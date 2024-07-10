@@ -7,10 +7,12 @@ from fastapi.openapi.docs import (
 )
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.responses import RedirectResponse
-from kb_api import BaseResponse, ListResponse, VectorSearchResponse, create_kb, delete_docs, download_doc, get_kb_info, \
+from kb_api import BaseResponse, ListResponse, VectorSearchResponse, create_kb, delete_batch, delete_docs, download_doc, \
+    get_kb_info, \
     get_llm_info, list_embedding_models, list_kbs, list_llms, list_vector_store_types, query_in_kb, \
-    recreate_vector_store, upload_docs, upload_from_url, check_vector_store_embedding_progress, delete_kb, \
-    DeleteResponse, upload_from_object_storage, upload_audio_from_object_storage
+    recreate_vector_store, upload_docs, upload_from_url, check_vector_store_embedding_progress, sync_kbot_records, \
+    delete_kb, \
+    DeleteResponse, upload_from_object_storage, upload_audio_from_object_storage, text_embedding
 from typing import List
 from kb_llm_api import ask_llm
 from prompt_api import list_prompts, create_prompt, get_prompt, delete_prompt,update_prompt
@@ -263,6 +265,11 @@ def create_app():
              response_model=DeleteResponse,
              summary="delete one document"
              )(delete_docs)
+    app.post("/knowledge_base/delete_batch",
+             tags=["Knowledge Base Management"],
+             response_model=DeleteResponse,
+             summary="delete one batch"
+             )(delete_batch)
     app.post("/knowledge_base/delete_kb",
              tags=["Knowledge Base Management"],
              response_model=BaseResponse,
@@ -293,13 +300,10 @@ def create_app():
     app.get("/knowledge_base/download_doc",
             tags=["Knowledge Base Management"],
             summary="download knowledge file")(download_doc)
-    app.post("/knowledge_base/recreate_vector_store",
-             tags=["Knowledge Base Management"],
-             summary="reset kB vector store")(recreate_vector_store)
-    app.post("/knowledge_base/check_vector_store_embedding_progress",
+    app.post("/knowledge_base/sync_kbot_records",
              tags=["Knowledge Base Management"],
              # response_model=ORJSONResponse,
-             summary="check_recreate_vector_store_progress  ")(check_vector_store_embedding_progress)
+             summary="sync_kbot_records ")(sync_kbot_records)
 
 
 
@@ -323,6 +327,9 @@ def create_app():
     app.get("/chat/list_LLMs",
             tags=["LLM"],
             summary="list all llms")(list_llms)
+    app.post("/chat/text_embedding",
+            tags=["LLM"],
+            summary="turn text to embeddings")(text_embedding)
     app.get("/chat/get_llm_info",
             tags=["LLM"],
             summary="get_llm_info")(get_llm_info)

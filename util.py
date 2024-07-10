@@ -2,7 +2,6 @@ from langchain_community.embeddings import CohereEmbeddings, HuggingFaceEmbeddin
 from sympy import EX
 import config
 import os
-import shutil
 import tempfile
 import pytz
 from datetime import datetime
@@ -11,6 +10,8 @@ from urlextract import URLExtract
 from loguru import logger
 from langchain_community.document_loaders import UnstructuredFileLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+import shutil
+
 
 # 获取指定目录的所有文件
 def get_all_files_in_directory(directory: str):
@@ -21,18 +22,20 @@ def get_all_files_in_directory(directory: str):
             all_files.append(file_path)
     return all_files
 
+
 # 获取指定根目录下所有子目录的所有文件
-def list_files_by_level(all_files,root_dir, level=0):
-      for item in os.listdir(root_dir):
-          item_path = os.path.join(root_dir, item)
-          if os.path.isfile(item_path):
-              #logger.info(f"{'  ' * level}{item}")  # 使用缩进来表示目录级别
-              #logger.info("item_file:",item_path)
-              all_files.append(item_path)
-          elif os.path.isdir(item_path):
-              #logger.info(f"{'  ' * level}[{item}]")  # 使用方括号表示目录
-              #logger.info("item_dir:",item_path)
-              list_files_by_level(all_files,item_path, level + 1)  # 递归调用，增加目录级别
+def list_files_by_level(all_files, root_dir, level=0):
+    for item in os.listdir(root_dir):
+        item_path = os.path.join(root_dir, item)
+        if os.path.isfile(item_path):
+            # logger.info(f"{'  ' * level}{item}")  # 使用缩进来表示目录级别
+            # logger.info("item_file:",item_path)
+            all_files.append(item_path)
+        elif os.path.isdir(item_path):
+            # logger.info(f"{'  ' * level}[{item}]")  # 使用方括号表示目录
+            # logger.info("item_dir:",item_path)
+            list_files_by_level(all_files, item_path, level + 1)  # 递归调用，增加目录级别
+
 
 ###删除文件
 def delete_folder(folder_path):
@@ -40,6 +43,7 @@ def delete_folder(folder_path):
         os.remove(folder_path)
     elif os.path.isdir(folder_path):  # 判断路径是否为文件夹
         shutil.rmtree(folder_path)
+
 
 ##批次处理
 def batch_process(my_docs, batch_size=16):
@@ -51,6 +55,7 @@ def batch_process(my_docs, batch_size=16):
     for i in range(0, len(my_docs), batch_size):
         yield my_docs[i:i + batch_size]
 
+
 ##判断对象是否为空
 def is_empty(obj):
     if obj is None:
@@ -61,21 +66,9 @@ def is_empty(obj):
         return True
     return False
 
-def copy_to_dest_dir(src_dir,dest_dir):
-    # 创建临时目录
-
-    # 遍历源目录中的所有文件和子目录
-    for root, dirs, files in os.walk(src_dir):
-        # 对每个文件，构建目标路径并复制文件
-        for file in files:
-            src_file = os.path.join(root, file)
-            dst_file = os.path.join(dest_dir, os.path.relpath(src_file, src_dir))
-            dst_directory = os.path.dirname(dst_file)
-            # 如果目标目录不存在，则创建
-            os.makedirs(dst_directory, exist_ok=True)
-            shutil.copy2(src_file, dst_file)  # 使用shutil.copy2保留原文件的元数据
-
     return dest_dir
+
+
 def load_embedding_model(embedding_model_dir: str) -> HuggingFaceEmbeddings:
     embeddings: HuggingFaceEmbeddings = HuggingFaceEmbeddings(model_name=embedding_model_dir,
                                                               model_kwargs={'device': 'cuda'})
@@ -86,11 +79,12 @@ def load_embedding_model(embedding_model_dir: str) -> HuggingFaceEmbeddings:
     # logger.info("embedded_query[:4]:",embedded_query[:4])
     return embeddings
 
-def load_cohere_embedding(cohere_api_key:str="f2tdOlbKMadK2UwfcTlAI8BjTBqQSRwvwLcoSsYG") -> HuggingFaceEmbeddings:
-    #cohere_api_key="6RodbluQBIwqLTyXeJMhwKiyhEamDYmF5EUpvXhc" #zouzhongfan@gmail.com登陆
-    #cohere_api_key="f2tdOlbKMadK2UwfcTlAI8BjTBqQSRwvwLcoSsYG" #zhongfan.zou@oracle.com github登陆
+
+def load_cohere_embedding(cohere_api_key: str = "f2tdOlbKMadK2UwfcTlAI8BjTBqQSRwvwLcoSsYG") -> HuggingFaceEmbeddings:
+    # cohere_api_key="6RodbluQBIwqLTyXeJMhwKiyhEamDYmF5EUpvXhc" #zouzhongfan@gmail.com登陆
+    # cohere_api_key="f2tdOlbKMadK2UwfcTlAI8BjTBqQSRwvwLcoSsYG" #zhongfan.zou@oracle.com github登陆
     ###embed-english-v2.0 (default) 4096,embed-english-light-v2.0 1024,embed-multilingual-v2.0 768
-    model_name="embed-multilingual-v2.0"
+    model_name = "embed-multilingual-v2.0"
     embeddings = CohereEmbeddings(model=model_name, cohere_api_key=cohere_api_key)
     ##embeed query testing
     # query="What's the Exadata feature?"
@@ -101,12 +95,16 @@ def load_cohere_embedding(cohere_api_key:str="f2tdOlbKMadK2UwfcTlAI8BjTBqQSRwvwL
 
 
 from typing import List, Union, Dict, Optional
+
+
 class SupportedVSType:
     FAISS = 'faiss'
     MILVUS = 'milvus'
     DEFAULT = 'default'
     PG = 'pg'
     ORACLE = 'oracle'
+
+
 def get_kb_path(knowledge_base_name: str):
     return os.path.join(config.KB_ROOT_PATH, knowledge_base_name)
 
@@ -118,7 +116,10 @@ def get_content_root(knowledge_base_name: str):
     :return:
     '''
     return os.path.join(get_kb_path(knowledge_base_name), "content")
-faissVectorStore="faissVectorStore"
+
+
+faissVectorStore = "faissVectorStore"
+
 
 def get_url_subpath(knowledge_base_name: str):
     '''
@@ -126,26 +127,33 @@ def get_url_subpath(knowledge_base_name: str):
     :param knowledge_base_name:
     :return:
     '''
-    content_path=  os.path.join(get_kb_path(knowledge_base_name), "content")
+    content_path = os.path.join(get_kb_path(knowledge_base_name), "content")
     return os.path.join(content_path, "webpages")
+
 
 def get_uploaded_file_subpath(knowledge_base_name: str):
     content_path = os.path.join(get_kb_path(knowledge_base_name), "content")
     return os.path.join(content_path, "upload")
+
+
 def get_vs_path(knowledge_base_name: str):
     return os.path.join(get_kb_path(knowledge_base_name), faissVectorStore)
+
 
 def get_file_path(knowledge_base_name: str, doc_name: str):
     return os.path.join(get_content_root(knowledge_base_name), doc_name)
 
-def makeSplitter(chunck_size,chunk_overlap):
+
+def makeSplitter(chunck_size, chunk_overlap):
     Text_splitter = RecursiveCharacterTextSplitter(chunk_size=chunck_size, chunk_overlap=chunk_overlap,
-                                               separators=["(?<=\. )", "(?<=\。 )", "\n", " ", ""])
+                                                   separators=["(?<=\. )", "(?<=\。 )", "\n", " ", ""])
     return Text_splitter
+
 
 from pydantic import BaseModel
 import pydantic
 from typing import Callable, Generator, Any
+
 
 class BaseResponse(BaseModel):
     code: int = pydantic.Field(200, description="API status code")
@@ -159,6 +167,8 @@ class BaseResponse(BaseModel):
                 "msg": "success",
             }
         }
+
+
 class AskResponseData:
     content: str = ""
     source: str = ""
@@ -170,30 +180,36 @@ class AskResponseData:
         self.score = score
 
 
-#获取中国时间
+# 获取中国时间
 def get_cur_time():
     tz_SH = pytz.timezone('Asia/Shanghai')
     datetime_SH = datetime.now(tz_SH)
     return datetime_SH.strftime("%Y-%m-%d %H:%M:%S")
+
+
 from pathlib import Path
-def write_object(parentDir,filename,data):
+
+
+def write_object(parentDir, filename, data):
     fileDiskPath = Path(parentDir) / filename
     if not fileDiskPath.parent.exists():
         fileDiskPath.parent.mkdir(parents=True)
     try:
         with open(str(fileDiskPath), 'wb') as f:
-             f.write(data.content)
+            f.write(data.content)
     except Exception as e:
         logger.error(str(e))
 
+
 ##数据清洗
-def doc_clean(src:str):
+def doc_clean(src: str):
     pattern1 = r"Copyright © [\d{4}, ]+Oracle and/or its a[ ]+ffiliates. All rights reserved."
     src = re.sub(pattern1, r"", src)
     src = re.sub(r"\n{3,}", r"\n", src)
     src = re.sub('\s', " ", src)
     src = re.sub("\n\n", "", src)
     return src
+
 
 # 对LLM返回的结果作格式化处理，以后结果的格式化处理可以统一放在这个方法里面。
 def format_llm_response(llm_response: Optional[str]) -> str:
@@ -211,6 +227,7 @@ def format_llm_response(llm_response: Optional[str]) -> str:
         result_resp = result_resp.replace(f'\\\\\\"{url}\\\\\\"', f'\\"{url}\\"')
     return result_resp
 
+
 import oci
 
 from oci.ai_speech import AIServiceSpeechClientCompositeOperations
@@ -221,7 +238,7 @@ from oci.ai_speech import AIServiceSpeechClientCompositeOperations
 # ai_language_client = oci.ai_language.AIServiceLanguageClient(config = ociconfig)
 
 # ai_speech_client = oci.ai_speech.AIServiceSpeechClient(config={}, signer=signer)
-ai_speech_client  =None
+ai_speech_client = None
 #
 # object_storage_client = oci.object_storage.ObjectStorageClient(config={}, signer=signer)
 object_storage_client = None
@@ -230,12 +247,17 @@ import json
 
 
 def init_oci_auth(auth_type):
-    if auth_type== 'API_KEY':
+    finalConfig = {}
+    if auth_type == 'API_KEY':
         ociconfig = oci.config.from_file()
-        return {'config':ociconfig}
+        finalConfig = {'config': ociconfig}
+
     if auth_type == 'INSTANCE_PRINCIPAL':
         signer = oci.auth.signers.InstancePrincipalsSecurityTokenSigner()
-        return {'config': {},'signer':signer}
+        finalConfig = {'config': {}, 'signer': signer}
+    # if region:
+    #     finalConfig.update({"region":region})
+    return finalConfig
 
 
 from typing import List
@@ -249,7 +271,9 @@ from typing import List
 #     return ocr
 from PIL import Image
 from paddleocr import PaddleOCR, draw_ocr
-def ppOCR(img_path,lang="en"):
+
+
+def ppOCR(img_path, lang="en"):
     # Paddleocr目前支持的多语言语种可以通过修改lang参数进行切换
     # 例如`ch`, `en`, `fr`, `german`, `korean`, `japan`
     # need to run only once to download and load model into memory
@@ -263,6 +287,8 @@ def ppOCR(img_path,lang="en"):
             newarr.append(line[1][0])
     res = '\n'.join(newarr)
     return res
+
+
 # class RapidOCRLoader(UnstructuredFileLoader):
 #     def _get_elements(self) -> List:
 #         def img2text(filepath):
@@ -292,8 +318,8 @@ def ociSpeechASRLoader(namespace, bucket, objectName, lang):
     if not ai_speech_client:
         ai_speech_client = oci.ai_speech.AIServiceSpeechClient(**init_oci_auth(config.auth_type))
 
-    aiServiceSpeechClientCompositeOperations=AIServiceSpeechClientCompositeOperations(client=ai_speech_client)
-    waiter_result =  aiServiceSpeechClientCompositeOperations.create_transcription_job_and_wait_for_state(
+    aiServiceSpeechClientCompositeOperations = AIServiceSpeechClientCompositeOperations(client=ai_speech_client)
+    waiter_result = aiServiceSpeechClientCompositeOperations.create_transcription_job_and_wait_for_state(
         create_transcription_job_details=oci.ai_speech.models.CreateTranscriptionJobDetails(
             compartment_id=config.compartment_id,
             input_location=oci.ai_speech.models.ObjectListInlineInputLocation(
@@ -326,13 +352,12 @@ def ociSpeechASRLoader(namespace, bucket, objectName, lang):
                 #         type="PROFANITY",
                 #         mode="TAG")]
             ),
-        ),wait_for_states=['SUCCEEDED','FAILED']
+        ), wait_for_states=['SUCCEEDED', 'FAILED']
     )
     if waiter_result.data.lifecycle_state == "SUCCEEDED":
-        outputPrefix= waiter_result.data.output_location.prefix
-        objectName=namespace+"_"+bucket+'_'+ objectName+'.json'
-        objectName = outputPrefix+ objectName
-
+        outputPrefix = waiter_result.data.output_location.prefix
+        objectName = namespace + "_" + bucket + '_' + objectName + '.json'
+        objectName = outputPrefix + objectName
 
         # 设置桶名和对象名
 

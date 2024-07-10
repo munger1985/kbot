@@ -41,14 +41,19 @@ def update_prompt_from_db(session, name,content):
 def load_prompt_from_db(session, name):
     if name=='rag_default':
         rag_default_prompt_content= '''
-你是一个乐于助人、尊重他人、诚实的AI助手。
-请参考下面的上下文内容，回答后面的问题。如果您不知道答案，就回答说不知道，不要试图编造答案。
-如果要回答的问题是中文，则用中文回答问题。
-如果要回答的问题是英文，则用英文回答问题。
-下面是上下文：
-{context}
-下面是要回答的问题：{question}
-                                    '''
+You are an AI assistant who is helpful, respectful, and honest. 
+Use the below given context to answer the customer queries. 
+If there is anything that you cannot answer, or you think is inappropriate to answer, simply reply as,"Sorry, I cannot help you with that." 
+CONTEXT: {context} 
+
+Instructions: 
+1. Answer only from the given context. 
+2: Please answer the question simply as you can, and do not generate any new content out of this context. 
+3: Your answer should not include any harmful, unethical, violent, racist, sexist, pornographic, toxic, discriminatory, blasphemous, dangerous, or illegal content. 
+4: Please ensure that your responses are socially unbiased and positive in nature. 
+5: Ensure length of the answer is within 300 words. 
+Now, Answer the following question: {question}
+'''
         return rag_default_prompt_content
     kb = session.query(Prompt).filter_by(name=name).first()
     if kb:

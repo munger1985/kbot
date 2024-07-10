@@ -122,6 +122,8 @@ def ask_rag(user: str,
 
     # 3.设置Prompt
     promptContent = load_prompt_from_db(prompt_name)
+    if not promptContent or promptContent =="":
+        raise ValueError("prompt is empty !")
     prompt = PromptTemplate(input_variables=["question", "context"], template=promptContent)
     logger.info(f"##3.完成获取prompt:{prompt}##")
 
