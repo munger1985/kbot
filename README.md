@@ -63,6 +63,35 @@ python main.py  --port 8899 --ssl_keyfile tls.key --ssl_certfile tls.crt
 python main.py  --port 443 --ssl_keyfile /home/ubuntu/qq/dev.oracle.k8scloud.site.key  --ssl_certfile /home/ubuntu/qq/dev.oracle.k8scloud.site.pem
 ```
 
+## Daemon Service File
+
+```commandline
+[Unit]
+Description=Kbot Service
+After=network.target
+
+[Service]
+# User and group under which the script should run
+User=ubuntu
+
+# The working directory, the directory where main.py locates.
+WorkingDirectory=/home/ubuntu/kbot
+# The command to execute
+ExecStart=/home/ubuntu/anaconda3/envs/kbot/bin/python /home/ubuntu/kbot/main.py
+# Restart policy
+#Restart=always
+#RestartSec=5
+
+# Environment variables (if needed)
+
+[Install]
+WantedBy=multi-user.target
+```
+
+You can create a file called kbot.service, put it in /etc/systemd/system
+
+Then you can systemctl start kbot or systemctl stop kbot to control this service up and down.
+
 ## FrontEnd web site
 
 We have an Apex built frontend, will be released in another repo. you can refer to the swagger document once you started the API server.

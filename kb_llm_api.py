@@ -3,7 +3,7 @@ import torch
 from langchain.chains import LLMChain
 import json, re, os
 from typing import List, Optional, Tuple
-from kb_api import get_docs_with_scores, get_vs_from_kb, get_vs_path,makeSimilarDocs
+from kb_api import fulltext_search, get_docs_with_scores, get_vs_from_kb, get_vs_path, makeSimilarDocs, user_settings
 import config
 from util import AskResponseData
 from langchain_core.prompts import PromptTemplate, MessagesPlaceholder
@@ -17,6 +17,9 @@ from util import get_cur_time, format_llm_response
 from loguru import logger
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnablePassthrough
+from types import SimpleNamespace
+
+from vectorDB.hybrid import oracle_fulltext_helper
 
 response = None
 user_memory = {}
@@ -97,6 +100,7 @@ def clear_disable_memory_rag(user: str, kb_name: str, llm_model: str):
     logger.info(f"####clear after: len(user_memory):{len(user_memory)}")
     return [user_model + ' memory has been cleared']
 
+
 ##没有记忆rag
 def ask_rag(user: str,
             question: str,
@@ -106,23 +110,28 @@ def ask_rag(user: str,
             rerankerModel: str = 'bgeReranker',
             reranker_topk: int = 2,
             score_threshold: float = 0.6,
-            vector_store_limit=10
+            vector_store_limit=10,
+            search_type: str = 'vector'
             ):
     # 1.初始化配置参数
-    config.prompt_name = prompt_name
-    config.rerankerModel = rerankerModel
-    config.reranker_topk = reranker_topk
-    config.score_threshold = score_threshold
-    config.vector_store_limit = vector_store_limit
+    settings = SimpleNamespace()
+    settings.prompt_name = prompt_name
+    settings.rerankerModel = rerankerModel
+    settings.reranker_topk = reranker_topk
+    settings.score_threshold = score_threshold
+    settings.vector_store_limit = vector_store_limit
+    settings.search_type = search_type
+    user_settings[user] = settings
+
     logger.info(f"##1).完成配置参数初始化:{get_cur_time()}##")
 
     # 2.获取向量检索结果以及rerank结果
-    vector_res_arr, llm_context = makeSimilarDocs(question, kb_name)
+    vector_res_arr, llm_context = makeSimilarDocs(question, kb_name, user)
     logger.info("##2)完成获取向量检索结果以及rerank结果。##")
 
     # 3.设置Prompt
     promptContent = load_prompt_from_db(prompt_name)
-    if not promptContent or promptContent =="":
+    if not promptContent or promptContent == "":
         raise ValueError("prompt is empty !")
     prompt = PromptTemplate(input_variables=["question", "context"], template=promptContent)
     logger.info(f"##3.完成获取prompt:{prompt}##")
@@ -156,27 +165,31 @@ def ask_history_rag(user: str,
                     reranker_topk: int = 2,
                     score_threshold: float = 0.6,
                     vector_store_limit: int = 10,
-                    history_k: int = 3
+                    history_k: int = 3,
+                    search_type='vector'
                     ):
     # 1.初始化配置参数
-    config.prompt_name = prompt_name
-    config.rerankerModel = rerankerModel
-    config.reranker_topk = reranker_topk
-    config.score_threshold = score_threshold
-    config.vector_store_limit = vector_store_limit
-    config.history_k = history_k
-    user_model = user + "_" + kb_name + "_" + model_name
+    settings = SimpleNamespace()
+    settings.prompt_name = prompt_name
+    settings.rerankerModel = rerankerModel
+    settings.reranker_topk = reranker_topk
+    settings.score_threshold = score_threshold
+    settings.vector_store_limit = vector_store_limit
+    settings.search_type = search_type
+    settings.history_k = history_k
+    user_settings[user] = settings
+    user_memory_key = user + "_" + kb_name + "_" + model_name
     logger.info(f"##1).完成配置参数初始化:{get_cur_time()}##")
 
     ##2.调用Vector database retrieval and Rerank并获取处理之后结果
-    vector_res_arr, llm_context = makeSimilarDocs(question, kb_name)
+    vector_res_arr, llm_context = makeSimilarDocs(question, kb_name, user)
     logger.info("##2).完成获取向量检索结果以及rerank结果。##")
 
     # 3.Initial chat history, and set user_memory
     memory = ConversationBufferWindowMemory(memory_key="chat_history", k=config.history_k, return_messages=True,
                                             output_key='output')
-    user_memory.setdefault(user_model, memory)
-    current_memory = user_memory.get(user_model)
+    user_memory.setdefault(user_memory_key, memory)
+    current_memory = user_memory.get(user_memory_key)
     logger.info("##3).完成设置ConversationBufferWindowMemory##")
 
     # 4.create a New Conversation
@@ -205,7 +218,7 @@ def ask_history_rag(user: str,
     return result_list
 
 
-##有记忆rag
+##有记忆rag 第二种写法，修改记忆，保留
 def ask_conversational_rag(
         user: str,
         question: str,
@@ -216,23 +229,27 @@ def ask_conversational_rag(
         reranker_topk: int = 2,
         score_threshold: float = 0.6,
         vector_store_limit: int = 10,
-        history_k: int = 3
+        history_k: int = 3,
+        search_type='vector'
 ):
     '''
     manually implemented conversation chain
     '''
     # 1.初始化配置参数
-    config.prompt_name = prompt_name
-    config.rerankerModel = rerankerModel
-    config.reranker_topk = reranker_topk
-    config.score_threshold = score_threshold
-    config.vector_store_limit = vector_store_limit
-    config.history_k = history_k
+    settings = SimpleNamespace()
+    settings.prompt_name = prompt_name
+    settings.rerankerModel = rerankerModel
+    settings.reranker_topk = reranker_topk
+    settings.score_threshold = score_threshold
+    settings.vector_store_limit = vector_store_limit
+    settings.search_type = search_type
+    settings.history_k = history_k
+    user_settings[user] = settings
     user_model = user + "_" + kb_name + "_" + model_name
     logger.info(f"##1).完成配置参数初始化:{get_cur_time()}##\n")
 
     # 2.获取向量检索结果以及rerank结果
-    vector_res_arr, llm_context = makeSimilarDocs(question, kb_name)
+    vector_res_arr, llm_context = makeSimilarDocs(question, kb_name, user)
     logger.info("##2).完成获取向量检索结果以及rerank结果。##\n")
 
     # 3.设置ConversationBufferWindowMemory
@@ -355,3 +372,26 @@ def compression_rag(question, model_name: str, kb_name: str):
     result_list = json.loads(result_str)
     return result_list
 
+
+from fastapi import Body
+from fastapi.responses import Response
+
+
+def translate(query: str = Body(..., description="query", examples=['how to manage services, add users']),
+              llm_model: str = Body("OCI-meta.llama-3.1-405b-instruct", description="llm model name"),
+              language: str = Body('Chinese', description="the target language")):
+    translatorPromptTemplate = """
+    You are a very smart translator, you can translate the texts below
+    {query}
+    to this language {language}, just output the translation result.
+    """
+    prompt = PromptTemplate(input_variables=["query", 'language'], template=translatorPromptTemplate)
+
+    logger.info("#### Prompt: {}", query)
+
+    query_llm = LLMChain(llm=config.MODEL_DICT.get(llm_model), prompt=prompt)
+    logger.info(f"#### translate with LLM {llm_model}: ", config.MODEL_DICT.get(llm_model))
+
+    response = query_llm.invoke({"language": language, "query": query})
+
+    return Response(content=response['text'], media_type="text/plain")

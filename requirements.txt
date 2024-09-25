@@ -8,7 +8,7 @@ lazy-load==0.8.3
 transformers
 uvicorn==0.22.0
 python-multipart==0.0.6
-accelerate==0.25.0
+accelerate
 oci
 httpx
 FlagEmbedding
@@ -23,7 +23,7 @@ websocket-client
 zhipuai
 docx2txt
 html2text
-cohere==4.45
+cohere
 dashscope
 urlextract
 oracledb
@@ -32,3 +32,10 @@ loguru
 unstructured[all-docs]
 paddlepaddle
 paddleocr
+qianfan
+jieba==0.42.1
+mysql-connector-python
+graphrag
+shortuuid
+redis
+peft

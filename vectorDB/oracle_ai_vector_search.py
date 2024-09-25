@@ -1,6 +1,7 @@
 from __future__ import annotations
 from loguru import logger
-
+import os
+import config
 import asyncio
 import contextlib
 import enum
@@ -32,20 +33,13 @@ from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
 from langchain_core.utils import get_from_dict_or_env
 from langchain_core.vectorstores import VectorStore
-
+from langchain_community.vectorstores.utils import (
+    DistanceStrategy,
+)
 try:
     from sqlalchemy.orm import declarative_base
 except ImportError:
     from sqlalchemy.ext.declarative import declarative_base
-
-
-class DistanceStrategy(str, enum.Enum):
-    """Enumerator of the Distance strategies."""
-
-    EUCLIDEAN = "l2"
-    COSINE = "cosine"
-    MAX_INNER_PRODUCT = "inner"
-
 
 DEFAULT_DISTANCE_STRATEGY = DistanceStrategy.COSINE
 
@@ -53,6 +47,21 @@ Base = declarative_base()  # type: Any
 
 _LANGCHAIN_DEFAULT_COLLECTION_NAME = "langchain"
 
+def _get_distance_function(distance_strategy: DistanceStrategy) -> str:
+    # Dictionary to map distance strategies to their corresponding function
+    # names
+    distance_strategy2function = {
+        DistanceStrategy.EUCLIDEAN_DISTANCE: "EUCLIDEAN",
+        DistanceStrategy.DOT_PRODUCT: "DOT",
+        DistanceStrategy.COSINE: "COSINE",
+    }
+
+    # Attempt to return the corresponding distance function
+    if distance_strategy in distance_strategy2function:
+        return distance_strategy2function[distance_strategy]
+
+    # If it's an unsupported distance strategy, raise an error
+    raise ValueError(f"Unsupported distance strategy: {distance_strategy}")
 
 class BaseModel(Base):
     """Base model for the SQL stores."""
@@ -185,10 +194,11 @@ class OracleAIVector(VectorStore):
         return self.embedding_function
 
     def connect(self) -> oracledb.Connection:
-        try:
+        try:   
             #oracledb.init_oracle_client()
             self._conn = oracledb.connect(dsn=self.connection_string)
             # self._conn=self.pool.acquire()
+            #print("###Get conn from DBCS 23ai conn####")
             return self._conn
         except Exception as e:
             logger.info(f"##conn exception:{e}")
@@ -618,15 +628,14 @@ class OracleAIVector(VectorStore):
         # logger.info(embedding[0])
         start_time = datetime.now()  # get the current time
         cursor.execute(
-            """
+            f"""
                         SELECT 
                             collection_id,
-                            embedding,
                             document,
                             cmetadata,
                             custom_id,
                             uuid,
-                            VECTOR_DISTANCE(embedding, to_vector(:1)) as distance
+                            VECTOR_DISTANCE(embedding, to_vector(:1), {_get_distance_function(self._distance_strategy)}) as distance
                         FROM langchain_oracle_embedding
                         WHERE
                             collection_id = :2
@@ -642,56 +651,18 @@ class OracleAIVector(VectorStore):
         json_results = []
         for result in results:
             json_results.append(
-                {"collection_id": result[0], "embedding": result[1], "document": result[2].read(),
-                 "cmetadata": result[3], "custom_id": result[4], "uuid": result[5], "distance": result[6]})
+                {
+                    "collection_id": result[0],
+                    "document": result[1].read(),
+                    "cmetadata": result[2],
+                    "custom_id": result[3],
+                    "uuid": result[4],
+                    "distance": result[5],
+                }
+            )
         # logger.info(f"results: {results}")
         cursor.close()
         return json_results
-
-        # with Session(self._conn) as session:
-        #     collection = self.get_collection()
-        #     if not collection:
-        #         raise ValueError("Collection not found")
-        #
-        #     filter_by = self.collection_id == collection["uuid"]
-        #
-        #     if filter is not None:
-        #         filter_clauses = []
-        #         for key, value in filter.items():
-        #             IN = "in"
-        #             if isinstance(value, dict) and IN in map(str.lower, value):
-        #                 value_case_insensitive = {
-        #                     k.lower(): v for k, v in value.items()
-        #                 }
-        #                 filter_by_metadata = self.EmbeddingStore.cmetadata[
-        #                     key
-        #                 ].astext.in_(value_case_insensitive[IN])
-        #                 filter_clauses.append(filter_by_metadata)
-        #             else:
-        #                 filter_by_metadata = self.EmbeddingStore.cmetadata[
-        #                                          key
-        #                                      ].astext == str(value)
-        #                 filter_clauses.append(filter_by_metadata)
-        #
-        #         filter_by = sqlalchemy.and_(filter_by, *filter_clauses)
-        #
-        #     _type = self.EmbeddingStore
-        #
-        #     results: List[Any] = (
-        #         session.query(
-        #             self.EmbeddingStore,
-        #             self.distance_strategy(embedding).label("distance"),  # type: ignore
-        #         )
-        #         .filter(filter_by)
-        #         .order_by(sqlalchemy.asc("distance"))
-        #         .join(
-        #             self.CollectionStore,
-        #             self.EmbeddingStore.collection_id == self.CollectionStore.uuid,
-        #         )
-        #         .limit(k)
-        #         .all()
-        #     )
-        # return results
 
     def similarity_search_by_vector(
             self,
@@ -883,6 +854,10 @@ class OracleAIVector(VectorStore):
     ) -> str:
         """Return connection string from database parameters."""
         return f"postgresql+{driver}://{user}:{password}@{host}:{port}/{database}"
+
+    def _cosine_relevance_score_fn(self, distance: float) -> float:
+        """Normalize the distance to a score on a scale [0, 1]."""
+        return 0 if distance > 1.0 else 1.0 - distance
 
     def _select_relevance_score_fn(self) -> Callable[[float], float]:
         """

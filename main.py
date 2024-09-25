@@ -5,14 +5,17 @@ from fastapi.openapi.docs import (
     get_redoc_html,
     get_swagger_ui_html,
 )
+from kbot_graphrag import oci_sample_init,default_init,graphrag_index,graphrag_local_search,graphrag_global_search, \
+    getPromptByKB,editPromptByKB,editSettingsYamlByKB,getSettingsYamlByKB
+
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.responses import RedirectResponse
-from kb_api import BaseResponse, ListResponse, VectorSearchResponse, create_kb, delete_batch, delete_docs, download_doc, \
+from kb_api import BaseResponse, ListResponse, VectorSearchResponse, create_kb, delete_batch, delete_docs, delete_webpage, download_doc, \
     get_kb_info, \
     get_llm_info, list_embedding_models, list_kbs, list_llms, list_vector_store_types, query_in_kb, \
     recreate_vector_store, upload_docs, upload_from_url, check_vector_store_embedding_progress, sync_kbot_records, \
     delete_kb, \
-    DeleteResponse, upload_from_object_storage, upload_audio_from_object_storage, text_embedding
+    DeleteResponse, upload_from_object_storage, upload_audio_from_object_storage,text_embedding
 from typing import List
 from kb_llm_api import ask_llm
 from prompt_api import list_prompts, create_prompt, get_prompt, delete_prompt,update_prompt
@@ -48,11 +51,12 @@ async def with_rag(
         reranker_topk: int = Body(2 ,description='reranker_topk' ),
         score_threshold:float= Body(0.6 ,description='reranker score threshold' ),
         vector_store_limit =  Body(10 ,description='the limit of query from vector db'),
+        search_type =  Body('vector' ,description='the type of search. eg. vector, fulltext, hybrid'),
 ):
     status: str = "success"
     err_msg: str = ""
     data: list = []
-    logger.info(f"#with_rag##user:{user},ask:{ask},kb_name:{kb_name},llm_model:{llm_model},prompt_name:{prompt_name},rerankerModel:{rerankerModel},reranker_topk:{reranker_topk},score_threshold:{score_threshold},vector_store_limit:{vector_store_limit}")
+    logger.info(f"#with_rag##user:{user},ask:{ask},kb_name:{kb_name},llm_model:{llm_model},prompt_name:{prompt_name},rerankerModel:{rerankerModel},reranker_topk:{reranker_topk},score_threshold:{score_threshold},vector_store_limit:{vector_store_limit},search_type:{search_type}")
     if ask != '' and llm_model != '' and kb_name != '':
         data = ask_rag(
                         user,
@@ -63,7 +67,8 @@ async def with_rag(
                         rerankerModel,
                         reranker_topk ,
                         score_threshold ,
-                        vector_store_limit
+                        vector_store_limit,
+                        search_type
                 )
     else:
         status = "failed"
@@ -87,11 +92,12 @@ async def with_history_rag(
         score_threshold: float= Body(0.6 ,description='reranker score threshold' ),
         vector_store_limit: int =  Body(10 ,description='the limit of query from vector db'),
         history_k: int = Body(3 ,description='history_k' ),
+        search_type =  Body('vector' ,description='the type of search. eg. vector, fulltext, hybrid'),
 ):
     status: str = "success"
     err_msg: str = ""
     data: list = []
-    logger.info(f"#with_history_rag##user:{user},ask:{ask},kb_name:{kb_name},llm_model:{llm_model}, prompt_name:{prompt_name},rerankerModel:{rerankerModel},reranker_topk:{reranker_topk},score_threshold:{score_threshold},vector_store_limit:{vector_store_limit},history_k:{history_k}")
+    logger.info(f"#with_history_rag##user:{user},ask:{ask},kb_name:{kb_name},llm_model:{llm_model}, prompt_name:{prompt_name},rerankerModel:{rerankerModel},reranker_topk:{reranker_topk},score_threshold:{score_threshold},vector_store_limit:{vector_store_limit},history_k:{history_k},search_type:{search_type}")
     if ask != '' and llm_model != '' and kb_name != '':
         #ask_conversational_rag,ask_history_rag
         data = ask_history_rag(
@@ -104,7 +110,8 @@ async def with_history_rag(
                     reranker_topk ,
                     score_threshold ,
                     vector_store_limit,
-                    history_k
+                    history_k,
+                    search_type
             )
     else:
         status = "failed"
@@ -239,6 +246,7 @@ def create_app():
     app.get("/",
             response_model=BaseResponse,
             summary="swagger 文档")(document)
+    ################################  KB
 
     app.post("/knowledge_base/create_knowledge_base",
              tags=["Knowledge Base Management"],
@@ -265,6 +273,11 @@ def create_app():
              response_model=DeleteResponse,
              summary="delete one document"
              )(delete_docs)
+    app.post("/knowledge_base/delete_webpage",
+             tags=["Knowledge Base Management"],
+             response_model=DeleteResponse,
+             summary="delete one webpage from url"
+             )(delete_webpage)
     app.post("/knowledge_base/delete_batch",
              tags=["Knowledge Base Management"],
              response_model=DeleteResponse,
@@ -305,7 +318,7 @@ def create_app():
              # response_model=ORJSONResponse,
              summary="sync_kbot_records ")(sync_kbot_records)
 
-
+    ################################  prompt
 
     app.get("/prompt/list_prompts",
             tags=["Prompt Management"],
@@ -323,6 +336,7 @@ def create_app():
             tags=["Prompt Management"],
             summary="update_prompt a Prompt by its name")(update_prompt)
 
+    ################################  llm
 
     app.get("/chat/list_LLMs",
             tags=["LLM"],
@@ -334,6 +348,7 @@ def create_app():
             tags=["LLM"],
             summary="get_llm_info")(get_llm_info)
 
+    ################################  chat, QA
 
     app.post("/chat/with_rag",
              tags=["Chat"],
@@ -353,9 +368,36 @@ def create_app():
     app.post("/chat/with_llm",
              tags=["Chat"],
              summary="chat with llm")(with_llm)
+    ################################  graphrag
 
+    app.post("/graphrag/oci_sample_init",
+             tags=["graphrag"],
+             summary="init a kb for graphrag    ")(oci_sample_init)
+    app.post("/graphrag/default_init",
+             tags=["graphrag"],
+             summary="init a kb for graphrag manually   ")(default_init)
+    app.post("/graphrag/getSettingsYamlByKB",
+             tags=["graphrag"],
+             summary="getGraphRagSettingsYaml By a kb   for graphrag    ")(getSettingsYamlByKB)
+    app.post("/graphrag/editSettingsYamlByKB",
+             tags=["graphrag"],
+             summary="edit a kb  graphrag settings    ")(editSettingsYamlByKB)
+    app.post("/graphrag/getPromptByKB",
+             tags=["graphrag"],
+             summary="getPromptByKB    ")(getPromptByKB)
+    app.post("/graphrag/editPromptByKB",
+             tags=["graphrag"],
+             summary="editPromptByKB      ")(editPromptByKB)
+    app.post("/graphrag/index",
+             tags=["graphrag"],
+             summary="index this kb for graphrag    ")(graphrag_index)
+    app.post("/graphrag/local_search",
+             tags=["graphrag"],
+             summary="local_search")(graphrag_local_search)
+    app.post("/graphrag/global_search",
+             tags=["graphrag"],
+             summary="global_search")(graphrag_global_search)
     return app
-
 
 app = create_app()
 
@@ -384,6 +426,13 @@ async def qabot(qaBody:QABody):
 
 
     return   qaBody
+
+
+
+from openaiCompatible import extendApp
+
+app = extendApp(app)
+
 
 @app.get("/docs", include_in_schema=False)
 async def custom_swagger_ui_html():

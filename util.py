@@ -11,6 +11,8 @@ from loguru import logger
 from langchain_community.document_loaders import UnstructuredFileLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 import shutil
+from langchain_core.documents import Document
+from typing import List, Tuple, Union, Dict, Optional
 
 
 # 获取指定目录的所有文件
@@ -66,7 +68,33 @@ def is_empty(obj):
         return True
     return False
 
-    return dest_dir
+
+def merge_search_results(
+        docs_by_vector: Optional[List[Tuple[Document, float]]],
+        docs_by_text: Optional[List[Tuple[Document, float]]],
+):
+    """Union the two query result lists with eliminating duplicate records.
+
+    Args:
+        docs_by_vector (List[Tuple[Document, float]]): _description_
+        docs_by_text (List[Tuple[Document, float]]): _description_
+
+    Returns:
+        _type_: _description_
+    """
+    docs_by_vector = [] if not docs_by_vector else docs_by_vector
+    docs_by_text = [] if not docs_by_text else docs_by_text
+    logger.info(f"### Merge result: {len(docs_by_vector)} | {len(docs_by_text)} ")
+
+    merged_results: List[Tuple[Document, float]] = [] + docs_by_vector
+    vdocs = [doc.page_content for doc, _ in docs_by_vector]
+    for doc, score in docs_by_text:
+        content = doc.page_content
+        if content not in vdocs:
+            merged_results.append((doc, score))
+
+    logger.info(f"### Merged result size: {len(merged_results)}")
+    return merged_results
 
 
 def load_embedding_model(embedding_model_dir: str) -> HuggingFaceEmbeddings:
@@ -92,9 +120,6 @@ def load_cohere_embedding(cohere_api_key: str = "f2tdOlbKMadK2UwfcTlAI8BjTBqQSRw
     # logger.info("len(embedded_query):",len(embedded_query))
     # logger.info("embedded_query[:4]:",embedded_query[:4])
     return embeddings
-
-
-from typing import List, Union, Dict, Optional
 
 
 class SupportedVSType:
@@ -279,6 +304,8 @@ def ppOCR(img_path, lang="en"):
     # need to run only once to download and load model into memory
     ocr = PaddleOCR(use_angle_cls=True, lang=lang)
     result = ocr.ocr(img_path, cls=True)
+    if result ==[None]:
+        return ""
     newarr = []
     for idx in range(len(result)):
         res = result[idx]
@@ -376,3 +403,11 @@ def ociSpeechASRLoader(namespace, bucket, objectName, lang):
         return textData
     else:
         return "FAILED ASR"
+
+def copy2Graphrag(knowledgeFile):
+        graphragFilePosixPath = Path(knowledgeFile.kbPath) / Path('graphrag') / Path('input') / Path(knowledgeFile.filename + '.txt')
+        if not graphragFilePosixPath.parent.exists():
+            graphragFilePosixPath.parent.mkdir(parents=True)
+        with open(str(graphragFilePosixPath), "w") as f:
+            f.write(knowledgeFile.full_text)
+        return graphragFilePosixPath
