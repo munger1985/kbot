@@ -6,7 +6,7 @@ from fastapi.openapi.docs import (
     get_swagger_ui_html,
 )
 from kbot_graphrag import oci_sample_init,default_init,graphrag_index,graphrag_local_search,graphrag_global_search, \
-    getPromptByKB,editPromptByKB,editSettingsYamlByKB,getSettingsYamlByKB
+    getPromptByKB,editPromptByKB,editSettingsYamlByKB,getSettingsYamlByKB,checkIndexProgress
 
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.responses import RedirectResponse
@@ -17,7 +17,7 @@ from kb_api import BaseResponse, ListResponse, VectorSearchResponse, create_kb, 
     delete_kb, \
     DeleteResponse, upload_from_object_storage, upload_audio_from_object_storage,text_embedding
 from typing import List
-from kb_llm_api import ask_llm
+from kb_llm_api import ask_llm,translate
 from prompt_api import list_prompts, create_prompt, get_prompt, delete_prompt,update_prompt
 from pydantic import BaseModel
 from fastapi.responses import ORJSONResponse
@@ -368,6 +368,9 @@ def create_app():
     app.post("/chat/with_llm",
              tags=["Chat"],
              summary="chat with llm")(with_llm)
+    app.post("/chat/translate",
+             tags=["Chat"],
+             summary="Translate with llm")(translate)
     ################################  graphrag
 
     app.post("/graphrag/oci_sample_init",
@@ -397,6 +400,9 @@ def create_app():
     app.post("/graphrag/global_search",
              tags=["graphrag"],
              summary="global_search")(graphrag_global_search)
+    app.post("/graphrag/checkIndexProgress",
+             tags=["graphrag"],
+             summary="checkIndexProgress")(checkIndexProgress)
     return app
 
 app = create_app()

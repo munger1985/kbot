@@ -12,6 +12,22 @@ To help customers leverage services in OCI easier.
 
 ![image](/readmeIMG/highlevel.png)
 
+## Features
+
+
+### llm management and openai format compatible API 
+
+### text embedding and openai format compatible API 
+
+### RAG or QA bot
+
+### prompt management
+
+### Knowledge base management
+
+### graphrag feature
+
+
 ## Workflow
 
 ![image](/readmeIMG/workflow.png)

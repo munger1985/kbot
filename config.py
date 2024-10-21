@@ -1,7 +1,9 @@
 from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_community.llms import HuggingFacePipeline
 from modelPrepare.cohereAPI import commandRPlus
 from modelPrepare.qwenAPI import QwenPlus
 from llm_prepare import load_llm_model
+from langchain_community.llms import OCIGenAI
 import torch
 from langchain_community.chat_models.oci_generative_ai import ChatOCIGenAI
 from modelPrepare import sparkAPI
@@ -21,24 +23,24 @@ http_prefix = 'http://150.230.37.250:8093/'
 http_doc_viewer = "http://150.230.37.250/HysunDocuViewer/?src=http://150.230.37.250:8080/"
 #ORACLE_AI_VECTOR_CONNECTION_STRING="vector/vector@129.159.40.144:1521/orclpdb1"
 #ORACLE_VECTOR_DB_TYPE = "ORACLE" #The value of this parameter is ORACLE | ADB. If it is ADB, it is connect to ADB through Wallet, otherwise it is a non-ADB Oracle database
-ORACLE_AI_VECTOR_CONNECTION_STRING="vect3r_dev/12#_123@165.1.65.228:1521/kb121.oraclevcn.com"
+ORACLE_AI_VECTOR_CONNECTION_STRING="vector_dev/xxxpassword@165.1.65.228:1521/kbpdb1.sub08030309530.justinvnc1.oraclevcn.com"
 
 # ADW AI Vector Search
-ADW_VECTOR_SEARCH_USER = "ve31ev"
-ADW_VECTOR_SEARCH_PASSWORD = "Bot1##"
-ADW_VECTOR_SEARCH_DSN = "kb1_medium"
-ADW_VECTOR_SEARCH_WALLET_LOCATION = "/home/ubuntu/kbot/keys/adwv3ectordb"  # Wallet zip文件解压缩后的目录
-ADW_VECTOR_SEARCH_WALLET_PASSWORD = "BotW13##"
+ADW_VECTOR_SEARCH_USER = "vector_dev"
+ADW_VECTOR_SEARCH_PASSWORD = "xxxpassword"
+ADW_VECTOR_SEARCH_DSN = "kbotadw23ai_medium"
+ADW_VECTOR_SEARCH_WALLET_LOCATION = "/home/ubuntu/kbot/keys/adwvectordb"  # Wallet zip文件解压缩后的目录
+ADW_VECTOR_SEARCH_WALLET_PASSWORD = "xxxpassword"
 
 OCI_OPEN_SEARCH_URL="https://amaaaaaaak7gbrialufa2y2ozyzfflp5ox2g5roy5aw5b6f7h3j2ee5z2zva.opensearch.ap-melbourne-1.oci.oraclecloud.com:9200"
 OCI_OPEN_SEARCH_USER='opc'
-OCI_OPEN_SEARCH_PASSWD='Qa16'
+OCI_OPEN_SEARCH_PASSWD='Qartrz!66'
 
 # HeatWave VectorStore
 HEATWAVE_CONNECTION_PARAMS = {
     "user": "admin",
-    "password": "Bot13##",
-    "host": "123.9.3.173",
+    "password": "xxxpassword",
+    "host": "192.9.158.173",
     "database": "kbot_dev",
 }
 HEATWAVE_VECTOR_STORE_POOL_NAME = "heatwave_vectorstore_pool"
@@ -46,7 +48,7 @@ HEATWAVE_VECTOR_STORE_POOL_SIZE = 6
 
 #######  PRD #################
 #http_prefix = 'https://prd.oracle.k8scloud.site/'
-#ORACLE_AI_VECTOR_CONNECTION_STRING="vector_prd/VEctor#_123@165.1.65.228:1521/kbpdb1.sub08030309530.justinvnc1.oraclevcn.com"
+#ORACLE_AI_VECTOR_CONNECTION_STRING="vector_prd/xxxpassword@165.1.65.228:1521/kbpdb1.sub08030309530.justinvnc1.oraclevcn.com"
 
 
 #######  API auth method   #####################
@@ -109,7 +111,7 @@ MODEL_DICT = {
     'OCI-cohere.command-r-16k':ociCMDR,
     'OCI-cohere.command-r-plus':ociCMDRPlus,
     #'OCIGenAICohereCmd': ociGenAICohere,
-    'OCI-meta.llama-3.1-70b-instruc': ociGenAILlama3_1_70B,
+    'OCI-meta.llama-3.1-70b-instruct': ociGenAILlama3_1_70B,
     'OCI-meta.llama-3.1-405b-instruct': ociGenAILlama3_1_405B,
     #'OCIGenAILlama2': ociGenAILlama2,
     'Qwen2-7B-Instruct': remoteModel('Qwen2-7B-Instruct','http://146.235.226.110:8098/v1','123456',512,0),
@@ -159,9 +161,9 @@ VECTOR_STORE_DICT = [
 selectai_pool = None
 #selectai_pool = oracledb.create_pool(
 #    user="WKSP_XH",
-#    password="Cntech!123456#",
+#    password="xxxpassword",
 #    dsn="cntech_medium",
 #    wallet_location="/home/ubuntu/qq/Keys",
 #    config_dir="/home/ubuntu/qq/Keys",
-#    wallet_password="admin1234",
+#    wallet_password="xxxpassword",
 #)

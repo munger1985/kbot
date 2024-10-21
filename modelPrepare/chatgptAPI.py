@@ -18,3 +18,13 @@ import llm_keys
 gpt3 = ChatOpenAI(temperature=0, 
             openai_api_key=llm_keys.openai_key,
             model_name="gpt-3.5-turbo")
+
+def openaiCompatible(model="hunyuan-turbo",api_key="",base_url="",max_tokens=4096,temperature=0):
+    llm = ChatOpenAI(
+            openai_api_key=api_key,
+            openai_api_base=base_url,
+            model_name=model,
+            max_tokens=max_tokens,
+            temperature=temperature,
+        )
+    return llm

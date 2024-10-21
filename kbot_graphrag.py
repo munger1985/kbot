@@ -10,7 +10,10 @@ import os
 import shutil
 import util
 from fastapi.responses import StreamingResponse, FileResponse, ORJSONResponse
-
+from prompt_api import load_prompt_from_db
+from langchain_core.prompts import PromptTemplate
+import config
+from langchain.chains import LLMChain
 import os
 
 import pandas as pd
@@ -155,6 +158,15 @@ async def run_cmd(cmd):
     return return_code
 
 
+def check_if_init(knowledge_base_name: str = Body(..., examples=["samples"])):
+    kbPath = util.get_kb_path(knowledge_base_name)
+    settingsYaml = Path(kbPath) / 'graphrag' / "settings.yaml"
+    if os.path.exists(settingsYaml):
+        return True
+    else:
+        return False
+
+
 def oci_sample_init(knowledge_base_name: str = Body(..., examples=["samples"]),
                     llm_endpoint: str = Body("http://localhost:8093/v1"),
                     llm_model: str = Body("OCI-meta.llama-3.1-405b-instruct"),
@@ -169,10 +181,10 @@ def oci_sample_init(knowledge_base_name: str = Body(..., examples=["samples"]),
     graphrag_root_path = Path(kbPath) / 'graphrag'
     graphrag_input_path = graphrag_root_path / "input"
     os.makedirs(str(graphrag_input_path), exist_ok=True)
-
-    cmd = [f"{sys.executable}", "-m", "graphrag.index",
-           "--init", "--root", graphrag_root_path]
-    asyncio.run(run_cmd(cmd))
+    if not check_if_init(knowledge_base_name):
+        cmd = [f"{sys.executable}", "-m", "graphrag.index",
+               "--init", "--root", graphrag_root_path]
+        asyncio.run(run_cmd(cmd))
 
     settingFile = graphrag_root_path / 'settings.yaml'
 
@@ -198,16 +210,47 @@ def oci_sample_init(knowledge_base_name: str = Body(..., examples=["samples"]),
     embedllm['api_base'] = embedding_endpoint
     data['storage']['base_dir'] = 'output/artifacts'
     data['claim_extraction']['enabled'] = claim
-
+    data['reporting']['base_dir'] = 'output/logs'
     # 将修改后的数据写回 YAML 文件
     write_yaml(data, str(settingFile))
 
     return BaseResponse(code=200, msg=f"successfully init graphrag for kb {knowledge_base_name}")
 
 
-from fastapi import  Form
+from fastapi import Form
 
 from fastapi.responses import Response
+
+
+def checkIndexProgress(knowledge_base_name: str = Body(..., examples=["samples"]),
+                       stub: str = Body('stub', examples=["no need to input"])
+                       ):
+    kbPath = util.get_kb_path(knowledge_base_name)
+    logfile = Path(kbPath) / 'graphrag/output/logs/indexing-engine.log'
+    # if ''
+    num_lines = 3
+    tails = 1
+    with open(str(logfile), 'rb') as file:
+        file.seek(0, 2)  # 移动到文件末尾
+        buffer = bytearray()
+        pointer_location = file.tell()
+        while pointer_location >= 0:
+            file.seek(pointer_location)
+            byte = file.read(1)
+            if byte == b'\n':  # 检测换行符
+                num_lines -= 1
+                if num_lines == 0:
+                    break
+            buffer.extend(byte)
+            pointer_location -= 1
+
+        # 最终的内容是反向的，需要翻转并解码
+        tails = buffer[::-1].decode('utf-8')
+    if 'completed successfully' in tails:
+        return BaseResponse(code=200, msg=f"completed")
+
+    else:
+        return BaseResponse(code=200, msg=f"not completed")
 
 
 def editSettingsYamlByKB(knowledge_base_name: str = Form(..., description="知识库名称", examples=[
@@ -229,6 +272,9 @@ def editSettingsYamlByKB(knowledge_base_name: str = Form(..., description="知�
 
 def default_init(knowledge_base_name: str = Body(..., examples=["samples"]),
                  stub: str = Body('stub', examples=["no need to input"])):
+    if check_if_init(knowledge_base_name):
+        return BaseResponse(code=200, msg=f"successfully init graphrag for kb {knowledge_base_name}")
+
     kbPath = util.get_kb_path(knowledge_base_name)
     graphrag_root_path = Path(kbPath) / 'graphrag'
     graphrag_input_path = graphrag_root_path / "input"
@@ -255,9 +301,9 @@ def getSettingsYamlByKB(knowledge_base_name: str = Body(..., examples=["samples"
 
 def getPromptByKB(knowledge_base_name: str = Body(..., examples=["samples"]),
                   promptName: str = Body('entity_extraction.txt', examples=["claim_extraction.txt",
-                                                                                    "community_report.txt",
-                                                                                    "entity_extraction.txt",
-                                                                                    "summarize_descriptions.txt"])):
+                                                                            "community_report.txt",
+                                                                            "entity_extraction.txt",
+                                                                            "summarize_descriptions.txt"])):
     kbPath = util.get_kb_path(knowledge_base_name)
 
     promptFile = Path(kbPath) / 'graphrag' / 'prompts' / promptName
@@ -271,9 +317,9 @@ def getPromptByKB(knowledge_base_name: str = Body(..., examples=["samples"]),
 
 def editPromptByKB(knowledge_base_name: str = Body(..., examples=["samples"]),
                    promptName: str = Body('entity_extraction.txt', examples=["claim_extraction.txt",
-                                                                                     "community_report.txt",
-                                                                                     "entity_extraction.txt",
-                                                                                     "summarize_descriptions.txt"]),
+                                                                             "community_report.txt",
+                                                                             "entity_extraction.txt",
+                                                                             "summarize_descriptions.txt"]),
                    content: str = Body('')):
     kbPath = util.get_kb_path(knowledge_base_name)
 
@@ -300,7 +346,11 @@ def graphrag_index(knowledge_base_name: str = Body(..., examples=["samples"]),
 
 
 def graphrag_local_search(knowledge_base_name: str = Body(..., examples=["samples"]),
-                          question: str = Body('question', examples=["ask the detailed part as a question "])):
+                          question: str = Body('question', examples=["ask the detailed part as a question "]),
+                          model_name: str = Body('OCI-cohere.command-r-plus',
+                                                 examples=["OCI-meta.llama-3.1-405b-instruct"]),
+                          prompt_name: str = 'rag_default',
+                          ):
     kbPath = util.get_kb_path(knowledge_base_name)
     graphrag_root_path = Path(kbPath) / 'graphrag'
     INPUT_DIR = graphrag_root_path / "output/artifacts"
@@ -446,11 +496,29 @@ def graphrag_local_search(knowledge_base_name: str = Body(..., examples=["sample
         # multiple paragraphs  free form text describing the response type and format, can be anything, e.g. prioritized list, single paragraph, multiple paragraphs, multiple-page report
     )
 
-    result = search_engine.search(question)
-    logger.info(result.response)
-    logger.info(f"LLM calls: {result.llm_calls}. LLM tokens: {result.prompt_tokens}")
+    context_text, context_records = search_engine.context_builder.build_context(
+        query=question,
+        conversation_history=[],
 
-    return BaseResponse(code=200, data=f"{result.response}")
+    )
+
+
+    promptContent = load_prompt_from_db(prompt_name)
+    if not promptContent or promptContent == "":
+        raise ValueError("prompt is empty !")
+    prompt = PromptTemplate(input_variables=["question", "context"], template=promptContent)
+    logger.info(f"##3.完成获取prompt:{prompt}##")
+
+    # 4.调用LLM
+    llm = config.MODEL_DICT.get(model_name)
+    query_llm = LLMChain(llm=llm, prompt=prompt)
+    response = query_llm.invoke({"context": context_text, "question": question})
+    logger.info(f"##response:{response}##")
+    # result = search_engine.search(question)
+    # logger.info(result.response)
+    # logger.info(f"LLM calls: {result.llm_calls}. LLM tokens: {result.prompt_tokens}")
+    result = response['text']
+    return BaseResponse(code=200, data=f"{result}")
 
 
 def graphrag_global_search(knowledge_base_name: str = Body(..., examples=["samples"]),
@@ -550,5 +618,5 @@ def graphrag_global_search(knowledge_base_name: str = Body(..., examples=["sampl
     logger.info(f'report context: {result.context_data["reports"]}')
 
     logger.info(f"LLM calls: {result.llm_calls}. LLM tokens: {result.prompt_tokens}")
-    return BaseResponse(code=200, msg=f"{finalAnswer}")
+    return BaseResponse(code=200, data=f"{finalAnswer}")
 

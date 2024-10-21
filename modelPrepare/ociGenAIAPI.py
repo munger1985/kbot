@@ -38,7 +38,7 @@ ociGenAICohere = KbotOCIGenAI(
 
 ociCMDR = KbotChatOCIGenAI(
     model_id="cohere.command-r-16k",
-    service_endpoint="https://inference.generativeai.us-chicago-1.oci.oraclecloud.com",
+    service_endpoint=GenAIEndpoint,
     compartment_id=compartment_id,
     auth_type=auth_type,
     model_kwargs={'max_tokens': 4000,
@@ -48,7 +48,7 @@ ociCMDR = KbotChatOCIGenAI(
 
 ociCMDRPlus = KbotChatOCIGenAI(
     model_id="cohere.command-r-plus",
-    service_endpoint="https://inference.generativeai.us-chicago-1.oci.oraclecloud.com",
+    service_endpoint=GenAIEndpoint,
     compartment_id=compartment_id,
     auth_type=auth_type,
     model_kwargs={'max_tokens': 4000,

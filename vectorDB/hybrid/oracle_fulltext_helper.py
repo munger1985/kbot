@@ -8,7 +8,7 @@ pip requirement:
 #先用dba用户赋予vector_prd用户可执行权限
 grant execute on ctxsys.ctx_ddl to vector_prd;
 
-#在执行如下步骤，创建索引。
+#在普通用户执行如下步骤，创建索引。
 exec ctx_ddl.create_preference('chinese_lexer','chinese_vgram_lexer');
 CREATE INDEX  "KM_TEXTSEARCH_IDX" ON  kbot_oracle_embeddings("DOCUMENT") INDEXTYPE IS "CTXSYS"."CONTEXT" parameters ('lexer chinese_lexer');
 

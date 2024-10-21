@@ -1955,7 +1955,7 @@ def reRankVectorResultByBgeReranker(rerankModel: FlagReranker, query: str, vecto
 
     # 2.执行Rerank
     # scores = rerankModel.compute_score([['what is panda?', 'hi'], ['what is panda?', 'The giant panda (Ailuropoda melanoleuca), sometimes called a panda bear or simply panda, is a bear species endemic to China.']])
-    scores = rerankModel.compute_score(src_docs)
+    scores = rerankModel.compute_score(src_docs,normalize=True)
     # 3.获取Rerank结果
     reRankResult = []
     index: int = 0
