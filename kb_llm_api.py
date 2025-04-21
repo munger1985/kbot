@@ -1,5 +1,6 @@
 # coding = utf-8
-import torch
+from fastapi import Body
+from fastapi.responses import Response
 from langchain.chains import LLMChain
 import json, re, os
 from typing import List, Optional, Tuple
@@ -13,13 +14,12 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain.memory import ConversationBufferWindowMemory
 from langchain.chains import ConversationChain
 from prompt_api import load_prompt_from_db
-from util import get_cur_time, format_llm_response
+from util import get_cur_time, format_llm_response,remove_special_chars
 from loguru import logger
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnablePassthrough
 from types import SimpleNamespace
-
-from vectorDB.hybrid import oracle_fulltext_helper
+from util import BaseResponse
 
 response = None
 user_memory = {}
@@ -111,7 +111,8 @@ def ask_rag(user: str,
             reranker_topk: int = 2,
             score_threshold: float = 0.6,
             vector_store_limit=10,
-            search_type: str = 'vector'
+            search_type: str = 'vector',
+            summary_flag: Optional[str] = 'N',
             ):
     # 1.初始化配置参数
     settings = SimpleNamespace()
@@ -121,6 +122,7 @@ def ask_rag(user: str,
     settings.score_threshold = score_threshold
     settings.vector_store_limit = vector_store_limit
     settings.search_type = search_type
+    settings.summary_flag = summary_flag
     user_settings[user] = settings
 
     logger.info(f"##1).完成配置参数初始化:{get_cur_time()}##")
@@ -137,20 +139,21 @@ def ask_rag(user: str,
     logger.info(f"##3.完成获取prompt:{prompt}##")
 
     # 4.调用LLM
-    logger.info("######llm invoke start time:", get_cur_time())
+    logger.debug( f" llm invoke start time:, {get_cur_time()}")
     llm = config.MODEL_DICT.get(model_name)
     query_llm = LLMChain(llm=llm, prompt=prompt)
     response = query_llm.invoke({"context": llm_context, "question": question})
-    logger.info(f"##response:{response}##")
+    #logger.info(f"##response.text:{response.get('text')}##")
     logger.info(f"##4).完成LLM调用:{get_cur_time()}##")
 
     # 5.LLM结果出来
-    vector_res_arr.insert(0, AskResponseData(response.get('text'), "llm", 1))
+    vector_res_arr.insert(0, AskResponseData(remove_special_chars(response.get('text')), "llm", 1, "",1 , "" ))
     # 将结果对象列表转换为JSON数组
     result_str = json.dumps(
-        [{"content": p.content, "source": p.source, "score": float(p.score)} for p in vector_res_arr],
+        [{"content": p.content, "source": p.source, "score": float(p.score), "source_file_ext": p.source_file_ext, "page_num": int(p.page_num), "viewer_source": p.viewer_source} for p in vector_res_arr],
         ensure_ascii=False)
     result_list = json.loads(format_llm_response(result_str))
+    logger.info(f"result_list:{result_list}##")
     logger.info(f"##5).完成LLM结果处理:{get_cur_time()}##")
     return result_list
 
@@ -166,7 +169,8 @@ def ask_history_rag(user: str,
                     score_threshold: float = 0.6,
                     vector_store_limit: int = 10,
                     history_k: int = 3,
-                    search_type='vector'
+                    search_type='vector',
+                    summary_flag: Optional[str] = 'N',
                     ):
     # 1.初始化配置参数
     settings = SimpleNamespace()
@@ -177,6 +181,7 @@ def ask_history_rag(user: str,
     settings.vector_store_limit = vector_store_limit
     settings.search_type = search_type
     settings.history_k = history_k
+    settings.summary_flag = summary_flag
     user_settings[user] = settings
     user_memory_key = user + "_" + kb_name + "_" + model_name
     logger.info(f"##1).完成配置参数初始化:{get_cur_time()}##")
@@ -186,7 +191,7 @@ def ask_history_rag(user: str,
     logger.info("##2).完成获取向量检索结果以及rerank结果。##")
 
     # 3.Initial chat history, and set user_memory
-    memory = ConversationBufferWindowMemory(memory_key="chat_history", k=config.history_k, return_messages=True,
+    memory = ConversationBufferWindowMemory(memory_key="chat_history", k=settings.history_k, return_messages=True,
                                             output_key='output')
     user_memory.setdefault(user_memory_key, memory)
     current_memory = user_memory.get(user_memory_key)
@@ -204,16 +209,18 @@ def ask_history_rag(user: str,
     logger.info("######llm invoke start time:", get_cur_time())
     inputs = {"input": f"{question}"}
     response = conversation.invoke(inputs)
-    logger.info(f"##LLM reponse:{response}")
+    #logger.info(f"##LLM reponse:{response}")
     logger.info(f"##5).完成LLM调用:{get_cur_time()}##")
 
     # 6.将LLM结果以及向量数据库结果，转换为JSON数组，返回
-    vector_res_arr.insert(0, AskResponseData(response.get('output'), "llm", 1))
+    vector_res_arr.insert(0, AskResponseData(remove_special_chars(response.get('output')), "llm", 1, "",1 , "" ))
+    #print(f"####response:{response.get('output')}")
     # reference list
     result_str = json.dumps(
-        [{"content": p.content, "source": p.source, "score": float(p.score)} for p in vector_res_arr],
+        [{"content": p.content, "source": p.source, "score": float(p.score), "source_file_ext": p.source_file_ext, "page_num": int(p.page_num), "viewer_source": p.viewer_source} for p in vector_res_arr],
         ensure_ascii=False)
     result_list = json.loads(format_llm_response(result_str))
+    #print(f"##result_list:{result_list}")
     logger.info(f"##6).完成LLM结果处理:{get_cur_time()}##")
     return result_list
 
@@ -230,7 +237,8 @@ def ask_conversational_rag(
         score_threshold: float = 0.6,
         vector_store_limit: int = 10,
         history_k: int = 3,
-        search_type='vector'
+        search_type='vector',
+        summary_flag: Optional[str] = 'N',
 ):
     '''
     manually implemented conversation chain
@@ -244,6 +252,7 @@ def ask_conversational_rag(
     settings.vector_store_limit = vector_store_limit
     settings.search_type = search_type
     settings.history_k = history_k
+    settings.summary_flag = summary_flag
     user_settings[user] = settings
     user_model = user + "_" + kb_name + "_" + model_name
     logger.info(f"##1).完成配置参数初始化:{get_cur_time()}##\n")
@@ -253,7 +262,7 @@ def ask_conversational_rag(
     logger.info("##2).完成获取向量检索结果以及rerank结果。##\n")
 
     # 3.设置ConversationBufferWindowMemory
-    memory = ConversationBufferWindowMemory(memory_key="chat_history", k=config.history_k, return_messages=True,
+    memory = ConversationBufferWindowMemory(memory_key="chat_history", k=settings.history_k, return_messages=True,
                                             output_key='output')
     user_memory.setdefault(user_model, memory)
     current_memory = user_memory.get(user_model)
@@ -271,7 +280,7 @@ def ask_conversational_rag(
     history = current_memory.load_memory_variables({})
     # logger.info(f"##history:{history}")
     llm_context = llm_context + "\n" + str(history)
-    # logger.info(f"##llm_context:{llm_context}")
+    logger.info(f"##llm_context:{llm_context}")
     response = query_llm.invoke({"context": llm_context, "question": question})
     logger.info(f"##response:{response}##")
     # 设置LLM结果到到memory中
@@ -279,10 +288,10 @@ def ask_conversational_rag(
     logger.info(f"##5).完成LLM调用:{get_cur_time()}##\n")
 
     # 6.LLM结果出来
-    vector_res_arr.insert(0, AskResponseData(response.get('text'), "llm", 1))
+    vector_res_arr.insert(0, AskResponseData(remove_special_chars(response.get('text')), "llm", 1, "",1 , "" ))
     # 将结果对象列表转换为JSON数组
     result_str = json.dumps(
-        [{"content": p.content, "source": p.source, "score": float(p.score)} for p in vector_res_arr],
+        [{"content": p.content, "source": p.source, "score": float(p.score), "source_file_ext": p.source_file_ext, "page_num": int(p.page_num), "viewer_source": p.viewer_source} for p in vector_res_arr],
         ensure_ascii=False)
     result_list = json.loads(result_str)
     logger.info(f"##6).完成LLM结果处理:{get_cur_time()}##\n")
@@ -315,24 +324,34 @@ def ask_llm(query, model_name: str, prompt_name: Optional[str] = None):
         promptContent = load_prompt_from_db(prompt_name)
         prompt = PromptTemplate(input_variables=["query"], template=promptContent)
 
-    logger.info("#### Prompt: {}", query)
+    logger.info("  Prompt: {}", query)
 
     query_llm = LLMChain(llm=config.MODEL_DICT.get(model_name), prompt=prompt)
-    logger.info(f"#### chat with LLM {model_name}: ", config.MODEL_DICT.get(model_name))
+    logger.info(f"  chat with LLM {model_name}: ", config.MODEL_DICT.get(model_name))
 
     response = query_llm.invoke(query)
 
-    response = format_result(response['text'])
+    #response = format_result(response['text'])
 
     vector_res_arr: List[AskResponseData] = []
-    vector_res_arr.insert(0, AskResponseData(response, "llm", 1))
+    vector_res_arr.insert(0, AskResponseData(remove_special_chars(response.get('text')), "llm", 1, "",1 , "" ))
     # 将结果对象列表转换为JSON数组
     result_str = json.dumps(
-        [{"content": p.content, "source": p.source, "score": float(p.score)} for p in vector_res_arr],
+        [{"content": p.content, "source": p.source, "score": float(p.score), "source_file_ext": p.source_file_ext, "page_num": int(p.page_num), "viewer_source": p.viewer_source} for p in vector_res_arr],
         ensure_ascii=False)
-    logger.info("###### answer: {}", result_str)
+    #logger.info("###### answer: {}", result_str)
     result_list = json.loads(result_str)
     return result_list
+
+
+def modify_llm_parameters( model_name: str = Body("星火大模型3.0", description="query", examples=['how to manage services, add users']),
+              max_tokens: int = Body(1000, description="max tokens for this llm"),
+              temperature: float = Body(0.1, description="temperature for llm") ):
+    llm = config.MODEL_DICT.get(model_name)
+    model_kwargs=llm.model_kwargs
+    model_kwargs['max_tokens']=max_tokens
+    model_kwargs['temperature']=temperature
+    return BaseResponse(data=str(llm.model_kwargs))
 
 
 def compression_rag(question, model_name: str, kb_name: str):
@@ -364,18 +383,14 @@ def compression_rag(question, model_name: str, kb_name: str):
     )
     resp = chain.invoke(question)
 
-    vector_res_arr.insert(0, AskResponseData(resp, "llm", 1))
+    # LLM结果出来
+    vector_res_arr.insert(0, AskResponseData(remove_special_chars(response.get('text')), "llm", 1, "",1 , "" ))
     # 将结果对象列表转换为JSON数组
     result_str = json.dumps(
-        [{"content": p.content, "score": float(p.score)} for p in vector_res_arr],
+        [{"content": p.content, "source": p.source, "score": float(p.score), "source_file_ext": p.source_file_ext, "page_num": int(p.page_num), "viewer_source": p.viewer_source} for p in vector_res_arr],
         ensure_ascii=False)
     result_list = json.loads(result_str)
     return result_list
-
-
-from fastapi import Body
-from fastapi.responses import Response
-
 
 def translate(query: str = Body(..., description="query", examples=['how to manage services, add users']),
               llm_model: str = Body("OCI-meta.llama-3.1-405b-instruct", description="llm model name"),

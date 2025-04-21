@@ -128,6 +128,7 @@ def runCMD(cmd):
 
 async def run_cmd(cmd):
     # 使用 asyncio.create_subprocess_exec() 来运行命令和参数
+    logger.info(f"Running command: {' '.join(cmd)}")
     process = await asyncio.create_subprocess_exec(
         *cmd,
         stdout=asyncio.subprocess.PIPE,
@@ -167,23 +168,22 @@ def check_if_init(knowledge_base_name: str = Body(..., examples=["samples"])):
         return False
 
 
-def oci_sample_init(knowledge_base_name: str = Body(..., examples=["samples"]),
-                    llm_endpoint: str = Body("http://localhost:8093/v1"),
-                    llm_model: str = Body("OCI-meta.llama-3.1-405b-instruct"),
-                    embedding_endpoint: str = Body("http://localhost:8093/v1"),
-                    embedding_model: str = Body(
-                        'OCI-cohere.embed-multilingual-v3.0'),
-                    llm_api_key: str = Body('a'),
-                    embedding_api_key: str = Body('a'),
-                    claim: bool = Body(False),
-                    ) -> BaseResponse:
+def recommended_config(knowledge_base_name: str = Body(..., examples=["samples"]),
+                       llm_endpoint: str = Body("http://localhost:8093/v1"),
+                       llm_model: str = Body("OCI-meta.llama-3.1-405b-instruct"),
+                       embedding_endpoint: str = Body("http://localhost:8093/v1"),
+                       embedding_model: str = Body('OCI-cohere.embed-multilingual-v3.0'),
+                       llm_api_key: str = Body('a'),
+                       embedding_api_key: str = Body('a'),
+                       claim: bool = Body(False),
+                       ) -> BaseResponse:
     kbPath = util.get_kb_path(knowledge_base_name)
     graphrag_root_path = Path(kbPath) / 'graphrag'
     graphrag_input_path = graphrag_root_path / "input"
     os.makedirs(str(graphrag_input_path), exist_ok=True)
     if not check_if_init(knowledge_base_name):
-        cmd = [f"{sys.executable}", "-m", "graphrag.index",
-               "--init", "--root", graphrag_root_path]
+        cmd = [f"graphrag", "init", "--root",  str(graphrag_root_path)]
+        logger.info(f"##oci_sample_init cmd: {cmd}")
         asyncio.run(run_cmd(cmd))
 
     settingFile = graphrag_root_path / 'settings.yaml'
@@ -214,7 +214,7 @@ def oci_sample_init(knowledge_base_name: str = Body(..., examples=["samples"]),
     # 将修改后的数据写回 YAML 文件
     write_yaml(data, str(settingFile))
 
-    return BaseResponse(code=200, msg=f"successfully init graphrag for kb {knowledge_base_name}")
+    return BaseResponse(code=200, msg=f"successfully configured Graphrag for kb {knowledge_base_name}")
 
 
 from fastapi import Form
@@ -228,8 +228,10 @@ def checkIndexProgress(knowledge_base_name: str = Body(..., examples=["samples"]
     kbPath = util.get_kb_path(knowledge_base_name)
     logfile = Path(kbPath) / 'graphrag/output/logs/indexing-engine.log'
     # if ''
-    num_lines = 3
-    tails = 1
+    num_lines = 11
+
+    if not os.path.exists(str(logfile)):
+        return BaseResponse(code=404, msg=f"Indexing not started")
     with open(str(logfile), 'rb') as file:
         file.seek(0, 2)  # 移动到文件末尾
         buffer = bytearray()
@@ -247,10 +249,38 @@ def checkIndexProgress(knowledge_base_name: str = Body(..., examples=["samples"]
         # 最终的内容是反向的，需要翻转并解码
         tails = buffer[::-1].decode('utf-8')
     if 'completed successfully' in tails:
-        return BaseResponse(code=200, msg=f"completed")
-
+        return BaseResponse(code=200, msg=f"Indexing completed")
     else:
-        return BaseResponse(code=200, msg=f"not completed")
+        return BaseResponse(code=200, msg=f"Indexing ....")
+
+
+def get_latest_log(knowledge_base_name: str = Body(..., examples=["samples"]),
+                       stub: str = Body('stub', examples=["no need to input"])
+                       ):
+    kbPath = util.get_kb_path(knowledge_base_name)
+    logfile = Path(kbPath) / 'graphrag/output/logs/indexing-engine.log'
+    # if ''
+    num_lines = 3
+
+    if not os.path.exists(str(logfile)):
+        return BaseResponse(code=404, msg= "Indexing not started",data="Indexing not started")
+    with open(str(logfile), 'rb') as file:
+        file.seek(0, 2)  # 移动到文件末尾
+        buffer = bytearray()
+        pointer_location = file.tell()
+        while pointer_location >= 0:
+            file.seek(pointer_location)
+            byte = file.read(1)
+            if byte == b'\n':  # 检测换行符
+                num_lines -= 1
+                if num_lines == 0:
+                    break
+            buffer.extend(byte)
+            pointer_location -= 1
+
+        # 最终的内容是反向的，需要翻转并解码
+        tails = buffer[::-1].decode('utf-8')
+    return BaseResponse(code=200, data=f"{tails}")
 
 
 def editSettingsYamlByKB(knowledge_base_name: str = Form(..., description="知识库名称", examples=[
@@ -280,9 +310,19 @@ def default_init(knowledge_base_name: str = Body(..., examples=["samples"]),
     graphrag_input_path = graphrag_root_path / "input"
     os.makedirs(str(graphrag_input_path), exist_ok=True)
 
-    cmd = [f"{sys.executable}", "-m", "graphrag.index",
-           "--init", "--root", graphrag_root_path]
+    cmd = [f"graphrag", "init", "--root",
+            str(graphrag_root_path)]
+    logger.info(f"##graphrag init cmd: {cmd}")
     asyncio.run(run_cmd(cmd))
+    settingFile = graphrag_root_path / 'settings.yaml'
+    data = read_yaml(settingFile)
+    logger.info("读取的 YAML 内容：")
+    logger.info(data)
+    data['storage']['base_dir'] = 'output/artifacts'
+    data['reporting']['base_dir'] = 'output/logs'
+    # data['update_index_storage']={"type": 'file' ,"base_dir": 'update_output'}
+    # 将修改后的数据写回 YAML 文件
+    write_yaml(data, str(settingFile))
     return BaseResponse(code=200, msg=f"successfully init graphrag for kb {knowledge_base_name}")
 
 
@@ -337,10 +377,9 @@ def graphrag_index(knowledge_base_name: str = Body(..., examples=["samples"]),
     graphrag_root_path = Path(kbPath) / 'graphrag'
 
     graphrag_output_path = graphrag_root_path / "output"
-    util.delete_folder(str(graphrag_output_path))
+    # util.delete_folder(str(graphrag_output_path))
 
-    cmd = [f"{sys.executable}", "-m", "graphrag.index", "--root", str(graphrag_root_path)]
-
+    cmd = [f"graphrag",  "index", "--root", str(graphrag_root_path)]
     # 实时读取标准输出
     return StreamingResponse(runCMD(cmd), media_type="text/plain")
 
@@ -349,12 +388,13 @@ def graphrag_local_search(knowledge_base_name: str = Body(..., examples=["sample
                           question: str = Body('question', examples=["ask the detailed part as a question "]),
                           model_name: str = Body('OCI-cohere.command-r-plus',
                                                  examples=["OCI-meta.llama-3.1-405b-instruct"]),
-                          prompt_name: str = 'rag_default',
+                          prompt_name: str = Body('rag_default',
+                                                 examples=["rag_default"]),
                           ):
     kbPath = util.get_kb_path(knowledge_base_name)
     graphrag_root_path = Path(kbPath) / 'graphrag'
     INPUT_DIR = graphrag_root_path / "output/artifacts"
-    LANCEDB_URI = f"{INPUT_DIR}/lancedb"
+    LANCEDB_URI =graphrag_root_path /"output/lancedb"
 
     COMMUNITY_REPORT_TABLE = "create_final_community_reports"
     ENTITY_TABLE = "create_final_nodes"
@@ -379,12 +419,13 @@ def graphrag_local_search(knowledge_base_name: str = Body(..., examples=["sample
     # load description embeddings to an in-memory lancedb vectorstore
     # to connect to a remote db, specify url and port values.
     description_embedding_store = LanceDBVectorStore(
-        collection_name="entity_description_embeddings",
+        collection_name="default-entity-description",
     )
+    uril='/home/ubuntu/kbroot/ff/graphrag/output/lancedb/default-entity-description.lance'
     description_embedding_store.connect(db_uri=LANCEDB_URI)
-    entity_description_embeddings = store_entity_semantic_embeddings(
-        entities=entities, vectorstore=description_embedding_store
-    )
+    # entity_description_embeddings = store_entity_semantic_embeddings(
+    #     entities=entities, vectorstore=description_embedding_store
+    # )
 
     logger.info(f"Entity count: {len(entity_df)}")
     entity_df.head()
@@ -502,12 +543,12 @@ def graphrag_local_search(knowledge_base_name: str = Body(..., examples=["sample
 
     )
 
-
+    logger.info(f"context_text#:{context_text}")
     promptContent = load_prompt_from_db(prompt_name)
     if not promptContent or promptContent == "":
         raise ValueError("prompt is empty !")
     prompt = PromptTemplate(input_variables=["question", "context"], template=promptContent)
-    logger.info(f"##3.完成获取prompt:{prompt}##")
+    logger.info(f"##  prompt:{prompt}##")
 
     # 4.调用LLM
     llm = config.MODEL_DICT.get(model_name)
@@ -522,7 +563,12 @@ def graphrag_local_search(knowledge_base_name: str = Body(..., examples=["sample
 
 
 def graphrag_global_search(knowledge_base_name: str = Body(..., examples=["samples"]),
-                           question: str = Body('question', examples=["ask the a global question "])):
+                           question: str = Body('question', examples=["ask the a global question "]),
+                           model_name: str = Body('OCI-cohere.command-r-plus',
+                                                  examples=["OCI-meta.llama-3.1-405b-instruct"]),
+                           prompt_name: str = Body('rag_default',
+                                                   examples=["rag_default"]  )
+                           ):
     kbPath = util.get_kb_path(knowledge_base_name)
     graphrag_root_path = Path(kbPath) / 'graphrag'
     INPUT_DIR = graphrag_root_path / "output/artifacts"
@@ -608,15 +654,38 @@ def graphrag_global_search(knowledge_base_name: str = Body(..., examples=["sampl
         # free form text describing the response type and format, can be anything, e.g. prioritized list, single paragraph, multiple paragraphs, multiple-page report
     )
 
-    result = search_engine.search(
-        question
+
+
+    context_text, context_records = search_engine.context_builder.build_context(
+        query=question,
+        conversation_history=[],
+
     )
 
-    logger.info(f'response: {result.response}')
-    logger.info(f"map_responses: {result.map_responses[0].response[0]['answer']}")
-    finalAnswer = result.response if result.response else result.map_responses[0].response[0]['answer']
-    logger.info(f'report context: {result.context_data["reports"]}')
+    promptContent = load_prompt_from_db(prompt_name)
+    if not promptContent or promptContent == "":
+        raise ValueError("prompt is empty !")
+    prompt = PromptTemplate(input_variables=["question", "context"], template=promptContent)
+    logger.info(f"##  prompt:{prompt}##")
 
-    logger.info(f"LLM calls: {result.llm_calls}. LLM tokens: {result.prompt_tokens}")
-    return BaseResponse(code=200, data=f"{finalAnswer}")
+    # 4.调用LLM
+    llm = config.MODEL_DICT.get(model_name)
+    query_llm = LLMChain(llm=llm, prompt=prompt)
+    response = query_llm.invoke({"context": context_text, "question": question})
+    logger.info(f"##response:{response}##")
+    # result = search_engine.search(question)
+    # logger.info(result.response)
+    # logger.info(f"LLM calls: {result.llm_calls}. LLM tokens: {result.prompt_tokens}")
+    result = response['text']
+    return BaseResponse(code=200, data=f"{result}")
+    # result = search_engine.search(
+    #     question
+    # )
+    # logger.info(f'response: {result.response}')
+    # logger.info(f"map_responses: {result.map_responses[0].response[0]['answer']}")
+    # finalAnswer = result.response if result.response else result.map_responses[0].response[0]['answer']
+    # logger.info(f'report context: {result.context_data["reports"]}')
+    #
+    # logger.info(f"LLM calls: {result.llm_calls}. LLM tokens: {result.prompt_tokens}")
+    # return BaseResponse(code=200, data=f"{finalAnswer}")
 

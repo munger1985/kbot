@@ -181,7 +181,7 @@ class SparkLLM(LLM):
     """Define the custom LLM wrapper for Xunfei SparkLLM to get support of LangChain
     """
     user_id: str  =   random.randint(0, 111119)
-    text  =  []
+    text :List =  []
     """Endpoint URL to use.此URL指向部署的调用星火大模型的FastAPI接口地址"""
     model_kwargs: Optional[dict] = None
     answer :str   = ""

@@ -1,11 +1,11 @@
-""" 
-Description: 
+"""
+Description:
  - Implement Oracle VectorStore parent(abstract) class.
- 
- This class(AbstractOracleVS) should not be used directly, instead, 
+
+ This class(AbstractOracleVS) should not be used directly, instead,
  use its child classes: OracleAdbVS for ADB and OracleBaseDbVS for
  Oracle Base Database.
- 
+
 
 History:
  - 2024/09/07 by Hysun (hysun.he@oracle.com): Created
@@ -175,7 +175,8 @@ class AbstractOracleVS(VectorStore):
                             collection_name varchar2(256),
                             embedding vector(*, FLOAT32),
                             document CLOB,
-                            metadata JSON 
+                            metadata JSON,
+                            chunk_category varchar2(256)
                         )
                     """
                     results: Any = cursor.execute(ddl)
@@ -242,7 +243,6 @@ class AbstractOracleVS(VectorStore):
         """
 
         texts = list(texts)
-
         if ids:
             # If ids are provided, hash them to maintain consistency
             processed_ids = [_id for _id in ids]
@@ -263,9 +263,11 @@ class AbstractOracleVS(VectorStore):
             (
                 id_,
                 self.collection_name,
+                metadata,
+                # json.dumps(metadata, ensure_ascii=False),
+                embedding,
+                metadata.get("chunk_category", "SOURCE_DOCS") or "SOURCE_DOCS",
                 text,
-                json.dumps(metadata, ensure_ascii=False),
-                json.dumps(embedding),
             )
             for id_, text, metadata, embedding in zip(
                 processed_ids, texts, metadatas, embeddings
@@ -274,8 +276,17 @@ class AbstractOracleVS(VectorStore):
 
         with self.connect() as client:
             with client.cursor() as cursor:
+                cursor.setinputsizes(
+                    None,
+                    None,
+                    oracledb.DB_TYPE_JSON,
+                    oracledb.DB_TYPE_VECTOR,
+                    None,
+                    oracledb.DB_TYPE_CLOB,
+                )
+
                 cursor.executemany(
-                    f"INSERT INTO {self.table_name} (id, collection_name, document, metadata, embedding) VALUES (:1, :2, :3, :4, to_vector(:5))",
+                    f"INSERT INTO {self.table_name} (id, collection_name,  metadata, embedding, chunk_category, document) VALUES (:1, :2, :3, :4, :5, :6)",
                     docs,
                 )
                 client.commit()
@@ -332,24 +343,74 @@ class AbstractOracleVS(VectorStore):
         **kwargs: Any,
     ) -> List[Tuple[Document, float]]:
         docs_and_scores = []
+        embedding_str = json.dumps(embedding)
+        if kwargs.get("summary_flag") == "Y":
+            logger.info("### Search chunk summary vectors")
 
-        query = f"""
-        SELECT id,
-          document,
-          metadata,
-          vector_distance(embedding, to_vector(:1), {_get_distance_function(
-            self.distance_strategy)}) as distance,
-          embedding
-        FROM {self.table_name}
-        WHERE collection_name = '{self.collection_name}'
-        ORDER BY distance
-        FETCH FIRST {k} ROWS ONLY
-        """
+            query = f"""
+            SELECT t2.id,
+                t2.document,
+                t2.metadata,
+                t1.distance
+            FROM (
+                SELECT
+                    t.metadata.src_chunk_id as src_chunk_id,
+                    vector_distance(embedding, to_vector(:1), {_get_distance_function(
+                        self.distance_strategy)}) as distance
+                FROM {self.table_name} t
+                WHERE collection_name = '{self.collection_name}'
+                    and chunk_category like 'SUMMARY_%'
+                ORDER BY distance
+                FETCH FIRST {k} ROWS ONLY
+            ) t1, {self.table_name} t2
+            WHERE t1.src_chunk_id = t2.metadata.chunk_id
+            
+            union all
+
+            select * from (
+                SELECT id,
+                    document,
+                    metadata,
+                    vector_distance(embedding, to_vector(:2), {_get_distance_function(
+                        self.distance_strategy)}) as distance
+                FROM {self.table_name} t1
+                WHERE collection_name = '{self.collection_name}'
+                    AND ( t1.chunk_category is null OR (
+                        t1.chunk_category like 'SOURCE_%'
+                        and not exists (
+                            select 1 from kbot_oracle_embeddings t2 
+                            where t1.metadata.chunk_id = t2.metadata.src_chunk_id
+                        )
+                    ))
+                ORDER BY distance
+                FETCH FIRST {k} ROWS ONLY
+            )
+
+            ORDER BY distance
+            FETCH FIRST {k} ROWS ONLY
+            """
+            bind_params = [embedding_str, embedding_str]
+        else:
+            logger.info("### Search chunk vectors")
+
+            query = f"""
+            SELECT id,
+                document,
+                metadata,
+                vector_distance(embedding, to_vector(:3), {_get_distance_function(
+                    self.distance_strategy)}) as distance
+            FROM {self.table_name}
+            WHERE collection_name = '{self.collection_name}'
+                and (chunk_category is null or chunk_category like 'SOURCE_%')
+            ORDER BY distance
+            FETCH FIRST {k} ROWS ONLY
+            """
+            bind_params = [embedding_str]
 
         # Execute the query
         with self.connect() as client:
             with client.cursor() as cursor:
-                cursor.execute(query, [json.dumps(embedding)])
+                cursor.execute(query, bind_params)
                 results = cursor.fetchall()
 
                 # Filter results if filter is provided

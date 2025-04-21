@@ -1,32 +1,30 @@
-from langchain_community.embeddings import HuggingFaceEmbeddings
-from langchain_community.llms import HuggingFacePipeline
-from modelPrepare.cohereAPI import commandRPlus
-from modelPrepare.qwenAPI import QwenPlus
-from llm_prepare import load_llm_model
-from langchain_community.llms import OCIGenAI
 import torch
-from langchain_community.chat_models.oci_generative_ai import ChatOCIGenAI
-from modelPrepare import sparkAPI
-from modelPrepare import glm4API
+from langchain_community.embeddings import HuggingFaceEmbeddings
+
+from modelPrepare import cohereAPI
+from llm_prepare import load_llm_model,load_embedding_model
 from modelPrepare import chatgptAPI
-from modelPrepare.aquaAPI import AIQuickActions
-from modelPrepare.ociGenAIAPI import *
-from modelPrepare.cohereAPI import cohereEmbedding
+from modelPrepare import glm4API
 from modelPrepare import qianfanAPI
+from modelPrepare import sparkAPI
+from modelPrepare.aquaAPI import AIQuickActions
+from modelPrepare.cohereAPI import cohereEmbedding
+from modelPrepare.ociGenAIAPI import *
+from modelPrepare.qwenAPI import QwenPlus
 from modelPrepare.remoteAPI import *
+import  llm_keys
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 #######  DEV #################
-#http_prefix = 'https://dev.oracle.k8scloud.site/'
-DOC_VIEWER_FLAG='N' ##Y|N,If config `Y`, it will use the http_doc_viewer to view the document, otherwise it will http_prefix to download the file.
+#http_prefix  is the url prefix for downloading the docs, is kbot server itself
 http_prefix = 'http://150.230.37.250:8093/'
+DOC_VIEWER_FLAG='N' ##Y|N,If config `Y`, it will use the http_doc_viewer to view the document, otherwise it will http_prefix to download the file.
 http_doc_viewer = "http://150.230.37.250/HysunDocuViewer/?src=http://150.230.37.250:8080/"
 #ORACLE_AI_VECTOR_CONNECTION_STRING="vector/vector@129.159.40.144:1521/orclpdb1"
-#ORACLE_VECTOR_DB_TYPE = "ORACLE" #The value of this parameter is ORACLE | ADB. If it is ADB, it is connect to ADB through Wallet, otherwise it is a non-ADB Oracle database
-ORACLE_AI_VECTOR_CONNECTION_STRING="vector_dev/xxxpassword@165.1.65.228:1521/kbpdb1.sub08030309530.justinvnc1.oraclevcn.com"
+ORACLE_AI_VECTOR_CONNECTION_STRING="vectorxx_dev/xxxpassword@165.1.65.228:1521/kbpdb1.sub08030309530.justinvnc1.oraclevcn.com"
 
 # ADW AI Vector Search
-ADW_VECTOR_SEARCH_USER = "vector_dev"
+ADW_VECTOR_SEARCH_USER = "vectoxxr_dev"
 ADW_VECTOR_SEARCH_PASSWORD = "xxxpassword"
 ADW_VECTOR_SEARCH_DSN = "kbotadw23ai_medium"
 ADW_VECTOR_SEARCH_WALLET_LOCATION = "/home/ubuntu/kbot/keys/adwvectordb"  # Wallet zip文件解压缩后的目录
@@ -34,7 +32,13 @@ ADW_VECTOR_SEARCH_WALLET_PASSWORD = "xxxpassword"
 
 OCI_OPEN_SEARCH_URL="https://amaaaaaaak7gbrialufa2y2ozyzfflp5ox2g5roy5aw5b6f7h3j2ee5z2zva.opensearch.ap-melbourne-1.oci.oraclecloud.com:9200"
 OCI_OPEN_SEARCH_USER='opc'
-OCI_OPEN_SEARCH_PASSWD='Qartrz!66'
+OCI_OPEN_SEARCH_PASSWD='xxxpassword'
+
+####### opensearch docker in ai-dev
+OCI_OPEN_SEARCH_URL="https://localhost:9200"
+OCI_OPEN_SEARCH_USER='admin'
+OCI_OPEN_SEARCH_PASSWD='admin'
+
 
 # HeatWave VectorStore
 HEATWAVE_CONNECTION_PARAMS = {
@@ -74,8 +78,9 @@ vector_store_limit= 10
 #######  Reranker model setting    #######################################
 #rerankerModel = 'bgeReranker'
 #BGE_RERANK_PATH="/home/ubuntu/ChatGPT/Models/Embeddings/bge-reranker-large"  #BAAI/bge-reranker-large
-BGE_RERANK_PATH="BAAI/bge-reranker-large"
-rerankerModel = 'cohereReranker'
+BGE_RERANKER="BAAI/bge-reranker-v2-m3"
+# disableReranker, ociCohereReranker,cohereReranker
+rerankerModel = 'ociCohereReranker'
 reranker_topk= 2
 
 #######  the memory window for chat history   #####################
@@ -86,20 +91,21 @@ CHUNK_SIZE = 500
 CHUNK_OVERLAP = 50
 #e5_large_v2 = HuggingFaceEmbeddings(model_name="/home/ubuntu/ChatGPT/Models/Embeddings/e5-large-v2", model_kwargs={'device': device})
 #bge_large_zh_v15 = HuggingFaceEmbeddings(model_name="/home/ubuntu/ChatGPT/Models/Embeddings/bge-large-zh-v1.5", model_kwargs={'device': device})
-e5_large_v2 = HuggingFaceEmbeddings(model_name="intfloat/e5-large-v2", model_kwargs={'device': device})
-bge_m3 = HuggingFaceEmbeddings(model_name="BAAI/bge-m3", model_kwargs={'device': device})
-bge_large_zh_v15 = HuggingFaceEmbeddings(model_name="BAAI/bge-large-zh-v1.5", model_kwargs={'device': device})
+# e5_large_v2 = HuggingFaceEmbeddings(model_name="intfloat/e5-large-v2", model_kwargs={'device': device})
+# bge_m3 = HuggingFaceEmbeddings(model_name="BAAI/bge-m3", model_kwargs={'device': device})
+# bge_large_zh_v15 = HuggingFaceEmbeddings(model_name=, model_kwargs={'device': device})
 
 
-
-## no need for a certain model, comment it
 EMBEDDING_DICT = {
-    # 'm3e-base': m3eEmbedding,
-    'bge_m3': bge_m3,
-    'bge_large_zh_v15': bge_large_zh_v15,
+    'bge_m3': load_embedding_model("BAAI/bge-m3",device),
+    'bge_large_zh_v15': load_embedding_model("BAAI/bge-large-zh-v1.5",device),
+    'e5_large_v2': load_embedding_model("intfloat/e5-large-v2",device),
     'OCI-cohere.embed-multilingual-v3.0': genaiEmbedding,
-    'e5_large_v2': e5_large_v2,
-    'cohere_embed':cohereEmbedding
+    'cohere_embed':cohereEmbedding,
+    'text-embedding-3-large':chatgptAPI.openaiEmbeddings,
+    'cohereRemoteVM': remoteEmbedding(model_name='OCI-cohere.embed-multilingual-v3.0',
+                                      openai_api_key='xxxx',
+                                      openai_api_base='http://localhost:8093/v1')
 }
 
 #######  llm model setting          #######################################
@@ -108,12 +114,12 @@ EMBEDDING_DICT = {
 MODEL_DICT = {
     'NoneLLM': 'NoneLLM',
     ######################      API models        #############################################
-    'OCI-cohere.command-r-16k':ociCMDR,
-    'OCI-cohere.command-r-plus':ociCMDRPlus,
-    #'OCIGenAICohereCmd': ociGenAICohere,
+    'OCI-cohere.command-r-16k': ociCMDR,
+    'OCI-cohere.command-r-plus': ociCMDRPlus,
+    'OCI-cohere.command-r-plus082024': ociCMDRPlus082024,
+    'OCI-cohere.command-r082024': ociCMDR082024,
     'OCI-meta.llama-3.1-70b-instruct': ociGenAILlama3_1_70B,
     'OCI-meta.llama-3.1-405b-instruct': ociGenAILlama3_1_405B,
-    #'OCIGenAILlama2': ociGenAILlama2,
     'Qwen2-7B-Instruct': remoteModel('Qwen2-7B-Instruct','http://146.235.226.110:8098/v1','123456',512,0),
     'Qwen2-7B-Instruct_Https': remoteModel('Qwen2-7B-Instruct','https://chat.oracle.k8scloud.site:8098/v1','123456',512,0),
     'Llama-3-8B-Instruct':  remoteModel('/home/ubuntu/ChatGPT/Models/meta/Meta-Llama-3-8B-Instruct','http://146.235.226.110:8098/v1','123456',256,0),
@@ -124,7 +130,9 @@ MODEL_DICT = {
     'ChatGLM4':  glm4API.GLM4(),
     'ChatGPT' : chatgptAPI.gpt3,
     'Qwen-plus': QwenPlus(),
-    'Cohere-CommandR+': commandRPlus(),
+    'DeepSeek_V3':  remoteModel('deepseek-chat','https://api.deepseek.com/v1',llm_keys.deepseek_api_key,512,0),
+    'DeepSeek_R1':  remoteModel('deepseek-reasoner','https://api.deepseek.com/v1',llm_keys.deepseek_api_key,512,0),
+    #'Cohere-CommandR+': cohereAPI.commandRPlus(),
     'ERNIE-4.0-8K-Latest':qianfanAPI.qianfanLLM('ERNIE-4.0-8K-Latest'),
     ######################      local models      ###########################################
     ###   format 1) : local path
@@ -155,7 +163,8 @@ VECTOR_STORE_DICT = [
     'opensearch',
     'heatwave'
 ]
-
+########## summary model #################################
+SUMMARY_MODEL ="OCI-cohere.command-r-plus082024"
 
 ######## Select AI ########
 selectai_pool = None

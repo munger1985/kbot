@@ -7,7 +7,7 @@ import time
 import shortuuid
 from pydantic import BaseModel, Field
 import base64
-
+from util import BaseResponse
 from langchain_core.prompts import ChatPromptTemplate
 import config
 from loguru import logger
@@ -62,7 +62,7 @@ class CompletionRequest(BaseModel):
 
 chat_template = ChatPromptTemplate.from_messages(
     [
-        ("system", "you are a helpful ai called kbot"),
+        ("system", "you are a helpful and smart ai called kbot"),
         ("human", "{input}"),
 
     ]
@@ -119,8 +119,24 @@ ENCODER = tiktoken.get_encoding("cl100k_base")
 
 
 def extendApp(app):
-    @app.post("/v1/chat/completions", tags=["OpenAI API compatible"],   summary="chat with  OpenAI API")
-    def create_completion(request: ChatCompletionRequest):
+    @app.post("/v1/chat/completions", tags=["OpenAI API compatible"],   summary="chat with OpenAI API")
+    def create_completion(request: Annotated[ChatCompletionRequest,
+    Body(
+        examples=[
+            {
+                "model": "OCI-meta.llama-3.1-405b-instruct",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "Hello!"
+                    }
+                ],
+                "temperature": 0.7,
+                "max_tokens": 0
+            }
+        ],
+    ),
+    ]):
         try:
             query_llm = LLMChain(llm=config.MODEL_DICT.get(
                 request.model), prompt=chat_template)
@@ -149,6 +165,31 @@ def extendApp(app):
 
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
+    @app.get("/v1/models", tags=["OpenAI API compatible"],   summary="get openai api format models")
+    def get_models( ):
+        try:
+            modelNames= config.MODEL_DICT.keys()
+
+            result = {
+                        "object": "list",
+                        "data": [
+                            {
+                                "id": name,
+                                "object": "model",
+                                "created": 1677649429,
+                                "owned_by": "kbot",
+                                "permission": []
+                            }
+                            for name in modelNames
+                        ]
+                    }
+
+# 将结果转换成格式化的 JSON 字符串并打印
+# print(json.dumps(result, indent=2, ensure_ascii=False))
+            return BaseResponse(data= result)
+
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
 
     @app.post("/v1/embeddings", tags=["OpenAI API compatible"],   summary="embeddings with  OpenAI API")
     def embed(embeddings_request: Annotated[
@@ -156,7 +197,7 @@ def extendApp(app):
         Body(
             examples=[
                 {
-                    "model": "OCI-cohere.embed-multilingual-v3",
+                    "model": "OCI-cohere.embed-multilingual-v3.0",
                     "input": [
                         "Your text string goes here"
                     ],

@@ -9,6 +9,29 @@ from langchain_community.llms import Tongyi
 from modelPrepare import  qwenLLM
 import llm_keys
 from langchain_core.language_models import LLM
+from FlagEmbedding import FlagReranker
+from langchain_community.embeddings import HuggingFaceEmbeddings
+
+#######  this module is for complex model loading
+
+bgeRerankerModel= None
+@lazy_func
+def load_embedding_model( model_name_or_path,device)  :
+
+    # e5_large_v2 = HuggingFaceEmbeddings(model_name="intfloat/e5-large-v2", model_kwargs={'device': device})
+    # bge_m3 = HuggingFaceEmbeddings(model_name="BAAI/bge-m3", model_kwargs={'device': device})
+    # bge_large_zh_v15 = HuggingFaceEmbeddings(model_name="BAAI/bge-large-zh-v1.5", model_kwargs={'device': device})
+
+    return HuggingFaceEmbeddings(model_name=model_name_or_path, model_kwargs={'device': device})
+
+@lazy_func
+def load_bge_reranker(model_name_or_path )  :
+    global bgeRerankerModel
+    if bgeRerankerModel:
+        return bgeRerankerModel
+    else:
+        bgeRerankerModel=  FlagReranker(   model_name_or_path, use_fp16=True)  # Setting use_fp16 to True speeds up computation with a slight performance degradation
+        return bgeRerankerModel
 
 @lazy_func
 def load_llm_model(model_alias='hf_pipeline', model_path:str= "") -> LLM:

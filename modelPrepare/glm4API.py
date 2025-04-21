@@ -13,7 +13,7 @@ class GLM4(LLM):
     max_token: int = 8192
     do_sample: bool = False
     temperature: float = 0.1
-    top_p = 0.7
+    top_p:float = 0.7
     tokenizer: object = None
     model: object = None
     history: List = []

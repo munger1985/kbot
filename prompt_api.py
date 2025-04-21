@@ -11,7 +11,7 @@ from fastapi import Body
 from loguru import logger
 
 @with_session
-def add_prompt(session,
+def add_prompt_in_sqlite(session,
                    name: str,
                     template:str
                    ):
@@ -39,22 +39,22 @@ def update_prompt_from_db(session, name,content):
         session.commit()
 @with_session
 def load_prompt_from_db(session, name):
-    if name=='rag_default':
-        rag_default_prompt_content= '''
-You are an AI assistant who is helpful, respectful, and honest. 
-Use the below given context to answer the customer queries. 
-If there is anything that you cannot answer, or you think is inappropriate to answer, simply reply as,"Sorry, I cannot help you with that." 
-CONTEXT: {context} 
-
-Instructions: 
-1. Answer only from the given context. 
-2: Please answer the question simply as you can, and do not generate any new content out of this context. 
-3: Your answer should not include any harmful, unethical, violent, racist, sexist, pornographic, toxic, discriminatory, blasphemous, dangerous, or illegal content. 
-4: Please ensure that your responses are socially unbiased and positive in nature. 
-5: Ensure length of the answer is within 300 words. 
-Now, Answer the following question: {question}
-'''
-        return rag_default_prompt_content
+#     if name=='rag_default':
+#         rag_default_prompt_content= '''
+# You are an AI assistant who is helpful, respectful, and honest.
+# Use the below given context to answer the customer queries.
+# If there is anything that you cannot answer, or you think is inappropriate to answer, simply reply as,"Sorry, I cannot help you with that."
+# CONTEXT: {context}
+#
+# Instructions:
+# 1. Answer only from the given context.
+# 2: Please answer the question simply as you can, and do not generate any new content out of this context.
+# 3: Your answer should not include any harmful, unethical, violent, racist, sexist, pornographic, toxic, discriminatory, blasphemous, dangerous, or illegal content.
+# 4: Please ensure that your responses are socially unbiased and positive in nature.
+# 5: Ensure length of the answer is within 300 words.
+# Now, Answer the following question: {question}
+# '''
+#         return rag_default_prompt_content
     kb = session.query(Prompt).filter_by(name=name).first()
     if kb:
         return kb.template
@@ -101,8 +101,8 @@ class ListResponse(BaseResponse):
 
 def list_prompts():
     arr=list_prompt_from_db()
-    arr.append('default')
-    arr.append('rag_default')
+    # arr.append('default')
+    # arr.append('rag_default')
 
     return ListResponse(data=list(arr))
 
@@ -124,17 +124,18 @@ def delete_prompt(
     delete_prompt_from_db(name)
     return PromptResponse(data=f"deleted prompt {name} ", status="ok",err_msg="")
 
-def create_prompt(
+def add_prompt(
             name: str = Form(..., description="prompt name", examples=["llama2Prompt"]),
             template: str = Form(..., description="when you chat with llm, {query} is variable, chat with rag, {query} {context} are variables", examples=["you are an AI, answer my question {query}"]),
               ) -> Response:
     logger.info(f"##name:{name} template:{template}")
     kk= load_prompt_from_db(name)
     logger.info(f"##kk:{kk} ")
+
     if  kk:
         return PromptResponse(data=f"the prompt existed, change another name ", status="ok",err_msg="change another name")
     else:
-        add_prompt(name,template)
+        add_prompt_in_sqlite(name,template)
         return PromptResponse(data=f"created prompt {name} ", status="ok",err_msg="")
 
 
@@ -148,5 +149,21 @@ def update_prompt(
     return PromptResponse(status="ok" , data=f"updated prompt {name} ",err_msg="")
 
 
+def init_default():
+    add_prompt_in_sqlite('default','{query}')
+    rag_default_prompt_content = '''
+    You are an AI assistant who is helpful, respectful, and honest. 
+    Use the below given context to answer the customer queries. 
+    If there is anything that you cannot answer, or you think is inappropriate to answer, simply reply as,"Sorry, I cannot help you with that." 
+    CONTEXT: {context} 
 
+    Instructions: 
+    1. Answer only from the given context. 
+    2: Please answer the question simply as you can, and do not generate any new content out of this context. 
+    3: Your answer should not include any harmful, unethical, violent, racist, sexist, pornographic, toxic, discriminatory, blasphemous, dangerous, or illegal content. 
+    4: Please ensure that your responses are socially unbiased and positive in nature. 
+    5: Ensure length of the answer is within 300 words. 
+    Now, Answer the following question: {question}
+    '''
+    add_prompt_in_sqlite('rag_default',rag_default_prompt_content)
 

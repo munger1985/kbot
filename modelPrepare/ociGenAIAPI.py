@@ -55,6 +55,24 @@ ociCMDRPlus = KbotChatOCIGenAI(
                   'temperature': 0,
     }
 )
+ociCMDRPlus082024 = KbotChatOCIGenAI(
+    model_id="cohere.command-r-plus-08-2024",
+    service_endpoint=GenAIEndpoint,
+    compartment_id=compartment_id,
+    auth_type=auth_type,
+    model_kwargs={'max_tokens': 4000,
+                  'temperature': 0,
+    }
+)
+ociCMDR082024 = KbotChatOCIGenAI(
+    model_id="cohere.command-r-08-2024",
+    service_endpoint=GenAIEndpoint,
+    compartment_id=compartment_id,
+    auth_type=auth_type,
+    model_kwargs={'max_tokens': 4000,
+                  'temperature': 0,
+    }
+)
 
 ociGenAILlama2 =  KbotOCIGenAI(
     model_id="meta.llama-2-70b-chat",
@@ -87,3 +105,46 @@ ociGenAILlama3_1_70B =  KbotChatOCIGenAI(
      'temperature'   : 0.10,
      }
 )
+
+ociGenAILlama3_3_70B =  KbotChatOCIGenAI(
+    model_id="meta.llama-3.3-70b-instruct",
+    service_endpoint=GenAIEndpoint,
+    compartment_id=compartment_id,
+    auth_type=auth_type,
+    model_kwargs = {
+      'max_tokens': 1024,
+     'temperature'   : 0.10,
+     }
+)
+
+
+
+def init_oci_auth(auth_type):
+    finalConfig = {}
+    if auth_type == 'API_KEY':
+        ociconfig = oci.config.from_file()
+        finalConfig = {'config': ociconfig}
+
+    if auth_type == 'INSTANCE_PRINCIPAL':
+        signer = oci.auth.signers.InstancePrincipalsSecurityTokenSigner()
+        finalConfig = {'config': {}, 'signer': signer}
+    # if region:
+    #     finalConfig.update({"region":region})
+    return finalConfig
+
+
+from pathlib import Path
+import sys
+# 获取当前模块的父目录的父目录（即与util同级的根目录）
+root_dir = Path(__file__).resolve().parent.parent
+sys.path.append(str(root_dir))
+
+import llm_keys
+import oci
+region = 'ap-osaka-1'
+model_id = 'cohere.rerank-multilingual-v3.1'
+generative_ai_inference_client = oci.generative_ai_inference.GenerativeAiInferenceClient(
+    **init_oci_auth(llm_keys.auth_type),
+    service_endpoint=f"https://inference.generativeai.{region}.oci.oraclecloud.com",
+    retry_strategy=oci.retry.NoneRetryStrategy(),
+    timeout=(10, 240))

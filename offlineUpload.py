@@ -1,19 +1,86 @@
 import argparse
 from pathlib import Path
-
 from tqdm import tqdm
-
 from kb_api import checkIfKBExists,  KnowledgeFile, store_vectors_by_batch, KnowledgeBatchInfo, \
     add_file_to_db, add_batchInfo_to_db
 from util import makeSplitter, get_content_root
-
 ### init logging
 from loguru import logger
+from typing import List, Union, Dict
+from langchain_core.documents import Document
 logger.add("offlineUpload.log", rotation="5 MB")
 
 
+import uuid
+import config
 
-def offlineUploadRuntime(knowledge_base_name, batch_name,chunk_size, chunk_overlap,ocr_lang):
+# Define the prompt template
+prompt_text = """
+You are an assistant tasked with summarizing tables and text particularly for semantic retrieval.
+These summaries will be embedded and used to retrieve the raw text or table elements.
+Give a detailed summary of the table or text below that is well optimized for retrieval.
+For any tables also add in a one-line description of what the table is about besides the summary.
+Do not add additional words like "Summary:" etc.
+
+Table or text chunk:
+{element}
+"""
+from langchain_core.prompts import ChatPromptTemplate
+from langchain.chains import LLMChain
+from langchain_core.output_parsers import StrOutputParser
+import copy
+
+prompt = ChatPromptTemplate.from_template(prompt_text)
+from langchain_core.runnables import RunnablePassthrough, RunnableLambda
+
+summary_model = config.MODEL_DICT.get(config.SUMMARY_MODEL)
+
+# Define the summary chain
+summarize_chain = (
+        {"element": RunnablePassthrough()}
+        | prompt
+        | summary_model
+        | StrOutputParser()  # Extracts the response as text
+)
+
+def add_summaries_to_langchain_documents(data: List[Document]):
+    docs = []
+    tables = []
+    images = []
+    for doc in data:
+        file_type = doc.metadata.get('filetype', 'non_pdf')
+        if file_type == 'application/pdf':
+            doc.metadata['page'] = doc.metadata.get('page_number', 0)
+            doc.metadata["chunk_id"] = str(uuid.uuid4())
+            if doc.metadata.get('category') == 'Table':
+                doc.metadata["chunk_category"] = "SOURCE_TABLE"
+                tables.append(doc)
+            elif doc.metadata.get('category') == 'CompositeElement':
+                doc.metadata["chunk_category"] = "SOURCE_DOCS"
+                docs.append(doc)
+            elif doc.metadata.get('category') == 'Image':
+                doc.metadata["chunk_category"] = "SOURCE_IMAGE"
+                images.append(doc)
+        else:
+            docs.append(doc)
+
+    summary_chunk_list = []
+    src_chunk_list = docs + tables + images
+
+    for doc in src_chunk_list:
+        file_type = doc.metadata.get('filetype', 'non_pdf')
+        if file_type == 'application/pdf':
+            summary = summarize_chain.invoke(doc.page_content)
+            # Update previous_chunk for the next iteration
+            newdoc = copy.deepcopy(doc)
+            newdoc.page_content = summary
+            newdoc.metadata["chunk_id"] = str(uuid.uuid4())
+            newdoc.metadata["src_chunk_id"] = doc.metadata["chunk_id"]
+            newdoc.metadata["chunk_category"] = doc.metadata["chunk_category"].replace('SOURCE', 'SUMMARY')
+            summary_chunk_list.append(newdoc)
+    return summary_chunk_list + src_chunk_list
+
+def offlineUploadRuntime(knowledge_base_name, batch_name,chunk_size, chunk_overlap,ocr_lang,multivector):
     if knowledge_base_name is None or knowledge_base_name.strip() == "":
         raise ValueError("knowledge_base_name should not be empty!")
     kb = checkIfKBExists(knowledge_base_name)
@@ -31,11 +98,13 @@ def offlineUploadRuntime(knowledge_base_name, batch_name,chunk_size, chunk_overl
 
     kb_files = [KnowledgeFile(filename=str(Path(batch_name) / file), knowledge_base_name=knowledge_base_name) for file
                 in saved_disk_files]
-    logger.info('vectorize uploaded docs...')
+    logger.info('vectorizing uploaded docs...')
     for kb_file in tqdm(kb_files):
         try:
             text_splitter = makeSplitter(chunk_size, chunk_overlap)
             chunkDocuments = kb_file.file2text(text_splitter, ocr_lang)
+            if 'summary' in multivector:
+                chunkDocuments = add_summaries_to_langchain_documents(chunkDocuments)
             store_vectors_by_batch(knowledge_base_name, kb.embed_model, chunkDocuments)
             kb_file.batch_name = batch_name
 
@@ -47,17 +116,6 @@ def offlineUploadRuntime(knowledge_base_name, batch_name,chunk_size, chunk_overl
                                            chunk_size=chunk_size,
                                            chunk_overlap=chunk_overlap)
 
-            # fileEmbeddingSetting = FileEmbeddingSetting(batch_name =batch_name,
-            #                                             file_path=kb_file.filepath,
-            #                                             chunk_overlap=chunk_overlap,
-            #                                             chunk_size=chunk_size )
-            # add_file_embedding_setting_to_db(fileEmbeddingSetting)
-            # status = add_file_to_db(kb_file)
-
-            # if not status:
-            # msg = f"adding file ‘{kb_file.filename}’ to sqlite db failed：skip。"
-            # failed_files[kb_file.filename] = msg
-            # logger.info(msg)
             add_file_to_db(kb_file)
             add_batchInfo_to_db(batchInfo)
 
@@ -77,6 +135,7 @@ if __name__ == "__main__":
     parser.add_argument("--chunk_size", type=int, default=250)
     parser.add_argument("--chunk_overlap", type=int, default=22)
     parser.add_argument("--ocr_lang", type=str,default='en')
+    parser.add_argument("--multivector", type=str,default='')
     # 初始化消息
     args = parser.parse_args()
 
@@ -84,5 +143,6 @@ if __name__ == "__main__":
                           args.batch_name,
                           args.chunk_size,
                           args.chunk_overlap,
-                          args.ocr_lang
+                          args.ocr_lang,
+                          args.multivector
             )

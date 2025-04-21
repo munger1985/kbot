@@ -20,15 +20,12 @@ import shutil
 from datetime import datetime
 from langchain_community.document_loaders import RecursiveUrlLoader
 from langchain_community.document_transformers import Html2TextTransformer
-from util import init_oci_auth, merge_search_results, ppOCR, copy2Graphrag
-from langchain_community.document_loaders import TextLoader, PyPDFLoader, WebBaseLoader, Docx2txtLoader, \
+from modelPrepare.ociGenAIAPI import generative_ai_inference_client, model_id
+from llm_prepare import load_bge_reranker
+from util import init_oci_auth, merge_search_results, ppOCR, copy2Graphrag, get_file_extension, remove_special_chars
+from langchain_community.document_loaders import TextLoader, WebBaseLoader, Docx2txtLoader, \
     UnstructuredWordDocumentLoader
-import json
-import os
-import urllib
-import cohere
-from pydantic import BaseModel, FilePath
-import pydantic
+import json, os, urllib, pydantic, cohere
 from fastapi import File, Form, Query, UploadFile
 from typing import Tuple
 from fastapi import Body
@@ -42,8 +39,9 @@ import copy
 import config
 import llm_keys
 from pathlib import Path
-
+from vectorDB import opensearch_store
 from vectorDB.hybrid import oracle_fulltext_helper
+from vectorDB.opensearch_store import delete_doc, opensearch_fulltext_wrapper, opensearch_pyclient
 from vectorDB.oracle_ai_vector_search import OracleAIVector
 from vectorDB.heatwave_vectorstore import HeatWaveVS
 from vectorDB.oracle_vectorstore_adb import OracleAdbVS
@@ -55,6 +53,11 @@ from util import get_content_root, get_file_path, get_kb_path, get_vs_path, make
 from FlagEmbedding import FlagReranker
 from langchain_core.documents import Document
 from langchain_text_splitters import TextSplitter
+from util import BaseResponse, ListResponse, DeleteResponse, CheckProgressResponse
+import fitz  # PyMuPDF
+from fastapi.responses import HTMLResponse, Response
+import io, base64
+from PIL import Image
 
 EMBEDDING_MODEL = "e5_large_v2"
 user_settings = {}
@@ -73,55 +76,13 @@ def score_threshold_process(score_threshold, k, docs):
     return docs[:k]
 
 
-class CheckProgressResponse(BaseModel):
-    total: int = pydantic.Field(200, description="total file count")
-    finished: int = pydantic.Field(200, description="finished count")
-    current_document: str = pydantic.Field(
-        "success", description="current file being processed")
-    details: List = pydantic.Field(None, description="list of detailed info")
-
-
-class DeleteResponse(BaseModel):
-    code: int = pydantic.Field(200, description="API status code")
-    msg: str = pydantic.Field("success", description="API status message")
-    data: Dict = pydantic.Field(None, description="API Detailed info")
-
-
-class BaseResponse(BaseModel):
-    code: int = pydantic.Field(200, description="API status code")
-    msg: str = pydantic.Field("success", description="API status message")
-    data: Any = pydantic.Field(None, description="API data")
-
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "code": 200,
-                "msg": "success",
-            }
-        }
-
-
-class ListResponse(BaseResponse):
-    data: List[str] = pydantic.Field(...,
-                                     description="List of knowledge base names")
-
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "code": 200,
-                "msg": "success",
-                "data": ["bank", "medical", "OCI info"],
-            }
-        }
-
-
 TEXT_SPLITTER_NAME = "RecursiveCharacterTextSplitter"
 
 LOADER_DICT = {"UnstructuredHTMLLoader": ['.url'],
                "UnstructuredMarkdownLoader": ['.md'],
                "CustomJSONLoader": [".json"],
                "CSVLoader": [".csv"],
-               "RapidOCRPDFLoader": [".pdf"],
+               "UnstructuredPDFLoader": [".pdf"],
                "ImageOCRLoader": ['.png', '.jpg', '.jpeg', '.bmp'],
                "UnstructuredFileLoader": ['.eml', '.msg', '.rst',
                                           '.rtf', '.txt', '.xml',
@@ -138,6 +99,37 @@ def get_LoaderClass(file_extension):
     for LoaderClass, extensions in LOADER_DICT.items():
         if file_extension in extensions:
             return LoaderClass
+
+
+from langchain_community.document_loaders import UnstructuredPDFLoader
+
+# Define the prompt template
+prompt_text = """
+You are an assistant tasked with summarizing tables and text particularly for semantic retrieval.
+These summaries will be embedded and used to retrieve the raw text or table elements.
+Give a detailed summary of the table or text below that is well optimized for retrieval.
+For any tables also add in a one-line description of what the table is about besides the summary.
+Do not add additional words like "Summary:" etc.
+
+Table or text chunk:
+{element}
+"""
+from langchain_core.prompts import ChatPromptTemplate
+from langchain.chains import LLMChain
+from langchain_core.output_parsers import StrOutputParser
+
+prompt = ChatPromptTemplate.from_template(prompt_text)
+from langchain_core.runnables import RunnablePassthrough, RunnableLambda
+
+summary_model = config.MODEL_DICT.get(config.SUMMARY_MODEL)
+
+# Define the summary chain
+summarize_chain = (
+        {"element": RunnablePassthrough()}
+        | prompt
+        | summary_model
+        | StrOutputParser()  # Extracts the response as text
+)
 
 
 class KnowledgeFile:
@@ -161,10 +153,48 @@ class KnowledgeFile:
 
     def get_loader(self, loader_name: str, filepath: str):
         if filepath.lower().endswith(".pdf"):
-            loader = PyPDFLoader(filepath)
+            loader = UnstructuredPDFLoader(
+                file_path=filepath,
+                strategy='hi_res',
+                extract_images_in_pdf=False,
+                infer_table_structure=True,
+                chunking_strategy="by_title",  # section-based chunking
+                multipage_sections=False,
+                max_characters=self.chunk_size,  # max size of chunks
+                new_after_n_chars=self.chunk_size,  # preferred size of chunks
+                # combine_text_under_n_chars=100,  # smaller chunks < 100 chars will be combined into a larger chunk
+                overlap=self.chunk_overlap,  # overlap between chunks
+                mode='elements',
+                image_output_dir_path='./figures_unstructured_pdf'
+            )
         elif loader_name == 'UnstructuredWordDocumentLoader':
             # loader = Docx2txtLoader(filepath)
-            loader = UnstructuredWordDocumentLoader(filepath)
+            loader = UnstructuredWordDocumentLoader(
+                file_path=filepath,
+                # 基本参数
+                mode="elements",  # 文档处理模式: "single"(整个文档作为一个文档), "elements"(按元素分割), "paged"(按页分割)
+                strategy="hi_res",  # 处理策略: "fast"(快速但精度较低) 或 "hi_res"(高精度但较慢)
+
+                # 分块策略参数
+                chunking_strategy="by_title",  # 分块策略: "by_title"(按标题分块), "by_page"(按页分块) 或 None
+                multipage_sections=False,  # 是否允许章节跨页
+                max_characters=self.chunk_size,  # 块的最大字符数
+                new_after_n_chars=self.chunk_size,  # 达到此字符数后创建新块
+                overlap=self.chunk_overlap,  # 块之间的重叠字符数
+
+                # 表格处理参数
+                infer_table_structure=True,  # 是否推断表格结构
+
+                # 图像处理参数
+                include_page_breaks=False,  # 是否包含页面分隔符
+                include_metadata=True,  # 是否包含元数据
+
+                # 高级选项
+                # encoding="utf-8",  # 文件编码
+                paragraph_grouper=None,  # 自定义段落分组函数
+                headers_to_metadata=False,  # 是否将标题转换为元数据
+                skip_infer_table_types=None,  # 跳过推断的表格类型列表
+            )
         elif filepath.lower().endswith(".wav"):
             loader = ociSpeechASRLoader(
                 self.namespace, self.bucket, self.objectName, self.lang)
@@ -267,7 +297,7 @@ class KnowledgeFile:
         :param lang: when there are some images or audios, specify the language
         :return: chunked langchain documents
         '''
-        if self.ext == '.wav':
+        if self.ext == '.wav':  #### just audios
 
             # asr to text .
             #  for asr , need to upload  to oci buckets first。
@@ -280,7 +310,7 @@ class KnowledgeFile:
             document = Document(page_content=self.full_text)
             document.metadata['source'] = self.filepath
             self.docs = [document]
-        elif self.document_loader_name == 'ImageOCRLoader':
+        elif self.document_loader_name == 'ImageOCRLoader':  ## just images
             fileTextOneString = ppOCR(self.filepath, lang)
             ocrFilePosixPath = Path(self.kbPath) / \
                                Path('ocr') / Path(self.filename + '.txt')
@@ -291,14 +321,27 @@ class KnowledgeFile:
             document = Document(page_content=fileTextOneString)
             document.metadata['source'] = self.filepath
             self.docs = [document]
-        else:
+        else:  ### if this is just docs
             self.docs = self.file2docs()
+            if self.ext in ['.pdf', '.doc', '.docx']:
+                self.texts = []
+                for doc in self.docs:
+                    doc.metadata.pop('last_modified', None)
+                    doc.metadata.pop('text_as_html', None)
+                    doc.metadata.pop('file_directory', None)
+                    doc.metadata.pop('filename', None)
+                    doc.metadata.pop('languages', None)
+                    doc.metadata.pop('orig_elements', None)
+                    self.texts.append(doc)
+
+                ### because we reckon unstructuredXXXloader is smarter, no need splitter
+            else:
+                self.texts = self.docs2texts(docs=self.docs,
+                                             text_splitter=text_splitter)
         self.full_text = "\n".join(doc.page_content for doc in self.docs)
 
         copy2Graphrag(self)
 
-        self.texts = self.docs2texts(docs=self.docs,
-                                     text_splitter=text_splitter)
         return self.texts
 
     def rebuild_file2text(
@@ -731,8 +774,8 @@ def text_embedding(
                                 description="when you chat with llm, {query} is variable, chat with rag, {query} {context} are variables",
                                 examples=["bge_m3"]),
 ) -> BaseResponse:
-    print("##text:", text)
-    print("##embed_model:", embed_model)
+    logger.info(f"##text:{text}")
+    logger.info(f"##embed_model:{embed_model}")
     embeddingModel = config.EMBEDDING_DICT.get(embed_model)
     query_vector = embeddingModel.embed_query(text)
 
@@ -801,14 +844,6 @@ def init_vs(knowledge_base_name, embed_model, vector_store_type):
             vector_store.save_local(vs_path)
             vector_store.vs_path = vs_path
 
-    elif vector_store_type == 'opensearch':
-        vector_store = OpenSearchVectorSearch(
-            index_name=knowledge_base_name,
-            embedding_function=embeddingModel,
-            opensearch_url=config.OCI_OPEN_SEARCH_URL,
-            http_auth=(config.OCI_OPEN_SEARCH_USER,
-                       config.OCI_OPEN_SEARCH_PASSWD)
-        )
     elif vector_store_type == 'oracle':
         # vector_store = OracleAIVector(collection_name=knowledge_base_name,
         #                              connection_string=config.ORACLE_AI_VECTOR_CONNECTION_STRING,
@@ -833,18 +868,20 @@ def init_vs(knowledge_base_name, embed_model, vector_store_type):
             pre_delete_collection=False,
             embedding_function=embeddingModel
         )
-
+    else:
+        raise ValueError("invalid vector db type")
     return vector_store
 
 
 def get_vs_from_kb(kb_name):
     kb = load_kb_from_db(kb_name)
+    vector_store = 1
     if 'faiss' == kb.vs_type:
         vs_path = get_vs_path(kb_name)
         vector_store = FAISS.load_local(vs_path, config.EMBEDDING_DICT[kb.embed_model], normalize_L2=True,
                                         allow_dangerous_deserialization=True)
         vector_store.vs_path = vs_path
-        return vector_store, kb
+    # return vector_store, kb
     elif 'oracle' == kb.vs_type:
         # vector_store = OracleAIVector.from_existing_index(
         #    embedding=config.EMBEDDING_DICT[kb.embed_model],
@@ -855,27 +892,29 @@ def get_vs_from_kb(kb_name):
             collection_name=kb_name,
             embedding_function=config.EMBEDDING_DICT[kb.embed_model],
         )
-        return vector_store, kb
+        # return vector_store, kb
     elif 'opensearch' == kb.vs_type:
         vector_store = OpenSearchVectorSearch(
             index_name=kb_name,
             embedding_function=config.EMBEDDING_DICT[kb.embed_model],
             opensearch_url=config.OCI_OPEN_SEARCH_URL,
             http_auth=(config.OCI_OPEN_SEARCH_USER,
-                       config.OCI_OPEN_SEARCH_PASSWD)
+                       config.OCI_OPEN_SEARCH_PASSWD),
+            verify_certs=False,
         )
+        # return vector_store, kb
     elif 'heatwave' == kb.vs_type:
         vector_store = HeatWaveVS(
             collection_name=kb_name,
             embedding_function=config.EMBEDDING_DICT[kb.embed_model],
         )
-        return vector_store, kb
+        # return vector_store, kb
     elif 'adb' == kb.vs_type:
         vector_store = OracleAdbVS(
             collection_name=kb_name,
             embedding_function=config.EMBEDDING_DICT[kb.embed_model],
         )
-        return vector_store, kb
+    return vector_store, kb
 
 
 class UploadFromUrlRequest(pydantic.BaseModel):
@@ -1079,7 +1118,9 @@ def delete_docs(knowledge_base_name: str = Body(..., examples=["samples"]),
                     logger.error(e)
                     failed_files[filename] = 'Failed to delete it in vectorDB'
                     pass
-            else:
+            elif isinstance(vector_store, OpenSearchVectorSearch):
+                opensearch_store.delete_doc(kb_file)
+            elif isinstance(vector_store, FAISS):
                 ids = [k for k, v in vector_store.docstore._dict.items() if
                        v.metadata.get("source") == kb_file.filepath]
                 #    check faiss content
@@ -1088,7 +1129,7 @@ def delete_docs(knowledge_base_name: str = Body(..., examples=["samples"]),
                     vector_store.delete(ids)
                     vector_store.save_local(vector_store.vs_path, 'index')
         else:
-            failed_files[filename] = 'File does not exist'
+            failed_files[filename] = 'File does not exist in file system'
 
     return DeleteResponse(code=200, msg=f"File deletion ended", data={"failed_files": failed_files})
 
@@ -1108,13 +1149,6 @@ def saveInVectorDB(knowledge_base_name, texts: List[Document]):
         vector_store.add_documents(texts)
         vector_store.save_local(vs_path, 'index')
     elif 'oracle' == kb.vs_type:
-        # vector_store = OracleAIVector.from_documents(
-        #    embedding=config.EMBEDDING_DICT[kb.embed_model],
-        #    documents=texts,
-        #    collection_name=knowledge_base_name,
-        #    connection_string=config.ORACLE_AI_VECTOR_CONNECTION_STRING,
-        #    pre_delete_collection=False,  # Append to the vectorstore
-        # )
         vector_store = OracleBaseDbVS.from_documents(
             embedding=config.EMBEDDING_DICT[kb.embed_model],
             documents=texts,
@@ -1131,6 +1165,7 @@ def saveInVectorDB(knowledge_base_name, texts: List[Document]):
             http_auth=(config.OCI_OPEN_SEARCH_USER,
                        config.OCI_OPEN_SEARCH_PASSWD),
             bulk_size=2222,
+            verify_certs=False
         )
     elif 'heatwave' == kb.vs_type:
         vector_store = HeatWaveVS.from_documents(
@@ -1184,7 +1219,8 @@ def queryInVectorDB(knowledge_base_name, texts: List[Document]):
             documents=texts,
             collection_name=knowledge_base_name,
             connection_string=config.ORACLE_AI_VECTOR_CONNECTION_STRING,
-            pre_delete_collection=False,  # Append to the vectorstore
+            pre_delete_collection=False,
+            verify_certs=False,
         )
     elif 'heatwave' == kb.vs_type:
         vector_store = HeatWaveVS.from_documents(
@@ -1353,6 +1389,8 @@ async def upload_from_object_storage(
         chunk_size: int = Body(config.CHUNK_SIZE, description="知识库中单段文本最大长度"),
         chunk_overlap: int = Body(
             config.CHUNK_OVERLAP, description="知识库中相邻文本重合长度"),
+        multivector: str = Body('summary', description="e.g. [ summary]")
+
 ) -> BaseResponse:
     if knowledge_base_name is None or knowledge_base_name.strip() == "":
         return BaseResponse(code=404, msg="知识库名称不能为空，请重新填写知识库名称")
@@ -1433,6 +1471,8 @@ async def upload_from_object_storage(
 
                 Text_splitter = makeSplitter(chunk_size, chunk_overlap)
                 chunkDocuments = kb_file.file2text(Text_splitter)
+                if 'summary' in multivector:
+                    chunkDocuments = add_summaries_to_langchain_documents(chunkDocuments)
 
                 store_vectors_by_batch(
                     knowledge_base_name, kb.embed_model, chunkDocuments)
@@ -1464,6 +1504,47 @@ async def upload_from_object_storage(
     return StreamingResponse(output(), media_type="text/event-stream")
 
 
+import uuid
+
+
+def add_summaries_to_langchain_documents(data: List[Document]):
+    docs = []
+    tables = []
+    images = []
+    for doc in data:
+        file_type = doc.metadata.get('filetype', 'non_pdf')
+        if file_type == 'application/pdf' or file_type == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+            # doc.metadata['page'] = doc.metadata.get('page_number', 0)
+            doc.metadata["chunk_id"] = str(uuid.uuid4())
+            if doc.metadata.get('category') == 'Table':
+                doc.metadata["chunk_category"] = "SOURCE_TABLE"
+                tables.append(doc)
+            elif doc.metadata.get('category') == 'CompositeElement':
+                doc.metadata["chunk_category"] = "SOURCE_DOCS"
+                docs.append(doc)
+            elif doc.metadata.get('category') == 'Image':
+                doc.metadata["chunk_category"] = "SOURCE_IMAGE"
+                images.append(doc)
+        else:
+            docs.append(doc)
+
+    summary_chunk_list = []
+    src_chunk_list = docs + tables + images
+    for doc in src_chunk_list:
+        file_type = doc.metadata.get('filetype', 'non_pdf')
+        if file_type == 'application/pdf' or file_type == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+            summary = summarize_chain.invoke(doc.page_content)
+            # Update previous_chunk for the next iteration
+            newdoc = copy.deepcopy(doc)
+            newdoc.page_content = remove_special_chars(summary)
+            logger.info(f'summary:{newdoc.page_content}')
+            newdoc.metadata["chunk_id"] = str(uuid.uuid4())
+            newdoc.metadata["src_chunk_id"] = doc.metadata["chunk_id"]
+            newdoc.metadata["chunk_category"] = doc.metadata["chunk_category"].replace('SOURCE', 'SUMMARY')
+            summary_chunk_list.append(newdoc)
+    return summary_chunk_list + src_chunk_list
+
+
 def upload_docs(files: List[UploadFile] = File(..., description="上传文件，支持多文件"),
                 batch_name: str = Form("./", description="the prefix directory path for this batch file uploading",
                                        examples=["./"]),
@@ -1475,7 +1556,8 @@ def upload_docs(files: List[UploadFile] = File(..., description="上传文件，
                 chunk_overlap: int = Form(
                     config.CHUNK_OVERLAP, description="知识库中相邻文本重合长度"),
                 ocr_lang: str = Form('en',
-                                     description="if having images, use this to define language in the image,eg. `ch`, `en`, `fr`, `german`, `korean`, `japan`")
+                                     description="if having images, use this to define language in the image,eg. `ch`, `en`, `fr`, `german`, `korean`, `japan`"),
+                multivector: str = Form('', description="e.g. [ summary] ", examples=['summary'])
                 ) -> BaseResponse:
     '''
     API接口：上传文件，并/或向量化
@@ -1485,7 +1567,6 @@ def upload_docs(files: List[UploadFile] = File(..., description="上传文件，
     kb = checkIfKBExists(knowledge_base_name)
     if kb is None:
         return BaseResponse(code=404, msg=f"未找到知识库 {knowledge_base_name}")
-
     failed_files = {}
     # file_names = list()
 
@@ -1504,19 +1585,22 @@ def upload_docs(files: List[UploadFile] = File(..., description="上传文件，
     logger.info('vectorize uploaded docs...')
     for kb_file in tqdm(kb_files):
         try:
+            kb_file.batch_name = batch_name
+            kb_file.chunk_overlap = chunk_overlap
+            kb_file.chunk_size = chunk_size
+            kb_file.knowledge_base_name = knowledge_base_name
+
             batchInfo = KnowledgeBatchInfo(batch_name=batch_name,
                                            kb_name=knowledge_base_name,
                                            chunk_size=chunk_size,
                                            chunk_overlap=chunk_overlap)
             text_splitter = makeSplitter(chunk_size, chunk_overlap)
             chunkDocuments = kb_file.file2text(text_splitter, ocr_lang)
+            if 'summary' in multivector:
+                chunkDocuments = add_summaries_to_langchain_documents(chunkDocuments)
+
             store_vectors_by_batch(knowledge_base_name,
                                    kb.embed_model, chunkDocuments)
-            kb_file.batch_name = batch_name
-
-            kb_file.chunk_overlap = chunk_overlap
-            kb_file.chunk_size = chunk_size
-            kb_file.knowledge_base_name = knowledge_base_name
 
             add_file_to_db(kb_file)
             add_batchInfo_to_db(batchInfo)
@@ -1566,6 +1650,25 @@ class VectorSearchResponse(pydantic.BaseModel):
             "example": {
                 "data": [{"content": "xxx", "score": 1, "source": "llm"},
                          {"content": "yyy", "score": 0.78, "source": "source file url"}],
+                "status": "success",
+                "err_msg": ""
+            }
+        }
+
+
+class DiFyVectorSearchResponse(pydantic.BaseModel):
+    records: list = pydantic.Field(...,
+                                   description="data returned from vector store")
+    status: str = pydantic.Field(..., description="Response text")
+    err_msg: str = pydantic.Field(..., description="Response text")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "records": [{"metadata": {"path": "123"}, "content": "xxx", "score": 1, "title": "llm", "url": "123",
+                             "icon": "aaa"},
+                            {"metadata": {"path": "123"}, "content": "yyy", "score": 0.78, "title": "source file url",
+                             "url": "123", "icon": "aaa"}],
                 "status": "success",
                 "err_msg": ""
             }
@@ -1674,6 +1777,12 @@ def check_vector_store_embedding_progress(
         check_vdb_init_status[knowledge_base_name] if knowledge_base_name in check_vdb_init_status else "")
 
 
+def delete_vs(knowledge_base_name):
+    vs, kb = get_vs_from_kb(knowledge_base_name)
+    if kb.vs_type == 'opensearch':
+        vs.delete_index(knowledge_base_name)
+
+
 def delete_kb(knowledge_base_name: str = Body(..., examples=["samples"]),
               stub: str = Body('stub', examples=["for json body, no need to input "])):
     if knowledge_base_name is None or knowledge_base_name.strip() == "":
@@ -1681,7 +1790,7 @@ def delete_kb(knowledge_base_name: str = Body(..., examples=["samples"]),
     files = list_files_from_folder(knowledge_base_name)
     # delete vectors and file record in sqlite
     delete_docs(knowledge_base_name, files)
-    vs, kb = get_vs_from_kb(knowledge_base_name)
+    delete_vs(knowledge_base_name)
     # if 'oracle' == kb.vs_type:
     #    vs.delete_collection()
     if delete_kb_from_db(knowledge_base_name=knowledge_base_name):
@@ -1808,7 +1917,9 @@ def query_in_kb(
         vector_store_limit: int = Body(
             10, description='the limit of query from vector db'),
         search_type=Body(
-            'vector', description='the type of search. eg. vector, full_text, hybrid'),
+            'vector', description='the type of search. eg. vector, fulltext, hybrid'),
+        summary_flag=Body(
+            'N', description='Search summary of chunks or original chunks to retrieve relevant docs.'),
 
 ):
     # 1.初始化配置参数
@@ -1819,16 +1930,17 @@ def query_in_kb(
     settings.score_threshold = score_threshold
     settings.vector_store_limit = vector_store_limit
     settings.search_type = search_type
+    settings.summary_flag = summary_flag
     user_settings[user] = settings
 
-    logger.info(f"##1).完成配置参数初始化:{get_cur_time()}##")
+    logger.info(f"  1).完成配置参数初始化:{get_cur_time()}  ")
 
     # 2.获取向量检索结果以及rerank结果
     status: str = "success"
     err_msg: str = ""
     vector_res_arr = []
     vector_res_arr, _ = makeSimilarDocs(ask, kb_name, user)
-    logger.info("##2)完成获取向量检索结果以及rerank结果。##")
+    logger.info("  2)完成获取向量检索结果以及rerank结果。  ")
 
     # 将结果对象列表转换为JSON数组
     result_str = json.dumps(
@@ -1836,9 +1948,51 @@ def query_in_kb(
           "score": float(p.score)} for p in vector_res_arr],
         ensure_ascii=False)
     result_list = json.loads(format_llm_response(result_str))
-    logger.info(f"##3).完成LLM结果处理:{get_cur_time()}##")
+    logger.info(f"  3).完成LLM结果处理:{get_cur_time()}  ")
     return VectorSearchResponse(
         data=result_list,
+        status=status,
+        err_msg=err_msg
+    )
+
+
+# Integrate kbot query for Dify
+# https://docs.dify.ai/zh-hans/guides/knowledge-base/external-knowledge-api-documentation
+def dify_query_from_kb_vectordb(
+        query: str = Body(..., description="query", examples=["What's kyc"]),
+        knowledge_id: str = Body(..., description="knowledge_base_name", examples=["samples"]),
+        retrieval_setting: dict = Body(..., description="retrieval settings",
+                                       examples=['{"top_k": 2, "score_threshold": 0.6}']),
+):
+    # for dify
+    logger.info(f" 从 Dify 获取请求参数 query:{query},kb_name:{knowledge_id}, retrieval_setting{retrieval_setting}  ")
+    top_k = retrieval_setting.get('top_k', 10)
+    score_threshold = retrieval_setting.get('score_threshold', 0.6)
+    logger.info(f" top_k:{top_k}, score_threshold:{score_threshold}  ")
+    user = "Dify"
+    settings = SimpleNamespace()
+    settings.rerankerModel = "disableReranker"
+    settings.reranker_topk = top_k
+    settings.score_threshold = score_threshold
+    settings.vector_store_limit = top_k
+    settings.search_type = "vector"
+    settings.summary_flag = "N"
+    user_settings[user] = settings
+    logger.info(f"##1).完成配置参数初始化:{get_cur_time()}##")
+    # 2.获取向量检索结果以及rerank结果
+    status: str = "success"
+    err_msg: str = ""
+    vector_res_arr = []
+    vector_res_arr, _ = makeSimilarDocs(query, knowledge_id, user)
+    logger.info("##2)完成获取向量检索结果以及rerank结果。##")
+    result_str = json.dumps(
+        [{"metadata": {"path": p.source}, "content": p.content, "title": p.source, "title": knowledge_id,
+          "score": float(p.score)} for p in vector_res_arr],
+        ensure_ascii=False)
+    result_list = json.loads(format_llm_response(result_str))
+    logger.info(f"##3).完成LLM结果处理:{get_cur_time()}{result_str}##")
+    return DiFyVectorSearchResponse(
+        records=result_list,
         status=status,
         err_msg=err_msg
     )
@@ -1849,7 +2003,7 @@ def fulltext_search(question, kb_name, user):
     settings = user_settings.get(user)
     fullTextDocsWithScore = []
     if kb.vs_type == 'opensearch':
-        pass  # todo
+        fullTextDocsWithScore = opensearch_fulltext_wrapper(question, kb_name)
     elif kb.vs_type == 'faiss':
         pass
     elif kb.vs_type == 'oracle' or kb.vs_type == 'adb':
@@ -1872,9 +2026,14 @@ def makeSimilarDocs(question, kb_name, user):
         doc = obj[0]
         doc_content = doc.page_content
         doc_source = doc.metadata.get("source")
+        doc_page_num = 1
+        doc_source_file_ext = get_file_extension(doc_source)
+        if isinstance(doc_source_file_ext, str) and len(doc_source_file_ext) > 0 and doc_source_file_ext in ('pdf','doc','docx'):
+            if isinstance(doc.metadata.get("page_number"), int) :
+                doc_page_num = int(doc.metadata.get("page_number"))
         doc_score = obj[1]
         logger.info(
-            f"##doc_score: {doc_score}, score_threshold: {settings.score_threshold}, doc_source: {doc_source}")
+            f"  doc_score: {doc_score}, score_threshold: {settings.score_threshold}, doc_source: {doc_source}, doc_source_file_ext:{doc_source_file_ext},doc_page_num:{doc_page_num}")
         # doc_score（向量相识度/Reranker）统一成越大，越相似，所以需要大于配置的阈值才显示。
 
         if doc_score >= settings.score_threshold:
@@ -1895,26 +2054,24 @@ def makeSimilarDocs(question, kb_name, user):
                     if not config.http_prefix.endswith('/'):
                         config.http_prefix += '/'
                     doc_source = config.http_prefix + f'knowledge_base/download_doc?knowledge_base_name={kb_name}&file_name={filename}'
-            askRes = AskResponseData(doc_content, doc_source, doc_score)
+                    viewer_source = config.http_prefix + f'knowledge_base/viewer_doc?knowledge_base_name={kb_name}&file_name={filename}&page_num={doc_page_num}'
+            askRes = AskResponseData(doc_content, doc_source, doc_score, doc_source_file_ext, doc_page_num,
+                                     viewer_source)
             vector_res_arr.append(askRes)
     return vector_res_arr, llm_context
 
 
-def load_bge_reranker_large_model(model_path: str = config.BGE_RERANK_PATH) -> FlagReranker:
-    reranker = FlagReranker(model_path,
-                            use_fp16=True)  # Setting use_fp16 to True speeds up computation with a slight performance degradation
-    return reranker
-
-
-def reRankVectorResult(query: str, vectorResut: List[Document],  user: str) -> List[Document]:
+def reRankVectorResult(query: str, vectorResut: List[Document], user: str) -> List[Document]:
     settings = user_settings.get(user)
-    top_k=settings.reranker_topk
+    top_k = settings.reranker_topk
     if settings.rerankerModel == 'bgeReranker':
-        bge_reranker_large_model = load_bge_reranker_large_model()
-        reRankResult = reRankVectorResultByBgeReranker(bge_reranker_large_model, query, vectorResut,
+        bge_reranker = load_bge_reranker(config.BGE_RERANKER)
+        reRankResult = reRankVectorResultByBgeReranker(bge_reranker, query, vectorResut,
                                                        top_k)
     elif settings.rerankerModel == 'cohereReranker':
         reRankResult = reRankVectorResultByCohere(query, vectorResut, top_k)
+    elif settings.rerankerModel == 'ociCohereReranker':
+        reRankResult = reRankVectorResultByOCICohere(query, vectorResut, top_k)
     elif settings.rerankerModel == 'disableReranker':
         reRankResult = vectorResut
     return reRankResult
@@ -1943,32 +2100,80 @@ def reRankVectorResultByCohere(query: str, vectorResut: List[Document], top_k: i
     return reRankResult
 
 
-def reRankVectorResultByBgeReranker(rerankModel: FlagReranker, query: str, vectorResut: List[Document],
-                                    top_k: int = 3) -> List[Document]:
-    # 1.获取Rerank所需要的数据格式
+def reRankVectorResultByOCICohere(query: str, vectorResut: List[Document], top_k: int = 3) -> List[Document]:
     src_docs = []
     for obj in vectorResut:
-        # logger.info("index:",obj)
         doc = obj[0]
         doc_content = doc.page_content
-        src_docs.append([query, doc_content])
+        src_docs.append(doc_content)
 
-    # 2.执行Rerank
-    # scores = rerankModel.compute_score([['what is panda?', 'hi'], ['what is panda?', 'The giant panda (Ailuropoda melanoleuca), sometimes called a panda bear or simply panda, is a bear species endemic to China.']])
-    scores = rerankModel.compute_score(src_docs,normalize=True)
-    # 3.获取Rerank结果
+    reRankDocs = generative_ai_inference_client.rerank_text(
+        rerank_text_details=oci.generative_ai_inference.models.RerankTextDetails(
+            input=query,
+            compartment_id=llm_keys.compartment_id,
+            serving_mode=oci.generative_ai_inference.models.OnDemandServingMode(
+                serving_type="ON_DEMAND",
+                model_id=model_id),
+            documents=src_docs,
+            top_n=top_k,
+            # is_echo=False,
+            # max_chunks_per_document=618
+        )
+    )
+
     reRankResult = []
-    index: int = 0
-    for obj in vectorResut:
-        doc = obj[0]
-        reRankResult.append((doc, scores[index]))
-        index = index + 1
-        # 只返回top_k的结果
-        if index >= top_k:
-            break
-    # 4.按照rerank的score排序，从大到小排序
+    for r in reRankDocs.data.document_ranks:
+        reRankResult.append(
+            (Document(page_content=src_docs[r.index], metadata=vectorResut[r.index][0].metadata), r.relevance_score))
+    return reRankResult
+
+
+def extract_doc(obj):
+    return obj[0] if isinstance(obj, (list, tuple, str, dict)) else obj
+
+
+def reRankVectorResultByBgeReranker(rerankModel: FlagReranker, query: str, vectorResult: List[Document],
+                                    top_k: int = 3) -> List[Document]:
+    # 1.获取Rerank所需要的数据格式
+    # src_docs = []
+    # for obj in vectorResut:
+    #     # logger.info("index:",obj)
+    #     if  isinstance(obj, (list, tuple, str, dict)):
+    #          doc = obj[0]
+    #     else:
+    #         doc= obj
+    #     doc_content = doc.page_content
+    #     src_docs.append([query, doc_content])
+
+    # # 2.执行Rerank
+    # # scores = rerankModel.compute_score([['what is panda?', 'hi'], ['what is panda?', 'The giant panda (Ailuropoda melanoleuca), sometimes called a panda bear or simply panda, is a bear species endemic to China.']])
+    # scores = rerankModel.compute_score(src_docs,normalize=True)
+    # # 3.获取Rerank结果
+    # reRankResult = []
+    # index: int = 0
+    # for obj in vectorResut:
+    #     if  isinstance(obj, (list, tuple, str, dict)):
+    #          doc = obj[0]
+    #     else:
+    #         doc= obj
+    #     reRankResult.append((doc, scores[index]))
+    #     index = index + 1
+    #     # 只返回top_k的结果
+    #     if index >= top_k:
+    #         break
+    # # 4.按照rerank的score排序，从大到小排序
+    # reRankResult = sorted(
+    #     reRankResult, key=lambda tupleobj: tupleobj[1], reverse=True)
+    src_docs = [[query, extract_doc(obj).page_content] for obj in vectorResult]
+
+    # Execute Rerank
+    scores = rerankModel.compute_score(src_docs, normalize=True)
+
+    # Get and sort Rerank results, returning only top_k results
     reRankResult = sorted(
-        reRankResult, key=lambda tupleobj: tupleobj[1], reverse=True)
+        ((extract_doc(obj), score) for obj, score in zip(vectorResult, scores)),
+        key=lambda item: item[1],
+        reverse=True)[:top_k]
     return reRankResult
 
 
@@ -1976,14 +2181,24 @@ def vectorOpenSearchWrapper(query, knowledge_base_name, user):
     settings = user_settings.get(user)
     vector_store, _ = get_vs_from_kb(knowledge_base_name)
 
-    return vector_store.similarity_search_with_score_by_vector(query, k=settings.vector_store_limit)
+    return vector_store.similarity_search(query, k=settings.vector_store_limit)
 
 
 def vectorSearchWrapper(query, knowledge_base_name, user):
     settings = user_settings.get(user)
-    vector_store, _ = get_vs_from_kb(knowledge_base_name)
+    vector_store, kb = get_vs_from_kb(knowledge_base_name)
 
-    return vector_store.similarity_search_with_relevance_scores(query, k=settings.vector_store_limit)
+    similar_doc_with_socres: list[tuple[Document, float]] = []
+    similar_doc_with_socres = vector_store.similarity_search_with_relevance_scores(
+        query,
+        k=settings.vector_store_limit,
+        summary_flag=settings.summary_flag
+    )
+
+    # embedding = config.EMBEDDING_DICT[kb.embed_model]
+    # query_vector = embedding.embed_query(query)
+    # similar_doc_with_socres = vector_store.max_marginal_relevance_search_with_score_by_vector(query_vector, k=settings.vector_store_limit)
+    return similar_doc_with_socres
 
 
 def get_docs_with_scores(query, knowledge_base_name, user) -> List[Document]:
@@ -1991,8 +2206,8 @@ def get_docs_with_scores(query, knowledge_base_name, user) -> List[Document]:
     settings = user_settings.get(user)
     search_functions = {
         'opensearch': {
-            'vector': vectorOpenSearchWrapper,
-            # 'fulltext': opensearch_fulltext_search
+            'vector': vectorSearchWrapper,
+            'fulltext': fulltext_search
         },
         'oracle': {
             'vector': vectorSearchWrapper,
@@ -2009,20 +2224,6 @@ def get_docs_with_scores(query, knowledge_base_name, user) -> List[Document]:
             'vector': vectorSearchWrapper,
         },
     }
-    # if kb.vs_type == 'opensearch':
-    #     embedding = config.EMBEDDING_DICT[kb.embed_model]
-    #     query_vector = embedding.embed_query(query)
-    #     # similarity_search_with_score_by_vector,这个结果是越小，越相似
-    #     similar_doc_with_scores = search_functions.get(kb.vs_type+"_"+settings.search_type)(query_vector,
-    #                                                                                 k=settings.vector_store_limit)
-    # else:
-    #     # max_marginal_relevance_search_with_score_by_vector这个是越小，越相似
-    #     # similar_doc_with_scores = vector_store.max_marginal_relevance_search_with_score_by_vector(
-    #     #    query_vector, k=config.vector_store_limit)
-    #     # similarity_search_with_relevance_scores是越大，越相似，取值是[0,1]
-    #     similar_doc_with_scores = search_functions.get(kb.vs_type+"_"+settings.search_type) (
-    #        query, k=settings.vector_store_limit)
-
     if settings.search_type == 'hybrid':  # 如果是hyrid检索，则是向量检索+全文检索的组合，如果全文检索的结果和向量结果一样，则优先获取向量结果
         similar_doc_with_scores = search_functions[kb.vs_type]['vector'](
             query, knowledge_base_name, user)
@@ -2035,7 +2236,7 @@ def get_docs_with_scores(query, knowledge_base_name, user) -> List[Document]:
             query, knowledge_base_name, user)
 
     logger.info(
-        f"####检索结果kb.vs_type:{kb.vs_type},search_type:{settings.search_type},len(similar_doc_with_scores):{len(similar_doc_with_scores)}, vector_store_limit:{settings.vector_store_limit} reranker_topk:{settings.reranker_topk}")
+        f"    检索结果kb.vs_type:{kb.vs_type},search_type:{settings.search_type},len(similar_doc_with_scores):{len(similar_doc_with_scores)}, vector_store_limit:{settings.vector_store_limit} reranker_topk:{settings.reranker_topk}")
     # for obj in similar_doc_with_scores:
     #   doc = obj[0]
     #   doc_source = doc.metadata.get("source")
@@ -2044,7 +2245,7 @@ def get_docs_with_scores(query, knowledge_base_name, user) -> List[Document]:
     if len(similar_doc_with_scores) > 1:
         # Rereank的结果是越大，越相似
         similar_doc_with_scores = reRankVectorResult(
-            query, similar_doc_with_scores,  user)
+            query, similar_doc_with_scores, user)
     return similar_doc_with_scores
 
 
@@ -2094,6 +2295,101 @@ def download_doc(
     return BaseResponse(code=500, msg=f"{kb_file.filename} 读取文件失败")
 
 
+def viewer_doc(
+        knowledge_base_name: str = Query(..., description="知识库名称", examples=[
+            "bank"]),
+        file_name: str = Query(..., description="文件名称", examples=["test.txt"]),
+        page_num: int = Query(..., description="文件页码", examples=[2])
+):
+    '''
+    预览知识库文档
+    '''
+    if knowledge_base_name is None or knowledge_base_name.strip() == "":
+        return BaseResponse(code=404, msg=f"未找到知识库 {knowledge_base_name}")
+    try:
+        logger.info(f"knowledge_base_name:{knowledge_base_name} file_name:{file_name} page_num:{page_num}")
+        kb_file = KnowledgeFile(filename=file_name,
+                                knowledge_base_name=knowledge_base_name)
+        if os.path.exists(kb_file.filepath):
+            """
+            将PDF的指定页转换为图片，并返回base64编码的图片数据（PNG格式）
+
+            参数:
+                pdf_path (str): PDF文件路径
+                page_num (int): 要转换的页数（从0开始）
+                dpi (int): 输出图片的分辨率，默认300
+
+            返回:
+                str: base64编码的图片数据（可以直接用于HTML的img标签）
+            """
+            # 打开PDF文件
+            pdf_path = kb_file.filepath
+            # print(pdf_path)
+            vs_base64 = base64.b64encode(pdf_path.encode("utf-8")).decode("utf-8")
+            doc = fitz.open(pdf_path)
+            # 检查页数是否有效
+            if page_num < 1 or page_num > len(doc):
+                # raise ValueError(f"页数 {page_number} 超出范围（总页数: {len(doc)}）")
+                html_content = f"""
+                <HTML><meta http-equiv='content-type' content='text/html; charset=utf-8'>
+                                        <BODY>页数 {page_num} 超出范围（总页数: {len(doc)}）</HTML>
+                """
+                response = HTMLResponse(content=html_content)
+                response.headers['Content-Type'] = 'text/html'
+
+            # 获取指定页
+            page = doc.load_page(page_num - 1)
+            # 将PDF页转换为图片（pix对象）
+            dpi = 310 / 2
+            zoom = dpi / 72  # 72是PDF的默认DPI
+            mat = fitz.Matrix(zoom, zoom)
+            pix = page.get_pixmap(matrix=mat)
+            # 转换为Pillow图像
+            img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+            # 将图像保存到字节流（PNG格式）
+            img_byte_arr = io.BytesIO()
+            img.save(img_byte_arr, format='PNG')
+            img_byte_arr = img_byte_arr.getvalue()
+            # 转换为base64编码
+            img_base64 = base64.b64encode(img_byte_arr).decode('utf-8')
+            previousPage = "上一页"
+            previousPageNum = page_num - 1
+            nextPage = "下一页"
+            nextPageNum = page_num + 1
+            if page_num == 1:
+                previousPage = "首页"
+                previousPageNum = 1
+            if page_num == len(doc):
+                nextPage = "尾页"
+                nextPageNum = len(doc)
+            # return img_base64
+            html_content = f"""
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>PDF页面预览</title>
+                    <meta http-equiv="content-type" content="text/html; charset=utf-8">
+                </head>
+                <body>
+                    <h1>{file_name} 第 {page_num}/{len(doc)} 页预览</h1><p>
+                    <a href="viewer_doc?knowledge_base_name={knowledge_base_name}&file_name={file_name}&page_num={previousPageNum}&vs={vs_base64}">{previousPage}</a>
+                    &nbsp;&nbsp;
+                    <a href="viewer_doc?knowledge_base_name={knowledge_base_name}&file_name={file_name}&page_num={nextPageNum}&vs={vs_base64}">{nextPage}</a><br>
+                    <img src="data:image/png;base64,{img_base64}" alt="PDF page {page_num}"/>
+                    </p>
+                </body>
+                </html>
+                """
+            # 保存HTML文件
+            response = HTMLResponse(content=html_content)
+            response.headers['Content-Type'] = 'text/html'
+            return response
+    except Exception as e:
+        msg = f"{kb_file.filename} 读取文件失败，错误信息是：{e}"
+        return BaseResponse(code=500, msg=msg)
+    return BaseResponse(code=500, msg=f"{kb_file.filename} 读取文件失败")
+
+
 def create_kb(knowledge_base_name: str = Body(..., examples=["samples"]),
               knowledge_base_info: str = Body(..., examples=[
                   "this is about bank"]),
@@ -2110,9 +2406,9 @@ def create_kb(knowledge_base_name: str = Body(..., examples=["samples"]),
         return BaseResponse(code=500, msg=f"had the same name {knowledge_base_name}")
     try:
         create_dir(knowledge_base_name)
+        init_vs(knowledge_base_name, embed_model, vector_store_type)
         add_kb_to_db(knowledge_base_name, knowledge_base_info,
                      vector_store_type, embed_model)
-        init_vs(knowledge_base_name, embed_model, vector_store_type)
     except Exception as e:
         msg = f"创建知识库出错： {e}"
         logger.error(msg)

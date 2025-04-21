@@ -12,6 +12,7 @@ openai_key='sk-x'
 zhipu_api_key='x.8we0mIxmPT'
 qwen_api_key='sk-x'
 hunyuan_api_key='sk-x'
+deepseek_api_key='sk-x'
 
 ######  讯飞星火模型key配置开始 ######
 xinghuo_appid="a4871479"

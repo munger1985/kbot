@@ -15,6 +15,7 @@ To help customers leverage services in OCI easier.
 ## Features
 
 
+
 ### llm management and openai format compatible API 
 
 ### text embedding and openai format compatible API 
@@ -43,6 +44,26 @@ with or without GPU
 git clone https://github.com/munger1985/kbot.git
 
 cd kbot/
+
+## OS prerequisites
+
+### ubuntu 22.04
+
+```commandline
+sudo apt update -y
+sudo apt install libgl1 -y
+sudo apt-get install poppler-utils -y
+sudo apt install tesseract-ocr -y 
+```
+
+### Oracle Linux 8
+
+```commandline
+sudo yum install mesa-libGL -y
+sudo yum install poppler-utils -y
+sudo yum install tesseract  -y 
+```
+
 
 
 ## Install python env
@@ -92,6 +113,8 @@ User=ubuntu
 
 # The working directory, the directory where main.py locates.
 WorkingDirectory=/home/ubuntu/kbot
+# the path should be kbot conda environment path, use 'which pip' to get prefix url before /pip
+Environment="PATH=/home/ubuntu/.conda/envs/kbot/bin:$PATH"
 # The command to execute
 ExecStart=/home/ubuntu/anaconda3/envs/kbot/bin/python /home/ubuntu/kbot/main.py
 # Restart policy
@@ -158,6 +181,11 @@ the script is in autoStart.sh
 crontab -e
 @reboot /bin/bash /home/ubuntu/kbot/autoStart.sh
 ```
+
+#### proxy prefix
+cd kbot
+export PYTHONPATH=.:$PYTHONPATH
+fastapi run main.py --root-path   /api/v1  --port 8093
 
 
 ## Contact 

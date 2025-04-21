@@ -1,11 +1,9 @@
 from langchain_community.embeddings import CohereEmbeddings, HuggingFaceEmbeddings
 from sympy import EX
 import config
-import os
+import os,re,pytz,oci
 import tempfile
-import pytz
 from datetime import datetime
-import re
 from urlextract import URLExtract
 from loguru import logger
 from langchain_community.document_loaders import UnstructuredFileLoader
@@ -13,7 +11,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 import shutil
 from langchain_core.documents import Document
 from typing import List, Tuple, Union, Dict, Optional
-
+from oci.ai_speech import AIServiceSpeechClientCompositeOperations
 
 # 获取指定目录的所有文件
 def get_all_files_in_directory(directory: str):
@@ -192,18 +190,45 @@ class BaseResponse(BaseModel):
                 "msg": "success",
             }
         }
+class ListResponse(BaseResponse):
+    data: List[str] = pydantic.Field(...,
+                                     description="List of knowledge base names")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "code": 200,
+                "msg": "success",
+                "data": ["bank", "medical", "OCI info"],
+            }
+        }
+class DeleteResponse(BaseModel):
+    code: int = pydantic.Field(200, description="API status code")
+    msg: str = pydantic.Field("success", description="API status message")
+    data: Dict = pydantic.Field(None, description="API Detailed info")
+class CheckProgressResponse(BaseModel):
+    total: int = pydantic.Field(200, description="total file count")
+    finished: int = pydantic.Field(200, description="finished count")
+    current_document: str = pydantic.Field(
+        "success", description="current file being processed")
+    details: List = pydantic.Field(None, description="list of detailed info")
 
 
 class AskResponseData:
     content: str = ""
     source: str = ""
     score: float = 0.0
+    source_file_ext:str = "" #file extension（文件后缀）
+    page_num: int =1
+    viewer_source:str = ""
 
-    def __init__(self, content, source, score):
+    def __init__(self, content, source, score,source_file_ext, page_num, viewer_source):
         self.content = content
         self.source = source
         self.score = score
-
+        self.source_file_ext = source_file_ext
+        self.page_num = page_num
+        self.viewer_source = viewer_source
 
 # 获取中国时间
 def get_cur_time():
@@ -252,10 +277,30 @@ def format_llm_response(llm_response: Optional[str]) -> str:
         result_resp = result_resp.replace(f'\\\\\\"{url}\\\\\\"', f'\\"{url}\\"')
     return result_resp
 
+def remove_special_chars(llm_response: str) -> str:
+    if not llm_response:
+        return llm_response
+    llm_response = re.sub(r'.*?</think>', '', llm_response, flags=re.DOTALL) #### 去掉所有think标签
+    return llm_response.strip()
 
-import oci
+# 对LLM返回的结果作格式化处理，以后结果的格式化处理可以统一放在这个方法里面。
+def format_llm_response(llm_response: Optional[str]) -> str:
+    if not llm_response:
+        return llm_response
+    tmp_content = llm_response
+    tmp_content = re.sub("\s*http", " http", tmp_content)
+    tmp_content = re.sub("(，|。|；|！|“|”|？|——|：|（|）|【|】|》|《|\{|\}|\"|\'|,|;|\|!|\(|\)|\[|\]|>|<)", " ", tmp_content)
+    tmp_content = re.sub("\.com[\u4e00-\u9fa5]", ".com ", tmp_content)
+    tmp_content = re.sub("\.cn[\u4e00-\u9fa5]", ".cn ", tmp_content)
+    extractor = URLExtract()
+    urls = extractor.find_urls(tmp_content)
+    result_resp = llm_response
+    for url in urls:
+        result_resp = result_resp.replace(f'\\\\\\"{url}\\\\\\"', f'\\"{url}\\"')
+    #logger.info(f"result_resp: {result_resp}")
+    return result_resp
 
-from oci.ai_speech import AIServiceSpeechClientCompositeOperations
+
 
 # signer = oci.auth.signers.InstancePrincipalsSecurityTokenSigner()
 
@@ -411,3 +456,24 @@ def copy2Graphrag(knowledgeFile):
         with open(str(graphragFilePosixPath), "w") as f:
             f.write(knowledgeFile.full_text)
         return graphragFilePosixPath
+
+
+from pathlib import Path
+
+def get_file_extension(file_path):
+    """
+    获取指定文件路径的后缀名。
+    参数:
+        file_path (str): 文件的完整路径或文件名。
+    返回:
+        str: 文件的后缀名（包括点），如果文件没有后缀，则返回空字符串。
+    """
+    # 创建 Path 对象
+    path_obj = Path(file_path)
+    # 获取文件的后缀
+    extension = path_obj.suffix
+    extension = extension.lower()
+    if len(extension) > 0:
+        return extension[1:]
+    else:
+        return extension  # 如果字符串为空，则返回原字符串

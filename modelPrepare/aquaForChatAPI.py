@@ -100,14 +100,29 @@ class ModelInvoker:
             "Content-Type": "application/json",
             "enable-streaming": "true",
         }
-
         try:
+            payload = {
+                "model": "odsc-llm",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": self.prompt},
+                        ],
+                    }
+                ],
+                "max_tokens": self.params.get("max_tokens"),
+                "temperature": self.params.get("temperature"),
+                "top_p": self.params.get("top_p"),
+                "frequency_penalty": self.params.get("frequency_penalty"),
+                "presence_penalty": self.params.get("presence_penalty"),
+            }
             response = self.session.post(
                 self.endpoint,
                 auth=self.auth["signer"],
                 headers=headers,
-                json={"prompt": self.prompt, **self.params},
-                stream=True,
+                json=payload,
+                #stream=True,
             )
             response.raise_for_status()
             for line in response.iter_lines():
@@ -134,15 +149,15 @@ def invoke_streaming_md(endpoint: str, prompt: str, params: dict):
             item_json = json.loads(item[len(_END_MARKER):])
         else:
             item_json = json.loads(item)
-
+        #print(f"###item_json:{item_json}")
         if 'choices' in item_json:
-            res+= item_json['choices'][0]['text']
-            # logger.info(item_json['choices'][0]['text'], end='')
+            res+= item_json['choices'][0]['message'].get('content')
         else:
             raise StreamingException(item_json)
+        print(f"###res:{res}")
     return res
 
-class AIQuickActions(LLM):
+class AIQuickActionsChat(LLM):
     user_id: str  =   random.randint(0, 111119)
     text  :List=  []
     model_kwargs: Optional[dict] = None
@@ -208,10 +223,10 @@ class AIQuickActions(LLM):
     ) -> str:
         self.answer=""
         try:
-            self.answer=  invoke_streaming_md(
+            self.answer =  invoke_streaming_md(
             endpoint= self.endpoint+"/predict",
             prompt=prompt,
-            params={"max_tokens": 500, "temperature": 0.7, "top_k": 50, "top_p": 1, "stop": [], "frequency_penalty": 0,
+            params={"max_tokens": 500, "temperature": 0, "top_k": 200, "top_p": 0.9, "frequency_penalty": 0,
                     "presence_penalty": 0})
         except requests.exceptions.RequestException as e:
             raise ValueError(f"Error raised by inference endpoint: {e}")

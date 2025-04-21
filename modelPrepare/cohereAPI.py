@@ -2,9 +2,9 @@ import llm_keys
 from langchain_community.llms import Cohere
 
 
-from langchain_community.embeddings import CohereEmbeddings
+# from langchain_community.embeddings import CohereEmbeddings
 
-
+from langchain_cohere import CohereEmbeddings
 
 
 def commandRPlus(model="command-r-plus",temperature=0, max_tokens=102400):

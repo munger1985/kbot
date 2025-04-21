@@ -8,9 +8,13 @@ pip requirement:
 #先用dba用户赋予vector_prd用户可执行权限
 grant execute on ctxsys.ctx_ddl to vector_prd;
 
-#在普通用户执行如下步骤，创建索引。
+#在普通用户执行如下步骤，创建索引。（中文）
 exec ctx_ddl.create_preference('chinese_lexer','chinese_vgram_lexer');
 CREATE INDEX  "KM_TEXTSEARCH_IDX" ON  kbot_oracle_embeddings("DOCUMENT") INDEXTYPE IS "CTXSYS"."CONTEXT" parameters ('lexer chinese_lexer');
+
+#在普通用户执行如下步骤，创建索引。（英文）
+exec ctx_ddl.create_preference('english_lexer','basic_lexer');
+CREATE INDEX  "KM_TEXTSEARCH_IDX" ON  kbot_oracle_embeddings("DOCUMENT") INDEXTYPE IS "CTXSYS"."CONTEXT" parameters ('lexer english_lexer');
 
 History:
  - 2024/08/02 by Hysun (hysun.he@oracle.com): Created.
@@ -65,6 +69,7 @@ def query_by_text_search(
         score(9) as score
     FROM kbot_oracle_embeddings
     WHERE collection_name = :1
+        and (chunk_category is null OR chunk_category like 'SOURCE_%')
         and contains(document, regexp_replace(:2,'\\W+', ' ACCUM '), 9) > 0
     ORDER BY score DESC
     FETCH FIRST {topk} ROWS ONLY

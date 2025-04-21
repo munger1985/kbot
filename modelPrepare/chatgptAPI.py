@@ -1,7 +1,17 @@
 from langchain_openai import OpenAI
 from langchain_openai import ChatOpenAI
+from langchain_openai import OpenAIEmbeddings
+
 import llm_keys
 
+openaiEmbeddings = OpenAIEmbeddings(
+    model="text-embedding-3-large",
+    openai_api_key=llm_keys.openai_key,
+    # With the `text-embedding-3` class
+    # of models, you can specify the size
+    # of the embeddings you want returned.
+    # dimensions=1024
+)
 #gpt3 = OpenAI(model_name="gpt-3.5-turbo-instruct",
 #      openai_api_key="sess-xxx" ,
 #      temperature   =0.10,
@@ -19,12 +29,3 @@ gpt3 = ChatOpenAI(temperature=0,
             openai_api_key=llm_keys.openai_key,
             model_name="gpt-3.5-turbo")
 
-def openaiCompatible(model="hunyuan-turbo",api_key="",base_url="",max_tokens=4096,temperature=0):
-    llm = ChatOpenAI(
-            openai_api_key=api_key,
-            openai_api_base=base_url,
-            model_name=model,
-            max_tokens=max_tokens,
-            temperature=temperature,
-        )
-    return llm
