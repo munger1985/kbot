@@ -91,6 +91,11 @@ allow dynamic-group <xxxx> to manage generative-ai-family in tenancy
 xxxx is your dynamic-group that indicated your vm or other resources
 ```
 
+### your secrets
+
+rename the .secrets.toml.example to .secrets.toml, follow the format and 
+configure your secrets such as vectordb and llms in .secrets.toml
+
 ## Python API Server Start 
 
 ```commandline
