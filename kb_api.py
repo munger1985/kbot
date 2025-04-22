@@ -4,6 +4,7 @@ from langchain_community.vectorstores import OpenSearchVectorSearch
 from contextlib import contextmanager
 from sqlalchemy.ext.declarative import declarative_base, DeclarativeMeta
 import time
+import embedding_models
 from langchain_community.document_loaders import TextLoader, PyPDFLoader
 from sqlalchemy import Column, Integer, String, DateTime, func, Index
 from sqlalchemy.ext.declarative import declarative_base
@@ -36,8 +37,7 @@ from typing import List, Union, Dict
 from langchain_community.vectorstores import FAISS
 import copy
 # from sympy import content
-import config
-import llm_keys
+from config import config
 from pathlib import Path
 from vectorDB import opensearch_store
 from vectorDB.hybrid import oracle_fulltext_helper
@@ -117,11 +117,11 @@ Table or text chunk:
 from langchain_core.prompts import ChatPromptTemplate
 from langchain.chains import LLMChain
 from langchain_core.output_parsers import StrOutputParser
-
+import llm_models
 prompt = ChatPromptTemplate.from_template(prompt_text)
 from langchain_core.runnables import RunnablePassthrough, RunnableLambda
 
-summary_model = config.MODEL_DICT.get(config.SUMMARY_MODEL)
+summary_model = llm_models.MODEL_DICT.get(config.SUMMARY_MODEL)
 
 # Define the summary chain
 summarize_chain = (
@@ -310,6 +310,7 @@ class KnowledgeFile:
             document = Document(page_content=self.full_text)
             document.metadata['source'] = self.filepath
             self.docs = [document]
+           
         elif self.document_loader_name == 'ImageOCRLoader':  ## just images
             fileTextOneString = ppOCR(self.filepath, lang)
             ocrFilePosixPath = Path(self.kbPath) / \
@@ -321,22 +322,22 @@ class KnowledgeFile:
             document = Document(page_content=fileTextOneString)
             document.metadata['source'] = self.filepath
             self.docs = [document]
+         
         else:  ### if this is just docs
             self.docs = self.file2docs()
-            if self.ext in ['.pdf', '.doc', '.docx']:
-                self.texts = []
-                for doc in self.docs:
-                    doc.metadata.pop('last_modified', None)
-                    doc.metadata.pop('text_as_html', None)
-                    doc.metadata.pop('file_directory', None)
-                    doc.metadata.pop('filename', None)
-                    doc.metadata.pop('languages', None)
-                    doc.metadata.pop('orig_elements', None)
-                    self.texts.append(doc)
-
-                ### because we reckon unstructuredXXXloader is smarter, no need splitter
-            else:
-                self.texts = self.docs2texts(docs=self.docs,
+        ### because we reckon unstructuredXXXloader is smarter, no need splitter
+        if self.ext in ['.pdf', '.doc', '.docx']:
+            self.texts = []
+            for doc in self.docs:
+                doc.metadata.pop('last_modified', None)
+                doc.metadata.pop('text_as_html', None)
+                doc.metadata.pop('file_directory', None)
+                doc.metadata.pop('filename', None)
+                doc.metadata.pop('languages', None)
+                doc.metadata.pop('orig_elements', None)
+                self.texts.append(doc)
+        else:
+            self.texts = self.docs2texts(docs=self.docs,
                                              text_splitter=text_splitter)
         self.full_text = "\n".join(doc.page_content for doc in self.docs)
 
@@ -390,7 +391,7 @@ if config.KB_ROOT_PATH == 'auto':
     config.sqlite_path = config.KB_ROOT_PATH
 
 # 创建一个 SQLite 数据库引擎
-sqlitePath = os.path.expanduser(f'{config.sqlite_path}/kbdatabase.db')
+sqlitePath = os.path.expanduser(f'{config.KB_ROOT_PATH}/kbdatabase.db')
 parent_path = os.path.dirname(sqlitePath)
 if not os.path.exists(parent_path):
     os.makedirs(parent_path)
@@ -762,9 +763,8 @@ def list_kbs():
 def list_vector_store_types():
     return ListResponse(data=list(config.VECTOR_STORE_DICT))
 
-
 def list_embedding_models():
-    return ListResponse(data=list(config.EMBEDDING_DICT.keys()))
+    return ListResponse(data=list(embedding_models.EMBEDDING_DICT.keys()))
 
 
 def text_embedding(
@@ -776,20 +776,20 @@ def text_embedding(
 ) -> BaseResponse:
     logger.info(f"##text:{text}")
     logger.info(f"##embed_model:{embed_model}")
-    embeddingModel = config.EMBEDDING_DICT.get(embed_model)
+    embeddingModel = embedding_models.EMBEDDING_DICT.get(embed_model)
     query_vector = embeddingModel.embed_query(text)
 
     return BaseResponse(data=str(query_vector))
-
+import llm_models
 
 def list_llms():
     # Get List of Knowledge Base
 
-    return ListResponse(data=list(config.MODEL_DICT.keys()))
+    return ListResponse(data=list(llm_models.MODEL_DICT.keys()))
 
 
 def get_llm_info(llm: str = Query(..., description="llm name", examples=["ociGenAI_command"])):
-    return BaseResponse(data=config.MODEL_DICT.get(llm))
+    return BaseResponse(data=llm_models.MODEL_DICT.get(llm))
 
 
 def checkIfKBExists(kb_name: str
@@ -826,7 +826,7 @@ def init_vs(knowledge_base_name, embed_model, vector_store_type):
     embed_model is a string, should be converted to model
     '''
     vs_path = get_vs_path(knowledge_base_name)
-    embeddingModel = config.EMBEDDING_DICT.get(embed_model)
+    embeddingModel = embedding_models.EMBEDDING_DICT.get(embed_model)
     vector_store = 1
     if vector_store_type == 'faiss':
         if not os.path.exists(vs_path):
@@ -878,25 +878,25 @@ def get_vs_from_kb(kb_name):
     vector_store = 1
     if 'faiss' == kb.vs_type:
         vs_path = get_vs_path(kb_name)
-        vector_store = FAISS.load_local(vs_path, config.EMBEDDING_DICT[kb.embed_model], normalize_L2=True,
+        vector_store = FAISS.load_local(vs_path, embedding_models.EMBEDDING_DICT[kb.embed_model], normalize_L2=True,
                                         allow_dangerous_deserialization=True)
         vector_store.vs_path = vs_path
     # return vector_store, kb
     elif 'oracle' == kb.vs_type:
         # vector_store = OracleAIVector.from_existing_index(
-        #    embedding=config.EMBEDDING_DICT[kb.embed_model],
+        #    embedding=embedding_models.EMBEDDING_DICT[kb.embed_model],
         #    collection_name=kb_name,
-        #    embedding_function=config.EMBEDDING_DICT[kb.embed_model],
+        #    embedding_function=embedding_models.EMBEDDING_DICT[kb.embed_model],
         # )
         vector_store = OracleBaseDbVS(
             collection_name=kb_name,
-            embedding_function=config.EMBEDDING_DICT[kb.embed_model],
+            embedding_function=embedding_models.EMBEDDING_DICT[kb.embed_model],
         )
         # return vector_store, kb
     elif 'opensearch' == kb.vs_type:
         vector_store = OpenSearchVectorSearch(
             index_name=kb_name,
-            embedding_function=config.EMBEDDING_DICT[kb.embed_model],
+            embedding_function=embedding_models.EMBEDDING_DICT[kb.embed_model],
             opensearch_url=config.OCI_OPEN_SEARCH_URL,
             http_auth=(config.OCI_OPEN_SEARCH_USER,
                        config.OCI_OPEN_SEARCH_PASSWD),
@@ -906,13 +906,13 @@ def get_vs_from_kb(kb_name):
     elif 'heatwave' == kb.vs_type:
         vector_store = HeatWaveVS(
             collection_name=kb_name,
-            embedding_function=config.EMBEDDING_DICT[kb.embed_model],
+            embedding_function=embedding_models.EMBEDDING_DICT[kb.embed_model],
         )
         # return vector_store, kb
     elif 'adb' == kb.vs_type:
         vector_store = OracleAdbVS(
             collection_name=kb_name,
-            embedding_function=config.EMBEDDING_DICT[kb.embed_model],
+            embedding_function=embedding_models.EMBEDDING_DICT[kb.embed_model],
         )
     return vector_store, kb
 
@@ -1144,13 +1144,13 @@ def saveInVectorDB(knowledge_base_name, texts: List[Document]):
     kb = load_kb_from_db(knowledge_base_name)
     if 'faiss' == kb.vs_type:
         vs_path = get_vs_path(knowledge_base_name)
-        vector_store = FAISS.load_local(vs_path, config.EMBEDDING_DICT[kb.embed_model], normalize_L2=True,
+        vector_store = FAISS.load_local(vs_path, embedding_models.EMBEDDING_DICT[kb.embed_model], normalize_L2=True,
                                         allow_dangerous_deserialization=True)
         vector_store.add_documents(texts)
         vector_store.save_local(vs_path, 'index')
     elif 'oracle' == kb.vs_type:
         vector_store = OracleBaseDbVS.from_documents(
-            embedding=config.EMBEDDING_DICT[kb.embed_model],
+            embedding=embedding_models.EMBEDDING_DICT[kb.embed_model],
             documents=texts,
             collection_name=knowledge_base_name,
             connection_string=config.ORACLE_AI_VECTOR_CONNECTION_STRING,
@@ -1158,7 +1158,7 @@ def saveInVectorDB(knowledge_base_name, texts: List[Document]):
         )
     elif 'opensearch' == kb.vs_type:
         vector_store = OpenSearchVectorSearch.from_documents(
-            embedding=config.EMBEDDING_DICT[kb.embed_model],
+            embedding=embedding_models.EMBEDDING_DICT[kb.embed_model],
             documents=texts,
             index_name=knowledge_base_name,
             opensearch_url=config.OCI_OPEN_SEARCH_URL,
@@ -1171,14 +1171,14 @@ def saveInVectorDB(knowledge_base_name, texts: List[Document]):
         vector_store = HeatWaveVS.from_documents(
             collection_name=knowledge_base_name,
             documents=texts,
-            embedding=config.EMBEDDING_DICT[kb.embed_model],
+            embedding=embedding_models.EMBEDDING_DICT[kb.embed_model],
             pre_delete_collection=False,  # Append to the vectorstore
         )
     elif 'adb' == kb.vs_type:
         vector_store = OracleAdbVS.from_documents(
             collection_name=knowledge_base_name,
             documents=texts,
-            embedding=config.EMBEDDING_DICT[kb.embed_model],
+            embedding=embedding_models.EMBEDDING_DICT[kb.embed_model],
             pre_delete_collection=False,  # Append to the vectorstore
         )
 
@@ -1195,13 +1195,13 @@ def queryInVectorDB(knowledge_base_name, texts: List[Document]):
     kb = load_kb_from_db(knowledge_base_name)
     if 'faiss' == kb.vs_type:
         vs_path = get_vs_path(knowledge_base_name)
-        vector_store = FAISS.load_local(vs_path, config.EMBEDDING_DICT[kb.embed_model], normalize_L2=True,
+        vector_store = FAISS.load_local(vs_path, embedding_models.EMBEDDING_DICT[kb.embed_model], normalize_L2=True,
                                         allow_dangerous_deserialization=True)
         vector_store.add_documents(texts)
         vector_store.save_local(vs_path, 'index')
     elif 'oracle' == kb.vs_type:
         # vector_store = OracleAIVector.from_documents(
-        #    embedding=config.EMBEDDING_DICT[kb.embed_model],
+        #    embedding=embedding_models.EMBEDDING_DICT[kb.embed_model],
         #    documents=texts,
         #    collection_name=knowledge_base_name,
         #    connection_string=config.ORACLE_AI_VECTOR_CONNECTION_STRING,
@@ -1210,12 +1210,12 @@ def queryInVectorDB(knowledge_base_name, texts: List[Document]):
         vector_store = OracleBaseDbVS.from_documents(
             collection_name=knowledge_base_name,
             documents=texts,
-            embedding=config.EMBEDDING_DICT[kb.embed_model],
+            embedding=embedding_models.EMBEDDING_DICT[kb.embed_model],
             pre_delete_collection=False,  # Append to the vectorstore
         )
     elif 'opensearch' == kb.vs_type:
         vector_store = OracleAIVector.from_documents(
-            embedding=config.EMBEDDING_DICT[kb.embed_model],
+            embedding=embedding_models.EMBEDDING_DICT[kb.embed_model],
             documents=texts,
             collection_name=knowledge_base_name,
             connection_string=config.ORACLE_AI_VECTOR_CONNECTION_STRING,
@@ -1226,14 +1226,14 @@ def queryInVectorDB(knowledge_base_name, texts: List[Document]):
         vector_store = HeatWaveVS.from_documents(
             collection_name=knowledge_base_name,
             documents=texts,
-            embedding=config.EMBEDDING_DICT[kb.embed_model],
+            embedding=embedding_models.EMBEDDING_DICT[kb.embed_model],
             pre_delete_collection=False,  # Append to the vectorstore
         )
     elif 'adb' == kb.vs_type:
         vector_store = OracleAdbVS.from_documents(
             collection_name=knowledge_base_name,
             documents=texts,
-            embedding=config.EMBEDDING_DICT[kb.embed_model],
+            embedding=embedding_models.EMBEDDING_DICT[kb.embed_model],
             pre_delete_collection=False,  # Append to the vectorstore
         )
 
@@ -2080,7 +2080,7 @@ def reRankVectorResult(query: str, vectorResut: List[Document], user: str) -> Li
 # 对向量数据库结果使用Cohere Rerank模型进行Rerank
 def reRankVectorResultByCohere(query: str, vectorResut: List[Document], top_k: int = 3) -> List[Document]:
     # 1.初始化Cohere客户端
-    api_key = llm_keys.cohere_api_key
+    api_key = config.cohere_api_key
     co = cohere.Client(api_key)
     # 2.获取Rerank所需要的数据格式
     src_docs = []
@@ -2110,7 +2110,7 @@ def reRankVectorResultByOCICohere(query: str, vectorResut: List[Document], top_k
     reRankDocs = generative_ai_inference_client.rerank_text(
         rerank_text_details=oci.generative_ai_inference.models.RerankTextDetails(
             input=query,
-            compartment_id=llm_keys.compartment_id,
+            compartment_id=config.compartment_id,
             serving_mode=oci.generative_ai_inference.models.OnDemandServingMode(
                 serving_type="ON_DEMAND",
                 model_id=model_id),
@@ -2195,7 +2195,7 @@ def vectorSearchWrapper(query, knowledge_base_name, user):
         summary_flag=settings.summary_flag
     )
 
-    # embedding = config.EMBEDDING_DICT[kb.embed_model]
+    # embedding = embedding_models.EMBEDDING_DICT[kb.embed_model]
     # query_vector = embedding.embed_query(query)
     # similar_doc_with_socres = vector_store.max_marginal_relevance_search_with_score_by_vector(query_vector, k=settings.vector_store_limit)
     return similar_doc_with_socres

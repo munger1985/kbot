@@ -7,11 +7,10 @@ from lazy_load import lazy_func
 from langchain_community.llms.chatglm3 import ChatGLM3 as ChatGlm3Remote
 from langchain_community.llms import Tongyi
 from modelPrepare import  qwenLLM
-import llm_keys
 from langchain_core.language_models import LLM
 from FlagEmbedding import FlagReranker
 from langchain_community.embeddings import HuggingFaceEmbeddings
-
+from config import config
 #######  this module is for complex model loading
 
 bgeRerankerModel= None
@@ -43,7 +42,7 @@ def load_llm_model(model_alias='hf_pipeline', model_path:str= "") -> LLM:
     """
     if model_alias == "Cohere":
         llm = Cohere(model="command-r-plus",
-                    cohere_api_key=llm_keys.cohere_api_key, 
+                    cohere_api_key=config.cohere_api_key, 
                     temperature=0,
                     max_tokens=102400)
     elif model_alias == 'Chatglm3Remote':
@@ -66,7 +65,7 @@ def load_llm_model(model_alias='hf_pipeline', model_path:str= "") -> LLM:
         #https://help.aliyun.com/zh/dashscope/developer-reference/model-introduction?spm=a2c4g.11186623.0.0.1568140bOMYZzf
         #https://help.aliyun.com/zh/dashscope/developer-reference/tongyi-qianwen-7b-14b-72b-api-detailes?spm=a2c4g.11186623.0.0.6ec95018FuKzlW
         llm = Tongyi(model_name="qwen-plus",
-                    dashscope_api_key=llm_keys.qwen_api_key,
+                    dashscope_api_key=config.qwen_api_key,
                     model_kwargs=text_gen_params)
     elif model_alias == 'Qwen':
         llm = qwenLLM.QwenLLM(model_path=model_path)

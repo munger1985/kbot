@@ -2,7 +2,7 @@
 
 ## Acknowledgement 
 Thanks to projects of https://github.com/chatchat-space/Langchain-Chatchat and https://github.com/infiniflow/ragflow
-Inspired me a lot, so I designed this project to integrate OCI AI Services into this project. Our whole OCI  AI team contributed to this project.
+Inspired me a lot, so I designed this project to integrate OCI AI Services into this project. Our whole OCI Sehub AI team contributed to this project.
 
 ## Goal
 
@@ -192,4 +192,3 @@ fastapi run main.py --root-path   /api/v1  --port 8093
 
 contact me or any other oracle staffs
 jingsong.liu@oracle.com
-zhongfan.zou@oracle.com

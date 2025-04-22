@@ -42,3 +42,4 @@ redis==5.2.1
 peft==0.14.0
 fastapi-cli==0.0.7
 pymupdf==1.25.5
+dynaconf==3.2.10

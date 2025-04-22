@@ -6,13 +6,13 @@ from pydantic import BaseModel, FilePath
 import pydantic
 from typing import Callable, Generator, Any
 from fastapi import Body
-import os
+import os,llm_models
 import shutil
 import util
 from fastapi.responses import StreamingResponse, FileResponse, ORJSONResponse
 from prompt_api import load_prompt_from_db
 from langchain_core.prompts import PromptTemplate
-import config
+from config import config
 from langchain.chains import LLMChain
 import os
 
@@ -551,7 +551,7 @@ def graphrag_local_search(knowledge_base_name: str = Body(..., examples=["sample
     logger.info(f"##  prompt:{prompt}##")
 
     # 4.调用LLM
-    llm = config.MODEL_DICT.get(model_name)
+    llm = llm_models.MODEL_DICT.get(model_name)
     query_llm = LLMChain(llm=llm, prompt=prompt)
     response = query_llm.invoke({"context": context_text, "question": question})
     logger.info(f"##response:{response}##")
@@ -669,7 +669,7 @@ def graphrag_global_search(knowledge_base_name: str = Body(..., examples=["sampl
     logger.info(f"##  prompt:{prompt}##")
 
     # 4.调用LLM
-    llm = config.MODEL_DICT.get(model_name)
+    llm = llm_models.MODEL_DICT.get(model_name)
     query_llm = LLMChain(llm=llm, prompt=prompt)
     response = query_llm.invoke({"context": context_text, "question": question})
     logger.info(f"##response:{response}##")

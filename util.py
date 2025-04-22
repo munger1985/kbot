@@ -1,6 +1,6 @@
 from langchain_community.embeddings import CohereEmbeddings, HuggingFaceEmbeddings
 from sympy import EX
-import config
+from config import config
 import os,re,pytz,oci
 import tempfile
 from datetime import datetime

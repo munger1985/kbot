@@ -5,7 +5,8 @@ from langchain.chains import LLMChain
 import json, re, os
 from typing import List, Optional, Tuple
 from kb_api import fulltext_search, get_docs_with_scores, get_vs_from_kb, get_vs_path, makeSimilarDocs, user_settings
-import config
+from config import config
+import llm_models
 from util import AskResponseData
 from langchain_core.prompts import PromptTemplate, MessagesPlaceholder
 from langchain.retrievers import ContextualCompressionRetriever
@@ -140,7 +141,7 @@ def ask_rag(user: str,
 
     # 4.调用LLM
     logger.debug( f" llm invoke start time:, {get_cur_time()}")
-    llm = config.MODEL_DICT.get(model_name)
+    llm = llm_models.MODEL_DICT.get(model_name)
     query_llm = LLMChain(llm=llm, prompt=prompt)
     response = query_llm.invoke({"context": llm_context, "question": question})
     #logger.info(f"##response.text:{response.get('text')}##")
@@ -198,7 +199,7 @@ def ask_history_rag(user: str,
     logger.info("##3).完成设置ConversationBufferWindowMemory##")
 
     # 4.create a New Conversation
-    llm = config.MODEL_DICT.get(model_name)
+    llm = llm_models.MODEL_DICT.get(model_name)
     assert llm is not None, f"{model_name} not in config.py"
     # if not currentConversation:
     conversation = createConversation(llm, current_memory, prompt_name, question, llm_context)
@@ -275,7 +276,7 @@ def ask_conversational_rag(
 
     # 5.调用LLM
     logger.info("######llm invoke start time:", get_cur_time())
-    llm = config.MODEL_DICT.get(model_name)
+    llm = llm_models.MODEL_DICT.get(model_name)
     query_llm = LLMChain(llm=llm, prompt=prompt)
     history = current_memory.load_memory_variables({})
     # logger.info(f"##history:{history}")
@@ -326,8 +327,8 @@ def ask_llm(query, model_name: str, prompt_name: Optional[str] = None):
 
     logger.info("  Prompt: {}", query)
 
-    query_llm = LLMChain(llm=config.MODEL_DICT.get(model_name), prompt=prompt)
-    logger.info(f"  chat with LLM {model_name}: ", config.MODEL_DICT.get(model_name))
+    query_llm = LLMChain(llm=llm_models.MODEL_DICT.get(model_name), prompt=prompt)
+    logger.info(f"  chat with LLM {model_name}: ", llm_models.MODEL_DICT.get(model_name))
 
     response = query_llm.invoke(query)
 
@@ -347,7 +348,7 @@ def ask_llm(query, model_name: str, prompt_name: Optional[str] = None):
 def modify_llm_parameters( model_name: str = Body("星火大模型3.0", description="query", examples=['how to manage services, add users']),
               max_tokens: int = Body(1000, description="max tokens for this llm"),
               temperature: float = Body(0.1, description="temperature for llm") ):
-    llm = config.MODEL_DICT.get(model_name)
+    llm = llm_models.MODEL_DICT.get(model_name)
     model_kwargs=llm.model_kwargs
     model_kwargs['max_tokens']=max_tokens
     model_kwargs['temperature']=temperature
@@ -373,7 +374,7 @@ def compression_rag(question, model_name: str, kb_name: str):
             askRes = AskResponseData(doc_content, doc_source, doc_score)
             vector_res_arr.append(askRes)
 
-    llm = config.MODEL_DICT.get(model_name)
+    llm = llm_models.MODEL_DICT.get(model_name)
     prompt = create_prompt_template(model_name)
     chain = (
             {"context": compression_retriever, "question": RunnablePassthrough()}
@@ -404,8 +405,8 @@ def translate(query: str = Body(..., description="query", examples=['how to mana
 
     logger.info("#### Prompt: {}", query)
 
-    query_llm = LLMChain(llm=config.MODEL_DICT.get(llm_model), prompt=prompt)
-    logger.info(f"#### translate with LLM {llm_model}: ", config.MODEL_DICT.get(llm_model))
+    query_llm = LLMChain(llm=llm_models.MODEL_DICT.get(llm_model), prompt=prompt)
+    logger.info(f"#### translate with LLM {llm_model}: ", llm_models.MODEL_DICT.get(llm_model))
 
     response = query_llm.invoke({"language": language, "query": query})
 

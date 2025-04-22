@@ -2,11 +2,11 @@ from langchain_openai import OpenAI
 from langchain_openai import ChatOpenAI
 from langchain_openai import OpenAIEmbeddings
 
-import llm_keys
+from config import config
 
 openaiEmbeddings = OpenAIEmbeddings(
     model="text-embedding-3-large",
-    openai_api_key=llm_keys.openai_key,
+    openai_api_key=config.openai_key,
     # With the `text-embedding-3` class
     # of models, you can specify the size
     # of the embeddings you want returned.
@@ -26,6 +26,6 @@ openaiEmbeddings = OpenAIEmbeddings(
 #gpt-3.5-turbo-instruct 4,096 tokens    Up to Sep 2021
 
 gpt3 = ChatOpenAI(temperature=0, 
-            openai_api_key=llm_keys.openai_key,
+            openai_api_key=config.openai_key,
             model_name="gpt-3.5-turbo")
 

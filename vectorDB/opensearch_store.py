@@ -1,5 +1,5 @@
 
-import config
+from config import config
 from loguru import logger
 from langchain_community.vectorstores import OpenSearchVectorSearch
 from opensearchpy import OpenSearch

@@ -1,7 +1,8 @@
 from __future__ import annotations
 from loguru import logger
 import os
-import config
+from config import config
+
 import asyncio
 import contextlib
 import enum

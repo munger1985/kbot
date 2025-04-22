@@ -7,7 +7,7 @@ History:
 """
 
 import oracledb
-import config
+from config import config
 from vectorDB.oracle_vectorstore_abstract import AbstractOracleVS
 from loguru import logger
 

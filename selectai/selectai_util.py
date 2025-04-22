@@ -8,7 +8,8 @@ History:
  - 2024/04/29 by Hysun (hysun.he@oracle.com): Initial version
 """
 
-import config
+from config import config
+
 from typing import List, Optional
 from loguru import logger
 

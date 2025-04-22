@@ -27,7 +27,7 @@ from typing import (
     cast,
 )
 
-import config
+from config import config
 import numpy as np
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
@@ -51,7 +51,6 @@ except ImportError:
 finally:
     from mysql.connector import Error
     from mysql.connector import errorcode
-
 
 _EMBEDDING_TABLE_NAME = "kbot_heatwave_embeddings"
 
@@ -87,7 +86,11 @@ def _table_exists(table_name: str) -> bool:
     with mysql.connector.connect(
         pool_name=config.HEATWAVE_VECTOR_STORE_POOL_NAME,
         pool_size=config.HEATWAVE_VECTOR_STORE_POOL_SIZE,
-        **config.HEATWAVE_CONNECTION_PARAMS,
+        user=config.HEATWAVE_CONNECTION_PARAMS["user"],
+        password=config.HEATWAVE_CONNECTION_PARAMS["password"],
+        host=config.HEATWAVE_CONNECTION_PARAMS["host"],
+        database=config.HEATWAVE_CONNECTION_PARAMS["database"],
+
     ) as client:
         with client.cursor() as cursor:
             try:
@@ -129,7 +132,10 @@ def _create_or_clean_table(
         with mysql.connector.connect(
             pool_name=config.HEATWAVE_VECTOR_STORE_POOL_NAME,
             pool_size=config.HEATWAVE_VECTOR_STORE_POOL_SIZE,
-            **config.HEATWAVE_CONNECTION_PARAMS,
+            user=config.HEATWAVE_CONNECTION_PARAMS["user"],
+            password=config.HEATWAVE_CONNECTION_PARAMS["password"],
+            host=config.HEATWAVE_CONNECTION_PARAMS["host"],
+            database=config.HEATWAVE_CONNECTION_PARAMS["database"],
         ) as client:
             with client.cursor() as cursor:
                 ddl = f"""
@@ -149,7 +155,10 @@ def _create_or_clean_table(
         with mysql.connector.connect(
             pool_name=config.HEATWAVE_VECTOR_STORE_POOL_NAME,
             pool_size=config.HEATWAVE_VECTOR_STORE_POOL_SIZE,
-            **config.HEATWAVE_CONNECTION_PARAMS,
+            user=config.HEATWAVE_CONNECTION_PARAMS["user"],
+            password=config.HEATWAVE_CONNECTION_PARAMS["password"],
+            host=config.HEATWAVE_CONNECTION_PARAMS["host"],
+            database=config.HEATWAVE_CONNECTION_PARAMS["database"],
         ) as client:
             with client.cursor() as cursor:
                 sql = f"delete from {table_name} WHERE collection_name = '{collection_name}'"
@@ -308,7 +317,10 @@ class HeatWaveVS(VectorStore):
         with mysql.connector.connect(
             pool_name=config.HEATWAVE_VECTOR_STORE_POOL_NAME,
             pool_size=config.HEATWAVE_VECTOR_STORE_POOL_SIZE,
-            **config.HEATWAVE_CONNECTION_PARAMS,
+            user=config.HEATWAVE_CONNECTION_PARAMS["user"],
+            password=config.HEATWAVE_CONNECTION_PARAMS["password"],
+            host=config.HEATWAVE_CONNECTION_PARAMS["host"],
+            database=config.HEATWAVE_CONNECTION_PARAMS["database"],
         ) as client:
             with client.cursor() as cursor:
                 cursor.executemany(
@@ -387,7 +399,10 @@ class HeatWaveVS(VectorStore):
         with mysql.connector.connect(
             pool_name=config.HEATWAVE_VECTOR_STORE_POOL_NAME,
             pool_size=config.HEATWAVE_VECTOR_STORE_POOL_SIZE,
-            **config.HEATWAVE_CONNECTION_PARAMS,
+            user=config.HEATWAVE_CONNECTION_PARAMS["user"],
+            password=config.HEATWAVE_CONNECTION_PARAMS["password"],
+            host=config.HEATWAVE_CONNECTION_PARAMS["host"],
+            database=config.HEATWAVE_CONNECTION_PARAMS["database"],
         ) as client:
             with client.cursor() as cursor:
                 cursor.execute(query, [json.dumps(embedding)])
@@ -448,7 +463,10 @@ class HeatWaveVS(VectorStore):
         with mysql.connector.connect(
             pool_name=config.HEATWAVE_VECTOR_STORE_POOL_NAME,
             pool_size=config.HEATWAVE_VECTOR_STORE_POOL_SIZE,
-            **config.HEATWAVE_CONNECTION_PARAMS,
+            user=config.HEATWAVE_CONNECTION_PARAMS["user"],
+            password=config.HEATWAVE_CONNECTION_PARAMS["password"],
+            host=config.HEATWAVE_CONNECTION_PARAMS["host"],
+            database=config.HEATWAVE_CONNECTION_PARAMS["database"],
         ) as client:
             with client.cursor() as cursor:
                 cursor.execute(query, [json.dumps(embedding)])
@@ -711,7 +729,10 @@ class HeatWaveVS(VectorStore):
             with mysql.connector.connect(
                 pool_name=config.HEATWAVE_VECTOR_STORE_POOL_NAME,
                 pool_size=config.HEATWAVE_VECTOR_STORE_POOL_SIZE,
-                **config.HEATWAVE_CONNECTION_PARAMS,
+                user=config.HEATWAVE_CONNECTION_PARAMS["user"],
+                password=config.HEATWAVE_CONNECTION_PARAMS["password"],
+                host=config.HEATWAVE_CONNECTION_PARAMS["host"],
+                database=config.HEATWAVE_CONNECTION_PARAMS["database"],
             ) as client:
                 with client.cursor() as cursor:
                     cursor.execute(
@@ -724,7 +745,10 @@ class HeatWaveVS(VectorStore):
             with mysql.connector.connect(
                 pool_name=config.HEATWAVE_VECTOR_STORE_POOL_NAME,
                 pool_size=config.HEATWAVE_VECTOR_STORE_POOL_SIZE,
-                **config.HEATWAVE_CONNECTION_PARAMS,
+                user=config.HEATWAVE_CONNECTION_PARAMS["user"],
+                password=config.HEATWAVE_CONNECTION_PARAMS["password"],
+                host=config.HEATWAVE_CONNECTION_PARAMS["host"],
+                database=config.HEATWAVE_CONNECTION_PARAMS["database"],
             ) as client:
                 with client.cursor() as cursor:
                     cursor.execute(

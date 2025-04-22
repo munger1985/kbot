@@ -4,7 +4,7 @@ from langchain.output_parsers import pydantic
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import Column, Integer, String, DateTime, func
 from kb_api import Prompt
-import config
+from config import config
 from kb_api import with_session
 from fastapi.responses import Response
 from fastapi import Body

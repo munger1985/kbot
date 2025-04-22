@@ -34,7 +34,7 @@ logging, usage: in your module, just use
 from loguru import logger
 logger.debug("That's it, beautiful and simple logging!")
 logger.error("That's error, beautiful and simple logging!")
-test by justin
+
 """
 
 ### init logging

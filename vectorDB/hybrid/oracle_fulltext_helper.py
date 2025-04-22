@@ -22,7 +22,8 @@ History:
 """
 
 import oracledb
-import config
+from config import config
+
 from oracledb import Connection
 from loguru import logger
 from langchain_core.documents import Document

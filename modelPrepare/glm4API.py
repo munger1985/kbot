@@ -1,10 +1,10 @@
 from typing import Any, List, Mapping, Optional, Dict
 from zhipuai import ZhipuAI
-import llm_keys
+from config import config
 from loguru import logger
 from langchain_core.language_models import LLM
 
-query_llm = ZhipuAI(api_key=llm_keys.zhipu_api_key)
+query_llm = ZhipuAI(api_key=config.zhipu_api_key)
 
 class GLM4(LLM):
     '''

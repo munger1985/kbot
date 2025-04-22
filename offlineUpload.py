@@ -12,7 +12,7 @@ logger.add("offlineUpload.log", rotation="5 MB")
 
 
 import uuid
-import config
+from config import config
 
 # Define the prompt template
 prompt_text = """

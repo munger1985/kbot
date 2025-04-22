@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 import base64
 from util import BaseResponse
 from langchain_core.prompts import ChatPromptTemplate
-import config
+from config import config
 from loguru import logger
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel

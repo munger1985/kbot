@@ -16,7 +16,7 @@ from datetime import datetime
 from time import mktime
 from urllib.parse import urlencode
 from wsgiref.handlers import format_date_time
-import llm_keys
+from config import config
 import websocket  # 使用websocket_client
 from langchain_core.callbacks import CallbackManagerForLLMRun
 from langchain_core.language_models import LLM
@@ -24,13 +24,13 @@ from langchain_core.language_models import LLM
 '''配置授权
 '''
 
-appid=llm_keys.xinghuo_appid
-api_secret=llm_keys.xinghuo_api_secret
-api_key=llm_keys.xinghuo_api_key
+appid=config.xinghuo_appid
+api_secret=config.xinghuo_api_secret
+api_key=config.xinghuo_api_key
 #用于配置大模型版本，默认“general/generalv2”
-domain = llm_keys.xinghuo_domain
+domain = config.xinghuo_domain
 #云端环境的服务地址
-Spark_url = llm_keys.xinghuo_spark_url
+Spark_url = config.xinghuo_spark_url
 
 
 
