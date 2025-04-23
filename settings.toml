@@ -21,7 +21,7 @@ score_threshold =  0.6
 vector_store_limit= 10
 
 auth_type= "INSTANCE_PRINCIPAL"
-## auto means ~/kbroot
+#######  if use auto, the kbroot will be automatically set  in the same directory where kbot/ locates   ######################
 KB_ROOT_PATH="auto"
 #  you can specify a certain path, KB_ROOT_PATH="/home/ubuntu/knnn"
 

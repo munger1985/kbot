@@ -32,8 +32,8 @@ import copy
 
 prompt = ChatPromptTemplate.from_template(prompt_text)
 from langchain_core.runnables import RunnablePassthrough, RunnableLambda
-
-summary_model = config.MODEL_DICT.get(config.SUMMARY_MODEL)
+import llm_models
+summary_model = llm_models.MODEL_DICT.get(config.SUMMARY_MODEL)
 
 # Define the summary chain
 summarize_chain = (
@@ -126,19 +126,21 @@ def offlineUploadRuntime(knowledge_base_name, batch_name,chunk_size, chunk_overl
             kb_file.status = 'failure'
             logger.error(e)
             add_file_to_db(kb_file)
-            add_batchInfo_to_db(batchInfo)
+            if batchInfo:
+                add_batchInfo_to_db(batchInfo)
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(prog='offline upload cmd',
                                      description='About hub knowledge based apis exposed as  rest-svc,  ')
     parser.add_argument("--knowledge_base_name", type=str,  )
-    parser.add_argument("--batch_name", type=str,  )
+    parser.add_argument("--batch_name", type=str, help='is the folder name after kbroot/kb_name/content/' )
     parser.add_argument("--chunk_size", type=int, default=250)
     parser.add_argument("--chunk_overlap", type=int, default=22)
     parser.add_argument("--ocr_lang", type=str,default='en')
     parser.add_argument("--multivector", type=str,default='')
     # 初始化消息
     args = parser.parse_args()
-
+    import time
+    s=time.time()
     offlineUploadRuntime( args.knowledge_base_name,
                           args.batch_name,
                           args.chunk_size,
@@ -146,3 +148,5 @@ if __name__ == "__main__":
                           args.ocr_lang,
                           args.multivector
             )
+    e=time.time()
+    print(f'takes {e-s} s')
