@@ -19,7 +19,7 @@ VECTOR_STORE_DICT = [
 #######  Vector Store setting    #######################################
 score_threshold =  0.6
 vector_store_limit= 10
-## oci api authentication type : none,API_KEY,INSTANCE_PRINCIPAL
+## oci api authentication type : "none", "API_KEY", "INSTANCE_PRINCIPAL"
 auth_type= "INSTANCE_PRINCIPAL"
 #######  if use auto, the kbroot will be automatically set  in the same directory where kbot/ locates   ######################
 KB_ROOT_PATH="auto"
