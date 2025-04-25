@@ -141,10 +141,13 @@ sys.path.append(str(root_dir))
 import oci
 region = 'ap-osaka-1'
 model_id = 'cohere.rerank-multilingual-v3.1'
-generative_ai_inference_client = oci.generative_ai_inference.GenerativeAiInferenceClient(
-    **init_oci_auth(config.auth_type),
-    service_endpoint=f"https://inference.generativeai.{region}.oci.oraclecloud.com",
-    retry_strategy=oci.retry.NoneRetryStrategy(),
-    timeout=(10, 240))
+if config.auth_type == 'none':
+    generative_ai_inference_client = None
 
+else:
+    generative_ai_inference_client = oci.generative_ai_inference.GenerativeAiInferenceClient(
+        **init_oci_auth(config.auth_type),
+        service_endpoint=f"https://inference.generativeai.{region}.oci.oraclecloud.com",
+        retry_strategy=oci.retry.NoneRetryStrategy(),
+        timeout=(10, 240))
 
