@@ -11,6 +11,10 @@ from fastapi.openapi.docs import (
 )
 from kbot_graphrag import recommended_config, default_init, graphrag_index, graphrag_local_search, graphrag_global_search ,\
     getPromptByKB, editPromptByKB, editSettingsYamlByKB, getSettingsYamlByKB, checkIndexProgress, get_latest_log
+from kbot_lightrag import lightragInit, lightragConfig, lightragIndex, lightragLocalSearch, \
+     lightragGlobalSearch, lightragHybridSearch, lightragCheckIndexStatus, lightragGetIndexLog, \
+     lightragGetEnvByKB, lightragSetEnvByKB
+
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.responses import RedirectResponse
 from kb_api import BaseResponse, ListResponse, VectorSearchResponse, create_kb, delete_batch, delete_docs, \
@@ -438,6 +442,39 @@ def create_app():
     app.post("/graphrag/get_latest_log",
              tags=["graphrag"],
              summary="check if indexing is still in progress")(get_latest_log)
+
+    ################################  lightrag
+    app.post("/lightrag/lightrag_init",
+             tags=["lightrag"],
+             summary="init a kb by lightrag")(lightragInit)
+    app.post("/lightrag/lightrag_config",
+             tags=["lightrag"],
+             summary="init a kb for lightrag via lightrag_config ")(lightragConfig)
+    app.post("/lightrag/lightrag_index",
+             tags=["lightrag"],
+             summary="index this kb by lightrag")(lightragIndex)
+    app.post("/lightrag/lightrag_local_search",
+             tags=["lightrag"],
+             summary="lightrag local search")(lightragLocalSearch)
+    app.post("/lightrag/lightrag_global_search",
+             tags=["lightrag"],
+             summary="lightrag global search")(lightragGlobalSearch)
+    app.post("/lightrag/lightrag_hybrid_search",
+             tags=["lightrag"],
+             summary="lightrag Hybrid search")(lightragHybridSearch)
+    app.post("/lightrag/lightrag_checkIndexStatus",
+             tags=["lightrag"],
+             summary="check Index Status")(lightragCheckIndexStatus)
+    app.post("/lightrag/lightrag_get_index_log",
+             tags=["lightrag"],
+             summary="check if indexing is still in progress")(lightragGetIndexLog)
+    app.post("/lightrag/lightragGetEnvByKB",
+             tags=["lightrag"],
+             summary="get lightrag env for kb")(lightragGetEnvByKB)
+    app.post("/lightrag/lightragSetEnvByKB",
+             tags=["lightrag"],
+             summary="set lightrag env for kb")(lightragSetEnvByKB)
+
     return app
 
 
