@@ -5,7 +5,7 @@ from dynaconf import Dynaconf
 # 初始化配置
 config = Dynaconf(
     # 配置文件路径，按顺序加载（后面的会覆盖前面的）
-    settings_files=['settings.toml', '.secrets.toml'],
+    settings_files=['settings.toml', 'lightrag.env', '.secrets.toml'],
 
     # 启用环境变量支持
     environments=True,
