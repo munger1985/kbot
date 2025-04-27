@@ -43,3 +43,5 @@ peft==0.14.0
 fastapi-cli==0.0.7
 pymupdf==1.25.5
 dynaconf==3.2.10
+configparser=7.2.0
+pipmaster=0.7.0
