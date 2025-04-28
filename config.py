@@ -1,5 +1,3 @@
-
-
 from dynaconf import Dynaconf
 
 # 初始化配置

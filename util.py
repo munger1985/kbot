@@ -450,12 +450,19 @@ def ociSpeechASRLoader(namespace, bucket, objectName, lang):
         return "FAILED ASR"
 
 def copy2Graphrag(knowledgeFile):
-        graphragFilePosixPath = Path(knowledgeFile.kbPath) / Path('graphrag') / Path('input') / Path(knowledgeFile.filename + '.txt')
-        if not graphragFilePosixPath.parent.exists():
-            graphragFilePosixPath.parent.mkdir(parents=True)
-        with open(str(graphragFilePosixPath), "w") as f:
-            f.write(knowledgeFile.full_text)
-        return graphragFilePosixPath
+    #graphrag 
+    graphragFilePosixPath = Path(knowledgeFile.kbPath) / Path('graphrag') / Path('input') / Path(knowledgeFile.filename + '.txt')
+    if not graphragFilePosixPath.parent.exists():
+        graphragFilePosixPath.parent.mkdir(parents=True)
+    with open(str(graphragFilePosixPath), "w") as f:
+        f.write(knowledgeFile.full_text)
+    #lightrag
+    lightragFilePosixPath = Path(knowledgeFile.kbPath) / Path('lightrag') / Path('input') / Path(knowledgeFile.filename + '.txt')
+    if not lightragFilePosixPath.parent.exists():
+        lightragFilePosixPath.parent.mkdir(parents=True)
+    with open(str(lightragFilePosixPath), "w") as f:
+        f.write(knowledgeFile.full_text)    
+    return graphragFilePosixPath
 
 
 from pathlib import Path

@@ -15,11 +15,6 @@ from modelPrepare.remoteAPI import *
 from config import config
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
-
-
-
-
-
 MODEL_DICT = {
     'NoneLLM': 'NoneLLM',
     ######################      API models        #############################################

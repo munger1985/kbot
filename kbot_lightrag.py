@@ -477,7 +477,7 @@ def lightragGetIndexLog(knowledge_base_name: str = Body(..., examples=["samples"
                        stub: str = Body('stub', examples=["no need to input"])
                        ) -> BaseResponse:
     kbPath = util.get_kb_path(knowledge_base_name)
-    logfile = Path(kbPath) / 'graphrag/output/logs/indexing-engine.log'
+    logfile = Path(kbPath) / 'lightrag/output/logs/indexing-engine.log'
     # if ''
     num_lines = 3
 
@@ -678,7 +678,7 @@ def lightragGetEnvByKB(knowledge_base_name: str = Body(..., examples=["samples"]
                         stub: str = Body('stub', examples=["no need to input"])):
     kbPath = util.get_kb_path(knowledge_base_name)
 
-    settingFile = Path(kbPath) / 'graphrag' / 'lightrag.env'
+    settingFile = Path(kbPath) / 'lightrag' / 'lightrag.env'
     with open(str(settingFile), "r", encoding="utf-8") as file:
         # 将字符串写入文件
         envContent = file.read()
