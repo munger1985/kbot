@@ -22,7 +22,7 @@ from datetime import datetime
 from langchain_community.document_loaders import RecursiveUrlLoader
 from langchain_community.document_transformers import Html2TextTransformer
 from modelPrepare.ociGenAIAPI import generative_ai_inference_client, model_id
-from llm_prepare import load_bge_reranker
+from llm_models import load_bge_reranker
 from util import init_oci_auth, merge_search_results, ppOCR, copy2Graphrag, get_file_extension, remove_special_chars
 from langchain_community.document_loaders import TextLoader, WebBaseLoader, Docx2txtLoader, \
     UnstructuredWordDocumentLoader
@@ -118,6 +118,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain.chains import LLMChain
 from langchain_core.output_parsers import StrOutputParser
 import llm_models
+
 prompt = ChatPromptTemplate.from_template(prompt_text)
 from langchain_core.runnables import RunnablePassthrough, RunnableLambda
 
@@ -310,7 +311,7 @@ class KnowledgeFile:
             document = Document(page_content=self.full_text)
             document.metadata['source'] = self.filepath
             self.docs = [document]
-           
+
         elif self.document_loader_name == 'ImageOCRLoader':  ## just images
             fileTextOneString = ppOCR(self.filepath, lang)
             ocrFilePosixPath = Path(self.kbPath) / \
@@ -322,7 +323,7 @@ class KnowledgeFile:
             document = Document(page_content=fileTextOneString)
             document.metadata['source'] = self.filepath
             self.docs = [document]
-         
+
         else:  ### if this is just docs
             self.docs = self.file2docs()
         ### because we reckon unstructuredXXXloader is smarter, no need splitter
@@ -338,7 +339,7 @@ class KnowledgeFile:
                 self.texts.append(doc)
         else:
             self.texts = self.docs2texts(docs=self.docs,
-                                             text_splitter=text_splitter)
+                                         text_splitter=text_splitter)
         self.full_text = "\n".join(doc.page_content for doc in self.docs)
 
         copy2Graphrag(self)
@@ -763,6 +764,7 @@ def list_kbs():
 def list_vector_store_types():
     return ListResponse(data=list(config.VECTOR_STORE_DICT))
 
+
 def list_embedding_models():
     return ListResponse(data=list(embedding_models.EMBEDDING_DICT.keys()))
 
@@ -780,7 +782,10 @@ def text_embedding(
     query_vector = embeddingModel.embed_query(text)
 
     return BaseResponse(data=str(query_vector))
+
+
 import llm_models
+
 
 def list_llms():
     # Get List of Knowledge Base
@@ -2028,8 +2033,9 @@ def makeSimilarDocs(question, kb_name, user):
         doc_source = doc.metadata.get("source")
         doc_page_num = 1
         doc_source_file_ext = get_file_extension(doc_source)
-        if isinstance(doc_source_file_ext, str) and len(doc_source_file_ext) > 0 and doc_source_file_ext in ('pdf','doc','docx'):
-            if isinstance(doc.metadata.get("page_number"), int) :
+        if isinstance(doc_source_file_ext, str) and len(doc_source_file_ext) > 0 and doc_source_file_ext in (
+        'pdf', 'doc', 'docx'):
+            if isinstance(doc.metadata.get("page_number"), int):
                 doc_page_num = int(doc.metadata.get("page_number"))
         doc_score = obj[1]
         logger.info(
