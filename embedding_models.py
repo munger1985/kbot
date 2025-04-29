@@ -1,20 +1,10 @@
 import torch
-from langchain_community.embeddings import HuggingFaceEmbeddings
-
 from modelPrepare import cohereAPI
-from llm_prepare import load_llm_model,load_embedding_model
+from llm_prepare import load_embedding_model
 from modelPrepare import chatgptAPI
-from modelPrepare import glm4API
-from modelPrepare import qianfanAPI
-from modelPrepare import sparkAPI
-from modelPrepare.aquaAPI import AIQuickActions
-from modelPrepare.cohereAPI import cohereEmbedding
 from modelPrepare  import  ociGenAIAPI     
-from modelPrepare.qwenAPI import QwenPlus
 from modelPrepare.remoteAPI import *
 device = "cuda" if torch.cuda.is_available() else "cpu"
-
-
 
 
 EMBEDDING_DICT = {

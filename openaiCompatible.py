@@ -9,7 +9,6 @@ from pydantic import BaseModel, Field
 import base64
 from util import BaseResponse
 from langchain_core.prompts import ChatPromptTemplate
-from config import config
 from loguru import logger
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
@@ -17,6 +16,7 @@ from langchain.prompts import PromptTemplate
 from langchain.chains import LLMChain
 import uvicorn
 from typing import Literal, Optional, List, Dict, Any, Union
+import embedding_models,llm_models
 
 
 class UsageInfo(BaseModel):
@@ -138,10 +138,10 @@ def extendApp(app):
     ),
     ]):
         try:
-            query_llm = LLMChain(llm=config.MODEL_DICT.get(
+            query_llm = LLMChain(llm=llm_models.MODEL_DICT.get(
                 request.model), prompt=chat_template)
             logger.info(
-                f"#### chat with LLM {request.model}: ", config.MODEL_DICT.get(request.model))
+                f"#### chat with LLM {request.model}: ", llm_models.MODEL_DICT.get(request.model))
             logger.info(
                 f"#### user: {request.messages[0].get('content')} ")
             response = query_llm.invoke(
@@ -168,7 +168,7 @@ def extendApp(app):
     @app.get("/v1/models", tags=["OpenAI API compatible"],   summary="get openai api format models")
     def get_models( ):
         try:
-            modelNames= config.MODEL_DICT.keys()
+            modelNames= llm_models.MODEL_DICT.keys()
 
             result = {
                         "object": "list",
@@ -221,7 +221,7 @@ def extendApp(app):
                     texts.append(text)
             if encodings:
                 texts.append(ENCODER.decode(encodings))
-        embeddingModel = config.EMBEDDING_DICT.get(embeddings_request.model)
+        embeddingModel = embedding_models.EMBEDDING_DICT.get(embeddings_request.model)
         embeddings = embeddingModel.embed_documents(texts)
         for i, embedding in enumerate(embeddings):
             if embeddings_request.encoding_format == "base64":
