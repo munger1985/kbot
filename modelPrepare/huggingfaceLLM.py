@@ -1,14 +1,11 @@
 from typing import Any, List, Optional
 from transformers import AutoTokenizer, AutoModelForCausalLM, GenerationConfig
-
 import torch
-
 from loguru import logger
 from langchain_core.callbacks import CallbackManagerForLLMRun
 from langchain_core.language_models import LLM
 
-class QwenLLM(LLM):
-    # 基于本地 Qwen 自定义 LLM 类
+class HfLLM(LLM):
     tokenizer: AutoTokenizer = None
     model: AutoModelForCausalLM = None
 
@@ -23,10 +20,13 @@ class QwenLLM(LLM):
     def _call(self, prompt: str, stop: Optional[List[str]] = None,
               run_manager: Optional[CallbackManagerForLLMRun] = None,
               **kwargs: Any):
-        messages = [{"role": "user", "content": prompt}]
+        messages = [
+               {"role": "system", "content": "You are smart AI helper kbot, you can answer user's queries."},
+            {"role": "user", "content": prompt}
+            ]
         input_ids = self.tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
         model_inputs = self.tokenizer([input_ids], return_tensors="pt").to('cuda')
-        generated_ids = self.model.generate(model_inputs.input_ids, max_new_tokens=8192)
+        generated_ids = self.model.generate(model_inputs.input_ids, max_new_tokens=333)
         generated_ids = [
             output_ids[len(input_ids):] for input_ids, output_ids in zip(model_inputs.input_ids, generated_ids)
         ]
@@ -34,6 +34,7 @@ class QwenLLM(LLM):
 
         return response
 
+
     @property
     def _llm_type(self) -> str:
-        return "Qwen3_LLM"
+        return "Hf models for text-generation"
