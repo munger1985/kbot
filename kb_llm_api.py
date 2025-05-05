@@ -137,7 +137,7 @@ def ask_rag(user: str,
     if not promptContent or promptContent == "":
         raise ValueError("prompt is empty !")
     prompt = PromptTemplate(input_variables=["question", "context"], template=promptContent)
-    logger.info(f"##3.完成获取prompt:{prompt}##")
+    logger.info(f"  3.完成获取prompt:{prompt}##")
 
     # 4.调用LLM
     logger.debug( f" llm invoke start time:, {get_cur_time()}")
@@ -155,7 +155,7 @@ def ask_rag(user: str,
         ensure_ascii=False)
     result_list = json.loads(format_llm_response(result_str))
     logger.info(f"result_list:{result_list}##")
-    logger.info(f"##5).完成LLM结果处理:{get_cur_time()}##")
+    logger.info(f" 5).完成LLM结果处理:{get_cur_time()}##")
     return result_list
 
 

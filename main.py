@@ -64,7 +64,7 @@ async def with_rag(
     status: str = "success"
     err_msg: str = ""
     data: list = []
-    logger.info(
+    logger.debug(
         f"#with_rag##user:{user},ask:{ask},kb_name:{kb_name},llm_model:{llm_model},prompt_name:{prompt_name},rerankerModel:{rerankerModel},reranker_topk:{reranker_topk},score_threshold:{score_threshold},vector_store_limit:{vector_store_limit},search_type:{search_type},summary_flag:{summary_flag}")
     if ask != '' and llm_model != '' and kb_name != '':
         try:
