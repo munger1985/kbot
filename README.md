@@ -28,6 +28,11 @@ To help customers leverage services in OCI easier.
 
 ### graphrag feature
 
+### lightrag with oracle db 
+
+### support Langsmith tracing
+
+
 
 ## Workflow
 
