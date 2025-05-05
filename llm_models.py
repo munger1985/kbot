@@ -86,8 +86,8 @@ MODEL_DICT = {
     ###   format 2) : huggingface model id
     # 'Llama-2-7B-Chat': load_llm_model( 'meta-llama/Llama-2-7b-chat-hf'),
     # 'Gemma-7B-IT': load_llm_model( 'google/gemma-7b-it'),
-    # 'Mistral-7B-Instruct-v0.2': load_llm_model('Mistral','mistralai/Mistral-7B-Instruct-v0.2'),
-    'Qwen3-8B': load_llm_model('Qwen/Qwen3-8B'),
+    # 'Mistral-7B-Instruct-v0.2': load_llm_model( 'mistralai/Mistral-7B-Instruct-v0.2'),
+    # 'Qwen3-8B': load_llm_model('Qwen/Qwen3-8B'),
 
 }
 

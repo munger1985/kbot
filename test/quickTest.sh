@@ -14,7 +14,7 @@ response=$(curl  -s -X 'POST' \
   -H 'accept: application/json' \
   -H 'Content-Type: application/json' \
   -d '{
-  "knowledge_base_name": "ss",
+  "knowledge_base_name": "ssTestss",
   "knowledge_base_info": "this is about bank",
   "vector_store_type": "'"$vector_store_type"'",
   "embed_model": "bge_m3"
@@ -36,7 +36,7 @@ response=$(curl   -s   -X 'POST' \
   "urls": [
     "https://python.langchain.com/docs/integrations/vectorstores/opensearch/"
   ],
-  "knowledge_base_name": "ss",
+  "knowledge_base_name": "ssTestss",
   "batch_name": "./",
   "max_depth": 1,
   "chunk_size": 500,
@@ -59,7 +59,7 @@ response=$(curl -o /dev/null -s -w "%{http_code}" -X 'POST' \
   -d '{
   "user": "Demo",
   "ask": "opensearch'\''s usage",
-  "kb_name": "ss",
+  "kb_name": "ssTestss",
   "llm_model": "'"$model"'",
   "prompt_name": "rag_default",
   "rerankerModel": "bgeReranker",
@@ -81,7 +81,7 @@ response=$(curl -o /dev/null -s -w "%{http_code}" -X 'POST' \
   -H 'accept: application/json' \
   -H 'Content-Type: application/json' \
   -d '{
-  "knowledge_base_name": "ss",
+  "knowledge_base_name": "ssTestss",
   "stub": "for json body, no need to input "
 }' )
 

@@ -10,7 +10,7 @@ from fastapi.openapi.docs import (
     get_swagger_ui_html,
 )
 from kbot_graphrag import recommended_config, default_init, graphrag_index, graphrag_local_search, graphrag_global_search ,\
-    getPromptByKB, editPromptByKB, editSettingsYamlByKB, getSettingsYamlByKB, checkIndexProgress, get_latest_log
+    getPromptByKB, editPromptByKB,listPrompts,graphrag_update_index, editSettingsYamlByKB, getSettingsYamlByKB, checkIndexProgress, get_latest_log
 from kbot_lightrag import lightragInit, lightragConfig, lightragIndex, lightragLocalSearch, \
      lightragGlobalSearch, lightragHybridSearch, lightragCheckIndexStatus, lightragGetIndexLog, \
      lightragGetEnvByKB, lightragSetEnvByKB
@@ -424,6 +424,12 @@ def create_app():
     app.post("/graphrag/getPromptByKB",
              tags=["graphrag"],
              summary="getPromptByKB    ")(getPromptByKB)
+    app.post("/graphrag/listPrompts",
+             tags=["graphrag"],
+             summary="list all the prompts for this kb    ")(listPrompts)
+    app.post("/graphrag/graphrag_update_index",
+             tags=["graphrag"],
+             summary="update the index    ")(graphrag_update_index)
     app.post("/graphrag/editPromptByKB",
              tags=["graphrag"],
              summary="editPromptByKB      ")(editPromptByKB)

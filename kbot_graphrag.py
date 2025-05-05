@@ -1,24 +1,34 @@
 import yaml
 import asyncio
-import sys
-from pathlib import Path
-from pydantic import BaseModel, FilePath
+from pydantic import BaseModel
 import pydantic
-from typing import Callable, Generator, Any
+from typing import  Any
 from fastapi import Body
-import os,llm_models
+import llm_models
 import shutil
+
+
+from graphrag.query.indexer_adapters import (
+    read_indexer_communities,
+)
+from graphrag.config.enums import ModelType
+from graphrag.config.models.language_model_config import LanguageModelConfig
+from graphrag.language_model.manager import ModelManager
+
+import tiktoken
+
+
+token_encoder = tiktoken.get_encoding("cl100k_base")
+
 import util
 from fastapi.responses import StreamingResponse, FileResponse, ORJSONResponse
 from prompt_api import load_prompt_from_db
 from langchain_core.prompts import PromptTemplate
-from config import config
 from langchain.chains import LLMChain
 import os
 
 import pandas as pd
-import tiktoken
-
+from pathlib import Path
 from graphrag.query.context_builder.entity_extraction import EntityVectorStoreKey
 from graphrag.query.indexer_adapters import (
     read_indexer_covariates,
@@ -27,13 +37,6 @@ from graphrag.query.indexer_adapters import (
     read_indexer_reports,
     read_indexer_text_units,
 )
-from graphrag.query.input.loaders.dfs import (
-    store_entity_semantic_embeddings,
-)
-from graphrag.query.llm.oai.chat_openai import ChatOpenAI
-from graphrag.query.llm.oai.embedding import OpenAIEmbedding
-from graphrag.query.llm.oai.typing import OpenaiApiType
-from graphrag.query.question_gen.local_gen import LocalQuestionGen
 from graphrag.query.structured_search.local_search.mixed_context import (
     LocalSearchMixedContext,
 )
@@ -182,7 +185,7 @@ def recommended_config(knowledge_base_name: str = Body(..., examples=["samples"]
     graphrag_input_path = graphrag_root_path / "input"
     os.makedirs(str(graphrag_input_path), exist_ok=True)
     if not check_if_init(knowledge_base_name):
-        cmd = [f"graphrag", "init", "--root",  str(graphrag_root_path)]
+        cmd = [f"graphrag", "init", "--root", str(graphrag_root_path)]
         logger.info(f"##oci_sample_init cmd: {cmd}")
         asyncio.run(run_cmd(cmd))
 
@@ -192,25 +195,23 @@ def recommended_config(knowledge_base_name: str = Body(..., examples=["samples"]
     data = read_yaml(settingFile)
     logger.info("读取的 YAML 内容：")
     logger.info(data)
-    llm = data['llm']
-
-    llm.update({"api_base": llm_endpoint})
+    default_chat_model = data['models']['default_chat_model']
+    default_chat_model.update({"api_base": llm_endpoint})
+    default_chat_model.update({"api_key": llm_api_key})
+    default_chat_model.update({"encoding_model": "cl100k_base"})
+    default_chat_model.update({"model": llm_model})
+    default_chat_model.update({"model_supports_json": False})
     # llm.update({"model": "Qwen/Qwen2-7B-Instruct"})
-    llm.update({"model": llm_model})
-    llm.update({"api_key": llm_api_key})
-    llm.update({"model_supports_json": False})
 
-    embeddings = data['embeddings']
-    # embeddings.update({"model": "Qwen/Qwen2-7B-Instruct"})
-    embedllm = embeddings['llm']
-    # embedllm['model'] = 'bge-m3'
-    embedllm['model'] = embedding_model
-    embedllm['api_key'] = embedding_api_key
-    # embedllm['api_base'] = 'http://localhost:9997/v1'
-    embedllm['api_base'] = embedding_endpoint
-    data['storage']['base_dir'] = 'output/artifacts'
-    data['claim_extraction']['enabled'] = claim
-    data['reporting']['base_dir'] = 'output/logs'
+    default_embedding_model = data['models']['default_embedding_model']
+    default_embedding_model.update({"api_key": embedding_api_key})
+    default_embedding_model.update({"api_base": embedding_endpoint})
+    default_embedding_model.update({"model": embedding_model})
+    default_embedding_model.update({"encoding_model": "cl100k_base"})
+    default_embedding_model.update({"model_supports_json": False})
+
+    data['extract_claims']['enabled'] = claim
+
     # 将修改后的数据写回 YAML 文件
     write_yaml(data, str(settingFile))
 
@@ -226,7 +227,7 @@ def checkIndexProgress(knowledge_base_name: str = Body(..., examples=["samples"]
                        stub: str = Body('stub', examples=["no need to input"])
                        ):
     kbPath = util.get_kb_path(knowledge_base_name)
-    logfile = Path(kbPath) / 'graphrag/output/logs/indexing-engine.log'
+    logfile = Path(kbPath) / 'graphrag/logs/indexing-engine.log'
     # if ''
     num_lines = 11
 
@@ -255,15 +256,15 @@ def checkIndexProgress(knowledge_base_name: str = Body(..., examples=["samples"]
 
 
 def get_latest_log(knowledge_base_name: str = Body(..., examples=["samples"]),
-                       stub: str = Body('stub', examples=["no need to input"])
-                       ):
+                   stub: str = Body('stub', examples=["no need to input"])
+                   ):
     kbPath = util.get_kb_path(knowledge_base_name)
-    logfile = Path(kbPath) / 'graphrag/output/logs/indexing-engine.log'
+    logfile = Path(kbPath) / 'graphrag/logs/indexing-engine.log'
     # if ''
     num_lines = 3
 
     if not os.path.exists(str(logfile)):
-        return BaseResponse(code=404, msg= "Indexing not started",data="Indexing not started")
+        return BaseResponse(code=404, msg="Indexing not started", data="Indexing not started")
     with open(str(logfile), 'rb') as file:
         file.seek(0, 2)  # 移动到文件末尾
         buffer = bytearray()
@@ -311,18 +312,15 @@ def default_init(knowledge_base_name: str = Body(..., examples=["samples"]),
     os.makedirs(str(graphrag_input_path), exist_ok=True)
 
     cmd = [f"graphrag", "init", "--root",
-            str(graphrag_root_path)]
+           str(graphrag_root_path)]
     logger.info(f"##graphrag init cmd: {cmd}")
     asyncio.run(run_cmd(cmd))
     settingFile = graphrag_root_path / 'settings.yaml'
     data = read_yaml(settingFile)
     logger.info("读取的 YAML 内容：")
     logger.info(data)
-    data['storage']['base_dir'] = 'output/artifacts'
-    data['reporting']['base_dir'] = 'output/logs'
     # data['update_index_storage']={"type": 'file' ,"base_dir": 'update_output'}
     # 将修改后的数据写回 YAML 文件
-    write_yaml(data, str(settingFile))
     return BaseResponse(code=200, msg=f"successfully init graphrag for kb {knowledge_base_name}")
 
 
@@ -339,11 +337,22 @@ def getSettingsYamlByKB(knowledge_base_name: str = Body(..., examples=["samples"
     return Response(content=yamlContent, media_type="text/plain")
 
 
+async def listPrompts(knowledge_base_name: str = Body(..., examples=["samples"]),
+                      stub: str = Body('stub', examples=["for json body, no need to input "])):
+    kbPath = util.get_kb_path(knowledge_base_name)
+    promptDir = Path(kbPath) / 'graphrag' / 'prompts'
+    promptDir = str(promptDir)
+    import glob
+
+    txt_files = glob.glob(f"{promptDir}/*.txt")
+    print([f.split("/")[-1] for f in txt_files])  # 仅文件名
+
+    return [f.split("/")[-1] for f in txt_files]
+
+
 def getPromptByKB(knowledge_base_name: str = Body(..., examples=["samples"]),
-                  promptName: str = Body('entity_extraction.txt', examples=["claim_extraction.txt",
-                                                                            "community_report.txt",
-                                                                            "entity_extraction.txt",
-                                                                            "summarize_descriptions.txt"])):
+                  promptName: str = Body('entity_extraction.txt',
+                                         examples=["get the prompt file name from listPrompts"])):
     kbPath = util.get_kb_path(knowledge_base_name)
 
     promptFile = Path(kbPath) / 'graphrag' / 'prompts' / promptName
@@ -371,15 +380,24 @@ def editPromptByKB(knowledge_base_name: str = Body(..., examples=["samples"]),
     return Response(content=content, media_type="text/plain")
 
 
-def graphrag_index(knowledge_base_name: str = Body(..., examples=["samples"]),
-                   stub: str = Body('stub', examples=["for json body, no need to input "])):
+async def graphrag_index(knowledge_base_name: str = Body(..., examples=["samples"]),
+                         stub: str = Body('stub', examples=["for json body, no need to input "])):
     kbPath = util.get_kb_path(knowledge_base_name)
     graphrag_root_path = Path(kbPath) / 'graphrag'
-
-    graphrag_output_path = graphrag_root_path / "output"
     # util.delete_folder(str(graphrag_output_path))
 
-    cmd = [f"graphrag",  "index", "--root", str(graphrag_root_path)]
+    cmd = [f"graphrag", "index", "--root", str(graphrag_root_path)]
+    # 实时读取标准输出
+    return StreamingResponse(runCMD(cmd), media_type="text/plain")
+
+
+async def graphrag_update_index(knowledge_base_name: str = Body(..., examples=["samples"]),
+                                stub: str = Body('stub', examples=["for json body, no need to input "])):
+    kbPath = util.get_kb_path(knowledge_base_name)
+    graphrag_root_path = Path(kbPath) / 'graphrag'
+    # util.delete_folder(str(graphrag_output_path))
+
+    cmd = [f"graphrag", "update", "--root", str(graphrag_root_path)]
     # 实时读取标准输出
     return StreamingResponse(runCMD(cmd), media_type="text/plain")
 
@@ -389,101 +407,121 @@ def graphrag_local_search(knowledge_base_name: str = Body(..., examples=["sample
                           model_name: str = Body('OCI-cohere.command-r-plus',
                                                  examples=["OCI-meta.llama-3.1-405b-instruct"]),
                           prompt_name: str = Body('rag_default',
-                                                 examples=["rag_default"]),
+                                                  examples=["rag_default"]),
                           ):
     kbPath = util.get_kb_path(knowledge_base_name)
     graphrag_root_path = Path(kbPath) / 'graphrag'
-    INPUT_DIR = graphrag_root_path / "output/artifacts"
-    LANCEDB_URI =graphrag_root_path /"output/lancedb"
-
-    COMMUNITY_REPORT_TABLE = "create_final_community_reports"
-    ENTITY_TABLE = "create_final_nodes"
-    ENTITY_EMBEDDING_TABLE = "create_final_entities"
-    RELATIONSHIP_TABLE = "create_final_relationships"
-    COVARIATE_TABLE = "create_final_covariates"
-    TEXT_UNIT_TABLE = "create_final_text_units"
+    OUTPUT_DIR = graphrag_root_path / "output"
+    OUTPUT_DIR = str(OUTPUT_DIR)
+    LANCEDB_URI = graphrag_root_path / "output" / "lancedb"
+    LANCEDB_URI = str(LANCEDB_URI)
+    COMMUNITY_REPORT_TABLE = "community_reports"
+    ENTITY_TABLE = "entities"
+    COMMUNITY_TABLE = "communities"
+    RELATIONSHIP_TABLE = "relationships"
+    COVARIATE_TABLE = "covariates"
+    TEXT_UNIT_TABLE = "text_units"
     COMMUNITY_LEVEL = 2
+    # read nodes table to get community and degree data
+    entity_df = pd.read_parquet(f"{OUTPUT_DIR}/{ENTITY_TABLE}.parquet")
+    community_df = pd.read_parquet(f"{OUTPUT_DIR}/{COMMUNITY_TABLE}.parquet")
+
+    entities = read_indexer_entities(entity_df, community_df, COMMUNITY_LEVEL)
+
+    description_embedding_store = LanceDBVectorStore(
+        collection_name="default-entity-description",
+    )
+    description_embedding_store.connect(db_uri=LANCEDB_URI)
+
+    print(f"Entity count: {len(entity_df)}")
+    entity_df.head()
+    relationship_df = pd.read_parquet(f"{OUTPUT_DIR}/{RELATIONSHIP_TABLE}.parquet")
+    relationships = read_indexer_relationships(relationship_df)
+
+    print(f"Relationship count: {len(relationship_df)}")
+    relationship_df.head()
+    report_df = pd.read_parquet(f"{OUTPUT_DIR}/{COMMUNITY_REPORT_TABLE}.parquet")
+    reports = read_indexer_reports(report_df, community_df, COMMUNITY_LEVEL)
+
+    print(f"Report records: {len(report_df)}")
+    report_df.head()
+    text_unit_df = pd.read_parquet(f"{OUTPUT_DIR}/{TEXT_UNIT_TABLE}.parquet")
+    text_units = read_indexer_text_units(text_unit_df)
+
+    print(f"Text unit records: {len(text_unit_df)}")
+    text_unit_df.head()
+
+
+
     claimEnabled = False
-    if os.path.isfile(f'{INPUT_DIR}/{COVARIATE_TABLE}.parquet'):
+    if os.path.isfile(f'{OUTPUT_DIR}/{COVARIATE_TABLE}.parquet'):
         claimEnabled = True
 
     settingFile = graphrag_root_path / 'settings.yaml'
     data = read_yaml(settingFile)
 
     # read nodes table to get community and degree data
-    entity_df = pd.read_parquet(f"{INPUT_DIR}/{ENTITY_TABLE}.parquet")
-    entity_embedding_df = pd.read_parquet(f"{INPUT_DIR}/{ENTITY_EMBEDDING_TABLE}.parquet")
-
-    entities = read_indexer_entities(entity_df, entity_embedding_df, COMMUNITY_LEVEL)
+    entity_df = pd.read_parquet(f"{OUTPUT_DIR}/{ENTITY_TABLE}.parquet")
 
     # load description embeddings to an in-memory lancedb vectorstore
     # to connect to a remote db, specify url and port values.
     description_embedding_store = LanceDBVectorStore(
         collection_name="default-entity-description",
     )
-    uril='/home/ubuntu/kbroot/ff/graphrag/output/lancedb/default-entity-description.lance'
     description_embedding_store.connect(db_uri=LANCEDB_URI)
-    # entity_description_embeddings = store_entity_semantic_embeddings(
-    #     entities=entities, vectorstore=description_embedding_store
-    # )
 
     logger.info(f"Entity count: {len(entity_df)}")
     entity_df.head()
-    relationship_df = pd.read_parquet(f"{INPUT_DIR}/{RELATIONSHIP_TABLE}.parquet")
+    relationship_df = pd.read_parquet(f"{OUTPUT_DIR}/{RELATIONSHIP_TABLE}.parquet")
     relationships = read_indexer_relationships(relationship_df)
 
     logger.info(f"Relationship count: {len(relationship_df)}")
     relationship_df.head()
     if claimEnabled:
-        covariate_df = pd.read_parquet(f"{INPUT_DIR}/{COVARIATE_TABLE}.parquet")
+        covariate_df = pd.read_parquet(f"{OUTPUT_DIR}/{COVARIATE_TABLE}.parquet")
 
         claims = read_indexer_covariates(covariate_df)
 
         logger.info(f"Claim records: {len(claims)}")
         covariates = {"claims": claims}
-
-    report_df = pd.read_parquet(f"{INPUT_DIR}/{COMMUNITY_REPORT_TABLE}.parquet")
-    reports = read_indexer_reports(report_df, entity_df, COMMUNITY_LEVEL)
-
-    logger.info(f"Report records: {len(report_df)}")
-    report_df.head()
-
-    text_unit_df = pd.read_parquet(f"{INPUT_DIR}/{TEXT_UNIT_TABLE}.parquet")
-    text_units = read_indexer_text_units(text_unit_df)
-
-    logger.info(f"Text unit records: {len(text_unit_df)}")
-    text_unit_df.head()
-    llm = data['llm']
-    api_key = llm['api_key']
-    llm_model = llm['model']
-    embeddings = data['embeddings']
-    embeddingllm = embeddings['llm']
-    embedding_model = embeddingllm['model']
-
-    llm = ChatOpenAI(
-        api_key=api_key,
-        model=llm_model,
-        api_base=llm['api_base'],
-        api_type=OpenaiApiType.OpenAI,  # OpenaiApiType.OpenAI or OpenaiApiType.AzureOpenAI
+    chat_config = LanguageModelConfig(
+        api_key=data['models']['default_chat_model']['api_key'],
+        api_base=data['models']['default_chat_model']['api_base'],
+        type=ModelType.OpenAIChat,
+        model=data['models']['default_chat_model']['model'],
         max_retries=20,
+        encoding_model=data['models']['default_chat_model']['encoding_model']
+    )
+    chat_model = ModelManager().get_or_create_chat_model(
+        name="local_search",
+        model_type=ModelType.OpenAIChat,
+        config=chat_config,
     )
 
-    token_encoder = tiktoken.get_encoding("cl100k_base")
 
-    text_embedder = OpenAIEmbedding(
-        api_key=embeddingllm['api_key'],
-        api_base=embeddingllm['api_base'],
-        api_type=OpenaiApiType.OpenAI,
-        model=embedding_model,
-        deployment_name=embedding_model,
+    embedding_config = LanguageModelConfig(
+        api_key=data['models']['default_embedding_model']['api_key'],
+        api_base=data['models']['default_embedding_model']['api_base'],
+        type=ModelType.OpenAIEmbedding,
+        model=data['models']['default_embedding_model']['model'],
         max_retries=20,
+        encoding_model=data['models']['default_embedding_model']['encoding_model']
+
     )
+
+    text_embedder = ModelManager().get_or_create_embedding_model(
+        name="local_search_embedding",
+        model_type=ModelType.OpenAIEmbedding,
+        config=embedding_config,
+    )
+
     if claimEnabled == True:
         context_builder = LocalSearchMixedContext(
             community_reports=reports,
             text_units=text_units,
             entities=entities,
             relationships=relationships,
+            # if you did not run covariates during indexing, set this to None
             covariates=covariates,
             entity_text_embeddings=description_embedding_store,
             embedding_vectorstore_key=EntityVectorStoreKey.ID,
@@ -497,6 +535,8 @@ def graphrag_local_search(knowledge_base_name: str = Body(..., examples=["sample
             text_units=text_units,
             entities=entities,
             relationships=relationships,
+            # if you did not run covariates during indexing, set this to None
+            # covariates=covariates,
             entity_text_embeddings=description_embedding_store,
             embedding_vectorstore_key=EntityVectorStoreKey.ID,
             # if the vectorstore uses entity title as ids, set this to EntityVectorStoreKey.TITLE
@@ -517,33 +557,37 @@ def graphrag_local_search(knowledge_base_name: str = Body(..., examples=["sample
         "return_candidate_context": False,
         "embedding_vectorstore_key": EntityVectorStoreKey.ID,
         # set this to EntityVectorStoreKey.TITLE if the vectorstore uses entity title as ids
-        "max_tokens": 9999,
+        "max_tokens": 12_000,
         # change this based on the token limit you have on your model (if you are using a model with 8k limit, a good setting could be 5000)
     }
 
-    llm_params = {
-        "max_tokens": 1000,
+    model_params = {
+        "max_tokens": 2_000,
         # change this based on the token limit you have on your model (if you are using a model with 8k limit, a good setting could be 1000=1500)
-        "temperature": 0.1,
+        "temperature": 0.0,
     }
-
     search_engine = LocalSearch(
-        llm=llm,
+        model=chat_model,
         context_builder=context_builder,
         token_encoder=token_encoder,
-        llm_params=llm_params,
+        model_params=model_params,
         context_builder_params=local_context_params,
-        response_type="prioritized list",
-        # multiple paragraphs  free form text describing the response type and format, can be anything, e.g. prioritized list, single paragraph, multiple paragraphs, multiple-page report
+        response_type="multiple paragraphs",
+        # free form text describing the response type and format, can be anything, e.g. prioritized list, single paragraph, multiple paragraphs, multiple-page report
     )
-
-    context_text, context_records = search_engine.context_builder.build_context(
+    context_result = search_engine.context_builder.build_context(
         query=question,
         conversation_history=[],
 
     )
 
-    logger.info(f"context_text#:{context_text}")
+    from graphrag.prompts.query.local_search_system_prompt import LOCAL_SEARCH_SYSTEM_PROMPT
+    system_prompt = LOCAL_SEARCH_SYSTEM_PROMPT
+    context_prompt = system_prompt.format(
+        context_data=context_result.context_chunks,
+        response_type='multiple paragraphs',
+    )
+
     promptContent = load_prompt_from_db(prompt_name)
     if not promptContent or promptContent == "":
         raise ValueError("prompt is empty !")
@@ -553,63 +597,66 @@ def graphrag_local_search(knowledge_base_name: str = Body(..., examples=["sample
     # 4.调用LLM
     llm = llm_models.MODEL_DICT.get(model_name)
     query_llm = LLMChain(llm=llm, prompt=prompt)
-    response = query_llm.invoke({"context": context_text, "question": question})
-    logger.info(f"##response:{response}##")
-    # result = search_engine.search(question)
-    # logger.info(result.response)
-    # logger.info(f"LLM calls: {result.llm_calls}. LLM tokens: {result.prompt_tokens}")
+    response = query_llm.invoke({"context": context_prompt, "question": question})
     result = response['text']
     return BaseResponse(code=200, data=f"{result}")
 
 
-def graphrag_global_search(knowledge_base_name: str = Body(..., examples=["samples"]),
-                           question: str = Body('question', examples=["ask the a global question "]),
-                           model_name: str = Body('OCI-cohere.command-r-plus',
-                                                  examples=["OCI-meta.llama-3.1-405b-instruct"]),
-                           prompt_name: str = Body('rag_default',
-                                                   examples=["rag_default"]  )
-                           ):
+async def graphrag_global_search(knowledge_base_name: str = Body(..., examples=["samples"]),
+                                 question: str = Body('question', examples=["ask the a global question "]),
+                                 model_name: str = Body('OCI-cohere.command-r-plus',
+                                                        examples=["OCI-meta.llama-3.1-405b-instruct"]),
+                                 prompt_name: str = Body('rag_default',
+                                                         examples=["rag_default"])
+                                 ):
     kbPath = util.get_kb_path(knowledge_base_name)
     graphrag_root_path = Path(kbPath) / 'graphrag'
-    INPUT_DIR = graphrag_root_path / "output/artifacts"
+
     settingFile = graphrag_root_path / 'settings.yaml'
     data = read_yaml(settingFile)
-    llm = data['llm']
 
-    llm = ChatOpenAI(
-        api_key=llm['api_key'],
-        model=llm['model'],
-        api_base=llm['api_base'],
-        api_type=OpenaiApiType.OpenAI,  # OpenaiApiType.OpenAI or OpenaiApiType.AzureOpenAI
+    chat_config = LanguageModelConfig(
+        api_key=data['models']['default_chat_model']['api_key'],
+        api_base=data['models']['default_chat_model']['api_base'],
+        type=ModelType.OpenAIChat,
+        model=data['models']['default_chat_model']['model'],
         max_retries=20,
+        encoding_model=data['models']['default_chat_model']['encoding_model']
     )
-
-    token_encoder = tiktoken.get_encoding("cl100k_base")
-    # INPUT_DIR = "/home/opc/ragtest/output/artifacts"
-
-    COMMUNITY_REPORT_TABLE = "create_final_community_reports"
-    ENTITY_TABLE = "create_final_nodes"
-    ENTITY_EMBEDDING_TABLE = "create_final_entities"
+    model = ModelManager().get_or_create_chat_model(
+        name="global_search",
+        model_type=ModelType.OpenAIChat,
+        config=chat_config,
+    )
+    OUTPUT_DIR = graphrag_root_path / "output"
+    OUTPUT_DIR = str(OUTPUT_DIR)
+    COMMUNITY_TABLE = "communities"
+    COMMUNITY_REPORT_TABLE = "community_reports"
+    ENTITY_TABLE = "entities"
 
     # community level in the Leiden community hierarchy from which we will load the community reports
     # higher value means we use reports from more fine-grained communities (at the cost of higher computation cost)
     COMMUNITY_LEVEL = 2
+    community_df = pd.read_parquet(f"{OUTPUT_DIR}/{COMMUNITY_TABLE}.parquet")
+    entity_df = pd.read_parquet(f"{OUTPUT_DIR}/{ENTITY_TABLE}.parquet")
+    report_df = pd.read_parquet(f"{OUTPUT_DIR}/{COMMUNITY_REPORT_TABLE}.parquet")
 
-    entity_df = pd.read_parquet(f"{INPUT_DIR}/{ENTITY_TABLE}.parquet")
-    report_df = pd.read_parquet(f"{INPUT_DIR}/{COMMUNITY_REPORT_TABLE}.parquet")
-    entity_embedding_df = pd.read_parquet(f"{INPUT_DIR}/{ENTITY_EMBEDDING_TABLE}.parquet")
+    communities = read_indexer_communities(community_df, report_df)
+    reports = read_indexer_reports(report_df, community_df, COMMUNITY_LEVEL)
+    entities = read_indexer_entities(entity_df, community_df, COMMUNITY_LEVEL)
 
-    reports = read_indexer_reports(report_df, entity_df, COMMUNITY_LEVEL)
-    entities = read_indexer_entities(entity_df, entity_embedding_df, COMMUNITY_LEVEL)
-    logger.info(f"Report records: {len(report_df)}")
+    print(f"Total report count: {len(report_df)}")
+    print(
+        f"Report count after filtering by community level {COMMUNITY_LEVEL}: {len(reports)}"
+    )
+
     report_df.head()
-
     context_builder = GlobalCommunityContext(
         community_reports=reports,
+        communities=communities,
         entities=entities,  # default to None if you don't want to use community weights for ranking
         token_encoder=token_encoder,
     )
-
     context_builder_params = {
         "use_community_summary": False,
         # False means using full community reports. True means using community short summaries.
@@ -627,18 +674,18 @@ def graphrag_global_search(knowledge_base_name: str = Body(..., examples=["sampl
 
     map_llm_params = {
         "max_tokens": 1000,
-        "temperature": 0.1,
+        "temperature": 0.0,
         "response_format": {"type": "json_object"},
     }
 
     reduce_llm_params = {
         "max_tokens": 2000,
         # change this based on the token limit you have on your model (if you are using a model with 8k limit, a good setting could be 1000-1500)
-        "temperature": 0.1,
+        "temperature": 0.0,
     }
 
     search_engine = GlobalSearch(
-        llm=llm,
+        model=model,
         context_builder=context_builder,
         token_encoder=token_encoder,
         max_data_tokens=12_000,
@@ -647,45 +694,22 @@ def graphrag_global_search(knowledge_base_name: str = Body(..., examples=["sampl
         reduce_llm_params=reduce_llm_params,
         allow_general_knowledge=False,
         # set this to True will add instruction to encourage the LLM to incorporate general knowledge in the response, which may increase hallucinations, but could be useful in some use cases.
-        json_mode=False,  # set this to False if your LLM model does not support JSON mode.
+        json_mode=True,  # set this to False if your LLM model does not support JSON mode.
         context_builder_params=context_builder_params,
         concurrent_coroutines=32,
         response_type="multiple paragraphs",
         # free form text describing the response type and format, can be anything, e.g. prioritized list, single paragraph, multiple paragraphs, multiple-page report
     )
-
-
-
-    context_text, context_records = search_engine.context_builder.build_context(
-        query=question,
-        conversation_history=[],
-
-    )
+    globalSearchResult = await search_engine.search(question)
 
     promptContent = load_prompt_from_db(prompt_name)
     if not promptContent or promptContent == "":
         raise ValueError("prompt is empty !")
     prompt = PromptTemplate(input_variables=["question", "context"], template=promptContent)
-    logger.info(f"##  prompt:{prompt}##")
 
     # 4.调用LLM
     llm = llm_models.MODEL_DICT.get(model_name)
     query_llm = LLMChain(llm=llm, prompt=prompt)
-    response = query_llm.invoke({"context": context_text, "question": question})
-    logger.info(f"##response:{response}##")
-    # result = search_engine.search(question)
-    # logger.info(result.response)
-    # logger.info(f"LLM calls: {result.llm_calls}. LLM tokens: {result.prompt_tokens}")
+    response = query_llm.invoke({"context": globalSearchResult.context_text, "question": question})
     result = response['text']
     return BaseResponse(code=200, data=f"{result}")
-    # result = search_engine.search(
-    #     question
-    # )
-    # logger.info(f'response: {result.response}')
-    # logger.info(f"map_responses: {result.map_responses[0].response[0]['answer']}")
-    # finalAnswer = result.response if result.response else result.map_responses[0].response[0]['answer']
-    # logger.info(f'report context: {result.context_data["reports"]}')
-    #
-    # logger.info(f"LLM calls: {result.llm_calls}. LLM tokens: {result.prompt_tokens}")
-    # return BaseResponse(code=200, data=f"{finalAnswer}")
-
