@@ -1,7 +1,7 @@
-import nltk, os
+import  os
 os.environ['USER_AGENT'] = 'kbot'
-nltk.download('punkt_tab', quiet=True)
-nltk.download('averaged_perceptron_tagger_eng', quiet=True)
+# nltk.download('punkt_tab', quiet=True)
+# nltk.download('averaged_perceptron_tagger_eng', quiet=True)
 from fastapi import FastAPI, Body
 import argparse, uvicorn
 from kb_llm_api import compression_rag, ask_conversational_rag, clear_disable_memory_rag, ask_rag, ask_history_rag, modify_llm_parameters
@@ -21,7 +21,7 @@ from kb_api import BaseResponse, ListResponse, VectorSearchResponse, create_kb, 
     delete_webpage, download_doc, viewer_doc, \
     get_kb_info, \
     get_llm_info, list_embedding_models, list_kbs, list_llms, list_vector_store_types, query_in_kb,dify_query_from_kb_vectordb,  \
-    recreate_vector_store, upload_docs, upload_from_url, check_vector_store_embedding_progress, sync_kbot_records, \
+    upload_docs, upload_from_url, sync_kbot_records, \
     delete_kb, \
     DeleteResponse, upload_from_object_storage, upload_audio_from_object_storage, text_embedding
 from kb_llm_api import ask_llm, translate
