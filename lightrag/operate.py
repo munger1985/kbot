@@ -1,6 +1,8 @@
 from __future__ import annotations
+from functools import partial
 
 import asyncio
+import traceback
 import json
 import re
 import os
@@ -11,10 +13,9 @@ from .utils import (
     logger,
     clean_str,
     compute_mdhash_id,
-    decode_tokens_by_tiktoken,
-    encode_string_by_tiktoken,
+    Tokenizer,
     is_float_regex,
-    list_of_list_to_csv,
+    normalize_extracted_info,
     pack_user_ass_to_openai_messages,
     split_string_by_multi_markers,
     truncate_list_by_token_size,
@@ -23,9 +24,9 @@ from .utils import (
     handle_cache,
     save_to_cache,
     CacheData,
-    statistic_data,
     get_conversation_turns,
-    verbose_debug,
+    use_llm_func_with_cache,
+    list_of_list_to_json,
 )
 from .base import (
     BaseGraphStorage,
@@ -38,37 +39,38 @@ from .prompt import GRAPH_FIELD_SEP, PROMPTS
 import time
 from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv(override=True)
+# use the .env that is inside the current folder
+# allows to use different .env file for each lightrag instance
+# the OS environment variables take precedence over the .env file
+load_dotenv(dotenv_path=".env", override=False)
 
 
 def chunking_by_token_size(
+    tokenizer: Tokenizer,
     content: str,
     split_by_character: str | None = None,
     split_by_character_only: bool = False,
     overlap_token_size: int = 128,
     max_token_size: int = 1024,
-    tiktoken_model: str = "gpt-4o",
 ) -> list[dict[str, Any]]:
-    tokens = encode_string_by_tiktoken(content, model_name=tiktoken_model)
+    tokens = tokenizer.encode(content)
     results: list[dict[str, Any]] = []
     if split_by_character:
         raw_chunks = content.split(split_by_character)
         new_chunks = []
         if split_by_character_only:
             for chunk in raw_chunks:
-                _tokens = encode_string_by_tiktoken(chunk, model_name=tiktoken_model)
+                _tokens = tokenizer.encode(chunk)
                 new_chunks.append((len(_tokens), chunk))
         else:
             for chunk in raw_chunks:
-                _tokens = encode_string_by_tiktoken(chunk, model_name=tiktoken_model)
+                _tokens = tokenizer.encode(chunk)
                 if len(_tokens) > max_token_size:
                     for start in range(
                         0, len(_tokens), max_token_size - overlap_token_size
                     ):
-                        chunk_content = decode_tokens_by_tiktoken(
-                            _tokens[start : start + max_token_size],
-                            model_name=tiktoken_model,
+                        chunk_content = tokenizer.decode(
+                            _tokens[start : start + max_token_size]
                         )
                         new_chunks.append(
                             (min(max_token_size, len(_tokens) - start), chunk_content)
@@ -87,9 +89,7 @@ def chunking_by_token_size(
         for index, start in enumerate(
             range(0, len(tokens), max_token_size - overlap_token_size)
         ):
-            chunk_content = decode_tokens_by_tiktoken(
-                tokens[start : start + max_token_size], model_name=tiktoken_model
-            )
+            chunk_content = tokenizer.decode(tokens[start : start + max_token_size])
             results.append(
                 {
                     "tokens": min(max_token_size, len(tokens) - start),
@@ -104,26 +104,34 @@ async def _handle_entity_relation_summary(
     entity_or_relation_name: str,
     description: str,
     global_config: dict,
+    pipeline_status: dict = None,
+    pipeline_status_lock=None,
+    llm_response_cache: BaseKVStorage | None = None,
 ) -> str:
     """Handle entity relation summary
     For each entity or relation, input is the combined description of already existing description and new description.
     If too long, use LLM to summarize.
     """
     use_llm_func: callable = global_config["llm_model_func"]
+    # Apply higher priority (8) to entity/relation summary tasks
+    use_llm_func = partial(use_llm_func, _priority=8)
+
+    tokenizer: Tokenizer = global_config["tokenizer"]
     llm_max_tokens = global_config["llm_model_max_token_size"]
-    tiktoken_model_name = global_config["tiktoken_model_name"]
-    summary_max_tokens = global_config["entity_summary_to_max_tokens"]
+    summary_max_tokens = global_config["summary_to_max_tokens"]
+
     language = global_config["addon_params"].get(
         "language", PROMPTS["DEFAULT_LANGUAGE"]
     )
 
-    tokens = encode_string_by_tiktoken(description, model_name=tiktoken_model_name)
-    if len(tokens) < summary_max_tokens:  # No need for summary
-        return description
+    tokens = tokenizer.encode(description)
+
+    ### summarize is not determined here anymore (It's determined by num_fragment now)
+    # if len(tokens) < summary_max_tokens:  # No need for summary
+    #     return description
+
     prompt_template = PROMPTS["summarize_entity_descriptions"]
-    use_description = decode_tokens_by_tiktoken(
-        tokens[:llm_max_tokens], model_name=tiktoken_model_name
-    )
+    use_description = tokenizer.decode(tokens[:llm_max_tokens])
     context_base = dict(
         entity_name=entity_or_relation_name,
         description_list=use_description.split(GRAPH_FIELD_SEP),
@@ -131,7 +139,15 @@ async def _handle_entity_relation_summary(
     )
     use_prompt = prompt_template.format(**context_base)
     logger.debug(f"Trigger summary: {entity_or_relation_name}")
-    summary = await use_llm_func(use_prompt, max_tokens=summary_max_tokens)
+
+    # Use LLM function with cache (higher priority for summary generation)
+    summary = await use_llm_func_with_cache(
+        use_prompt,
+        use_llm_func,
+        llm_response_cache=llm_response_cache,
+        max_tokens=summary_max_tokens,
+        cache_type="extract",
+    )
     return summary
 
 
@@ -140,16 +156,19 @@ async def _handle_single_entity_extraction(
     chunk_key: str,
     file_path: str = "unknown_source",
 ):
-    if len(record_attributes) < 4 or record_attributes[0] != '"entity"':
+    if len(record_attributes) < 4 or '"entity"' not in record_attributes[0]:
         return None
 
     # Clean and validate entity name
-    entity_name = clean_str(record_attributes[1]).strip('"')
-    if not entity_name.strip():
+    entity_name = clean_str(record_attributes[1]).strip()
+    if not entity_name:
         logger.warning(
             f"Entity extraction error: empty entity name in: {record_attributes}"
         )
         return None
+
+    # Normalize entity name
+    entity_name = normalize_extracted_info(entity_name, is_entity=True)
 
     # Clean and validate entity type
     entity_type = clean_str(record_attributes[2]).strip('"')
@@ -160,7 +179,9 @@ async def _handle_single_entity_extraction(
         return None
 
     # Clean and validate description
-    entity_description = clean_str(record_attributes[3]).strip('"')
+    entity_description = clean_str(record_attributes[3])
+    entity_description = normalize_extracted_info(entity_description)
+
     if not entity_description.strip():
         logger.warning(
             f"Entity extraction error: empty description for entity '{entity_name}' of type '{entity_type}'"
@@ -181,17 +202,24 @@ async def _handle_single_relationship_extraction(
     chunk_key: str,
     file_path: str = "unknown_source",
 ):
-    if len(record_attributes) < 5 or record_attributes[0] != '"relationship"':
+    if len(record_attributes) < 5 or '"relationship"' not in record_attributes[0]:
         return None
     # add this record as edge
-    source = clean_str(record_attributes[1]).strip('"')
-    target = clean_str(record_attributes[2]).strip('"')
-    edge_description = clean_str(record_attributes[3]).strip('"')
-    edge_keywords = clean_str(record_attributes[4]).strip('"')
+    source = clean_str(record_attributes[1])
+    target = clean_str(record_attributes[2])
+
+    # Normalize source and target entity names
+    source = normalize_extracted_info(source, is_entity=True)
+    target = normalize_extracted_info(target, is_entity=True)
+
+    edge_description = clean_str(record_attributes[3])
+    edge_description = normalize_extracted_info(edge_description)
+
+    edge_keywords = clean_str(record_attributes[4]).strip('"').strip("'")
     edge_source_id = chunk_key
     weight = (
-        float(record_attributes[-1].strip('"'))
-        if is_float_regex(record_attributes[-1])
+        float(record_attributes[-1].strip('"').strip("'"))
+        if is_float_regex(record_attributes[-1].strip('"').strip("'"))
         else 1.0
     )
     return dict(
@@ -210,6 +238,9 @@ async def _merge_nodes_then_upsert(
     nodes_data: list[dict],
     knowledge_graph_inst: BaseGraphStorage,
     global_config: dict,
+    pipeline_status: dict = None,
+    pipeline_status_lock=None,
+    llm_response_cache: BaseKVStorage | None = None,
 ):
     """Get existing nodes from knowledge graph use name,if exists, merge data, else create, then upsert."""
     already_entity_types = []
@@ -245,10 +276,35 @@ async def _merge_nodes_then_upsert(
         set([dp["file_path"] for dp in nodes_data] + already_file_paths)
     )
 
-    logger.debug(f"file_path: {file_path}")
-    description = await _handle_entity_relation_summary(
-        entity_name, description, global_config
-    )
+    force_llm_summary_on_merge = global_config["force_llm_summary_on_merge"]
+
+    num_fragment = description.count(GRAPH_FIELD_SEP) + 1
+    num_new_fragment = len(set([dp["description"] for dp in nodes_data]))
+
+    if num_fragment > 1:
+        if num_fragment >= force_llm_summary_on_merge:
+            status_message = f"LLM merge N: {entity_name} | {num_new_fragment}+{num_fragment-num_new_fragment}"
+            logger.info(status_message)
+            if pipeline_status is not None and pipeline_status_lock is not None:
+                async with pipeline_status_lock:
+                    pipeline_status["latest_message"] = status_message
+                    pipeline_status["history_messages"].append(status_message)
+            description = await _handle_entity_relation_summary(
+                entity_name,
+                description,
+                global_config,
+                pipeline_status,
+                pipeline_status_lock,
+                llm_response_cache,
+            )
+        else:
+            status_message = f"Merge N: {entity_name} | {num_new_fragment}+{num_fragment-num_new_fragment}"
+            logger.info(status_message)
+            if pipeline_status is not None and pipeline_status_lock is not None:
+                async with pipeline_status_lock:
+                    pipeline_status["latest_message"] = status_message
+                    pipeline_status["history_messages"].append(status_message)
+
     node_data = dict(
         entity_id=entity_name,
         entity_type=entity_type,
@@ -270,6 +326,9 @@ async def _merge_edges_then_upsert(
     edges_data: list[dict],
     knowledge_graph_inst: BaseGraphStorage,
     global_config: dict,
+    pipeline_status: dict = None,
+    pipeline_status_lock=None,
+    llm_response_cache: BaseKVStorage | None = None,
 ):
     already_weights = []
     already_source_ids = []
@@ -345,6 +404,16 @@ async def _merge_edges_then_upsert(
 
     for need_insert_id in [src_id, tgt_id]:
         if not (await knowledge_graph_inst.has_node(need_insert_id)):
+            # # Discard this edge if the node does not exist
+            # if need_insert_id == src_id:
+            #     logger.warning(
+            #         f"Discard edge: {src_id} - {tgt_id} | Source node missing"
+            #     )
+            # else:
+            #     logger.warning(
+            #         f"Discard edge: {src_id} - {tgt_id} | Target node missing"
+            #     )
+            # return None
             await knowledge_graph_inst.upsert_node(
                 need_insert_id,
                 node_data={
@@ -355,9 +424,38 @@ async def _merge_edges_then_upsert(
                     "file_path": file_path,
                 },
             )
-    description = await _handle_entity_relation_summary(
-        f"({src_id}, {tgt_id})", description, global_config
+
+    force_llm_summary_on_merge = global_config["force_llm_summary_on_merge"]
+
+    num_fragment = description.count(GRAPH_FIELD_SEP) + 1
+    num_new_fragment = len(
+        set([dp["description"] for dp in edges_data if dp.get("description")])
     )
+
+    if num_fragment > 1:
+        if num_fragment >= force_llm_summary_on_merge:
+            status_message = f"LLM merge E: {src_id} - {tgt_id} | {num_new_fragment}+{num_fragment-num_new_fragment}"
+            logger.info(status_message)
+            if pipeline_status is not None and pipeline_status_lock is not None:
+                async with pipeline_status_lock:
+                    pipeline_status["latest_message"] = status_message
+                    pipeline_status["history_messages"].append(status_message)
+            description = await _handle_entity_relation_summary(
+                f"({src_id}, {tgt_id})",
+                description,
+                global_config,
+                pipeline_status,
+                pipeline_status_lock,
+                llm_response_cache,
+            )
+        else:
+            status_message = f"Merge E: {src_id} - {tgt_id} | {num_new_fragment}+{num_fragment-num_new_fragment}"
+            logger.info(status_message)
+            if pipeline_status is not None and pipeline_status_lock is not None:
+                async with pipeline_status_lock:
+                    pipeline_status["latest_message"] = status_message
+                    pipeline_status["history_messages"].append(status_message)
+
     await knowledge_graph_inst.upsert_edge(
         src_id,
         tgt_id,
@@ -382,8 +480,8 @@ async def _merge_edges_then_upsert(
     return edge_data
 
 
-async def extract_entities(
-    chunks: dict[str, TextChunkSchema],
+async def merge_nodes_and_edges(
+    chunk_results: list,
     knowledge_graph_inst: BaseGraphStorage,
     entity_vdb: BaseVectorStorage,
     relationships_vdb: BaseVectorStorage,
@@ -391,12 +489,139 @@ async def extract_entities(
     pipeline_status: dict = None,
     pipeline_status_lock=None,
     llm_response_cache: BaseKVStorage | None = None,
+    current_file_number: int = 0,
+    total_files: int = 0,
+    file_path: str = "unknown_source",
 ) -> None:
+    """Merge nodes and edges from extraction results
+
+    Args:
+        chunk_results: List of tuples (maybe_nodes, maybe_edges) containing extracted entities and relationships
+        knowledge_graph_inst: Knowledge graph storage
+        entity_vdb: Entity vector database
+        relationships_vdb: Relationship vector database
+        global_config: Global configuration
+        pipeline_status: Pipeline status dictionary
+        pipeline_status_lock: Lock for pipeline status
+        llm_response_cache: LLM response cache
+    """
+    # Get lock manager from shared storage
+    from .kg.shared_storage import get_graph_db_lock
+
+    # Collect all nodes and edges from all chunks
+    all_nodes = defaultdict(list)
+    all_edges = defaultdict(list)
+
+    for maybe_nodes, maybe_edges in chunk_results:
+        # Collect nodes
+        for entity_name, entities in maybe_nodes.items():
+            all_nodes[entity_name].extend(entities)
+
+        # Collect edges with sorted keys for undirected graph
+        for edge_key, edges in maybe_edges.items():
+            sorted_edge_key = tuple(sorted(edge_key))
+            all_edges[sorted_edge_key].extend(edges)
+
+    # Centralized processing of all nodes and edges
+    entities_data = []
+    relationships_data = []
+
+    # Merge nodes and edges
+    # Use graph database lock to ensure atomic merges and updates
+    graph_db_lock = get_graph_db_lock(enable_logging=False)
+    async with graph_db_lock:
+        async with pipeline_status_lock:
+            log_message = (
+                f"Merging stage {current_file_number}/{total_files}: {file_path}"
+            )
+            logger.info(log_message)
+            pipeline_status["latest_message"] = log_message
+            pipeline_status["history_messages"].append(log_message)
+
+        # Process and update all entities at once
+        for entity_name, entities in all_nodes.items():
+            entity_data = await _merge_nodes_then_upsert(
+                entity_name,
+                entities,
+                knowledge_graph_inst,
+                global_config,
+                pipeline_status,
+                pipeline_status_lock,
+                llm_response_cache,
+            )
+            entities_data.append(entity_data)
+
+        # Process and update all relationships at once
+        for edge_key, edges in all_edges.items():
+            edge_data = await _merge_edges_then_upsert(
+                edge_key[0],
+                edge_key[1],
+                edges,
+                knowledge_graph_inst,
+                global_config,
+                pipeline_status,
+                pipeline_status_lock,
+                llm_response_cache,
+            )
+            if edge_data is not None:
+                relationships_data.append(edge_data)
+
+        # Update total counts
+        total_entities_count = len(entities_data)
+        total_relations_count = len(relationships_data)
+
+        log_message = f"Updating {total_entities_count} entities  {current_file_number}/{total_files}: {file_path}"
+        logger.info(log_message)
+        if pipeline_status is not None:
+            async with pipeline_status_lock:
+                pipeline_status["latest_message"] = log_message
+                pipeline_status["history_messages"].append(log_message)
+
+        # Update vector databases with all collected data
+        if entity_vdb is not None and entities_data:
+            data_for_vdb = {
+                compute_mdhash_id(dp["entity_name"], prefix="ent-"): {
+                    "entity_name": dp["entity_name"],
+                    "entity_type": dp["entity_type"],
+                    "content": f"{dp['entity_name']}\n{dp['description']}",
+                    "source_id": dp["source_id"],
+                    "file_path": dp.get("file_path", "unknown_source"),
+                }
+                for dp in entities_data
+            }
+            await entity_vdb.upsert(data_for_vdb)
+
+        log_message = f"Updating {total_relations_count} relations {current_file_number}/{total_files}: {file_path}"
+        logger.info(log_message)
+        if pipeline_status is not None:
+            async with pipeline_status_lock:
+                pipeline_status["latest_message"] = log_message
+                pipeline_status["history_messages"].append(log_message)
+
+        if relationships_vdb is not None and relationships_data:
+            data_for_vdb = {
+                compute_mdhash_id(dp["src_id"] + dp["tgt_id"], prefix="rel-"): {
+                    "src_id": dp["src_id"],
+                    "tgt_id": dp["tgt_id"],
+                    "keywords": dp["keywords"],
+                    "content": f"{dp['src_id']}\t{dp['tgt_id']}\n{dp['keywords']}\n{dp['description']}",
+                    "source_id": dp["source_id"],
+                    "file_path": dp.get("file_path", "unknown_source"),
+                }
+                for dp in relationships_data
+            }
+            await relationships_vdb.upsert(data_for_vdb)
+
+
+async def extract_entities(
+    chunks: dict[str, TextChunkSchema],
+    global_config: dict[str, str],
+    pipeline_status: dict = None,
+    pipeline_status_lock=None,
+    llm_response_cache: BaseKVStorage | None = None,
+) -> list:
     use_llm_func: callable = global_config["llm_model_func"]
     entity_extract_max_gleaning = global_config["entity_extract_max_gleaning"]
-    enable_llm_cache_for_entity_extract: bool = global_config[
-        "enable_llm_cache_for_entity_extract"
-    ]
 
     ordered_chunks = list(chunks.items())
     # add language and example number params to prompt
@@ -439,52 +664,6 @@ async def extract_entities(
 
     processed_chunks = 0
     total_chunks = len(ordered_chunks)
-
-    async def _user_llm_func_with_cache(
-        input_text: str, history_messages: list[dict[str, str]] = None
-    ) -> str:
-        if enable_llm_cache_for_entity_extract and llm_response_cache:
-            if history_messages:
-                history = json.dumps(history_messages, ensure_ascii=False)
-                _prompt = history + "\n" + input_text
-            else:
-                _prompt = input_text
-
-            # TODO： add cache_type="extract"
-            arg_hash = compute_args_hash(_prompt)
-            cached_return, _1, _2, _3 = await handle_cache(
-                llm_response_cache,
-                arg_hash,
-                _prompt,
-                "default",
-                cache_type="extract",
-            )
-            if cached_return:
-                logger.debug(f"Found cache for {arg_hash}")
-                statistic_data["llm_cache"] += 1
-                return cached_return
-            statistic_data["llm_call"] += 1
-            if history_messages:
-                res: str = await use_llm_func(
-                    input_text, history_messages=history_messages
-                )
-            else:
-                res: str = await use_llm_func(input_text)
-            await save_to_cache(
-                llm_response_cache,
-                CacheData(
-                    args_hash=arg_hash,
-                    content=res,
-                    prompt=_prompt,
-                    cache_type="extract",
-                ),
-            )
-            return res
-
-        if history_messages:
-            return await use_llm_func(input_text, history_messages=history_messages)
-        else:
-            return await use_llm_func(input_text)
 
     async def _process_extraction_result(
         result: str, chunk_key: str, file_path: str = "unknown_source"
@@ -536,6 +715,8 @@ async def extract_entities(
         Args:
             chunk_key_dp (tuple[str, TextChunkSchema]):
                 ("chunk-xxxxxx", {"tokens": int, "content": str, "full_doc_id": str, "chunk_order_index": int})
+        Returns:
+            tuple: (maybe_nodes, maybe_edges) containing extracted entities and relationships
         """
         nonlocal processed_chunks
         chunk_key = chunk_key_dp[0]
@@ -546,10 +727,15 @@ async def extract_entities(
 
         # Get initial extraction
         hint_prompt = entity_extract_prompt.format(
-            **context_base, input_text="{input_text}"
-        ).format(**context_base, input_text=content)
+            **{**context_base, "input_text": content}
+        )
 
-        final_result = await _user_llm_func_with_cache(hint_prompt)
+        final_result = await use_llm_func_with_cache(
+            hint_prompt,
+            use_llm_func,
+            llm_response_cache=llm_response_cache,
+            cache_type="extract",
+        )
         history = pack_user_ass_to_openai_messages(hint_prompt, final_result)
 
         # Process initial extraction with file path
@@ -559,8 +745,12 @@ async def extract_entities(
 
         # Process additional gleaning results
         for now_glean_index in range(entity_extract_max_gleaning):
-            glean_result = await _user_llm_func_with_cache(
-                continue_prompt, history_messages=history
+            glean_result = await use_llm_func_with_cache(
+                continue_prompt,
+                use_llm_func,
+                llm_response_cache=llm_response_cache,
+                history_messages=history,
+                cache_type="extract",
             )
 
             history += pack_user_ass_to_openai_messages(continue_prompt, glean_result)
@@ -570,17 +760,27 @@ async def extract_entities(
                 glean_result, chunk_key, file_path
             )
 
-            # Merge results
+            # Merge results - only add entities and edges with new names
             for entity_name, entities in glean_nodes.items():
-                maybe_nodes[entity_name].extend(entities)
+                if (
+                    entity_name not in maybe_nodes
+                ):  # Only accetp entities with new name in gleaning stage
+                    maybe_nodes[entity_name].extend(entities)
             for edge_key, edges in glean_edges.items():
-                maybe_edges[edge_key].extend(edges)
+                if (
+                    edge_key not in maybe_edges
+                ):  # Only accetp edges with new name in gleaning stage
+                    maybe_edges[edge_key].extend(edges)
 
             if now_glean_index == entity_extract_max_gleaning - 1:
                 break
 
-            if_loop_result: str = await _user_llm_func_with_cache(
-                if_loop_prompt, history_messages=history
+            if_loop_result: str = await use_llm_func_with_cache(
+                if_loop_prompt,
+                use_llm_func,
+                llm_response_cache=llm_response_cache,
+                history_messages=history,
+                cache_type="extract",
             )
             if_loop_result = if_loop_result.strip().strip('"').strip("'").lower()
             if if_loop_result != "yes":
@@ -589,108 +789,53 @@ async def extract_entities(
         processed_chunks += 1
         entities_count = len(maybe_nodes)
         relations_count = len(maybe_edges)
-        log_message = f"  Chunk {processed_chunks}/{total_chunks}: extracted {entities_count} entities and {relations_count} relationships (deduplicated)"
-        logger.info(log_message)
-        if pipeline_status is not None:
-            async with pipeline_status_lock:
-                pipeline_status["latest_message"] = log_message
-                pipeline_status["history_messages"].append(log_message)
-        return dict(maybe_nodes), dict(maybe_edges)
-
-    tasks = [_process_single_content(c) for c in ordered_chunks]
-    results = await asyncio.gather(*tasks)
-
-    maybe_nodes = defaultdict(list)
-    maybe_edges = defaultdict(list)
-    for m_nodes, m_edges in results:
-        for k, v in m_nodes.items():
-            maybe_nodes[k].extend(v)
-        for k, v in m_edges.items():
-            maybe_edges[tuple(sorted(k))].extend(v)
-
-    from .kg.shared_storage import get_graph_db_lock
-
-    graph_db_lock = get_graph_db_lock(enable_logging=False)
-
-    # Ensure that nodes and edges are merged and upserted atomically
-    async with graph_db_lock:
-        all_entities_data = await asyncio.gather(
-            *[
-                _merge_nodes_then_upsert(k, v, knowledge_graph_inst, global_config)
-                for k, v in maybe_nodes.items()
-            ]
-        )
-
-        all_relationships_data = await asyncio.gather(
-            *[
-                _merge_edges_then_upsert(
-                    k[0], k[1], v, knowledge_graph_inst, global_config
-                )
-                for k, v in maybe_edges.items()
-            ]
-        )
-
-    if not (all_entities_data or all_relationships_data):
-        log_message = "Didn't extract any entities and relationships."
-        logger.info(log_message)
-        if pipeline_status is not None:
-            async with pipeline_status_lock:
-                pipeline_status["latest_message"] = log_message
-                pipeline_status["history_messages"].append(log_message)
-        return
-
-    if not all_entities_data:
-        log_message = "Didn't extract any entities"
-        logger.info(log_message)
-        if pipeline_status is not None:
-            async with pipeline_status_lock:
-                pipeline_status["latest_message"] = log_message
-                pipeline_status["history_messages"].append(log_message)
-    if not all_relationships_data:
-        log_message = "Didn't extract any relationships"
+        log_message = f"Chunk {processed_chunks} of {total_chunks} extracted {entities_count} Ent + {relations_count} Rel"
         logger.info(log_message)
         if pipeline_status is not None:
             async with pipeline_status_lock:
                 pipeline_status["latest_message"] = log_message
                 pipeline_status["history_messages"].append(log_message)
 
-    log_message = f"Extracted {len(all_entities_data)} entities and {len(all_relationships_data)} relationships (deduplicated)"
-    logger.info(log_message)
-    if pipeline_status is not None:
-        async with pipeline_status_lock:
-            pipeline_status["latest_message"] = log_message
-            pipeline_status["history_messages"].append(log_message)
-    verbose_debug(
-        f"New entities:{all_entities_data}, relationships:{all_relationships_data}"
-    )
-    verbose_debug(f"New relationships:{all_relationships_data}")
+        # Return the extracted nodes and edges for centralized processing
+        return maybe_nodes, maybe_edges
 
-    if entity_vdb is not None:
-        data_for_vdb = {
-            compute_mdhash_id(dp["entity_name"], prefix="ent-"): {
-                "entity_name": dp["entity_name"],
-                "entity_type": dp["entity_type"],
-                "content": f"{dp['entity_name']}\n{dp['description']}",
-                "source_id": dp["source_id"],
-                "file_path": dp.get("file_path", "unknown_source"),
-            }
-            for dp in all_entities_data
-        }
-        await entity_vdb.upsert(data_for_vdb)
+    # Get max async tasks limit from global_config
+    llm_model_max_async = global_config.get("llm_model_max_async", 4)
+    semaphore = asyncio.Semaphore(llm_model_max_async)
 
-    if relationships_vdb is not None:
-        data_for_vdb = {
-            compute_mdhash_id(dp["src_id"] + dp["tgt_id"], prefix="rel-"): {
-                "src_id": dp["src_id"],
-                "tgt_id": dp["tgt_id"],
-                "keywords": dp["keywords"],
-                "content": f"{dp['src_id']}\t{dp['tgt_id']}\n{dp['keywords']}\n{dp['description']}",
-                "source_id": dp["source_id"],
-                "file_path": dp.get("file_path", "unknown_source"),
-            }
-            for dp in all_relationships_data
-        }
-        await relationships_vdb.upsert(data_for_vdb)
+    async def _process_with_semaphore(chunk):
+        async with semaphore:
+            return await _process_single_content(chunk)
+
+    tasks = []
+    for c in ordered_chunks:
+        task = asyncio.create_task(_process_with_semaphore(c))
+        tasks.append(task)
+
+    # Wait for tasks to complete or for the first exception to occur
+    # This allows us to cancel remaining tasks if any task fails
+    done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_EXCEPTION)
+
+    # Check if any task raised an exception
+    for task in done:
+        if task.exception():
+            # If a task failed, cancel all pending tasks
+            # This prevents unnecessary processing since the parent function will abort anyway
+            for pending_task in pending:
+                pending_task.cancel()
+
+            # Wait for cancellation to complete
+            if pending:
+                await asyncio.wait(pending)
+
+            # Re-raise the exception to notify the caller
+            raise task.exception()
+
+    # If all tasks completed successfully, collect results
+    chunk_results = [task.result() for task in tasks]
+
+    # Return the chunk_results for later processing in merge_nodes_and_edges
+    return chunk_results
 
 
 async def kg_query(
@@ -704,8 +849,14 @@ async def kg_query(
     hashing_kv: BaseKVStorage | None = None,
     system_prompt: str | None = None,
 ) -> str | AsyncIterator[str]:
+    if query_param.model_func:
+        use_model_func = query_param.model_func
+    else:
+        use_model_func = global_config["llm_model_func"]
+        # Apply higher priority (5) to query relation LLM function
+        use_model_func = partial(use_model_func, _priority=5)
+
     # Handle cache
-    use_model_func = global_config["llm_model_func"]
     args_hash = compute_args_hash(query_param.mode, query, cache_type="query")
     cached_response, quantized, min_val, max_val = await handle_cache(
         hashing_kv, args_hash, query, query_param.mode, cache_type="query"
@@ -713,8 +864,7 @@ async def kg_query(
     if cached_response is not None:
         return cached_response
 
-    # Extract keywords using extract_keywords_only function which already supports conversation history
-    hl_keywords, ll_keywords = await extract_keywords_only(
+    hl_keywords, ll_keywords = await get_keywords_from_query(
         query, query_param, global_config, hashing_kv
     )
 
@@ -774,7 +924,8 @@ async def kg_query(
     if query_param.only_need_prompt:
         return sys_prompt
 
-    len_of_prompts = len(encode_string_by_tiktoken(query + sys_prompt))
+    tokenizer: Tokenizer = global_config["tokenizer"]
+    len_of_prompts = len(tokenizer.encode(query + sys_prompt))
     logger.debug(f"[kg_query]Prompt Tokens: {len_of_prompts}")
 
     response = await use_model_func(
@@ -793,21 +944,55 @@ async def kg_query(
             .strip()
         )
 
-    # Save to cache
-    await save_to_cache(
-        hashing_kv,
-        CacheData(
-            args_hash=args_hash,
-            content=response,
-            prompt=query,
-            quantized=quantized,
-            min_val=min_val,
-            max_val=max_val,
-            mode=query_param.mode,
-            cache_type="query",
-        ),
-    )
+    if hashing_kv.global_config.get("enable_llm_cache"):
+        # Save to cache
+        await save_to_cache(
+            hashing_kv,
+            CacheData(
+                args_hash=args_hash,
+                content=response,
+                prompt=query,
+                quantized=quantized,
+                min_val=min_val,
+                max_val=max_val,
+                mode=query_param.mode,
+                cache_type="query",
+            ),
+        )
+
     return response
+
+
+async def get_keywords_from_query(
+    query: str,
+    query_param: QueryParam,
+    global_config: dict[str, str],
+    hashing_kv: BaseKVStorage | None = None,
+) -> tuple[list[str], list[str]]:
+    """
+    Retrieves high-level and low-level keywords for RAG operations.
+
+    This function checks if keywords are already provided in query parameters,
+    and if not, extracts them from the query text using LLM.
+
+    Args:
+        query: The user's query text
+        query_param: Query parameters that may contain pre-defined keywords
+        global_config: Global configuration dictionary
+        hashing_kv: Optional key-value storage for caching results
+
+    Returns:
+        A tuple containing (high_level_keywords, low_level_keywords)
+    """
+    # Check if pre-defined keywords are already provided
+    if query_param.hl_keywords or query_param.ll_keywords:
+        return query_param.hl_keywords, query_param.ll_keywords
+
+    # Extract keywords using extract_keywords_only function which already supports conversation history
+    hl_keywords, ll_keywords = await extract_keywords_only(
+        query, query_param, global_config, hashing_kv
+    )
+    return hl_keywords, ll_keywords
 
 
 async def extract_keywords_only(
@@ -862,11 +1047,18 @@ async def extract_keywords_only(
         query=text, examples=examples, language=language, history=history_context
     )
 
-    len_of_prompts = len(encode_string_by_tiktoken(kw_prompt))
+    tokenizer: Tokenizer = global_config["tokenizer"]
+    len_of_prompts = len(tokenizer.encode(kw_prompt))
     logger.debug(f"[kg_query]Prompt Tokens: {len_of_prompts}")
 
     # 5. Call the LLM for keyword extraction
-    use_model_func = global_config["llm_model_func"]
+    if param.model_func:
+        use_model_func = param.model_func
+    else:
+        use_model_func = global_config["llm_model_func"]
+        # Apply higher priority (5) to query relation LLM function
+        use_model_func = partial(use_model_func, _priority=5)
+
     result = await use_model_func(kw_prompt, keyword_extraction=True)
 
     # 6. Parse out JSON from the LLM response
@@ -889,19 +1081,21 @@ async def extract_keywords_only(
             "high_level_keywords": hl_keywords,
             "low_level_keywords": ll_keywords,
         }
-        await save_to_cache(
-            hashing_kv,
-            CacheData(
-                args_hash=args_hash,
-                content=json.dumps(cache_data),
-                prompt=text,
-                quantized=quantized,
-                min_val=min_val,
-                max_val=max_val,
-                mode=param.mode,
-                cache_type="keywords",
-            ),
-        )
+        if hashing_kv.global_config.get("enable_llm_cache"):
+            await save_to_cache(
+                hashing_kv,
+                CacheData(
+                    args_hash=args_hash,
+                    content=json.dumps(cache_data),
+                    prompt=text,
+                    quantized=quantized,
+                    min_val=min_val,
+                    max_val=max_val,
+                    mode=param.mode,
+                    cache_type="keywords",
+                ),
+            )
+
     return hl_keywords, ll_keywords
 
 
@@ -925,8 +1119,17 @@ async def mix_kg_vector_query(
     2. Retrieving relevant text chunks through vector similarity
     3. Combining both results for comprehensive answer generation
     """
+    # get tokenizer
+    tokenizer: Tokenizer = global_config["tokenizer"]
+
+    if query_param.model_func:
+        use_model_func = query_param.model_func
+    else:
+        use_model_func = global_config["llm_model_func"]
+        # Apply higher priority (5) to query relation LLM function
+        use_model_func = partial(use_model_func, _priority=5)
+
     # 1. Cache handling
-    use_model_func = global_config["llm_model_func"]
     args_hash = compute_args_hash("mix", query, cache_type="query")
     cached_response, quantized, min_val, max_val = await handle_cache(
         hashing_kv, args_hash, query, "mix", cache_type="query"
@@ -944,8 +1147,7 @@ async def mix_kg_vector_query(
     # 2. Execute knowledge graph and vector searches in parallel
     async def get_kg_context():
         try:
-            # Extract keywords using extract_keywords_only function which already supports conversation history
-            hl_keywords, ll_keywords = await extract_keywords_only(
+            hl_keywords, ll_keywords = await get_keywords_from_query(
                 query, query_param, global_config, hashing_kv
             )
 
@@ -982,6 +1184,7 @@ async def mix_kg_vector_query(
 
         except Exception as e:
             logger.error(f"Error in get_kg_context: {str(e)}")
+            traceback.print_exc()
             return None
 
     async def get_vector_context():
@@ -993,7 +1196,6 @@ async def mix_kg_vector_query(
         try:
             # Reduce top_k for vector search in hybrid mode since we have structured information from KG
             mix_topk = min(10, query_param.top_k)
-            # TODO: add ids to the query
             results = await chunks_vdb.query(
                 augmented_query, top_k=mix_topk, ids=query_param.ids
             )
@@ -1010,6 +1212,7 @@ async def mix_kg_vector_query(
                     chunk_with_time = {
                         "content": chunk["content"],
                         "created_at": result.get("created_at", None),
+                        "file_path": result.get("file_path", None),
                     }
                     valid_chunks.append(chunk_with_time)
 
@@ -1020,6 +1223,14 @@ async def mix_kg_vector_query(
                 valid_chunks,
                 key=lambda x: x["content"],
                 max_token_size=query_param.max_token_for_text_unit,
+                tokenizer=tokenizer,
+            )
+
+            logger.debug(
+                f"Truncate chunks from {len(valid_chunks)} to {len(maybe_trun_chunks)} (max tokens:{query_param.max_token_for_text_unit})"
+            )
+            logger.info(
+                f"Naive query: {len(maybe_trun_chunks)} chunks, top_k: {mix_topk}"
             )
 
             if not maybe_trun_chunks:
@@ -1028,7 +1239,7 @@ async def mix_kg_vector_query(
             # Include time information in content
             formatted_chunks = []
             for c in maybe_trun_chunks:
-                chunk_text = c["content"]
+                chunk_text = "File path: " + c["file_path"] + "\n" + c["content"]
                 if c["created_at"]:
                     chunk_text = f"[Created at: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(c['created_at']))}]\n{chunk_text}"
                 formatted_chunks.append(chunk_text)
@@ -1051,28 +1262,33 @@ async def mix_kg_vector_query(
         return PROMPTS["fail_response"]
 
     if query_param.only_need_context:
-        return {"kg_context": kg_context, "vector_context": vector_context}
+        context_str = f"""
+        -----Knowledge Graph Context-----
+        {kg_context if kg_context else "No relevant knowledge graph information found"}
+
+        -----Vector Context-----
+        {vector_context if vector_context else "No relevant text information found"}
+        """.strip()
+        return context_str
 
     # 5. Construct hybrid prompt
     sys_prompt = (
-        system_prompt
-        if system_prompt
-        else PROMPTS["mix_rag_response"].format(
-            kg_context=kg_context
-            if kg_context
-            else "No relevant knowledge graph information found",
-            vector_context=vector_context
-            if vector_context
-            else "No relevant text information found",
-            response_type=query_param.response_type,
-            history=history_context,
-        )
+        system_prompt if system_prompt else PROMPTS["mix_rag_response"]
+    ).format(
+        kg_context=kg_context
+        if kg_context
+        else "No relevant knowledge graph information found",
+        vector_context=vector_context
+        if vector_context
+        else "No relevant text information found",
+        response_type=query_param.response_type,
+        history=history_context,
     )
 
     if query_param.only_need_prompt:
         return sys_prompt
 
-    len_of_prompts = len(encode_string_by_tiktoken(query + sys_prompt))
+    len_of_prompts = len(tokenizer.encode(query + sys_prompt))
     logger.debug(f"[mix_kg_vector_query]Prompt Tokens: {len_of_prompts}")
 
     # 6. Generate response
@@ -1094,20 +1310,21 @@ async def mix_kg_vector_query(
             .strip()
         )
 
-        # 7. Save cache - Only cache after collecting complete response
-        await save_to_cache(
-            hashing_kv,
-            CacheData(
-                args_hash=args_hash,
-                content=response,
-                prompt=query,
-                quantized=quantized,
-                min_val=min_val,
-                max_val=max_val,
-                mode="mix",
-                cache_type="query",
-            ),
-        )
+        if hashing_kv.global_config.get("enable_llm_cache"):
+            # 7. Save cache - Only cache after collecting complete response
+            await save_to_cache(
+                hashing_kv,
+                CacheData(
+                    args_hash=args_hash,
+                    content=response,
+                    prompt=query,
+                    quantized=quantized,
+                    min_val=min_val,
+                    max_val=max_val,
+                    mode="mix",
+                    cache_type="query",
+                ),
+            )
 
     return response
 
@@ -1139,21 +1356,19 @@ async def _build_query_context(
             query_param,
         )
     else:  # hybrid mode
-        ll_data, hl_data = await asyncio.gather(
-            _get_node_data(
-                ll_keywords,
-                knowledge_graph_inst,
-                entities_vdb,
-                text_chunks_db,
-                query_param,
-            ),
-            _get_edge_data(
-                hl_keywords,
-                knowledge_graph_inst,
-                relationships_vdb,
-                text_chunks_db,
-                query_param,
-            ),
+        ll_data = await _get_node_data(
+            ll_keywords,
+            knowledge_graph_inst,
+            entities_vdb,
+            text_chunks_db,
+            query_param,
+        )
+        hl_data = await _get_edge_data(
+            hl_keywords,
+            knowledge_graph_inst,
+            relationships_vdb,
+            text_chunks_db,
+            query_param,
         )
 
         (
@@ -1174,23 +1389,33 @@ async def _build_query_context(
             [hl_text_units_context, ll_text_units_context],
         )
     # not necessary to use LLM to generate a response
-    if not entities_context.strip() and not relations_context.strip():
+    if not entities_context and not relations_context:
         return None
 
-    result = f"""
-    -----Entities-----
-    ```csv
-    {entities_context}
-    ```
-    -----Relationships-----
-    ```csv
-    {relations_context}
-    ```
-    -----Sources-----
-    ```csv
-    {text_units_context}
-    ```
-    """.strip()
+    # 转换为 JSON 字符串
+    entities_str = json.dumps(entities_context, ensure_ascii=False)
+    relations_str = json.dumps(relations_context, ensure_ascii=False)
+    text_units_str = json.dumps(text_units_context, ensure_ascii=False)
+
+    result = f"""-----Entities-----
+
+```json
+{entities_str}
+```
+
+-----Relationships-----
+
+```json
+{relations_str}
+```
+
+-----Sources-----
+
+```json
+{text_units_str}
+```
+
+"""
     return result
 
 
@@ -1212,15 +1437,19 @@ async def _get_node_data(
 
     if not len(results):
         return "", "", ""
-    # get entity information
-    node_datas, node_degrees = await asyncio.gather(
-        asyncio.gather(
-            *[knowledge_graph_inst.get_node(r["entity_name"]) for r in results]
-        ),
-        asyncio.gather(
-            *[knowledge_graph_inst.node_degree(r["entity_name"]) for r in results]
-        ),
+
+    # Extract all entity IDs from your results list
+    node_ids = [r["entity_name"] for r in results]
+
+    # Call the batch node retrieval and degree functions concurrently.
+    nodes_dict, degrees_dict = await asyncio.gather(
+        knowledge_graph_inst.get_nodes_batch(node_ids),
+        knowledge_graph_inst.node_degrees_batch(node_ids),
     )
+
+    # Now, if you need the node data and degree in order:
+    node_datas = [nodes_dict.get(nid) for nid in node_ids]
+    node_degrees = [degrees_dict.get(nid, 0) for nid in node_ids]
 
     if not all([n is not None for n in node_datas]):
         logger.warning("Some nodes are missing, maybe the storage is damaged")
@@ -1231,20 +1460,25 @@ async def _get_node_data(
         if n is not None
     ]  # what is this text_chunks_db doing.  dont remember it in airvx.  check the diagram.
     # get entitytext chunk
-    use_text_units, use_relations = await asyncio.gather(
-        _find_most_related_text_unit_from_entities(
-            node_datas, query_param, text_chunks_db, knowledge_graph_inst
-        ),
-        _find_most_related_edges_from_entities(
-            node_datas, query_param, knowledge_graph_inst
-        ),
+    use_text_units = await _find_most_related_text_unit_from_entities(
+        node_datas,
+        query_param,
+        text_chunks_db,
+        knowledge_graph_inst,
+    )
+    use_relations = await _find_most_related_edges_from_entities(
+        node_datas,
+        query_param,
+        knowledge_graph_inst,
     )
 
+    tokenizer: Tokenizer = text_chunks_db.global_config.get("tokenizer")
     len_node_datas = len(node_datas)
     node_datas = truncate_list_by_token_size(
         node_datas,
         key=lambda x: x["description"] if x["description"] is not None else "",
         max_token_size=query_param.max_token_for_local_context,
+        tokenizer=tokenizer,
     )
     logger.debug(
         f"Truncate entities from {len_node_datas} to {len(node_datas)} (max tokens:{query_param.max_token_for_local_context})"
@@ -1285,7 +1519,7 @@ async def _get_node_data(
                 file_path,
             ]
         )
-    entities_context = list_of_list_to_csv(entites_section_list)
+    entities_context = list_of_list_to_json(entites_section_list)
 
     relations_section_list = [
         [
@@ -1322,12 +1556,14 @@ async def _get_node_data(
                 file_path,
             ]
         )
-    relations_context = list_of_list_to_csv(relations_section_list)
+    relations_context = list_of_list_to_json(relations_section_list)
 
-    text_units_section_list = [["id", "content"]]
+    text_units_section_list = [["id", "content", "file_path"]]
     for i, t in enumerate(use_text_units):
-        text_units_section_list.append([i, t["content"]])
-    text_units_context = list_of_list_to_csv(text_units_section_list)
+        text_units_section_list.append(
+            [i, t["content"], t.get("file_path", "unknown_source")]
+        )
+    text_units_context = list_of_list_to_json(text_units_section_list)
     return entities_context, relations_context, text_units_context
 
 
@@ -1340,10 +1576,14 @@ async def _find_most_related_text_unit_from_entities(
     text_units = [
         split_string_by_multi_markers(dp["source_id"], [GRAPH_FIELD_SEP])
         for dp in node_datas
+        if dp["source_id"] is not None
     ]
-    edges = await asyncio.gather(
-        *[knowledge_graph_inst.get_node_edges(dp["entity_name"]) for dp in node_datas]
-    )
+
+    node_names = [dp["entity_name"] for dp in node_datas]
+    batch_edges_dict = await knowledge_graph_inst.get_nodes_edges_batch(node_names)
+    # Build the edges list in the same order as node_datas.
+    edges = [batch_edges_dict.get(name, []) for name in node_names]
+
     all_one_hop_nodes = set()
     for this_edges in edges:
         if not this_edges:
@@ -1351,9 +1591,14 @@ async def _find_most_related_text_unit_from_entities(
         all_one_hop_nodes.update([e[1] for e in this_edges])
 
     all_one_hop_nodes = list(all_one_hop_nodes)
-    all_one_hop_nodes_data = await asyncio.gather(
-        *[knowledge_graph_inst.get_node(e) for e in all_one_hop_nodes]
+
+    # Batch retrieve one-hop node data using get_nodes_batch
+    all_one_hop_nodes_data_dict = await knowledge_graph_inst.get_nodes_batch(
+        all_one_hop_nodes
     )
+    all_one_hop_nodes_data = [
+        all_one_hop_nodes_data_dict.get(e) for e in all_one_hop_nodes
+    ]
 
     # Add null check for node data
     all_one_hop_text_units_lookup = {
@@ -1371,9 +1616,16 @@ async def _find_most_related_text_unit_from_entities(
                 all_text_units_lookup[c_id] = index
                 tasks.append((c_id, index, this_edges))
 
-    results = await asyncio.gather(
-        *[text_chunks_db.get_by_id(c_id) for c_id, _, _ in tasks]
-    )
+    # Process in batches tasks at a time to avoid overwhelming resources
+    batch_size = 5
+    results = []
+
+    for i in range(0, len(tasks), batch_size):
+        batch_tasks = tasks[i : i + batch_size]
+        batch_results = await asyncio.gather(
+            *[text_chunks_db.get_by_id(c_id) for c_id, _, _ in batch_tasks]
+        )
+        results.extend(batch_results)
 
     for (c_id, index, this_edges), data in zip(tasks, results):
         all_text_units_lookup[c_id] = {
@@ -1401,14 +1653,15 @@ async def _find_most_related_text_unit_from_entities(
         logger.warning("No valid text units found")
         return []
 
+    tokenizer: Tokenizer = text_chunks_db.global_config.get("tokenizer")
     all_text_units = sorted(
         all_text_units, key=lambda x: (x["order"], -x["relation_counts"])
     )
-
     all_text_units = truncate_list_by_token_size(
         all_text_units,
         key=lambda x: x["data"]["content"],
         max_token_size=query_param.max_token_for_text_unit,
+        tokenizer=tokenizer,
     )
 
     logger.debug(
@@ -1424,30 +1677,45 @@ async def _find_most_related_edges_from_entities(
     query_param: QueryParam,
     knowledge_graph_inst: BaseGraphStorage,
 ):
-    all_related_edges = await asyncio.gather(
-        *[knowledge_graph_inst.get_node_edges(dp["entity_name"]) for dp in node_datas]
-    )
+    node_names = [dp["entity_name"] for dp in node_datas]
+    batch_edges_dict = await knowledge_graph_inst.get_nodes_edges_batch(node_names)
+
     all_edges = []
     seen = set()
 
-    for this_edges in all_related_edges:
+    for node_name in node_names:
+        this_edges = batch_edges_dict.get(node_name, [])
         for e in this_edges:
             sorted_edge = tuple(sorted(e))
             if sorted_edge not in seen:
                 seen.add(sorted_edge)
                 all_edges.append(sorted_edge)
 
-    all_edges_pack, all_edges_degree = await asyncio.gather(
-        asyncio.gather(*[knowledge_graph_inst.get_edge(e[0], e[1]) for e in all_edges]),
-        asyncio.gather(
-            *[knowledge_graph_inst.edge_degree(e[0], e[1]) for e in all_edges]
-        ),
+    # Prepare edge pairs in two forms:
+    # For the batch edge properties function, use dicts.
+    edge_pairs_dicts = [{"src": e[0], "tgt": e[1]} for e in all_edges]
+    # For edge degrees, use tuples.
+    edge_pairs_tuples = list(all_edges)  # all_edges is already a list of tuples
+
+    # Call the batched functions concurrently.
+    edge_data_dict, edge_degrees_dict = await asyncio.gather(
+        knowledge_graph_inst.get_edges_batch(edge_pairs_dicts),
+        knowledge_graph_inst.edge_degrees_batch(edge_pairs_tuples),
     )
-    all_edges_data = [
-        {"src_tgt": k, "rank": d, **v}
-        for k, v, d in zip(all_edges, all_edges_pack, all_edges_degree)
-        if v is not None
-    ]
+
+    # Reconstruct edge_datas list in the same order as the deduplicated results.
+    all_edges_data = []
+    for pair in all_edges:
+        edge_props = edge_data_dict.get(pair)
+        if edge_props is not None:
+            combined = {
+                "src_tgt": pair,
+                "rank": edge_degrees_dict.get(pair, 0),
+                **edge_props,
+            }
+            all_edges_data.append(combined)
+
+    tokenizer: Tokenizer = knowledge_graph_inst.global_config.get("tokenizer")
     all_edges_data = sorted(
         all_edges_data, key=lambda x: (x["rank"], x["weight"]), reverse=True
     )
@@ -1455,6 +1723,7 @@ async def _find_most_related_edges_from_entities(
         all_edges_data,
         key=lambda x: x["description"] if x["description"] is not None else "",
         max_token_size=query_param.max_token_for_global_context,
+        tokenizer=tokenizer,
     )
 
     logger.debug(
@@ -1482,29 +1751,35 @@ async def _get_edge_data(
     if not len(results):
         return "", "", ""
 
-    edge_datas, edge_degree = await asyncio.gather(
-        asyncio.gather(
-            *[knowledge_graph_inst.get_edge(r["src_id"], r["tgt_id"]) for r in results]
-        ),
-        asyncio.gather(
-            *[
-                knowledge_graph_inst.edge_degree(r["src_id"], r["tgt_id"])
-                for r in results
-            ]
-        ),
+    # Prepare edge pairs in two forms:
+    # For the batch edge properties function, use dicts.
+    edge_pairs_dicts = [{"src": r["src_id"], "tgt": r["tgt_id"]} for r in results]
+    # For edge degrees, use tuples.
+    edge_pairs_tuples = [(r["src_id"], r["tgt_id"]) for r in results]
+
+    # Call the batched functions concurrently.
+    edge_data_dict, edge_degrees_dict = await asyncio.gather(
+        knowledge_graph_inst.get_edges_batch(edge_pairs_dicts),
+        knowledge_graph_inst.edge_degrees_batch(edge_pairs_tuples),
     )
 
-    edge_datas = [
-        {
-            "src_id": k["src_id"],
-            "tgt_id": k["tgt_id"],
-            "rank": d,
-            "created_at": k.get("__created_at__", None),
-            **v,
-        }
-        for k, v, d in zip(results, edge_datas, edge_degree)
-        if v is not None
-    ]
+    # Reconstruct edge_datas list in the same order as results.
+    edge_datas = []
+    for k in results:
+        pair = (k["src_id"], k["tgt_id"])
+        edge_props = edge_data_dict.get(pair)
+        if edge_props is not None:
+            # Use edge degree from the batch as rank.
+            combined = {
+                "src_id": k["src_id"],
+                "tgt_id": k["tgt_id"],
+                "rank": edge_degrees_dict.get(pair, k.get("rank", 0)),
+                "created_at": k.get("__created_at__", None),
+                **edge_props,
+            }
+            edge_datas.append(combined)
+
+    tokenizer: Tokenizer = text_chunks_db.global_config.get("tokenizer")
     edge_datas = sorted(
         edge_datas, key=lambda x: (x["rank"], x["weight"]), reverse=True
     )
@@ -1512,13 +1787,19 @@ async def _get_edge_data(
         edge_datas,
         key=lambda x: x["description"] if x["description"] is not None else "",
         max_token_size=query_param.max_token_for_global_context,
+        tokenizer=tokenizer,
     )
     use_entities, use_text_units = await asyncio.gather(
         _find_most_related_entities_from_relationships(
-            edge_datas, query_param, knowledge_graph_inst
+            edge_datas,
+            query_param,
+            knowledge_graph_inst,
         ),
         _find_related_text_unit_from_relationships(
-            edge_datas, query_param, text_chunks_db, knowledge_graph_inst
+            edge_datas,
+            query_param,
+            text_chunks_db,
+            knowledge_graph_inst,
         ),
     )
     logger.info(
@@ -1560,7 +1841,7 @@ async def _get_edge_data(
                 file_path,
             ]
         )
-    relations_context = list_of_list_to_csv(relations_section_list)
+    relations_context = list_of_list_to_json(relations_section_list)
 
     entites_section_list = [
         ["id", "entity", "type", "description", "rank", "created_at", "file_path"]
@@ -1585,12 +1866,12 @@ async def _get_edge_data(
                 file_path,
             ]
         )
-    entities_context = list_of_list_to_csv(entites_section_list)
+    entities_context = list_of_list_to_json(entites_section_list)
 
-    text_units_section_list = [["id", "content"]]
+    text_units_section_list = [["id", "content", "file_path"]]
     for i, t in enumerate(use_text_units):
-        text_units_section_list.append([i, t["content"]])
-    text_units_context = list_of_list_to_csv(text_units_section_list)
+        text_units_section_list.append([i, t["content"], t.get("file_path", "unknown")])
+    text_units_context = list_of_list_to_json(text_units_section_list)
     return entities_context, relations_context, text_units_context
 
 
@@ -1610,30 +1891,31 @@ async def _find_most_related_entities_from_relationships(
             entity_names.append(e["tgt_id"])
             seen.add(e["tgt_id"])
 
-    node_datas, node_degrees = await asyncio.gather(
-        asyncio.gather(
-            *[
-                knowledge_graph_inst.get_node(entity_name)
-                for entity_name in entity_names
-            ]
-        ),
-        asyncio.gather(
-            *[
-                knowledge_graph_inst.node_degree(entity_name)
-                for entity_name in entity_names
-            ]
-        ),
+    # Batch approach: Retrieve nodes and their degrees concurrently with one query each.
+    nodes_dict, degrees_dict = await asyncio.gather(
+        knowledge_graph_inst.get_nodes_batch(entity_names),
+        knowledge_graph_inst.node_degrees_batch(entity_names),
     )
-    node_datas = [
-        {**n, "entity_name": k, "rank": d}
-        for k, n, d in zip(entity_names, node_datas, node_degrees)
-    ]
 
+    # Rebuild the list in the same order as entity_names
+    node_datas = []
+    for entity_name in entity_names:
+        node = nodes_dict.get(entity_name)
+        degree = degrees_dict.get(entity_name, 0)
+        if node is None:
+            logger.warning(f"Node '{entity_name}' not found in batch retrieval.")
+            continue
+        # Combine the node data with the entity name and computed degree (as rank)
+        combined = {**node, "entity_name": entity_name, "rank": degree}
+        node_datas.append(combined)
+
+    tokenizer: Tokenizer = knowledge_graph_inst.global_config.get("tokenizer")
     len_node_datas = len(node_datas)
     node_datas = truncate_list_by_token_size(
         node_datas,
         key=lambda x: x["description"] if x["description"] is not None else "",
         max_token_size=query_param.max_token_for_local_context,
+        tokenizer=tokenizer,
     )
     logger.debug(
         f"Truncate entities from {len_node_datas} to {len(node_datas)} (max tokens:{query_param.max_token_for_local_context})"
@@ -1651,6 +1933,7 @@ async def _find_related_text_unit_from_relationships(
     text_units = [
         split_string_by_multi_markers(dp["source_id"], [GRAPH_FIELD_SEP])
         for dp in edge_datas
+        if dp["source_id"] is not None
     ]
     all_text_units_lookup = {}
 
@@ -1687,10 +1970,12 @@ async def _find_related_text_unit_from_relationships(
         logger.warning("No valid text chunks after filtering")
         return []
 
+    tokenizer: Tokenizer = text_chunks_db.global_config.get("tokenizer")
     truncated_text_units = truncate_list_by_token_size(
         valid_text_units,
         key=lambda x: x["data"]["content"],
         max_token_size=query_param.max_token_for_text_unit,
+        tokenizer=tokenizer,
     )
 
     logger.debug(
@@ -1730,8 +2015,14 @@ async def naive_query(
     hashing_kv: BaseKVStorage | None = None,
     system_prompt: str | None = None,
 ) -> str | AsyncIterator[str]:
+    if query_param.model_func:
+        use_model_func = query_param.model_func
+    else:
+        use_model_func = global_config["llm_model_func"]
+        # Apply higher priority (5) to query relation LLM function
+        use_model_func = partial(use_model_func, _priority=5)
+
     # Handle cache
-    use_model_func = global_config["llm_model_func"]
     args_hash = compute_args_hash(query_param.mode, query, cache_type="query")
     cached_response, quantized, min_val, max_val = await handle_cache(
         hashing_kv, args_hash, query, query_param.mode, cache_type="query"
@@ -1757,10 +2048,12 @@ async def naive_query(
         logger.warning("No valid chunks found after filtering")
         return PROMPTS["fail_response"]
 
+    tokenizer: Tokenizer = global_config["tokenizer"]
     maybe_trun_chunks = truncate_list_by_token_size(
         valid_chunks,
         key=lambda x: x["content"],
         max_token_size=query_param.max_token_for_text_unit,
+        tokenizer=tokenizer,
     )
 
     if not maybe_trun_chunks:
@@ -1770,8 +2063,16 @@ async def naive_query(
     logger.debug(
         f"Truncate chunks from {len(chunks)} to {len(maybe_trun_chunks)} (max tokens:{query_param.max_token_for_text_unit})"
     )
+    logger.info(
+        f"Naive query: {len(maybe_trun_chunks)} chunks, top_k: {query_param.top_k}"
+    )
 
-    section = "\n--New Chunk--\n".join([c["content"] for c in maybe_trun_chunks])
+    section = "\n--New Chunk--\n".join(
+        [
+            "File path: " + c["file_path"] + "\n" + c["content"]
+            for c in maybe_trun_chunks
+        ]
+    )
 
     if query_param.only_need_context:
         return section
@@ -1793,15 +2094,16 @@ async def naive_query(
     if query_param.only_need_prompt:
         return sys_prompt
 
-    len_of_prompts = len(encode_string_by_tiktoken(query + sys_prompt))
+    len_of_prompts = len(tokenizer.encode(query + sys_prompt))
     logger.debug(f"[naive_query]Prompt Tokens: {len_of_prompts}")
 
     response = await use_model_func(
         query,
         system_prompt=sys_prompt,
+        stream=query_param.stream,
     )
 
-    if len(response) > len(sys_prompt):
+    if isinstance(response, str) and len(response) > len(sys_prompt):
         response = (
             response[len(sys_prompt) :]
             .replace(sys_prompt, "")
@@ -1813,20 +2115,21 @@ async def naive_query(
             .strip()
         )
 
-    # Save to cache
-    await save_to_cache(
-        hashing_kv,
-        CacheData(
-            args_hash=args_hash,
-            content=response,
-            prompt=query,
-            quantized=quantized,
-            min_val=min_val,
-            max_val=max_val,
-            mode=query_param.mode,
-            cache_type="query",
-        ),
-    )
+    if hashing_kv.global_config.get("enable_llm_cache"):
+        # Save to cache
+        await save_to_cache(
+            hashing_kv,
+            CacheData(
+                args_hash=args_hash,
+                content=response,
+                prompt=query,
+                quantized=quantized,
+                min_val=min_val,
+                max_val=max_val,
+                mode=query_param.mode,
+                cache_type="query",
+            ),
+        )
 
     return response
 
@@ -1846,11 +2149,16 @@ async def kg_query_with_keywords(
     It expects hl_keywords and ll_keywords to be set in query_param, or defaults to empty.
     Then it uses those to build context and produce a final LLM response.
     """
+    if query_param.model_func:
+        use_model_func = query_param.model_func
+    else:
+        use_model_func = global_config["llm_model_func"]
+        # Apply higher priority (5) to query relation LLM function
+        use_model_func = partial(use_model_func, _priority=5)
 
     # ---------------------------
     # 1) Handle potential cache for query results
     # ---------------------------
-    use_model_func = global_config["llm_model_func"]
     args_hash = compute_args_hash(query_param.mode, query, cache_type="query")
     cached_response, quantized, min_val, max_val = await handle_cache(
         hashing_kv, args_hash, query, query_param.mode, cache_type="query"
@@ -1935,7 +2243,8 @@ async def kg_query_with_keywords(
     if query_param.only_need_prompt:
         return sys_prompt
 
-    len_of_prompts = len(encode_string_by_tiktoken(query + sys_prompt))
+    tokenizer: Tokenizer = global_config["tokenizer"]
+    len_of_prompts = len(tokenizer.encode(query + sys_prompt))
     logger.debug(f"[kg_query_with_keywords]Prompt Tokens: {len_of_prompts}")
 
     # 6. Generate response
@@ -1957,20 +2266,21 @@ async def kg_query_with_keywords(
             .strip()
         )
 
-        # 7. Save cache - 只有在收集完整响应后才缓存
-        await save_to_cache(
-            hashing_kv,
-            CacheData(
-                args_hash=args_hash,
-                content=response,
-                prompt=query,
-                quantized=quantized,
-                min_val=min_val,
-                max_val=max_val,
-                mode=query_param.mode,
-                cache_type="query",
-            ),
-        )
+        if hashing_kv.global_config.get("enable_llm_cache"):
+            # 7. Save cache - 只有在收集完整响应后才缓存
+            await save_to_cache(
+                hashing_kv,
+                CacheData(
+                    args_hash=args_hash,
+                    content=response,
+                    prompt=query,
+                    quantized=quantized,
+                    min_val=min_val,
+                    max_val=max_val,
+                    mode=query_param.mode,
+                    cache_type="query",
+                ),
+            )
 
     return response
 
@@ -2010,15 +2320,12 @@ async def query_with_keywords(
         Query response or async iterator
     """
     # Extract keywords
-    hl_keywords, ll_keywords = await extract_keywords_only(
-        text=query,
-        param=param,
+    hl_keywords, ll_keywords = await get_keywords_from_query(
+        query=query,
+        query_param=param,
         global_config=global_config,
         hashing_kv=hashing_kv,
     )
-
-    param.hl_keywords = hl_keywords
-    param.ll_keywords = ll_keywords
 
     # Create a new string with the prompt and the keywords
     ll_keywords_str = ", ".join(ll_keywords)

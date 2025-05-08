@@ -13,7 +13,7 @@ from kbot_graphrag import recommended_config, default_init, graphrag_index, grap
     getPromptByKB, editPromptByKB,listPrompts,graphrag_update_index, editSettingsYamlByKB, getSettingsYamlByKB, checkIndexProgress, get_latest_log
 from kbot_lightrag import lightragInit, lightragConfig, lightragIndex, lightragLocalSearch, \
      lightragGlobalSearch, lightragHybridSearch, lightragCheckIndexStatus, lightragGetIndexLog, \
-     lightragGetEnvByKB, lightragSetEnvByKB
+     lightragGetEnvByKB, lightragSetEnvByKB,lightragDeleteKB,lightragDeleteKBDoc
 
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.responses import RedirectResponse

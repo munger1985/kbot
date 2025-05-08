@@ -12,17 +12,22 @@ from dotenv import load_dotenv
 from pathlib import Path
 from fastapi import Body, Depends, Form
 from fastapi.responses import Response
+from config import config
 
 from lightrag import LightRAG, QueryParam
-from lightrag.utils import EmbeddingFunc, logger, set_verbose_debug
-from lightrag.base import DocProcessingStatus, DocStatus
+from lightrag.utils import EmbeddingFunc
+from lightrag.base import DocStatus
 from lightrag.types import GPTKeywordExtractionFormat
+
+from lightrag.api.config import (
+    parse_args,
+    get_default_host,
+)
 
 from lightrag.api.utils_api import (
     get_combined_auth_dependency,
-    parse_args,
-    get_default_host,
     display_splash_screen,
+    check_env_file,
 )
 from lightrag.kg.shared_storage import (
     get_namespace_data,
@@ -31,7 +36,6 @@ from lightrag.kg.shared_storage import (
 )
 from lightrag.api.routers.document_routes import (
     DocumentManager,
-    create_document_routes,
     run_scanning_process,
 )
 
@@ -45,17 +49,6 @@ class RAGStorage:
         self.rag = None
         self.knowledge_base_name = None
 
-    def set_rag(self, rag):
-        self.rag = rag
-
-    def set_knowledge_base_name(self, knowledge_base_name):
-        self.knowledge_base_name = knowledge_base_name
-
-    def get_rag(self):
-        return self.rag
-
-    def get_knowledge_base_name(self):
-        return self.knowledge_base_name
 
 # 创建 RAGStorage 实例
 rag_storage = RAGStorage()
@@ -141,9 +134,6 @@ def check_if_init(knowledge_base_name: str = Body(..., examples=["samples"])):
 
 
 async def initialize_rag(knowledge_base_name, args):
-    # Setup logging
-    logger.setLevel(args.log_level)
-    set_verbose_debug(args.verbose)
     os.environ["ORACLE_WORKSPACE"] = knowledge_base_name
 
     # Verify that bindings are correctly setup
@@ -320,7 +310,6 @@ async def initialize_rag(knowledge_base_name, args):
         await rag.initialize_storages()
         await initialize_pipeline_status()
 
-        rag_storage.set_rag(rag)
         return rag
     except Exception as e:
         # 处理 LightRAG 初始化可能出现的异常
@@ -702,9 +691,101 @@ def lightragSetEnvByKB(knowledge_base_name: str = Form(..., examples=["samples"]
 
     return BaseResponse(code=200, msg=f"successfully edited lightrag settings for kb {knowledge_base_name}")
 
+async def lightragDeleteKB(
+        knowledge_base_name: str = Body(..., examples=["samples"]),
+        stub: str = Body('stub'),
+) -> BaseResponse:
+    try:
+        kbPath = util.get_kb_path(knowledge_base_name)
+        graphrag_root_path = Path(kbPath) / 'lightrag'
+        graphrag_input_path = graphrag_root_path / "input"
+        # 确保输入目录存在
+        if not graphrag_input_path.exists():
+            return BaseResponse(code=404, msg="Input directory not found")
 
+        os.environ["ORACLE_WORKSPACE"] = knowledge_base_name
 
+        env_path = graphrag_root_path / 'lightrag.env'
+        load_dotenv(env_path)
+        args = parse_args()
+        args.working_dir = graphrag_root_path
 
+        rag = await initialize_rag(knowledge_base_name, args)
+        if not rag:
+            return BaseResponse(code=500, msg="Failed to initialize RAG")
 
+        logger.info(f"Start dropped kb")
 
+        # Use drop method to clear all data
+        drop_tasks = []
+        storages = [
+            rag.text_chunks,
+            rag.full_docs,
+            rag.entities_vdb,
+            rag.relationships_vdb,
+            rag.chunks_vdb,
+            rag.chunk_entity_relation_graph,
+            rag.doc_status,
+        ]
 
+        for storage in storages:
+            if storage is not None:
+                drop_tasks.append(storage.drop())
+
+        # Wait for all drop tasks to complete
+        drop_results = await asyncio.gather(*drop_tasks, return_exceptions=True)
+
+        # Check for errors and log results
+        errors = []
+        storage_success_count = 0
+        storage_error_count = 0
+
+        for i, result in enumerate(drop_results):
+            storage_name = storages[i].__class__.__name__
+            if isinstance(result, Exception):
+                error_msg = f"Error dropping {storage_name}: {str(result)}"
+                errors.append(error_msg)
+                logger.error(error_msg)
+                storage_error_count += 1
+            else:
+                logger.info(f"Successfully dropped {storage_name}")
+                storage_success_count += 1
+
+    except Exception as e:
+        error_msg = f"Error clearing documents: {str(e)}"
+        logger.error(error_msg)
+        raise BaseResponse(code=500, msg=str(e))
+    finally:
+        return BaseResponse(code=200, msg=f"successfully delete {knowledge_base_name}")
+
+async def lightragDeleteKBDoc(knowledge_base_name: str = Body(..., examples=["samples"]),
+                        doc_id: str = Body('stub', examples=["doc-xxx"])) -> BaseResponse:
+    try:
+        kbPath = util.get_kb_path(knowledge_base_name)
+        graphrag_root_path = Path(kbPath) / 'lightrag'
+        os.environ["ORACLE_WORKSPACE"] = knowledge_base_name
+
+        env_path = graphrag_root_path / 'lightrag.env'
+        load_dotenv(env_path)
+        args = parse_args()
+        args.working_dir = graphrag_root_path
+
+        rag = await initialize_rag(knowledge_base_name, args)
+        if not rag:
+            return BaseResponse(code=500, msg="Failed to initialize RAG")
+
+        # 删除文档数据
+        success = await rag.adelete_by_doc_id(doc_id)
+        if not success:
+            return BaseResponse(code=404, msg=f"Document {doc_id} not found")
+
+        return BaseResponse(
+            code=200,
+            msg=f"Successfully deleted document {doc_id} from {knowledge_base_name}"
+        )
+    except Exception as e:
+        logger.error(f"Error deleting document: {e}")
+        return BaseResponse(
+            code=500,
+            msg=f"Failed to delete document: {str(e)}"
+        )

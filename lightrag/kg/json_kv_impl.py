@@ -79,7 +79,7 @@ class JsonKVStorage(BaseKVStorage):
                     # For non-cache namespaces, use the original count method
                     data_count = len(data_dict)
 
-                logger.info(
+                logger.debug(
                     f"Process {os.getpid()} KV writting {data_count} records to {self.namespace}"
                 )
                 write_json(data_dict, self._file_name)
@@ -114,16 +114,93 @@ class JsonKVStorage(BaseKVStorage):
             return set(keys) - set(self._data.keys())
 
     async def upsert(self, data: dict[str, dict[str, Any]]) -> None:
+        """
+        Importance notes for in-memory storage:
+        1. Changes will be persisted to disk during the next index_done_callback
+        2. update flags to notify other processes that data persistence is needed
+        """
         if not data:
             return
-        logger.info(f"Inserting {len(data)} records to {self.namespace}")
+        logger.debug(f"Inserting {len(data)} records to {self.namespace}")
         async with self._storage_lock:
             self._data.update(data)
             await set_all_update_flags(self.namespace)
 
     async def delete(self, ids: list[str]) -> None:
+        """Delete specific records from storage by their IDs
+
+        Importance notes for in-memory storage:
+        1. Changes will be persisted to disk during the next index_done_callback
+        2. update flags to notify other processes that data persistence is needed
+
+        Args:
+            ids (list[str]): List of document IDs to be deleted from storage
+
+        Returns:
+            None
+        """
         async with self._storage_lock:
+            any_deleted = False
             for doc_id in ids:
-                self._data.pop(doc_id, None)
-            await set_all_update_flags(self.namespace)
-        await self.index_done_callback()
+                result = self._data.pop(doc_id, None)
+                if result is not None:
+                    any_deleted = True
+
+            if any_deleted:
+                await set_all_update_flags(self.namespace)
+
+    async def drop_cache_by_modes(self, modes: list[str] | None = None) -> bool:
+        """Delete specific records from storage by by cache mode
+
+        Importance notes for in-memory storage:
+        1. Changes will be persisted to disk during the next index_done_callback
+        2. update flags to notify other processes that data persistence is needed
+
+        Args:
+            ids (list[str]): List of cache mode to be drop from storage
+
+        Returns:
+             True: if the cache drop successfully
+             False: if the cache drop failed
+        """
+        if not modes:
+            return False
+
+        try:
+            await self.delete(modes)
+            return True
+        except Exception:
+            return False
+
+    async def drop(self) -> dict[str, str]:
+        """Drop all data from storage and clean up resources
+           This action will persistent the data to disk immediately.
+
+        This method will:
+        1. Clear all data from memory
+        2. Update flags to notify other processes
+        3. Trigger index_done_callback to save the empty state
+
+        Returns:
+            dict[str, str]: Operation status and message
+            - On success: {"status": "success", "message": "data dropped"}
+            - On failure: {"status": "error", "message": "<error details>"}
+        """
+        try:
+            async with self._storage_lock:
+                self._data.clear()
+                await set_all_update_flags(self.namespace)
+
+            await self.index_done_callback()
+            logger.info(f"Process {os.getpid()} drop {self.namespace}")
+            return {"status": "success", "message": "data dropped"}
+        except Exception as e:
+            logger.error(f"Error dropping {self.namespace}: {e}")
+            return {"status": "error", "message": str(e)}
+
+    async def finalize(self):
+        """Finalize storage resources
+        Persistence cache data to disk before exiting
+        """
+        if self.namespace.endswith("cache"):
+            await self.index_done_callback()
