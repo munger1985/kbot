@@ -1,10 +1,8 @@
-import asyncio
 import inspect
 import os
 import re
 from dataclasses import dataclass
-from typing import Any, final, Optional
-import numpy as np
+from typing import final
 import configparser
 
 
@@ -29,14 +27,21 @@ from neo4j import (  # type: ignore
     exceptions as neo4jExceptions,
     AsyncDriver,
     AsyncManagedTransaction,
-    GraphDatabase,
 )
+
+from dotenv import load_dotenv
+
+# use the .env that is inside the current folder
+# allows to use different .env file for each lightrag instance
+# the OS environment variables take precedence over the .env file
+load_dotenv(dotenv_path=".env", override=False)
+
+# Get maximum number of graph nodes from environment variable, default is 1000
+MAX_GRAPH_NODES = int(os.getenv("MAX_GRAPH_NODES", 1000))
 
 config = configparser.ConfigParser()
 config.read("config.ini", "utf-8")
 
-# Get maximum number of graph nodes from environment variable, default is 1000
-MAX_GRAPH_NODES = int(os.getenv("MAX_GRAPH_NODES", 1000))
 
 # Set neo4j logger level to ERROR to suppress warning logs
 logging.getLogger("neo4j").setLevel(logging.ERROR)
@@ -52,8 +57,8 @@ class Neo4JStorage(BaseGraphStorage):
             embedding_func=embedding_func,
         )
         self._driver = None
-        self._driver_lock = asyncio.Lock()
 
+    async def initialize(self):
         URI = os.environ.get("NEO4J_URI", config.get("neo4j", "uri", fallback=None))
         USERNAME = os.environ.get(
             "NEO4J_USERNAME", config.get("neo4j", "username", fallback=None)
@@ -86,7 +91,7 @@ class Neo4JStorage(BaseGraphStorage):
             ),
         )
         DATABASE = os.environ.get(
-            "NEO4J_DATABASE", re.sub(r"[^a-zA-Z0-9-]", "-", namespace)
+            "NEO4J_DATABASE", re.sub(r"[^a-zA-Z0-9-]", "-", self.namespace)
         )
 
         self._driver: AsyncDriver = AsyncGraphDatabase.driver(
@@ -98,71 +103,92 @@ class Neo4JStorage(BaseGraphStorage):
             max_transaction_retry_time=MAX_TRANSACTION_RETRY_TIME,
         )
 
-        # Try to connect to the database
-        with GraphDatabase.driver(
-            URI,
-            auth=(USERNAME, PASSWORD),
-            max_connection_pool_size=MAX_CONNECTION_POOL_SIZE,
-            connection_timeout=CONNECTION_TIMEOUT,
-            connection_acquisition_timeout=CONNECTION_ACQUISITION_TIMEOUT,
-        ) as _sync_driver:
-            for database in (DATABASE, None):
-                self._DATABASE = database
-                connected = False
+        # Try to connect to the database and create it if it doesn't exist
+        for database in (DATABASE, None):
+            self._DATABASE = database
+            connected = False
 
-                try:
-                    with _sync_driver.session(database=database) as session:
-                        try:
-                            session.run("MATCH (n) RETURN n LIMIT 0")
-                            logger.info(f"Connected to {database} at {URI}")
-                            connected = True
-                        except neo4jExceptions.ServiceUnavailable as e:
-                            logger.error(
-                                f"{database} at {URI} is not available".capitalize()
-                            )
-                            raise e
-                except neo4jExceptions.AuthError as e:
-                    logger.error(f"Authentication failed for {database} at {URI}")
-                    raise e
-                except neo4jExceptions.ClientError as e:
-                    if e.code == "Neo.ClientError.Database.DatabaseNotFound":
-                        logger.info(
-                            f"{database} at {URI} not found. Try to create specified database.".capitalize()
+            try:
+                async with self._driver.session(database=database) as session:
+                    try:
+                        result = await session.run("MATCH (n) RETURN n LIMIT 0")
+                        await result.consume()  # Ensure result is consumed
+                        logger.info(f"Connected to {database} at {URI}")
+                        connected = True
+                    except neo4jExceptions.ServiceUnavailable as e:
+                        logger.error(
+                            f"{database} at {URI} is not available".capitalize()
                         )
-                        try:
-                            with _sync_driver.session() as session:
-                                session.run(
-                                    f"CREATE DATABASE `{database}` IF NOT EXISTS"
+                        raise e
+            except neo4jExceptions.AuthError as e:
+                logger.error(f"Authentication failed for {database} at {URI}")
+                raise e
+            except neo4jExceptions.ClientError as e:
+                if e.code == "Neo.ClientError.Database.DatabaseNotFound":
+                    logger.info(
+                        f"{database} at {URI} not found. Try to create specified database.".capitalize()
+                    )
+                    try:
+                        async with self._driver.session() as session:
+                            result = await session.run(
+                                f"CREATE DATABASE `{database}` IF NOT EXISTS"
+                            )
+                            await result.consume()  # Ensure result is consumed
+                            logger.info(f"{database} at {URI} created".capitalize())
+                            connected = True
+                    except (
+                        neo4jExceptions.ClientError,
+                        neo4jExceptions.DatabaseError,
+                    ) as e:
+                        if (
+                            e.code
+                            == "Neo.ClientError.Statement.UnsupportedAdministrationCommand"
+                        ) or (e.code == "Neo.DatabaseError.Statement.ExecutionFailed"):
+                            if database is not None:
+                                logger.warning(
+                                    "This Neo4j instance does not support creating databases. Try to use Neo4j Desktop/Enterprise version or DozerDB instead. Fallback to use the default database."
                                 )
-                                logger.info(f"{database} at {URI} created".capitalize())
-                                connected = True
-                        except (
-                            neo4jExceptions.ClientError,
-                            neo4jExceptions.DatabaseError,
-                        ) as e:
-                            if (
-                                e.code
-                                == "Neo.ClientError.Statement.UnsupportedAdministrationCommand"
-                            ) or (
-                                e.code == "Neo.DatabaseError.Statement.ExecutionFailed"
-                            ):
-                                if database is not None:
-                                    logger.warning(
-                                        "This Neo4j instance does not support creating databases. Try to use Neo4j Desktop/Enterprise version or DozerDB instead. Fallback to use the default database."
-                                    )
-                            if database is None:
-                                logger.error(f"Failed to create {database} at {URI}")
-                                raise e
+                        if database is None:
+                            logger.error(f"Failed to create {database} at {URI}")
+                            raise e
 
-                if connected:
-                    break
+            if connected:
+                # Create index for base nodes on entity_id if it doesn't exist
+                try:
+                    async with self._driver.session(database=database) as session:
+                        # Check if index exists first
+                        check_query = """
+                        CALL db.indexes() YIELD name, labelsOrTypes, properties
+                        WHERE labelsOrTypes = ['base'] AND properties = ['entity_id']
+                        RETURN count(*) > 0 AS exists
+                        """
+                        try:
+                            check_result = await session.run(check_query)
+                            record = await check_result.single()
+                            await check_result.consume()
 
-    def __post_init__(self):
-        self._node_embed_algorithms = {
-            "node2vec": self._node2vec_embed,
-        }
+                            index_exists = record and record.get("exists", False)
 
-    async def close(self):
+                            if not index_exists:
+                                # Create index only if it doesn't exist
+                                result = await session.run(
+                                    "CREATE INDEX FOR (n:base) ON (n.entity_id)"
+                                )
+                                await result.consume()
+                                logger.info(
+                                    f"Created index for base nodes on entity_id in {database}"
+                                )
+                        except Exception:
+                            # Fallback if db.indexes() is not supported in this Neo4j version
+                            result = await session.run(
+                                "CREATE INDEX IF NOT EXISTS FOR (n:base) ON (n.entity_id)"
+                            )
+                            await result.consume()
+                except Exception as e:
+                    logger.warning(f"Failed to create index: {str(e)}")
+                break
+
+    async def finalize(self):
         """Close the Neo4j driver and release all resources"""
         if self._driver:
             await self._driver.close()
@@ -170,7 +196,7 @@ class Neo4JStorage(BaseGraphStorage):
 
     async def __aexit__(self, exc_type, exc, tb):
         """Ensure driver is closed when context manager exits"""
-        await self.close()
+        await self.finalize()
 
     async def index_done_callback(self) -> None:
         # Noe4J handles persistence automatically
@@ -243,7 +269,7 @@ class Neo4JStorage(BaseGraphStorage):
                 raise
 
     async def get_node(self, node_id: str) -> dict[str, str] | None:
-        """Get node by its label identifier.
+        """Get node by its label identifier, return only node properties
 
         Args:
             node_id: The node label to look up
@@ -290,6 +316,39 @@ class Neo4JStorage(BaseGraphStorage):
                 logger.error(f"Error getting node for {node_id}: {str(e)}")
                 raise
 
+    async def get_nodes_batch(self, node_ids: list[str]) -> dict[str, dict]:
+        """
+        Retrieve multiple nodes in one query using UNWIND.
+
+        Args:
+            node_ids: List of node entity IDs to fetch.
+
+        Returns:
+            A dictionary mapping each node_id to its node data (or None if not found).
+        """
+        async with self._driver.session(
+            database=self._DATABASE, default_access_mode="READ"
+        ) as session:
+            query = """
+            UNWIND $node_ids AS id
+            MATCH (n:base {entity_id: id})
+            RETURN n.entity_id AS entity_id, n
+            """
+            result = await session.run(query, node_ids=node_ids)
+            nodes = {}
+            async for record in result:
+                entity_id = record["entity_id"]
+                node = record["n"]
+                node_dict = dict(node)
+                # Remove the 'base' label if present in a 'labels' property
+                if "labels" in node_dict:
+                    node_dict["labels"] = [
+                        label for label in node_dict["labels"] if label != "base"
+                    ]
+                nodes[entity_id] = node_dict
+            await result.consume()  # Make sure to consume the result fully
+            return nodes
+
     async def node_degree(self, node_id: str) -> int:
         """Get the degree (number of relationships) of a node with the given label.
         If multiple nodes have the same label, returns the degree of the first node.
@@ -324,7 +383,7 @@ class Neo4JStorage(BaseGraphStorage):
 
                     degree = record["degree"]
                     logger.debug(
-                        "Neo4j query node degree for {node_id} return: {degree}"
+                        f"Neo4j query node degree for {node_id} return: {degree}"
                     )
                     return degree
                 finally:
@@ -332,6 +391,41 @@ class Neo4JStorage(BaseGraphStorage):
             except Exception as e:
                 logger.error(f"Error getting node degree for {node_id}: {str(e)}")
                 raise
+
+    async def node_degrees_batch(self, node_ids: list[str]) -> dict[str, int]:
+        """
+        Retrieve the degree for multiple nodes in a single query using UNWIND.
+
+        Args:
+            node_ids: List of node labels (entity_id values) to look up.
+
+        Returns:
+            A dictionary mapping each node_id to its degree (number of relationships).
+            If a node is not found, its degree will be set to 0.
+        """
+        async with self._driver.session(
+            database=self._DATABASE, default_access_mode="READ"
+        ) as session:
+            query = """
+                UNWIND $node_ids AS id
+                MATCH (n:base {entity_id: id})
+                RETURN n.entity_id AS entity_id, count { (n)--() } AS degree;
+            """
+            result = await session.run(query, node_ids=node_ids)
+            degrees = {}
+            async for record in result:
+                entity_id = record["entity_id"]
+                degrees[entity_id] = record["degree"]
+            await result.consume()  # Ensure result is fully consumed
+
+            # For any node_id that did not return a record, set degree to 0.
+            for nid in node_ids:
+                if nid not in degrees:
+                    logger.warning(f"No node found with label '{nid}'")
+                    degrees[nid] = 0
+
+            logger.debug(f"Neo4j batch node degree query returned: {degrees}")
+            return degrees
 
     async def edge_degree(self, src_id: str, tgt_id: str) -> int:
         """Get the total degree (sum of relationships) of two nodes.
@@ -352,6 +446,32 @@ class Neo4JStorage(BaseGraphStorage):
 
         degrees = int(src_degree) + int(trg_degree)
         return degrees
+
+    async def edge_degrees_batch(
+        self, edge_pairs: list[tuple[str, str]]
+    ) -> dict[tuple[str, str], int]:
+        """
+        Calculate the combined degree for each edge (sum of the source and target node degrees)
+        in batch using the already implemented node_degrees_batch.
+
+        Args:
+            edge_pairs: List of (src, tgt) tuples.
+
+        Returns:
+            A dictionary mapping each (src, tgt) tuple to the sum of their degrees.
+        """
+        # Collect unique node IDs from all edge pairs.
+        unique_node_ids = {src for src, _ in edge_pairs}
+        unique_node_ids.update({tgt for _, tgt in edge_pairs})
+
+        # Get degrees for all nodes in one go.
+        degrees = await self.node_degrees_batch(list(unique_node_ids))
+
+        # Sum up degrees for each edge pair.
+        edge_degrees = {}
+        for src, tgt in edge_pairs:
+            edge_degrees[(src, tgt)] = degrees.get(src, 0) + degrees.get(tgt, 0)
+        return edge_degrees
 
     async def get_edge(
         self, source_node_id: str, target_node_id: str
@@ -428,13 +548,8 @@ class Neo4JStorage(BaseGraphStorage):
                     logger.debug(
                         f"{inspect.currentframe().f_code.co_name}: No edge found between {source_node_id} and {target_node_id}"
                     )
-                    # Return default edge properties when no edge found
-                    return {
-                        "weight": 0.0,
-                        "source_id": None,
-                        "description": None,
-                        "keywords": None,
-                    }
+                    # Return None when no edge found
+                    return None
                 finally:
                     await result.consume()  # Ensure result is fully consumed
 
@@ -443,6 +558,55 @@ class Neo4JStorage(BaseGraphStorage):
                 f"Error in get_edge between {source_node_id} and {target_node_id}: {str(e)}"
             )
             raise
+
+    async def get_edges_batch(
+        self, pairs: list[dict[str, str]]
+    ) -> dict[tuple[str, str], dict]:
+        """
+        Retrieve edge properties for multiple (src, tgt) pairs in one query.
+
+        Args:
+            pairs: List of dictionaries, e.g. [{"src": "node1", "tgt": "node2"}, ...]
+
+        Returns:
+            A dictionary mapping (src, tgt) tuples to their edge properties.
+        """
+        async with self._driver.session(
+            database=self._DATABASE, default_access_mode="READ"
+        ) as session:
+            query = """
+            UNWIND $pairs AS pair
+            MATCH (start:base {entity_id: pair.src})-[r:DIRECTED]-(end:base {entity_id: pair.tgt})
+            RETURN pair.src AS src_id, pair.tgt AS tgt_id, collect(properties(r)) AS edges
+            """
+            result = await session.run(query, pairs=pairs)
+            edges_dict = {}
+            async for record in result:
+                src = record["src_id"]
+                tgt = record["tgt_id"]
+                edges = record["edges"]
+                if edges and len(edges) > 0:
+                    edge_props = edges[0]  # choose the first if multiple exist
+                    # Ensure required keys exist with defaults
+                    for key, default in {
+                        "weight": 0.0,
+                        "source_id": None,
+                        "description": None,
+                        "keywords": None,
+                    }.items():
+                        if key not in edge_props:
+                            edge_props[key] = default
+                    edges_dict[(src, tgt)] = edge_props
+                else:
+                    # No edge found – set default edge properties
+                    edges_dict[(src, tgt)] = {
+                        "weight": 0.0,
+                        "source_id": None,
+                        "description": None,
+                        "keywords": None,
+                    }
+            await result.consume()
+            return edges_dict
 
     async def get_node_edges(self, source_node_id: str) -> list[tuple[str, str]] | None:
         """Retrieves all edges (relationships) for a particular node identified by its label.
@@ -504,6 +668,64 @@ class Neo4JStorage(BaseGraphStorage):
             logger.error(f"Error in get_node_edges for {source_node_id}: {str(e)}")
             raise
 
+    async def get_nodes_edges_batch(
+        self, node_ids: list[str]
+    ) -> dict[str, list[tuple[str, str]]]:
+        """
+        Batch retrieve edges for multiple nodes in one query using UNWIND.
+        For each node, returns both outgoing and incoming edges to properly represent
+        the undirected graph nature.
+
+        Args:
+            node_ids: List of node IDs (entity_id) for which to retrieve edges.
+
+        Returns:
+            A dictionary mapping each node ID to its list of edge tuples (source, target).
+            For each node, the list includes both:
+            - Outgoing edges: (queried_node, connected_node)
+            - Incoming edges: (connected_node, queried_node)
+        """
+        async with self._driver.session(
+            database=self._DATABASE, default_access_mode="READ"
+        ) as session:
+            # Query to get both outgoing and incoming edges
+            query = """
+                UNWIND $node_ids AS id
+                MATCH (n:base {entity_id: id})
+                OPTIONAL MATCH (n)-[r]-(connected:base)
+                RETURN id AS queried_id, n.entity_id AS node_entity_id,
+                       connected.entity_id AS connected_entity_id,
+                       startNode(r).entity_id AS start_entity_id
+            """
+            result = await session.run(query, node_ids=node_ids)
+
+            # Initialize the dictionary with empty lists for each node ID
+            edges_dict = {node_id: [] for node_id in node_ids}
+
+            # Process results to include both outgoing and incoming edges
+            async for record in result:
+                queried_id = record["queried_id"]
+                node_entity_id = record["node_entity_id"]
+                connected_entity_id = record["connected_entity_id"]
+                start_entity_id = record["start_entity_id"]
+
+                # Skip if either node is None
+                if not node_entity_id or not connected_entity_id:
+                    continue
+
+                # Determine the actual direction of the edge
+                # If the start node is the queried node, it's an outgoing edge
+                # Otherwise, it's an incoming edge
+                if start_entity_id == node_entity_id:
+                    # Outgoing edge: (queried_node -> connected_node)
+                    edges_dict[queried_id].append((node_entity_id, connected_entity_id))
+                else:
+                    # Incoming edge: (connected_node -> queried_node)
+                    edges_dict[queried_id].append((connected_entity_id, node_entity_id))
+
+            await result.consume()  # Ensure results are fully consumed
+            return edges_dict
+
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=4, max=10),
@@ -526,7 +748,6 @@ class Neo4JStorage(BaseGraphStorage):
         """
         properties = node_data
         entity_type = properties["entity_type"]
-        entity_id = properties["entity_id"]
         if "entity_id" not in properties:
             raise ValueError("Neo4j: node properties must contain an 'entity_id' field")
 
@@ -536,15 +757,17 @@ class Neo4JStorage(BaseGraphStorage):
                 async def execute_upsert(tx: AsyncManagedTransaction):
                     query = (
                         """
-                    MERGE (n:base {entity_id: $properties.entity_id})
+                    MERGE (n:base {entity_id: $entity_id})
                     SET n += $properties
                     SET n:`%s`
                     """
                         % entity_type
                     )
-                    result = await tx.run(query, properties=properties)
+                    result = await tx.run(
+                        query, entity_id=node_id, properties=properties
+                    )
                     logger.debug(
-                        f"Upserted node with entity_id '{entity_id}' and properties: {properties}"
+                        f"Upserted node with entity_id '{node_id}' and properties: {properties}"
                     )
                     await result.consume()  # Ensure result is fully consumed
 
@@ -615,32 +838,23 @@ class Neo4JStorage(BaseGraphStorage):
             logger.error(f"Error during edge upsert: {str(e)}")
             raise
 
-    async def _node2vec_embed(self):
-        print("Implemented but never called.")
-
     async def get_knowledge_graph(
         self,
         node_label: str,
         max_depth: int = 3,
-        min_degree: int = 0,
-        inclusive: bool = False,
+        max_nodes: int = MAX_GRAPH_NODES,
     ) -> KnowledgeGraph:
         """
         Retrieve a connected subgraph of nodes where the label includes the specified `node_label`.
-        Maximum number of nodes is constrained by the environment variable `MAX_GRAPH_NODES` (default: 1000).
-        When reducing the number of nodes, the prioritization criteria are as follows:
-            1. min_degree does not affect nodes directly connected to the matching nodes
-            2. Label matching nodes take precedence
-            3. Followed by nodes directly connected to the matching nodes
-            4. Finally, the degree of the nodes
 
         Args:
-            node_label: Label of the starting node
-            max_depth: Maximum depth of the subgraph
-            min_degree: Minimum degree of nodes to include. Defaults to 0
-            inclusive: Do an inclusive search if true
+            node_label: Label of the starting node, * means all nodes
+            max_depth: Maximum depth of the subgraph, Defaults to 3
+            max_nodes: Maxiumu nodes to return by BFS, Defaults to 1000
+
         Returns:
-            KnowledgeGraph: Complete connected subgraph for specified node
+            KnowledgeGraph object containing nodes and edges, with an is_truncated flag
+            indicating whether the graph was truncated due to max_nodes limit
         """
         result = KnowledgeGraph()
         seen_nodes = set()
@@ -651,11 +865,27 @@ class Neo4JStorage(BaseGraphStorage):
         ) as session:
             try:
                 if node_label == "*":
+                    # First check total node count to determine if graph is truncated
+                    count_query = "MATCH (n) RETURN count(n) as total"
+                    count_result = None
+                    try:
+                        count_result = await session.run(count_query)
+                        count_record = await count_result.single()
+
+                        if count_record and count_record["total"] > max_nodes:
+                            result.is_truncated = True
+                            logger.info(
+                                f"Graph truncated: {count_record['total']} nodes found, limited to {max_nodes}"
+                            )
+                    finally:
+                        if count_result:
+                            await count_result.consume()
+
+                    # Run main query to get nodes with highest degree
                     main_query = """
                     MATCH (n)
                     OPTIONAL MATCH (n)-[r]-()
                     WITH n, COALESCE(count(r), 0) AS degree
-                    WHERE degree >= $min_degree
                     ORDER BY degree DESC
                     LIMIT $max_nodes
                     WITH collect({node: n}) AS filtered_nodes
@@ -666,20 +896,23 @@ class Neo4JStorage(BaseGraphStorage):
                     RETURN filtered_nodes AS node_info,
                            collect(DISTINCT r) AS relationships
                     """
-                    result_set = await session.run(
-                        main_query,
-                        {"max_nodes": MAX_GRAPH_NODES, "min_degree": min_degree},
-                    )
+                    result_set = None
+                    try:
+                        result_set = await session.run(
+                            main_query,
+                            {"max_nodes": max_nodes},
+                        )
+                        record = await result_set.single()
+                    finally:
+                        if result_set:
+                            await result_set.consume()
 
                 else:
-                    # Main query uses partial matching
-                    main_query = """
+                    # return await self._robust_fallback(node_label, max_depth, max_nodes)
+                    # First try without limit to check if we need to truncate
+                    full_query = """
                     MATCH (start)
-                    WHERE
-                        CASE
-                            WHEN $inclusive THEN start.entity_id CONTAINS $entity_id
-                            ELSE start.entity_id = $entity_id
-                        END
+                    WHERE start.entity_id = $entity_id
                     WITH start
                     CALL apoc.path.subgraphAll(start, {
                         relationshipFilter: '',
@@ -688,78 +921,115 @@ class Neo4JStorage(BaseGraphStorage):
                         bfs: true
                     })
                     YIELD nodes, relationships
-                    WITH start, nodes, relationships
+                    WITH nodes, relationships, size(nodes) AS total_nodes
                     UNWIND nodes AS node
-                    OPTIONAL MATCH (node)-[r]-()
-                    WITH node, COALESCE(count(r), 0) AS degree, start, nodes, relationships
-                    WHERE node = start OR EXISTS((start)--(node)) OR degree >= $min_degree
-                    ORDER BY
-                        CASE
-                            WHEN node = start THEN 3
-                            WHEN EXISTS((start)--(node)) THEN 2
-                            ELSE 1
-                        END DESC,
-                        degree DESC
-                    LIMIT $max_nodes
-                    WITH collect({node: node}) AS filtered_nodes
-                    UNWIND filtered_nodes AS node_info
-                    WITH collect(node_info.node) AS kept_nodes, filtered_nodes
-                    OPTIONAL MATCH (a)-[r]-(b)
-                    WHERE a IN kept_nodes AND b IN kept_nodes
-                    RETURN filtered_nodes AS node_info,
-                           collect(DISTINCT r) AS relationships
+                    WITH collect({node: node}) AS node_info, relationships, total_nodes
+                    RETURN node_info, relationships, total_nodes
                     """
-                    result_set = await session.run(
-                        main_query,
-                        {
-                            "max_nodes": MAX_GRAPH_NODES,
-                            "entity_id": node_label,
-                            "inclusive": inclusive,
-                            "max_depth": max_depth,
-                            "min_degree": min_degree,
-                        },
-                    )
 
-                try:
-                    record = await result_set.single()
-
-                    if record:
-                        # Handle nodes (compatible with multi-label cases)
-                        for node_info in record["node_info"]:
-                            node = node_info["node"]
-                            node_id = node.id
-                            if node_id not in seen_nodes:
-                                result.nodes.append(
-                                    KnowledgeGraphNode(
-                                        id=f"{node_id}",
-                                        labels=[node.get("entity_id")],
-                                        properties=dict(node),
-                                    )
-                                )
-                                seen_nodes.add(node_id)
-
-                        # Handle relationships (including direction information)
-                        for rel in record["relationships"]:
-                            edge_id = rel.id
-                            if edge_id not in seen_edges:
-                                start = rel.start_node
-                                end = rel.end_node
-                                result.edges.append(
-                                    KnowledgeGraphEdge(
-                                        id=f"{edge_id}",
-                                        type=rel.type,
-                                        source=f"{start.id}",
-                                        target=f"{end.id}",
-                                        properties=dict(rel),
-                                    )
-                                )
-                                seen_edges.add(edge_id)
-
-                        logger.info(
-                            f"Process {os.getpid()} graph query return: {len(result.nodes)} nodes, {len(result.edges)} edges"
+                    # Try to get full result
+                    full_result = None
+                    try:
+                        full_result = await session.run(
+                            full_query,
+                            {
+                                "entity_id": node_label,
+                                "max_depth": max_depth,
+                            },
                         )
-                finally:
-                    await result_set.consume()  # Ensure result set is consumed
+                        full_record = await full_result.single()
+
+                        # If no record found, return empty KnowledgeGraph
+                        if not full_record:
+                            logger.debug(f"No nodes found for entity_id: {node_label}")
+                            return result
+
+                        # If record found, check node count
+                        total_nodes = full_record["total_nodes"]
+
+                        if total_nodes <= max_nodes:
+                            # If node count is within limit, use full result directly
+                            logger.debug(
+                                f"Using full result with {total_nodes} nodes (no truncation needed)"
+                            )
+                            record = full_record
+                        else:
+                            # If node count exceeds limit, set truncated flag and run limited query
+                            result.is_truncated = True
+                            logger.info(
+                                f"Graph truncated: {total_nodes} nodes found, breadth-first search limited to {max_nodes}"
+                            )
+
+                            # Run limited query
+                            limited_query = """
+                            MATCH (start)
+                            WHERE start.entity_id = $entity_id
+                            WITH start
+                            CALL apoc.path.subgraphAll(start, {
+                                relationshipFilter: '',
+                                minLevel: 0,
+                                maxLevel: $max_depth,
+                                limit: $max_nodes,
+                                bfs: true
+                            })
+                            YIELD nodes, relationships
+                            UNWIND nodes AS node
+                            WITH collect({node: node}) AS node_info, relationships
+                            RETURN node_info, relationships
+                            """
+                            result_set = None
+                            try:
+                                result_set = await session.run(
+                                    limited_query,
+                                    {
+                                        "entity_id": node_label,
+                                        "max_depth": max_depth,
+                                        "max_nodes": max_nodes,
+                                    },
+                                )
+                                record = await result_set.single()
+                            finally:
+                                if result_set:
+                                    await result_set.consume()
+                    finally:
+                        if full_result:
+                            await full_result.consume()
+
+                if record:
+                    # Handle nodes (compatible with multi-label cases)
+                    for node_info in record["node_info"]:
+                        node = node_info["node"]
+                        node_id = node.id
+                        if node_id not in seen_nodes:
+                            result.nodes.append(
+                                KnowledgeGraphNode(
+                                    id=f"{node_id}",
+                                    labels=[node.get("entity_id")],
+                                    properties=dict(node),
+                                )
+                            )
+                            seen_nodes.add(node_id)
+
+                    # Handle relationships (including direction information)
+                    for rel in record["relationships"]:
+                        edge_id = rel.id
+                        if edge_id not in seen_edges:
+                            start = rel.start_node
+                            end = rel.end_node
+                            result.edges.append(
+                                KnowledgeGraphEdge(
+                                    id=f"{edge_id}",
+                                    type=rel.type,
+                                    source=f"{start.id}",
+                                    target=f"{end.id}",
+                                    properties=dict(rel),
+                                )
+                            )
+                            seen_edges.add(edge_id)
+
+                    logger.info(
+                        f"Subgraph query successful | Node count: {len(result.nodes)} | Edge count: {len(result.edges)}"
+                    )
 
             except neo4jExceptions.ClientError as e:
                 logger.warning(f"APOC plugin error: {str(e)}")
@@ -767,110 +1037,28 @@ class Neo4JStorage(BaseGraphStorage):
                     logger.warning(
                         "Neo4j: falling back to basic Cypher recursive search..."
                     )
-                    if inclusive:
-                        logger.warning(
-                            "Neo4j: inclusive search mode is not supported in recursive query, using exact matching"
-                        )
-                    return await self._robust_fallback(
-                        node_label, max_depth, min_degree
+                    return await self._robust_fallback(node_label, max_depth, max_nodes)
+                else:
+                    logger.warning(
+                        "Neo4j: APOC plugin error with wildcard query, returning empty result"
                     )
 
         return result
 
     async def _robust_fallback(
-        self, node_label: str, max_depth: int, min_degree: int = 0
+        self, node_label: str, max_depth: int, max_nodes: int
     ) -> KnowledgeGraph:
         """
         Fallback implementation when APOC plugin is not available or incompatible.
         This method implements the same functionality as get_knowledge_graph but uses
-        only basic Cypher queries and recursive traversal instead of APOC procedures.
+        only basic Cypher queries and true breadth-first traversal instead of APOC procedures.
         """
+        from collections import deque
+
         result = KnowledgeGraph()
         visited_nodes = set()
         visited_edges = set()
-
-        async def traverse(
-            node: KnowledgeGraphNode,
-            edge: Optional[KnowledgeGraphEdge],
-            current_depth: int,
-        ):
-            # Check traversal limits
-            if current_depth > max_depth:
-                logger.debug(f"Reached max depth: {max_depth}")
-                return
-            if len(visited_nodes) >= MAX_GRAPH_NODES:
-                logger.debug(f"Reached max nodes limit: {MAX_GRAPH_NODES}")
-                return
-
-            # Check if node already visited
-            if node.id in visited_nodes:
-                return
-
-            # Get all edges and target nodes
-            async with self._driver.session(
-                database=self._DATABASE, default_access_mode="READ"
-            ) as session:
-                query = """
-                MATCH (a:base {entity_id: $entity_id})-[r]-(b)
-                WITH r, b, id(r) as edge_id, id(b) as target_id
-                RETURN r, b, edge_id, target_id
-                """
-                results = await session.run(query, entity_id=node.id)
-
-                # Get all records and release database connection
-                records = await results.fetch(
-                    1000
-                )  # Max neighbour nodes we can handled
-                await results.consume()  # Ensure results are consumed
-
-                # Nodes not connected to start node need to check degree
-                if current_depth > 1 and len(records) < min_degree:
-                    return
-
-                # Add current node to result
-                result.nodes.append(node)
-                visited_nodes.add(node.id)
-
-                # Add edge to result if it exists and not already added
-                if edge and edge.id not in visited_edges:
-                    result.edges.append(edge)
-                    visited_edges.add(edge.id)
-
-                # Prepare nodes and edges for recursive processing
-                nodes_to_process = []
-                for record in records:
-                    rel = record["r"]
-                    edge_id = str(record["edge_id"])
-                    if edge_id not in visited_edges:
-                        b_node = record["b"]
-                        target_id = b_node.get("entity_id")
-
-                        if target_id:  # Only process if target node has entity_id
-                            # Create KnowledgeGraphNode for target
-                            target_node = KnowledgeGraphNode(
-                                id=f"{target_id}",
-                                labels=list(f"{target_id}"),
-                                properties=dict(b_node.properties),
-                            )
-
-                            # Create KnowledgeGraphEdge
-                            target_edge = KnowledgeGraphEdge(
-                                id=f"{edge_id}",
-                                type=rel.type,
-                                source=f"{node.id}",
-                                target=f"{target_id}",
-                                properties=dict(rel),
-                            )
-
-                            nodes_to_process.append((target_node, target_edge))
-                        else:
-                            logger.warning(
-                                f"Skipping edge {edge_id} due to missing labels on target node"
-                            )
-
-                # Process nodes after releasing database connection
-                for target_node, target_edge in nodes_to_process:
-                    await traverse(target_node, target_edge, current_depth + 1)
+        visited_edge_pairs = set()
 
         # Get the starting node's data
         async with self._driver.session(
@@ -889,15 +1077,129 @@ class Neo4JStorage(BaseGraphStorage):
                 # Create initial KnowledgeGraphNode
                 start_node = KnowledgeGraphNode(
                     id=f"{node_record['n'].get('entity_id')}",
-                    labels=list(f"{node_record['n'].get('entity_id')}"),
-                    properties=dict(node_record["n"].properties),
+                    labels=[node_record["n"].get("entity_id")],
+                    properties=dict(node_record["n"]._properties),
                 )
             finally:
                 await node_result.consume()  # Ensure results are consumed
 
-            # Start traversal with the initial node
-            await traverse(start_node, None, 0)
+        # Initialize queue for BFS with (node, edge, depth) tuples
+        # edge is None for the starting node
+        queue = deque([(start_node, None, 0)])
 
+        # True BFS implementation using a queue
+        while queue and len(visited_nodes) < max_nodes:
+            # Dequeue the next node to process
+            current_node, current_edge, current_depth = queue.popleft()
+
+            # Skip if already visited or exceeds max depth
+            if current_node.id in visited_nodes:
+                continue
+
+            if current_depth > max_depth:
+                logger.debug(
+                    f"Skipping node at depth {current_depth} (max_depth: {max_depth})"
+                )
+                continue
+
+            # Add current node to result
+            result.nodes.append(current_node)
+            visited_nodes.add(current_node.id)
+
+            # Add edge to result if it exists and not already added
+            if current_edge and current_edge.id not in visited_edges:
+                result.edges.append(current_edge)
+                visited_edges.add(current_edge.id)
+
+            # Stop if we've reached the node limit
+            if len(visited_nodes) >= max_nodes:
+                result.is_truncated = True
+                logger.info(
+                    f"Graph truncated: breadth-first search limited to: {max_nodes} nodes"
+                )
+                break
+
+            # Get all edges and target nodes for the current node (even at max_depth)
+            async with self._driver.session(
+                database=self._DATABASE, default_access_mode="READ"
+            ) as session:
+                query = """
+                MATCH (a:base {entity_id: $entity_id})-[r]-(b)
+                WITH r, b, id(r) as edge_id, id(b) as target_id
+                RETURN r, b, edge_id, target_id
+                """
+                results = await session.run(query, entity_id=current_node.id)
+
+                # Get all records and release database connection
+                records = await results.fetch(1000)  # Max neighbor nodes we can handle
+                await results.consume()  # Ensure results are consumed
+
+                # Process all neighbors - capture all edges but only queue unvisited nodes
+                for record in records:
+                    rel = record["r"]
+                    edge_id = str(record["edge_id"])
+
+                    if edge_id not in visited_edges:
+                        b_node = record["b"]
+                        target_id = b_node.get("entity_id")
+
+                        if target_id:  # Only process if target node has entity_id
+                            # Create KnowledgeGraphNode for target
+                            target_node = KnowledgeGraphNode(
+                                id=f"{target_id}",
+                                labels=[target_id],
+                                properties=dict(b_node._properties),
+                            )
+
+                            # Create KnowledgeGraphEdge
+                            target_edge = KnowledgeGraphEdge(
+                                id=f"{edge_id}",
+                                type=rel.type,
+                                source=f"{current_node.id}",
+                                target=f"{target_id}",
+                                properties=dict(rel),
+                            )
+
+                            # Sort source_id and target_id to ensure (A,B) and (B,A) are treated as the same edge
+                            sorted_pair = tuple(sorted([current_node.id, target_id]))
+
+                            # Check if the same edge already exists (considering undirectedness)
+                            if sorted_pair not in visited_edge_pairs:
+                                # Only add the edge if the target node is already in the result or will be added
+                                if target_id in visited_nodes or (
+                                    target_id not in visited_nodes
+                                    and current_depth < max_depth
+                                ):
+                                    result.edges.append(target_edge)
+                                    visited_edges.add(edge_id)
+                                    visited_edge_pairs.add(sorted_pair)
+
+                            # Only add unvisited nodes to the queue for further expansion
+                            if target_id not in visited_nodes:
+                                # Only add to queue if we're not at max depth yet
+                                if current_depth < max_depth:
+                                    # Add node to queue with incremented depth
+                                    # Edge is already added to result, so we pass None as edge
+                                    queue.append((target_node, None, current_depth + 1))
+                                else:
+                                    # At max depth, we've already added the edge but we don't add the node
+                                    # This prevents adding nodes beyond max_depth to the result
+                                    logger.debug(
+                                        f"Node {target_id} beyond max depth {max_depth}, edge added but node not included"
+                                    )
+                            else:
+                                # If target node already exists in result, we don't need to add it again
+                                logger.debug(
+                                    f"Node {target_id} already visited, edge added but node not queued"
+                                )
+                        else:
+                            logger.warning(
+                                f"Skipping edge {edge_id} due to missing entity_id on target node"
+                            )
+
+        logger.info(
+            f"BFS subgraph query successful | Node count: {len(result.nodes)} | Edge count: {len(result.edges)}"
+        )
         return result
 
     async def get_all_labels(self) -> list[str]:
@@ -914,7 +1216,7 @@ class Neo4JStorage(BaseGraphStorage):
 
             # Method 2: Query compatible with older versions
             query = """
-            MATCH (n)
+            MATCH (n:base)
             WHERE n.entity_id IS NOT NULL
             RETURN DISTINCT n.entity_id AS label
             ORDER BY label
@@ -1024,7 +1326,27 @@ class Neo4JStorage(BaseGraphStorage):
                 logger.error(f"Error during edge deletion: {str(e)}")
                 raise
 
-    async def embed_nodes(
-        self, algorithm: str
-    ) -> tuple[np.ndarray[Any, Any], list[str]]:
-        raise NotImplementedError
+    async def drop(self) -> dict[str, str]:
+        """Drop all data from storage and clean up resources
+
+        This method will delete all nodes and relationships in the Neo4j database.
+
+        Returns:
+            dict[str, str]: Operation status and message
+            - On success: {"status": "success", "message": "data dropped"}
+            - On failure: {"status": "error", "message": "<error details>"}
+        """
+        try:
+            async with self._driver.session(database=self._DATABASE) as session:
+                # Delete all nodes and relationships
+                query = "MATCH (n) DETACH DELETE n"
+                result = await session.run(query)
+                await result.consume()  # Ensure result is fully consumed
+
+                logger.info(
+                    f"Process {os.getpid()} drop Neo4j database {self._DATABASE}"
+                )
+                return {"status": "success", "message": "data dropped"}
+        except Exception as e:
+            logger.error(f"Error dropping Neo4j database {self._DATABASE}: {e}")
+            return {"status": "error", "message": str(e)}

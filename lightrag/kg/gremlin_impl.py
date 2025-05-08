@@ -6,9 +6,6 @@ import pipmaster as pm
 from dataclasses import dataclass
 from typing import Any, Dict, List, final
 
-import numpy as np
-
-
 from tenacity import (
     retry,
     retry_if_exception_type,
@@ -24,9 +21,9 @@ from ..base import BaseGraphStorage
 if not pm.is_installed("gremlinpython"):
     pm.install("gremlinpython")
 
-from gremlin_python.driver import client, serializer
-from gremlin_python.driver.aiohttp.transport import AiohttpTransport
-from gremlin_python.driver.protocol import GremlinServerError
+from gremlin_python.driver import client, serializer  # type: ignore
+from gremlin_python.driver.aiohttp.transport import AiohttpTransport  # type: ignore
+from gremlin_python.driver.protocol import GremlinServerError  # type: ignore
 
 
 @final
@@ -71,11 +68,6 @@ class GremlinStorage(BaseGraphStorage):
             message_serializer=serializer.GraphSONSerializersV3d0(),
             transport_factory=lambda: AiohttpTransport(call_from_event_loop=True),
         )
-
-    def __post_init__(self):
-        self._node_embed_algorithms = {
-            "node2vec": self._node2vec_embed,
-        }
 
     async def close(self):
         if self._driver:
@@ -392,9 +384,6 @@ class GremlinStorage(BaseGraphStorage):
             logger.error("Error during edge upsert: {%s}", e)
             raise
 
-    async def _node2vec_embed(self):
-        print("Implemented but never called.")
-
     async def delete_node(self, node_id: str) -> None:
         """Delete a node with the specified entity_name
 
@@ -418,27 +407,6 @@ class GremlinStorage(BaseGraphStorage):
         except Exception as e:
             logger.error(f"Error during node deletion: {str(e)}")
             raise
-
-    async def embed_nodes(
-        self, algorithm: str
-    ) -> tuple[np.ndarray[Any, Any], list[str]]:
-        """
-        Embed nodes using the specified algorithm.
-        Currently, only node2vec is supported but never called.
-
-        Args:
-            algorithm: The name of the embedding algorithm to use
-
-        Returns:
-            A tuple of (embeddings, node_ids)
-
-        Raises:
-            NotImplementedError: If the specified algorithm is not supported
-            ValueError: If the algorithm is not supported
-        """
-        if algorithm not in self._node_embed_algorithms:
-            raise ValueError(f"Node embedding algorithm {algorithm} not supported")
-        return await self._node_embed_algorithms[algorithm]()
 
     async def get_all_labels(self) -> list[str]:
         """
@@ -695,3 +663,24 @@ class GremlinStorage(BaseGraphStorage):
             except Exception as e:
                 logger.error(f"Error during edge deletion: {str(e)}")
                 raise
+
+    async def drop(self) -> dict[str, str]:
+        """Drop the storage by removing all nodes and relationships in the graph.
+
+        This function deletes all nodes with the specified graph name property,
+        which automatically removes all associated edges.
+
+        Returns:
+            dict[str, str]: Status of the operation with keys 'status' and 'message'
+        """
+        try:
+            query = f"""g
+                    .V().has('graph', {self.graph_name})
+                    .drop()
+                    """
+            await self._query(query)
+            logger.info(f"Successfully dropped all data from graph {self.graph_name}")
+            return {"status": "success", "message": "graph data dropped"}
+        except Exception as e:
+            logger.error(f"Error dropping graph {self.graph_name}: {e}")
+            return {"status": "error", "message": str(e)}

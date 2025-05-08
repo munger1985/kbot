@@ -12,11 +12,13 @@ from typing import (
     TypeVar,
     Callable,
 )
-import numpy as np
 from .utils import EmbeddingFunc
 from .types import KnowledgeGraph
 
-load_dotenv()
+# use the .env that is inside the current folder
+# allows to use different .env file for each lightrag instance
+# the OS environment variables take precedence over the .env file
+load_dotenv(dotenv_path=".env", override=False)
 
 
 class TextChunkSchema(TypedDict):
@@ -33,7 +35,7 @@ T = TypeVar("T")
 class QueryParam:
     """Configuration parameters for query execution in LightRAG."""
 
-    mode: Literal["local", "global", "hybrid", "naive", "mix"] = "global"
+    mode: Literal["local", "global", "hybrid", "naive", "mix", "bypass"] = "global"
     """Specifies the retrieval mode:
     - "local": Focuses on context-dependent information.
     - "global": Utilizes global knowledge.
@@ -109,6 +111,32 @@ class StorageNameSpace(ABC):
     async def index_done_callback(self) -> None:
         """Commit the storage operations after indexing"""
 
+    @abstractmethod
+    async def drop(self) -> dict[str, str]:
+        """Drop all data from storage and clean up resources
+
+        This abstract method defines the contract for dropping all data from a storage implementation.
+        Each storage type must implement this method to:
+        1. Clear all data from memory and/or external storage
+        2. Remove any associated storage files if applicable
+        3. Reset the storage to its initial state
+        4. Handle cleanup of any resources
+        5. Notify other processes if necessary
+        6. This action should persistent the data to disk immediately.
+
+        Returns:
+            dict[str, str]: Operation status and message with the following format:
+                {
+                    "status": str,  # "success" or "error"
+                    "message": str  # "data dropped" on success, error details on failure
+                }
+
+        Implementation specific:
+        - On success: return {"status": "success", "message": "data dropped"}
+        - On failure: return {"status": "error", "message": "<error details>"}
+        - If not supported: return {"status": "error", "message": "unsupported"}
+        """
+
 
 @dataclass
 class BaseVectorStorage(StorageNameSpace, ABC):
@@ -124,15 +152,33 @@ class BaseVectorStorage(StorageNameSpace, ABC):
 
     @abstractmethod
     async def upsert(self, data: dict[str, dict[str, Any]]) -> None:
-        """Insert or update vectors in the storage."""
+        """Insert or update vectors in the storage.
+
+        Importance notes for in-memory storage:
+        1. Changes will be persisted to disk during the next index_done_callback
+        2. Only one process should updating the storage at a time before index_done_callback,
+           KG-storage-log should be used to avoid data corruption
+        """
 
     @abstractmethod
     async def delete_entity(self, entity_name: str) -> None:
-        """Delete a single entity by its name."""
+        """Delete a single entity by its name.
+
+        Importance notes for in-memory storage:
+        1. Changes will be persisted to disk during the next index_done_callback
+        2. Only one process should updating the storage at a time before index_done_callback,
+           KG-storage-log should be used to avoid data corruption
+        """
 
     @abstractmethod
     async def delete_entity_relation(self, entity_name: str) -> None:
-        """Delete relations for a given entity."""
+        """Delete relations for a given entity.
+
+        Importance notes for in-memory storage:
+        1. Changes will be persisted to disk during the next index_done_callback
+        2. Only one process should updating the storage at a time before index_done_callback,
+           KG-storage-log should be used to avoid data corruption
+        """
 
     @abstractmethod
     async def get_by_id(self, id: str) -> dict[str, Any] | None:
@@ -158,6 +204,19 @@ class BaseVectorStorage(StorageNameSpace, ABC):
         """
         pass
 
+    @abstractmethod
+    async def delete(self, ids: list[str]):
+        """Delete vectors with specified IDs
+
+        Importance notes for in-memory storage:
+        1. Changes will be persisted to disk during the next index_done_callback
+        2. Only one process should updating the storage at a time before index_done_callback,
+           KG-storage-log should be used to avoid data corruption
+
+        Args:
+            ids: List of vector IDs to be deleted
+        """
+
 
 @dataclass
 class BaseKVStorage(StorageNameSpace, ABC):
@@ -177,7 +236,42 @@ class BaseKVStorage(StorageNameSpace, ABC):
 
     @abstractmethod
     async def upsert(self, data: dict[str, dict[str, Any]]) -> None:
-        """Upsert data"""
+        """Upsert data
+
+        Importance notes for in-memory storage:
+        1. Changes will be persisted to disk during the next index_done_callback
+        2. update flags to notify other processes that data persistence is needed
+        """
+
+    @abstractmethod
+    async def delete(self, ids: list[str]) -> None:
+        """Delete specific records from storage by their IDs
+
+        Importance notes for in-memory storage:
+        1. Changes will be persisted to disk during the next index_done_callback
+        2. update flags to notify other processes that data persistence is needed
+
+        Args:
+            ids (list[str]): List of document IDs to be deleted from storage
+
+        Returns:
+            None
+        """
+
+    async def drop_cache_by_modes(self, modes: list[str] | None = None) -> bool:
+        """Delete specific records from storage by cache mode
+
+        Importance notes for in-memory storage:
+        1. Changes will be persisted to disk during the next index_done_callback
+        2. update flags to notify other processes that data persistence is needed
+
+        Args:
+            modes (list[str]): List of cache modes to be dropped from storage
+
+        Returns:
+             True: if the cache drop successfully
+             False: if the cache drop failed, or the cache mode is not supported
+        """
 
 
 @dataclass
@@ -186,63 +280,256 @@ class BaseGraphStorage(StorageNameSpace, ABC):
 
     @abstractmethod
     async def has_node(self, node_id: str) -> bool:
-        """Check if an edge exists in the graph."""
+        """Check if a node exists in the graph.
+
+        Args:
+            node_id: The ID of the node to check
+
+        Returns:
+            True if the node exists, False otherwise
+        """
 
     @abstractmethod
     async def has_edge(self, source_node_id: str, target_node_id: str) -> bool:
-        """Get the degree of a node."""
+        """Check if an edge exists between two nodes.
+
+        Args:
+            source_node_id: The ID of the source node
+            target_node_id: The ID of the target node
+
+        Returns:
+            True if the edge exists, False otherwise
+        """
 
     @abstractmethod
     async def node_degree(self, node_id: str) -> int:
-        """Get the degree of an edge."""
+        """Get the degree (number of connected edges) of a node.
+
+        Args:
+            node_id: The ID of the node
+
+        Returns:
+            The number of edges connected to the node
+        """
 
     @abstractmethod
     async def edge_degree(self, src_id: str, tgt_id: str) -> int:
-        """Get a node by its id."""
+        """Get the total degree of an edge (sum of degrees of its source and target nodes).
+
+        Args:
+            src_id: The ID of the source node
+            tgt_id: The ID of the target node
+
+        Returns:
+            The sum of the degrees of the source and target nodes
+        """
 
     @abstractmethod
     async def get_node(self, node_id: str) -> dict[str, str] | None:
-        """Get an edge by its source and target node ids."""
+        """Get node by its ID, returning only node properties.
+
+        Args:
+            node_id: The ID of the node to retrieve
+
+        Returns:
+            A dictionary of node properties if found, None otherwise
+        """
 
     @abstractmethod
     async def get_edge(
         self, source_node_id: str, target_node_id: str
     ) -> dict[str, str] | None:
-        """Get all edges connected to a node."""
+        """Get edge properties between two nodes.
+
+        Args:
+            source_node_id: The ID of the source node
+            target_node_id: The ID of the target node
+
+        Returns:
+            A dictionary of edge properties if found, None otherwise
+        """
 
     @abstractmethod
     async def get_node_edges(self, source_node_id: str) -> list[tuple[str, str]] | None:
-        """Upsert a node into the graph."""
+        """Get all edges connected to a node.
+
+        Args:
+            source_node_id: The ID of the node to get edges for
+
+        Returns:
+            A list of (source_id, target_id) tuples representing edges,
+            or None if the node doesn't exist
+        """
+
+    async def get_nodes_batch(self, node_ids: list[str]) -> dict[str, dict]:
+        """Get nodes as a batch using UNWIND
+
+        Default implementation fetches nodes one by one.
+        Override this method for better performance in storage backends
+        that support batch operations.
+        """
+        result = {}
+        for node_id in node_ids:
+            node = await self.get_node(node_id)
+            if node is not None:
+                result[node_id] = node
+        return result
+
+    async def node_degrees_batch(self, node_ids: list[str]) -> dict[str, int]:
+        """Node degrees as a batch using UNWIND
+
+        Default implementation fetches node degrees one by one.
+        Override this method for better performance in storage backends
+        that support batch operations.
+        """
+        result = {}
+        for node_id in node_ids:
+            degree = await self.node_degree(node_id)
+            result[node_id] = degree
+        return result
+
+    async def edge_degrees_batch(
+        self, edge_pairs: list[tuple[str, str]]
+    ) -> dict[tuple[str, str], int]:
+        """Edge degrees as a batch using UNWIND also uses node_degrees_batch
+
+        Default implementation calculates edge degrees one by one.
+        Override this method for better performance in storage backends
+        that support batch operations.
+        """
+        result = {}
+        for src_id, tgt_id in edge_pairs:
+            degree = await self.edge_degree(src_id, tgt_id)
+            result[(src_id, tgt_id)] = degree
+        return result
+
+    async def get_edges_batch(
+        self, pairs: list[dict[str, str]]
+    ) -> dict[tuple[str, str], dict]:
+        """Get edges as a batch using UNWIND
+
+        Default implementation fetches edges one by one.
+        Override this method for better performance in storage backends
+        that support batch operations.
+        """
+        result = {}
+        for pair in pairs:
+            src_id = pair["src"]
+            tgt_id = pair["tgt"]
+            edge = await self.get_edge(src_id, tgt_id)
+            if edge is not None:
+                result[(src_id, tgt_id)] = edge
+        return result
+
+    async def get_nodes_edges_batch(
+        self, node_ids: list[str]
+    ) -> dict[str, list[tuple[str, str]]]:
+        """Get nodes edges as a batch using UNWIND
+
+        Default implementation fetches node edges one by one.
+        Override this method for better performance in storage backends
+        that support batch operations.
+        """
+        result = {}
+        for node_id in node_ids:
+            edges = await self.get_node_edges(node_id)
+            result[node_id] = edges if edges is not None else []
+        return result
 
     @abstractmethod
     async def upsert_node(self, node_id: str, node_data: dict[str, str]) -> None:
-        """Upsert an edge into the graph."""
+        """Insert a new node or update an existing node in the graph.
+
+        Importance notes for in-memory storage:
+        1. Changes will be persisted to disk during the next index_done_callback
+        2. Only one process should updating the storage at a time before index_done_callback,
+           KG-storage-log should be used to avoid data corruption
+
+        Args:
+            node_id: The ID of the node to insert or update
+            node_data: A dictionary of node properties
+        """
 
     @abstractmethod
     async def upsert_edge(
         self, source_node_id: str, target_node_id: str, edge_data: dict[str, str]
     ) -> None:
-        """Delete a node from the graph."""
+        """Insert a new edge or update an existing edge in the graph.
+
+        Importance notes for in-memory storage:
+        1. Changes will be persisted to disk during the next index_done_callback
+        2. Only one process should updating the storage at a time before index_done_callback,
+           KG-storage-log should be used to avoid data corruption
+
+        Args:
+            source_node_id: The ID of the source node
+            target_node_id: The ID of the target node
+            edge_data: A dictionary of edge properties
+        """
 
     @abstractmethod
     async def delete_node(self, node_id: str) -> None:
-        """Embed nodes using an algorithm."""
+        """Delete a node from the graph.
+
+        Importance notes for in-memory storage:
+        1. Changes will be persisted to disk during the next index_done_callback
+        2. Only one process should updating the storage at a time before index_done_callback,
+           KG-storage-log should be used to avoid data corruption
+
+        Args:
+            node_id: The ID of the node to delete
+        """
 
     @abstractmethod
-    async def embed_nodes(
-        self, algorithm: str
-    ) -> tuple[np.ndarray[Any, Any], list[str]]:
-        """Get all labels in the graph."""
+    async def remove_nodes(self, nodes: list[str]):
+        """Delete multiple nodes
+
+        Importance notes:
+        1. Changes will be persisted to disk during the next index_done_callback
+        2. Only one process should updating the storage at a time before index_done_callback,
+           KG-storage-log should be used to avoid data corruption
+
+        Args:
+            nodes: List of node IDs to be deleted
+        """
+
+    @abstractmethod
+    async def remove_edges(self, edges: list[tuple[str, str]]):
+        """Delete multiple edges
+
+        Importance notes:
+        1. Changes will be persisted to disk during the next index_done_callback
+        2. Only one process should updating the storage at a time before index_done_callback,
+           KG-storage-log should be used to avoid data corruption
+
+        Args:
+            edges: List of edges to be deleted, each edge is a (source, target) tuple
+        """
 
     @abstractmethod
     async def get_all_labels(self) -> list[str]:
-        """Get a knowledge graph of a node."""
+        """Get all labels in the graph.
+
+        Returns:
+            A list of all node labels in the graph, sorted alphabetically
+        """
 
     @abstractmethod
     async def get_knowledge_graph(
-        self, node_label: str, max_depth: int = 3
+        self, node_label: str, max_depth: int = 3, max_nodes: int = 1000
     ) -> KnowledgeGraph:
-        """Retrieve a subgraph of the knowledge graph starting from a given node."""
+        """
+        Retrieve a connected subgraph of nodes where the label includes the specified `node_label`.
+
+        Args:
+            node_label: Label of the starting node，* means all nodes
+            max_depth: Maximum depth of the subgraph, Defaults to 3
+            max_nodes: Maxiumu nodes to return, Defaults to 1000（BFS if possible)
+
+        Returns:
+            KnowledgeGraph object containing nodes and edges, with an is_truncated flag
+            indicating whether the graph was truncated due to max_nodes limit
+        """
 
 
 class DocStatus(str, Enum):
@@ -293,6 +580,10 @@ class DocStatusStorage(BaseKVStorage, ABC):
         self, status: DocStatus
     ) -> dict[str, DocProcessingStatus]:
         """Get all documents with a specific status"""
+
+    async def drop_cache_by_modes(self, modes: list[str] | None = None) -> bool:
+        """Drop cache is not supported for Doc Status storage"""
+        return False
 
 
 class StoragesStatus(str, Enum):
