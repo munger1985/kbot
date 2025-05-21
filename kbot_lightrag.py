@@ -701,7 +701,7 @@ async def lightragDeleteKB(
         graphrag_input_path = graphrag_root_path / "input"
         # 确保输入目录存在
         if not graphrag_input_path.exists():
-            return BaseResponse(code=404, msg="Input directory not found")
+            return BaseResponse(code=404, msg="Input Directory not found")
 
         os.environ["ORACLE_WORKSPACE"] = knowledge_base_name
 
@@ -727,7 +727,6 @@ async def lightragDeleteKB(
             rag.chunk_entity_relation_graph,
             rag.doc_status,
         ]
-
         for storage in storages:
             if storage is not None:
                 drop_tasks.append(storage.drop())
