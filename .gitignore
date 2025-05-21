@@ -3,7 +3,6 @@
 .secrets.*
 .idea/
 .git/
-*
 kbot.log
 
 # Python-related files
