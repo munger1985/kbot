@@ -477,6 +477,9 @@ def create_app():
     app.post("/lightrag/lightragGetEnvByKB",
              tags=["lightrag"],
              summary="get lightrag env for kb")(lightragGetEnvByKB)
+    app.post("/lightrag/lightragSetEnvByKB",
+             tags=["lightrag"],
+             summary="set lightrag env for kb")(lightragSetEnvByKB)
     app.post("/lightrag/lightrag_delete_kb",
              tags=["lightrag"],
              summary="delete a kb from lightrag")(lightragDeleteKB)
