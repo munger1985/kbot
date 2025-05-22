@@ -2036,8 +2036,9 @@ def makeSimilarDocs(question, kb_name, user):
         doc_source_file_ext = get_file_extension(doc_source)
         if isinstance(doc_source_file_ext, str) and len(doc_source_file_ext) > 0 and doc_source_file_ext in (
         'pdf', 'doc', 'docx'):
-            if isinstance(doc.metadata.get("page_number"), int):
-                doc_page_num = int(doc.metadata.get("page_number"))
+            page_number = doc.metadata.get("page_number")
+            if page_number is not None:
+                doc_page_num = page_number
         doc_score = obj[1]
         logger.info(
             f"  doc_score: {doc_score}, score_threshold: {settings.score_threshold}, doc_source: {doc_source}, doc_source_file_ext:{doc_source_file_ext},doc_page_num:{doc_page_num}")
