@@ -46,6 +46,8 @@ from vectorDB.oracle_ai_vector_search import OracleAIVector
 from vectorDB.heatwave_vectorstore import HeatWaveVS
 from vectorDB.oracle_vectorstore_adb import OracleAdbVS
 from vectorDB.oracle_vectorstore_basedb import OracleBaseDbVS
+import kbot_lightrag
+
 from util import get_content_root, get_file_path, get_kb_path, get_vs_path, makeSplitter, AskResponseData, \
     get_url_subpath, \
     get_uploaded_file_subpath, delete_folder, write_object, doc_clean, ociSpeechASRLoader, \
@@ -1796,17 +1798,16 @@ def delete_kb(knowledge_base_name: str = Body(..., examples=["samples"]),
     # delete vectors and file record in sqlite
     delete_docs(knowledge_base_name, files)
     delete_vs(knowledge_base_name)
-    # if 'oracle' == kb.vs_type:
-    #    vs.delete_collection()
+    kbot_lightrag.lightragDeleteKB(knowledge_base_name=knowledge_base_name)
     if delete_kb_from_db(knowledge_base_name=knowledge_base_name):
         kbPath = get_kb_path(knowledge_base_name)
         delete_folder(kbPath)
         batchInfo = KnowledgeBatchInfo(kb_name=knowledge_base_name)
         delete_allbatchInfo_in_one_kb(batchInfo)
 
-        return BaseResponse(code=200, msg="删除成功")
+        return BaseResponse(code=200, msg="Deletion Done")
     else:
-        return BaseResponse(code=404, msg="删除失败")
+        return BaseResponse(code=503, msg="Deletion Failed")
 
 
 def copy_to_dest_dir(src_dir, dest_dir):
