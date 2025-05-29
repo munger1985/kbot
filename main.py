@@ -392,7 +392,7 @@ def create_app():
              summary="create llm stream")(create_llm_stream)
     app.post("/chat/create_rag_stream",
              tags=["Chat"],
-             summary="create llm stream")(create_rag_stream)
+             summary="create rag stream")(create_rag_stream)
     app.post("/chat/translate",
              tags=["Chat"],
              summary="Translate with llm")(translate)
