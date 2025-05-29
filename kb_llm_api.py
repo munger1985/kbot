@@ -3,11 +3,12 @@ from fastapi import Body
 from fastapi.responses import Response
 from langchain.chains import LLMChain
 import json, re, os
+from fastapi.responses import StreamingResponse
 from typing import List, Optional, Tuple
 from kb_api import fulltext_search, get_docs_with_scores, get_vs_from_kb, get_vs_path, makeSimilarDocs, user_settings
 from config import config
 import llm_models
-from util import AskResponseData
+from util import AskResponseData, SSEIdResponse
 from langchain_core.prompts import PromptTemplate, MessagesPlaceholder
 from langchain.retrievers import ContextualCompressionRetriever
 from langchain.retrievers.document_compressors.flashrank_rerank import FlashrankRerank
@@ -15,7 +16,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain.memory import ConversationBufferWindowMemory
 from langchain.chains import ConversationChain
 from prompt_api import load_prompt_from_db
-from util import get_cur_time, format_llm_response,remove_special_chars
+from util import get_cur_time, format_llm_response, remove_special_chars
 from loguru import logger
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnablePassthrough
@@ -140,18 +141,19 @@ def ask_rag(user: str,
     logger.info(f"  3.完成获取prompt:{prompt}##")
 
     # 4.调用LLM
-    logger.debug( f" llm invoke start time:, {get_cur_time()}")
+    logger.debug(f" llm invoke start time:, {get_cur_time()}")
     llm = llm_models.MODEL_DICT.get(model_name)
     query_llm = LLMChain(llm=llm, prompt=prompt)
     response = query_llm.invoke({"context": llm_context, "question": question})
-    #logger.info(f"##response.text:{response.get('text')}##")
+    # logger.info(f"##response.text:{response.get('text')}##")
     logger.info(f"##4).完成LLM调用:{get_cur_time()}##")
 
     # 5.LLM结果出来
-    vector_res_arr.insert(0, AskResponseData(remove_special_chars(response.get('text')), "llm", 1, "",1 , "" ))
+    vector_res_arr.insert(0, AskResponseData(remove_special_chars(response.get('text')), "llm", 1, "", 1, ""))
     # 将结果对象列表转换为JSON数组
     result_str = json.dumps(
-        [{"content": p.content, "source": p.source, "score": float(p.score), "source_file_ext": p.source_file_ext, "page_num": int(p.page_num), "viewer_source": p.viewer_source} for p in vector_res_arr],
+        [{"content": p.content, "source": p.source, "score": float(p.score), "source_file_ext": p.source_file_ext,
+          "page_num": int(p.page_num), "viewer_source": p.viewer_source} for p in vector_res_arr],
         ensure_ascii=False)
     result_list = json.loads(format_llm_response(result_str))
     logger.info(f"result_list:{result_list}##")
@@ -210,18 +212,19 @@ def ask_history_rag(user: str,
     logger.info("######llm invoke start time:", get_cur_time())
     inputs = {"input": f"{question}"}
     response = conversation.invoke(inputs)
-    #logger.info(f"##LLM reponse:{response}")
+    # logger.info(f"##LLM reponse:{response}")
     logger.info(f"##5).完成LLM调用:{get_cur_time()}##")
 
     # 6.将LLM结果以及向量数据库结果，转换为JSON数组，返回
-    vector_res_arr.insert(0, AskResponseData(remove_special_chars(response.get('output')), "llm", 1, "",1 , "" ))
-    #print(f"####response:{response.get('output')}")
+    vector_res_arr.insert(0, AskResponseData(remove_special_chars(response.get('output')), "llm", 1, "", 1, ""))
+    # print(f"####response:{response.get('output')}")
     # reference list
     result_str = json.dumps(
-        [{"content": p.content, "source": p.source, "score": float(p.score), "source_file_ext": p.source_file_ext, "page_num": int(p.page_num), "viewer_source": p.viewer_source} for p in vector_res_arr],
+        [{"content": p.content, "source": p.source, "score": float(p.score), "source_file_ext": p.source_file_ext,
+          "page_num": int(p.page_num), "viewer_source": p.viewer_source} for p in vector_res_arr],
         ensure_ascii=False)
     result_list = json.loads(format_llm_response(result_str))
-    #print(f"##result_list:{result_list}")
+    # print(f"##result_list:{result_list}")
     logger.info(f"##6).完成LLM结果处理:{get_cur_time()}##")
     return result_list
 
@@ -289,10 +292,11 @@ def ask_conversational_rag(
     logger.info(f"##5).完成LLM调用:{get_cur_time()}##\n")
 
     # 6.LLM结果出来
-    vector_res_arr.insert(0, AskResponseData(remove_special_chars(response.get('text')), "llm", 1, "",1 , "" ))
+    vector_res_arr.insert(0, SSEIdResponse(remove_special_chars(response.get('text')), "llm", 1, "", 1, ""))
     # 将结果对象列表转换为JSON数组
     result_str = json.dumps(
-        [{"content": p.content, "source": p.source, "score": float(p.score), "source_file_ext": p.source_file_ext, "page_num": int(p.page_num), "viewer_source": p.viewer_source} for p in vector_res_arr],
+        [{"content": p.content, "source": p.source, "score": float(p.score), "source_file_ext": p.source_file_ext,
+          "page_num": int(p.page_num), "viewer_source": p.viewer_source} for p in vector_res_arr],
         ensure_ascii=False)
     result_list = json.loads(result_str)
     logger.info(f"##6).完成LLM结果处理:{get_cur_time()}##\n")
@@ -318,7 +322,245 @@ def get_prompt():
     return prompt_template
 
 
-def ask_llm(query, model_name: str, prompt_name: Optional[str] = None):
+import uuid
+
+sse_store = {}
+
+from kb_api import BaseResponse, ListResponse, VectorSearchResponse
+
+
+##这个是一次性返回LLM和向量数据库的结果。
+def with_llm(
+        query: str = Body(..., description="query", examples=['how to manage services, add users']),
+        llm_model: str = Body(..., description="llm model name", examples=['ChatGLM4', 'llama-2-7b-chat']),
+        prompt_name: str = Body('default', description="prompt name, will use the corresponding content of prompt",
+                                examples=['default']),
+):
+    logger.info("\n******** question is: {}", query)
+    status: str = "success"
+    err_msg: str = ""
+    data: list = []
+    if query != '' and llm_model != '':
+        data = invoke_llm(query, llm_model, prompt_name)
+    else:
+        status = "failed"
+        err_msg = "Not selected llm model and knowledge base or no questions input"
+    return VectorSearchResponse(
+        data=data,
+        status=status,
+        err_msg=err_msg
+    )
+
+
+def create_rag_stream(
+        user: str = Body(..., description="current user", examples=['Demo']),
+        question: str = Body(..., description="query", examples=['how to create certificate in oci']),
+        kb_name: str = Body(..., description="knowledge base name", examples=['samples']),
+        llm_model: str = Body(..., description="llm model name", examples=['genai']),
+        prompt_name: str = Body('rag_default', description="prompt name"),
+        rerankerModel: str = Body('bgeReranker', description='which reranker model'),
+        reranker_topk: int = Body(2, description='reranker_topk'),
+        score_threshold: float = Body(0.6, description='reranker score threshold'),
+        vector_store_limit: int = Body(10, description='the limit of query from vector db'),
+        history_k: int = Body(3, description='history_k'),
+        search_type: str = Body('vector', description='the type of search. eg. vector, fulltext, hybrid'),
+        summary_flag: str = Body('N', description='enable summary or not'),
+):
+    # 1.初始化配置参数
+    settings = SimpleNamespace()
+    settings.prompt_name = prompt_name
+    settings.rerankerModel = rerankerModel
+    settings.reranker_topk = reranker_topk
+    settings.score_threshold = score_threshold
+    settings.vector_store_limit = vector_store_limit
+    settings.search_type = search_type
+    settings.history_k = history_k
+    settings.summary_flag = summary_flag
+    user_settings[user] = settings
+    user_memory_key = user + "_" + kb_name + "_" + llm_model
+    logger.info(f"##1).完成配置参数初始化:{get_cur_time()}##")
+
+    ##2.调用Vector database retrieval and Rerank并获取处理之后结果
+    vector_res_arr, llm_context = makeSimilarDocs(question, kb_name, user)
+    session = str(uuid.uuid4())
+    promptContent = load_prompt_from_db(prompt_name)
+    promptTemplate = PromptTemplate(input_variables=["question", "context"], template=promptContent)
+    prompt = promptTemplate.format(question=question, context=llm_context)
+    input_messages = [
+        {
+            "role": "system",
+            "content": prompt,
+        },
+        {"role": "user", "content": question},
+    ]
+    if user_memory_key not in user_memory:
+        llm = llm_models.MODEL_DICT.get(llm_model)
+        assert llm is not None, f"{llm_model} not found"
+
+        workflow = StateGraph(state_schema=MessagesState)
+
+        # Define the function that calls the model
+        def call_model(state: MessagesState):
+            response = llm.invoke(state["messages"])
+            return {"messages": response}
+
+        # Define the two nodes we will cycle between
+        workflow.add_edge(START, "model")
+        workflow.add_node("model", call_model)
+
+        # Add memory
+        memory = MemorySaver()
+        app = workflow.compile(checkpointer=memory)
+
+        user_memory[user_memory_key] = app
+    else:
+        app = user_memory.get(user_memory_key)
+
+    # 3.Initial chat history, and set user_memory
+    # memory = ConversationBufferWindowMemory(memory_key="chat_history", k=settings.history_k, return_messages=True,
+    # output_key='output')
+    # user_memory.setdefault(user_memory_key, memory)
+    config = {"configurable": {"thread_id": user_memory_key}}
+
+    sse_store[session] = [input_messages, config, user_memory_key, app]
+
+    new_vector_res_arr = []
+    new_vector_res_arr.insert(0,
+                              {
+                                  "sse_session_id": session,
+                              }
+                              )
+    new_vector_res_arr.extend([
+        {
+            "content": p.content,
+            "source": p.source,
+            "score": float(p.score),
+            "source_file_ext": p.source_file_ext,
+            "page_num": int(p.page_num),
+            "viewer_source": p.viewer_source
+        }
+        for p in vector_res_arr
+    ])
+
+    # print(f"####response:{response.get('output')}")
+    # reference list
+    # result_str = json.dumps(
+    #     new_vector_res_arr,
+    #     ensure_ascii=False)
+    return new_vector_res_arr
+    # result_list = json.loads(format_llm_response(result_str))
+
+
+def create_llm_stream(
+        query: str = Body(..., description="query", examples=['how to manage services, add users']),
+        llm_model: str = Body(..., description="llm model name", examples=['ChatGLM4', 'llama-2-7b-chat']),
+        prompt_name: str = Body('default', description="prompt name, will use the corresponding content of prompt",
+                                examples=['default']),
+):
+    logger.info("\n******** question is: {}", query)
+    # llm = llm_models.MODEL_DICT.get(llm_model)
+    session = str(uuid.uuid4())
+    if len(query) > 0:
+        sse_store[session] = [query, llm_model, prompt_name]
+    else:
+        session = "llm not found"
+    return {"sse_session_id": session}
+
+
+from fastapi import Query
+import asyncio
+import uuid
+
+from langchain_openai import ChatOpenAI
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph import START, MessagesState, StateGraph
+
+
+async def stream_rag(sse_session_id: str = Query(..., description="sse_session_id ",
+                                                 examples=["43837fae-6d7c-43e9-9b5d-e12ac80537ea"])):
+    # sse_store[session] = [input_messages,config,user_memory_key,app]
+
+    params = sse_store[sse_session_id]
+    input_messages = params[0]
+    config = params[1]
+    user_memory_key = params[2]
+    app = params[3]
+
+    app = user_memory.get(user_memory_key)
+
+    # 4.create a New Conversation
+
+    async def event_generator():
+
+        for event in app.stream({"messages": input_messages}, config, stream_mode="messages"):
+            content = event[0].content
+            print(content, end="", flush=True)
+
+            if content:
+                await asyncio.sleep(0)
+                yield f"event: message\ndata: {content}\n\n"
+
+    headers = {
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+        "X-Accel-Buffering": "no",  # 针对 nginx，如果用到
+    }
+    response = StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers=headers
+    )
+    return response
+    # current_memory.save_context(inputs={"input": f"{question}"}, outputs={"output": f'found some context: \n {llm_context} \n'})
+
+
+async def stream_llm(sse_session_id: str = Query(..., description="sse_session_id ",
+                                                 examples=["43837fae-6d7c-43e9-9b5d-e12ac80537ea"])):
+    params = sse_store[sse_session_id]
+    query = params[0]
+    model_name = params[1]
+    prompt_name = params[2]
+
+    if prompt_name == 'default':
+        promptTemplate = PromptTemplate(input_variables=["query"], template="{query}")
+    else:
+        promptContent = load_prompt_from_db(prompt_name)
+        promptTemplate = PromptTemplate(input_variables=["query"], template=promptContent)
+    prompt = promptTemplate.format(query=query)
+    logger.info("  Prompt: {}", query)
+    llm = llm_models.MODEL_DICT.get(model_name)
+    # llmModel = LLMChain(llm=llm_models.MODEL_DICT.get(model_name), prompt=prompt)
+    logger.info(f"Chat with LLM {model_name}: ", llm_models.MODEL_DICT.get(model_name))
+
+    async def event_generator():
+
+        for chunk in llm.stream(prompt):
+            content = chunk.content
+            print(content, end="", flush=True)
+
+            if content:
+                await asyncio.sleep(0)
+                yield f"event: message\ndata: {content}\n\n"
+
+    headers = {
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+        "X-Accel-Buffering": "no",  # 针对 nginx，如果用到
+    }
+    response = StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers=headers
+    )
+    return response
+
+
+def get_llm(model_name: str):
+    llm = llm_models.MODEL_DICT.get(model_name)
+    return llm
+
+
+def invoke_llm(query, model_name: str, prompt_name: Optional[str] = None):
     if prompt_name == 'default':
         prompt = PromptTemplate(input_variables=["query"], template="{query}")
     else:
@@ -332,26 +574,28 @@ def ask_llm(query, model_name: str, prompt_name: Optional[str] = None):
 
     response = query_llm.invoke(query)
 
-    #response = format_result(response['text'])
+    # response = format_result(response['text'])
 
     vector_res_arr: List[AskResponseData] = []
-    vector_res_arr.insert(0, AskResponseData(remove_special_chars(response.get('text')), "llm", 1, "",1 , "" ))
+    vector_res_arr.insert(0, AskResponseData(remove_special_chars(response.get('text')), "llm", 1, "", 1, ""))
     # 将结果对象列表转换为JSON数组
     result_str = json.dumps(
-        [{"content": p.content, "source": p.source, "score": float(p.score), "source_file_ext": p.source_file_ext, "page_num": int(p.page_num), "viewer_source": p.viewer_source} for p in vector_res_arr],
+        [{"content": p.content, "source": p.source, "score": float(p.score), "source_file_ext": p.source_file_ext,
+          "page_num": int(p.page_num), "viewer_source": p.viewer_source} for p in vector_res_arr],
         ensure_ascii=False)
-    #logger.info("###### answer: {}", result_str)
+    # logger.info("###### answer: {}", result_str)
     result_list = json.loads(result_str)
     return result_list
 
 
-def modify_llm_parameters( model_name: str = Body("星火大模型3.0", description="query", examples=['how to manage services, add users']),
-              max_tokens: int = Body(1000, description="max tokens for this llm"),
-              temperature: float = Body(0.1, description="temperature for llm") ):
+def modify_llm_parameters(
+        model_name: str = Body("星火大模型3.0", description="query", examples=['how to manage services, add users']),
+        max_tokens: int = Body(1000, description="max tokens for this llm"),
+        temperature: float = Body(0.1, description="temperature for llm")):
     llm = llm_models.MODEL_DICT.get(model_name)
-    model_kwargs=llm.model_kwargs
-    model_kwargs['max_tokens']=max_tokens
-    model_kwargs['temperature']=temperature
+    model_kwargs = llm.model_kwargs
+    model_kwargs['max_tokens'] = max_tokens
+    model_kwargs['temperature'] = temperature
     return BaseResponse(data=str(llm.model_kwargs))
 
 
@@ -385,13 +629,15 @@ def compression_rag(question, model_name: str, kb_name: str):
     resp = chain.invoke(question)
 
     # LLM结果出来
-    vector_res_arr.insert(0, AskResponseData(remove_special_chars(response.get('text')), "llm", 1, "",1 , "" ))
+    vector_res_arr.insert(0, AskResponseData(remove_special_chars(response.get('text')), "llm", 1, "", 1, ""))
     # 将结果对象列表转换为JSON数组
     result_str = json.dumps(
-        [{"content": p.content, "source": p.source, "score": float(p.score), "source_file_ext": p.source_file_ext, "page_num": int(p.page_num), "viewer_source": p.viewer_source} for p in vector_res_arr],
+        [{"content": p.content, "source": p.source, "score": float(p.score), "source_file_ext": p.source_file_ext,
+          "page_num": int(p.page_num), "viewer_source": p.viewer_source} for p in vector_res_arr],
         ensure_ascii=False)
     result_list = json.loads(result_str)
     return result_list
+
 
 def translate(query: str = Body(..., description="query", examples=['how to manage services, add users']),
               llm_model: str = Body("OCI-meta.llama-3.1-405b-instruct", description="llm model name"),

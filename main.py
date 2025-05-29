@@ -4,7 +4,7 @@ os.environ['USER_AGENT'] = 'kbot'
 # nltk.download('averaged_perceptron_tagger_eng', quiet=True)
 from fastapi import FastAPI, Body
 import argparse, uvicorn
-from kb_llm_api import compression_rag, ask_conversational_rag, clear_disable_memory_rag, ask_rag, ask_history_rag, modify_llm_parameters
+from kb_llm_api import compression_rag,with_llm,create_llm_stream,create_rag_stream,stream_llm,stream_rag, ask_conversational_rag, clear_disable_memory_rag, ask_rag, ask_history_rag, modify_llm_parameters
 from fastapi.openapi.docs import (
     get_redoc_html,
     get_swagger_ui_html,
@@ -24,7 +24,7 @@ from kb_api import BaseResponse, ListResponse, VectorSearchResponse, create_kb, 
     upload_docs, upload_from_url, sync_kbot_records, \
     delete_kb, \
     DeleteResponse, upload_from_object_storage, upload_audio_from_object_storage, text_embedding
-from kb_llm_api import ask_llm, translate
+from kb_llm_api import invoke_llm, translate,get_llm
 from prompt_api import list_prompts, add_prompt, get_prompt, delete_prompt, update_prompt,init_default
 init_default()
 from pydantic import BaseModel
@@ -225,29 +225,6 @@ async def with_compressionDoc(
     )
 
 
-##这个是一次性返回LLM和向量数据库的结果。
-def with_llm(
-        query: str = Body(..., description="query", examples=['how to manage services, add users']),
-        llm_model: str = Body(..., description="llm model name", examples=['ChatGLM4', 'llama-2-7b-chat']),
-        prompt_name: str = Body('default', description="prompt name, will use the corresponding content of prompt",
-                                examples=['default']),
-):
-    logger.info("\n******** question is: {}", query)
-    status: str = "success"
-    err_msg: str = ""
-    data: list = []
-    if query != '' and llm_model != '':
-        data = ask_llm(query, llm_model, prompt_name)
-    else:
-        status = "failed"
-        err_msg = "Not selected llm model and knowledge base or no questions input"
-    return VectorSearchResponse(
-        data=data,
-        status=status,
-        err_msg=err_msg
-    )
-
-
 async def document():
     return RedirectResponse(url="/docs")
 
@@ -374,6 +351,7 @@ def create_app():
     app.get("/chat/list_LLMs",
             tags=["LLM"],
             summary="list all llms")(list_llms)
+
     app.post("/chat/text_embedding",
              tags=["LLM"],
              summary="turn text to embeddings")(text_embedding)
@@ -385,7 +363,12 @@ def create_app():
             summary="get_llm_info")(get_llm_info)
 
     ################################  chat, QA
-
+    app.get("/chat/stream_llm",
+            tags=["Chat"],
+            summary="stream_llm")(stream_llm)
+    app.get("/chat/stream_rag",
+            tags=["Chat"],
+            summary="stream_rag")(stream_rag)
     app.post("/chat/with_rag",
              tags=["Chat"],
              summary="chat with kbot disable memory")(with_rag)
@@ -404,6 +387,12 @@ def create_app():
     app.post("/chat/with_llm",
              tags=["Chat"],
              summary="chat with llm")(with_llm)
+    app.post("/chat/create_llm_stream",
+             tags=["Chat"],
+             summary="create llm stream")(create_llm_stream)
+    app.post("/chat/create_rag_stream",
+             tags=["Chat"],
+             summary="create llm stream")(create_rag_stream)
     app.post("/chat/translate",
              tags=["Chat"],
              summary="Translate with llm")(translate)

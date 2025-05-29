@@ -39,7 +39,7 @@ reranker_topk= 2
 history_k = 5
 
 
-SUMMARY_MODEL ="OCI-cohere.command-r-plus082024"
+SUMMARY_MODEL ="OCI-meta.llama-4-scout-17b
 
 ######## Select AI ########
 selectai_pool = ""

@@ -213,6 +213,10 @@ class CheckProgressResponse(BaseModel):
         "success", description="current file being processed")
     details: List = pydantic.Field(None, description="list of detailed info")
 
+class SSEIdResponse(BaseModel):
+    sse_sessionId:str=""
+    def __init__(self, sse_sessionId):
+        self.sse_sessionId=sse_sessionId
 
 class AskResponseData:
     content: str = ""

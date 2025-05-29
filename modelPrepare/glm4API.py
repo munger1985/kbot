@@ -3,8 +3,17 @@ from zhipuai import ZhipuAI
 from config import config
 from loguru import logger
 from langchain_core.language_models import LLM
-
+from langchain_community.chat_models import ChatZhipuAI
 query_llm = ZhipuAI(api_key=config.zhipu_api_key)
+
+
+glm4 = ChatZhipuAI(
+    model="glm-4",
+    temperature=0.5,
+    api_key=config.zhipu_api_key
+)
+
+
 
 class GLM4(LLM):
     '''

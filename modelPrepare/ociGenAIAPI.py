@@ -25,37 +25,46 @@ genaiEmbedding=KbotOCIGenAIEmbeddings(model_id="cohere.embed-multilingual-v3.0",
                                       service_endpoint=config.GenAIEndpoint,
                                       compartment_id=config.compartment_id,
                                       auth_type=config.auth_type)
-ociGenAICohere = KbotOCIGenAI(
-    model_id="cohere.command",
-    service_endpoint=config.GenAIEndpoint,
-    compartment_id=config.compartment_id,
-    auth_type=config.auth_type,
-    model_kwargs={'max_tokens': 4000,
-                  'temperature': 0,
-                  }
-)
+# ociGenAICohere = KbotOCIGenAI(
+#     model_id="cohere.command",
+#     service_endpoint=config.GenAIEndpoint,
+#     compartment_id=config.compartment_id,
+#     auth_type=config.auth_type,
+#     model_kwargs={'max_tokens': 4000,
+#                   'temperature': 0,
+#                   }
+# )
 
-ociCMDR = KbotChatOCIGenAI(
-    model_id="cohere.command-r-16k",
-    service_endpoint=config.GenAIEndpoint,
-    compartment_id=config.compartment_id,
-    auth_type=config.auth_type,
-    model_kwargs={'max_tokens': 4000,
-                  'temperature': 0,
-    }
-)
+# ociCMDR = KbotChatOCIGenAI(
+#     model_id="cohere.command-r-16k",
+#     service_endpoint=config.GenAIEndpoint,
+#     compartment_id=config.compartment_id,
+#     auth_type=config.auth_type,
+#     model_kwargs={'max_tokens': 4000,
+#                   'temperature': 0,
+#     }
+# )
 
-ociCMDRPlus = KbotChatOCIGenAI(
-    model_id="cohere.command-r-plus",
-    service_endpoint=config.GenAIEndpoint,
-    compartment_id=config.compartment_id,
-    auth_type=config.auth_type,
-    model_kwargs={'max_tokens': 4000,
-                  'temperature': 0,
-    }
-)
+# ociCMDRPlus = KbotChatOCIGenAI(
+#     model_id="cohere.command-r-plus",
+#     service_endpoint=config.GenAIEndpoint,
+#     compartment_id=config.compartment_id,
+#     auth_type=config.auth_type,
+#     model_kwargs={'max_tokens': 4000,
+#                   'temperature': 0,
+#     }
+# )
 ociCMDRPlus082024 = KbotChatOCIGenAI(
     model_id="cohere.command-r-plus-08-2024",
+    service_endpoint=config.GenAIEndpoint,
+    compartment_id=config.compartment_id,
+    auth_type=config.auth_type,
+    model_kwargs={'max_tokens': 4000,
+                  'temperature': 0,
+    }
+)
+ociCMDA032025 = KbotChatOCIGenAI(
+    model_id="cohere.command-a-03-2025",
     service_endpoint=config.GenAIEndpoint,
     compartment_id=config.compartment_id,
     auth_type=config.auth_type,
@@ -85,6 +94,46 @@ ociGenAILlama2 =  KbotOCIGenAI(
 )
 ociGenAILlama3_1_405B =  KbotChatOCIGenAI(
     model_id="meta.llama-3.1-405b-instruct",
+    service_endpoint=config.GenAIEndpoint,
+    compartment_id=config.compartment_id,
+    auth_type=config.auth_type,
+    model_kwargs = {
+      'max_tokens': 1024,
+     'temperature'   : 0.10,
+     }
+)
+ociGenAILlama3_2_90b =  KbotChatOCIGenAI(
+    model_id="meta.llama-3.2-90b-vision-instruct",
+    service_endpoint=config.GenAIEndpoint,
+    compartment_id=config.compartment_id,
+    auth_type=config.auth_type,
+    model_kwargs = {
+      'max_tokens': 1024,
+     'temperature'   : 0.10,
+     }
+)
+ociGenAILlama4_maverick_17b =  KbotChatOCIGenAI(
+    model_id="meta.llama-4-maverick-17b-128e-instruct-fp8",
+    service_endpoint=config.GenAIEndpoint,
+    compartment_id=config.compartment_id,
+    auth_type=config.auth_type,
+    model_kwargs = {
+      'max_tokens': 1024,
+     'temperature'   : 0.10,
+     }
+)
+ociGenAILlama4_scout_17b =  KbotChatOCIGenAI(
+    model_id="meta.llama-4-scout-17b-16e-instruct",
+    service_endpoint=config.GenAIEndpoint,
+    compartment_id=config.compartment_id,
+    auth_type=config.auth_type,
+    model_kwargs = {
+      'max_tokens': 1024,
+     'temperature'   : 0.10,
+     }
+)
+ociGenAILlama3_3_70b =  KbotChatOCIGenAI(
+    model_id="meta.llama-3.3-70b-instruct",
     service_endpoint=config.GenAIEndpoint,
     compartment_id=config.compartment_id,
     auth_type=config.auth_type,
