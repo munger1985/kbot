@@ -362,7 +362,6 @@ def create_rag_stream(
         reranker_topk: int = Body(2, description='reranker_topk'),
         score_threshold: float = Body(0.2, description='reranker score threshold'),
         vector_store_limit: int = Body(10, description='the limit of query from vector db'),
-        history_k: int = Body(3, description='history_k'),
         search_type: str = Body('vector', description='the type of search. eg. vector, fulltext, hybrid'),
         summary_flag: str = Body('N', description='enable summary or not'),
 ):
@@ -374,7 +373,6 @@ def create_rag_stream(
     settings.score_threshold = score_threshold
     settings.vector_store_limit = vector_store_limit
     settings.search_type = search_type
-    settings.history_k = history_k
     settings.summary_flag = summary_flag
     user_settings[user] = settings
     user_memory_key = user + "_" + kb_name + "_" + llm_model
