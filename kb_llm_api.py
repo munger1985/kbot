@@ -376,7 +376,6 @@ def create_rag_stream(
     settings.summary_flag = summary_flag
     user_settings[user] = settings
     user_memory_key = user + "_" + kb_name + "_" + llm_model
-    logger.info(f"##1).完成配置参数初始化:{get_cur_time()}##")
 
     ##2.调用Vector database retrieval and Rerank并获取处理之后结果
     vector_res_arr, llm_context = makeSimilarDocs(question, kb_name, user)
@@ -397,16 +396,13 @@ def create_rag_stream(
 
         workflow = StateGraph(state_schema=MessagesState)
 
-        # Define the function that calls the model
         def call_model(state: MessagesState):
             response = llm.invoke(state["messages"])
             return {"messages": response}
 
-        # Define the two nodes we will cycle between
         workflow.add_edge(START, "model")
         workflow.add_node("model", call_model)
 
-        # Add memory
         memory = MemorySaver()
         app = workflow.compile(checkpointer=memory)
 
@@ -414,10 +410,6 @@ def create_rag_stream(
     else:
         app = user_memory.get(user_memory_key)
 
-    # 3.Initial chat history, and set user_memory
-    # memory = ConversationBufferWindowMemory(memory_key="chat_history", k=settings.history_k, return_messages=True,
-    # output_key='output')
-    # user_memory.setdefault(user_memory_key, memory)
     config = {"configurable": {"thread_id": user_memory_key}}
 
     sse_store[session] = [input_messages, config, user_memory_key, app]
@@ -440,13 +432,12 @@ def create_rag_stream(
         for p in vector_res_arr
     ])
 
-    # print(f"####response:{response.get('output')}")
-    # reference list
-    # result_str = json.dumps(
-    #     new_vector_res_arr,
-    #     ensure_ascii=False)
-    return new_vector_res_arr
-    # result_list = json.loads(format_llm_response(result_str))
+    response= VectorSearchResponse(
+        data=new_vector_res_arr,
+        status="success",
+        err_msg=""
+    )
+    return response
 
 
 def create_llm_stream(
