@@ -126,7 +126,7 @@ def delete_prompt(
 
 def add_prompt(
             name: str = Form(..., description="prompt name", examples=["llama2Prompt"]),
-            template: str = Form(..., description="when you chat with llm, {query} is variable, chat with rag, {query} {context} are variables", examples=["you are an AI, answer my question {query}"]),
+            template: str = Form(..., description="when you chat with llm, {query} is variable, chat with rag, {question} {context} are variables", examples=["you are an AI, answer my question {query}"]),
               ) -> Response:
     logger.info(f"##name:{name} template:{template}")
     kk= load_prompt_from_db(name)
@@ -142,7 +142,7 @@ def add_prompt(
 
 def update_prompt(
               name: str = Form(..., description="prompt name", examples=["llama2Prompt"]),
-            template: str = Form(..., description="when you chat with llm, {query} is variable, chat with rag, {query} {context} are variables", examples=["you are an AI, answer my question {query}"]),
+            template: str = Form(..., description="when you chat with llm, {query} is variable, chat with rag, {question} {context} are variables", examples=["you are an AI, answer my question {query}"]),
              ) -> PromptResponse:
 
     update_prompt_from_db(name,template)
