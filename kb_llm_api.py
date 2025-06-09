@@ -488,7 +488,7 @@ async def stream_rag(sse_session_id: str = Query(..., description="sse_session_i
             if content:
                 await asyncio.sleep(0)
                 yield f"event: message\ndata: {content}\n\n"
-
+        yield f"event: end\ndata: end\n\n"
     headers = {
         "Cache-Control": "no-cache",
         "Connection": "keep-alive",
@@ -530,7 +530,7 @@ async def stream_llm(sse_session_id: str = Query(..., description="sse_session_i
             if content:
                 await asyncio.sleep(0)
                 yield f"event: message\ndata: {content}\n\n"
-
+        yield f"event: end\ndata: end\n\n"
     headers = {
         "Cache-Control": "no-cache",
         "Connection": "keep-alive",
