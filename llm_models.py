@@ -47,8 +47,6 @@ def load_llm_model(model_id_or_path: str = "") -> LLM:
 MODEL_DICT = {
     'NoneLLM': 'NoneLLM',
     ######################      API models        #############################################
-    # 'OCI-cohere.command-r-16k': ociGenAIAPI.ociCMDR,
-    # 'OCI-cohere.command-r-plus': ociCMDRPlus,
     'OCI-cohere.command-a-03-2025': ociGenAIAPI.ociCMDA032025,
     'OCI-cohere.command-r-plus-08-2024': ociGenAIAPI.ociCMDRPlus082024,
     'OCI-cohere.command-r-08-2024': ociGenAIAPI.ociCMDR082024,

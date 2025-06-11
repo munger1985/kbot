@@ -332,7 +332,7 @@ from kb_api import BaseResponse, ListResponse, VectorSearchResponse
 ##这个是一次性返回LLM和向量数据库的结果。
 def with_llm(
         query: str = Body(..., description="query", examples=['how to manage services, add users']),
-        llm_model: str = Body(..., description="llm model name", examples=['ChatGLM4', 'llama-2-7b-chat']),
+        llm_model: str = Body(..., description="llm model name", examples=['OCI-cohere.command-a-03-2025']),
         prompt_name: str = Body('default', description="prompt name, will use the corresponding content of prompt",
                                 examples=['default']),
 ):
