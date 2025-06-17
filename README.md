@@ -32,8 +32,6 @@ To help customers leverage services in OCI easier.
 
 ### support Langsmith tracing
 
-
-
 ## Workflow
 
 ![image](/readmeIMG/workflow.png)
