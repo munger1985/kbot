@@ -1,0 +1,5 @@
+[app]
+name = "KBot"
+description = "KBot backend application"
+version = "3.0.0"
+debug = true

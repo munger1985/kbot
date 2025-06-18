@@ -13,24 +13,24 @@ backend/
 │   ├── log/                   # Loguru日志管理
 │   │   └── logger.py          # 全局日志配置
 │   ├── database/              # SQLAlchemy核心
-│   │   ├── base.py            # ORM基类
-│   │   ├── session.py         # 会话管理
-│   │   └── redis_client.py    # Redis集成
+│   │   ├── oracle.py          # ORM基类 (for Oracle DB)
+│   │   └── redis_client.py    # Redis集成 (if needed)
 │   └── exceptions/            # 全局异常处理
 ├── api/
-│   ├── controllers/
+│   ├── controllers/           # API控制器
 │   │   └── ...                
-│   └── schemas/               # Pydantic响应模型
-│       ├── image_search.py
-│       └── ...              
+│   ├── routers/               # API路由
+│   ├── schemas/               # Pydantic响应模型
+│   ├── └── ...
+│   └── routers.py             # FastAPI路由注册
 ├── services/
-│   ├── image_search/
+│   ├── image_search/          # 图像搜索引擎 (举例)
 │   │   └── engine.py          # 业务逻辑处理
 │   └── ...                     
 ├── repositories/              # 数据访问层
 │   ├── knowledge_repo.py      # SQLAlchemy操作类
 │   ├── vector_repo.py         # 向量库操作
-│   └── cache_repo.py          # Redis操作
+│   └── cache_repo.py          # Redis操作 (if needed)
 ├── models/                    # SQLAlchemy ORM模型
 │   ├── knowledge.py           # 知识模型
 │   ├── search_log.py          # 日志模型

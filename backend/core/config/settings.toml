@@ -1,0 +1,18 @@
+[app]
+name = "KBot"
+description = "KBot API Service"
+version = "3.0.0"
+debug = true
+
+[database]
+echo = false
+pool_size = 5
+max_overflow = 10
+pool_pre_ping = false
+pool_recycle = 3600
+
+[logging]
+level = "DEBUG"
+path = "logs/app.log"
+rotation = "100 MB"
+retention = "10 days"
