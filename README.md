@@ -14,8 +14,6 @@ To help customers leverage services in OCI easier.
 
 ## Features
 
-
-
 ### llm management and openai format compatible API 
 
 ### text embedding and openai format compatible API 
