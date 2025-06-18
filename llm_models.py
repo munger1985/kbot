@@ -19,6 +19,10 @@ from config import config
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 bgeRerankerModel = None
+from transformers import AutoModelForSequenceClassification
+jinaRerankerModel =None
+
+
 
 
 @lazy_func
@@ -30,6 +34,22 @@ def load_bge_reranker(model_name_or_path):
         bgeRerankerModel = FlagReranker(model_name_or_path,
                                         use_fp16=True)  # Setting use_fp16 to True speeds up computation with a slight performance degradation
         return bgeRerankerModel
+
+@lazy_func
+def load_jina_reranker(model_name_or_path):
+    global jinaRerankerModel
+    if jinaRerankerModel:
+        return jinaRerankerModel
+    else:
+        jinaRerankerModel = AutoModelForSequenceClassification.from_pretrained(
+            model_name_or_path,
+            torch_dtype="auto",
+            trust_remote_code=True,
+        )
+
+        jinaRerankerModel.to(device)  # or 'cpu' if no GPU is available
+        jinaRerankerModel.eval()
+        return jinaRerankerModel
 
 
 @lazy_func

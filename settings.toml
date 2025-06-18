@@ -31,8 +31,9 @@ CHUNK_SIZE = 500
 CHUNK_OVERLAP = 50
 
 BGE_RERANKER="BAAI/bge-reranker-v2-m3"
-# disableReranker, ociCohereReranker,cohereReranker
-rerankerModel = 'ociCohereReranker'
+JINA_RERANKER="jinaai/jina-reranker-v2-base-multilingual"
+# disableReranker, jinaReranker,bgeReranker, ociCohereReranker,cohereReranker
+rerankerModel = 'jinaReranker'
 reranker_topk= 2
 
 #######  the memory window for chat history   #####################

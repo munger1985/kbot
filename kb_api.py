@@ -2076,10 +2076,15 @@ def reRankVectorResult(query: str, vectorResut: List[Document], user: str) -> Li
         bge_reranker = load_bge_reranker(config.BGE_RERANKER)
         reRankResult = reRankVectorResultByBgeReranker(bge_reranker, query, vectorResut,
                                                        top_k)
+    elif settings.rerankerModel == 'jinaReranker':
+        jina_reranker_model = llm_models.load_jina_reranker(config.JINA_RERANKER)
+        reRankResult = reRankeVectorResultByJinaReranker(jina_reranker_model,query, vectorResut, top_k)
+
     elif settings.rerankerModel == 'cohereReranker':
         reRankResult = reRankVectorResultByCohere(query, vectorResut, top_k)
     elif settings.rerankerModel == 'ociCohereReranker':
         reRankResult = reRankVectorResultByOCICohere(query, vectorResut, top_k)
+
     elif settings.rerankerModel == 'disableReranker':
         reRankResult = vectorResut
     return reRankResult
@@ -2107,7 +2112,18 @@ def reRankVectorResultByCohere(query: str, vectorResut: List[Document], top_k: i
             (Document(page_content=r.document.text, metadata=vectorResut[r.index][0].metadata), r.relevance_score))
     return reRankResult
 
+def reRankeVectorResultByJinaReranker(rerankerModel, query: str, vectorResult: List[Document], top_k: int = 3) -> List[Document]:
+    sentence_pairs = [[query, extract_doc(obj).page_content] for obj in vectorResult]
 
+    # Execute Rerank
+    scores = rerankerModel.compute_score(sentence_pairs, max_length=1024)
+
+    # Get and sort Rerank results, returning only top_k results
+    reRankResult = sorted(
+        ((extract_doc(obj), score) for obj, score in zip(vectorResult, scores)),
+        key=lambda item: item[1],
+        reverse=True)[:top_k]
+    return reRankResult
 def reRankVectorResultByOCICohere(query: str, vectorResut: List[Document], top_k: int = 3) -> List[Document]:
     src_docs = []
     for obj in vectorResut:

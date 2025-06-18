@@ -48,3 +48,4 @@ pipmaster==0.7.0
 pydantic==2.10.6
 pyuca==1.2
 langgraph==0.4.7
+einops==0.8.1
