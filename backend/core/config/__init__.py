@@ -7,7 +7,7 @@ import toml
 def load_config() -> Dict[str, Any]:
     """Load and merge configuration files."""
     # Load base config
-    default_path = Path(__file__).parent.parent.parent / "core/config/settings.toml"
+    default_path = Path(__file__).parent.parent.parent / "settings.toml"
     config_path = os.getenv("CONFIG_PATH", str(default_path))
     base_config = toml.load(Path(config_path))
     
