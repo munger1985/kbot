@@ -3,7 +3,7 @@
 ## Acknowledgement 
 Thanks to projects of https://github.com/chatchat-space/Langchain-Chatchat and https://github.com/infiniflow/ragflow
 Inspired me a lot, so I designed this project to integrate OCI AI Services into this project. Our whole OCI Sehub AI team contributed to this project.
-66
+77
 
 ## Goal
 
