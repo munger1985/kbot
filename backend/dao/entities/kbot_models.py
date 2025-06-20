@@ -19,7 +19,7 @@ class KBotModels(Base):
     provider: Mapped[str] = mapped_column(String(256))
     api_endpoint: Mapped[str] = mapped_column(String(256))
     api_key: Mapped[str] = mapped_column(String(256))
-    status: Mapped[str] = mapped_column(String(256))
+    status: Mapped[str] = mapped_column(String(1))
     model_params: Mapped[dict] = mapped_column(JSON)
     model_template: Mapped[dict] = mapped_column(JSON)
     descs: Mapped[Optional[str]] = mapped_column(String(512))

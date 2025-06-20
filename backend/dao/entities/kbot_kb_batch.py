@@ -17,7 +17,7 @@ class KBotKBBatch(Base):
     kb_id: Mapped[int] = mapped_column(BigInteger)
     parse_engine: Mapped[str] = mapped_column(String(256))
     engine_params: Mapped[dict] = mapped_column(JSON)
-    enable_summary: Mapped[int] = mapped_column(BigInteger)
+    enable_summary: Mapped[str] = mapped_column(String(1))
     metadata: Mapped[dict] = mapped_column(JSON)
     created_by: Mapped[str] = mapped_column(String(512))
     created_time: Mapped[datetime] = mapped_column(DateTime)

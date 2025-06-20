@@ -16,7 +16,7 @@ class KBotPrompt(Base):
     name: Mapped[str] = mapped_column(String(256))
     prompt_category: Mapped[str] = mapped_column(String(256))
     template: Mapped[str] = mapped_column(Text)
-    status: Mapped[str] = mapped_column(String(20))
+    status: Mapped[str] = mapped_column(String(1))
     descs: Mapped[Optional[str]] = mapped_column(String(512))
     created_by: Mapped[str] = mapped_column(String(512))
     created_time: Mapped[datetime] = mapped_column(DateTime)
