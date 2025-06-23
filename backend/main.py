@@ -6,6 +6,7 @@ from pathlib import Path
 import toml
 from typing import Dict, Any
 import logging
+from contextlib import asynccontextmanager
 
 from backend.core.log.logger import setup_logging
 
@@ -43,6 +44,14 @@ def load_config() -> Dict[str, Any]:
         logging.error(f"Failed to load config: {str(e)}")
         raise
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    logging.info("Application starting up")
+    yield
+    logging.info("Application shutting down")
+
+
+
 def create_app() -> FastAPI:
     """Create and configure FastAPI application.
     
@@ -61,6 +70,7 @@ def create_app() -> FastAPI:
             description=config["app"]["description"],
             version=config["app"]["version"],
             debug=config["app"].get("debug", False),
+            lifespan=lifespan
         )
         
         # Add middleware with safer defaults
@@ -82,14 +92,14 @@ def create_app() -> FastAPI:
             return JSONResponse({"status": "ok"})
             
         # Add startup/shutdown events
-        @app.on_event("startup")
-        async def startup():
-            logging.info("Application startup")
-            
-        @app.on_event("shutdown") 
-        async def shutdown():
-            logging.info("Application shutdown")
-        
+        # @app.on_event("startup")
+        # async def startup():
+        #     logging.info("Application startup")
+        #
+        # @app.on_event("shutdown")
+        # async def shutdown():
+        #     logging.info("Application shutdown")
+
         return app
         
     except Exception as e:
