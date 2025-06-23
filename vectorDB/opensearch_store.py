@@ -11,7 +11,7 @@ parsed_url = urlparse(config.OCI_OPEN_SEARCH_URL)
 opensearch_pyclient= OpenSearch(
      hosts=[{'host': parsed_url.hostname, 'port': parsed_url.port}],
             # opensearch_url = config.OCI_OPEN_SEARCH_URL,
-            http_auth =(config.OCI_OPEN_SEARCH_USER,config. OCI_OPEN_SEARCH_PASSWD),
+            http_auth =(config.OCI_OPEN_SEARCH_USER,config.OCI_OPEN_SEARCH_PASSWD),
             verify_certs=False,
             use_ssl=True
         )
@@ -44,7 +44,7 @@ def opensearch_fulltext_wrapper(question, kb_name):
         # 查询文档
     query = {
     "query": {
-        "match": {
+        "match": {x
         "text": question
         }
     }
