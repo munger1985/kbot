@@ -5,10 +5,12 @@ from langchain_community.vectorstores import OpenSearchVectorSearch
 from opensearchpy import OpenSearch
 from langchain_core.documents import Document
 
-# 创建连接
 
+from urllib.parse import urlparse
+parsed_url = urlparse(config.OCI_OPEN_SEARCH_URL)
 opensearch_pyclient= OpenSearch(
-            opensearch_url = config.OCI_OPEN_SEARCH_URL,
+     hosts=[{'host': parsed_url.hostname, 'port': parsed_url.port}],
+            # opensearch_url = config.OCI_OPEN_SEARCH_URL,
             http_auth =(config.OCI_OPEN_SEARCH_USER,config. OCI_OPEN_SEARCH_PASSWD),
             verify_certs=False,
             use_ssl=True
