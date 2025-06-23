@@ -875,6 +875,13 @@ def init_vs(knowledge_base_name, embed_model, vector_store_type):
             pre_delete_collection=False,
             embedding_function=embeddingModel
         )
+    elif vector_store_type == 'opensearch':
+       vector_store = OpenSearchVectorSearch(
+            index_name=knowledge_base_name,
+            embedding_function=embeddingModel,
+            opensearch_url=config.OCI_OPEN_SEARCH_URL,
+            http_auth=(config.OCI_OPEN_SEARCH_USER, config.OCI_OPEN_SEARCH_PASSWD)
+        )
     else:
         raise ValueError("invalid vector db type")
     return vector_store
