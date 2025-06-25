@@ -7,13 +7,13 @@ from sqlalchemy.ext.declarative import declarative_base
 
 from backend.core.config import load_config
 
-# 定义异步Base类
+# Declare the asynchronous base class
 Base = declarative_base()
 
 
 config = load_config()
 
-# 优先使用环境变量中的连接字符串
+# Default to environment variable connection strings when available
 DB_CON_STRING = os.getenv("DB_CON_STRING")
 DATABASE_URL = DB_CON_STRING if DB_CON_STRING else config["database"]["url"]
 
@@ -24,7 +24,7 @@ async_engine = create_async_engine(
     max_overflow=config["database"]["max_overflow"],
     pool_pre_ping=config["database"]["pool_pre_ping"],
     pool_recycle=config["database"]["pool_recycle"],
-    future=True  # 启用SQLAlchemy 2.0特性
+    future=True  # Enable SQLAlchemy 2.0 features
 )
 
 async_session = sessionmaker(

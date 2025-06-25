@@ -4,23 +4,22 @@ from pathlib import Path
 from typing import Optional
 
 from loguru import logger
-import toml
+from backend.core.config import settings
 
 def setup_logging(config_path: Optional[str] = None) -> None:
-    """Setup logging configuration from TOML file.
+    """Setup logging configuration from Dynaconf settings.
     
     Args:
-        config_path: Path to the TOML config file. If None, uses default settings.
+        config_path: Deprecated. Kept for backward compatibility.
     """
-    if config_path is None:
-        config_path = os.getenv("LOGGING_CONFIG", "settings.toml")
-    
     try:
-        config = toml.load(config_path)
-        log_config = config.get("logging", {})
+        log_config = settings.logging
         
         level = log_config.get("level", "INFO")
-        log_path = log_config.get("path", "logs/app.log")
+        log_path = log_config.get("path", "backend/logs/app.log")
+        # Convert to absolute path
+        if not os.path.isabs(log_path):
+            log_path = os.path.abspath(log_path)
         rotation = log_config.get("rotation", "100 MB")
         retention = log_config.get("retention", "10 days")
         

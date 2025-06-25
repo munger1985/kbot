@@ -1,25 +1,27 @@
 import os
+from dynaconf import Dynaconf
 from pathlib import Path
 from typing import Dict, Any
 
-import toml
+# Initialize configuration with simplified setup
+current_env = os.getenv("KBOT_ENV", "development")
+
+# Initialize the complete configuration
+settings = Dynaconf(
+    envvar_prefix="KBOT",
+    settings_files=[
+        Path(__file__).parent.parent.parent / "settings.toml",  # base configuration
+        Path(__file__).parent / "env" / f"{current_env}.toml",  # environment specific configuration
+        Path(__file__).parent.parent.parent / ".secret.toml",  # secret configuration
+    ],
+    environments=True,
+    env=current_env,
+    load_dotenv=True,
+    env_switcher="KBOT_ENV",
+    lowercase_read=True,  # Support lowercase access
+    merge_enabled=True,   # Allow merging of configurations
+)
 
 def load_config() -> Dict[str, Any]:
     """Load and merge configuration files."""
-    # Load base config
-    default_path = Path(__file__).parent.parent / "settings.toml"
-    config_path = os.getenv("CONFIG_PATH", str(default_path))
-    base_config = toml.load(Path(config_path))
-    
-    # Load environment specific config
-    env_config_path = os.getenv("ENV_CONFIG_PATH")
-    if env_config_path and Path(env_config_path).exists():
-        env_config = toml.load(Path(env_config_path))
-        # Merge configs with environment overriding base
-        for section, values in env_config.items():
-            if section in base_config:
-                base_config[section].update(values)
-            else:
-                base_config[section] = values
-    
-    return base_config
+    return settings.as_dict()

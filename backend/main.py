@@ -1,47 +1,18 @@
 import os
+import uvicorn
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pathlib import Path
-import toml
-from typing import Dict, Any
-import logging
+from fastapi.openapi.docs import (
+    get_redoc_html,
+    get_swagger_ui_html,
+)
 
-from backend.core.log.logger import setup_logging
+from .api.routers import router
+from backend.core.log.logger import setup_logging, logger
+from backend.core.config import settings
 
-def load_config() -> Dict[str, Any]:
-    """Load and validate configuration from TOML files.
-    
-    Returns:
-        Dict[str, Any]: Merged configuration dictionary
-        
-    Raises:
-        FileNotFoundError: If main config file not found
-        toml.TomlDecodeError: If config file is invalid
-        ValueError: If required config is missing
-    """
-    try:
-        config_path = os.getenv("CONFIG_PATH", "settings.toml")
-        env_config_path = os.getenv("ENV_CONFIG_PATH", "env/development.toml")
-        
-        if not Path(config_path).exists():
-            raise FileNotFoundError(f"Config file not found: {config_path}")
-            
-        config = toml.load(config_path)
-        
-        # Validate required config
-        if "app" not in config:
-            raise ValueError("Missing required 'app' section in config")
-            
-        if Path(env_config_path).exists():
-            env_config = toml.load(env_config_path)
-            config.update(env_config)
-        
-        return config
-        
-    except (toml.TomlDecodeError, FileNotFoundError, ValueError) as e:
-        logging.error(f"Failed to load config: {str(e)}")
-        raise
 
 def create_app() -> FastAPI:
     """Create and configure FastAPI application.
@@ -50,50 +21,72 @@ def create_app() -> FastAPI:
         FastAPI: Configured application instance
     """
     try:
-        config = load_config()
-        
-        # Setup logging from config file
-        logging_config_path = config.get("logging_config", "settings.toml")
-        setup_logging(logging_config_path)
-        
+        # Initiate loguru configuration
+        setup_logging()
+        logger.debug("Starting application initialization")
+
+        async def lifespan(app: FastAPI):
+            # Startup logic
+            logger.info("Application startup")
+            yield
+            # Shutdown logic
+            logger.info("Application shutdown")
+
         app = FastAPI(
-            title=config["app"]["name"],
-            description=config["app"]["description"],
-            version=config["app"]["version"],
-            debug=config["app"].get("debug", False),
+            title=settings.app.name,
+            description=settings.app.description,
+            version=settings.app.version,
+            debug=settings.app.debug,
+            lifespan=lifespan,
         )
         
         # Add middleware with safer defaults
         app.add_middleware(
             CORSMiddleware,
-            allow_origins=config.get("cors", {}).get("allow_origins", []),
+            allow_origins=["*"],
             allow_credentials=True,
-            allow_methods=["GET", "POST", "PUT", "DELETE"],
-            allow_headers=["Content-Type", "Authorization"],
+            allow_methods=["*"],
+            allow_headers=["*"],
         )
         
         # Add routers
-        from backend.api.routers import router
         app.include_router(router)
         
         # Add health check endpoint
         @app.get("/health", tags=["health"])
         async def health_check() -> JSONResponse:
             return JSONResponse({"status": "ok"})
-            
-        # Add startup/shutdown events
-        @app.on_event("startup")
-        async def startup():
-            logging.info("Application startup")
-            
-        @app.on_event("shutdown") 
-        async def shutdown():
-            logging.info("Application shutdown")
+
+        # Add API documentation endpoint 
+        @app.get("/docs", include_in_schema=False)
+        async def custom_swagger_ui_html():
+            return get_swagger_ui_html(
+                openapi_url=app.openapi_url,
+                title=app.title + " - Swagger UI",
+                swagger_js_url="/static/swagger-ui-bundle.js",
+                swagger_css_url="/static/swagger-ui.css",
+            )
         
+        # Add API documentation endpoint
+        @app.get("/redoc", include_in_schema=False)
+        async def redoc_html():
+            return get_redoc_html(
+                openapi_url=app.openapi_url,
+                title=app.title + " - ReDoc",
+                redoc_js_url="/static/redoc.standalone.js",
+            )
+
         return app
         
     except Exception as e:
-        logging.critical(f"Failed to create application: {str(e)}")
+        logger.critical(f"Failed to create application: {str(e)}")
         raise
 
-app = create_app()
+if __name__ == "__main__":
+    
+    app = create_app()
+    logger.info("Application created, starting Uvicorn server")
+    uvicorn.run(app, host="0.0.0.0", port=8000)
+else:
+    app = create_app()
+    logger.info("Application created as module")

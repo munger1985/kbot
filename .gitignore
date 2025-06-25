@@ -1,0 +1,31 @@
+# Environment variables
+.env
+.env.local
+.env.*.local
+backend/.env
+
+# Sensitive configuration files
+*.secret.toml
+*.key
+*.token
+*.pem
+*.cert
+
+# Development files
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Log files
+*.log
+logs/
+
+# IDE directories
+.idea/
+.vscode/

@@ -1,5 +1,18 @@
-[app]
-name = "KBot"
-description = "KBot backend application"
-version = "3.0.0"
-debug = true
+[default]
+app.name = "KBot_dev"
+app.description = "KBot API Service"
+app.version = "3.0.0"
+app.debug = true
+
+# database connection pool configuration
+database.echo = true
+database.pool_size = 5
+database.max_overflow = 10
+database.pool_pre_ping = false
+database.pool_recycle = 3600
+
+# logging configuration
+logging.level = "DEBUG"
+logging.path = "backend/logs/app.log"
+logging.rotation = "100 MB"
+logging.retention = "10 days"
