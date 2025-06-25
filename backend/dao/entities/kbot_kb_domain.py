@@ -14,6 +14,7 @@ class KBotKBDomain(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     app_id: Mapped[int] = mapped_column(BigInteger)
     name: Mapped[str] = mapped_column(String(256))
+    status: Mapped[str] = mapped_column(String(1))
     descs: Mapped[Optional[str]] = mapped_column(String(512))
     created_by: Mapped[str] = mapped_column(String(512))
     created_time: Mapped[datetime] = mapped_column(DateTime)

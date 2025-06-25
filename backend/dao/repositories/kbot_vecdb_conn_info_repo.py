@@ -3,11 +3,11 @@ from typing import List, Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.dao.entities.kbot_db_conn_info import KBotDbConnInfo
+from github.kbot3.backend.dao.entities.kbot_vecdb_conn_info import KBotDbConnInfo
 from backend.core.database.oracle import async_session
 
-class KBotDbConnInfoRepository:
-    """Repository for KBOT_DB_CONN_INFO table operations."""
+class KBotVecDbConnInfoRepository:
+    """Repository for KBOT_VECDB_CONN_INFO table operations."""
     
     async def create(self, conn_info: KBotDbConnInfo) -> KBotDbConnInfo:
         """Create a new connection info record."""

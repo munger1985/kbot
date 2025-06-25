@@ -14,6 +14,14 @@ from backend.core.log.logger import setup_logging, logger
 from backend.core.config import settings
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    logging.info("Application starting up")
+    yield
+    logging.info("Application shutting down")
+
+
+
 def create_app() -> FastAPI:
     """Create and configure FastAPI application.
     
