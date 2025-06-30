@@ -1,4 +1,4 @@
-[default]
+[production]
 app.name = "KBot3"
 app.description = "KBot API Service"
 app.version = "3.0.0"

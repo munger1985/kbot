@@ -16,3 +16,11 @@ logging.level = "DEBUG"
 logging.path = "backend/logs/app.log"
 logging.rotation = "100 MB"
 logging.retention = "10 days"
+
+# chunk configuration
+chunk.size = 1000
+chunk.overlap = 100
+
+# knowledge base configuration
+kbot.file_root_path = "/home/chris/kbot/knowledge_base"
+kbot.parallel_workers = 10

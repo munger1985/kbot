@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Dict, Any
 
 # Initialize configuration with simplified setup
-current_env = os.getenv("KBOT_ENV", "development")
+current_env = os.getenv("KBOT_ENV", "default")
 
 # Initialize the complete configuration
 settings = Dynaconf(
@@ -24,4 +24,4 @@ settings = Dynaconf(
 
 def load_config() -> Dict[str, Any]:
     """Load and merge configuration files."""
-    return settings.as_dict()
+    return dict(settings)

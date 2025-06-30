@@ -1,37 +1,79 @@
 # -*- coding: utf-8 -*-
 
-import os
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy import text
+from typing import AsyncIterator
+from contextlib import asynccontextmanager
 
-from backend.core.config import load_config
+
+from backend.core.config import settings
 
 # Declare the asynchronous base class
 Base = declarative_base()
 
-
-config = load_config()
-
 # Default to environment variable connection strings when available
-DB_CON_STRING = os.getenv("DB_CON_STRING")
-DATABASE_URL = DB_CON_STRING if DB_CON_STRING else config["database"]["url"]
+DATABASE_URL = settings.KBOT_DATABASE_URL
 
-async_engine = create_async_engine(
-    DATABASE_URL,
-    echo=config["database"]["echo"],
-    pool_size=config["database"]["pool_size"],
-    max_overflow=config["database"]["max_overflow"],
-    pool_pre_ping=config["database"]["pool_pre_ping"],
-    pool_recycle=config["database"]["pool_recycle"],
-    future=True  # Enable SQLAlchemy 2.0 features
+try:
+    async_engine = create_async_engine(
+        DATABASE_URL,
+        echo=settings.database.echo,
+        pool_size=settings.database.pool_size,
+        max_overflow=settings.database.max_overflow,
+        pool_pre_ping=settings.database.pool_pre_ping,
+        pool_recycle=settings.database.pool_recycle,
+        future=True  # Enable SQLAlchemy 2.0 features
+    )
+except Exception as e:
+    raise RuntimeError(f"Failed to create database engine: {str(e)}") from e
+
+async def close_engine() -> None:
+    """Dispose the database engine and clean up resources."""
+    await async_engine.dispose()
+
+async_session = async_sessionmaker(
+    async_engine, expire_on_commit=False, class_=AsyncSession
 )
 
-async_session = sessionmaker(
-    async_engine, class_=AsyncSession, expire_on_commit=False
-)
-
-async def get_db() -> AsyncSession:
-    """Get an async database session."""
+@asynccontextmanager
+async def get_session() -> AsyncIterator[AsyncSession]:
+    """Asynchronous context manager for database sessions with automatic transaction handling.
+    
+    Yields:
+        AsyncSession: An async database session
+        
+    Raises:
+        Exception: Any database operation errors will be raised after rollback
+        
+    Example:
+        async with get_session() as session:
+            result = await session.execute(query)
+    """
     async with async_session() as session:
-        yield session
+        try:
+            yield session
+            await session.commit()
+        except Exception as e:
+            await session.rollback()
+            raise RuntimeError(f"Database operation failed: {str(e)}") from e
+        finally:
+            await session.close()
+
+
+
+async def test_connection() -> bool:
+    """Test the database connection by executing a simple query.
+    
+    Returns:
+        bool: True if connection is successful, False otherwise
+    """
+    try:
+        async with get_session() as session:
+            # 使用与数据库类型无关的通用测试语句
+            await session.execute(text("SELECT 1"))
+            await session.commit()  # 确保测试查询被提交
+        return True
+    except Exception as e:
+        print(f"Connection test failed: {e}")
+        return False
