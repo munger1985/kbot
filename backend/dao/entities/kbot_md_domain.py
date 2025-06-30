@@ -3,7 +3,13 @@ from sqlalchemy.dialects.oracle import NUMBER
 from sqlalchemy.sql import func
 from sqlalchemy import UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
+from enum import Enum
 from .base import Base
+
+class DomainStatus(int, Enum):
+    """Database configuration status enumeration."""
+    ENABLED = 1
+    DISABLED = 0
 
 class KbotMdDomain(Base):
     """Business domain entity for KBOT_MD_DOMAIN table."""
@@ -25,9 +31,9 @@ class KbotMdDomain(Base):
         String(256),
         comment="业务域名称"
     )
-    status: Mapped[str | None] = mapped_column(
-        String(1),
-        comment="提示词状态：Y-启用，N-禁用"
+    status: Mapped[int | None] = mapped_column(
+        NUMBER(1, 0),
+        comment="提示词状态：1-启用，0-禁用"
     )
     descs: Mapped[str | None] = mapped_column(
         String(512),

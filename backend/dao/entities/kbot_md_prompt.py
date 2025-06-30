@@ -8,8 +8,14 @@ from .base import Base
 
 class PromptCategory(int, Enum):
     """Prompt category enumeration."""
-    RAG = 1
-    SUMMARY = 2
+    SYSTEM_PROMPT = 1
+    PROMPT_TEMPLATE = 2
+    AGENT_PROMPT = 3
+
+class PromptStatus(int, Enum):
+    """Database configuration status enumeration."""
+    ENABLED = 1
+    DISABLED = 0
 
 class KbotMdPrompt(Base):
     """Prompt entity for KBOT_MD_PROMPT table."""
@@ -32,18 +38,17 @@ class KbotMdPrompt(Base):
         String(256),
         comment="提示词名称"
     )
-    prompt_category: Mapped[str] = mapped_column(
-        NUMBER(38, 0),
-        nullable=False,
+    prompt_category: Mapped[int | None] = mapped_column(
+        NUMBER(2, 0),
         comment="提示词类型：1-系统提示词；2-知识库提示词模版 3-Agent提示词"
     )
     template: Mapped[str | None] = mapped_column(
         CLOB,
         comment="提示词模板内容（CLOB大文本）"
     )
-    status: Mapped[str | None] = mapped_column(
+    status: Mapped[int | None] = mapped_column(
         VARCHAR2(1),
-        comment="提示词状态：Y-启用, N-禁用"
+        comment="提示词状态：1-启用, 0-禁用"
     )
     descs: Mapped[str | None] = mapped_column(
         String(512),

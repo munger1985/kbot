@@ -14,6 +14,11 @@ class ParamType(int, Enum):
     FEEDBACK = 5
     DATA_PROCESS = 6
 
+class ConfStatus(int, Enum):
+    """Database configuration status enumeration."""
+    ENABLED = 1
+    DISABLED = 0
+
 class KbotMdSysConf(Base):
     """System configuration entity for KBOT_MD_SYS_CONF table."""
     
@@ -28,7 +33,7 @@ class KbotMdSysConf(Base):
         comment="所属应用ID"
     )
     param_type: Mapped[int | None] = mapped_column(
-        NUMBER(38, 0),
+        NUMBER(2, 0),
         comment="1-ServiceURL/2-RagControl/3-Reranker/4-Search/5-Feedback/6-DataProcess DataProcess=》图片转成文本模型，语音转成文本模型。"
     )
     param_name: Mapped[str | None] = mapped_column(
@@ -39,7 +44,7 @@ class KbotMdSysConf(Base):
         String(256),
         comment="参数值"
     )
-    status: Mapped[str | None] = mapped_column(
+    status: Mapped[int | None] = mapped_column(
         NUMBER(1, 0),
         comment="配置状态：1-启用, 0-禁用"
     )

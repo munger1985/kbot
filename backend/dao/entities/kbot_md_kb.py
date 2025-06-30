@@ -47,8 +47,8 @@ class KbotMdKb(Base):
         String(256),
         comment="知识库名称，在同一业务域下具有唯一性"
     )
-    kb_category: Mapped[str | None] = mapped_column(
-        NUMBER(38, 0),
+    kb_category: Mapped[int | None] = mapped_column(
+        NUMBER(2, 0),
         comment="知识库类型：KBot(文搜文/文搜图)、ImageSearch(图搜图)、GenReport、Translate、Summary"
     )
     descs: Mapped[str | None] = mapped_column(
@@ -64,7 +64,7 @@ class KbotMdKb(Base):
         comment="使用的嵌入模型ID"
     )
     kb_status: Mapped[int | None] = mapped_column(
-        NUMBER(38, 0),
+        NUMBER(1, 0),
         comment="知识库状态：1-NEW(新建)、2-ENABLED(启用)、3-DISABLED(禁用)、4-ARCHIVED(归档)"
     )
     created_by: Mapped[str | None] = mapped_column(
