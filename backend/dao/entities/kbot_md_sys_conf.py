@@ -40,8 +40,8 @@ class KbotMdSysConf(Base):
         comment="参数值"
     )
     status: Mapped[str | None] = mapped_column(
-        VARCHAR2(1),
-        comment="配置状态：Y-启用, N-禁用"
+        NUMBER(1, 0),
+        comment="配置状态：1-启用, 0-禁用"
     )
     descs: Mapped[str | None] = mapped_column(
         String(512),

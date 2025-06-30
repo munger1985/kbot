@@ -35,7 +35,7 @@ class KbotMdPrompt(Base):
     prompt_category: Mapped[str] = mapped_column(
         NUMBER(38, 0),
         nullable=False,
-        comment="提示词类型：RAG-知识库, SUMMARY-摘要"
+        comment="提示词类型：1-系统提示词；2-知识库提示词模版 3-Agent提示词"
     )
     template: Mapped[str | None] = mapped_column(
         CLOB,
