@@ -9,7 +9,8 @@ from fastapi.openapi.docs import (
     get_swagger_ui_html,
 )
 
-from .api.routers import router
+from backend.api.routers import router
+from backend.api.routers.kb_upload_router import router as kb_upload_router
 from backend.core.log.logger import setup_logging, logger
 from backend.core.config import settings
 
@@ -59,6 +60,7 @@ def create_app() -> FastAPI:
         
         # Add routers
         app.include_router(router)
+        app.include_router(kb_upload_router)
         
         # Add health check endpoint
         @app.get("/health", tags=["health"])

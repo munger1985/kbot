@@ -1,5 +1,6 @@
+import json
 from typing import Sequence, Optional
-from sqlalchemy import select, delete, and_
+from sqlalchemy import select, delete, and_, update
 from backend.dao.entities.kbot_md_kb_files import (
     KbotMdKbFiles, 
     FileStatus,
@@ -8,8 +9,7 @@ from backend.dao.entities.kbot_md_kb_files import (
 from backend.dao.entities.kbot_md_kb_batch import KbotMdKbBatch
 from backend.dao.entities.kbot_md_kb_chunks import KbotMdKbChunks
 from backend.dao.repositories.kbot_md_kb_batch_repo import KbotMdKbBatchRepository
-from backend.core.database.oracle import get_session
-from backend.utils.common_methods import safe_int
+from backend.core.database.meta_oracle import get_session
 
 class KbotMdKbFilesRepository:
     """Repository for KBOT_MD_KB_FILES table operations."""
@@ -106,25 +106,25 @@ class KbotMdKbFilesRepository:
         Returns:
             bool: True if deletion succeeded, False otherwise
         """
-        await session.delete(file)
+        # Update file status to deleted. //更新文件状态为已删除
+        stmt = (
+            update(KbotMdKbFiles)
+            .where(KbotMdKbFiles.file_id == file.file_id)
+            .values(status=FileStatus.DELETED.value)
+        )
+        await session.execute(stmt)
         stmt = delete(KbotMdKbChunks).where(KbotMdKbChunks.file_id == file.file_id)
         await session.execute(stmt)
         await session.commit()
         return True
 
     
-    async def delete(self, id: int) -> bool:
-        """Delete a KB file record by ID.
+    async def delete(self, file_id: int) -> bool:
+        """
         
-        Args:
-            id (int): The ID of the KB file record to delete
-            
-        Returns:
-            int: Number of records deleted (including related chunks records), 
-                 0 if no record was found or deletion failed
         """
         async with get_session() as session:
-            file = await self.get_by_id(id)
+            file = await self.get_by_id(file_id)
             if not file:
                 return False
             return await self._delete_file_and_chunks(file, session)
@@ -151,25 +151,25 @@ class KbotMdKbFilesRepository:
                 else:
                     failed_count += 1
             
-            return (success_count, failed_count)
+            return success_count, failed_count
         
     async def create(self, batch: KbotMdKbBatch, files: list = [KbotMdKbFiles]) -> bool:
         """Create a new knowledge base file record."""
         if files is None or len(files) == 0:
             return False
-        # check if the batch already exists
-        batch_name = str(batch.batch_name)
-        kbid = safe_int(batch.kb_id)
-        batch_repo = KbotMdKbBatchRepository()
-        r = await batch_repo.get_by_name_and_kb(batch_name, kbid)
 
-        if not r: # create the batch if it doesn't exist
+        if not batch.batch_id: # create the batch if it doesn't exist
             async with get_session() as session:               
                 session.add(batch)
+                await session.flush()
+                for file in files:
+                    file.batch_id = batch.batch_id
                 session.add_all(files)
                 await session.commit()
                 return True
         else:
+            for file in files:
+                    file.batch_id = batch.batch_id
             async with get_session() as session:
                 session.add_all(files)
                 await session.commit()

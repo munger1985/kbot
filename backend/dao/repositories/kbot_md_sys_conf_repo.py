@@ -4,7 +4,7 @@ from backend.dao.entities.kbot_md_sys_conf import (
     KbotMdSysConf, 
     ParamType
 )
-from backend.core.database.oracle import get_session
+from backend.core.database.meta_oracle import get_session
 
 class KbotMdSysConfRepository:
     """Repository for KBOT_MD_SYS_CONF table operations."""

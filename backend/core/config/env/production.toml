@@ -1,6 +1,6 @@
 [production]
-app.name = "KBot3"
-app.description = "KBot API Service"
+app.name = "KBOT3_PROD"
+app.description = "The KBOT backend application provides API services for KBOT and is currently in the production environment."
 app.version = "3.0.0"
 app.debug = false
 

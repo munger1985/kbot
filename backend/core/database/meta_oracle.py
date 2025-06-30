@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.ext.declarative import declarative_base
@@ -13,17 +12,22 @@ from backend.core.config import settings
 Base = declarative_base()
 
 # Default to environment variable connection strings when available
-DATABASE_URL = settings.KBOT_DATABASE_URL
+url = settings["database"]["url"]
+echo = settings["database"]["echo"]
+pool_size = settings["database"]["pool_size"]
+max_overflow = settings["database"]["max_overflow"]
+pool_pre_ping = settings["database"]["pool_pre_ping"]
+pool_recycle = settings["database"]["pool_recycle"]
 
 try:
     async_engine = create_async_engine(
-        DATABASE_URL,
-        echo=settings.database.echo,
-        pool_size=settings.database.pool_size,
-        max_overflow=settings.database.max_overflow,
-        pool_pre_ping=settings.database.pool_pre_ping,
-        pool_recycle=settings.database.pool_recycle,
-        future=True  # Enable SQLAlchemy 2.0 features
+        url,
+        echo=echo,
+        pool_size=pool_size,
+        max_overflow=max_overflow,
+        pool_pre_ping=pool_pre_ping,
+        pool_recycle=pool_recycle,
+        future=True,  # Enable SQLAlchemy 2.0 features
     )
 except Exception as e:
     raise RuntimeError(f"Failed to create database engine: {str(e)}") from e

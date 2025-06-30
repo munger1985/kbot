@@ -1,7 +1,7 @@
 [development]
-app.name = "KBot_dev"
-app.description = "KBot API Service"
-app.version = "3.0.0"
+app.name = "KBOT_DEV"
+app.description = "The KBOT backend application provides API services for KBOT and is currently in the development environment."
+app.version = "0.3.0"
 app.debug = true
 
 # database connection pool configuration

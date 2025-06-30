@@ -1,7 +1,7 @@
 from typing import Sequence, Optional
 from sqlalchemy import select, delete
 from backend.dao.entities.kbot_md_kb_chunks import KbotMdKbChunks, ChunkType
-from backend.core.database.oracle import get_session
+from backend.core.database.meta_oracle import get_session
 
 class KbotMdKbChunksRepository:
     """Repository for KBOT_MD_KB_CHUNKS table operations."""

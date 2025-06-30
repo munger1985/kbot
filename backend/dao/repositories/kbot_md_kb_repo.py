@@ -1,7 +1,8 @@
 from typing import Sequence, Optional
 from sqlalchemy import select, delete
 from backend.dao.entities.kbot_md_kb import KbotMdKb, KbCategory, KbStatus
-from backend.core.database.oracle import get_session
+from backend.dao.entities.kbot_md_db_conf import KbotMdDbConf
+from backend.core.database.meta_oracle import get_session
 
 class KbotMdKbRepository:
     """Repository for KBOT_MD_KB table operations."""
@@ -94,5 +95,16 @@ class KbotMdKbRepository:
                 .where(KbotMdKb.app_id == app_id)
                 .where(KbotMdKb.domain_id == domain_id)
                 .where(KbotMdKb.kb_name == kb_name)
+            )
+            return result.scalars().first()
+    
+    async def get_dbconf_by_kbid(self, kbid: int) -> Optional[KbotMdDbConf]:
+        """Get database configuration by knowledge base ID."""
+        async with get_session() as session:
+            result = await session.execute(
+                select(KbotMdDbConf)
+                .join(KbotMdKb, KbotMdKb.db_conn_id == KbotMdDbConf.db_id)
+                .where(KbotMdKb.kb_id == kbid)
+                .where(KbotMdDbConf.status == 'Y')
             )
             return result.scalars().first()

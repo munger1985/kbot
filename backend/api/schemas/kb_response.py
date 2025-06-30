@@ -15,6 +15,11 @@ class SuccessResponse(BaseResponse):
     success: bool = Field(True, description="请求成功")
     message: str = Field("操作成功", description="成功消息")
 
+class SuccessWithErrorResponse(SuccessResponse):
+    """部分失败的成功响应模型"""
+    code: int = Field(207, description="多状态码")
+    details: Optional[dict] = Field(None, description="详情")
+
 class ErrorResponse(BaseResponse):
     """错误响应模型"""
     success: bool = Field(False, description="请求失败")
@@ -42,8 +47,8 @@ class KBItem(BaseModel):
     updated_at: str = Field(..., description="更新时间")
 
 class KBUploadResponse(SuccessResponse):
-    """知识库上传响应"""
-    data: KBItem = Field(..., description="上传的知识库项")
+    """知识库上传成功响应"""
+    data: KBItem = Field(..., description="成功的知识库项")
 
 class KBListResponse(SuccessResponse):
     """知识库列表响应"""

@@ -1,7 +1,7 @@
 from typing import Sequence, Optional
 from sqlalchemy import select, delete, and_
 from backend.dao.entities.kbot_md_models import KbotMdKbModels
-from backend.core.database.oracle import get_session
+from backend.core.database.meta_oracle import get_session
 
 class KbotMdKbModelsRepository:
     """Repository for KBOT_MD_KB_MODELS table operations."""
