@@ -13,6 +13,11 @@ class ModelCategory(int, Enum):
     RERANKER = 3
     VLM = 4
 
+class ModelStatus(int, Enum):
+    """Database configuration status enumeration."""
+    ENABLED = 1
+    DISABLED = 0
+
 class KbotMdKbModels(Base):
     """Knowledge base models entity for KBOT_MD_MODELS table."""
     
@@ -34,8 +39,8 @@ class KbotMdKbModels(Base):
         String(256),
         comment="模型技术名称（如gpt-4、text-embedding-ada-002等）"
     )
-    category: Mapped[str | None] = mapped_column(
-        NUMBER(38, 0),
+    category: Mapped[int | None] = mapped_column(
+        NUMBER(2, 0),
         comment="模型类别：LLM-大语言模型, EMBEDDING-嵌入模型, RERANKER-重排序模型, VLM-视觉语言模型"
     )
     provider: Mapped[str | None] = mapped_column(
@@ -50,9 +55,9 @@ class KbotMdKbModels(Base):
         String(256),
         comment="API密钥（建议加密存储）"
     )
-    status: Mapped[str | None] = mapped_column(
-        VARCHAR2(1),
-        comment="模型状态：Y-启用, N-禁用"
+    status: Mapped[int | None] = mapped_column(
+        NUMBER(1, 0),
+        comment="模型状态：1-启用, 0-禁用"
     )
     model_params: Mapped[dict | None] = mapped_column(
         JSONB,

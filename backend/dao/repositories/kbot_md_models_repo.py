@@ -1,6 +1,10 @@
 from typing import Sequence, Optional
 from sqlalchemy import select, delete, and_
-from backend.dao.entities.kbot_md_models import KbotMdKbModels
+from backend.dao.entities.kbot_md_models import (
+    KbotMdKbModels,
+    ModelCategory,
+    ModelStatus
+)
 from backend.core.database.meta_oracle import get_session
 
 class KbotMdKbModelsRepository:
