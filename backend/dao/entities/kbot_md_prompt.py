@@ -29,9 +29,9 @@ class KbotMdPrompt(Base):
         comment="提示词名称"
     )
     prompt_category = Column(
-        String(256),
+        NUMBER(2, 0), 
         nullable=False,
-        comment="提示词类型：RAG-知识库, SUMMARY-摘要"
+        comment="提示词类型：1-系统提示词；2-知识库提示词模版 3-Agent提示词"
     )
     template = Column(
         CLOB,

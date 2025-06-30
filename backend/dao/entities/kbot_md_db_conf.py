@@ -5,21 +5,21 @@ from sqlalchemy.sql import func
 from sqlalchemy.dialects.postgresql import JSONB
 from .base import Base
 
-class DbType(str, Enum):
+class DbType(int, Enum):
     """Database type enumeration."""
-    ORACLEDB = "ORACLEDB"
-    ADB = "ADB"
-    HEATWAVE = "HEATWAVE"
-    ELASTICSEARCH = "ELASTICSEARCH"
-    MILVUS = "MILVUS"
-    FAISS = "FAISS"
-    PINECONE = "PINECONE"
-    WEAVIATE = "WEAVIATE"
+    ORACLEDB = 1
+    ADB = 2
+    HEATWAVE = 3
+    ELASTICSEARCH = 4
+    MILVUS = 5
+    FAISS = 6
+    PINECONE = 7
+    WEAVIATE = 8
 
-class DbStatus(str, Enum):
+class DbStatus(int, Enum):
     """Database configuration status enumeration."""
-    ENABLED = "Y"
-    DISABLED = "N"
+    ENABLED = 1
+    DISABLED = 0
 
 class KbotMdDbConf(Base):
     """Database configuration entity for KBOT_MD_DB_CONF table."""
@@ -41,16 +41,16 @@ class KbotMdDbConf(Base):
         comment="数据库显示名称（用户友好名称）"
     )
     db_type = Column(
-        String(20),
-        comment="数据库类型：ORACLEDB-Oracle数据库, ADB-Oracle自治数据库, HEATWAVE-MySQL HeatWave, ELASTICSEARCH, MILVUS, FAISS, PINECONE, WEAVIATE等"
+        NUMBER(2, 0), 
+        comment="数据库类型：1-ORACLEDB-Oracle数据库, 2-ADB-Oracle自治数据库, 3-HEATWAVE-MySQL HeatWave, 4-ELASTICSEARCH, 5-MILVUS, 6-FAISS, PINECONE, WEAVIATE等"
     )
     db_conn_str = Column(
         JSONB,
         comment="JSON格式的数据库连接字符串，包含主机、端口、认证等信息"
     )
     status = Column(
-        VARCHAR2(1),
-        comment="配置状态：Y-启用, N-禁用"
+        NUMBER(1, 0), 
+        comment="配置状态：1-启用, 0-禁用"
     )
     descs = Column(
         String(512),

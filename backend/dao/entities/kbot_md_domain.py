@@ -27,8 +27,8 @@ class KbotMdDomain(Base):
         comment="业务域名称"
     )
     status = Column(
-        String(1),
-        comment="提示词状态：Y-启用，N-禁用"
+        NUMBER(1, 0),
+        comment="提示词状态：1-启用，0-禁用"
     )
     descs = Column(
         String(512),

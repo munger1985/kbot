@@ -29,8 +29,8 @@ class KbotMdKbModels(Base):
         comment="模型技术名称（如gpt-4、text-embedding-ada-002等）"
     )
     category = Column(
-        String(256),
-        comment="模型类别：LLM-大语言模型, EMBEDDING-嵌入模型, RERANKER-重排序模型, VLM-视觉语言模型"
+        NUMBER(2, 0), 
+        comment="模型类别：1-LLM-大语言模型, 2-EMBEDDING-嵌入模型, 3-RERANKER-重排序模型, 4-VLM-视觉语言模型"
     )
     provider = Column(
         String(256),
