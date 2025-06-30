@@ -44,7 +44,7 @@ def opensearch_fulltext_wrapper(question, kb_name):
         # 查询文档
     query = {
     "query": {
-        "match": {x
+        "match": {
         "text": question
         }
     }
