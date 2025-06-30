@@ -133,6 +133,8 @@ summarize_chain = (
         | summary_model
         | StrOutputParser()  # Extracts the response as text
 )
+from langchain_community.document_loaders import UnstructuredHTMLLoader
+
 
 
 class KnowledgeFile:
@@ -201,6 +203,8 @@ class KnowledgeFile:
         elif filepath.lower().endswith(".wav"):
             loader = ociSpeechASRLoader(
                 self.namespace, self.bucket, self.objectName, self.lang)
+        elif filepath.lower().endswith(".html"):
+            loader= UnstructuredHTMLLoader(filepath)
         elif loader_name == 'ImageOCRLoader':
             loader = ppOCR(file_path=self.filepath)
         else:
