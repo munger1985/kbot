@@ -8,11 +8,11 @@ from .base import Base
 class ParamType(int, Enum):
     """Parameter type enumeration."""
     SERVICE_URL = 1
-    RAG_CONTROL = 2
-    RERANKER = 3
-    SEARCH = 4
-    FEEDBACK = 5
-    DATA_PROCESS = 6
+    SYSLOGO = 2
+    SEARCH = 3
+    FEEDBACK = 4
+    DATA_PARSE = 5
+    GRAPHRAG = 6
 
 class ConfStatus(int, Enum):
     """Database configuration status enumeration."""
