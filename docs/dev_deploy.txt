@@ -1,0 +1,15 @@
+
+Kbot3.0后台：
+ssh to chatbot_dev_v2(150.230.37.250)
+代码路径在/home/ubuntu/kbot3
+启动服务：
+cd /home/ubuntu/kbot3
+export KBOT_ENV=development
+export PYTHONPATH=/home/ubuntu/kbot3
+python backend/main.py
+http://150.230.37.250:8000/docs
+
+Kbot3.0前端：
+http://132.145.81.123:8080/ords/r/kbotui_dev/km-chat109/login?session=14621582970445&tz=8:00
+
+

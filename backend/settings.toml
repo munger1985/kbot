@@ -22,5 +22,5 @@ chunk.size = 1000
 chunk.overlap = 100
 
 # knowledge base configuration
-kbot.file_root_path = "/home/chris/kbot/knowledge_base"
+kbot.file_root_path = "/home/ubuntu/kbot3/kbot_root"
 kbot.parallel_workers = 10
