@@ -68,9 +68,9 @@ class KbotMdKbFiles(Base):
         comment="文件版本号，每次更新递增"
     )
     is_overwrite: Mapped[str] = mapped_column(
-        VARCHAR2(1),
-        server_default="Y",
-        comment="是否覆盖：Y-是,N-否"
+        NUMBER(1, 0),
+        server_default=1,
+        comment="是否覆盖：1-是,0-否"
     )
     security_level: Mapped[str | None] = mapped_column(
         String(256),
@@ -89,9 +89,9 @@ class KbotMdKbFiles(Base):
         comment="JSON格式的处理参数配置(存储为字符串)"
     )
     enable_summary: Mapped[str] = mapped_column(
-        VARCHAR2(1),
-        server_default="N",
-        comment="是否启用摘要：Y-启用,N-不启用"
+        NUMBER(1, 0),
+        server_default=0,
+        comment="1-启用,0-不启用"
     )
     biz_metadata: Mapped[str | None] = mapped_column(
         String(4000),
