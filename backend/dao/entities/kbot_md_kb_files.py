@@ -73,8 +73,8 @@ class KbotMdKbFiles(Base):
         comment="是否覆盖：1-是,0-否"
     )
     security_level: Mapped[str | None] = mapped_column(
-        String(256),
-        comment="文件安全等级：高、中、低"
+        NUMBER(1, 0),
+        comment="文件安全等级：1-高、2-中、3-低"
     )
     file_size: Mapped[int | None] = mapped_column(
         NUMBER(38, 0),
