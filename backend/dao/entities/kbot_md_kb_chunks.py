@@ -37,6 +37,6 @@ class KbotMdKbChunks(Base):
         comment="关联的原始文件ID"
     )
     chunk_type: Mapped[int | None] = mapped_column(
-        NUMBER(38, 0),
+        NUMBER(2, 0),
         comment="分块类型：1-文本(TXT)、2-图片(IMG)"
     )

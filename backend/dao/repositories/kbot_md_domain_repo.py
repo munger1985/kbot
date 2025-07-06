@@ -1,11 +1,11 @@
 from typing import Sequence, Optional
 
 from sqlalchemy import select, delete
-from backend.dao.entities.kbot_md_domain import (
+from dao.entities.kbot_md_domain import (
     KbotMdDomain,
     DomainStatus
 )
-from backend.core.database.meta_oracle import get_session
+from core.database.meta_oracle import get_session
 
 class KbotMdDomainRepository:
     """Repository for KBOT_MD_DOMAIN table operations."""

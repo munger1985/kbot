@@ -47,7 +47,7 @@ class KbotMdPrompt(Base):
         comment="提示词模板内容（CLOB大文本）"
     )
     status: Mapped[int | None] = mapped_column(
-        VARCHAR2(1),
+        NUMBER(1,0),
         comment="提示词状态：1-启用, 0-禁用"
     )
     descs: Mapped[str | None] = mapped_column(

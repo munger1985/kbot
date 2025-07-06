@@ -3,22 +3,22 @@ import sys
 from pathlib import Path
 
 from loguru import logger
-from backend.core.config import settings
+from core.config import settings
 
 def setup_logging() -> None:
     """Setup logging configuration from Dynaconf settings.
     """
     try:
-        log_config = settings.logging
+        log_config = settings["logging"]
         
-        level = str(log_config.level) if log_config.level else "INFO"
-        conf_path = str(log_config.path) if log_config.path else os.path.join("logs", "app.log")
+        level = str(log_config["level"]) if log_config["level"] else "INFO"
+        conf_path = str(log_config["path"]) if log_config["path"] else os.path.join("logs", "app.log")
         log_path = Path(conf_path)
         # Convert to absolute path
         if not os.path.isabs(log_path):
             log_path = os.path.abspath(log_path)
-        rotation = str(log_config.rotation) if log_config.rotation else "10 MB" 
-        retention = str(log_config.retention) if log_config.retention else "10 days"
+        rotation = str(log_config["rotation"]) if log_config["rotation"] else "10 MB" 
+        retention = str(log_config["retention"]) if log_config["retention"] else "10 days"
         
         # Ensure log directory exists and has write permission
         log_dir = Path(log_path).parent

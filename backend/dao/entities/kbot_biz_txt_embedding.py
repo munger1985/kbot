@@ -1,8 +1,8 @@
 from sqlalchemy import String, CLOB, Numeric, JSON
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
-from backend.core.database.vec_oracle import OracleVectorType
-from backend.core.database.vec_pg import PgVectorType
+from core.database.vec_oracle import OracleVectorType
+from core.database.vec_pg import PgVectorType
 from .base import Base
 
 class KbotBizTxtEmbedding(Base):

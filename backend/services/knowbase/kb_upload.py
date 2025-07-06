@@ -5,17 +5,19 @@ from pathlib import Path
 from fastapi import UploadFile
 from datetime import datetime
 
-from backend.api.schemas.kb_response import KBErrorResponse, KBUploadResponse, KBItem
-from backend.core.log.logger import logger
-from backend.core.config import settings
-from backend.dao.entities.kbot_md_kb_batch import KbotMdKbBatch
-from backend.dao.entities.kbot_md_kb_files import (
+from loguru import logger
+from core.config import settings
+from dao.entities.kbot_md_kb_batch import KbotMdKbBatch
+from dao.entities.kbot_md_kb_files import (
     KbotMdKbFiles,
-    FileStatus
+    FileStatus,
+    EnableSummary,
+    IsOverwrite,
+    SecurityLevel
     )
-from backend.dao.repositories.kbot_md_kb_repo import KbotMdKbRepository
-from backend.dao.repositories.kbot_md_kb_files_repo import KbotMdKbFilesRepository
-from backend.utils.common_methods import run_in_thread_pool
+from dao.repositories.kbot_md_kb_repo import KbotMdKbRepository
+from dao.repositories.kbot_md_kb_files_repo import KbotMdKbFilesRepository
+from utils.common_methods import run_in_thread_pool
 
 
 def save_file(file: UploadFile, domain_id: int, kb_id: int, batch_name:str, overwrite: bool) -> dict:
@@ -34,7 +36,7 @@ def save_file(file: UploadFile, domain_id: int, kb_id: int, batch_name:str, over
                     "file_path": str,  // 文件保存路径
                     "file_name": str,  // 文件名
                     "file_ext": str,   // 文件扩展名
-                    "is_overwrite": str,  // 是否覆盖(Y/N)
+                    "is_overwrite": int,  // 是否覆盖(1是 0-否)
                     "file_version": int,  // 文件版本号
                     "file_size": int     // 文件大小
                 }
@@ -55,9 +57,9 @@ def save_file(file: UploadFile, domain_id: int, kb_id: int, batch_name:str, over
                 toml_config_path = project_root.parent / "KBOT_FILES"
 
             root_path = Path(toml_config_path).resolve()  # 转换为绝对路径
-            target_path = root_path / str(domain_id) / str(kb_id) / "source" / batch_name
+            target_path = root_path / Path(str(domain_id)) / Path(str(kb_id)) / Path("source") / Path(batch_name)
             target_path.mkdir(parents=True, exist_ok=True)
-            file_path = target_path / filename
+            file_path = target_path / Path(filename)
 
             # Get file parameters. // 获取文件相关参数
             name, ext = os.path.splitext(filename)
@@ -65,36 +67,36 @@ def save_file(file: UploadFile, domain_id: int, kb_id: int, batch_name:str, over
             fileparams = {"file_path": str(file_path), 
                           "file_name": filename, 
                           "file_ext": ext, 
-                          "is_overwrite": "Y" if overwrite else "N",
+                          "is_overwrite": IsOverwrite.YES.value if overwrite else IsOverwrite.NO.value,
                           "file_version": 1, 
                           "file_size": len(file_content)}          
             
             # Handle filename conflicts. // 处理文件名冲突
-            if file_path.exists() and not overwrite:               
-                # Append a numeric suffix to the filename until the conflict is resolved. // 添加数字后缀直到文件名不冲突
+            if file_path.exists():
+                logger.debug(f"File {filename} already exists.")
                 counter = 1
                 new_filename = ""
-                while file_path.exists():
-                    new_filename = f"{name}-{counter}{ext}"
-                    file_path = target_path / new_filename
-                    counter += 1
-                fileparams["file_name"] = new_filename
-                fileparams["file_version"] = counter
-            # Retrieve the maximum version number of the file before overwriting. //覆盖前获取该文件的最大版本号
-            elif file_path.exists() and overwrite:
-                counter = 1
-                new_filename = ""
-                 
-                # After retrieving the maximum version number, the original file must still be overwritten, 
-                # and subsequent saves will continue using the same file_path.
-                # 在获取最大版本号之后仍然需要覆盖最初的文件，后续保存文件仍然使用 file_path
-                new_path = file_path
-
-                while new_path.exists():
-                    new_filename = f"{name}-{counter}{ext}"
-                    new_path = target_path / new_filename
-                    counter += 1
-                fileparams["file_version"] = counter
+                if overwrite:
+                    logger.debug(f"File {filename} already exists, will overwrite it.")
+                    # After retrieving the maximum version number, the original file must still be overwritten, 
+                    # and subsequent saves will continue using the same file_path.
+                    # 在获取最大版本号之后仍然需要覆盖最初的文件，后续保存文件仍然使用 file_path
+                    new_path = file_path
+                    while new_path.exists():
+                        new_filename = f"{name}({counter}){ext}"
+                        new_path = target_path / new_filename
+                        counter += 1
+                    fileparams["file_version"] = counter
+                else:
+                    logger.debug(f"File {filename} already exists, will not overwrite it.")
+                    # Append a numeric suffix to the filename until the conflict is resolved. // 添加数字后缀直到文件名不冲突
+                    while file_path.exists():
+                        new_filename = f"{name}({counter}){ext}"
+                        file_path = target_path / new_filename
+                        counter += 1
+                    fileparams["file_name"] = new_filename
+                    fileparams["file_version"] = counter
+                
 
             # Save the file. // 保存文件
             with open(file_path, "wb") as f:
@@ -105,7 +107,7 @@ def save_file(file: UploadFile, domain_id: int, kb_id: int, batch_name:str, over
 
         except Exception as e:
             logger.error(f"Failed to save file {filename if 'filename' in locals() else 'unknown'}: {str(e)}")
-            return {}
+            raise e
         
 def save_files_in_thread(files: List[UploadFile],
                           domain_id: int,
@@ -135,6 +137,8 @@ def save_files_in_thread(files: List[UploadFile],
     params = [{"file": file, "domain_id": domain_id, "kb_id": kb_id,
                "batch_name": batch_name, "overwrite": overwrite} for file in files]
     results = list(run_in_thread_pool(save_file, params=params))
+
+    logger.debug(f"file save result: {results}")
     return results
 
 async def upload_files(files: List[UploadFile], 
@@ -147,7 +151,7 @@ async def upload_files(files: List[UploadFile],
                  security_level: Optional[str] = None,
                  biz_metadata: Optional[dict] = None,
                  created_by: Optional[str] = None,
-                 ) -> KBUploadResponse | KBErrorResponse:
+                 ) -> bool:
     '''
     Upload files to knowledge base and save records to database. // 上传文件到知识库并保存记录到数据库
     Args:
@@ -174,13 +178,7 @@ async def upload_files(files: List[UploadFile],
     # else:
     #    msg = f"Knowledge base {kb_id} does not exist."
     #    logger.error(msg)
-    #    return KBErrorResponse(
-    #         success=False,
-    #         code=404, 
-    #         message=msg,
-    #         error_type="knowledge_base_not_found",
-    #         details=None
-    #     )
+    #    return false
     
     # Save the file. // 保存文件
     logger.info(f"Start uploading {len(files)} files to knowledge base: {kb_id}")
@@ -223,36 +221,8 @@ async def upload_files(files: List[UploadFile],
         logger.debug(f"Start saving {len(file_entitities)} files to database for knowledge base: {kb_id}")
         r = await kb_files_repo.create(batch_entity, file_entitities)
         logger.info(f"Successfully saved {len(file_entitities)} files to database")
-        if r:
-            data = KBItem(
-                id=str(kb_id),
-                name="Knowledge Base",
-                description=f"Successfully saved {len(file_entitities)} files to database",
-                created_at=datetime.now().isoformat(),
-                updated_at=datetime.now().isoformat()
-            )
-            return KBUploadResponse(
-                success=True,
-                message="Files uploaded successfully", 
-                data=data,
-                code=200
-            )
-        else:
-            return KBErrorResponse(
-                success=False,
-                code=500,
-                message="Upload records save failed.",
-                error_type="database_error",
-                details=None
-            )
+        return r
     except Exception as e:
-        msg = f"Upload records save failed. Error: {e}"
-        logger.error(msg)
-        return KBErrorResponse(
-            success=False,
-            code=500,
-            message=msg,
-            error_type="database_error",
-            details={"file_params": fileparams}  # use the actual saved file parameters as details. //使用实际保存的文件参数作为details
-        )
+        logger.error(f"Failed to save files to database for knowledge base: {kb_id}")
+        raise e
     

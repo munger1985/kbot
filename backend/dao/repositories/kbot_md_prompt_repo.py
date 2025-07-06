@@ -1,11 +1,11 @@
 from typing import Sequence, Optional
 from sqlalchemy import select, delete, and_, or_
-from backend.dao.entities.kbot_md_prompt import (
+from dao.entities.kbot_md_prompt import (
     KbotMdPrompt,
     PromptStatus,
     PromptCategory
 )
-from backend.core.database.meta_oracle import get_session
+from core.database.meta_oracle import get_session
 
 class KbotMdPromptRepository:
     """Repository for KBOT_MD_PROMPT table operations."""

@@ -1,7 +1,7 @@
 from typing import Sequence, Dict, Any
 from sqlalchemy import select, delete
-from backend.core.database.factory import create_session
-from backend.dao.entities.kbot_biz_img_embedding import (
+from core.database.factory import create_session
+from dao.entities.kbot_biz_img_embedding import (
     KbotBizImgEmbeddingOracle,
     KbotBizImgEmbeddingPG,
     KbotBizImgEmbeddingMySQL

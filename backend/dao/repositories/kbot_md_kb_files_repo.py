@@ -1,15 +1,18 @@
 import json
 from typing import Sequence, Optional
 from sqlalchemy import select, delete, and_, update
-from backend.dao.entities.kbot_md_kb_files import (
+from dao.entities.kbot_md_kb_files import (
     KbotMdKbFiles, 
     FileStatus,
-    ProcessPriority
+    ProcessPriority,
+    EnableSummary,
+    IsOverwrite,
+    SecurityLevel
 )
-from backend.dao.entities.kbot_md_kb_batch import KbotMdKbBatch
-from backend.dao.entities.kbot_md_kb_chunks import KbotMdKbChunks
-from backend.dao.repositories.kbot_md_kb_batch_repo import KbotMdKbBatchRepository
-from backend.core.database.meta_oracle import get_session
+from dao.entities.kbot_md_kb_batch import KbotMdKbBatch
+from dao.entities.kbot_md_kb_chunks import KbotMdKbChunks
+from dao.repositories.kbot_md_kb_batch_repo import KbotMdKbBatchRepository
+from core.database.meta_oracle import get_session
 
 class KbotMdKbFilesRepository:
     """Repository for KBOT_MD_KB_FILES table operations."""
@@ -158,8 +161,10 @@ class KbotMdKbFilesRepository:
         if files is None or len(files) == 0:
             return False
 
-        if not batch.batch_id: # create the batch if it doesn't exist
-            async with get_session() as session:               
+        batch_repo = KbotMdKbBatchRepository()
+        batch_entity = await batch_repo.get_id_by_name(batch.batch_name, batch.kb_id, app_id=batch.app_id)
+        async with get_session() as session:  
+            if not batch_entity: # create the batch if it doesn't exist   
                 session.add(batch)
                 await session.flush()
                 for file in files:
@@ -167,10 +172,29 @@ class KbotMdKbFilesRepository:
                 session.add_all(files)
                 await session.commit()
                 return True
-        else:
-            for file in files:
-                    file.batch_id = batch.batch_id
-            async with get_session() as session:
-                session.add_all(files)
+            else:
+                for file in files:
+                    file.batch_id = batch_entity.batch_id
+
+                    # check if the file already exists //检查文件是否已存在
+                    existing_file = await session.execute(
+                        select(KbotMdKbFiles).where(
+                            and_(
+                                KbotMdKbFiles.app_id == file.app_id,
+                                KbotMdKbFiles.kb_id == file.kb_id,
+                                KbotMdKbFiles.batch_id == file.batch_id,
+                                KbotMdKbFiles.file_path == file.file_path
+                            )
+                        )
+                    )
+                    existing_file = existing_file.scalars().first()
+                    
+                    if existing_file and file.is_overwrite == IsOverwrite.YES.value:
+                        # if the file already exists and overwrite is allowed // 如果文件已存在且允许覆盖，则更新现有记录
+                        # mark the existing file as deleted and delete its chunks // 将现有文件标记为已删除并删除其块
+                        await self._delete_file_and_chunks(existing_file, session)
+
+                    session.add(file)
+                
                 await session.commit()
                 return True

@@ -19,11 +19,6 @@ class ConfStatus(int, Enum):
     ENABLED = 1
     DISABLED = 0
 
-class ConfStatus(int, Enum):
-    """Database configuration status enumeration."""
-    ENABLED = 1
-    DISABLED = 0
-
 class KbotMdSysConf(Base):
     """System configuration entity for KBOT_MD_SYS_CONF table."""
     

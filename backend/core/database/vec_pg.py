@@ -2,7 +2,6 @@ from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, Asyn
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.types import TypeDecorator
 from typing import AsyncIterator
-import asyncpg
 
 async def create_pg_session(connection_string: str) -> AsyncIterator[AsyncSession]:
     """

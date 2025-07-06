@@ -1,7 +1,7 @@
 import os
 from typing import List, Dict, Optional, Callable, Generator
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from backend.core.config import settings
+from core.config import settings
 
 
 

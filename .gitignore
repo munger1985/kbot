@@ -32,3 +32,5 @@ logs/
 
 # Uploaded files
 knowledge_base/
+
+backend/settings.toml

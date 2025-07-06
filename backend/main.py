@@ -8,18 +8,18 @@ from fastapi.openapi.docs import (
     get_redoc_html,
     get_swagger_ui_html,
 )
-
-from backend.api.routers import router
-from backend.api.routers.kb_upload_router import router as kb_upload_router
-from backend.core.log.logger import setup_logging, logger
-from backend.core.config import settings
+from loguru import logger
+from api.routers import router
+from api.routers.kb_upload_router import router as kb_upload_router
+from core.log.logger import setup_logging
+from core.config import settings
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logging.info("Application starting up")
+    logger.info("Application starting up")
     yield
-    logging.info("Application shutting down")
+    logger.info("Application shutting down")
 
 
 
@@ -42,10 +42,10 @@ def create_app() -> FastAPI:
             logger.info("Application shutdown")
 
         app = FastAPI(
-            title=settings.app.name,
-            description=settings.app.description,
-            version=settings.app.version,
-            debug=settings.app.debug,
+            title=settings["app"]["name"],
+            description=settings["app"]["description"],
+            version=settings["app"]["version"],
+            debug=settings["app"]["debug"],
             lifespan=lifespan,
         )
         
@@ -71,7 +71,7 @@ def create_app() -> FastAPI:
         @app.get("/docs", include_in_schema=False)
         async def custom_swagger_ui_html():
             return get_swagger_ui_html(
-                openapi_url=app.openapi_url,
+                openapi_url="/openapi.json",
                 title=app.title + " - Swagger UI",
                 swagger_js_url="/static/swagger-ui-bundle.js",
                 swagger_css_url="/static/swagger-ui.css",
@@ -81,7 +81,7 @@ def create_app() -> FastAPI:
         @app.get("/redoc", include_in_schema=False)
         async def redoc_html():
             return get_redoc_html(
-                openapi_url=app.openapi_url,
+                openapi_url="/openapi.json",
                 title=app.title + " - ReDoc",
                 redoc_js_url="/static/redoc.standalone.js",
             )

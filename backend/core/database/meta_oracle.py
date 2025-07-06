@@ -6,7 +6,7 @@ from typing import AsyncIterator
 from contextlib import asynccontextmanager
 
 
-from backend.core.config import settings
+from core.config import settings
 
 # Declare the asynchronous base class
 Base = declarative_base()

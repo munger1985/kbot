@@ -13,7 +13,7 @@ database.pool_recycle = 3600
 
 # logging configuration
 logging.level = "DEBUG"
-logging.path = "backend/logs/app.log"
+logging.path = "logs/app.log"
 logging.rotation = "100 MB"
 logging.retention = "10 days"
 
@@ -22,5 +22,5 @@ chunk.size = 1000
 chunk.overlap = 100
 
 # knowledge base configuration
-kbot.file_root_path = "/home/ubuntu/kbot3/kbot_root"
+kbot.file_root_path = "/home/chris/kbot/knowledge_base"
 kbot.parallel_workers = 10

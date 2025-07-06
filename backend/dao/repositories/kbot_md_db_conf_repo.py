@@ -1,12 +1,12 @@
 from typing import Sequence, Optional
 from sqlalchemy import select, delete, and_
 from sqlalchemy import func
-from backend.dao.entities.kbot_md_db_conf import (
+from dao.entities.kbot_md_db_conf import (
     KbotMdDbConf, 
     DbType,
     DbStatus
 )
-from backend.core.database.meta_oracle import get_session
+from core.database.meta_oracle import get_session
 
 class KbotMdDbConfRepository:
     """Repository for KBOT_MD_DB_CONF table operations."""

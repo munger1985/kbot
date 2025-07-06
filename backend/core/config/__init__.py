@@ -1,7 +1,7 @@
 import os
 from dynaconf import Dynaconf
 from pathlib import Path
-from typing import Dict, Any, TypedDict, cast
+from typing import Dict, Any, cast
 from .conf_types import AppSettings
 
 # Initialize configuration with simplified setup
