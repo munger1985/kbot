@@ -1,0 +1,14 @@
+
+# Ignore dynaconf secret files
+.secret.*
+.idea/
+.git/
+kbot.log
+
+# Python-related files
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+*.tgz
+*.tar.gz

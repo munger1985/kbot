@@ -1,0 +1,38 @@
+
+Kbot3.0后台：
+ssh to chatbot_dev_v2(150.230.37.250)
+代码路径在/home/ubuntu/kbot3
+启动服务：
+cd /home/ubuntu/kbot3
+./start.sh
+
+conda activate kbot3
+export KBOT_ENV=development
+export PYTHONPATH=/home/ubuntu/kbot3
+python backend/main.py
+
+nohup python backend/main.py &
+
+http://150.230.37.250:8000/docs
+
+Kbot3.0前端：
+http://132.145.81.123:8080/ords/r/kbotui_dev/km-chat109/login?session=14621582970445&tz=8:00
+
+
+Ubuntu 安装 Oracle Instant Client
+1.下载安装包
+wget https://download.oracle.com/otn_software/linux/instantclient/2380000/instantclient-basic-linux.x64-23.8.0.25.04.zip
+wget https://download.oracle.com/otn_software/linux/instantclient/2380000/instantclient-sqlplus-linux.x64-23.8.0.25.04.zip
+
+2.解压安装：
+sudo mkdir -p /opt/oracle
+sudo unzip instantclient-basic-linux.x64-*.zip -d /opt/oracle
+sudo unzip instantclient-sqlplus-linux.x64-*.zip -d /opt/oracle
+
+3.设置环境变量：
+export ORACLE_HOME=/opt/oracle/instantclient_23_8
+export LD_LIBRARY_PATH=$ORACLE_HOME:$LD_LIBRARY_PATH
+export PATH=$ORACLE_HOME:$PATH
+
+
+
