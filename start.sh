@@ -5,7 +5,6 @@ echo -n "Starting Kbot3.0 service (Estimated time cost: ~10 seconds)"
 cd /home/ubuntu/kbot3
 
 export KBOT_ENV=development
-export PYTHONPATH=/home/ubuntu/kbot3
 
 source /home/ubuntu/anaconda3/etc/profile.d/conda.sh
 conda activate kbot3
