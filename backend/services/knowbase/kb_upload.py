@@ -8,11 +8,10 @@ from datetime import datetime
 from loguru import logger
 from core.config import settings
 from dao.entities.kbot_md_kb_batch import KbotMdKbBatch
-from dao.entities.kbot_md_kb_files import (
-    KbotMdKbFiles,
+from dao.entities.kbot_md_kb_files import KbotMdKbFiles
+from dao.data_dict import(
     FileStatus,
-    EnableSummary,
-    IsOverwrite,
+    YesNoEnmu,
     SecurityLevel
     )
 from dao.repositories.kbot_md_kb_repo import KbotMdKbRepository
@@ -67,7 +66,7 @@ def save_file(file: UploadFile, domain_id: int, kb_id: int, batch_name:str, over
             fileparams = {"file_path": str(file_path), 
                           "file_name": filename, 
                           "file_ext": ext, 
-                          "is_overwrite": IsOverwrite.YES.value if overwrite else IsOverwrite.NO.value,
+                          "is_overwrite": YesNoEnmu.YES.value if overwrite else YesNoEnmu.NO.value,
                           "file_version": 1, 
                           "file_size": len(file_content)}          
             

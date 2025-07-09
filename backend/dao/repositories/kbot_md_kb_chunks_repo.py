@@ -1,6 +1,7 @@
 from typing import Sequence, Optional
 from sqlalchemy import select, delete
-from dao.entities.kbot_md_kb_chunks import KbotMdKbChunks, ChunkType
+from dao.entities.kbot_md_kb_chunks import KbotMdKbChunks
+from dao.data_dict import ChunkType
 from core.database.meta_oracle import get_session
 
 class KbotMdKbChunksRepository:

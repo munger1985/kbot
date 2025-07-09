@@ -3,13 +3,8 @@ from sqlalchemy.dialects.oracle import NUMBER
 from sqlalchemy.sql import func
 from sqlalchemy import UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
-from enum import Enum
 from .base import Base
 
-class DomainStatus(int, Enum):
-    """Database configuration status enumeration."""
-    ENABLED = 1
-    DISABLED = 0
 
 class KbotMdDomain(Base):
     """Business domain entity for KBOT_MD_DOMAIN table."""

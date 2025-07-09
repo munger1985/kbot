@@ -1,23 +1,9 @@
-from enum import Enum
 from sqlalchemy import String, Date
-from sqlalchemy.dialects.oracle import NUMBER, VARCHAR2
+from sqlalchemy.dialects.oracle import NUMBER
 from sqlalchemy.sql import func
-from sqlalchemy.orm import Mapped, mapped_column, DeclarativeBase
+from sqlalchemy.orm import Mapped, mapped_column
 from .base import Base
 
-class ParamType(int, Enum):
-    """Parameter type enumeration."""
-    SERVICE_URL = 1
-    SYSLOGO = 2
-    SEARCH = 3
-    FEEDBACK = 4
-    DATA_PARSE = 5
-    GRAPHRAG = 6
-
-class ConfStatus(int, Enum):
-    """Database configuration status enumeration."""
-    ENABLED = 1
-    DISABLED = 0
 
 class KbotMdSysConf(Base):
     """System configuration entity for KBOT_MD_SYS_CONF table."""
@@ -34,7 +20,7 @@ class KbotMdSysConf(Base):
     )
     param_type: Mapped[int | None] = mapped_column(
         NUMBER(2, 0),
-        comment="1-ServiceURL/2-RagControl/3-Reranker/4-Search/5-Feedback/6-DataProcess DataProcess=》图片转成文本模型，语音转成文本模型。"
+        comment="参数类型枚举"
     )
     param_name: Mapped[str | None] = mapped_column(
         String(256),

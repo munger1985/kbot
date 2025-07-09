@@ -1,10 +1,6 @@
 from typing import Sequence, Optional
 from sqlalchemy import select, delete, and_, or_
-from dao.entities.kbot_md_prompt import (
-    KbotMdPrompt,
-    PromptStatus,
-    PromptCategory
-)
+from dao.entities.kbot_md_prompt import KbotMdPrompt
 from core.database.meta_oracle import get_session
 
 class KbotMdPromptRepository:
@@ -50,48 +46,3 @@ class KbotMdPromptRepository:
             await session.commit()
             return True
     
-    async def get_by_app_id(self, app_id: int) -> Sequence[KbotMdPrompt]:
-        """Get prompts by application ID."""
-        async with get_session() as session:
-            result = await session.execute(
-                select(KbotMdPrompt).where(KbotMdPrompt.app_id == app_id)
-            )
-            return result.scalars().all()
-    
-    async def get_by_domain_id(self, domain_id: int) -> Sequence[KbotMdPrompt]:
-        """Get prompts by domain ID."""
-        async with get_session() as session:
-            result = await session.execute(
-                select(KbotMdPrompt).where(KbotMdPrompt.domain_id == domain_id)
-            )
-            return result.scalars().all()
-    
-    async def get_by_name(self, name: str) -> Optional[KbotMdPrompt]:
-        """Get prompt by name."""
-        async with get_session() as session:
-            result = await session.execute(
-                select(KbotMdPrompt).where(KbotMdPrompt.name == name)
-            )
-            return result.scalars().first()
-    
-    async def search_by_template(self, keyword: str) -> Sequence[KbotMdPrompt]:
-        """Search prompts by template content (case-insensitive)."""
-        async with get_session() as session:
-            result = await session.execute(
-                select(KbotMdPrompt).where(
-                    KbotMdPrompt.template.ilike(f"%{keyword}%")
-                )
-            )
-            return result.scalars().all()
-    
-    async def get_by_name_and_app(self, name: str, app_id: int) -> Optional[KbotMdPrompt]:
-        """Get prompt by name and application ID."""
-        async with get_session() as session:
-            result = await session.execute(
-                select(KbotMdPrompt)
-                .where(and_(
-                    KbotMdPrompt.name == name,
-                    KbotMdPrompt.app_id == app_id
-                ))
-            )
-            return result.scalars().first()

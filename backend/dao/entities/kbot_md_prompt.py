@@ -1,21 +1,9 @@
-from enum import Enum
 from sqlalchemy import String, Date, CLOB
-from sqlalchemy.dialects.oracle import NUMBER, VARCHAR2
+from sqlalchemy.dialects.oracle import NUMBER
 from sqlalchemy.sql import func
-from sqlalchemy import Sequence
-from sqlalchemy.orm import Mapped, mapped_column, DeclarativeBase
+from sqlalchemy.orm import Mapped, mapped_column
 from .base import Base
 
-class PromptCategory(int, Enum):
-    """Prompt category enumeration."""
-    SYSTEM_PROMPT = 1
-    PROMPT_TEMPLATE = 2
-    AGENT_PROMPT = 3
-
-class PromptStatus(int, Enum):
-    """Database configuration status enumeration."""
-    ENABLED = 1
-    DISABLED = 0
 
 class KbotMdPrompt(Base):
     """Prompt entity for KBOT_MD_PROMPT table."""
@@ -40,7 +28,7 @@ class KbotMdPrompt(Base):
     )
     prompt_category: Mapped[int | None] = mapped_column(
         NUMBER(2, 0),
-        comment="提示词类型：1-系统提示词；2-知识库提示词模版 3-Agent提示词"
+        comment="提示词枚举类型"
     )
     template: Mapped[str | None] = mapped_column(
         CLOB,

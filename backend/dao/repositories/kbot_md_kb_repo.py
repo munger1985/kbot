@@ -1,6 +1,7 @@
 from typing import Sequence, Optional
-from sqlalchemy import select, delete
-from dao.entities.kbot_md_kb import KbotMdKb, KbCategory, KbStatus
+from sqlalchemy import select
+from dao.entities.kbot_md_kb import KbotMdKb
+from dao.data_dict import KbCategory, KbStatus
 from dao.entities.kbot_md_db_conf import KbotMdDbConf
 from core.database.meta_oracle import get_session
 

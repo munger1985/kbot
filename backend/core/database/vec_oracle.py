@@ -26,25 +26,3 @@ async def create_oracle_session(connection_string: str) -> AsyncIterator[AsyncSe
             raise RuntimeError(f"Database connection failed: {str(e)}") from e
         finally:
             await session.close()
-
-
-class OracleVectorType(TypeDecorator):
-    """Oracle VECTOR类型适配器"""
-    
-    impl = "VECTOR"  # 映射到Oracle的VECTOR类型
-
-    def __init__(self, dimensions=None):
-        super().__init__()
-        self.dimensions = dimensions
-
-    def process_bind_param(self, value, dialect):
-        """将Python list转为Oracle VECTOR格式字符串"""
-        if value is None:
-            return None
-        return str(value)  # 将Python list转为字符串格式
-
-    def process_result_value(self, value, dialect):
-        """将Oracle VECTOR字符串解析为Python list"""
-        if value is None:
-            return None
-        return list(map(float, value.split(",")))  # 解析为Python list

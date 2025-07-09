@@ -1,43 +1,9 @@
-from enum import Enum
 from sqlalchemy import String, Date
-from sqlalchemy.dialects.oracle import NUMBER, VARCHAR2
+from sqlalchemy.dialects.oracle import NUMBER
 from sqlalchemy.sql import func
 from sqlalchemy.orm import Mapped, mapped_column
 from .base import Base
 
-class FileStatus(int, Enum):
-    """File status enumeration."""
-    DELETED = -1
-    UPLOADED = 1
-    APPROVED = 2
-    REJECTED = 3
-    PARSING = 4
-    PARSED = 5
-    PARSE_FAILED = 6
-    REPARSE = 7
-    ARCHIVED = 8
-
-class ProcessPriority(int, Enum):
-    """Process priority enumeration."""
-    LOW = 1
-    MEDIUM = 2
-    HIGH = 3
-
-class EnableSummary(int, Enum):
-    """Process priority enumeration."""
-    ENABLED = 1
-    DISABLED = 0
-
-class IsOverwrite(int, Enum):
-    """Process priority enumeration."""
-    YES = 1
-    NO = 0
-
-class SecurityLevel(int, Enum):
-    """Process priority enumeration."""
-    LOW = 1
-    MEDIUM = 2
-    HIGH = 3
 
 class KbotMdKbFiles(Base):
     """Knowledge base files entity for KBOT_MD_KB_FILES table."""
@@ -75,7 +41,7 @@ class KbotMdKbFiles(Base):
     )
     status: Mapped[int | None] = mapped_column(
         NUMBER(2, 0),
-        comment="文件状态：1-已上传,2-已审批,3-已拒绝,4-解析中,5-解析完成,6-重新解析,7-解析失败,8-已归档,-1-已删除"
+        comment="文件状态枚举类型"
     )
     file_version: Mapped[int | None] = mapped_column(
         NUMBER(38, 0),
@@ -87,7 +53,7 @@ class KbotMdKbFiles(Base):
     )
     security_level: Mapped[int | None] = mapped_column(
         NUMBER(1, 0),
-        comment="文件安全等级：1-高、2-中、3-低"
+        comment="文件安全等级枚举类型"
     )
     file_size: Mapped[int | None] = mapped_column(
         NUMBER(38, 0),
@@ -97,13 +63,21 @@ class KbotMdKbFiles(Base):
         NUMBER(38, 0),
         comment="文件分块数量"
     )
-    process_params: Mapped[str | None] = mapped_column(
+    chunk_parser: Mapped[str | None] = mapped_column(
         String(4000),
-        comment="JSON格式的处理参数配置(存储为字符串)"
+        comment="数据chunk参数"
     )
     enable_summary: Mapped[int] = mapped_column(
         NUMBER(1, 0),
         comment="1-启用,0-不启用"
+    )
+    is_img2txt: Mapped[int] = mapped_column(
+        NUMBER(1, 0),
+        comment="是否把IMAGE转成文本:1-是,0-否"
+    )
+    is_table_head_fill: Mapped[int] = mapped_column(
+        NUMBER(1, 0),
+        comment="Table表头是否拼装：1-是,0-否"
     )
     biz_metadata: Mapped[str | None] = mapped_column(
         String(4000),
@@ -111,7 +85,7 @@ class KbotMdKbFiles(Base):
     )
     process_priority: Mapped[int | None] = mapped_column(
         NUMBER(1, 0),
-        comment="处理优先级：1-低,2-中,3-高"
+        comment="处理优先级枚举类型"
     )
     log_msg: Mapped[str | None] = mapped_column(
         String(1000),

@@ -1,7 +1,7 @@
 from sqlalchemy import String, CLOB, Numeric, JSON
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
-from core.database.vec_oracle import OracleVectorType
+from sqlalchemy.dialects.oracle import VECTOR
 from core.database.vec_pg import PgVectorType
 from .base import Base
 
@@ -17,7 +17,7 @@ class KbotBizTxtEmbedding(Base):
 
 class KbotBizTxtEmbeddingOracle(KbotBizTxtEmbedding):
     """Oracle数据库的文本向量嵌入模型"""
-    embedding: Mapped[list] = mapped_column(OracleVectorType(1024), nullable=False, comment='文本向量(FLOAT32格式)')
+    embedding: Mapped[list] = mapped_column(VECTOR, nullable=False, comment='文本向量(FLOAT64格式)')
 
 class KbotBizTxtEmbeddingPG(KbotBizTxtEmbedding):
     """PostgreSQL数据库的文本向量嵌入模型"""
