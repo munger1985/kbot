@@ -1,4 +1,3 @@
-from enum import Enum
 from sqlalchemy import String, Date
 from sqlalchemy.dialects.oracle import NUMBER
 from sqlalchemy.sql import func
@@ -6,21 +5,6 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 from .base import Base
 
-class DbType(int, Enum):
-    """Database type enumeration."""
-    ORACLEDB = 1
-    ADB = 2
-    HEATWAVE = 3
-    ELASTICSEARCH = 4
-    MILVUS = 5
-    FAISS = 6
-    PINECONE = 7
-    WEAVIATE = 8
-
-class DbStatus(int, Enum):
-    """Database configuration status enumeration."""
-    ENABLED = 1
-    DISABLED = 0
 
 class KbotMdDbConf(Base):
     """Database configuration entity for KBOT_MD_DB_CONF table."""
@@ -42,7 +26,7 @@ class KbotMdDbConf(Base):
     
     db_type: Mapped[int | None] = mapped_column(
         NUMBER(2, 0), 
-        comment="数据库类型：1-ORACLEDB-Oracle数据库, 2-ADB-Oracle自治数据库, 3-HEATWAVE-MySQL HeatWave, 4-ELASTICSEARCH, 5-MILVUS, 6-FAISS, PINECONE, WEAVIATE等"
+        comment="数据库类型枚举"
     )
     db_conn_str: Mapped[dict | None] = mapped_column(
         JSONB,

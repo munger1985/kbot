@@ -1,7 +1,7 @@
 from sqlalchemy import String, CLOB, Numeric, JSON
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
-from core.database.vec_oracle import OracleVectorType
+from sqlalchemy.dialects.oracle import VECTOR
 from core.database.vec_pg import PgVectorType
 from .base import Base
 
@@ -16,7 +16,7 @@ class KbotBizImgEmbedding(Base):
 
 class KbotBizImgEmbeddingOracle(KbotBizImgEmbedding):
     """Oracle数据库的图片向量嵌入模型"""
-    embedding: Mapped[list] = mapped_column(OracleVectorType(1024), nullable=False, comment='图片向量(FLOAT32格式)')
+    embedding: Mapped[list] = mapped_column(VECTOR, nullable=False, comment='图片向量(FLOAT64格式)')
 
 class KbotBizImgEmbeddingPG(KbotBizImgEmbedding):
     """PostgreSQL数据库的图片向量嵌入模型"""

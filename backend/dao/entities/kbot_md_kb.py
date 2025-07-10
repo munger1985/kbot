@@ -1,4 +1,3 @@
-from enum import Enum
 from sqlalchemy import String, Date
 from sqlalchemy.dialects.oracle import NUMBER
 from sqlalchemy.sql import func
@@ -6,20 +5,6 @@ from sqlalchemy import UniqueConstraint, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
 from .base import Base
 
-class KbCategory(int, Enum):
-    """Knowledge base category enumeration."""
-    KBOT = 1
-    IMAGE_SEARCH = 2
-    GEN_REPORT = 3
-    TRANSLATE = 4
-    SUMMARY = 5
-
-class KbStatus(int, Enum):
-    """Knowledge base status enumeration."""
-    NEW = 1
-    ENABLED = 2
-    DISABLED = 3
-    ARCHIVED = 4
 
 class KbotMdKb(Base):
     """Knowledge base entity for KBOT_MD_KB table."""
@@ -49,7 +34,7 @@ class KbotMdKb(Base):
     )
     kb_category: Mapped[int | None] = mapped_column(
         NUMBER(2, 0),
-        comment="知识库类型：KBot(文搜文/文搜图)、ImageSearch(图搜图)、GenReport、Translate、Summary"
+        comment="知识库类型枚举类型"
     )
     descs: Mapped[str | None] = mapped_column(
         String(512),
@@ -59,13 +44,25 @@ class KbotMdKb(Base):
         NUMBER(38, 0),
         comment="关联的向量数据库连接配置ID"
     )
-    embed_model_id: Mapped[int | None] = mapped_column(
+    TXT_EMBED_MODEL_ID: Mapped[int | None] = mapped_column(
         NUMBER(38, 0),
-        comment="使用的嵌入模型ID"
+        comment="文本嵌入模型ID"
+    )
+    IMG_EMBED_MODEL_ID: Mapped[int | None] = mapped_column(
+        NUMBER(38, 0),
+        comment="图片嵌入模型ID"
+    )
+    SUMMARY_MODEL_ID: Mapped[int | None] = mapped_column(
+        NUMBER(38, 0),
+        comment="摘要模型ID"
+    )
+    IMG2TXT_MODEL_ID: Mapped[int | None] = mapped_column(
+        NUMBER(38, 0),
+        comment="图片转文本模型ID"
     )
     kb_status: Mapped[int | None] = mapped_column(
         NUMBER(1, 0),
-        comment="知识库状态：1-NEW(新建)、2-ENABLED(启用)、3-DISABLED(禁用)、4-ARCHIVED(归档)"
+        comment="知识库状态枚举类型"
     )
     created_by: Mapped[str | None] = mapped_column(
         String(512),

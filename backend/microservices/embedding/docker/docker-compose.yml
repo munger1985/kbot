@@ -1,0 +1,29 @@
+version: '3'
+
+services:
+  embedding-service:
+    build:
+      context: ../../..  # 从backend目录构建
+      dockerfile: microservices/embedding/docker/Dockerfile
+    ports:
+      - "8001:8001"
+    environment:
+      - EMBEDDING_HOST=0.0.0.0
+      - EMBEDDING_PORT=8001
+      - EMBEDDING_WORKERS=2
+      - EMBEDDING_MAX_BATCH_SIZE=64
+      - EMBEDDING_MAX_WAIT_TIME=0.1
+      - EMBEDDING_MAX_IDLE_TIME=3600
+      - EMBEDDING_HEALTH_CHECK_INTERVAL=300
+      # 模型配置示例 - 根据实际需求修改
+      - EMBEDDING_MODEL_TEXT2VEC_API_URL=https://api.example.com/embedding
+      - EMBEDDING_MODEL_TEXT2VEC_API_KEY=${TEXT2VEC_API_KEY}
+    volumes:
+      - ../../..:/app  # 挂载整个backend目录
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/embedding/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s

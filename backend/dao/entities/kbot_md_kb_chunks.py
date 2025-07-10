@@ -1,13 +1,8 @@
-from enum import Enum
 from sqlalchemy import String
 from sqlalchemy.dialects.oracle import NUMBER
 from sqlalchemy.orm import Mapped, mapped_column
 from .base import Base
 
-class ChunkType(int, Enum):
-    """Chunk type enumeration."""
-    TEXT = 1
-    IMAGE = 2
 
 class KbotMdKbChunks(Base):
     """Knowledge base chunks entity for KBOT_MD_KB_CHUNKS table."""

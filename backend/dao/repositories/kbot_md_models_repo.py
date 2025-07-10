@@ -1,10 +1,6 @@
 from typing import Sequence, Optional
 from sqlalchemy import select, delete, and_
-from dao.entities.kbot_md_models import (
-    KbotMdKbModels,
-    ModelCategory,
-    ModelStatus
-)
+from dao.entities.kbot_md_models import KbotMdKbModels
 from core.database.meta_oracle import get_session
 
 class KbotMdKbModelsRepository:
@@ -66,30 +62,3 @@ class KbotMdKbModelsRepository:
             )
             return result.scalars().all()    
     
-    async def get_by_name(self, model_name: str) -> Optional[KbotMdKbModels]:
-        """Get knowledge base model by technical name."""
-        async with get_session() as session:
-            result = await session.execute(
-                select(KbotMdKbModels).where(KbotMdKbModels.model_name == model_name)
-            )
-            return result.scalars().first()
-    
-    async def get_by_display_name(self, display_name: str) -> Optional[KbotMdKbModels]:
-        """Get knowledge base model by display name."""
-        async with get_session() as session:
-            result = await session.execute(
-                select(KbotMdKbModels).where(KbotMdKbModels.display_name == display_name)
-            )
-            return result.scalars().first()
-    
-    async def get_by_name_and_provider(self, model_name: str, provider: str) -> Optional[KbotMdKbModels]:
-        """Get knowledge base model by name and provider."""
-        async with get_session() as session:
-            result = await session.execute(
-                select(KbotMdKbModels)
-                .where(and_(
-                    KbotMdKbModels.model_name == model_name,
-                    KbotMdKbModels.provider == provider
-                ))
-            )
-            return result.scalars().first()

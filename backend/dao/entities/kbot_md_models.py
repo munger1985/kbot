@@ -1,22 +1,10 @@
-from enum import Enum
 from sqlalchemy import String, Date
-from sqlalchemy.dialects.oracle import NUMBER, VARCHAR2
+from sqlalchemy.dialects.oracle import NUMBER
 from sqlalchemy.sql import func
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import Mapped, mapped_column, DeclarativeBase
+from sqlalchemy.orm import Mapped, mapped_column
 from .base import Base
 
-class ModelCategory(int, Enum):
-    """Model category enumeration."""
-    LLM = 1
-    EMBEDDING = 2
-    RERANKER = 3
-    VLM = 4
-
-class ModelStatus(int, Enum):
-    """Database configuration status enumeration."""
-    ENABLED = 1
-    DISABLED = 0
 
 class KbotMdKbModels(Base):
     """Knowledge base models entity for KBOT_MD_MODELS table."""
