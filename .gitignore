@@ -2,7 +2,7 @@
 .env
 .env.local
 .env.*.local
-backend/.env
+
 
 # Sensitive configuration files
 *.secret.toml
@@ -34,3 +34,6 @@ logs/
 knowledge_base/
 
 backend/settings.toml
+backend/.env
+start.sh
+backend/.pytest_cache/

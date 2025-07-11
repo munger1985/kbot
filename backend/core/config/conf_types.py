@@ -15,9 +15,9 @@ class DatabaseConfig(TypedDict):
     pool_pre_ping: bool
     pool_recycle: int
 
-class LoggingConfig(TypedDict):
+class LoggerConfig(TypedDict):
     level: str
-    path: str
+    dir: str
     rotation: str
     retention: str
 
@@ -32,6 +32,6 @@ class KBotConfig(TypedDict):
 class AppSettings(TypedDict):
     app: AppConfig
     database: DatabaseConfig
-    logging: LoggingConfig
+    logger: LoggerConfig
     chunk: ChunkConfig
     kbot: KBotConfig

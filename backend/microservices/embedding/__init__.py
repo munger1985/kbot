@@ -1,3 +1,1 @@
-from .main import start_service
-
-__all__ = ['start_service']
+# 嵌入微服务初始化文件

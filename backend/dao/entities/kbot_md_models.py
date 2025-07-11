@@ -1,12 +1,11 @@
 from sqlalchemy import String, Date
 from sqlalchemy.dialects.oracle import NUMBER
 from sqlalchemy.sql import func
-from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 from .base import Base
 
 
-class KbotMdKbModels(Base):
+class KbotMdModels(Base):
     """Knowledge base models entity for KBOT_MD_MODELS table."""
     
     model_id: Mapped[int] = mapped_column(
@@ -23,7 +22,7 @@ class KbotMdKbModels(Base):
         String(256),
         comment="模型显示名称（用户友好名称）"
     )
-    model_name: Mapped[str | None] = mapped_column(
+    model_name: Mapped[str] = mapped_column(
         String(256),
         comment="模型技术名称（如gpt-4、text-embedding-ada-002等）"
     )
@@ -31,9 +30,9 @@ class KbotMdKbModels(Base):
         NUMBER(2, 0),
         comment="模型类别：LLM-大语言模型, EMBEDDING-嵌入模型, RERANKER-重排序模型, VLM-视觉语言模型"
     )
-    provider: Mapped[str | None] = mapped_column(
+    provider: Mapped[str] = mapped_column(
         String(256),
-        comment="模型提供商（如OpenAI、Azure、Anthropic等）"
+        comment="模型提供商（如local, OpenAI, Azure, Anthropic等）"
     )
     api_endpoint: Mapped[str | None] = mapped_column(
         String(256),
@@ -48,11 +47,11 @@ class KbotMdKbModels(Base):
         comment="模型状态：1-启用, 0-禁用"
     )
     model_params: Mapped[dict | None] = mapped_column(
-        JSONB,
+        String(4000),
         comment="JSON格式的模型默认参数配置，如{\"TEMPERATURE\":0,\"MAX_TOKENS\":1024}"
     )
     model_template: Mapped[dict | None] = mapped_column(
-        JSONB,
+        String(4000),
         comment="JSON格式的模型模板配置"
     )
     descs: Mapped[str | None] = mapped_column(

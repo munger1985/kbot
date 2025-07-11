@@ -1,6 +1,3 @@
-from .model_pool import EmbeddingModelPool
-from .batch_processor import BatchProcessor
-from .health_check import HealthChecker
-from .service import EmbeddingService
+from services.embedding.embed_service import EmbeddingService, embedding_service
 
-__all__ = ['EmbeddingModelPool', 'BatchProcessor', 'HealthChecker', 'EmbeddingService']
+__all__ = ["EmbeddingService", "embedding_service"]

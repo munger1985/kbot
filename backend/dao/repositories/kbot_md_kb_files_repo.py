@@ -5,7 +5,7 @@ from dao.entities.kbot_md_kb_files import KbotMdKbFiles
 from dao.data_dict import (
     FileStatus,
     ProcessPriority,
-    YesNoEnmu,
+    YesNoEnum,
     SecurityLevel
 )
 from dao.entities.kbot_md_kb_batch import KbotMdKbBatch
@@ -188,7 +188,7 @@ class KbotMdKbFilesRepository:
                     )
                     existing_file = existing_file.scalars().first()
                     
-                    if existing_file and file.is_overwrite == YesNoEnmu.YES.value:
+                    if existing_file and file.is_overwrite == YesNoEnum.YES.value:
                         # if the file already exists and overwrite is allowed // 如果文件已存在且允许覆盖，则更新现有记录
                         # mark the existing file as deleted and delete its chunks // 将现有文件标记为已删除并删除其块
                         await self._delete_file_and_chunks(existing_file, session)

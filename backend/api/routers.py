@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 
-from .controllers.health import router as health_router
-from .routers.kb_upload_router import router as kb_upload_router
+from api.controllers.health import router as health_router
+from api.routers.kb_upload_router import router as kb_upload_router
 
 router = APIRouter()
 

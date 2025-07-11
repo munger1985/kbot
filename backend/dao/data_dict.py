@@ -1,11 +1,11 @@
 from enum import Enum
 
-class StatusEnmu(int, Enum):
+class Status(int, Enum):
     """Status enumeration."""
     ENABLED = 1
     DISABLED = 0
 
-class YesNoEnmu(int, Enum):
+class YesNoEnum(int, Enum):
     """Yes or No enumeration."""
     YES = 1
     NO = 0

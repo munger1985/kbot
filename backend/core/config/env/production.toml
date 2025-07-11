@@ -11,8 +11,8 @@ database.max_overflow = 40
 database.pool_pre_ping = false
 database.pool_recycle = 3600
 
-# logging configuration
-logging.level = "INFO"
-logging.path = "backend/logs/app.log"
-logging.rotation = "100 MB"
-logging.retention = "10 days"
+# logger configuration
+logger.level = "INFO"
+logger.path = "backend/logs/"
+logger.rotation = "100 MB"
+logger.retention = "10 days"

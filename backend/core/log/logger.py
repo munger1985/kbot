@@ -9,11 +9,11 @@ def setup_logging() -> None:
     """Setup logging configuration from Dynaconf settings.
     """
     try:
-        log_config = settings["logging"]
+        log_config = settings["logger"]
         
         level = str(log_config["level"]) if log_config["level"] else "INFO"
-        conf_path = str(log_config["path"]) if log_config["path"] else os.path.join("logs", "app.log")
-        log_path = Path(conf_path)
+        conf_path = str(log_config["dir"]) if log_config["dir"] else "logs"
+        log_path = Path(os.path.join(conf_path, "app.log"))
         # Convert to absolute path
         if not os.path.isabs(log_path):
             log_path = os.path.abspath(log_path)

@@ -1,134 +1,171 @@
-import time
 import asyncio
-import logging
-from typing import Dict, Any, Optional
-import numpy as np
+import torch
+from loguru import logger
+from typing import Dict, Optional
+from datetime import datetime, timedelta
 
-from ...models.embedding.txt.base import CloudEmbeddingConfig
-from ...models.embedding.txt.cloud import CloudEmbedding
+from models.embedding.factory import create_embedding_model
+from models.embedding.base import BaseEmbedding, LocalEmbeddingConfig, RemoteEmbeddingConfig
+from dao.repositories.kbot_md_models_repo import KbotMdModelsRepository
 
-logger = logging.getLogger(__name__)
 
-class EmbeddingModelPool:
-    """管理多个embedding模型实例的池"""
+
+class ModelPool:
+    """Manage a pool of embedding models with health checking and lifecycle management"""
     
-    def __init__(self, max_idle_time=3600):  # 默认1小时不用自动卸载
-        self.models = {}  # 存储已初始化的模型
-        self.model_configs = {}  # 存储模型配置
-        self.config_versions = {}  # 存储配置版本
-        self.last_used = {}  # 跟踪模型最后使用时间
-        self.request_counts = {}  # 跟踪模型请求次数
-        self.max_idle_time = max_idle_time
-        self.cleanup_task = None
-    
-    async def start(self):
-        """启动定期清理任务"""
-        self.cleanup_task = asyncio.create_task(self._cleanup_idle_models())
-        logger.info("Model pool started with idle cleanup task")
-    
-    async def stop(self):
-        """停止所有任务并释放资源"""
-        if self.cleanup_task:
-            self.cleanup_task.cancel()
+    def __init__(self, health_check_interval: int = 300):
+        """
+        Args:
+            health_check_interval: Interval in seconds between health checks
+        """
+        self._models: Dict[int, BaseEmbedding] = {}
+        self._last_used: Dict[int, datetime] = {}
+        self._health_check_interval = health_check_interval
+        self._health_check_task: Optional[asyncio.Task] = None
+        
+    async def initialize(self):
+        """Initialize the model pool and start health check task"""
+        self._health_check_task = asyncio.create_task(self._health_check_loop())
+        
+    async def shutdown(self):
+        """Shutdown the model pool and all models"""
+        if self._health_check_task:
+            self._health_check_task.cancel()
             try:
-                await self.cleanup_task
+                await self._health_check_task
             except asyncio.CancelledError:
                 pass
-        await self.shutdown_all()
-        logger.info("Model pool stopped")
-    
-    async def _cleanup_idle_models(self):
-        """定期检查并卸载闲置模型"""
-        try:
-            while True:
-                await asyncio.sleep(300)  # 每5分钟检查一次
-                current_time = time.time()
-                models_to_remove = []
-                
-                for model_id, last_used in self.last_used.items():
-                    if current_time - last_used > self.max_idle_time:
-                        models_to_remove.append(model_id)
-                
-                for model_id in models_to_remove:
-                    if model_id in self.models:
-                        await self.models[model_id].shutdown()
-                        del self.models[model_id]
-                        logger.info(f"Model {model_id} unloaded due to inactivity")
-        except asyncio.CancelledError:
-            logger.info("Cleanup task cancelled")
-        except Exception as e:
-            logger.error(f"Error in cleanup task: {str(e)}")
-    
-    async def get_model(self, model_id: str) -> CloudEmbedding:
-        """获取指定ID的模型，如果不存在则初始化"""
-        if model_id not in self.models:
-            if model_id not in self.model_configs:
-                raise ValueError(f"Model config for {model_id} not found")
             
-            config = self.model_configs[model_id]
-            model = CloudEmbedding(config)
-            await model.startup()
-            self.models[model_id] = model
-            self.request_counts[model_id] = 0
-            logger.info(f"Model {model_id} initialized")
-        
-        # 更新使用统计
-        self.last_used[model_id] = time.time()
-        self.request_counts[model_id] = self.request_counts.get(model_id, 0) + 1
-        return self.models[model_id]
-    
-    async def update_model_config(self, model_id: str, config: Dict[str, Any], version: Optional[str] = None) -> bool:
-        """更新模型配置，带版本控制"""
-        # 如果提供了版本且与当前版本相同，则跳过更新
-        if version and model_id in self.config_versions and self.config_versions[model_id] == version:
-            return False  # 配置未变更
-        
-        # 更新配置和版本
-        embedding_config = CloudEmbeddingConfig(**config)
-        self.model_configs[model_id] = embedding_config
-        if version:
-            self.config_versions[model_id] = version
-        
-        # 如果模型已存在，则重新初始化
-        if model_id in self.models:
-            old_model = self.models[model_id]
-            await old_model.shutdown()
-            
-            new_model = CloudEmbedding(embedding_config)
-            await new_model.startup()
-            self.models[model_id] = new_model
-            logger.info(f"Model {model_id} reinitialized with new config")
-        
-        return True  # 配置已更新
-    
-    async def reinitialize_model(self, model_id: str) -> bool:
-        """重新初始化模型（用于健康检查失败后恢复）"""
-        if model_id not in self.model_configs:
-            return False
-        
-        if model_id in self.models:
-            try:
-                await self.models[model_id].shutdown()
-            except Exception:
-                pass  # 忽略关闭错误
-        
-        try:
-            config = self.model_configs[model_id]
-            model = CloudEmbedding(config)
-            await model.startup()
-            self.models[model_id] = model
-            logger.info(f"Model {model_id} successfully reinitialized")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to reinitialize model {model_id}: {str(e)}")
-            return False
-    
-    async def shutdown_all(self):
-        """关闭所有模型"""
-        for model_id, model in list(self.models.items()):
+        for model_id, model in self._models.items():
             try:
                 await model.shutdown()
-                logger.info(f"Model {model_id} shutdown")
             except Exception as e:
-                logger.error(f"Error shutting down model {model_id}: {str(e)}")
-        self.models = {}
+                logger.error(f"Error shutting down model {model_id}: {e}")
+                
+        self._models.clear()
+        self._last_used.clear()
+        
+    async def load_model(self, model_id: int) -> BaseEmbedding:
+        """Load a model instance by model_id
+        
+        Args:
+            model_id: ID of the model to get
+            
+        Returns:
+            The model instance
+            
+        Raises:
+            ValueError: If model_id is not found in database
+            RuntimeError: If model creation fails
+        """
+        # Check if model is already loaded
+        if model_id in self._models:
+            self._last_used[model_id] = datetime.now()
+            return self._models[model_id]
+            
+        # Load model config from database
+        md_repo = KbotMdModelsRepository()
+        model_entity = await md_repo.get_by_id(model_id)
+        if not model_entity:
+            raise ValueError(f"Model {model_id} not found in database")
+        
+        if model_entity.model_params is None:
+            raise ValueError(f"Model {model_id} has no model_params")
+
+        # 根据模型类型创建相应的配置
+        
+        if model_entity.provider == "local":
+            model_config = LocalEmbeddingConfig(
+                model_name=model_entity.model_name,
+                provider=model_entity.provider,
+                max_tokens=model_entity.model_params.get("max_tokens", 512),
+                model_path=model_entity.model_params.get("model_path", None),
+                device=model_entity.model_params.get("device", None),
+                device_map=model_entity.model_params.get("device_map", None),
+                max_memory=model_entity.model_params.get("max_memory", None),
+                trust_remote_code=model_entity.model_params.get("trust_remote_code", False),
+                use_fp16=model_entity.model_params.get("use_fp16", False),
+                local_files_only=model_entity.model_params.get("local_files_only", False),
+                compile_model=model_entity.model_params.get("compile_model", True)
+            )
+        else:  # 远程模型
+            model_config = RemoteEmbeddingConfig(
+                model_name=model_entity.model_name,
+                provider=model_entity.provider,
+                max_tokens=model_entity.model_params.get("max_tokens", 512),
+                api_key=model_entity.api_key, # type: ignore
+                endpoint=model_entity.api_endpoint, # type: ignore
+                timeout=model_entity.model_params.get("timeout", 30),        
+                max_retries=model_entity.model_params.get("max_retries", 3),
+                organization=model_entity.model_params.get("organization", ""),
+                deployment_name=model_entity.model_params.get("deployment_name", ""),
+                api_version=model_entity.model_params.get("api_version", "2023-05-15")
+            )
+
+        # Create and initialize model //创建和初始化模型
+        try:
+            model = create_embedding_model(model_config)
+            await model.startup()
+            self._models[model_id] = model
+            self._last_used[model_id] = datetime.now()
+            return model
+        except Exception as e:
+            logger.error(f"Failed to create model {model_id}: {e}")
+            raise RuntimeError(f"Failed to create model {model_id}: {e}")
+                    
+    async def unload_model(self, model_id: int):
+        """Unload a model from the pool
+        
+        Args:
+            model_id: ID of the model to unload
+        """
+        if model_id in self._models:
+            model = self._models.pop(model_id)
+            self._last_used.pop(model_id, None)
+            try:
+                await model.shutdown()
+            except Exception as e:
+                logger.error(f"Error unloading model {model_id}: {e}")
+                
+    async def reload_model(self, model_id: int):
+        """Reload a model in the pool
+        
+        Args:
+            model_id: ID of the model to reload
+        """
+        if model_id in self._models:
+            await self.unload_model(model_id)
+        return await self.load_model(model_id)
+        
+    async def _health_check_loop(self):
+        """Background task to periodically check model health"""
+        while True:
+            await asyncio.sleep(self._health_check_interval)
+            await self._perform_health_checks()
+            
+    async def _perform_health_checks(self):
+        """Check health of all models and unload inactive ones"""
+        now = datetime.now()
+        inactive_threshold = now - timedelta(hours=1)  # Unload after 1 hour of inactivity
+        
+        for model_id in list(self._models.keys()):
+            try:
+                # Check if model is inactive
+                if self._last_used.get(model_id, now) < inactive_threshold:
+                    logger.info(f"Unloading inactive model {model_id}")
+                    await self.unload_model(model_id)
+                    continue
+                    
+                # Simple health check by calling embed with empty list
+                model = self._models[model_id]
+                await model.embed([])
+                
+            except Exception as e:
+                logger.error(f"Health check failed for model {model_id}: {e}")
+                # Try to restart the model
+                try:
+                    logger.info(f"Attempting to restart model {model_id}")
+                    await self.reload_model(model_id)
+                except Exception as restart_error:
+                    logger.error(f"Failed to restart model {model_id}: {restart_error}")
+                    await self.unload_model(model_id)
