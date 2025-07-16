@@ -14,6 +14,8 @@ python backend/main.py
 nohup python backend/main.py &
 
 http://150.230.37.250:8000/docs
+http://150.230.37.250:8000/redoc
+http://150.230.37.250:8000/health
 
 Kbot3.0前端：
 http://132.145.81.123:8080/ords/r/kbotui_dev/km-chat109/login?session=14621582970445&tz=8:00x
