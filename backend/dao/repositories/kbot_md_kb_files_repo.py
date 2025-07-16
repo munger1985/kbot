@@ -1,4 +1,3 @@
-import json
 from typing import Sequence, Optional
 from sqlalchemy import select, delete, and_, update
 from dao.entities.kbot_md_kb_files import KbotMdKbFiles
@@ -29,14 +28,6 @@ class KbotMdKbFilesRepository:
         async with get_session() as session:
             result = await session.execute(select(KbotMdKbFiles))
             return result.scalars().all()
-    
-    async def update(self, file: KbotMdKbFiles) -> KbotMdKbFiles:
-        """Update a knowledge base file record."""
-        async with get_session() as session:
-            session.add(file)
-            await session.commit()
-            await session.refresh(file)
-            return file
     
     async def get_by_app_id(self, app_id: int) -> Sequence[KbotMdKbFiles]:
         """Get knowledge base files by application ID."""
@@ -197,3 +188,14 @@ class KbotMdKbFilesRepository:
                 
                 await session.commit()
                 return True
+            
+    async def update_file_status(self, file_id: int, status: FileStatus) -> bool:
+        """Update the status of a knowledge base file record."""
+        async with get_session() as session:
+            await session.execute(
+                update(KbotMdKbFiles)
+                .where(KbotMdKbFiles.file_id == file_id)
+                .values(status=status.value)
+                )
+            await session.commit()
+            return True

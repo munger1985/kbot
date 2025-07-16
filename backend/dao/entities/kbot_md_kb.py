@@ -44,19 +44,19 @@ class KbotMdKb(Base):
         NUMBER(38, 0),
         comment="关联的向量数据库连接配置ID"
     )
-    TXT_EMBED_MODEL_ID: Mapped[int | None] = mapped_column(
+    txt_embed_model_id: Mapped[int | None] = mapped_column(
         NUMBER(38, 0),
         comment="文本嵌入模型ID"
     )
-    IMG_EMBED_MODEL_ID: Mapped[int | None] = mapped_column(
+    img_embed_model_id: Mapped[int | None] = mapped_column(
         NUMBER(38, 0),
         comment="图片嵌入模型ID"
     )
-    SUMMARY_MODEL_ID: Mapped[int | None] = mapped_column(
+    summary_model_id: Mapped[int | None] = mapped_column(
         NUMBER(38, 0),
         comment="摘要模型ID"
     )
-    IMG2TXT_MODEL_ID: Mapped[int | None] = mapped_column(
+    img2txt_model_id: Mapped[int | None] = mapped_column(
         NUMBER(38, 0),
         comment="图片转文本模型ID"
     )

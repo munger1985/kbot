@@ -1,4 +1,4 @@
-from enum import Enum
+from enum import Enum, unique
 
 class Status(int, Enum):
     """Status enumeration."""
@@ -12,7 +12,7 @@ class YesNoEnum(int, Enum):
 
 class DbType(int, Enum):
     """Database type enumeration."""
-    ORACLEDB = 1
+    ORACLE = 1
     ADB = 2
     HEATWAVE = 3
     ELASTICSEARCH = 4
@@ -39,11 +39,12 @@ class FileStatus(int, Enum):
     REPARSING = 8
     ARCHIVED = 9
 
+@unique
 class ProcessPriority(int, Enum):
     """Process priority enumeration."""
-    LOW = 1
-    MEDIUM = 2
-    HIGH = 3
+    HIGH = 0
+    MEDIUM = 1
+    LOW = 2
 
 class SecurityLevel(int, Enum):
     """Process priority enumeration."""
@@ -87,3 +88,10 @@ class ParamType(int, Enum):
     FEEDBACK = 4
     DATA_PARSE = 5
     GRAPHRAG = 6
+
+class SplitStrategy(int, Enum):
+    """Split strategy enumeration."""
+    SELF_SPLIT = 1
+    BY_DOCSTRUCTURE = 2
+    BY_PAGE = 3
+    BY_SEMANTIC = 4

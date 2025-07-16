@@ -11,15 +11,16 @@ database.max_overflow = 10
 database.pool_pre_ping = false
 database.pool_recycle = 3600
 
-# logging configuration
-logging.level = "DEBUG"
-logging.path = "logs/app.log"
-logging.rotation = "100 MB"
-logging.retention = "10 days"
+# logger configuration
+logger.level = "DEBUG"
+logger.dir = "logs/"
+logger.rotation = "100 MB"
+logger.retention = "10 days"
 
-# chunk configuration
-chunk.size = 1000
-chunk.overlap = 100
+# embedding daemon configuration
+embed.max_workers = 1
+embed.check_interval = 60 # seconds
+embed.batch_size = 2 # 0 means auto detected by the system
 
 # knowledge base configuration
 kbot.file_root_path = "/your_path"

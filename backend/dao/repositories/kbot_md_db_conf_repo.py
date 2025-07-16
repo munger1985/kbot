@@ -2,9 +2,10 @@ from typing import Sequence, Optional
 from sqlalchemy import select, delete, and_
 from sqlalchemy import func
 from dao.entities.kbot_md_db_conf import KbotMdDbConf
+from dao.entities.kbot_md_kb import KbotMdKb
 from dao.data_dict import ( 
     DbType,
-    StatusEnmu
+    Status
 )
 from core.database.meta_oracle import get_session
 
@@ -27,6 +28,16 @@ class KbotMdDbConfRepository:
             )
             return result.scalars().first()
     
+    async def get_by_kbid(self, kb_id: int) -> Optional[KbotMdDbConf]:
+        """Get database configuration by KB ID."""
+        async with get_session() as session:
+            result = await session.execute(
+                select(KbotMdDbConf)
+                .join(KbotMdKb, KbotMdKb.db_conn_id == KbotMdDbConf.db_id)
+                .where(KbotMdKb.kb_id == kb_id)
+            )
+            return result.scalars().first()
+        
     async def get_all(self) -> Sequence[KbotMdDbConf]:
         """Get all database configuration records."""
         async with get_session() as session:
@@ -67,7 +78,7 @@ class KbotMdDbConfRepository:
             )
             return result.scalars().all()
     
-    async def get_by_status(self, status: StatusEnmu) -> Sequence[KbotMdDbConf]:
+    async def get_by_status(self, status: Status) -> Sequence[KbotMdDbConf]:
         """Get database configurations by status."""
         async with get_session() as session:
             result = await session.execute(

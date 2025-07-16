@@ -1,7 +1,8 @@
 from typing import Sequence, Optional
 from sqlalchemy import select
+from sqlalchemy.engine.row import Row
 from dao.entities.kbot_md_kb import KbotMdKb
-from dao.data_dict import KbCategory, KbStatus
+from dao.data_dict import KbCategory, KbStatus, Status
 from dao.entities.kbot_md_db_conf import KbotMdDbConf
 from core.database.meta_oracle import get_session
 
@@ -106,6 +107,17 @@ class KbotMdKbRepository:
                 select(KbotMdDbConf)
                 .join(KbotMdKb, KbotMdKb.db_conn_id == KbotMdDbConf.db_id)
                 .where(KbotMdKb.kb_id == kbid)
-                .where(KbotMdDbConf.status == 'Y')
+                .where(KbotMdDbConf.status == Status.ENABLED.value)
             )
             return result.scalars().first()
+    
+    async def get_model_by_kbid(self, kbid: int):
+        """Get model configuration by knowledge base ID."""
+        async with get_session() as session:
+            result = await session.execute(
+                select(KbotMdKb.img2txt_model_id,
+                       KbotMdKb.img_embed_model_id,
+                       KbotMdKb.txt_embed_model_id)
+                .where(KbotMdKb.kb_id == kbid)
+            )
+            return result.fetchone()

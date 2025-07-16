@@ -49,7 +49,7 @@ def save_file(file: UploadFile, domain_id: int, kb_id: int, batch_name:str, over
             file_content = file.file.read()
 
             # Construct the target path. // 构建目标路径
-            toml_config_path = settings.get("kbot", {}).get("file_root_path")
+            toml_config_path = settings["kbot"]["file_root_path"]
             if not toml_config_path:
                 # 动态计算项目根目录的同级路径
                 project_root = Path(__file__).parent.parent.parent
@@ -94,6 +94,7 @@ def save_file(file: UploadFile, domain_id: int, kb_id: int, batch_name:str, over
                         file_path = target_path / new_filename
                         counter += 1
                     fileparams["file_name"] = new_filename
+                    fileparams["file_path"] = str(file_path)
                     fileparams["file_version"] = counter
                 
 
@@ -147,7 +148,6 @@ async def upload_files(files: List[UploadFile],
                  batch_name:str,
                  overwrite: bool,
                  batch_id: Optional[int] = None,
-                 security_level: Optional[str] = None,
                  biz_metadata: Optional[dict] = None,
                  created_by: Optional[str] = None,
                  ) -> bool:
@@ -161,7 +161,6 @@ async def upload_files(files: List[UploadFile],
         batch_name: Batch name for this upload // 本次上传的批次名称
         overwrite: Whether to overwrite existing files // 是否覆盖已存在的文件
         batch_id: Optional batch ID // 可选的批次ID
-        security_level: File security level // 文件安全级别
         biz_metadata: Business metadata in JSON format // 业务元数据(JSON格式)
         created_by: Creator identifier // 创建者标识
     
@@ -170,14 +169,12 @@ async def upload_files(files: List[UploadFile],
         KBErrorResponse: On error // 出错时返回
     '''
     
-    # kb_repo = KbotMdKbRepository()
-    # kb_entity = await kb_repo.get_by_id(kb_id)
-    # if kb_entity:
-    #    kb_id = kb_entity.kb_id
-    # else:
-    #    msg = f"Knowledge base {kb_id} does not exist."
-    #    logger.error(msg)
-    #    return false
+    # Get default configuration from KB table. //从KB表获取默认配置
+    kb_repo = KbotMdKbRepository()
+    kb_entity = await kb_repo.get_by_id(kb_id)
+    if kb_entity is None:
+        logger.error(f"Knowledge base {kb_id} does not exist.")
+        return False
     
     # Save the file. // 保存文件
     logger.info(f"Start uploading {len(files)} files to knowledge base: {kb_id}")
@@ -190,9 +187,10 @@ async def upload_files(files: List[UploadFile],
         app_id=app_id,
         batch_name=batch_name,
         kb_id=kb_id,
-        created_by=created_by
+        created_by=created_by,
+        updated_by=created_by
     )
-
+    
     # Construct the file entities for batch saving to the database. //构造 file 的实体列表用于批量保存到数据库
     file_entitities = []
     for fileparam in fileparams:
@@ -207,10 +205,16 @@ async def upload_files(files: List[UploadFile],
             status=FileStatus.UPLOADED.value,
             file_version = fileparam["file_version"],
             is_overwrite = fileparam["is_overwrite"],
-            security_level = security_level,
+            security_level = kb_entity.security_level,
+            chunk_parser = kb_entity.chunk_parser,
+            enable_summary = kb_entity.enable_summary,
+            is_img2txt = kb_entity.is_img2txt,
+            is_table_head_fill = kb_entity.is_table_head_fill,
+            process_priority = kb_entity.process_priority,
             file_size = fileparam["file_size"],
             biz_metadata = json.dumps(biz_metadata) if biz_metadata is not None else None,
-            created_by=created_by
+            created_by=created_by,
+            updated_by=created_by
         )
         file_entitities = file_entitities + [file_entitity]
     

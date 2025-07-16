@@ -1,7 +1,7 @@
 from sqlalchemy import String, Date
 from sqlalchemy.dialects.oracle import NUMBER
 from sqlalchemy.sql import func
-from sqlalchemy import UniqueConstraint, ForeignKey
+from sqlalchemy import UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 from .base import Base
 
@@ -29,7 +29,6 @@ class KbotMdKbBatch(Base):
     )
     kb_id: Mapped[int] = mapped_column(
         NUMBER(38, 0),
-        ForeignKey("KBOT_MD_KB.kb_id"),
         nullable=False,
         comment="关联的知识库ID，外键引用KBOT_MD_KB表"
     )

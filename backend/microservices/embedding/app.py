@@ -43,18 +43,18 @@ logger.add(
 async def lifespan(app: FastAPI):
     # 启动事件
     await embedding_service.initialize()
-    logger.info("嵌入服务已初始化")
+    logger.info("Embedding service is initialized.")
     
     yield  # 服务运行期间
     
     # 关闭事件
     await embedding_service.shutdown()
-    logger.info("嵌入服务已关闭")
+    logger.info("Embedding service is closed.")
 
 # 创建 FastAPI 应用
 app = FastAPI(
-    title="嵌入微服务",
-    description="提供文本嵌入服务，将文本转换为向量表示",
+    title="Embedding service",
+    description="Provides text embedding services to convert text into vector representations.",
     version="1.0.0",
     lifespan=lifespan,
 )
@@ -70,15 +70,15 @@ app.add_middleware(
 
 # 定义请求模型
 class EmbeddingRequest(BaseModel):
-    model_id: int = Field(..., description="嵌入模型的ID")
-    texts: List[str] = Field(..., description="要嵌入的文本列表")
-    batch_size: Optional[int] = Field(32, description="批处理大小")
+    model_id: int = Field(..., description="Embedding model ID")
+    texts: List[str] = Field(..., description="List of texts to be embedded.")
+    batch_size: Optional[int] = Field(32, description="Batch size")
 
 # 定义响应模型
 class EmbeddingResponse(BaseModel):
-    embeddings: List[List[float]] = Field(..., description="嵌入向量列表")
-    model_id: int = Field(..., description="使用的嵌入模型ID")
-    dimensions: int = Field(..., description="嵌入向量的维度")
+    embeddings: List[List[float]] = Field(..., description="List of embedding vectors.")
+    model_id: int = Field(..., description="Embedding model ID used.")
+    dimensions: int = Field(..., description="Dimensionality of the embedding vectors.")
 
 # 依赖项：获取嵌入服务实例
 def get_embed_service():
@@ -104,7 +104,7 @@ async def embed_texts(
     - **dimensions**: 嵌入向量的维度
     """
     try:
-        logger.info(f"接收到嵌入请求: 模型={request.model_id}, 文本数量={len(request.texts)}")
+        logger.info(f"Received embedding request: model={request.model_id}, Number of texts.={len(request.texts)}")
         
         # 使用嵌入服务将文本转换为向量
         embeddings = await embed_service.embed_texts(
@@ -119,7 +119,7 @@ async def embed_texts(
         # 获取嵌入向量的维度
         dimensions = len(embeddings_list[0]) if embeddings_list and len(embeddings_list) > 0 else 0
         
-        logger.info(f"嵌入完成: 向量数量={len(embeddings_list)}, 维度={dimensions}")
+        logger.info(f"Embedding completed: number of vectors={len(embeddings_list)}, dimensions={dimensions}")
         
         return {
             "embeddings": embeddings_list,
@@ -127,18 +127,18 @@ async def embed_texts(
             "dimensions": dimensions
         }
     except Exception as e:
-        logger.error(f"嵌入过程中出错: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"嵌入过程中出错: {str(e)}")
+        logger.error(f"Error occurred during embedding.: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error occurred during embedding.: {str(e)}")
 
 @app.get("/embed/models")
 async def list_models(
     embed_service: EmbeddingService = Depends(get_embed_service)
 ):
     """
-    获取可用的嵌入模型列表
+    Retrieve the list of available embedding models.
     
-    返回:
-    - 可用模型ID的列表
+    return:
+    - List of available model IDs.
     """
     try:
         # 从数据库获取模型列表
@@ -150,16 +150,16 @@ async def list_models(
             result.append({"model_id": model.model_id, "model_name": model.model_name})
         return result
     except Exception as e:
-        logger.error(f"获取模型列表时出错: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"获取模型列表时出错: {str(e)}")
+        logger.error(f"Error occurred while fetching the model list.: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error occurred while fetching the model list.: {str(e)}")
 
 @app.get("/embed/health")
 async def health_check():
     """
-    健康检查端点
+    Health Check Endpoint 健康检查端点
     
-    返回:
-    - 服务状态信息
+    return:
+    - Status: 服务状态信息
     """
     return {"status": "healthy", "service": "embedding-service"}
 
@@ -167,8 +167,8 @@ async def health_check():
 embedding_service_process = None
 
 def start_embedding_service():
-    """启动嵌入微服务作为独立进程"""
-    logger.info("启动嵌入微服务作为独立进程")
+    """Start the embedding microservice as an independent process."""
+    logger.info("Start the embedding microservice as an independent process.")
     embedding_service_path = os.path.abspath(__file__)
     
     # 启动嵌入微服务，使用不同的端口（8001）并设置为独立模式
@@ -179,21 +179,21 @@ def start_embedding_service():
     return process
 
 def shutdown_embedding_service():
-    """关闭嵌入微服务进程"""
+    """Terminate the embedding microservice process."""
     global embedding_service_process
     if embedding_service_process:
-        logger.info("关闭嵌入微服务进程")
+        logger.info("Terminating the embedding microservice process...")
         try:
             embedding_service_process.terminate()
             embedding_service_process.wait(timeout=5)
         except subprocess.TimeoutExpired:
-            logger.warning("嵌入微服务进程未能正常终止，强制关闭...")
+            logger.warning("The embedding microservice process failed to terminate properly; forcing shutdown...")
             embedding_service_process.kill()
         embedding_service_process = None
 
 def signal_handler(sig, frame):
-    """处理终止信号"""
-    logger.info(f"接收到信号 {sig}，正在关闭...")
+    """Handling termination signal."""
+    logger.info(f"Signal received: {sig}, shutting down....")
     shutdown_embedding_service()
     sys.exit(0)
 
@@ -210,5 +210,5 @@ if __name__ == "__main__":
         signal.signal(signal.SIGINT, signal_handler)
         signal.signal(signal.SIGTERM, signal_handler)
     
-    logger.info(f"启动嵌入微服务，监听 {host}:{port}")
+    logger.info(f"Started the embedding microservice, listening on {host}:{port}")
     uvicorn.run(app, host=host, port=port)

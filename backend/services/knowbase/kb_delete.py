@@ -6,19 +6,9 @@ from typing import List, Optional
 from api.schemas.kb_response import SuccessWithErrorResponse
 from loguru import logger
 from core.config import settings
-from dao.entities.kbot_md_kb_files import FileStatus
+from dao.data_dict import FileStatus
 from dao.repositories.kbot_md_kb_repo import KbotMdKbRepository
 from dao.repositories.kbot_md_kb_files_repo import KbotMdKbFilesRepository
-from dao.repositories.kbot_biz_txt_embedding_repo import (
-    KbotBizTxtEmbeddingOracleRepo,
-    KbotBizTxtEmbeddingPGRepo,
-    KbotBizTxtEmbeddingMySQLRepo
-)
-from dao.repositories.kbot_biz_img_embedding_repo import (
-    KbotBizImgEmbeddingOracleRepo,
-    KbotBizImgEmbeddingPGRepo,
-    KbotBizImgEmbeddingMySQLRepo
-)
 from dao.repositories.kbot_md_kb_batch_repo import KbotMdKbBatchRepository
 
 # define the result object // 定义结果对象
@@ -27,6 +17,7 @@ class DELRESULT():
         failed_file_cnt: int = 0
         success_meta_cnt: int = 0
         failed_meta_cnt: int = 0
+
 def delete_files(file_paths: List[str]) -> DELRESULT:
     '''
     Delete files from disk by file paths.

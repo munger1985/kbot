@@ -11,7 +11,6 @@ class KBUploadRequest(BaseModel):
     overwrite: bool
     batch_name: str
     batch_id: Optional[int] = None
-    security_level: Optional[str] = None
     biz_metadata: Optional[dict] = None
     created_by: Optional[str] = None
 

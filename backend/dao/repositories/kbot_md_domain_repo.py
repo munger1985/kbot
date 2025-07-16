@@ -2,7 +2,7 @@ from typing import Sequence, Optional
 
 from sqlalchemy import select, delete
 from dao.entities.kbot_md_domain import KbotMdDomain
-from dao.data_dict import StatusEnmu
+from dao.data_dict import Status
 from core.database.meta_oracle import get_session
 
 class KbotMdDomainRepository:
@@ -64,7 +64,7 @@ class KbotMdDomainRepository:
             )
             return result.scalars().all()
     
-    async def get_by_status(self, status: StatusEnmu) -> Sequence[KbotMdDomain]:
+    async def get_by_status(self, status: Status) -> Sequence[KbotMdDomain]:
         """Get domains by status."""
         async with get_session() as session:
             result = await session.execute(

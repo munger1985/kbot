@@ -1,9 +1,0 @@
-fastapi>=0.68.0
-uvicorn>=0.15.0
-pydantic>=1.8.0
-numpy>=1.20.0
-torch>=1.9.0
-transformers>=4.10.0
-sentence-transformers>=2.2.0
-sqlalchemy>=1.4.0
-asyncpg>=0.24.0

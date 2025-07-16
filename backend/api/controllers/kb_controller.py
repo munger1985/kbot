@@ -18,7 +18,6 @@ async def upload_knowledge_base_files(
             overwrite=form.metadata.overwrite,
             batch_name=form.metadata.batch_name,
             batch_id=form.metadata.batch_id,
-            security_level=form.metadata.security_level,
             biz_metadata=form.metadata.biz_metadata,
             created_by=form.metadata.created_by
         )

@@ -1,13 +1,10 @@
-from typing import Dict, Any
-from typing import AsyncIterator
-from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Dict, Any, AsyncIterator
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from contextlib import asynccontextmanager
-from .vec_mysql import create_mysql_session
-from .vec_oracle import create_oracle_session
-from .vec_pg import create_pg_session
+from dao.data_dict import DbType
 
 @asynccontextmanager
-async def create_session(db_type: str, connection_info: Dict[str, Any]) -> AsyncIterator[AsyncSession]:
+async def create_session(db_type: int, connection_info: Dict[str, Any]) -> AsyncIterator[AsyncSession]:
     """
     根据数据库类型和连接信息创建异步数据库session
     :param db_type: 数据库类型，支持oracle/mysql/pg
@@ -17,12 +14,19 @@ async def create_session(db_type: str, connection_info: Dict[str, Any]) -> Async
 
     connection_string = _build_connection_string(db_type, connection_info)
     
-    if db_type == "oracle":
-        yield await create_oracle_session(connection_string)
-    elif db_type == "mysql":
-        yield await create_mysql_session(connection_string)
-    elif db_type == "pg":
-        yield await create_pg_session(connection_string)
+    if db_type == DbType.ORACLE.value:
+        async_engine = create_async_engine(connection_string)
+        async_session = async_sessionmaker(async_engine, expire_on_commit=False, class_=AsyncSession)
+        async with async_session() as session:
+            try:
+                yield session
+                await session.commit()
+            except Exception as e:
+                await session.rollback()
+                raise RuntimeError(f"Database connection failed: {str(e)}") from e
+            finally:
+                await session.close()
+
     else:
         raise ValueError(f"不支持的数据库类型: {db_type}")
 
@@ -43,11 +47,7 @@ def _build_connection_string(db_type: str, connection_info: Dict[str, Any]) -> s
     if not all([user, password, host, port, database]):
         raise ValueError("缺少必要的连接参数")
 
-    if db_type == "oracle":
-        return f"oracle+oracledb://{user}:{password}@{host}:{port}/{database}"
-    elif db_type == "mysql":
-        return f"mysql+aiomysql://{user}:{password}@{host}:{port}/{database}"
-    elif db_type == "pg":
-        return f"postgresql+asyncpg://{user}:{password}@{host}:{port}/{database}"
+    if db_type == DbType.ORACLE.value:
+        return f"oracle+oracledb://{user}:{password}@{host}:{port}/?service_name={database}"
     else:
         raise ValueError(f"不支持的数据库类型: {db_type}")

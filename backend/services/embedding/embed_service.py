@@ -59,7 +59,7 @@ class EmbeddingService:
         self, 
         model_id: int, 
         texts: List[str], 
-        batch_size: Optional[int] = None
+        batch_size: int = 0
     ) -> np.ndarray:
         """
         使用指定模型对文本列表进行嵌入
@@ -67,7 +67,7 @@ class EmbeddingService:
         Args:
             model_id: 要使用的嵌入模型ID
             texts: 要嵌入的文本列表
-            batch_size: 批处理大小，如果为None则由模型决定
+            batch_size: 批处理大小，如果为0则由模型决定
 
         Returns:
             嵌入向量数组，每行对应一个输入文本的嵌入向量
@@ -83,7 +83,7 @@ class EmbeddingService:
             model = await self.get_embedding_model(model_id)
             
             # 如果指定了批处理大小，则分批处理
-            if batch_size and batch_size > 0 and len(texts) > batch_size:
+            if batch_size > 0 and len(texts) > batch_size:
                 all_embeddings = []
                 for i in range(0, len(texts), batch_size):
                     batch_texts = texts[i:i+batch_size]

@@ -21,9 +21,10 @@ class LoggerConfig(TypedDict):
     rotation: str
     retention: str
 
-class ChunkConfig(TypedDict):
-    size: int
-    overlap: int
+class EmbedConfig(TypedDict):
+    max_workers: int
+    check_interval: int
+    batch_size: int
 
 class KBotConfig(TypedDict):
     file_root_path: str
@@ -33,5 +34,5 @@ class AppSettings(TypedDict):
     app: AppConfig
     database: DatabaseConfig
     logger: LoggerConfig
-    chunk: ChunkConfig
+    embed: EmbedConfig
     kbot: KBotConfig

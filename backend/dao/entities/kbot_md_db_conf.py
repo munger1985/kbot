@@ -1,7 +1,6 @@
 from sqlalchemy import String, Date
 from sqlalchemy.dialects.oracle import NUMBER
 from sqlalchemy.sql import func
-from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 from .base import Base
 
@@ -29,7 +28,7 @@ class KbotMdDbConf(Base):
         comment="数据库类型枚举"
     )
     db_conn_str: Mapped[dict | None] = mapped_column(
-        JSONB,
+        String(4000),
         comment="JSON格式的数据库连接字符串，包含主机、端口、认证等信息"
     )
     status: Mapped[int | None] = mapped_column(

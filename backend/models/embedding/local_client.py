@@ -162,7 +162,7 @@ class LocalEmbedding(BaseEmbedding):
     async def embed(
     self,
     texts: List[str],
-    batch_size: Optional[int] = None,
+    batch_size: int = 0,
     normalize: bool = True,
     raise_on_error: bool = True
 ) -> np.ndarray:
@@ -182,7 +182,7 @@ class LocalEmbedding(BaseEmbedding):
             raise RuntimeError("Model not initialized. Call startup() first.")
             
         # 使用推荐批次大小（除非显式指定）
-        effective_batch_size = batch_size if batch_size is not None else self._batch_size
+        effective_batch_size = batch_size if batch_size > 0 else self._batch_size
         all_embeddings = []
         
         try:

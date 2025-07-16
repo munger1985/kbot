@@ -3,7 +3,7 @@ from sqlalchemy import select, delete, and_
 from dao.entities.kbot_md_sys_conf import KbotMdSysConf
 from dao.data_dict import (
     ParamType,
-    StatusEnmu
+    Status
 )
 from core.database.meta_oracle import get_session
 

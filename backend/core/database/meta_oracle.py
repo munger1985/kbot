@@ -75,7 +75,7 @@ async def test_connection() -> bool:
     try:
         async with get_session() as session:
             # 使用与数据库类型无关的通用测试语句
-            await session.execute(text("SELECT 1"))
+            await session.execute(text("SELECT 1 FROM dual"))
             await session.commit()  # 确保测试查询被提交
         return True
     except Exception as e:

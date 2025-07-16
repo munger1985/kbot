@@ -1,19 +1,25 @@
-from typing import Sequence, Optional
-from sqlalchemy import select, delete
+from typing import Sequence, Optional, List
+from sqlalchemy import select, delete, update
 from dao.entities.kbot_md_kb_chunks import KbotMdKbChunks
+from dao.entities.kbot_md_kb_files import KbotMdKbFiles
 from dao.data_dict import ChunkType
 from core.database.meta_oracle import get_session
 
 class KbotMdKbChunksRepository:
     """Repository for KBOT_MD_KB_CHUNKS table operations."""
     
-    async def create(self, chunk: KbotMdKbChunks) -> KbotMdKbChunks:
+    async def create(self, chunks: List[KbotMdKbChunks], file_id: int, chunks_cnt: int) -> bool:
         """Create a new knowledge base chunk record."""
         async with get_session() as session:
-            session.add(chunk)
+            for chunk in chunks:
+                session.add(chunk)
+            await session.execute(
+                update(KbotMdKbFiles)
+                .where(KbotMdKbFiles.file_id == file_id)
+                .values(chunks_cnt=chunks_cnt)
+                )
             await session.commit()
-            await session.refresh(chunk)
-            return chunk
+            return True
     
     async def get_by_id(self, chunk_id: str) -> Optional[KbotMdKbChunks]:
         """Get knowledge base chunk by ID."""
