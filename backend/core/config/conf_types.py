@@ -25,6 +25,9 @@ class EmbedConfig(TypedDict):
     max_workers: int
     check_interval: int
     batch_size: int
+    max_tokens: int
+    timeout: int
+    max_retries: int
 
 class KBotConfig(TypedDict):
     file_root_path: str

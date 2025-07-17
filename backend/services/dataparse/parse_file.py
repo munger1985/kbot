@@ -234,12 +234,10 @@ class FileProcessorDaemon:
         kb_repo = KbotMdKbRepository()       
         file_repo = KbotMdKbFilesRepository()
         files = await file_repo.get_by_status(FileStatus.APPROVED)
-        if files is None:
-            logger.debug("No files to process")
+        if files is None or len(files) == 0:
             return
             
         for file in files:
-            logger.debug(f"Adding file to queue: {file.file_path}")
             file_params = FileParams()
             file_params.file_id = file.file_id
             file_params.app_id = file.app_id
@@ -303,26 +301,40 @@ class FileProcessorDaemon:
             while not self.shutdown_flag.is_set():
                 try:
                     # 1. 检查是否有新文件需要添加
+                    logger.debug("Checking for new files to process...")
                     await self._set_file_queue()
                     
-                    # 2. 处理队列中的文件
-                    while not self.priority_queue.empty() and self.active_tasks < self.max_workers:
-                        try:
-                            priority, timestamp, file_params = await self.priority_queue.get()
-                            
-                            # 创建并启动新任务
-                            task = asyncio.create_task(self._process_file_wrapper(file_params, priority, timestamp))
-                            tasks.add(task)
-                            task.add_done_callback(lambda t: tasks.remove(t))
-                            
-                            self.active_tasks += 1
-                            logger.debug(f"Started processing {file_params.file_path} (priority: {ProcessPriority(priority)}, enqueued at: {datetime.fromtimestamp(timestamp)})")
-                        except Exception as task_e:
-                            logger.error(f"Error creating task: {str(task_e)}")
-                            # 继续处理下一个文件
-                            continue
+                    # 2. 处理队列中的所有文件，直到队列为空
+                    if not self.priority_queue.empty():
+                        logger.info(f"Found {self.priority_queue.qsize()} files to process")
+                        
+                        # 内部循环：处理所有队列中的任务直到队列为空
+                        while not self.priority_queue.empty():
+                            # 如果达到最大工作进程数，等待一个任务完成
+                            if self.active_tasks >= self.max_workers:
+                                logger.debug(f"Reached max workers ({self.max_workers}), waiting 10 seconds for tasks to complete...")
+                                await asyncio.sleep(10)
+                                continue
+                                
+                            try:
+                                priority, timestamp, file_params = await self.priority_queue.get()
+                                
+                                # 创建并启动新任务
+                                task = asyncio.create_task(self._process_file_wrapper(file_params, priority, timestamp))
+                                tasks.add(task)
+                                task.add_done_callback(lambda t: tasks.remove(t))
+                                
+                                self.active_tasks += 1
+                                logger.debug(f"Started processing {file_params.file_path} (priority: {ProcessPriority(priority)}, enqueued at: {datetime.fromtimestamp(timestamp)})")
+                            except Exception as task_e:
+                                logger.error(f"Error creating task: {str(task_e)}")
+                                # 继续处理下一个文件
+                                continue
+                    else:
+                        logger.debug("No files in queue to process")
                     
-                    # 3. 等待一段时间再检查
+                    # 3. 等待一段时间再检查数据库
+                    logger.debug(f"Waiting {self.check_interval} seconds before next database check...")
                     await asyncio.sleep(self.check_interval)
                 except Exception as inner_e:
                     # 捕获内部循环中的异常，记录日志但不中断主循环

@@ -4,6 +4,7 @@ import openai
 from openai import AsyncOpenAI
 from prometheus_client import Histogram, Counter
 from models.embedding.base import BaseEmbedding, RemoteEmbeddingConfig
+from core.config import settings
 
 class OpenAIEmbedding(BaseEmbedding):
     """
@@ -53,8 +54,8 @@ class OpenAIEmbedding(BaseEmbedding):
         self._client: Optional[AsyncOpenAI] = None
         self.model_name = config.model_name
         self.api_key = config.api_key
-        self.timeout = config.timeout
-        self.max_retries = config.max_retries
+        self.timeout = config.timeout or settings["embed"]["timeout"]
+        self.max_retries = config.max_retries or settings["embed"]["max_retries"]
         self.organization = config.organization
         self._is_initialized = False
 

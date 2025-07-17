@@ -17,10 +17,13 @@ logger.dir = "logs/"
 logger.rotation = "100 MB"
 logger.retention = "10 days"
 
-# embedding daemon configuration
+# embedding configuration
 embed.max_workers = 1
 embed.check_interval = 60 # seconds
 embed.batch_size = 2 # 0 means auto detected by the system
+embed.max_tokens = 2048
+embed.timeout = 120 # seconds
+embed.max_retries = 3
 
 # knowledge base configuration
 kbot.file_root_path = "/your_path"

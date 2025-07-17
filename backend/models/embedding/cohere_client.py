@@ -4,6 +4,7 @@ import cohere
 from cohere import AsyncClient
 from prometheus_client import Histogram, Counter
 from models.embedding.base import BaseEmbedding, RemoteEmbeddingConfig
+from core.config import settings
 
 
 class CohereEmbedding(BaseEmbedding):
@@ -61,7 +62,7 @@ class CohereEmbedding(BaseEmbedding):
         self._client: Optional[AsyncClient] = None
         self.api_key = config.api_key
         self.model_name = config.model_name
-        self.timeout = config.timeout
+        self.timeout = config.timeout or settings["embed"]["timeout"]
         self._cohere_params = config.additional_params
         self._is_initialized = False
 

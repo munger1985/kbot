@@ -4,6 +4,7 @@ import openai
 from openai import AsyncAzureOpenAI
 from prometheus_client import Histogram, Counter
 from models.embedding.base import BaseEmbedding, RemoteEmbeddingConfig
+from core.config import settings
 
 
 class AzureEmbedding(BaseEmbedding):
@@ -61,8 +62,8 @@ class AzureEmbedding(BaseEmbedding):
         self.deployment_name = config.deployment_name
         self.endpoint = config.endpoint
         self.api_version = config.api_version
-        self.timeout = config.timeout
-        self.max_retries = config.max_retries
+        self.timeout = config.timeout or settings["embed"]["timeout"]
+        self.max_retries = config.max_retries or settings["embed"]["max_retries"]
         self.custom_headers = {}
         self._is_initialized = False
         self._azure_params = config.additional_params  # Store additional Azure-specific params

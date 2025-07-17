@@ -5,6 +5,7 @@ from loguru import logger
 from transformers import AutoModel, AutoTokenizer
 from prometheus_client import Histogram, Counter, Gauge
 from models.embedding.base import BaseEmbedding, LocalEmbeddingConfig
+from core.config import settings
 
 class LocalEmbedding(BaseEmbedding):
     """
@@ -40,7 +41,7 @@ class LocalEmbedding(BaseEmbedding):
                 - model_path: Optional local path to model files
                 - device: Target device (e.g., "cuda:0", "cpu")
                 - device_map: For multi-GPU setups (e.g., "auto", "balanced")
-                - max_tokens: Maximum input sequence length (default: 512)
+                - max_tokens: Maximum input sequence length (default: get settings.toml)
                 - compile_model: Whether to compile model with torch.compile() (PyTorch 2.0+)
                 - use_fp16: Use half-precision inference (recommended for GPU)
                 - local_files_only: Only use local model files (no internet download)
@@ -56,9 +57,9 @@ class LocalEmbedding(BaseEmbedding):
         self.model_path = config.model_path
         self.device = config.device
         self.device_map = config.device_map
-        self.max_tokens = getattr(config, 'max_tokens', 512)
-        self.compile_model = getattr(config, 'compile_model', False)
-        self.use_fp16 = getattr(config, 'use_fp16', torch.cuda.is_available())
+        self.max_tokens = getattr(config, 'max_tokens', settings['embed']['max_tokens'])
+        self.compile_model = getattr(config, 'compile_model', True)
+        self.use_fp16 = getattr(config, 'use_fp16', False)
         self.local_files_only = getattr(config, 'local_files_only', False)
         self.trust_remote_code = getattr(config, 'trust_remote_code', False)
         self.max_memory = getattr(config, 'max_memory', None)
@@ -115,13 +116,13 @@ class LocalEmbedding(BaseEmbedding):
         
         # 如果没有使用device_map，则使用.to()方法将模型移动到指定设备
         if self.device_map is None:
-            self.model = self.model.to(target_device)
+            self.model = self.model.to(target_device) # type: ignore
             logger.debug(f"模型已加载到设备: {target_device}")
         else:
             logger.debug(f"模型已加载到多设备: {self.device_map}")
             
         # 记录模型参数所在的设备
-        sample_param = next(self.model.parameters())
+        sample_param = next(self.model.parameters()) # type: ignore
         logger.debug(f"模型参数设备检查: {sample_param.device}")
             
         self.model.eval() # type: ignore
@@ -160,11 +161,11 @@ class LocalEmbedding(BaseEmbedding):
             return 32  # Fallback value
 
     async def embed(
-    self,
-    texts: List[str],
-    batch_size: int = 0,
-    normalize: bool = True,
-    raise_on_error: bool = True
+                self,
+                texts: List[str],
+                batch_size: int = 0,
+                normalize: bool = True,
+                raise_on_error: bool = True,
 ) -> np.ndarray:
         """
         Generate embeddings with automatic batch processing.
@@ -208,10 +209,10 @@ class LocalEmbedding(BaseEmbedding):
                         
                         # 如果是GPU，记录内存使用情况
                         if device.type == 'cuda':
-                            gpu_id = device.index if device.index is not None else 0
-                            gpu_name = torch.cuda.get_device_name(gpu_id)
-                            current_mem = torch.cuda.memory_allocated(device) / (1024**3)
-                            max_mem = torch.cuda.max_memory_allocated(device) / (1024**3)
+                            gpu_id = device.index if device.index is not None else 0 # type: ignore
+                            gpu_name = torch.cuda.get_device_name(gpu_id) # type: ignore
+                            current_mem = torch.cuda.memory_allocated(device) / (1024**3) # type: ignore
+                            max_mem = torch.cuda.max_memory_allocated(device) / (1024**3) # type: ignore
                             logger.debug(f"GPU: {gpu_name}, 内存使用: {current_mem:.2f}GB / {max_mem:.2f}GB (当前/峰值)")
                     else:
                         # 多设备情况

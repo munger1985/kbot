@@ -9,7 +9,7 @@ from typing import List, Optional
 class EmbeddingConfig(BaseModel):
     model_name: str
     provider: str
-    max_tokens: int = 512
+    max_tokens: int
 
 class LocalEmbeddingConfig(EmbeddingConfig):
     model_path: Optional[str] = None
