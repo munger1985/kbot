@@ -12,9 +12,7 @@ from asyncio import PriorityQueue
 from datetime import datetime
 from dao.repositories.kbot_md_kb_files_repo import KbotMdKbFilesRepository
 from dao.repositories.kbot_md_kb_repo import KbotMdKbRepository
-from dao.repositories.kbot_md_kb_chunks_repo import KbotMdKbChunksRepository
 from dao.repositories.kbot_biz_txt_embedding import KbotBizTxtEmbeddingRepository
-from dao.entities.kbot_md_kb_chunks import KbotMdKbChunks
 from dao.entities.kbot_biz_txt_embedding import KbotBizTxtEmbedding
 from dao.data_dict import FileStatus, ProcessPriority, ChunkType, SplitStrategy
 from core.config import settings
@@ -107,11 +105,11 @@ class FileProcessorDaemon:
             chunks = []
 
             # 参数安全处理
-            split_strategy = int(file_params.paser.get("SplitStrategy", 1))
-            chunk_size = int(file_params.paser.get("ChunkSize", 500))
-            overlap = int(file_params.paser.get("ChunkOverlap", 50))
+            split_strategy = int(file_params.paser.get("split_strategy", 1))
+            chunk_size = int(file_params.paser.get("chunk_size", 500))
+            overlap = int(file_params.paser.get("chunk_overlap", 50))
 
-            logger.debug(f"ChunkSize: {chunk_size}, ChunkOverlap: {overlap}")
+            logger.debug(f"Chunk size: {chunk_size}, chunk overlap: {overlap}")
 
             # 根据策略选择分割方式: 根据chunk size和overlap切片
             if split_strategy == SplitStrategy.SELF_SPLIT.value:
@@ -161,50 +159,29 @@ class FileProcessorDaemon:
                         embeddings = response_data["embeddings"]
                         logger.info(f"Successfully obtained embeddings for {file_params.file_path}")
                         embed_entities = []
-                        chunk_entities = []
+
                         for chunk, embedding in zip(chunks, embeddings):
-                            id=str(uuid.uuid4())
                             # 保存嵌入向量到向量数据库
                             embed_entity = KbotBizTxtEmbedding(
-                                embed_id=id,
+                                embed_id=str(uuid.uuid4()),
                                 chunk_doc=chunk,
-                                chunk_metadata=json.dumps({"ChunkType": ChunkType.TEXT, 
-                                                           "SplitStrategy": split_strategy,
-                                                           "ChunkSize": chunk_size,
-                                                           "ChunkOverlap": overlap,
-                                                           "FileID": file_params.file_id,
-                                                           "FilePath": file_params.file_path}),
-                                chunk_id=id,
+                                chunk_metadata=json.dumps({"chunk_type": ChunkType.TEXT, 
+                                                           "split_strategy": split_strategy,
+                                                           "chunk_size": chunk_size,
+                                                           "chunk_overlap": overlap,
+                                                           "file_id": file_params.file_id,
+                                                           "file_path": file_params.file_path}),
                                 file_id=file_params.file_id,
                                 embedding=embedding  
                             )
                             embed_entities.append(embed_entity)
-                            chunk_entity = KbotMdKbChunks(
-                                    chunk_id=id,
-                                    app_id=file_params.app_id,
-                                    kb_id=file_params.kb_id,
-                                    batch_id=file_params.batch_id,
-                                    file_id=file_params.file_id,
-                                    chunk_type=ChunkType.TEXT.value,
-                                )
-                            chunk_entities.append(chunk_entity)
+                          
                         embedding_repo = KbotBizTxtEmbeddingRepository()
                         result = await embedding_repo.create(kb_id=file_params.kb_id, embeddings=embed_entities)
                         if result:
-                            logger.info(f"Successfully saved embeddings for {file_params.file_path}")
-                            # 保存chunk信息到元数据库
-                            chunk_repo = KbotMdKbChunksRepository()
-                            meta_result = await chunk_repo.create(chunk_entities,file_params.file_id, len(chunks))                       
-                            if meta_result:
-                                logger.info(f"Successfully saved chunk metadata for {file_params.file_path}")
-                            else:
-                                logger.error(f"Failed to save chunk metadata for {file_params.file_path}")
-                                
-                                await file_repo.update_file_status(file_params.file_id, FileStatus.PARSE_FAILED)
-                                return False
+                            logger.info(f"Successfully saved embeddings for {file_params.file_path}")                           
                         else:
-                            logger.error(f"Failed to save embeddings for {file_params.file_path}")
-                            
+                            logger.error(f"Failed to save embeddings for {file_params.file_path}")     
                             await file_repo.update_file_status(file_params.file_id, FileStatus.PARSE_FAILED) 
                             return False
                     else:
@@ -277,6 +254,10 @@ class FileProcessorDaemon:
             # 检查 chunk_parser 是否已经是字典类型
             if isinstance(file.chunk_parser, dict):
                 file_params.paser = file.chunk_parser
+            elif file.chunk_parser is None:
+                # 如果是 None，则使用空字典
+                file_params.paser = {}
+                logger.warning(f"chunk_parser is None for file_id: {file.file_id}, using empty dict")
             else:
                 # 如果是字符串，则解析为 JSON
                 file_params.paser = json.loads(file.chunk_parser) # type: ignore

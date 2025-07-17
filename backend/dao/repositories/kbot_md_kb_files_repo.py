@@ -8,7 +8,7 @@ from dao.data_dict import (
     SecurityLevel
 )
 from dao.entities.kbot_md_kb_batch import KbotMdKbBatch
-from dao.entities.kbot_md_kb_chunks import KbotMdKbChunks
+from dao.entities.kbot_md_kb import KbotMdKb
 from dao.repositories.kbot_md_kb_batch_repo import KbotMdKbBatchRepository
 from core.database.meta_oracle import get_session
 
@@ -89,62 +89,57 @@ class KbotMdKbFilesRepository:
             )
             return result.scalars().first()
     
-    async def _delete_file_and_chunks(self, file: KbotMdKbFiles, session) -> bool:
-        """Internal method to delete a file and its chunks.
-        
-        Args:
-            file (KbotMdKbFiles): The file record to delete
-            session: The database session
-            
+    async def delete_by_batch(self, batch_id: int) -> int:
+        """Delete knowledge base files by batch ID.
+        batch_id (int): The batch ID to delete all related files for
+
         Returns:
-            bool: True if deletion succeeded, False otherwise
+            int: The number of deleted records
         """
         # Update file status to deleted. //更新文件状态为已删除
-        stmt = (
-            update(KbotMdKbFiles)
-            .where(KbotMdKbFiles.file_id == file.file_id)
-            .values(status=FileStatus.DELETED.value)
-        )
-        await session.execute(stmt)
-        stmt = delete(KbotMdKbChunks).where(KbotMdKbChunks.file_id == file.file_id)
-        await session.execute(stmt)
-        await session.commit()
-        return True
+        async with get_session() as session:
+            stmt = update(KbotMdKbFiles).where(KbotMdKbFiles.batch_id == batch_id).values(status=FileStatus.DELETED.value)
+            result = await session.execute(stmt)
+            stmt = delete(KbotMdKbBatch).where(KbotMdKbBatch.batch_id == batch_id)
+            await session.execute(stmt)
+            await session.commit()
+            return result.rowcount
 
     
-    async def delete(self, file_id: int) -> bool:
-        """
-        
+    async def delete_by_ids(self, file_ids: list[int]) -> int:
+        """Delete knowledge base file by ID.
+        file_ids (int): The file IDs to delete
+
+        returns:
+            int: The number of deleted records
         """
         async with get_session() as session:
-            file = await self.get_by_id(file_id)
-            if not file:
-                return False
-            return await self._delete_file_and_chunks(file, session)
+            if len(file_ids) == 1:
+                stmt = update(KbotMdKbFiles).where(KbotMdKbFiles.file_id==file_ids[0]).values(status=FileStatus.DELETED.value)
+            else:
+                stmt = update(KbotMdKbFiles).where(KbotMdKbFiles.file_id.in_(file_ids)).values(status=FileStatus.DELETED.value)
+            result = await session.execute(stmt)
+            await session.commit()
+            return result.rowcount
     
-    async def batch_delete(self, batch_id: int) -> tuple:
-        """Delete all KB file records belonging to a specific batch.
+    async def delete_by_kb(self, kb_id: int) -> int:
+        """Delete all KB file records belonging to a specific knowledge base.
         
         Args:
-            batch_id (int): The batch ID to delete all related files for
+            kb_id (int): The knowledge base ID to delete all related files for
             
         Returns:
-            tuple: (success_count, failed_count) where:
-                success_count (int): Number of files successfully deleted
-                failed_count (int): Number of files that failed to delete
+            int: The number of deleted records
         """
         async with get_session() as session:
-            files = await self.get_by_batch_id(batch_id)
-            success_count = 0
-            failed_count = 0
-            
-            for file in files:
-                if await self._delete_file_and_chunks(file, session):
-                    success_count += 1
-                else:
-                    failed_count += 1
-            
-            return success_count, failed_count
+            stmt = update(KbotMdKbFiles).where(KbotMdKbFiles.kb_id == kb_id).values(status=FileStatus.DELETED.value)
+            result = await session.execute(stmt)
+            stmt = delete(KbotMdKbBatch).where(KbotMdKbBatch.kb_id == kb_id)
+            await session.execute(stmt)
+            stmt = delete(KbotMdKb).where(KbotMdKb.kb_id == kb_id)
+            await session.execute(stmt)
+            await session.commit()
+            return result.rowcount
         
     async def create(self, batch: KbotMdKbBatch, files: list = [KbotMdKbFiles]) -> bool:
         """Create a new knowledge base file record."""
@@ -182,7 +177,7 @@ class KbotMdKbFilesRepository:
                     if existing_file and file.is_overwrite == YesNoEnum.YES.value:
                         # if the file already exists and overwrite is allowed // 如果文件已存在且允许覆盖，则更新现有记录
                         # mark the existing file as deleted and delete its chunks // 将现有文件标记为已删除并删除其块
-                        await self._delete_file_and_chunks(existing_file, session)
+                        await self.delete_by_ids([existing_file.file_id])
 
                     session.add(file)
                 
@@ -199,3 +194,17 @@ class KbotMdKbFilesRepository:
                 )
             await session.commit()
             return True
+    
+    async def actual_delete_by_ids(self, file_ids: list[int]) -> int:
+        """Delete knowledge base file by ID."""
+        async with get_session() as session:
+            stmt = delete(KbotMdKbFiles).where(
+                and_(
+                    KbotMdKbFiles.file_id.in_(file_ids),
+                    KbotMdKbFiles.status == FileStatus.DELETED.value
+                )
+            )
+            result = await session.execute(stmt)
+            await session.commit()
+            return result.rowcount
+        

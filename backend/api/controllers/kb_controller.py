@@ -1,5 +1,6 @@
-from services.knowbase.kb_upload import upload_files
-from api.schemas.kb_upload_schema import KBUploadForm
+from services.knowbase.kb_upload import upload_file_service
+from services.knowbase.kb_delete import delete_file_service
+from api.schemas.kb_schema import KBUploadForm, KBDeleteForm
 
 
 async def upload_knowledge_base_files(
@@ -10,7 +11,7 @@ async def upload_knowledge_base_files(
     上传文件到知识库
     """
     try:
-        result = await upload_files(
+        result = await upload_file_service(
             files=form.files,
             app_id=form.metadata.app_id,
             domain_id=form.metadata.domain_id,
@@ -24,3 +25,25 @@ async def upload_knowledge_base_files(
         return result
     except Exception as e:
         raise e
+
+async def delete_knowledge_base_files(
+    form: KBDeleteForm
+) -> dict:
+    """
+    Delete files from the knowledge base.
+    从知识库中删除文件
+    """
+    try:
+        result = await delete_file_service(
+            app_id=form.metadata.app_id,
+            domain_id=form.metadata.domain_id,
+            kb_id=form.metadata.kb_id,
+            batch_id=form.metadata.batch_id,
+            batch_name=form.metadata.batch_name,
+            file_ids=form.metadata.file_ids,
+            file_paths=form.metadata.file_paths,
+        )
+        return result
+    except Exception as e:
+        raise e
+    

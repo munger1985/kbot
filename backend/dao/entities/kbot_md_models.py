@@ -50,10 +50,6 @@ class KbotMdModels(Base):
         String(4000),
         comment="JSON格式的模型默认参数配置，如{\"TEMPERATURE\":0,\"MAX_TOKENS\":1024}"
     )
-    model_template: Mapped[dict | None] = mapped_column(
-        String(4000),
-        comment="JSON格式的模型模板配置"
-    )
     descs: Mapped[str | None] = mapped_column(
         String(512),
         comment="模型详细描述"

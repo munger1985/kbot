@@ -141,7 +141,7 @@ def save_files_in_thread(files: List[UploadFile],
     logger.debug(f"file save result: {results}")
     return results
 
-async def upload_files(files: List[UploadFile], 
+async def upload_file_service(files: List[UploadFile], 
                  app_id: int,
                  domain_id: int,
                  kb_id: int,

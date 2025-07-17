@@ -5,8 +5,7 @@ import uvicorn
 import signal
 import sys
 import multiprocessing
-from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.openapi.docs import (
@@ -15,7 +14,7 @@ from fastapi.openapi.docs import (
 )
 from loguru import logger
 from api.routers import router
-from api.routers.kb_upload_router import router as kb_upload_router
+from api.routers.kb_router import router as kb_router
 from core.log.logger import setup_logging
 from core.config import settings
 from services.dataparse.parse_file import start_file_parse_service
@@ -78,7 +77,7 @@ def create_app() -> FastAPI:
 
         # Add routers
         app.include_router(router)
-        app.include_router(kb_upload_router)
+        app.include_router(kb_router)
 
         # Add health check endpoint
         @app.get("/health", tags=["health"])
