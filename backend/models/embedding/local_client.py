@@ -182,6 +182,10 @@ class LocalEmbedding(BaseEmbedding):
         if not self._is_initialized:
             raise RuntimeError("Model not initialized. Call startup() first.")
             
+        # 处理空列表的情况
+        if not texts:
+            return np.array([])
+            
         # 使用推荐批次大小（除非显式指定）
         effective_batch_size = batch_size if batch_size > 0 else self._batch_size
         all_embeddings = []

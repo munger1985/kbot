@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from models.embedding.factory import create_embedding_model
 from models.embedding.base import BaseEmbedding, LocalEmbeddingConfig, RemoteEmbeddingConfig
 from dao.repositories.kbot_md_models_repo import KbotMdModelsRepository
-
+from core.config import settings
 
 
 class ModelPool:
@@ -78,7 +78,7 @@ class ModelPool:
             model_config = LocalEmbeddingConfig(
                 model_name=model_entity.model_name,
                 provider=model_entity.provider,
-                max_tokens=model_entity.model_params.get("max_tokens", 512),
+                max_tokens=model_entity.model_params.get("max_tokens", settings["embed"]["max_tokens"]),
                 model_path=model_entity.model_params.get("model_path", None),
                 device=model_entity.model_params.get("device", None),
                 device_map=model_entity.model_params.get("device_map", None),
@@ -92,14 +92,14 @@ class ModelPool:
             model_config = RemoteEmbeddingConfig(
                 model_name=model_entity.model_name,
                 provider=model_entity.provider,
-                max_tokens=model_entity.model_params.get("max_tokens", 512),
+                max_tokens=model_entity.model_params.get("max_tokens", settings["embed"]["max_tokens"]),
                 api_key=model_entity.api_key, # type: ignore
                 endpoint=model_entity.api_endpoint, # type: ignore
-                timeout=model_entity.model_params.get("timeout", 30),        
-                max_retries=model_entity.model_params.get("max_retries", 3),
+                timeout=model_entity.model_params.get("timeout", settings["embed"]["timeout"]),        
+                max_retries=model_entity.model_params.get("max_retries", settings["embed"]["max_retries"]),
                 organization=model_entity.model_params.get("organization", ""),
                 deployment_name=model_entity.model_params.get("deployment_name", ""),
-                api_version=model_entity.model_params.get("api_version", "2023-05-15")
+                api_version=model_entity.model_params.get("api_version", "")
             )
 
         # Create and initialize model //创建和初始化模型
@@ -156,7 +156,7 @@ class ModelPool:
                     await self.unload_model(model_id)
                     continue
                     
-                # Simple health check by calling embed with empty list
+                # Simple health check by calling embed with a test text
                 model = self._models[model_id]
                 await model.embed([])
                 
