@@ -1,4 +1,7 @@
 import os
+import json
+from decimal import Decimal
+from json import JSONEncoder
 from typing import List, Dict, Optional, Callable, Generator
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from core.config import settings
@@ -23,7 +26,7 @@ def run_in_thread_pool(
     :param pool: 可选线程池/Optional thread pool executor
     :return: 任务结果生成器/Generator of task results
     '''
-    workers = int(settings.kbot.parallel_workers)
+    workers = int(settings['kbot']['parallel_workers'])
     thread_pool = ThreadPoolExecutor(max_workers=workers)
     pool = pool or thread_pool
     tasks = []
@@ -41,3 +44,9 @@ def safe_int(value) -> int:
         return int(value) if value is not None else 0
     except (ValueError, TypeError):
         return 0
+    
+class DecimalEncoder(JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, Decimal):
+            return float(obj)  # 或者 str(obj) 如果需要保留精度
+        return super(DecimalEncoder, self).default(obj)

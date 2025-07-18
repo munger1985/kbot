@@ -16,7 +16,7 @@ from dao.data_dict import(
     )
 from dao.repositories.kbot_md_kb_repo import KbotMdKbRepository
 from dao.repositories.kbot_md_kb_files_repo import KbotMdKbFilesRepository
-from utils.common_methods import run_in_thread_pool
+from utils.common_methods import run_in_thread_pool, DecimalEncoder
 
 
 def save_file(file: UploadFile, domain_id: int, kb_id: int, batch_name:str, overwrite: bool) -> dict:
@@ -194,7 +194,6 @@ async def upload_file_service(files: List[UploadFile],
     # Construct the file entities for batch saving to the database. //构造 file 的实体列表用于批量保存到数据库
     file_entitities = []
     for fileparam in fileparams:
-
         file_entitity = KbotMdKbFiles(
             app_id = app_id,
             kb_id = kb_id,
@@ -206,13 +205,13 @@ async def upload_file_service(files: List[UploadFile],
             file_version = fileparam["file_version"],
             is_overwrite = fileparam["is_overwrite"],
             security_level = kb_entity.security_level,
-            chunk_parser = kb_entity.chunk_parser,
+            chunk_parser = json.dumps(kb_entity.chunk_parser, cls=DecimalEncoder) if kb_entity.chunk_parser is not None else None,
             enable_summary = kb_entity.enable_summary,
             is_img2txt = kb_entity.is_img2txt,
             is_table_head_fill = kb_entity.is_table_head_fill,
             process_priority = kb_entity.process_priority,
             file_size = fileparam["file_size"],
-            biz_metadata = json.dumps(biz_metadata) if biz_metadata is not None else None,
+            biz_metadata = json.dumps(biz_metadata, cls=DecimalEncoder) if biz_metadata is not None else None,
             created_by=created_by,
             updated_by=created_by
         )

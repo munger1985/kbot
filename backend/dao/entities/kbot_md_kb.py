@@ -68,7 +68,7 @@ class KbotMdKb(Base):
         NUMBER(1, 0),
         comment="文件安全等级枚举类型"
     )
-    chunk_parser: Mapped[int | None] = mapped_column(
+    chunk_parser: Mapped[str | None] = mapped_column(
         String(4000),
         comment="数据Chunk参数"
     )
