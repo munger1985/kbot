@@ -1,10 +1,18 @@
+"""Embedding microservice application.
+
+This module provides a FastAPI application that exposes HTTP endpoints for interacting
+with various embedding providers. It supports text embedding.
+"""
+
 import os
 import sys
-import uvicorn
 import signal
 import subprocess
+import time
 import atexit
-from typing import List, Optional
+import platform
+from datetime import datetime
+from typing import List, Optional, Any, Dict
 from contextlib import asynccontextmanager
 from pydantic import BaseModel, Field
 import numpy as np
@@ -18,8 +26,9 @@ backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(current_file)))
 if backend_dir not in sys.path:
     sys.path.insert(0, backend_dir)
     
-from microservices.embedding.embed_service import EmbeddingService, embedding_service
+from microservices.embedding.embed_service import EmbeddingService
 from core.config import settings
+from models.embedding import EmbeddingProvider
 from dao.repositories.kbot_md_models_repo import KbotMdModelsRepository
 
 # 确保日志目录存在
@@ -34,24 +43,58 @@ logger.add(
     level=settings["logger"]["level"]
 )
 
+# 创建embedding服务实例
+embedding_service = EmbeddingService()
+
+# 服务启动时间，用于计算运行时间
+SERVICE_START_TIME = time.time()
+
 # 定义 lifespan 上下文管理器
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """应用程序生命周期管理。"""
     # 启动事件
-    await embedding_service.initialize()
-    logger.info("Embedding service is initialized.")
+    start_time = time.time()
+    logger.info("Initializing embedding service...")
+    
+    # 设置应用程序版本（在健康检查端点中使用）
+    app.version = "0.1.0"  # 与FastAPI初始化时设置的版本保持一致
+    
+    # 记录系统信息
+    logger.info(f"平台: {platform.platform()}")
+    logger.info(f"Python版本: {platform.python_version()}")
+    logger.info(f"进程ID: {os.getpid()}")
+    
+    # 初始化LLM服务
+    try:
+        await embedding_service.initialize()
+        logger.info("Embedding service is initialized.")
+    except Exception as e:
+        logger.error(f"Embedding service initialization failed: {e}")
+        # 在生产环境中，可能需要在这里退出应用程序
+    
+    logger.info(f"Embedding service started successfully, elapsed time: {time.time() - start_time:.2f}秒")
     
     yield  # 服务运行期间
     
     # 关闭事件
-    await embedding_service.shutdown()
-    logger.info("Embedding service is closed.")
+    logger.info("Closing embedding service...")
+    shutdown_start = time.time()
+    
+    try:
+        await embedding_service.shutdown()
+        logger.info("Embedding service is closed.")
+    except Exception as e:
+        logger.error(f"Embedding service shutdown failed: {e}")
+    
+    logger.info(f"Embedding service closed successfully, elapsed time: {time.time() - shutdown_start:.2f}秒")
+    logger.info(f"Total running time: {time.time() - SERVICE_START_TIME:.2f}秒")
 
 # 创建 FastAPI 应用
 app = FastAPI(
     title="Embedding service",
     description="Provides text embedding services to convert text into vector representations.",
-    version="1.0.0",
+    version="0.1.0",
     lifespan=lifespan,
 )
 
@@ -80,19 +123,36 @@ class EmbeddingResponse(BaseModel):
 def get_embed_service():
     return embedding_service
 
-# 启动和关闭事件已移至 lifespan 上下文管理器
+@app.get("/health", response_model=dict, tags=["System"])
+async def health() -> Dict[str, Any]:
+    """Health check endpoint. //微服务接口健康检查
+    Returns:
+        Loaded models count. //已加载的模型数量
+    """
+    
+    # 获取已加载的模型信息
+    loaded_models = {}
+    if embedding_service._initialized and hasattr(embedding_service._model_pool, '_models'):
+        loaded_models = embedding_service._model_pool._models
+    
+    # 返回已加载模型数量
+    return {
+        "status": "ok",
+        "loaded_models_count": len(loaded_models),
+        "timestamp": datetime.now().isoformat()
+    }
 
-@app.post("/embed", response_model=EmbeddingResponse)
+@app.post("/embed", response_model=EmbeddingResponse, tags=["Embedding"])
 async def embed_texts(
     request: EmbeddingRequest,
     embed_service: EmbeddingService = Depends(get_embed_service)
-):
+    ) -> Dict[str, Any]:
     """
     将文本列表转换为嵌入向量
     
     - **model_id**: 要使用的嵌入模型的ID
     - **texts**: 要嵌入的文本列表
-    - **batch_size**: 批处理大小（可选，默认为32）
+    - **batch_size**: 批处理大小（可选）
     
     返回:
     - **embeddings**: 嵌入向量列表
@@ -126,38 +186,7 @@ async def embed_texts(
         logger.error(f"Error occurred during embedding.: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error occurred during embedding.: {str(e)}")
 
-@app.get("/embed/models")
-async def list_models(
-    embed_service: EmbeddingService = Depends(get_embed_service)
-):
-    """
-    Retrieve the list of available embedding models.
-    
-    return:
-    - List of available model IDs.
-    """
-    try:
-        # 从数据库获取模型列表
-        
-        md_repo = KbotMdModelsRepository()
-        models = await md_repo.get_all_embedding_models()
-        result = []
-        for model in models:
-            result.append({"model_id": model.model_id, "model_name": model.model_name})
-        return result
-    except Exception as e:
-        logger.error(f"Error occurred while fetching the model list.: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error occurred while fetching the model list.: {str(e)}")
 
-@app.get("/embed/health")
-async def health_check():
-    """
-    Health Check Endpoint 健康检查端点
-    
-    return:
-    - Status: 服务状态信息
-    """
-    return {"status": "healthy", "service": "embedding-service"}
 
 # 全局变量，用于存储微服务进程
 embedding_service_process = None
@@ -170,7 +199,7 @@ def start_embedding_service():
     # 启动嵌入微服务，使用不同的端口（8001）并设置为独立模式
     process = subprocess.Popen(
         [sys.executable, embedding_service_path],
-        env={**os.environ, "PORT": "8001", "EMBEDDING_SERVICE_STANDALONE": "1"}
+        env={**os.environ, "KBOT_EMBED_PORT": "8001", "EMBEDDING_SERVICE_STANDALONE": "1"}
     )
     return process
 
@@ -197,9 +226,10 @@ def signal_handler(sig, frame):
 atexit.register(shutdown_embedding_service)
 
 if __name__ == "__main__":
+    import uvicorn
     # 从环境变量获取主机和端口，如果没有设置，则使用默认值
-    host = os.environ.get("HOST", "0.0.0.0")
-    port = int(os.environ.get("PORT", 8001))
+    host = os.environ.get("KBOT_EMBED_HOST", "0.0.0.0")
+    port = int(os.environ.get("KBOT_EMBED_PORT", 8001))
     
     # 如果是作为独立进程启动，则注册信号处理器
     if os.environ.get("EMBEDDING_SERVICE_STANDALONE") == "1":

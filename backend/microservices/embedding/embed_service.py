@@ -33,7 +33,7 @@ class EmbeddingService:
         if not self._initialized:
             await self._model_pool.initialize()
             self._initialized = True
-            logger.info("嵌入服务已初始化")
+            logger.info("Embedding service initialized")
         
     async def shutdown(self):
         """
@@ -42,7 +42,7 @@ class EmbeddingService:
         if self._initialized:
             await self._model_pool.shutdown()
             self._initialized = False
-            logger.info("嵌入服务已关闭")
+            logger.info("Embedding service has been shutdown")
     
     async def get_embedding_model(self, model_id: int) -> BaseEmbedding:
         """
@@ -80,9 +80,6 @@ class EmbeddingService:
         Returns:
             嵌入向量数组，每行对应一个输入文本的嵌入向量
 
-        Raises:
-            ValueError: 如果模型ID在数据库中不存在
-            RuntimeError: 如果嵌入过程失败
         """
         if not texts:
             return np.array([])
@@ -108,26 +105,6 @@ class EmbeddingService:
         except Exception as e:
             logger.error(f"嵌入文本失败，模型ID: {model_id}, 错误: {e}")
             raise RuntimeError(f"嵌入文本失败: {e}")
-    
-    async def embed_query(self, model_id: int, query: str) -> np.ndarray:
-        """
-        嵌入单个查询文本
-
-        Args:
-            model_id: 要使用的嵌入模型ID
-            query: 要嵌入的查询文本
-
-        Returns:
-            查询文本的嵌入向量
-
-        Raises:
-            ValueError: 如果模型ID在数据库中不存在
-            RuntimeError: 如果嵌入过程失败
-        """
-        embeddings = await self.embed_texts(model_id, [query])
-        if embeddings.size == 0:
-            raise RuntimeError("嵌入查询失败: 返回了空的嵌入向量")
-        return embeddings[0]
     
     async def compute_similarity(
         self, 
@@ -194,7 +171,3 @@ class EmbeddingService:
             await self.initialize()
         
         return await self._model_pool.reload_model(model_id)
-
-
-# 创建全局嵌入服务实例
-embedding_service = EmbeddingService()

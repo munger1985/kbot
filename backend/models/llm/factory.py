@@ -3,15 +3,19 @@ from enum import Enum
 from typing import Dict, List, Union, Any
 from .base import BaseLLM
 from .openai_client import OpenaiClient, OpenaiLLMConfig
+from .anthropic_client import AnthropicClient, AnthropicLLMConfig
+from .huggingface_client import HuggingFaceClient, HuggingFaceLLMConfig
 
 class LLMProvider(str, Enum):
     """Enum of supported LLM providers."""
     OPENAI = "openai"
+    ANTHROPIC = "anthropic"
+    HUGGINGFACE = "huggingface"
     # Add more providers as they are implemented
     # AZURE = "azure"
     # LOCAL = "local"
 
-def create_llm_model(config: Union[OpenaiLLMConfig, Dict[str, Any]]) -> BaseLLM:
+def create_llm_model(config: Union[OpenaiLLMConfig, AnthropicLLMConfig, HuggingFaceLLMConfig, Dict[str, Any]]) -> BaseLLM:
     """Create an LLM model based on the provided configuration.
     
     Args:
@@ -25,6 +29,10 @@ def create_llm_model(config: Union[OpenaiLLMConfig, Dict[str, Any]]) -> BaseLLM:
     """
     if isinstance(config, OpenaiLLMConfig):
         return OpenaiClient(config)
+    elif isinstance(config, AnthropicLLMConfig):
+        return AnthropicClient(config)
+    elif isinstance(config, HuggingFaceLLMConfig):
+        return HuggingFaceClient(config)
     
     # Add more providers as they are implemented
     # elif isinstance(config, AzureLLMConfig):

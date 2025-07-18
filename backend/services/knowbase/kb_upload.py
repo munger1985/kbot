@@ -227,5 +227,6 @@ async def upload_file_service(files: List[UploadFile],
         return r
     except Exception as e:
         logger.error(f"Failed to save files to database for knowledge base: {kb_id}")
+        logger.error(e)
         raise e
     

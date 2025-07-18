@@ -1,8 +1,11 @@
+"""LLM model pool implementation."""
+
+import asyncio
 import os
 import sys
-import asyncio
+import time
 from loguru import logger
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 from datetime import datetime, timedelta
 
 # 添加项目根目录到 Python 路径，确保可以导入项目模块
@@ -11,34 +14,38 @@ backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(current_file)))
 if backend_dir not in sys.path:
     sys.path.insert(0, backend_dir)
 
-from models.embedding import (
-    BaseEmbedding, 
-    EmbeddingProvider,
-    LocalEmbeddingConfig, 
-    RemoteEmbeddingConfig, 
-    create_embedding_model
+from models.llm import(
+    BaseLLM, 
+    OpenaiLLMConfig, 
+    LLMProvider,
+    HuggingFaceLLMConfig, 
+    AnthropicLLMConfig, 
+    create_llm_model
 )
 from dao.repositories.kbot_md_models_repo import KbotMdModelsRepository
 from core.config import settings
 
 
 class ModelPool:
-    """Manage a pool of embedding models with health checking and lifecycle management"""
-    
-    def __init__(self, health_check_interval: int = 300):
+    """Model pool class for managing LLM models."""
+
+    def __init__(self, health_check_interval: int = 300) -> None:
         """Initialize model pool.
+
         Args:
             health_check_interval: Interval in seconds between health checks
         """
-        self._models: Dict[int, BaseEmbedding] = {}
+        
+        # 用于按提供商管理模型的池
+        self._models: Dict[int, BaseLLM] = {}
         self._last_used: Dict[int, datetime] = {}
         self._health_check_interval = health_check_interval
         self._health_check_task: Optional[asyncio.Task] = None
-        
+
     async def initialize(self):
         """Initialize the model pool and start health check task"""
         self._health_check_task = asyncio.create_task(self._health_check_loop())
-        
+
     async def shutdown(self):
         """Shutdown the model pool and all models"""
         if self._health_check_task:
@@ -56,8 +63,8 @@ class ModelPool:
                 
         self._models.clear()
         self._last_used.clear()
-        
-    async def load_model(self, model_id: int) -> BaseEmbedding:
+
+    async def load_model(self, model_id: int) -> BaseLLM:
         """Load a model instance by model_id
         
         Args:
@@ -86,37 +93,30 @@ class ModelPool:
 
         # 根据模型类型创建相应的配置
         
-        if model_entity.provider == EmbeddingProvider.LOCAL.value:
-            model_config = LocalEmbeddingConfig(
-                model_name=model_entity.model_name,
-                provider=model_entity.provider,
-                max_tokens=model_entity.model_params.get("max_tokens", settings["embed"]["max_tokens"]),
-                model_path=model_entity.model_params.get("model_path", None),
-                device=model_entity.model_params.get("device", None),
-                device_map=model_entity.model_params.get("device_map", None),
-                max_memory=model_entity.model_params.get("max_memory", None),
-                trust_remote_code=model_entity.model_params.get("trust_remote_code", False),
-                use_fp16=model_entity.model_params.get("use_fp16", False),
-                local_files_only=model_entity.model_params.get("local_files_only", False),
-                compile_model=model_entity.model_params.get("compile_model", True)
-            )
-        else:
-            model_config = RemoteEmbeddingConfig(
-                model_name=model_entity.model_name,
-                provider=model_entity.provider,
-                max_tokens=model_entity.model_params.get("max_tokens", settings["embed"]["max_tokens"]),
+        if model_entity.provider == LLMProvider.OPENAI.value:
+            model_config = OpenaiLLMConfig(
                 api_key=model_entity.api_key, # type: ignore
-                endpoint=model_entity.api_endpoint, # type: ignore
-                timeout=model_entity.model_params.get("timeout", settings["embed"]["timeout"]),        
-                max_retries=model_entity.model_params.get("max_retries", settings["embed"]["max_retries"]),
-                organization=model_entity.model_params.get("organization", ""),
-                deployment_name=model_entity.model_params.get("deployment_name", ""),
-                api_version=model_entity.model_params.get("api_version", "")
+                model_name=model_entity.model_name,
+                temperature=model_entity.model_params.get("temperature", None), # type: ignore
+                max_tokens=model_entity.model_params.get("max_tokens", None), # type: ignore
+                top_p=model_entity.model_params.get("top_p", None), # type: ignore
+                frequency_penalty=model_entity.model_params.get("frequency_penalty", None), # type: ignore
+                presence_penalty=model_entity.model_params.get("presence_penalty", None), # type: ignore
+                timeout=model_entity.model_params.get("timeout", None) # type: ignore
             )
-
+        if model_entity.provider == LLMProvider.ANTHROPIC.value:
+            model_config = AnthropicLLMConfig(
+                model_name=model_entity.model_name,
+                api_key=model_entity.api_key # type: ignore
+            )
+        if model_entity.provider == LLMProvider.HUGGINGFACE.value:
+            model_config = HuggingFaceLLMConfig(
+                model_name=model_entity.model_name,
+                api_key=model_entity.api_key # type: ignore
+            )
         # Create and initialize model //创建和初始化模型
         try:
-            model = create_embedding_model(model_config)
+            model = create_llm_model(model_config)
             await model.startup()
             self._models[model_id] = model
             self._last_used[model_id] = datetime.now()
@@ -124,7 +124,8 @@ class ModelPool:
         except Exception as e:
             logger.error(f"Failed to create model {model_id}: {e}")
             raise RuntimeError(f"Failed to create model {model_id}: {e}")
-                    
+
+
     async def unload_model(self, model_id: int):
         """Unload a model from the pool
         
@@ -170,7 +171,7 @@ class ModelPool:
                     
                 # Simple health check by calling embed with a test text
                 model = self._models[model_id]
-                await model.embed([])
+                await model.generate("")
                 
             except Exception as e:
                 logger.error(f"Health check failed for model {model_id}: {e}")
