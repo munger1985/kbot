@@ -29,6 +29,14 @@ class EmbedConfig(TypedDict):
     timeout: int
     max_retries: int
 
+class LLMConfig(TypedDict):
+    max_tokens: int
+    temperature: float
+    top_p: float
+    top_k: int
+    max_retries: int
+    timeout: int
+
 class KBotConfig(TypedDict):
     file_root_path: str
     parallel_workers: int
@@ -38,4 +46,5 @@ class AppSettings(TypedDict):
     database: DatabaseConfig
     logger: LoggerConfig
     embed: EmbedConfig
+    llm: LLMConfig
     kbot: KBotConfig

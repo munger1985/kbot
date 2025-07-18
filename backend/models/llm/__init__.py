@@ -1,19 +1,15 @@
-"""
-LLM模块入口
-提供以下主要组件：
-1. LLMProvider - 统一模型管理入口
-2. LocalLLMConfig - 本地模型配置
-3. CloudLLMConfig - 云端模型配置
-"""
-from .provider import LLMProvider
-from .base import LocalLLMConfig, CloudLLMConfig
-from .local import LocalLLM
-from .cloud import CloudLLM
+"""LLM module for handling large language models."""
+
+from .base import BaseLLM, LLMConfig
+from .factory import LLMProvider, create_llm_model, get_supported_providers
+from .openai_client import OpenaiClient, OpenaiLLMConfig
 
 __all__ = [
-    'LLMProvider',
-    'LocalLLMConfig',
-    'CloudLLMConfig',
-    'LocalLLM',
-    'CloudLLM'
+    "BaseLLM",
+    "LLMConfig",
+    "LLMProvider",
+    "create_llm_model",
+    "get_supported_providers",
+    "OpenaiClient",
+    "OpenaiLLMConfig",
 ]

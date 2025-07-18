@@ -1,8 +1,16 @@
+import os
+import sys
 from typing import List, Dict, Any, Optional, Union
 import numpy as np
 from loguru import logger
 
-from services.embedding.model_pool import ModelPool
+# 添加项目根目录到 Python 路径，确保可以导入项目模块
+current_file = os.path.abspath(__file__)
+backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(current_file)))
+if backend_dir not in sys.path:
+    sys.path.insert(0, backend_dir)
+    
+from microservices.embedding.model_pool import ModelPool
 from models.embedding.base import BaseEmbedding
 
 

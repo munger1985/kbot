@@ -13,17 +13,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 
 # 添加项目根目录到 Python 路径，确保可以导入项目模块
-# 获取当前文件的绝对路径
 current_file = os.path.abspath(__file__)
-# 获取 backend 目录的路径（假设当前文件在 backend/microservices/embedding/ 目录下）
 backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(current_file)))
-# 将 backend 目录添加到 Python 路径
 if backend_dir not in sys.path:
     sys.path.insert(0, backend_dir)
-
-# 现在可以导入项目模块了
+    
+from microservices.embedding.embed_service import EmbeddingService, embedding_service
 from core.config import settings
-from services.embedding import EmbeddingService, embedding_service
 from dao.repositories.kbot_md_models_repo import KbotMdModelsRepository
 
 # 确保日志目录存在
@@ -110,7 +106,7 @@ async def embed_texts(
         embeddings = await embed_service.embed_texts(
             model_id=request.model_id,
             texts=request.texts,
-            batch_size=request.batch_size
+            batch_size=request.batch_size # type: ignore
         )
         
         # 将numpy数组转换为Python列表

@@ -1,49 +1,36 @@
 """
 LLM基础配置和接口定义
 包含：
-1. 所有配置数据类（BaseLLMConfig/LocalLLMConfig/CloudLLMConfig）
+1. 所有配置数据类LLMConfig
 2. 基础接口类BaseLLM
 """
 
 from pydantic import BaseModel, field_validator, ConfigDict
-from typing import Optional, Dict, Any, List, Union
-from dataclasses import dataclass
-import numpy as np
+from typing import Optional, Dict, List
 from tenacity import retry, stop_after_attempt
-from functools import lru_cache
-import torch
 from prometheus_client import Counter, Histogram
+from core.config import settings
 
-class BaseLLMConfig(BaseModel):
+class LLMConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')  # 禁止额外字段
     
     model_name: str
-    temperature: float = 0.7
-    max_tokens: int = 1024
-    timeout: int = 30
+    api_key: str
+    provider: str
+    endpoint: Optional[str] = None
+    temperature: float = settings['llm']['temperature']
+    top_p: float = settings['llm']['top_p']
+    top_k: int = settings['llm']['top_k']
+    max_tokens: int = settings['llm']['max_tokens']
+    max_retries: int = settings['llm']['max_retries']
+    timeout: int = settings['llm']['timeout']
     
     @field_validator('temperature')
     def validate_temp(cls, v):
         if not 0 <= v <= 2:
             raise ValueError("Temperature must be between 0 and 2")
         return v
-
-class LocalLLMConfig(BaseLLMConfig):
-    model_path: str
-    device: str = "cuda" if torch.cuda.is_available() else "cpu"
-    trust_remote_code: bool = False
-    compile_model: bool = True
     
-    @field_validator('device')
-    def validate_device(cls, v):
-        assert v in ['cpu', 'cuda', 'mps'], "Invalid device"
-        return v
-
-class CloudLLMConfig(BaseLLMConfig):
-    api_key: str
-    provider: str
-    endpoint: Optional[str] = None
-    region: Optional[str] = None
 
 class BaseLLM:
     ERROR_COUNTER = Counter('llm_errors', 'Errors by provider', ['provider'])
