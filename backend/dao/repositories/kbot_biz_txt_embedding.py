@@ -28,11 +28,12 @@ class KbotBizTxtEmbeddingRepository:
         db_repo = KbotMdDbConfRepository()
         db_conf = await db_repo.get_by_kbid(kb_id)
         if db_conf is None:
-            return False
+            return 0
         connstr = db_conf.db_conn_str
         db_type = db_conf.db_type
+
         if connstr is None or db_type is None:
-            return False
+            return 0
         async with create_session(db_type=db_type, connection_info=connstr) as session:
             stmt = delete(KbotBizTxtEmbedding).where(KbotBizTxtEmbedding.file_id.in_(file_ids))
             result = await session.execute(stmt)

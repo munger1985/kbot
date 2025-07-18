@@ -105,9 +105,9 @@ async def delete_files(domain_id: int,
         logger.error("Invalid parameters")
         return success_cnt, failed_cnt
 
-async def delete_file_metadata(kb_id: Optional[int], 
-                               batch_id: Optional[int], 
-                               file_ids: Optional[List[int]]) -> bool:
+async def delete_metadata(kb_id: Optional[int], 
+                          batch_id: Optional[int], 
+                          file_ids: Optional[List[int]]) -> bool:
     """
     Delete file metadata either by individual file IDs or by batch ID or by kb ID.
     根据文件ID或批次ID或知识库ID删除文件元数据
@@ -144,7 +144,7 @@ async def delete_file_metadata(kb_id: Optional[int],
     # 删除整个知识库中的所有文件
     if kb_id is not None:
         try:
-            rowcnt = await file_repo.delete_by_kb(kb_id)
+            rowcnt = await file_repo.delete(kb_id, None, None)
             logger.info(f"Successfully deleted {rowcnt} files in kb {kb_id}")
             return True
         except Exception as e:
@@ -155,7 +155,7 @@ async def delete_file_metadata(kb_id: Optional[int],
     # 批次删除逻辑
     elif batch_id is not None:
         try:
-            rowcnt = await file_repo.delete_by_batch(batch_id)
+            rowcnt = await file_repo.delete(None, batch_id, None)
             logger.info(f"Successfully deleted {rowcnt} files in batch {batch_id}")           
             return True           
         except Exception as e:
@@ -166,7 +166,7 @@ async def delete_file_metadata(kb_id: Optional[int],
     # 单个文件删除逻辑
     elif file_ids is not None:
         try:
-            rowcnt = await file_repo.delete_by_ids(file_ids)
+            rowcnt = await file_repo.delete(None, None, file_ids)
             logger.info(f"Successfully deleted {rowcnt} files")
             return True
         except Exception as e:
@@ -178,7 +178,7 @@ async def delete_file_metadata(kb_id: Optional[int],
 
 async def delete_vec_data(kb_id: int, 
                           batch_id: Optional[int], 
-                          file_ids: Optional[List[int]]) -> tuple[int, int]:
+                          file_ids: Optional[List[int]]) -> int:
     """
     Delete vector data from the database by file IDs and delete file metadata finally. 
     根据文件ID从数据库中删除向量数据，最后彻底删除文件元数据。
@@ -189,7 +189,7 @@ async def delete_vec_data(kb_id: int,
         file_ids: List of file IDs to delete //要删除的文件ID列表
     
     Returns/返回:
-        result: True if deletion is successful, False otherwise //如果删除成功返回True，否则返回False
+        result: Row count of deleted records //删除的记录行数
     
     Note/注意:
         - This is an async function and needs to be awaited //这是一个异步函数，需要await调用
@@ -197,16 +197,17 @@ async def delete_vec_data(kb_id: int,
 
     embed_repo = KbotBizTxtEmbeddingRepository()
     file_repo = KbotMdKbFilesRepository()
-
+    vec_cnt = 0
     # Mode 1: Delete by file IDs //模式1：通过文件ID删除
     if file_ids is not None:
         try:
+            logger.debug(f"Deleting vector data for {len(file_ids)} files in vector base")
             vec_cnt = await embed_repo.delete_by_file_ids(kb_id, file_ids)
-            meta_cnt = await file_repo.actual_delete_by_ids(file_ids)
-            return vec_cnt, meta_cnt
+            logger.debug(f"Successfully deleted {vec_cnt} records in vector base")
+            return vec_cnt
         except Exception as e:
             logger.error(f"Failed to delete vector data: {str(e)}")
-            return (0,0)
+            return 0
     # Mode 2: Delete by batch ID //模式2：通过批次ID删除
     elif batch_id is not None:
         try:
@@ -215,15 +216,16 @@ async def delete_vec_data(kb_id: int,
             file_ids = []
             if files is None:
                 logger.error(f"Files in batch {batch_id} not found")
-                return (0,0)
+                return 0
             for file in files:
                 file_ids.append(file.file_id)
+            logger.debug(f"Deleting vector data for {len(file_ids)} files in vector base")
             vec_cnt = await embed_repo.delete_by_file_ids(kb_id, file_ids)
-            meta_cnt = await file_repo.actual_delete_by_ids(file_ids)
-            return vec_cnt, meta_cnt
+            logger.debug(f"Successfully deleted {vec_cnt} records in vector base")
+            return vec_cnt
         except Exception as e:
             logger.error(f"Failed to delete vector data: {str(e)}")
-            return (0,0)
+            return 0
     # Mode 3: Delete by knowledge base ID //模式3：通过知识库ID删除
     else:
         try:
@@ -232,15 +234,16 @@ async def delete_vec_data(kb_id: int,
             file_ids = []
             if files is None:
                 logger.error(f"Files in knowledge base {kb_id} not found")
-                return (0,0)
+                return 0
             for file in files:
                 file_ids.append(file.file_id)
+            logger.debug(f"Deleting vector data for {len(file_ids)} files in vector base")
             vec_cnt = await embed_repo.delete_by_file_ids(kb_id, file_ids)
-            meta_cnt = await file_repo.actual_delete_by_ids(file_ids)
-            return vec_cnt, meta_cnt
+            logger.debug(f"Successfully deleted {vec_cnt} records in vector base")
+            return vec_cnt
         except Exception as e:
             logger.error(f"Failed to delete vector data: {str(e)}")
-            return (0,0)
+            return 0
 
 
 async def delete_file_service(
@@ -294,35 +297,34 @@ async def delete_file_service(
     # 模式1：通过ID和路径删除特定文件
     if file_paths is not None and file_ids is not None:
         logger.info(f"Starting to delete files, total {len(file_paths)} files...")
-        # 1. Update file status to DELETED //将文件状态更新为已删除
-        await delete_file_metadata(None, None, file_ids)
-        # 2. Delete files physically //物理删除文件
+        # 1. Delete vector data //删除向量数据
+        result["vec_cnt"] = await delete_vec_data(kb_id, None, file_ids)
+        # 2. Delete file metadata //删除文件元数据
+        result["meta_cnt"] = await delete_metadata(None, None, file_ids)
+        # 3. Delete files physically //物理删除文件
         result["success_file_cnt"], result["failed_file_cnt"] = await delete_files(domain_id, None, None, file_paths)
-        # 3. Delete vector data and meta data //删除向量数据和元数据
-        result["vec_cnt"], result["meta_cnt"] = await delete_vec_data(kb_id, None, file_ids)
-        await delete_vec_data(kb_id, None, file_ids)
         return result
     # Mode 2: Delete entire batch
     # 模式2：删除整个批次
     elif batch_name is not None and batch_id is not None:
         logger.info(f"Starting to delete files in batch: {batch_name}")
-        # 1. Update file status to DELETED //将文件状态更新为已删除
-        await delete_file_metadata(None, batch_id, None)
-        # 2. Delete files physically //物理删除文件
+        # 1. Delete vector data //删除向量数据
+        result["vec_cnt"] = await delete_vec_data(kb_id, batch_id, None)
+        # 2. Delete file metadata //删除文件元数据
+        result["meta_cnt"] = await delete_metadata(None, batch_id, None)
+        # 3. Delete files physically //物理删除文件
         result["success_file_cnt"], result["failed_file_cnt"] = await delete_files(domain_id, kb_id, batch_name, None)
-        # 3. Delete vector data and meta data //删除向量数据和元数据
-        result["vec_cnt"], result["meta_cnt"] = await delete_vec_data(kb_id, batch_id, None)
         return result
     # Mode 3: Delete entire knowledge base
     # 模式3：删除整个知识库
     elif kb_id is not None and batch_id is None and file_ids is None:
         logger.info(f"Starting to delete knowledge base: {kb_id}")
-        # 1. Update file status to DELETED //将文件状态更新为已删除
-        await delete_file_metadata(kb_id, None, None)
-        # 2. Delete files physically //物理删除文件
+        # 1. Delete vector data //删除向量数据
+        result["vec_cnt"] = await delete_vec_data(kb_id, None, None)
+        # 2. Delete file metadata //删除文件元数据
+        result["meta_cnt"] = await delete_metadata(kb_id, None, None)
+        # 3. Delete files physically //物理删除文件
         result["success_file_cnt"], result["failed_file_cnt"] = await delete_files(domain_id, kb_id, None, None)
-        # 3. Delete vector data and meta data //删除向量数据和元数据
-        result["vec_cnt"], result["meta_cnt"] = await delete_vec_data(kb_id, None, None)
         return result
     else:
         logger.error("Invalid deletion parameters: must provide either kb_id, batch_id, or file_ids")

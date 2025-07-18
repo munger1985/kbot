@@ -82,7 +82,7 @@ async def delete_files(
         result = await delete_knowledge_base_files(form)
 
 
-        if result["success_file_cnt"] > 0 and result["failed_file_cnt"] == 0 and result["meta_cnt"] > 0 and result["vec_cnt"] > 0:
+        if result["success_file_cnt"] > 0 and result["failed_file_cnt"] == 0 and result["meta_cnt"] > 0:
             return SuccessResponse(
                 code=200,
                 success=True,
