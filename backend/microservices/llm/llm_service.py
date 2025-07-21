@@ -12,20 +12,20 @@ if backend_dir not in sys.path:
     sys.path.insert(0, backend_dir)
 
 from microservices.llm.model_pool import ModelPool
-from models.llm import LLMProvider, BaseLLM
+from models.llm import BaseLLM
 
 
 class LLMService:
     """LLM service class."""
 
     def __init__(self) -> None:
-        """Initialize LLM service."""
+        """Initialize LLM service. //初始化LLM服务"""
         self._model_pool = ModelPool()
         self._initialized = False
 
     async def initialize(self):
         """
-        初始化LLM服务和所有模型池
+        Initialize LLM service and all model pools.//初始化LLM服务和所有模型池
         """
         if not self._initialized:
             await self._model_pool.initialize()
@@ -34,7 +34,7 @@ class LLMService:
         
     async def shutdown(self):
         """
-        关闭LLM服务和所有模型池
+        Close all LLM service and model pools.//关闭LLM服务和所有模型池
         """
         if self._initialized:
             await self._model_pool.shutdown()
@@ -42,13 +42,13 @@ class LLMService:
             logger.info("LLM service has been shutdown")
             
     async def get_llm_model(self, model_id: int) -> BaseLLM:
-        """获取指定ID的LLM模型
+        """Retrieve a LLM model by ID. //获取指定ID的LLM模型
 
         Args:
             model_id: 模型ID
 
         Returns:
-            LLM模型实例
+            LLM model instance //LLM模型实例
         """
         if not self._initialized:
             await self.initialize()
@@ -62,7 +62,7 @@ class LLMService:
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
     ) -> str:
-        """Generate text from a prompt.
+        """Generate text from a prompt. //根据提示词生成文本
 
         Args:
             model_id: Model ID
@@ -88,8 +88,8 @@ class LLMService:
                 
             return await model.generate(prompt=prompt, **kwargs)
         except Exception as e:
-            logger.exception(f"生成文本时出错: {e}")
-            raise RuntimeError(f"生成文本时出错: {e}")
+            logger.exception(f"Error generating text: {e}")
+            raise RuntimeError(f"Error generating text: {e}")
 
     async def chat(
         self,
@@ -98,7 +98,7 @@ class LLMService:
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
     ) -> Dict[str, str]:
-        """Generate a chat response.
+        """Generate a chat response. //生成聊天响应
 
         Args:
             model_id: Model ID
@@ -125,5 +125,5 @@ class LLMService:
             response = await model.chat(messages=messages, **kwargs)
             return {"role": "assistant", "content": response}
         except Exception as e:
-            logger.exception(f"生成聊天响应时出错: {e}")
-            raise RuntimeError(f"生成聊天响应时出错: {e}")
+            logger.exception(f"Error generating chat response: {e}")
+            raise RuntimeError(f"Error generating chat response: {e}")

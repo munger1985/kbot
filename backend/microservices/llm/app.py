@@ -2,6 +2,9 @@
 
 This module provides a FastAPI application that exposes HTTP endpoints for interacting
 with various LLM providers. It supports text generation and chat completion.
+
+该模块提供 FastAPI 微服务应用程序，用于与各种 LLM 提供者交互。它支持文本生成和聊天完成。
+
 """
 
 import sys
@@ -32,9 +35,6 @@ from core.config import settings
 # 创建LLM服务实例
 llm_service = LLMService()
 
-# 服务启动时间，用于计算运行时间
-SERVICE_START_TIME = time.time()
-
 # 确保日志目录存在
 log_dir = settings["logger"]["dir"]
 os.makedirs(log_dir, exist_ok=True)
@@ -49,43 +49,43 @@ logger.add(
 # 定义 lifespan 上下文管理器
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """应用程序生命周期管理。"""
+    """Application lifespan context manager. //应用程序生命周期上下文管理器"""
     # 启动事件
     start_time = time.time()
-    logger.info("正在初始化LLM服务...")
+    logger.info("Initializing LLM service...")
     
     # 设置应用程序版本（在健康检查端点中使用）
     app.version = "0.1.0"  # 与FastAPI初始化时设置的版本保持一致
     
     # 记录系统信息
-    logger.info(f"平台: {platform.platform()}")
-    logger.info(f"Python版本: {platform.python_version()}")
-    logger.info(f"进程ID: {os.getpid()}")
+    logger.info(f"Platform: {platform.platform()}")
+    logger.info(f"Python version: {platform.python_version()}")
+    logger.info(f"Process ID: {os.getpid()}")
     
     # 初始化LLM服务
     try:
         await llm_service.initialize()
-        logger.info("LLM服务初始化成功")
+        logger.info("Successfully initialized LLM service")
     except Exception as e:
-        logger.error(f"LLM服务初始化失败: {e}")
+        logger.error(f"Failed to initialize LLM service: {e}")
         # 在生产环境中，可能需要在这里退出应用程序
     
-    logger.info(f"LLM服务启动完成，耗时: {time.time() - start_time:.2f}秒")
+    logger.info(f"LLM service initialized in {time.time() - start_time:.2f} seconds")
     
     yield  # 服务运行期间
     
     # 关闭事件
-    logger.info("正在关闭LLM服务...")
+    logger.info("Closing LLM service...")
     shutdown_start = time.time()
     
     try:
         await llm_service.shutdown()
-        logger.info("LLM服务关闭成功")
+        logger.info("Successfully closed LLM service")
     except Exception as e:
-        logger.error(f"LLM服务关闭过程中出错: {e}")
+        logger.error(f"Error closing LLM service: {e}")
     
-    logger.info(f"LLM服务已关闭，耗时: {time.time() - shutdown_start:.2f}秒")
-    logger.info(f"总运行时间: {time.time() - SERVICE_START_TIME:.2f}秒")
+    logger.info(f"LLM service closed in {time.time() - shutdown_start:.2f} seconds")
+    logger.info(f"Total service runtime: {time.time() - start_time:.2f} seconds")
 
 # 创建FastAPI应用
 app = FastAPI(
@@ -106,7 +106,7 @@ app.add_middleware(
 
 
 class GenerateRequest(BaseModel):
-    """Request model for text generation."""
+    """Request model for text generation. //文本生成请求模型"""
 
     model_id: int = Field(..., description="Specific model id to use")
     prompt: str = Field(..., description="Input prompt for text generation")
@@ -117,21 +117,21 @@ class GenerateRequest(BaseModel):
 
 
 class LLMResponse(BaseModel):
-    """Response model for text generation and chat."""
+    """Response model for text generation and chat. //文本生成和聊天响应模型"""
 
     text: str = Field(..., description="Generated text")
     processing_time: float = Field(..., description="Processing time in seconds")
 
 
 class ChatMessage(BaseModel):
-    """Chat message model."""
+    """Chat message model. //聊天消息模型"""
 
     role: str = Field(..., description="Message role (system, user, assistant)")
     content: str = Field(..., description="Message content")
 
 
 class ChatRequest(BaseModel):
-    """Request model for chat."""
+    """Request model for chat. //聊天请求模型"""
 
     model_id: int = Field(..., description="Specific model id to use")
     messages: List[ChatMessage] = Field(..., description="List of chat messages")
@@ -168,7 +168,7 @@ async def generate(
     request: GenerateRequest,
     llm_service: LLMService = Depends(get_llm_service)
     ) -> Dict[str, Any]:
-    """生成文本
+    """Generate text //生成文本
     
     - **model_id**: 要使用的模型ID
     - **prompt**: 输入提示
@@ -205,7 +205,7 @@ async def chat(
     request: ChatRequest,
     llm_service: LLMService = Depends(get_llm_service)
     ) -> Dict[str, Any]:
-    """生成聊天响应
+    """Generate chat response //生成聊天响应
     
     - **model_id**: 要使用的模型ID
     - **messages**: 聊天消息列表

@@ -2,6 +2,9 @@
 
 This module provides a FastAPI application that exposes HTTP endpoints for interacting
 with various embedding providers. It supports text embedding.
+
+该模块提供 FastAPI 微服务应用程序，用于公开与各种嵌入提供者交互的 HTTP 端点。它支持文本嵌入。
+
 """
 
 import os
@@ -28,8 +31,6 @@ if backend_dir not in sys.path:
     
 from microservices.embedding.embed_service import EmbeddingService
 from core.config import settings
-from models.embedding import EmbeddingProvider
-from dao.repositories.kbot_md_models_repo import KbotMdModelsRepository
 
 # 确保日志目录存在
 log_dir = settings["logger"]["dir"]
@@ -46,13 +47,10 @@ logger.add(
 # 创建embedding服务实例
 embedding_service = EmbeddingService()
 
-# 服务启动时间，用于计算运行时间
-SERVICE_START_TIME = time.time()
-
 # 定义 lifespan 上下文管理器
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """应用程序生命周期管理。"""
+    """Application lifespan context manager. //应用程序生命周期上下文管理器"""
     # 启动事件
     start_time = time.time()
     logger.info("Initializing embedding service...")
@@ -60,10 +58,9 @@ async def lifespan(app: FastAPI):
     # 设置应用程序版本（在健康检查端点中使用）
     app.version = "0.1.0"  # 与FastAPI初始化时设置的版本保持一致
     
-    # 记录系统信息
-    logger.info(f"平台: {platform.platform()}")
-    logger.info(f"Python版本: {platform.python_version()}")
-    logger.info(f"进程ID: {os.getpid()}")
+    logger.info(f"Platform: {platform.platform()}")
+    logger.info(f"Python version: {platform.python_version()}")
+    logger.info(f"Process ID: {os.getpid()}")
     
     # 初始化LLM服务
     try:
@@ -72,8 +69,9 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Embedding service initialization failed: {e}")
         # 在生产环境中，可能需要在这里退出应用程序
+        # sys.exit(1)
     
-    logger.info(f"Embedding service started successfully, elapsed time: {time.time() - start_time:.2f}秒")
+    logger.info(f"Embedding service started successfully, elapsed time: {time.time() - start_time:.2f} seconds")
     
     yield  # 服务运行期间
     
@@ -87,8 +85,8 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Embedding service shutdown failed: {e}")
     
-    logger.info(f"Embedding service closed successfully, elapsed time: {time.time() - shutdown_start:.2f}秒")
-    logger.info(f"Total running time: {time.time() - SERVICE_START_TIME:.2f}秒")
+    logger.info(f"Embedding service closed successfully, elapsed time: {time.time() - shutdown_start:.2f} seconds")
+    logger.info(f"Total running time: {time.time() - start_time:.2f} seconds")
 
 # 创建 FastAPI 应用
 app = FastAPI(

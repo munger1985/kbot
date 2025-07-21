@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Optional
 import requests
 from pydantic import Field
 from loguru import logger
-from backend.models.llm.base import BaseLLM, LLMConfig
+from models.llm.base import BaseLLM, LLMConfig
 from core.config import settings
 
 

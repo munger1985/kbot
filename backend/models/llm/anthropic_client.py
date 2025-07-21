@@ -4,7 +4,7 @@ import anthropic
 from loguru import logger
 from typing import Any, Dict, List, Optional
 from pydantic import Field
-from backend.models.llm.base import BaseLLM, LLMConfig
+from models.llm.base import BaseLLM, LLMConfig
 from core.config import settings
 
 

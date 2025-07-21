@@ -1,1 +1,1 @@
-# 嵌入微服务初始化文件
+"""Embedding microservice module."""
