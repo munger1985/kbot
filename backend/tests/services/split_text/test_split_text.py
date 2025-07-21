@@ -5,7 +5,7 @@ from pathlib import Path
 # 添加项目根目录到Python路径，以便导入backend模块
 sys.path.append(str(Path(__file__).parent.parent.parent.parent))
 
-from backend.utils.chunk_text import chunk_text
+from utils.chunk_text import chunk_text
 
 def test_split_text_with_post_doc():
     """
@@ -20,7 +20,7 @@ def test_split_text_with_post_doc():
         text = f.read()
     
     # 调用split_text方法，设置参数
-    chunks = chunk_text(text=text, chunk_size=100, overlap=20)
+    chunks = chunk_text(text=text, chunk_size=500, overlap=50)
     
     # 输出结果
     print("\n测试结果：")
