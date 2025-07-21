@@ -1,8 +1,9 @@
 from typing import List, Optional, Any
 import numpy as np
 import torch
+import os
 from loguru import logger
-from transformers import AutoModel, AutoTokenizer
+from transformers import AutoModel, AutoTokenizer, AutoConfig
 from prometheus_client import Histogram, Counter, Gauge
 from models.embedding.base import BaseEmbedding, LocalEmbeddingConfig
 from core.config import settings
@@ -55,6 +56,9 @@ class LocalEmbedding(BaseEmbedding):
         # Configuration parameters
         self.model_name = config.model_name
         self.model_path = config.model_path
+        self.predownload = False # 是否为本地预下载模型
+        self.cache_path = os.path.join("./models/embedding/local_model_cache", self.model_name) # 模型缓存路径
+        self.name_or_path = ""
         self.device = config.device
         self.device_map = config.device_map
         self.max_tokens = getattr(config, 'max_tokens', settings['embed']['max_tokens'])
@@ -76,19 +80,40 @@ class LocalEmbedding(BaseEmbedding):
         if self.model_path is None and self.local_files_only:
             raise ValueError("Local model path not specified.")
 
+        if self.model_path is not None:
+            valid_path = self._validate_embedding_model(self.model_path)
+            if valid_path:
+                self.predownload = True
+            else:
+                valid_cache = self._validate_embedding_model(self.cache_path)
+                if valid_cache:
+                    logger.info(f"Using cached embedding model: {self.cache_path}")
+                    self.model_path = os.path.abspath(self.cache_path)
+                    self.predownload = True
+                else:
+                    self.predownload = False
+
+        if self.predownload:
+            self.name_or_path = self.model_path
+        else:
+            self.name_or_path = self.model_name
+
+        logger.debug(f"Embedding model name: {self.model_name}, path: {self.model_path}")
+        logger.debug(f"Model name or path: {self.name_or_path}")
+
         # Load tokenizer
         self.tokenizer = AutoTokenizer.from_pretrained(
-            self.model_path or self.model_name,
-            trust_remote_code=self.trust_remote_code,
-            use_fast=True,
-            model_max_length=self.max_tokens,
-            padding_side='right',
-            local_files_only=self.local_files_only
+            pretrained_model_name_or_path = self.name_or_path,
+            trust_remote_code = self.trust_remote_code,
+            use_fast = True,
+            model_max_length = self.max_tokens,
+            padding_side = 'right',
+            local_files_only = self.local_files_only
         )
 
         # Load model with optimized settings
         load_kwargs = {
-            "pretrained_model_name_or_path": self.model_path or self.model_name,
+            "pretrained_model_name_or_path": self.name_or_path,
             "trust_remote_code": self.trust_remote_code,
             "low_cpu_mem_usage": True,
             "local_files_only": self.local_files_only,
@@ -113,17 +138,25 @@ class LocalEmbedding(BaseEmbedding):
             target_device = "cpu"
 
         self.model = AutoModel.from_pretrained(**load_kwargs)
+
+        # 如果是首次使用从HuggingFace下载的模型，则将模型从默认缓存路径保存到本地
+        if self.predownload is not True:
+            try:
+                self._cache_model()
+                logger.debug(f"Embedding model {self.model_name} downloaded to local cache: {self.cache_path}")
+            except Exception as e:
+                logger.error(f"Error saving embedding model to local cache: {e}")
         
         # 如果没有使用device_map，则使用.to()方法将模型移动到指定设备
         if self.device_map is None:
             self.model = self.model.to(target_device) # type: ignore
-            logger.debug(f"模型已加载到设备: {target_device}")
+            logger.debug(f"Embedding model loaded to device: {target_device}")
         else:
-            logger.debug(f"模型已加载到多设备: {self.device_map}")
+            logger.debug(f"Embedding model loaded with device_map: {self.device_map}")
             
         # 记录模型参数所在的设备
         sample_param = next(self.model.parameters()) # type: ignore
-        logger.debug(f"模型参数设备检查: {sample_param.device}")
+        logger.debug(f"Embedding model parameters located on device: {sample_param.device}")
             
         self.model.eval() # type: ignore
 
@@ -135,6 +168,33 @@ class LocalEmbedding(BaseEmbedding):
             )
 
         self._is_initialized = True
+
+    
+    def _validate_embedding_model(self, model_path: str) -> bool:
+        """Check if the model directory contains necessary files. //检查模型目录是否包含必要文件"""
+        must_have = ["config.json", "tokenizer_config.json"]
+        model_files = ["pytorch_model.bin", "model.safetensors"]
+        vocab_files = ["vocab.txt", "vocab.json", "tokenizer.json"]
+        
+        # 检查必备文件
+        for f in must_have:
+            if not os.path.exists(os.path.join(model_path, f)):
+                return False
+        
+        # 检查模型权重文件(至少存在一种)
+        if not any(os.path.exists(os.path.join(model_path, f)) for f in model_files):
+            return False
+        
+        # 检查词汇表文件(至少存在一种)
+        if not any(os.path.exists(os.path.join(model_path, f)) for f in vocab_files):
+            return False
+        
+        return True
+
+    def _cache_model(self):
+        """Save model to cache directory."""
+        self.model.save_pretrained(self.cache_path) # type: ignore
+        self.tokenizer.save_pretrained(self.cache_path) # type: ignore
 
     def _auto_detect_batch_size(self) -> int:
         """Dynamically determine safe batch size based on hardware."""
@@ -166,7 +226,7 @@ class LocalEmbedding(BaseEmbedding):
                 batch_size: int = 0,
                 normalize: bool = True,
                 raise_on_error: bool = True,
-) -> np.ndarray:
+        ) -> np.ndarray:
         """
         Generate embeddings with automatic batch processing.
         
@@ -209,7 +269,7 @@ class LocalEmbedding(BaseEmbedding):
                     if not hasattr(self.model, 'device_map'):  # 单设备情况
                         device = self.model.device  # type: ignore
                         encoded_input = {k: v.to(device) for k, v in encoded_input.items()}
-                        logger.info(f"批次 {i//effective_batch_size + 1}: 使用设备 {device}")
+                        logger.info(f"Batch {i//effective_batch_size + 1} on device {device}")
                         
                         # 如果是GPU，记录内存使用情况
                         if device.type == 'cuda':
@@ -217,10 +277,10 @@ class LocalEmbedding(BaseEmbedding):
                             gpu_name = torch.cuda.get_device_name(gpu_id) # type: ignore
                             current_mem = torch.cuda.memory_allocated(device) / (1024**3) # type: ignore
                             max_mem = torch.cuda.max_memory_allocated(device) / (1024**3) # type: ignore
-                            logger.debug(f"GPU: {gpu_name}, 内存使用: {current_mem:.2f}GB / {max_mem:.2f}GB (当前/峰值)")
+                            logger.debug(f"GPU: {gpu_name}, Memory: {current_mem:.2f}GB / {max_mem:.2f}GB (Current/Peak)")
                     else:
                         # 多设备情况
-                        logger.info(f"批次 {i//effective_batch_size + 1}: 使用多设备配置 {self.model.device_map}")  # type: ignore
+                        logger.info(f"Batch {i//effective_batch_size + 1} on devices {self.model.device_map}")  # type: ignore
                     
                     # 推理
                     with torch.no_grad():
