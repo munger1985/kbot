@@ -37,6 +37,9 @@ class LLMConfig(TypedDict):
     max_retries: int
     timeout: int
 
+class RankerConfig(TypedDict):
+    max_tokens: int
+
 class KBotConfig(TypedDict):
     file_root_path: str
     parallel_workers: int
@@ -47,4 +50,5 @@ class AppSettings(TypedDict):
     logger: LoggerConfig
     embed: EmbedConfig
     llm: LLMConfig
+    reranker: RankerConfig
     kbot: KBotConfig

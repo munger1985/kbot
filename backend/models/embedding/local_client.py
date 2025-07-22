@@ -57,7 +57,7 @@ class LocalEmbedding(BaseEmbedding):
         self.model_name = config.model_name
         self.model_path = config.model_path
         self.predownload = False # 是否为本地预下载模型
-        self.cache_path = os.path.join("./models/embedding/local_model_cache", self.model_name) # 模型缓存路径
+        self.cache_path = os.path.join("./models/local_model_cache", self.model_name) # 模型缓存路径
         self.name_or_path = ""
         self.device = config.device
         self.device_map = config.device_map
@@ -73,7 +73,7 @@ class LocalEmbedding(BaseEmbedding):
         self._is_initialized = False
 
     async def startup(self) -> None:
-        """Initialize model with hardware-aware settings."""
+        """Initialize the embedding model."""
         if self._is_initialized:
             return
 
@@ -99,7 +99,7 @@ class LocalEmbedding(BaseEmbedding):
             self.name_or_path = self.model_name
 
         logger.debug(f"Embedding model name: {self.model_name}, path: {self.model_path}")
-        logger.debug(f"Model name or path: {self.name_or_path}")
+        logger.debug(f"Embedding model name or path: {self.name_or_path}")
 
         # Load tokenizer
         self.tokenizer = AutoTokenizer.from_pretrained(
@@ -168,6 +168,7 @@ class LocalEmbedding(BaseEmbedding):
             )
 
         self._is_initialized = True
+        logger.info(f"Embedding model {self.model_name} initialized successfully.")
 
     
     def _validate_embedding_model(self, model_path: str) -> bool:
@@ -334,18 +335,22 @@ class LocalEmbedding(BaseEmbedding):
 
     async def shutdown(self) -> None:
         """Clean up resources safely."""
-        if self.model is not None:
-            if hasattr(self.model, 'cpu'):
-                self.model.cpu()
-            del self.model
-            self.model = None
+        if self.model:
+            # Move model to CPU to free GPU memory
+            if self.device != "cpu" and not self.device_map:
+                self.model = self.model.to("cpu")
             
-        if self.tokenizer is not None:
+            # Clear CUDA cache if available
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            
+            # Delete model and tokenizer
+            del self.model
             del self.tokenizer
+            self.model = None
             self.tokenizer = None
             
-        torch.cuda.empty_cache()
-        self._is_initialized = False
+            logger.info(f"{self.__class__.__name__} model resources released")
 
     @property
     def embedding_dim(self) -> int:

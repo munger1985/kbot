@@ -18,13 +18,18 @@ from api.routers import router
 from api.routers.kb_router import router as kb_router
 from core.log.logger import setup_logging
 from core.config import settings
-from services.dataparse.parse_file import start_file_parse_service
+from services.dataparse.parse_file import start_file_parse_service, shutdown_file_parse_service
 from microservices.embedding.app import start_embedding_service, shutdown_embedding_service
 from microservices.llm.app import start_llm_service, shutdown_llm_service
+from microservices.reranker.app import start_reranker_service, shutdown_reranker_service
+
+# 加载环境变量
+load_dotenv()
 
 # 全局变量，用于存储微服务进程和后台子进程状态
 embedding_service_process = None
 llm_service_process = None
+reranker_service_process = None
 file_parse_service_process = None
 
 def run_file_parse_service():
@@ -34,25 +39,55 @@ def run_file_parse_service():
     """
     asyncio.run(start_file_parse_service())
 
-# 注册退出时的清理函数
-def cleanup():
-    """在应用程序退出时关闭微服务"""
-    global embedding_service_process, file_parse_service_process, llm_service_process
+def shutdown_services(message_prefix=""):
+    """关闭所有微服务和后台进程
+    
+    Args:
+        message_prefix (str): 日志消息前缀
+    """
+    global embedding_service_process, file_parse_service_process, llm_service_process, reranker_service_process
+    
+    # 关闭embedding微服务
     if embedding_service_process:
-        logger.info("Application exiting, shutting down the embedding microservice.")
+        logger.info(f"{message_prefix}shutting down the embedding microservice.")
         shutdown_embedding_service()
         embedding_service_process = None
 
+    # 关闭LLM微服务
     if llm_service_process:
-        logger.info("Application exiting, shutting down the LLM microservice.")
-        start_llm_service()
+        logger.info(f"{message_prefix}shutting down the LLM microservice.")
+        shutdown_llm_service()
         llm_service_process = None
+
+    # 关闭reranker微服务
+    if reranker_service_process:
+        logger.info(f"{message_prefix}shutting down the reranker microservice.")
+        shutdown_reranker_service()
+        reranker_service_process = None
     
+    # 关闭文件解析服务
     if file_parse_service_process:
-        logger.info("Application exiting, shutting down the file parsing service.")
-        file_parse_service_process.terminate()
-        file_parse_service_process.join()
+        logger.info(f"{message_prefix}shutting down the file parsing service.")
+        # 发送关闭信号
+        if shutdown_file_parse_service():
+            # 给一些时间让进程优雅地关闭
+            file_parse_service_process.join(timeout=10)
+            # 如果进程仍然活着，强制终止
+            if file_parse_service_process.is_alive():
+                logger.warning("File parsing service did not shut down gracefully, forcing termination.")
+                file_parse_service_process.terminate()
+                file_parse_service_process.join()
+        else:
+            # 如果发送信号失败，直接终止
+            logger.warning("Failed to send shutdown signal, forcing termination.")
+            file_parse_service_process.terminate()
+            file_parse_service_process.join()
         file_parse_service_process = None
+
+# 注册退出时的清理函数
+def cleanup():
+    """在应用程序退出时关闭微服务"""
+    shutdown_services("Application exiting, ")
 
 atexit.register(cleanup)
 
@@ -121,25 +156,7 @@ def signal_handler(sig, frame):
     """Processing termination signal."""
     logger.info(f"Received signal {sig}, shutting down")
     # 确保在退出前关闭微服务
-    global embedding_service_process, file_parse_service_process, llm_service_process
-    if embedding_service_process:
-        logger.info("Shutting down the embedding microservice...")
-        # 关闭嵌入微服务
-        shutdown_embedding_service()
-        embedding_service_process = None
-
-    if llm_service_process:
-        logger.info("Shutting down the LLM microservice...")
-        # 关闭LLM微服务
-        shutdown_llm_service()
-        llm_service_process = None
-    
-    if file_parse_service_process:
-        logger.info("Shutting down the file parsing service...")
-        file_parse_service_process.terminate()
-        file_parse_service_process.join()
-        file_parse_service_process = None
-    
+    shutdown_services()
     sys.exit(0)
 
 
@@ -153,6 +170,10 @@ async def main():
     # 启动LLM微服务
     llm_service_process = start_llm_service()
     logger.info(f"LLM microservice started with PID {llm_service_process.pid}")
+
+    # 启动reranker微服务
+    reranker_service_process = start_reranker_service()
+    logger.info(f"Reranker microservice started with PID {reranker_service_process.pid}")
     
     # 启动文件解析服务
     file_parse_service_process = multiprocessing.Process(target=run_file_parse_service)
@@ -167,6 +188,7 @@ async def main():
     # 配置uvicorn服务器
     host = os.environ.get("KBOT_HOST", "0.0.0.0")
     port = int(os.environ.get("KBOT_PORT", 8000))
+    logger.debug(f"Main application is using host: {host}, port: {port}")
     config = uvicorn.Config(app, host=host, port=port)
     server = uvicorn.Server(config)
     logger.info("Starting Uvicorn server")
@@ -176,7 +198,7 @@ async def main():
 
 
 if __name__ == "__main__":
-    load_dotenv()
+
     # 注册信号处理器
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)

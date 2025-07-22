@@ -21,17 +21,20 @@ logger.retention = "10 days"
 embed.max_workers = 1
 embed.check_interval = 60 # seconds
 embed.batch_size = 2 # 0 means auto detected by the system
-embed.max_tokens = 2048
+embed.max_tokens = 8192
 embed.timeout = 120 # seconds
 embed.max_retries = 3
 
 # llm configuration
-llm.max_tokens = 2048
+llm.max_tokens = 8192
 llm.temperature = 0.7
 llm.top_p = 1.0
 llm.top_k = 50
 llm.max_retries = 3
 llm.timeout = 120 # seconds
+
+# reranker configuration
+reranker.max_tokens = 2048
 
 # knowledge base configuration
 kbot.file_root_path = "/your_path"

@@ -21,14 +21,14 @@ class EmbeddingService:
     
     def __init__(self):
         """
-        初始化嵌入服务
+        Initialize embedding service // 初始化嵌入服务
         """
         self._model_pool = ModelPool()
         self._initialized = False
         
     async def initialize(self):
         """
-        初始化嵌入服务和模型池
+        Initialize embedding service and model pool // 初始化嵌入服务和模型池
         """
         if not self._initialized:
             await self._model_pool.initialize()
@@ -37,7 +37,7 @@ class EmbeddingService:
         
     async def shutdown(self):
         """
-        关闭嵌入服务和所有模型
+        Shutdown embedding service and all models // 关闭嵌入服务和所有模型
         """
         if self._initialized:
             await self._model_pool.shutdown()
@@ -46,17 +46,17 @@ class EmbeddingService:
     
     async def get_embedding_model(self, model_id: int) -> BaseEmbedding:
         """
-        获取指定ID的嵌入模型
+        Get a embedding model by ID // 获取指定ID的embedding模型
 
         Args:
-            model_id: 模型ID
+            model_id: The ID of the model to get // 要获取的模型ID
 
         Returns:
-            嵌入模型实例
+            embedding model instance // embedding模型实例
 
         Raises:
-            ValueError: 如果模型ID在数据库中不存在
-            RuntimeError: 如果模型创建失败
+            ValueError: If model_id is not found in database // 如果模型ID在数据库中不存在
+            RuntimeError: If model creation fails // 如果模型创建失败
         """
         if not self._initialized:
             await self.initialize()
@@ -70,7 +70,7 @@ class EmbeddingService:
         batch_size: int = 0
     ) -> np.ndarray:
         """
-        使用指定模型对文本列表进行嵌入
+        Embed texts with the specified model // 使用指定模型对文本列表进行嵌入
 
         Args:
             model_id: 要使用的嵌入模型ID
@@ -78,7 +78,8 @@ class EmbeddingService:
             batch_size: 批处理大小，如果为0则由模型决定
 
         Returns:
-            嵌入向量数组，每行对应一个输入文本的嵌入向量
+            Embeddings array, each row corresponds to an embedding vector for the input text.
+            嵌入向量数组，每行对应一个输入文本的嵌入向量。
 
         """
         if not texts:
@@ -103,8 +104,8 @@ class EmbeddingService:
                 return embeddings
                 
         except Exception as e:
-            logger.error(f"嵌入文本失败，模型ID: {model_id}, 错误: {e}")
-            raise RuntimeError(f"嵌入文本失败: {e}")
+            logger.error(f"Failed to embed texts, model_id: {model_id}, error: {e}")
+            raise RuntimeError(f"Failed to embed texts: {e}")
     
     async def compute_similarity(
         self, 
@@ -127,7 +128,7 @@ class EmbeddingService:
             ValueError: 如果向量维度不匹配或方法不支持
         """
         if embedding1.shape != embedding2.shape:
-            raise ValueError(f"嵌入向量维度不匹配: {embedding1.shape} vs {embedding2.shape}")
+            raise ValueError(f"Embedding vectors have different shapes: {embedding1.shape} vs {embedding2.shape}")
         
         # 确保向量是一维的
         vec1 = embedding1.flatten()
@@ -144,7 +145,7 @@ class EmbeddingService:
             # 点积
             return float(np.dot(vec1, vec2))
         else:
-            raise ValueError(f"不支持的相似度计算方法: {method}")
+            raise ValueError(f"Unsupported similarity method: {method}")
     
     async def unload_model(self, model_id: int):
         """
@@ -155,17 +156,17 @@ class EmbeddingService:
         """
         if self._initialized:
             await self._model_pool.unload_model(model_id)
-            logger.info(f"已卸载模型 {model_id}")
+            logger.info(f"Model {model_id} has been unloaded.")
     
     async def reload_model(self, model_id: int) -> BaseEmbedding:
         """
-        重新加载模型
+        Reload a model from the pool // 重新加载模型
 
         Args:
-            model_id: 要重新加载的模型ID
+            model_id: The ID of the model to reload // 要重新加载的模型ID
 
         Returns:
-            重新加载的嵌入模型实例
+            The reloaded embedding model instance // 重新加载的嵌入模型实例
         """
         if not self._initialized:
             await self.initialize()

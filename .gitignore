@@ -37,4 +37,4 @@ backend/settings.toml
 backend/.env
 start.sh
 backend/.pytest_cache/
-backend/models/embedding/local_model_cache/
+local_model_cache/

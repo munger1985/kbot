@@ -9,7 +9,7 @@ from models.embedding.cohere_client import CohereEmbedding
 
 
 class EmbeddingProvider(str, Enum):
-    """Embedding provider types"""
+    """Enumeration of supported embedding providers."""
     LOCAL = "local"
     OPENAI = "openai"
     AZURE = "azure"

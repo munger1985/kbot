@@ -6,10 +6,11 @@ Contains:
 """
 
 from pydantic import BaseModel, field_validator, ConfigDict
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, AsyncGenerator
 from tenacity import retry, stop_after_attempt
 from prometheus_client import Counter, Histogram
 from core.config import settings
+
 
 class LLMConfig(BaseModel):
     """Base configuration for LLM models."""
@@ -52,38 +53,30 @@ class BaseLLM:
     async def generate(
         self,
         prompt: str,
-        max_tokens: Optional[int] = settings['llm']['max_tokens'],
-        temperature: Optional[float] = settings['llm']['temperature'],
         **kwargs: Any
-    ) -> str:
+    ) -> Optional[List[str]]:
         """Generate text from a prompt asynchronously.
         
         Args:
             prompt: Input prompt
-            model: Model name
-            max_tokens: Maximum number of tokens to generate
-            temperature: Sampling temperature
             **kwargs: Additional arguments
             
         Returns:
-            Generated text
+            Generated text list
         """
         raise NotImplementedError
     
     async def chat(
         self,
         messages: List[Dict[str, str]],
-        max_tokens: Optional[int] = settings['llm']['max_tokens'],
-        temperature: Optional[float] = settings['llm']['temperature'],
+        stream: bool = False,
         **kwargs: Any
-    ) -> str:
+    ) -> Optional[AsyncGenerator[str, None] | str]:
         """Generate a chat response asynchronously.
         
         Args:
             messages: List of messages
-            model: Model name
-            max_tokens: Maximum number of tokens to generate
-            temperature: Sampling temperature
+            stream: Whether to stream the response
             **kwargs: Additional arguments
             
         Returns:

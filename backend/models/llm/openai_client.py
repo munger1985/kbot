@@ -1,7 +1,6 @@
-import openai
+from openai import AsyncOpenAI, APIError
 from loguru import logger
-from typing import Dict, List, Optional, Union, Any
-from pydantic import Field
+from typing import Dict, List, Optional, AsyncGenerator, Any
 from .base import LLMConfig, BaseLLM
 from core.config import settings
 from openai.types.chat import (
@@ -10,17 +9,18 @@ from openai.types.chat import (
     ChatCompletionAssistantMessageParam
 )
 
+
 class OpenaiLLMConfig(LLMConfig):
     """Configuration for OpenAI LLM client."""
     
-    model_name: str = "gpt-3.5-turbo"
     temperature: float = settings['llm']['temperature']
     max_tokens: int = settings['llm']['max_tokens']
     top_p: float = settings['llm']['top_p']
     frequency_penalty: float = 0.0
     presence_penalty: float = 0.0
     timeout: int = settings['llm']['timeout']
-    additional_kwargs: Dict[str, Any] = Field(default_factory=dict)
+    api_endpoint: Optional[str] = None
+    # organization: Optional[str] = None
 
 class OpenaiClient(BaseLLM):
     """OpenAI LLM client implementation."""
@@ -31,82 +31,70 @@ class OpenaiClient(BaseLLM):
         Args:
             config: OpenAI LLM configuration
         """
-        super().__init__(config)
+        self.config = config
         self.client = None
+        self._is_running = False
     
     async def startup(self) -> None:
         """Initialize the OpenAI client."""
-        openai.api_key = self.config.api_key
-        # For newer versions of OpenAI Python client
         try:
-            self.client = openai.AsyncOpenAI(api_key=self.config.api_key)
+            self.client = AsyncOpenAI(
+                api_key=self.config.api_key,
+                base_url=self.config.api_endpoint,
+                # organization=self.config.organization,
+                timeout=self.config.timeout
+            )
+            self._is_running = True
             logger.info("OpenAI AsyncOpenAI client initialized")
-        except (ImportError, AttributeError):
-            # Fall back to older client version
-            self.client = openai
-            logger.info("OpenAI client initialized")
+        except Exception as e:
+            logger.error(f"Error initializing OpenAI client: {str(e)}")
+        
     
     async def shutdown(self) -> None:
         """Shutdown the OpenAI client."""
-        # Nothing specific to do for OpenAI client shutdown
+        if self.client:
+            await self.client.close()
+        self._is_running = False
         logger.info("OpenAI client shutdown")
-        pass
     
     async def generate(
         self,
         prompt: str,
-        max_tokens: Optional[int] = None,
-        temperature: Optional[float] = None,
+        n: int = 1,
         **kwargs
-    ) -> str:
+    ) -> Optional[List[str]]:
         """Generate text based on the prompt.
         
         Args:
             prompt: Input prompt
-            model: Model name to use (overrides config)
-            max_tokens: Maximum number of tokens to generate (overrides config)
-            temperature: Sampling temperature (overrides config)
+            n: Number of responses to generate
             **kwargs: Additional parameters to override configuration
         
         Returns:
             Generated text
         """
-        if not self.client:
+        if not self._is_running:
             await self.startup()
         
         # Used for health check
         if prompt == "":
-            return ""
+            return None
         
         # Merge config with any overrides
         params = {
             "model": self.config.model_name,
-            "temperature": temperature or self.config.temperature, # type: ignore
-            "max_tokens": max_tokens or self.config.max_tokens, # type: ignore
-            "top_p": self.config.top_p, # type: ignore
-            "frequency_penalty": self.config.frequency_penalty, # type: ignore
-            "presence_penalty": self.config.presence_penalty, # type: ignore
-            "timeout": self.config.timeout, # type: ignore
-            **self.config.additional_kwargs, # type: ignore
-            **kwargs
+            "prompt": prompt,
+            "temperature": kwargs.get('temperature', self.config.temperature),
+            "max_tokens": kwargs.get('max_tokens', self.config.max_tokens),
+            "n": n,
+            "top_p": kwargs.get('top_p', self.config.top_p),
+            "frequency_penalty": kwargs.get('frequency_penalty', self.config.frequency_penalty),
+            "presence_penalty": kwargs.get('presence_penalty', self.config.presence_penalty)
         }
         
         try:
-            # Handle both new and old OpenAI client versions
-            if hasattr(self.client, "completions"):
-                # New client version
-                response = await self.client.completions.create( # type: ignore
-                    prompt=prompt,
-                    **params
-                )
-                return response.choices[0].text.strip()
-            else:
-                # Old client version
-                response = await self.client.Completion.acreate( # type: ignore
-                    prompt=prompt,
-                    **params
-                )
-                return response.choices[0].text.strip()
+            response = await self.client.completions.create(**params) # type: ignore
+            return [choice.text.strip() for choice in response.choices]
         except Exception as e:
             self.ERROR_COUNTER.labels(provider="openai").inc()
             logger.error(f"Error generating text with OpenAI: {str(e)}")
@@ -115,23 +103,21 @@ class OpenaiClient(BaseLLM):
     async def chat(
         self,
         messages: List[Dict[str, str]],
-        max_tokens: Optional[int] = None,
-        temperature: Optional[float] = None,
+        stream: bool = False,
         **kwargs
-    ) -> str:
+    ) -> Optional[AsyncGenerator[str, None] | str]:
         """Generate a chat response based on the conversation history.
         
         Args:
             messages: List of message dictionaries with 'role' and 'content' keys
-            model: Model name to use (overrides config)
-            max_tokens: Maximum number of tokens to generate (overrides config)
-            temperature: Sampling temperature (overrides config)
+            stream: Whether to stream the response
             **kwargs: Additional parameters to override configuration
         
         Returns:
-            Generated response text
+            If stream is True, returns an async generator of strings, else returns a single string.
+            流式模式下返回异步生成器，非流式返回字符串
         """
-        if not self.client:
+        if not self._is_running:
             await self.startup()
         
         # Validate messages format
@@ -141,41 +127,49 @@ class OpenaiClient(BaseLLM):
         
         # Convert messages to proper format
         converted_messages = [self._convert_message(msg) for msg in messages]
-
+        
         # Merge config with any overrides
         params = {
             "model": self.config.model_name,
-            "temperature": temperature or self.config.temperature, # type: ignore
-            "max_tokens": max_tokens or self.config.max_tokens, # type: ignore
-            "top_p": self.config.top_p, # type: ignore
-            "frequency_penalty": self.config.frequency_penalty, # type: ignore
-            "presence_penalty": self.config.presence_penalty, # type: ignore
-            "timeout": self.config.timeout, # type: ignore
-            **self.config.additional_kwargs, # type: ignore
-            **kwargs
+            "messages": converted_messages,
+            "temperature": kwargs.get('temperature', self.config.temperature),
+            "max_tokens": kwargs.get('max_tokens', self.config.max_tokens),
+            "top_p": kwargs.get('top_p', self.config.top_p),
+            "frequency_penalty": kwargs.get('frequency_penalty', self.config.frequency_penalty),
+            "presence_penalty": kwargs.get('presence_penalty', self.config.presence_penalty),
+            "stream": stream,
         }
         
         try:
-            # Handle both new and old OpenAI client versions
-            if hasattr(self.client, "chat"):
-                # New client version
-                response = await self.client.chat.completions.create( # type: ignore
-                    messages=converted_messages,
-                    **params
-                )
-                return response.choices[0].message.content.strip()
-            else:
-                # Old client version
-                response = await self.client.ChatCompletion.acreate( # type: ignore
-                    messages=[msg.model_dump() if hasattr(msg, 'model_dump') else msg for msg in converted_messages], # type: ignore
-                    **params
-                )
-                return response.choices[0].message.content.strip()
+            response = await self.client.chat.completions.create(**params) # type: ignore
+            
+            if stream:
+                return self._handle_stream(response)
+            return response.choices[0].message.content
+            
+        except APIError as e:
+            self.ERROR_COUNTER.labels(provider="openai").inc()
+            logger.error(f"API Error: {e.code} - {e.message}")
+            raise e
         except Exception as e:
             self.ERROR_COUNTER.labels(provider="openai").inc()
             logger.error(f"Error generating chat response with OpenAI: {str(e)}")
             raise Exception(f"Error generating chat response with OpenAI: {str(e)}")
-        
+
+
+    async def _handle_stream(
+        self, 
+        response_stream: Any
+    ) -> AsyncGenerator[str, None]:
+        """处理流式响应"""
+        full_response = ""
+        async for chunk in response_stream:
+            if chunk.choices[0].delta.content:
+                content = chunk.choices[0].delta.content
+                full_response += content
+                yield content
+        yield f"\n[Full response: {len(full_response)} characters]"
+
     def _convert_message(self, msg: dict):
             if msg['role'] == 'user':
                 return ChatCompletionUserMessageParam(role='user', content=msg['content'])

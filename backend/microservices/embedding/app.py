@@ -53,11 +53,7 @@ async def lifespan(app: FastAPI):
     """Application lifespan context manager. //应用程序生命周期上下文管理器"""
     # 启动事件
     start_time = time.time()
-    logger.info("Initializing embedding service...")
-    
-    # 设置应用程序版本（在健康检查端点中使用）
-    app.version = "0.1.0"  # 与FastAPI初始化时设置的版本保持一致
-    
+    logger.info(f"Initializing embedding service at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}...") 
     logger.info(f"Platform: {platform.platform()}")
     logger.info(f"Python version: {platform.python_version()}")
     logger.info(f"Process ID: {os.getpid()}")
@@ -65,18 +61,18 @@ async def lifespan(app: FastAPI):
     # 初始化LLM服务
     try:
         await embedding_service.initialize()
-        logger.info("Embedding service is initialized.")
+        logger.info(f"Embedding service started successfully, elapsed time: {time.time() - start_time:.2f} seconds")
     except Exception as e:
         logger.error(f"Embedding service initialization failed: {e}")
         # 在生产环境中，可能需要在这里退出应用程序
-        # sys.exit(1)
-    
-    logger.info(f"Embedding service started successfully, elapsed time: {time.time() - start_time:.2f} seconds")
+        current_env = os.getenv("KBOT_ENV")
+        if current_env == "production":
+            sys.exit(1)
     
     yield  # 服务运行期间
     
     # 关闭事件
-    logger.info("Closing embedding service...")
+    logger.info("Closing embedding service at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}...")
     shutdown_start = time.time()
     
     try:
@@ -92,7 +88,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Embedding service",
     description="Provides text embedding services to convert text into vector representations.",
-    version="0.1.0",
+    version=settings["app"]["version"],
     lifespan=lifespan,
 )
 
@@ -121,7 +117,7 @@ class EmbeddingResponse(BaseModel):
 def get_embed_service():
     return embedding_service
 
-@app.get("/health", response_model=dict, tags=["System"])
+@app.get("/health", response_model=dict, tags=["Embedding"])
 async def health() -> Dict[str, Any]:
     """Health check endpoint. //微服务接口健康检查
     Returns:
@@ -144,7 +140,7 @@ async def health() -> Dict[str, Any]:
 async def embed_texts(
     request: EmbeddingRequest,
     embed_service: EmbeddingService = Depends(get_embed_service)
-    ) -> Dict[str, Any]:
+    ) -> EmbeddingResponse:
     """
     将文本列表转换为嵌入向量
     
@@ -175,11 +171,11 @@ async def embed_texts(
         
         logger.info(f"Embedding completed: number of vectors={len(embeddings_list)}, dimensions={dimensions}")
         
-        return {
-            "embeddings": embeddings_list,
-            "model_id": request.model_id,
-            "dimensions": dimensions
-        }
+        return EmbeddingResponse(
+            embeddings=embeddings_list,
+            model_id=request.model_id,
+            dimensions=dimensions
+        )
     except Exception as e:
         logger.error(f"Error occurred during embedding.: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error occurred during embedding.: {str(e)}")
@@ -194,10 +190,10 @@ def start_embedding_service():
     logger.info("Start the embedding microservice as an independent process.")
     embedding_service_path = os.path.abspath(__file__)
     
-    # 启动嵌入微服务，使用不同的端口（8001）并设置为独立模式
+    # 启动嵌入微服务，使用环境变量中的端口并设置为独立模式
     process = subprocess.Popen(
         [sys.executable, embedding_service_path],
-        env={**os.environ, "KBOT_EMBED_PORT": "8001", "EMBEDDING_SERVICE_STANDALONE": "1"}
+        env={**os.environ, "EMBEDDING_SERVICE_STANDALONE": "1"}
     )
     return process
 

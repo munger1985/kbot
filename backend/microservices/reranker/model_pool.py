@@ -1,11 +1,8 @@
-"""LLM model pool implementation."""
-
-import asyncio
 import os
 import sys
-import time
+import asyncio
 from loguru import logger
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 from datetime import datetime, timedelta
 
 # 添加项目根目录到 Python 路径，确保可以导入项目模块
@@ -14,38 +11,32 @@ backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(current_file)))
 if backend_dir not in sys.path:
     sys.path.insert(0, backend_dir)
 
-from models.llm import(
-    BaseLLM, 
-    OpenaiLLMConfig, 
-    LLMProvider,
-    HuggingFaceLLMConfig, 
-    AnthropicLLMConfig, 
-    create_llm_model
+from models.reranker import (
+    BaseReranker, 
+    RerankerConfig, 
+    create_reranker_model
 )
 from dao.repositories.kbot_md_models_repo import KbotMdModelsRepository
 from core.config import settings
 
 
 class ModelPool:
-    """Model pool class for managing LLM models."""
-
-    def __init__(self, health_check_interval: int = 300) -> None:
+    """Manage a pool of reranker models with health checking and lifecycle management"""
+    
+    def __init__(self, health_check_interval: int = 300):
         """Initialize model pool.
-
         Args:
             health_check_interval: Interval in seconds between health checks
         """
-        
-        # 用于按提供商管理模型的池
-        self._models: Dict[int, BaseLLM] = {}
+        self._models: Dict[int, BaseReranker] = {}
         self._last_used: Dict[int, datetime] = {}
         self._health_check_interval = health_check_interval
         self._health_check_task: Optional[asyncio.Task] = None
-
+        
     async def initialize(self):
         """Initialize the model pool and start health check task"""
         self._health_check_task = asyncio.create_task(self._health_check_loop())
-
+        
     async def shutdown(self):
         """Shutdown the model pool and all models"""
         if self._health_check_task:
@@ -63,8 +54,8 @@ class ModelPool:
                 
         self._models.clear()
         self._last_used.clear()
-
-    async def load_model(self, model_id: int) -> BaseLLM:
+        
+    async def load_model(self, model_id: int) -> BaseReranker:
         """Load a model instance by model_id
         
         Args:
@@ -93,31 +84,23 @@ class ModelPool:
 
         # 根据模型类型创建相应的配置
         
-        if model_entity.provider == LLMProvider.OPENAI.value:
-            model_config = OpenaiLLMConfig(
-                api_key=model_entity.api_key, # type: ignore
-                api_endpoint=model_entity.api_endpoint,
-                model_name=model_entity.model_name,
-                temperature=model_entity.model_params.get("temperature", settings['llm']['temperature']),
-                max_tokens=model_entity.model_params.get("max_tokens", settings['llm']['max_tokens']),
-                top_p=model_entity.model_params.get("top_p", settings['llm']['top_p']),
-                frequency_penalty=model_entity.model_params.get("frequency_penalty", settings['llm'].get('frequency_penalty', 0)), # type: ignore
-                presence_penalty=model_entity.model_params.get("presence_penalty", settings['llm'].get('presence_penalty', 0)), # type: ignore
-                timeout=model_entity.model_params.get("timeout", settings['llm']['timeout'])
-            )
-        if model_entity.provider == LLMProvider.ANTHROPIC.value:
-            model_config = AnthropicLLMConfig(
-                model_name=model_entity.model_name,
-                api_key=model_entity.api_key # type: ignore
-            )
-        if model_entity.provider == LLMProvider.HUGGINGFACE.value:
-            model_config = HuggingFaceLLMConfig(
-                model_name=model_entity.model_name,
-                api_key=model_entity.api_key # type: ignore
-            )
+
+        model_config = RerankerConfig(
+            model_name=model_entity.model_name,
+            model_path=model_entity.model_params.get("model_path", None),
+            device=model_entity.model_params.get("device", None),
+            device_map=model_entity.model_params.get("device_map", None),
+            max_tokens=model_entity.model_params.get("max_tokens", settings["embed"]["max_tokens"]),
+            compile_model=model_entity.model_params.get("compile_model", True),
+            use_fp16=model_entity.model_params.get("use_fp16", False),
+            trust_remote_code=model_entity.model_params.get("trust_remote_code", False),
+            local_files_only=model_entity.model_params.get("local_files_only", False),
+            max_memory=model_entity.model_params.get("max_memory", None)
+        )
+
         # Create and initialize model //创建和初始化模型
         try:
-            model = create_llm_model(model_config)
+            model = create_reranker_model(model_config)
             await model.startup()
             self._models[model_id] = model
             self._last_used[model_id] = datetime.now()
@@ -125,8 +108,7 @@ class ModelPool:
         except Exception as e:
             logger.error(f"Failed to create model {model_id}: {e}")
             raise RuntimeError(f"Failed to create model {model_id}: {e}")
-
-
+                    
     async def unload_model(self, model_id: int):
         """Unload a model from the pool
         
@@ -172,7 +154,7 @@ class ModelPool:
                     
                 # Simple health check by calling embed with a test text
                 model = self._models[model_id]
-                await model.generate("")
+                await model.rerank("test",[])
                 
             except Exception as e:
                 logger.error(f"Health check failed for model {model_id}: {e}")

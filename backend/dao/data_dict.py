@@ -62,10 +62,9 @@ class KbCategory(int, Enum):
 
 class KbStatus(int, Enum):
     """Knowledge base status enumeration."""
-    NEW = 1
-    ENABLED = 2
-    DISABLED = 3
-    ARCHIVED = 4
+    DISABLED = 0
+    ENABLED = 1
+    ARCHIVED = 2
 
 class ModelCategory(int, Enum):
     """Model category enumeration."""
@@ -95,3 +94,9 @@ class SplitStrategy(int, Enum):
     BY_DOCSTRUCTURE = 2
     BY_PAGE = 3
     BY_SEMANTIC = 4
+
+class AgentStatus(int, Enum):
+    """Agent status enumeration."""
+    DISABLED = 0
+    ENABLED = 1
+    ARCHIVED = 2
