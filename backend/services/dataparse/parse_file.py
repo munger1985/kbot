@@ -47,7 +47,6 @@ class FileProcessorDaemon:
         """
         self.max_workers = settings["embed"]["max_workers"] or max_workers
         self.check_interval = settings["embed"]["check_interval"] or check_interval
-        self.shutdown_flag = asyncio.Event()
         self.priority_queue = PriorityQueue()
         self.active_tasks = 0
         self._setup_signal_handlers()
@@ -60,7 +59,11 @@ class FileProcessorDaemon:
     def _handle_signal(self, signum, frame):
         """处理终止信号"""
         logger.info(f"Received signal {signum}, shutting down...")
-        self.shutdown_flag.set()
+        global _shutdown_event
+        if _shutdown_event is not None:
+            _shutdown_event.set()
+        else:
+            logger.error("Shutdown event not initialized!")
 
 
     async def process_txt(self, file_params: FileParams) -> bool:
@@ -301,7 +304,7 @@ class FileProcessorDaemon:
         tasks = set()
         
         try:
-            while not self.shutdown_flag.is_set():
+            while not _shutdown_event.is_set():
                 try:
                     # 1. 检查是否有新文件需要添加
                     logger.debug("Checking for new files to process...")
@@ -312,7 +315,7 @@ class FileProcessorDaemon:
                         logger.info(f"Found {self.priority_queue.qsize()} files to process")
                         
                         # 内部循环：处理所有队列中的任务直到队列为空
-                        while not self.priority_queue.empty():
+                        while not self.priority_queue.empty() and not _shutdown_event.is_set():
                             # 如果达到最大工作进程数，等待一个任务完成
                             if self.active_tasks >= self.max_workers:
                                 logger.debug(f"Reached max workers ({self.max_workers}), waiting 10 seconds for tasks to complete...")
@@ -336,13 +339,13 @@ class FileProcessorDaemon:
                     else:
                         logger.debug("No files in queue to process")
                     
-                    # 3. 等待一段时间再检查数据库，但是可以被shutdown_flag中断
+                    # 3. 等待一段时间再检查数据库，但是可以被_shutdown_event中断
                     logger.debug(f"Waiting {self.check_interval} seconds before next database check...")
                     try:
-                        # 使用wait_for和shutdown_flag.wait()来实现可中断的sleep
-                        await asyncio.wait_for(self.shutdown_flag.wait(), timeout=self.check_interval)
-                        # 如果到达这里，说明shutdown_flag已经被设置
-                        logger.info("Shutdown flag detected during sleep, exiting loop...")
+                        # 使用wait_for和_shutdown_event.wait()来实现可中断的sleep
+                        await asyncio.wait_for(_shutdown_event.wait(), timeout=self.check_interval)
+                        # 如果到达这里，说明_shutdown_event已经被设置
+                        logger.info("Shutdown event detected during sleep, exiting loop...")
                         break
                     except asyncio.TimeoutError:
                         # 超时意味着没有收到shutdown信号，继续正常流程
@@ -371,7 +374,8 @@ class FileProcessorDaemon:
     async def _process_file_wrapper(self, file_params: FileParams, priority: int, timestamp: float):
         """包装process_file方法的异步任务"""
         try:
-            await self.process_file(file_params)
+            if not _shutdown_event.is_set():
+                await self.process_file(file_params)
         except Exception as e:
             logger.error(f"Error processing file {file_params.file_path}: {str(e)}")
             # 更新文件状态为处理失败
@@ -380,8 +384,8 @@ class FileProcessorDaemon:
         finally:
             await self._task_completed()
 
-# 全局变量，用于在进程间共享关闭标志
-_shutdown_event = None
+# 全局事件，用于进程间关闭信号
+_shutdown_event: asyncio.Event = asyncio.Event()
 
 async def start_file_parse_service(max_workers=4, check_interval=30):
     """
@@ -392,12 +396,10 @@ async def start_file_parse_service(max_workers=4, check_interval=30):
         check_interval: 检查新文件的间隔时间(秒)
     """
     global _shutdown_event
-    # 创建一个事件文件路径
-    shutdown_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "shutdown.signal")
     
-    # 如果存在旧的信号文件，先删除它
-    if os.path.exists(shutdown_file):
-        os.remove(shutdown_file)
+    # 确保事件已初始化
+    if _shutdown_event is None:
+        _shutdown_event = asyncio.Event()
     
     # 创建守护进程实例
     processor = FileProcessorDaemon(
@@ -405,43 +407,13 @@ async def start_file_parse_service(max_workers=4, check_interval=30):
         check_interval=check_interval
     )
     
-    # 启动一个后台任务来检查关闭信号文件
-    asyncio.create_task(check_shutdown_signal(processor, shutdown_file))
-    
     # 启动守护进程
     await processor.run()
-
-async def check_shutdown_signal(processor, shutdown_file):
-    """
-    检查关闭信号文件的后台任务
-    
-    参数:
-        processor: FileProcessorDaemon实例
-        shutdown_file: 关闭信号文件路径
-    """
-    while not processor.shutdown_flag.is_set():
-        if os.path.exists(shutdown_file):
-            logger.info("Shutdown signal file detected, initiating graceful shutdown...")
-            processor.shutdown_flag.set()
-            # 删除信号文件
-            try:
-                os.remove(shutdown_file)
-            except:
-                pass
-            break
-        await asyncio.sleep(1)  # 每秒检查一次
 
 def shutdown_file_parse_service():
     """
     发送关闭信号给文件解析服务
     """
-    # 创建一个信号文件来通知服务关闭
-    shutdown_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "shutdown.signal")
-    try:
-        with open(shutdown_file, 'w') as f:
-            f.write(str(time.time()))
-        logger.info("Shutdown signal sent to file parse service")
-        return True
-    except Exception as e:
-        logger.error(f"Failed to send shutdown signal: {str(e)}")
-        return False
+    logger.info("Shutdown signal received for file parse service")
+    _shutdown_event.set()
+    return True
