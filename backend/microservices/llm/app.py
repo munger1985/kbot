@@ -274,7 +274,7 @@ async def chat(
             
             return StreamingResponse(
                 generate(),
-                media_type="text/plain"
+                media_type="text/markdown"
             )
         
         # 处理非流式响应
