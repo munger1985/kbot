@@ -3,6 +3,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.dialects.oracle import VECTOR
 from .base import Base
 
+
 class KbotBizTxtEmbedding(Base):
     """文本向量嵌入基类"""
     

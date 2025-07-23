@@ -3,9 +3,10 @@ from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.dialects.oracle import VECTOR
 from .base import Base
 
+
 class KbotBizImgEmbedding(Base):
     """图片向量嵌入基类"""
-    
+
     embed_id: Mapped[str] = mapped_column(String(256), primary_key=True, comment='图片向量唯一标识，主键')
     img_txt: Mapped[str | None] = mapped_column(CLOB, comment='从图片中提取的文本内容')
     chunk_metadata: Mapped[dict] = mapped_column(String(4000), nullable=False, comment='JSON格式的图片元数据')

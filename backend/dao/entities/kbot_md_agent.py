@@ -1,16 +1,12 @@
 from datetime import datetime
 from typing import Optional
-
 from sqlalchemy import JSON, BigInteger, Date, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
-
-from backend.core.database.meta_oracle import Base
+from .base import Base
 
 
 class KBotMdAgent(Base):
     """Agent metadata orm."""
-    
-    __tablename__ = "KBOT_MD_AGENT"
     
     AGENT_ID: Mapped[int] = mapped_column(BigInteger, primary_key=True, comment="主键ID")
     APP_ID: Mapped[Optional[int]] = mapped_column(BigInteger, comment="所属APP_ID")

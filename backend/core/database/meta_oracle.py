@@ -4,12 +4,8 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy import text
 from typing import AsyncIterator
 from contextlib import asynccontextmanager
-
-
 from core.config import settings
 
-# Declare the asynchronous base class
-Base = declarative_base()
 
 # Default to environment variable connection strings when available
 url = settings["database"]["url"]

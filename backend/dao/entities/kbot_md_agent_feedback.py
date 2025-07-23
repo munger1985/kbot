@@ -1,17 +1,13 @@
 from datetime import datetime
 from typing import Optional
-
-from sqlalchemy import Column, Integer, String, Text, Date, JSON
+from sqlalchemy import String, Date
 from sqlalchemy.dialects.oracle import CLOB, NUMBER
-from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
+from .base import Base
 
-from core.database.meta_oracle import Base
 
 class KbotMdAgentFeedback(Base):
     """Agent feedback entity model"""
-    
-    __tablename__ = "KBOT_MD_AGENT_FEEDBACK"
     
     fb_id: Mapped[int] = mapped_column(
         "FB_ID", 
@@ -25,7 +21,7 @@ class KbotMdAgentFeedback(Base):
     question: Mapped[Optional[str]] = mapped_column("QUESTION", String(4000))
     question_vector: Mapped[Optional[str]] = mapped_column("QUESTION_VECTOR", String(4000))
     answer_disp: Mapped[Optional[str]] = mapped_column("ANSWER_DISP", CLOB)
-    answer_json: Mapped[Optional[dict]] = mapped_column("ANSWER_JSON", JSONB)
+    answer_json: Mapped[Optional[dict]] = mapped_column("ANSWER_JSON", String(4000))
     agent_id: Mapped[Optional[int]] = mapped_column("AGENT_ID", NUMBER)
     created_by: Mapped[Optional[str]] = mapped_column("CREATED_BY", String(256))
     created_time: Mapped[Optional[datetime]] = mapped_column(

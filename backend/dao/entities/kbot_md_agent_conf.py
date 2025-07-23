@@ -1,17 +1,13 @@
 from datetime import datetime
 from typing import Optional
-
-from sqlalchemy import ForeignKey, text
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import text
+from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
-
-from core.database.meta_oracle import Base
+from .base import Base
 
 
 class KBotMdAgentConf(Base):
     """KBOT_MD_AGENT_CONF表的ORM模型"""
-
-    __tablename__ = "KBOT_MD_AGENT_CONF"
 
     conf_id: Mapped[int] = mapped_column(
         primary_key=True,

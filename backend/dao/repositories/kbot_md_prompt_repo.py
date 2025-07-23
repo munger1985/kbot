@@ -3,6 +3,7 @@ from sqlalchemy import select, delete, and_, or_
 from dao.entities.kbot_md_prompt import KbotMdPrompt
 from core.database.meta_oracle import get_session
 
+
 class KbotMdPromptRepository:
     """Repository for KBOT_MD_PROMPT table operations."""
     

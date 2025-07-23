@@ -4,6 +4,7 @@ from dao.entities.kbot_md_models import KbotMdModels
 from dao.data_dict import ModelCategory, Status
 from core.database.meta_oracle import get_session
 
+
 class KbotMdModelsRepository:
     """Repository for KBOT_MD_KB_MODELS table operations."""
     

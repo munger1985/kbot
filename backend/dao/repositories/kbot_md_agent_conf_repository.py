@@ -1,7 +1,5 @@
 from typing import Optional, List, AsyncIterator, Sequence
-
 from sqlalchemy import select, update, delete
-
 from core.database.meta_oracle import get_session
 from dao.entities.kbot_md_agent_conf import KBotMdAgentConf
 

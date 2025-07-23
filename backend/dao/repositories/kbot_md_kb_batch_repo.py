@@ -4,6 +4,7 @@ from sqlalchemy.orm import load_only
 from dao.entities.kbot_md_kb_batch import KbotMdKbBatch
 from core.database.meta_oracle import get_session
 
+
 class KbotMdKbBatchRepository:
     """Repository for KBOT_MD_KB_BATCH table operations."""
     

@@ -13,6 +13,7 @@ from dao.entities.kbot_md_kb import KbotMdKb
 from dao.repositories.kbot_md_kb_batch_repo import KbotMdKbBatchRepository
 from core.database.meta_oracle import get_session
 
+
 class KbotMdKbFilesRepository:
     """Repository for KBOT_MD_KB_FILES table operations."""
     

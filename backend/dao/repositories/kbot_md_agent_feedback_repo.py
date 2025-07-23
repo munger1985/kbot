@@ -2,7 +2,6 @@ from typing import Optional, Sequence
 from datetime import datetime
 from sqlalchemy import select, update, delete
 from sqlalchemy.ext.asyncio import AsyncSession
-
 from dao.entities.kbot_md_agent_feedback import KbotMdAgentFeedback
 
 
