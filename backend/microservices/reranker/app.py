@@ -30,18 +30,10 @@ if backend_dir not in sys.path:
     
 from microservices.reranker.reranker_service import RerankerService
 from core.config import settings
+from core.log.logger import setup_logging
 
-# 确保日志目录存在
-log_dir = settings["logger"]["dir"]
-os.makedirs(log_dir, exist_ok=True)
-
-# 配置日志 - 使用 loguru，覆盖日志文件路径
-logger.add(
-    os.path.join(log_dir, "reranker_service.log"),
-    rotation=settings["logger"]["rotation"],
-    retention=settings["logger"]["retention"],
-    level=settings["logger"]["level"]
-)
+# 初始化日志
+setup_logging(service_name="reranker")
 
 # 创建reranker服务实例
 reranker_service = RerankerService()

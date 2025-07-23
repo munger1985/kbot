@@ -5,15 +5,19 @@ from pathlib import Path
 from loguru import logger
 from core.config import settings
 
-def setup_logging() -> None:
+def setup_logging(service_name: str = "app") -> None:
     """Setup logging configuration from Dynaconf settings.
+    
+    Args:
+        service_name: Name of the service for log file naming. 
+                     Defaults to "app" for main application.
     """
     try:
         log_config = settings["logger"]
         
         level = str(log_config["level"]) if log_config["level"] else "INFO"
         conf_path = str(log_config["dir"]) if log_config["dir"] else "logs"
-        log_path = Path(os.path.join(conf_path, "app.log"))
+        log_path = Path(os.path.join(conf_path, f"{service_name}.log"))
         # Convert to absolute path
         if not os.path.isabs(log_path):
             log_path = os.path.abspath(log_path)

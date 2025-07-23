@@ -31,20 +31,13 @@ if backend_dir not in sys.path:
 
 from microservices.llm.llm_service import LLMService
 from core.config import settings
+from core.log.logger import setup_logging
+
+# 初始化日志
+setup_logging(service_name="llm")
 
 # 创建LLM服务实例
 llm_service = LLMService()
-
-# 确保日志目录存在
-log_dir = settings["logger"]["dir"]
-os.makedirs(log_dir, exist_ok=True)
-# 配置日志 - 使用 loguru，覆盖日志文件路径
-logger.add(
-    os.path.join(log_dir, "llm_service.log"),
-    rotation=settings["logger"]["rotation"],
-    retention=settings["logger"]["retention"],
-    level=settings["logger"]["level"]
-)
 
 # 定义 lifespan 上下文管理器
 @asynccontextmanager

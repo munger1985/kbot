@@ -36,6 +36,9 @@ class FileParams:
         self.img_embed_model: Optional[int] = None
         self.txt_embed_model: Optional[int] = None
 
+# 全局事件，用于进程间关闭信号
+_shutdown_event = asyncio.Event()
+
 class FileProcessorDaemon:
     def __init__(self, max_workers=4, check_interval=60):
         """
@@ -58,12 +61,20 @@ class FileProcessorDaemon:
         
     def _handle_signal(self, signum, frame):
         """处理终止信号"""
-        logger.info(f"Received signal {signum}, shutting down...")
-        global _shutdown_event
-        if _shutdown_event is not None:
-            _shutdown_event.set()
-        else:
-            logger.error("Shutdown event not initialized!")
+        try:
+            signame = {getattr(signal, name): name for name in dir(signal) 
+                      if name.startswith('SIG') and not name.startswith('SIG_')}.get(signum, str(signum))
+            logger.info(f"Received signal {signame}({signum}), initiating graceful shutdown...")
+            global _shutdown_event
+            if _shutdown_event is not None and not _shutdown_event.is_set():
+                _shutdown_event.set()
+                logger.info(f"Shutdown event set in response to {signame}")
+            elif _shutdown_event is None:
+                logger.error("Shutdown event not initialized! Cannot handle signal properly")
+            else:
+                logger.warning("Shutdown event already set, ignoring duplicate signal")
+        except Exception as e:
+            logger.exception(f"Error handling signal {signame}({signum}): {e}")
 
 
     async def process_txt(self, file_params: FileParams) -> bool:
@@ -71,7 +82,7 @@ class FileProcessorDaemon:
         处理文本文件，将其分割成指定大小的块，并调用嵌入微服务获取嵌入向量后写入数据库
         
         参数:
-            filep_arams: 文件参数类
+            file_params: 文件参数类
             
         返回:
             是否成功处理文件
@@ -304,7 +315,7 @@ class FileProcessorDaemon:
         tasks = set()
         
         try:
-            while not _shutdown_event.is_set():
+            while not _shutdown_event.is_set(): # type: ignore
                 try:
                     # 1. 检查是否有新文件需要添加
                     logger.debug("Checking for new files to process...")
@@ -315,7 +326,7 @@ class FileProcessorDaemon:
                         logger.info(f"Found {self.priority_queue.qsize()} files to process")
                         
                         # 内部循环：处理所有队列中的任务直到队列为空
-                        while not self.priority_queue.empty() and not _shutdown_event.is_set():
+                        while not self.priority_queue.empty() and not _shutdown_event.is_set(): # type: ignore
                             # 如果达到最大工作进程数，等待一个任务完成
                             if self.active_tasks >= self.max_workers:
                                 logger.debug(f"Reached max workers ({self.max_workers}), waiting 10 seconds for tasks to complete...")
@@ -339,27 +350,51 @@ class FileProcessorDaemon:
                     else:
                         logger.debug("No files in queue to process")
                     
-                    # 3. 等待一段时间再检查数据库，但是可以被_shutdown_event中断
+                    # 3. 等待一段时间再检查数据库，但可以更及时响应关闭信号
                     logger.debug(f"Waiting {self.check_interval} seconds before next database check...")
-                    try:
-                        # 使用wait_for和_shutdown_event.wait()来实现可中断的sleep
-                        await asyncio.wait_for(_shutdown_event.wait(), timeout=self.check_interval)
-                        # 如果到达这里，说明_shutdown_event已经被设置
-                        logger.info("Shutdown event detected during sleep, exiting loop...")
+                    remaining_wait = self.check_interval
+                    while remaining_wait > 0 and not _shutdown_event.is_set(): # type: ignore
+                        # 将长等待拆分为多个短间隔，以便及时响应关闭
+                        chunk = min(10, remaining_wait)  # 最多等待10秒
+                        try:
+                            await asyncio.wait_for(_shutdown_event.wait(), timeout=chunk) # type: ignore
+                            # 如果执行到这里说明收到了关闭信号
+                            logger.info("Shutdown signal received during wait, exiting loop...")
+                            break
+                        except asyncio.TimeoutError:
+                            # 正常等待超时，继续剩余等待
+                            remaining_wait -= chunk
+                            logger.debug(f"Waited {chunk}s, remaining wait: {remaining_wait}s")
+                    
+                    if _shutdown_event.is_set(): # type: ignore
+                        logger.info("Shutdown detected, exiting main loop")
                         break
-                    except asyncio.TimeoutError:
-                        # 超时意味着没有收到shutdown信号，继续正常流程
-                        pass
                 except Exception as inner_e:
                     # 捕获内部循环中的异常，记录日志但不中断主循环
                     logger.error(f"Error in inner run loop: {str(inner_e)}")
                     # 短暂暂停后继续
                     await asyncio.sleep(5)
             
-            # 清理阶段 - 等待所有任务完成
+            # 清理阶段 - 等待所有任务完成或取消
             logger.info("Shutdown initiated, waiting for active tasks to complete...")
+            logger.info(f"Active tasks count: {len(tasks)}")
+            
             if tasks:
-                await asyncio.gather(*tasks)
+                # 先尝试等待任务完成
+                done, pending = await asyncio.wait(
+                    tasks,
+                    timeout=30,  # 最多等待30秒
+                    return_when=asyncio.ALL_COMPLETED
+                )
+                
+                # 取消仍在运行的任务
+                if pending:
+                    logger.warning(f"Cancelling {len(pending)} pending tasks...")
+                    for task in pending:
+                        task.cancel()
+                    
+                    # 等待取消完成
+                    await asyncio.wait(pending)
             
             logger.info("File processor daemon stopped gracefully")
         except Exception as e:
@@ -374,7 +409,7 @@ class FileProcessorDaemon:
     async def _process_file_wrapper(self, file_params: FileParams, priority: int, timestamp: float):
         """包装process_file方法的异步任务"""
         try:
-            if not _shutdown_event.is_set():
+            if not _shutdown_event.is_set(): # type: ignore
                 await self.process_file(file_params)
         except Exception as e:
             logger.error(f"Error processing file {file_params.file_path}: {str(e)}")
@@ -384,8 +419,6 @@ class FileProcessorDaemon:
         finally:
             await self._task_completed()
 
-# 全局事件，用于进程间关闭信号
-_shutdown_event: asyncio.Event = asyncio.Event()
 
 async def start_file_parse_service(max_workers=4, check_interval=30):
     """
@@ -397,9 +430,21 @@ async def start_file_parse_service(max_workers=4, check_interval=30):
     """
     global _shutdown_event
     
-    # 确保事件已初始化
-    if _shutdown_event is None:
-        _shutdown_event = asyncio.Event()
+    # 强制重新初始化事件，确保多进程环境下可用
+    if _shutdown_event is not None:
+        logger.info("Existing shutdown event found, recreating for process safety")
+        _shutdown_event = None
+    
+    _shutdown_event = asyncio.Event()
+    logger.info("Initialized shutdown event for file parse service (process-safe)")
+    
+    # 验证事件是否正常工作
+    try:
+        _shutdown_event.is_set()  # 测试访问
+        logger.debug("Shutdown event test successful")
+    except Exception as e:
+        logger.error(f"Shutdown event initialization failed: {e}")
+        raise
     
     # 创建守护进程实例
     processor = FileProcessorDaemon(
@@ -410,10 +455,27 @@ async def start_file_parse_service(max_workers=4, check_interval=30):
     # 启动守护进程
     await processor.run()
 
-def shutdown_file_parse_service():
+def shutdown_file_parse_service() -> bool:
     """
     发送关闭信号给文件解析服务
+    
+    返回:
+        bool: 是否成功发送关闭信号
     """
-    logger.info("Shutdown signal received for file parse service")
-    _shutdown_event.set()
-    return True
+    global _shutdown_event
+    try:
+        if _shutdown_event is None:
+            logger.error("Cannot shutdown file parse service: shutdown event not initialized")
+            return False
+            
+        logger.info("Initiating graceful shutdown of file parse service...")
+        if _shutdown_event.is_set():
+            logger.warning("Shutdown event already set, ignoring duplicate request")
+            return True
+            
+        _shutdown_event.set()
+        logger.info("Shutdown signal successfully sent to file parse service")
+        return True
+    except Exception as e:
+        logger.error(f"Error while shutting down file parse service: {str(e)}")
+        return False

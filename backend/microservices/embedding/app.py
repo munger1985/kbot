@@ -31,18 +31,10 @@ if backend_dir not in sys.path:
     
 from microservices.embedding.embed_service import EmbeddingService
 from core.config import settings
+from core.log.logger import setup_logging
 
-# 确保日志目录存在
-log_dir = settings["logger"]["dir"]
-os.makedirs(log_dir, exist_ok=True)
-
-# 配置日志 - 使用 loguru，覆盖日志文件路径
-logger.add(
-    os.path.join(log_dir, "embedding_service.log"),
-    rotation=settings["logger"]["rotation"],
-    retention=settings["logger"]["retention"],
-    level=settings["logger"]["level"]
-)
+# 初始化日志
+setup_logging(service_name="embedding")
 
 # 创建embedding服务实例
 embedding_service = EmbeddingService()

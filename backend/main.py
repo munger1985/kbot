@@ -70,18 +70,26 @@ def shutdown_services(message_prefix=""):
         logger.info(f"{message_prefix}shutting down the file parsing service.")
         # 发送关闭信号
         if shutdown_file_parse_service():
-            # 给一些时间让进程优雅地关闭
-            file_parse_service_process.join(timeout=10)
-            # 如果进程仍然活着，强制终止
+            # 给更多时间让进程优雅地关闭(30秒)
+            file_parse_service_process.join(timeout=30)
+            # 如果进程仍然活着，尝试发送SIGTERM信号
             if file_parse_service_process.is_alive():
-                logger.warning("File parsing service did not shut down gracefully, forcing termination.")
+                logger.warning("File parsing service did not shut down gracefully, sending SIGTERM...")
                 file_parse_service_process.terminate()
-                file_parse_service_process.join()
+                file_parse_service_process.join(timeout=10)
+                # 如果仍然活着，强制终止
+                if file_parse_service_process.is_alive():
+                    logger.warning("File parsing service still alive after SIGTERM, forcing kill.")
+                    file_parse_service_process.kill()
+                    file_parse_service_process.join()
         else:
             # 如果发送信号失败，直接终止
             logger.warning("Failed to send shutdown signal, forcing termination.")
             file_parse_service_process.terminate()
-            file_parse_service_process.join()
+            file_parse_service_process.join(timeout=10)
+            if file_parse_service_process.is_alive():
+                file_parse_service_process.kill()
+                file_parse_service_process.join()
         file_parse_service_process = None
 
 # 注册退出时的清理函数
