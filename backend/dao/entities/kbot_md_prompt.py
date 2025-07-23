@@ -60,3 +60,6 @@ class KbotMdPrompt(Base):
         server_default=func.current_date(),
         comment="最后修改时间，默认系统当前时间"
     )
+
+    def __repr__(self):
+        return f"KbotMdPrompt(prompt_id={self.prompt_id!r}, app_id={self.app_id!r}, name={self.name!r}, prompt_category={self.prompt_category!r}, status={self.status!r})"

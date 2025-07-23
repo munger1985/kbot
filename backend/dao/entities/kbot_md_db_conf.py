@@ -57,3 +57,6 @@ class KbotMdDbConf(Base):
         server_default=func.current_date(),
         comment="最后修改时间，默认系统当前时间"
     )
+
+    def __repr__(self):
+        return f"KbotMdDbConf(db_id={self.db_id!r}, db_display_name={self.db_display_name!r}, db_type={self.db_type!r})"

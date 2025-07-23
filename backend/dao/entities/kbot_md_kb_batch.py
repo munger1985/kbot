@@ -50,3 +50,6 @@ class KbotMdKbBatch(Base):
         server_default=func.current_date(),
         comment="最后修改时间，默认系统当前时间"
     )
+
+    def __repr__(self):
+        return f"KbotMdKbBatch(batch_id={self.batch_id!r}, app_id={self.app_id!r}, batch_name={self.batch_name!r}, kb_id={self.kb_id!r})"

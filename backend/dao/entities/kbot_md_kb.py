@@ -106,3 +106,6 @@ class KbotMdKb(Base):
         server_default=func.current_date(),
         comment="最后修改时间，默认系统当前时间"
     )
+
+    def __repr__(self):
+        return f"KbotMdKb(kb_id={self.kb_id!r}, app_id={self.app_id!r}, domain_id={self.domain_id!r}, kb_name={self.kb_name!r})"

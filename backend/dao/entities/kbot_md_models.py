@@ -72,3 +72,6 @@ class KbotMdModels(Base):
         server_default=func.current_date(),
         comment="最后修改时间，默认系统当前时间"
     )
+
+    def __repr__(self):
+        return f"KbotMdModels(model_id={self.model_id!r}, model_name={self.model_name!r}, provider={self.provider!r})"

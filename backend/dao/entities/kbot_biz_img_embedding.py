@@ -12,3 +12,6 @@ class KbotBizImgEmbedding(Base):
     chunk_id: Mapped[str] = mapped_column(String(256), nullable=False, comment='关联的图片块ID')
     file_id: Mapped[int | None] = mapped_column(Numeric, comment='关联的图片文件ID')
     embedding: Mapped[list] = mapped_column(VECTOR, nullable=False, comment='图片向量(FLOAT64格式)')
+
+    def __repr__(self):
+        return f"KbotBizImgEmbedding(embed_id={self.embed_id!r}, chunk_id={self.chunk_id!r})"

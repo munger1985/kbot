@@ -52,3 +52,6 @@ class KbotMdDomain(Base):
         server_default=func.current_date(),
         comment="修改时间，默认当前日期"
     )
+
+    def __repr__(self):
+        return f"KbotMdDomain(domain_id={self.domain_id!r}, app_id={self.app_id!r}, name={self.name!r})"

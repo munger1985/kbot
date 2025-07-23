@@ -12,3 +12,6 @@ class KbotBizTxtEmbedding(Base):
     multi_vector: Mapped[int | None] = mapped_column(Numeric, comment='多向量标识(预留字段)')
     file_id: Mapped[int | None] = mapped_column(Numeric, comment='关联的文本文件ID')
     embedding: Mapped[list] = mapped_column(VECTOR, nullable=False, comment='文本向量(FLOAT64格式)')
+
+    def __repr__(self):
+        return f"KbotBizTxtEmbedding(embed_id={self.embed_id!r}, file_id={self.file_id!r})"

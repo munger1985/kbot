@@ -121,3 +121,6 @@ class KbotMdKbFiles(Base):
         String(1024),
         comment="审批意见"
     )
+
+    def __repr__(self):
+        return f"KbotMdKbFiles(file_id={self.file_id!r}, app_id={self.app_id!r}, kb_id={self.kb_id!r}, file_name={self.file_name!r}, status={self.status!r})"
