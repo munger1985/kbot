@@ -1,32 +1,30 @@
-from datetime import datetime
-from typing import Optional
-from sqlalchemy import JSON, BigInteger, Date, Integer, String
+from sqlalchemy import String, Date, Numeric, CLOB
 from sqlalchemy.orm import Mapped, mapped_column
 from .base import Base
 
 
 class KBotMdAgent(Base):
-    """Agent metadata orm."""
+    """智能体表"""
     
-    AGENT_ID: Mapped[int] = mapped_column(BigInteger, primary_key=True, comment="主键ID")
-    APP_ID: Mapped[Optional[int]] = mapped_column(BigInteger, comment="所属APP_ID")
-    DOMAIN_ID: Mapped[Optional[int]] = mapped_column(BigInteger, comment="所属DOMAIN")
-    AGENT_NAME: Mapped[Optional[str]] = mapped_column(String(256), comment="智能体名称")
-    AGNET_DESC: Mapped[Optional[str]] = mapped_column(String(512), comment="智能体描述")
-    WELCOME: Mapped[Optional[str]] = mapped_column(String(512), comment="开场白")
-    PROMPT_ID: Mapped[Optional[int]] = mapped_column(BigInteger, comment="Prompt ID")
-    LLM_ID: Mapped[Optional[int]] = mapped_column(BigInteger, comment="大语言模型ID")
-    LLM_PARAMS: Mapped[Optional[dict]] = mapped_column(JSON, comment="LLM参数配置(JSON格式)")
-    FEEDBACK_SIMILARITY_FLAG: Mapped[Optional[int]] = mapped_column(Integer, default=0, comment="反馈相似度开关")
-    SYNONYM_SIMILARITY_FLAG: Mapped[Optional[int]] = mapped_column(Integer, default=0, comment="同义词相似度开关")
-    RERANKER_MODEL_ID: Mapped[Optional[int]] = mapped_column(BigInteger, comment="重排分模型ID")
-    RERANKER_TOPK: Mapped[Optional[int]] = mapped_column(BigInteger, comment="重排分取数个数")
-    RERANKER_SCORE_THRESHOLD: Mapped[Optional[int]] = mapped_column(BigInteger, comment="重排分数阈值")
-    AGENT_STATUS: Mapped[Optional[int]] = mapped_column(Integer, comment="状态: AgentStatus枚举")
-    CREATED_BY: Mapped[Optional[str]] = mapped_column(String(256), comment="创建用户")
-    CREATED_TIME: Mapped[Optional[datetime]] = mapped_column(Date, server_default="CURRENT_DATE", comment="创建时间")
-    UPDATED_BY: Mapped[Optional[str]] = mapped_column(String(256), comment="修改用户")
-    UPDATED_TIME: Mapped[Optional[datetime]] = mapped_column(Date, server_default="CURRENT_DATE", comment="修改时间")
+    agent_id: Mapped[int] = mapped_column(Numeric(38, 0), primary_key=True, comment="主键id")
+    app_id: Mapped[int | None] = mapped_column(Numeric(38, 0), comment="所属app_id")
+    domain_id: Mapped[int | None] = mapped_column(Numeric(38, 0), comment="所属domain")
+    agent_name: Mapped[str | None] = mapped_column(String(256), comment="智能体名称")
+    agnet_desc: Mapped[str | None] = mapped_column(String(512), comment="智能体描述")
+    welcome: Mapped[str | None] = mapped_column(String(512), comment="开场白")
+    prompt_id: Mapped[int | None] = mapped_column(Numeric(38, 0), comment="prompt id")
+    llm_id: Mapped[int | None] = mapped_column(Numeric(38, 0), comment="大语言模型id")
+    llm_params: Mapped[dict | None] = mapped_column(CLOB, comment="llm参数配置(json格式)")
+    feedback_similarity_flag: Mapped[int | None] = mapped_column(Numeric(1, 0), default=0, comment="反馈相似度开关")
+    synonym_similarity_flag: Mapped[int | None] = mapped_column(Numeric(1, 0), default=0, comment="同义词相似度开关")
+    reranker_model_id: Mapped[int | None] = mapped_column(Numeric(38, 0), comment="重排分模型id")
+    reranker_topk: Mapped[int | None] = mapped_column(Numeric(38, 0), comment="重排分取数个数")
+    reranker_score_threshold: Mapped[int | None] = mapped_column(Numeric(38, 0), comment="重排分数阈值")
+    agent_status: Mapped[int | None] = mapped_column(Numeric(2, 0), comment="状态：枚举")
+    created_by: Mapped[str | None] = mapped_column(String(256), comment="创建用户")
+    created_time: Mapped[Date] = mapped_column(Date, comment="创建时间")
+    updated_by: Mapped[str | None] = mapped_column(String(256), comment="修改用户")
+    updated_time: Mapped[Date] = mapped_column(Date, comment="修改时间")
 
     def __repr__(self):
-        return f"KBotMdAgent(AGENT_ID={self.AGENT_ID!r}, APP_ID={self.APP_ID!r}, DOMAIN_ID={self.DOMAIN_ID!r}, AGENT_NAME={self.AGENT_NAME!r})"
+        return f"KBotMdAgent(agent_id={self.agent_id!r},agent_name={self.agent_name!r})"

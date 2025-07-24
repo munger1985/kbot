@@ -20,7 +20,7 @@ async def main():
     load_dotenv()
     
     # 1. Prepare test text
-    test_text = "量子计算"
+    test_text = "文艺复兴"
     
     # 2. Get embedding from service
     embed_host = os.getenv("KBOT_EMBED_HOST", "localhost")
@@ -56,7 +56,7 @@ async def main():
         results = await repo.get_similar_embeddings(
             kb_id=1,  # Use a known KB ID that has data
             embedding=embedding,
-            similarity_threshold=0.7,
+            similarity_threshold=0.5,
             top_k=5
         )
         

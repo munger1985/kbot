@@ -205,19 +205,6 @@ class ParseService:
                             f"{worker_name} failed to process {file_params.file_path}: {str(process_error)}",
                             exc_info=True
                         )
-
-                        # 重新排队任务
-                        if file_params.retry_count < 3:
-                            file_params.retry_count += 1
-                            logger.warning(
-                                f"{worker_name} requeuing {file_params.file_path} "
-                                f"(attempt {file_params.retry_count}/3)"
-                            )
-                            await self.file_queue.put((priority, time.time(), file_params))
-                        else:
-                            logger.error(
-                                f"{worker_name} max retries exceeded for {file_params.file_path}"
-                            )
                     
                     finally:
                         self.file_queue.task_done()

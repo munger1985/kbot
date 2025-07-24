@@ -1,4 +1,4 @@
-from typing import Sequence, Optional
+from typing import Sequence, Optional, Union, Dict
 from sqlalchemy import select, delete, and_, update
 from dao.entities.kbot_md_kb_files import KbotMdKbFiles
 from dao.data_dict import (
@@ -168,15 +168,32 @@ class KbotMdKbFilesRepository:
                 await session.commit()
                 return True
             
-    async def update_file_status(self, file_id: int, status: FileStatus) -> bool:
+    async def update_file_status(self, file_id: int, status: FileStatus, log_msg: Optional[str] = None) -> bool:
         """Update the status of a knowledge base file record."""
+        async with get_session() as session:
+            # Start building the update query
+            query = update(KbotMdKbFiles).where(KbotMdKbFiles.file_id == file_id)
+            
+            # Prepare the values to update
+            values: Dict[str, Union[int, str]] = {"status": status.value}
+            if log_msg is not None:
+                values["log_msg"] = log_msg
+                
+            # Execute the update with the conditional values
+            await session.execute(query.values(**values))
+            await session.commit()
+            return True
+        
+    async def update_file_parse_metadata(self, file_id:int, parse_metadata: str) -> bool:
+        """Update the parse metadata of a knowledge base file record."""
         async with get_session() as session:
             await session.execute(
                 update(KbotMdKbFiles)
                 .where(KbotMdKbFiles.file_id == file_id)
-                .values(status=status.value)
+                .values(parse_metadata=parse_metadata)
                 )
             await session.commit()
             return True
+        
     
         

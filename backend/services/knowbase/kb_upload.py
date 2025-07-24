@@ -16,7 +16,8 @@ from dao.data_dict import(
     )
 from dao.repositories.kbot_md_kb_repo import KbotMdKbRepository
 from dao.repositories.kbot_md_kb_files_repo import KbotMdKbFilesRepository
-from utils.common_methods import run_in_thread_pool, DecimalEncoder
+from utils.common_methods import run_in_thread_pool
+from utils.decimal_encoder import DecimalEncoder
 
 
 def save_file(file: UploadFile, domain_id: int, kb_id: int, batch_name:str, overwrite: bool) -> dict:
