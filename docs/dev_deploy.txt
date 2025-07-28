@@ -26,6 +26,12 @@ http://132.145.81.123:8080/ords/r/kbotui_dev/km-chat109/login?session=1462158297
 curl -X POST "http://localhost:8001/embed" -H "Content-Type: application/json" -d '{"model_id": 65, "texts": ["这是一个测试文本11111", "这是另一个 测试文本222222"], "batch_size": 2}'
 
 
+curl -X POST "http://150.230.37.250:8001/embed" -H "Content-Type: application/json" -d '{"model_id": 65, "texts": ["这是一个测试文本11111", "这是另一个 测试文本222222"], "batch_size": 2}'
+
+curl -X POST "http://150.230.37.250:8002/chat" -H "Content-Type: application/json" -d '{"model_id": 67, "stream": true, "messages": [{"role": "system", "content": "You are a helpful assistant"}, {"role": "user", "content": "Hello"}]}'
+
+curl -X POST "http://localhost:8002/chat" -H "Content-Type: application/json" -d '{"model_id": 67, "stream": true, "messages": [{"role": "system", "content": "You are a helpful assistant"}, {"role": "user", "content": "Hello"}]}'
+
 
 Ubuntu 安装 Oracle Instant Client
 1.下载安装包
