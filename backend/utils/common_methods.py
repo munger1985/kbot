@@ -40,4 +40,3 @@ def safe_int(value) -> int:
         return int(value) if value is not None else 0
     except (ValueError, TypeError):
         return 0
-    

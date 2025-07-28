@@ -62,14 +62,13 @@ class FileProcessor:
 
             # 确保 models 不为空且至少有一个元素，并且第一个元素不为None
             if models:
-                file_params.img2txt_model = models[0]
-                file_params.img_embed_model = models[1]
-                file_params.txt_embed_model = models[2]
+                file_params.kb_category = models[0]
+                file_params.img2txt_model = models[1]
+                file_params.img_embed_model = models[2]
+                file_params.txt_embed_model = models[3]
             else:
-                file_params.img2txt_model = None
-                file_params.img_embed_model = None
-                file_params.txt_embed_model = None
                 logger.warning(f"No models found for kb_id: {file.kb_id}")
+                return result
 
             timestamp = datetime.now().timestamp()  # 获取当前时间戳
             # 将文件状态更新为处理中

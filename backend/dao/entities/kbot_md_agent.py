@@ -3,7 +3,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from .base import Base
 
 
-class KBotMdAgent(Base):
+class KbotMdAgent(Base):
     """智能体表"""
     
     agent_id: Mapped[int] = mapped_column(Numeric(38, 0), primary_key=True, comment="主键id")

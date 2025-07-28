@@ -5,7 +5,7 @@ from typing import List, Optional
 from loguru import logger
 from core.config import settings
 from dao.repositories.kbot_md_kb_files_repo import KbotMdKbFilesRepository
-from dao.repositories.kbot_biz_txt_embedding import KbotBizTxtEmbeddingRepository
+from dao.repositories.kbot_biz_txt_embedding_repo import KbotBizTxtEmbeddingRepository
   
 
 async def delete_files(domain_id: int, 
