@@ -12,7 +12,7 @@ from dao.data_dict import FileStatus, ChunkType, SplitStrategy
 from core.config import settings
 from utils.chunk_text import chunk_text
 
-
+from utils import check_text_file
 import os
 import uuid
 import json
@@ -30,6 +30,47 @@ from pdfminer.layout import LAParams, LTImage, LTFigure
 
 
 class PDFPlumberParser:
+    @staticmethod
+    def parse_pdf(file_params ) -> Tuple[
+        List[Dict], List[Dict], List[Dict], List[str]]:
+        """静态方法：解析PDF并返回文本、图片、表格信息以及按页分块的文本数组"""
+        pdf_path = file_params.file_path
+        output_dir = pdf_path
+        parser = PDFPlumberParser(pdf_path, output_dir)
+        split_strategy = int(file_params.paser.get("split_strategy", 1))
+
+        if split_strategy == SplitStrategy.BY_PAGE.value:
+            text_content, images_info, tables_info = parser.extract_all_per_page()
+
+        # 获取按页分块的文本数组
+            text_chunks = PDFPlumberParser.get_text_chunks(text_content)
+
+        # 保存结果
+        parser.save_results()
+
+        # 打印摘要
+        parser.print_summary()
+
+        return text_content, images_info, tables_info, text_chunks
+
+    @staticmethod
+    def get_text_chunks(text_content: List[Dict]) -> List[str]:
+        """静态方法：从文本内容中提取按页分块的文本数组
+
+        Args:
+            text_content: 包含页码和文本的字典列表，每个字典包含'page'和'text'键
+
+        Returns:
+            按页分块的文本字符串列表
+        """
+        # 按页码排序
+        sorted_content = sorted(text_content, key=lambda x: x['page'])
+
+        # 提取文本
+        text_chunks = [item['text'] for item in sorted_content]
+
+        return text_chunks
+
     def __init__(self, pdf_path: str, output_dir: str = "extracted_content_pdfplumber"):
         self.pdf_path = pdf_path
         self.output_dir = Path(output_dir)
@@ -46,7 +87,7 @@ class PDFPlumberParser:
         self.tables_info = []
         self.page_content = []  # 存储每页的完整内容（包含占位符）
 
-    def extract_all(self):
+    def extract_all_per_page(self):
         """提取PDF中的所有内容：文字、图片和表格"""
         print(f"正在解析PDF文件: {self.pdf_path}")
 
@@ -397,7 +438,6 @@ class PDFPlumberParser:
         print("=" * 50)
 
 
-
 async def process_pdf(file_params: FileParams) -> bool:
     """
     处理文本文件，将其分割成指定大小的块，并调用嵌入微服务获取嵌入向量后写入数据库
@@ -408,38 +448,28 @@ async def process_pdf(file_params: FileParams) -> bool:
     返回:
         是否成功处理文件
     """
-    file_repo = KbotMdKbFilesRepository()
     # 检查文本嵌入模型是否指定
-    if file_params.txt_embed_model is None:
-        msg = f"Text embedding model not specified for file {file_params.file_path}"
-        logger.error(msg)
-        # 更新文件状态为处理失败
-        await file_repo.update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, msg)
+    if not check_text_file(file_params):
         return False
-        
-    # 检查文件是否存在
-    if not os.path.exists(file_params.file_path):
-        msg = f"File not found at path: {file_params.file_path}"
-        logger.error(msg)
-        await file_repo.update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, msg)
-        return False
-    
-    try:
-        logger.debug(f"Processing text file: {file_params.file_path}")
+    # if text_length == 0:
+    #     msg = f"Empty file: {file_params.file_path}"
+    #     logger.info(msg)
+    #     await file_repo.update_file_status(file_params.file_id, FileStatus.PARSED, msg)
+    #     return True
 
-        # 1.读取文本文件
-        with open(file_params.file_path, 'r', encoding='utf-8') as f:
-            text = f.read()
-        
+    file_repo = KbotMdKbFilesRepository()
+
+    try:
+        logger.debug(f"Processing pdf file: {file_params.file_path}")
+        text_content, images_info, tables_info, text_chunks = PDFPlumberParser.parse_pdf(file_params )
+        # # 1.读取文本文件
+        # with open(file_params.file_path, 'r', encoding='utf-8') as f:
+        #     text = f.read()
+        #
         # 2.文本分割
         text_length = len(text)
 
-        if text_length == 0:
-            msg = f"Empty file: {file_params.file_path}"
-            logger.info(msg)
-            await file_repo.update_file_status(file_params.file_id, FileStatus.PARSED, msg)
-            return True
-            
+
         chunks = []
 
         # 参数安全处理
