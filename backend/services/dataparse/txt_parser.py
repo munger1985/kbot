@@ -6,7 +6,7 @@ from loguru import logger
 
 from .file_params import FileParams
 from dao.repositories.kbot_md_kb_files_repo import KbotMdKbFilesRepository
-from dao.repositories.kbot_biz_txt_embedding import KbotBizTxtEmbeddingRepository
+from dao.repositories.kbot_biz_txt_embedding_repo import KbotBizTxtEmbeddingRepository
 from dao.entities.kbot_biz_txt_embedding import KbotBizTxtEmbedding
 from dao.data_dict import FileStatus, ChunkType, SplitStrategy
 from core.config import settings
@@ -132,6 +132,7 @@ async def process_txt(file_params: FileParams) -> bool:
                                                     "chunk_overlap": int(overlap),
                                                     "file_path": file_params.file_path}),
                         file_id=file_params.file_id,
+                        kb_id=file_params.kb_id,
                         embedding=embedding  
                     )
                     embed_entities.append(embed_entity)

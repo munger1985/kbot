@@ -1,0 +1,25 @@
+class AgentParams:
+    def __init__(self):
+        self.conf_id: int
+        self.agent_id: int
+        self.tool_id: int
+        self.tool_type: int
+        self.tool_weight: float
+        self.reranker_flag: int
+        self.search_type: int
+        self.top_k: int
+        self.threshold: float
+        self.kb_catogory: int
+        self.img2txt_model: int
+        self.img_embed_model: int
+        self.txt_embed_model: int
+
+class KBResult:
+    def __init__(self):
+        self.embed_id: int
+        self.kb_id: int
+        self.file_id: int
+        self.chunk_doc: str
+        self.chunk_metadata: dict
+        self.similarity: float
+        self.weight: float

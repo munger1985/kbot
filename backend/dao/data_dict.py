@@ -90,3 +90,18 @@ class AgentStatus(int, Enum):
     DISABLED = 0
     ENABLED = 1
     ARCHIVED = 2
+
+class ToolType(int, Enum):
+    """Tool type enumeration."""
+    KB = 1
+    FUNCTIONCALL = 2
+    INTERNET = 3
+    AGENT = 4
+    CHATAI = 5
+
+class KBSearchType(int, Enum):
+    """Knowledge base search type enumeration."""
+    VECTOR = 1
+    FULLTEXT = 2
+    SUMMARY = 3
+    GRAPH = 4

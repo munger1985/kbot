@@ -1,9 +1,10 @@
-from typing import List
+import array
+from typing import List, Sequence
 from sqlalchemy import select, delete
 from core.database.factory import create_session
 from dao.entities.kbot_biz_txt_embedding import KbotBizTxtEmbedding
 from dao.repositories.kbot_md_db_conf_repo import KbotMdDbConfRepository
-
+from utils.oracle_vec_handler import OracleVecHandler
 
 class KbotBizTxtEmbeddingRepository:
 
@@ -40,12 +41,17 @@ class KbotBizTxtEmbeddingRepository:
             await session.commit()
             return result.rowcount
         
-    async def get_similar_embeddings(self, kb_id: int, embedding: List[float], similarity_threshold: float = 0.8, top_k: int = 10) -> List[KbotBizTxtEmbedding]:
+    async def get_similar_embeddings(self,
+                                     kb_id: int,
+                                     query_vec: str,
+                                     similarity_threshold: float = 0.8,
+                                     top_k: int = 10
+                                     ) -> Sequence:
         """Get similar embeddings using vector similarity search.
         
         Args:
             kb_id: Knowledge base ID
-            embedding: Target embedding vector to compare with
+            query_vec: Target embedding vector to compare with
             similarity_threshold: Minimum similarity score (0.0-1.0)
             top_k: Maximum number of results to return
             
@@ -63,14 +69,39 @@ class KbotBizTxtEmbeddingRepository:
             
         async with create_session(db_type=db_type, connection_info=connstr) as session:
             # Use database's vector distance function (cosine similarity)
-            stmt = select(
-                KbotBizTxtEmbedding,
-                KbotBizTxtEmbedding.embedding.vector_distance(embedding, 'cosine').label('similarity')
-            ).where(
-                KbotBizTxtEmbedding.embedding.vector_distance(embedding, 'cosine') <= 1 - similarity_threshold
-            ).order_by(
-                'similarity'
-            ).limit(top_k)
+            # Generate SQL
+            sql = """
+                SELECT 
+                    EMBED_ID, KB_ID, FILE_ID, CHUNK_DOC, CHUNK_METADATA,
+                    1 - VECTOR_DISTANCE(EMBEDDING, :query_vec, COSINE) AS similarity
+                FROM KBOT_BIZ_TXT_EMBEDDING
+                WHERE 1 - VECTOR_DISTANCE(EMBEDDING, :query_vec, COSINE) >= :threshold
+                AND KB_ID = :kb_id
+                ORDER BY similarity DESC
+                FETCH FIRST :top_k ROWS ONLY
+            """
+            # 添加向量和阈值参数
+            params = {}
+            params["kb_id"] = kb_id
+            params["query_vec"] = query_vec
+            params["threshold"] = similarity_threshold
+            params["top_k"] = top_k
+
+            # 分步获取原生连接
+            conn = await session.connection()  # 获取AsyncConnection
+            raw_conn = await conn.get_raw_connection()  # 获取底层连接
+            driver_conn = raw_conn.driver_connection  # 获取驱动连接             
+            driver_conn.outputtypehandler = OracleVecHandler.vector_type_handler # type: ignore
             
-            result = await session.execute(stmt)
-            return [row[0] for row in result.all()]
+            # 执行查询
+            cursor = driver_conn.cursor() # type: ignore
+            await cursor.execute(sql, params)
+            result = await cursor.fetchall()
+        
+            return result
+
+        
+            
+            
+
+

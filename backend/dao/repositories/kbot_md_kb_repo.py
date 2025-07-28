@@ -116,7 +116,8 @@ class KbotMdKbRepository:
         """Get model configuration by knowledge base ID."""
         async with get_session() as session:
             result = await session.execute(
-                select(KbotMdKb.img2txt_model_id,
+                select(KbotMdKb.kb_category,
+                       KbotMdKb.img2txt_model_id,
                        KbotMdKb.img_embed_model_id,
                        KbotMdKb.txt_embed_model_id)
                 .where(KbotMdKb.kb_id == kbid)

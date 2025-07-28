@@ -1,5 +1,5 @@
-from services.knowbase.kb_upload import upload_file_service
-from services.knowbase.kb_delete import delete_file_service
+from services.kb.kb_upload import upload_file_service
+from services.kb.kb_delete import delete_file_service
 from api.schemas.kb_schema import KBUploadForm, KBDeleteForm
 
 

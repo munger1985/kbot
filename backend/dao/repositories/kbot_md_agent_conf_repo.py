@@ -1,42 +1,42 @@
 from typing import Optional, List, AsyncIterator, Sequence
 from sqlalchemy import select, update, delete
 from core.database.meta_oracle import get_session
-from dao.entities.kbot_md_agent_conf import KBotMdAgentConf
+from dao.entities.kbot_md_agent_conf import KbotMdAgentConf
 
 
-class KBotMdAgentConfRepository:
+class KbotMdAgentConfRepository:
     """KBOT_MD_AGENT_CONF表的Repository类"""
 
-    async def get_by_id(self, conf_id: int) -> Optional[KBotMdAgentConf]:
+    async def get_by_id(self, conf_id: int) -> Optional[KbotMdAgentConf]:
         """get agent config by id. """
         async with get_session() as session:
             result = await session.execute(
-                select(KBotMdAgentConf).where(KBotMdAgentConf.conf_id == conf_id)
+                select(KbotMdAgentConf).where(KbotMdAgentConf.conf_id == conf_id)
             )
             return result.scalars().first()
 
-    async def get_by_agent_id(self, agent_id: int) -> Sequence[KBotMdAgentConf]:
+    async def get_by_agent_id(self, agent_id: int) -> Sequence[KbotMdAgentConf]:
         """get agent config by agent id. """
         async with get_session() as session:
             result = await session.execute(
-                select(KBotMdAgentConf).where(KBotMdAgentConf.agent_id == agent_id)
+                select(KbotMdAgentConf).where(KbotMdAgentConf.agent_id == agent_id)
             )
             return result.scalars().all()
 
-    async def create(self, conf_data: dict) -> KBotMdAgentConf:
+    async def create(self, conf_data: dict) -> KbotMdAgentConf:
         """create agent config. """
-        new_conf = KBotMdAgentConf(**conf_data)
+        new_conf = KbotMdAgentConf(**conf_data)
         async with get_session() as session:
             session.add(new_conf)
             await session.commit()
             await session.refresh(new_conf)
         return new_conf
   
-    async def update(self, conf_id: int, update_data: dict) -> Optional[KBotMdAgentConf]:
+    async def update(self, conf_id: int, update_data: dict) -> Optional[KbotMdAgentConf]:
         """update agent config by id. """
         async with get_session() as session:
             result = await session.execute(
-                select(KBotMdAgentConf).where(KBotMdAgentConf.conf_id == conf_id)
+                select(KbotMdAgentConf).where(KbotMdAgentConf.conf_id == conf_id)
             )
             conf = result.scalars().first()
             if not conf:
@@ -53,16 +53,16 @@ class KBotMdAgentConfRepository:
         """delete agent config by id. """
         async with get_session() as session:
             result = await session.execute(
-                delete(KBotMdAgentConf).where(KBotMdAgentConf.conf_id == conf_id)
+                delete(KbotMdAgentConf).where(KbotMdAgentConf.conf_id == conf_id)
             )
             await session.commit()
             return result.rowcount > 0
 
-    async def get_all(self) -> AsyncIterator[KBotMdAgentConf]:
+    async def get_all(self) -> AsyncIterator[KbotMdAgentConf]:
         """get all agent config. """
         async with get_session() as session:
             result = await session.stream(
-                select(KBotMdAgentConf).order_by(KBotMdAgentConf.conf_id)
+                select(KbotMdAgentConf).order_by(KbotMdAgentConf.conf_id)
             )
             async for row in result:
-                yield row.KBotMdAgentConf
+                yield row.KbotMdAgentConf

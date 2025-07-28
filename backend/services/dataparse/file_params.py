@@ -9,6 +9,7 @@ class FileParams:
         self.file_path: str = ""
         self.file_ext: Optional[str] = None
         self.summary: int = 0
+        self.kb_category: int = 0
         self.img2txt: int = 0
         self.tab_head: int = 0
         self.priority: int = 0
