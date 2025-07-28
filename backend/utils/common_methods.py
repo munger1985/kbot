@@ -1,12 +1,24 @@
-import os
-import json
-from decimal import Decimal
-from json import JSONEncoder
 from typing import List, Dict, Optional, Callable, Generator
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from core.config import settings
 
+from loguru import logger
 
+import os
+@staticmethod
+def check_text_file(file_params):
+    """检查文件嵌入模型和文件存在性"""
+    if file_params.txt_embed_model is None:
+        msg = f"Text embedding model not specified for file {file_params.file_path}"
+        logger.error(msg)
+        return False
+
+    if not os.path.exists(file_params.file_path):
+        msg = f"File not found at path: {file_params.file_path}"
+        logger.error(msg)
+        return False
+
+    return True
 
 @staticmethod
 def run_in_thread_pool(
@@ -45,8 +57,3 @@ def safe_int(value) -> int:
     except (ValueError, TypeError):
         return 0
     
-class DecimalEncoder(JSONEncoder):
-    def default(self, obj):
-        if isinstance(obj, Decimal):
-            return float(obj)  # 或者 str(obj) 如果需要保留精度
-        return super(DecimalEncoder, self).default(obj)

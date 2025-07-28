@@ -6,6 +6,7 @@ from dao.data_dict import KbCategory, KbStatus, Status
 from dao.entities.kbot_md_db_conf import KbotMdDbConf
 from core.database.meta_oracle import get_session
 
+
 class KbotMdKbRepository:
     """Repository for KBOT_MD_KB table operations."""
     

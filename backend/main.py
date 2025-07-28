@@ -18,7 +18,7 @@ from api.routers import router
 from api.routers.kb_router import router as kb_router
 from core.log.logger import setup_logging
 from core.config import settings
-from services.dataparse.parse_file import start_file_parse_service, shutdown_file_parse_service
+from services.dataparse.parse_service import start_file_parse_service, shutdown_file_parse_service
 from microservices.embedding.app import start_embedding_service, shutdown_embedding_service
 from microservices.llm.app import start_llm_service, shutdown_llm_service
 from microservices.reranker.app import start_reranker_service, shutdown_reranker_service
@@ -37,7 +37,15 @@ def run_file_parse_service():
     在子进程中运行文件解析服务。
     这个函数作为multiprocessing.Process的目标函数。
     """
-    asyncio.run(start_file_parse_service())
+    # 在子进程中初始化日志
+    setup_logging(service_name="file_parse")
+    logger.info("File parse service process starting")
+    
+    try:
+        asyncio.run(start_file_parse_service())
+    except Exception as e:
+        logger.error(f"File parse service failed: {str(e)}")
+        raise
 
 def shutdown_services(message_prefix=""):
     """关闭所有微服务和后台进程

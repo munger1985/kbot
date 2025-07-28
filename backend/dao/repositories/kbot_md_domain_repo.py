@@ -1,9 +1,9 @@
 from typing import Sequence, Optional
-
 from sqlalchemy import select, delete
 from dao.entities.kbot_md_domain import KbotMdDomain
 from dao.data_dict import Status
 from core.database.meta_oracle import get_session
+
 
 class KbotMdDomainRepository:
     """Repository for KBOT_MD_DOMAIN table operations."""

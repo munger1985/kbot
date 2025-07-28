@@ -65,6 +65,11 @@ async def delete_files(domain_id: int,
         for files in os.walk(target_path):
             file_count += len(files)
         
+        # 添加存在性检查
+        if not target_path.exists():
+            logger.warning(f"The batch {batch_name} in knowledge base {kb_id} has no files, skip deletion")
+            return success_cnt, failed_cnt
+    
         try:
             logger.info(f"Deleting batch files: {str(target_path)}")
             shutil.rmtree(target_path)
@@ -91,6 +96,11 @@ async def delete_files(domain_id: int,
         for files in os.walk(target_path):
             file_count += len(files)
         
+        # 添加存在性检查
+        if not target_path.exists():
+            logger.warning(f"Knowledge base {kb_id} has no files, skip deletion")
+            return success_cnt, failed_cnt
+
         try:
             logger.info(f"Deleting files in knowlodge base {str(kb_id)}: {str(target_path)}")
             shutil.rmtree(target_path)

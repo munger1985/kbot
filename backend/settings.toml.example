@@ -36,6 +36,9 @@ llm.timeout = 120 # seconds
 # reranker configuration
 reranker.max_tokens = 2048
 
+# nlp configuration
+nlp.model_name = "zh_core_web_trf"
+
 # knowledge base configuration
 kbot.file_root_path = "/your_path"
 kbot.parallel_workers = 10

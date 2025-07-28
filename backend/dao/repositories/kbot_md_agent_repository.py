@@ -1,9 +1,7 @@
 from typing import Optional, Sequence
-
 from sqlalchemy import select, update, delete
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from backend.dao.entities.kbot_md_agent import KBotMdAgent
+from dao.entities.kbot_md_agent import KBotMdAgent
 
 
 class KBotMdAgentRepository:

@@ -40,6 +40,9 @@ class LLMConfig(TypedDict):
 class RankerConfig(TypedDict):
     max_tokens: int
 
+class NlpConfig(TypedDict):
+    model_name: str
+
 class KBotConfig(TypedDict):
     file_root_path: str
     parallel_workers: int
@@ -51,4 +54,5 @@ class AppSettings(TypedDict):
     embed: EmbedConfig
     llm: LLMConfig
     reranker: RankerConfig
+    nlp: NlpConfig
     kbot: KBotConfig

@@ -9,6 +9,7 @@ from dao.data_dict import (
 )
 from core.database.meta_oracle import get_session
 
+
 class KbotMdDbConfRepository:
     """Repository for KBOT_MD_DB_CONF table operations."""
     
