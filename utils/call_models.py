@@ -4,7 +4,7 @@ from loguru import logger
 from typing import Optional, List, Dict, Any
 
 
-async def call_embedding_model(model_id: int, texts: List[str]) -> Optional[List[List[float]]]:
+async def call_embedding_model(model_unique_name: str, texts: List[str]) -> Optional[List[List[float]]]:
     """Call embedding model"""
 
     embed_host = os.getenv("KBOT_EMBED_HOST", "localhost")
@@ -13,7 +13,7 @@ async def call_embedding_model(model_id: int, texts: List[str]) -> Optional[List
     embed_url = f"http://{embed_host}:{embed_port}/embed"
     headers = {"Content-Type": "application/json"}
     payload = {
-        "model_id": int(model_id),
+        "model_unique_name": int(model_unique_name),
         "texts": texts,
         "batch_size": 0
     }
@@ -35,10 +35,10 @@ async def call_embedding_model(model_id: int, texts: List[str]) -> Optional[List
         return None
     
 
-async def call_rerank_model(model_id: int, query: str, documents: List[str], top_k: Optional[int]) -> Optional[List[Dict[str, Any]]]:
-    """Call rerank model
-    将文本列表进行rerank
-    - **model_id**: Model ID to use for reranking.
+async def call_reranker_model(model_unique_name: str, query: str, documents: List[str], top_k: Optional[int]) -> Optional[List[Dict[str, Any]]]:
+    """Call reranker model to rerank documents
+    调用reranker微服务将文本列表进行rerank
+    - **model_unique_name**: Model unique name to use for reranking.
     - **query**: Query text to be reranked.
     - **documents**: List of documents to be reranked.
     - **top_k**: Number of top documents to return (None for all)
@@ -50,7 +50,7 @@ async def call_rerank_model(model_id: int, query: str, documents: List[str], top
     rerank_url = f"http://{rerank_host}:{rerank_port}/rerank"
     headers = {"Content-Type": "application/json"}
     payload = {
-        "model_id": int(model_id),
+        "model_unique_name": int(model_unique_name),
         "query": query,
         "documents": documents,
         "top_k": top_k

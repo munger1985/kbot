@@ -6,7 +6,7 @@ Contains:
 """
 
 from pydantic import BaseModel, field_validator, ConfigDict
-from typing import Any, Dict, List, Optional, AsyncGenerator
+from typing import Any, Dict, List, Union, Optional, AsyncGenerator
 from tenacity import retry, stop_after_attempt
 from prometheus_client import Counter, Histogram
 from core.config import settings
@@ -49,26 +49,9 @@ class BaseLLM:
         """Release resources asynchronously."""
         pass
     
-    @retry(stop=stop_after_attempt(3))
-    async def generate(
-        self,
-        prompt: str,
-        **kwargs: Any
-    ) -> Optional[List[str]]:
-        """Generate text from a prompt asynchronously.
-        
-        Args:
-            prompt: Input prompt
-            **kwargs: Additional arguments
-            
-        Returns:
-            Generated text list
-        """
-        raise NotImplementedError
-    
     async def chat(
         self,
-        messages: List[Dict[str, str]],
+        messages: Union[List[Dict[str, str]], str],
         stream: bool = False,
         **kwargs: Any
     ) -> Optional[AsyncGenerator[str, None] | str]:

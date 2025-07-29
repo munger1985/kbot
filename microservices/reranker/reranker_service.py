@@ -43,28 +43,28 @@ class RerankerService:
             self._initialized = False
             logger.info("Reranker service has been shutdown")
     
-    async def get_reranker_model(self, model_id: int) -> BaseReranker:
+    async def get_reranker_model(self, model_unique_name: str) -> BaseReranker:
         """
-        Get a reranker model by ID // 获取指定ID的reranker模型
+        Get a reranker model by unique name // 获取指定unique name的reranker模型
 
         Args:
-            model_id: The ID of the model to get // 要获取的模型ID
+            model_unique_name: The unique name of the model to get // 要获取的模型unique name
 
         Returns:
             Reranker model instance // Reranker模型实例
 
         Raises:
-            ValueError: If model_id is not found in database // 如果模型ID在数据库中不存在
+            ValueError: If model_unique_name is not found in database // 如果模型unique name在数据库中不存在
             RuntimeError: If model creation fails // 如果模型创建失败
         """
         if not self._initialized:
             await self.initialize()
         
-        return await self._model_pool.load_model(model_id)
+        return await self._model_pool.load_model(model_unique_name)
     
     async def rerank(
         self,
-        model_id: int,
+        model_unique_name: str,
         query: str,
         documents: List[str],
         top_k: Optional[int] = None
@@ -85,7 +85,7 @@ class RerankerService:
             return []
         
         try:
-            model = await self.get_reranker_model(model_id)
+            model = await self.get_reranker_model(model_unique_name)
             return await model.rerank(query, documents, top_k)
                 
         except Exception as e:
@@ -93,23 +93,23 @@ class RerankerService:
             raise RuntimeError("Failed to rerank documents") from e
     
     
-    async def unload_model(self, model_id: int):
+    async def unload_model(self, model_unique_name: str):
         """
         Unload a model from the pool // 从模型池中卸载模型
 
         Args:
-            model_id: The ID of the model to unload // 要卸载的模型ID
+            model_unique_name: The unique name of the model to unload // 要卸载的模型unique name
         """
         if self._initialized:
-            await self._model_pool.unload_model(model_id)
-            logger.info(f"Model {model_id} has been unloaded.")
+            await self._model_pool.unload_model(model_unique_name)
+            logger.info(f"Model {model_unique_name} has been unloaded.")
     
-    async def reload_model(self, model_id: int) -> BaseReranker:
+    async def reload_model(self, model_unique_name: str) -> BaseReranker:
         """
         Reload a model from the pool // 重新加载模型
 
         Args:
-            model_id: 要重新加载的模型ID
+            model_unique_name: 要重新加载的模型unique name
 
         Returns:
             The reloaded reranker model instance // 重新加载的reranker模型实例
@@ -117,4 +117,4 @@ class RerankerService:
         if not self._initialized:
             await self.initialize()
         
-        return await self._model_pool.reload_model(model_id)
+        return await self._model_pool.reload_model(model_unique_name)

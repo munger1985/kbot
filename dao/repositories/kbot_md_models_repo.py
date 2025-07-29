@@ -8,7 +8,7 @@ from core.database.meta_oracle import get_session
 class KbotMdModelsRepository:
     """Repository for KBOT_MD_KB_MODELS table operations."""
     
-    async def get_all_embedding_models(self) -> Sequence[KbotMdModels]:
+    async def get_all_embedding_models(self, app_id: int) -> Sequence[KbotMdModels]:
         """
         获取所有嵌入模型
         
@@ -19,7 +19,26 @@ class KbotMdModelsRepository:
             query = select(KbotMdModels).where(
                 and_(
                     KbotMdModels.category == ModelCategory.EMBEDDING.value,
-                    KbotMdModels.status == Status.ENABLED.value  # 只获取启用状态的模型
+                    KbotMdModels.status == Status.ENABLED.value,  # 只获取启用状态的模型
+                    KbotMdModels.app_id == app_id # 只获取指定app_id的模型
+                )
+            )
+            result = await session.execute(query)
+            return result.scalars().all()
+        
+    async def get_all_llm_models(self, app_id: int) -> Sequence[KbotMdModels]:
+        """
+        获取所有LLM模型
+        
+        Returns:
+            Sequence[KbotMdModels]: LLM模型列表
+        """
+        async with get_session() as session:
+            query = select(KbotMdModels).where(
+                and_(
+                    KbotMdModels.category == ModelCategory.LLM.value,
+                    KbotMdModels.status == Status.ENABLED.value,  # 只获取启用状态的模型
+                    KbotMdModels.app_id == app_id # 只获取指定app_id的模型
                 )
             )
             result = await session.execute(query)
@@ -38,6 +57,14 @@ class KbotMdModelsRepository:
         async with get_session() as session:
             result = await session.execute(
                 select(KbotMdModels).where(KbotMdModels.model_id == model_id)
+            )
+            return result.scalars().first()
+        
+    async def get_by_unique_name(self, model_unique_name: str) -> Optional[KbotMdModels]:
+        """Get knowledge base model by model unique name."""
+        async with get_session() as session:
+            result = await session.execute(
+                select(KbotMdModels).where(KbotMdModels.model_unique_name == model_unique_name)
             )
             return result.scalars().first()
     
@@ -65,7 +92,7 @@ class KbotMdModelsRepository:
             await session.commit()
             return True
     
-    async def get_by_app_id(self, app_id: int) -> Sequence[KbotMdModels]:
+    async def get_all_by_app_id(self, app_id: int) -> Sequence[KbotMdModels]:
         """Get knowledge base models by application ID."""
         async with get_session() as session:
             result = await session.execute(

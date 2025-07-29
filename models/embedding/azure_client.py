@@ -1,201 +1,327 @@
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple
 import numpy as np
 import openai
-from openai import AsyncAzureOpenAI
-from prometheus_client import Histogram, Counter
-from models.embedding.base import BaseEmbedding, RemoteEmbeddingConfig
+from openai import AsyncAzureOpenAI, APIError, APIConnectionError, RateLimitError, APIStatusError
+from prometheus_client import Histogram, Counter, Gauge
+from loguru import logger
+import asyncio
+from models.embedding.base import BaseEmbedding, RemoteEmbeddingConfig, EmbeddingResponse, EmbeddingDataItem
 from core.config import settings
-
 
 class AzureEmbedding(BaseEmbedding):
     """
-    High-performance Azure OpenAI embedding client with enterprise-grade features.
-    
-    Example:
-        >>> embedder = AzureEmbedding(
-        ...     api_key="your-azure-key",
-        ...     api_version="2023-05-15",
-        ...     deployment_name="your-deployment",
-        ...     endpoint="https://your-resource.openai.azure.com",
-        ...     timeout=30
-        ... )
-        >>> await embedder.startup()
-        >>> embeddings = await embedder.embed(["Hello world"], batch_size=50)
-        >>> await embedder.shutdown()
+    Production-grade Azure OpenAI embedding service with:
+    - Intelligent batching
+    - Adaptive retry policies
+    - Comprehensive monitoring
+    - Azure-specific optimizations
     """
-    
-    # Prometheus metrics
+
+    # Enhanced metrics with Azure-specific dimensions
     LATENCY_HIST = Histogram(
         'azure_embedding_latency_seconds',
-        'Latency for Azure OpenAI embedding requests',
-        ['deployment', 'api_version']
+        'Embedding request latency distribution',
+        ['deployment', 'api_version', 'status']
     )
     
     ERROR_COUNTER = Counter(
         'azure_embedding_errors_total',
-        'Count of Azure embedding errors',
-        ['deployment', 'error_type']
+        'Embedding error counts by type',
+        ['deployment', 'error_code']
     )
     
     REQUEST_COUNTER = Counter(
         'azure_embedding_requests_total',
-        'Count of Azure embedding requests',
+        'Total embedding requests processed',
+        ['deployment', 'api_version']
+    )
+    
+    BATCH_SIZE_GAUGE = Gauge(
+        'azure_embedding_batch_size',
+        'Effective batch size per request',
+        ['deployment']
+    )
+    
+    TOKEN_USAGE = Gauge(
+        'azure_embedding_tokens_used',
+        'Tokens consumed per request',
         ['deployment']
     )
 
     def __init__(self, config: RemoteEmbeddingConfig):
         """
-        Initialize Azure OpenAI embedding client.
+        Initialize with Azure-specific configuration.
         
         Args:
-            api_key: Azure OpenAI API key
-            deployment_name: Deployment name (not model name)
-            endpoint: Azure endpoint URL (e.g., "https://xxx.openai.azure.com")
-            api_version: Azure API version (e.g., "2023-05-15")
-            timeout: Request timeout in seconds
-            max_retries: Maximum retry attempts
-            custom_headers: Custom HTTP headers to include
-            kwargs: Additional Azure-specific parameters
+            config: RemoteEmbeddingConfig containing:
+                - api_key: Azure API key
+                - deployment_name: Deployment name
+                - endpoint: Azure endpoint URL
+                - api_version: API version (default "2023-05-15")
+                - timeout: Request timeout (default 30s)
+                - max_retries: Maximum retries (default 3)
+                - max_batch_size: Maximum texts per request (default 16)
+                - min_batch_size: Minimum texts per request (default 1)
+                - retry_delay: Base retry delay (default 1.0s)
+                - headers: Custom HTTP headers
+                - azure_params: Additional Azure parameters
         """
         self._client: Optional[AsyncAzureOpenAI] = None
-        self.api_key = config.api_key
+        self.api_key = config.api_key or settings.get('azure_api_key')
         self.deployment_name = config.deployment_name
         self.endpoint = config.endpoint
-        self.api_version = config.api_version
-        self.timeout = config.timeout or settings["embed"]["timeout"]
-        self.max_retries = config.max_retries or settings["embed"]["max_retries"]
-        self.custom_headers = {}
+        self.api_version = config.api_version or "2023-05-15"
+        self.timeout = config.timeout or settings['embed']['timeout']
+        self.max_retries = getattr(config, 'max_retries', 3)
+        self.max_batch_size = getattr(config, 'max_batch_size', 16)  # Azure recommendation
+        self.min_batch_size = getattr(config, 'min_batch_size', 1)
+        self.retry_delay = getattr(config, 'retry_delay', 1.0)
+        self.custom_headers = getattr(config, 'headers', {})
+        self._azure_params = getattr(config, 'azure_params', {})
         self._is_initialized = False
-        self._azure_params = config.additional_params  # Store additional Azure-specific params
 
     async def startup(self) -> None:
-        """Initialize the async Azure client with proper cleanup."""
+        """Initialize client with connection validation."""
         if self._is_initialized:
             return
             
-        if not self.endpoint:
-            raise ValueError("Azure endpoint must be provided")
+        if not all([self.api_key, self.endpoint, self.deployment_name]):
+            raise ValueError("Missing required Azure configuration")
 
-        headers = {
-            "User-Agent": "KBOT/3.0.0",
-            "X-Request-Source": "backend-service",
-            **self.custom_headers
-        }
+        try:
+            headers = {
+                "User-Agent": "AzureEmbedding/1.0",
+                "X-Deployment-Name": self.deployment_name,
+                **self.custom_headers
+            }
 
-        self._client = AsyncAzureOpenAI(
-            api_key=self.api_key,
-            api_version=self.api_version,
-            azure_endpoint=self.endpoint,
-            timeout=self.timeout,
-            max_retries=self.max_retries,
-            default_headers=headers,
-            **self._azure_params
-        )
-        self._is_initialized = True
+            self._client = AsyncAzureOpenAI(
+                api_key=self.api_key,
+                api_version=self.api_version,
+                azure_endpoint=self.endpoint,
+                timeout=self.timeout,
+                max_retries=self.max_retries,
+                default_headers=headers,
+                **self._azure_params
+            )
+            
+            await self._validate_connection()
+            self._is_initialized = True
+            logger.success(f"Azure client ready for {self.deployment_name}")
+            
+        except Exception as e:
+            logger.error(f"Initialization failed: {str(e)}")
+            raise RuntimeError("Azure client initialization failed") from e
+
+    async def _validate_connection(self) -> None:
+        """Perform lightweight connection test."""
+        try:
+            test_response = await self._client.embeddings.create(  # type: ignore
+                model=self.deployment_name,
+                input=["connection test"],
+                encoding_format="float"
+            )
+            if not test_response.data:
+                raise ValueError("Empty test response")
+        except Exception as e:
+            await self._client.close()  # type: ignore
+            raise RuntimeError(f"Connection test failed: {str(e)}") from e
 
     async def shutdown(self) -> None:
-        """Properly cleanup client resources."""
-        if self._client:
-            await self._client.close()
-        self._client = None
-        self._is_initialized = False
+        """Graceful shutdown with resource cleanup."""
+        if not self._is_initialized:
+            return
+            
+        try:
+            if self._client:
+                await self._client.close()
+            self._client = None
+            self._is_initialized = False
+            logger.info("Azure client shutdown completed")
+        except Exception as e:
+            logger.error(f"Shutdown error: {str(e)}")
+            raise
 
     async def embed(
         self,
         texts: List[str],
-        batch_size: int = 100,
-        raise_on_error: bool = True
-    ) -> np.ndarray:
+        batch_size: int = 0,
+        raise_on_error: bool = True,
+        **kwargs: Any
+    ) -> EmbeddingResponse:
         """
         Generate embeddings with Azure-specific optimizations.
         
         Args:
-            texts: Input texts to process
-            batch_size: Texts per request (Azure recommends <= 16 for long texts)
-            raise_on_error: Whether to raise exceptions on failure
+            texts: Input texts to embed
+            batch_size: Override auto batch size (0 for auto)
+            raise_on_error: Whether to raise exceptions
+            kwargs: Additional Azure API parameters
             
         Returns:
-            np.ndarray: Embedding matrix (texts x dimensions)
+            EmbeddingResponse: Standardized response
             
         Raises:
             RuntimeError: If client not initialized
-            openai.APIError: For Azure-specific errors
         """
         if not self._is_initialized:
-            raise RuntimeError("Azure client not initialized. Call startup() first.")
-            
-        if not texts:
-            return np.array([])
+            raise RuntimeError("Client not initialized. Call startup() first.")
 
-        embeddings = []
-        self.REQUEST_COUNTER.labels(deployment=self.deployment_name).inc()
+        if not texts:
+            logger.warning("Received empty input texts")
+            return self._empty_response()
+
+        # Calculate effective batch size
+        effective_batch = self._calculate_batch_size(len(texts), batch_size)
+        self.REQUEST_COUNTER.labels(
+            deployment=self.deployment_name,
+            api_version=self.api_version
+        ).inc()
+        
+        self.BATCH_SIZE_GAUGE.labels(deployment=self.deployment_name).set(effective_batch)
 
         try:
             with self.LATENCY_HIST.labels(
                 deployment=self.deployment_name,
-                api_version=self.api_version
+                api_version=self.api_version,
+                status="success"
             ).time():
-                # Azure-specific batch processing
-                for i in range(0, len(texts), batch_size):
-                    batch = texts[i:i + batch_size]
-                    
-                    response = await self._client.embeddings.create( # type: ignore
-                        model=self.deployment_name,  # Azure uses deployment names
+                return await self._process_batches(texts, effective_batch, **kwargs)
+                
+        except Exception as e:
+            self._handle_error(e)
+            if raise_on_error:
+                raise
+            return self._empty_response()
+
+    async def _process_batches(
+        self,
+        texts: List[str],
+        batch_size: int,
+        **kwargs: Any
+    ) -> EmbeddingResponse:
+        """Process batches with Azure-specific retry logic."""
+        all_embeddings = []
+        total_tokens = 0
+        
+        for i in range(0, len(texts), batch_size):
+            batch = texts[i:i + batch_size]
+            logger.debug(f"Processing batch {i//batch_size + 1}/{(len(texts)-1)//batch_size + 1}")
+            
+            for attempt in range(self.max_retries + 1):
+                try:
+                    response = await self._client.embeddings.create(  # type: ignore
+                        model=self.deployment_name,
                         input=batch,
-                        encoding_format="float"  # Explicit format for numpy
+                        encoding_format="float",
+                        **kwargs
                     )
                     
-                    embeddings.extend([item.embedding for item in response.data])
-                
-            return np.vstack(embeddings) if embeddings else np.array([])
+                    all_embeddings.extend([item.embedding for item in response.data])
+                    total_tokens += response.usage.total_tokens
+                    break
+                    
+                except RateLimitError:
+                    wait_time = self.retry_delay * (2 ** attempt)
+                    logger.warning(f"Rate limited, retrying in {wait_time}s...")
+                    await asyncio.sleep(wait_time)
+                except APIConnectionError:
+                    if attempt == self.max_retries:
+                        raise
+                    await asyncio.sleep(self.retry_delay)
+                except APIStatusError as e:
+                    if e.status_code >= 500:  # Retry server errors
+                        if attempt == self.max_retries:
+                            raise
+                        await asyncio.sleep(self.retry_delay * (attempt + 1))
+                    else:
+                        raise
+
+        self.TOKEN_USAGE.labels(deployment=self.deployment_name).set(total_tokens)
+        return self._build_response(all_embeddings, total_tokens)
+
+    def _calculate_batch_size(self, num_texts: int, user_batch_size: int) -> int:
+        """Calculate optimal batch size considering Azure limits."""
+        if user_batch_size > 0:
+            return min(user_batch_size, self.max_batch_size)
             
-        except openai.RateLimitError as e:
-            self.ERROR_COUNTER.labels(
-                deployment=self.deployment_name,
-                error_type="rate_limit"
-            ).inc()
-            if raise_on_error:
-                raise
-            return np.array([])
+        # Auto-calculate based on text length
+        avg_length = sum(len(t) for t in texts) / max(1, len(texts)) # type: ignore
+        if avg_length > 1000:  # Reduce batch size for long documents
+            return min(8, self.max_batch_size)
+        return min(
+            max(self.min_batch_size, num_texts // 4),
+            self.max_batch_size
+        )
+
+    def _build_response(self, embeddings: List[List[float]], total_tokens: int) -> EmbeddingResponse:
+        """Construct standardized response."""
+        data = [
+            EmbeddingDataItem(
+                embedding=embedding,
+                index=i,
+                object="embedding"
+            ) for i, embedding in enumerate(embeddings)
+        ]
+        
+        return EmbeddingResponse(
+            data=data,
+            model=self.deployment_name,
+            object="list",
+            usage={
+                "prompt_tokens": total_tokens,
+                "total_tokens": total_tokens
+            }
+        )
+
+    def _handle_error(self, error: Exception) -> None:
+        """Centralized error handling."""
+        error_code = "unknown"
+        if isinstance(error, RateLimitError):
+            error_code = "rate_limit"
+        elif isinstance(error, APIConnectionError):
+            error_code = "connection"
+        elif isinstance(error, APIStatusError):
+            error_code = f"http_{error.status_code}"
             
-        except openai.APIConnectionError as e:
-            self.ERROR_COUNTER.labels(
-                deployment=self.deployment_name,
-                error_type="connection"
-            ).inc()
-            if raise_on_error:
-                raise
-            return np.array([])
-            
-        except openai.APIStatusError as e:
-            self.ERROR_COUNTER.labels(
-                deployment=self.deployment_name,
-                error_type=f"http_{e.status_code}"
-            ).inc()
-            if raise_on_error:
-                raise
-            return np.array([])
-            
-        except Exception as e:
-            self.ERROR_COUNTER.labels(
-                deployment=self.deployment_name,
-                error_type="unknown"
-            ).inc()
-            if raise_on_error:
-                raise
-            return np.array([])
+        self.ERROR_COUNTER.labels(
+            deployment=self.deployment_name,
+            error_code=error_code
+        ).inc()
+        
+        self.LATENCY_HIST.labels(
+            deployment=self.deployment_name,
+            api_version=self.api_version,
+            status="error"
+        ).observe(0)
+        
+        logger.error(f"Embedding failed - {self.deployment_name}: {str(error)}")
+
+    def _empty_response(self) -> EmbeddingResponse:
+        """Generate empty response for error cases."""
+        return EmbeddingResponse(
+            data=[],
+            model=self.deployment_name,
+            object="list",
+            usage={"prompt_tokens": 0, "total_tokens": 0}
+        )
 
     @property
-    def is_initialized(self) -> bool:
-        """Check if client is ready for requests."""
-        return self._is_initialized
+    def embedding_dim(self) -> int:
+        """Get embedding dimension for the deployment."""
+        dim_map = {
+            "text-embedding-ada-002": 1536,
+            "text-embedding-3-small": 1536,
+            "text-embedding-3-large": 3072
+        }
+        return dim_map.get(self.deployment_name.split('-')[0], 1536)  # Default fallback
 
-    @property
-    def azure_config(self) -> Dict[str, Any]:
-        """Get current Azure configuration."""
+    async def health_check(self) -> Dict[str, Any]:
+        """Get service health status."""
         return {
-            "api_version": self.api_version,
-            "endpoint": self.endpoint,
+            "initialized": self._is_initialized,
             "deployment": self.deployment_name,
-            **self._azure_params
+            "api_version": self.api_version,
+            "last_error": None,
+            "throughput": "N/A"
         }

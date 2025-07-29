@@ -94,7 +94,7 @@ app.add_middleware(
 
 # 定义请求模型
 class RerankerRequest(BaseModel):
-    model_id: int = Field(..., description="reranker model ID")
+    model_unique_name: str = Field(..., description="reranker model ID")
     query: str = Field(..., description="query")
     documents: List[str] = Field(..., description="List of documents to be reranked.")
     top_k: Optional[int] = Field(10, description="Number of top documents to return (None for all)")
@@ -133,18 +133,18 @@ async def rerank_texts(
     ) -> RerankerResponse:
     """
     将文本列表进行rerank
-    - **model_id**: Model ID to use for reranking.
+    - **model_unique_name**: Model ID to use for reranking.
     - **query**: Query text to be reranked.
     - **documents**: List of documents to be reranked.
     - **top_k**: Number of top documents to return (None for all)
     """
 
     try:
-        logger.info(f"Received reranker request: model={request.model_id}, query={request.query}, documents={len(request.documents)}, top_k={request.top_k}")
+        logger.info(f"Received reranker request: model={request.model_unique_name}, query={request.query}, documents={len(request.documents)}, top_k={request.top_k}")
         
         # 使用嵌入服务将文本转换为向量
         rerankers = await reranker_service.rerank(
-            model_id=request.model_id,
+            model_unique_name=request.model_unique_name,
             query=request.query,
             documents=request.documents,
             top_k=request.top_k

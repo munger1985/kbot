@@ -1,9 +1,9 @@
 import numpy as np
 import torch
 from abc import ABC, abstractmethod
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from prometheus_client import Counter, Histogram
-from typing import List, Optional
+from typing import List, Optional, Dict
 
 
 class EmbeddingConfig(BaseModel):
@@ -31,6 +31,17 @@ class RemoteEmbeddingConfig(EmbeddingConfig):
     api_version: str = "2023-05-15"
     additional_params: dict = {}
 
+class EmbeddingDataItem(BaseModel):
+    embedding: List[float] = Field(..., description="The embedding vector.")
+    index: int = Field(..., description="The index of the embedding in the batch.")
+    object: str = Field("embedding", description="The object type, always 'embedding'.")
+
+class EmbeddingResponse(BaseModel):
+    data: List[EmbeddingDataItem] = Field(..., description="List of embedding data items.")
+    model: str = Field(..., description="Embedding model name used.")
+    object: str = Field("list", description="The object type, always 'list'.")
+    usage: Dict[str, int] = Field(..., description="Token usage information.")
+
 class BaseEmbedding(ABC):
     LATENCY_HIST = Histogram(
         'embedding_latency_seconds', 
@@ -54,6 +65,17 @@ class BaseEmbedding(ABC):
         pass
     
     @abstractmethod
-    async def embed(self, texts: List[str]) -> np.ndarray:
-        """Generate embeddings for a list of texts"""
+    async def embed(self, texts: List[str]) -> EmbeddingResponse:
+        """Generate embeddings for a list of texts in OpenAI standard format.
+        
+        Args:
+            texts: List of texts to embed
+            
+        Returns:
+            EmbeddingResponse: Response in OpenAI standard format containing:
+                - data: List of embedding items with vectors, indices and object type
+                - model: Name of the model used
+                - object: Always "list"
+                - usage: Token usage information
+        """
         pass
