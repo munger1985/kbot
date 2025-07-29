@@ -1,12 +1,13 @@
+import os
 from typing import List, Dict, Optional, Callable, Generator
+from loguru import logger
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from core.config import settings
+from services.dataparse.file_params import FileParams
 
-from loguru import logger
 
-import os
 @staticmethod
-def check_text_file(file_params):
+def check_text_file(file_params: FileParams):
     """检查文件嵌入模型和文件存在性"""
     if file_params.txt_embed_model is None:
         msg = f"Text embedding model not specified for file {file_params.file_path}"

@@ -13,7 +13,7 @@ class FileParams:
         self.img2txt: int = 0
         self.tab_head: int = 0
         self.priority: int = 0
-        self.paser: dict = {}
+        self.parser: dict = {}
         self.img2txt_model: Optional[int] = None
         self.img_embed_model: Optional[int] = None
         self.txt_embed_model: Optional[int] = None

@@ -161,14 +161,14 @@ class OpenaiClient(BaseLLM):
         self, 
         response_stream: Any
     ) -> AsyncGenerator[str, None]:
-        """处理流式响应"""
-        full_response = ""
+        """处理流式响应，返回SSE格式数据"""
         async for chunk in response_stream:
             if chunk.choices[0].delta.content:
                 content = chunk.choices[0].delta.content
-                full_response += content
-                yield content
-        yield f"\n[Full response: {len(full_response)} characters]"
+                # 包装为SSE格式
+                yield f"data: {content}\n\n"
+        # 流式结束标记
+        yield "data: [DONE]\n\n"
 
     def _convert_message(self, msg: dict):
             if msg['role'] == 'user':

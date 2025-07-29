@@ -125,8 +125,6 @@ class LLMService:
         try:
             # Get model from pool
             model = await self.get_llm_model(model_id)
-            # 修改提示词，要求模型生成markdown格式的内容
-            markdown_prompt = f"{prompt}\n\n请以markdown格式返回内容。"
             # Generate text
             kwargs = {}
             if timeout:
@@ -143,7 +141,7 @@ class LLMService:
                 kwargs["presence_penalty"] = presence_penalty
             
             # 获取生成的文本
-            result = await model.generate(prompt=markdown_prompt, n=n, **kwargs)
+            result = await model.generate(prompt=prompt, n=n, **kwargs)
             
             # 确保返回的内容是markdown格式
             if result:

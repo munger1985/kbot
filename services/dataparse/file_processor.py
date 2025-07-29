@@ -45,14 +45,14 @@ class FileProcessor:
             
             # 检查 chunk_parser 是否已经是字典类型
             if isinstance(file.chunk_parser, dict):
-                file_params.paser = file.chunk_parser
+                file_params.parser = file.chunk_parser
             elif file.chunk_parser is None:
                 # 如果是 None，则使用空字典
-                file_params.paser = {}
+                file_params.parser = {}
                 logger.warning(f"chunk_parser is None for file_id: {file.file_id}, using empty dict")
             else:
                 # 如果是字符串，则解析为 JSON
-                file_params.paser = json.loads(file.chunk_parser, cls=DecimalEncoder) # type: ignore
+                file_params.parser = json.loads(file.chunk_parser, cls=DecimalEncoder) # type: ignore
             
             logger.debug(f"File params: {file_params.__dict__}")
 

@@ -13,9 +13,9 @@ sys.path.insert(0, str(backend_dir))
 sys.path.insert(0, str(project_root))
 
 # Use absolute imports from project root
-from backend.dao.repositories.kbot_biz_txt_embedding_repo import KbotBizTxtEmbeddingRepository
-from backend.utils.oracle_vec_handler import OracleVecHandler
-from backend.services.chat.agent_chat import Agent
+from dao.repositories.kbot_biz_txt_embedding_repo import KbotBizTxtEmbeddingRepository
+from utils.oracle_vec_handler import OracleVecHandler
+from services.chat.agent_chat import Agent
 
 async def main():
     """End-to-end test with real embedding service and database"""

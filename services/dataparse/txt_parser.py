@@ -58,9 +58,9 @@ async def process_txt(file_params: FileParams) -> bool:
         chunks = []
 
         # 参数安全处理
-        split_strategy = int(file_params.paser.get("split_strategy", 1))
-        chunk_size = int(file_params.paser.get("chunk_size", 500))
-        overlap = int(file_params.paser.get("chunk_overlap", 50))
+        split_strategy = int(file_params.parser.get("split_strategy", 1))
+        chunk_size = int(file_params.parser.get("chunk_size", 500))
+        overlap = int(file_params.parser.get("chunk_overlap", 50))
 
         logger.debug(f"Chunk size: {chunk_size}, chunk overlap: {overlap}")
 

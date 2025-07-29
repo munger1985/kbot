@@ -10,6 +10,8 @@ with various LLM providers. It supports text generation and chat completion.
 import sys
 import os
 import time
+import uuid
+import json
 import signal
 import subprocess
 import platform
@@ -118,10 +120,21 @@ class GenerateResponse(BaseModel):
 
 
 class ChatResponse(BaseModel):
-    """Response model for chat. //聊天响应模型"""
+    """Response model for chat (OpenAI compatible). //聊天响应模型(兼容OpenAI)"""
 
-    message: 'ChatMessage' = Field(..., description="Chat message")
-    processing_time: float = Field(..., description="Processing time in seconds")
+    id: str = Field(default_factory=lambda: f"chatcmpl-{uuid.uuid4()}", 
+                   description="Unique identifier for the chat completion")
+    object: str = Field("chat.completion", 
+                       description="The object type, always 'chat.completion'")
+    created: int = Field(default_factory=lambda: int(time.time()), 
+                        description="Unix timestamp of when the response was created")
+    model: str = Field(..., description="The model used for the completion")
+    choices: List[Dict[str, Any]] = Field(...,
+        description="List of chat completion choices containing messages")
+    usage: Dict[str, int] = Field(...,
+        description="Token usage statistics including prompt_tokens, completion_tokens and total_tokens")
+    processing_time: float = Field(..., 
+                                 description="Processing time in seconds (custom field)")
 
 
 class ChatMessage(BaseModel):
@@ -249,6 +262,11 @@ async def chat(
         if request.stream:
             async def generate():
                 try:
+                    # 生成流式响应ID和时间戳
+                    response_id = f"chatcmpl-{uuid.uuid4()}"
+                    created_time = int(time.time())
+                    model_name = f"model-{request.model_id}"
+                    
                     async for chunk in await llm_service.chat( # type: ignore
                         model_id=request.model_id,
                         messages=messages,
@@ -260,14 +278,43 @@ async def chat(
                         frequency_penalty=request.frequency_penalty,
                         presence_penalty=request.presence_penalty
                     ):
-                        yield chunk
+                        # 包装为完整的OpenAI兼容流式响应格式
+                        chunk_data = {
+                            "id": response_id,
+                            "object": "chat.completion.chunk",
+                            "created": created_time,
+                            "model": model_name,
+                            "choices": [{
+                                "delta": {
+                                    "content": chunk
+                                },
+                                "index": 0,
+                                "finish_reason": None
+                            }]
+                        }
+                        yield f"data: {json.dumps(chunk_data)}\n\n"
+                    
+                    # 发送结束标记
+                    done_data = {
+                        "id": response_id,
+                        "object": "chat.completion.chunk",
+                        "created": created_time,
+                        "model": model_name,
+                        "choices": [{
+                            "delta": {},
+                            "index": 0,
+                            "finish_reason": "stop"
+                        }]
+                    }
+                    yield f"data: {json.dumps(done_data)}\n\n"
+                    yield "data: [DONE]\n\n"
                 except Exception as e:
                     logger.error(f"Error in streaming chat: {e}")
                     yield f"Error: {str(e)}"
             
             return StreamingResponse(
                 generate(),
-                media_type="text/markdown"
+                media_type="text/event-stream"
             )
         
         # 处理非流式响应
@@ -286,9 +333,25 @@ async def chat(
             processing_time = time.time() - start_time
             
             logger.info(f"Chat response generated in {processing_time:.2f}s")
+            # 返回符合OpenAI API规范的响应
             return ChatResponse(
-                message=ChatMessage(role=response["role"], content=response["content"]), # type: ignore
-                processing_time=processing_time,
+                id=f"chatcmpl-{uuid.uuid4()}",
+                object="chat.completion",
+                created=int(time.time()),
+                model=f"model-{request.model_id}",
+                choices=[{
+                    "message": {
+                        "role": "assistant",
+                        "content": response
+                        },
+                        "finish_reason": "stop"
+                        }],
+                        usage={
+                            "prompt_tokens": 0,
+                            "completion_tokens": 0,
+                            "total_tokens": 0
+                            },
+                            processing_time=processing_time
             )
     except Exception as e:
         logger.exception(f"Error generating chat response: {e}")

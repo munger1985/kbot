@@ -33,8 +33,8 @@ logs/
 # Uploaded files
 knowledge_base/
 
-backend/settings.toml
-backend/.env
+settings.toml
+.env
 start.sh
-backend/.pytest_cache/
+.pytest_cache/
 local_model_cache/
