@@ -17,9 +17,9 @@ import subprocess
 import platform
 import atexit
 from datetime import datetime
-from typing import Dict, List, Optional, Any, Union
+from typing import Any
 from loguru import logger
-from fastapi import FastAPI, HTTPException, status, Depends, Query
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, ValidationError
@@ -105,9 +105,9 @@ class ChatResponse(BaseModel):
     created: int = Field(default_factory=lambda: int(time.time()), 
                         description="Unix timestamp of when the response was created")
     model: str = Field(..., description="The model used for the completion")
-    choices: List[Dict[str, Any]] = Field(...,
-        description="List of chat completion choices containing messages")
-    usage: Dict[str, int] = Field(...,
+    choices: list[dict[str, Any]] = Field(...,
+        description="list of chat completion choices containing messages")
+    usage: dict[str, int] = Field(...,
         description="Token usage statistics including prompt_tokens, completion_tokens and total_tokens")
     processing_time: float = Field(..., 
                                  description="Processing time in seconds (custom field)")
@@ -124,16 +124,16 @@ class ChatRequest(BaseModel):
     """Request model for chat. //聊天请求模型"""
 
     model_unique_name: str = Field(..., description="Specific model id to use")
-    messages: Union[List[ChatMessage], str] = Field(..., description="List of chat messages")
-    max_tokens: Optional[int] = Field(None, description="Maximum number of tokens to generate")
-    temperature: Optional[float] = Field(
+    messages: list[ChatMessage] | str = Field(..., description="list of chat messages")
+    max_tokens: int | None = Field(None, description="Maximum number of tokens to generate")
+    temperature: float | None = Field(
         None, description="Sampling temperature (0.0-1.0, lower is more deterministic)"
     )
     stream: bool = Field(False, description="Whether to stream the response")
-    timeout: Optional[int] = Field(None, description="Timeout in seconds")
-    top_p: Optional[float] = Field(None, description="Top-p sampling parameter")
-    frequency_penalty: Optional[float] = Field(None, description="Frequency penalty")
-    presence_penalty: Optional[float] = Field(None, description="Presence penalty")
+    timeout: int | None = Field(None, description="Timeout in seconds")
+    top_p: float | None = Field(None, description="Top-p sampling parameter")
+    frequency_penalty: float | None = Field(None, description="Frequency penalty")
+    presence_penalty: float | None = Field(None, description="Presence penalty")
 
 
 # 依赖项：获取嵌入服务实例
@@ -141,7 +141,7 @@ def get_llm_service():
     return llm_service
 
 @app.get("/health", response_model=dict, tags=["LLM"])
-async def health() -> Dict[str, Any]:
+async def health() -> dict[str, Any]:
     """Health check endpoint. //微服务接口健康检查
     Returns:
         Loaded models count. //已加载的模型数量
@@ -159,7 +159,6 @@ async def health() -> Dict[str, Any]:
     }
 
 
-@app.post("/chat", response_model=None, tags=["LLM"])
 @app.post("/v1/chat/completions", response_model=None, tags=["LLM"])
 async def chat(
     request: ChatRequest,

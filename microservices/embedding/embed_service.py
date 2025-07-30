@@ -1,6 +1,5 @@
 import os
 import sys
-from typing import List
 import numpy as np
 from loguru import logger
 
@@ -66,7 +65,7 @@ class EmbeddingService:
     async def embed_texts(
         self, 
         model_unique_name: str, 
-        texts: List[str], 
+        texts: list[str], 
         batch_size: int = 0
     ) -> EmbeddingResponse:
         """

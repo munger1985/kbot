@@ -1,6 +1,5 @@
 import json
 from loguru import logger
-from typing import List, Tuple
 from datetime import datetime
 from .txt_parser import process_txt
 from .file_params import FileParams
@@ -15,7 +14,7 @@ class FileProcessor:
     """文件处理类，负责文件解析和处理的业务逻辑"""
     
     @staticmethod
-    async def get_pending_files() -> List[Tuple[int, float, FileParams]]:
+    async def get_pending_files() -> list[tuple[int, float, FileParams]]:
         """
         从数据库获取待处理的文件
         
@@ -42,6 +41,7 @@ class FileProcessor:
             file_params.img2txt = file.is_img2txt
             file_params.tab_head = file.is_table_head_fill
             file_params.priority = file.process_priority or ProcessPriority.MEDIUM.value
+            file_params.security_level = file.security_level
             
             # 检查 chunk_parser 是否已经是字典类型
             if isinstance(file.chunk_parser, dict):

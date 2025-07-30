@@ -1,6 +1,6 @@
 from openai import AsyncOpenAI, APIError
 from loguru import logger
-from typing import Dict, List, Optional, AsyncGenerator, Union
+from typing import AsyncGenerator
 from .base import LLMConfig, BaseLLM
 from core.config import settings
 from openai.types.chat import (
@@ -21,7 +21,7 @@ class OpenaiLLMConfig(LLMConfig):
     frequency_penalty: float = 0.0
     presence_penalty: float = 0.0
     timeout: int = settings['llm']['timeout']
-    api_endpoint: Optional[str] = None
+    api_endpoint: str | None = None
 
 
 class OpenaiClient(BaseLLM):
@@ -61,10 +61,10 @@ class OpenaiClient(BaseLLM):
     
     async def chat(
         self,
-        messages: Union[List[Dict[str, str]], str],
+        messages: list[dict[str, str]] | str,
         stream: bool = False,
         **kwargs
-    ) -> Optional[Union[ChatCompletion, AsyncGenerator[ChatCompletionChunk, None]]]:
+    ) -> ChatCompletion | AsyncGenerator[ChatCompletionChunk, None] | None:
         """Generate chat response with consistent return types.
         
         Args:

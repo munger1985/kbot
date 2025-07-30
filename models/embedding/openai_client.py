@@ -1,4 +1,4 @@
-from typing import List, Optional, Dict, Any, cast
+from typing import Any, cast
 import numpy as np
 from openai import AsyncOpenAI, APIError, APIConnectionError, RateLimitError
 from prometheus_client import Histogram, Counter, Gauge
@@ -65,7 +65,7 @@ class OpenAIEmbedding(BaseEmbedding):
                 - min_batch_size: Minimum texts per API call
                 - retry_delay: Base delay between retries in seconds
         """
-        self._client: Optional[AsyncOpenAI] = None
+        self._client: AsyncOpenAI | None = None
         self.model_name = config.model_name
         self.api_key = config.api_key or settings.get('openai_api_key')
         self.timeout = config.timeout or settings['embed']['timeout']
@@ -134,7 +134,7 @@ class OpenAIEmbedding(BaseEmbedding):
 
     async def embed(
         self,
-        texts: List[str],
+        texts: list[str],
         batch_size: int = 0,
         normalize: bool = False,
         raise_on_error: bool = True
@@ -178,7 +178,7 @@ class OpenAIEmbedding(BaseEmbedding):
 
     async def _process_batches(
         self,
-        texts: List[str],
+        texts: list[str],
         batch_size: int,
         normalize: bool
     ) -> EmbeddingResponse:
@@ -237,7 +237,7 @@ class OpenAIEmbedding(BaseEmbedding):
             self.max_batch_size
         )
 
-    def _normalize_embedding(self, embedding: List[float]) -> List[float]:
+    def _normalize_embedding(self, embedding: list[float]) -> list[float]:
         """
         Safely normalize embedding vector with proper type handling.
         
@@ -245,7 +245,7 @@ class OpenAIEmbedding(BaseEmbedding):
             embedding: Input vector to normalize
             
         Returns:
-            List[float]: Normalized vector guaranteed to be List[float]
+            list[float]: Normalized vector guaranteed to be list[float]
         """
         try:
             norm = np.linalg.norm(embedding)
@@ -258,13 +258,13 @@ class OpenAIEmbedding(BaseEmbedding):
             # 或者方案2：使用NumPy
             arr = np.array(embedding, dtype=np.float32)
             normalized = (arr / norm).tolist()
-            return cast(List[float], normalized)
+            return cast(list[float], normalized)
             
         except Exception as e:
             logger.warning(f"Normalization failed: {str(e)}")
             return embedding
 
-    def _build_response(self, embeddings: List[List[float]], total_tokens: int) -> EmbeddingResponse:
+    def _build_response(self, embeddings: list[list[float]], total_tokens: int) -> EmbeddingResponse:
         """Construct standardized response object."""
         data = [
             EmbeddingDataItem(
@@ -318,7 +318,7 @@ class OpenAIEmbedding(BaseEmbedding):
         }
         return dim_map.get(self.model_name, 1536)  # Default to 1536 if unknown
 
-    async def health_check(self) -> Dict[str, Any]:
+    async def health_check(self) -> dict[str, Any]:
         """Check service health status."""
         return {
             "initialized": self._is_initialized,

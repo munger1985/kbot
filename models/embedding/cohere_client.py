@@ -1,6 +1,4 @@
-from typing import List, Optional, Dict, Any, Tuple
-import numpy as np
-import cohere
+from typing import Any
 from cohere import AsyncClient
 from prometheus_client import Histogram, Counter, Gauge
 from loguru import logger
@@ -63,7 +61,7 @@ class CohereEmbedding(BaseEmbedding):
                 - retry_delay: Base delay between retries in seconds
                 - truncate_strategy: Default truncation ("END"/"START"/"NONE")
         """
-        self._client: Optional[AsyncClient] = None
+        self._client: AsyncClient | None = None
         self.api_key = config.api_key or settings.get('cohere_api_key')
         self.model_name = config.model_name
         self.timeout = config.timeout or settings['embed']['timeout']
@@ -118,10 +116,10 @@ class CohereEmbedding(BaseEmbedding):
 
     async def embed(
         self,
-        texts: List[str],
+        texts: list[str],
         batch_size: int = 0,
-        input_type: Optional[str] = None,
-        truncate: Optional[str] = None,
+        input_type: str | None = None,
+        truncate: str | None = None,
         raise_on_error: bool = True,
         **kwargs: Any
     ) -> EmbeddingResponse:
@@ -183,7 +181,7 @@ class CohereEmbedding(BaseEmbedding):
 
     async def _process_batches(
         self,
-        texts: List[str],
+        texts: list[str],
         batch_size: int,
         input_type: str,
         truncate: str,
@@ -233,7 +231,7 @@ class CohereEmbedding(BaseEmbedding):
             self.max_batch_size
         )
 
-    def _build_response(self, embeddings: List[List[float]], total_tokens: int) -> EmbeddingResponse:
+    def _build_response(self, embeddings: list[list[float]], total_tokens: int) -> EmbeddingResponse:
         """Construct standardized response object."""
         data = [
             EmbeddingDataItem(
@@ -289,7 +287,7 @@ class CohereEmbedding(BaseEmbedding):
         }
         return dim_map.get(self.model_name, 1024)  # Default to 1024
 
-    async def health_check(self) -> Dict[str, Any]:
+    async def health_check(self) -> dict[str, Any]:
         """Check service health status."""
         return {
             "initialized": self._is_initialized,

@@ -15,7 +15,7 @@ import time
 import atexit
 import platform
 from datetime import datetime
-from typing import List, Optional, Any, Dict
+from typing import Any
 from contextlib import asynccontextmanager
 from pydantic import BaseModel, Field
 import numpy as np
@@ -97,8 +97,8 @@ app.add_middleware(
 # 定义请求模型
 class EmbeddingRequest(BaseModel):
     model_unique_name: str = Field(..., description="Embedding model unique name")
-    texts: List[str] = Field(..., description="List of texts to be embedded.")
-    batch_size: Optional[int] = Field(32, description="Batch size")
+    texts: list[str] = Field(..., description="list of texts to be embedded.")
+    batch_size: int | None = Field(32, description="Batch size")
 
 
 # 依赖项：获取嵌入服务实例
@@ -106,7 +106,7 @@ def get_embed_service():
     return embedding_service
 
 @app.get("/health", response_model=dict, tags=["Embedding"])
-async def health() -> Dict[str, Any]:
+async def health() -> dict[str, Any]:
     """Health check endpoint. //微服务接口健康检查
     Returns:
         Loaded models count. //已加载的模型数量
@@ -124,7 +124,6 @@ async def health() -> Dict[str, Any]:
         "timestamp": datetime.now().isoformat()
     }
 
-@app.post("/embed", response_model=EmbeddingResponse, tags=["Embedding"])
 @app.post("/v1/embeddings", response_model=EmbeddingResponse, tags=["Embedding"])
 async def embed_texts(
     request: EmbeddingRequest,

@@ -1,13 +1,10 @@
-import oracledb
-import array
-import numpy as np
-from typing import Dict, Any, AsyncIterator, Union
+from typing import Any, AsyncIterator
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from contextlib import asynccontextmanager
 from dao.data_dict import DbType
 
 @asynccontextmanager
-async def create_session(db_type: int, connection_info: Dict[str, Any]) -> AsyncIterator[AsyncSession]:
+async def create_session(db_type: int, connection_info: dict[str, Any]) -> AsyncIterator[AsyncSession]:
     """
     根据数据库类型和连接信息创建异步数据库session
     :param db_type: 数据库类型，支持oracle/mysql/pg
@@ -34,7 +31,7 @@ async def create_session(db_type: int, connection_info: Dict[str, Any]) -> Async
         raise ValueError(f"不支持的数据库类型: {db_type}")
 
 @staticmethod
-def _build_connection_string(db_type: int, connection_info: Dict[str, Any]) -> str:
+def _build_connection_string(db_type: int, connection_info: dict[str, Any]) -> str:
     """
     构建数据库连接字符串
     :param db_type: 数据库类型

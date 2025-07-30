@@ -1,12 +1,11 @@
 import re
-from typing import List, Optional
 
 def chunk_text(
     text: str, 
     chunk_size: int = 1000, 
     overlap: int = 100, 
     sentence_boundary: bool = True
-) -> List[str]:
+) -> list[str]:
     """
     将文本分割成指定大小的块，尽量不切断单词和句子
     
@@ -57,7 +56,7 @@ def chunk_text(
     
     return chunks
 
-def _find_sentence_boundary(text: str, position: int) -> Optional[int]:
+def _find_sentence_boundary(text: str, position: int) -> int | None:
     """
     查找最近的句子边界位置
     
@@ -80,7 +79,7 @@ def _find_sentence_boundary(text: str, position: int) -> Optional[int]:
     
     return None
 
-def _find_word_boundary(text: str, position: int) -> Optional[int]:
+def _find_word_boundary(text: str, position: int) -> int | None:
     """
     查找最近的单词边界位置
     

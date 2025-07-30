@@ -1,6 +1,6 @@
 """Hugging Face LLM client implementation."""
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 import requests
 from pydantic import Field
 from loguru import logger
@@ -42,8 +42,8 @@ class HuggingFaceClient(BaseLLM):
     async def generate(
         self,
         prompt: str,
-        max_tokens: Optional[int] = None,
-        temperature: Optional[float] = None,
+        max_tokens: int | None = None,
+        temperature: float | None = None,
         **kwargs: Any,
     ) -> str:
         """Generate text from a prompt.
@@ -106,9 +106,9 @@ class HuggingFaceClient(BaseLLM):
 
     async def chat(
         self,
-        messages: List[Dict[str, str]],
-        max_tokens: Optional[int] = None,
-        temperature: Optional[float] = None,
+        messages: list[dict[str, str]],
+        max_tokens: int | None = None,
+        temperature: float | None = None,
         **kwargs: Any,
     ) -> str:
         """Generate a chat response.
@@ -144,11 +144,11 @@ class HuggingFaceClient(BaseLLM):
             **kwargs
         )
 
-    def _format_chat_messages(self, messages: List[Dict[str, str]]) -> str:
+    def _format_chat_messages(self, messages: list[dict[str, str]]) -> str:
         """Format chat messages into a prompt.
 
         Args:
-            messages: List of messages
+            messages: list of messages
 
         Returns:
             Formatted prompt

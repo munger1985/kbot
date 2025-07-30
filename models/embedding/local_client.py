@@ -1,13 +1,13 @@
-from typing import List, Optional, Any, Dict, Tuple
-import numpy as np
-import torch
 import os
+import gc
+import torch
+from typing import Any
 from loguru import logger
-from transformers import AutoModel, AutoTokenizer, AutoConfig
+from transformers import AutoModel, AutoTokenizer
 from prometheus_client import Histogram, Counter, Gauge
 from models.embedding.base import BaseEmbedding, LocalEmbeddingConfig, EmbeddingResponse, EmbeddingDataItem
 from core.config import settings
-import gc
+
 
 
 class LocalEmbedding(BaseEmbedding):
@@ -67,8 +67,8 @@ class LocalEmbedding(BaseEmbedding):
             raise TypeError("config must be an instance of LocalEmbeddingConfig")
 
         # Model components
-        self.model: Optional[torch.nn.Module] = None
-        self.tokenizer: Optional[Any] = None
+        self.model: torch.nn.Module | None = None
+        self.tokenizer: Any | None = None
         
         # Configuration with validation
         self.model_name = config.model_name
@@ -277,7 +277,7 @@ class LocalEmbedding(BaseEmbedding):
 
     async def embed(
         self,
-        texts: List[str],
+        texts: list[str],
         batch_size: int = 0,
         normalize: bool = True,
         raise_on_error: bool = True,
@@ -286,7 +286,7 @@ class LocalEmbedding(BaseEmbedding):
         Generate embeddings with automatic batch processing and comprehensive monitoring.
         
         Args:
-            texts: List of input texts to embed
+            texts: list of input texts to embed
             batch_size: Override auto-detected batch size (0 for auto)
             normalize: L2-normalize output embeddings
             raise_on_error: Whether to raise exceptions or return empty response
@@ -314,7 +314,7 @@ class LocalEmbedding(BaseEmbedding):
         except Exception as e:
             return self._handle_embed_error(e, effective_batch_size, raise_on_error)
 
-    def _validate_inputs(self, texts: List[str], raise_on_error: bool) -> bool:
+    def _validate_inputs(self, texts: list[str], raise_on_error: bool) -> bool:
         """Validate input texts and model state."""
         if not self._is_initialized:
             if raise_on_error:
@@ -330,7 +330,7 @@ class LocalEmbedding(BaseEmbedding):
 
     async def _process_batches(
         self,
-        texts: List[str],
+        texts: list[str],
         batch_size: int,
         normalize: bool
     ) -> EmbeddingResponse:
@@ -354,9 +354,9 @@ class LocalEmbedding(BaseEmbedding):
 
     async def _process_single_batch(
         self,
-        batch: List[str],
+        batch: list[str],
         normalize: bool
-    ) -> Tuple[torch.Tensor, int]:
+    ) -> tuple[torch.Tensor, int]:
         """Process a single batch of texts."""
         if self.tokenizer is None or self.model is None:
             raise RuntimeError("Model and tokenizer must be initialized")
@@ -404,7 +404,7 @@ class LocalEmbedding(BaseEmbedding):
 
     def _build_response(
         self,
-        all_embeddings: List[torch.Tensor],
+        all_embeddings: list[torch.Tensor],
         total_tokens: int
     ) -> EmbeddingResponse:
         """确保每个输入文本对应一个embedding"""
@@ -413,8 +413,6 @@ class LocalEmbedding(BaseEmbedding):
 
         # 合并所有批次的embeddings [total_texts, hidden_dim]
         embeddings_np = torch.cat(all_embeddings, dim=0).cpu().numpy()
-        logger.debug(f"Final embeddings count: {len(embeddings_np)}")
-
         
         # 创建响应项
         data = []
@@ -593,7 +591,7 @@ class LocalEmbedding(BaseEmbedding):
         except Exception as e:
             logger.warning(f"Warmup failed: {e}")
 
-    def health_check(self) -> Dict[str, Any]:
+    def health_check(self) -> dict[str, Any]:
         """Check model health and resource status."""
         status = {
             "initialized": self._is_initialized,
@@ -613,7 +611,7 @@ class LocalEmbedding(BaseEmbedding):
         
         return status
 
-    def model_info(self) -> Dict[str, Any]:
+    def model_info(self) -> dict[str, Any]:
         """Get detailed information about the loaded model."""
         if not self._is_initialized or self.model is None:
             raise RuntimeError("Model not initialized")

@@ -1,5 +1,4 @@
-from typing import Sequence, Optional
-from sqlalchemy import select, delete, and_, or_
+from sqlalchemy import select
 from dao.entities.kbot_md_prompt import KbotMdPrompt
 from core.database.meta_oracle import get_session
 
@@ -15,19 +14,14 @@ class KbotMdPromptRepository:
             await session.refresh(prompt)
             return prompt
     
-    async def get_by_id(self, prompt_id: int) -> Optional[KbotMdPrompt]:
+    async def get_by_id(self, prompt_id: int) -> KbotMdPrompt | None:
         """Get prompt by ID."""
         async with get_session() as session:
             result = await session.execute(
                 select(KbotMdPrompt).where(KbotMdPrompt.prompt_id == prompt_id)
             )
-            return result.scalars().first()
+            return result.scalar_one_or_none()
     
-    async def get_all(self) -> Sequence[KbotMdPrompt]:
-        """Get all prompt records."""
-        async with get_session() as session:
-            result = await session.execute(select(KbotMdPrompt))
-            return result.scalars().all()
     
     async def update(self, prompt: KbotMdPrompt) -> KbotMdPrompt:
         """Update a prompt record."""

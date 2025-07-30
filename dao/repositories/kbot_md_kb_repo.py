@@ -1,6 +1,5 @@
-from typing import Sequence, Optional
+from typing import Sequence
 from sqlalchemy import select
-from sqlalchemy.engine.row import Row
 from dao.entities.kbot_md_kb import KbotMdKb
 from dao.data_dict import KbCategory, KbStatus, Status
 from dao.entities.kbot_md_db_conf import KbotMdDbConf
@@ -18,15 +17,15 @@ class KbotMdKbRepository:
             await session.refresh(kb)
             return kb
     
-    async def get_by_id(self, kb_id: int) -> Optional[KbotMdKb]:
+    async def get_by_id(self, kb_id: int) -> KbotMdKb | None:
         """Get knowledge base by ID."""
         async with get_session() as session:
             result = await session.execute(
                 select(KbotMdKb).where(KbotMdKb.kb_id == kb_id)
             )
-            return result.scalars().first()
+            return result.scalar_one_or_none()
     
-    async def get_by_name(self, kb_name: str) -> Optional[KbotMdKb]:
+    async def get_by_name(self, kb_name: str) -> KbotMdKb | None:
         """Get knowledge base by name."""
         async with get_session() as session:
             result = await session.execute(
@@ -90,7 +89,7 @@ class KbotMdKbRepository:
             )
             return result.scalars().all()
     
-    async def get_by_app_domain_name(self, app_id: int, domain_id: int, kb_name: str) -> Optional[KbotMdKb]:
+    async def get_by_app_domain_name(self, app_id: int, domain_id: int, kb_name: str) -> KbotMdKb | None:
         """Get knowledge base by app_id, domain_id and kb_name (unique constraint)."""
         async with get_session() as session:
             result = await session.execute(
@@ -101,7 +100,7 @@ class KbotMdKbRepository:
             )
             return result.scalars().first()
     
-    async def get_dbconf_by_kbid(self, kbid: int) -> Optional[KbotMdDbConf]:
+    async def get_dbconf_by_kbid(self, kbid: int) -> KbotMdDbConf | None:
         """Get database configuration by knowledge base ID."""
         async with get_session() as session:
             result = await session.execute(

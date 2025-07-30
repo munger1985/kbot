@@ -4,7 +4,7 @@ import asyncio
 import os
 import sys
 from loguru import logger
-from typing import Dict, List, Optional
+from typing import Optional
 from datetime import datetime, timedelta
 
 # 添加项目根目录到 Python 路径，确保可以导入项目模块
@@ -36,8 +36,8 @@ class ModelPool:
         """
         
         # 用于按提供商管理模型的池
-        self._models: Dict[str, BaseLLM] = {}
-        self._last_used: Dict[str, datetime] = {}
+        self._models: dict[str, BaseLLM] = {}
+        self._last_used: dict[str, datetime] = {}
         self._health_check_interval = health_check_interval
         self._health_check_task: Optional[asyncio.Task] = None
 

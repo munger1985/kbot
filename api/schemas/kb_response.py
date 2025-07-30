@@ -1,4 +1,4 @@
-from typing import Generic, List, Optional, TypeVar
+from typing import Generic, TypeVar
 from pydantic import BaseModel, Field
 
 T = TypeVar('T')
@@ -16,19 +16,19 @@ class SuccessResponse(BaseResponse):
 
 class SuccessQueryResponse(SuccessResponse):
     """成功查询响应模型"""
-    data: Optional[List[dict]] = Field(None, description="返回结果集")
+    data: list[dict] | None = Field(None, description="返回结果集")
 
 class SuccessWithErrorResponse(SuccessResponse):
     """部分失败的成功响应模型"""
     code: int = Field(207, description="多状态码")
-    details: Optional[dict] = Field(None, description="详情")
+    details: dict | None = Field(None, description="详情")
 
 class ErrorResponse(BaseResponse):
     """错误响应模型"""
     success: bool = Field(False, description="请求失败")
     code: int = Field(400, description="错误码")
     error_type: str = Field(..., description="错误类型")
-    details: Optional[dict] = Field(None, description="错误详情")
+    details: dict | None = Field(None, description="错误详情")
 
 class Pagination(BaseModel):
     """分页信息"""
@@ -38,5 +38,5 @@ class Pagination(BaseModel):
 
 class PaginatedResponse(BaseModel, Generic[T]):
     """分页响应模型"""
-    items: List[T] = Field(..., description="数据列表")
+    items: list[T] = Field(..., description="数据列表")
     pagination: Pagination = Field(..., description="分页信息")

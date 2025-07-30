@@ -1,5 +1,5 @@
-from typing import Sequence, Optional
-from sqlalchemy import select, delete
+from typing import Sequence
+from sqlalchemy import select
 from dao.entities.kbot_md_domain import KbotMdDomain
 from dao.data_dict import Status
 from core.database.meta_oracle import get_session
@@ -16,13 +16,13 @@ class KbotMdDomainRepository:
             await session.refresh(domain)
             return domain
     
-    async def get_by_id(self, domain_id: int) -> Optional[KbotMdDomain]:
+    async def get_by_id(self, domain_id: int) -> KbotMdDomain | None:
         """Get domain by ID."""
         async with get_session() as session:
             result = await session.execute(
                 select(KbotMdDomain).where(KbotMdDomain.domain_id == domain_id)
             )
-            return result.scalars().first()
+            return result.scalar_one_or_none()
     
     async def get_all(self) -> Sequence[KbotMdDomain]:
         """Get all domain records."""
@@ -48,14 +48,6 @@ class KbotMdDomainRepository:
             await session.commit()
             return True
     
-    async def get_by_app_id(self, app_id: int) -> Sequence[KbotMdDomain]:
-        """Get domains by application ID."""
-        async with get_session() as session:
-            result = await session.execute(
-                select(KbotMdDomain).where(KbotMdDomain.app_id == app_id)
-            )
-            return result.scalars().all()
-    
     async def get_by_name(self, name: str) -> Sequence[KbotMdDomain]:
         """Get domains by name."""
         async with get_session() as session:
@@ -71,13 +63,3 @@ class KbotMdDomainRepository:
                 select(KbotMdDomain).where(KbotMdDomain.status == status.value)
             )
             return result.scalars().all()
-    
-    async def get_by_app_and_name(self, app_id: int, name: str) -> Optional[KbotMdDomain]:
-        """Get domain by app_id and name (unique constraint)."""
-        async with get_session() as session:
-            result = await session.execute(
-                select(KbotMdDomain)
-                .where(KbotMdDomain.app_id == app_id)
-                .where(KbotMdDomain.name == name)
-            )
-            return result.scalars().first()

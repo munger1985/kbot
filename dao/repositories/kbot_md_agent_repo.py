@@ -1,49 +1,50 @@
-from typing import Optional, Sequence
+from typing import Sequence
 from sqlalchemy import select, update, delete
-from sqlalchemy.ext.asyncio import AsyncSession
 from dao.entities.kbot_md_agent import KbotMdAgent
-
+from core.database.meta_oracle import get_session
 
 class KbotMdAgentRepository:
     """Agent metadata repository"""
     
-    def __init__(self, session: AsyncSession):
-        self.session = session
-
     async def create(self, agent: KbotMdAgent) -> KbotMdAgent:
         """create agent metadata"""
-        self.session.add(agent)
-        await self.session.flush()
-        await self.session.refresh(agent)
-        return agent
+        async with get_session() as session:
+            session.add(agent)
+            await session.flush()
+            await session.refresh(agent)
+            return agent
 
-    async def get_by_id(self, agent_id: int) -> Optional[KbotMdAgent]:
+    async def get_by_id(self, agent_id: int) -> KbotMdAgent | None:
         """get agent metadata by id"""
-        stmt = select(KbotMdAgent).where(KbotMdAgent.agent_id == agent_id)
-        result = await self.session.execute(stmt)
-        return result.scalar_one_or_none()
+        async with get_session() as session:
+            stmt = select(KbotMdAgent).where(KbotMdAgent.agent_id == agent_id)
+            result = await session.execute(stmt)
+            return result.scalar_one_or_none()
 
     async def get_all(self) -> Sequence[KbotMdAgent]:
         """get all agent metadata"""
-        stmt = select(KbotMdAgent)
-        result = await self.session.execute(stmt)
-        return result.scalars().all()
+        async with get_session() as session:
+            stmt = select(KbotMdAgent)
+            result = await session.execute(stmt)
+            return result.scalars().all()
 
-    async def update(self, agent_id: int, **kwargs) -> Optional[KbotMdAgent]:
+    async def update(self, agent_id: int, **kwargs) -> KbotMdAgent | None:
         """update agent metadata by id"""
-        stmt = (
-            update(KbotMdAgent)
-            .where(KbotMdAgent.agent_id == agent_id)
-            .values(**kwargs)
-            .returning(KbotMdAgent)
-        )
-        result = await self.session.execute(stmt)
-        await self.session.commit()
-        return result.scalar_one_or_none()
+        async with get_session() as session:
+            stmt = (
+                update(KbotMdAgent)
+                .where(KbotMdAgent.agent_id == agent_id)
+                .values(**kwargs)
+                .returning(KbotMdAgent)
+            )
+            result = await session.execute(stmt)
+            await session.commit()
+            return result.scalar_one_or_none()
 
     async def delete(self, agent_id: int) -> bool:
         """delete agent metadata by id"""
-        stmt = delete(KbotMdAgent).where(KbotMdAgent.agent_id == agent_id)
-        result = await self.session.execute(stmt)
-        await self.session.commit()
-        return result.rowcount > 0
+        async with get_session() as session:
+            stmt = delete(KbotMdAgent).where(KbotMdAgent.agent_id == agent_id)
+            result = await session.execute(stmt)
+            await session.commit()
+            return result.rowcount > 0

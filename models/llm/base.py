@@ -6,8 +6,7 @@ Contains:
 """
 
 from pydantic import BaseModel, field_validator, ConfigDict
-from typing import Any, Dict, List, Union, Optional, AsyncGenerator
-from tenacity import retry, stop_after_attempt
+from typing import Any, AsyncGenerator
 from prometheus_client import Counter, Histogram
 from core.config import settings
 
@@ -51,10 +50,10 @@ class BaseLLM:
     
     async def chat(
         self,
-        messages: Union[List[Dict[str, str]], str],
+        messages: list[dict[str, str]] | str,
         stream: bool = False,
         **kwargs: Any
-    ) -> Optional[AsyncGenerator[str, None] | str]:
+    ) -> AsyncGenerator[str, None] | str | None:
         """Generate a chat response asynchronously.
         
         Args:

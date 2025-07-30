@@ -1,6 +1,6 @@
 import os
 import sys
-from typing import List, Dict, Any, Optional
+from typing import Any
 from loguru import logger
 
 # 添加项目根目录到 Python 路径，确保可以导入项目模块
@@ -66,9 +66,9 @@ class RerankerService:
         self,
         model_unique_name: str,
         query: str,
-        documents: List[str],
-        top_k: Optional[int] = None
-    ) -> List[Dict[str, Any]]:
+        documents: list[str],
+        top_k: int | None = None
+    ) -> list[dict[str, Any]]:
         """
         Rerank documents based on relevance to query.
         

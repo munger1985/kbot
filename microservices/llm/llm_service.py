@@ -4,7 +4,7 @@ from loguru import logger
 import os
 import sys
 import json
-from typing import Dict, List, Union, Optional, Any, AsyncGenerator
+from typing import Any, AsyncGenerator
 
 # 添加项目根目录到 Python 路径，确保可以导入项目模块
 current_file = os.path.abspath(__file__)
@@ -60,20 +60,20 @@ class LLMService:
     async def chat(
         self,
         model_unique_name: str,
-        messages: Union[List[Dict[str, str]], str],
+        messages: list[dict[str, str]] | str,
         stream: bool = False,
-        timeout: Optional[int] = None,
-        max_tokens: Optional[int] = None,
-        temperature: Optional[float] = None,
-        top_p: Optional[float] = None,
-        frequency_penalty: Optional[float] = None,
-        presence_penalty: Optional[float] = None
-    ) -> Union[Dict[str, Any], AsyncGenerator[str, None]]:
+        timeout: int | None = None,
+        max_tokens: int | None = None,
+        temperature: float | None = None,
+        top_p: float | None = None,
+        frequency_penalty: float | None = None,
+        presence_penalty: float | None = None
+    ) -> dict[str, Any] | AsyncGenerator[str, None]:
         """Generate a chat response.
 
         Args:
             model_unique_name: Model ID
-            messages: List of messages or single prompt string
+            messages: list of messages or single prompt string
             stream: Whether to stream the response
             timeout: Timeout in seconds
             max_tokens: Maximum number of tokens to generate

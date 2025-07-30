@@ -1,5 +1,4 @@
-import array
-from typing import List, Sequence
+from typing import Sequence
 from sqlalchemy import select, delete
 from core.database.factory import create_session
 from dao.entities.kbot_biz_txt_embedding import KbotBizTxtEmbedding
@@ -8,7 +7,7 @@ from utils.oracle_vec_handler import OracleVecHandler
 
 class KbotBizTxtEmbeddingRepository:
 
-    async def create(self, kb_id: int, embeddings: List[KbotBizTxtEmbedding]) -> bool:
+    async def create(self, kb_id: int, embeddings: list[KbotBizTxtEmbedding]) -> bool:
         """Create a new embedding record."""
         db_repo = KbotMdDbConfRepository()
         db_conf = await db_repo.get_by_kbid(kb_id)
@@ -24,7 +23,7 @@ class KbotBizTxtEmbeddingRepository:
             await session.commit()
             return True
     
-    async def delete_by_file_ids(self, kb_id: int, file_ids: List[int]) -> int:
+    async def delete_by_file_ids(self, kb_id: int, file_ids: list[int]) -> int:
         """Delete embedding records by file IDs."""
         db_repo = KbotMdDbConfRepository()
         db_conf = await db_repo.get_by_kbid(kb_id)
@@ -44,19 +43,21 @@ class KbotBizTxtEmbeddingRepository:
     async def get_similar_embeddings(self,
                                      kb_id: int,
                                      query_vec: str,
-                                     similarity_threshold: float = 0.8,
-                                     top_k: int = 10
+                                     security: int,
+                                     similarity_threshold: float | None = 0.8,
+                                     top_k: int | None = 10
                                      ) -> Sequence:
         """Get similar embeddings using vector similarity search.
         
         Args:
             kb_id: Knowledge base ID
             query_vec: Target embedding vector to compare with
+            security: Security level
             similarity_threshold: Minimum similarity score (0.0-1.0)
             top_k: Maximum number of results to return
             
         Returns:
-            List of similar embeddings ordered by similarity score
+            list of similar embeddings ordered by similarity score
         """
         db_repo = KbotMdDbConfRepository()
         db_conf = await db_repo.get_by_kbid(kb_id)
@@ -77,6 +78,7 @@ class KbotBizTxtEmbeddingRepository:
                 FROM KBOT_BIZ_TXT_EMBEDDING
                 WHERE 1 - VECTOR_DISTANCE(EMBEDDING, :query_vec, COSINE) >= :threshold
                 AND KB_ID = :kb_id
+                AND SECURITY_LEVEL <= :security
                 ORDER BY similarity DESC
                 FETCH FIRST :top_k ROWS ONLY
             """
@@ -84,6 +86,7 @@ class KbotBizTxtEmbeddingRepository:
             params = {}
             params["kb_id"] = kb_id
             params["query_vec"] = query_vec
+            params["security"] = security
             params["threshold"] = similarity_threshold
             params["top_k"] = top_k
 

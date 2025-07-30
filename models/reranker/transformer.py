@@ -1,6 +1,6 @@
-from typing import Dict, List, Optional, Union, Any
 import os
 import torch
+from typing import Any
 from loguru import logger
 from prometheus_client import Histogram, Counter, Gauge
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
@@ -39,8 +39,8 @@ class TransformerReranker(BaseReranker):
             metrics_prefix: Prometheus指标前缀
         """
         # Model components
-        self.model: Optional[torch.nn.Module] = None
-        self.tokenizer: Optional[Any] = None
+        self.model: torch.nn.Module | None = None
+        self.tokenizer: Any | None = None
         self.model_name = config.model_name
         self.model_path = config.model_path
         self.predownload = False  # 是否为本地预下载模型
@@ -191,9 +191,9 @@ class TransformerReranker(BaseReranker):
     async def rerank(
         self,
         query: str,
-        documents: List[str],
-        top_k: Optional[int] = None
-    ) -> List[Dict[str, Any]]:
+        documents: list[str],
+        top_k: int | None = None
+    ) -> list[dict[str, Any]]:
         """
         Rerank documents based on relevance to query.
         

@@ -2,7 +2,6 @@ import os
 import sys
 import asyncio
 from loguru import logger
-from typing import Dict, Optional
 from datetime import datetime, timedelta
 
 # 添加项目根目录到 Python 路径，确保可以导入项目模块
@@ -30,10 +29,10 @@ class ModelPool:
         Args:
             health_check_interval: Interval in seconds between health checks
         """
-        self._models: Dict[str, BaseEmbedding] = {}
-        self._last_used: Dict[str, datetime] = {}
+        self._models: dict[str, BaseEmbedding] = {}
+        self._last_used: dict[str, datetime] = {}
         self._health_check_interval = health_check_interval
-        self._health_check_task: Optional[asyncio.Task] = None
+        self._health_check_task: asyncio.Task | None = None
         
     async def initialize(self):
         """Initialize the model pool and start health check task"""

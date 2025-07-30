@@ -1,7 +1,5 @@
-from typing import List, Optional, Dict, Any, Tuple
-import numpy as np
-import openai
-from openai import AsyncAzureOpenAI, APIError, APIConnectionError, RateLimitError, APIStatusError
+from typing import Any
+from openai import AsyncAzureOpenAI, APIConnectionError, RateLimitError, APIStatusError
 from prometheus_client import Histogram, Counter, Gauge
 from loguru import logger
 import asyncio
@@ -66,7 +64,7 @@ class AzureEmbedding(BaseEmbedding):
                 - headers: Custom HTTP headers
                 - azure_params: Additional Azure parameters
         """
-        self._client: Optional[AsyncAzureOpenAI] = None
+        self._client: AsyncAzureOpenAI | None = None
         self.api_key = config.api_key or settings.get('azure_api_key')
         self.deployment_name = config.deployment_name
         self.endpoint = config.endpoint
@@ -144,7 +142,7 @@ class AzureEmbedding(BaseEmbedding):
 
     async def embed(
         self,
-        texts: List[str],
+        texts: list[str],
         batch_size: int = 0,
         raise_on_error: bool = True,
         **kwargs: Any
@@ -196,7 +194,7 @@ class AzureEmbedding(BaseEmbedding):
 
     async def _process_batches(
         self,
-        texts: List[str],
+        texts: list[str],
         batch_size: int,
         **kwargs: Any
     ) -> EmbeddingResponse:
@@ -254,7 +252,7 @@ class AzureEmbedding(BaseEmbedding):
             self.max_batch_size
         )
 
-    def _build_response(self, embeddings: List[List[float]], total_tokens: int) -> EmbeddingResponse:
+    def _build_response(self, embeddings: list[list[float]], total_tokens: int) -> EmbeddingResponse:
         """Construct standardized response."""
         data = [
             EmbeddingDataItem(
@@ -316,7 +314,7 @@ class AzureEmbedding(BaseEmbedding):
         }
         return dim_map.get(self.deployment_name.split('-')[0], 1536)  # Default fallback
 
-    async def health_check(self) -> Dict[str, Any]:
+    async def health_check(self) -> dict[str, Any]:
         """Get service health status."""
         return {
             "initialized": self._is_initialized,

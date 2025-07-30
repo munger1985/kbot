@@ -15,7 +15,7 @@ import time
 import atexit
 import platform
 from datetime import datetime
-from typing import List, Optional, Any, Dict
+from typing import Any
 from contextlib import asynccontextmanager
 from pydantic import BaseModel, Field
 from fastapi import FastAPI, HTTPException, Depends
@@ -96,19 +96,19 @@ app.add_middleware(
 class RerankerRequest(BaseModel):
     model_unique_name: str = Field(..., description="reranker model ID")
     query: str = Field(..., description="query")
-    documents: List[str] = Field(..., description="List of documents to be reranked.")
-    top_k: Optional[int] = Field(10, description="Number of top documents to return (None for all)")
+    documents: list[str] = Field(..., description="List of documents to be reranked.")
+    top_k: int | None = Field(10, description="Number of top documents to return (None for all)")
 
 # 定义响应模型
 class RerankerResponse(BaseModel):
-    rerankers: List[Dict[str, Any]] = Field(..., description="List of reranked documents.")
+    rerankers: list[dict[str, Any]] = Field(..., description="List of reranked documents.")
 
 # 依赖项：获取reranker服务实例
 def get_reranker_service():
     return reranker_service
 
 @app.get("/health", response_model=dict, tags=["Reranker"])
-async def health() -> Dict[str, Any]:
+async def health() -> dict[str, Any]:
     """Health check endpoint. //微服务接口健康检查
     Returns:
         Loaded models count. //已加载的模型数量
@@ -126,7 +126,7 @@ async def health() -> Dict[str, Any]:
         "timestamp": datetime.now().isoformat()
     }
 
-@app.post("/rerank", response_model=RerankerResponse, tags=["Reranker"])
+@app.post("/v1/rerank", response_model=RerankerResponse, tags=["Reranker"])
 async def rerank_texts(
     request: RerankerRequest,
     reranker_service: RerankerService = Depends(get_reranker_service)
@@ -135,7 +135,7 @@ async def rerank_texts(
     将文本列表进行rerank
     - **model_unique_name**: Model ID to use for reranking.
     - **query**: Query text to be reranked.
-    - **documents**: List of documents to be reranked.
+    - **documents**: list of documents to be reranked.
     - **top_k**: Number of top documents to return (None for all)
     """
 

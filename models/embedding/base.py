@@ -1,9 +1,6 @@
-import numpy as np
-import torch
 from abc import ABC, abstractmethod
 from pydantic import BaseModel, Field
 from prometheus_client import Counter, Histogram
-from typing import List, Optional, Dict
 
 
 class EmbeddingConfig(BaseModel):
@@ -12,10 +9,10 @@ class EmbeddingConfig(BaseModel):
     max_tokens: int
 
 class LocalEmbeddingConfig(EmbeddingConfig):
-    model_path: Optional[str] = None
-    device: Optional[str] = None
-    device_map: Optional[str] = None
-    max_memory: Optional[int] = None
+    model_path: str | None = None
+    device: str | None = None
+    device_map: str | None = None
+    max_memory: int | None = None
     trust_remote_code: bool = False
     use_fp16: bool = False
     local_files_only: bool = False
@@ -32,15 +29,15 @@ class RemoteEmbeddingConfig(EmbeddingConfig):
     additional_params: dict = {}
 
 class EmbeddingDataItem(BaseModel):
-    embedding: List[float] = Field(..., description="The embedding vector.")
+    embedding: list[float] = Field(..., description="The embedding vector.")
     index: int = Field(..., description="The index of the embedding in the batch.")
     object: str = Field("embedding", description="The object type, always 'embedding'.")
 
 class EmbeddingResponse(BaseModel):
-    data: List[EmbeddingDataItem] = Field(..., description="List of embedding data items.")
+    data: list[EmbeddingDataItem] = Field(..., description="List of embedding data items.")
     model: str = Field(..., description="Embedding model name used.")
     object: str = Field("list", description="The object type, always 'list'.")
-    usage: Dict[str, int] = Field(..., description="Token usage information.")
+    usage: dict[str, int] = Field(..., description="Token usage information.")
 
 class BaseEmbedding(ABC):
     LATENCY_HIST = Histogram(
@@ -65,7 +62,7 @@ class BaseEmbedding(ABC):
         pass
     
     @abstractmethod
-    async def embed(self, texts: List[str]) -> EmbeddingResponse:
+    async def embed(self, texts: list[str]) -> EmbeddingResponse:
         """Generate embeddings for a list of texts in OpenAI standard format.
         
         Args:

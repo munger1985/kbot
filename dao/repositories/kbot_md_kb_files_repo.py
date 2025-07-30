@@ -1,4 +1,4 @@
-from typing import Sequence, Optional, Union, Dict
+from typing import Sequence
 from sqlalchemy import select, delete, and_, update
 from dao.entities.kbot_md_kb_files import KbotMdKbFiles
 from dao.data_dict import (
@@ -17,26 +17,18 @@ from core.database.meta_oracle import get_session
 class KbotMdKbFilesRepository:
     """Repository for KBOT_MD_KB_FILES table operations."""
     
-    async def get_by_id(self, file_id: int) -> Optional[KbotMdKbFiles]:
+    async def get_by_id(self, file_id: int) -> KbotMdKbFiles | None:
         """Get knowledge base file by ID."""
         async with get_session() as session:
             result = await session.execute(
                 select(KbotMdKbFiles).where(KbotMdKbFiles.file_id == file_id)
             )
-            return result.scalars().first()
+            return result.scalar_one_or_none()
     
     async def get_all(self) -> Sequence[KbotMdKbFiles]:
         """Get all knowledge base file records."""
         async with get_session() as session:
             result = await session.execute(select(KbotMdKbFiles))
-            return result.scalars().all()
-    
-    async def get_by_app_id(self, app_id: int) -> Sequence[KbotMdKbFiles]:
-        """Get knowledge base files by application ID."""
-        async with get_session() as session:
-            result = await session.execute(
-                select(KbotMdKbFiles).where(KbotMdKbFiles.app_id == app_id)
-            )
             return result.scalars().all()
     
     async def get_by_kb_id(self, kb_id: int) -> Sequence[KbotMdKbFiles]:
@@ -79,7 +71,7 @@ class KbotMdKbFilesRepository:
             )
             return result.scalars().all()
     
-    async def get_by_name_and_kb(self, file_name: str, kb_id: int) -> Optional[KbotMdKbFiles]:
+    async def get_by_name_and_kb(self, file_name: str, kb_id: int) -> KbotMdKbFiles | None:
         """Get knowledge base file by name and KB ID."""
         async with get_session() as session:
             result = await session.execute(
@@ -91,7 +83,7 @@ class KbotMdKbFilesRepository:
             )
             return result.scalars().first()
     
-    async def delete(self, kb_id: Optional[int], batch_id: Optional[int], file_ids: Optional[list[int]]) -> int:
+    async def delete(self, kb_id: int | None, batch_id: int | None, file_ids: list[int] | None) -> int:
         """Delete knowledge base files.
         kb_id (int): The knowledge base ID to delete all related files for
         batch_id (int): The batch ID to delete all related files for
@@ -168,14 +160,14 @@ class KbotMdKbFilesRepository:
                 await session.commit()
                 return True
             
-    async def update_file_status(self, file_id: int, status: FileStatus, log_msg: Optional[str] = None) -> bool:
+    async def update_file_status(self, file_id: int, status: FileStatus, log_msg: str | None = None) -> bool:
         """Update the status of a knowledge base file record."""
         async with get_session() as session:
             # Start building the update query
             query = update(KbotMdKbFiles).where(KbotMdKbFiles.file_id == file_id)
             
             # Prepare the values to update
-            values: Dict[str, Union[int, str]] = {"status": status.value}
+            values: dict[str, int | str] = {"status": status.value}
             if log_msg is not None:
                 values["log_msg"] = log_msg
                 

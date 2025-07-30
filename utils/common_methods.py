@@ -1,5 +1,5 @@
 import os
-from typing import List, Dict, Optional, Callable, Generator
+from typing import Callable, Generator
 from loguru import logger
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from core.config import settings
@@ -24,8 +24,8 @@ def check_text_file(file_params: FileParams):
 @staticmethod
 def run_in_thread_pool(
         func: Callable,
-        params: List[Dict] = [],
-        pool: Optional[ThreadPoolExecutor] = None
+        params: list[dict] = [],
+        pool: ThreadPoolExecutor | None = None
 ) -> Generator:
     '''
     在线程池中批量运行任务，并将运行结果以生成器的形式返回。
@@ -57,3 +57,15 @@ def safe_int(value) -> int:
         return int(value) if value is not None else 0
     except (ValueError, TypeError):
         return 0
+    
+@staticmethod
+async def lob_to_string(async_lob):
+    """
+    将 AsyncLOB 对象转换为字符串
+    :param async_lob: oracledb.AsyncLOB 对象
+    :return: 字符串内容
+    """
+    content = await async_lob.read()
+    if isinstance(content, bytes):
+        return content.decode('utf-8')  # 假设使用UTF-8编码
+    return content

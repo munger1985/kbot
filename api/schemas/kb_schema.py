@@ -1,4 +1,3 @@
-from typing import List, Optional
 from pydantic import BaseModel
 from fastapi import UploadFile
 
@@ -10,16 +9,16 @@ class KBUploadRequest(BaseModel):
     kb_id: int
     overwrite: bool
     batch_name: str
-    batch_id: Optional[int] = None
-    biz_metadata: Optional[dict] = None
-    created_by: Optional[str] = None
+    batch_id: int | None = None
+    biz_metadata: dict | None = None
+    created_by: str | None = None
 
 
 class KBUploadForm:
     """知识库上传表单模型"""
     def __init__(
         self,
-        files: List[UploadFile],
+        files: list[UploadFile],
         metadata: KBUploadRequest
     ):
         self.files = files
@@ -30,10 +29,10 @@ class KBDeleteRequest(BaseModel):
     app_id: int
     domain_id: int
     kb_id: int
-    batch_id: Optional[int]
-    batch_name: Optional[str]
-    file_ids: Optional[List[int]]
-    file_paths: Optional[List[str]]
+    batch_id: int | None
+    batch_name: str | None
+    file_ids: list[int] | None
+    file_paths: list[str] | None
 
 
 
