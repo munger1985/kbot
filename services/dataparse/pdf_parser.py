@@ -11,7 +11,7 @@ from dao.entities.kbot_biz_txt_embedding import KbotBizTxtEmbedding
 from dao.data_dict import FileStatus, ChunkType, SplitStrategy
 from core.config import settings
 from utils.chunk_text import chunk_text
-
+from utils.call_models import call_embedding_model
 from utils import check_text_file
 import os
 import uuid
@@ -30,28 +30,110 @@ from pdfminer.layout import LAParams, LTImage, LTFigure
 
 
 class PDFPlumberParser:
-    @staticmethod
-    def parse_pdf(file_params ) -> Tuple[
-        List[Dict], List[Dict], List[Dict], List[str]]:
-        """静态方法：解析PDF并返回文本、图片、表格信息以及按页分块的文本数组"""
-        pdf_path = file_params.file_path
-        output_dir = pdf_path
-        parser = PDFPlumberParser(pdf_path, output_dir)
-        split_strategy = int(file_params.paser.get("split_strategy", 1))
+    async def parse(self) -> Tuple[
+        List[Dict], List[Dict], List[Dict] ]:
+        pdf_path = self.file_params.file_path
+        split_strategy = int(self. file_params.parser.get("split_strategy", 1))
+        file_repo = KbotMdKbFilesRepository()
 
         if split_strategy == SplitStrategy.BY_PAGE.value:
-            text_content, images_info, tables_info = parser.extract_all_per_page()
+            text_content, images_info, tables_info = self.extract_all_per_page()
+            self.text_content = text_content
+            self.images_info= images_info
+            self.tables_info = tables_info
+            ###### text
+            embed_entities = []
+            for each_content in text_content:
+                text = each_content['text']
+                page = each_content['page']
+                if text != "":
+                    embeddings_list =await call_embedding_model(self.file_params.txt_embed_model, [text])
+                    embedding = embeddings_list[0]
+                    embed_entity = KbotBizTxtEmbedding(
+                        embed_id=str(uuid.uuid4()),
+                        chunk_doc=text,
+                        chunk_metadata=json.dumps({"chunk_type": ChunkType.TEXT,
+                                                   "split_strategy": int(split_strategy),
+                                                   "file_path": self.file_params.file_path,
+                                                   "page": page}),
+                        file_id=self.file_params.file_id,
+                        embedding=embedding
+                    )
+                    embed_entities.append(embed_entity)
 
-        # 获取按页分块的文本数组
-            text_chunks = PDFPlumberParser.get_text_chunks(text_content)
+                embedding_repo = KbotBizTxtEmbeddingRepository()
+                logger.debug(f"Attempting to save {len(embed_entities)} embeddings to database...")
+                try:
+                    result = await embedding_repo.create(kb_id=self.file_params.kb_id, embeddings=embed_entities)
+                    if result:
+                        logger.info(f"Successfully saved {len(embed_entities)} embeddings for {self.file_params.file_path}")
+                        logger.debug(f"Database operation returned: {result}")
+                    else:
+                        msg = f"Failed to save embeddings for {self.file_params.file_path} (repository returned False)"
+                        logger.error(msg)
+                        await file_repo.update_file_status(self.file_params.file_id, FileStatus.PARSE_FAILED, msg)
+                        return False
+                except Exception as e:
+                    msg = f"Exception while saving embeddings: {str(e)}"
+                    logger.error(msg, exc_info=True)
+                    await  file_repo.update_file_status(self.file_params.file_id, FileStatus.PARSE_FAILED, msg)
+                    return False
+            #### table
+            embed_entities = []
+            for each_content in tables_info:
+                table_id = each_content['uuid']
+                page = each_content['page']
 
-        # 保存结果
-        parser.save_results()
+                table_file_path = each_content['file_path']
+                with open(table_file_path, 'r', encoding='utf-8') as f:
+                    text = f.read()
+                    if text != "":
+                        embeddings_list = await call_embedding_model(self.file_params.txt_embed_model, [text])
+                        embedding = embeddings_list[0]
+                        embed_entity = KbotBizTxtEmbedding(
+                            embed_id=str(uuid.uuid4()),
+                            chunk_doc=text,
+                            chunk_metadata=json.dumps({"chunk_type": ChunkType.TEXT,
+                                                       "split_strategy": int(split_strategy),
+                                                       "file_path": self.file_params.file_path,
+                                                       "page": page}),
+                            file_id=self.file_params.file_id,
+                            embedding=embedding
+                        )
+                        embed_entities.append(embed_entity)
 
-        # 打印摘要
-        parser.print_summary()
+                    embedding_repo = KbotBizTxtEmbeddingRepository()
+                    logger.debug(f"Attempting to save {len(embed_entities)} embeddings to database...")
+                    try:
+                        result = await embedding_repo.create(kb_id=self.file_params.kb_id,
+                                                             embeddings=embed_entities)
+                        if result:
+                            logger.info(
+                                f"Successfully saved {len(embed_entities)} embeddings for {self.file_params.file_path}")
+                            logger.debug(f"Database operation returned: {result}")
+                        else:
+                            msg = f"Failed to save embeddings for {self.file_params.file_path} (repository returned False)"
+                            logger.error(msg)
+                            await file_repo.update_file_status(self.file_params.file_id, FileStatus.PARSE_FAILED,
+                                                               msg)
+                            return False
+                    except Exception as e:
+                        msg = f"Exception while saving embeddings: {str(e)}"
+                        logger.error(msg, exc_info=True)
+                        await  file_repo.update_file_status(self.file_params.file_id, FileStatus.PARSE_FAILED, msg)
+                        return False
 
-        return text_content, images_info, tables_info, text_chunks
+
+            # # 获取按页分块的文本数组
+            # text_chunks = PDFPlumberParser.get_text_chunks(text_content)
+
+        # # 保存结果
+        # parser.save_results()
+        #
+        # # 打印摘要
+        # parser.logger.info_summary()
+
+        return text_content, images_info, tables_info
 
     @staticmethod
     def get_text_chunks(text_content: List[Dict]) -> List[str]:
@@ -71,9 +153,10 @@ class PDFPlumberParser:
 
         return text_chunks
 
-    def __init__(self, pdf_path: str, output_dir: str = "extracted_content_pdfplumber"):
-        self.pdf_path = pdf_path
-        self.output_dir = Path(output_dir)
+    def __init__(self, file_params: FileParams):
+        self.file_params = file_params
+        self.pdf_path = file_params.file_path
+        self.output_dir = Path(file_params.file_path).parent / "output"
         self.images_dir = self.output_dir / "images"
         self.tables_dir = self.output_dir / "tables"
 
@@ -89,13 +172,13 @@ class PDFPlumberParser:
 
     def extract_all_per_page(self):
         """提取PDF中的所有内容：文字、图片和表格"""
-        print(f"正在解析PDF文件: {self.pdf_path}")
+        logger.info(f"Parsing file: {self.pdf_path}")
 
         try:
             # 使用pdfplumber提取文字和表格
             with pdfplumber.open(self.pdf_path) as pdf:
                 for page_num, page in enumerate(pdf.pages, 1):
-                    print(f"正在处理第 {page_num} 页...")
+                    logger.info(f"Parsing page {page_num} ")
 
                     # 提取文字和表格
                     page_text, page_tables = self._extract_text_and_tables_from_page(page, page_num)
@@ -112,7 +195,7 @@ class PDFPlumberParser:
                     })
 
         except Exception as e:
-            print(f"解析PDF时出错: {e}")
+            logger.info(f"解析PDF时出错: {e}")
 
         return self.text_content, self.images_info, self.tables_info
 
@@ -155,7 +238,7 @@ class PDFPlumberParser:
                     self.tables_info.append(table_info)
                     page_tables.append(table_info)
 
-                    print(f"已保存表格: {csv_path} (第{page_num}页)")
+                    logger.info(f"已保存表格: {csv_path} (第{page_num}页)")
 
             # 提取文字（排除表格区域）
             # 获取表格边界框
@@ -180,7 +263,7 @@ class PDFPlumberParser:
                 })
 
         except Exception as e:
-            print(f"提取第{page_num}页文字和表格时出错: {e}")
+            logger.info(f"提取第{page_num}页文字和表格时出错: {e}")
             page_text = page.extract_text() or ""
 
         return page_text, page_tables
@@ -205,7 +288,7 @@ class PDFPlumberParser:
                         break
 
         except Exception as e:
-            print(f"提取第{page_num}页图片时出错: {e}")
+            logger.info(f"提取第{page_num}页图片时出错: {e}")
 
         return page_images
 
@@ -233,7 +316,7 @@ class PDFPlumberParser:
             if bbox is not None:
                 x0, y0, x1, y1 = bbox
                 if x0 == 0 or y0 == 0:
-                    print(f"忽略背景图片，bbox起始坐标为0 (第{page_num}页)")
+                    logger.info(f"忽略背景图片，bbox起始坐标为0 (第{page_num}页)")
                     return None
 
             result = self._image_data_from_stream(lt_image)
@@ -251,7 +334,7 @@ class PDFPlumberParser:
 
             # 判断图片是否过小（小于200x200像素）
             if width < 200 or height < 200:
-                print(f"忽略小图片: {width}x{height}像素 (第{page_num}页)")
+                logger.info(f"忽略小图片: {width}x{height}像素 (第{page_num}页)")
                 return None
 
             image_uuid = str(uuid.uuid4())
@@ -278,11 +361,11 @@ class PDFPlumberParser:
             }
 
             self.images_info.append(image_info)
-            print(f"已保存图片: {image_path} (第{page_num}页)")
+            logger.info(f"已保存图片: {image_path} (第{page_num}页)")
             return image_info
 
         except Exception as e:
-            print(f"保存第{page_num}页图片时出错: {e}")
+            logger.info(f"保存第{page_num}页图片时出错: {e}")
             return None
 
     def _image_data_from_stream(self, lt_image):
@@ -332,7 +415,7 @@ class PDFPlumberParser:
                     pil_image = Image.frombytes(mode, (width, height), data)
                     return data, 'png', pil_image
                 except Exception as e:
-                    print(f"FlateDecode图片解码失败: {e}")
+                    logger.info(f"FlateDecode图片解码失败: {e}")
                     return None
             else:
                 ext = 'bin'
@@ -366,6 +449,34 @@ class PDFPlumberParser:
             combined_content += page_text
 
         return combined_content
+
+    def make_parsed_metadata(self):
+
+            placeholders_mapping = {
+                'images': [
+                    {
+                        'uuid': img['uuid'],
+                        'placeholder': f"[image:{img['uuid']}]",
+                        'filename': img['filename'],
+                        'page': img['page'],
+                        'file_path': img['file_path']
+                    } for img in self.images_info
+                ],
+                'tables': [
+                    {
+                        'uuid': table['uuid'],
+                        'placeholder': f"[table:{table['uuid']}]",
+                        'filename': table['filename'],
+                        'page': table['page'],
+                        'file_path': table['file_path']
+                    } for table in self.tables_info
+                ]
+            }
+            json_string = json.dumps(placeholders_mapping, ensure_ascii=False, indent=2)
+            return  json_string
+
+
+
 
     def save_results(self):
         """保存所有提取结果"""
@@ -413,29 +524,28 @@ class PDFPlumberParser:
             with open(self.output_dir / "placeholders_mapping.json", 'w', encoding='utf-8') as f:
                 json.dump(placeholders_mapping, f, ensure_ascii=False, indent=2)
 
-            print(f"\n所有结果已保存到: {self.output_dir}")
+            logger.info(f"\n所有结果已保存到: {self.output_dir}")
 
         except Exception as e:
-            print(f"保存结果时出错: {e}")
+            logger.info(f"保存结果时出错: {e}")
 
     def print_summary(self):
-        """打印解析摘要"""
-        print("\n" + "=" * 50)
-        print("PDF解析完成!")
-        print("=" * 50)
-        print(f"提取的文字段落数: {len(self.text_content)}")
-        print(f"提取的图片数量: {len(self.images_info)}")
-        print(f"提取的表格数量: {len(self.tables_info)}")
-        print(f"输出目录: {self.output_dir}")
+        logger.info("\n" + "=" * 50)
+        logger.info("PDF解析完成!")
+        logger.info("=" * 50)
+        logger.info(f"提取的文字段落数: {len(self.text_content)}")
+        logger.info(f"提取的图片数量: {len(self.images_info)}")
+        logger.info(f"提取的表格数量: {len(self.tables_info)}")
+        logger.info(f"输出目录: {self.output_dir}")
 
         pages_with_text = set(item['page'] for item in self.text_content)
         pages_with_images = set(item['page'] for item in self.images_info)
         pages_with_tables = set(item['page'] for item in self.tables_info)
 
-        print(f"包含文字的页数: {len(pages_with_text)}")
-        print(f"包含图片的页数: {len(pages_with_images)}")
-        print(f"包含表格的页数: {len(pages_with_tables)}")
-        print("=" * 50)
+        logger.info(f"包含文字的页数: {len(pages_with_text)}")
+        logger.info(f"包含图片的页数: {len(pages_with_images)}")
+        logger.info(f"包含表格的页数: {len(pages_with_tables)}")
+        logger.info("=" * 50)
 
 
 async def process_pdf(file_params: FileParams) -> bool:
@@ -458,140 +568,138 @@ async def process_pdf(file_params: FileParams) -> bool:
     #     return True
 
     file_repo = KbotMdKbFilesRepository()
+    parser = PDFPlumberParser(file_params)
 
     try:
         logger.debug(f"Processing pdf file: {file_params.file_path}")
-        text_content, images_info, tables_info, text_chunks = PDFPlumberParser.parse_pdf(file_params )
-        # # 1.读取文本文件
-        # with open(file_params.file_path, 'r', encoding='utf-8') as f:
-        #     text = f.read()
-        #
-        # 2.文本分割
-        text_length = len(text)
+        text_content, images_info, tables_info = await  parser.parse()
+        parsed_metadata = parser.make_parsed_metadata()
 
-
-        chunks = []
-
-        # 参数安全处理
-        split_strategy = int(file_params.paser.get("split_strategy", 1))
-        chunk_size = int(file_params.paser.get("chunk_size", 500))
-        overlap = int(file_params.paser.get("chunk_overlap", 50))
-
-        logger.debug(f"Chunk size: {chunk_size}, chunk overlap: {overlap}")
-
-        # 根据策略选择分割方式: 根据chunk size和overlap切片
-        if split_strategy == SplitStrategy.SELF_SPLIT.value:
-            # 文本分割逻辑
-            if text_length <= chunk_size:
-                logger.debug(f"Text length {text_length} <= chunk size {chunk_size}, no need to split.")
-                chunks = [text]
-            else:
-                chunks = chunk_text(text, chunk_size, overlap)
-        # 根据策略选择分割方式: 根据文档结构和段落切片
-        elif split_strategy == SplitStrategy.BY_DOCSTRUCTURE.value:
-            pass
-        # 根据策略选择分割方式: 根据文档分页切片
-        elif split_strategy == SplitStrategy.BY_PAGE.value:
-            pass
-        # 根据策略选择分割方式: 根据语义切片
-        elif split_strategy == SplitStrategy.BY_SEMANTIC.value:
-            pass
-        else:
-            msg = f"Invalid split strategy: {split_strategy}"
-            logger.error(msg)
-            await file_repo.update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, msg)
-            return False
-        
-        # 3.调用嵌入微服务获取嵌入向量
-        logger.info(f"Calling embedding service for {file_params.file_path}...")
-
-        # 准备请求参数
-        batch_size = settings["embed"]["batch_size"] or 0
-        host = os.getenv("KBOT_EMBED_HOST", "localhost")
-        port = os.getenv("KBOT_EMBED_PORT", "8001")
-        embed_url = f"http://{host}:{port}/embed"
-        logger.debug(f"Embedding URL: {embed_url}")
-        headers = {"Content-Type": "application/json"}
-        payload = {
-            "model_id": int(file_params.txt_embed_model),
-            "texts": chunks,
-            "batch_size": int(batch_size)
-        }
-        
-        # 发送POST请求到嵌入微服务
-        logger.info(f"Sending {len(chunks)} text chunks to embedding service...")
-        
-        session = None
-        try:
-            session = aiohttp.ClientSession()
-            response = await session.post(embed_url, headers=headers, json=payload)
-
-            logger.debug(f"Response status: {response.status}")
-
-            # 检查响应状态
-            if response.status == 200:
-                # 解析响应数据
-                response_data = await response.json()
-                embeddings = response_data["embeddings"]
-                logger.info(f"Successfully obtained embeddings for {file_params.file_path}")
-                embed_entities = []
-
-                for chunk, embedding in zip(chunks, embeddings):
-                    # 保存嵌入向量到向量数据库
-                    embed_entity = KbotBizTxtEmbedding(
-                        embed_id=str(uuid.uuid4()),
-                        chunk_doc=chunk,
-                        chunk_metadata=json.dumps({"chunk_type": ChunkType.TEXT, 
-                                                    "split_strategy": int(split_strategy),
-                                                    "chunk_size": int(chunk_size),
-                                                    "chunk_overlap": int(overlap),
-                                                    "file_path": file_params.file_path}),
-                        file_id=file_params.file_id,
-                        embedding=embedding  
-                    )
-                    embed_entities.append(embed_entity)
-                    
-                embedding_repo = KbotBizTxtEmbeddingRepository()
-                logger.debug(f"Attempting to save {len(embed_entities)} embeddings to database...")
-                try:
-                    result = await embedding_repo.create(kb_id=file_params.kb_id, embeddings=embed_entities)
-                    if result:
-                        logger.info(f"Successfully saved {len(embed_entities)} embeddings for {file_params.file_path}")
-                        logger.debug(f"Database operation returned: {result}")
-                    else:
-                        msg = f"Failed to save embeddings for {file_params.file_path} (repository returned False)"
-                        logger.error(msg)     
-                        await file_repo.update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, msg) 
-                        return False
-                except Exception as e:
-                    msg = f"Exception while saving embeddings: {str(e)}"
-                    logger.error(msg, exc_info=True)
-                    await file_repo.update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, msg) 
-                    return False
-            else:
-                response_text = await response.text()
-                msg = f"Failed to get embeddings: HTTP {response.status}, {response_text}"
-                logger.error(msg)
-                await file_repo.update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, msg) 
-                return False
-                
-        except Exception as e:
-            msg = f"Error during embedding process: {str(e)}"
-            logger.error(msg) 
-            await file_repo.update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, msg)
-            return False
-        finally:
-            # 确保关闭会话
-            if session is not None:
-                await session.close()
-        # 更新文件状态为已解析
-        msg = f"File {file_params.file_path} processed: {len(chunks)} chunks created"
-        logger.info(msg) 
-        await file_repo.update_file_status(file_params.file_id, FileStatus.PARSED, msg)
-        return True
-        
+        ok=file_repo.update_file_parsed_metadata(file_params.file_id, parsed_metadata)
+        return ok
     except Exception as e:
-        msg = f"Error in process_txt for {file_params.file_path}: {str(e)}"
-        logger.error(msg)  
-        await file_repo.update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, msg)
+        logger.error(f"Error processing pdf file: {file_params.file_path}, error: {e}")
+        await file_repo.update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, str(e))
         return False
+    #     split_strategy = int(file_params.paser.get("split_strategy", 1))
+    #     chunk_size = int(file_params.paser.get("chunk_size", 500))
+    #     overlap = int(file_params.paser.get("chunk_overlap", 50))
+    #
+    #     logger.debug(f"Chunk size: {chunk_size}, chunk overlap: {overlap}")
+    #
+    #     # 根据策略选择分割方式: 根据chunk size和overlap切片
+    #     if split_strategy == SplitStrategy.SELF_SPLIT.value:
+    #         # 文本分割逻辑
+    #         if text_length <= chunk_size:
+    #             logger.debug(f"Text length {text_length} <= chunk size {chunk_size}, no need to split.")
+    #             chunks = [text]
+    #         else:
+    #             chunks = chunk_text(text, chunk_size, overlap)
+    #     # 根据策略选择分割方式: 根据文档结构和段落切片
+    #     elif split_strategy == SplitStrategy.BY_DOCSTRUCTURE.value:
+    #         pass
+    #     # 根据策略选择分割方式: 根据文档分页切片
+    #     elif split_strategy == SplitStrategy.BY_PAGE.value:
+    #         pass
+    #     # 根据策略选择分割方式: 根据语义切片
+    #     elif split_strategy == SplitStrategy.BY_SEMANTIC.value:
+    #         pass
+    #     else:
+    #         msg = f"Invalid split strategy: {split_strategy}"
+    #         logger.error(msg)
+    #         await file_repo.update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, msg)
+    #         return False
+    #
+    #     # 3.调用嵌入微服务获取嵌入向量
+    #     logger.info(f"Calling embedding service for {file_params.file_path}...")
+    #
+    #     # 准备请求参数
+    #     batch_size = settings["embed"]["batch_size"] or 0
+    #     host = os.getenv("KBOT_EMBED_HOST", "localhost")
+    #     port = os.getenv("KBOT_EMBED_PORT", "8001")
+    #     embed_url = f"http://{host}:{port}/embed"
+    #     logger.debug(f"Embedding URL: {embed_url}")
+    #     headers = {"Content-Type": "application/json"}
+    #     payload = {
+    #         "model_id": int(file_params.txt_embed_model),
+    #         "texts": chunks,
+    #         "batch_size": int(batch_size)
+    #     }
+    #
+    #     # 发送POST请求到嵌入微服务
+    #     logger.info(f"Sending {len(chunks)} text chunks to embedding service...")
+    #
+    #     session = None
+    #     try:
+    #         session = aiohttp.ClientSession()
+    #         response = await session.post(embed_url, headers=headers, json=payload)
+    #
+    #         logger.debug(f"Response status: {response.status}")
+    #
+    #         # 检查响应状态
+    #         if response.status == 200:
+    #             # 解析响应数据
+    #             response_data = await response.json()
+    #             embeddings = response_data["embeddings"]
+    #             logger.info(f"Successfully obtained embeddings for {file_params.file_path}")
+    #             embed_entities = []
+    #
+    #             for chunk, embedding in zip(chunks, embeddings):
+    #                 # 保存嵌入向量到向量数据库
+    #                 embed_entity = KbotBizTxtEmbedding(
+    #                     embed_id=str(uuid.uuid4()),
+    #                     chunk_doc=chunk,
+    #                     chunk_metadata=json.dumps({"chunk_type": ChunkType.TEXT,
+    #                                                 "split_strategy": int(split_strategy),
+    #                                                 "chunk_size": int(chunk_size),
+    #                                                 "chunk_overlap": int(overlap),
+    #                                                 "file_path": file_params.file_path}),
+    #                     file_id=file_params.file_id,
+    #                     embedding=embedding
+    #                 )
+    #                 embed_entities.append(embed_entity)
+    #
+    #             embedding_repo = KbotBizTxtEmbeddingRepository()
+    #             logger.debug(f"Attempting to save {len(embed_entities)} embeddings to database...")
+    #             try:
+    #                 result = await embedding_repo.create(kb_id=file_params.kb_id, embeddings=embed_entities)
+    #                 if result:
+    #                     logger.info(f"Successfully saved {len(embed_entities)} embeddings for {file_params.file_path}")
+    #                     logger.debug(f"Database operation returned: {result}")
+    #                 else:
+    #                     msg = f"Failed to save embeddings for {file_params.file_path} (repository returned False)"
+    #                     logger.error(msg)
+    #                     await file_repo.update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, msg)
+    #                     return False
+    #             except Exception as e:
+    #                 msg = f"Exception while saving embeddings: {str(e)}"
+    #                 logger.error(msg, exc_info=True)
+    #                 await file_repo.update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, msg)
+    #                 return False
+    #         else:
+    #             response_text = await response.text()
+    #             msg = f"Failed to get embeddings: HTTP {response.status}, {response_text}"
+    #             logger.error(msg)
+    #             await file_repo.update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, msg)
+    #             return False
+    #
+    #     except Exception as e:
+    #         msg = f"Error during embedding process: {str(e)}"
+    #         logger.error(msg)
+    #         await file_repo.update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, msg)
+    #         return False
+    #     finally:
+    #         # 确保关闭会话
+    #         if session is not None:
+    #             await session.close()
+    #     # 更新文件状态为已解析
+    #     msg = f"File {file_params.file_path} processed: {len(chunks)} chunks created"
+    #     logger.info(msg)
+    #     await file_repo.update_file_status(file_params.file_id, FileStatus.PARSED, msg)
+    #     return True
+    #
+    # except Exception as e:
+    #     msg = f"Error in process_txt for {file_params.file_path}: {str(e)}"
+    #     logger.error(msg)
+    #     await file_repo.update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, msg)
+    #     return False
