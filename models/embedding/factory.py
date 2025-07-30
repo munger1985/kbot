@@ -1,6 +1,4 @@
 from enum import Enum
-from typing import List, Union
-
 from models.embedding.base import BaseEmbedding, LocalEmbeddingConfig, RemoteEmbeddingConfig
 from models.embedding.local_client import LocalEmbedding
 from models.embedding.openai_client import OpenAIEmbedding
@@ -16,7 +14,7 @@ class EmbeddingProvider(str, Enum):
     COHERE = "cohere"
 
 
-def create_embedding_model(config: Union[LocalEmbeddingConfig, RemoteEmbeddingConfig]) -> BaseEmbedding:
+def create_embedding_model(config: LocalEmbeddingConfig | RemoteEmbeddingConfig) -> BaseEmbedding:
     """Factory function to create embedding model based on provider"""
     provider = config.provider.lower()
     
@@ -32,6 +30,6 @@ def create_embedding_model(config: Union[LocalEmbeddingConfig, RemoteEmbeddingCo
         raise ValueError(f"Unsupported embedding provider: {provider}")
 
 
-def get_supported_providers() -> List[str]:
+def get_supported_providers() -> list[str]:
     """Get a list of supported embedding providers"""
     return [provider.value for provider in EmbeddingProvider]

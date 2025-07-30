@@ -2,7 +2,7 @@
 
 import anthropic
 from loguru import logger
-from typing import Any, Dict, List, Optional
+from typing import Any
 from pydantic import Field
 from models.llm.base import BaseLLM, LLMConfig
 from core.config import settings
@@ -41,8 +41,8 @@ class AnthropicClient(BaseLLM):
     async def generate(
         self,
         prompt: str,
-        max_tokens: Optional[int] = None,
-        temperature: Optional[float] = None,
+        max_tokens: int | None = None,
+        temperature: float | None = None,
         **kwargs: Any,
     ) -> str:
         """Generate text from a prompt.
@@ -92,9 +92,9 @@ class AnthropicClient(BaseLLM):
 
     async def chat(
         self,
-        messages: List[Dict[str, str]],
-        max_tokens: Optional[int] = None,
-        temperature: Optional[float] = None,
+        messages: list[dict[str, str]],
+        max_tokens: int | None = None,
+        temperature: float | None = None,
         **kwargs: Any,
     ) -> str:
         """Generate a chat response.

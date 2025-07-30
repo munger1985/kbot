@@ -1,10 +1,7 @@
 import os
 import json
-from typing import List, Optional
 from pathlib import Path
 from fastapi import UploadFile
-from datetime import datetime
-
 from loguru import logger
 from core.config import settings
 from dao.entities.kbot_md_kb_batch import KbotMdKbBatch
@@ -110,11 +107,11 @@ def save_file(file: UploadFile, domain_id: int, kb_id: int, batch_name:str, over
             logger.error(f"Failed to save file {filename if 'filename' in locals() else 'unknown'}: {str(e)}")
             raise e
         
-def save_files_in_thread(files: List[UploadFile],
+def save_files_in_thread(files: list[UploadFile],
                           domain_id: int,
                           kb_id: int,
                           batch_name: str,
-                          overwrite: bool) -> List[dict]:
+                          overwrite: bool) -> list[dict]:
     '''
     Save uploaded files to corresponding knowledge base directory using multi-threading. // 通过多线程将上传的文件保存到对应知识库目录内
     Args:
@@ -142,15 +139,15 @@ def save_files_in_thread(files: List[UploadFile],
     logger.debug(f"file save result: {results}")
     return results
 
-async def upload_file_service(files: List[UploadFile], 
+async def upload_file_service(files: list[UploadFile], 
                  app_id: int,
                  domain_id: int,
                  kb_id: int,
                  batch_name:str,
                  overwrite: bool,
-                 batch_id: Optional[int] = None,
-                 biz_metadata: Optional[dict] = None,
-                 created_by: Optional[str] = None,
+                 batch_id: int | None = None,
+                 biz_metadata: dict | None = None,
+                 created_by: str | None = None,
                  ) -> bool:
     '''
     Upload files to knowledge base and save records to database. // 上传文件到知识库并保存记录到数据库

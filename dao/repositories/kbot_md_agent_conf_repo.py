@@ -1,4 +1,4 @@
-from typing import Optional, List, AsyncIterator, Sequence
+from typing import AsyncIterator, Sequence
 from sqlalchemy import select, update, delete
 from core.database.meta_oracle import get_session
 from dao.entities.kbot_md_agent_conf import KbotMdAgentConf
@@ -7,13 +7,13 @@ from dao.entities.kbot_md_agent_conf import KbotMdAgentConf
 class KbotMdAgentConfRepository:
     """KBOT_MD_AGENT_CONF表的Repository类"""
 
-    async def get_by_id(self, conf_id: int) -> Optional[KbotMdAgentConf]:
+    async def get_by_id(self, conf_id: int) -> KbotMdAgentConf | None:
         """get agent config by id. """
         async with get_session() as session:
             result = await session.execute(
                 select(KbotMdAgentConf).where(KbotMdAgentConf.conf_id == conf_id)
             )
-            return result.scalars().first()
+            return result.scalar_one_or_none()
 
     async def get_by_agent_id(self, agent_id: int) -> Sequence[KbotMdAgentConf]:
         """get agent config by agent id. """
@@ -32,7 +32,7 @@ class KbotMdAgentConfRepository:
             await session.refresh(new_conf)
         return new_conf
   
-    async def update(self, conf_id: int, update_data: dict) -> Optional[KbotMdAgentConf]:
+    async def update(self, conf_id: int, update_data: dict) -> KbotMdAgentConf | None:
         """update agent config by id. """
         async with get_session() as session:
             result = await session.execute(

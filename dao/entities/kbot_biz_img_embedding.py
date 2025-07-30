@@ -14,6 +14,7 @@ class KbotBizImgEmbedding(Base):
     img_txt: Mapped[str | None] = mapped_column(CLOB, comment='从图片中提取的文本内容')
     chunk_metadata: Mapped[dict] = mapped_column(CLOB, nullable=False, comment='JSON格式的图片元数据')
     embedding: Mapped[list] = mapped_column(VECTOR, nullable=False, comment='图片向量(FLOAT64格式)')
+    security_level: Mapped[int | None] = mapped_column(Numeric(1, 0), comment='文件安全等级枚举类型')
 
     def __repr__(self):
         return f"KbotBizImgEmbedding(embed_id={self.embed_id!r}, kb_id={self.kb_id!r}, file_id={self.file_id!r})"

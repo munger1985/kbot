@@ -1,7 +1,6 @@
 import asyncio
 import signal
 import time
-from typing import List
 from loguru import logger
 from core.config import settings
 from .file_processor import FileProcessor
@@ -10,7 +9,7 @@ from .file_processor import FileProcessor
 class ParseService:
     def __init__(self):
         self.shutdown_event = asyncio.Event()
-        self.workers: List[asyncio.Task] = []
+        self.workers: list[asyncio.Task] = []
         self.worker_last_active = {}  # 记录worker最后活动时间
         self.file_queue = asyncio.Queue()
         self.parallel_workers = settings["embed"]["max_workers"]

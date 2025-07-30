@@ -15,7 +15,7 @@ import time
 import atexit
 import platform
 from datetime import datetime
-from typing import List, Optional, Any, Dict
+from typing import Any
 from contextlib import asynccontextmanager
 from pydantic import BaseModel, Field
 import numpy as np
@@ -30,6 +30,7 @@ if backend_dir not in sys.path:
     sys.path.insert(0, backend_dir)
     
 from microservices.embedding.embed_service import EmbeddingService
+from models.embedding.base import EmbeddingResponse, EmbeddingDataItem
 from core.config import settings
 from core.log.logger import setup_logging
 
@@ -95,22 +96,17 @@ app.add_middleware(
 
 # 定义请求模型
 class EmbeddingRequest(BaseModel):
-    model_id: int = Field(..., description="Embedding model ID")
-    texts: List[str] = Field(..., description="List of texts to be embedded.")
-    batch_size: Optional[int] = Field(32, description="Batch size")
+    model_unique_name: str = Field(..., description="Embedding model unique name")
+    texts: list[str] = Field(..., description="list of texts to be embedded.")
+    batch_size: int | None = Field(32, description="Batch size")
 
-# 定义响应模型
-class EmbeddingResponse(BaseModel):
-    embeddings: List[List[float]] = Field(..., description="List of embedding vectors.")
-    model_id: int = Field(..., description="Embedding model ID used.")
-    dimensions: int = Field(..., description="Dimensionality of the embedding vectors.")
 
 # 依赖项：获取嵌入服务实例
 def get_embed_service():
     return embedding_service
 
 @app.get("/health", response_model=dict, tags=["Embedding"])
-async def health() -> Dict[str, Any]:
+async def health() -> dict[str, Any]:
     """Health check endpoint. //微服务接口健康检查
     Returns:
         Loaded models count. //已加载的模型数量
@@ -128,7 +124,7 @@ async def health() -> Dict[str, Any]:
         "timestamp": datetime.now().isoformat()
     }
 
-@app.post("/embed", response_model=EmbeddingResponse, tags=["Embedding"])
+@app.post("/v1/embeddings", response_model=EmbeddingResponse, tags=["Embedding"])
 async def embed_texts(
     request: EmbeddingRequest,
     embed_service: EmbeddingService = Depends(get_embed_service)
@@ -136,38 +132,33 @@ async def embed_texts(
     """
     将文本列表转换为嵌入向量
     
-    - **model_id**: 要使用的嵌入模型的ID
+    - **model_unique_name**: 要使用的嵌入模型的ID
     - **texts**: 要嵌入的文本列表
     - **batch_size**: 批处理大小（可选）
     
     返回:
-    - **embeddings**: 嵌入向量列表
-    - **model_id**: 使用的嵌入模型ID
-    - **dimensions**: 嵌入向量的维度
+    - **data**: 嵌入向量列表
+    - **usage**: 使用情况信息，包括总令牌数和提示令牌数
+    - **model**: 使用的嵌入模型ID
+    - **object**: 响应对象类型，固定为 "list"
+    
+    Raises:
+    - **HTTPException**: 如果模型ID不存在或嵌入失败
+    - **RuntimeError**: 如果模型创建失败
+    - **Exception**: 如果发生其他错误
     """
     try:
-        logger.info(f"Received embedding request: model={request.model_id}, Number of texts.={len(request.texts)}")
+        logger.info(f"Received embedding request: model={request.model_unique_name}, Number of texts.={len(request.texts)}")
         
         # 使用嵌入服务将文本转换为向量
         embeddings = await embed_service.embed_texts(
-            model_id=request.model_id,
+            model_unique_name=request.model_unique_name,
             texts=request.texts,
             batch_size=request.batch_size # type: ignore
         )
         
-        # 将numpy数组转换为Python列表
-        embeddings_list = embeddings.tolist() if isinstance(embeddings, np.ndarray) else embeddings
-        
-        # 获取嵌入向量的维度
-        dimensions = len(embeddings_list[0]) if embeddings_list and len(embeddings_list) > 0 else 0
-        
-        logger.info(f"Embedding completed: number of vectors={len(embeddings_list)}, dimensions={dimensions}")
-        
-        return EmbeddingResponse(
-            embeddings=embeddings_list,
-            model_id=request.model_id,
-            dimensions=dimensions
-        )
+        return embeddings
+    
     except Exception as e:
         logger.error(f"Error occurred during embedding.: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error occurred during embedding.: {str(e)}")

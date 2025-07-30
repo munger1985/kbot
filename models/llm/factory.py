@@ -1,6 +1,5 @@
-import asyncio
 from enum import Enum
-from typing import Dict, List, Union, Any
+from typing import Any
 from .base import BaseLLM
 from .openai_client import OpenaiClient, OpenaiLLMConfig
 from .anthropic_client import AnthropicClient, AnthropicLLMConfig
@@ -15,7 +14,7 @@ class LLMProvider(str, Enum):
     # AZURE = "azure"
     # LOCAL = "local"
 
-def create_llm_model(config: Union[OpenaiLLMConfig, AnthropicLLMConfig, HuggingFaceLLMConfig, Dict[str, Any]]) -> BaseLLM:
+def create_llm_model(config: OpenaiLLMConfig | AnthropicLLMConfig | HuggingFaceLLMConfig | dict[str, Any]) -> BaseLLM:
     """Create an LLM model based on the provided configuration.
     
     Args:
@@ -42,7 +41,7 @@ def create_llm_model(config: Union[OpenaiLLMConfig, AnthropicLLMConfig, HuggingF
     
     raise ValueError(f"Unsupported LLM configuration type: {type(config)}")
 
-def get_supported_providers() -> List[str]:
+def get_supported_providers() -> list[str]:
     """Get a list of supported LLM providers.
     
     Returns:

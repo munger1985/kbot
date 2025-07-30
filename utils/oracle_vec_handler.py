@@ -1,11 +1,11 @@
 import array
 import oracledb
 import numpy as np
-from typing import Any, Union, List
+from typing import Any
 
 class OracleVecHandler:
 
-    def convert(self, vec: Any, to_string: bool = True) -> Union[array.array, str]:
+    def convert(self, vec: Any, to_string: bool = True) -> array.array | str:
         """
         主转换方法
         
@@ -32,7 +32,7 @@ class OracleVecHandler:
             
         return result
     
-    def _to_list(self, vec: Any) -> List[float]:
+    def _to_list(self, vec: Any) -> list[float]:
         """转换为Python列表"""
         if isinstance(vec, str):
             return self._parse_string(vec)
@@ -45,7 +45,7 @@ class OracleVecHandler:
         else:
             raise ValueError(f"不支持的向量类型: {type(vec).__name__}")
     
-    def _parse_string(self, vec_str: str) -> List[float]:
+    def _parse_string(self, vec_str: str) -> list[float]:
         """解析字符串格式的向量"""
         try:
             cleaned = vec_str.strip().strip('[]')
@@ -53,7 +53,7 @@ class OracleVecHandler:
         except Exception as e:
             raise ValueError(f"无效的向量字符串: {str(e)}")
     
-    def _validate_vector(self, vec: List[float]):
+    def _validate_vector(self, vec: list[float]):
         """验证向量有效性"""
         if not vec:
             raise ValueError("向量不能为空")
@@ -61,11 +61,11 @@ class OracleVecHandler:
         if not all(isinstance(x, (float, int)) for x in vec):
             raise ValueError("向量必须只包含数值")
     
-    def _to_oracle_string(self, vec: List[float]) -> str:
+    def _to_oracle_string(self, vec: list[float]) -> str:
         """转换为Oracle需要的字符串格式"""
         return '[' + ','.join(map(str, vec)) + ']'
     
-    def _to_array(self, vec: List[float]) -> array.array:
+    def _to_array(self, vec: list[float]) -> array.array:
         """转换为Python数组"""
         return array.array('d', vec)
     

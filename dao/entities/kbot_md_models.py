@@ -8,6 +8,7 @@ class KbotMdModels(Base):
     
     model_id: Mapped[int] = mapped_column(Numeric(38, 0), primary_key=True, comment="模型唯一标识，主键")
     app_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False, comment="所属应用ID")
+    model_unique_name: Mapped[str] = mapped_column(String(256), comment="模型在数据库中的唯一名字，用于程序中的模型调用")
     display_name: Mapped[str | None] = mapped_column(String(256), comment="模型显示名称（用户友好名称）")
     model_name: Mapped[str] = mapped_column(String(256), comment="模型技术名称（如gpt-4、text-embedding-ada-002等）")
     category: Mapped[int | None] = mapped_column(Numeric(2, 0), comment="模型类别枚举")
@@ -24,3 +25,4 @@ class KbotMdModels(Base):
 
     def __repr__(self):
         return f"KbotMdModels(model_id={self.model_id!r}, provider={self.provider!r})"
+    

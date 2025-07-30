@@ -17,12 +17,12 @@ import subprocess
 import platform
 import atexit
 from datetime import datetime
-from typing import Dict, List, Optional, Any
+from typing import Any
 from loguru import logger
-from fastapi import FastAPI, HTTPException, status, Depends, Query
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 from contextlib import asynccontextmanager
 
 # 添加项目根目录到 Python 路径，确保可以导入项目模块
@@ -95,30 +95,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-class GenerateRequest(BaseModel):
-    """Request model for text generation. //文本生成请求模型"""
-
-    model_id: int = Field(..., description="Specific model id to use")
-    prompt: str = Field(..., description="Input prompt for text generation")
-    max_tokens: Optional[int] = Field(None, description="Maximum number of tokens to generate")
-    temperature: Optional[float] = Field(
-        None, description="Sampling temperature (0.0-1.0, lower is more deterministic)"
-    )
-    timeout: Optional[int] = Field(None, description="Timeout in seconds")
-    n: Optional[int] = Field(1, description="Number of responses to generate")
-    top_p: Optional[float] = Field(None, description="Top-p sampling parameter")
-    frequency_penalty: Optional[float] = Field(None, description="Frequency penalty")
-    presence_penalty: Optional[float] = Field(None, description="Presence penalty")
-
-
-class GenerateResponse(BaseModel):
-    """Response model for text generation. //文本生成响应模型"""
-
-    text: Optional[List[str]] = Field(..., description="Generated text")
-    processing_time: float = Field(..., description="Processing time in seconds")
-
-
 class ChatResponse(BaseModel):
     """Response model for chat (OpenAI compatible). //聊天响应模型(兼容OpenAI)"""
 
@@ -129,9 +105,9 @@ class ChatResponse(BaseModel):
     created: int = Field(default_factory=lambda: int(time.time()), 
                         description="Unix timestamp of when the response was created")
     model: str = Field(..., description="The model used for the completion")
-    choices: List[Dict[str, Any]] = Field(...,
-        description="List of chat completion choices containing messages")
-    usage: Dict[str, int] = Field(...,
+    choices: list[dict[str, Any]] = Field(...,
+        description="list of chat completion choices containing messages")
+    usage: dict[str, int] = Field(...,
         description="Token usage statistics including prompt_tokens, completion_tokens and total_tokens")
     processing_time: float = Field(..., 
                                  description="Processing time in seconds (custom field)")
@@ -147,17 +123,17 @@ class ChatMessage(BaseModel):
 class ChatRequest(BaseModel):
     """Request model for chat. //聊天请求模型"""
 
-    model_id: int = Field(..., description="Specific model id to use")
-    messages: List[ChatMessage] = Field(..., description="List of chat messages")
-    max_tokens: Optional[int] = Field(None, description="Maximum number of tokens to generate")
-    temperature: Optional[float] = Field(
+    model_unique_name: str = Field(..., description="Specific model id to use")
+    messages: list[ChatMessage] | str = Field(..., description="list of chat messages")
+    max_tokens: int | None = Field(None, description="Maximum number of tokens to generate")
+    temperature: float | None = Field(
         None, description="Sampling temperature (0.0-1.0, lower is more deterministic)"
     )
     stream: bool = Field(False, description="Whether to stream the response")
-    timeout: Optional[int] = Field(None, description="Timeout in seconds")
-    top_p: Optional[float] = Field(None, description="Top-p sampling parameter")
-    frequency_penalty: Optional[float] = Field(None, description="Frequency penalty")
-    presence_penalty: Optional[float] = Field(None, description="Presence penalty")
+    timeout: int | None = Field(None, description="Timeout in seconds")
+    top_p: float | None = Field(None, description="Top-p sampling parameter")
+    frequency_penalty: float | None = Field(None, description="Frequency penalty")
+    presence_penalty: float | None = Field(None, description="Presence penalty")
 
 
 # 依赖项：获取嵌入服务实例
@@ -165,7 +141,7 @@ def get_llm_service():
     return llm_service
 
 @app.get("/health", response_model=dict, tags=["LLM"])
-async def health() -> Dict[str, Any]:
+async def health() -> dict[str, Any]:
     """Health check endpoint. //微服务接口健康检查
     Returns:
         Loaded models count. //已加载的模型数量
@@ -182,61 +158,15 @@ async def health() -> Dict[str, Any]:
         "timestamp": datetime.now().isoformat()
     }
 
-@app.post("/generate", response_model=GenerateResponse, tags=["LLM"])
-async def generate(
-    request: GenerateRequest,
-    llm_service: LLMService = Depends(get_llm_service)
-    ) -> GenerateResponse:
-    """Generate text //生成文本
-    
-    - **model_id**: 要使用的模型ID
-    - **prompt**: 输入提示
-    - **max_tokens**: 要生成的最大令牌数（可选）
-    - **temperature**: 采样温度（0.0-1.0，越低越确定）
-    - **timeout**: 超时时间（秒）
-    - **n**: 生成响应的数量
-    - **top_p**: Top-p采样参数
-    - **frequency_penalty**: 频率惩罚
-    - **presence_penalty**: 存在惩罚
-    
-    返回:
-    - **text**: 生成的文本
-    - **processing_time**: 处理时间（秒）
-    """
-    start_time = time.time()
 
-    try:
-        text = await llm_service.generate(
-            model_id=request.model_id,
-            prompt=request.prompt,
-            max_tokens=request.max_tokens,
-            temperature=request.temperature,
-            timeout=request.timeout,
-            n=request.n,
-            top_p=request.top_p,
-            frequency_penalty=request.frequency_penalty,
-            presence_penalty=request.presence_penalty
-        )
-        processing_time = time.time() - start_time
-        
-        logger.info(f"文本生成完成，耗时 {processing_time:.2f}秒")
-        return GenerateResponse(
-            text=text,
-            processing_time=processing_time,
-        )
-    except Exception as e:
-        logger.exception(f"生成文本时出错: {e}")
-        raise e
-
-
-@app.post("/chat", response_model=None, tags=["LLM"])
+@app.post("/v1/chat/completions", response_model=None, tags=["LLM"])
 async def chat(
     request: ChatRequest,
     llm_service: LLMService = Depends(get_llm_service)
 ) -> ChatResponse | StreamingResponse:
     """Generate chat response //生成聊天响应
     
-    - **model_id**: 要使用的模型ID
+    - **model_unique_name**: 要使用的模型ID
     - **messages**: 聊天消息列表
     - **max_tokens**: 要生成的最大令牌数（可选）
     - **temperature**: 采样温度（0.0-1.0，越低越确定）
@@ -251,25 +181,19 @@ async def chat(
     - 非流式模式: 包含消息和处理时间的JSON对象
     """
     start_time = time.time()
-
-    # Convert Pydantic models to dictionaries
-    messages = [{"role": msg.role, "content": msg.content} for msg in request.messages]
-
+    response_id = f"chatcmpl-{uuid.uuid4()}"
+    created_time = int(time.time())
+    model_name = request.model_unique_name
+    
+    logger.info(f"Generating chat response by using model {request.model_unique_name}")
     try:
-        logger.info(f"Generating chat response by using model {request.model_id}")
-        
         # 处理流式响应
         if request.stream:
             async def generate():
                 try:
-                    # 生成流式响应ID和时间戳
-                    response_id = f"chatcmpl-{uuid.uuid4()}"
-                    created_time = int(time.time())
-                    model_name = f"model-{request.model_id}"
-                    
-                    async for chunk in await llm_service.chat( # type: ignore
-                        model_id=request.model_id,
-                        messages=messages,
+                    chunk_stream = await llm_service.chat( # type: ignore
+                        model_unique_name=request.model_unique_name,
+                        messages=request.messages, # type: ignore
                         stream=True,
                         max_tokens=request.max_tokens,
                         temperature=request.temperature,
@@ -277,51 +201,62 @@ async def chat(
                         top_p=request.top_p,
                         frequency_penalty=request.frequency_penalty,
                         presence_penalty=request.presence_penalty
-                    ):
-                        # 包装为完整的OpenAI兼容流式响应格式
+                    )# 处理流式响应
+                    usage_data = {}
+                    async for content in chunk_stream:  # type: ignore
+                        # 检查是否是usage数据
+                        if content.startswith("\n\n=== USAGE ==="):
+                            try:
+                                usage_data = json.loads(content.replace("\n\n=== USAGE ===\n", ""))
+                            except json.JSONDecodeError:
+                                logger.warning("Failed to parse usage data")
+                            continue
+                            
                         chunk_data = {
                             "id": response_id,
                             "object": "chat.completion.chunk",
                             "created": created_time,
                             "model": model_name,
                             "choices": [{
-                                "delta": {
-                                    "content": chunk
-                                },
+                                "delta": {"content": content},
                                 "index": 0,
                                 "finish_reason": None
                             }]
                         }
                         yield f"data: {json.dumps(chunk_data)}\n\n"
                     
-                    # 发送结束标记
-                    done_data = {
-                        "id": response_id,
-                        "object": "chat.completion.chunk",
-                        "created": created_time,
-                        "model": model_name,
-                        "choices": [{
-                            "delta": {},
-                            "index": 0,
-                            "finish_reason": "stop"
-                        }]
-                    }
-                    yield f"data: {json.dumps(done_data)}\n\n"
+                    # 流结束标记
+                    yield f"data: {json.dumps({
+                        'id': response_id,
+                        'object': 'chat.completion.chunk',
+                        'created': created_time,
+                        'model': model_name,
+                        'choices': [{
+                            'delta': {},
+                            'index': 0,
+                            'finish_reason': 'stop'
+                        }],
+                        'usage': usage_data
+                    })}\n\n"
                     yield "data: [DONE]\n\n"
+                
                 except Exception as e:
-                    logger.error(f"Error in streaming chat: {e}")
-                    yield f"Error: {str(e)}"
-            
+                    logger.error(f"Stream error: {str(e)}")
+                    yield f"data: {json.dumps({
+                        'error': str(e),
+                        'code': 500
+                    })}\n\n"
+
             return StreamingResponse(
                 generate(),
-                media_type="text/event-stream"
+                media_type="text/event-stream",
+                headers={"Cache-Control": "no-cache"}
             )
-        
-        # 处理非流式响应
         else:
+            # 非流式响应
             response = await llm_service.chat(
-                model_id=request.model_id,
-                messages=messages,
+                model_unique_name=request.model_unique_name,
+                messages=request.messages, # type: ignore
                 stream=False,
                 max_tokens=request.max_tokens,
                 temperature=request.temperature,
@@ -330,39 +265,43 @@ async def chat(
                 frequency_penalty=request.frequency_penalty,
                 presence_penalty=request.presence_penalty
             )
-            processing_time = time.time() - start_time
             
-            logger.info(f"Chat response generated in {processing_time:.2f}s")
-            # 返回符合OpenAI API规范的响应
+            processing_time = time.time() - start_time
+            logger.info(f"Chat completion took {processing_time:.2f}s")
+            
+            # 从服务层响应中获取usage数据
+            usage_data = response.get("usage", {}) # type: ignore
             return ChatResponse(
-                id=f"chatcmpl-{uuid.uuid4()}",
+                id=response_id,
                 object="chat.completion",
-                created=int(time.time()),
-                model=f"model-{request.model_id}",
+                created=created_time,
+                model=model_name,
                 choices=[{
                     "message": {
                         "role": "assistant",
-                        "content": response
-                        },
-                        "finish_reason": "stop"
-                        }],
-                        usage={
-                            "prompt_tokens": 0,
-                            "completion_tokens": 0,
-                            "total_tokens": 0
-                            },
-                            processing_time=processing_time
+                        "content": response["content"] # type: ignore
+                    },
+                    "finish_reason": "stop",
+                    "index": 0
+                }],
+                usage={
+                    "prompt_tokens": usage_data.get("prompt_tokens", 0),
+                    "completion_tokens": usage_data.get("completion_tokens", 0),
+                    "total_tokens": usage_data.get("total_tokens", 0)
+                },
+                processing_time=time.time() - start_time
             )
+
+    except ValidationError as e:
+        raise HTTPException(400, detail=str(e))
+    except TimeoutError:
+        raise HTTPException(408, detail="Request timeout")
     except Exception as e:
-        logger.exception(f"Error generating chat response: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={
-                "detail": str(e),
-                "error_type": e.__class__.__name__,
-                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-            },
-        )
+        logger.exception("Chat completion failed")
+        raise HTTPException(500, detail={
+            "error": str(e),
+            "type": e.__class__.__name__
+        })
 
 
 # 全局变量，用于存储微服务进程

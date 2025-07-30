@@ -1,7 +1,7 @@
 import os
 from dynaconf import Dynaconf
 from pathlib import Path
-from typing import Dict, Any, cast
+from typing import Any, cast
 from .conf_types import AppSettings
 
 # Initialize configuration with simplified setup
@@ -30,6 +30,6 @@ if "KBOT_DATABASE_URL" in os.environ:
     settings["database"]["url"] = os.environ["KBOT_DATABASE_URL"]
 
 
-def load_config() -> Dict[str, Any]:
+def load_config() -> dict[str, Any]:
     """Load and merge configuration files."""
     return dict(settings)

@@ -1,8 +1,6 @@
 
 import json
-from typing import List
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, status
-
 from api.controllers.kb_controller import upload_knowledge_base_files, delete_knowledge_base_files
 from api.schemas.kb_schema import KBUploadRequest, KBUploadForm, KBDeleteRequest, KBDeleteForm
 from api.schemas.kb_response import SuccessResponse, ErrorResponse
@@ -20,7 +18,7 @@ router = APIRouter(
     status_code=status.HTTP_200_OK
 )
 async def upload_files(
-    files: List[UploadFile] = File(...),
+    files: list[UploadFile] = File(...),
     metadata: str = Form(...)
 ):
     try:

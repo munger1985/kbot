@@ -1,7 +1,6 @@
 import os
 import shutil
 from pathlib import Path
-from typing import List, Optional
 from loguru import logger
 from core.config import settings
 from dao.repositories.kbot_md_kb_files_repo import KbotMdKbFilesRepository
@@ -9,9 +8,9 @@ from dao.repositories.kbot_biz_txt_embedding_repo import KbotBizTxtEmbeddingRepo
   
 
 async def delete_files(domain_id: int, 
-                       kb_id: Optional[int], 
-                       batch_name: Optional[str],
-                       file_paths: Optional[List[str]]) -> tuple[int, int]:
+                       kb_id: int | None, 
+                       batch_name: str | None,
+                       file_paths: list[str] | None) -> tuple[int, int]:
     '''
     Delete files from disk by file IDs or batch ID or knowledge base ID.
     根据文件ID或批次ID或知识库ID从磁盘删除文件
@@ -115,9 +114,9 @@ async def delete_files(domain_id: int,
         logger.error("Invalid parameters")
         return success_cnt, failed_cnt
 
-async def delete_metadata(kb_id: Optional[int], 
-                          batch_id: Optional[int], 
-                          file_ids: Optional[List[int]]) -> bool:
+async def delete_metadata(kb_id: int | None, 
+                          batch_id: int | None, 
+                          file_ids: list[int] | None) -> bool:
     """
     Delete file metadata either by individual file IDs or by batch ID or by kb ID.
     根据文件ID或批次ID或知识库ID删除文件元数据
@@ -187,8 +186,8 @@ async def delete_metadata(kb_id: Optional[int],
         return False
 
 async def delete_vec_data(kb_id: int, 
-                          batch_id: Optional[int], 
-                          file_ids: Optional[List[int]]) -> int:
+                          batch_id: int | None, 
+                          file_ids: list[int] | None) -> int:
     """
     Delete vector data from the database by file IDs and delete file metadata finally. 
     根据文件ID从数据库中删除向量数据，最后彻底删除文件元数据。
@@ -260,10 +259,10 @@ async def delete_file_service(
     app_id: int,
     domain_id: int,
     kb_id: int, 
-    batch_id: Optional[int], 
-    batch_name: Optional[str],
-    file_ids: Optional[List[int]],
-    file_paths: Optional[List[str]]
+    batch_id: int | None, 
+    batch_name: str | None,
+    file_ids: list[int] | None,
+    file_paths: list[str] | None
 ) -> dict:
     """
     Unified file deletion service that handles multiple deletion scenarios.

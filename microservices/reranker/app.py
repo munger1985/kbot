@@ -15,7 +15,7 @@ import time
 import atexit
 import platform
 from datetime import datetime
-from typing import List, Optional, Any, Dict
+from typing import Any
 from contextlib import asynccontextmanager
 from pydantic import BaseModel, Field
 from fastapi import FastAPI, HTTPException, Depends
@@ -94,21 +94,21 @@ app.add_middleware(
 
 # 定义请求模型
 class RerankerRequest(BaseModel):
-    model_id: int = Field(..., description="reranker model ID")
+    model_unique_name: str = Field(..., description="reranker model ID")
     query: str = Field(..., description="query")
-    documents: List[str] = Field(..., description="List of documents to be reranked.")
-    top_k: Optional[int] = Field(10, description="Number of top documents to return (None for all)")
+    documents: list[str] = Field(..., description="List of documents to be reranked.")
+    top_k: int | None = Field(10, description="Number of top documents to return (None for all)")
 
 # 定义响应模型
 class RerankerResponse(BaseModel):
-    rerankers: List[Dict[str, Any]] = Field(..., description="List of reranked documents.")
+    rerankers: list[dict[str, Any]] = Field(..., description="List of reranked documents.")
 
 # 依赖项：获取reranker服务实例
 def get_reranker_service():
     return reranker_service
 
 @app.get("/health", response_model=dict, tags=["Reranker"])
-async def health() -> Dict[str, Any]:
+async def health() -> dict[str, Any]:
     """Health check endpoint. //微服务接口健康检查
     Returns:
         Loaded models count. //已加载的模型数量
@@ -126,25 +126,25 @@ async def health() -> Dict[str, Any]:
         "timestamp": datetime.now().isoformat()
     }
 
-@app.post("/rerank", response_model=RerankerResponse, tags=["Reranker"])
+@app.post("/v1/rerank", response_model=RerankerResponse, tags=["Reranker"])
 async def rerank_texts(
     request: RerankerRequest,
     reranker_service: RerankerService = Depends(get_reranker_service)
     ) -> RerankerResponse:
     """
     将文本列表进行rerank
-    - **model_id**: Model ID to use for reranking.
+    - **model_unique_name**: Model ID to use for reranking.
     - **query**: Query text to be reranked.
-    - **documents**: List of documents to be reranked.
+    - **documents**: list of documents to be reranked.
     - **top_k**: Number of top documents to return (None for all)
     """
 
     try:
-        logger.info(f"Received reranker request: model={request.model_id}, query={request.query}, documents={len(request.documents)}, top_k={request.top_k}")
+        logger.info(f"Received reranker request: model={request.model_unique_name}, query={request.query}, documents={len(request.documents)}, top_k={request.top_k}")
         
         # 使用嵌入服务将文本转换为向量
         rerankers = await reranker_service.rerank(
-            model_id=request.model_id,
+            model_unique_name=request.model_unique_name,
             query=request.query,
             documents=request.documents,
             top_k=request.top_k
