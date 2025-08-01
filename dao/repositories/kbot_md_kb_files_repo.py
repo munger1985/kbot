@@ -176,13 +176,13 @@ class KbotMdKbFilesRepository:
             await session.commit()
             return True
         
-    async def update_file_parse_metadata(self, file_id:int, parse_metadata: str) -> bool:
+    async def update_file_parsed_metadata(self, file_id:int, parsed_metadata: str) -> bool:
         """Update the parse metadata of a knowledge base file record."""
         async with get_session() as session:
             await session.execute(
                 update(KbotMdKbFiles)
                 .where(KbotMdKbFiles.file_id == file_id)
-                .values(parse_metadata=parse_metadata)
+                .values(parsed_metadata=parsed_metadata)
                 )
             await session.commit()
             return True
