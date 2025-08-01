@@ -13,14 +13,14 @@ async def upload_knowledge_base_files(
     try:
         result = await upload_file_service(
             files=form.files,
-            app_id=form.metadata.app_id,
-            domain_id=form.metadata.domain_id,
-            kb_id=form.metadata.kb_id,
-            overwrite=form.metadata.overwrite,
-            batch_name=form.metadata.batch_name,
-            batch_id=form.metadata.batch_id,
-            biz_metadata=form.metadata.biz_metadata,
-            created_by=form.metadata.created_by
+            app_id=form.app_id,
+            domain_id=form.domain_id,
+            kb_id=form.kb_id,
+            overwrite=form.overwrite,
+            batch_name=form.batch_name,
+            batch_id=form.batch_id,
+            biz_metadata=form.biz_metadata,
+            created_by=form.created_by
         )
         return result
     except Exception as e:
@@ -35,13 +35,13 @@ async def delete_knowledge_base_files(
     """
     try:
         result = await delete_file_service(
-            app_id=form.metadata.app_id,
-            domain_id=form.metadata.domain_id,
-            kb_id=form.metadata.kb_id,
-            batch_id=form.metadata.batch_id,
-            batch_name=form.metadata.batch_name,
-            file_ids=form.metadata.file_ids,
-            file_paths=form.metadata.file_paths,
+            app_id=form.app_id,
+            domain_id=form.domain_id,
+            kb_id=form.kb_id,
+            batch_id=form.batch_id,
+            batch_name=form.batch_name,
+            file_ids=form.file_ids,
+            file_paths=form.file_paths,
         )
         return result
     except Exception as e:

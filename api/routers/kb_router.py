@@ -2,11 +2,11 @@
 import json
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, status
 from api.controllers.kb_controller import upload_knowledge_base_files, delete_knowledge_base_files
-from api.schemas.kb_schema import KBUploadRequest, KBUploadForm, KBDeleteRequest, KBDeleteForm
+from api.schemas.kb_schema import KBUploadForm, KBDeleteForm
 from api.schemas.kb_response import SuccessResponse, ErrorResponse
 
 router = APIRouter(
-    prefix="/api/knowledge-base",
+    prefix="/kb",
     tags=["Knowledge Base"]
 )
 
@@ -22,12 +22,9 @@ async def upload_files(
     metadata: str = Form(...)
 ):
     try:
-        # Parse JSON metadata
+        # Parse and validate as form model
         metadata_dict = json.loads(metadata)
-        upload_request = KBUploadRequest(**metadata_dict)
-        
-        # Create form object
-        form = KBUploadForm(files=files, metadata=upload_request)
+        form = KBUploadForm(files=files, **metadata_dict)
         
         # Call the controller
         result = await upload_knowledge_base_files(form)
@@ -42,9 +39,7 @@ async def upload_files(
             return ErrorResponse(
                 code=400,
                 success=False,
-                message="Upload files failed.",
-                error_type="File Upload Error",
-                details=None
+                message="Upload files failed."
             )
         
     except json.JSONDecodeError as e:
@@ -69,12 +64,9 @@ async def delete_files(
     metadata: str = Form(...)
 ):
     try:
-        # Parse JSON metadata
+        # Parse and validate as form model
         metadata_dict = json.loads(metadata)
-        delete_request = KBDeleteRequest(**metadata_dict)
-        
-        # Create form object
-        form = KBDeleteForm(metadata=delete_request)
+        form = KBDeleteForm(**metadata_dict)
         
         # Call the controller
         result = await delete_knowledge_base_files(form)
@@ -90,9 +82,7 @@ async def delete_files(
             return ErrorResponse(
                 code=400,
                 success=False,
-                message="Delete files failed.",
-                error_type="File Delete Error",
-                details=result
+                message=f"Delete files failed. Result: {result}"
                 )
         
     except json.JSONDecodeError as e:

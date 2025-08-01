@@ -19,11 +19,16 @@ class KBSearch:
         # 1. Get model ID
         repo = KbotMdKbRepository()
         models = await repo.get_model_by_kbid(self.tool_params.tool_id)
+    
         if models:
             self.tool_params.kb_catogory = models[0]
+            logger.debug(f"KB category: {models[0]}")
             self.tool_params.img2txt_model = models[1]
+            logger.debug(f"Image to text model: {models[1]}")
             self.tool_params.img_embed_model = models[2]
+            logger.debug(f"Image embedding model: {models[2]}")
             self.tool_params.txt_embed_model = models[3]
+            logger.debug(f"Text embedding model: {models[3]}")
         else:
             logger.warning(f"Embedding model not found for KB {self.tool_params.tool_id}")
             return None
@@ -31,6 +36,7 @@ class KBSearch:
         # 2. Decide search method
         if self.tool_params.kb_catogory == KbCategory.KBOT.value:
             if self.tool_params.search_type == KBSearchType.VECTOR.value:
+                logger.debug("Search method: vector")
                 return await self.search_by_vector(question, security)
             elif self.tool_params.search_type == KBSearchType.FULLTEXT.value:
                 pass
@@ -78,6 +84,10 @@ class KBSearch:
         convertor = OracleVecHandler()
         vec = convertor.convert(query_vec, to_string=True)
         try:
+            logger.debug(f"Vector search query: {vec}")
+            logger.debug(f"Vector search security: {security}")
+            logger.debug(f"Vector search threshold: {self.tool_params.threshold}")
+            logger.debug(f"Vector search top_k: {self.tool_params.top_k}")
             dataset = await repo.get_similar_embeddings(
                 kb_id = self.tool_params.tool_id,
                 query_vec = vec,  # type: ignore
@@ -86,7 +96,7 @@ class KBSearch:
                 top_k = self.tool_params.top_k
             )
             if not dataset:
-                logger.info(f"Vector search found no results")
+                logger.info(f"Vector search returned no results")
                 return None
             results = []
 

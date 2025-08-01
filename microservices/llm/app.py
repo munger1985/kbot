@@ -98,7 +98,7 @@ app.add_middleware(
 class ChatResponse(BaseModel):
     """Response model for chat (OpenAI compatible). //聊天响应模型(兼容OpenAI)"""
 
-    id: str = Field(default_factory=lambda: f"chatcmpl-{uuid.uuid4()}", 
+    id: str = Field(default_factory=lambda: f"sse-{uuid.uuid4()}", 
                    description="Unique identifier for the chat completion")
     object: str = Field("chat.completion", 
                        description="The object type, always 'chat.completion'")
@@ -113,18 +113,11 @@ class ChatResponse(BaseModel):
                                  description="Processing time in seconds (custom field)")
 
 
-class ChatMessage(BaseModel):
-    """Chat message model. //聊天消息模型"""
-
-    role: str = Field(..., description="Message role (system, user, assistant)")
-    content: str = Field(..., description="Message content")
-
-
 class ChatRequest(BaseModel):
     """Request model for chat. //聊天请求模型"""
 
     model_unique_name: str = Field(..., description="Specific model id to use")
-    messages: list[ChatMessage] | str = Field(..., description="list of chat messages")
+    messages: list[dict[str, str]] | str = Field(..., description="list of chat messages")
     max_tokens: int | None = Field(None, description="Maximum number of tokens to generate")
     temperature: float | None = Field(
         None, description="Sampling temperature (0.0-1.0, lower is more deterministic)"
@@ -177,23 +170,24 @@ async def chat(
     - **presence_penalty**: 存在惩罚
     
     返回:
-    - 流式模式: 文本流
+    - 流式模式: 标准OpenAI SSE格式
     - 非流式模式: 包含消息和处理时间的JSON对象
     """
     start_time = time.time()
-    response_id = f"chatcmpl-{uuid.uuid4()}"
+    response_id = f"chatcmpl-{uuid.uuid4()}"  # OpenAI格式的ID
     created_time = int(time.time())
     model_name = request.model_unique_name
     
-    logger.info(f"Generating chat response by using model {request.model_unique_name}")
+    logger.info(f"Generating chat response using model {request.model_unique_name}")
+    
     try:
-        # 处理流式响应
         if request.stream:
             async def generate():
                 try:
-                    chunk_stream = await llm_service.chat( # type: ignore
+                    # 获取流式响应
+                    chunk_stream = await llm_service.chat(
                         model_unique_name=request.model_unique_name,
-                        messages=request.messages, # type: ignore
+                        messages=request.messages,
                         stream=True,
                         max_tokens=request.max_tokens,
                         temperature=request.temperature,
@@ -201,17 +195,25 @@ async def chat(
                         top_p=request.top_p,
                         frequency_penalty=request.frequency_penalty,
                         presence_penalty=request.presence_penalty
-                    )# 处理流式响应
-                    usage_data = {}
-                    async for content in chunk_stream:  # type: ignore
-                        # 检查是否是usage数据
+                    )
+                    
+                    # 初始化usage数据
+                    usage_data = {
+                        "prompt_tokens": 0,
+                        "completion_tokens": 0,
+                        "total_tokens": 0
+                    }
+                    
+                    async for content in chunk_stream: # type: ignore
+                        # 如果是usage数据，更新usage_data
                         if content.startswith("\n\n=== USAGE ==="):
                             try:
-                                usage_data = json.loads(content.replace("\n\n=== USAGE ===\n", ""))
+                                usage_data.update(json.loads(content.replace("\n\n=== USAGE ===\n", "")))
                             except json.JSONDecodeError:
                                 logger.warning("Failed to parse usage data")
                             continue
                             
+                        # 标准OpenAI SSE格式
                         chunk_data = {
                             "id": response_id,
                             "object": "chat.completion.chunk",
@@ -225,38 +227,48 @@ async def chat(
                         }
                         yield f"data: {json.dumps(chunk_data)}\n\n"
                     
-                    # 流结束标记
-                    yield f"data: {json.dumps({
-                        'id': response_id,
-                        'object': 'chat.completion.chunk',
-                        'created': created_time,
-                        'model': model_name,
-                        'choices': [{
-                            'delta': {},
-                            'index': 0,
-                            'finish_reason': 'stop'
+                    # 发送结束标记
+                    end_chunk = {
+                        "id": response_id,
+                        "object": "chat.completion.chunk",
+                        "created": created_time,
+                        "model": model_name,
+                        "choices": [{
+                            "delta": {},
+                            "index": 0,
+                            "finish_reason": "stop"
                         }],
-                        'usage': usage_data
-                    })}\n\n"
+                        "usage": usage_data
+                    }
+                    yield f"data: {json.dumps(end_chunk)}\n\n"
                     yield "data: [DONE]\n\n"
-                
+                    
                 except Exception as e:
                     logger.error(f"Stream error: {str(e)}")
-                    yield f"data: {json.dumps({
-                        'error': str(e),
-                        'code': 500
-                    })}\n\n"
+                    error_chunk = {
+                        "error": {
+                            "message": str(e),
+                            "type": e.__class__.__name__,
+                            "code": 500
+                        }
+                    }
+                    yield f"data: {json.dumps(error_chunk)}\n\n"
+                    yield "data: [DONE]\n\n"
 
             return StreamingResponse(
                 generate(),
                 media_type="text/event-stream",
-                headers={"Cache-Control": "no-cache"}
+                headers={
+                    "Cache-Control": "no-cache",
+                    "Connection": "keep-alive"
+                }
             )
+            
         else:
             # 非流式响应
             response = await llm_service.chat(
                 model_unique_name=request.model_unique_name,
-                messages=request.messages, # type: ignore
+                messages=request.messages,
                 stream=False,
                 max_tokens=request.max_tokens,
                 temperature=request.temperature,
@@ -269,8 +281,13 @@ async def chat(
             processing_time = time.time() - start_time
             logger.info(f"Chat completion took {processing_time:.2f}s")
             
-            # 从服务层响应中获取usage数据
-            usage_data = response.get("usage", {}) # type: ignore
+            # 获取usage数据
+            usage_data = response.get("usage", { # type: ignore
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0
+            })
+            
             return ChatResponse(
                 id=response_id,
                 object="chat.completion",
@@ -289,7 +306,7 @@ async def chat(
                     "completion_tokens": usage_data.get("completion_tokens", 0),
                     "total_tokens": usage_data.get("total_tokens", 0)
                 },
-                processing_time=time.time() - start_time
+                processing_time=processing_time
             )
 
     except ValidationError as e:

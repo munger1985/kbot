@@ -1,5 +1,7 @@
+from loguru import logger
 from .agent_params import KBResult, AgentParams
 from utils.call_models import call_reranker_model
+
 
 class AgentRerank:
     """Agent rerank"""
@@ -34,15 +36,33 @@ class AgentRerank:
         
         if rerankers is None:
             return None
-            
+
+        reranked_results: list[KBResult] = []    
         # Update rerank_score in original KBResult objects
         for reranker in rerankers:
             index = reranker.get("index")
             score = reranker.get("score")
-            if index is not None and score is not None and 0 <= index < len(kb_results):
-                kb_results[index].rerank_score = score
-        
-        # Sort KBResult objects by rerank_score in descending order
-        kb_results.sort(key=lambda x: x.rerank_score, reverse=True) # type: ignore
+            logger.debug(f"Reranker index: {index}, score: {score}")
 
-        return kb_results
+            if index is not None and score is not None:
+                reranked_result = KBResult()
+                reranked_result.chunk_doc=kb_results[index].chunk_doc
+                reranked_result.embed_id=kb_results[index].embed_id
+                reranked_result.kb_id=kb_results[index].kb_id
+                reranked_result.file_id=kb_results[index].file_id
+                reranked_result.chunk_doc=kb_results[index].chunk_doc
+                reranked_result.chunk_metadata=kb_results[index].chunk_metadata
+                reranked_result.similarity=kb_results[index].similarity
+                reranked_result.weight=kb_results[index].weight
+                reranked_result.rerank_score=score
+                reranked_results.append(reranked_result)
+
+                logger.debug(f"KBResult chunk_doc: {reranked_result.chunk_doc[0:20]}")
+                logger.debug(f"KBResult chunk_metadata: {reranked_result.chunk_metadata}")
+                logger.debug(f"KBResult rerank_score: {reranked_result.rerank_score}")
+                logger.debug(f"KBResult weight: {reranked_result.weight}")
+                
+
+        logger.debug(f"Reranked {len(reranked_results)} results with reranker model {self.agent_params.reranker_model_name}")
+
+        return reranked_results

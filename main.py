@@ -15,7 +15,6 @@ from fastapi.openapi.docs import (
 from loguru import logger
 from dotenv import load_dotenv
 from api.routers import router
-from api.routers.kb_router import router as kb_router
 from core.log.logger import setup_logging
 from core.config import settings
 from services.dataparse.parse_service import start_file_parse_service, shutdown_file_parse_service
@@ -136,12 +135,6 @@ def create_app() -> FastAPI:
 
         # Add routers
         app.include_router(router)
-        app.include_router(kb_router)
-
-        # Add health check endpoint
-        @app.get("/health", tags=["health"])
-        async def health_check() -> JSONResponse:
-            return JSONResponse({"status": "ok"})
 
         # Add API documentation endpoint
         @app.get("/docs", include_in_schema=False)

@@ -1,3 +1,4 @@
+from typing import Sequence
 from sqlalchemy import select
 from dao.entities.kbot_md_prompt import KbotMdPrompt
 from core.database.meta_oracle import get_session
@@ -40,4 +41,12 @@ class KbotMdPromptRepository:
             await session.delete(prompt)
             await session.commit()
             return True
+    
+    async def get_prompt_by_id(self, prompt_id: int) -> Sequence[str] | None:
+        """Get prompt content by ID."""
+        async with get_session() as session:
+            result = await session.execute(
+                select(KbotMdPrompt.template).where(KbotMdPrompt.prompt_id == prompt_id)
+            )
+            return result.scalar_one_or_none()
     

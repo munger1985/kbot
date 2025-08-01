@@ -11,18 +11,18 @@ from .agent_rerank import AgentRerank
 
 class Agent:
     """智能体类"""
-    def __init__(self, security: int):
-        self.agent_params = AgentParams()
+    def __init__(self, agent_id: int, security: int):
+        self.agent_id = agent_id
         self.security = security
+        self.agent_params = AgentParams()
 
-    async def chat(self, agent_id: int, chat: str) -> list[KBResult] | None:
+    async def chat(self, question: str) -> list[KBResult] | None:
         """Agent chat"""
-        # 获取 agent 的默认配置信息
-        agent = await KbotMdAgentRepository().get_by_id(agent_id)
+        # 1. 获取 agent 的默认配置信息
+        agent = await KbotMdAgentRepository().get_by_id(self.agent_id)
         if not agent:
             logger.warning("Agent not found")
             return None
-        self.agent_params.agent_id = agent.agent_id
         self.agent_params.domain_id = agent.domain_id
         self.agent_params.prompt_id = agent.prompt_id
         self.agent_params.llm_id = agent.llm_id
@@ -34,8 +34,8 @@ class Agent:
         self.agent_params.reranker_score_threshold = agent.reranker_score_threshold
         self.agent_params.reranker_model_name = await KbotMdModelsRepository().get_unique_name_by_id(self.agent_params.reranker_model_id) # type: ignore
 
-        # 获取 agent 包含的知识库或工具配置信息
-        confs = await KbotMdAgentConfRepository().get_by_agent_id(agent_id)
+        # 2. 获取 agent 包含的知识库或工具配置信息
+        confs = await KbotMdAgentConfRepository().get_by_agent_id(self.agent_id)
         if not confs:
             logger.warning("AgentConf not found")
             return None
@@ -46,7 +46,6 @@ class Agent:
         for conf in confs:
             tool_params = ToolParams()
             tool_params.conf_id = conf.conf_id
-            tool_params.agent_id = conf.agent_id
             tool_params.tool_id = conf.tool_id
             tool_params.tool_type = conf.tool_type
             tool_params.tool_weight = conf.tool_weight or 0.0
@@ -54,11 +53,13 @@ class Agent:
             tool_params.search_type = conf.search_type
             tool_params.top_k = conf.search_topk or 10
             tool_params.threshold = conf.search_score_threshold or 0.7
-            # 根据配置的 tool_type 调用不同的工具：
-            # 1. 知识库
+            
+            # 3. 根据配置的 tool_type 调用不同的工具：
+            # 知识库
             if tool_params.tool_type == ToolType.KB.value:
+                logger.debug("ToolType: knowledge base")
                 kb = KBSearch(tool_params)
-                result = await kb.search(chat, self.security)
+                result = await kb.search(question, self.security)
                 if result:
                     # 如果开启了reranker，则将结果添加到rerank列表中
                     if tool_params.reranker_flag == YesNoEnum.YES.value:
@@ -66,16 +67,19 @@ class Agent:
                     # 如果没有开启reranker，则将结果添加到非rerank列表中
                     else:
                         kb_results_non_rerank += result
-            # 2. 函数调用
+                else:
+                    logger.warning("KB search result is None")
+                    return None
+            # 函数调用
             elif tool_params.tool_type == ToolType.FUNCTIONCALL.value:
                 pass
-            # 3. 网络搜索
+            # 网络搜索
             elif tool_params.tool_type == ToolType.INTERNET.value:
                 pass
-            # 4. 代理智能体
+            # 代理智能体
             elif tool_params.tool_type == ToolType.AGENT.value:
                 pass
-            # 5. ChatAI
+            # ChatAI
             elif tool_params.tool_type == ToolType.CHATAI.value:
                 pass
             # 其他类型暂不支持
@@ -83,11 +87,11 @@ class Agent:
                 logger.error("Invalid tool type")
                 raise ValueError("Invalid tool type")
         
-        # Agent 范围内所有KB查询和工具调用的结果合并后，进行rerank
+        # 4. Agent 范围内所有KB查询和工具调用的结果合并后，进行rerank(配置决定是否需要rerank)
         # 如果 reranker 结果大于1个，则进行rerank，否则不进行rerank
         if len(kb_results_rerank) > 1:
             reranker = AgentRerank(self.agent_params)
-            reranked = await reranker.rerank_kb(chat, kb_results_rerank)
+            reranked = await reranker.rerank_kb(question, kb_results_rerank)
             if reranked:
                 # 根据reranker阈值，提取出大于等于阈值的reranker结果
                 kb_results += [item for item in reranked if item.rerank_score >= self.agent_params.reranker_score_threshold] # type: ignore
@@ -101,11 +105,15 @@ class Agent:
             kb_results += kb_results_rerank
         # 没有需要 reranker 的结果
         else:
+            logger.debug("No need rerank")
             pass
+
         if len(kb_results_non_rerank) > 0:
             kb_results += kb_results_non_rerank
 
-        # 最后根据权重进行排序，权重值最大的排在前面
+        # 5. 最后根据权重进行排序，权重值最大的排在前面
         kb_results.sort(key=lambda x: x.weight, reverse=True) # type: ignore
+
+        # 6. 返回结果
         return kb_results
 

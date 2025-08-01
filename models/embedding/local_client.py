@@ -1,6 +1,7 @@
 import os
 import gc
 import torch
+import inspect
 from typing import Any
 from loguru import logger
 from transformers import AutoModel, AutoTokenizer
@@ -323,10 +324,30 @@ class LocalEmbedding(BaseEmbedding):
             return False
             
         if not texts:
-            logger.warning("Empty input list")
+            logger.warning(
+                "Empty input list - "
+                f"Caller: {self._get_caller_info()}, "
+                f"Model: {self.model_name}, "
+                f"Initialized: {self._is_initialized}"
+            )
             return False
             
         return True
+
+    def _get_caller_info(self) -> str:
+        """Get information about the function that called this method."""
+        try:
+            frame = inspect.currentframe()
+            if frame is None or frame.f_back is None or frame.f_back.f_back is None:
+                return "unknown"
+            
+            caller_frame = frame.f_back.f_back
+            return (
+                f"{caller_frame.f_code.co_name}() in "
+                f"{caller_frame.f_code.co_filename}:{caller_frame.f_lineno}"
+            )
+        except Exception:
+            return "unknown"
 
     async def _process_batches(
         self,

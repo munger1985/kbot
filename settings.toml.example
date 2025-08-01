@@ -11,6 +11,9 @@ database.max_overflow = 10
 database.pool_pre_ping = false
 database.pool_recycle = 3600
 
+# redis configuration
+redis.max_connections = 10
+
 # logger configuration
 logger.level = "DEBUG"
 logger.dir = "/var/logs/"

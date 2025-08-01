@@ -1,7 +1,10 @@
 import os
 import aiohttp
+import asyncio
+import json
+from decimal import Decimal
 from loguru import logger
-from typing import Any
+from typing import Any, AsyncGenerator
 from models.embedding.base import EmbeddingDataItem
 
 
@@ -95,3 +98,51 @@ async def call_reranker_model(model_unique_name: str, query: str, documents: lis
     except Exception as e:
         logger.error(f"Reranking service got error: {str(e)}")
         return None
+    
+async def call_llm_model(model_unique_name: str, prompt: str, **kwargs):
+    """
+    调用LLM微服务并处理SSE格式的响应
+    
+    参数:
+        model_unique_name: 模型唯一标识
+        prompt: 输入的提示信息
+        **kwargs: 其他可选参数，如stream、temperature等
+        
+    返回:
+        一个异步生成器，逐块产生LLM的响应
+    """
+    # 获取LLM服务地址和端口
+    llm_host = os.getenv("KBOT_LLM_HOST", "localhost")
+    llm_port = os.getenv("KBOT_LLM_PORT", "8002")
+    llm_url = f"http://{llm_host}:{llm_port}/v1/chat/completions"
+    headers = {"Content-Type": "application/json"}
+    
+    # 构建请求负载
+    payload = {
+        "model_unique_name": model_unique_name,
+        "messages": prompt,
+        "stream": kwargs.get("stream", True)  # 默认为流式
+    }
+    
+    # 处理额外参数（Decimal转float/int）
+    if kwargs:
+        processed_kwargs = {}
+        for k, v in kwargs.items():
+            if v is not None:
+                if isinstance(v, Decimal):
+                    processed_kwargs[k] = float(v) if v % 1 else int(v)
+                else:
+                    processed_kwargs[k] = v
+        payload.update(processed_kwargs)
+    
+    logger.debug(f"Calling LLM service with payload: {payload}")
+
+    async with aiohttp.ClientSession() as session:
+        async with session.post(llm_url, headers=headers, json=payload) as response:
+            if response.status != 200:
+                error_msg = await response.text()
+                logger.error(f"LLM service error: {error_msg}")
+                raise Exception(f"LLM service error: {error_msg}")
+                
+            async for raw_chunk in response.content:
+                yield raw_chunk.decode('utf-8')

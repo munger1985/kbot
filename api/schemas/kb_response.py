@@ -26,9 +26,8 @@ class SuccessWithErrorResponse(SuccessResponse):
 class ErrorResponse(BaseResponse):
     """错误响应模型"""
     success: bool = Field(False, description="请求失败")
+    message: str | None = Field(None, description="错误详情")
     code: int = Field(400, description="错误码")
-    error_type: str = Field(..., description="错误类型")
-    details: dict | None = Field(None, description="错误详情")
 
 class Pagination(BaseModel):
     """分页信息"""

@@ -9,7 +9,6 @@ project_root = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 # Use absolute imports from project root
-from dao.repositories.kbot_biz_txt_embedding_repo import KbotBizTxtEmbeddingRepository
 from utils.common_methods import lob_to_string
 from services.chat.agent_chat import Agent
 
@@ -21,8 +20,11 @@ async def main():
     # 1. Prepare test text
     test_text = "文艺复兴是什么？"
     
-    agent = Agent(2)
-    r = await agent.chat(1, test_text)
+    agent = Agent(1,9)
+    r = await agent.chat(test_text)
+    if r is None:
+        print("No results found.")
+        return
     for res in r: # type: ignore
         print("\n===========================================================\n")
         print(f"kb_id: {res.kb_id}")

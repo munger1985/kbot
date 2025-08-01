@@ -2,8 +2,9 @@ from pydantic import BaseModel
 from fastapi import UploadFile
 
 
-class KBUploadRequest(BaseModel):
-    """知识库上传请求模型"""
+class KBUploadForm(BaseModel):
+    """知识库上传表单模型"""
+    files: list[UploadFile]
     app_id: int
     domain_id: int
     kb_id: int
@@ -14,35 +15,13 @@ class KBUploadRequest(BaseModel):
     created_by: str | None = None
 
 
-class KBUploadForm:
-    """知识库上传表单模型"""
-    def __init__(
-        self,
-        files: list[UploadFile],
-        metadata: KBUploadRequest
-    ):
-        self.files = files
-        self.metadata = metadata
-
-class KBDeleteRequest(BaseModel):
-    """知识库删除请求模型"""
+class KBDeleteForm(BaseModel):
+    """知识库删除表单模型"""
     app_id: int
     domain_id: int
     kb_id: int
-    batch_id: int | None
-    batch_name: str | None
-    file_ids: list[int] | None
-    file_paths: list[str] | None
-
-
-
-class KBDeleteForm:
-    """知识库上传表单模型"""
-    def __init__(
-        self,
-        metadata: KBDeleteRequest
-    ):
-        self.metadata = metadata
-
-
+    batch_id: int | None = None
+    batch_name: str | None = None
+    file_ids: list[int] | None = None
+    file_paths: list[str] | None = None
         

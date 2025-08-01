@@ -85,7 +85,7 @@ class OpenaiClient(BaseLLM):
         
         # Convert messages to proper format
         converted_messages = [self._convert_message(msg) for msg in messages]
-        
+
         # Merge config with any overrides
         params = {
             "model": self.config.model_name,

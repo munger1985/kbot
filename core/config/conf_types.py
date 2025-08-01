@@ -15,6 +15,11 @@ class DatabaseConfig(TypedDict):
     pool_pre_ping: bool
     pool_recycle: int
 
+class RedisConfig(TypedDict):
+    url: str
+    password: str
+    max_connections: int
+
 class LoggerConfig(TypedDict):
     level: str
     dir: str
@@ -50,6 +55,7 @@ class KBotConfig(TypedDict):
 class AppSettings(TypedDict):
     app: AppConfig
     database: DatabaseConfig
+    redis: RedisConfig
     logger: LoggerConfig
     embed: EmbedConfig
     llm: LLMConfig

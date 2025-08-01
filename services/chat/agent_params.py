@@ -1,6 +1,6 @@
 class AgentParams:
     def __init__(self):
-        self.agent_id: int
+        #self.agent_id: int
         self.domain_id: int | None
         self.prompt_id: int | None
         self.llm_id: int | None
@@ -16,7 +16,6 @@ class AgentParams:
 class ToolParams:
     def __init__(self):
         self.conf_id: int
-        self.agent_id: int
         self.tool_id: int
         self.tool_type: int
         self.tool_weight: float | None
@@ -31,11 +30,11 @@ class ToolParams:
 
 class KBResult:
     def __init__(self):
-        self.embed_id: int
-        self.kb_id: int
-        self.file_id: int
-        self.chunk_doc: str
-        self.chunk_metadata: dict
-        self.similarity: float
-        self.weight: float
-        self.rerank_score: float | None
+        self.embed_id: int = 0
+        self.kb_id: int = 0
+        self.file_id: int = 0
+        self.chunk_doc: str = ""
+        self.chunk_metadata: dict = {}
+        self.similarity: float = 0.0
+        self.weight: float = 0.0
+        self.rerank_score: float = 0.0
