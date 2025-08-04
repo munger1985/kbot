@@ -2,6 +2,7 @@ import json
 from loguru import logger
 from datetime import datetime
 from .txt_parser import process_txt
+from .pdf_parser import process_pdf
 from .file_params import FileParams
 from dao.repositories.kbot_md_kb_files_repo import KbotMdKbFilesRepository
 from dao.repositories.kbot_md_kb_repo import KbotMdKbRepository
@@ -97,6 +98,8 @@ class FileProcessor:
             if file_params.file_ext == ".txt":
                 logger.info(f"Processing text file {file_params.file_path}...")
                 return await process_txt(file_params)
+            if file_params.file_ext == ".pdf":
+                return await process_pdf(file_params)
             else:
                 logger.info(f"File {file_params.file_path} is not a text file, skipping...")
                 # 更新文件状态为已处理
