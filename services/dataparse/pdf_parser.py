@@ -1,64 +1,96 @@
-import os
 import uuid
 import json
-import aiohttp
-from loguru import logger
-
-from .file_params import FileParams
-from dao.repositories.kbot_md_kb_files_repo import KbotMdKbFilesRepository
-from dao.repositories.kbot_biz_txt_embedding import KbotBizTxtEmbeddingRepository
-from dao.entities.kbot_biz_txt_embedding import KbotBizTxtEmbedding
-from dao.data_dict import FileStatus, ChunkType, SplitStrategy
-from core.config import settings
-from utils.chunk_text import chunk_text
-from utils.call_models import call_embedding_model
-from utils import check_text_file
-import os
-import uuid
-import json
-from pathlib import Path
 import pdfplumber
-from PIL import Image
-import io
 import pandas as pd
-from typing import List, Dict, Any, Tuple
+from pathlib import Path
+from PIL import Image
 # 替换fitz为pdfminer.six
 from pdfminer.pdfinterp import PDFResourceManager, PDFPageInterpreter
 from pdfminer.pdfpage import PDFPage
 from pdfminer.converter import PDFPageAggregator
 from pdfminer.layout import LAParams, LTImage, LTFigure
+from loguru import logger
+
+from utils.oracle_vec_handler import OracleVecHandler
+from .file_params import FileParams
+from dao.repositories.kbot_md_kb_files_repo import KbotMdKbFilesRepository
+from dao.repositories.kbot_biz_txt_embedding_repo import KbotBizTxtEmbeddingRepository
+from dao.repositories.kbot_md_models_repo import KbotMdModelsRepository
+from dao.entities.kbot_biz_txt_embedding import KbotBizTxtEmbedding
+from dao.data_dict import FileStatus, ChunkType, SplitStrategy
+from core.config import settings
+from utils.call_models import call_embedding_model
+from utils.common_methods import check_text_file
 
 
 class PDFPlumberParser:
-    async def parse(self) -> Tuple[
-        List[Dict], List[Dict], List[Dict] ]:
+    """PDF文件解析类"""
+
+    def __init__(self, file_params: FileParams):
+        self.file_params = file_params
+        self.pdf_path = file_params.file_path
+        self.output_dir = Path(file_params.file_path).parent / "output"
+        self.images_dir = self.output_dir / "images"
+        self.tables_dir = self.output_dir / "tables"
+
+        # 创建输出目录
+        self.output_dir.mkdir(exist_ok=True)
+        self.images_dir.mkdir(exist_ok=True)
+        self.tables_dir.mkdir(exist_ok=True)
+
+        self.text_content = []
+        self.images_info = []
+        self.tables_info = []
+        self.page_content = []  # 存储每页的完整内容（包含占位符）
+
+    async def parse(self) -> bool:  # tuple[list[dict], list[dict], list[dict] ]:
         pdf_path = self.file_params.file_path
-        split_strategy = int(self. file_params.parser.get("split_strategy", SplitStrategy.SELF_SPLIT.value))
+        split_strategy = int(self.file_params.parser.get("split_strategy", SplitStrategy.SELF_SPLIT.value))
         file_repo = KbotMdKbFilesRepository()
+        oracle_vec_handler = OracleVecHandler()
 
         if split_strategy == SplitStrategy.BY_PAGE.value:
             text_content, images_info, tables_info = self.extract_all_per_page()
             self.text_content = text_content
-            self.images_info= images_info
+            self.images_info = images_info
             self.tables_info = tables_info
             ###### text
             embed_entities = []
+            # 获取embedding模型的unique name
+            model_unique_name = await KbotMdModelsRepository().get_unique_name_by_id(
+                self.file_params.txt_embed_model)  # type: ignore
+            if model_unique_name is None:
+                msg = f"Embedding model not found for id: {self.file_params.txt_embed_model}"
+                logger.error(msg)
+                await file_repo.update_file_status(self.file_params.file_id, FileStatus.PARSE_FAILED, msg)
+                return False
+
             for each_content in text_content:
                 text = each_content['text']
                 page = each_content['page']
                 if text != "":
-                    embeddings_list =await call_embedding_model(self.file_params.txt_embed_model, [text])
-                    embedding = embeddings_list[0]
+                    embeddings_list = await call_embedding_model(model_unique_name, [text])
+                    if embeddings_list is None:
+                        msg = f"Embedding model {model_unique_name} returned None."
+                        logger.error(msg)
+                        await file_repo.update_file_status(self.file_params.file_id, FileStatus.PARSE_FAILED, msg)
+                        return False
+                    print(123123, embeddings_list)
+                    embedding = embeddings_list[0].embedding
+                    print(3233, embedding)
+
                     embed_entity = KbotBizTxtEmbedding(
                         embed_id=str(uuid.uuid4()),
                         chunk_doc=text,
                         chunk_metadata=json.dumps({"chunk_type": ChunkType.TEXT,
                                                    "split_strategy": int(split_strategy),
                                                    "file_path": self.file_params.file_path,
-                                                   "page": page}),
+                                                   "page_num": int(page)}),
                         file_id=self.file_params.file_id,
+                        # embedding=oracle_vec_handler.convert(embedding,False)
                         embedding=embedding
                     )
+                    print(441, embed_entity.chunk_metadata)
                     embed_entities.append(embed_entity)
 
                 embedding_repo = KbotBizTxtEmbeddingRepository()
@@ -66,7 +98,8 @@ class PDFPlumberParser:
                 try:
                     result = await embedding_repo.create(kb_id=self.file_params.kb_id, embeddings=embed_entities)
                     if result:
-                        logger.info(f"Successfully saved {len(embed_entities)} embeddings for {self.file_params.file_path}")
+                        logger.info(
+                            f"Successfully saved {len(embed_entities)} embeddings for {self.file_params.file_path}")
                         logger.debug(f"Database operation returned: {result}")
                     else:
                         msg = f"Failed to save embeddings for {self.file_params.file_path} (repository returned False)"
@@ -88,17 +121,24 @@ class PDFPlumberParser:
                 with open(table_file_path, 'r', encoding='utf-8') as f:
                     text = f.read()
                     if text != "":
-                        embeddings_list = await call_embedding_model(self.file_params.txt_embed_model, [text])
-                        embedding = embeddings_list[0]
+                        embeddings_list = await call_embedding_model(model_unique_name, [text])
+                        if embeddings_list is None:
+                            msg = f"Embedding model {model_unique_name} returned None."
+                            logger.error(msg)
+                            await file_repo.update_file_status(self.file_params.file_id, FileStatus.PARSE_FAILED, msg)
+                            return False
+                        embedding = embeddings_list[0].embedding
                         embed_entity = KbotBizTxtEmbedding(
                             embed_id=str(uuid.uuid4()),
                             chunk_doc=text,
                             chunk_metadata=json.dumps({"chunk_type": ChunkType.TEXT,
                                                        "split_strategy": int(split_strategy),
                                                        "file_path": self.file_params.file_path,
-                                                       "page": page}),
+                                                       "page_num": int(page)}),
                             file_id=self.file_params.file_id,
                             embedding=embedding
+                            # embedding=oracle_vec_handler.convert(embedding,False)
+
                         )
                         embed_entities.append(embed_entity)
 
@@ -114,8 +154,7 @@ class PDFPlumberParser:
                         else:
                             msg = f"Failed to save embeddings for {self.file_params.file_path} (repository returned False)"
                             logger.error(msg)
-                            await file_repo.update_file_status(self.file_params.file_id, FileStatus.PARSE_FAILED,
-                                                               msg)
+                            await file_repo.update_file_status(self.file_params.file_id, FileStatus.PARSE_FAILED, msg)
                             return False
                     except Exception as e:
                         msg = f"Exception while saving embeddings: {str(e)}"
@@ -123,19 +162,21 @@ class PDFPlumberParser:
                         await  file_repo.update_file_status(self.file_params.file_id, FileStatus.PARSE_FAILED, msg)
                         return False
 
-
             # # 获取按页分块的文本数组
             # text_chunks = PDFPlumberParser.get_text_chunks(text_content)
 
-        # # 保存结果
-        # parser.save_results()
-        #
-        # # 打印摘要
+            # # 保存结果
+            # parser.save_results()
+            #
+            # # 打印摘要
 
-        return text_content, images_info, tables_info
+            return True  # text_content, images_info, tables_info
+        else:
+            logger.warning(f"Unrecognized split strategy: {split_strategy}. ")
+            return False
 
     @staticmethod
-    def get_text_chunks(text_content: List[Dict]) -> List[str]:
+    def get_text_chunks(text_content: list[dict]) -> list[str]:
         """静态方法：从文本内容中提取按页分块的文本数组
 
         Args:
@@ -151,23 +192,6 @@ class PDFPlumberParser:
         text_chunks = [item['text'] for item in sorted_content]
 
         return text_chunks
-
-    def __init__(self, file_params: FileParams):
-        self.file_params = file_params
-        self.pdf_path = file_params.file_path
-        self.output_dir = Path(file_params.file_path).parent / "output"
-        self.images_dir = self.output_dir / "images"
-        self.tables_dir = self.output_dir / "tables"
-
-        # 创建输出目录
-        self.output_dir.mkdir(exist_ok=True)
-        self.images_dir.mkdir(exist_ok=True)
-        self.tables_dir.mkdir(exist_ok=True)
-
-        self.text_content = []
-        self.images_info = []
-        self.tables_info = []
-        self.page_content = []  # 存储每页的完整内容（包含占位符）
 
     def extract_all_per_page(self):
         """提取PDF中的所有内容：文字、图片和表格"""
@@ -198,7 +222,7 @@ class PDFPlumberParser:
 
         return self.text_content, self.images_info, self.tables_info
 
-    def _extract_text_and_tables_from_page(self, page, page_num: int) -> Tuple[str, List[Dict]]:
+    def _extract_text_and_tables_from_page(self, page, page_num: int) -> tuple[str, list[dict]]:
         """从页面提取文字和表格"""
         page_text = ""
         page_tables = []
@@ -267,7 +291,7 @@ class PDFPlumberParser:
 
         return page_text, page_tables
 
-    def _extract_images_from_page_pdfminer(self, page_num: int) -> List[Dict]:
+    def _extract_images_from_page_pdfminer(self, page_num: int) -> list[dict]:
         """使用pdfminer.six从页面提取图片（替代fitz）"""
         page_images = []
 
@@ -291,7 +315,7 @@ class PDFPlumberParser:
 
         return page_images
 
-    def _extract_images_from_layout(self, layout, page_num: int) -> List[Dict]:
+    def _extract_images_from_layout(self, layout, page_num: int) -> list[dict]:
         """从layout中递归提取图片"""
         images = []
 
@@ -307,7 +331,7 @@ class PDFPlumberParser:
 
         return images
 
-    def _save_image_pdfminer(self, lt_image, page_num: int) -> Dict:
+    def _save_image_pdfminer(self, lt_image, page_num: int) -> dict | None:
         """保存pdfminer.six提取的图片"""
         try:
             # 去除bbox起始坐标x或y为0的图片，可能是背景图片
@@ -425,7 +449,7 @@ class PDFPlumberParser:
             data = stream.get_rawdata()
             return data, ext, None
 
-    def _combine_page_content(self, page_text: str, page_images: List[Dict], page_tables: List[Dict],
+    def _combine_page_content(self, page_text: str, page_images: list[dict], page_tables: list[dict],
                               page_num: int) -> str:
         """组合页面内容，在适当位置插入占位符"""
         combined_content = f"\n{'=' * 20} 第 {page_num} 页 {'=' * 20}\n\n"
@@ -451,30 +475,30 @@ class PDFPlumberParser:
 
     def make_parsed_metadata(self):
 
-            placeholders_mapping = {
-                'images': [
-                    {
-                        'uuid': img['uuid'],
-                        'placeholder': f"[image:{img['uuid']}]",
-                        'filename': img['filename'],
-                        'page': img['page'],
-                        'file_path': img['file_path']
-                    } for img in self.images_info
-                ],
-                'tables': [
-                    {
-                        'uuid': table['uuid'],
-                        'placeholder': f"[table:{table['uuid']}]",
-                        'filename': table['filename'],
-                        'page': table['page'],
-                        'file_path': table['file_path']
-                    } for table in self.tables_info
-                ]
-            }
-            json_string = json.dumps(placeholders_mapping, ensure_ascii=False, indent=2)
-            return  json_string
+        placeholders_mapping = {
+            'images': [
+                {
+                    'uuid': img['uuid'],
+                    'placeholder': f"[image:{img['uuid']}]",
+                    'filename': img['filename'],
+                    'page': img['page'],
+                    'file_path': img['file_path']
+                } for img in self.images_info
+            ],
+            'tables': [
+                {
+                    'uuid': table['uuid'],
+                    'placeholder': f"[table:{table['uuid']}]",
+                    'filename': table['filename'],
+                    'page': table['page'],
+                    'file_path': table['file_path']
+                } for table in self.tables_info
+            ]
+        }
+        json_string = json.dumps(placeholders_mapping, ensure_ascii=False, indent=2)
+        return json_string
 
-    def is_table_valid(csv_path: str) -> bool:
+    def is_table_valid(self, csv_path: str) -> bool:
         import re
         try:
             with open(csv_path, 'r', encoding='utf-8') as f:
@@ -565,10 +589,10 @@ class PDFPlumberParser:
 async def process_pdf(file_params: FileParams) -> bool:
     """
     处理文本文件，将其分割成指定大小的块，并调用嵌入微服务获取嵌入向量后写入数据库
-    
+
     参数:
         file_params: 文件参数类
-        
+
     返回:
         是否成功处理文件
     """
@@ -581,16 +605,23 @@ async def process_pdf(file_params: FileParams) -> bool:
 
     try:
         logger.info(f"Processing pdf file by pdfplumber: {file_params.file_path}")
-        text_content, images_info, tables_info = await  parser.parse()
+        # text_content, images_info, tables_info =
+        await parser.parse()
         parsed_metadata = parser.make_parsed_metadata()
 
-
-        ok=file_repo.update_file_parsed_metadata(file_params.file_id, parsed_metadata)
+        ok = await file_repo.update_file_parsed_metadata(file_params.file_id, parsed_metadata)
         parser.print_summary()
+        msg = f"File {file_params.file_path} processed:  created"
+
+        await file_repo.update_file_status(file_params.file_id, FileStatus.PARSED, msg)
 
         return ok
     except Exception as e:
-        logger.error(f"Error processing pdf file: {file_params.file_path}, error: {e}")
+        import traceback
+        error_message = traceback.format_exc()
+        print("将异常信息保存为字符串：")
+        print(error_message)
+        logger.error(f"Error processing pdf file: {file_params.file_path}, error: {str(e)}")
         await file_repo.update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, str(e))
         return False
     #     split_strategy = int(file_params.paser.get("split_strategy", 1))
@@ -707,8 +738,8 @@ async def process_pdf(file_params: FileParams) -> bool:
     #     # 更新文件状态为已解析
     #     msg = f"File {file_params.file_path} processed: {len(chunks)} chunks created"
     #     logger.info(msg)
-    #     await file_repo.update_file_status(file_params.file_id, FileStatus.PARSED, msg)
-    #     return True
+    # await file_repo.update_file_status(file_params.file_id, FileStatus.PARSED, msg)
+    # return True
     #
     # except Exception as e:
     #     msg = f"Error in process_txt for {file_params.file_path}: {str(e)}"
