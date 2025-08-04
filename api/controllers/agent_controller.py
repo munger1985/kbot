@@ -185,3 +185,13 @@ async def agent_feedback(form: AgentChatFeedbackForm) -> bool:
             return False       
     except Exception as e:  
         raise e
+    
+async def agent_get_session(form: AgentChatHistForm) -> dict | None:
+    try:
+        sess_repo = KbotMdChatSessionRepository()
+        session_id = form.session_id
+        # 根据session_id 和问题索引，更新redis对应的问答pair中的feedback数据
+        r = await sess_repo.get_session(session_id)
+        return r     
+    except Exception as e:  
+        raise e

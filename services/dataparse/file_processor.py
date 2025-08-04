@@ -96,26 +96,28 @@ class FileProcessor:
         try:
 
             logger.info(f"Processing {file_params.file_path}...")
-            await file_repo.update_file_status(file_params.file_id, FileStatus.PARSING)
 
             # 处理文本文件
             if file_params.file_ext == ".txt":
                 logger.info(f"Processing text file {file_params.file_path}...")
                 return await process_txt(file_params)
-            if file_params.file_ext == ".pdf":
-
+            elif file_params.file_ext == ".pdf":
+                logger.info(f"Processing pdf file {file_params.file_path}...")
                 return await process_pdf(file_params)
             else:
-                logger.info(f"File {file_params.file_path} is not a text file, skipping...")
+                msg = f"File type {file_params.file_ext} is not supported, skipping..."
+                logger.info(msg)
                 # 更新文件状态为已处理
-                await file_repo.update_file_status(file_params.file_id, FileStatus.PARSED)
+                file_repo = KbotMdKbFilesRepository()
+                await file_repo.update_file_status(file_params.file_id, FileStatus.PARSED, msg)
                 return True
                 
         except Exception as e:
-            logger.error(f"Error processing {file_params.file_path}: {str(e)}")
+            msg = f"Error processing {file_params.file_path}: {str(e)}"
+            logger.error(msg)
             # 更新文件状态为处理失败
             file_repo = KbotMdKbFilesRepository()
-            await file_repo.update_file_status(file_params.file_id, FileStatus.PARSE_FAILED)
+            await file_repo.update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, msg)
             return False
 
     
