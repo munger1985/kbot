@@ -33,7 +33,7 @@ class PDFPlumberParser:
     async def parse(self) -> Tuple[
         List[Dict], List[Dict], List[Dict] ]:
         pdf_path = self.file_params.file_path
-        split_strategy = int(self. file_params.parser.get("split_strategy", 1))
+        split_strategy = int(self. file_params.parser.get("split_strategy", SplitStrategy.SELF_SPLIT.value))
         file_repo = KbotMdKbFilesRepository()
 
         if split_strategy == SplitStrategy.BY_PAGE.value:
@@ -131,7 +131,6 @@ class PDFPlumberParser:
         # parser.save_results()
         #
         # # 打印摘要
-        # parser.logger.info_summary()
 
         return text_content, images_info, tables_info
 
@@ -475,8 +474,19 @@ class PDFPlumberParser:
             json_string = json.dumps(placeholders_mapping, ensure_ascii=False, indent=2)
             return  json_string
 
-
-
+    def is_table_valid(csv_path: str) -> bool:
+        import re
+        try:
+            with open(csv_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+                # 排除仅包含标点符号、引号或空白的无效内容
+                # 判断是否至少包含一个字母、数字或中文字符
+                if re.search(r'[\w\u4e00-\u9fff]', content):
+                    return True
+                else:
+                    return False
+        except Exception:
+            return False
 
     def save_results(self):
         """保存所有提取结果"""
@@ -500,6 +510,10 @@ class PDFPlumberParser:
                 json.dump(self.tables_info, f, ensure_ascii=False, indent=2)
 
             # 保存占位符映射
+            valid_tables = []
+            for table in self.tables_info:
+                if self.is_table_valid(self.file_params.file_path):
+                    valid_tables.append(table)
             placeholders_mapping = {
                 'images': [
                     {
@@ -517,7 +531,7 @@ class PDFPlumberParser:
                         'filename': table['filename'],
                         'page': table['page'],
                         'file_path': table['file_path']
-                    } for table in self.tables_info
+                    } for table in valid_tables
                 ]
             }
 
@@ -561,21 +575,19 @@ async def process_pdf(file_params: FileParams) -> bool:
     # 检查文本嵌入模型是否指定
     if not check_text_file(file_params):
         return False
-    # if text_length == 0:
-    #     msg = f"Empty file: {file_params.file_path}"
-    #     logger.info(msg)
-    #     await file_repo.update_file_status(file_params.file_id, FileStatus.PARSED, msg)
-    #     return True
 
     file_repo = KbotMdKbFilesRepository()
     parser = PDFPlumberParser(file_params)
 
     try:
-        logger.debug(f"Processing pdf file: {file_params.file_path}")
+        logger.info(f"Processing pdf file by pdfplumber: {file_params.file_path}")
         text_content, images_info, tables_info = await  parser.parse()
         parsed_metadata = parser.make_parsed_metadata()
 
+
         ok=file_repo.update_file_parsed_metadata(file_params.file_id, parsed_metadata)
+        parser.print_summary()
+
         return ok
     except Exception as e:
         logger.error(f"Error processing pdf file: {file_params.file_path}, error: {e}")
