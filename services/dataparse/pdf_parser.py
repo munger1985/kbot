@@ -6,13 +6,13 @@ from loguru import logger
 
 from .file_params import FileParams
 from dao.repositories.kbot_md_kb_files_repo import KbotMdKbFilesRepository
-from dao.repositories.kbot_biz_txt_embedding import KbotBizTxtEmbeddingRepository
+from dao.repositories.kbot_biz_txt_embedding_repo import KbotBizTxtEmbeddingRepository
 from dao.entities.kbot_biz_txt_embedding import KbotBizTxtEmbedding
 from dao.data_dict import FileStatus, ChunkType, SplitStrategy
 from core.config import settings
 from utils.chunk_text import chunk_text
 from utils.call_models import call_embedding_model
-from utils import check_text_file
+from utils.common_methods import check_text_file
 import os
 import uuid
 import json

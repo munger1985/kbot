@@ -2,7 +2,12 @@ import json
 from loguru import logger
 from fastapi import APIRouter, status
 from fastapi.responses import StreamingResponse
-from api.controllers.agent_controller import agent_chat, agent_feedback, agent_stream_chat
+from api.controllers.agent_controller import (
+    agent_chat, 
+    agent_feedback, 
+    agent_stream_chat, 
+    agent_get_session
+)
 from api.schemas.agent_schema import (
     AgentChatForm,
     AgentChatHistForm,
@@ -107,4 +112,35 @@ async def handle_agent_feedback(form: AgentChatFeedbackForm) -> SuccessResponse 
             code=400,
             success=False,
             message="Feedback failed."
+        )
+
+@router.get(
+    "/session",
+    summary="Get the session when login. 在登录智能体时获取session",
+    description="Get the session when login. 在登录智能体时获取session",
+    response_model=SuccessQueryResponse | ErrorResponse,
+    status_code=status.HTTP_200_OK
+)
+async def handle_agent_session(form: AgentChatHistForm) -> SuccessQueryResponse | ErrorResponse:
+    try:
+        r = await agent_get_session(form)
+        if r:
+            return SuccessQueryResponse(
+                code=200,
+                success=True,
+                message="Session get successfully.",
+                data=r
+                )
+        else:
+            return ErrorResponse(
+                code=400,
+                success=False,
+                message="Session get failed."
+            )
+            
+    except Exception as e:
+        return ErrorResponse(
+            code=400,
+            success=False,
+            message=f"Session get failed. {str(e)}"
         )

@@ -11,6 +11,7 @@ from dao.data_dict import FileStatus, ChunkType, SplitStrategy
 from core.config import settings
 from utils.chunk_text import chunk_text
 from utils.call_models import call_embedding_model
+from utils.common_methods import check_text_file
 
 
 async def process_txt(file_params: FileParams) -> bool:
@@ -25,18 +26,8 @@ async def process_txt(file_params: FileParams) -> bool:
     """
     file_repo = KbotMdKbFilesRepository()
     # 检查文本嵌入模型是否指定
-    if file_params.txt_embed_model is None:
-        msg = f"Text embedding model not specified for file {file_params.file_path}"
-        logger.error(msg)
-        # 更新文件状态为处理失败
-        await file_repo.update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, msg)
-        return False
-        
-    # 检查文件是否存在
-    if not os.path.exists(file_params.file_path):
-        msg = f"File not found at path: {file_params.file_path}"
-        logger.error(msg)
-        await file_repo.update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, msg)
+    file_exists= await check_text_file(file_params)
+    if not file_exists:
         return False
     
     try:
@@ -90,7 +81,7 @@ async def process_txt(file_params: FileParams) -> bool:
         # 准备请求参数
         batch_size = settings["embed"]["batch_size"] or 0
         # 获取embedding模型的unique name
-        model_unique_name = await KbotMdModelsRepository().get_unique_name_by_id(file_params.txt_embed_model)
+        model_unique_name = await KbotMdModelsRepository().get_unique_name_by_id(file_params.txt_embed_model) # type: ignore
         if model_unique_name is None:
             msg = f"Embedding model not found for id: {file_params.txt_embed_model}"
             logger.error(msg)
