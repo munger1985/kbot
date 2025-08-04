@@ -41,9 +41,9 @@ class FileStatus(int, Enum):
 @unique
 class ProcessPriority(int, Enum):
     """Process priority enumeration."""
-    HIGH = 0
-    MEDIUM = 1
-    LOW = 2
+    HIGH = 3
+    MEDIUM = 2
+    LOW = 1
 
 class SecurityLevel(int, Enum):
     """Process priority enumeration."""
