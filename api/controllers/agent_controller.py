@@ -11,11 +11,7 @@ from loguru import logger
 from utils.common_methods import lob_to_string
 from utils.decimal_encoder import DecimalEncoder
 from utils.call_models import call_llm_model
-from api.schemas.agent_schema import (
-    AgentChatForm,
-    AgentChatHistForm,
-    AgentChatFeedbackForm
-)
+from api.schemas.agent_schema import AgentChatForm, AgentChatFeedbackForm
 
 async def agent_chat(form: AgentChatForm) -> str | None:
     try:
@@ -186,10 +182,9 @@ async def agent_feedback(form: AgentChatFeedbackForm) -> bool:
     except Exception as e:  
         raise e
     
-async def agent_get_session(form: AgentChatHistForm) -> dict | None:
+async def agent_get_session(session_id: str) -> dict | None:
     try:
         sess_repo = KbotMdChatSessionRepository()
-        session_id = form.session_id
         # 根据session_id 和问题索引，更新redis对应的问答pair中的feedback数据
         r = await sess_repo.get_session(session_id)
         return r     

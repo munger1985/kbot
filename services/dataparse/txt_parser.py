@@ -26,8 +26,7 @@ async def process_txt(file_params: FileParams) -> bool:
     """
     file_repo = KbotMdKbFilesRepository()
     # 检查文本嵌入模型是否指定
-    file_exists= await check_text_file(file_params)
-    if not file_exists:
+    if not await check_text_file(file_params):
         return False
     
     try:

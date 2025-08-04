@@ -2,16 +2,12 @@ import json
 from loguru import logger
 from fastapi import APIRouter, status
 from fastapi.responses import StreamingResponse
+from api.schemas.agent_schema import AgentChatForm, AgentChatFeedbackForm
 from api.controllers.agent_controller import (
     agent_chat, 
     agent_feedback, 
     agent_stream_chat, 
     agent_get_session
-)
-from api.schemas.agent_schema import (
-    AgentChatForm,
-    AgentChatHistForm,
-    AgentChatFeedbackForm
 )
 from api.schemas.agent_response import (
     SuccessResponse,
@@ -121,9 +117,9 @@ async def handle_agent_feedback(form: AgentChatFeedbackForm) -> SuccessResponse 
     response_model=SuccessQueryResponse | ErrorResponse,
     status_code=status.HTTP_200_OK
 )
-async def handle_agent_session(form: AgentChatHistForm) -> SuccessQueryResponse | ErrorResponse:
+async def handle_agent_session(session_id: str) -> SuccessQueryResponse | ErrorResponse:
     try:
-        r = await agent_get_session(form)
+        r = await agent_get_session(session_id)
         if r:
             return SuccessQueryResponse(
                 code=200,
