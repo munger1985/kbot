@@ -91,19 +91,23 @@ class FileProcessor:
         返回:
             处理是否成功
         """
+        file_repo = KbotMdKbFilesRepository()
+
         try:
+
             logger.info(f"Processing {file_params.file_path}...")
+            await file_repo.update_file_status(file_params.file_id, FileStatus.PARSING)
 
             # 处理文本文件
             if file_params.file_ext == ".txt":
                 logger.info(f"Processing text file {file_params.file_path}...")
                 return await process_txt(file_params)
             if file_params.file_ext == ".pdf":
+
                 return await process_pdf(file_params)
             else:
                 logger.info(f"File {file_params.file_path} is not a text file, skipping...")
                 # 更新文件状态为已处理
-                file_repo = KbotMdKbFilesRepository()
                 await file_repo.update_file_status(file_params.file_id, FileStatus.PARSED)
                 return True
                 
