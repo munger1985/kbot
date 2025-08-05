@@ -45,6 +45,9 @@ class LLMConfig(TypedDict):
 class RankerConfig(TypedDict):
     max_tokens: int
 
+class VLMConfig(TypedDict):
+    max_tokens: int
+
 class NlpConfig(TypedDict):
     model_name: str
 
@@ -60,5 +63,6 @@ class AppSettings(TypedDict):
     embed: EmbedConfig
     llm: LLMConfig
     reranker: RankerConfig
+    vlm: VLMConfig
     nlp: NlpConfig
     kbot: KBotConfig

@@ -5,6 +5,7 @@ Contains:
 2. Base interface class BaseLLM
 """
 
+from abc import ABC, abstractmethod
 from pydantic import BaseModel, field_validator, ConfigDict
 from typing import Any, AsyncGenerator
 from prometheus_client import Counter, Histogram
@@ -26,7 +27,7 @@ class LLMConfig(BaseModel):
             raise ValueError("API key cannot be empty")
         return v
 
-class BaseLLM:
+class BaseLLM(ABC):
     """Base class for LLM implementations."""
     
     ERROR_COUNTER = Counter('llm_errors', 'Errors by provider', ['provider'])
@@ -40,28 +41,23 @@ class BaseLLM:
         """
         self.config = config
     
+    @abstractmethod
     async def startup(self) -> None:
         """Initialize resources asynchronously."""
         pass
     
+    @abstractmethod
     async def shutdown(self) -> None:
         """Release resources asynchronously."""
         pass
     
+    @abstractmethod
     async def chat(
         self,
         messages: list[dict[str, str]] | str,
         stream: bool = False,
         **kwargs: Any
     ) -> AsyncGenerator[str, None] | str | None:
-        """Generate a chat response asynchronously.
-        
-        Args:
-            messages: List of messages
-            stream: Whether to stream the response
-            **kwargs: Additional arguments
-            
-        Returns:
-            Chat response text
-        """
+        """Generate a chat response asynchronously."""
         raise NotImplementedError
+    

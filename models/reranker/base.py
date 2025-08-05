@@ -31,20 +31,15 @@ class BaseReranker(ABC):
         documents: list[str],
         top_k: int | None = None
     ) -> list[dict[str, Any]]:
-        """
-        Rerank documents based on relevance to query.
-        
-        Args:
-            query: The search query
-            documents: List of documents to rerank
-            top_k: Number of top documents to return (None for all)
-            
-        Returns:
-            List of dicts with 'index' and 'score' keys
-        """
+        """Rerank documents based on relevance to query."""
         pass
     
     @abstractmethod
     async def shutdown(self) -> None:
         """Clean up resources."""
+        pass
+
+    @abstractmethod
+    async def health_check(self) -> dict[str, Any]:
+        """Health check for a remote or local model"""
         pass

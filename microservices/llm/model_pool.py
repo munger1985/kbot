@@ -18,7 +18,6 @@ from models.llm import(
     OpenaiLLMConfig, 
     LLMProvider,
     HuggingFaceLLMConfig, 
-    AnthropicLLMConfig, 
     create_llm_model
 )
 from dao.repositories.kbot_md_models_repo import KbotMdModelsRepository
@@ -104,11 +103,11 @@ class ModelPool:
                 presence_penalty=model_entity.model_params.get("presence_penalty", settings['llm'].get('presence_penalty', 0)), # type: ignore
                 timeout=model_entity.model_params.get("timeout", settings['llm']['timeout'])
             )
-        if model_entity.provider == LLMProvider.ANTHROPIC.value:
-            model_config = AnthropicLLMConfig(
-                model_name=model_entity.model_name,
-                api_key=model_entity.api_key # type: ignore
-            )
+        # if model_entity.provider == LLMProvider.ANTHROPIC.value:
+        #     model_config = AnthropicLLMConfig(
+        #         model_name=model_entity.model_name,
+        #         api_key=model_entity.api_key # type: ignore
+        #     )
         if model_entity.provider == LLMProvider.HUGGINGFACE.value:
             model_config = HuggingFaceLLMConfig(
                 model_name=model_entity.model_name,
@@ -171,7 +170,7 @@ class ModelPool:
                     
                 # Simple health check by calling embed with a test text
                 model = self._models[model_unique_name]
-                await model.chat("Hi")
+                await model.chat("Hi", **{"max_tokens": 1}) # type: ignore
                 
             except Exception as e:
                 logger.error(f"Health check failed for model {model_unique_name}: {e}")

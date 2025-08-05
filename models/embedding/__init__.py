@@ -1,6 +1,5 @@
-from models.embedding.base import BaseEmbedding, LocalEmbeddingConfig, RemoteEmbeddingConfig
-from models.embedding.factory import EmbeddingProvider
-from models.embedding.factory import create_embedding_model, get_supported_providers
+from .base import BaseEmbedding, LocalEmbeddingConfig, RemoteEmbeddingConfig
+from .factory import EmbeddingProvider, create_embedding_model, get_supported_providers
 
 __all__ = [
     "BaseEmbedding",

@@ -8,23 +8,32 @@ from dao.repositories.kbot_md_kb_files_repo import KbotMdKbFilesRepository
 from dao.data_dict import FileStatus
 
 @staticmethod
-async def check_text_file(file_params: FileParams):
+async def check_text_file(file_params: FileParams) -> bool:
     """检查文件嵌入模型和文件存在性"""
     file_repo = KbotMdKbFilesRepository()
-    # 检查文本嵌入模型是否指定
-    if file_params.txt_embed_model is None:
-        msg = f"Text embedding model not specified for file {file_params.file_path}"
-        logger.error(msg)
-        # 更新文件状态为处理失败
+    msg = "Unknown error occurred during file check"  # 初始化 msg 变量
+    try:
+        # 检查文本嵌入模型是否指定
+        if file_params.txt_embed_model is None:
+            msg = f"Text embedding model not specified for file {file_params.file_path}"
+            logger.error(msg)
+            # 更新文件状态为处理失败
+            await file_repo.update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, msg)
+            return False
+            
+        # 检查文件是否存在
+        if not os.path.exists(file_params.file_path):
+            msg = f"File not found at path: {file_params.file_path}"
+            logger.error(msg)
+            await file_repo.update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, msg)
+            return False
+    except Exception as e:
+        msg = f"Error in process_txt for {file_params.file_path}: {str(e)}"
+        logger.error(msg)  
         await file_repo.update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, msg)
         return False
-        
-    # 检查文件是否存在
-    if not os.path.exists(file_params.file_path):
-        msg = f"File not found at path: {file_params.file_path}"
-        logger.error(msg)
-        await file_repo.update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, msg)
-        return False
+    
+    return True
 
 @staticmethod
 def run_in_thread_pool(

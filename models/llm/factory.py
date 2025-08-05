@@ -2,7 +2,6 @@ from enum import Enum
 from typing import Any
 from .base import BaseLLM
 from .openai_client import OpenaiClient, OpenaiLLMConfig
-from .anthropic_client import AnthropicClient, AnthropicLLMConfig
 from .huggingface_client import HuggingFaceClient, HuggingFaceLLMConfig
 
 class LLMProvider(str, Enum):
@@ -14,7 +13,7 @@ class LLMProvider(str, Enum):
     # AZURE = "azure"
     # LOCAL = "local"
 
-def create_llm_model(config: OpenaiLLMConfig | AnthropicLLMConfig | HuggingFaceLLMConfig | dict[str, Any]) -> BaseLLM:
+def create_llm_model(config: OpenaiLLMConfig | HuggingFaceLLMConfig | dict[str, Any]) -> BaseLLM:
     """Create an LLM model based on the provided configuration.
     
     Args:
@@ -28,8 +27,8 @@ def create_llm_model(config: OpenaiLLMConfig | AnthropicLLMConfig | HuggingFaceL
     """
     if isinstance(config, OpenaiLLMConfig):
         return OpenaiClient(config)
-    elif isinstance(config, AnthropicLLMConfig):
-        return AnthropicClient(config)
+    # elif isinstance(config, AnthropicLLMConfig):
+    #     return AnthropicClient(config)
     elif isinstance(config, HuggingFaceLLMConfig):
         return HuggingFaceClient(config)
     

@@ -10,24 +10,26 @@ backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(current_file)))
 if backend_dir not in sys.path:
     sys.path.insert(0, backend_dir)
 
-from models.reranker import (
-    BaseReranker, 
-    RerankerConfig, 
-    create_reranker_model
+from models.vlm import (
+    BaseVLM, 
+    VLMProvider,
+    LocalVLMConfig, 
+    RemoteVLMConfig, 
+    create_vlm_model
 )
 from dao.repositories.kbot_md_models_repo import KbotMdModelsRepository
 from core.config import settings
 
 
 class ModelPool:
-    """Manage a pool of reranker models with health checking and lifecycle management"""
+    """Manage a pool of VLM models with health checking and lifecycle management"""
     
     def __init__(self, health_check_interval: int = 300):
         """Initialize model pool.
         Args:
             health_check_interval: Interval in seconds between health checks
         """
-        self._models: dict[str, BaseReranker] = {}
+        self._models: dict[str, BaseVLM] = {}
         self._last_used: dict[str, datetime] = {}
         self._health_check_interval = health_check_interval
         self._health_check_task: asyncio.Task | None = None
@@ -54,11 +56,11 @@ class ModelPool:
         self._models.clear()
         self._last_used.clear()
         
-    async def load_model(self, model_unique_name: str) -> BaseReranker:
+    async def load_model(self, model_unique_name: str) -> BaseVLM:
         """Load a model instance by model_unique_name
         
         Args:
-            model_unique_name: ID of the model to get
+            model_unique_name: unique name of the model to get
             
         Returns:
             The model instance
@@ -83,23 +85,36 @@ class ModelPool:
 
         # 根据模型类型创建相应的配置
         
-
-        model_config = RerankerConfig(
-            model_name=model_entity.model_name,
-            model_path=model_entity.model_params.get("model_path", None),
-            device=model_entity.model_params.get("device", None),
-            device_map=model_entity.model_params.get("device_map", None),
-            max_tokens=model_entity.model_params.get("max_tokens", settings["embed"]["max_tokens"]),
-            compile_model=model_entity.model_params.get("compile_model", True),
-            use_fp16=model_entity.model_params.get("use_fp16", False),
-            trust_remote_code=model_entity.model_params.get("trust_remote_code", False),
-            local_files_only=model_entity.model_params.get("local_files_only", False),
-            max_memory=model_entity.model_params.get("max_memory", None)
-        )
+        if model_entity.provider == VLMProvider.LOCAL.value:
+            model_config = LocalVLMConfig(
+                model_name=model_entity.model_name,
+                provider=model_entity.provider,
+                max_tokens=model_entity.model_params.get("max_tokens", 512),
+                model_path=model_entity.model_params.get("model_path", None),
+                device=model_entity.model_params.get("device", None),
+                device_map=model_entity.model_params.get("device_map", None),
+                max_memory=model_entity.model_params.get("max_memory", None),
+                trust_remote_code=model_entity.model_params.get("trust_remote_code", False),
+                use_fp16=model_entity.model_params.get("use_fp16", False),
+                local_files_only=model_entity.model_params.get("local_files_only", False),
+                compile_model=model_entity.model_params.get("compile_model", True)
+            )
+        else:
+            model_config = RemoteVLMConfig(
+                model_name=model_entity.model_name,
+                provider=model_entity.provider,
+                max_tokens=model_entity.model_params.get("max_tokens", 512),
+                api_key=model_entity.api_key, # type: ignore
+                api_endpoint=model_entity.api_endpoint, # type: ignore    
+                api_version=model_entity.model_params.get("api_version", ""),
+                request_timeout=model_entity.model_params.get("request_timeout", 30),
+                max_retries=model_entity.model_params.get("max_retries", 3),
+                temperature=model_entity.model_params.get("temperature", 0.1)
+            )
 
         # Create and initialize model //创建和初始化模型
         try:
-            model = create_reranker_model(model_config)
+            model = create_vlm_model(model_config)
             await model.startup()
             self._models[model_unique_name] = model
             self._last_used[model_unique_name] = datetime.now()
@@ -112,7 +127,7 @@ class ModelPool:
         """Unload a model from the pool
         
         Args:
-            model_unique_name: ID of the model to unload
+            model_unique_name: unique name of the model to unload
         """
         if model_unique_name in self._models:
             model = self._models.pop(model_unique_name)
@@ -126,7 +141,7 @@ class ModelPool:
         """Reload a model in the pool
         
         Args:
-            model_unique_name: ID of the model to reload
+            model_unique_name: unique name of the model to reload
         """
         if model_unique_name in self._models:
             await self.unload_model(model_unique_name)

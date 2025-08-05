@@ -1,7 +1,4 @@
-from models.reranker.base import (
-    BaseReranker,
-    RerankerConfig
-)
+from models.reranker.base import BaseReranker,RerankerConfig
 from models.reranker.factory import RerankModels, create_reranker_model
 from models.reranker.transformer import TransformerReranker
 from models.reranker.bgev2m3 import BGERerankerV2M3

@@ -1,1 +1,1 @@
-"""Embedding microservice module."""
+"""VLM (Vision-Language Model) microservice module."""

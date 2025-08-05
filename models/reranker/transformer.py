@@ -278,3 +278,22 @@ class TransformerReranker(BaseReranker):
             self.tokenizer = None
             
             logger.info(f"{self.__class__.__name__} model resources released")
+
+    def health_check(self) -> dict[str, Any]:
+        """Check model health and resource status."""
+        status = {
+            "initialized": self._is_initialized,
+            "model_loaded": self.model is not None,
+            "tokenizer_loaded": self.tokenizer is not None,
+            "model_name": self.model_name
+        }
+        
+        if torch.cuda.is_available():
+            device = self.model.device if self.model else "cuda:0"
+            status.update({
+                "gpu_memory_used_mb": torch.cuda.memory_allocated(device) / (1024**2), # type: ignore
+                "gpu_memory_total_mb": torch.cuda.get_device_properties(device).total_memory / (1024**2), # type: ignore
+                "device": str(device)
+            })
+        
+        return status

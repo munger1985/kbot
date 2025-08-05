@@ -326,28 +326,12 @@ class LocalEmbedding(BaseEmbedding):
         if not texts:
             logger.warning(
                 "Empty input list - "
-                f"Caller: {self._get_caller_info()}, "
                 f"Model: {self.model_name}, "
                 f"Initialized: {self._is_initialized}"
             )
             return False
             
         return True
-
-    def _get_caller_info(self) -> str:
-        """Get information about the function that called this method."""
-        try:
-            frame = inspect.currentframe()
-            if frame is None or frame.f_back is None or frame.f_back.f_back is None:
-                return "unknown"
-            
-            caller_frame = frame.f_back.f_back
-            return (
-                f"{caller_frame.f_code.co_name}() in "
-                f"{caller_frame.f_code.co_filename}:{caller_frame.f_lineno}"
-            )
-        except Exception:
-            return "unknown"
 
     async def _process_batches(
         self,
@@ -610,7 +594,7 @@ class LocalEmbedding(BaseEmbedding):
                                batch_size=self._batch_size, 
                                raise_on_error=False)
         except Exception as e:
-            logger.warning(f"Warmup failed: {e}")
+            logger.warning(f"Warmup embedding model failed: {e}")
 
     def health_check(self) -> dict[str, Any]:
         """Check model health and resource status."""

@@ -66,7 +66,7 @@ async def lifespan(app: FastAPI):
     yield  # 服务运行期间
     
     # 关闭事件
-    logger.info("Closing LLM service...")
+    logger.info(f"Closing LLM service at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}...")
     shutdown_start = time.time()
     
     try:

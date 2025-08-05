@@ -28,15 +28,18 @@ class HuggingFaceClient(BaseLLM):
         super().__init__(config)
         self.config = config
         self.headers = None
+        self._is_initialized = False
 
     async def startup(self) -> None:
         """Initialize the client."""
         self.headers = {"Authorization": f"Bearer {self.config.api_key}"}
+        self._is_initialized = True
         logger.info("Hugging Face client initialized")
 
     async def shutdown(self) -> None:
         """Shutdown the client."""
         self.headers = None
+        self._is_initialized = False
         logger.info("Hugging Face client shutdown")
 
     async def generate(
@@ -63,10 +66,6 @@ class HuggingFaceClient(BaseLLM):
         """
         if self.headers is None:
             raise RuntimeError("Hugging Face client not initialized")
-
-        # Used for health check
-        if prompt == "":
-            return ""
         
         # Set default values
         model = self.config.model_name
@@ -172,3 +171,4 @@ class HuggingFaceClient(BaseLLM):
         formatted_messages.append("<|assistant|>")
         
         return "\n".join(formatted_messages)
+    

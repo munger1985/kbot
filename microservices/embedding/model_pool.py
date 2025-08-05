@@ -167,9 +167,34 @@ class ModelPool:
                     await self.unload_model(model_unique_name)
                     continue
                     
-                # Simple health check by calling embed with a test text
+                # Health check
                 model = self._models[model_unique_name]
-                await model.embed([])
+                try:
+                    # 确保 health_check 返回的是可等待对象
+                    if asyncio.iscoroutinefunction(model.health_check):
+                        status = await model.health_check()
+                    else:
+                        # 如果 health_check 是同步方法，包装为异步结果
+                        status = await asyncio.to_thread(model.health_check)
+                    
+                    if isinstance(status, dict):
+                        if status.get('initialized', False):
+                            logger.info(f"Health check passed for model {model_unique_name}")
+                        else:
+                            logger.warning(f"Health check failed for model {model_unique_name}")
+                            # Try to restart the model
+                            await self.reload_model(model_unique_name)
+                    else:
+                        if getattr(status, 'initialized', False):
+                            logger.info(f"Health check passed for model {model_unique_name}")
+                        else:
+                            logger.warning(f"Health check failed for model {model_unique_name}")
+                            # Try to restart the model
+                            await self.reload_model(model_unique_name)
+                except Exception as e:
+                    logger.error(f"Health check failed for model {model_unique_name}: {e}")
+                    # Try to restart the model
+                    await self.reload_model(model_unique_name)
                 
             except Exception as e:
                 logger.error(f"Health check failed for model {model_unique_name}: {e}")

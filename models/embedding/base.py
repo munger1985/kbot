@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from typing import Any
 from pydantic import BaseModel, Field
 from prometheus_client import Counter, Histogram
 
@@ -75,4 +76,9 @@ class BaseEmbedding(ABC):
                 - object: Always "list"
                 - usage: Token usage information
         """
+        pass
+    
+    @abstractmethod
+    async def health_check(self) -> dict[str, Any]:
+        """Health check for a remote or local model"""
         pass
