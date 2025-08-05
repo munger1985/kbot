@@ -35,8 +35,6 @@ from microservices.llm.llm_service import LLMService
 from core.config import settings
 from core.log.logger import setup_logging
 
-# 初始化日志
-setup_logging(service_name="llm")
 
 # 创建LLM服务实例
 llm_service = LLMService()
@@ -45,6 +43,9 @@ llm_service = LLMService()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan context manager. //应用程序生命周期上下文管理器"""
+    # 初始化日志
+    setup_logging(service_name="llm")
+    
     # 启动事件
     start_time = time.time()
     logger.info(f"Initializing LLM service at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}...")    

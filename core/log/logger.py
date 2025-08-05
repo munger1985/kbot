@@ -31,7 +31,7 @@ def setup_logging(service_name: str = "app") -> None:
         if not os.access(log_dir, os.W_OK):
             raise PermissionError(f"No write permission for log directory: {log_dir}")
         
-        # Remove default logger
+        # Remove all existing handlers to ensure isolation
         logger.remove()
         
         # Define log format
@@ -42,7 +42,7 @@ def setup_logging(service_name: str = "app") -> None:
             "<level>{message}</level>"
         )
 
-        # Add file handler
+        # Add file handler with a unique sink for each service
         logger.add(
             log_path,
             rotation=rotation,
@@ -52,6 +52,7 @@ def setup_logging(service_name: str = "app") -> None:
             enqueue=True,
             backtrace=True,
             diagnose=True,
+            filter=lambda record: record["extra"].get("service_name") == service_name
         )
         
         # Add console handler
@@ -61,7 +62,11 @@ def setup_logging(service_name: str = "app") -> None:
             enqueue=True,
             backtrace=True,
             diagnose=True,
+            filter=lambda record: record["extra"].get("service_name") == service_name
         )
+        
+        # Bind service_name to the logger
+        logger.configure(extra={"service_name": service_name})
         
     except Exception as e:
         logger.error(f"Failed to setup logging: {e}")

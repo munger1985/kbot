@@ -32,8 +32,6 @@ from microservices.reranker.reranker_service import RerankerService
 from core.config import settings
 from core.log.logger import setup_logging
 
-# 初始化日志
-setup_logging(service_name="reranker")
 
 # 创建reranker服务实例
 reranker_service = RerankerService()
@@ -42,6 +40,9 @@ reranker_service = RerankerService()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan context manager. //应用程序生命周期上下文管理器"""
+    # 初始化日志
+    setup_logging(service_name="reranker")
+    
     # 启动事件
     start_time = time.time()
     logger.info(f"Initializing reranker service at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}...")

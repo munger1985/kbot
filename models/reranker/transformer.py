@@ -50,7 +50,7 @@ class TransformerReranker(BaseReranker):
         self.device_map = config.device_map
         self.local_files_only = getattr(config, 'local_files_only', False)
         self.trust_remote_code = getattr(config, 'trust_remote_code', False)
-        self.max_tokens = getattr(config, 'max_tokens', settings['reranker']['max_tokens'])
+        self.max_tokens = getattr(config, 'max_tokens', 2048)
         self.compile_model = getattr(config, 'compile_model', True)
         self.use_fp16 = getattr(config, 'use_fp16', False)
         self.max_memory = getattr(config, 'max_memory', None)

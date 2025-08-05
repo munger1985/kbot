@@ -4,105 +4,26 @@ import asyncio
 import uvicorn
 import signal
 import sys
-import multiprocessing
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from fastapi.openapi.docs import (
-    get_redoc_html,
-    get_swagger_ui_html
-)
+from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from loguru import logger
 from dotenv import load_dotenv
 from api.routers import router
 from core.log.logger import setup_logging
 from core.config import settings
-from services.dataparse.parse_service import start_file_parse_service, shutdown_file_parse_service
-from microservices.embedding.app import start_embedding_service, shutdown_embedding_service
-from microservices.llm.app import start_llm_service, shutdown_llm_service
-from microservices.reranker.app import start_reranker_service, shutdown_reranker_service
+from microservices.microservice_manger import MicroserviceManager
+
 
 # 加载环境变量
 load_dotenv()
 
-# 全局变量，用于存储微服务进程和后台子进程状态
-embedding_service_process = None
-llm_service_process = None
-reranker_service_process = None
-file_parse_service_process = None
-
-def run_file_parse_service():
-    """
-    在子进程中运行文件解析服务。
-    这个函数作为multiprocessing.Process的目标函数。
-    """
-    # 在子进程中初始化日志
-    setup_logging(service_name="file_parse")
-    logger.info("File parse service process starting")
-    
-    try:
-        asyncio.run(start_file_parse_service())
-    except Exception as e:
-        logger.error(f"File parse service failed: {str(e)}")
-        raise
-
-def shutdown_services(message_prefix=""):
-    """关闭所有微服务和后台进程
-    
-    Args:
-        message_prefix (str): 日志消息前缀
-    """
-    global embedding_service_process, file_parse_service_process, llm_service_process, reranker_service_process
-    
-    # 关闭embedding微服务
-    if embedding_service_process:
-        logger.info(f"{message_prefix}shutting down the embedding microservice.")
-        shutdown_embedding_service()
-        embedding_service_process = None
-
-    # 关闭LLM微服务
-    if llm_service_process:
-        logger.info(f"{message_prefix}shutting down the LLM microservice.")
-        shutdown_llm_service()
-        llm_service_process = None
-
-    # 关闭reranker微服务
-    if reranker_service_process:
-        logger.info(f"{message_prefix}shutting down the reranker microservice.")
-        shutdown_reranker_service()
-        reranker_service_process = None
-    
-    # 关闭文件解析服务
-    if file_parse_service_process:
-        logger.info(f"{message_prefix}shutting down the file parsing service.")
-        # 发送关闭信号
-        if shutdown_file_parse_service():
-            # 给更多时间让进程优雅地关闭(30秒)
-            file_parse_service_process.join(timeout=30)
-            # 如果进程仍然活着，尝试发送SIGTERM信号
-            if file_parse_service_process.is_alive():
-                logger.warning("File parsing service did not shut down gracefully, sending SIGTERM...")
-                file_parse_service_process.terminate()
-                file_parse_service_process.join(timeout=10)
-                # 如果仍然活着，强制终止
-                if file_parse_service_process.is_alive():
-                    logger.warning("File parsing service still alive after SIGTERM, forcing kill.")
-                    file_parse_service_process.kill()
-                    file_parse_service_process.join()
-        else:
-            # 如果发送信号失败，直接终止
-            logger.warning("Failed to send shutdown signal, forcing termination.")
-            file_parse_service_process.terminate()
-            file_parse_service_process.join(timeout=10)
-            if file_parse_service_process.is_alive():
-                file_parse_service_process.kill()
-                file_parse_service_process.join()
-        file_parse_service_process = None
-
 # 注册退出时的清理函数
 def cleanup():
     """在应用程序退出时关闭微服务"""
-    shutdown_services("Application exiting, ")
+    # shutdown_services("Application exiting, ")
+    microservice_manager = MicroserviceManager()
+    microservice_manager.shutdown_all_services("Application exiting, ")
 
 atexit.register(cleanup)
 
@@ -114,7 +35,7 @@ def create_app() -> FastAPI:
     """
     try:
         # Initiate loguru configuration
-        setup_logging()
+        setup_logging(service_name="main")
         logger.debug("Starting application initialization")
 
         app = FastAPI(
@@ -164,31 +85,15 @@ def create_app() -> FastAPI:
 def signal_handler(sig, frame):
     """Processing termination signal."""
     logger.info(f"Received signal {sig}, shutting down")
-    # 确保在退出前关闭微服务
-    shutdown_services()
     sys.exit(0)
 
 
 async def main():
-    global embedding_service_process, file_parse_service_process
-    
-    # 启动嵌入微服务
-    embedding_service_process = start_embedding_service()
-    logger.info(f"Embedding microservice started with PID {embedding_service_process.pid}")
 
-    # 启动LLM微服务
-    llm_service_process = start_llm_service()
-    logger.info(f"LLM microservice started with PID {llm_service_process.pid}")
-
-    # 启动reranker微服务
-    reranker_service_process = start_reranker_service()
-    logger.info(f"Reranker microservice started with PID {reranker_service_process.pid}")
-    
-    # 启动文件解析服务
-    file_parse_service_process = multiprocessing.Process(target=run_file_parse_service)
-    file_parse_service_process.daemon = True  # 设置为守护进程，这样主进程退出时，子进程也会退出
-    file_parse_service_process.start()
-    logger.info(f"File parse service started with PID {file_parse_service_process.pid}")
+    # 创建微服务管理器实例
+    service_manager = MicroserviceManager()
+    # 启动所有微服务
+    service_manager.start_all_services()
 
     # 创建主应用程序
     app = create_app()

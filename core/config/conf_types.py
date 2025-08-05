@@ -42,12 +42,6 @@ class LLMConfig(TypedDict):
     max_retries: int
     timeout: int
 
-class RankerConfig(TypedDict):
-    max_tokens: int
-
-class VLMConfig(TypedDict):
-    max_tokens: int
-
 class NlpConfig(TypedDict):
     model_name: str
 
@@ -62,7 +56,5 @@ class AppSettings(TypedDict):
     logger: LoggerConfig
     embed: EmbedConfig
     llm: LLMConfig
-    reranker: RankerConfig
-    vlm: VLMConfig
     nlp: NlpConfig
     kbot: KBotConfig

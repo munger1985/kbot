@@ -36,12 +36,6 @@ llm.top_k = 50
 llm.max_retries = 3
 llm.timeout = 120 # seconds
 
-# reranker configuration
-reranker.max_tokens = 2048
-
-# vlm configuration
-vlm.max_tokens = 512
-
 # nlp configuration
 nlp.model_name = "zh_core_web_trf"
 
