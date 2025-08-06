@@ -83,8 +83,8 @@ async def agent_stream_chat(session_id: str) -> AsyncGenerator[str, None]:
     
     # 2. 根据agent_id获取agent配置的提示词和LLM模型
     agent_repo = KbotMdAgentRepository()
-    #agent = await agent_repo.get_by_id(agent_id)
-    agent = await agent_repo.get_by_id(1)
+    agent = await agent_repo.get_by_id(agent_id)
+    
     if agent is None:
         logger.warning("Agent not found")
         return
