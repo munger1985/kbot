@@ -1,5 +1,6 @@
 from openai import AsyncOpenAI, APIError
 from loguru import logger
+from pydantic import field_validator
 from typing import AsyncGenerator
 from .base import LLMConfig, BaseLLM
 from core.config import settings
@@ -22,6 +23,12 @@ class OpenaiLLMConfig(LLMConfig):
     presence_penalty: float = 0.0
     timeout: int = settings['llm']['timeout']
     api_endpoint: str | None = None
+
+    @field_validator('temperature')
+    def validate_temperature(cls, v):
+        if not 0 <= v <= 2:
+            raise ValueError('temperature must be between 0 and 2')
+        return v
 
 
 class OpenaiClient(BaseLLM):

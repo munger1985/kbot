@@ -8,7 +8,8 @@ from PIL import Image
 from abc import ABC, abstractmethod
 from pydantic import BaseModel
 from prometheus_client import Counter, Histogram
-from typing import Any
+from typing import Any, AsyncGenerator
+from openai.types.chat import ChatCompletion, ChatCompletionChunk
 
 
 class VLMConfig(BaseModel):
@@ -16,26 +17,6 @@ class VLMConfig(BaseModel):
     model_name: str
     provider: str
     max_tokens: int = 512
-
-class LocalVLMConfig(VLMConfig):
-    model_path: str | None = None             # 模型本地路径（优先级高于model_name）
-    device: str | None = None                 # 如 "cuda:0"/"cpu"/"mps"
-    device_map: str | None = None             # 多卡部署策略（如 "auto"/"balanced"/"sequential"）
-    max_memory: dict[int, str] | None = None  # 每卡显存分配（如 {0: "20GB", 1: "20GB"}）
-    trust_remote_code: bool = False           # 是否信任远程代码（如自定义模型）
-    use_fp16: bool = False                    # 是否使用半精度（FP16）
-    local_files_only: bool = False            # 是否强制离线加载
-    compile_model: bool = True                # 是否启用PyTorch 2.0+编译优化
-    quantization: str | None = None           # 量化精度设置（4bit/8bit）
-
-class RemoteVLMConfig(VLMConfig):
-    """Cloud API configuration"""
-    api_key: str                   # Required for cloud
-    api_endpoint: str | None = None
-    api_version: str = "2023-08-01"
-    request_timeout: int = 30
-    max_retries: int = 3
-    temperature: float = 0.7       # Override base temperature
 
 class BaseVLM(ABC):
     """Base class for VLM implementations."""
@@ -62,12 +43,35 @@ class BaseVLM(ABC):
         pass
 
     @abstractmethod
-    async def inference(self, text: str, image: str | Image.Image, **kwargs) -> str:
+    async def inference(self, messages: list[dict[str, Any]], 
+                        stream: bool = False, 
+                        **kwargs) -> ChatCompletion | AsyncGenerator[ChatCompletionChunk, None] | None:
         """
-        1. input: text and image
-        2. output: the generated text chunk
+        1. messages: List of dictionaries, each dict contains:
+            {
+                "role": str,   # One of "user", "system", or "assistant"
+                "content": [
+                    {
+                        "type": "text",
+                        "text": str
+                    },
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": str
+                        }
+                    }
+                ]
+            }
+            
+        2. stream: If True, the result will be streamed.
+        3. **kwargs: Extra parameters for inference model
+        
+        Returns:
+           output: the generated text chunk
         """
         pass
+
 
     @abstractmethod
     async def health_check(self) -> dict[str, Any]:

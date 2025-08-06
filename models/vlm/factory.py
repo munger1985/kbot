@@ -1,17 +1,14 @@
 from enum import Enum
-from .base import BaseVLM, LocalVLMConfig, RemoteVLMConfig
-from .deepseek_vl_remote import DeepSeekVLCloud
-from .qwen_vl_remote import QwenVLCloud
-from .local_client import LocalVL
+from .base import BaseVLM
+from .openai_client import OpenAIVLM, OpenAIVLMConfig
+
 
 class VLMProvider(str, Enum):
     """Enum of supported VLM providers."""
-    DEEPSEEK = "deepseek"
-    QWEN = "qwen"
-    LOCAL = "local"
+    OPENAI = "openai"     # Currently only supports OpenAI-compatible cloud providers
     # Add more providers as they are implemented
 
-def create_vlm_model(config: LocalVLMConfig | RemoteVLMConfig) -> BaseVLM:
+def create_vlm_model(config: OpenAIVLMConfig) -> BaseVLM:
     """Create a VLM model based on the provided configuration.
     
     Args:
@@ -23,12 +20,8 @@ def create_vlm_model(config: LocalVLMConfig | RemoteVLMConfig) -> BaseVLM:
     Raises:
         ValueError: If the provider is not supported
     """
-    if config.provider == VLMProvider.DEEPSEEK.value:
-        return DeepSeekVLCloud(config) # type: ignore
-    elif config.provider == VLMProvider.QWEN.value:
-        return QwenVLCloud(config) # type: ignore
-    elif config.provider == VLMProvider.LOCAL.value:
-        return LocalVL(config) # type: ignore 
+    if config.provider == VLMProvider.OPENAI.value:
+        return OpenAIVLM(config)
     else:
         # Add more providers as they are implemented
         raise ValueError(f"Unsupported VLM provider: {config.provider}")

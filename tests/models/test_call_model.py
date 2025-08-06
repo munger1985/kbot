@@ -3,7 +3,7 @@ from pathlib import Path
 # Add both project root and backend directory to Python path
 project_root = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(project_root))
-from utils.call_models import call_llm_model
+from utils.call_models import call_llm_model, call_vlm_model_for_parsing_picture
 
 import asyncio
 from decimal import Decimal
@@ -51,6 +51,22 @@ async def test_call_llm_model():
     finally:
         print("\n\n测试结束")
 
+async def test_call_vlm_model():
+    """
+    测试调用VLM模型的方法
+    """
+    # 测试参数
+    model_unique_name = "KBOT1/Qwen-VL-MAX"
+    prompt_unique_name = "KBOT1/pdf_parsing"
+    image = "/home/chris/docs/test_small.jpg"
+
+
+    print(f"测试开始，使用模型: {model_unique_name}")
+    print(f"输入提示的唯一标识: {prompt_unique_name}")
+    print("=" * 50)
+    response = await call_vlm_model_for_parsing_picture(model_unique_name,prompt_unique_name, image)
+    print(f"模型响应: {response}")
+
 # 运行测试
 if __name__ == "__main__":
-    asyncio.run(test_call_llm_model())
+    asyncio.run(test_call_vlm_model())

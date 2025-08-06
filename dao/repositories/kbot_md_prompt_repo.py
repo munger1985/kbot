@@ -49,4 +49,12 @@ class KbotMdPromptRepository:
                 select(KbotMdPrompt.template).where(KbotMdPrompt.prompt_id == prompt_id)
             )
             return result.scalar_one_or_none()
+        
+    async def get_prompt_by_unique_name(self, prompt_unique_name: str) -> Sequence[str] | None:
+        """Get prompt content by unique name."""
+        async with get_session() as session:
+            result = await session.execute(
+                select(KbotMdPrompt.template).where(KbotMdPrompt.prompt_unique_name == prompt_unique_name)
+            )
+            return result.scalar_one_or_none()
     

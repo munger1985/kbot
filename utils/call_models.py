@@ -1,20 +1,22 @@
 import os
 import aiohttp
-import asyncio
-import json
+from PIL import Image
 from decimal import Decimal
 from loguru import logger
-from typing import Any, AsyncGenerator
+from typing import Any
 from models.embedding.base import EmbeddingDataItem
+from dao.repositories.kbot_md_prompt_repo import KbotMdPromptRepository
+from core.config import settings
+from .common_methods import encode_image
 
 
 async def call_embedding_model(model_unique_name: str, texts: list[str], batch_dize: int | None = 0) -> list[EmbeddingDataItem] | None:
     """Call embedding model"""
 
-    embed_host = os.getenv("KBOT_EMBED_HOST", "localhost")
-    embed_port = os.getenv("KBOT_EMBED_PORT", "8001")
+    host = os.getenv("KBOT_EMBED_HOST", "localhost")
+    port = os.getenv("KBOT_EMBED_PORT", "8001")
     
-    embed_url = f"http://{embed_host}:{embed_port}/v1/embeddings"
+    url = f"http://{host}:{port}/v1/embeddings"
     headers = {"Content-Type": "application/json"}
     payload = {
         "model_unique_name": model_unique_name,
@@ -24,7 +26,7 @@ async def call_embedding_model(model_unique_name: str, texts: list[str], batch_d
     
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.post(embed_url, headers=headers, json=payload) as response:
+            async with session.post(url, headers=headers, json=payload) as response:
                 if response.status != 200:
                     text = await response.text()
                     logger.error(f"Embedding service error: HTTP {response.status}, {text}")
@@ -71,10 +73,10 @@ async def call_reranker_model(model_unique_name: str, query: str, documents: lis
     - **top_k**: Number of top documents to return (None for all)
     """
 
-    rerank_host = os.getenv("KBOT_RERANKER_HOST", "localhost")
-    rerank_port = os.getenv("KBOT_RERANKER_PORT", "8003")
+    host = os.getenv("KBOT_RERANKER_HOST", "localhost")
+    port = os.getenv("KBOT_RERANKER_PORT", "8003")
     
-    rerank_url = f"http://{rerank_host}:{rerank_port}/v1/rerank"
+    url = f"http://{host}:{port}/v1/rerank"
     headers = {"Content-Type": "application/json"}
     payload = {
         "model_unique_name": model_unique_name,
@@ -85,7 +87,7 @@ async def call_reranker_model(model_unique_name: str, query: str, documents: lis
     
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.post(rerank_url, headers=headers, json=payload) as response:
+            async with session.post(url, headers=headers, json=payload) as response:
                 if response.status != 200:
                     text = await response.text()
                     logger.error(f"Reranking service error: HTTP {response.status}, {text}")
@@ -112,9 +114,9 @@ async def call_llm_model(model_unique_name: str, prompt: str, **kwargs):
         一个异步生成器，逐块产生LLM的响应
     """
     # 获取LLM服务地址和端口
-    llm_host = os.getenv("KBOT_LLM_HOST", "localhost")
-    llm_port = os.getenv("KBOT_LLM_PORT", "8002")
-    llm_url = f"http://{llm_host}:{llm_port}/v1/chat/completions"
+    host = os.getenv("KBOT_LLM_HOST", "localhost")
+    port = os.getenv("KBOT_LLM_PORT", "8002")
+    url = f"http://{host}:{port}/v1/chat/completions"
     headers = {"Content-Type": "application/json"}
     
     # 构建请求负载
@@ -138,7 +140,7 @@ async def call_llm_model(model_unique_name: str, prompt: str, **kwargs):
     logger.debug(f"Calling LLM service with payload: {payload}")
 
     async with aiohttp.ClientSession() as session:
-        async with session.post(llm_url, headers=headers, json=payload) as response:
+        async with session.post(url, headers=headers, json=payload) as response:
             if response.status != 200:
                 error_msg = await response.text()
                 logger.error(f"LLM service error: {error_msg}")
@@ -146,3 +148,86 @@ async def call_llm_model(model_unique_name: str, prompt: str, **kwargs):
                 
             async for raw_chunk in response.content:
                 yield raw_chunk.decode('utf-8')
+
+async def call_vlm_model_for_parsing_picture(model_unique_name: str, 
+                                             prompt_unique_name: str, 
+                                             image: str | Image.Image, 
+                                             **kwargs) -> str | None:
+    """Call vector language model.
+    
+    Parameters:
+    - **model_unique_name**: Model unique name.
+    - **prompt_unique_name**: Get the prompt by unique name from the database.
+    - **image**: Input image (file path or PIL.Image object).
+    - **kwargs**: Additional arguments for inference.
+    
+    Returns:
+    - Output text, or None on failure
+    """
+    
+    
+    # Get vector language model host and port
+    host = os.getenv("KBOT_VLM_HOST", "localhost")
+    port = os.getenv("KBOT_VLM_PORT", "8004")
+    url = f"http://{host}:{port}/v1/inference"
+    headers = {"Content-Type": "application/json"}
+
+    # Encode image to base64
+    try:
+        image_base64 = await encode_image(image)
+    except Exception as e:
+        logger.error(f"Failed to encode image: {str(e)}")
+        return None
+    
+    # Get prompt text
+    try:
+        prompt_repo = KbotMdPromptRepository()
+        prompt = await prompt_repo.get_prompt_by_unique_name(prompt_unique_name)
+        if not prompt:
+            raise Exception(f"Prompt not found: {prompt_unique_name}")
+    except Exception as e:
+        logger.error(f"Failed to get prompt text: {str(e)}")
+        return None
+
+    # Build messages in required format
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": prompt
+                },
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:image/jpeg;base64,{image_base64}"
+                    }
+                }
+            ]
+        }
+    ]
+
+    # Build request payload
+    payload = {
+        "model_unique_name": model_unique_name,
+        "messages": messages,
+        "stream": False,
+        **kwargs
+    }
+    
+    # Send request
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, headers=headers, json=payload) as response:
+                if response.status != 200:
+                    logger.error(f"VLM service response error: HTTP {response.status}")
+                    return None
+                    
+                response_data = await response.json()
+                output = response_data["choices"][0]["message"]["content"]
+                logger.info("Successfully got VLM response")
+                return output
+    except Exception as e:
+        logger.error(f"VLM service error: {str(e)}")
+        return None 

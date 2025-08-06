@@ -24,5 +24,5 @@ class KbotMdModels(Base):
     updated_time: Mapped[Date] = mapped_column(Date, comment="最后修改时间，默认系统当前时间")
 
     def __repr__(self):
-        return f"KbotMdModels(model_id={self.model_id!r}, provider={self.provider!r})"
+        return f"KbotMdModels(model_id={self.model_id!r}, provider={self.provider!r}, model_unique_name={self.model_unique_name!r})"
     

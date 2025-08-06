@@ -8,6 +8,7 @@ Contains:
 from abc import ABC, abstractmethod
 from pydantic import BaseModel, field_validator, ConfigDict
 from typing import Any, AsyncGenerator
+from openai.types.chat import ChatCompletion, ChatCompletionChunk
 from prometheus_client import Counter, Histogram
 from core.config import settings
 
@@ -57,7 +58,7 @@ class BaseLLM(ABC):
         messages: list[dict[str, str]] | str,
         stream: bool = False,
         **kwargs: Any
-    ) -> AsyncGenerator[str, None] | str | None:
+    ) -> ChatCompletion | AsyncGenerator[ChatCompletionChunk, None] | None:
         """Generate a chat response asynchronously."""
         raise NotImplementedError
     

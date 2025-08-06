@@ -10,15 +10,39 @@ with various VLM providers. It supports text VLM.
 import os
 import sys
 import signal
-import subprocess
+import uuid
 import time
+import json
+import subprocess
 import atexit
 import platform
 from datetime import datetime
 from PIL import Image
-from typing import Any
+from typing import Any, Type
 from contextlib import asynccontextmanager
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
+from pydantic_core import core_schema
+from fastapi.responses import StreamingResponse
+
+# Add Pydantic support for PIL.Image.Image
+def get_pydantic_core_schema(
+    cls: Type[Image.Image],
+    handler: Any,
+) -> core_schema.CoreSchema:
+    """
+    Implement __get_pydantic_core_schema__ for PIL.Image.Image.
+    This allows Pydantic to properly handle PIL.Image.Image types.
+    """
+    return core_schema.no_info_after_validator_function(
+        lambda x: x,
+        core_schema.any_schema(),
+        serialization=core_schema.plain_serializer_function_ser_schema(
+            lambda img: img.filename if hasattr(img, 'filename') else "PIL.Image"
+        ),
+    )
+
+# Register the schema for PIL.Image.Image
+Image.Image.__get_pydantic_core_schema__ = get_pydantic_core_schema # type: ignore
 import numpy as np
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
@@ -97,15 +121,37 @@ app.add_middleware(
 
 # 定义请求模型
 class VLMRequest(BaseModel):
-    model_unique_name: str = Field(..., description="VLM model unique name")
-    text: str = Field(..., description="text to convert to VLM")
-    image: str | Image.Image = Field(..., description="image of the text")
+    """Request model for VLM inference. //VLM推理请求模型"""
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_unique_name: str = Field(..., description="Specific model id to use")
+    messages: list[dict[str, Any]] = Field(..., description="list of messages")
+    max_tokens: int | None = Field(None, description="Maximum number of tokens to generate")
+    temperature: float | None = Field(
+        None, description="Sampling temperature (0.0-1.0, lower is more deterministic)"
+    )
+    stream: bool = Field(False, description="Whether to stream the response")
+    timeout: int | None = Field(None, description="Timeout in seconds")
+    top_p: float | None = Field(None, description="Top-p sampling parameter")
+    frequency_penalty: float | None = Field(None, description="Frequency penalty")
+    presence_penalty: float | None = Field(None, description="Presence penalty")
+
 
 class VLMResponse(BaseModel):
-    response: str = Field(..., description="VLM model response")
+    """Response model for VLM inference (OpenAI compatible). //VLM推理响应模型(兼容OpenAI)"""
+
+    id: str = Field(default_factory=lambda: f"sse-{uuid.uuid4()}", 
+                   description="Unique identifier for the completion")
+    object: str = Field("chat.completion", 
+                       description="The object type, always 'chat.completion'")
+    created: int = Field(default_factory=lambda: int(time.time()), 
+                        description="Unix timestamp of when the response was created")
+    model: str = Field(..., description="The model used for the completion")
+    choices: list[dict[str, Any]] = Field(...,
+        description="list of completion choices containing messages")
+    usage: dict[str, int] = Field(...,
+        description="Token usage statistics including prompt_tokens, completion_tokens and total_tokens")
+    processing_time: float = Field(..., 
+                                 description="Processing time in seconds (custom field)")
 
 
 # 依赖项：获取VLM服务实例
@@ -131,46 +177,173 @@ async def health() -> dict[str, Any]:
         "timestamp": datetime.now().isoformat()
     }
 
-@app.post("/v1/VLMs", response_model=VLMResponse, tags=["VLM"])
+@app.post("/v1/inference", response_model=VLMResponse, tags=["VLM"])
 async def inference(
     request: VLMRequest,
     vlm_service: VLMService = Depends(get_vlm_service)
-    ) -> VLMResponse:
-    """
-    将文本列表转换为VLM向量
+) -> VLMResponse | StreamingResponse:
+    """Generate VLM response //生成VLM响应
     
-    - **model_unique_name**: 要使用的VLM模型的ID
-    - **texts**: 要VLM的文本列表
-    - **batch_size**: 批处理大小（可选）
+    - **model_unique_name**: 要使用的模型ID
+    - **messages**: 消息列表
+    - **max_tokens**: 要生成的最大令牌数（可选）
+    - **temperature**: 采样温度（0.0-1.0，越低越确定）
+    - **stream**: 是否流式返回响应
+    - **timeout**: 超时时间（秒）
+    - **top_p**: Top-p采样参数
+    - **frequency_penalty**: 频率惩罚
+    - **presence_penalty**: 存在惩罚
     
     返回:
-    - **data**: VLM向量列表
-    - **usage**: 使用情况信息，包括总令牌数和提示令牌数
-    - **model**: 使用的VLM模型ID
-    - **object**: 响应对象类型，固定为 "list"
-    
-    Raises:
-    - **HTTPException**: 如果模型ID不存在或VLM失败
-    - **RuntimeError**: 如果模型创建失败
-    - **Exception**: 如果发生其他错误
+    - 流式模式: 标准OpenAI SSE格式
+    - 非流式模式: 包含消息和处理时间的JSON对象
     """
-    try:
-        logger.info(f"Received VLM request: model={request.model_unique_name}")
-        
-        # 使用VLM服务将文本转换为向量
-        vlm = await vlm_service.inference(
-            model_unique_name=request.model_unique_name,
-            text=request.text,
-            image=request.image
-        )
-        
-        return VLMResponse(
-            response=vlm
-        )
+    start_time = time.time()
+    response_id = f"vlmcmpl-{uuid.uuid4()}"  # OpenAI格式的ID
+    created_time = int(time.time())
+    model_name = request.model_unique_name
     
+    logger.info(f"Generating VLM response using model {request.model_unique_name}")
+    
+    try:
+        if request.stream:
+            async def generate():
+                try:
+                    # 获取流式响应
+                    chunk_stream = await vlm_service.inference(
+                        model_unique_name=request.model_unique_name,
+                        messages=request.messages,
+                        stream=True,
+                        max_tokens=request.max_tokens,
+                        temperature=request.temperature,
+                        timeout=request.timeout,
+                        top_p=request.top_p,
+                        frequency_penalty=request.frequency_penalty,
+                        presence_penalty=request.presence_penalty
+                    )
+                    
+                    # 初始化usage数据
+                    usage_data = {
+                        "prompt_tokens": 0,
+                        "completion_tokens": 0,
+                        "total_tokens": 0
+                    }
+                    
+                    async for content in chunk_stream: # type: ignore
+                        # 如果是usage数据，更新usage_data
+                        if content.startswith("\n\n=== USAGE ==="):
+                            try:
+                                usage_data.update(json.loads(content.replace("\n\n=== USAGE ===\n", "")))
+                            except json.JSONDecodeError:
+                                logger.warning("Failed to parse usage data")
+                            continue
+                            
+                        # 标准OpenAI SSE格式
+                        chunk_data = {
+                            "id": response_id,
+                            "object": "chat.completion.chunk",
+                            "created": created_time,
+                            "model": model_name,
+                            "choices": [{
+                                "delta": {"content": content},
+                                "index": 0,
+                                "finish_reason": None
+                            }]
+                        }
+                        yield f"data: {json.dumps(chunk_data)}\n\n"
+                    
+                    # 发送结束标记
+                    end_chunk = {
+                        "id": response_id,
+                        "object": "chat.completion.chunk",
+                        "created": created_time,
+                        "model": model_name,
+                        "choices": [{
+                            "delta": {},
+                            "index": 0,
+                            "finish_reason": "stop"
+                        }],
+                        "usage": usage_data
+                    }
+                    yield f"data: {json.dumps(end_chunk)}\n\n"
+                    yield "data: [DONE]\n\n"
+                    
+                except Exception as e:
+                    logger.error(f"Stream error: {str(e)}")
+                    error_chunk = {
+                        "error": {
+                            "message": str(e),
+                            "type": e.__class__.__name__,
+                            "code": 500
+                        }
+                    }
+                    yield f"data: {json.dumps(error_chunk)}\n\n"
+                    yield "data: [DONE]\n\n"
+
+            return StreamingResponse(
+                generate(),
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "Connection": "keep-alive"
+                }
+            )
+            
+        else:
+            # 非流式响应
+            response = await vlm_service.inference(
+                model_unique_name=request.model_unique_name,
+                messages=request.messages,
+                stream=False,
+                max_tokens=request.max_tokens,
+                temperature=request.temperature,
+                timeout=request.timeout,
+                top_p=request.top_p,
+                frequency_penalty=request.frequency_penalty,
+                presence_penalty=request.presence_penalty
+            )
+            
+            processing_time = time.time() - start_time
+            logger.info(f"VLM completion took {processing_time:.2f}s")
+            
+            # 获取usage数据
+            usage_data = response.get("usage", { # type: ignore
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0
+            })
+            
+            return VLMResponse(
+                id=response_id,
+                object="chat.completion",
+                created=created_time,
+                model=model_name,
+                choices=[{
+                    "message": {
+                        "role": "assistant",
+                        "content": response["choices"][0]["message"]["content"] # type: ignore
+                    },
+                    "finish_reason": "stop",
+                    "index": 0
+                }],
+                usage={
+                    "prompt_tokens": usage_data.get("prompt_tokens", 0),
+                    "completion_tokens": usage_data.get("completion_tokens", 0),
+                    "total_tokens": usage_data.get("total_tokens", 0)
+                },
+                processing_time=processing_time
+            )
+
+    except ValidationError as e:
+        raise HTTPException(400, detail=str(e))
+    except TimeoutError:
+        raise HTTPException(408, detail="Request timeout")
     except Exception as e:
-        logger.error(f"Error occurred during VLM.: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error occurred during VLM.: {str(e)}")
+        logger.exception("VLM completion failed")
+        raise HTTPException(500, detail={
+            "error": str(e),
+            "type": e.__class__.__name__
+        })
 
 
 

@@ -13,8 +13,7 @@ if backend_dir not in sys.path:
 from models.vlm import (
     BaseVLM, 
     VLMProvider,
-    LocalVLMConfig, 
-    RemoteVLMConfig, 
+    OpenAIVLMConfig,
     create_vlm_model
 )
 from dao.repositories.kbot_md_models_repo import KbotMdModelsRepository
@@ -85,32 +84,20 @@ class ModelPool:
 
         # 根据模型类型创建相应的配置
         
-        if model_entity.provider == VLMProvider.LOCAL.value:
-            model_config = LocalVLMConfig(
-                model_name=model_entity.model_name,
-                provider=model_entity.provider,
-                max_tokens=model_entity.model_params.get("max_tokens", 512),
-                model_path=model_entity.model_params.get("model_path", None),
-                device=model_entity.model_params.get("device", None),
-                device_map=model_entity.model_params.get("device_map", None),
-                max_memory=model_entity.model_params.get("max_memory", None),
-                trust_remote_code=model_entity.model_params.get("trust_remote_code", False),
-                use_fp16=model_entity.model_params.get("use_fp16", False),
-                local_files_only=model_entity.model_params.get("local_files_only", False),
-                compile_model=model_entity.model_params.get("compile_model", True)
-            )
-        else:
-            model_config = RemoteVLMConfig(
+        if model_entity.provider == VLMProvider.OPENAI.value:           
+            model_config = OpenAIVLMConfig(
                 model_name=model_entity.model_name,
                 provider=model_entity.provider,
                 max_tokens=model_entity.model_params.get("max_tokens", 512),
                 api_key=model_entity.api_key, # type: ignore
                 api_endpoint=model_entity.api_endpoint, # type: ignore    
                 api_version=model_entity.model_params.get("api_version", ""),
-                request_timeout=model_entity.model_params.get("request_timeout", 30),
+                timeout=model_entity.model_params.get("timeout", 30),
                 max_retries=model_entity.model_params.get("max_retries", 3),
                 temperature=model_entity.model_params.get("temperature", 0.1)
             )
+        else:
+            raise NotImplementedError(f"Unsupported model provider: {model_entity.provider}")
 
         # Create and initialize model //创建和初始化模型
         try:

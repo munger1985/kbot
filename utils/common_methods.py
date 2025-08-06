@@ -1,4 +1,7 @@
 import os
+import io
+import base64
+from PIL import Image
 from typing import Callable, Generator
 from loguru import logger
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -66,11 +69,20 @@ def run_in_thread_pool(
         yield obj.result()
 
 @staticmethod
-def safe_int(value) -> int:
-    try:
-        return int(value) if value is not None else 0
-    except (ValueError, TypeError):
-        return 0
+async def encode_image(image: str | Image.Image) -> str:
+    """Convert image to base64 with validation"""
+    if isinstance(image, str):
+        with open(image, "rb") as f:
+            img_data = f.read()
+    else:
+        buf = io.BytesIO()
+        image.save(buf, format="JPEG")
+        img_data = buf.getvalue()
+
+    if len(img_data) > 20 * 1024 * 1024:  # 20MB limit
+        raise ValueError("Image size exceeds 20MB limit")
+
+    return base64.b64encode(img_data).decode('utf-8')
     
 @staticmethod
 async def lob_to_string(async_lob):
