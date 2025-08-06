@@ -95,20 +95,22 @@ async def agent_stream_chat(session_id: str) -> AsyncGenerator[str, None]:
     model_params["stream"] = True
     
     # 3. 根据 prompt_id 获取提示词
-    prompt = ""
+    prompt_template = ""
     prompt_content = await KbotMdPromptRepository().get_prompt_by_id(prompt_id) # type: ignore
     if prompt_content is None:
-        prompt = "根据参考内容回答问题。"
+        prompt_template = "根据参考内容回答问题。\n上下文:{context}\n回答的问题:{question}"
     else:
-        prompt = await lob_to_string(prompt_content)
+        prompt_template = await lob_to_string(prompt_content)
         
     # 4. 从返回的QA_PAIR中提取问题参考答案构建LLM提示词
+    context = ""
     for ref in refs:
-        prompt += f"\n{ref['content']} "
+        context += f"{ref['content']}\n"  # 收集所有参考内容，每段后用换行分隔
 
     # 5. 从返回的QA_PAIR中提取问题构建LLM问题
     question = last_qa_pair["question"]
-    prompt += f"\n{question}"
+
+    prompt = prompt_template.format(context=context.strip(), question=question)
         
     # 6. 根据LLM模型ID获取LLM模型
     model_unique_name = await KbotMdModelsRepository().get_unique_name_by_id(model_id) # type: ignore
