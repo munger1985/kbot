@@ -3,7 +3,7 @@ from loguru import logger
 from datetime import datetime
 from .txt_parser import process_txt
 from .pdf_parser import process_pdf
-from .pdf_parser_optimized import process_pdf as process_pdf_optimized
+from .pdf_parser_pdfplumber import process_pdf
 from .file_params import FileParams
 from dao.repositories.kbot_md_kb_files_repo import KbotMdKbFilesRepository
 from dao.repositories.kbot_md_kb_repo import KbotMdKbRepository
@@ -104,7 +104,7 @@ class FileProcessor:
             elif file_params.file_ext == ".pdf":
                 logger.info(f"Processing pdf file {file_params.file_path}...")
                 #return await process_pdf(file_params)
-                return await process_pdf_optimized(file_params)
+                return await process_pdf(file_params)
             else:
                 msg = f"File type {file_params.file_ext} is not supported, skipping..."
                 logger.info(msg)
