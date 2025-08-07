@@ -18,6 +18,7 @@ from dao.data_dict import FileStatus, ChunkType, SplitStrategy
 from core.config import settings
 from utils.call_models import call_embedding_model
 from utils.common_methods import check_text_file
+import traceback
 
 
 class PDFPlumberParser:
@@ -91,13 +92,13 @@ class PDFPlumberParser:
                 return True
 
             except Exception as e:
-                print(e)
-
-                logger.error(f"Error processing PDF file: {str(e)}")
+                logger.exception("Error processing PDF file:  {}", e)
+                tb = traceback.TracebackException.from_exception(e)
+                errMsg= ''.join(tb.format())
                 await file_repo.update_file_status(
                     self.file_params.file_id,
                     FileStatus.PARSE_FAILED,
-                    str(e)
+                    errMsg
                 )
                 return False
 
@@ -128,8 +129,6 @@ class PDFPlumberParser:
             chunks.append(text_item['text'])
             chunk_metas.append({
                 "chunk_type": ChunkType.TEXT,
-                # "split_strategy": SplitStrategy.PAGE.value,
-                # "file_path": str(self.pdf_path),
                 "page_num": text_item['page_num']
             })
 
@@ -144,8 +143,6 @@ class PDFPlumberParser:
                     chunks.append(table_text)
                     chunk_metas.append({
                         "chunk_type": ChunkType.TABLE,
-                        # "split_strategy": SplitStrategy.PAGE.value,
-                        # "file_path": str(self.pdf_path),
                         "page_num": table['page_num']
                     })
 
@@ -203,8 +200,6 @@ class PDFPlumberParser:
             chunks.append(text_item['text'])
             chunk_metas.append({
                 "chunk_type": ChunkType.TEXT,
-                "split_strategy": SplitStrategy.FIXED_SIZE.value,
-                "file_path": str(self.pdf_path),
                 "page_num": text_item['page_num']
             })
 
@@ -219,8 +214,6 @@ class PDFPlumberParser:
                     chunks.append(table_text)
                     chunk_metas.append({
                         "chunk_type": ChunkType.TABLE,
-                        "split_strategy": SplitStrategy.PAGE.value,
-                        "file_path": str(self.pdf_path),
                         "page_num": table['page_num']
                     })
 
