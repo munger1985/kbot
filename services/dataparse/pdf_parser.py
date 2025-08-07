@@ -45,11 +45,11 @@ class PDFPlumberParser:
 
     async def parse(self) -> bool:  # tuple[list[dict], list[dict], list[dict] ]:
         pdf_path = self.file_params.file_path
-        split_strategy = int(self.file_params.parser.get("split_strategy", SplitStrategy.SELF_SPLIT.value))
+        split_strategy = int(self.file_params.parser.get("split_strategy", SplitStrategy.FIXED_SIZE.value))
         file_repo = KbotMdKbFilesRepository()
         oracle_vec_handler = OracleVecHandler()
 
-        if split_strategy == SplitStrategy.BY_PAGE.value:
+        if split_strategy == SplitStrategy.PAGE.value:
             text_content, images_info, tables_info = self.extract_all_per_page()
             self.text_content = text_content
             self.images_info = images_info
@@ -171,6 +171,125 @@ class PDFPlumberParser:
             # # 打印摘要
 
             return True  # text_content, images_info, tables_info
+        elif split_strategy == SplitStrategy.FIXED_SIZE.value:
+            text_content, images_info, tables_info = self.extract_all_per_page()
+            self.text_content = text_content
+            self.images_info = images_info
+            self.tables_info = tables_info
+            ###### text
+            embed_entities = []
+            # 获取embedding模型的unique name
+            model_unique_name = await KbotMdModelsRepository().get_unique_name_by_id(
+                self.file_params.txt_embed_model)  # type: ignore
+            if model_unique_name is None:
+                msg = f"Embedding model not found for id: {self.file_params.txt_embed_model}"
+                logger.error(msg)
+                await file_repo.update_file_status(self.file_params.file_id, FileStatus.PARSE_FAILED, msg)
+                return False
+
+            for each_content in text_content:
+                text = each_content['text']
+                page = each_content['page']
+                if text != "":
+                    embeddings_list = await call_embedding_model(model_unique_name, [text])
+                    if embeddings_list is None:
+                        msg = f"Embedding model {model_unique_name} returned None."
+                        logger.error(msg)
+                        await file_repo.update_file_status(self.file_params.file_id, FileStatus.PARSE_FAILED, msg)
+                        return False
+                    print(123123, embeddings_list)
+                    embedding = embeddings_list[0].embedding
+                    print(3233, embedding)
+
+                    embed_entity = KbotBizTxtEmbedding(
+                        embed_id=str(uuid.uuid4()),
+                        chunk_doc=text,
+                        chunk_metadata=json.dumps({"chunk_type": ChunkType.TEXT,
+                                                   "split_strategy": int(split_strategy),
+                                                   "file_path": self.file_params.file_path,
+                                                   "page_num": int(page)}),
+                        file_id=self.file_params.file_id,
+                        # embedding=oracle_vec_handler.convert(embedding,False)
+                        embedding=embedding
+                    )
+                    print(441, embed_entity.chunk_metadata)
+                    embed_entities.append(embed_entity)
+
+                embedding_repo = KbotBizTxtEmbeddingRepository()
+                logger.debug(f"Attempting to save {len(embed_entities)} embeddings to database...")
+                try:
+                    result = await embedding_repo.create(kb_id=self.file_params.kb_id, embeddings=embed_entities)
+                    if result:
+                        logger.info(
+                            f"Successfully saved {len(embed_entities)} embeddings for {self.file_params.file_path}")
+                        logger.debug(f"Database operation returned: {result}")
+                    else:
+                        msg = f"Failed to save embeddings for {self.file_params.file_path} (repository returned False)"
+                        logger.error(msg)
+                        await file_repo.update_file_status(self.file_params.file_id, FileStatus.PARSE_FAILED, msg)
+                        return False
+                except Exception as e:
+                    msg = f"Exception while saving embeddings: {str(e)}"
+                    logger.error(msg, exc_info=True)
+                    await  file_repo.update_file_status(self.file_params.file_id, FileStatus.PARSE_FAILED, msg)
+                    return False
+            #### table
+            embed_entities = []
+            for each_content in tables_info:
+                table_id = each_content['uuid']
+                page = each_content['page']
+
+                table_file_path = each_content['file_path']
+                with open(table_file_path, 'r', encoding='utf-8') as f:
+                    text = f.read()
+                    if text != "":
+                        embeddings_list = await call_embedding_model(model_unique_name, [text])
+                        if embeddings_list is None:
+                            msg = f"Embedding model {model_unique_name} returned None."
+                            logger.error(msg)
+                            await file_repo.update_file_status(self.file_params.file_id, FileStatus.PARSE_FAILED, msg)
+                            return False
+                        embedding = embeddings_list[0].embedding
+                        embed_entity = KbotBizTxtEmbedding(
+                            embed_id=str(uuid.uuid4()),
+                            chunk_doc=text,
+                            chunk_metadata=json.dumps({"chunk_type": ChunkType.TEXT,
+                                                       "split_strategy": int(split_strategy),
+                                                       "file_path": self.file_params.file_path,
+                                                       "page_num": int(page)}),
+                            file_id=self.file_params.file_id,
+                            embedding=embedding
+                            # embedding=oracle_vec_handler.convert(embedding,False)
+
+                        )
+                        embed_entities.append(embed_entity)
+
+                    embedding_repo = KbotBizTxtEmbeddingRepository()
+                    logger.debug(f"Attempting to save {len(embed_entities)} embeddings to database...")
+                    try:
+                        result = await embedding_repo.create(kb_id=self.file_params.kb_id,
+                                                             embeddings=embed_entities)
+                        if result:
+                            logger.info(
+                                f"Successfully saved {len(embed_entities)} embeddings for {self.file_params.file_path}")
+                            logger.debug(f"Database operation returned: {result}")
+                        else:
+                            msg = f"Failed to save embeddings for {self.file_params.file_path} (repository returned False)"
+                            logger.error(msg)
+                            await file_repo.update_file_status(self.file_params.file_id, FileStatus.PARSE_FAILED, msg)
+                            return False
+                    except Exception as e:
+                        msg = f"Exception while saving embeddings: {str(e)}"
+                        logger.error(msg, exc_info=True)
+                        await  file_repo.update_file_status(self.file_params.file_id, FileStatus.PARSE_FAILED, msg)
+                        return False
+
+            # # 文本分割逻辑
+                if text_length <= chunk_size:
+                    logger.debug(f"Text length {text_length} <= chunk size {chunk_size}, no need to split.")
+                    chunks = [text]
+                else:
+                    chunks = chunk_text(text, chunk_size, overlap)
         else:
             logger.warning(f"Unrecognized split strategy: {split_strategy}. ")
             return False
@@ -526,12 +645,12 @@ class PDFPlumberParser:
                 f.write(pure_text)
 
             # 保存图片信息
-            with open(self.output_dir / "images_info.json", 'w', encoding='utf-8') as f:
-                json.dump(self.images_info, f, ensure_ascii=False, indent=2)
+            # with open(self.output_dir / "images_info.json", 'w', encoding='utf-8') as f:
+            #     json.dump(self.images_info, f, ensure_ascii=False, indent=2)
 
             # 保存表格信息
-            with open(self.output_dir / "tables_info.json", 'w', encoding='utf-8') as f:
-                json.dump(self.tables_info, f, ensure_ascii=False, indent=2)
+            # with open(self.output_dir / "tables_info.json", 'w', encoding='utf-8') as f:
+            #     json.dump(self.tables_info, f, ensure_ascii=False, indent=2)
 
             # 保存占位符映射
             valid_tables = []
@@ -559,10 +678,10 @@ class PDFPlumberParser:
                 ]
             }
 
-            with open(self.output_dir / "placeholders_mapping.json", 'w', encoding='utf-8') as f:
-                json.dump(placeholders_mapping, f, ensure_ascii=False, indent=2)
+            # with open(self.output_dir / "placeholders_mapping.json", 'w', encoding='utf-8') as f:
+            #     json.dump(placeholders_mapping, f, ensure_ascii=False, indent=2)
 
-            logger.info(f"\n所有结果已保存到: {self.output_dir}")
+            # logger.info(f"\n所有结果已保存到: {self.output_dir}")
 
         except Exception as e:
             logger.info(f"保存结果时出错: {e}")
@@ -631,13 +750,7 @@ async def process_pdf(file_params: FileParams) -> bool:
     #     logger.debug(f"Chunk size: {chunk_size}, chunk overlap: {overlap}")
     #
     #     # 根据策略选择分割方式: 根据chunk size和overlap切片
-    #     if split_strategy == SplitStrategy.SELF_SPLIT.value:
-    #         # 文本分割逻辑
-    #         if text_length <= chunk_size:
-    #             logger.debug(f"Text length {text_length} <= chunk size {chunk_size}, no need to split.")
-    #             chunks = [text]
-    #         else:
-    #             chunks = chunk_text(text, chunk_size, overlap)
+    #
     #     # 根据策略选择分割方式: 根据文档结构和段落切片
     #     elif split_strategy == SplitStrategy.BY_DOCSTRUCTURE.value:
     #         pass
