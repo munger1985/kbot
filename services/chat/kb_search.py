@@ -1,3 +1,4 @@
+import json
 from loguru import logger
 from .agent_params import ToolParams, KBResult
 from dao.repositories.kbot_md_kb_repo import KbotMdKbRepository
@@ -5,6 +6,7 @@ from dao.repositories.kbot_biz_txt_embedding_repo import KbotBizTxtEmbeddingRepo
 from dao.repositories.kbot_md_models_repo import KbotMdModelsRepository
 from dao.data_dict import KbCategory, KBSearchType
 from utils.oracle_vec_handler import OracleVecHandler
+from utils.decimal_encoder import DecimalEncoder
 from utils.call_models import call_embedding_model
 from utils.common_methods import lob_to_string
 
@@ -101,13 +103,15 @@ class KBSearch:
             results = []
 
             for data in dataset:
+                chunk_meta = json.loads(json.dumps(data[2], cls=DecimalEncoder))
                 result = KBResult()
-                result.embed_id = data[0]
-                result.kb_id = data[1]
-                result.file_id = data[2]
-                result.chunk_doc = await lob_to_string(data[3])
-                result.chunk_metadata = data[4]
-                result.similarity = data[5]
+                result.file_id = data[0]
+                result.chunk_type = getattr(chunk_meta, "chunk_type", 1)
+                result.chunk_file_path = getattr(chunk_meta, "chunk_file_path", "")
+                result.file_ext = getattr(chunk_meta, "file_ext", "")
+                result.page_num = getattr(chunk_meta, "page_num", 1)
+                result.content = await lob_to_string(data[1])
+                result.similarity = data[3]
                 result.weight = self.tool_params.tool_weight # type: ignore
                 results.append(result)
 

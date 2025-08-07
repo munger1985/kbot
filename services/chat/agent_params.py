@@ -30,11 +30,12 @@ class ToolParams:
 
 class KBResult:
     def __init__(self):
-        self.embed_id: int = 0
-        self.kb_id: int = 0
-        self.file_id: int = 0
-        self.chunk_doc: str = ""
-        self.chunk_metadata: dict = {}
+        self.file_id: str
+        self.chunk_type: int
+        self.chunk_file_path: str = ""
+        self.file_ext: str = ""
+        self.page_num: int = 0
+        self.content: str = ""
         self.similarity: float = 0.0
         self.weight: float = 0.0
-        self.rerank_score: float = 0.0
+        self.reranker_score: float = 0.0

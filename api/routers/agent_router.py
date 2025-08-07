@@ -7,7 +7,8 @@ from api.controllers.agent_controller import (
     agent_chat, 
     agent_feedback, 
     agent_stream_chat, 
-    agent_get_session
+    agent_get_session,
+    agent_del_session
 )
 from api.schemas.agent_response import (
     SuccessResponse,
@@ -47,7 +48,7 @@ async def handle_agent_chat(request: AgentChatForm) -> SuccessQueryResponse | Er
             code=200,
             success=True,
             message="Chat successfully.",
-            data={"session_id": r}
+            data=r
         )
         
     except Exception as e:
@@ -111,13 +112,13 @@ async def handle_agent_feedback(form: AgentChatFeedbackForm) -> SuccessResponse 
         )
 
 @router.get(
-    "/session",
+    "/session/get",
     summary="Get the session when login. 在登录智能体时获取session",
     description="Get the session when login. 在登录智能体时获取session",
     response_model=SuccessQueryResponse | ErrorResponse,
     status_code=status.HTTP_200_OK
 )
-async def handle_agent_session(session_id: str) -> SuccessQueryResponse | ErrorResponse:
+async def handle_agent_get_session(session_id: str) -> SuccessQueryResponse | ErrorResponse:
     try:
         r = await agent_get_session(session_id)
         if r:
@@ -132,6 +133,35 @@ async def handle_agent_session(session_id: str) -> SuccessQueryResponse | ErrorR
                 code=400,
                 success=False,
                 message="Session get failed."
+            )
+            
+    except Exception as e:
+        return ErrorResponse(
+            code=400,
+            success=False,
+            message=f"Session get failed. {str(e)}"
+        )
+    
+@router.get(
+    "/session/remove",
+    summary="Remove the session. 删除session",
+    description="Remove the session. 删除session",
+    response_model=SuccessResponse | ErrorResponse,
+    status_code=status.HTTP_200_OK
+)
+async def handle_agent_del_session(session_id: str) -> SuccessResponse | ErrorResponse:
+    try:
+        if await agent_del_session(session_id):
+            return SuccessResponse(
+                code=200,
+                success=True,
+                message="Session successfully removed."
+                )
+        else:
+            return ErrorResponse(
+                code=400,
+                success=False,
+                message="Session failed to remove."
             )
             
     except Exception as e:
