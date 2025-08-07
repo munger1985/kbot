@@ -108,11 +108,8 @@ async def process_txt(file_params: FileParams) -> bool:
                 embed_entity = KbotBizTxtEmbedding(
                     embed_id=str(uuid.uuid4()),
                     chunk_doc=chunk,
-                    chunk_metadata=json.dumps({"chunk_type": ChunkType.TEXT, 
-                                                "split_strategy": int(split_strategy),
-                                                "chunk_size": int(chunk_size),
-                                                "chunk_overlap": int(overlap),
-                                                "file_path": file_params.file_path,
+                    chunk_metadata=json.dumps({"chunk_type": ChunkType.TEXT,
+                                               "chunk_file_path": "",
                                                 "file_ext": file_params.file_ext,
                                                 "page_num": 1}),
                     file_id=file_params.file_id,

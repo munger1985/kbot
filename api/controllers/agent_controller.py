@@ -98,7 +98,7 @@ async def agent_stream_chat(session_id: str) -> AsyncGenerator[str, None]:
     prompt_template = ""
     prompt_content = await KbotMdPromptRepository().get_prompt_by_id(prompt_id) # type: ignore
     if prompt_content is None:
-        prompt_template = "根据参考内容回答问题。\n上下文:{context}\n回答的问题:{question}"
+        prompt_template = "根据参考内容回答问题。\n\n参考内容:{context}\n\n回答的问题:{question}"
     else:
         prompt_template = await lob_to_string(prompt_content)
         
@@ -147,17 +147,22 @@ async def agent_stream_chat(session_id: str) -> AsyncGenerator[str, None]:
         raise
         
 
-async def _write_to_redis(session_id: str, chunks: list):
+async def _write_to_redis(session_id: str, 
+                          #question: str, 
+                          answer: list):
     try:
         # Convert all chunks to strings first
         str_chunks = []
-        for chunk in chunks:
+        for chunk in answer:
             if isinstance(chunk, bytes):
                 str_chunks.append(chunk.decode("utf-8"))
             else:
                 str_chunks.append(str(chunk))
         
         full_response = "".join(str_chunks) if str_chunks else ""
+
+        # 将问题和答案作为历史上下文，转换为embedding后存入redis
+        # TODO
         
         logger.debug(f"The LLM stream answer: {full_response}")
 
@@ -192,3 +197,36 @@ async def agent_get_session(session_id: str) -> dict | None:
         return r     
     except Exception as e:  
         raise e
+    
+
+# a = {
+#     "code":200|500,
+#     "message":"xxx",
+#     "success":True|False,
+    
+#     "data":
+#       {
+#         "session_id":Session ID,
+#         agent_id:Agent ID,
+#         qa_data:[
+#           {
+#             question:xx,
+#             answer:xx,
+#             reference:[{
+#             "chunk_type":1-txt;2-img;3-table,
+#             "chunk_file_path": 分块的文件路径(如果是PDF，则保持抽取的图片或者table路径),
+#             "file_ext":文件后缀(string),
+#             "page_num":int,
+#     "content":chunk 原文(string),
+#     "download_link":下载link(string),
+#     "view_link":预览link(string),
+#     "similarity_score":double,
+#     "reranker_score":double,
+#             },{…}],
+#             feedback:0-未评论；1-点赞；-1-点踩（Int类型），
+#             by: Username,
+#             request_time:YYYY-MM-DD HH24:Mi:SS,
+#             response_time:YYYY-MM-DD HH24:Mi:SS
+#             },{…}]
+#         }
+#   }

@@ -116,7 +116,7 @@ async def delete_files(domain_id: int,
 
 async def delete_metadata(kb_id: int | None, 
                           batch_id: int | None, 
-                          file_ids: list[int] | None) -> bool:
+                          file_ids: list[str] | None) -> bool:
     """
     Delete file metadata either by individual file IDs or by batch ID or by kb ID.
     根据文件ID或批次ID或知识库ID删除文件元数据
@@ -187,7 +187,7 @@ async def delete_metadata(kb_id: int | None,
 
 async def delete_vec_data(kb_id: int, 
                           batch_id: int | None, 
-                          file_ids: list[int] | None) -> int:
+                          file_ids: list[str] | None) -> int:
     """
     Delete vector data from the database by file IDs and delete file metadata finally. 
     根据文件ID从数据库中删除向量数据，最后彻底删除文件元数据。
@@ -261,7 +261,7 @@ async def delete_file_service(
     kb_id: int, 
     batch_id: int | None, 
     batch_name: str | None,
-    file_ids: list[int] | None,
+    file_ids: list[str] | None,
     file_paths: list[str] | None
 ) -> dict:
     """

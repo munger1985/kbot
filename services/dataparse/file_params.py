@@ -1,10 +1,10 @@
 class FileParams:
     def __init__(self):
-        self.file_id: int = 0
+        self.file_id: str
         self.app_id: int = 0
         self.kb_id: int = 0
         self.batch_id: int | None = None
-        self.file_path: str = ""
+        self.file_path: str
         self.file_ext: str | None = None
         self.summary: int = 0
         self.kb_category: int = 0
@@ -15,4 +15,4 @@ class FileParams:
         self.img2txt_model: int | None = None
         self.img_embed_model: int | None = None
         self.txt_embed_model: int | None = None
-        self.security_level: int | None = 0
+        self.security_level: int = 0
