@@ -23,7 +23,7 @@ class KbotBizTxtEmbeddingRepository:
             await session.commit()
             return True
     
-    async def delete_by_file_ids(self, kb_id: int, file_ids: list[int]) -> int:
+    async def delete_by_file_ids(self, kb_id: int, file_ids: list[str]) -> int:
         """Delete embedding records by file IDs."""
         db_repo = KbotMdDbConfRepository()
         db_conf = await db_repo.get_by_kbid(kb_id)

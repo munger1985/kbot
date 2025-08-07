@@ -1,4 +1,5 @@
 import os
+import uuid
 import json
 from pathlib import Path
 from fastapi import UploadFile
@@ -193,6 +194,7 @@ async def upload_file_service(files: list[UploadFile],
     file_entitities = []
     for fileparam in fileparams:
         file_entitity = KbotMdKbFiles(
+            file_id = str(uuid.uuid4()),
             app_id = app_id,
             kb_id = kb_id,
             batch_id = batch_id,
@@ -202,7 +204,7 @@ async def upload_file_service(files: list[UploadFile],
             status=FileStatus.UPLOADED.value,
             file_version = fileparam["file_version"],
             is_overwrite = fileparam["is_overwrite"],
-            security_level = kb_entity.security_level,
+            security_level = kb_entity.security_level or 1,
             chunk_parser = json.dumps(kb_entity.chunk_parser, cls=DecimalEncoder) if kb_entity.chunk_parser is not None else None,
             enable_summary = kb_entity.enable_summary,
             is_img2txt = kb_entity.is_img2txt,

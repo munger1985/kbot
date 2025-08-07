@@ -6,7 +6,7 @@ from .base import Base
 class KbotMdKbFiles(Base):
     """知识库文件表"""
     
-    file_id: Mapped[int] = mapped_column(Numeric(38, 0),  primary_key=True, comment="文件唯一标识，主键")
+    file_id: Mapped[str] = mapped_column(String(256),  primary_key=True, comment="文件唯一标识UUID，主键")
     app_id: Mapped[int] = mapped_column(Numeric(38, 0),  nullable=False, comment="所属应用ID")
     kb_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False, comment="关联的知识库ID")
     batch_id: Mapped[int | None] = mapped_column(Numeric(38, 0), comment="关联的批次ID（可选）")
@@ -16,7 +16,7 @@ class KbotMdKbFiles(Base):
     status: Mapped[int | None] = mapped_column(Numeric(2, 0), comment="文件状态枚举类型")
     file_version: Mapped[int | None] = mapped_column(Numeric(38, 0), comment="文件版本号，每次更新递增")
     is_overwrite: Mapped[int] = mapped_column(Numeric(1, 0), comment="是否覆盖：1-是,0-否")
-    security_level: Mapped[int | None] = mapped_column(Numeric(1, 0), comment="文件安全等级枚举类型")
+    security_level: Mapped[int] = mapped_column(Numeric(1, 0), comment="文件安全等级枚举类型")
     file_size: Mapped[int | None] = mapped_column(Numeric(38, 0), comment="文件大小（字节）")
     chunks_cnt: Mapped[int | None] = mapped_column(Numeric(38, 0), comment="文件分块数量")
     chunk_parser: Mapped[str | None] = mapped_column(CLOB, comment="数据chunk参数")

@@ -22,6 +22,6 @@ class KBDeleteForm(BaseModel):
     kb_id: int
     batch_id: int | None = None
     batch_name: str | None = None
-    file_ids: list[int] | None = None
+    file_ids: list[str] | None = None
     file_paths: list[str] | None = None
         

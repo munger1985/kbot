@@ -2,7 +2,7 @@ import json
 from loguru import logger
 from datetime import datetime
 from .txt_parser import process_txt
-from .pdf_parser import process_pdf
+from .pdf_parser_old import process_pdf
 from .pdf_parser_optimized import process_pdf as process_pdf_optimized
 from .file_params import FileParams
 from dao.repositories.kbot_md_kb_files_repo import KbotMdKbFilesRepository

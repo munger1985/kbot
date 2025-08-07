@@ -17,7 +17,7 @@ from core.database.meta_oracle import get_session
 class KbotMdKbFilesRepository:
     """Repository for KBOT_MD_KB_FILES table operations."""
     
-    async def get_by_id(self, file_id: int) -> KbotMdKbFiles | None:
+    async def get_by_id(self, file_id: str) -> KbotMdKbFiles | None:
         """Get knowledge base file by ID."""
         async with get_session() as session:
             result = await session.execute(
@@ -83,11 +83,11 @@ class KbotMdKbFilesRepository:
             )
             return result.scalars().first()
     
-    async def delete(self, kb_id: int | None, batch_id: int | None, file_ids: list[int] | None) -> int:
+    async def delete(self, kb_id: int | None, batch_id: int | None, file_ids: list[str] | None) -> int:
         """Delete knowledge base files.
         kb_id (int): The knowledge base ID to delete all related files for
         batch_id (int): The batch ID to delete all related files for
-        file_ids (int): The file IDs to delete
+        file_ids (str): The file IDs to delete
 
         Returns:
             int: The number of deleted records
@@ -160,7 +160,7 @@ class KbotMdKbFilesRepository:
                 await session.commit()
                 return True
             
-    async def update_file_status(self, file_id: int, status: FileStatus, log_msg: str | None = None) -> bool:
+    async def update_file_status(self, file_id: str, status: FileStatus, log_msg: str | None = None) -> bool:
         """Update the status of a knowledge base file record."""
         async with get_session() as session:
             # Start building the update query
@@ -176,7 +176,7 @@ class KbotMdKbFilesRepository:
             await session.commit()
             return True
         
-    async def update_file_parsed_metadata(self, file_id:int, parsed_metadata: str) -> bool:
+    async def update_file_parsed_metadata(self, file_id: str, parsed_metadata: str) -> bool:
         """Update the parse metadata of a knowledge base file record."""
         async with get_session() as session:
             await session.execute(
