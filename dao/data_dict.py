@@ -81,10 +81,10 @@ class PromptCategory(int, Enum):
 
 class SplitStrategy(int, Enum):
     """Split strategy enumeration."""
-    SELF_SPLIT = 1
-    BY_DOCSTRUCTURE = 2
-    BY_PAGE = 3
-    BY_SEMANTIC = 4
+    FIXED_SIZE = 1
+    PARAGRAPH = 2
+    PAGE = 3
+    SEMANTIC = 4
 
 class AgentStatus(int, Enum):
     """Agent status enumeration."""

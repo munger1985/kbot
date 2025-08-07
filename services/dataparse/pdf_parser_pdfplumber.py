@@ -35,16 +35,20 @@ class PDFPlumberParser:
         self.tables_dir.mkdir(parents=True, exist_ok=True)
 
         self.text_content: list[dict] = []
+        self.text_chunks: list[dict] = []
         self.images_info: list[dict] = []
         self.tables_info: list[dict] = []
         self.page_content: list[dict] = []  # Stores complete page content with placeholders
 
+        self.chunk_size=0
+        self.chunk_overlap=0
+
     async def parse(self) -> bool:
         """Main parsing method with optimized flow"""
-        split_strategy = int(self.file_params.parser.get("split_strategy", SplitStrategy.SELF_SPLIT.value))
+        split_strategy = int(self.file_params.parser.get("split_strategy", SplitStrategy.FIXED_SIZE.value))
         file_repo = KbotMdKbFilesRepository()
 
-        if split_strategy == SplitStrategy.BY_PAGE.value:
+        if split_strategy == SplitStrategy.PAGE.value:
             try:
                 # Extract all content by page
                 self.extract_all_per_page()
@@ -68,8 +72,32 @@ class PDFPlumberParser:
                     str(e)
                 )
                 return False
-        #elif split_strategy == SplitStrategy.SELF_SPLIT.value:
-            # TODO: Add other strategies for PDF processing
+        elif split_strategy == SplitStrategy.FIXED_SIZE.value:
+            try:
+                self.chunk_size = int(self.file_params.parser.get("chunk_size", 500))
+                self.chunk_overlap = int(self.file_params.parser.get("chunk_overlap", 50))
+
+                self.extract_all_by_fixed_size()
+
+                # Process text and table embeddings
+                if not await self._process_embeddings2():
+                    return False
+
+                # Save parsed metadata
+                parsed_metadata = self.make_parsed_metadata()
+                await file_repo.update_file_parsed_metadata(self.file_params.file_id, parsed_metadata)
+
+                self.print_summary()
+                return True
+
+            except Exception as e:
+                logger.error(f"Error processing PDF file: {str(e)}")
+                await file_repo.update_file_status(
+                    self.file_params.file_id,
+                    FileStatus.PARSE_FAILED,
+                    str(e)
+                )
+                return False
 
         else:
             logger.warning(f"Unrecognized split strategy: {split_strategy}")
@@ -100,9 +128,9 @@ class PDFPlumberParser:
             chunks.append(text_item['text'])
             chunk_metas.append({
                 "chunk_type": ChunkType.TEXT,
-                "split_strategy": SplitStrategy.BY_PAGE.value,
+                "split_strategy": SplitStrategy.PAGE.value,
                 "file_path": str(self.pdf_path),
-                "page_num": text_item['page']
+                "page_num": text_item['page_num']
             })
 
         # Add table content
@@ -116,9 +144,82 @@ class PDFPlumberParser:
                     chunks.append(table_text)
                     chunk_metas.append({
                         "chunk_type": ChunkType.TABLE,
-                        "split_strategy": SplitStrategy.BY_PAGE.value,
+                        "split_strategy": SplitStrategy.PAGE.value,
                         "file_path": str(self.pdf_path),
-                        "page_num": table['page']
+                        "page_num": table['page_num']
+                    })
+
+        if not chunks:
+            logger.warning("No valid content chunks found for embedding")
+            return True  # Consider empty content as success
+
+        # Get all embeddings in one call
+        embeddings_list = await call_embedding_model(model_unique_name, chunks)
+        if not embeddings_list or len(embeddings_list) != len(chunks):
+            msg = f"Embedding model {model_unique_name} returned invalid results (expected {len(chunks)}, got {len(embeddings_list) if embeddings_list else 0})"
+            logger.error(msg)
+            await self._update_file_status(FileStatus.PARSE_FAILED, msg)
+            return False
+
+        # Create embedding entities
+        embed_entities = []
+        for idx, (chunk, meta) in enumerate(zip(chunks, chunk_metas)):
+            embed_entity = KbotBizTxtEmbedding(
+                embed_id=str(uuid.uuid4()),
+                chunk_doc=chunk,
+                chunk_metadata=json.dumps(meta),
+                file_id=self.file_params.file_id,
+                embedding=embeddings_list[idx].embedding
+            )
+            embed_entities.append(embed_entity)
+
+        # Save all embeddings in one batch
+        if not await self._save_embeddings(embed_entities):
+            return False
+
+        return True
+    async def _process_embeddings2(self) -> bool:
+        """Process text and table embeddings for by fixed size"""
+        model_unique_name = await KbotMdModelsRepository().get_unique_name_by_id(
+            self.file_params.txt_embed_model # type: ignore
+        )
+        if not model_unique_name:
+            msg = f"Embedding model not found for id: {self.file_params.txt_embed_model}"
+            logger.error(msg)
+            await self._update_file_status(FileStatus.PARSE_FAILED, msg)
+            return False
+
+        # Prepare all content chunks for embedding
+        chunks = []
+        chunk_metas = []
+
+        # Add text content
+        for text_item in self.text_chunks:
+            if not text_item['text'].strip():
+                continue
+
+            chunks.append(text_item['text'])
+            chunk_metas.append({
+                "chunk_type": ChunkType.TEXT,
+                "split_strategy": SplitStrategy.FIXED_SIZE.value,
+                "file_path": str(self.pdf_path),
+                "page_num": text_item['page_num']
+            })
+
+        # Add table content
+        for table in self.tables_info:
+            if not self._is_table_valid(table['file_path']):
+                continue
+
+            with open(table['file_path'], 'r', encoding='utf-8') as f:
+                table_text = f.read()
+                if table_text.strip():
+                    chunks.append(table_text)
+                    chunk_metas.append({
+                        "chunk_type": ChunkType.TABLE,
+                        "split_strategy": SplitStrategy.PAGE.value,
+                        "file_path": str(self.pdf_path),
+                        "page_num": table['page_num']
                     })
 
         if not chunks:
@@ -208,6 +309,36 @@ class PDFPlumberParser:
             raise
 
         return self.text_content, self.images_info, self.tables_info
+    def extract_all_by_fixed_size(self) -> tuple[list[dict], list[dict], list[dict]]:
+        """Extract all content from PDF by page"""
+        logger.info(f"Parsing file: {self.pdf_path}")
+
+        try:
+            with pdfplumber.open(self.pdf_path) as pdf:
+                for page_num, page in enumerate(pdf.pages, 1):
+                    logger.info(f"Processing page {page_num}")
+
+                    # Extract text and tables
+                    page_text, page_tables = self._extract_text_and_tables(page, page_num)
+
+                    # Extract images
+                    page_images = self._extract_images_from_page(page_num)
+
+
+                    # Combine content
+                    # combined = self._combine_page_content(page_text, page_images, page_tables, page_num)
+                    # self.page_content.append({'page_num': page_num, 'content': page_text})
+
+        except Exception as e:
+            logger.error(f"Error parsing PDF: {e}")
+            raise
+        for page in self.text_content:
+            page_num = page['page_num']
+            content = page['content']
+            for chunk_start in range(0, len(content), self.chunk_size - self.chunk_overlap):
+                chunk_text = content[chunk_start:chunk_start + self.chunk_size]
+                self.text_chunks.append({'page_num': page_num, 'chunk': chunk_text})
+        return self.text_chunks, self.images_info, self.tables_info
 
     def _extract_text_and_tables(self, page, page_num: int) -> tuple[str, list[dict]]:
         """Extract text and tables from a page"""
@@ -232,7 +363,7 @@ class PDFPlumberParser:
                 table_info = {
                     'uuid': table_uuid,
                     'filename': csv_path.name,
-                    'page': page_num,
+                    'page_num': page_num,
                     'file_path': str(csv_path),
                     'rows': len(table_data),
                     'columns': len(table_data[0]) if table_data and table_data[0] else 0,
@@ -247,7 +378,7 @@ class PDFPlumberParser:
             page_text = page.extract_text() or ""
             if page_text.strip():
                 self.text_content.append({
-                    'page': page_num,
+                    'page_num': page_num,
                     'text': page_text.strip()
                 })
 
@@ -392,7 +523,9 @@ class PDFPlumberParser:
             return stream.get_rawdata(), 'bin', None
 
     def _combine_page_content(self, text: str, images: list[dict], tables: list[dict], page_num: int) -> str:
-        """Combine page content with placeholders"""
+        """Combine page content with placeholders
+        especially for split by page strategy
+        """
         content = [f"\n{'=' * 20} Page {page_num} {'=' * 20}\n"]
 
         if images:

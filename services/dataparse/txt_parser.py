@@ -56,7 +56,7 @@ async def process_txt(file_params: FileParams) -> bool:
         logger.debug(f"Chunk size: {chunk_size}, chunk overlap: {overlap}")
 
         # 根据策略选择分割方式: 根据chunk size和overlap切片
-        if split_strategy == SplitStrategy.SELF_SPLIT.value:
+        if split_strategy == SplitStrategy.FIXED_SIZE.value:
             # 文本分割逻辑
             if text_length <= chunk_size:
                 logger.debug(f"Text length {text_length} <= chunk size {chunk_size}, no need to split.")
@@ -67,10 +67,10 @@ async def process_txt(file_params: FileParams) -> bool:
         elif split_strategy == SplitStrategy.BY_DOCSTRUCTURE.value:
             pass
         # 根据策略选择分割方式: 根据文档分页切片
-        elif split_strategy == SplitStrategy.BY_PAGE.value:
+        elif split_strategy == SplitStrategy.PAGE.value:
             pass
         # 根据策略选择分割方式: 根据语义切片
-        elif split_strategy == SplitStrategy.BY_SEMANTIC.value:
+        elif split_strategy == SplitStrategy.SEMANTIC.value:
             pass
         else:
             msg = f"Invalid split strategy: {split_strategy}"
