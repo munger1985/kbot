@@ -73,7 +73,7 @@ class KbotBizTxtEmbeddingRepository:
             # Generate SQL
             sql = """
                 SELECT 
-                    EMBED_ID, KB_ID, FILE_ID, CHUNK_DOC, CHUNK_METADATA,
+                    FILE_ID, CHUNK_DOC, CHUNK_METADATA,
                     1 - VECTOR_DISTANCE(EMBEDDING, :query_vec, COSINE) AS similarity
                 FROM KBOT_BIZ_TXT_EMBEDDING
                 WHERE 1 - VECTOR_DISTANCE(EMBEDDING, :query_vec, COSINE) >= :threshold

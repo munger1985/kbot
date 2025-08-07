@@ -24,13 +24,13 @@ class AgentRerank:
             return kb_results
             
         # Extract chunk_docs from KBResult objects
-        chunk_docs = [result.chunk_doc for result in kb_results]
+        contonts = [result.content for result in kb_results]
         
         # Call reranker model
         rerankers = await call_reranker_model(
             model_unique_name=self.agent_params.reranker_model_name, # type: ignore
             query=question,
-            documents=chunk_docs,
+            documents=contonts,
             top_k=self.agent_params.reranker_top_k
         )
         
@@ -46,20 +46,19 @@ class AgentRerank:
 
             if index is not None and score is not None:
                 reranked_result = KBResult()
-                reranked_result.chunk_doc=kb_results[index].chunk_doc
-                reranked_result.embed_id=kb_results[index].embed_id
-                reranked_result.kb_id=kb_results[index].kb_id
                 reranked_result.file_id=kb_results[index].file_id
-                reranked_result.chunk_doc=kb_results[index].chunk_doc
-                reranked_result.chunk_metadata=kb_results[index].chunk_metadata
+                reranked_result.chunk_type=kb_results[index].chunk_type
+                reranked_result.chunk_file_path=kb_results[index].chunk_file_path
+                reranked_result.file_ext=kb_results[index].file_ext
+                reranked_result.page_num=kb_results[index].page_num
+                reranked_result.content=kb_results[index].content
                 reranked_result.similarity=kb_results[index].similarity
                 reranked_result.weight=kb_results[index].weight
-                reranked_result.rerank_score=score
+                reranked_result.reranker_score=score
                 reranked_results.append(reranked_result)
 
-                logger.debug(f"KBResult chunk_doc: {reranked_result.chunk_doc[0:20]}")
-                logger.debug(f"KBResult chunk_metadata: {reranked_result.chunk_metadata}")
-                logger.debug(f"KBResult rerank_score: {reranked_result.rerank_score}")
+                logger.debug(f"KBResult chunk_doc: {reranked_result.content[0:20]}")
+                logger.debug(f"KBResult reranker_score: {reranked_result.reranker_score}")
                 logger.debug(f"KBResult weight: {reranked_result.weight}")
                 
 

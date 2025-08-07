@@ -11,7 +11,7 @@ sys.path.insert(0, str(project_root))
 
 from dao.repositories.kbot_md_chat_session_repo import KbotMdChatSessionRepository
 
-key="session_1754010982.804123"
+key="session_1754552000.5921"
 
 
 
@@ -19,40 +19,26 @@ def create_sample_data():
     """创建符合要求的测试数据"""
     return {
         "SESSION_ID": "session_" + str(datetime.now().timestamp()),
-        "AGENT_ID": 2001,
-        "QA_PAIR": [
+        "AGENT_ID": 1,
+        "QA_DATA": [
             {
                 "question": "什么是人工智能?",
                 "answer": "人工智能是模拟人类智能的计算机系统",
-                "reference": [
+                "qa_embedding": "",
+                "references": [
                     {
-                        "content": "人工智能(AI)是指由机器展示的智能...",
-                        "doc_link": "https://example.com/ai.pdf",
-                        "similarity_score": 0.95,
-                        "reranker_score": 0.88,
+                        "chunk_type": 1,
+                        "chunk_file_path": "",
+                        "file_ext": ".pdf",
                         "page_num": 1,
-                        "source_file_ext": "pdf"
+                        "content": "人工智能(AI)是指由机器展示的智能...",
+                        "download_link": "https://example.com/ai.pdf",
+                        "preview_link": "https://example.com/ai.pdf",
+                        "similarity_score": 0.95,
+                        "reranker_score": 0.88
                     }
                 ],
                 "feedback": 0,
-                "by": "chris",
-                "request_time": "2025-07-31 12:00:00",
-                "response_time": "2025-07-31 12:00:01"
-            },
-            {
-                "question": "Redis是什么?",
-                "answer": "Redis是一个开源的内存数据结构存储",
-                "reference": [
-                    {
-                        "content": "Redis是一个开源的、支持网络、基于内存...",
-                        "doc_link": "https://example.com/redis.pdf",
-                        "similarity_score": 0.92,
-                        "reranker_score": 0.85,
-                        "page_num": 1,
-                        "source_file_ext": "pdf"
-                    }
-                ],
-                "feedback": 1,
                 "by": "chris",
                 "request_time": "2025-07-31 12:00:00",
                 "response_time": "2025-07-31 12:00:01"
@@ -98,19 +84,23 @@ async def get_all():
         print("\n堆栈跟踪:")
         print(traceback.format_exc())
 
-async def insert_qa_pair():
+async def insert_qa_data():
     # 创建测试数据
     data = """{
                 "question": "Redis是什么?",
                 "answer": "Redis是一个开源的内存数据结构存储",
-                "reference": [
+                "qa_embedding": "329195767893316712",
+                "references": [
                     {
+                        "chunk_type": 2,
+                        "chunk_file_path": "",
+                        "file_ext": ".pdf",
+                        "page_num": 2,
                         "content": "Redis是一个开源的、支持网络、基于内存...",
-                        "doc_link": "https://example.com/redis.pdf",
+                        "download_link": "https://example.com/redis.pdf",
+                        "preview_link": "https://example.com/redis.pdf",
                         "similarity_score": 0.92,
-                        "reranker_score": 0.85,
-                        "page_num": 1,
-                        "source_file_ext": "pdf"
+                        "reranker_score": 0.85
                     }
                 ],
                 "feedback": 1,
@@ -121,16 +111,16 @@ async def insert_qa_pair():
     sample_data = json.loads(data)
     # 写入Redis
     repo = KbotMdChatSessionRepository()
-    result = await repo.add_qa_pair(key, sample_data)
+    result = await repo.add_qa_data(key, sample_data)
     if result:
         print("写入Redis成功")
     else:
         print("写入Redis失败")
 
-async def get_qa_pair():
+async def get_qa_data():
 
     repo = KbotMdChatSessionRepository()
-    result = await repo.get_qa_pair(key, 0)
+    result = await repo.get_qa_data(key, 0)
     if result:
         print("\n从Redis查询到的数据:")
         print(json.dumps(result, indent=2, ensure_ascii=False))
@@ -151,7 +141,7 @@ async def update_qa_feedback():
         result = await repo.update_qa_feedback(key, 0, -1)
         if result:
             print("写入Redis成功")
-            await get_qa_pair()
+            await get_qa_data()
         else:
             print("写入Redis失败")
     except Exception as e:
@@ -161,11 +151,11 @@ async def update_qa_feedback():
         print("\n堆栈跟踪:")
         print(traceback.format_exc())
 
-async def get_last_qa_pair():
+async def get_last_qa_data():
     try:
         repo = KbotMdChatSessionRepository()
         print(f"正在查询Redis，session_id: {key}")
-        result = await repo.get_last_qa_pair(key)
+        result = await repo.get_last_qa_data(key)
         if result:
             print("\n从Redis查询到的数据:")
             print(json.dumps(result, indent=2, ensure_ascii=False))
@@ -178,14 +168,14 @@ async def get_last_qa_pair():
         print("\n堆栈跟踪:")
         print(traceback.format_exc())
 
-async def update_last_qa_pair_answer():
+async def update_last_qa_data_answer():
     try:
         repo = KbotMdChatSessionRepository()
         print(f"正在写入Redis，session_id: {key}")
-        result = await repo.update_last_qa_pair_answer(key, "Redis啊redis")
+        result = await repo.update_last_qa_data_answer(key, "Redis啊redis")
         if result:
             print("写入Redis成功")
-            await get_last_qa_pair()
+            await get_last_qa_data()
         else:
             print("写入Redis失败")
     except Exception as e:
