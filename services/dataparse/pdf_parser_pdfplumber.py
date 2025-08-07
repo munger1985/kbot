@@ -40,8 +40,8 @@ class PDFPlumberParser:
         self.tables_info: list[dict] = []
         self.page_content: list[dict] = []  # Stores complete page content with placeholders
 
-        self.chunk_size=0
-        self.chunk_overlap=0
+        self.chunk_size = 0
+        self.chunk_overlap = 0
 
     async def parse(self) -> bool:
         """Main parsing method with optimized flow"""
@@ -60,15 +60,15 @@ class PDFPlumberParser:
                 # Save parsed metadata
                 parsed_metadata = self.make_parsed_metadata()
                 await file_repo.update_file_parsed_metadata(self.file_params.file_id, parsed_metadata)
-                
+
                 self.print_summary()
                 return True
 
             except Exception as e:
                 logger.error(f"Error processing PDF file: {str(e)}")
                 await file_repo.update_file_status(
-                    self.file_params.file_id, 
-                    FileStatus.PARSE_FAILED, 
+                    self.file_params.file_id,
+                    FileStatus.PARSE_FAILED,
                     str(e)
                 )
                 return False
@@ -91,6 +91,8 @@ class PDFPlumberParser:
                 return True
 
             except Exception as e:
+                print(e)
+
                 logger.error(f"Error processing PDF file: {str(e)}")
                 await file_repo.update_file_status(
                     self.file_params.file_id,
@@ -103,12 +105,10 @@ class PDFPlumberParser:
             logger.warning(f"Unrecognized split strategy: {split_strategy}")
             return False
 
-    
-
     async def _process_embeddings(self) -> bool:
         """Process all content embeddings in a unified way"""
         model_unique_name = await KbotMdModelsRepository().get_unique_name_by_id(
-            self.file_params.txt_embed_model # type: ignore
+            self.file_params.txt_embed_model  # type: ignore
         )
         if not model_unique_name:
             msg = f"Embedding model not found for id: {self.file_params.txt_embed_model}"
@@ -119,17 +119,17 @@ class PDFPlumberParser:
         # Prepare all content chunks for embedding
         chunks = []
         chunk_metas = []
-        
+
         # Add text content
         for text_item in self.text_content:
             if not text_item['text'].strip():
                 continue
-            
+
             chunks.append(text_item['text'])
             chunk_metas.append({
                 "chunk_type": ChunkType.TEXT,
-                "split_strategy": SplitStrategy.PAGE.value,
-                "file_path": str(self.pdf_path),
+                # "split_strategy": SplitStrategy.PAGE.value,
+                # "file_path": str(self.pdf_path),
                 "page_num": text_item['page_num']
             })
 
@@ -137,15 +137,15 @@ class PDFPlumberParser:
         for table in self.tables_info:
             if not self._is_table_valid(table['file_path']):
                 continue
-            
+
             with open(table['file_path'], 'r', encoding='utf-8') as f:
                 table_text = f.read()
                 if table_text.strip():
                     chunks.append(table_text)
                     chunk_metas.append({
                         "chunk_type": ChunkType.TABLE,
-                        "split_strategy": SplitStrategy.PAGE.value,
-                        "file_path": str(self.pdf_path),
+                        # "split_strategy": SplitStrategy.PAGE.value,
+                        # "file_path": str(self.pdf_path),
                         "page_num": table['page_num']
                     })
 
@@ -165,6 +165,7 @@ class PDFPlumberParser:
         embed_entities = []
         for idx, (chunk, meta) in enumerate(zip(chunks, chunk_metas)):
             embed_entity = KbotBizTxtEmbedding(
+                kb_id=self.file_params.kb_id,
                 embed_id=str(uuid.uuid4()),
                 chunk_doc=chunk,
                 chunk_metadata=json.dumps(meta),
@@ -178,10 +179,11 @@ class PDFPlumberParser:
             return False
 
         return True
+
     async def _process_embeddings2(self) -> bool:
         """Process text and table embeddings for by fixed size"""
         model_unique_name = await KbotMdModelsRepository().get_unique_name_by_id(
-            self.file_params.txt_embed_model # type: ignore
+            self.file_params.txt_embed_model  # type: ignore
         )
         if not model_unique_name:
             msg = f"Embedding model not found for id: {self.file_params.txt_embed_model}"
@@ -238,6 +240,7 @@ class PDFPlumberParser:
         embed_entities = []
         for idx, (chunk, meta) in enumerate(zip(chunks, chunk_metas)):
             embed_entity = KbotBizTxtEmbedding(
+                kb_id=self.file_params.kb_id,
                 embed_id=str(uuid.uuid4()),
                 chunk_doc=chunk,
                 chunk_metadata=json.dumps(meta),
@@ -251,8 +254,6 @@ class PDFPlumberParser:
             return False
 
         return True
-
-    
 
     async def _save_embeddings(self, embeddings: list[KbotBizTxtEmbedding]) -> list[KbotBizTxtEmbedding] | None:
         """Save embeddings to database with error handling"""
@@ -280,8 +281,8 @@ class PDFPlumberParser:
     async def _update_file_status(self, status: FileStatus, message: str) -> None:
         """Helper method to update file status"""
         await KbotMdKbFilesRepository().update_file_status(
-            self.file_params.file_id, 
-            status, 
+            self.file_params.file_id,
+            status,
             message
         )
 
@@ -293,22 +294,24 @@ class PDFPlumberParser:
             with pdfplumber.open(self.pdf_path) as pdf:
                 for page_num, page in enumerate(pdf.pages, 1):
                     logger.info(f"Processing page {page_num}")
-                    
+
                     # Extract text and tables
                     page_text, page_tables = self._extract_text_and_tables(page, page_num)
-                    
+
                     # Extract images
                     page_images = self._extract_images_from_page(page_num)
-                    
+
                     # Combine content
                     combined = self._combine_page_content(page_text, page_images, page_tables, page_num)
-                    self.page_content.append({'page': page_num, 'content': combined})
+                    self.page_content.append({'page_num': page_num, 'content': combined})
+                    print(445, combined)
 
         except Exception as e:
             logger.error(f"Error parsing PDF: {e}")
             raise
 
         return self.text_content, self.images_info, self.tables_info
+
     def extract_all_by_fixed_size(self) -> tuple[list[dict], list[dict], list[dict]]:
         """Extract all content from PDF by page"""
         logger.info(f"Parsing file: {self.pdf_path}")
@@ -324,7 +327,6 @@ class PDFPlumberParser:
                     # Extract images
                     page_images = self._extract_images_from_page(page_num)
 
-
                     # Combine content
                     # combined = self._combine_page_content(page_text, page_images, page_tables, page_num)
                     # self.page_content.append({'page_num': page_num, 'content': page_text})
@@ -334,10 +336,10 @@ class PDFPlumberParser:
             raise
         for page in self.text_content:
             page_num = page['page_num']
-            content = page['content']
+            content = page['text']
             for chunk_start in range(0, len(content), self.chunk_size - self.chunk_overlap):
                 chunk_text = content[chunk_start:chunk_start + self.chunk_size]
-                self.text_chunks.append({'page_num': page_num, 'chunk': chunk_text})
+                self.text_chunks.append({'page_num': page_num, 'text': chunk_text})
         return self.text_chunks, self.images_info, self.tables_info
 
     def _extract_text_and_tables(self, page, page_num: int) -> tuple[str, list[dict]]:
@@ -355,7 +357,7 @@ class PDFPlumberParser:
 
                 table_uuid = str(uuid.uuid4())
                 csv_path = self.tables_dir / f"table_{table_uuid}.csv"
-                
+
                 # Save as CSV
                 df = pd.DataFrame(table_data[1:], columns=table_data[0] if table_data[0] else None)
                 df.to_csv(csv_path, index=False, encoding='utf-8-sig')
@@ -369,7 +371,7 @@ class PDFPlumberParser:
                     'columns': len(table_data[0]) if table_data and table_data[0] else 0,
                     'bbox': table.bbox
                 }
-                
+
                 self.tables_info.append(table_info)
                 page_tables.append(table_info)
                 logger.debug(f"Saved table: {csv_path} (page {page_num})")
@@ -397,7 +399,7 @@ class PDFPlumberParser:
                 rsrcmgr = PDFResourceManager()
                 device = PDFPageAggregator(rsrcmgr, laparams=LAParams())
                 interpreter = PDFPageInterpreter(rsrcmgr, device)
-                
+
                 for current_page_num, page in enumerate(PDFPage.get_pages(file), 1):
                     if current_page_num == page_num:
                         interpreter.process_page(page)
@@ -441,7 +443,7 @@ class PDFPlumberParser:
 
             image_data, ext, pil_image = result
             image_uuid = str(uuid.uuid4())
-            
+
             # Save image
             if pil_image:
                 image_path = self.images_dir / f"{image_uuid}.png"
@@ -463,7 +465,7 @@ class PDFPlumberParser:
             image_info = {
                 'uuid': image_uuid,
                 'filename': image_path.name,
-                'page': page_num,
+                'page_num': page_num,
                 'file_path': str(image_path),
                 'width': width,
                 'height': height,
@@ -545,14 +547,14 @@ class PDFPlumberParser:
     def make_parsed_metadata(self) -> str:
         """Generate metadata JSON with placeholders"""
         valid_tables = [t for t in self.tables_info if self._is_table_valid(t['file_path'])]
-        
+
         metadata = {
             'images': [
                 {
                     'uuid': img['uuid'],
                     'placeholder': f"[image:{img['uuid']}]",
                     'filename': img['filename'],
-                    'page': img['page'],
+                    'page_num': img['page_num'],
                     'file_path': img['file_path']
                 } for img in self.images_info
             ],
@@ -561,12 +563,12 @@ class PDFPlumberParser:
                     'uuid': table['uuid'],
                     'placeholder': f"[table:{table['uuid']}]",
                     'filename': table['filename'],
-                    'page': table['page'],
+                    'page_num': table['page_num'],
                     'file_path': table['file_path']
                 } for table in valid_tables
             ]
         }
-        
+
         return json.dumps(metadata, ensure_ascii=False, indent=2)
 
     def _is_table_valid(self, csv_path: str) -> bool:
@@ -582,28 +584,28 @@ class PDFPlumberParser:
         """Save all extracted results to files"""
         try:
             # Save text with placeholders
-            full_text = "\n".join(page['content'] for page in self.page_content)
-            (self.output_dir / "extracted_text_with_placeholders.txt").write_text(full_text, encoding='utf-8')
+            # full_text = "\n".join(page['content'] for page in self.page_content)
+            # (self.output_dir / "extracted_text_with_placeholders.txt").write_text(full_text, encoding='utf-8')
 
             # Save pure text
-            pure_text = "\n".join(item['text'] for item in self.text_content)
-            (self.output_dir / "extracted_text_only.txt").write_text(pure_text, encoding='utf-8')
+            # pure_text = "\n".join(item['text'] for item in self.text_content)
+            # (self.output_dir / "extracted_text_only.txt").write_text(pure_text, encoding='utf-8')
 
             # Save metadata files
-            (self.output_dir / "images_info.json").write_text(
-                json.dumps(self.images_info, ensure_ascii=False, indent=2),
-                encoding='utf-8'
-            )
-            
-            (self.output_dir / "tables_info.json").write_text(
-                json.dumps(self.tables_info, ensure_ascii=False, indent=2),
-                encoding='utf-8'
-            )
-            
-            (self.output_dir / "placeholders_mapping.json").write_text(
-                self.make_parsed_metadata(),
-                encoding='utf-8'
-            )
+            # (self.output_dir / "images_info.json").write_text(
+            #     json.dumps(self.images_info, ensure_ascii=False, indent=2),
+            #     encoding='utf-8'
+            # )
+
+            # (self.output_dir / "tables_info.json").write_text(
+            #     json.dumps(self.tables_info, ensure_ascii=False, indent=2),
+            #     encoding='utf-8'
+            # )
+
+            # (self.output_dir / "placeholders_mapping.json").write_text(
+            #     self.make_parsed_metadata(),
+            #     encoding='utf-8'
+            # )
 
             logger.info(f"All results saved to: {self.output_dir}")
 
@@ -620,9 +622,9 @@ class PDFPlumberParser:
         logger.info(f"Tables extracted: {len(self.tables_info)}")
         logger.info(f"Output directory: {self.output_dir}")
 
-        pages_with_text = {item['page'] for item in self.text_content}
-        pages_with_images = {item['page'] for item in self.images_info}
-        pages_with_tables = {item['page'] for item in self.tables_info}
+        pages_with_text = {item['page_num'] for item in self.text_content}
+        pages_with_images = {item['page_num'] for item in self.images_info}
+        pages_with_tables = {item['page_num'] for item in self.tables_info}
 
         logger.info(f"Pages with text: {len(pages_with_text)}")
         logger.info(f"Pages with images: {len(pages_with_images)}")
@@ -651,96 +653,97 @@ class PDFPlumberParser:
     #             return False
 
     #         return True
-    
+
     # async def _create_text_embeddings(self, model_unique_name: str) -> list[KbotBizTxtEmbedding] | None:
-        #     """Create embeddings for text content"""
-        #     texts = [item['text'] for item in self.text_content if item['text'].strip()]
-        #     if not texts:
-        #         return []
+    #     """Create embeddings for text content"""
+    #     texts = [item['text'] for item in self.text_content if item['text'].strip()]
+    #     if not texts:
+    #         return []
 
-        #     embeddings_list = await call_embedding_model(model_unique_name, texts)
-        #     if not embeddings_list:
-        #         msg = f"Embedding model {model_unique_name} returned None."
-        #         logger.error(msg)
-        #         await self._update_file_status(FileStatus.PARSE_FAILED, msg)
-        #         return None
+    #     embeddings_list = await call_embedding_model(model_unique_name, texts)
+    #     if not embeddings_list:
+    #         msg = f"Embedding model {model_unique_name} returned None."
+    #         logger.error(msg)
+    #         await self._update_file_status(FileStatus.PARSE_FAILED, msg)
+    #         return None
 
-        #     embed_entities = []
-        #     for idx, text_item in enumerate(self.text_content):
-        #         if not text_item['text'].strip():
-        #             continue
+    #     embed_entities = []
+    #     for idx, text_item in enumerate(self.text_content):
+    #         if not text_item['text'].strip():
+    #             continue
 
-        #         embed_entity = KbotBizTxtEmbedding(
-        #             embed_id=str(uuid.uuid4()),
-        #             chunk_doc=text_item['text'],
-        #             chunk_metadata=json.dumps({
-        #                 "chunk_type": ChunkType.TEXT,
-        #                 "split_strategy": SplitStrategy.BY_PAGE.value,
-        #                 "file_path": str(self.pdf_path),
-        #                 "page_num": text_item['page']
-        #             }),
-        #             file_id=self.file_params.file_id,
-        #             embedding=embeddings_list[idx].embedding
-        #         )
-        #         embed_entities.append(embed_entity)
+    #         embed_entity = KbotBizTxtEmbedding(
+    #             embed_id=str(uuid.uuid4()),
+    #             chunk_doc=text_item['text'],
+    #             chunk_metadata=json.dumps({
+    #                 "chunk_type": ChunkType.TEXT,
+    #                 "split_strategy": SplitStrategy.BY_PAGE.value,
+    #                 "file_path": str(self.pdf_path),
+    #                 "page_num": text_item['page_num']
+    #             }),
+    #             file_id=self.file_params.file_id,
+    #             embedding=embeddings_list[idx].embedding
+    #         )
+    #         embed_entities.append(embed_entity)
 
-        #     return await self._save_embeddings(embed_entities)
+    #     return await self._save_embeddings(embed_entities)
 
-        # async def _create_table_embeddings(self, model_unique_name: str) -> list[KbotBizTxtEmbedding] | None:
-        #     """Create embeddings for table content"""
-        #     texts = []
-        #     valid_tables = []
-            
-        #     for table in self.tables_info:
-        #         if not self._is_table_valid(table['file_path']):
-        #             continue
-                
-        #         with open(table['file_path'], 'r', encoding='utf-8') as f:
-        #             table_text = f.read()
-        #             if table_text.strip():
-        #                 texts.append(table_text)
-        #                 valid_tables.append(table)
+    # async def _create_table_embeddings(self, model_unique_name: str) -> list[KbotBizTxtEmbedding] | None:
+    #     """Create embeddings for table content"""
+    #     texts = []
+    #     valid_tables = []
 
-        #     if not texts:
-        #         return []
+    #     for table in self.tables_info:
+    #         if not self._is_table_valid(table['file_path']):
+    #             continue
 
-        #     embeddings_list = await call_embedding_model(model_unique_name, texts)
-        #     if not embeddings_list:
-        #         msg = f"Embedding model {model_unique_name} returned None."
-        #         logger.error(msg)
-        #         await self._update_file_status(FileStatus.PARSE_FAILED, msg)
-        #         return None
+    #         with open(table['file_path'], 'r', encoding='utf-8') as f:
+    #             table_text = f.read()
+    #             if table_text.strip():
+    #                 texts.append(table_text)
+    #                 valid_tables.append(table)
 
-        #     embed_entities = []
-        #     for idx, table in enumerate(valid_tables):
-        #         with open(table['file_path'], 'r', encoding='utf-8') as f:
-        #             table_text = f.read()
-        #             if not table_text.strip():
-        #                 continue
+    #     if not texts:
+    #         return []
 
-        #             embed_entity = KbotBizTxtEmbedding(
-        #                 embed_id=str(uuid.uuid4()),
-        #                 chunk_doc=table_text,
-        #                 chunk_metadata=json.dumps({
-        #                     "chunk_type": ChunkType.TEXT,
-        #                     "split_strategy": SplitStrategy.BY_PAGE.value,
-        #                     "file_path": str(self.pdf_path),
-        #                     "page_num": table['page']
-        #                 }),
-        #                 file_id=self.file_params.file_id,
-        #                 embedding=embeddings_list[idx].embedding
-        #             )
-        #             embed_entities.append(embed_entity)
+    #     embeddings_list = await call_embedding_model(model_unique_name, texts)
+    #     if not embeddings_list:
+    #         msg = f"Embedding model {model_unique_name} returned None."
+    #         logger.error(msg)
+    #         await self._update_file_status(FileStatus.PARSE_FAILED, msg)
+    #         return None
 
-        #     return await self._save_embeddings(embed_entities)
+    #     embed_entities = []
+    #     for idx, table in enumerate(valid_tables):
+    #         with open(table['file_path'], 'r', encoding='utf-8') as f:
+    #             table_text = f.read()
+    #             if not table_text.strip():
+    #                 continue
+
+    #             embed_entity = KbotBizTxtEmbedding(
+    #                 embed_id=str(uuid.uuid4()),
+    #                 chunk_doc=table_text,
+    #                 chunk_metadata=json.dumps({
+    #                     "chunk_type": ChunkType.TEXT,
+    #                     "split_strategy": SplitStrategy.BY_PAGE.value,
+    #                     "file_path": str(self.pdf_path),
+    #                     "page_num": table['page_num']
+    #                 }),
+    #                 file_id=self.file_params.file_id,
+    #                 embedding=embeddings_list[idx].embedding
+    #             )
+    #             embed_entities.append(embed_entity)
+
+    #     return await self._save_embeddings(embed_entities)
+
 
 async def process_pdf(file_params: FileParams) -> bool:
     """
     Process PDF file by extracting content and generating embeddings
-    
+
     Args:
         file_params: File parameters including path and processing options
-        
+
     Returns:
         bool: True if processing succeeded, False otherwise
     """
@@ -754,16 +757,16 @@ async def process_pdf(file_params: FileParams) -> bool:
         if r:
             msg = f"Successfully parsed {file_params.file_path} (file id: {file_params.file_id})"
             await KbotMdKbFilesRepository().update_file_status(
-                file_params.file_id, 
-                FileStatus.PARSED, 
+                file_params.file_id,
+                FileStatus.PARSED,
                 str(msg)
             )
             return True
         else:
             msg = f"Failed to parse {file_params.file_path} (file id: {file_params.file_id})"
             await KbotMdKbFilesRepository().update_file_status(
-                file_params.file_id, 
-                FileStatus.PARSE_FAILED, 
+                file_params.file_id,
+                FileStatus.PARSE_FAILED,
                 str(msg)
             )
             return False
@@ -771,8 +774,8 @@ async def process_pdf(file_params: FileParams) -> bool:
         msg = f"Error processing PDF file: {file_params.file_path}, error: {str(e)}"
         logger.error(msg)
         await KbotMdKbFilesRepository().update_file_status(
-            file_params.file_id, 
-            FileStatus.PARSE_FAILED, 
+            file_params.file_id,
+            FileStatus.PARSE_FAILED,
             msg
         )
         return False
