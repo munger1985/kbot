@@ -18,45 +18,30 @@ async def agent_chat(form: AgentChatForm) -> dict[str, Any]:
         agent = Agent(agent_id=form.agent_id, security=form.security_level)
         results = await agent.chat(question=form.question)
         sess_repo = KbotMdChatSessionRepository()
+        
+        # 1. 根据session_id从Redis中获取问答pair
+        redis_data = await sess_repo.get_session(session_id=form.session_id)
 
-        if results is None or len(results) == 0:
-            # 第一次提问
-            logger.debug(f"第1次提问，保存到Redis")
-            redis_data = {
-                "session_id": form.session_id, 
-                "agent_id": form.agent_id, 
-                "qa_data": [{
-                    "question": form.question,
-                    "answer": "",
-                    "qa_embedding": "",
-                    "references": [],
-                    "feedback": 0,
-                    "by": form.by,
-                    "request_time": form.request_time,
-                    "response_time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    }]
-                }
-            logger.debug(f"第一次提问，保存到Redis：{redis_data}")
-            r = await sess_repo.create_session(redis_data)
-        else:
-            # 非第一次提问，追加问答对 qa_data
+        if redis_data:
+            # 非第一次提问
             references = []
-            logger.debug(f"Got {len(results)} matched references.")
             host = os.getenv("KBOT_HOST", "localhost")
             port = os.getenv("KBOT_PORT", "8000")
             url = f"http://{host}:{port}"
-            for kb_result in results:
-                reference = {
-                    "chunk_type": kb_result.chunk_type,
-                    "page_num": kb_result.page_num,
-                    "content": kb_result.content,
-                    "download_link": f"{url}/file/download?file_id={kb_result.file_id}",
-                    "preview_link": f"{url}/file/preview?file_id={kb_result.file_id}",
-                    "similarity_score": kb_result.similarity,
-                    "reranker_score": kb_result.reranker_score
-                }
-                references.append(reference)
-
+            if results and len(results) > 0:
+                # 获取到引用结果
+                for kb_result in results:
+                    reference = {
+                        "chunk_type": kb_result.chunk_type,
+                        "page_num": kb_result.page_num,
+                        "content": kb_result.content,
+                        "download_link": f"{url}/file/download?file_id={kb_result.file_id}",
+                        "preview_link": f"{url}/file/preview?file_id={kb_result.file_id}",
+                        "similarity_score": kb_result.similarity,
+                        "reranker_score": kb_result.reranker_score
+                    }
+                    references.append(reference)
+            # 构建问答pair
             qa_data= {
                         "question": form.question,
                         "answer": "",
@@ -67,15 +52,54 @@ async def agent_chat(form: AgentChatForm) -> dict[str, Any]:
                         "request_time": form.request_time,
                         "response_time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     }
-            # 将新的问题和答案qa_data存入Redis        
+            # 将问答对追加存入Redis
             r = await sess_repo.add_qa_data(session_id=form.session_id, qa_data=qa_data)
-            redis_data = await sess_repo.get_session(session_id=form.session_id)
+        
+        else:
+            # 第一次提问
+            references = []
+            
+            if results and len(results) > 0:
+                # 获取到引用结果
+                host = os.getenv("KBOT_HOST", "localhost")
+                port = os.getenv("KBOT_PORT", "8000")
+                url = f"http://{host}:{port}"
+                for kb_result in results:
+                    reference = {
+                        "chunk_type": kb_result.chunk_type,
+                        "page_num": kb_result.page_num,
+                        "content": kb_result.content,
+                        "download_link": f"{url}/file/download?file_id={kb_result.file_id}",
+                        "preview_link": f"{url}/file/preview?file_id={kb_result.file_id}",
+                        "similarity_score": kb_result.similarity,
+                        "reranker_score": kb_result.reranker_score
+                    }
+                    references.append(reference)
+            # 构建问答pair
+            qa_data = {
+                        "question": form.question,
+                        "answer": "",
+                        "qa_embedding": "",
+                        "references": references,
+                        "feedback": 0,
+                        "by": form.by,
+                        "request_time": form.request_time,
+                        "response_time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    }
+            # 构建完整session数据结构
+            redis_data = {
+                "session_id": form.session_id, 
+                "agent_id": form.agent_id, 
+                "qa_data": [qa_data]
+                }
+            # 将完整session数据写入Redis
+            r = await sess_repo.create_session(redis_data)
 
         if r:
             logger.debug(f"Successfully writed to Redis，session id: {form.session_id}")
         else:
             logger.warning(f"Fail to write to Redis，session id: {form.session_id}")
-        return redis_data
+        return qa_data
     
     except Exception as e:
         raise e
