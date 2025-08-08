@@ -41,11 +41,14 @@ class KBSearch:
                 logger.debug("Search method: vector")
                 return await self.search_by_vector(question, security)
             elif self.tool_params.search_type == KBSearchType.FULLTEXT.value:
-                pass
+                logger.debug("Search method: full text")
+                return await self.serch_by_full_text(question, security)
             elif self.tool_params.search_type == KBSearchType.SUMMARY.value:
-                pass
+                logger.debug("Search method: summary")
+                return await self.search_by_summary(question, security)
             elif self.tool_params.search_type == KBSearchType.GRAPH.value:
-                pass
+                logger.debug("Search method: graph")
+                return await self.search_by_graph(question, security)
             else:
                 logger.warning(f"Search method not implemented for KB {self.tool_params.tool_id}")
                 pass
@@ -119,3 +122,12 @@ class KBSearch:
         except Exception as e:
             logger.debug(f"Vector search failed: {str(e)}")
             return None
+        
+    async def serch_by_full_text(self, question: str, security: int) -> list[KBResult] | None:
+        pass
+
+    async def search_by_summary(self, question: str, security: int) -> list[KBResult] | None:
+        pass
+    
+    async def search_by_graph(self, question: str, security: int) -> list[KBResult] | None:
+        pass

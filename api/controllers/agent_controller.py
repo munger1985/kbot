@@ -17,10 +17,9 @@ async def agent_chat(form: AgentChatForm) -> dict[str, Any]:
     try:
         agent = Agent(agent_id=form.agent_id, security=form.security_level)
         results = await agent.chat(question=form.question)
+        sess_repo = KbotMdChatSessionRepository()
         if results is None:
-            logger.warning("No results found")
-            # 知识库如果没有查询到结果，需要返回一个空的数据结构
-            # 用以更新session中的问答记录
+            # 第一次提问
             redis_data={"session_id": form.session_id, 
                         "agent_id": form.agent_id, 
                         "qa_data": [{
@@ -34,12 +33,12 @@ async def agent_chat(form: AgentChatForm) -> dict[str, Any]:
                             "response_time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                             }]
                         }
+            r = await sess_repo.create_session(redis_data)
 
         else:
-            # 根据结果构建Redis数据结构并存入Redis
-            # 根据返回的KBResult构建问题参考答案
+            # 非第一次提问，追加问答对 qa_data
             references = []
-            logger.debug(f"Got {len(results)} KB results.")
+            logger.debug(f"Got {len(results)} matched references.")
             host = os.getenv("KBOT_HOST", "localhost")
             port = os.getenv("KBOT_PORT", "8000")
             url = f"http://{host}:{port}"
@@ -55,26 +54,26 @@ async def agent_chat(form: AgentChatForm) -> dict[str, Any]:
                 }
                 references.append(reference)
 
-            redis_data={"session_id": form.session_id, 
-                        "agent_id": form.agent_id, 
-                        "qa_data": [{
-                            "question": form.question,
-                            "answer": "",
-                            "qa_embedding": "",
-                            "references": references,
-                            "feedback": 0,
-                            "by": form.by,
-                            "request_time": form.request_time,
-                            "response_time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                            }]
-                        }
-        sess_repo = KbotMdChatSessionRepository()
-        r = await sess_repo.create_session(redis_data)
+            qa_data= {
+                        "question": form.question,
+                        "answer": "",
+                        "qa_embedding": "",
+                        "references": references,
+                        "feedback": 0,
+                        "by": form.by,
+                        "request_time": form.request_time,
+                        "response_time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    }
+            # 将新的问题和答案qa_data存入Redis        
+            r = await sess_repo.add_qa_data(session_id=form.session_id, qa_data=qa_data)
+            redis_data = await sess_repo.get_session(session_id=form.session_id)
+
         if r:
             logger.debug(f"Successfully writed to Redis，session id: {form.session_id}")
         else:
             logger.warning(f"Fail to write to Redis，session id: {form.session_id}")
-        return redis_data
+        return redis_data # type: ignore
+    
     except Exception as e:
         raise e
 
@@ -118,7 +117,7 @@ async def agent_stream_chat(session_id: str) -> AsyncGenerator[str, None]:
     if prompt_content is None:
         prompt_template = "根据参考内容回答问题。\n\n参考内容:{context}\n\n回答的问题:{question}"
     else:
-        prompt_template = await lob_to_string(prompt_content)
+        prompt_template = prompt_content
         
     # 4. 从返回的qa_data中提取问题参考答案构建LLM提示词
     context = ""
@@ -128,7 +127,7 @@ async def agent_stream_chat(session_id: str) -> AsyncGenerator[str, None]:
     # 5. 从返回的qa_data中提取问题构建LLM问题
     question = last_qa_data["question"]
 
-    prompt = prompt_template.format(context=context.strip(), question=question)
+    prompt = prompt_template.format(context=context.strip(), question=question) # type: ignore
         
     # 6. 根据LLM模型ID获取LLM模型
     model_unique_name = await KbotMdModelsRepository().get_unique_name_by_id(model_id) # type: ignore
