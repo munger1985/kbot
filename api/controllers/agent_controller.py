@@ -18,6 +18,9 @@ async def agent_chat(form: AgentChatForm) -> dict[str, Any]:
         agent = Agent(agent_id=form.agent_id, security=form.security_level)
         results = await agent.chat(question=form.question)
         sess_repo = KbotMdChatSessionRepository()
+        r = None
+        redis_data = None
+        logger.debug(f"form: {form}")
         if results is None:
             # 第一次提问
             redis_data={"session_id": form.session_id, 
@@ -34,7 +37,6 @@ async def agent_chat(form: AgentChatForm) -> dict[str, Any]:
                             }]
                         }
             r = await sess_repo.create_session(redis_data)
-
         else:
             # 非第一次提问，追加问答对 qa_data
             references = []
