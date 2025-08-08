@@ -18,9 +18,9 @@ key="session_1754552000.5921"
 def create_sample_data():
     """创建符合要求的测试数据"""
     return {
-        "SESSION_ID": "session_" + str(datetime.now().timestamp()),
-        "AGENT_ID": 1,
-        "QA_DATA": [
+        "session_id": "session_" + str(datetime.now().timestamp()),
+        "agent_id": 1,
+        "qa_data": [
             {
                 "question": "什么是人工智能?",
                 "answer": "人工智能是模拟人类智能的计算机系统",
@@ -51,7 +51,7 @@ async def insert():
     try:
         data = create_sample_data()
         repo = KbotMdChatSessionRepository()
-        session_id = data['SESSION_ID']
+        session_id = data['session_id']
         
         # 将数据转为JSON字符串存储
         r = await repo.create_session(data)

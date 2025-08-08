@@ -27,13 +27,12 @@ async def main():
         return
     for res in r: # type: ignore
         print("\n===========================================================\n")
-        print(f"kb_id: {res.kb_id}")
         print(f"file_id: {res.file_id}")
-        print(f"chunk_doc: {res.chunk_doc}")
-        print(f"chunk_metadata: {res.chunk_metadata}")
+        print(f"content: {res.content}")
+        print(f"page_num: {res.page_num}")
         print(f"similarity: {res.similarity}")
         print(f"weight: {res.weight}")
-        print(f"rerank_score: {res.rerank_score}")
+        print(f"rerank_score: {res.reranker_score}")
         print("\n===========================================================\n")
 
 

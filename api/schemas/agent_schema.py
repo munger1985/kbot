@@ -7,7 +7,6 @@ class AgentChatForm(BaseModel):
     agent_id: int
     security_level: int
     request_time: str
-    question_index: int
     question: str
 
 class AgentChatFeedbackForm(BaseModel):

@@ -20,7 +20,7 @@ class KbotMdChatSessionRepository:
         :param session_data: 会话数据
         :return: 是否创建成功
         """
-        session_id = session_data["SESSION_ID"]
+        session_id = session_data["session_id"]
         session_key = f"session:{session_id}"
         qa_data_key = f"{session_key}:qa_data"
 
@@ -28,11 +28,11 @@ class KbotMdChatSessionRepository:
             # 存储基本信息
             await redis.execute_command(
                 "HSET", session_key,
-                "AGENT_ID", session_data["AGENT_ID"]
+                "agent_id", session_data["agent_id"]
             )
 
             # 存储QA对
-            qa_data = session_data["QA_DATA"][0]
+            qa_data = session_data["qa_data"][0]
             qa_key = f"qa:{session_id}:0"
 
             # 存储QA基本信息
@@ -98,9 +98,9 @@ class KbotMdChatSessionRepository:
                 })
             
             return {
-                "SESSION_ID": session_id,
-                "AGENT_ID": int(basic_info["AGENT_ID"]),
-                "QA_DATA": qa_data
+                "session_id": session_id,
+                "agent_id": int(basic_info["agent_id"]),
+                "qa_data": qa_data
             }
 
     async def add_qa_data(self, session_id: str, qa_data: dict) -> bool:
@@ -215,7 +215,7 @@ class KbotMdChatSessionRepository:
                 "by": qa_info["by"],
                 "request_time": qa_info["request_time"],
                 "response_time": qa_info["response_time"],
-                "agent_id": int(session_info["AGENT_ID"])
+                "agent_id": int(session_info["agent_id"])
             }
 
     async def get_qa_data(self, session_id: str, qa_index: int) -> dict | None:

@@ -64,7 +64,7 @@ async def process_txt(file_params: FileParams) -> bool:
             else:
                 chunks = chunk_text(text, chunk_size, overlap)
         # 根据策略选择分割方式: 根据文档结构和段落切片
-        elif split_strategy == SplitStrategy.BY_DOCSTRUCTURE.value:
+        elif split_strategy == SplitStrategy.PARAGRAPH.value:
             pass
         # 根据策略选择分割方式: 根据文档分页切片
         elif split_strategy == SplitStrategy.PAGE.value:
@@ -109,8 +109,6 @@ async def process_txt(file_params: FileParams) -> bool:
                     embed_id=str(uuid.uuid4()),
                     chunk_doc=chunk,
                     chunk_metadata=json.dumps({"chunk_type": ChunkType.TEXT,
-                                               "chunk_file_path": "",
-                                                "file_ext": file_params.file_ext,
                                                 "page_num": 1}),
                     file_id=file_params.file_id,
                     kb_id=file_params.kb_id,

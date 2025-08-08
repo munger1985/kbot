@@ -86,7 +86,7 @@ class KBSearch:
         convertor = OracleVecHandler()
         vec = convertor.convert(query_vec, to_string=True)
         try:
-            logger.debug(f"Vector search query: {vec}")
+            logger.debug(f"Vector search KB ID: {self.tool_params.tool_id}")
             logger.debug(f"Vector search security: {security}")
             logger.debug(f"Vector search threshold: {self.tool_params.threshold}")
             logger.debug(f"Vector search top_k: {self.tool_params.top_k}")
@@ -107,8 +107,6 @@ class KBSearch:
                 result = KBResult()
                 result.file_id = data[0]
                 result.chunk_type = getattr(chunk_meta, "chunk_type", 1)
-                result.chunk_file_path = getattr(chunk_meta, "chunk_file_path", "")
-                result.file_ext = getattr(chunk_meta, "file_ext", "")
                 result.page_num = getattr(chunk_meta, "page_num", 1)
                 result.content = await lob_to_string(data[1])
                 result.similarity = data[3]

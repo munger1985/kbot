@@ -32,8 +32,6 @@ class KBResult:
     def __init__(self):
         self.file_id: str
         self.chunk_type: int
-        self.chunk_file_path: str = ""
-        self.file_ext: str = ""
         self.page_num: int = 0
         self.content: str = ""
         self.similarity: float = 0.0

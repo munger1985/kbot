@@ -36,7 +36,6 @@ async def handle_agent_chat(request: AgentChatForm) -> SuccessQueryResponse | Er
         agent_id=request.agent_id,
         security_level=request.security_level,
         request_time=request.request_time,
-        question_index=request.question_index,
         question=request.question,
     )
     try:
@@ -121,20 +120,14 @@ async def handle_agent_feedback(form: AgentChatFeedbackForm) -> SuccessResponse 
 async def handle_agent_get_session(session_id: str) -> SuccessQueryResponse | ErrorResponse:
     try:
         r = await agent_get_session(session_id)
-        if r:
-            return SuccessQueryResponse(
-                code=200,
-                success=True,
-                message="Session get successfully.",
-                data=r
-                )
-        else:
-            return ErrorResponse(
-                code=400,
-                success=False,
-                message="Session get failed."
+
+        return SuccessQueryResponse(
+            code=200,
+            success=True,
+            message="Session get successfully.",
+            data=r
             )
-            
+   
     except Exception as e:
         return ErrorResponse(
             code=400,

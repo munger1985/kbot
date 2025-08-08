@@ -21,9 +21,9 @@ async def agent_chat(form: AgentChatForm) -> dict[str, Any]:
             logger.warning("No results found")
             # 知识库如果没有查询到结果，需要返回一个空的数据结构
             # 用以更新session中的问答记录
-            redis_data={"SESSION_ID": form.session_id, 
-                        "AGENT_ID": form.agent_id, 
-                        "QA_DATA": [{
+            redis_data={"session_id": form.session_id, 
+                        "agent_id": form.agent_id, 
+                        "qa_data": [{
                             "question": form.question,
                             "answer": "",
                             "qa_embedding": "",
@@ -46,8 +46,6 @@ async def agent_chat(form: AgentChatForm) -> dict[str, Any]:
             for kb_result in results:
                 reference = {
                     "chunk_type": kb_result.chunk_type,
-                    "chunk_file_path": kb_result.chunk_file_path,
-                    "file_ext": kb_result.file_ext,
                     "page_num": kb_result.page_num,
                     "content": kb_result.content,
                     "download_link": f"{url}/file/download?file_id={kb_result.file_id}",
@@ -57,9 +55,9 @@ async def agent_chat(form: AgentChatForm) -> dict[str, Any]:
                 }
                 references.append(reference)
 
-            redis_data={"SESSION_ID": form.session_id, 
-                        "AGENT_ID": form.agent_id, 
-                        "QA_DATA": [{
+            redis_data={"session_id": form.session_id, 
+                        "agent_id": form.agent_id, 
+                        "qa_data": [{
                             "question": form.question,
                             "answer": "",
                             "qa_embedding": "",
@@ -95,7 +93,7 @@ async def agent_stream_chat(session_id: str) -> AsyncGenerator[str, None]:
         logger.warning("qa_data not found")
         return
     
-    refs = last_qa_data["reference"]
+    refs = last_qa_data["references"]
     agent_id = last_qa_data["agent_id"]
 
     logger.debug(f"refs: {refs}")
@@ -209,11 +207,18 @@ async def agent_feedback(form: AgentChatFeedbackForm) -> bool:
     except Exception as e:  
         raise e
     
-async def agent_get_session(session_id: str) -> dict | None:
+async def agent_get_session(session_id: str) -> dict:
     try:
         sess_repo = KbotMdChatSessionRepository()
         # 根据session_id 和问题索引，更新redis对应的问答pair中的feedback数据
-        return await sess_repo.get_session(session_id)
+        r = await sess_repo.get_session(session_id)
+        if r:
+            return r
+        else:
+            return {
+                "session_id": session_id, 
+                "qa_data": []
+                }
    
     except Exception as e:  
         raise e

@@ -18,7 +18,7 @@ class AgentRerank:
             kb_results: List of KBResult objects to rerank
             
         Returns:
-            Reranked KBResult list with updated rerank_scores, or None if error
+            Reranked KBResult list with updated reranker_scores, or None if error
         """
         if not kb_results:
             return kb_results
@@ -38,7 +38,7 @@ class AgentRerank:
             return None
 
         reranked_results: list[KBResult] = []    
-        # Update rerank_score in original KBResult objects
+        # Update reranker_score in original KBResult objects
         for reranker in rerankers:
             index = reranker.get("index")
             score = reranker.get("score")
@@ -48,8 +48,6 @@ class AgentRerank:
                 reranked_result = KBResult()
                 reranked_result.file_id=kb_results[index].file_id
                 reranked_result.chunk_type=kb_results[index].chunk_type
-                reranked_result.chunk_file_path=kb_results[index].chunk_file_path
-                reranked_result.file_ext=kb_results[index].file_ext
                 reranked_result.page_num=kb_results[index].page_num
                 reranked_result.content=kb_results[index].content
                 reranked_result.similarity=kb_results[index].similarity

@@ -43,7 +43,10 @@ class Agent:
         kb_results_rerank: list[KBResult] = []
         kb_results_non_rerank: list[KBResult] = []
         kb_results: list[KBResult]  = []
+        logger.debug(f"Found {len(confs)} tools.")
         for conf in confs:
+            # 生成 toolparams，用于不同工具的调用
+            logger.debug(f"Tool ID: {conf.tool_id}")
             tool_params = ToolParams()
             tool_params.conf_id = conf.conf_id
             tool_params.tool_id = conf.tool_id
@@ -69,7 +72,7 @@ class Agent:
                         kb_results_non_rerank += result
                 else:
                     logger.warning("KB search result is None")
-                    return None
+                    continue
             # 函数调用
             elif tool_params.tool_type == ToolType.FUNCTIONCALL.value:
                 pass
@@ -84,8 +87,8 @@ class Agent:
                 pass
             # 其他类型暂不支持
             else:
-                logger.error("Invalid tool type")
-                raise ValueError("Invalid tool type")
+                logger.warning("Unsupported tool type.")
+                continue
         
         # 4. Agent 范围内所有KB查询和工具调用的结果合并后，进行rerank(配置决定是否需要rerank)
         # 如果 reranker 结果大于1个，则进行rerank，否则不进行rerank
@@ -94,18 +97,19 @@ class Agent:
             reranked = await reranker.rerank_kb(question, kb_results_rerank)
             if reranked:
                 # 根据reranker阈值，提取出大于等于阈值的reranker结果
-                kb_results += [item for item in reranked if item.rerank_score >= self.agent_params.reranker_score_threshold] # type: ignore
+                kb_results += [item for item in reranked if item.reranker_score >= self.agent_params.reranker_score_threshold] # type: ignore
 
             # 计算 reranker 结果的权重值，权重值等于数组中每个kbresult对象的weight值的加权平均值
             for index, result in enumerate(kb_results):
                 result.weight = sum([item.weight for item in kb_results]) / len(kb_results)
 
         # 如果 reranker 结果等于1个，则直接返回结果
-        elif len(kb_results_rerank) == 1:     
+        elif len(kb_results_rerank) == 1:
+            logger.debug("Only 1 result, reranker is not needed.")
             kb_results += kb_results_rerank
         # 没有需要 reranker 的结果
         else:
-            logger.debug("No need rerank")
+            logger.debug("Vector Search returned no result, reranker is not needed.")
             pass
 
         if len(kb_results_non_rerank) > 0:
