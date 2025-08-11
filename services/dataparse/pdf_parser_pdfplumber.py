@@ -16,7 +16,7 @@ from dao.repositories.kbot_md_models_repo import KbotMdModelsRepository
 from dao.entities.kbot_biz_txt_embedding import KbotBizTxtEmbedding
 from dao.data_dict import FileStatus, ChunkType, SplitStrategy
 from core.config import settings
-from utils.call_models import call_embedding_model
+from utils.call_models import call_embedding_model, call_vlm_model_for_parsing_picture
 from utils.common_methods import check_text_file
 import traceback
 
@@ -52,8 +52,10 @@ class PDFPlumberParser:
         if split_strategy == SplitStrategy.PAGE.value:
             try:
                 # Extract all content by page
-                self.extract_all_per_page()
+                _, images_info, _  = self.extract_all_per_page()
 
+                if not await self._process_images_embeddings(images_info):
+                    return False
                 # Process text and table embeddings
                 if not await self._process_embeddings():
                     return False
@@ -67,6 +69,7 @@ class PDFPlumberParser:
 
             except Exception as e:
                 logger.error(f"Error processing PDF file: {str(e)}")
+                logger.exception('asdasd',e)
                 await file_repo.update_file_status(
                     self.file_params.file_id,
                     FileStatus.PARSE_FAILED,
@@ -78,7 +81,9 @@ class PDFPlumberParser:
                 self.chunk_size = int(self.file_params.parser.get("chunk_size", 500))
                 self.chunk_overlap = int(self.file_params.parser.get("chunk_overlap", 50))
 
-                self.extract_all_by_fixed_size()
+                _,images_info,_= self.extract_all_by_fixed_size()
+                if not await self._process_images_embeddings(images_info):
+                    return False
 
                 # Process text and table embeddings
                 if not await self._process_embeddings2():
@@ -105,7 +110,64 @@ class PDFPlumberParser:
         else:
             logger.warning(f"Unrecognized split strategy: {split_strategy}")
             return False
+    async def _process_images_embeddings(self,images_info) -> bool:
+        if self.file_params.parser.get("extract_images", False):
+            model_unique_name = "KBOT112/QwenVL"
+            prompt_unique_name = "DEFAULT/image2text"
+            chunks = []
+            chunk_metas = []
+            for eachImage in images_info:
+                description_file = Path(eachImage['file_path'] + ".description")
+                if not description_file.exists():
+                    model_unique_name = await KbotMdModelsRepository().get_unique_name_by_id(
+                        self.file_params.img2txt_model)  # type: ignore
 
+                    image_description = await call_vlm_model_for_parsing_picture(model_unique_name, prompt_unique_name,
+                                                                           eachImage['file_path'])
+                    if image_description:
+                        description_file.write_text(
+                            image_description,
+                            encoding='utf-8'
+                        )
+                        chunk_metas.append({
+                            "chunk_type": ChunkType.IMAGE,
+                            "page_num": eachImage['page_num'],
+                            "id": eachImage['uuid'],
+                        })
+                        chunks.append(image_description)
+            text_embedding_model = await KbotMdModelsRepository().get_unique_name_by_id(
+                self.file_params.txt_embed_model
+            )
+            if not text_embedding_model:
+                msg = f"Embedding model not found for id: {self.file_params.txt_embed_model}"
+                logger.error(msg)
+                await self._update_file_status(FileStatus.PARSE_FAILED, msg)
+                return False
+            embeddings_list = await call_embedding_model(text_embedding_model, chunks)
+            if not embeddings_list or len(embeddings_list) != len(chunks):
+                msg = f"Embedding model {model_unique_name} returned invalid results (expected {len(chunks)}, got {len(embeddings_list) if embeddings_list else 0})"
+                logger.error(msg)
+                await self._update_file_status(FileStatus.PARSE_FAILED, msg)
+                return False
+
+                # Create embedding entities
+            embed_entities = []
+            for idx, (chunk, meta) in enumerate(zip(chunks, chunk_metas)):
+                embed_entity = KbotBizTxtEmbedding(
+                    kb_id=self.file_params.kb_id,
+                    embed_id=meta['id'],
+                    chunk_doc=chunk,
+                    chunk_metadata=json.dumps(meta),
+                    file_id=self.file_params.file_id,
+                    embedding=embeddings_list[idx].embedding
+                )
+                embed_entities.append(embed_entity)
+
+            # Save all embeddings in one batch
+            if not await self._save_embeddings(embed_entities):
+                return False
+        else:
+            return True
     async def _process_embeddings(self) -> bool:
         """Process all content embeddings in a unified way"""
         model_unique_name = await KbotMdModelsRepository().get_unique_name_by_id(
@@ -359,7 +421,7 @@ class PDFPlumberParser:
                     'uuid': table_uuid,
                     'filename': csv_path.name,
                     'page_num': page_num,
-                    'file_path': str(csv_path),
+                    'file_path': str(csv_path.absolute()),
                     'rows': len(table_data),
                     'columns': len(table_data[0]) if table_data and table_data[0] else 0,
                     'bbox': table.bbox
@@ -367,7 +429,7 @@ class PDFPlumberParser:
 
                 self.tables_info.append(table_info)
                 page_tables.append(table_info)
-                logger.debug(f"Saved table: {csv_path} (page {page_num})")
+                logger.debug(f"Saved table: {csv_path.absolute()} (page {page_num})")
 
             # Extract text (excluding table areas)
             page_text = page.extract_text() or ""
@@ -459,7 +521,7 @@ class PDFPlumberParser:
                 'uuid': image_uuid,
                 'filename': image_path.name,
                 'page_num': page_num,
-                'file_path': str(image_path),
+                'file_path': str(image_path.absolute()),
                 'width': width,
                 'height': height,
                 'bbox': getattr(lt_image, 'bbox', None),
@@ -467,7 +529,7 @@ class PDFPlumberParser:
             }
 
             self.images_info.append(image_info)
-            logger.debug(f"Saved image: {image_path} (page {page_num})")
+            logger.debug(f"Saved image: {image_path.absolute()} (page {page_num})")
             return image_info
 
         except Exception as e:
