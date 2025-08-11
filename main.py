@@ -12,7 +12,8 @@ from dotenv import load_dotenv
 from api.routers import router
 from core.log.logger import setup_logging
 from core.config import settings
-from microservices.microservice_manger import MicroserviceManager
+from services.dataparse.file_parser_manger import FileParserManager
+#from microservices.microservice_manger import MicroserviceManager
 
 
 # 加载环境变量
@@ -20,10 +21,10 @@ load_dotenv()
 
 # 注册退出时的清理函数
 def cleanup():
-    """在应用程序退出时关闭微服务"""
+    """在应用程序退出时关闭文件解析服务"""
     # shutdown_services("Application exiting, ")
-    microservice_manager = MicroserviceManager()
-    microservice_manager.shutdown_all_services("Application exiting, ")
+    fp_manager = FileParserManager()
+    fp_manager.shutdown_service("Application exiting, ")
 
 atexit.register(cleanup)
 
@@ -90,10 +91,10 @@ def signal_handler(sig, frame):
 
 async def main():
 
-    # 创建微服务管理器实例
-    service_manager = MicroserviceManager()
-    # 启动所有微服务
-    service_manager.start_all_services()
+    # 创建文件解析服务管理器实例
+    fp_manager = FileParserManager()
+    # 启动所有文件解析服务
+    fp_manager.start_service()
 
     # 创建主应用程序
     app = create_app()

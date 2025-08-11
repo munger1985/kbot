@@ -18,7 +18,6 @@ from datetime import datetime
 from typing import Any
 from contextlib import asynccontextmanager
 from pydantic import BaseModel, Field
-import numpy as np
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
