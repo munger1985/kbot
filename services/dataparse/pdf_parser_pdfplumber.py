@@ -54,7 +54,9 @@ class PDFPlumberParser:
                 # Extract all content by page
                 _, images_info, _  = self.extract_all_per_page()
 
-                if not await self._process_images_embeddings(images_info):
+                r = await self._process_images_embeddings(images_info)
+                logger.debug(f"================={r}")
+                if not r:
                     return False
                 # Process text and table embeddings
                 if not await self._process_embeddings():
@@ -122,8 +124,8 @@ class PDFPlumberParser:
                     model_unique_name = await KbotMdModelsRepository().get_unique_name_by_id(
                         self.file_params.img2txt_model)  # type: ignore
 
-                    image_description = await call_vlm_model_for_parsing_picture(model_unique_name, prompt_unique_name,
-                                                                           eachImage['file_path'])
+                    image_description = await call_vlm_model_for_parsing_picture(model_unique_name, prompt_unique_name, # type: ignore
+                                                                           eachImage['file_path']) 
                     if image_description:
                         description_file.write_text(
                             image_description,
@@ -136,7 +138,7 @@ class PDFPlumberParser:
                         })
                         chunks.append(image_description)
             text_embedding_model = await KbotMdModelsRepository().get_unique_name_by_id(
-                self.file_params.txt_embed_model
+                self.file_params.txt_embed_model # type: ignore
             )
             if not text_embedding_model:
                 msg = f"Embedding model not found for id: {self.file_params.txt_embed_model}"
@@ -164,10 +166,11 @@ class PDFPlumberParser:
                 embed_entities.append(embed_entity)
 
             # Save all embeddings in one batch
-            if not await self._save_embeddings(embed_entities):
-                return False
+            return await self._save_embeddings(embed_entities)
         else:
             return True
+        
+
     async def _process_embeddings(self) -> bool:
         """Process all content embeddings in a unified way"""
         model_unique_name = await KbotMdModelsRepository().get_unique_name_by_id(
@@ -234,10 +237,8 @@ class PDFPlumberParser:
             embed_entities.append(embed_entity)
 
         # Save all embeddings in one batch
-        if not await self._save_embeddings(embed_entities):
-            return False
+        return await self._save_embeddings(embed_entities)
 
-        return True
 
     async def _process_embeddings2(self) -> bool:
         """Process text and table embeddings for by fixed size"""
@@ -305,15 +306,13 @@ class PDFPlumberParser:
             embed_entities.append(embed_entity)
 
         # Save all embeddings in one batch
-        if not await self._save_embeddings(embed_entities):
-            return False
+        return await self._save_embeddings(embed_entities)
 
-        return True
 
-    async def _save_embeddings(self, embeddings: list[KbotBizTxtEmbedding]) -> list[KbotBizTxtEmbedding] | None:
+    async def _save_embeddings(self, embeddings: list[KbotBizTxtEmbedding]) -> bool:
         """Save embeddings to database with error handling"""
         if not embeddings:
-            return []
+            return False
 
         try:
             repo = KbotBizTxtEmbeddingRepository()
@@ -322,16 +321,16 @@ class PDFPlumberParser:
                 msg = "Failed to save embeddings (repository returned False)"
                 logger.error(msg)
                 await self._update_file_status(FileStatus.PARSE_FAILED, msg)
-                return None
+                return False
 
             logger.info(f"Successfully saved {len(embeddings)} embeddings")
-            return embeddings
+            return True
 
         except Exception as e:
             msg = f"Exception while saving embeddings: {str(e)}"
             logger.error(msg)
             await self._update_file_status(FileStatus.PARSE_FAILED, msg)
-            return None
+            return False
 
     async def _update_file_status(self, status: FileStatus, message: str) -> None:
         """Helper method to update file status"""
