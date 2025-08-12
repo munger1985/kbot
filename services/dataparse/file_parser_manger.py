@@ -1,6 +1,7 @@
 import asyncio
 import multiprocessing
 from loguru import logger
+from core.log.logger import setup_logging
 from services.dataparse.parse_service import start_file_parse_service, shutdown_file_parse_service
 
 
@@ -52,6 +53,8 @@ class FileParserManager:
         在子进程中运行文件解析服务。
         这个函数作为multiprocessing.Process的目标函数。
         """
+        # 在子进程中初始化日志
+        setup_logging(service_name="main")
         logger.info("File parse service process starting")
 
         try:

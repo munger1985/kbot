@@ -13,7 +13,6 @@ from utils.chunk_text import chunk_text
 from utils.call_models import call_embedding_model
 from utils.common_methods import check_text_file
 
-import traceback
 
 async def process_txt(file_params: FileParams) -> bool:
     """
@@ -142,7 +141,6 @@ async def process_txt(file_params: FileParams) -> bool:
         return True
         
     except Exception as e:
-        traceback.print_exc()
         msg = f"Error in process_txt for {file_params.file_path}: {str(e)}"
         logger.exception(msg)  
         await file_repo.update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, msg)
