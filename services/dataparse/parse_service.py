@@ -12,8 +12,8 @@ class ParseService:
         self.workers: list[asyncio.Task] = []
         self.worker_last_active = {}  # 记录worker最后活动时间
         self.file_queue = asyncio.Queue()
-        self.parallel_workers = settings["embed"]["max_workers"]
-        self.check_interval = settings["embed"]["check_interval"]
+        self.parallel_workers = settings["parser"]["max_workers"]
+        self.check_interval = settings["parser"]["check_interval"]
         self.idle_timeout = 300  # worker空闲超时时间(秒)
         self.min_workers = 1     # 保持的最小worker数量
 

@@ -27,8 +27,6 @@ class LoggerConfig(TypedDict):
     retention: str
 
 class EmbedConfig(TypedDict):
-    max_workers: int
-    check_interval: int
     batch_size: int
     max_tokens: int
     timeout: int
@@ -49,12 +47,17 @@ class KBotConfig(TypedDict):
     file_root_path: str
     parallel_workers: int
 
+class ParserConfig(TypedDict):
+    max_workers: int
+    check_interval: int
+
 class AppSettings(TypedDict):
     app: AppConfig
     database: DatabaseConfig
     redis: RedisConfig
     logger: LoggerConfig
     embed: EmbedConfig
+    parser: ParserConfig
     llm: LLMConfig
     nlp: NlpConfig
     kbot: KBotConfig

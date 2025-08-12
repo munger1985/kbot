@@ -118,6 +118,16 @@ class Agent:
         # 5. 最后根据权重进行排序，权重值最大的排在前面
         kb_results.sort(key=lambda x: x.weight, reverse=True) # type: ignore
 
-        # 6. 返回结果
+        # 6. 对 content 进行去重
+        seen = set()
+        unique_kb_results = []
+        for item in kb_results:
+            content = item.content.strip()  # 去除首尾空格
+            if content not in seen:
+                seen.add(content)
+                unique_kb_results.append(item)
+        kb_results = unique_kb_results
+
+        # 7. 返回结果
         return kb_results
 
