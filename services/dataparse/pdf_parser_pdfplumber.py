@@ -113,7 +113,8 @@ class PDFPlumberParser:
             logger.warning(f"Unrecognized split strategy: {split_strategy}")
             return False
     async def _process_images_embeddings(self,images_info) -> bool:
-        if self.file_params.parser.get("extract_images", False):
+        if self.file_params.img2txt == 1:
+        # if self.file_params.parser.get("extract_images", False):
             model_unique_name = "KBOT112/QwenVL"
             prompt_unique_name = "DEFAULT/image2text"
             chunks = []
