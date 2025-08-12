@@ -135,7 +135,7 @@ class PDFPlumberParser:
                         chunk_metas.append({
                             "chunk_type": ChunkType.IMAGE,
                             "page_num": eachImage['page_num'],
-                            "id": eachImage['uuid'],
+                            "image_id": eachImage['uuid'],
                         })
                         chunks.append(image_description)
             text_embedding_model = await KbotMdModelsRepository().get_unique_name_by_id(
@@ -158,7 +158,7 @@ class PDFPlumberParser:
             for idx, (chunk, meta) in enumerate(zip(chunks, chunk_metas)):
                 embed_entity = KbotBizTxtEmbedding(
                     kb_id=self.file_params.kb_id,
-                    embed_id=meta['id'],
+                    embed_id=meta['image_id'],
                     chunk_doc=chunk,
                     chunk_metadata=json.dumps(meta),
                     file_id=self.file_params.file_id,
