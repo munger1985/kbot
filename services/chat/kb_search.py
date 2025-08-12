@@ -124,7 +124,33 @@ class KBSearch:
             return None
         
     async def serch_by_full_text(self, question: str, security: int) -> list[KBResult] | None:
-        pass
+        """Search by full text"""
+        repo = KbotBizTxtEmbeddingRepository()
+        try:
+            logger.debug(f"Full text search KB ID: {self.tool_params.tool_id}")
+            logger.debug(f"Full text search keyword: {question}")
+            dataset = await repo.full_text_search(kb_id=self.tool_params.tool_id, keyword=question, security=security)
+            if not dataset:
+                logger.info(f"Full text search returned no results")
+                return None
+            else:
+                results = []
+                for data in dataset:
+                    chunk_meta = json.loads(json.dumps(data[2], cls=DecimalEncoder))
+                    result = KBResult()
+                    result.file_id = data[0]
+                    result.chunk_type = getattr(chunk_meta, "chunk_type", 1)
+                    result.page_num = getattr(chunk_meta, "page_num", 1)
+                    result.content = await lob_to_string(data[1])
+                    result.similarity = data[3]
+                    result.weight = self.tool_params.tool_weight # type: ignore
+                    results.append(result)
+                logger.debug(f"Full text search found {len(results)} results")
+                return results
+            
+        except Exception as e:
+            logger.exception(f"Full text search failed: {str(e)}")
+            return None
 
     async def search_by_summary(self, question: str, security: int) -> list[KBResult] | None:
         pass

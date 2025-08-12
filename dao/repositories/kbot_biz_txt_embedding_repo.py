@@ -102,6 +102,66 @@ class KbotBizTxtEmbeddingRepository:
             result = await cursor.fetchall()
         
             return result
+        
+    async def full_text_search(self,
+                               kb_id: int,
+                               keyword: str,
+                               security: int,
+                               top_k: int | None = 10,
+                               simularity_threshold: float | None = 0.8
+                                ) -> Sequence:
+        """Get chunk record by full text search.
+        
+        Args:
+            kb_id: Knowledge base ID
+            keyword: Target text to compare with
+            
+        Returns:
+            list of chunk records
+        """
+        db_repo = KbotMdDbConfRepository()
+        db_conf = await db_repo.get_by_kbid(kb_id)
+        if db_conf is None:
+            return []
+        connstr = db_conf.db_conn_str
+        db_type = db_conf.db_type
+        if connstr is None or db_type is None:
+            return []
+            
+        async with create_session(db_type=db_type, connection_info=connstr) as session:
+
+            # Generate SQL
+            sql = """
+                SELECT /*+ INDEX(IDX_FULLSEARCH_TXT_EMBEDDING) */
+                    FILE_ID, CHUNK_DOC, CHUNK_METADATA,
+                    SCORE(1) AS similarity
+                FROM KBOT_BIZ_TXT_EMBEDDING
+                WHERE KB_ID = :kb_id
+                AND SECURITY_LEVEL <= :security
+                AND CONTAINS(CHUNK_DOC, :keyword, 1) > 0
+                ORDER BY similarity DESC
+                FETCH FIRST :top_k ROWS ONLY
+            """
+            # 添加向量和阈值参数
+            params = {}
+            params["kb_id"] = kb_id
+            params["keyword"] = keyword
+            params["security"] = security
+            #params["simularity_threshold"] = simularity_threshold
+            params["top_k"] = top_k
+
+            # 分步获取原生连接
+            conn = await session.connection()  # 获取AsyncConnection
+            raw_conn = await conn.get_raw_connection()  # 获取底层连接
+            driver_conn = raw_conn.driver_connection  # 获取驱动连接             
+            driver_conn.outputtypehandler = OracleVecHandler.vector_type_handler # type: ignore
+            
+            # 执行查询
+            cursor = driver_conn.cursor() # type: ignore
+            await cursor.execute(sql, params)
+            result = await cursor.fetchall()
+        
+            return result
 
         
             

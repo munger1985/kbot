@@ -48,3 +48,13 @@ class KbotMdAgentRepository:
             result = await session.execute(stmt)
             await session.commit()
             return result.rowcount > 0
+        
+    async def get_app_id(self, agent_id: int) -> int | None:
+        """get app id by id"""
+        async with get_session() as session:
+            stmt = (
+                select(KbotMdAgent.app_id)
+                .where(KbotMdAgent.agent_id == agent_id)
+            )
+            result = await session.execute(stmt)
+            return result.scalar_one_or_none()

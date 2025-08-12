@@ -7,9 +7,10 @@ from dao.repositories.kbot_md_chat_session_repo import KbotMdChatSessionReposito
 from dao.repositories.kbot_md_agent_repo import KbotMdAgentRepository
 from dao.repositories.kbot_md_prompt_repo import KbotMdPromptRepository
 from dao.repositories.kbot_md_models_repo import KbotMdModelsRepository
+from dao.repositories.kbot_md_chat_history_repo import KbotMdChatHistoryRepository
+from dao.entities.kbot_md_chat_history import KbotMdChatHistory
 from services.chat.agent_chat import Agent
 from loguru import logger
-from utils.common_methods import lob_to_string
 from utils.call_models import call_llm_model
 from api.schemas.agent_schema import AgentChatForm, AgentChatFeedbackForm
 
@@ -184,7 +185,35 @@ async def agent_stream_chat(session_id: str) -> AsyncGenerator[str, None]:
             
         # 8. 流结束后异步写入Redis
         if chunks:
-            asyncio.create_task(_write_to_redis(session_id, chunks))
+
+            # Convert all chunks to strings first
+            str_chunks = []
+            for chunk in chunks:
+                if isinstance(chunk, bytes):
+                    str_chunks.append(chunk.decode("utf-8"))
+                else:
+                    str_chunks.append(str(chunk))
+            
+            full_response = "".join(str_chunks) if str_chunks else ""
+
+            asyncio.create_task(_write_to_redis(session_id, full_response))
+
+            # 写入聊天历史
+            app_id = await agent_repo.get_app_id(agent_id=agent_id)
+            history = KbotMdChatHistory(
+                app_id=app_id,
+                agent_id=agent_id,
+                session_id=session_id,
+                question=question,
+                answer=full_response,
+                created_by=last_qa_data["by"],
+                created_time=datetime.datetime.now(),
+                updated_by=last_qa_data["by"],
+                updated_time=datetime.datetime.now()
+            )
+            asyncio.create_task(_write_history(history))
+            
+            
 
     except Exception as e:
         logger.error(f"Stream processing error: {str(e)}")
@@ -193,30 +222,30 @@ async def agent_stream_chat(session_id: str) -> AsyncGenerator[str, None]:
 
 async def _write_to_redis(session_id: str, 
                           #question: str, 
-                          answer: list):
+                          answer: str):
     try:
-        # Convert all chunks to strings first
-        str_chunks = []
-        for chunk in answer:
-            if isinstance(chunk, bytes):
-                str_chunks.append(chunk.decode("utf-8"))
-            else:
-                str_chunks.append(str(chunk))
-        
-        full_response = "".join(str_chunks) if str_chunks else ""
-
         # 将问题和答案作为历史上下文，转换为embedding后存入redis
         # TODO
         
-        logger.debug(f"The LLM stream answer: {full_response}")
+        logger.debug(f"The LLM stream answer: {answer}")
 
         sess_repo = KbotMdChatSessionRepository()
         await sess_repo.update_last_qa_data_answer(
             session_id,
-            full_response
+            answer
         )
     except Exception as e:
         logger.error(f"Error writing to Redis: {str(e)}")
+
+async def _write_history(history: KbotMdChatHistory):
+    """Write a history to database."""
+    try:
+        # 填充历史表
+        await KbotMdChatHistoryRepository().create(history)
+        return True
+    except Exception as e:
+        logger.error(f"Write history error: {str(e)}")
+        return False
 
 async def agent_feedback(form: AgentChatFeedbackForm) -> bool:
     try:

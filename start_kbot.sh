@@ -4,7 +4,7 @@
 eval "$(conda shell.bash hook)"
 
 # 激活 conda 环境
-conda activate kbot
+conda activate kbot3
 
 # 定义微服务目录
 MICROSERVICES_DIR="$(dirname "$0")/microservices"
