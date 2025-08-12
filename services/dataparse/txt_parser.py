@@ -131,7 +131,7 @@ async def process_txt(file_params: FileParams) -> bool:
                     return False
             except Exception as e:
                 msg = f"Exception while saving embeddings: {str(e)}"
-                logger.error(msg, exc_info=True)
+                logger.exception(msg, exc_info=True)
                 await file_repo.update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, msg) 
                 return False
                 
@@ -144,6 +144,6 @@ async def process_txt(file_params: FileParams) -> bool:
     except Exception as e:
         traceback.print_exc()
         msg = f"Error in process_txt for {file_params.file_path}: {str(e)}"
-        logger.error(msg)  
+        logger.exception(msg)  
         await file_repo.update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, msg)
         return False

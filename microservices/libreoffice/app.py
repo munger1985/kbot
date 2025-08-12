@@ -1,18 +1,90 @@
 import os
+import sys
 import subprocess
 import time
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+import platform
 import signal
 import psutil
+from datetime import datetime
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
+from pydantic import BaseModel
+from loguru import logger
+# 添加项目根目录到 Python 路径，确保可以导入项目模块
+current_file = os.path.abspath(__file__)
+backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(current_file)))
+if backend_dir not in sys.path:
+    sys.path.insert(0, backend_dir)
 
-app = FastAPI()
+from core.config import settings
+from core.log.logger import setup_logging
 
 
 # 配置从环境变量读取
 PDF_SERVICE_PORT = int(os.getenv("PDF_SERVICE_PORT", "8000"))
 LIBREOFFICE_PORT = int(os.getenv("LIBREOFFICE_PORT", "2002"))
 UVICORN_WORKERS = int(os.getenv("UVICORN_WORKERS", "4"))
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan context manager. //应用程序生命周期上下文管理器"""
+    # 初始化日志
+    setup_logging(service_name="Libre")
+    
+    # 启动事件
+    start_time = time.time()
+    logger.info(f"Initializing LibreOffice service at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}...") 
+    logger.info(f"Platform: {platform.platform()}")
+    logger.info(f"Python version: {platform.python_version()}")
+    logger.info(f"Process ID: {os.getpid()}")
+    
+    # 启动LibreOffice服务
+    try:
+        logger.info(f"Starting LibreOffice service at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}...")
+        app.state.libreoffice_process = start_libreoffice()
+        logger.info(f"LibreOffice版本: {subprocess.check_output(['libreoffice', '--version'], text=True).strip()}")
+        warmup_unoconv()
+    except Exception as e:
+        logger.error(f"LibreOffice service initialization failed: {e}")
+        # 在生产环境中，可能需要在这里退出应用程序
+        current_env = os.getenv("KBOT_ENV")
+        if current_env == "production":
+            sys.exit(1)
+    
+    yield  # 服务运行期间
+    
+    # 关闭事件
+    logger.info(f"Closing LibreOffice service at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}...")
+    shutdown_start = time.time()
+    
+    try:
+        if hasattr(app.state, 'libreoffice_process'):
+            os.killpg(os.getpgid(app.state.libreoffice_process.pid), signal.SIGTERM)
+            logger.info("LibreOffice service is closed.")
+    except Exception as e:
+        logger.error(f"LibreOffice service shutdown failed: {e}")
+    
+    logger.info(f"LibreOffice service closed successfully, elapsed time: {time.time() - shutdown_start:.2f} seconds")
+    logger.info(f"Total running time: {time.time() - start_time:.2f} seconds")
+
+# 创建 FastAPI 应用
+app = FastAPI(
+    title="LibreOffice service",
+    description="Provides LibreOffice services to convert word/ppt into pdf.",
+    version=settings["app"]["version"],
+    lifespan=lifespan,
+)
+
+# 添加 CORS 中间件
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # 在生产环境中应该限制为特定的源
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 class ConversionRequest(BaseModel):
     file_path: str
@@ -53,25 +125,7 @@ def warmup_unoconv():
         logger.error(f"预热失败: {str(e)}")
         raise
 
-@app.on_event("startup")
-async def startup():
-    """服务启动时初始化"""
-    # 启动LibreOffice
-    app.state.libreoffice_process = start_libreoffice()
-    
-    # 预热连接池
-    warmup_unoconv()
-    
-    # 打印系统信息
-    logger.info(f"服务配置：Workers={UVICORN_WORKERS}, LibreOffice端口={LIBREOFFICE_PORT}")
-    logger.info(f"系统资源：CPU={psutil.cpu_count()}核, 内存={psutil.virtual_memory().total/1024/1024:.1f}MB")
 
-@app.on_event("shutdown")
-async def shutdown():
-    """服务关闭时清理"""
-    if hasattr(app.state, 'libreoffice_process'):
-        os.killpg(os.getpgid(app.state.libreoffice_process.pid), signal.SIGTERM)
-        logger.info("已终止LibreOffice进程")
 
 @app.post("/convert")
 async def convert(request: ConversionRequest):
@@ -122,7 +176,7 @@ async def metrics():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
-        app,
+        "microservices.libreoffice.app:app",
         host="0.0.0.0",
         port=PDF_SERVICE_PORT,
         workers=UVICORN_WORKERS
