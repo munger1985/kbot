@@ -52,12 +52,11 @@ class PDFPlumberParser:
         if split_strategy == SplitStrategy.PAGE.value:
             try:
                 # Extract all content by page
-                _, images_info, _  = self.extract_all_per_page()
+                _, self.images_info, _  = self.extract_all_per_page()
 
-                r = await self._process_images_embeddings(images_info)
-                logger.debug(f"================={r}")
-                if not r:
-                    return False
+                # logger.debug(f"================={r}")
+                # if not r:
+                #     return False
                 # Process text and table embeddings
                 if not await self._process_embeddings_per_page():
                     return False
@@ -112,20 +111,20 @@ class PDFPlumberParser:
         else:
             logger.warning(f"Unrecognized split strategy: {split_strategy}")
             return False
-    async def _process_images_embeddings(self,images_info) -> bool:
+    async def _process_images_embeddings(self) -> list:
         if self.file_params.img2txt == 1:
         # if self.file_params.parser.get("extract_images", False):
-            model_unique_name = "KBOT112/QwenVL"
-            prompt_unique_name = "DEFAULT/image2text"
+            vlm_prompt_unique_name = "DEFAULT/image2text"
+            vlm_model_unique_name = await KbotMdModelsRepository().get_unique_name_by_id(
+            self.file_params.img2txt_model)  # type: ignore
             chunks = []
             chunk_metas = []
-            for eachImage in images_info:
+            for eachImage in self.images_info:
                 description_file = Path(eachImage['file_path'] + ".description")
                 if not description_file.exists():
-                    model_unique_name = await KbotMdModelsRepository().get_unique_name_by_id(
-                        self.file_params.img2txt_model)  # type: ignore
 
-                    image_description = await call_vlm_model_for_parsing_picture(model_unique_name, prompt_unique_name, # type: ignore
+
+                    image_description = await call_vlm_model_for_parsing_picture(vlm_model_unique_name, vlm_prompt_unique_name, # type: ignore
                                                                            eachImage['file_path']) 
                     if image_description:
                         description_file.write_text(
@@ -142,16 +141,19 @@ class PDFPlumberParser:
                 self.file_params.txt_embed_model # type: ignore
             )
             if not text_embedding_model:
-                msg = f"Embedding model not found for id: {self.file_params.txt_embed_model}"
+                msg = f"text_embedding_model not found for id: {self.file_params.txt_embed_model}"
                 logger.error(msg)
                 await self._update_file_status(FileStatus.PARSE_FAILED, msg)
                 return False
-            embeddings_list = await call_embedding_model(text_embedding_model, chunks)
+            embeddings_list= []
+            if  chunks:
+                embeddings_list = await call_embedding_model(text_embedding_model, chunks)
             if not embeddings_list or len(embeddings_list) != len(chunks):
-                msg = f"Embedding model {model_unique_name} returned invalid results (expected {len(chunks)}, got {len(embeddings_list) if embeddings_list else 0})"
+                msg = f"text_embedding_model  {text_embedding_model} returned invalid results (expected {len(chunks)}, got {len(embeddings_list) if embeddings_list else 0})"
                 logger.error(msg)
+                logger.error("failed file: {}",self.file_params.file_path)
                 await self._update_file_status(FileStatus.PARSE_FAILED, msg)
-                return False
+                return []
 
                 # Create embedding entities
             embed_entities = []
@@ -168,9 +170,9 @@ class PDFPlumberParser:
                 embed_entities.append(embed_entity)
 
             # Save all embeddings in one batch
-            return await self._save_embeddings(embed_entities)
+            return embed_entities
         else:
-            return True
+            return []
         
 
     async def _process_embeddings_per_page(self) -> bool:
@@ -238,6 +240,9 @@ class PDFPlumberParser:
                 security_level=self.file_params.security_level
             )
             embed_entities.append(embed_entity)
+
+        image_embed_entities= await self._process_images_embeddings()
+        embed_entities.extend(image_embed_entities)
 
         # Save all embeddings in one batch
         return await self._save_embeddings(embed_entities)
@@ -308,6 +313,8 @@ class PDFPlumberParser:
                 security_level=self.file_params.security_level
             )
             embed_entities.append(embed_entity)
+        image_embed_entities= await self._process_images_embeddings()
+        embed_entities.extend(image_embed_entities)
 
         # Save all embeddings in one batch
         return await self._save_embeddings(embed_entities)
