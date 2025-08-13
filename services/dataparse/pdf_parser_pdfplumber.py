@@ -59,7 +59,7 @@ class PDFPlumberParser:
                 if not r:
                     return False
                 # Process text and table embeddings
-                if not await self._process_embeddings():
+                if not await self._process_embeddings_per_page():
                     return False
 
                 # Save parsed metadata
@@ -88,7 +88,7 @@ class PDFPlumberParser:
                     return False
 
                 # Process text and table embeddings
-                if not await self._process_embeddings2():
+                if not await self._process_embeddings_by_fixed_size():
                     return False
 
                 # Save parsed metadata
@@ -162,7 +162,8 @@ class PDFPlumberParser:
                     chunk_doc=chunk,
                     chunk_metadata=json.dumps(meta),
                     file_id=self.file_params.file_id,
-                    embedding=embeddings_list[idx].embedding
+                    embedding=embeddings_list[idx].embedding,
+                    security_level=self.file_params.security_level
                 )
                 embed_entities.append(embed_entity)
 
@@ -172,7 +173,7 @@ class PDFPlumberParser:
             return True
         
 
-    async def _process_embeddings(self) -> bool:
+    async def _process_embeddings_per_page(self) -> bool:
         """Process all content embeddings in a unified way"""
         model_unique_name = await KbotMdModelsRepository().get_unique_name_by_id(
             self.file_params.txt_embed_model  # type: ignore
@@ -233,7 +234,8 @@ class PDFPlumberParser:
                 chunk_doc=chunk,
                 chunk_metadata=json.dumps(meta),
                 file_id=self.file_params.file_id,
-                embedding=embeddings_list[idx].embedding
+                embedding=embeddings_list[idx].embedding,
+                security_level=self.file_params.security_level
             )
             embed_entities.append(embed_entity)
 
@@ -241,7 +243,7 @@ class PDFPlumberParser:
         return await self._save_embeddings(embed_entities)
 
 
-    async def _process_embeddings2(self) -> bool:
+    async def _process_embeddings_by_fixed_size(self) -> bool:
         """Process text and table embeddings for by fixed size"""
         model_unique_name = await KbotMdModelsRepository().get_unique_name_by_id(
             self.file_params.txt_embed_model  # type: ignore
@@ -302,7 +304,8 @@ class PDFPlumberParser:
                 chunk_doc=chunk,
                 chunk_metadata=json.dumps(meta),
                 file_id=self.file_params.file_id,
-                embedding=embeddings_list[idx].embedding
+                embedding=embeddings_list[idx].embedding,
+                security_level=self.file_params.security_level
             )
             embed_entities.append(embed_entity)
 
