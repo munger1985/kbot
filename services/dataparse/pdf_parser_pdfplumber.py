@@ -27,7 +27,7 @@ class PDFPlumberParser:
     def __init__(self, file_params: FileParams):
         self.file_params = file_params
         self.pdf_path = Path(file_params.file_path)
-        self.output_dir = self.pdf_path.parent / "output"
+        self.output_dir = self.pdf_path.parent / "output"/file_params.file_id
         self.images_dir = self.output_dir / "images"
         self.tables_dir = self.output_dir / "tables"
 
@@ -82,9 +82,9 @@ class PDFPlumberParser:
                 self.chunk_size = int(self.file_params.parser.get("chunk_size", 500))
                 self.chunk_overlap = int(self.file_params.parser.get("chunk_overlap", 50))
 
-                _,images_info,_= self.extract_all_by_fixed_size()
-                if not await self._process_images_embeddings(images_info):
-                    return False
+                _, self.images_info, _= self.extract_all_by_fixed_size()
+                # if not await self._process_images_embeddings(images_info):
+                #     return False
 
                 # Process text and table embeddings
                 if not await self._process_embeddings_by_fixed_size():
