@@ -1,6 +1,6 @@
 from typing import Sequence
 from sqlalchemy import select, delete
-from core.database.factory import create_session
+from core.database.vec_oracle import create_session
 from dao.entities.kbot_biz_txt_embedding import KbotBizTxtEmbedding
 from dao.repositories.kbot_md_db_conf_repo import KbotMdDbConfRepository
 from utils.oracle_vec_handler import OracleVecHandler
