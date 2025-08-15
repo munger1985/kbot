@@ -1,0 +1,5 @@
+-e ./shared-libs
+oci==2.158.0
+python-dotenv==1.1.0
+openai==1.93.0
+fastapi==0.115.13

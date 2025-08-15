@@ -1,33 +1,33 @@
 """LLM model pool implementation."""
 
-import asyncio
 import os
 import sys
+import asyncio
+import configparser
 from loguru import logger
 from typing import Optional
 from datetime import datetime, timedelta
+from model import(
+    BaseLLM, 
+    OpenaiLLMConfig, 
+    LLMProvider,
+    OCILLMConfig,
+    create_llm_model
+)
+from nacos_manager.manager import nacos_manager # type: ignore
 
 # 添加项目根目录到 Python 路径，确保可以导入项目模块
 current_file = os.path.abspath(__file__)
 backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(current_file)))
 if backend_dir not in sys.path:
     sys.path.insert(0, backend_dir)
-
-from models.llm import(
-    BaseLLM, 
-    OpenaiLLMConfig, 
-    LLMProvider,
-    HuggingFaceLLMConfig, 
-    create_llm_model
-)
 from dao.repositories.kbot_md_models_repo import KbotMdModelsRepository
-from core.config import settings
 
 
 class ModelPool:
     """Model pool class for managing LLM models."""
 
-    def __init__(self, health_check_interval: int = 300) -> None:
+    def __init__(self, health_check_interval: int = 60) -> None:
         """Initialize model pool.
 
         Args:
@@ -87,32 +87,72 @@ class ModelPool:
             raise ValueError(f"Model {model_unique_name} not found in database")
         
         if model_entity.model_params is None:
-            raise ValueError(f"Model {model_unique_name} has no model_params")
+            raise ValueError(f"Model {model_unique_name} has no model_params")      
+        
+        if model_entity.model_params.get("temperature") is not None and not (0 <= model_entity.model_params["temperature"] <= 2):
+            raise ValueError(f"Model {model_unique_name} has invalid temperature {model_entity.model_params['temperature']}. Temperature must be between 0 and 2.")
+        
+        # 从 Nacos 获取 llm 默认参数
+        try:
+            nacos_group = os.getenv("NACOS_GROUP") or "DEV_GROUP"
+            config = nacos_manager.get_config("llm", nacos_group)
+            config_parser = configparser.ConfigParser()
+            config_parser.read_string(f"[{nacos_group}]\n{config}")
+            max_tokens = int(config_parser.get(nacos_group, "max_tokens")) or 8192
+            timeout = int(config_parser.get(nacos_group, "timeout")) or 30
+            temperature = float(config_parser.get(nacos_group, "temperature")) or 0.7
+            top_p = float(config_parser.get(nacos_group, "top_p")) or 1.0
+            #top_k = int(config_parser.get(nacos_group, "top_k")) or 0
+            frequency_penalty = float(config_parser.get(nacos_group, "frequency_penalty")) or 0.0
+            presence_penalty = float(config_parser.get(nacos_group, "presence_penalty")) or 0.0
+            
+        except Exception as e:
+            logger.error(f"Failed to get llm config from Nacos: {e}")
+            # 设置默认值
+            max_tokens = 819
+            timeout = 30
+            temperature = 0.7
+            top_p = 1.0
+            #top_k = 0
+            frequency_penalty = 0.0
+            presence_penalty = 0.0
 
         # 根据模型类型创建相应的配置
-        
         if model_entity.provider == LLMProvider.OPENAI.value:
+            if model_entity.api_key is None or model_entity.api_endpoint is None:
+                raise ValueError(f"Model {model_unique_name} has no api_key or api_endpoint")
+            
             model_config = OpenaiLLMConfig(
-                api_key=model_entity.api_key, # type: ignore
+                provider=model_entity.provider,
+                api_key=model_entity.api_key,
                 api_endpoint=model_entity.api_endpoint,
                 model_name=model_entity.model_name,
-                temperature=model_entity.model_params.get("temperature", settings['llm']['temperature']),
-                max_tokens=model_entity.model_params.get("max_tokens", settings['llm']['max_tokens']),
-                top_p=model_entity.model_params.get("top_p", settings['llm']['top_p']),
-                frequency_penalty=model_entity.model_params.get("frequency_penalty", settings['llm'].get('frequency_penalty', 0)), # type: ignore
-                presence_penalty=model_entity.model_params.get("presence_penalty", settings['llm'].get('presence_penalty', 0)), # type: ignore
-                timeout=model_entity.model_params.get("timeout", settings['llm']['timeout'])
+                temperature=model_entity.model_params.get("temperature", temperature),
+                max_tokens=model_entity.model_params.get("max_tokens", max_tokens),
+                top_p=model_entity.model_params.get("top_p", top_p),
+                frequency_penalty=model_entity.model_params.get("frequency_penalty", frequency_penalty),
+                presence_penalty=model_entity.model_params.get("presence_penalty", presence_penalty),
+                timeout=model_entity.model_params.get("timeout", timeout)
             )
-        # if model_entity.provider == LLMProvider.ANTHROPIC.value:
-        #     model_config = AnthropicLLMConfig(
-        #         model_name=model_entity.model_name,
-        #         api_key=model_entity.api_key # type: ignore
-        #     )
-        if model_entity.provider == LLMProvider.HUGGINGFACE.value:
-            model_config = HuggingFaceLLMConfig(
+        elif model_entity.provider == LLMProvider.OCI.value:
+            if model_entity.model_name is None or model_entity.api_endpoint is None or model_entity.model_params.get("compartment_id") is None:
+                raise ValueError(f"Model {model_unique_name} has no model_name, api_endpoint or compartment_id")
+            model_config = OCILLMConfig(
+                provider=model_entity.provider,
+                api_endpoint=model_entity.api_endpoint,
                 model_name=model_entity.model_name,
-                api_key=model_entity.api_key # type: ignore
+                temperature=model_entity.model_params.get("temperature", temperature),
+                compartment_id=str(model_entity.model_params.get("compartment_id")),
+                max_tokens=model_entity.model_params.get("max_tokens", max_tokens),
+                top_p=model_entity.model_params.get("top_p", top_p)
+                # top_k=model_entity.model_params.get("top_k", top_k),
+                # frequency_penalty=model_entity.model_params.get("frequency_penalty", frequency_penalty)
             )
+        else:
+            # TODO: support other providers
+            logger.error(f"Provider {model_entity.provider} is not supported yet")
+            raise ValueError(f"Model {model_unique_name} has unsupported provider {model_entity.provider}")
+        
         # Create and initialize model //创建和初始化模型
         try:
             model = create_llm_model(model_config)
@@ -121,8 +161,9 @@ class ModelPool:
             self._last_used[model_unique_name] = datetime.now()
             return model
         except Exception as e:
-            logger.error(f"Failed to create model {model_unique_name}: {e}")
-            raise RuntimeError(f"Failed to create model {model_unique_name}: {e}")
+            logger.exception(f"Failed to create model {model_unique_name}: {e}")
+            raise RuntimeError(f"Failed to create model {model_unique_name}: {str(e)}")
+
 
 
     async def unload_model(self, model_unique_name: str):
@@ -137,7 +178,7 @@ class ModelPool:
             try:
                 await model.shutdown()
             except Exception as e:
-                logger.error(f"Error unloading model {model_unique_name}: {e}")
+                logger.exception(f"Error unloading model {model_unique_name}: {e}")
                 
     async def reload_model(self, model_unique_name: str):
         """Reload a model in the pool
@@ -168,9 +209,10 @@ class ModelPool:
                     await self.unload_model(model_unique_name)
                     continue
                     
-                # Simple health check by calling embed with a test text
+                # Simple health check by calling model with a test text
                 model = self._models[model_unique_name]
-                await model.chat("Hi", **{"max_tokens": 1}) # type: ignore
+                await model.chat([{'role': 'user', 'content': 'Hi'}], False, **{"max_tokens": 2})
+                logger.debug(f"Health check for model {model_unique_name} succeeded.")
                 
             except Exception as e:
                 logger.error(f"Health check failed for model {model_unique_name}: {e}")
@@ -179,5 +221,5 @@ class ModelPool:
                     logger.info(f"Attempting to restart model {model_unique_name}")
                     await self.reload_model(model_unique_name)
                 except Exception as restart_error:
-                    logger.error(f"Failed to restart model {model_unique_name}: {restart_error}")
+                    logger.exception(f"Failed to restart model {model_unique_name}: {restart_error}")
                     await self.unload_model(model_unique_name)

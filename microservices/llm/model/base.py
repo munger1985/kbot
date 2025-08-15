@@ -6,27 +6,16 @@ Contains:
 """
 
 from abc import ABC, abstractmethod
-from pydantic import BaseModel, field_validator, ConfigDict
+from pydantic import BaseModel
 from typing import Any, AsyncGenerator
 from openai.types.chat import ChatCompletion, ChatCompletionChunk
 from prometheus_client import Counter, Histogram
-from core.config import settings
 
 
 class LLMConfig(BaseModel):
     """Base configuration for LLM models."""
-    
-    model_config = ConfigDict(extra='forbid')  # Forbid extra fields
-    
-    api_key: str
     model_name: str
-    
-    @field_validator('api_key')
-    def validate_api_key(cls, v):
-        """Validate API key is not empty."""
-        if not v:
-            raise ValueError("API key cannot be empty")
-        return v
+    provider: str
 
 class BaseLLM(ABC):
     """Base class for LLM implementations."""
@@ -41,6 +30,7 @@ class BaseLLM(ABC):
             config: LLM configuration
         """
         self.config = config
+        self.provider = config.provider
     
     @abstractmethod
     async def startup(self) -> None:

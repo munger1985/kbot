@@ -1,1 +1,0 @@
-"""VLM (Vision-Language Model) microservice module."""

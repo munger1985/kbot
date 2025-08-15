@@ -1,19 +1,18 @@
 from enum import Enum
-from typing import Any
-from .base import BaseLLM
-from .openai_client import OpenaiClient, OpenaiLLMConfig
-from .huggingface_client import HuggingFaceClient, HuggingFaceLLMConfig
+from .base import BaseLLM, LLMConfig
+from .openai_client import OpenaiClient
+from .oci_client import OCIClient
 
 class LLMProvider(str, Enum):
     """Enum of supported LLM providers."""
     OPENAI = "openai"
-    ANTHROPIC = "anthropic"
-    HUGGINGFACE = "huggingface"
+    OCI = "oci"
     # Add more providers as they are implemented
     # AZURE = "azure"
+    # HUGGINGFACE = "huggingface"
     # LOCAL = "local"
 
-def create_llm_model(config: OpenaiLLMConfig | HuggingFaceLLMConfig | dict[str, Any]) -> BaseLLM:
+def create_llm_model(config: LLMConfig) -> BaseLLM:
     """Create an LLM model based on the provided configuration.
     
     Args:
@@ -25,20 +24,19 @@ def create_llm_model(config: OpenaiLLMConfig | HuggingFaceLLMConfig | dict[str, 
     Raises:
         ValueError: If the provider is not supported
     """
-    if isinstance(config, OpenaiLLMConfig):
-        return OpenaiClient(config)
-    # elif isinstance(config, AnthropicLLMConfig):
-    #     return AnthropicClient(config)
-    elif isinstance(config, HuggingFaceLLMConfig):
-        return HuggingFaceClient(config)
-    
+    if config.provider == LLMProvider.OPENAI.value:
+        return OpenaiClient(config) # type: ignore
+    elif config.provider == LLMProvider.OCI.value:
+        return OCIClient(config) # type: ignore
+    # TODO: add more providers
     # Add more providers as they are implemented
     # elif isinstance(config, AzureLLMConfig):
     #     return AzureClient(config)
     # elif isinstance(config, LocalLLMConfig):
     #     return LocalClient(config)
-    
-    raise ValueError(f"Unsupported LLM configuration type: {type(config)}")
+    else:
+        raise ValueError(f"Unsupported LLM provider: {config.provider}")
+
 
 def get_supported_providers() -> list[str]:
     """Get a list of supported LLM providers.

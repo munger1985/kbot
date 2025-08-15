@@ -1,8 +1,17 @@
 import os
 import sys
 import asyncio
+import configparser
 from loguru import logger
 from datetime import datetime, timedelta
+from nacos_manager.manager import nacos_manager # type: ignore
+from model import (
+    BaseEmbedding, 
+    EmbeddingProvider,
+    LocalEmbeddingConfig, 
+    RemoteEmbeddingConfig, 
+    create_embedding_model
+)
 
 # 添加项目根目录到 Python 路径，确保可以导入项目模块
 current_file = os.path.abspath(__file__)
@@ -10,15 +19,9 @@ backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(current_file)))
 if backend_dir not in sys.path:
     sys.path.insert(0, backend_dir)
 
-from models.embedding import (
-    BaseEmbedding, 
-    EmbeddingProvider,
-    LocalEmbeddingConfig, 
-    RemoteEmbeddingConfig, 
-    create_embedding_model
-)
+
 from dao.repositories.kbot_md_models_repo import KbotMdModelsRepository
-from core.config import settings
+
 
 
 class ModelPool:
@@ -83,13 +86,29 @@ class ModelPool:
         if model_entity.model_params is None:
             raise ValueError(f"Model {model_unique_name} has no model_params")
 
-        # 根据模型类型创建相应的配置
+        # 从 Nacos 获取 embedding 默认参数
+        try:
+            nacos_group = os.getenv("NACOS_GROUP") or "DEV_GROUP"
+            config = nacos_manager.get_config("embedding", nacos_group)
+            config_parser = configparser.ConfigParser()
+            config_parser.read_string(f"[{nacos_group}]\n{config}")
+            max_tokens = int(config_parser.get(nacos_group, "max_tokens")) or 8192
+            timeout = int(config_parser.get(nacos_group, "timeout")) or 30
+            max_retries = int(config_parser.get(nacos_group, "max_retries")) or 0
+            
+        except Exception as e:
+            logger.warning(f"Failed to get embedding config from Nacos: {e}")
+            # 设置默认值
+            max_tokens = 8192
+            timeout = 30
+            max_retries = 0
         
+        # 根据模型类型创建相应的配置
         if model_entity.provider == EmbeddingProvider.LOCAL.value:
             model_config = LocalEmbeddingConfig(
                 model_name=model_entity.model_name,
                 provider=model_entity.provider,
-                max_tokens=model_entity.model_params.get("max_tokens", settings["embed"]["max_tokens"]),
+                max_tokens=model_entity.model_params.get("max_tokens", max_tokens),
                 model_path=model_entity.model_params.get("model_path", None),
                 device=model_entity.model_params.get("device", None),
                 device_map=model_entity.model_params.get("device_map", None),
@@ -103,11 +122,11 @@ class ModelPool:
             model_config = RemoteEmbeddingConfig(
                 model_name=model_entity.model_name,
                 provider=model_entity.provider,
-                max_tokens=model_entity.model_params.get("max_tokens", settings["embed"]["max_tokens"]),
+                max_tokens=model_entity.model_params.get("max_tokens", max_tokens),
                 api_key=model_entity.api_key, # type: ignore
                 endpoint=model_entity.api_endpoint, # type: ignore
-                timeout=model_entity.model_params.get("timeout", settings["embed"]["timeout"]),        
-                max_retries=model_entity.model_params.get("max_retries", settings["embed"]["max_retries"]),
+                timeout=model_entity.model_params.get("timeout", timeout),        
+                max_retries=model_entity.model_params.get("max_retries", max_retries),
                 organization=model_entity.model_params.get("organization", ""),
                 deployment_name=model_entity.model_params.get("deployment_name", ""),
                 api_version=model_entity.model_params.get("api_version", "")
@@ -121,7 +140,7 @@ class ModelPool:
             self._last_used[model_unique_name] = datetime.now()
             return model
         except Exception as e:
-            logger.error(f"Failed to create model {model_unique_name}: {e}")
+            logger.exception(f"Failed to create model {model_unique_name}: {e}")
             raise RuntimeError(f"Failed to create model {model_unique_name}: {e}")
                     
     async def unload_model(self, model_unique_name: str):
@@ -203,5 +222,5 @@ class ModelPool:
                     logger.info(f"Attempting to restart model {model_unique_name}")
                     await self.reload_model(model_unique_name)
                 except Exception as restart_error:
-                    logger.error(f"Failed to restart model {model_unique_name}: {restart_error}")
+                    logger.exception(f"Failed to restart model {model_unique_name}: {restart_error}")
                     await self.unload_model(model_unique_name)

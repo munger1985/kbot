@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  libreoffice:
+    image: libreoffice/stable:7.4
+    container_name: libreoffice-uno
+    restart: unless-stopped
+    ports:
+      - "${LIBREOFFICE_PORT}:${LIBREOFFICE_PORT}"
+    volumes:
+      - ./documents:/documents
+      - ./temp:/temp
+    environment:
+      - HOME=/temp
+    command: >
+      libreoffice --headless
+      --invisible
+      --nocrashreport
+      --nodefault
+      --nologo
+      --nofirststartwizard
+      --norestore
+      --accept="socket,host=0.0.0.0,port=${LIBREOFFICE_PORT};urp;"
+    healthcheck:
+      test: ["CMD", "netstat", "-anp", "|", "grep", "${LIBREOFFICE_PORT}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  api:
+    build: .
+    container_name: document-api
+    depends_on:
+      libreoffice:
+        condition: service_healthy
+    restart: unless-stopped
+    volumes:
+      - ./documents:/app/documents
+      - ./temp:/app/temp
+    environment:
+      - LIBREOFFICE_HOST=libreoffice
+      - LIBREOFFICE_PORT=${LIBREOFFICE_PORT}
+    ports:
+      - "${API_PORT}:${API_PORT}"

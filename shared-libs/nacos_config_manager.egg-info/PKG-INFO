@@ -1,0 +1,6 @@
+Metadata-Version: 2.4
+Name: nacos-config-manager
+Version: 0.1
+Requires-Dist: nacos-sdk-python>=2.0.0
+Requires-Dist: pydantic>=1.8.2
+Dynamic: requires-dist

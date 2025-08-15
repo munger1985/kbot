@@ -1,16 +1,7 @@
-import os
-import sys
 import numpy as np
 from loguru import logger
-
-# 添加项目根目录到 Python 路径，确保可以导入项目模块
-current_file = os.path.abspath(__file__)
-backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(current_file)))
-if backend_dir not in sys.path:
-    sys.path.insert(0, backend_dir)
-    
-from microservices.embedding.model_pool import ModelPool
-from models.embedding.base import BaseEmbedding, EmbeddingResponse, EmbeddingDataItem
+from model_pool import ModelPool
+from model.base import BaseEmbedding, EmbeddingResponse
 
 
 class EmbeddingService:
@@ -102,7 +93,7 @@ class EmbeddingService:
             return response
                 
         except Exception as e:
-            logger.error(f"Failed to embed texts, model_unique_name: {model_unique_name}, error: {e}")
+            logger.exception(f"Failed to embed texts, model_unique_name: {model_unique_name}, error: {e}")
             # 如果底层模型返回0-d tensor错误，返回空响应
             if "0-d tensor" in str(e):
                 return EmbeddingResponse(

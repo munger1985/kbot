@@ -1,22 +1,37 @@
 import os
 import aiohttp
+import configparser
 from PIL import Image
 from decimal import Decimal
 from loguru import logger
 from typing import Any
-from models.embedding.base import EmbeddingDataItem
+from microservices.embedding.model.base import EmbeddingDataItem
 from dao.repositories.kbot_md_prompt_repo import KbotMdPromptRepository
-from core.config import settings
 from .common_methods import encode_image
+from nacos_manager.manager import nacos_manager # type: ignore
 
 
-async def call_embedding_model(model_unique_name: str, texts: list[str], batch_dize: int | None = 0) -> list[EmbeddingDataItem] | None:
+async def call_embedding_model(model_unique_name: str, 
+                               texts: list[str], 
+                               batch_dize: int | None = 0
+                               ) -> list[EmbeddingDataItem] | None:
     """Call embedding model"""
 
-    host = os.getenv("KBOT_EMBED_HOST", "localhost")
-    port = os.getenv("KBOT_EMBED_PORT", "8001")
+    try:
+    # 从 nacos 获取 embedding 服务配置
+        nacos_group = os.getenv("NACOS_GROUP") or "DEV_GROUP" # Nacos分组
+        config_parser = configparser.ConfigParser()
+        embed_config = nacos_manager.get_config("embedding", nacos_group)
+        config_parser.read_string(f"[{nacos_group}]\n{embed_config}")
+        service_host = config_parser.get(nacos_group, "service_host") or "0.0.0.0" # 微服务地址
+        service_port = int(config_parser.get(nacos_group, "service_port")) or 9201 # 微服务通信端口
+    except Exception as e:
+        # 如果从 nacos 获取 embedding 服务配置失败，则使用默认配置
+        service_host = "0.0.0.0"
+        service_port = 9201
+
     
-    url = f"http://{host}:{port}/v1/embeddings"
+    url = f"http://{service_host}:{service_port}/v1/embeddings"
     headers = {"Content-Type": "application/json"}
     payload = {
         "model_unique_name": model_unique_name,
@@ -113,10 +128,20 @@ async def call_llm_model(model_unique_name: str, prompt: str, **kwargs):
     返回:
         一个异步生成器，逐块产生LLM的响应
     """
-    # 获取LLM服务地址和端口
-    host = os.getenv("KBOT_LLM_HOST", "localhost")
-    port = os.getenv("KBOT_LLM_PORT", "8002")
-    url = f"http://{host}:{port}/v1/chat/completions"
+    try:
+    # 从 nacos 获取 llm 服务配置
+        nacos_group = os.getenv("NACOS_GROUP") or "DEV_GROUP" # Nacos分组
+        config_parser = configparser.ConfigParser()
+        embed_config = nacos_manager.get_config("llm", nacos_group)
+        config_parser.read_string(f"[{nacos_group}]\n{embed_config}")
+        service_host = config_parser.get(nacos_group, "service_host") or "0.0.0.0" # 微服务地址
+        service_port = int(config_parser.get(nacos_group, "service_port")) or 9202 # 微服务通信端口
+    except Exception as e:
+        # 如果从 nacos 获取 llm 服务配置失败，则使用默认配置
+        service_host = "0.0.0.0"
+        service_port = 9202
+
+    url = f"http://{service_host}:{service_port}/v1/chat/completions"
     headers = {"Content-Type": "application/json"}
     
     # 构建请求负载

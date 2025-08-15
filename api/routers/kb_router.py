@@ -1,7 +1,7 @@
 
 import json
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, status
-from api.controllers.kb_controller import upload_knowledge_base_files, delete_knowledge_base_files
+from api.controllers.kb_controller import upload_kb_files, delete_kb_files, get_kb_files
 from api.schemas.kb_schema import KBUploadForm, KBDeleteForm
 from api.schemas.kb_response import SuccessResponse, ErrorResponse
 
@@ -27,7 +27,7 @@ async def upload_files(
         form = KBUploadForm(files=files, **metadata_dict)
         
         # Call the controller
-        result = await upload_knowledge_base_files(form)
+        result = await upload_kb_files(form)
         
         if result:
             return SuccessResponse(
@@ -69,7 +69,7 @@ async def delete_files(
         form = KBDeleteForm(**metadata_dict)
         
         # Call the controller
-        result = await delete_knowledge_base_files(form)
+        result = await delete_kb_files(form)
 
 
         if result["failed_file_cnt"] == 0 and result["meta_cnt"] > 0:
@@ -90,6 +90,33 @@ async def delete_files(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Invalid JSON format for metadata: {str(e)}"
         )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Internal server error: {str(e)}"
+        )
+    
+@router.get(
+    "/download",
+    summary="Download a file from the knowledge base. 从知识库中下载文件",
+    description="Download a file from the knowledge base. 从知识库中下载文件",
+    response_model=bytes | list[str],
+    status_code=status.HTTP_200_OK
+)
+async def download_file(
+    file_id: str
+):
+    try:
+        result = await get_kb_files(file_id, download=True)
+        
+        if result:
+            return result
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="File not found."
+            )
+        
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

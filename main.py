@@ -13,7 +13,6 @@ from api.routers import router
 from core.log.logger import setup_logging
 from core.config import settings
 from services.dataparse.file_parser_manger import FileParserManager
-#from microservices.microservice_manger import MicroserviceManager
 
 
 # 加载环境变量

@@ -1,14 +1,13 @@
 import os
 import gc
 import torch
-import inspect
+import configparser
 from typing import Any
 from loguru import logger
 from transformers import AutoModel, AutoTokenizer
 from prometheus_client import Histogram, Counter, Gauge
-from models.embedding.base import BaseEmbedding, LocalEmbeddingConfig, EmbeddingResponse, EmbeddingDataItem
-from core.config import settings
-
+from .base import BaseEmbedding, LocalEmbeddingConfig, EmbeddingResponse, EmbeddingDataItem
+from nacos_manager.manager import nacos_manager # type: ignore
 
 
 class LocalEmbedding(BaseEmbedding):
@@ -67,6 +66,18 @@ class LocalEmbedding(BaseEmbedding):
         if not isinstance(config, LocalEmbeddingConfig):
             raise TypeError("config must be an instance of LocalEmbeddingConfig")
 
+        # 从nacos manager中读取cache_dir配置，用于缓存模型
+        try:
+            nacos_group = os.getenv("NACOS_GROUP") or "DEV_GROUP"
+            embed_config = nacos_manager.get_config("embedding", nacos_group)
+            config_parser = configparser.ConfigParser()
+            config_parser.read_string(f"[{nacos_group}]\n{embed_config}")
+            cache_dir = config_parser.get(nacos_group, "cache_dir") or "/tmp"
+            
+        except Exception as e:
+            logger.error(f"Failed to get embedding config from Nacos: {e}")
+            cache_dir = "/tmp"
+
         # Model components
         self.model: torch.nn.Module | None = None
         self.tokenizer: Any | None = None
@@ -75,7 +86,7 @@ class LocalEmbedding(BaseEmbedding):
         self.model_name = config.model_name
         self.model_path = config.model_path
         self.predownload = False
-        self.cache_path = os.path.join("./models/local_model_cache", self.model_name)
+        self.cache_path = os.path.join(cache_dir, self.model_name)
         self.name_or_path = ""
         
         # Device configuration
@@ -84,12 +95,7 @@ class LocalEmbedding(BaseEmbedding):
         self.max_memory = getattr(config, 'max_memory', None)
         
         # Model parameters with defaults
-        try:
-            self.max_tokens = getattr(config, 'max_tokens', settings['embed']['max_tokens'])
-        except (KeyError, TypeError) as e:
-            logger.error("Invalid settings structure for max_tokens")
-            raise ValueError("Missing or invalid max_tokens setting") from e
-        
+        self.max_tokens = getattr(config, 'max_tokens')
         self.compile_model = getattr(config, 'compile_model', True)
         self.use_fp16 = getattr(config, 'use_fp16', False)
         self.local_files_only = getattr(config, 'local_files_only', False)
@@ -145,7 +151,7 @@ class LocalEmbedding(BaseEmbedding):
             
         except Exception as e:
             self._is_initialized = False
-            logger.error(f"Failed to initialize model: {e}")
+            logger.exception(f"Failed to initialize model: {e}")
             raise
 
     def _load_tokenizer(self) -> Any:

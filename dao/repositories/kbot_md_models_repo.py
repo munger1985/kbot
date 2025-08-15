@@ -106,3 +106,12 @@ class KbotMdModelsRepository:
             )
             return result.scalar_one_or_none()
     
+    async def get_provider_by_unique_name(self, model_unique_name: str) -> str | None:
+        """Get knowledge base model provider by unique name."""
+        async with get_session() as session:
+            result = await session.execute(
+                select(KbotMdModels.provider).where(
+                    KbotMdModels.model_unique_name == model_unique_name
+                )
+            )
+            return result.scalar_one_or_none()

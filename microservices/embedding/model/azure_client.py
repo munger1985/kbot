@@ -3,8 +3,8 @@ from openai import AsyncAzureOpenAI, APIConnectionError, RateLimitError, APIStat
 from prometheus_client import Histogram, Counter, Gauge
 from loguru import logger
 import asyncio
-from models.embedding.base import BaseEmbedding, RemoteEmbeddingConfig, EmbeddingResponse, EmbeddingDataItem
-from core.config import settings
+from .base import BaseEmbedding, RemoteEmbeddingConfig, EmbeddingResponse, EmbeddingDataItem
+
 
 class AzureEmbedding(BaseEmbedding):
     """
@@ -65,11 +65,11 @@ class AzureEmbedding(BaseEmbedding):
                 - azure_params: Additional Azure parameters
         """
         self._client: AsyncAzureOpenAI | None = None
-        self.api_key = config.api_key or settings.get('azure_api_key')
+        self.api_key = config.api_key #or settings.get('azure_api_key')
         self.deployment_name = config.deployment_name
         self.endpoint = config.endpoint
         self.api_version = config.api_version or "2023-05-15"
-        self.timeout = config.timeout or settings['embed']['timeout']
+        self.timeout = config.timeout #or settings['embed']['timeout']
         self.max_retries = getattr(config, 'max_retries', 3)
         self.max_batch_size = getattr(config, 'max_batch_size', 16)  # Azure recommendation
         self.min_batch_size = getattr(config, 'min_batch_size', 1)

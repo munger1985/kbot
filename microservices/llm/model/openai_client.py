@@ -1,9 +1,7 @@
 from openai import AsyncOpenAI, APIError
 from loguru import logger
-from pydantic import field_validator
 from typing import AsyncGenerator
-from .base import LLMConfig, BaseLLM
-from core.config import settings
+
 from openai.types.chat import (
     ChatCompletion,
     ChatCompletionChunk,
@@ -11,24 +9,19 @@ from openai.types.chat import (
     ChatCompletionSystemMessageParam,
     ChatCompletionAssistantMessageParam
 )
+from .base import LLMConfig, BaseLLM
 
 
 class OpenaiLLMConfig(LLMConfig):
     """Configuration for OpenAI LLM client."""
-    
-    temperature: float = settings['llm']['temperature']
-    max_tokens: int = settings['llm']['max_tokens']
-    top_p: float = settings['llm']['top_p']
-    frequency_penalty: float = 0.0
-    presence_penalty: float = 0.0
-    timeout: int = settings['llm']['timeout']
-    api_endpoint: str | None = None
-
-    @field_validator('temperature')
-    def validate_temperature(cls, v):
-        if not 0 <= v <= 2:
-            raise ValueError('temperature must be between 0 and 2')
-        return v
+    temperature: float | None = None
+    max_tokens: int | None = None
+    top_p: float | None = None
+    frequency_penalty: float | None = None
+    presence_penalty: float | None = None
+    timeout: int | None = None
+    api_endpoint: str
+    api_key: str
 
 
 class OpenaiClient(BaseLLM):
@@ -40,7 +33,7 @@ class OpenaiClient(BaseLLM):
         Args:
             config: OpenAI LLM configuration
         """
-        self.config = config
+        super().__init__(config)
         self.client = None
         self._is_running = False
     
@@ -48,9 +41,9 @@ class OpenaiClient(BaseLLM):
         """Initialize the OpenAI client."""
         try:
             self.client = AsyncOpenAI(
-                api_key=self.config.api_key,
-                base_url=self.config.api_endpoint,
-                timeout=self.config.timeout
+                api_key=self.config.api_key, # type: ignore
+                base_url=self.config.api_endpoint, # type: ignore
+                timeout=self.config.timeout # type: ignore
             )
             self._is_running = True
             logger.info("OpenAI AsyncOpenAI client initialized")
@@ -97,11 +90,11 @@ class OpenaiClient(BaseLLM):
         params = {
             "model": self.config.model_name,
             "messages": converted_messages,
-            "temperature": kwargs.get('temperature', self.config.temperature),
-            "max_tokens": kwargs.get('max_tokens', self.config.max_tokens),
-            "top_p": kwargs.get('top_p', self.config.top_p),
-            "frequency_penalty": kwargs.get('frequency_penalty', self.config.frequency_penalty),
-            "presence_penalty": kwargs.get('presence_penalty', self.config.presence_penalty),
+            "temperature": kwargs.get('temperature', self.config.temperature), # type: ignore
+            "max_tokens": kwargs.get('max_tokens', self.config.max_tokens), # type: ignore
+            "top_p": kwargs.get('top_p', self.config.top_p), # type: ignore
+            "frequency_penalty": kwargs.get('frequency_penalty', self.config.frequency_penalty), # type: ignore
+            "presence_penalty": kwargs.get('presence_penalty', self.config.presence_penalty), # type: ignore
             "stream": stream,
         }
         

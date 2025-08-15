@@ -6,14 +6,16 @@ import sys
 import json
 from typing import Any, AsyncGenerator
 
+from model_pool import ModelPool
+from model import BaseLLM, LLMProvider
+
 # 添加项目根目录到 Python 路径，确保可以导入项目模块
 current_file = os.path.abspath(__file__)
 backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(current_file)))
 if backend_dir not in sys.path:
     sys.path.insert(0, backend_dir)
 
-from microservices.llm.model_pool import ModelPool
-from models.llm import BaseLLM
+
 
 
 class LLMService:
@@ -68,7 +70,7 @@ class LLMService:
         top_p: float | None = None,
         frequency_penalty: float | None = None,
         presence_penalty: float | None = None
-    ) -> dict[str, Any] | AsyncGenerator[str, None]:
+    ):
         """Generate a chat response.
 
         Args:
@@ -119,103 +121,53 @@ class LLMService:
                             })
                 
                 logger.debug(f"Sending messages to model: {processed_messages}")
-                response = await model.chat(processed_messages, stream=stream, **kwargs)
-                logger.debug(f"Received response type: {type(response)}")
-            except Exception as e:
-                logger.error(f"Error generating chat response: {e}")
 
-            if stream:
-                # Stream response processing
-                async def generate_stream():
-                    try:
-                        content_parts = []
-                        last_chunk = None
-                        
-                        async for chunk in response: # type: ignore
-                            logger.debug(f"Received chunk type: {type(chunk)}")
-                            last_chunk = chunk
+                # OpenAI stream mode
+                if stream and model.provider == LLMProvider.OPENAI.value:
+                    response = await model.chat(processed_messages, stream=True, **kwargs)
+                    logger.debug("OpenAI streaming response received.")
+                    async def generate_openai_stream():
+                        try:
+                            async for chunk in response: # type: ignore
+                                    yield chunk
+                                
+                        except Exception as e:
+                            logger.exception(f"Error in OpenAI streaming response: {e}")
+                            raise
                             
-                            if not hasattr(chunk, 'choices'):
-                                logger.warning("Received invalid chunk format")
-                                continue
-                            
-                            if not chunk.choices:
-                                logger.warning("Received chunk with no choices")
-                                continue
-                            
-                            if not hasattr(chunk.choices[0], 'delta'):
-                                logger.warning("Received invalid choice format")
-                                continue
-                            
-                            delta = chunk.choices[0].delta
-                            if delta and hasattr(delta, 'content'):
-                                content = delta.content
-                                if content is not None:
-                                    content_parts.append(str(content))
-                                    yield str(content)
-                                else:
-                                    logger.debug("Received delta with null content")
-                            else:
-                                logger.debug("Received delta with no content")
-                        
-                        # After stream ends, check for usage data
-                        if hasattr(last_chunk, 'usage'):
-                            yield "\n\n=== USAGE ===\n" + json.dumps({
-                                "total_tokens": int(last_chunk.usage.total_tokens), # type: ignore
-                                "prompt_tokens": int(last_chunk.usage.prompt_tokens), # type: ignore
-                                "completion_tokens": int(last_chunk.usage.completion_tokens) # type: ignore
-                            })
-                        elif hasattr(response, 'usage'):
-                            yield "\n\n=== USAGE ===\n" + json.dumps({
-                                "total_tokens": int(response.usage.total_tokens), # type: ignore
-                                "prompt_tokens": int(response.usage.prompt_tokens), # type: ignore
-                                "completion_tokens": int(response.usage.completion_tokens) # type: ignore
-                            })
-                            
-                    except Exception as e:
-                        logger.error(f"Error in streaming response: {e}")
-                        raise
-                        
-                return generate_stream()
-            else:
-                # Non-stream response processing
-                logger.debug(f"Received response type: {type(response)}")
+                    return generate_openai_stream()
                 
-                if not hasattr(response, 'choices'):
-                    raise ValueError("Invalid response format: no choices attribute")
+                # OCI stream mode
+                elif stream and model.provider == LLMProvider.OCI.value:
+                    response = await model.chat(processed_messages, stream=True, **kwargs)
+                    logger.debug("Non-openai streaming response received.")
+                    async def generate_oci_stream():
+                        try:
+                            for event in response.data.events(): # type: ignore
+                                output =  json.loads(event.data)
+                                yield output
+                        except Exception as e:
+                            logger.exception(f"Error in streaming response: {e}")
+                            raise   
+
+                    return generate_oci_stream()
                 
-                if not response.choices: # type: ignore
-                    raise ValueError("Invalid completion format: no choices available")
+                # non-stream mode
+                elif not stream:
+                    response = await model.chat(processed_messages, stream=False, **kwargs) # type: ignore
+                    logger.debug("Non-stream response received")
+                    return response
+                # Unknown response type
+                else:
+                    logger.warning(f"Unknown response type.")
+                    return None
                 
-                if not hasattr(response.choices[0], 'message'): # type: ignore
-                    raise ValueError("Invalid choice format: no message attribute")
-                
-                message = response.choices[0].message # type: ignore
-                if not message or not hasattr(message, 'content'):
-                    raise ValueError("Invalid message format: no content attribute")
-                
-                if not message.content:
-                    raise ValueError("Invalid message format: empty content")
-                
-                if not hasattr(response, 'usage'):
-                    raise ValueError("Invalid completion format: no usage attribute")
-                
-                if not response.usage: # type: ignore
-                    raise ValueError("Invalid completion format: no usage data available")
-                
-                if not all(hasattr(response.usage, attr)  # type: ignore
-                          for attr in ['total_tokens', 'prompt_tokens', 'completion_tokens']):
-                    raise ValueError("Invalid usage format: missing required attributes")
-                
-                return {
-                    "content": str(message.content),
-                    "usage": {
-                        "total_tokens": int(response.usage.total_tokens), # type: ignore
-                        "prompt_tokens": int(response.usage.prompt_tokens), # type: ignore
-                        "completion_tokens": int(response.usage.completion_tokens) # type: ignore
-                    }
-                }
+            except Exception as e:
+                logger.exception(f"Error generating chat response: {e}")
+                raise RuntimeError("Error generating chat response") from e
+
+            
                 
         except Exception as e:
-            logger.error(f"Error generating chat response: {e}")
+            logger.exception(f"Error generating chat response: {e}")
             raise RuntimeError(f"Failed to generate chat response: {e}")

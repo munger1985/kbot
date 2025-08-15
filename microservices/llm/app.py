@@ -7,34 +7,83 @@ with various LLM providers. It supports text generation and chat completion.
 
 """
 
-import sys
 import os
-import time
-import uuid
-import json
+import sys
 import signal
+import json
 import subprocess
-import platform
+import time
 import atexit
+import platform
+import configparser
+import uuid
+import uvicorn
+from dotenv import load_dotenv
 from datetime import datetime
+from pathlib import Path
 from typing import Any
-from loguru import logger
-from fastapi import FastAPI, HTTPException, Depends
-from fastapi.responses import StreamingResponse
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field, ValidationError
 from contextlib import asynccontextmanager
+from pydantic import BaseModel, Field, ValidationError
+from fastapi import FastAPI, HTTPException, Depends
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
+from loguru import logger
+from nacos import NacosClient
+from nacos_manager.manager import nacos_manager # type: ignore
+from llm_service import LLMService
+from model import LLMProvider
 
 # 添加项目根目录到 Python 路径，确保可以导入项目模块
 current_file = os.path.abspath(__file__)
 backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(current_file)))
 if backend_dir not in sys.path:
     sys.path.insert(0, backend_dir)
+from dao.repositories.kbot_md_models_repo import KbotMdModelsRepository
 
-from microservices.llm.llm_service import LLMService
-from core.config import settings
-from core.log.logger import setup_logging
 
+# 加载环境变量配置
+load_dotenv()
+nacos_addr = os.getenv("NACOS_SERVER_ADDR") # Nacos服务器地址
+nacos_namespace = os.getenv("NACOS_NAMESPACE") or "dev" # Nacos命名空间
+nacos_group = os.getenv("NACOS_GROUP") or "DEV_GROUP" # Nacos分组
+nacos_username = os.getenv("NACOS_USERNAME") # Nacos账号名称
+nacos_password = os.getenv("NACOS_PASSWORD") # Nacos账号密码
+
+try:
+    # 从 nacos 获取 llm 服务配置
+    config_parser = configparser.ConfigParser()
+    embed_config = nacos_manager.get_config("llm", nacos_group)
+    config_parser.read_string(f"[{nacos_group}]\n{embed_config}")
+    service_name = config_parser.get(nacos_group, "service_name") or "llm-service" # 全局微服务名称
+    service_version = config_parser.get(nacos_group, "service_version") or "1.0.0" # 微服务版本
+    service_host = config_parser.get(nacos_group, "service_host") or "0.0.0.0" # 微服务地址
+    service_port = int(config_parser.get(nacos_group, "service_port")) or 9201 # 微服务通信端口
+except Exception as e:
+    # 如果从 nacos 获取 llm 服务配置失败，则使用默认配置
+    logger.warning("Failed to get llm service config from nacos: {}".format(e))
+    service_name = "llm-service"
+    service_version = "1.0.0"
+    service_host = "0.0.0.0"
+    service_port = 9202
+
+# 服务注册到 Nacos
+def register_service():
+    
+    client = NacosClient(
+        server_addresses=nacos_addr,
+        namespace=nacos_namespace
+        # username='nacos',
+        # password='nacos'
+        )
+    
+    # 注册服务
+    client.add_naming_instance(
+        service_name=service_name,
+        ip=service_host,
+        port=service_port,
+        ephemeral=True,
+        healthy=True
+    )
 
 # 创建LLM服务实例
 llm_service = LLMService()
@@ -43,8 +92,26 @@ llm_service = LLMService()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan context manager. //应用程序生命周期上下文管理器"""
+    # 通过 nacos_manager 获取logger配置
+    try:
+        log_config = nacos_manager.get_config("logger", nacos_group)
+        config_parser.read_string(f"[{nacos_group}]\n{log_config}")
+        log_dir = config_parser.get(nacos_group, "dir") or "logs/"
+        log_level = config_parser.get(nacos_group, "level") or "DEBUG"
+        rotation = config_parser.get(nacos_group, "rotation") or "10 MB"
+        retention = config_parser.get(nacos_group, "retention") or "20 days"
+        
+    except Exception as e:
+        # 如果获取 logger 配置失败，则使用默认配置
+        logger.warning(f"Failed to get logger config from nacos: {str(e)}")
+        log_dir = "logs/"
+        log_level = "DEBUG"
+        rotation = "10 MB"
+        retention = "10 days"
+    
+    logfile = Path.joinpath(Path(log_dir), f"{service_name}.log")
     # 初始化日志
-    setup_logging(service_name="llm")
+    logger.add(logfile, level=log_level, rotation=rotation, retention=retention)
     
     # 启动事件
     start_time = time.time()
@@ -58,10 +125,10 @@ async def lifespan(app: FastAPI):
         await llm_service.initialize()
         logger.info(f"LLM service started successfully, elapsed time: {time.time() - start_time:.2f} seconds")
     except Exception as e:
-        logger.error(f"Failed to initialize LLM service: {e}")
+        logger.exception(f"Failed to initialize LLM service: {e}")
         # 在生产环境中，可能需要在这里退出应用程序
-        current_env = os.getenv("KBOT_ENV")
-        if current_env == "production":
+        current_env = nacos_namespace
+        if current_env == "prod":
             sys.exit(1)
     
     yield  # 服务运行期间
@@ -74,7 +141,7 @@ async def lifespan(app: FastAPI):
         await llm_service.shutdown()
         logger.info("Successfully closed LLM service")
     except Exception as e:
-        logger.error(f"Error closing LLM service: {e}")
+        logger.exception(f"Error closing LLM service: {e}")
     
     logger.info(f"LLM service closed in {time.time() - shutdown_start:.2f} seconds")
     logger.info(f"Total service runtime: {time.time() - start_time:.2f} seconds")
@@ -83,7 +150,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="LLM service",
     description="Provides text generation and chat completion services using various LLM providers.",
-    version=settings["app"]["version"],
+    version=service_version,
     lifespan=lifespan,
 )
 
@@ -178,12 +245,13 @@ async def chat(
     response_id = f"chatcmpl-{uuid.uuid4()}"  # OpenAI格式的ID
     created_time = int(time.time())
     model_name = request.model_unique_name
-    
+    provider = await KbotMdModelsRepository().get_provider_by_unique_name(model_name)
     logger.info(f"Generating chat response using model {request.model_unique_name}")
     
     try:
-        if request.stream:
-            async def generate():
+        # OpenAI streaming 格式响应
+        if request.stream and provider == LLMProvider.OPENAI.value:
+            async def generate_openai_sse():
                 try:
                     # 获取流式响应
                     chunk_stream = await llm_service.chat(
@@ -198,24 +266,10 @@ async def chat(
                         presence_penalty=request.presence_penalty
                     )
                     
-                    # 初始化usage数据
-                    usage_data = {
-                        "prompt_tokens": 0,
-                        "completion_tokens": 0,
-                        "total_tokens": 0
-                    }
-                    
-                    async for content in chunk_stream: # type: ignore
-                        # 如果是usage数据，更新usage_data
-                        if content.startswith("\n\n=== USAGE ==="):
-                            try:
-                                usage_data.update(json.loads(content.replace("\n\n=== USAGE ===\n", "")))
-                            except json.JSONDecodeError:
-                                logger.warning("Failed to parse usage data")
-                            continue
-                            
-                        # 标准OpenAI SSE格式
-                        chunk_data = {
+                    async for chunk in chunk_stream: # type: ignore
+                        # ChatCompletionChunk
+                        content = chunk.choices[0].delta.content
+                        chunk_dict = {
                             "id": response_id,
                             "object": "chat.completion.chunk",
                             "created": created_time,
@@ -226,7 +280,7 @@ async def chat(
                                 "finish_reason": None
                             }]
                         }
-                        yield f"data: {json.dumps(chunk_data)}\n\n"
+                        yield f"data: {json.dumps(chunk_dict)}\n\n"
                     
                     # 发送结束标记
                     end_chunk = {
@@ -238,14 +292,80 @@ async def chat(
                             "delta": {},
                             "index": 0,
                             "finish_reason": "stop"
-                        }],
-                        "usage": usage_data
+                        }]
                     }
                     yield f"data: {json.dumps(end_chunk)}\n\n"
                     yield "data: [DONE]\n\n"
                     
                 except Exception as e:
-                    logger.error(f"Stream error: {str(e)}")
+                    logger.exception(f"Stream error: {str(e)}")
+                    error_chunk = {
+                        "error": {
+                            "message": str(e),
+                            "type": e.__class__.__name__,
+                            "code": 500
+                        }
+                    }
+                    yield f"data: {json.dumps(error_chunk)}\n\n"
+                    yield "data: [DONE]\n\n"
+            
+            return StreamingResponse(
+                generate_openai_sse(),
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "Connection": "keep-alive"
+                }
+            )
+
+        elif request.stream and provider == LLMProvider.OCI.value:
+            async def generate_oci_sse():
+                try:
+                    # 获取流式响应
+                    chunk_stream = await llm_service.chat(
+                        model_unique_name=request.model_unique_name,
+                        messages=request.messages,
+                        stream=True,
+                        max_tokens=request.max_tokens,
+                        temperature=request.temperature,
+                        timeout=request.timeout,
+                        top_p=request.top_p,
+                        frequency_penalty=request.frequency_penalty,
+                        presence_penalty=request.presence_penalty
+                    )
+                    
+                    async for chunk in chunk_stream: # type: ignore                        
+                        content = chunk["text"]
+                        chunk_dict = {
+                            "id": response_id,
+                            "object": "chat.completion.chunk",
+                            "created": created_time,
+                            "model": model_name,
+                            "choices": [{
+                                "delta": {"content": content},
+                                "index": 0,
+                                "finish_reason": None
+                            }]
+                        }
+                        yield f"data: {json.dumps(chunk_dict)}\n\n"
+                    
+                    # 发送结束标记
+                    end_chunk = {
+                        "id": response_id,
+                        "object": "chat.completion.chunk",
+                        "created": created_time,
+                        "model": model_name,
+                        "choices": [{
+                            "delta": {},
+                            "index": 0,
+                            "finish_reason": "stop"
+                        }]
+                    }
+                    yield f"data: {json.dumps(end_chunk)}\n\n"
+                    yield "data: [DONE]\n\n"
+                    
+                except Exception as e:
+                    logger.exception(f"Stream error: {str(e)}")
                     error_chunk = {
                         "error": {
                             "message": str(e),
@@ -257,7 +377,7 @@ async def chat(
                     yield "data: [DONE]\n\n"
 
             return StreamingResponse(
-                generate(),
+                generate_oci_sse(),
                 media_type="text/event-stream",
                 headers={
                     "Cache-Control": "no-cache",
@@ -265,8 +385,8 @@ async def chat(
                 }
             )
             
-        else:
-            # 非流式响应
+        elif not request.stream:
+            # OpenAI 非流式响应
             response = await llm_service.chat(
                 model_unique_name=request.model_unique_name,
                 messages=request.messages,
@@ -281,14 +401,20 @@ async def chat(
             
             processing_time = time.time() - start_time
             logger.info(f"Chat completion took {processing_time:.2f}s")
-            
-            # 获取usage数据
-            usage_data = response.get("usage", { # type: ignore
-                "prompt_tokens": 0,
-                "completion_tokens": 0,
-                "total_tokens": 0
-            })
-            
+            content = None
+            usage_data = None
+            # 获取响应内容和usage数据
+            if provider == LLMProvider.OPENAI.value:
+                content = response.choices[0].message.content # type: ignore
+                usage_data = response.usage # type: ignore
+
+            elif provider == LLMProvider.OCI.value:
+                content = response.data.chat_response.text # type: ignore
+                usage_data = response.data.chat_response.usage # type: ignore
+
+            else:
+                logger.warning(f"Unsupported provider: {provider}")
+
             return ChatResponse(
                 id=response_id,
                 object="chat.completion",
@@ -297,18 +423,22 @@ async def chat(
                 choices=[{
                     "message": {
                         "role": "assistant",
-                        "content": response["content"] # type: ignore
+                        "content": content
                     },
                     "finish_reason": "stop",
                     "index": 0
                 }],
                 usage={
-                    "prompt_tokens": usage_data.get("prompt_tokens", 0),
-                    "completion_tokens": usage_data.get("completion_tokens", 0),
-                    "total_tokens": usage_data.get("total_tokens", 0)
+                    "prompt_tokens": usage_data["prompt_tokens"] if isinstance(usage_data, dict) else usage_data.prompt_tokens, # type: ignore
+                    "completion_tokens": usage_data["completion_tokens"] if isinstance(usage_data, dict) else usage_data.completion_tokens, # type: ignore
+                    "total_tokens": usage_data["total_tokens"] if isinstance(usage_data, dict) else usage_data.total_tokens # type: ignore
                 },
                 processing_time=processing_time
             )
+        
+        else:
+            # 响应格式不支持
+            raise HTTPException(400, detail="Response format not supported")
 
     except ValidationError as e:
         raise HTTPException(400, detail=str(e))
@@ -326,27 +456,40 @@ async def chat(
 llm_service_process = None
 
 def start_llm_service():
-    """Start the llm microservice as an independent process."""
-    logger.info("Start the llm microservice as an independent process.")
-    llm_service_path = os.path.abspath(__file__)
-    
-    # 启动llm微服务，使用环境变量中的端口并设置为独立模式
-    process = subprocess.Popen(
-        [sys.executable, llm_service_path],
-        env={**os.environ, "LLM_SERVICE_STANDALONE": "1"}
-    )
-    return process
+    """Start the LLM microservice as an independent process."""
+    try:
+        logger.info("Starting LLM microservice as independent process...")
+        llm_service_path = os.path.abspath(__file__)
+        
+        process = subprocess.Popen(
+            [sys.executable, llm_service_path],
+            env={**os.environ, "LLM_SERVICE_STANDALONE": "1"},
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
+        
+        # 检查进程是否成功启动
+        if process.poll() is not None:
+            stderr = process.stderr.read().decode('utf-8') if process.stderr else ""
+            raise RuntimeError(f"Failed to start LLM service: {stderr}")
+            
+        logger.success(f"LLM service started successfully with PID {process.pid}")
+        return process
+        
+    except Exception as e:
+        logger.exception(f"Error starting LLM service: {str(e)}")
+        raise
 
 def shutdown_llm_service():
-    """Terminate the llm microservice process."""
+    """Terminate the LLM microservice process."""
     global llm_service_process
     if llm_service_process:
-        logger.info("Terminating the llm microservice process...")
+        logger.info("Terminating the LLM microservice process...")
         try:
             llm_service_process.terminate()
             llm_service_process.wait(timeout=5)
         except subprocess.TimeoutExpired:
-            logger.warning("The llm microservice process failed to terminate properly; forcing shutdown...")
+            logger.warning("The LLM microservice process failed to terminate properly; forcing shutdown...")
             llm_service_process.kill()
         llm_service_process = None
 
@@ -360,15 +503,10 @@ def signal_handler(sig, frame):
 atexit.register(shutdown_llm_service)
 
 if __name__ == "__main__":
-    import uvicorn
-    # 从环境变量获取主机和端口，如果没有设置，则使用默认值
-    host = os.environ.get("KBOT_LLM_HOST", "0.0.0.0")
-    port = int(os.environ.get("KBOT_LLM_PORT", 8002))
-    
     # 如果是作为独立进程启动，则注册信号处理器
     if os.environ.get("LLM_SERVICE_STANDALONE") == "1":
         signal.signal(signal.SIGINT, signal_handler)
         signal.signal(signal.SIGTERM, signal_handler)
     
-    logger.info(f"Started the llm microservice, listening on {host}:{port}")
-    uvicorn.run(app, host=host, port=port)
+    logger.info(f"Started the LLM microservice, listening on {service_host}:{service_port}")
+    uvicorn.run(app, host=service_host, port=service_port)

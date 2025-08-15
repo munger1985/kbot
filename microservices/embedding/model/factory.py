@@ -1,9 +1,9 @@
 from enum import Enum
-from models.embedding.base import BaseEmbedding, LocalEmbeddingConfig, RemoteEmbeddingConfig
-from models.embedding.local_client import LocalEmbedding
-from models.embedding.openai_client import OpenAIEmbedding
-from models.embedding.azure_client import AzureEmbedding
-from models.embedding.cohere_client import CohereEmbedding
+from .base import BaseEmbedding, LocalEmbeddingConfig, RemoteEmbeddingConfig
+from .local_client import LocalEmbedding
+from .openai_client import OpenAIEmbedding
+from .azure_client import AzureEmbedding
+from .cohere_client import CohereEmbedding
 
 
 class EmbeddingProvider(str, Enum):

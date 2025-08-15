@@ -1,9 +1,10 @@
 from services.kb.kb_upload import upload_file_service
 from services.kb.kb_delete import delete_file_service
 from api.schemas.kb_schema import KBUploadForm, KBDeleteForm
+from dao.repositories.kbot_md_kb_files_repo import KbotMdKbFilesRepository
 
 
-async def upload_knowledge_base_files(
+async def upload_kb_files(
     form: KBUploadForm
 ) -> bool:
     """
@@ -26,7 +27,7 @@ async def upload_knowledge_base_files(
     except Exception as e:
         raise e
 
-async def delete_knowledge_base_files(
+async def delete_kb_files(
     form: KBDeleteForm
 ) -> dict:
     """
@@ -44,6 +45,42 @@ async def delete_knowledge_base_files(
             file_paths=form.file_paths,
         )
         return result
+    except Exception as e:
+        raise e
+    
+async def get_kb_files(
+        file_id: str,
+        download: bool = False
+) -> bytes | list[dict] | None:
+    """
+    Get file content for download or convert to images.
+    获取文件内容用于下载或转换为图片
+
+    params:
+    - file_id (str): 文件id
+    - download (bool): 是否下载原文件，而不是预览
+
+    return:
+    - bytes or list or None: 文件内容或图片数组或 None
+    """
+    file = await KbotMdKbFilesRepository().get_by_id(file_id=file_id)
+    if file is None:
+        return None
+    
+    file_path = file.file_path
+    if file_path is None:
+        return None
+    
+    try:
+        if download:
+            # 下载文件
+            with open(file_path, 'rb') as f:
+                file_content = f.read()
+            return file_content
+        else:
+            # 预览文件
+            # TODO
+            pass
     except Exception as e:
         raise e
     

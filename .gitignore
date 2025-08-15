@@ -17,6 +17,7 @@ venv/
 __pycache__/
 *.py[cod]
 *$py.class
+.pytest_cache/
 
 # System files
 .DS_Store
@@ -30,11 +31,8 @@ logs/
 .idea/
 .vscode/
 
-# Uploaded files
+# Project-generated files
 knowledge_base/
-
 settings.toml
-.env
-start.sh
-.pytest_cache/
 local_model_cache/
+nacos-data/
