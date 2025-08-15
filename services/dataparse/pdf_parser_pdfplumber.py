@@ -201,7 +201,7 @@ class PDFPlumberParser:
 
         # Add table content
         for table in self.tables_info:
-            if not self._is_table_valid(table['file_path']):
+            if not self.is_table_valid(table['file_path']):
                 continue
 
             with open(table['file_path'], 'r', encoding='utf-8') as f:
@@ -274,7 +274,7 @@ class PDFPlumberParser:
 
         # Add table content
         for table in self.tables_info:
-            if not self._is_table_valid(table['file_path']):
+            if not self.is_table_valid(table['file_path']):
                 continue
 
             with open(table['file_path'], 'r', encoding='utf-8') as f:
