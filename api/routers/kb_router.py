@@ -1,8 +1,8 @@
 
 import json
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, status
-from api.controllers.kb_controller import upload_kb_files, delete_kb_files, get_kb_files
-from api.schemas.kb_schema import KBUploadForm, KBDeleteForm
+from api.controllers.kb_controller import upload_kb_files, delete_kb_files, get_kb_files, reparse_kb_files
+from api.schemas.kb_schema import KBUploadForm, KBDeleteForm, KBReparseForm
 from api.schemas.kb_response import SuccessResponse, ErrorResponse
 
 router = APIRouter(
@@ -12,12 +12,11 @@ router = APIRouter(
 
 @router.post(
     "/upload",
-    summary="Upload files to the knowledge base. 上传文件到知识库",
-    description="Upload one or more files to the specified knowledge base. 上传一个或多个文件到指定的知识库",
+    description="上传一个或多个文件到指定知识库的接口",
     response_model=SuccessResponse,
     status_code=status.HTTP_200_OK
 )
-async def upload_files(
+async def handle_upload_files(
     files: list[UploadFile] = File(...),
     metadata: str = Form(...)
 ):
@@ -55,12 +54,11 @@ async def upload_files(
     
 @router.post(
     "/delete",
-    summary="Delete files from the knowledge base. 删除知识库中的文件",
-    description="Delete files or all files from the specified knowledge base along with the knowledge base or batch. 从指定的知识库中删除文件或所有文件以及其知识库或批次",
+    description="从指定的知识库中删除文件或所有文件以及其知识库或批次的接口",
     response_model=SuccessResponse,
     status_code=status.HTTP_200_OK
 )
-async def delete_files(
+async def handle_delete_files(
     metadata: str = Form(...)
 ):
     try:
@@ -98,12 +96,11 @@ async def delete_files(
     
 @router.get(
     "/download",
-    summary="Download a file from the knowledge base. 从知识库中下载文件",
-    description="Download a file from the knowledge base. 从知识库中下载文件",
+    description="从知识库中下载文件的接口",
     response_model=bytes | list[str],
     status_code=status.HTTP_200_OK
 )
-async def download_file(
+async def handle_download_file(
     file_id: str
 ):
     try:
@@ -117,6 +114,44 @@ async def download_file(
                 detail="File not found."
             )
         
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Internal server error: {str(e)}"
+        )
+    
+@router.post(
+    "/file/reparse",
+    description="重新解析文件的接口",
+    response_model=SuccessResponse,
+    status_code=status.HTTP_200_OK
+)
+async def handle_reparse_files(
+    metadata: str = Form(...)
+):
+    try:
+        metadata_dict = json.loads(metadata)
+        form = KBReparseForm(**metadata_dict)
+
+        result = await reparse_kb_files(form=form)
+        if result:
+            return SuccessResponse(
+                code=200,
+                success=True,
+                message="Reparse successfully."
+                )
+        else:
+            return ErrorResponse(
+                code=400,
+                success=False,
+                message="Reparse failed."
+            )
+            
+    except json.JSONDecodeError as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid JSON format for metadata: {str(e)}"
+        )
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

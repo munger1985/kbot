@@ -262,6 +262,14 @@ class ParseService:
         except Exception as e:
             logger.error(f"Failed to check new files: {str(e)}", exc_info=True)
             raise
+    
+    async def _stuck_file_checker(self):
+        while not self.shutdown_event.is_set():
+            # stuck_files = await FileProcessor.get_stuck_files(timeout=300)  # 超过5分钟未完成
+            # for file in stuck_files:
+            #     logger.warning(f"重置卡住的文件状态: {file.id}")
+            #     await FileProcessor.mark_as_failed(file)
+            await asyncio.sleep(60)  # 每分钟检查一次
 
     def _handle_shutdown(self, signum, frame):
         """处理关闭信号"""

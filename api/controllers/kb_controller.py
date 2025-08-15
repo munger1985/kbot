@@ -1,6 +1,7 @@
 from services.kb.kb_upload import upload_file_service
 from services.kb.kb_delete import delete_file_service
-from api.schemas.kb_schema import KBUploadForm, KBDeleteForm
+from services.kb.kb_procedure import KBProcedure
+from api.schemas.kb_schema import KBUploadForm, KBDeleteForm, KBReparseForm
 from dao.repositories.kbot_md_kb_files_repo import KbotMdKbFilesRepository
 
 
@@ -81,6 +82,20 @@ async def get_kb_files(
             # 预览文件
             # TODO
             pass
+    except Exception as e:
+        raise e
+    
+async def reparse_kb_files(
+    form: KBReparseForm
+) -> bool:
+    """
+    Re-parse files for the knowledge base.
+    重新解析知识库文件
+    """
+    try:
+        kbproc = KBProcedure()
+        result = await kbproc.reparse_files(kb_id=form.kb_id, files=form.files)
+        return result
     except Exception as e:
         raise e
     

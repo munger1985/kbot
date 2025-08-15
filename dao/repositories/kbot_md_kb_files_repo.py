@@ -187,5 +187,15 @@ class KbotMdKbFilesRepository:
             await session.commit()
             return True
         
+    async def batch_update_file_status(self, file_ids: list[str], status: FileStatus, log_msg: str | None = None) -> bool:
+        """Batch update status of knowledge base file records."""
+        async with get_session() as session:
+            await session.execute(
+                update(KbotMdKbFiles)
+                .where(KbotMdKbFiles.file_id.in_(file_ids))
+                .values(status=status.value, log_msg=log_msg)
+                )
+            await session.commit()
+            return True
     
         

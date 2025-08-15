@@ -143,5 +143,5 @@ async def process_txt(file_params: FileParams) -> bool:
     except Exception as e:
         msg = f"Error in process_txt for {file_params.file_path}: {str(e)}"
         logger.exception(msg)  
-        await file_repo.update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, msg)
+        await file_repo.update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, msg[:3999]) #截取前3999个字符防止数据库报错
         return False

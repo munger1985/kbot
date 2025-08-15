@@ -24,4 +24,9 @@ class KBDeleteForm(BaseModel):
     batch_name: str | None = None
     file_ids: list[str] | None = None
     file_paths: list[str] | None = None
+
+class KBReparseForm(BaseModel):
+    """知识库重新解析表单模型"""
+    kb_id: int
+    files: list[str]
         
