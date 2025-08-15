@@ -1,7 +1,7 @@
-from models.reranker.transformer import TransformerReranker
-from models.reranker.base import RerankerConfig
+from .reranker import Reranker
+from .base import RerankerConfig
 
-class JinaRerankerV2(TransformerReranker):
+class JinaRerankerV2(Reranker):
     """Implementation of jinaai/jina-reranker-v2-base-multilingual model."""
     
     def __init__(self, config: RerankerConfig):

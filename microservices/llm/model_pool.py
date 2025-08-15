@@ -14,7 +14,7 @@ from model import(
     OCILLMConfig,
     create_llm_model
 )
-from nacos_manager.manager import nacos_manager # type: ignore
+from nacos_manager import nacos_manager # type: ignore
 
 # 添加项目根目录到 Python 路径，确保可以导入项目模块
 current_file = os.path.abspath(__file__)
@@ -27,7 +27,7 @@ from dao.repositories.kbot_md_models_repo import KbotMdModelsRepository
 class ModelPool:
     """Model pool class for managing LLM models."""
 
-    def __init__(self, health_check_interval: int = 60) -> None:
+    def __init__(self, health_check_interval: int = 600) -> None:
         """Initialize model pool.
 
         Args:

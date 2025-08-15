@@ -3,8 +3,13 @@ from cohere import AsyncClient
 from prometheus_client import Histogram, Counter, Gauge
 from loguru import logger
 import asyncio
-from .base import BaseEmbedding, RemoteEmbeddingConfig, EmbeddingResponse, EmbeddingDataItem
-#from core.config import settings
+from .base import BaseEmbedding, EmbeddingConfig, EmbeddingResponse, EmbeddingDataItem
+
+class CohereEmbeddingConfig(EmbeddingConfig):
+    api_endpoint: str
+    timeout: int = 30
+    max_retries: int = 3
+    api_key: str = ""
 
 class CohereEmbedding(BaseEmbedding):
     """
@@ -46,12 +51,12 @@ class CohereEmbedding(BaseEmbedding):
         ['model_name']
     )
 
-    def __init__(self, config: RemoteEmbeddingConfig):
+    def __init__(self, config: CohereEmbeddingConfig):
         """
         Initialize with Cohere-specific configuration.
         
         Args:
-            config: RemoteEmbeddingConfig containing:
+            config: CohereEmbeddingConfig containing:
                 - api_key: Cohere API key
                 - model_name: Model identifier (e.g. "embed-english-v3.0")
                 - timeout: Request timeout in seconds
@@ -62,9 +67,9 @@ class CohereEmbedding(BaseEmbedding):
                 - truncate_strategy: Default truncation ("END"/"START"/"NONE")
         """
         self._client: AsyncClient | None = None
-        self.api_key = config.api_key #or settings.get('cohere_api_key')
+        self.api_key = config.api_key
         self.model_name = config.model_name
-        self.timeout = config.timeout #or settings['embed']['timeout']
+        self.timeout = config.timeout or 30
         self.default_input_type = getattr(config, 'default_input_type', 'search_document')
         self.max_batch_size = getattr(config, 'max_batch_size', 96)  # Cohere recommended
         self.retry_delay = getattr(config, 'retry_delay', 1.0)

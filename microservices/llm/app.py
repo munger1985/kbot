@@ -20,7 +20,6 @@ import uuid
 import uvicorn
 from dotenv import load_dotenv
 from datetime import datetime
-from pathlib import Path
 from typing import Any
 from contextlib import asynccontextmanager
 from pydantic import BaseModel, Field, ValidationError
@@ -29,7 +28,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from loguru import logger
 from nacos import NacosClient
-from nacos_manager.manager import nacos_manager # type: ignore
+from nacos_manager import nacos_manager # type: ignore
+from logger_manager import LogManager, LogConfig # type: ignore
 from llm_service import LLMService
 from model import LLMProvider
 
@@ -52,12 +52,12 @@ nacos_password = os.getenv("NACOS_PASSWORD") # Nacos账号密码
 try:
     # 从 nacos 获取 llm 服务配置
     config_parser = configparser.ConfigParser()
-    embed_config = nacos_manager.get_config("llm", nacos_group)
-    config_parser.read_string(f"[{nacos_group}]\n{embed_config}")
+    nacos_config = nacos_manager.get_config("llm", nacos_group)
+    config_parser.read_string(f"[{nacos_group}]\n{nacos_config}")
     service_name = config_parser.get(nacos_group, "service_name") or "llm-service" # 全局微服务名称
     service_version = config_parser.get(nacos_group, "service_version") or "1.0.0" # 微服务版本
     service_host = config_parser.get(nacos_group, "service_host") or "0.0.0.0" # 微服务地址
-    service_port = int(config_parser.get(nacos_group, "service_port")) or 9201 # 微服务通信端口
+    service_port = int(config_parser.get(nacos_group, "service_port")) or 9202 # 微服务通信端口
 except Exception as e:
     # 如果从 nacos 获取 llm 服务配置失败，则使用默认配置
     logger.warning("Failed to get llm service config from nacos: {}".format(e))
@@ -109,9 +109,9 @@ async def lifespan(app: FastAPI):
         rotation = "10 MB"
         retention = "10 days"
     
-    logfile = Path.joinpath(Path(log_dir), f"{service_name}.log")
     # 初始化日志
-    logger.add(logfile, level=log_level, rotation=rotation, retention=retention)
+    conf = LogConfig(service_name=service_name, log_dir=log_dir, level=log_level, rotation=rotation, retention=retention)
+    LogManager(conf).setup()
     
     # 启动事件
     start_time = time.time()

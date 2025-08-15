@@ -6,8 +6,18 @@ from typing import Any
 from loguru import logger
 from transformers import AutoModel, AutoTokenizer
 from prometheus_client import Histogram, Counter, Gauge
-from .base import BaseEmbedding, LocalEmbeddingConfig, EmbeddingResponse, EmbeddingDataItem
-from nacos_manager.manager import nacos_manager # type: ignore
+from .base import BaseEmbedding, EmbeddingConfig, EmbeddingResponse, EmbeddingDataItem
+from nacos_manager import nacos_manager # type: ignore
+
+class LocalEmbeddingConfig(EmbeddingConfig):
+    model_path: str | None = None
+    device: str | None = None
+    device_map: str | None = None
+    max_memory: int | None = None
+    trust_remote_code: bool = False
+    use_fp16: bool = False
+    local_files_only: bool = False
+    compile_model: bool = True # True when PyTorch 2.0+ else False
 
 
 class LocalEmbedding(BaseEmbedding):

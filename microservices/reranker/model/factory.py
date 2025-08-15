@@ -1,7 +1,7 @@
 from enum import Enum
-from models.reranker.base import BaseReranker, RerankerConfig
-from models.reranker.bgev2m3 import BGERerankerV2M3
-from models.reranker.jinav2 import JinaRerankerV2
+from .base import BaseReranker, RerankerConfig
+from .bgev2m3 import BGERerankerV2M3
+from .jinav2 import JinaRerankerV2
 
 class RerankModels(str, Enum):
     """Enumeration of supported reranker models."""

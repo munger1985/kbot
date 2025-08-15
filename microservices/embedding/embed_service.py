@@ -80,7 +80,7 @@ class EmbeddingService:
         
         try:
             model = await self.get_embedding_model(model_unique_name)
-            response = await model.embed(texts)
+            response = await model.embed(texts=texts, batch_size=batch_size)
             
             # 确保返回的响应数据有效
             if not response.data or len(response.data) == 0:

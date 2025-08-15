@@ -3,8 +3,8 @@ from loguru import logger
 from typing import Any, AsyncGenerator
 from pydantic import field_validator
 from prometheus_client import Histogram, Counter
-from models.vlm.base import BaseVLM, VLMConfig
 from openai.types.chat import ChatCompletion, ChatCompletionChunk
+from .base import BaseVLM, VLMConfig
 
 
 class OpenAIVLMConfig(VLMConfig):

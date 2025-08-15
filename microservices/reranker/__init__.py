@@ -1,1 +1,0 @@
-"""Reranker microservice module."""

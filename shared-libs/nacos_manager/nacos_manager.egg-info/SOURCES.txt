@@ -1,0 +1,12 @@
+setup.py
+./nacos_manager/__init__.py
+./nacos_manager/nacos_manager.py
+./nacos_manager/version.py
+nacos_manager/__init__.py
+nacos_manager/nacos_manager.py
+nacos_manager/version.py
+nacos_manager.egg-info/PKG-INFO
+nacos_manager.egg-info/SOURCES.txt
+nacos_manager.egg-info/dependency_links.txt
+nacos_manager.egg-info/requires.txt
+nacos_manager.egg-info/top_level.txt

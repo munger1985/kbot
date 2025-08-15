@@ -9,26 +9,6 @@ class EmbeddingConfig(BaseModel):
     provider: str
     max_tokens: int
 
-class LocalEmbeddingConfig(EmbeddingConfig):
-    model_path: str | None = None
-    device: str | None = None
-    device_map: str | None = None
-    max_memory: int | None = None
-    trust_remote_code: bool = False
-    use_fp16: bool = False
-    local_files_only: bool = False
-    compile_model: bool = True # True when PyTorch 2.0+ else False
-
-class RemoteEmbeddingConfig(EmbeddingConfig):
-    api_key: str
-    endpoint: str
-    timeout: int = 30
-    max_retries: int = 3
-    organization: str
-    deployment_name: str
-    api_version: str = "2023-05-15"
-    additional_params: dict = {}
-
 class EmbeddingDataItem(BaseModel):
     embedding: list[float] = Field(..., description="The embedding vector.")
     index: int = Field(..., description="The index of the embedding in the batch.")
@@ -63,7 +43,7 @@ class BaseEmbedding(ABC):
         pass
     
     @abstractmethod
-    async def embed(self, texts: list[str]) -> EmbeddingResponse:
+    async def embed(self, texts: list[str], batch_size: int | None) -> EmbeddingResponse:
         """Generate embeddings for a list of texts in OpenAI standard format.
         
         Args:

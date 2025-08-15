@@ -1,9 +1,0 @@
-setup.py
-nacos_config_manager.egg-info/PKG-INFO
-nacos_config_manager.egg-info/SOURCES.txt
-nacos_config_manager.egg-info/dependency_links.txt
-nacos_config_manager.egg-info/requires.txt
-nacos_config_manager.egg-info/top_level.txt
-nacos_manager/__init__.py
-nacos_manager/manager.py
-nacos_manager/settings.py

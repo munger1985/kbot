@@ -4,7 +4,6 @@ Contains:
 1. Base configuration class VLMConfig
 2. Base interface class BaseVLM
 """
-from PIL import Image
 from abc import ABC, abstractmethod
 from pydantic import BaseModel
 from prometheus_client import Counter, Histogram

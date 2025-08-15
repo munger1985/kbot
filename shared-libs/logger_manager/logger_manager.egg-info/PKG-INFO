@@ -1,0 +1,7 @@
+Metadata-Version: 2.4
+Name: logger-manager
+Version: 0.1.0
+Requires-Python: >=3.7
+Requires-Dist: loguru>=0.6.0
+Dynamic: requires-dist
+Dynamic: requires-python

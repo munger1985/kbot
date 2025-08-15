@@ -79,6 +79,8 @@ sudo apt-get install poppler-utils
 
 ### 项目初始化时需要到nacos-init目录下初始化nacos的docker容器
 ```bash
+# 首先在home目录下创建nacos/data和nacos/logs
+# 然后修改nacos-init/docker-compose.yaml文件中的相关目录
 cd nacos-init
 docker-compose up -d
 ```
@@ -87,6 +89,13 @@ docker-compose up -d
 python nacos-init/load_properties_to_nacos.py
 # nacos默认管理界面
 http://localhost:8848/nacos/
+```
+
+### 本地开发包安装
+包位于项目根目录下的shared-libs目录中：
+进到shared-libs下的logger_manager和nacos_manager目录中，用下面的命令分别安装
+```bash
+pip install -e .
 ```
 
 ```sql

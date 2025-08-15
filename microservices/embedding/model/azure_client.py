@@ -3,9 +3,16 @@ from openai import AsyncAzureOpenAI, APIConnectionError, RateLimitError, APIStat
 from prometheus_client import Histogram, Counter, Gauge
 from loguru import logger
 import asyncio
-from .base import BaseEmbedding, RemoteEmbeddingConfig, EmbeddingResponse, EmbeddingDataItem
+from .base import BaseEmbedding, EmbeddingConfig, EmbeddingResponse, EmbeddingDataItem
 
-
+class AzureEmbeddingConfig(EmbeddingConfig):
+    api_endpoint: str
+    timeout: int = 30
+    max_retries: int = 3
+    api_key: str = ""
+    deployment_name: str = ""
+    api_version: str = "2023-05-15"
+    
 class AzureEmbedding(BaseEmbedding):
     """
     Production-grade Azure OpenAI embedding service with:
@@ -46,7 +53,7 @@ class AzureEmbedding(BaseEmbedding):
         ['deployment']
     )
 
-    def __init__(self, config: RemoteEmbeddingConfig):
+    def __init__(self, config: AzureEmbeddingConfig):
         """
         Initialize with Azure-specific configuration.
         
@@ -65,9 +72,9 @@ class AzureEmbedding(BaseEmbedding):
                 - azure_params: Additional Azure parameters
         """
         self._client: AsyncAzureOpenAI | None = None
-        self.api_key = config.api_key #or settings.get('azure_api_key')
+        self.api_key = config.api_key
         self.deployment_name = config.deployment_name
-        self.endpoint = config.endpoint
+        self.endpoint = config.api_endpoint
         self.api_version = config.api_version or "2023-05-15"
         self.timeout = config.timeout #or settings['embed']['timeout']
         self.max_retries = getattr(config, 'max_retries', 3)

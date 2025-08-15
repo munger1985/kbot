@@ -8,7 +8,7 @@ from typing import Any
 from microservices.embedding.model.base import EmbeddingDataItem
 from dao.repositories.kbot_md_prompt_repo import KbotMdPromptRepository
 from .common_methods import encode_image
-from nacos_manager.manager import nacos_manager # type: ignore
+from nacos_manager import nacos_manager # type: ignore
 
 
 async def call_embedding_model(model_unique_name: str, 

@@ -1,26 +1,13 @@
 version: '3'
 services:
   nacos:
-    image: nacos/nacos-server:v2.2.3  # 建议指定稳定版本而非latest
+    image: nacos/nacos-server:v2.2.3
     container_name: nacos
     restart: unless-stopped
     ports:
       - "8848:8848"
-      - "9848:9848"  # 2.0+版本需要额外端口
-      - "9555:9555"  # Prometheus监控端口(可选)
     environment:
       - MODE=standalone
-      - PREFER_HOST_MODE=hostname
-      - NACOS_AUTH_ENABLE=false  # 如果不需要Nacos鉴权，可以关闭鉴权，方便启动
-      # - NACOS_AUTH_ENABLE=true  # 如果需要开启Nacos鉴权，可以开启
-      # - TOKEN=your_secret_key  # 设置token密钥
-      - JVM_XMS=512m  # 初始堆内存
-      - JVM_XMX=512m  # 最大堆内存
     volumes:
       - ~/nacos/data:/home/nacos/data
       - ~/nacos/logs:/home/nacos/logs
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8848/nacos/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3

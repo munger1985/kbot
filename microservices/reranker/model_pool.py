@@ -3,6 +3,7 @@ import sys
 import asyncio
 from loguru import logger
 from datetime import datetime, timedelta
+from .model import BaseReranker, RerankerConfig, create_reranker_model
 
 # 添加项目根目录到 Python 路径，确保可以导入项目模块
 current_file = os.path.abspath(__file__)
@@ -10,13 +11,8 @@ backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(current_file)))
 if backend_dir not in sys.path:
     sys.path.insert(0, backend_dir)
 
-from models.reranker import (
-    BaseReranker, 
-    RerankerConfig, 
-    create_reranker_model
-)
 from dao.repositories.kbot_md_models_repo import KbotMdModelsRepository
-from core.config import settings
+
 
 
 class ModelPool:
@@ -83,13 +79,12 @@ class ModelPool:
 
         # 根据模型类型创建相应的配置
         
-
         model_config = RerankerConfig(
             model_name=model_entity.model_name,
             model_path=model_entity.model_params.get("model_path", None),
             device=model_entity.model_params.get("device", None),
             device_map=model_entity.model_params.get("device_map", None),
-            max_tokens=model_entity.model_params.get("max_tokens", settings["embed"]["max_tokens"]),
+            max_tokens=model_entity.model_params.get("max_tokens", 8192),
             compile_model=model_entity.model_params.get("compile_model", True),
             use_fp16=model_entity.model_params.get("use_fp16", False),
             trust_remote_code=model_entity.model_params.get("trust_remote_code", False),

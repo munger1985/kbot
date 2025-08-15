@@ -14,24 +14,64 @@ import subprocess
 import time
 import atexit
 import platform
+import uvicorn
+import configparser
 from datetime import datetime
+from dotenv import load_dotenv
 from typing import Any
 from contextlib import asynccontextmanager
 from pydantic import BaseModel, Field
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
+from nacos import NacosClient
+from reranker_service import RerankerService
+from nacos_manager import nacos_manager # type: ignore
+from logger_manager import LogManager, LogConfig # type: ignore
 
-# 添加项目根目录到 Python 路径，确保可以导入项目模块
-current_file = os.path.abspath(__file__)
-backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(current_file)))
-if backend_dir not in sys.path:
-    sys.path.insert(0, backend_dir)
+# 加载环境变量配置
+load_dotenv()
+nacos_addr = os.getenv("NACOS_SERVER_ADDR") # Nacos服务器地址
+nacos_namespace = os.getenv("NACOS_NAMESPACE") or "dev" # Nacos命名空间
+nacos_group = os.getenv("NACOS_GROUP") or "DEV_GROUP" # Nacos分组
+nacos_username = os.getenv("NACOS_USERNAME") # Nacos账号名称
+nacos_password = os.getenv("NACOS_PASSWORD") # Nacos账号密码
+
+try:
+    # 从 nacos 获取 reranker 服务配置
+    config_parser = configparser.ConfigParser()
+    nacos_config = nacos_manager.get_config("reranker", nacos_group)
+    config_parser.read_string(f"[{nacos_group}]\n{nacos_config}")
+    service_name = config_parser.get(nacos_group, "service_name") or "reranker-service" # 全局微服务名称
+    service_version = config_parser.get(nacos_group, "service_version") or "1.0.0" # 微服务版本
+    service_host = config_parser.get(nacos_group, "service_host") or "0.0.0.0" # 微服务地址
+    service_port = int(config_parser.get(nacos_group, "service_port")) or 9203 # 微服务通信端口
+except Exception as e:
+    # 如果从 nacos 获取 reranker 服务配置失败，则使用默认配置
+    logger.warning("Failed to get reranker service config from nacos: {}".format(e))
+    service_name = "reranker-service"
+    service_version = "1.0.0"
+    service_host = "0.0.0.0"
+    service_port = 9203
+
+# 服务注册到 Nacos
+def register_service():
     
-from microservices.reranker.reranker_service import RerankerService
-from core.config import settings
-from core.log.logger import setup_logging
-
+    client = NacosClient(
+        server_addresses=nacos_addr,
+        namespace=nacos_namespace
+        # username='nacos',
+        # password='nacos'
+        )
+    
+    # 注册服务
+    client.add_naming_instance(
+        service_name=service_name,
+        ip=service_host,
+        port=service_port,
+        ephemeral=True,
+        healthy=True
+    )
 
 # 创建reranker服务实例
 reranker_service = RerankerService()
@@ -40,8 +80,26 @@ reranker_service = RerankerService()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan context manager. //应用程序生命周期上下文管理器"""
+    # 通过 nacos_manager 获取logger配置
+    try:
+        log_config = nacos_manager.get_config("logger", nacos_group)
+        config_parser.read_string(f"[{nacos_group}]\n{log_config}")
+        log_dir = config_parser.get(nacos_group, "dir") or "logs/"
+        log_level = config_parser.get(nacos_group, "level") or "DEBUG"
+        rotation = config_parser.get(nacos_group, "rotation") or "10 MB"
+        retention = config_parser.get(nacos_group, "retention") or "20 days"
+        
+    except Exception as e:
+        # 如果获取 logger 配置失败，则使用默认配置
+        logger.warning(f"Failed to get logger config from nacos: {str(e)}")
+        log_dir = "logs/"
+        log_level = "DEBUG"
+        rotation = "10 MB"
+        retention = "10 days"
+    
     # 初始化日志
-    setup_logging(service_name="reranker")
+    conf = LogConfig(service_name=service_name, log_dir=log_dir, level=log_level, rotation=rotation, retention=retention)
+    LogManager(conf).setup()
     
     # 启动事件
     start_time = time.time()
@@ -50,15 +108,15 @@ async def lifespan(app: FastAPI):
     logger.info(f"Python version: {platform.python_version()}")
     logger.info(f"Process ID: {os.getpid()}")
     
-    # 初始化LLM服务
+    # 初始化reranker服务
     try:
         await reranker_service.initialize()
         logger.info(f"Reranker service started successfully, elapsed time: {time.time() - start_time:.2f} seconds")
     except Exception as e:
         logger.error(f"Reranker service initialization failed: {e}")
         # 在生产环境中，可能需要在这里退出应用程序
-        current_env = os.getenv("KBOT_ENV")
-        if current_env == "production":
+        current_env = nacos_namespace
+        if current_env == "prod":
             sys.exit(1)
     
     yield  # 服务运行期间
@@ -79,8 +137,8 @@ async def lifespan(app: FastAPI):
 # 创建 FastAPI 应用
 app = FastAPI(
     title="reranker service",
-    description="Provides text reranker services to convert text into vector representations.",
-    version=settings["app"]["version"],
+    description="Provides text reranker services.",
+    version=service_version,
     lifespan=lifespan,
 )
 
@@ -95,7 +153,7 @@ app.add_middleware(
 
 # 定义请求模型
 class RerankerRequest(BaseModel):
-    model_unique_name: str = Field(..., description="reranker model ID")
+    model_unique_name: str = Field(..., description="Reranker model ID")
     query: str = Field(..., description="query")
     documents: list[str] = Field(..., description="List of documents to be reranked.")
     top_k: int | None = Field(10, description="Number of top documents to return (None for all)")
@@ -165,15 +223,30 @@ reranker_service_process = None
 
 def start_reranker_service():
     """Start the reranker microservice as an independent process."""
-    logger.info("Start the reranker microservice as an independent process.")
-    reranker_service_path = os.path.abspath(__file__)
-    
+
     # 启动reranker微服务，使用环境变量中的端口并设置为独立模式
-    process = subprocess.Popen(
-        [sys.executable, reranker_service_path],
-        env={**os.environ, "RERANKER_SERVICE_STANDALONE": "1"}
-    )
-    return process
+    try:
+        logger.info("Start the reranker microservice as an independent process.")
+        reranker_service_path = os.path.abspath(__file__)
+        
+        process = subprocess.Popen(
+            [sys.executable, reranker_service_path],
+            env={**os.environ, "RERANKER_SERVICE_STANDALONE": "1"},
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
+        
+        # 检查进程是否成功启动
+        if process.poll() is not None:
+            stderr = process.stderr.read().decode('utf-8') if process.stderr else ""
+            raise RuntimeError(f"Failed to start LLM service: {stderr}")
+            
+        logger.success(f"LLM service started successfully with PID {process.pid}")
+        return process
+        
+    except Exception as e:
+        logger.exception(f"Error starting LLM service: {str(e)}")
+        raise
 
 def shutdown_reranker_service():
     """Terminate the reranker microservice process."""
@@ -198,15 +271,10 @@ def signal_handler(sig, frame):
 atexit.register(shutdown_reranker_service)
 
 if __name__ == "__main__":
-    import uvicorn
-    # 从环境变量获取主机和端口，如果没有设置，则使用默认值
-    host = os.environ.get("KBOT_RERANKER_HOST", "0.0.0.0")
-    port = int(os.environ.get("KBOT_RERANKER_PORT", 8003))
-    
     # 如果是作为独立进程启动，则注册信号处理器
     if os.environ.get("RERANKER_SERVICE_STANDALONE") == "1":
         signal.signal(signal.SIGINT, signal_handler)
         signal.signal(signal.SIGTERM, signal_handler)
     
-    logger.info(f"Started the reranker microservice, listening on {host}:{port}")
-    uvicorn.run(app, host=host, port=port)
+    logger.info(f"Started the reranker microservice, listening on {service_host}:{service_port}")
+    uvicorn.run(app, host=service_host, port=service_port)

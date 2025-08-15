@@ -1,13 +1,18 @@
 import os
 import asyncio
 import numpy as np
-import configparser
 from typing import Any, cast
 from openai import AsyncOpenAI, APIError, APIConnectionError, RateLimitError
 from prometheus_client import Histogram, Counter, Gauge
-from .base import BaseEmbedding, RemoteEmbeddingConfig, EmbeddingResponse, EmbeddingDataItem
+from .base import BaseEmbedding, EmbeddingConfig, EmbeddingResponse, EmbeddingDataItem
 from loguru import logger
-from nacos_manager.manager import nacos_manager # type: ignore
+
+class OpenAIEmbeddingConfig(EmbeddingConfig):
+    api_endpoint: str
+    timeout: int = 30
+    max_retries: int = 3
+    api_key: str = ""
+    organization: str | None = None # Optional
 
 
 class OpenAIEmbedding(BaseEmbedding):
@@ -53,12 +58,12 @@ class OpenAIEmbedding(BaseEmbedding):
         ['model_name']
     )
 
-    def __init__(self, config: RemoteEmbeddingConfig):
+    def __init__(self, config: OpenAIEmbeddingConfig):
         """
         Initialize with enhanced configuration options.
         
         Args:
-            config: RemoteEmbeddingConfig containing:
+            config: OpenAIEmbeddingConfig containing:
                 - model_name: OpenAI model identifier
                 - api_key: API key (recommend using environment variables)
                 - timeout: Request timeout in seconds
@@ -68,20 +73,13 @@ class OpenAIEmbedding(BaseEmbedding):
                 - min_batch_size: Minimum texts per API call
                 - retry_delay: Base delay between retries in seconds
         """
-        # 从 nacos 获取 embedding 服务配置
-        nacos_group = os.getenv("NACOS_GROUP") or "DEV_GROUP" # Nacos分组
-        config_parser = configparser.ConfigParser()
-        embed_config = nacos_manager.get_config("embedding", nacos_group)
-        config_parser.read_string(f"[{nacos_group}]\n{embed_config}")
-        timetout = int(config_parser.get(nacos_group, "timeout")) or 30 # 超时时间 30s
-        max_retries = int(config_parser.get(nacos_group, "max_retries")) or 0 # 最大重试次数
 
         # 初始化参数
         self._client: AsyncOpenAI | None = None
         self.model_name = config.model_name
         self.api_key = config.api_key
-        self.timeout = config.timeout or timetout
-        self.max_retries = config.max_retries or max_retries
+        self.timeout = config.timeout or 30
+        self.max_retries = config.max_retries or 0
         self.organization = config.organization
         self.max_batch_size = getattr(config, 'max_batch_size', 100)
         self.min_batch_size = getattr(config, 'min_batch_size', 10)

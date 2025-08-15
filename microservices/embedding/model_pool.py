@@ -4,12 +4,15 @@ import asyncio
 import configparser
 from loguru import logger
 from datetime import datetime, timedelta
-from nacos_manager.manager import nacos_manager # type: ignore
+from nacos_manager import nacos_manager # type: ignore
 from model import (
     BaseEmbedding, 
     EmbeddingProvider,
     LocalEmbeddingConfig, 
-    RemoteEmbeddingConfig, 
+    AzureEmbeddingConfig,
+    CohereEmbeddingConfig,
+    OCIEmbeddingConfig,
+    OpenAIEmbeddingConfig,
     create_embedding_model
 )
 
@@ -27,7 +30,7 @@ from dao.repositories.kbot_md_models_repo import KbotMdModelsRepository
 class ModelPool:
     """Manage a pool of embedding models with health checking and lifecycle management"""
     
-    def __init__(self, health_check_interval: int = 300):
+    def __init__(self, health_check_interval: int = 600):
         """Initialize model pool.
         Args:
             health_check_interval: Interval in seconds between health checks
@@ -118,18 +121,15 @@ class ModelPool:
                 local_files_only=model_entity.model_params.get("local_files_only", False),
                 compile_model=model_entity.model_params.get("compile_model", True)
             )
-        else:
-            model_config = RemoteEmbeddingConfig(
+        elif model_entity.provider == EmbeddingProvider.OCI.value:
+            model_config = OCIEmbeddingConfig(
                 model_name=model_entity.model_name,
                 provider=model_entity.provider,
                 max_tokens=model_entity.model_params.get("max_tokens", max_tokens),
-                api_key=model_entity.api_key, # type: ignore
-                endpoint=model_entity.api_endpoint, # type: ignore
-                timeout=model_entity.model_params.get("timeout", timeout),        
-                max_retries=model_entity.model_params.get("max_retries", max_retries),
-                organization=model_entity.model_params.get("organization", ""),
-                deployment_name=model_entity.model_params.get("deployment_name", ""),
-                api_version=model_entity.model_params.get("api_version", "")
+                api_endpoint=model_entity.api_endpoint, # type: ignore
+                compartment_id=model_entity.model_params.get("compartment_id", None), # type: ignore
+                config_profile=model_entity.model_params.get("config_profile", "DEFAULT"), # type: ignore
+                config_file=model_entity.model_params.get("config_file", "~/.oci/config")
             )
 
         # Create and initialize model //创建和初始化模型
