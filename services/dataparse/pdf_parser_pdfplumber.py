@@ -2,6 +2,8 @@ import uuid
 import json
 import pdfplumber
 import pandas as pd
+import json
+
 from pathlib import Path
 from PIL import Image
 from pdfminer.pdfinterp import PDFResourceManager, PDFPageInterpreter
@@ -54,10 +56,6 @@ class PDFPlumberParser:
             try:
                 # Extract all content by page
                 _, self.images_info, _  = self.extract_all_per_page()
-                # logger.debug(f"================={r}")
-                # if not r:
-                #     return False
-                # Process text and table embeddings
                 if not await self._process_embeddings_per_page():
                     return False
 
@@ -360,7 +358,7 @@ class PDFPlumberParser:
             return text_content
 
         # 获取第一个元素的完整内容作为参考
-        first_content = text_content[0]['content']
+        first_content = text_content[0]['text']
 
         # 找出所有元素中共同的前缀和后缀
         common_prefix = ""
@@ -370,7 +368,7 @@ class PDFPlumberParser:
         if len(text_content) > 1:
             # 从第二个元素开始比较
             for item in text_content[1:]:
-                content = item['content']
+                content = item['text']
                 if not content:
                     continue
 
@@ -394,7 +392,7 @@ class PDFPlumberParser:
         # 找出共同后缀
         if len(text_content) > 1:
             for item in text_content[1:]:
-                content = item['content']
+                content = item['text']
                 if not content:
                     continue
 
@@ -427,7 +425,7 @@ class PDFPlumberParser:
                 new_text_content.append(item)
             else:
                 # 其他元素中移除共同的前缀和后缀
-                content = item['content']
+                content = item['text']
                 cleaned_content = content
 
                 # 移除前缀
@@ -440,7 +438,7 @@ class PDFPlumberParser:
 
                 # 创建新的元素
                 new_item = item.copy()
-                new_item['content'] = cleaned_content.strip()
+                new_item['text'] = cleaned_content.strip()
                 new_text_content.append(new_item)
 
         print(f"原始元素数: {len(text_content)}")
@@ -545,46 +543,143 @@ class PDFPlumberParser:
         page_tables = []
 
         try:
-            # Extract tables
+            # 提取表格
             tables = page.find_tables()
-            for table in tables:
-                table_data = table.extract()
-                if not table_data:
-                    continue
 
+            for table_index, table in enumerate(tables):
+                # 生成表格UUID
                 table_uuid = str(uuid.uuid4())
-                csv_path = self.tables_dir / f"table_{table_uuid}.csv"
 
-                # Save as CSV
-                df = pd.DataFrame(table_data[1:], columns=table_data[0] if table_data[0] else None)
-                df.to_csv(csv_path, index=False, encoding='utf-8-sig')
+                # 提取表格数据
+                table_data = table.extract()
 
-                table_info = {
-                    'uuid': table_uuid,
-                    'filename': csv_path.name,
-                    'page_num': page_num,
-                    'file_path': str(csv_path.absolute()),
-                    'rows': len(table_data),
-                    'columns': len(table_data[0]) if table_data and table_data[0] else 0,
-                    'bbox': table.bbox
-                }
+                if table_data:
+                    # 获取表头
+                    headers = table_data[0] if table_data[0] else []
 
-                self.tables_info.append(table_info)
-                page_tables.append(table_info)
-                logger.debug(f"Saved table: {csv_path.absolute()} (page {page_num})")
+                    # 如果没有表头，生成默认表头
+                    if not headers or not any(str(header).strip() if header is not None else '' for header in headers):
+                        headers = [f"Column_{i + 1}" for i in range(len(table_data[0]) if table_data[0] else 0)]
 
-            # Extract text (excluding table areas)
-            page_text = page.extract_text() or ""
+                    # 将表格数据转换为JSON格式
+                    json_data = []
+                    for row_data in table_data[1:]:  # 跳过表头行
+                        if row_data:  # 确保行数据不为空
+                            row_dict = {}
+                            for i, value in enumerate(row_data):
+                                if i < len(headers):
+                                    # 使用表头作为key，如果表头为空则使用默认列名
+                                    header_str = str(headers[i]) if headers[i] is not None else ""
+                                    key = header_str.strip() if header_str.strip() else f"Column_{i + 1}"
+                                    row_dict[key] = value if value is not None else ""
+                            if row_dict:  # 只添加非空行
+                                json_data.append(row_dict)
+
+                    # 保存为JSON文件
+                    json_filename = f"table_{table_uuid}.json"
+                    json_path = self.tables_dir / json_filename
+
+                    # 保存JSON数据
+                    import json
+                    with open(json_path, 'w', encoding='utf-8') as f:
+                        json.dump(json_data, f, ensure_ascii=False, indent=2)
+
+                    # 记录表格信息
+                    table_info = {
+                        'uuid': table_uuid,
+                        'filename': json_filename,
+                        'page': page_num,
+                        'file_path': str(json_path.absolute()),  # 使用绝对路径
+                        'rows': len(json_data),
+                        'columns': len(headers),
+                        'bbox': table.bbox,
+                        'headers': headers,  # 添加表头信息
+                        'data': json_data  # 添加JSON数据
+                    }
+
+                    self.tables_info.append(table_info)
+                    page_tables.append(table_info)
+
+                    print(f"已保存表格: {json_path} (第{page_num}页)")
+
+            # 提取文字（排除表格区域）
+            # 获取表格边界框
+            table_bboxes = [table.bbox for table in tables]
+
+            # 提取文字，排除表格区域
+            if table_bboxes:
+                try:
+                    # 创建排除表格区域的文本提取
+
+                    # 合并所有表格区域为一个排除区域列表
+                    exclude_areas = []
+                    for bbox in table_bboxes:
+                        x0, y0, x1, y1 = bbox
+                        exclude_areas.append((x0, y0, x1, y1))
+
+                    # 获取页面所有文本字符及其位置
+                    words = page.extract_words()
+
+                    # 过滤掉在表格区域内的文本
+                    filtered_words = []
+                    for word in words:
+                        word_x0, word_y0, word_x1, word_y1 = word['x0'], word['top'], word['x1'], word['bottom']
+
+                        # 检查单词是否在任意表格区域内
+                        in_table = False
+                        for table_x0, table_y0, table_x1, table_y1 in exclude_areas:
+                            # 如果单词与表格区域重叠，则跳过
+                            if (word_x0 < table_x1 and word_x1 > table_x0 and
+                                    word_y0 < table_y1 and word_y1 > table_y0):
+                                in_table = True
+                                break
+
+                        if not in_table:
+                            filtered_words.append(word)
+
+                    # 按行和位置重新组合文本
+                    if filtered_words:
+                        # 按y坐标分组（同一行）
+                        lines = {}
+                        for word in filtered_words:
+                            y_key = int(word['top'] / 10)  # 近似分组
+                            if y_key not in lines:
+                                lines[y_key] = []
+                            lines[y_key].append(word)
+
+                        # 按行排序并组合文本
+                        sorted_lines = []
+                        for y_key in sorted(lines.keys()):
+                            line_words = sorted(lines[y_key], key=lambda w: w['x0'])
+                            line_text = ' '.join([w['text'] for w in line_words])
+                            sorted_lines.append(line_text)
+
+                        page_text = '\n'.join(sorted_lines)
+                    else:
+                        page_text = ""
+
+                except Exception as e:
+                    print(f"排除表格区域时出错: {e}")
+                    page_text = page.extract_text() or ""
+            else:
+                page_text = page.extract_text() or ""
+
+            # 应用页眉页脚过滤
             page_text = self._filter_header_footer(page, page_text)
+
+            # 记录文字内容
             if page_text.strip():
                 self.text_contents.append({
-                    'page_num': page_num,
+                    'page': page_num,
                     'text': page_text.strip()
                 })
 
         except Exception as e:
-            logger.error(f"Error extracting text/tables from page {page_num}: {e}")
+            traceback.print_exc()
+            print(f"提取第{page_num}页文字和表格时出错: {e}")
             page_text = page.extract_text() or ""
+            # 应用页眉页脚过滤
+            page_text = self._filter_header_footer(page, page_text)
         self.text_contents = self.remove_duplicate_prefix_suffix(self.text_contents)
 
         return page_text, page_tables
@@ -770,46 +865,66 @@ class PDFPlumberParser:
 
         return json.dumps(metadata, ensure_ascii=False, indent=2)
 
-    def _is_table_valid(self, csv_path: str) -> bool:
-        """Check if a table CSV file contains valid content"""
+    # @staticmethod
+    def is_table_valid(self, json_path: str) -> bool:
         try:
-            with open(csv_path, 'r', encoding='utf-8') as f:
-                content = f.read()
-                return any(c.isalnum() or '\u4e00' <= c <= '\u9fff' for c in content)
+            with open(json_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+
+                # 检查是否为列表且不为空
+                if not isinstance(data, list) or len(data) == 0:
+                    return False
+
+                # 检查是否至少包含一个非空行
+                for row in data:
+                    if isinstance(row, dict) and any(
+                            value.strip() if isinstance(value, str) else value for value in row.values()):
+                        return True
+
+                return False
+
         except Exception:
             return False
+    # def _is_table_valid(self, csv_path: str) -> bool:
+    #     """Check if a table CSV file contains valid content"""
+    #     try:
+    #         with open(csv_path, 'r', encoding='utf-8') as f:
+    #             content = f.read()
+    #             return any(c.isalnum() or '\u4e00' <= c <= '\u9fff' for c in content)
+    #     except Exception:
+    #         return False
 
-    def save_results(self):
-        """Save all extracted results to files"""
-        try:
-            # Save text with placeholders
-            # full_text = "\n".join(page['content'] for page in self.page_content)
-            # (self.output_dir / "extracted_text_with_placeholders.txt").write_text(full_text, encoding='utf-8')
-
-            # Save pure text
-            # pure_text = "\n".join(item['text'] for item in self.text_content)
-            # (self.output_dir / "extracted_text_only.txt").write_text(pure_text, encoding='utf-8')
-
-            # Save metadata files
-            # (self.output_dir / "images_info.json").write_text(
-            #     json.dumps(self.images_info, ensure_ascii=False, indent=2),
-            #     encoding='utf-8'
-            # )
-
-            # (self.output_dir / "tables_info.json").write_text(
-            #     json.dumps(self.tables_info, ensure_ascii=False, indent=2),
-            #     encoding='utf-8'
-            # )
-
-            # (self.output_dir / "placeholders_mapping.json").write_text(
-            #     self.make_parsed_metadata(),
-            #     encoding='utf-8'
-            # )
-
-            logger.info(f"All results saved to: {self.output_dir}")
-
-        except Exception as e:
-            logger.error(f"Error saving results: {e}")
+    # def save_results(self):
+    #     """Save all extracted results to files"""
+    #     try:
+    #         # Save text with placeholders
+    #         # full_text = "\n".join(page['content'] for page in self.page_content)
+    #         # (self.output_dir / "extracted_text_with_placeholders.txt").write_text(full_text, encoding='utf-8')
+    #
+    #         # Save pure text
+    #         # pure_text = "\n".join(item['text'] for item in self.text_content)
+    #         # (self.output_dir / "extracted_text_only.txt").write_text(pure_text, encoding='utf-8')
+    #
+    #         # Save metadata files
+    #         # (self.output_dir / "images_info.json").write_text(
+    #         #     json.dumps(self.images_info, ensure_ascii=False, indent=2),
+    #         #     encoding='utf-8'
+    #         # )
+    #
+    #         # (self.output_dir / "tables_info.json").write_text(
+    #         #     json.dumps(self.tables_info, ensure_ascii=False, indent=2),
+    #         #     encoding='utf-8'
+    #         # )
+    #
+    #         # (self.output_dir / "placeholders_mapping.json").write_text(
+    #         #     self.make_parsed_metadata(),
+    #         #     encoding='utf-8'
+    #         # )
+    #
+    #         logger.info(f"All results saved to: {self.output_dir}")
+    #
+    #     except Exception as e:
+    #         logger.error(f"Error saving results: {e}")
 
     def print_summary(self):
         """Print parsing summary"""
