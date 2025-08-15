@@ -15,6 +15,7 @@ git reset --hard origin/kbot3  # 强制将本地 main 分支重置为远程状�
 ### 后端API文档：
 http://64.181.236.219:18099/docs
 http://64.181.236.219:18099/redoc
+http://64.181.236.219:18099/api/health
 
 ### Kbot3.0前端：
 http://132.145.81.123:8080/ords/r/kbotui_dev/km-chat/home     chinase1/chinase1  admin/12345678 
