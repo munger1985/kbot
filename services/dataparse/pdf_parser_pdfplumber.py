@@ -840,7 +840,7 @@ class PDFPlumberParser:
 
     def make_parsed_metadata(self) -> str:
         """Generate metadata JSON with placeholders"""
-        valid_tables = [t for t in self.tables_info if self._is_table_valid(t['file_path'])]
+        valid_tables = [t for t in self.tables_info if self.is_table_valid(t['file_path'])]
 
         metadata = {
             'images': [
