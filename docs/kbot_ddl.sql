@@ -843,3 +843,18 @@ ALTER TABLE KBOT_MD_PROMPT ADD CONSTRAINT PROMPT_UNIQUE_NAME_UK UNIQUE (PROMPT_U
 ALTER TABLE KBOT_MD_CHAT_SESSION DROP COLUMN DOMAIN_ID;
 ALTER TABLE KBOT_MD_CHAT_SESSION ADD (SESSION_TITLE VARCHAR2(256));
 COMMENT ON COLUMN KBOT_MD_CHAT_SESSION.SESSION_TITLE IS 'Session的标题';
+
+
+--update by Justin at 20250812
+--对CHUNK_DOC字段创建全文检索索引
+--先用dba用户赋予kbotui_dev用户可执行权限
+grant execute on ctxsys.ctx_ddl to kbotui_dev;
+
+--在普通用户执行如下步骤，创建索引。（中文）
+exec ctx_ddl.create_preference('chinese_lexer','chinese_vgram_lexer');
+CREATE INDEX IDX_FULLSEARCH_TXT_EMBEDDING ON  KBOT_BIZ_TXT_EMBEDDING("CHUNK_DOC") INDEXTYPE IS "CTXSYS"."CONTEXT" PARAMETERS ('lexer chinese_lexer');
+
+--在普通用户执行如下步骤，创建索引。（英文）
+exec ctx_ddl.create_preference('english_lexer','basic_lexer');
+CREATE INDEX IDX_FULLSEARCH_TXT_EMBEDDING ON  KBOT_BIZ_TXT_EMBEDDING("CHUNK_DOC") INDEXTYPE IS "CTXSYS"."CONTEXT" PARAMETERS ('lexer english_lexer');
+ALTER TABLE KBOT_BIZ_TXT_EMBEDDING DROP COLUMN MULTI_VECTOR;
