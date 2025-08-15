@@ -4,42 +4,42 @@
 backend/
 ├── api/
 │   ├── controllers/           # API控制器
-│   │   └── health.py
+│   │   └── kb_controller.py
 │   ├── routers/               # API路由
-│   │   └── __init__.py
+│   │   └── kb_router.py
 │   ├── schemas/               # Pydantic响应模型
-│   └── routers.py             # FastAPI路由注册
+        └── kb_schema.py
 ├── core/
 │   ├── config/                # 配置管理
 │   │   └── __init__.py
 │   ├── database/              # 数据库连接
-│   │   └── oracle.py          # Oracle数据库连接
-│   ├── exceptions/            # 全局异常处理
+│   │   └── meta_oracle.py          # Oracle数据库连接
 │   └── log/                   # 日志管理
 │       ├── __init__.py
 │       └── logger.py
 ├── dao/                       # 数据访问层
 │   ├── entities/              # 实体定义
 │   │   └── base.py
-│   └── repositories/          # 数据仓库实现
-├── logs/                      # 日志文件
-│   └── app.log
+│   │── metadata_service
+│       │── __init__.py
+│   └── repositories/          # 数据操作实现
+├── microservices/             # 微服务
+│   ├── embedding/             # embedding微服务
+│   ├── llm/                   # LLM微服务
+│   ├── reranker/              # 重排序微服务
+│   └── vlm/                   # VLM微服务
 ├── models/                    # 模型定义
-│   ├── embedding/             # 嵌入模型
-│   ├── llm/                   # 大语言模型
 │   ├── reranker/              # 重排序模型
 │   └── vlm/                   # 视觉语言模型
 ├── services/                  # 业务服务层
 │   ├── chat/                  # 聊天服务
 │   ├── dataparse/             # 数据解析服务
-│   ├── knowbase/              # 知识库服务
-│   ├── ocikbot/               # Oracle Kbot服务
-│   └── search/                # 搜索服务
+│   └── kb/                    # 知识库服务
 ├── utils/                     # 工具类
 ├── main.py                    # FastAPI启动入口
 ├── requirements.txt           # 依赖文件
 ├── settings.toml              # 配置文件
-└── start.sh                   # 启动脚本
+└── start_kbot.sh              # 启动脚本
 ```
 
 ## 核心组件说明
