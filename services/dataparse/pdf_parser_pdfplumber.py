@@ -112,7 +112,7 @@ class PDFPlumberParser:
     async def _process_images_embeddings(self) -> list:
         if self.file_params.img2txt == 1:
         # if self.file_params.parser.get("extract_images", False):
-            vlm_prompt_unique_name = "DEFAULT/image2text"
+            vlm_prompt_unique_name = "SYSTEM/image2text"
             vlm_model_unique_name = await KbotMdModelsRepository().get_unique_name_by_id(
             self.file_params.img2txt_model)  # type: ignore
             chunks = []
