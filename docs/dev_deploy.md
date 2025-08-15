@@ -15,40 +15,11 @@ git reset --hard origin/kbot3  # 强制将本地 main 分支重置为远程状�
 ### 后端API文档：
 http://64.181.236.219:18099/docs
 http://64.181.236.219:18099/redoc
+http://64.181.236.219:18099/api/health
 
 ### Kbot3.0前端：
-http://132.145.81.123:8080/ords/r/kbotui_dev/km-chat/home     chinase1/chinase1  admin/12345678 
+http://132.145.81.123:8080/ords/r/kbotui_dev/km-chat/home     chinase1/chinase1  admin/12345678
 http://132.145.81.123:8080/ords/r/kbotui_dev/ai-platform-portal/home  admin/12345678
-
-### 后端调用示例：
-```bash
-curl -X POST "http://localhost:8001/embed" -H "Content-Type: application/json" -d '{"model_id": 65, "texts": ["这是一个测试文本11111", "这是另一个 测试文本222222"], "batch_size": 2}'
-
-curl -X POST "http://150.230.37.250:8001/embed" -H "Content-Type: application/json" -d '{"model_id": 65, "texts": ["这是一个测试文本11111", "这是另一个 测试文本222222"], "batch_size": 2}'
-
-curl -X POST "http://150.230.37.250:8002/chat" -H "Content-Type: application/json" -d '{"model_id": 67, "stream": true, "messages": [{"role": "system", "content": "You are a helpful assistant"}, {"role": "user", "content": "Hello"}]}'
-
-curl -X POST "http://localhost:8002/chat" -H "Content-Type: application/json" -d '{"model_id": 67, "stream": true, "messages": [{"role": "system", "content": "You are a helpful assistant"}, {"role": "user", "content": "Hello"}]}'
-```
-
-### Ubuntu 安装 Oracle Instant Client
-1.下载安装包
-```bash
-wget https://download.oracle.com/otn_software/linux/instantclient/2380000/instantclient-basic-linux.x64-23.8.0.25.04.zip
-wget https://download.oracle.com/otn_software/linux/instantclient/2380000/instantclient-sqlplus-linux.x64-23.8.0.25.04.zip
-```
-2.解压安装：
-```bash
-sudo mkdir -p /opt/oracle
-sudo unzip instantclient-basic-linux.x64-*.zip -d /opt/oracle
-sudo unzip instantclient-sqlplus-linux.x64-*.zip -d /opt/oracle
-```
-3.设置环境变量：
-```bash
-export ORACLE_HOME=/opt/oracle/instantclient_23_8
-export LD_LIBRARY_PATH=$ORACLE_HOME:$LD_LIBRARY_PATH
-export PATH=$ORACLE_HOME:$PATH
-```
 
 ### 部署Docker：
 ```bash
@@ -98,16 +69,18 @@ http://localhost:8848/nacos/
 pip install -e .
 ```
 
-```sql
-select * from KBOT_MD_DOMAIN;
-select * from KBOT_MD_KB;
-select * from kbot_md_agent;
-select * from kbot_md_agent_conf;
-select * from KBOT_MD_KB_BATCH;
-select * from KBOT_MD_KB_FILES where kb_id = 165;
-select * from KBOT_MD_PROMPT;
-select embed_id,chunk_metadata,file_id,security_level from KBOT_BIZ_TXT_EMBEDDING 
-    where file_id = '744d6f6f-cf5f-47c7-974e-3ca3e2f2ceab'
-    and file_id = 'e08c72c5-3789-4cf8-b126-6f09117e0c9c'
-    ;
+### Oracle 23ai全文检索创建索引
+```bash
+--对CHUNK_DOC字段创建全文检索索引
+--先用dba用户赋予kbotui_dev用户可执行权限
+grant execute on ctxsys.ctx_ddl to kbotui_dev;
+
+--在普通用户执行如下步骤，创建索引。（中文）
+exec ctx_ddl.create_preference('chinese_lexer','chinese_vgram_lexer');
+CREATE INDEX IDX_FULLSEARCH_TXT_EMBEDDING ON  KBOT_BIZ_TXT_EMBEDDING("CHUNK_DOC") INDEXTYPE IS "CTXSYS"."CONTEXT" PARAMETERS ('lexer chinese_lexer');
+
+--在普通用户执行如下步骤，创建索引。（英文）
+--exec ctx_ddl.create_preference('english_lexer','basic_lexer');
+--CREATE INDEX IDX_FULLSEARCH_TXT_EMBEDDING ON  KBOT_BIZ_TXT_EMBEDDING("CHUNK_DOC") INDEXTYPE IS "CTXSYS"."CONTEXT" PARAMETERS ('lexer english_lexer');
+
 ```
