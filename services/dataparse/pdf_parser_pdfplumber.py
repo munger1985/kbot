@@ -24,7 +24,7 @@ import traceback
 class PDFPlumberParser:
     """PDF file parser class with optimized processing"""
 
-    def __init__(self, file_params: FileParams):
+    def __init__(self, file_params: FileParams, remove_header_footer: bool = True):
         self.file_params = file_params
         self.pdf_path = Path(file_params.file_path)
         self.output_dir = self.pdf_path.parent / "output"/file_params.file_id
@@ -35,11 +35,12 @@ class PDFPlumberParser:
         self.images_dir.mkdir(parents=True, exist_ok=True)
         self.tables_dir.mkdir(parents=True, exist_ok=True)
 
-        self.text_content: list[dict] = []
+        self.text_contents: list[dict] = []
         self.text_chunks: list[dict] = []
         self.images_info: list[dict] = []
         self.tables_info: list[dict] = []
         self.page_content: list[dict] = []  # Stores complete page content with placeholders
+        self.remove_header_footer = remove_header_footer
 
         self.chunk_size = 0
         self.chunk_overlap = 0
@@ -53,7 +54,6 @@ class PDFPlumberParser:
             try:
                 # Extract all content by page
                 _, self.images_info, _  = self.extract_all_per_page()
-
                 # logger.debug(f"================={r}")
                 # if not r:
                 #     return False
@@ -191,7 +191,7 @@ class PDFPlumberParser:
         chunk_metas = []
 
         # Add text content
-        for text_item in self.text_content:
+        for text_item in self.text_contents:
             if not text_item['text'].strip():
                 continue
 
@@ -351,6 +351,102 @@ class PDFPlumberParser:
             message
         )
 
+    def remove_duplicate_prefix_suffix(self, text_content):
+        """
+        移除 text_content 中除第一个元素外所有元素的重复前缀和后缀
+        保留第一个元素中的完整内容，其他元素中删除相同的前缀和后缀
+        """
+        if not text_content or len(text_content) < 2:
+            return text_content
+
+        # 获取第一个元素的完整内容作为参考
+        first_content = text_content[0]['content']
+
+        # 找出所有元素中共同的前缀和后缀
+        common_prefix = ""
+        common_suffix = ""
+
+        # 找出共同前缀
+        if len(text_content) > 1:
+            # 从第二个元素开始比较
+            for item in text_content[1:]:
+                content = item['content']
+                if not content:
+                    continue
+
+                # 找出当前元素与第一个元素的共同前缀
+                current_prefix = ""
+                min_len = min(len(first_content), len(content))
+                for i in range(min_len):
+                    if first_content[i] == content[i]:
+                        current_prefix += first_content[i]
+                    else:
+                        break
+
+                # 更新共同前缀（取最短的）
+                if not common_prefix:
+                    common_prefix = current_prefix
+                else:
+                    common_prefix = common_prefix[:len(current_prefix)]
+                    if len(common_prefix) > len(current_prefix):
+                        common_prefix = current_prefix[:len(current_prefix)]
+
+        # 找出共同后缀
+        if len(text_content) > 1:
+            for item in text_content[1:]:
+                content = item['content']
+                if not content:
+                    continue
+
+                # 找出当前元素与第一个元素的共同后缀
+                current_suffix = ""
+                min_len = min(len(first_content), len(content))
+                for i in range(1, min_len + 1):
+                    if first_content[-i] == content[-i]:
+                        current_suffix = first_content[-i] + current_suffix
+                    else:
+                        break
+
+                # 更新共同后缀（取最短的）
+                if not common_suffix:
+                    common_suffix = current_suffix
+                else:
+                    common_suffix = current_suffix[:len(current_suffix)]
+                    if len(common_suffix) > len(current_suffix):
+                        common_suffix = current_suffix[:len(current_suffix)]
+
+        print(f"检测到的共同前缀: '{common_prefix}'")
+        print(f"检测到的共同后缀: '{common_suffix}'")
+
+        # 生成新的列表
+        new_text_content = []
+
+        for i, item in enumerate(text_content):
+            if i == 0:
+                # 第一个元素保持不变
+                new_text_content.append(item)
+            else:
+                # 其他元素中移除共同的前缀和后缀
+                content = item['content']
+                cleaned_content = content
+
+                # 移除前缀
+                if common_prefix and content.startswith(common_prefix):
+                    cleaned_content = content[len(common_prefix):]
+
+                # 移除后缀
+                if common_suffix and cleaned_content.endswith(common_suffix):
+                    cleaned_content = cleaned_content[:-len(common_suffix)]
+
+                # 创建新的元素
+                new_item = item.copy()
+                new_item['content'] = cleaned_content.strip()
+                new_text_content.append(new_item)
+
+        print(f"原始元素数: {len(text_content)}")
+        print(f"处理后元素数: {len(new_text_content)}")
+
+        return new_text_content
     def extract_all_per_page(self) -> tuple[list[dict], list[dict], list[dict]]:
         """Extract all content from PDF by page"""
         logger.info(f"Parsing file: {self.pdf_path}")
@@ -369,13 +465,12 @@ class PDFPlumberParser:
                     # Combine content
                     combined = self._combine_page_content(page_text, page_images, page_tables, page_num)
                     self.page_content.append({'page_num': page_num, 'content': combined})
-                    print(445, combined)
 
         except Exception as e:
             logger.error(f"Error parsing PDF: {e}")
             raise
 
-        return self.text_content, self.images_info, self.tables_info
+        return self.text_contents, self.images_info, self.tables_info
 
     def extract_all_by_fixed_size(self) -> tuple[list[dict], list[dict], list[dict]]:
         """Extract all content from PDF by page"""
@@ -399,7 +494,7 @@ class PDFPlumberParser:
         except Exception as e:
             logger.error(f"Error parsing PDF: {e}")
             raise
-        for page in self.text_content:
+        for page in self.text_contents:
             page_num = page['page_num']
             content = page['text']
             for chunk_start in range(0, len(content), self.chunk_size - self.chunk_overlap):
@@ -407,6 +502,43 @@ class PDFPlumberParser:
                 self.text_chunks.append({'page_num': page_num, 'text': chunk_text})
         return self.text_chunks, self.images_info, self.tables_info
 
+    def _filter_header_footer(self, page, page_text: str) -> str:
+        """过滤页眉页脚内容"""
+        if not self.remove_header_footer or not page_text.strip():
+            return page_text
+
+        try:
+            # 获取页面尺寸
+            page_height = page.height
+            page_width = page.width
+            text_objects = page.objects.get("char", [])
+            header_lines = [obj for obj in text_objects
+                            if obj["y0"] > page.height * 0.9]
+            header_height = max(header_lines, key=lambda x: x["top"])["top"]
+            footer_lines = [obj for obj in text_objects
+                            if obj["y0"] < page.height * 0.1]
+            footer_height = max(footer_lines, key=lambda x: x["top"])["top"]
+
+            # 使用动态检测的高度
+            # header_height = getattr(self, '_detected_header_height', self.header_height)
+            # footer_height = getattr(self, '_detected_footer_height', self.footer_height)
+
+            # 提取主体内容区域（排除页眉页脚）
+            main_content_bbox = (0, header_height + 10, page_width, footer_height - 10)
+
+            # 确保边界框有效
+            if main_content_bbox[1] >= main_content_bbox[3]:
+                return page_text  # 如果页眉页脚太大，返回原始文本
+
+            # 裁剪页面到主体内容区域
+            main_content_page = page.crop(main_content_bbox)
+            filtered_text = main_content_page.extract_text() or ""
+
+            return filtered_text
+
+        except Exception as e:
+            print(f"过滤页眉页脚时出错: {e}，返回原始文本")
+            return page_text
     def _extract_text_and_tables(self, page, page_num: int) -> tuple[str, list[dict]]:
         """Extract text and tables from a page"""
         page_text = ""
@@ -443,8 +575,9 @@ class PDFPlumberParser:
 
             # Extract text (excluding table areas)
             page_text = page.extract_text() or ""
+            page_text = self._filter_header_footer(page, page_text)
             if page_text.strip():
-                self.text_content.append({
+                self.text_contents.append({
                     'page_num': page_num,
                     'text': page_text.strip()
                 })
@@ -452,6 +585,7 @@ class PDFPlumberParser:
         except Exception as e:
             logger.error(f"Error extracting text/tables from page {page_num}: {e}")
             page_text = page.extract_text() or ""
+        self.text_contents = self.remove_duplicate_prefix_suffix(self.text_contents)
 
         return page_text, page_tables
 
@@ -682,12 +816,12 @@ class PDFPlumberParser:
         logger.info("\n" + "=" * 50)
         logger.info("PDF Parsing Complete!")
         logger.info("=" * 50)
-        logger.info(f"Text paragraphs extracted: {len(self.text_content)}")
+        logger.info(f"Text paragraphs extracted: {len(self.text_contents)}")
         logger.info(f"Images extracted: {len(self.images_info)}")
         logger.info(f"Tables extracted: {len(self.tables_info)}")
         logger.info(f"Output directory: {self.output_dir}")
 
-        pages_with_text = {item['page_num'] for item in self.text_content}
+        pages_with_text = {item['page_num'] for item in self.text_contents}
         pages_with_images = {item['page_num'] for item in self.images_info}
         pages_with_tables = {item['page_num'] for item in self.tables_info}
 
