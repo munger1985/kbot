@@ -588,7 +588,7 @@ class PDFPlumberParser:
                     table_info = {
                         'uuid': table_uuid,
                         'filename': json_filename,
-                        'page': page_num,
+                        'page_num': page_num,
                         'file_path': str(json_path.absolute()),  # 使用绝对路径
                         'rows': len(json_data),
                         'columns': len(headers),
@@ -670,7 +670,7 @@ class PDFPlumberParser:
             # 记录文字内容
             if page_text.strip():
                 self.text_contents.append({
-                    'page': page_num,
+                    'page_num': page_num,
                     'text': page_text.strip()
                 })
 
