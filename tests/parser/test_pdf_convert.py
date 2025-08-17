@@ -14,7 +14,7 @@ async def test():
     
     # 转换Word文档
     try:
-        pdf_path = await converter.convert_to_pdf("/mnt/f/docs/resume.docx")
+        pdf_path = await converter.convert_to_pdf(input_path="/mnt/f/docs/resume.docx", page=2)
         print(f"转换成功: {pdf_path}")
     except Exception as e:
         print(f"转换失败: {e}")

@@ -4,6 +4,8 @@ import asyncio
 import uvicorn
 import signal
 import sys
+import time
+import socket
 import configparser
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -22,30 +24,55 @@ from services.dataparse.file_parser_manger import FileParserManager
 load_dotenv()
 service_name = "main"
 nacos_addr = os.getenv("NACOS_SERVER_ADDR") # Nacos服务器地址
-nacos_namespace = os.getenv("NACOS_NAMESPACE") or "dev" # Nacos命名空间
+nacos_namespace = os.getenv("NACOS_NAMESPACE") or "public" # Nacos命名空间
 nacos_group = os.getenv("NACOS_GROUP") or "DEV_GROUP" # Nacos分组
 nacos_username = os.getenv("NACOS_USERNAME") # Nacos账号名称
 nacos_password = os.getenv("NACOS_PASSWORD") # Nacos账号密码
 service_host = os.getenv("KBOT_HOST", "0.0.0.0") # 服务地址
 service_port = int(os.getenv("KBOT_PORT", 9000)) # 服务端口
 
+# Nacos 服务注册
 def register_service():
-    
     client = NacosClient(
         server_addresses=nacos_addr,
         namespace=nacos_namespace
         # username='nacos',
         # password='nacos'
         )
-    
-    # 注册服务
     client.add_naming_instance(
         service_name=service_name,
+        group_name=nacos_group,
         ip=service_host,
         port=service_port,
         ephemeral=True,
         healthy=True
     )
+    # nacos 心跳发送器
+    while True:
+        if signal.SIGINT or signal.SIGTERM:
+            break
+        try:
+            # 健康检查：检测服务端口是否存活
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(1)
+            result = sock.connect_ex((service_host, service_port))
+            is_healthy = (result == 0)
+            sock.close()
+
+            # 更新实例健康状态
+            client.send_heartbeat(
+                service_name=service_name,
+                group_name=nacos_group,
+                ip=service_host,
+                port=service_port
+            )
+            
+            logger.info(f"Heartbeat sent, healthy: {is_healthy}")
+        except Exception as e:
+            logger.error(f"Heartbeat failed: {e}")
+            break
+        
+        time.sleep(10)  # 间隔需小于Nacos心跳超时时间（默认15秒）
 
 # 注册退出时的清理函数
 def cleanup():
@@ -53,6 +80,7 @@ def cleanup():
     # shutdown_services("Application exiting, ")
     fp_manager = FileParserManager()
     fp_manager.shutdown_service("Application exiting, ")
+
 
 atexit.register(cleanup)
 

@@ -3,7 +3,7 @@ import sys
 import asyncio
 from loguru import logger
 from datetime import datetime, timedelta
-from .model import BaseReranker, RerankerConfig, create_reranker_model
+from model import BaseReranker, RerankerConfig, create_reranker_model
 
 # 添加项目根目录到 Python 路径，确保可以导入项目模块
 current_file = os.path.abspath(__file__)

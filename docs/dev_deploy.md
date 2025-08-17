@@ -38,17 +38,17 @@ docker run --name kbot-redis -d \
 # 设置容器自动重启
 docker update --restart unless-stopped kbot-redis #容器名或ID
 ```
-### 安装字体，用于libreoffice转PDF时解决中文乱码
+### 配置 libreoffice 容器
 ```bash
-sudo apt-get install fonts-noto-cjk libreoffice
+cd microservices/libreoffice
+docker-compose up -d
+
+# 服务端口修改docker-compose.yaml里的端口号。默认为9316
+# 容器所在服务器ip和容器端口需要更新到app.properties文件的 libre_host 和 libre_port 两项中
 ```
 
-### 页码提取工具，用于提取pdf中的页码信息
-```bash
-sudo apt-get install poppler-utils
-```
 
-### 项目初始化时需要到nacos-init目录下初始化nacos的docker容器
+### 配置 nacos 容器
 ```bash
 # 首先在home目录下创建nacos/data和nacos/logs
 # 然后修改nacos-init/docker-compose.yaml文件中的相关目录

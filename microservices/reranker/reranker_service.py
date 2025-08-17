@@ -1,7 +1,7 @@
 from typing import Any
 from loguru import logger
-from .model_pool import ModelPool
-from .model.base import BaseReranker
+from model_pool import ModelPool
+from model.base import BaseReranker
 
 
 class RerankerService:

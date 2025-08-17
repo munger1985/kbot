@@ -21,8 +21,8 @@ async def call_embedding_model(model_unique_name: str,
     # 从 nacos 获取 embedding 服务配置
         nacos_group = os.getenv("NACOS_GROUP") or "DEV_GROUP" # Nacos分组
         config_parser = configparser.ConfigParser()
-        embed_config = nacos_manager.get_config("embedding", nacos_group)
-        config_parser.read_string(f"[{nacos_group}]\n{embed_config}")
+        nacos_config = nacos_manager.get_config("embedding", nacos_group)
+        config_parser.read_string(f"[{nacos_group}]\n{nacos_config}")
         service_host = config_parser.get(nacos_group, "service_host") or "0.0.0.0" # 微服务地址
         service_port = int(config_parser.get(nacos_group, "service_port")) or 9201 # 微服务通信端口
     except Exception as e:
@@ -88,10 +88,20 @@ async def call_reranker_model(model_unique_name: str, query: str, documents: lis
     - **top_k**: Number of top documents to return (None for all)
     """
 
-    host = os.getenv("KBOT_RERANKER_HOST", "localhost")
-    port = os.getenv("KBOT_RERANKER_PORT", "8003")
+    try:
+    # 从 nacos 获取 reranker 服务配置
+        nacos_group = os.getenv("NACOS_GROUP") or "DEV_GROUP" # Nacos分组
+        config_parser = configparser.ConfigParser()
+        nacos_config = nacos_manager.get_config("reranker", nacos_group)
+        config_parser.read_string(f"[{nacos_group}]\n{nacos_config}")
+        service_host = config_parser.get(nacos_group, "service_host") or "0.0.0.0" # 微服务地址
+        service_port = int(config_parser.get(nacos_group, "service_port")) or 9203 # 微服务通信端口
+    except Exception as e:
+        # 如果从 nacos 获取 reranker 服务配置失败，则使用默认配置
+        service_host = "0.0.0.0"
+        service_port = 9203
     
-    url = f"http://{host}:{port}/v1/rerank"
+    url = f"http://{service_host}:{service_port}/v1/rerank"
     headers = {"Content-Type": "application/json"}
     payload = {
         "model_unique_name": model_unique_name,
@@ -190,11 +200,20 @@ async def call_vlm_model_for_parsing_picture(model_unique_name: str,
     - Output text, or None on failure
     """
     
-    
-    # Get vector language model host and port
-    host = os.getenv("KBOT_VLM_HOST", "localhost")
-    port = os.getenv("KBOT_VLM_PORT", "8004")
-    url = f"http://{host}:{port}/v1/inference"
+    try:
+    # 从 nacos 获取 vlm 服务配置
+        nacos_group = os.getenv("NACOS_GROUP") or "DEV_GROUP" # Nacos分组
+        config_parser = configparser.ConfigParser()
+        nacos_config = nacos_manager.get_config("vlm", nacos_group)
+        config_parser.read_string(f"[{nacos_group}]\n{nacos_config}")
+        service_host = config_parser.get(nacos_group, "service_host") or "0.0.0.0" # 微服务地址
+        service_port = int(config_parser.get(nacos_group, "service_port")) or 9204 # 微服务通信端口
+    except Exception as e:
+        # 如果从 nacos 获取 vlm 服务配置失败，则使用默认配置
+        service_host = "0.0.0.0"
+        service_port = 9204
+
+    url = f"http://{service_host}:{service_port}/v1/inference"
     headers = {"Content-Type": "application/json"}
 
     # Encode image to base64

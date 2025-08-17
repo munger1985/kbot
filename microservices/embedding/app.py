@@ -15,6 +15,7 @@ import time
 import atexit
 import configparser
 import uvicorn
+import socket
 from dotenv import load_dotenv
 from datetime import datetime
 from typing import Any
@@ -32,8 +33,9 @@ from model.base import EmbeddingResponse
 
 # 加载环境变量配置
 load_dotenv()
+
 nacos_addr = os.getenv("NACOS_SERVER_ADDR") # Nacos服务器地址
-nacos_namespace = os.getenv("NACOS_NAMESPACE") or "dev" # Nacos命名空间
+nacos_namespace = "public" # Nacos命名空间
 nacos_group = os.getenv("NACOS_GROUP") or "DEV_GROUP" # Nacos分组
 nacos_username = os.getenv("NACOS_USERNAME") # Nacos账号名称
 nacos_password = os.getenv("NACOS_PASSWORD") # Nacos账号密码
@@ -56,24 +58,50 @@ except Exception as e:
     service_port = 9201
 
 
-# 服务注册到 Nacos
+
+# Nacos 服务注册
 def register_service():
-    
     client = NacosClient(
         server_addresses=nacos_addr,
         namespace=nacos_namespace
         # username='nacos',
         # password='nacos'
         )
-    
-    # 注册服务
     client.add_naming_instance(
         service_name=service_name,
+        group_name=nacos_group,
         ip=service_host,
         port=service_port,
         ephemeral=True,
         healthy=True
     )
+    # nacos 心跳发送器
+    while True:
+        if signal.SIGINT or signal.SIGTERM:
+            break
+        try:
+            # 健康检查：检测服务端口是否存活
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(1)
+            result = sock.connect_ex((service_host, service_port))
+            is_healthy = (result == 0)
+            sock.close()
+
+            # 更新实例健康状态
+            client.send_heartbeat(
+                service_name=service_name,
+                group_name=nacos_group,
+                ip=service_host,
+                port=service_port
+            )
+            
+            logger.info(f"Heartbeat sent, healthy: {is_healthy}")
+        except Exception as e:
+            logger.error(f"Heartbeat failed: {e}")
+            break
+        
+        time.sleep(10)  # 间隔需小于Nacos心跳超时时间（默认15秒）
+
 
 # 创建embedding服务实例
 embedding_service = EmbeddingService()
@@ -108,14 +136,17 @@ async def lifespan(app: FastAPI):
     logger.info(f"Initializing embedding service at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}...") 
     logger.info(f"Process ID: {os.getpid()}")
     
-    # 注册服务到 Nacos
-    register_service()
-    logger.info("Embedding service registered to Nacos.")
+    
      
     # 初始化微服务
     try:
         await embedding_service.initialize()
         logger.info(f"Embedding service started successfully, elapsed time: {time.time() - start_time:.2f} seconds")
+
+        # 注册服务到 Nacos
+        register_service()
+        logger.info("Embedding service registered to Nacos.")
+
     except Exception as e:
         logger.exception(f"Embedding service initialization failed: {e}")
         # 在生产环境中，可能需要在这里退出应用程序
@@ -225,7 +256,6 @@ async def embed_texts(
         raise HTTPException(status_code=500, detail=f"Error occurred during embedding.: {str(e)}")
 
 
-
 # 全局变量，用于存储微服务进程
 embedding_service_process = None
 
@@ -266,6 +296,8 @@ def shutdown_embedding_service():
             logger.warning("The embedding microservice process failed to terminate properly; forcing shutdown...")
             embedding_service_process.kill()
         embedding_service_process = None
+
+    
 
 def signal_handler(sig, frame):
     """Handling termination signal."""

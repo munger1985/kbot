@@ -42,13 +42,13 @@ class Reranker(BaseReranker):
         # 从nacos manager中读取cache_dir配置，用于缓存模型
         try:
             nacos_group = os.getenv("NACOS_GROUP") or "DEV_GROUP"
-            embed_config = nacos_manager.get_config("embedding", nacos_group)
+            embed_config = nacos_manager.get_config("reranker", nacos_group)
             config_parser = configparser.ConfigParser()
             config_parser.read_string(f"[{nacos_group}]\n{embed_config}")
             cache_dir = config_parser.get(nacos_group, "cache_dir") or "/tmp"
             
         except Exception as e:
-            logger.error(f"Failed to get embedding config from Nacos: {e}")
+            logger.error(f"Failed to get reranker config from Nacos: {e}")
             cache_dir = "/tmp"
 
         # Model components
