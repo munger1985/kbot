@@ -146,7 +146,7 @@ class PDFPlumberParser:
             embeddings_list= []
             if  chunks:
                 embeddings_list = await call_embedding_model(text_embedding_model, chunks)
-            if not embeddings_list or len(embeddings_list) != len(chunks):
+            if   len(embeddings_list) != len(chunks):
                 msg = f"text_embedding_model  {text_embedding_model} returned invalid results (expected {len(chunks)}, got {len(embeddings_list) if embeddings_list else 0})"
                 logger.error(msg)
                 logger.error("failed file: {}",self.file_params.file_path)
