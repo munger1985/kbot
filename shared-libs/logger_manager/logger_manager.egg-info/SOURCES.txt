@@ -3,6 +3,7 @@ setup.py
 ./logger_manager/logger_manager.py
 ./logger_manager/version.py
 logger_manager/__init__.py
+logger_manager/logger_manager.py
 logger_manager/version.py
 logger_manager.egg-info/PKG-INFO
 logger_manager.egg-info/SOURCES.txt

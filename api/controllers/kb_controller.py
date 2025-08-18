@@ -52,7 +52,7 @@ async def delete_kb_files(
 async def get_kb_files(
         file_id: str,
         download: bool = False
-) -> bytes | list[dict] | None:
+) -> tuple[str, str | None] | list |None:
     """
     Get file content for download or convert to images.
     获取文件内容用于下载或转换为图片
@@ -69,15 +69,16 @@ async def get_kb_files(
         return None
     
     file_path = file.file_path
+    file_name = file.file_name
+
     if file_path is None:
         return None
     
     try:
         if download:
             # 下载文件
-            with open(file_path, 'rb') as f:
-                file_content = f.read()
-            return file_content
+            
+            return file_path, file_name
         else:
             # 预览文件
             # TODO

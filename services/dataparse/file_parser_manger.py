@@ -1,7 +1,10 @@
 import asyncio
+import os
 import multiprocessing
+import configparser
 from loguru import logger
-from core.log.logger import setup_logging
+from nacos_manager import nacos_manager # type: ignore
+from logger_manager import LogManager, LogConfig # type: ignore
 from services.dataparse.parse_service import start_file_parse_service, shutdown_file_parse_service
 
 
@@ -54,7 +57,29 @@ class FileParserManager:
         这个函数作为multiprocessing.Process的目标函数。
         """
         # 在子进程中初始化日志
-        setup_logging(service_name="main")
+        # 通过 nacos_manager 获取logger配置
+        try:
+            nacos_group = os.getenv("NACOS_GROUP") or "DEV_GROUP" # Nacos分组
+            config_parser = configparser.ConfigParser()
+            log_config = nacos_manager.get_config("logger", nacos_group)
+            config_parser.read_string(f"[{nacos_group}]\n{log_config}")
+            log_dir = config_parser.get(nacos_group, "dir") or "logs/"
+            log_level = config_parser.get(nacos_group, "level") or "DEBUG"
+            rotation = config_parser.get(nacos_group, "rotation") or "10 MB"
+            retention = config_parser.get(nacos_group, "retention") or "20 days"
+            
+        except Exception as e:
+            # 如果获取 logger 配置失败，则使用默认配置
+            logger.warning(f"Failed to get logger config from nacos: {str(e)}")
+            log_dir = "logs/"
+            log_level = "DEBUG"
+            rotation = "10 MB"
+            retention = "10 days"
+            
+        # 初始化日志
+        conf = LogConfig(service_name="main", log_dir=log_dir, level=log_level, rotation=rotation, retention=retention)
+        LogManager(conf).setup()
+
         logger.info("File parse service process starting")
 
         try:

@@ -36,8 +36,7 @@ class FileStatus(int, Enum):
     PARSING = 5
     PARSED = 6
     PARSE_FAILED = 7
-    REPARSING = 8
-    ARCHIVED = 9
+    ARCHIVED = 8
 
 @unique
 class ProcessPriority(int, Enum):

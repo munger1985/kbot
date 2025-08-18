@@ -1,6 +1,7 @@
 
 import json
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, status
+from fastapi.responses import FileResponse
 from api.controllers.kb_controller import upload_kb_files, delete_kb_files, get_kb_files, reparse_kb_files
 from api.schemas.kb_schema import KBUploadForm, KBDeleteForm, KBReparseForm
 from api.schemas.kb_response import SuccessResponse, ErrorResponse
@@ -107,7 +108,12 @@ async def handle_download_file(
         result = await get_kb_files(file_id, download=True)
         
         if result:
-            return result
+            return FileResponse(
+                path=result[0],
+                filename=result[1],
+                media_type="multipart/form-data",
+                content_disposition_type=None # type: ignore
+                )
         else:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
