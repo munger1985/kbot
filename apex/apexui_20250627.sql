@@ -33,7 +33,7 @@ prompt APPLICATION 109 - Oracle AI Knowledge Platform
 -- Application Export:
 --   Application:     109
 --   Name:            Oracle AI Knowledge Platform
---   Date and Time:   02:30 星期三 6月 18, 2025
+--   Date and Time:   01:50 星期一 6月 30, 2025
 --   Exported By:     DEV_23AI
 --   Flashback:       0
 --   Export Type:     Application Export
@@ -130,9 +130,9 @@ wwv_imp_workspace.create_flow(
 ,p_substitution_string_01=>'APP_NAME'
 ,p_substitution_value_01=>'Knowledge Base Chat'
 ,p_last_updated_by=>'DEV_23AI'
-,p_last_upd_yyyymmddhh24miss=>'20250616083135'
+,p_last_upd_yyyymmddhh24miss=>'20250630014925'
 ,p_file_prefix => nvl(wwv_flow_application_install.get_static_app_file_prefix,'')
-,p_files_version=>109
+,p_files_version=>110
 ,p_print_server_type=>'NATIVE'
 ,p_file_storage=>'DB'
 ,p_is_pwa=>'Y'
@@ -33238,8 +33238,8 @@ wwv_flow_imp_shared.create_translation(
 ,p_translate_to_lang_code=>'zh-cn'
 ,p_translation_specific_to_item=>'NO'
 ,p_template_translatable=>'N'
-,p_translate_to_text=>'application/msword,application/pdf,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/*'
-,p_translate_from_text=>'application/msword,application/pdf,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/*'
+,p_translate_to_text=>'application/msword,application/pdf,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/*,text/html'
+,p_translate_from_text=>'application/msword,application/pdf,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/*,text/html'
 );
 wwv_flow_imp_shared.create_translation(
  p_id=>wwv_flow_imp.id(7234301338565893)
@@ -33290,8 +33290,8 @@ wwv_flow_imp_shared.create_translation(
 ,p_translate_to_lang_code=>'zh-cn'
 ,p_translation_specific_to_item=>'NO'
 ,p_template_translatable=>'N'
-,p_translate_to_text=>unistr('\52A0\8F7D PDF, DOCX, TXT, IMAGE \6587\4EF6')
-,p_translate_from_text=>'Load PDF, DOCX, TXT, IMAGE File'
+,p_translate_to_text=>'Load PDF, DOCX, TXT, IMAGE, HTML File'
+,p_translate_from_text=>'Load PDF, DOCX, TXT, IMAGE, HTML File'
 );
 wwv_flow_imp_shared.create_translation(
  p_id=>wwv_flow_imp.id(7235092670565902)
@@ -96768,7 +96768,7 @@ unistr('    padding-right: 30px !important; /* \907F\514D\6587\5B57\548C\7BAD\59
 ,p_protection_level=>'C'
 ,p_page_component_map=>'21'
 ,p_last_updated_by=>'DEV_23AI'
-,p_last_upd_yyyymmddhh24miss=>'20250609062658'
+,p_last_upd_yyyymmddhh24miss=>'20250630014901'
 );
 end;
 /
@@ -98233,10 +98233,10 @@ wwv_flow_imp_page.create_page_item(
 ,p_attribute_01=>'APEX_APPLICATION_TEMP_FILES'
 ,p_attribute_09=>'SESSION'
 ,p_attribute_10=>'Y'
-,p_attribute_11=>'application/msword,application/pdf,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/*'
+,p_attribute_11=>'application/msword,application/pdf,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/*,text/html'
 ,p_attribute_12=>'DROPZONE_INLINE'
 ,p_attribute_13=>'Support multi-file upload'
-,p_attribute_14=>'Load PDF, DOCX, TXT, IMAGE File'
+,p_attribute_14=>'Load PDF, DOCX, TXT, IMAGE, HTML File'
 ,p_attribute_15=>'51200'
 );
 wwv_flow_imp_page.create_page_item(
@@ -121887,7 +121887,7 @@ unistr('/* \53EF\9009\FF1A\9690\85CF\9ED8\8BA4\6EDA\52A8\6761\FF08\9002\914D Chr
 ,p_protection_level=>'C'
 ,p_page_component_map=>'16'
 ,p_last_updated_by=>'DEV_23AI'
-,p_last_upd_yyyymmddhh24miss=>'20250611083339'
+,p_last_upd_yyyymmddhh24miss=>'20250627032720'
 );
 end;
 /
@@ -122077,7 +122077,7 @@ wwv_flow_imp_page.create_page_branch(
 wwv_flow_imp_page.create_page_branch(
  p_id=>wwv_flow_imp.id(61756322832153443)
 ,p_branch_name=>'Go to page 37(clear)'
-,p_branch_action=>'f?p=&APP_ID.:40:&SESSION.::&DEBUG.:40:P40_KNOWLEDGE_BASE_NAME,P40_PROFILE_TEMP_MODEL:&P40_KNOWLEDGE_BASE_NAME.,&P40_MODEL.&success_msg=#SUCCESS_MSG#'
+,p_branch_action=>'f?p=&APP_ID.:40:&SESSION.:init:&DEBUG.:40:P40_KNOWLEDGE_BASE_NAME,P40_PROFILE_TEMP_MODEL:&P40_KNOWLEDGE_BASE_NAME.,&P40_MODEL.&success_msg=#SUCCESS_MSG#'
 ,p_branch_point=>'AFTER_PROCESSING'
 ,p_branch_type=>'REDIRECT_URL'
 ,p_branch_sequence=>30
