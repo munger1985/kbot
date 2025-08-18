@@ -36,7 +36,6 @@ async def agent_chat(form: AgentChatForm) -> dict[str, Any]:
                         "chunk_type": kb_result.chunk_type,
                         "page_num": kb_result.page_num,
                         "content": kb_result.content,
-                        # http://localhost:8000/api/kb/download?file_id=
                         "download_link": f"{url}/api/kb/download?file_id={kb_result.file_id}",
                         "preview_link": f"{url}/api/kb/preview?file_id={kb_result.file_id}?page_num={kb_result.page_num}",
                         "similarity_score": kb_result.similarity,

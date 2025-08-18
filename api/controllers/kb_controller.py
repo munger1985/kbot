@@ -53,7 +53,7 @@ async def delete_kb_files(
 async def get_kb_files(
         file_id: str,
         download: bool = False,
-        page_num: int | None = None
+        page_num: int = 0
 ) -> tuple[str, str | None] | str | None:
     """
     Get file content for download or preview.
@@ -62,7 +62,7 @@ async def get_kb_files(
     params:
     - file_id (str): 文件id
     - download (bool): 是否下载原文件，而不是预览
-    - page (int | None): 当预览时，该参数指定预览的页数
+    - page_num (int | None): 当预览时，该参数指定预览的页数
 
     return:
     - tuple[str, str | None] | str | None: 返回文件下载的路径和文件名，或者当预览文件时，返回文件的临时路径，或者如果没有找到文件，返回 None
@@ -86,7 +86,7 @@ async def get_kb_files(
             # 预览文件
             img = FileToImage()
             try:
-                return await img.convert_to_image(input_path=file_path, page=page) # type: ignore
+                return await img.convert_to_image(input_path=file_path, page_num=page_num)
             except Exception as e:
                 raise e
 
