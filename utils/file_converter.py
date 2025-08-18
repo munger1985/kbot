@@ -145,7 +145,7 @@ class FileToImage:
         # 支持的文件扩展名
         self.supported_extensions = ['.ppt', '.pptx', '.doc', '.docx', '.txt', '.pdf']
 
-    async def convert_to_image(self, input_path: str, page: int) -> bytes:
+    async def convert_to_image(self, input_path: str, page: int) -> str:
         """
         Convert file to images.
         将文档转换为图片
@@ -174,10 +174,15 @@ class FileToImage:
             images = []
             pdf_images = convert_from_path(file_path, first_page=page, last_page=page)
             image = pdf_images[0]
-                # Convert image to base64
-            buffered = BytesIO()
-            image.save(buffered, format="PNG")
-            return base64.b64encode(buffered.getvalue())
+            
+            temp_dir = mkdtemp()
+            img_path = os.path.join(temp_dir, "output.img")
+            # buffered = BytesIO()
+            # image.save(buffered, format="PNG")
+            image.save(img_path, format="PNG")
+
+            return img_path
+            # return base64.b64encode(buffered.getvalue())
             #     images.append({"page": page_num, "image": img_str})
             # return images
         

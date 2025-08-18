@@ -54,7 +54,7 @@ async def get_kb_files(
         file_id: str,
         download: bool = False,
         page: int | None = None
-) -> tuple[str, str | None] | bytes |None:
+) -> tuple[str, str | None] | str |None:
     """
     Get file content for download or convert to images.
     获取文件内容用于下载或转换为图片

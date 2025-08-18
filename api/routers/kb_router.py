@@ -138,12 +138,14 @@ async def handle_preview_file(
     page: int = 0
 ):
     try:
-        result = await get_kb_files(file_id, download=True, page=page)
+        result = await get_kb_files(file_id, download=False, page=page)
         
         if result:
-            return StreamingResponse(
-                BytesIO(result), # type: ignore
-                    media_type="image/png"
+            return FileResponse(
+                    path=result,  # type: ignore
+                    filename="output.png", # type: ignore
+                    media_type="image/png",
+                    headers={"Content-Disposition": "inline"}
                 )
         else:
             raise HTTPException(
