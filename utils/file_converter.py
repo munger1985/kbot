@@ -145,17 +145,17 @@ class FileToImage:
         # 支持的文件扩展名
         self.supported_extensions = ['.ppt', '.pptx', '.doc', '.docx', '.txt', '.pdf']
 
-    async def convert_to_image(self, input_path: str, page: int) -> str:
+    async def convert_to_image(self, input_path: str, page_num: int) -> str:
         """
         Convert file to images.
         将文档转换为图片
 
         Parameters        
             - param input_path: Input file path
-            - param page: Page number
+            - param page_num: Page number
             
         Return
-            - A list of image base64 string
+            - temp image path (str)
 
         """
         file_path = Path(input_path)
@@ -172,19 +172,14 @@ class FileToImage:
         if file_extension == '.pdf':
             # 使用 pdf2image 将 PDF 文件转换为Base64图片列表
             images = []
-            pdf_images = convert_from_path(file_path, first_page=page, last_page=page)
+            pdf_images = convert_from_path(file_path, first_page=page_num, last_page=page_num)
             image = pdf_images[0]
             
             temp_dir = mkdtemp()
             img_path = os.path.join(temp_dir, "output.img")
-            # buffered = BytesIO()
-            # image.save(buffered, format="PNG")
             image.save(img_path, format="PNG")
 
             return img_path
-            # return base64.b64encode(buffered.getvalue())
-            #     images.append({"page": page_num, "image": img_str})
-            # return images
         
         elif file_extension in ['.ppt', '.pptx', '.doc', '.docx']:
             # 使用LibreOffice先将Word文档转换为PDF，再转换为Base64图片列表
@@ -196,7 +191,7 @@ class FileToImage:
                 await OfficeToPDF().convert_to_pdf(input_path=str(file_path), output_path=pdf_path)
                 
                 # 第二步：将PDF转为图片
-                return await self.convert_to_image(pdf_path, page)
+                return await self.convert_to_image(pdf_path, page_num)
                 
             finally:
                 # 清理临时文件

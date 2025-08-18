@@ -99,7 +99,7 @@ async def handle_delete_files(
 @router.get(
     "/download",
     description="从知识库中下载文件的接口",
-    response_model=bytes | list[str],
+    response_model=FileResponse,
     status_code=status.HTTP_200_OK
 )
 async def handle_download_file(
@@ -130,20 +130,20 @@ async def handle_download_file(
 @router.get(
     "/preview",
     description="从知识库中预览文件的接口",
-    response_model=bytes,
+    response_model=FileResponse,
     status_code=status.HTTP_200_OK
 )
 async def handle_preview_file(
     file_id: str,
-    page: int = 0
+    page_num: int = 0
 ):
     try:
-        result = await get_kb_files(file_id, download=False, page=page)
+        result = await get_kb_files(file_id, download=False, page_num=page_num)
         
         if result:
             return FileResponse(
                     path=result,  # type: ignore
-                    filename="output.png", # type: ignore
+                    filename="preview.png", # type: ignore
                     media_type="image/png",
                     headers={"Content-Disposition": "inline"}
                 )

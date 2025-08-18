@@ -53,18 +53,19 @@ async def delete_kb_files(
 async def get_kb_files(
         file_id: str,
         download: bool = False,
-        page: int | None = None
-) -> tuple[str, str | None] | str |None:
+        page_num: int | None = None
+) -> tuple[str, str | None] | str | None:
     """
-    Get file content for download or convert to images.
-    获取文件内容用于下载或转换为图片
+    Get file content for download or preview.
+    获取文件内容用于下载或预览
 
     params:
     - file_id (str): 文件id
     - download (bool): 是否下载原文件，而不是预览
+    - page (int | None): 当预览时，该参数指定预览的页数
 
     return:
-    - bytes or list or None: 文件内容或图片数组或 None
+    - tuple[str, str | None] | str | None: 返回文件下载的路径和文件名，或者当预览文件时，返回文件的临时路径，或者如果没有找到文件，返回 None
     """
     file = await KbotMdKbFilesRepository().get_by_id(file_id=file_id)
     if file is None:

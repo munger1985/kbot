@@ -26,7 +26,7 @@ async def agent_chat(form: AgentChatForm) -> dict[str, Any]:
         if redis_data:
             # 非第一次提问
             references = []
-            host = os.getenv("KBOT_HOST", "localhost")
+            host = os.getenv("KBOT_IP", "localhost")
             port = os.getenv("KBOT_PORT", "8000")
             url = f"http://{host}:{port}"
             if results and len(results) > 0:
@@ -38,7 +38,7 @@ async def agent_chat(form: AgentChatForm) -> dict[str, Any]:
                         "content": kb_result.content,
                         # http://localhost:8000/api/kb/download?file_id=
                         "download_link": f"{url}/api/kb/download?file_id={kb_result.file_id}",
-                        "preview_link": f"{url}/api/kb/preview?file_id={kb_result.file_id}",
+                        "preview_link": f"{url}/api/kb/preview?file_id={kb_result.file_id}?page_num={kb_result.page_num}",
                         "similarity_score": kb_result.similarity,
                         "reranker_score": kb_result.reranker_score
                     }
