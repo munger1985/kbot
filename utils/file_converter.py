@@ -145,7 +145,7 @@ class FileToImage:
         # 支持的文件扩展名
         self.supported_extensions = ['.ppt', '.pptx', '.doc', '.docx', '.txt', '.pdf']
 
-    async def convert_to_image(self, input_path: str, page: int | None = None) -> list[dict]:
+    async def convert_to_image(self, input_path: str, page: int) -> bytes:
         """
         Convert file to images.
         将文档转换为图片
@@ -172,52 +172,52 @@ class FileToImage:
         if file_extension == '.pdf':
             # 使用 pdf2image 将 PDF 文件转换为Base64图片列表
             images = []
-            pdf_images = convert_from_path(file_path)
-            for page_num, image in enumerate(pdf_images, start=1):
+            pdf_images = convert_from_path(file_path, first_page=page, last_page=page)
+            image = pdf_images[0]
                 # Convert image to base64
-                buffered = BytesIO()
-                image.save(buffered, format="PNG")
-                img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
-                images.append({"page": page_num, "image": img_str})
-            return images
+            buffered = BytesIO()
+            image.save(buffered, format="PNG")
+            return base64.b64encode(buffered.getvalue())
+            #     images.append({"page": page_num, "image": img_str})
+            # return images
         
         elif file_extension in ['.ppt', '.pptx', '.doc', '.docx']:
             # 使用LibreOffice先将Word文档转换为PDF，再转换为Base64图片列表
             temp_dir = mkdtemp()
     
             try:
-                # 第一步：将Word转为PDF
+                # 第一步：将文件转为PDF
                 pdf_path = os.path.join(temp_dir, "output.pdf")
                 await OfficeToPDF().convert_to_pdf(input_path=str(file_path), output_path=pdf_path)
                 
                 # 第二步：将PDF转为图片
-                return await self.convert_to_image(pdf_path)
+                return await self.convert_to_image(pdf_path, page)
                 
             finally:
                 # 清理临时文件
                 shutil.rmtree(temp_dir)
 
-        elif file_extension == 'txt':
-            # 分割文本文件并转换为图像
-            with open(file_path, 'r', encoding='utf-8') as f:
-                text = f.read()
+        # elif file_extension == 'txt':
+            # # 分割文本文件并转换为图像
+            # with open(file_path, 'r', encoding='utf-8') as f:
+            #     text = f.read()
             
-            # 分割文本到合适的大小以便生成图像
-            chunk_size = 500  # 每个文本块500字符
-            chunks = [text[i:i+chunk_size] for i in range(0, len(text), chunk_size)]
+            # # 分割文本到合适的大小以便生成图像
+            # chunk_size = 500  # 每个文本块500字符
+            # chunks = [text[i:i+chunk_size] for i in range(0, len(text), chunk_size)]
             
-            # 将每一个文本块渲染为图像
-            images = []
-            for page_num, chunk in enumerate(chunks, start=1):
-                img = Image.new('RGB', (800, 600), color=(255, 255, 255))
-                draw = ImageDraw.Draw(img)
-                font = ImageFont.load_default()
-                draw.text((10, 10), chunk, fill="black", font=font)
-                buffered = BytesIO()
-                img.save(buffered, format="PNG")
-                img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
-                images.append({"page": page_num, "image": img_str})
-            return images
+            # # 将每一个文本块渲染为图像
+            # images = []
+            # for page_num, chunk in enumerate(chunks, start=1):
+            #     img = Image.new('RGB', (800, 600), color=(255, 255, 255))
+            #     draw = ImageDraw.Draw(img)
+            #     font = ImageFont.load_default()
+            #     draw.text((10, 10), chunk, fill="black", font=font)
+            #     buffered = BytesIO()
+            #     img.save(buffered, format="PNG")
+            #     img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
+            #     images.append({"page": page_num, "image": img_str})
+            # return images
         else:
             raise ValueError("Unsupported file type for image conversion")
     

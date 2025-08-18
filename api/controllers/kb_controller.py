@@ -3,6 +3,7 @@ from services.kb.kb_delete import delete_file_service
 from services.kb.kb_procedure import KBProcedure
 from api.schemas.kb_schema import KBUploadForm, KBDeleteForm, KBReparseForm
 from dao.repositories.kbot_md_kb_files_repo import KbotMdKbFilesRepository
+from utils.file_converter import FileToImage
 
 
 async def upload_kb_files(
@@ -51,8 +52,9 @@ async def delete_kb_files(
     
 async def get_kb_files(
         file_id: str,
-        download: bool = False
-) -> tuple[str, str | None] | list |None:
+        download: bool = False,
+        page: int | None = None
+) -> tuple[str, str | None] | bytes |None:
     """
     Get file content for download or convert to images.
     获取文件内容用于下载或转换为图片
@@ -81,8 +83,12 @@ async def get_kb_files(
             return file_path, file_name
         else:
             # 预览文件
-            # TODO
-            pass
+            img = FileToImage()
+            try:
+                return await img.convert_to_image(input_path=file_path, page=page) # type: ignore
+            except Exception as e:
+                raise e
+
     except Exception as e:
         raise e
     

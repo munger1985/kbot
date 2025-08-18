@@ -1,7 +1,8 @@
 
 import json
+from io import BytesIO
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, status
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from api.controllers.kb_controller import upload_kb_files, delete_kb_files, get_kb_files, reparse_kb_files
 from api.schemas.kb_schema import KBUploadForm, KBDeleteForm, KBReparseForm
 from api.schemas.kb_response import SuccessResponse, ErrorResponse
@@ -109,10 +110,40 @@ async def handle_download_file(
         
         if result:
             return FileResponse(
-                path=result[0],
-                filename=result[1],
+                path=result[0],  # type: ignore
+                filename=result[1], # type: ignore
                 media_type="multipart/form-data",
                 content_disposition_type=None # type: ignore
+                )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="File not found."
+            )
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Internal server error: {str(e)}"
+        )
+
+@router.get(
+    "/preview",
+    description="从知识库中预览文件的接口",
+    response_model=bytes,
+    status_code=status.HTTP_200_OK
+)
+async def handle_preview_file(
+    file_id: str,
+    page: int = 0
+):
+    try:
+        result = await get_kb_files(file_id, download=True, page=page)
+        
+        if result:
+            return StreamingResponse(
+                BytesIO(result), # type: ignore
+                    media_type="image/png"
                 )
         else:
             raise HTTPException(
