@@ -47,7 +47,7 @@ for i in range(0, len(inputs), batch_size):
         model_id=model_id
     )
     rerank_text_detail.compartment_id = compartment_id
-    rerank_response = rerank_generative_ai_inference_client.rerank_text(rerank_text_detail)
+    rerank_response = generative_ai_inference_client.rerank_text(rerank_text_detail)
     # print(f"Processed batch {i // batch_size + 1} of {(len(inputs) - 1) // batch_size + 1}")
     adjusted_results = []
     for rank in rerank_response.data.document_ranks:
