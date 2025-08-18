@@ -35,7 +35,7 @@ from model.base import EmbeddingResponse
 load_dotenv()
 
 nacos_addr = os.getenv("NACOS_SERVER_ADDR") # Nacos服务器地址
-nacos_namespace = "public" # Nacos命名空间
+nacos_namespace = os.getenv("NACOS_NAMESPACE") or "public" # Nacos命名空间
 nacos_group = os.getenv("NACOS_GROUP") or "DEV_GROUP" # Nacos分组
 nacos_username = os.getenv("NACOS_USERNAME") # Nacos账号名称
 nacos_password = os.getenv("NACOS_PASSWORD") # Nacos账号密码

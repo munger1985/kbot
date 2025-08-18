@@ -3,18 +3,36 @@ from pathlib import Path
 # Add both project root and backend directory to Python path
 project_root = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(project_root))
-from utils.call_models import call_llm_model, call_vlm_model_for_parsing_picture
+from utils.call_models import call_llm_model, call_vlm_model_for_parsing_picture, call_embedding_model, call_reranker_model
 
 import asyncio
 from decimal import Decimal
+
+async def test_call_embedding_model():
+    """
+    测试调用embedding模型的方法
+    """
+    # 测试参数
+    embed_model_unique_name = "KBOT1/BGE-M3" # KBOT1/E5-LARGE-V2
+    embed_input_texts = ["苹果", "香蕉"]
+    topk = 4
+    emb = await call_embedding_model(
+        embed_model_unique_name, 
+        embed_input_texts
+    )
+    print(f"测试开始，使用模型: {embed_model_unique_name}")
+    print(f"输入文本: {embed_input_texts}")
+    print("=" * 50)
+    print("\n向量列表: ", emb)
+    print("\n测试结束")
 
 async def test_call_llm_model():
     """
     测试调用LLM模型的方法
     """
     # 测试参数
-    model_name = "KBOT1/DeepSeek V3"
-    test_prompt = "你好"
+    model_name = "KBOT1/OCI-LLM"
+    test_prompt = "文艺复兴是什么"
     
     print(f"测试开始，使用模型: {model_name}")
     print(f"输入提示: {test_prompt}")
@@ -51,6 +69,32 @@ async def test_call_llm_model():
     finally:
         print("\n\n测试结束")
 
+async def test_call_reranker_model():
+    """
+    测试调用reranker模型的方法
+    """
+    # 测试参数
+    rerank_model_unique_name = "KBOT1/BGE-RANKER"
+    question = "招聘数据工程师"
+    inputs_list = [
+        "<|im_end|>你好，我想要找一份有关数据科学的数据集。",
+        "<|im_end|>我想做些有关数据科学的工作。",
+        "<|im_end|>我想要找一份与量子计算相关的工作。",
+        "<|im_end|>我的研究兴趣是量子计算，我想寻找一份相关专业的工作。"
+    ]
+    
+    rerank = await call_reranker_model(
+        rerank_model_unique_name,
+        question,
+        inputs_list,
+        2
+    )
+
+    print(f"测试开始，使用模型: {rerank_model_unique_name}")
+    print(f"结果: {rerank}")
+    print("=" * 50)
+    
+
 async def test_call_vlm_model():
     """
     测试调用VLM模型的方法
@@ -58,7 +102,7 @@ async def test_call_vlm_model():
     # 测试参数
     model_unique_name = "KBOT1/Qwen-VL-MAX"
     prompt_unique_name = "KBOT1/pdf_parsing"
-    image = "/home/chris/docs/test_small.jpg"
+    image = "/mnt/f/docs/test_small.jpg"
 
 
     print(f"测试开始，使用模型: {model_unique_name}")
@@ -69,4 +113,4 @@ async def test_call_vlm_model():
 
 # 运行测试
 if __name__ == "__main__":
-    asyncio.run(test_call_vlm_model())
+    asyncio.run(test_call_llm_model())

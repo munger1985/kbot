@@ -283,11 +283,12 @@ async def chat(
             async def generate_openai_sse():
                 try:
                     # 获取流式响应
+                    max_tokens = min(request.max_tokens, 4000) if request.max_tokens else 4000
                     chunk_stream = await llm_service.chat(
                         model_unique_name=request.model_unique_name,
                         messages=request.messages,
                         stream=True,
-                        max_tokens=request.max_tokens,
+                        max_tokens=max_tokens,
                         temperature=request.temperature,
                         timeout=request.timeout,
                         top_p=request.top_p,

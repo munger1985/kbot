@@ -89,83 +89,80 @@ class LLMService:
         try:
             # Get model from pool
             model = await self.get_llm_model(model_unique_name)
+        except Exception as e:
+            raise RuntimeError(f"Failed to get model {model_unique_name}: {e}")
+        
+        # Prepare parameters
+        kwargs = {
+            "timeout": timeout,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "top_p": top_p,
+            "frequency_penalty": frequency_penalty,
+            "presence_penalty": presence_penalty
+        }
+        kwargs = {k: v for k, v in kwargs.items() if v is not None}
+        
+        # Get response from model
+        try:
+            # Ensure messages are in correct format
+            processed_messages = []
+            if isinstance(messages, str):
+                processed_messages = [{"role": "user", "content": messages}]
+            else:
+                for msg in messages:
+                    if isinstance(msg, dict):
+                        processed_messages.append(msg)
+                    else:
+                        # Convert message objects to dict if needed
+                        processed_messages.append({
+                            "role": getattr(msg, "role", "user"),
+                            "content": getattr(msg, "content", "")
+                        })
             
-            # Prepare parameters
-            kwargs = {
-                "timeout": timeout,
-                "max_tokens": max_tokens,
-                "temperature": temperature,
-                "top_p": top_p,
-                "frequency_penalty": frequency_penalty,
-                "presence_penalty": presence_penalty
-            }
-            kwargs = {k: v for k, v in kwargs.items() if v is not None}
-            
-            # Get response from model
-            try:
-                # Ensure messages are in correct format
-                processed_messages = []
-                if isinstance(messages, str):
-                    processed_messages = [{"role": "user", "content": messages}]
-                else:
-                    for msg in messages:
-                        if isinstance(msg, dict):
-                            processed_messages.append(msg)
-                        else:
-                            # Convert message objects to dict if needed
-                            processed_messages.append({
-                                "role": getattr(msg, "role", "user"),
-                                "content": getattr(msg, "content", "")
-                            })
-                
-                logger.debug(f"Sending messages to model: {processed_messages}")
+            logger.debug(f"Sending messages to model: {processed_messages}")
 
-                # OpenAI stream mode
-                if stream and model.provider == LLMProvider.OPENAI.value:
-                    response = await model.chat(processed_messages, stream=True, **kwargs)
-                    logger.debug("OpenAI streaming response received.")
-                    async def generate_openai_stream():
-                        try:
-                            async for chunk in response: # type: ignore
-                                    yield chunk
-                                
-                        except Exception as e:
-                            logger.exception(f"Error in OpenAI streaming response: {e}")
-                            raise
+            # OpenAI stream mode
+            if stream and model.provider == LLMProvider.OPENAI.value:
+                response = await model.chat(processed_messages, stream=True, **kwargs)
+                logger.debug("OpenAI streaming response received.")
+                async def generate_openai_stream():
+                    try:
+                        async for chunk in response: # type: ignore
+                                yield chunk
                             
-                    return generate_openai_stream()
-                
-                # OCI stream mode
-                elif stream and model.provider == LLMProvider.OCI.value:
-                    response = await model.chat(processed_messages, stream=True, **kwargs)
-                    logger.debug("Non-openai streaming response received.")
-                    async def generate_oci_stream():
-                        try:
-                            for event in response.data.events(): # type: ignore
-                                output =  json.loads(event.data)
-                                yield output
-                        except Exception as e:
-                            logger.exception(f"Error in streaming response: {e}")
-                            raise   
-
-                    return generate_oci_stream()
-                
-                # non-stream mode
-                elif not stream:
-                    response = await model.chat(processed_messages, stream=False, **kwargs) # type: ignore
-                    logger.debug("Non-stream response received")
-                    return response
-                # Unknown response type
-                else:
-                    logger.warning(f"Unknown response type.")
-                    return None
-                
-            except Exception as e:
-                logger.exception(f"Error generating chat response: {e}")
-                raise RuntimeError("Error generating chat response") from e
-
+                    except Exception as e:
+                        logger.exception(f"Error in OpenAI streaming response: {e}")
+                        raise
+                        
+                return generate_openai_stream()
             
-                
+            # OCI stream mode
+            elif stream and model.provider == LLMProvider.OCI.value:
+                response = await model.chat(processed_messages, stream=True, **kwargs)
+                logger.debug("Non-openai streaming response received.")
+                async def generate_oci_stream():
+                    try:
+                        for event in response.data.events(): # type: ignore
+                            output =  json.loads(event.data)
+                            yield output
+                    except Exception as e:
+                        logger.exception(f"Error in streaming response: {e}")
+                        raise   
+
+                return generate_oci_stream()
+            
+            # non-stream mode
+            elif not stream:
+                response = await model.chat(processed_messages, stream=False, **kwargs) # type: ignore
+                logger.debug("Non-stream response received")
+                return response
+            # Unknown response type
+            else:
+                logger.warning(f"Unknown response type.")
+                return None
+            
         except Exception as e:
             logger.exception(f"Error generating chat response: {e}")
-            raise RuntimeError(f"Failed to generate chat response: {e}")
+            logger.error(f"Detailed error context - Model: {model_unique_name}, Messages: {messages}, Stream: {stream}")
+            raise RuntimeError(f"Failed to generate chat response: {e}. Context: Model={model_unique_name}, Messages={messages}, Stream={stream}")

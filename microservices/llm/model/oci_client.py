@@ -86,10 +86,16 @@ class OCIClient(BaseLLM):
         if converted_messages == '':
             raise ValueError("No message provided to generate response for.")
         
+        # OCI max_tokens has a max limit of 4000
+        max_tokens = kwargs.get('max_tokens', self.config.max_tokens) # type: ignore
+        if max_tokens and max_tokens > 4000:
+            max_tokens = 4000
+            logger.warning("OCI max_tokens limit exceeded, setting max_tokens to 4000.")
+
         chat_request = oci.generative_ai_inference.models.CohereChatRequest()
         #chat_request.api_format = oci.generative_ai_inference.models.BaseChatRequest.API_FORMAT_GENERIC
         chat_request.message = converted_messages
-        chat_request.max_tokens = kwargs.get('max_tokens', self.config.max_tokens) # type: ignore
+        chat_request.max_tokens = max_tokens
         chat_request.temperature = kwargs.get('temperature', self.config.temperature) # type: ignore
         chat_request.top_p = kwargs.get('top_p', self.config.top_p) # type: ignore
         #chat_request.top_k = kwargs.get('top_k', self.config.top_k) # type: ignore
