@@ -14,7 +14,7 @@ from model import(
     OCILLMConfig,
     create_llm_model
 )
-from nacos_manager import nacos_manager # type: ignore
+from ms_core import load_config, ModelConfig
 
 # 添加项目根目录到 Python 路径，确保可以导入项目模块
 current_file = os.path.abspath(__file__)
@@ -94,17 +94,16 @@ class ModelPool:
         
         # 从 Nacos 获取 llm 默认参数
         try:
-            nacos_group = os.getenv("NACOS_GROUP") or "DEV_GROUP"
-            config = nacos_manager.get_config("llm", nacos_group)
-            config_parser = configparser.ConfigParser()
-            config_parser.read_string(f"[{nacos_group}]\n{config}")
-            max_tokens = int(config_parser.get(nacos_group, "max_tokens")) or 8192
-            timeout = int(config_parser.get(nacos_group, "timeout")) or 30
-            temperature = float(config_parser.get(nacos_group, "temperature")) or 0.7
-            top_p = float(config_parser.get(nacos_group, "top_p")) or 1.0
-            #top_k = int(config_parser.get(nacos_group, "top_k")) or 0
-            frequency_penalty = float(config_parser.get(nacos_group, "frequency_penalty")) or 0.0
-            presence_penalty = float(config_parser.get(nacos_group, "presence_penalty")) or 0.0
+            config = load_config("model_config")
+            if not isinstance(config, ModelConfig):
+                raise ValueError
+            max_tokens = config.llm.max_tokens or 8192
+            timeout = config.llm.timeout or 30
+            temperature = config.llm.temperature or 0.7
+            top_p = config.llm.top_p or 1.0
+            top_k = config.llm.top_k or 0
+            frequency_penalty = config.llm.frequency_penalty or 0.0
+            presence_penalty = config.llm.presence_penalty or 0.0
             
         except Exception as e:
             logger.error(f"Failed to get llm config from Nacos: {e}")
@@ -113,7 +112,7 @@ class ModelPool:
             timeout = 30
             temperature = 0.7
             top_p = 1.0
-            #top_k = 0
+            top_k = 0
             frequency_penalty = 0.0
             presence_penalty = 0.0
 

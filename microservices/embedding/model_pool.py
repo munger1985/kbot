@@ -1,10 +1,9 @@
 import os
 import sys
 import asyncio
-import configparser
 from loguru import logger
 from datetime import datetime, timedelta
-from nacos_manager import nacos_manager # type: ignore
+from ms_core import load_config, ModelConfig
 from model import (
     BaseEmbedding, 
     EmbeddingProvider,
@@ -91,13 +90,13 @@ class ModelPool:
 
         # 从 Nacos 获取 embedding 默认参数
         try:
-            nacos_group = os.getenv("NACOS_GROUP") or "DEV_GROUP"
-            config = nacos_manager.get_config("embedding", nacos_group)
-            config_parser = configparser.ConfigParser()
-            config_parser.read_string(f"[{nacos_group}]\n{config}")
-            max_tokens = int(config_parser.get(nacos_group, "max_tokens")) or 8192
-            timeout = int(config_parser.get(nacos_group, "timeout")) or 30
-            max_retries = int(config_parser.get(nacos_group, "max_retries")) or 0
+            config = load_config("model_config")
+            if not isinstance(config, ModelConfig):
+                raise ValueError
+            max_tokens = config.embed.max_tokens or 8192
+            timeout = config.embed.timeout or 30
+            max_retries = config.embed.max_retries or 0
+            cache_dir = config.embed.cache_dir
             
         except Exception as e:
             logger.warning(f"Failed to get embedding config from Nacos: {e}")
@@ -105,6 +104,7 @@ class ModelPool:
             max_tokens = 8192
             timeout = 30
             max_retries = 0
+            cache_dir = "./cached_models"
         
         # 根据模型类型创建相应的配置
         if model_entity.provider == EmbeddingProvider.LOCAL.value:
@@ -119,7 +119,8 @@ class ModelPool:
                 trust_remote_code=model_entity.model_params.get("trust_remote_code", False),
                 use_fp16=model_entity.model_params.get("use_fp16", False),
                 local_files_only=model_entity.model_params.get("local_files_only", False),
-                compile_model=model_entity.model_params.get("compile_model", True)
+                compile_model=model_entity.model_params.get("compile_model", True),
+                cache_dir=cache_dir
             )
         elif model_entity.provider == EmbeddingProvider.OCI.value:
             model_config = OCIEmbeddingConfig(

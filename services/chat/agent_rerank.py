@@ -1,6 +1,6 @@
 from loguru import logger
 from .agent_params import KBResult, AgentParams
-from utils.call_models import call_reranker_model
+from utils.call_models import CallModel
 
 
 class AgentRerank:
@@ -27,7 +27,7 @@ class AgentRerank:
         contonts = [result.content for result in kb_results]
         
         # Call reranker model
-        rerankers = await call_reranker_model(
+        rerankers = await CallModel().call_reranker_model(
             model_unique_name=self.agent_params.reranker_model_name, # type: ignore
             query=question,
             documents=contonts,

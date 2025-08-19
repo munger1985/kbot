@@ -1,5 +1,4 @@
-from services.kb.kb_upload import upload_file_service
-from services.kb.kb_delete import delete_file_service
+from services.kb.kb_file_operator import KBFileOperator
 from services.kb.kb_procedure import KBProcedure
 from api.schemas.kb_schema import KBUploadForm, KBDeleteForm, KBReparseForm
 from dao.repositories.kbot_md_kb_files_repo import KbotMdKbFilesRepository
@@ -14,7 +13,7 @@ async def upload_kb_files(
     上传文件到知识库
     """
     try:
-        result = await upload_file_service(
+        result = await KBFileOperator().upload_file_service(
             files=form.files,
             app_id=form.app_id,
             domain_id=form.domain_id,
@@ -37,7 +36,7 @@ async def delete_kb_files(
     从知识库中删除文件
     """
     try:
-        result = await delete_file_service(
+        result = await KBFileOperator().delete_file_service(
             app_id=form.app_id,
             domain_id=form.domain_id,
             kb_id=form.kb_id,

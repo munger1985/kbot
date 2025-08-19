@@ -1,4 +1,3 @@
-import shutil
 from loguru import logger
 from dao.repositories.kbot_md_kb_files_repo import KbotMdKbFilesRepository
 from dao.repositories.kbot_biz_txt_embedding_repo import KbotBizTxtEmbeddingRepository

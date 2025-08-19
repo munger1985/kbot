@@ -4,6 +4,7 @@ import asyncio
 from loguru import logger
 from datetime import datetime, timedelta
 from model import BaseReranker, RerankerConfig, create_reranker_model
+from ms_core import load_config, ModelConfig
 
 # 添加项目根目录到 Python 路径，确保可以导入项目模块
 current_file = os.path.abspath(__file__)
@@ -76,6 +77,11 @@ class ModelPool:
         
         if model_entity.model_params is None:
             raise ValueError(f"Model {model_unique_name} has no model_params")
+        
+        # 从 Nacos 获取配置信息
+        config = load_config("model_config")
+        if not isinstance(config, ModelConfig):
+            raise ValueError
 
         # 根据模型类型创建相应的配置
         
@@ -89,7 +95,8 @@ class ModelPool:
             use_fp16=model_entity.model_params.get("use_fp16", False),
             trust_remote_code=model_entity.model_params.get("trust_remote_code", False),
             local_files_only=model_entity.model_params.get("local_files_only", False),
-            max_memory=model_entity.model_params.get("max_memory", None)
+            max_memory=model_entity.model_params.get("max_memory", None),
+            cache_dir=config.reranker.cache_dir or "./cached_models"
         )
 
         # Create and initialize model //创建和初始化模型

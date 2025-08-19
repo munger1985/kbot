@@ -1,12 +1,11 @@
 import os
 import torch
-import configparser
 from typing import Any
 from loguru import logger
 from prometheus_client import Histogram, Counter, Gauge
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 from .base import BaseReranker, RerankerConfig
-from nacos_manager import nacos_manager # type: ignore
+
 
 class Reranker(BaseReranker):
     """通用 Reranker 重排器基类"""
@@ -39,25 +38,13 @@ class Reranker(BaseReranker):
             default_model_name: 默认模型名称
             metrics_prefix: Prometheus指标前缀
         """
-        # 从nacos manager中读取cache_dir配置，用于缓存模型
-        try:
-            nacos_group = os.getenv("NACOS_GROUP") or "DEV_GROUP"
-            embed_config = nacos_manager.get_config("reranker", nacos_group)
-            config_parser = configparser.ConfigParser()
-            config_parser.read_string(f"[{nacos_group}]\n{embed_config}")
-            cache_dir = config_parser.get(nacos_group, "cache_dir") or "/tmp"
-            
-        except Exception as e:
-            logger.error(f"Failed to get reranker config from Nacos: {e}")
-            cache_dir = "/tmp"
-
         # Model components
         self.model: torch.nn.Module | None = None
         self.tokenizer: Any | None = None
         self.model_name = config.model_name
         self.model_path = config.model_path
         self.predownload = False  # 是否为本地预下载模型
-        self.cache_path = os.path.join(cache_dir, self.model_name) # 模型缓存路径
+        self.cache_path = os.path.join(config.cache_dir, self.model_name) # 模型缓存路径
         self.name_or_path = ""
         self.device = config.device
         self.device_map = config.device_map

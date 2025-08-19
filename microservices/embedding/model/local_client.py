@@ -1,13 +1,11 @@
 import os
 import gc
 import torch
-import configparser
 from typing import Any
 from loguru import logger
 from transformers import AutoModel, AutoTokenizer
 from prometheus_client import Histogram, Counter, Gauge
 from .base import BaseEmbedding, EmbeddingConfig, EmbeddingResponse, EmbeddingDataItem
-from nacos_manager import nacos_manager # type: ignore
 
 class LocalEmbeddingConfig(EmbeddingConfig):
     model_path: str | None = None
@@ -18,6 +16,7 @@ class LocalEmbeddingConfig(EmbeddingConfig):
     use_fp16: bool = False
     local_files_only: bool = False
     compile_model: bool = True # True when PyTorch 2.0+ else False
+    cache_dir: str = "./cached_models" # 从nacos manager中读取cache_dir配置，用于缓存模型
 
 
 class LocalEmbedding(BaseEmbedding):
@@ -76,18 +75,6 @@ class LocalEmbedding(BaseEmbedding):
         if not isinstance(config, LocalEmbeddingConfig):
             raise TypeError("config must be an instance of LocalEmbeddingConfig")
 
-        # 从nacos manager中读取cache_dir配置，用于缓存模型
-        try:
-            nacos_group = os.getenv("NACOS_GROUP") or "DEV_GROUP"
-            embed_config = nacos_manager.get_config("embedding", nacos_group)
-            config_parser = configparser.ConfigParser()
-            config_parser.read_string(f"[{nacos_group}]\n{embed_config}")
-            cache_dir = config_parser.get(nacos_group, "cache_dir") or "/tmp"
-            
-        except Exception as e:
-            logger.error(f"Failed to get embedding config from Nacos: {e}")
-            cache_dir = "/tmp"
-
         # Model components
         self.model: torch.nn.Module | None = None
         self.tokenizer: Any | None = None
@@ -96,7 +83,7 @@ class LocalEmbedding(BaseEmbedding):
         self.model_name = config.model_name
         self.model_path = config.model_path
         self.predownload = False
-        self.cache_path = os.path.join(cache_dir, self.model_name)
+        self.cache_path = os.path.join(config.cache_dir, self.model_name)
         self.name_or_path = ""
         
         # Device configuration

@@ -12,6 +12,7 @@ class RerankerConfig(BaseModel):
     compile_model: bool = Field(True, description="Whether to compile model with torch.compile() (PyTorch 2.0+)")
     use_fp16: bool = Field(False, description="Use half-precision inference (recommended for GPU)")
     local_files_only: bool = Field(False, description="Only use local model files (no internet download)")
+    cache_dir: str = Field("./cached_models", description="Local cache directory for model files")
     trust_remote_code: bool = Field(False, description="Trust custom model code from HuggingFace")
     max_memory: dict[str, str] | None = Field(None, description="Dict of GPU memory limits (e.g. {'0': '24GB', '1': '24GB'})")
 

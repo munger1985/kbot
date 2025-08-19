@@ -13,9 +13,7 @@ import signal
 import subprocess
 import time
 import atexit
-import configparser
 import uvicorn
-import socket
 from dotenv import load_dotenv
 from datetime import datetime
 from typing import Any
@@ -24,9 +22,7 @@ from pydantic import BaseModel, Field
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
-from nacos import NacosClient
-from nacos_manager import nacos_manager # type: ignore
-from logger_manager import LogManager, LogConfig # type: ignore
+from ms_core import LogConfig, LogManager, nacos_manager, load_config, AppConfig, ModelConfig
 from embed_service import EmbeddingService
 from model.base import EmbeddingResponse
 
@@ -34,21 +30,15 @@ from model.base import EmbeddingResponse
 # 加载环境变量配置
 load_dotenv()
 
-nacos_addr = os.getenv("NACOS_SERVER_ADDR") # Nacos服务器地址
-nacos_namespace = os.getenv("NACOS_NAMESPACE") or "public" # Nacos命名空间
-nacos_group = os.getenv("NACOS_GROUP") or "DEV_GROUP" # Nacos分组
-nacos_username = os.getenv("NACOS_USERNAME") # Nacos账号名称
-nacos_password = os.getenv("NACOS_PASSWORD") # Nacos账号密码
-
 try:
     # 从 nacos 获取 embedding 服务配置
-    config_parser = configparser.ConfigParser()
-    nacos_config = nacos_manager.get_config("embedding", nacos_group)
-    config_parser.read_string(f"[{nacos_group}]\n{nacos_config}")
-    service_name = config_parser.get(nacos_group, "service_name") or "embedding-service" # 全局微服务名称
-    service_version = config_parser.get(nacos_group, "service_version") or "1.0.0" # 微服务版本
-    service_host = config_parser.get(nacos_group, "service_host") or "0.0.0.0" # 微服务地址
-    service_port = int(config_parser.get(nacos_group, "service_port")) or 9201 # 微服务通信端口
+    config = load_config("model_config")
+    if not isinstance(config, ModelConfig):
+        raise ValueError
+    service_name = config.embed.service_name or "embedding-service" # 全局微服务名称
+    service_version = config.embed.service_version or "1.0.0" # 微服务版本
+    service_host = config.embed.service_host or "0.0.0.0" # 微服务地址
+    service_port = config.embed.service_port or 9201 # 微服务通信端口
 except Exception as e:
     # 如果从 nacos 获取 embedding 服务配置失败，则使用默认配置
     logger.warning("Failed to get embedding service config from nacos: {}".format(e))
@@ -57,52 +47,6 @@ except Exception as e:
     service_host = "0.0.0.0"
     service_port = 9201
 
-
-
-# Nacos 服务注册
-def register_service():
-    client = NacosClient(
-        server_addresses=nacos_addr,
-        namespace=nacos_namespace
-        # username='nacos',
-        # password='nacos'
-        )
-    client.add_naming_instance(
-        service_name=service_name,
-        group_name=nacos_group,
-        ip=service_host,
-        port=service_port,
-        ephemeral=True,
-        healthy=True
-    )
-    # nacos 心跳发送器
-    while True:
-        if signal.SIGINT or signal.SIGTERM:
-            break
-        try:
-            # 健康检查：检测服务端口是否存活
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(1)
-            result = sock.connect_ex((service_host, service_port))
-            is_healthy = (result == 0)
-            sock.close()
-
-            # 更新实例健康状态
-            client.send_heartbeat(
-                service_name=service_name,
-                group_name=nacos_group,
-                ip=service_host,
-                port=service_port
-            )
-            
-            logger.info(f"Heartbeat sent, healthy: {is_healthy}")
-        except Exception as e:
-            logger.error(f"Heartbeat failed: {e}")
-            break
-        
-        time.sleep(10)  # 间隔需小于Nacos心跳超时时间（默认15秒）
-
-
 # 创建embedding服务实例
 embedding_service = EmbeddingService()
 
@@ -110,14 +54,16 @@ embedding_service = EmbeddingService()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan context manager. //应用程序生命周期上下文管理器"""
-    # 通过 nacos_manager 获取logger配置
+    # 通过 nacos_manager 获取 logger 配置
     try:
-        log_config = nacos_manager.get_config("logger", nacos_group)
-        config_parser.read_string(f"[{nacos_group}]\n{log_config}")
-        log_dir = config_parser.get(nacos_group, "dir") or "logs/"
-        log_level = config_parser.get(nacos_group, "level") or "DEBUG"
-        rotation = config_parser.get(nacos_group, "rotation") or "10 MB"
-        retention = config_parser.get(nacos_group, "retention") or "20 days"
+        log_config = load_config("app_config")
+        if not isinstance(log_config, AppConfig):
+            raise ValueError
+        
+        log_dir = log_config.kbot.log.dir or "logs/"
+        log_level = log_config.kbot.log.level or "DEBUG"
+        rotation = log_config.kbot.log.rotation or "10 MB"
+        retention = log_config.kbot.log.retention or "20 days"
         
     except Exception as e:
         # 如果获取 logger 配置失败，则使用默认配置
@@ -144,13 +90,13 @@ async def lifespan(app: FastAPI):
         logger.info(f"Embedding service started successfully, elapsed time: {time.time() - start_time:.2f} seconds")
 
         # 注册服务到 Nacos
-        register_service()
+        nacos_manager.register_service(service_name=service_name, service_host=service_host, service_port=service_port)
         logger.info("Embedding service registered to Nacos.")
 
     except Exception as e:
         logger.exception(f"Embedding service initialization failed: {e}")
         # 在生产环境中，可能需要在这里退出应用程序
-        current_env = nacos_namespace
+        current_env = os.getenv("NACOS_GROUP", "dev")
         if current_env == "prod":
             sys.exit(1)
     

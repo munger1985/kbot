@@ -5,7 +5,7 @@ from dao.repositories.kbot_md_agent_repo import KbotMdAgentRepository
 from dao.repositories.kbot_md_models_repo import KbotMdModelsRepository
 from dao.data_dict import ToolType, YesNoEnum
 from .agent_params import AgentParams, ToolParams, KBResult
-from .kb_search import KBSearch
+from ..search.kb_search import KBSearch
 from .agent_rerank import AgentRerank
 
 

@@ -11,7 +11,7 @@ from dao.repositories.kbot_md_chat_history_repo import KbotMdChatHistoryReposito
 from dao.entities.kbot_md_chat_history import KbotMdChatHistory
 from services.chat.agent_chat import Agent
 from loguru import logger
-from utils.call_models import call_llm_model
+from utils.call_models import CallModel
 from api.schemas.agent_schema import AgentChatForm, AgentChatFeedbackForm
 
 async def agent_chat(form: AgentChatForm) -> dict[str, Any]:
@@ -166,7 +166,7 @@ async def agent_stream_chat(session_id: str) -> AsyncGenerator[str, None]:
     # 7. 调用LLM模型并处理流式响应
     chunks = []
     try:
-        async for chunk in call_llm_model(model_unique_name, prompt, **model_params):
+        async for chunk in CallModel().call_llm_model(model_unique_name, prompt, **model_params):
             # 直接传递SSE流
             yield chunk
             

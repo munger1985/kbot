@@ -99,7 +99,7 @@ async def handle_delete_files(
 @router.get(
     "/download",
     description="从知识库中下载文件的接口",
-    response_model=FileResponse,
+    response_model=None,
     status_code=status.HTTP_200_OK
 )
 async def handle_download_file(
@@ -130,7 +130,7 @@ async def handle_download_file(
 @router.get(
     "/preview",
     description="从知识库中预览文件的接口",
-    response_model=FileResponse,
+    response_model=None,
     status_code=status.HTTP_200_OK
 )
 async def handle_preview_file(

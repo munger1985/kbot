@@ -17,8 +17,7 @@ from dao.repositories.kbot_biz_txt_embedding_repo import KbotBizTxtEmbeddingRepo
 from dao.repositories.kbot_md_models_repo import KbotMdModelsRepository
 from dao.entities.kbot_biz_txt_embedding import KbotBizTxtEmbedding
 from dao.data_dict import FileStatus, ChunkType, SplitStrategy
-from core.config import settings
-from utils.call_models import call_embedding_model, call_vlm_model_for_parsing_picture
+from utils.call_models import CallModel
 from utils.common_methods import check_text_file
 import traceback
 
@@ -142,11 +141,11 @@ class PDFPlumberParser:
                 msg = f"text_embedding_model not found for id: {self.file_params.txt_embed_model}"
                 logger.error(msg)
                 await self._update_file_status(FileStatus.PARSE_FAILED, msg)
-                return False
+                return []
             embeddings_list= []
-            if  chunks:
-                embeddings_list = await call_embedding_model(text_embedding_model, chunks)
-            if   len(embeddings_list) != len(chunks):
+            if chunks:
+                embeddings_list = await CallModel().call_embedding_model(text_embedding_model, chunks)
+            if embeddings_list and len(embeddings_list) != len(chunks):
                 msg = f"text_embedding_model  {text_embedding_model} returned invalid results (expected {len(chunks)}, got {len(embeddings_list) if embeddings_list else 0})"
                 logger.error(msg)
                 logger.error("failed file: {}",self.file_params.file_path)
@@ -162,7 +161,7 @@ class PDFPlumberParser:
                     chunk_doc=chunk,
                     chunk_metadata=json.dumps(meta),
                     file_id=self.file_params.file_id,
-                    embedding=embeddings_list[idx].embedding,
+                    embedding=embeddings_list[idx].embedding, # type: ignore
                     security_level=self.file_params.security_level
                 )
                 embed_entities.append(embed_entity)
@@ -218,7 +217,7 @@ class PDFPlumberParser:
             return True  # Consider empty content as success
 
         # Get all embeddings in one call
-        embeddings_list = await call_embedding_model(model_unique_name, chunks)
+        embeddings_list = await CallModel().call_embedding_model(model_unique_name, chunks)
         if not embeddings_list or len(embeddings_list) != len(chunks):
             msg = f"Embedding model {model_unique_name} returned invalid results (expected {len(chunks)}, got {len(embeddings_list) if embeddings_list else 0})"
             logger.error(msg)
@@ -291,7 +290,7 @@ class PDFPlumberParser:
             return True  # Consider empty content as success
 
         # Get all embeddings in one call
-        embeddings_list = await call_embedding_model(model_unique_name, chunks)
+        embeddings_list = await CallModel().call_embedding_model(model_unique_name, chunks)
         if not embeddings_list or len(embeddings_list) != len(chunks):
             msg = f"Embedding model {model_unique_name} returned invalid results (expected {len(chunks)}, got {len(embeddings_list) if embeddings_list else 0})"
             logger.error(msg)

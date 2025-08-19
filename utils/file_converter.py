@@ -1,16 +1,12 @@
 import os
 import shutil
-import base64
-import subprocess
 import configparser
 import aiohttp
 from tempfile import mkdtemp
-from io import BytesIO
 from pdf2image import convert_from_path
-from PIL import Image, ImageDraw, ImageFont
 from pathlib import Path
 from loguru import logger
-from nacos_manager import nacos_manager # type: ignore
+from core.nacos_manager import load_config, AppConfig
 
 
 class OfficeToPDF:
@@ -22,12 +18,11 @@ class OfficeToPDF:
         self.supported_extensions = ['.ppt', '.pptx', '.doc', '.docx', '.odt', '.ods']
         try:
             # 从 nacos 获取 libreoffice 服务配置
-            nacos_group = os.getenv("NACOS_GROUP") or "DEV_GROUP" # Nacos分组
-            config_parser = configparser.ConfigParser()
-            nacos_config = nacos_manager.get_config("app", nacos_group)
-            config_parser.read_string(f"[{nacos_group}]\n{nacos_config}")
-            libre_host = config_parser.get(nacos_group, "libre_host") or "0.0.0.0" # libreoffice服务地址
-            libre_port = int(config_parser.get(nacos_group, "libre_port")) or 9316 # libreoffice服务通信端口
+            app_config = load_config("app_config")
+            if not isinstance(app_config, AppConfig):
+                raise ValueError
+            libre_host = app_config.libre.host or "0.0.0.0" # libreoffice服务地址
+            libre_port = app_config.libre.port or 9316 # libreoffice服务通信端口
         except Exception as e:
             # 如果从 nacos 获取 libreoffice 服务配置失败，则使用默认配置
             logger.warning("Failed to get libreoffice service config from nacos: {}".format(e))

@@ -1,18 +1,32 @@
-
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy import text
 from typing import AsyncIterator
 from contextlib import asynccontextmanager
-from core.config import settings
+from core.nacos_manager import load_config, DBConfig
 
 
-# Default to environment variable connection strings when available
-url = settings["database"]["url"]
-echo = settings["database"]["echo"]
-pool_size = settings["database"]["pool_size"]
-max_overflow = settings["database"]["max_overflow"]
-pool_pre_ping = settings["database"]["pool_pre_ping"]
-pool_recycle = settings["database"]["pool_recycle"]
+# 通过 nacos_manager 获取 database 配置
+try:
+    db_config = load_config("db_config")
+    if isinstance(db_config, DBConfig):
+        username = db_config.oracle.username
+        password = db_config.oracle.password
+        host = db_config.oracle.host
+        port = db_config.oracle.port
+        service_name = db_config.oracle.service_name
+        url = f"oracle+oracledb://{username}:{password}@{host}:{port}/?service_name={service_name}"
+        echo = db_config.sqlalchemy.echo
+        pool_size = db_config.sqlalchemy.pool_size
+        max_overflow = db_config.sqlalchemy.max_overflow
+        pool_pre_ping = db_config.sqlalchemy.pool_pre_ping
+        pool_recycle = db_config.sqlalchemy.pool_recycle
+    else:
+        # 如果获取 database 配置失败，则抛出异常
+        raise ValueError
+    
+except Exception as e:
+    # 如果获取 database 配置失败，则抛出异常
+    raise RuntimeError(f"Failed to get database config from nacos: {str(e)}") from e
 
 try:
     async_engine = create_async_engine(
@@ -59,20 +73,3 @@ async def get_session() -> AsyncIterator[AsyncSession]:
         finally:
             await session.close()
 
-
-
-async def test_connection() -> bool:
-    """Test the database connection by executing a simple query.
-    
-    Returns:
-        bool: True if connection is successful, False otherwise
-    """
-    try:
-        async with get_session() as session:
-            # 使用与数据库类型无关的通用测试语句
-            await session.execute(text("SELECT 1 FROM dual"))
-            await session.commit()  # 确保测试查询被提交
-        return True
-    except Exception as e:
-        print(f"Connection test failed: {e}")
-        return False

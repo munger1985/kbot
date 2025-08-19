@@ -1,8 +1,9 @@
-import asyncio
+import os
 from typing import Any
 from redis.asyncio import Redis, ConnectionPool
 from redis.exceptions import RedisError
-from core.config import settings
+from core.nacos_manager import load_config, DBConfig
+
 
 class AsyncRedisPool:
     """
@@ -21,10 +22,31 @@ class AsyncRedisPool:
         :param url: Redis连接URL (e.g. redis://:password@host:port/db)
         :param max_connections: 最大连接数
         """
-        self._url = settings["redis"]["url"]
+        # 通过环境变量获取 nacos 配置的组别
+        nacos_group = os.getenv("NACOS_GROUP") or "DEV_GROUP"
+
+        # 通过 nacos_manager 获取 database 配置
+        try:
+            db_config = load_config("db_config")
+            if isinstance(db_config, DBConfig):
+                password = db_config.redis.password
+                host = db_config.redis.host
+                port = db_config.redis.port
+                db = db_config.redis.db
+                url = f"redis://:{password}@{host}:{port}/{db}"
+                max_connections = db_config.redis.max_connections
+            else:
+                # 如果获取 database 配置失败，则使用默认配置
+                raise ValueError
+        except Exception as e:
+            # 如果获取 database 配置失败，则使用默认配置
+            raise RuntimeError(f"Failed to get database config from nacos: {str(e)}") from e
+
+        
+        self._url = url
         self._pool: ConnectionPool | None = None
         self._redis: Redis | None = None
-        self._max_connections = settings["redis"]["max_connections"] or 20
+        self._max_connections = max_connections or 20
         self._is_initialized = False
 
     async def initialize(self) -> None:

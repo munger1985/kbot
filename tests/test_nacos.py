@@ -1,17 +1,15 @@
-import configparser
-from nacos_manager.manager import nacos_manager # type: ignore
+from core.nacos_manager import load_config, AppConfig
 
-config = nacos_manager.get_config("logger", "DEV_GROUP") # 获取配置
-print(config)
-
-# 解析配置内容
-config_parser = configparser.ConfigParser()
-config_parser.read_string(f"[DEV_GROUP]\n{config}")
+config = load_config("app_config") # 获取配置
 
 # 获取配置值
-level = config_parser.get('DEV_GROUP', 'level')
-dir = config_parser.get('DEV_GROUP', 'dir')
-rotation = config_parser.get('DEV_GROUP', 'rotation')
-retention = config_parser.get('DEV_GROUP', 'retention')
+if isinstance(config, AppConfig):
+    level = config.kbot.log.level
+    dir = config.kbot.log.dir
+    rotation = config.kbot.log.rotation
+    retention = config.kbot.log.retention
 
 print(f"file logger {level}, {dir}, {rotation}, {retention}")
+
+
+# python -m tests.test_nacos

@@ -3,8 +3,8 @@ import os
 import multiprocessing
 import configparser
 from loguru import logger
-from nacos_manager import nacos_manager # type: ignore
-from logger_manager import LogManager, LogConfig # type: ignore
+from core.nacos_manager import load_config, AppConfig
+from core.logger_manager import LogManager, LogConfig
 from services.dataparse.parse_service import start_file_parse_service, shutdown_file_parse_service
 
 
@@ -59,14 +59,15 @@ class FileParserManager:
         # 在子进程中初始化日志
         # 通过 nacos_manager 获取logger配置
         try:
-            nacos_group = os.getenv("NACOS_GROUP") or "DEV_GROUP" # Nacos分组
-            config_parser = configparser.ConfigParser()
-            log_config = nacos_manager.get_config("logger", nacos_group)
-            config_parser.read_string(f"[{nacos_group}]\n{log_config}")
-            log_dir = config_parser.get(nacos_group, "dir") or "logs/"
-            log_level = config_parser.get(nacos_group, "level") or "DEBUG"
-            rotation = config_parser.get(nacos_group, "rotation") or "10 MB"
-            retention = config_parser.get(nacos_group, "retention") or "20 days"
+            log_config = load_config("app_config")
+            if not isinstance(log_config, AppConfig):
+                raise ValueError
+            log_dir = log_config.kbot.log.dir
+            log_level = log_config.kbot.log.level
+            rotation = log_config.kbot.log.rotation
+            retention = log_config.kbot.log.retention
+            max_parallel_workers = log_config.kbot.parser.max_workers
+            check_interval = log_config.kbot.parser.check_interval
             
         except Exception as e:
             # 如果获取 logger 配置失败，则使用默认配置
@@ -83,7 +84,7 @@ class FileParserManager:
         logger.info("File parse service process starting")
 
         try:
-            asyncio.run(start_file_parse_service())
+            asyncio.run(start_file_parse_service(max_parallel_workers, check_interval))
         except Exception as e:
             logger.error(f"File parse service failed: {str(e)}")
             raise

@@ -36,4 +36,4 @@ knowledge_base/
 settings.toml
 local_model_cache/
 nacos-data/
-*.properties
+configuration/*.json

@@ -5,7 +5,6 @@ from PIL import Image
 from typing import Callable, Generator
 from loguru import logger
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from core.config import settings
 from services.dataparse.file_params import FileParams
 from dao.repositories.kbot_md_kb_files_repo import KbotMdKbFilesRepository
 from dao.data_dict import FileStatus
@@ -42,6 +41,7 @@ async def check_text_file(file_params: FileParams) -> bool:
 def run_in_thread_pool(
         func: Callable,
         params: list[dict] = [],
+        workers: int = 5,
         pool: ThreadPoolExecutor | None = None
 ) -> Generator:
     '''
@@ -53,10 +53,11 @@ def run_in_thread_pool(
 
     :param func: 任务函数/Function to execute in thread pool
     :param params: 任务参数列表/List of parameter dictionaries for tasks
+    :param workers: 线程池大小/Number of threads in the thread pool
     :param pool: 可选线程池/Optional thread pool executor
     :return: 任务结果生成器/Generator of task results
     '''
-    workers = int(settings['kbot']['parallel_workers'])
+
     thread_pool = ThreadPoolExecutor(max_workers=workers)
     pool = pool or thread_pool
     tasks = []

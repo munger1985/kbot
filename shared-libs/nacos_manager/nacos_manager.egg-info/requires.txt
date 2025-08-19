@@ -1,2 +1,0 @@
-nacos-sdk-python>=2.0.0
-pydantic>=1.8.2

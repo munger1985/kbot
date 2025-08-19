@@ -2,18 +2,18 @@ import asyncio
 import signal
 import time
 from loguru import logger
-from core.config import settings
 from .file_processor import FileProcessor
 
 
 class ParseService:
-    def __init__(self):
+    def __init__(self, parallel_workers=5, check_interval=60):
+
         self.shutdown_event = asyncio.Event()
         self.workers: list[asyncio.Task] = []
         self.worker_last_active = {}  # 记录worker最后活动时间
         self.file_queue = asyncio.Queue()
-        self.parallel_workers = settings["parser"]["max_workers"]
-        self.check_interval = settings["parser"]["check_interval"]
+        self.parallel_workers = parallel_workers
+        self.check_interval = check_interval
         self.idle_timeout = 300  # worker空闲超时时间(秒)
         self.min_workers = 1     # 保持的最小worker数量
 
@@ -295,9 +295,9 @@ class ParseService:
         if pending:
             logger.warning(f"{len(pending)} workers did not complete in time")
 
-async def start_file_parse_service():
+async def start_file_parse_service(max_parallel_workers: int, check_interval: int):
     """启动文件解析服务（供main.py调用）"""
-    service = ParseService()
+    service = ParseService(max_parallel_workers, check_interval)
     await service.start()
 
 async def shutdown_file_parse_service():

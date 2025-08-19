@@ -8,9 +8,8 @@ from dao.repositories.kbot_biz_txt_embedding_repo import KbotBizTxtEmbeddingRepo
 from dao.entities.kbot_biz_txt_embedding import KbotBizTxtEmbedding
 from dao.repositories.kbot_md_models_repo import KbotMdModelsRepository
 from dao.data_dict import FileStatus, ChunkType, SplitStrategy
-from core.config import settings
 from utils.chunk_text import chunk_text
-from utils.call_models import call_embedding_model
+from utils.call_models import CallModel
 from utils.common_methods import check_text_file
 
 
@@ -77,8 +76,6 @@ async def process_txt(file_params: FileParams) -> bool:
             await file_repo.update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, msg)
             return False
         
-        # 准备请求参数
-        batch_size = settings["embed"]["batch_size"] or 0
         # 获取embedding模型的unique name
         model_unique_name = await KbotMdModelsRepository().get_unique_name_by_id(file_params.txt_embed_model) # type: ignore
         if model_unique_name is None:
@@ -90,7 +87,7 @@ async def process_txt(file_params: FileParams) -> bool:
         # 3.调用嵌入微服务获取嵌入向量
         logger.info(f"Calling embedding service, model name is {model_unique_name}")
 
-        response_data = await call_embedding_model(model_unique_name, chunks, batch_size)
+        response_data = await CallModel().call_embedding_model(model_unique_name, chunks)
         if response_data is None:
             msg = f"Failed to get embeddings for {file_params.file_path}"
             logger.error(msg)

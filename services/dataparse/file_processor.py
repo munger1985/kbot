@@ -8,7 +8,6 @@ from .file_params import FileParams
 from dao.repositories.kbot_md_kb_files_repo import KbotMdKbFilesRepository
 from dao.repositories.kbot_md_kb_repo import KbotMdKbRepository
 from dao.data_dict import FileStatus, ProcessPriority
-from core.config import settings
 from utils.decimal_encoder import DecimalEncoder
 
 
