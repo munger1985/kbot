@@ -3,7 +3,7 @@ from pathlib import Path
 # Add both project root and backend directory to Python path
 project_root = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(project_root))
-from utils.call_models import call_llm_model, call_vlm_model_for_parsing_picture, call_embedding_model, call_reranker_model
+from utils.call_models import CallModel
 
 import asyncio
 from decimal import Decimal
@@ -16,7 +16,7 @@ async def test_call_embedding_model():
     embed_model_unique_name = "KBOT1/BGE-M3" # KBOT1/E5-LARGE-V2
     embed_input_texts = ["苹果", "香蕉"]
     topk = 4
-    emb = await call_embedding_model(
+    emb = await CallModel().call_embedding_model(
         embed_model_unique_name, 
         embed_input_texts
     )
@@ -41,7 +41,7 @@ async def test_call_llm_model():
     try:
         # 调用方法1：基本调用（流式）
         print("\n测试1：基本流式调用")
-        async for chunk in call_llm_model(model_name, test_prompt):
+        async for chunk in CallModel().call_llm_model(model_name, test_prompt):
             print(chunk, end="", flush=True)  # 实时打印响应
         
         # 调用方法2：带额外参数
@@ -83,7 +83,7 @@ async def test_call_reranker_model():
         "<|im_end|>我的研究兴趣是量子计算，我想寻找一份相关专业的工作。"
     ]
     
-    rerank = await call_reranker_model(
+    rerank = await CallModel().call_reranker_model(
         rerank_model_unique_name,
         question,
         inputs_list,
@@ -108,7 +108,7 @@ async def test_call_vlm_model():
     print(f"测试开始，使用模型: {model_unique_name}")
     print(f"输入提示的唯一标识: {prompt_unique_name}")
     print("=" * 50)
-    response = await call_vlm_model_for_parsing_picture(model_unique_name,prompt_unique_name, image)
+    response = await CallModel().call_vlm_model_for_parsing_picture(model_unique_name,prompt_unique_name, image)
     print(f"模型响应: {response}")
 
 # 运行测试
