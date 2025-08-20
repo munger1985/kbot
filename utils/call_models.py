@@ -1,6 +1,5 @@
 import os
 import aiohttp
-import configparser
 from PIL import Image
 from decimal import Decimal
 from loguru import logger
@@ -29,13 +28,15 @@ class CallModel():
 
         try:
         # 从 nacos 获取 embedding 服务配置
-            nacos_group = os.getenv("NACOS_GROUP") or "DEV_GROUP" # Nacos分组
             service_host = self.model_config.embed.service_host or "0.0.0.0" # 微服务地址
             service_port = self.model_config.embed.service_port or 9201 # 微服务通信端口
+            total = self.model_config.embed.timeout or 30
+            timeout = aiohttp.ClientTimeout(total=total)
         except Exception as e:
             # 如果从 nacos 获取 embedding 服务配置失败，则使用默认配置
             service_host = "0.0.0.0"
             service_port = 9201
+            timeout = aiohttp.ClientTimeout(total=30)
 
         
         url = f"http://{service_host}:{service_port}/v1/embeddings"
@@ -47,7 +48,7 @@ class CallModel():
         }
         
         try:
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.post(url, headers=headers, json=payload) as response:
                     if response.status != 200:
                         text = await response.text()
@@ -98,10 +99,13 @@ class CallModel():
         try:
             service_host = self.model_config.reranker.service_host or "0.0.0.0" # 微服务地址
             service_port = self.model_config.reranker.service_port or 9203 # 微服务通信端口
+            total = self.model_config.reranker.timeout or 30
+            timeout = aiohttp.ClientTimeout(total=total)
         except Exception as e:
             # 如果从 nacos 获取 reranker 服务配置失败，则使用默认配置
             service_host = "0.0.0.0"
             service_port = 9203
+            timeout = aiohttp.ClientTimeout(total=30)
         
         url = f"http://{service_host}:{service_port}/v1/rerank"
         headers = {"Content-Type": "application/json"}
@@ -113,7 +117,7 @@ class CallModel():
         }
         
         try:
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.post(url, headers=headers, json=payload) as response:
                     if response.status != 200:
                         text = await response.text()
@@ -144,6 +148,8 @@ class CallModel():
         # 从 nacos 获取 llm 服务配置
             service_host = self.model_config.llm.service_host or "0.0.0.0" # 微服务地址
             service_port = self.model_config.llm.service_port or 9202 # 微服务通信端口
+            total = self.model_config.llm.timeout or 30
+            timeout = aiohttp.ClientTimeout(total=total)
         except Exception as e:
             # 如果从 nacos 获取 llm 服务配置失败，则使用默认配置
             service_host = "0.0.0.0"
@@ -172,7 +178,7 @@ class CallModel():
         
         logger.debug(f"Calling LLM service with payload: {payload}")
 
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.post(url, headers=headers, json=payload) as response:
                 if response.status != 200:
                     error_msg = await response.text()
@@ -202,10 +208,13 @@ class CallModel():
         try:
             service_host = self.model_config.vlm.service_host or "0.0.0.0" # 微服务地址
             service_port = self.model_config.vlm.service_port or 9204 # 微服务通信端口
+            total = self.model_config.vlm.timeout or 30
+            timeout = aiohttp.ClientTimeout(total=total)
         except Exception as e:
             # 如果从 nacos 获取 vlm 服务配置失败，则使用默认配置
             service_host = "0.0.0.0"
             service_port = 9204
+            timeout = aiohttp.ClientTimeout(total=30)
 
         url = f"http://{service_host}:{service_port}/v1/inference"
         headers = {"Content-Type": "application/json"}
@@ -256,7 +265,7 @@ class CallModel():
         
         # Send request
         try:
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.post(url, headers=headers, json=payload) as response:
                     if response.status != 200:
                         logger.error(f"VLM service response error: HTTP {response.status}")

@@ -108,12 +108,14 @@ class RerankerConfig(BaseModel):
     service_host: str
     service_port: int = Field(gt=0, lt=65536)
     cache_dir: str
+    timeout: int = Field(ge=1)
 
 class VLMConfig(BaseModel):
     service_name: str
     service_version: str
     service_host: str
     service_port: int = Field(gt=0, lt=65536)
+    timeout: int = Field(ge=1)
 
 class ModelConfig(BaseModel):
     embed: EmbedConfig

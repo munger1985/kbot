@@ -3,7 +3,7 @@ from sqlalchemy import select
 from sqlalchemy import func
 from dao.entities.kbot_md_db_conf import KbotMdDbConf
 from dao.entities.kbot_md_kb import KbotMdKb
-from dao.data_dict import ( 
+from core.dictionary import ( 
     DbType,
     Status
 )

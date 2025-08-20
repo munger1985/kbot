@@ -1,7 +1,7 @@
 from typing import Any, AsyncIterator
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from contextlib import asynccontextmanager
-from dao.data_dict import DbType
+from core.dictionary import DbType
 
 @asynccontextmanager
 async def create_session(db_type: int, connection_info: dict[str, Any]) -> AsyncIterator[AsyncSession]:

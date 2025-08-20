@@ -2,12 +2,12 @@ import os
 import io
 import base64
 from PIL import Image
-from typing import Callable, Generator
+from typing import Callable, AsyncGenerator
 from loguru import logger
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from services.dataparse.file_params import FileParams
 from dao.repositories.kbot_md_kb_files_repo import KbotMdKbFilesRepository
-from dao.data_dict import FileStatus
+from core.dictionary import FileStatus
 
 @staticmethod
 async def check_text_file(file_params: FileParams) -> bool:
@@ -38,12 +38,12 @@ async def check_text_file(file_params: FileParams) -> bool:
     return True
 
 @staticmethod
-def run_in_thread_pool(
+async def run_in_thread_pool(
         func: Callable,
         params: list[dict] = [],
         workers: int = 5,
         pool: ThreadPoolExecutor | None = None
-) -> Generator:
+) -> AsyncGenerator:
     '''
     在线程池中批量运行任务，并将运行结果以生成器的形式返回。
     Execute tasks in batches within a thread pool and return the results as a generator.

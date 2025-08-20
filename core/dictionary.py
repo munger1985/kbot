@@ -105,3 +105,8 @@ class KBSearchType(int, Enum):
     FULLTEXT = 2
     SUMMARY = 3
     GRAPH = 4
+
+class AccessorType(int, Enum):
+    """Accessor type enumeration."""
+    USER = 1
+    SERVICE = 2

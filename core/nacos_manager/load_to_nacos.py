@@ -1,15 +1,13 @@
 import os
-import sys
 import json
 import requests
-from dotenv import load_dotenv
+
 from typing import Any
 from pydantic import BaseModel, SecretStr
 from nacos_encryptor import ConfigEncryptor
 
 
-# 加载环境变量
-load_dotenv()
+
 
 # Nacos 配置中心地址
 NACOS_SERVER = os.getenv('NACOS_SERVER', 'http://localhost:8848')

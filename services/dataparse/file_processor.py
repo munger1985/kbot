@@ -7,7 +7,7 @@ from .office_parser import process_word_ppt_by_converter
 from .file_params import FileParams
 from dao.repositories.kbot_md_kb_files_repo import KbotMdKbFilesRepository
 from dao.repositories.kbot_md_kb_repo import KbotMdKbRepository
-from dao.data_dict import FileStatus, ProcessPriority
+from core.dictionary import FileStatus, ProcessPriority
 from utils.decimal_encoder import DecimalEncoder
 
 

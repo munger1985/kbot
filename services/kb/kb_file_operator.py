@@ -9,7 +9,7 @@ from loguru import logger
 from core.nacos_manager import nacos_manager
 from dao.entities.kbot_md_kb_batch import KbotMdKbBatch
 from dao.entities.kbot_md_kb_files import KbotMdKbFiles
-from dao.data_dict import FileStatus, YesNoEnum
+from core.dictionary import FileStatus, YesNoEnum
 from dao.repositories.kbot_md_kb_repo import KbotMdKbRepository
 from dao.repositories.kbot_md_kb_files_repo import KbotMdKbFilesRepository
 from dao.repositories.kbot_biz_txt_embedding_repo import KbotBizTxtEmbeddingRepository
@@ -43,7 +43,7 @@ class KBFileOperator:
         self.upload_workers = upload_workers
 
 
-    async def save_file(self, file: UploadFile, domain_id: int, kb_id: int, batch_name:str, overwrite: bool) -> dict:
+    def save_file(self, file: UploadFile, domain_id: int, kb_id: int, batch_name:str, overwrite: bool) -> dict:
             '''
             Save single file to disk and return the file path // 保存单个文件到磁盘并返回文件路径
             Args:
@@ -154,7 +154,7 @@ class KBFileOperator:
         '''
         file_params = [{"file": file, "domain_id": domain_id, "kb_id": kb_id,
                 "batch_name": batch_name, "overwrite": overwrite} for file in files]
-        results = list(run_in_thread_pool(func=self.save_file, params=file_params, workers=self.upload_workers))
+        results = [result async for result in run_in_thread_pool(func=self.save_file, params=file_params, workers=self.upload_workers)]
 
         logger.debug(f"file save result: {results}")
         return results

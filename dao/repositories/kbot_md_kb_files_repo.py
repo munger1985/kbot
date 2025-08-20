@@ -1,7 +1,7 @@
 from typing import Sequence
 from sqlalchemy import select, delete, and_, update
 from dao.entities.kbot_md_kb_files import KbotMdKbFiles
-from dao.data_dict import (
+from core.dictionary import (
     FileStatus,
     ProcessPriority,
     YesNoEnum,

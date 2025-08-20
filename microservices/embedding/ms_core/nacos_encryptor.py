@@ -1,6 +1,10 @@
 import os
 import base64
+from dotenv import load_dotenv
 from cryptography.fernet import Fernet
+
+# 加载环境变量
+load_dotenv()
 
 # 从环境变量获取加密密钥（必须32字符）
 ENCRYPTION_KEY = os.getenv('NACOS_ENCRYPTION_KEY')

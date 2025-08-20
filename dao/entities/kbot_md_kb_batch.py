@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from sqlalchemy import String, Date, Numeric
 from sqlalchemy.orm import Mapped, mapped_column
 from .base import Base
@@ -9,10 +10,10 @@ class KbotMdKbBatch(Base):
     app_id: Mapped[int] = mapped_column(Numeric(38, 0),  nullable=False, comment="所属应用ID")
     batch_name: Mapped[str] = mapped_column(String(256), nullable=False, comment="批次名称，与KB_ID组成联合唯一约束")
     kb_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False, comment="关联的知识库ID")
-    created_by: Mapped[str | None] = mapped_column(String(512), comment="批次创建人")
-    created_time: Mapped[Date] = mapped_column(Date, comment="批次创建时间，默认系统当前时间")
-    updated_by: Mapped[str | None] = mapped_column(String(512), comment="最后修改人")
-    updated_time: Mapped[Date] = mapped_column(Date, comment="最后修改时间，默认系统当前时间")
+    created_by: Mapped[str | None] = mapped_column(String(256), comment="创建用户")
+    created_time: Mapped[Date] = mapped_column(Date, default=datetime.now(timezone.utc), comment="创建时间")
+    updated_by: Mapped[str | None] = mapped_column(String(256), comment="修改用户")
+    updated_time: Mapped[Date] = mapped_column(Date, default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc), comment="修改时间")
 
     def __repr__(self):
         return f"KbotMdKbBatch(batch_id={self.batch_id!r}, batch_name={self.batch_name!r}, kb_id={self.kb_id!r})"

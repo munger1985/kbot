@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from sqlalchemy import String, Date, Numeric, CLOB
 from sqlalchemy.orm import Mapped, mapped_column
 from .base import Base
@@ -24,10 +25,10 @@ class KbotMdKb(Base):
     is_img2txt: Mapped[int | None] = mapped_column(Numeric(1, 0), comment="是否把IMAGE转成文本:1-是,0-否")
     is_table_head_fill: Mapped[int | None] = mapped_column(Numeric(1, 0), comment="Table表头是否拼装：1-是,0-否")
     process_priority: Mapped[int | None] = mapped_column(Numeric(1, 0), comment="处理优先级枚举类型")
-    created_by: Mapped[str | None] = mapped_column(String(512), comment="记录创建人")
-    created_time: Mapped[Date] = mapped_column(Date, comment="记录创建时间，默认系统当前时间")
-    updated_by: Mapped[str | None] = mapped_column(String(512), comment="最后修改人")
-    updated_time: Mapped[Date] = mapped_column(Date, comment="最后修改时间，默认系统当前时间")
+    created_by: Mapped[str | None] = mapped_column(String(256), comment="创建用户")
+    created_time: Mapped[Date] = mapped_column(Date, default=datetime.now(timezone.utc), comment="创建时间")
+    updated_by: Mapped[str | None] = mapped_column(String(256), comment="修改用户")
+    updated_time: Mapped[Date] = mapped_column(Date, default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc), comment="修改时间")
 
     def __repr__(self):
         return f"KbotMdKb(kb_id={self.kb_id!r}, app_id={self.app_id!r}, domain_id={self.domain_id!r}, kb_name={self.kb_name!r})"

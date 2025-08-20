@@ -4,7 +4,7 @@ from ..chat.agent_params import ToolParams, KBResult
 from dao.repositories.kbot_md_kb_repo import KbotMdKbRepository
 from dao.repositories.kbot_biz_txt_embedding_repo import KbotBizTxtEmbeddingRepository
 from dao.repositories.kbot_md_models_repo import KbotMdModelsRepository
-from dao.data_dict import KbCategory, KBSearchType
+from core.dictionary import KbCategory, KBSearchType
 from utils.oracle_vec_handler import OracleVecHandler
 from utils.decimal_encoder import DecimalEncoder
 from utils.call_models import CallModel

@@ -16,7 +16,12 @@ from services.dataparse.file_parser_manger import FileParserManager
 
 
 # 加载环境变量
-load_dotenv()
+from pathlib import Path
+env_path = Path(__file__).parent / ".env"
+load_dotenv(env_path)
+
+# 验证环境变量加载
+print(f"KBOT_API_AUTH: {os.getenv('KBOT_API_AUTH')}")
 service_name = "main"
 service_host = os.getenv("KBOT_HOST") or "0.0.0.0"
 service_port = int(os.getenv("KBOT_PORT") or 8000)
@@ -30,6 +35,7 @@ def cleanup():
 
 
 atexit.register(cleanup)
+
 
 def create_app() -> FastAPI:
     """Create and configure FastAPI application.
@@ -93,6 +99,7 @@ def create_app() -> FastAPI:
         app.include_router(router)
 
         # Add API documentation endpoint
+        @app.get("/", include_in_schema=False)
         @app.get("/docs", include_in_schema=False)
         async def custom_swagger_ui_html():
             return get_swagger_ui_html(

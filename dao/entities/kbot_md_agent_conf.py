@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from sqlalchemy import String, Date, Numeric
 from sqlalchemy.orm import Mapped, mapped_column
 from .base import Base
@@ -17,9 +18,9 @@ class KbotMdAgentConf(Base):
     search_topk: Mapped[int | None] = mapped_column(Numeric(38, 0), comment="搜索TOPK个数")
     search_score_threshold: Mapped[float | None] = mapped_column(Numeric(38, 0), comment="搜索相似度阈值")
     created_by: Mapped[str | None] = mapped_column(String(256), comment="创建用户")
-    created_time: Mapped[Date] = mapped_column(Date, comment="创建时间")
+    created_time: Mapped[Date] = mapped_column(Date, default=datetime.now(timezone.utc), comment="创建时间")
     updated_by: Mapped[str | None] = mapped_column(String(256), comment="修改用户")
-    updated_time: Mapped[Date] = mapped_column(Date, comment="修改时间")
+    updated_time: Mapped[Date] = mapped_column(Date, default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc), comment="修改时间")
 
 
     def __repr__(self):

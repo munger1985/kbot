@@ -1,7 +1,7 @@
 from typing import Sequence
 from sqlalchemy import select, and_
 from dao.entities.kbot_md_models import KbotMdModels
-from dao.data_dict import ModelCategory, Status
+from core.dictionary import ModelCategory, Status
 from core.database.meta_oracle import get_session
 
 

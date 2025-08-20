@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from sqlalchemy import String, Date, Numeric, CLOB
 from sqlalchemy.orm import Mapped, mapped_column
 from .base import Base
@@ -13,10 +14,10 @@ class KbotMdDbConf(Base):
     db_conn_str: Mapped[dict | None] = mapped_column(CLOB, comment="JSON格式的数据库连接字符串，包含主机、端口、认证等信息")
     status: Mapped[int | None] = mapped_column(Numeric(1, 0), comment="配置状态：1-启用, 0-禁用")
     descs: Mapped[str | None] = mapped_column(String(512), comment="连接配置详细描述")
-    created_by: Mapped[str | None] = mapped_column(String(512), comment="创建用户")
-    created_time: Mapped[Date] = mapped_column(Date, comment="创建时间，默认系统当前时间")
-    updated_by: Mapped[str | None] = mapped_column(String(512), comment="最后修改用户")
-    updated_time: Mapped[Date] = mapped_column(Date, comment="最后修改时间，默认系统当前时间")
+    created_by: Mapped[str | None] = mapped_column(String(256), comment="创建用户")
+    created_time: Mapped[Date] = mapped_column(Date, default=datetime.now(timezone.utc), comment="创建时间")
+    updated_by: Mapped[str | None] = mapped_column(String(256), comment="修改用户")
+    updated_time: Mapped[Date] = mapped_column(Date, default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc), comment="修改时间")
 
     def __repr__(self):
         return f"KbotMdDbConf(db_id={self.db_id!r}, db_display_name={self.db_display_name!r}, db_type={self.db_type!r})"
