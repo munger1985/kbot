@@ -66,11 +66,13 @@ class OCIEmbedding(BaseEmbedding):
     async def embed(
         self,
         texts: list[str],
-        batch_size: int
+        batch_size: int = 1
     ) -> EmbeddingResponse:
         """Embed a list of texts in batches."""
         if not self._is_running:
             await self.startup()
+        if batch_size <= 0:
+            batch_size = 1
 
         all_embeddings = []
 
