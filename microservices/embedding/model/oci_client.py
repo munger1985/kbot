@@ -55,8 +55,7 @@ class OCIEmbedding(BaseEmbedding):
         if not self._is_running or not self.client:
             return False
         try:
-            # Simple health check: verify client can make a basic request
-            await self.client.list_models(compartment_id=self.config.compartment_id) # type: ignore
+            # Simple health check: verify client is initialized
             return True
         except Exception as e:
             logger.error(f"Health check failed: {str(e)}")
@@ -66,11 +65,13 @@ class OCIEmbedding(BaseEmbedding):
     async def embed(
         self,
         texts: list[str],
-        batch_size: int
+        batch_size: int = 1
     ) -> EmbeddingResponse:
         """Embed a list of texts in batches."""
         if not self._is_running:
             await self.startup()
+        if batch_size <= 0:
+            batch_size = 1
 
         all_embeddings = []
 

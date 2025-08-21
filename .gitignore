@@ -33,6 +33,7 @@ logs/
 
 # Project-generated files
 knowledge_base/
+kbot_files/
 settings.toml
 local_model_cache/
 nacos-data/

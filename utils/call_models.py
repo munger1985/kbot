@@ -22,7 +22,7 @@ class CallModel():
     async def call_embedding_model(self, 
                                 model_unique_name: str, 
                                 texts: list[str], 
-                                batch_dize: int = 0
+                                batch_size: int = 0
                                 ) -> list[EmbeddingDataItem] | None:
         """Call embedding model"""
 
@@ -44,7 +44,7 @@ class CallModel():
         payload = {
             "model_unique_name": model_unique_name,
             "texts": texts,
-            "batch_size": int(batch_dize) if batch_dize else 0
+            "batch_size": int(batch_size) if batch_size else 0
         }
         
         try:
