@@ -1,4 +1,3 @@
-
 --==============================================================================
 --1.KBOT_MD_UI_UTL
 --==============================================================================
@@ -47,7 +46,7 @@ function get_dic_sql_string(
 return varchar2;
 
 end "KBOT_MD_UI_UTL";
-
+/
 
 create or replace package body "KBOT_MD_UI_UTL" 
 as
@@ -216,9 +215,7 @@ END;
 
 
 end "KBOT_MD_UI_UTL";
-
-
-
+/
 
 
 --==============================================================================
@@ -240,7 +237,7 @@ AS
 BEGIN
     v_login := V('APP_USER'); 
 
-    IF v_login IS NULL OR v_login = UPPER('kbotui_dev') OR v_user_name IN ('SYS')THEN
+    IF v_login IS NULL OR v_login = UPPER('KBOTUI_DEV') OR v_user_name IN ('SYS')THEN
         predicate := '1 = 1';
     ELSE 
         SELECT JSON_VALUE(ar.KBOT_SUB, '$."KBOT".domain')
@@ -271,7 +268,7 @@ EXCEPTION
     WHEN OTHERS THEN
         RETURN '1 =2';
 END;
-
+/
 --==============================================================================
 --3.KBOT_AGENT_POLICY
 --==============================================================================
@@ -291,7 +288,7 @@ AS
 BEGIN
     v_login := V('APP_USER'); 
 
-    IF v_login IS NULL OR v_login = UPPER('kbotui_dev') OR v_user_name IN ('SYS')THEN
+    IF v_login IS NULL OR v_login = UPPER('KBOTUI_DEV') OR v_user_name IN ('SYS')THEN
         predicate := '1 = 1';
     ELSE 
         SELECT JSON_VALUE(ar.KBOT_SUB, '$."KBOT".agent')
@@ -320,7 +317,7 @@ EXCEPTION
     WHEN OTHERS THEN
         RETURN '1 =2';
 END;
-
+/
 
 --==============================================================================
 --4.KBOT_CHAT_HISTORY_POLICY
@@ -341,7 +338,7 @@ AS
 BEGIN
     v_login := V('APP_USER'); 
 
-    IF v_login IS NULL OR v_login = UPPER('kbotui_dev') OR v_user_name IN ('SYS')THEN
+    IF v_login IS NULL OR v_login = UPPER('KBOTUI_DEV') OR v_user_name IN ('SYS')THEN
         predicate := '1 = 1';
     ELSE 
         SELECT ar.KBOT
@@ -365,14 +362,14 @@ EXCEPTION
     WHEN OTHERS THEN
         RETURN '1 =2';
 END;
-
+/
 
 --==============================================================================
 --5.配置VPD策略，注意，需要修改object_schema名称。
 --需要把KBOTUI_DEV修改成实际的schema。
 --==============================================================================
 --下面的语句需要dba用户执行
-GRANT EXECUTE ON DBMS_RLS TO KBOTUI_DEV;
+--GRANT EXECUTE ON DBMS_RLS TO KBOTUI_DEV;
 --下面的脚步用实际的schema执行即可
 BEGIN
     DBMS_RLS.ADD_POLICY(
@@ -383,6 +380,7 @@ BEGIN
         statement_types => 'SELECT'
     );
 END;
+/
 BEGIN
     DBMS_RLS.ADD_POLICY(
         object_schema => 'KBOTUI_DEV',
@@ -392,6 +390,7 @@ BEGIN
         statement_types => 'SELECT'
     );
 END;
+/
 BEGIN
     DBMS_RLS.ADD_POLICY(
         object_schema => 'KBOTUI_DEV',
@@ -401,7 +400,7 @@ BEGIN
         statement_types => 'SELECT'
     );
 END;
-
+/
 --==============================================================================
 --5.apex ui数据字典，执行完之后，需要更新app_id
 --update KBOT_MD_DATA_DIC set app_id = ?;
