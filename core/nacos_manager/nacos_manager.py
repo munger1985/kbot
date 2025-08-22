@@ -148,8 +148,8 @@ class NacosConfigManager:
         # 3. 等待线程结束（设置超时）
         for thread in threading.enumerate():
             if thread is not threading.current_thread() and thread.is_alive() and not thread.daemon:
-                if "loguru" in thread.name.lower():
-                    continue  # 忽略 loguru 线程，由日志系统自行管理
+                if "loguru" in thread.name.lower() or "anyio" in thread.name.lower():
+                    continue  # 忽略 loguru 和 AnyIO 线程，由日志系统或 AnyIO 自行管理
                 thread.join(timeout=5)
                 if thread.is_alive():
                     logger.warning(f"Thread {thread.name} did not stop gracefully")

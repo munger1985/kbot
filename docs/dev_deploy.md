@@ -57,16 +57,15 @@ docker-compose up -d
 ```
 ### 然后将配置文档注入nacos，只需要运行一次，之后就不再需要初始化nacos，除非配置有变更需要重新运行下面的命令
 ```bash
-python nacos-init/load_properties_to_nacos.py
+# 配置文档位于项目根目录的configuration文件夹中
+python core/nacos_manager/nacos-init/load_to_nacos.py
 # nacos默认管理界面
 http://localhost:8848/nacos/
 ```
 
-### 本地开发包安装
-包位于项目根目录下的shared-libs目录中：
-进到shared-libs下的logger_manager和nacos_manager目录中，用下面的命令分别安装
+### 如果需要本地部署jina reranker模型，需要安装nvidia-cuda-toolkit
 ```bash
-pip install -e .
+sudo apt install nvidia-cuda-toolkit
 ```
 
 ### Oracle 23ai全文检索创建索引

@@ -32,7 +32,8 @@ async def test_call_llm_model():
     测试调用LLM模型的方法
     """
     # 测试参数
-    model_name = "KBOT1/OCI-LLM"
+    # model_name = "KBOT1/OCI-llama"
+    model_name = "KBOT1/xai.grok-4"
     test_prompt = "文艺复兴是什么"
     
     print(f"测试开始，使用模型: {model_name}")
@@ -75,7 +76,8 @@ async def test_call_reranker_model():
     测试调用reranker模型的方法
     """
     # 测试参数
-    rerank_model_unique_name = "KBOT1/BGE-RANKER"
+    rerank_model_unique_name = "KBOT1/JINA-RANKER"
+    # rerank_model_unique_name = "KBOT1/cohere-reranker"
     question = "招聘数据工程师"
     inputs_list = [
         "<|im_end|>你好，我想要找一份有关数据科学的数据集。",

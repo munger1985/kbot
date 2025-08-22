@@ -138,7 +138,7 @@ class LLMService:
                 return generate_openai_stream()
             
             # OCI stream mode
-            elif stream and model.provider == LLMProvider.OCI.value:
+            elif stream and model.provider in [LLMProvider.OCI_COHERE.value, LLMProvider.OCI_GROK.value, LLMProvider.OCI_LLAMA.value]:
                 response = await model.chat(processed_messages, stream=True, **kwargs)
                 logger.debug("Non-openai streaming response received.")
                 async def generate_oci_stream():

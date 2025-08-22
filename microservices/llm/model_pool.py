@@ -133,7 +133,7 @@ class ModelPool:
                 presence_penalty=model_entity.model_params.get("presence_penalty", presence_penalty),
                 timeout=model_entity.model_params.get("timeout", timeout)
             )
-        elif model_entity.provider == LLMProvider.OCI.value:
+        elif model_entity.provider in [LLMProvider.OCI_COHERE.value, LLMProvider.OCI_GROK.value, LLMProvider.OCI_LLAMA.value]:
             if model_entity.model_name is None or model_entity.api_endpoint is None or model_entity.model_params.get("compartment_id") is None:
                 raise ValueError(f"Model {model_unique_name} has no model_name, api_endpoint or compartment_id")
             model_config = OCILLMConfig(
@@ -143,9 +143,10 @@ class ModelPool:
                 temperature=model_entity.model_params.get("temperature", temperature),
                 compartment_id=str(model_entity.model_params.get("compartment_id")),
                 max_tokens=model_entity.model_params.get("max_tokens", max_tokens),
-                top_p=model_entity.model_params.get("top_p", top_p)
-                # top_k=model_entity.model_params.get("top_k", top_k),
-                # frequency_penalty=model_entity.model_params.get("frequency_penalty", frequency_penalty)
+                top_p=model_entity.model_params.get("top_p", top_p),
+                top_k=model_entity.model_params.get("top_k", top_k),
+                frequency_penalty=model_entity.model_params.get("frequency_penalty", frequency_penalty),
+                presence_penalty=model_entity.model_params.get("presence_penalty", presence_penalty)
             )
         else:
             # TODO: support other providers

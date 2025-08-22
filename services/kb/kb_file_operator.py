@@ -6,7 +6,7 @@ import configparser
 from pathlib import Path
 from fastapi import UploadFile
 from loguru import logger
-from core.nacos_manager import nacos_manager
+from core.nacos_manager import load_config, AppConfig
 from dao.entities.kbot_md_kb_batch import KbotMdKbBatch
 from dao.entities.kbot_md_kb_files import KbotMdKbFiles
 from core.dictionary import FileStatus, YesNoEnum
@@ -26,12 +26,12 @@ class KBFileOperator:
 
         # 通过 nacos_manager 获取文件上传路径和并行度配置
         try:
-            nacos_group = os.getenv("NACOS_GROUP") or "DEV_GROUP" # Nacos分组
-            config_parser = configparser.ConfigParser()
-            log_config = nacos_manager.get_config("app", nacos_group)
-            config_parser.read_string(f"[{nacos_group}]\n{log_config}")
-            file_storage = config_parser.get(nacos_group, "kbot.file_storage") or "./kbot_files"
-            upload_workers = int(config_parser.get(nacos_group, "kbot.upload_workers")) or 1
+            config = load_config("app_config")
+            if not isinstance(config, AppConfig):
+                raise ValueError
+
+            file_storage = config.kbot.file_storage or "./kbot_files"
+            upload_workers = int(config.kbot.upload_workers) or 1
             
         except Exception as e:
             # 如果获取 logger 配置失败，则使用默认配置

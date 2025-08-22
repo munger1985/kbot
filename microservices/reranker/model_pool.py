@@ -3,8 +3,9 @@ import sys
 import asyncio
 from loguru import logger
 from datetime import datetime, timedelta
-from model import BaseReranker, RerankerConfig, create_reranker_model
+from model import *
 from ms_core import load_config, ModelConfig
+
 
 # 添加项目根目录到 Python 路径，确保可以导入项目模块
 current_file = os.path.abspath(__file__)
@@ -84,20 +85,31 @@ class ModelPool:
             raise ValueError
 
         # 根据模型类型创建相应的配置
-        
-        model_config = RerankerConfig(
-            model_name=model_entity.model_name,
-            model_path=model_entity.model_params.get("model_path", None),
-            device=model_entity.model_params.get("device", None),
-            device_map=model_entity.model_params.get("device_map", None),
-            max_tokens=model_entity.model_params.get("max_tokens", 8192),
-            compile_model=model_entity.model_params.get("compile_model", True),
-            use_fp16=model_entity.model_params.get("use_fp16", False),
-            trust_remote_code=model_entity.model_params.get("trust_remote_code", False),
-            local_files_only=model_entity.model_params.get("local_files_only", False),
-            max_memory=model_entity.model_params.get("max_memory", None),
-            cache_dir=config.reranker.cache_dir or "./cached_models"
-        )
+        if model_entity.provider == RerankerProvider.LOCAL.value:
+            model_config = LocalRerankerConfig(
+                provider = model_entity.provider,
+                model_name = model_entity.model_name,
+                model_path = model_entity.model_params.get("model_path", None),
+                device = model_entity.model_params.get("device", None),
+                device_map = model_entity.model_params.get("device_map", None),
+                max_tokens = model_entity.model_params.get("max_tokens", 8192),
+                compile_model = model_entity.model_params.get("compile_model", True),
+                use_fp16 = model_entity.model_params.get("use_fp16", False),
+                trust_remote_code = model_entity.model_params.get("trust_remote_code", True),
+                local_files_only = model_entity.model_params.get("local_files_only", False),
+                max_memory = model_entity.model_params.get("max_memory", None),
+                cache_dir = config.reranker.cache_dir or "./cached_models"
+            )
+            
+        elif model_entity.provider == RerankerProvider.COHERE.value:
+            model_config = CohereRerankerConfig(
+                provider = model_entity.provider,
+                model_name = model_entity.model_name,
+                max_tokens = model_entity.model_params.get("max_tokens", 8192),
+                api_key = model_entity.api_key,
+                api_endpoint = model_entity.api_endpoint, # type: ignore
+                timeout  = model_entity.model_params.get("timeout", 10)
+            )
 
         # Create and initialize model //创建和初始化模型
         try:

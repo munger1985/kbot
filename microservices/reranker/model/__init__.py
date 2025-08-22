@@ -1,15 +1,16 @@
 from .base import BaseReranker,RerankerConfig
-from .factory import RerankModels, create_reranker_model
-from .reranker import Reranker
-from .bgev2m3 import BGERerankerV2M3
-from .jinav2 import JinaRerankerV2
+from .factory import RerankerProvider, create_reranker_model
+from .local_reranker import LocalReranker, LocalRerankerConfig
+from .cohere_reranker import CohereReranker, CohereRerankerConfig
+
 
 __all__ = [
     "BaseReranker",
     "RerankerConfig",
-    "RerankModels",
-    "Reranker",
-    "BGERerankerV2M3",
-    "JinaRerankerV2",
+    "RerankerProvider",
+    "LocalReranker",
+    "LocalRerankerConfig",
+    "CohereReranker",
+    "CohereRerankerConfig",
     "create_reranker_model"
 ]

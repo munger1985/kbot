@@ -70,9 +70,10 @@ class RedisConfig(BaseModel):
 class SQLAlchemyConfig(BaseModel):
     echo: bool
     pool_size: int = Field(ge=1)
+    pool_timeout: int = Field(ge=1) # seconds to wait for a connection
     max_overflow: int = Field(ge=0)
-    pool_pre_ping: bool
-    pool_recycle: int = Field(ge=0)
+    pool_pre_ping: bool             # test connections for liveness before use
+    pool_recycle: int = Field(ge=0) # recycle connections after 1 hour
 
 class DBConfig(BaseModel):
     oracle: OracleConfig
