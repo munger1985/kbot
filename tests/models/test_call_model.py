@@ -116,4 +116,8 @@ async def test_call_vlm_model():
 
 # 运行测试
 if __name__ == "__main__":
+<<<<<<< HEAD
     asyncio.run(test_call_reranker_model())
+=======
+    asyncio.run(test_call_embedding_model())
+>>>>>>> ce801dd0b8fab6d595e0f6fb7e18ff43fe0c3891

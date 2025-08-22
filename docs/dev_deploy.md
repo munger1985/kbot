@@ -9,17 +9,29 @@ cd /home/ubuntu/kbot3
 ```
 ```bash
 git pull                      #本地更新代码      
+git clone https://github.com/munger1985/kbot.git 
+git clone -b kbot3 https://github.com/munger1985/kbot.git
+mv kbot kbot3
 git reset --hard origin/kbot3  # 强制将本地 main 分支重置为远程状态
 ```
 
+### kbot3 env
+conda create -n kbot3  python=3.12
+conda activate kbot3
+cd ./kbot3
+pip install -r requirements.txt
+
 ### 后端API文档：
-http://64.181.236.219:18099/docs
-http://64.181.236.219:18099/redoc
+http://64.181.236.219:18099/docs 
+http://64.181.236.219:18099/redoc 
 http://64.181.236.219:18099/api/health
 
 ### Kbot3.0前端：
 http://132.145.81.123:8080/ords/r/kbotui_dev/km-chat/home     chinase1/chinase1  admin/12345678
 http://132.145.81.123:8080/ords/r/kbotui_dev/ai-platform-portal/home  admin/12345678
+
+### nacos :
+http://64.181.236.219:8848/nacos
 
 ### 部署Docker：
 ```bash
@@ -38,7 +50,7 @@ docker run --name kbot-redis -d \
 # 设置容器自动重启
 docker update --restart unless-stopped kbot-redis #容器名或ID
 ```
-### 配置 libreoffice 容器
+### 配置 libreoffice 容器(把word/ppt数据转成pdf)
 ```bash
 cd microservices/libreoffice
 docker-compose up -d
@@ -46,7 +58,6 @@ docker-compose up -d
 # 服务端口修改docker-compose.yaml里的端口号。默认为9316
 # 容器所在服务器ip和容器端口需要更新到app.properties文件的 libre_host 和 libre_port 两项中
 ```
-
 
 ### 配置 nacos 容器
 ```bash
@@ -67,6 +78,17 @@ http://localhost:8848/nacos/
 ```bash
 sudo apt install nvidia-cuda-toolkit
 ```
+
+
+### 在OCI上部署时，需要放开端口
+1.在VCN的security list中添加端口（8848、18099）
+2.在系统层面放开端口
+```bash
+sudo iptables -nvL
+sudo iptables -I INPUT -p tcp --dport 8848 -j ACCEPT
+sudo iptables -I INPUT -p tcp --dport 18099 -j ACCEPT
+```
+
 
 ### Oracle 23ai全文检索创建索引
 ```bash
