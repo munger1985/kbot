@@ -9,6 +9,7 @@ from ..search.kb_search import KBSearch
 from .agent_rerank import AgentRerank
 
 
+
 class Agent:
     """智能体类"""
     def __init__(self, agent_id: int, security: int):
@@ -18,11 +19,19 @@ class Agent:
 
     async def chat(self, question: str) -> list[KBResult] | None:
         """Agent chat"""
+
         # 1. 获取 agent 的默认配置信息
         agent = await KbotMdAgentRepository().get_by_id(self.agent_id)
         if not agent:
             logger.warning("Agent not found")
             return None
+        if agent.reranker_model_id is None:
+            logger.warning("Agent reranker model ID is None")
+            model_unique_name = None
+        else:
+            model_repo = KbotMdModelsRepository()
+            model_unique_name = await model_repo.get_unique_name_by_id(agent.reranker_model_id)
+
         self.agent_params.domain_id = agent.domain_id
         self.agent_params.prompt_id = agent.prompt_id
         self.agent_params.llm_id = agent.llm_id
@@ -32,12 +41,13 @@ class Agent:
         self.agent_params.reranker_model_id = agent.reranker_model_id
         self.agent_params.reranker_top_k = agent.reranker_topk
         self.agent_params.reranker_score_threshold = agent.reranker_score_threshold
-        self.agent_params.reranker_model_name = await KbotMdModelsRepository().get_unique_name_by_id(self.agent_params.reranker_model_id) # type: ignore
+        self.agent_params.reranker_model_name = model_unique_name
 
         # 2. 获取 agent 包含的知识库或工具配置信息
-        confs = await KbotMdAgentConfRepository().get_by_agent_id(self.agent_id)
+        agent_conf_repo = KbotMdAgentConfRepository()
+        confs = await agent_conf_repo.get_by_agent_id(self.agent_id)
         if not confs:
-            logger.warning("AgentConf not found")
+            logger.warning("Agent config not found")
             return None
         
         kb_results_rerank: list[KBResult] = []

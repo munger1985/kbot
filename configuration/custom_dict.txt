@@ -1,0 +1,22 @@
+Python 3 n
+MySQL 2 n
+Docker 2 n
+Kubernetes 3 n
+JavaScript 3 n
+TypeScript 3 n
+React 2 n
+Vue 2 n
+API 2 n
+JSON 2 n
+XML 2 n
+HTTP 3 n
+HTTPS 3 n
+TCP 2 n
+UDP 2 n
+IP 2 n
+DNS 2 n
+SSL 2 n
+TLS 2 n
+Oracle 2 n
+SQL 2 n
+SQL Server 2 n

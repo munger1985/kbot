@@ -1,4 +1,5 @@
 import oci
+import json
 from loguru import logger
 from .base import LLMConfig, BaseLLM
 
@@ -12,8 +13,7 @@ class OCILLMConfig(LLMConfig):
     presence_penalty: float = 0
     api_endpoint: str
     compartment_id: str
-    config_profile: str = "DEFAULT"
-    config_file: str = "~/.oci/config"
+    config_file: dict
 
 
 class OCIClient(BaseLLM):
@@ -32,7 +32,11 @@ class OCIClient(BaseLLM):
     async def startup(self) -> None:
         """Initialize the OCI client."""
         try:
-            oci_config = oci.config.from_file(self.config.config_file, self.config.config_profile) # type: ignore
+            # Parse config_file from JSON string to dict if needed
+            if isinstance(self.config.config_file, str):  # type: ignore
+                oci_config = json.loads(self.config.config_file) # type: ignore
+            else:
+                oci_config = self.config.config_file # type: ignore
             self.client = oci.generative_ai_inference.GenerativeAiInferenceClient(
                 config=oci_config,
                 service_endpoint=self.config.api_endpoint, # type: ignore
@@ -93,7 +97,7 @@ class OCIClient(BaseLLM):
 
         
 
-        if self.provider == "oci-cohere":
+        if "cohere" in self.config.model_name.lower():
             chat_request = oci.generative_ai_inference.models.CohereChatRequest()
             chat_request.message = converted_messages
             chat_request.frequency_penalty = kwargs.get('frequency_penalty', self.config.frequency_penalty) # type: ignore
@@ -104,7 +108,7 @@ class OCIClient(BaseLLM):
                 max_tokens = 4000
                 logger.warning("OCI cohere model max_tokens limit exceeded, setting max_tokens to 4000.")
 
-        elif self.provider == "oci-grok":
+        elif "grok" in self.config.model_name.lower():
             chat_request = oci.generative_ai_inference.models.GenericChatRequest()
             chat_request.api_format = oci.generative_ai_inference.models.BaseChatRequest.API_FORMAT_GENERIC
             content = oci.generative_ai_inference.models.TextContent()
@@ -120,7 +124,7 @@ class OCIClient(BaseLLM):
                 max_tokens = 20000
                 logger.warning("OCI grok model max_tokens limit exceeded, setting max_tokens to 20000.")
 
-        elif self.provider == "oci-llama":
+        elif "llama" in self.config.model_name.lower():
             chat_request = oci.generative_ai_inference.models.GenericChatRequest()
             chat_request.api_format = oci.generative_ai_inference.models.BaseChatRequest.API_FORMAT_GENERIC
             content = oci.generative_ai_inference.models.TextContent()

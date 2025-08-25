@@ -3,10 +3,16 @@ import torch
 from typing import Any
 from pydantic import Field
 from loguru import logger
-from prometheus_client import Histogram, Counter, Gauge
+# from prometheus_client import Histogram, Counter, Gauge
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 from .base import BaseReranker, RerankerConfig
 
+# # 启用高性能矩阵乘法
+# torch.set_float32_matmul_precision('high')
+# # 避免 Tensor.item() 导致的 Graph Break
+# torch._dynamo.config.capture_scalar_outputs = True
+# # 强制使用 FP16/BF16
+# torch.backends.cuda.matmul.allow_fp16_reduced_precision_reduction = True
 
 class LocalRerankerConfig(RerankerConfig):
     """Configuration for reranker models."""
@@ -25,24 +31,24 @@ class LocalRerankerConfig(RerankerConfig):
 class LocalReranker(BaseReranker):
     """通用 Reranker 重排器基类"""
 
-    # Prometheus metrics
-    LATENCY_HIST = Histogram(
-        'local_reranker_latency_seconds',
-        'Latency for local reranker requests',
-        ['model_name']
-    )
+    # # Prometheus metrics
+    # LATENCY_HIST = Histogram(
+    #     'local_reranker_latency_seconds',
+    #     'Latency for local reranker requests',
+    #     ['model_name']
+    # )
     
-    ERROR_COUNTER = Counter(
-        'local_reranker_errors_total',
-        'Count of local reranker errors',
-        ['model_name', 'error_type']
-    )
+    # ERROR_COUNTER = Counter(
+    #     'local_reranker_errors_total',
+    #     'Count of local reranker errors',
+    #     ['model_name', 'error_type']
+    # )
     
-    MEMORY_GAUGE = Gauge(
-        'local_reranker_memory_usage_mb',
-        'GPU memory usage in MB',
-        ['device_id']
-    )
+    # MEMORY_GAUGE = Gauge(
+    #     'local_reranker_memory_usage_mb',
+    #     'GPU memory usage in MB',
+    #     ['device_id']
+    # )
 
     def __init__(self, config: LocalRerankerConfig):
         """

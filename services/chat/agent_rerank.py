@@ -21,6 +21,11 @@ class AgentRerank:
             Reranked KBResult list with updated reranker_scores, or None if error
         """
         if not kb_results:
+            logger.warning("No KB results provided for reranking.")
+            return kb_results
+        
+        if self.agent_params.reranker_model_name is None:
+            logger.warning("Reranker model is not configured, skipping reranking.")
             return kb_results
             
         # Extract chunk_docs from KBResult objects
@@ -28,14 +33,15 @@ class AgentRerank:
         
         # Call reranker model
         rerankers = await CallModel().call_reranker_model(
-            model_unique_name=self.agent_params.reranker_model_name, # type: ignore
+            model_unique_name=self.agent_params.reranker_model_name,
             query=question,
             documents=contonts,
             top_k=self.agent_params.reranker_top_k
         )
         
         if rerankers is None:
-            return None
+            logger.warning("Reranker model call failed or returned None.")
+            return kb_results
 
         reranked_results: list[KBResult] = []    
         # Update reranker_score in original KBResult objects

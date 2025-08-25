@@ -8,10 +8,7 @@ from model import (
     BaseEmbedding, 
     EmbeddingProvider,
     LocalEmbeddingConfig, 
-    AzureEmbeddingConfig,
-    CohereEmbeddingConfig,
     OCIEmbeddingConfig,
-    OpenAIEmbeddingConfig,
     create_embedding_model
 )
 
@@ -123,14 +120,17 @@ class ModelPool:
                 cache_dir=cache_dir
             )
         elif model_entity.provider == EmbeddingProvider.OCI.value:
+            compartment_id = model_entity.model_params.get("compartment_id")
+            config_file = model_entity.model_params.get("config_file")
+            if model_entity.model_name is None or model_entity.api_endpoint is None or compartment_id is None or config_file is None:
+                raise ValueError(f"Model {model_unique_name} has no model_name, api_endpoint, compartment_id or config_file")
             model_config = OCIEmbeddingConfig(
                 model_name=model_entity.model_name,
                 provider=model_entity.provider,
                 max_tokens=model_entity.model_params.get("max_tokens", max_tokens),
-                api_endpoint=model_entity.api_endpoint, # type: ignore
-                compartment_id=model_entity.model_params.get("compartment_id", None), # type: ignore
-                config_profile=model_entity.model_params.get("config_profile", "DEFAULT"), # type: ignore
-                config_file=model_entity.model_params.get("config_file", "~/.oci/config")
+                api_endpoint=model_entity.api_endpoint,
+                compartment_id=compartment_id,
+                config_file=config_file
             )
 
         # Create and initialize model //创建和初始化模型

@@ -132,13 +132,14 @@ class KbotBizTxtEmbeddingRepository:
 
             # Generate SQL
             sql = """
-                SELECT /*+ INDEX(IDX_FULLSEARCH_TXT_EMBEDDING) */
-                    FILE_ID, CHUNK_DOC, CHUNK_METADATA,
-                    SCORE(1) AS similarity
+                SELECT FILE_ID, 
+                       CHUNK_DOC, 
+                       CHUNK_METADATA,
+                       SCORE(1) AS similarity
                 FROM KBOT_BIZ_TXT_EMBEDDING
                 WHERE KB_ID = :kb_id
                 AND SECURITY_LEVEL <= :security
-                AND CONTAINS(CHUNK_DOC, REGEXP_REPLACE(:keyword,'\\W+', ' ACCUM '), 1) > 0
+                AND CONTAINS(CHUNK_DOC, REGEXP_REPLACE(:keyword, '\\W+', ' ACCUM '), 1) > 0
                 ORDER BY similarity DESC
                 FETCH FIRST :top_k ROWS ONLY
             """

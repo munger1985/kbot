@@ -110,7 +110,6 @@ class FileProcessor:
                 msg = f"File type {file_params.file_ext} is not supported, skipping..."
                 logger.info(msg)
                 # 更新文件状态为已处理
-                file_repo = KbotMdKbFilesRepository()
                 await file_repo.update_file_status(file_params.file_id, FileStatus.PARSED, msg)
                 return True
                 
@@ -118,7 +117,6 @@ class FileProcessor:
             msg = f"Error processing {file_params.file_path}: {str(e)}"
             logger.error(msg)
             # 更新文件状态为处理失败
-            file_repo = KbotMdKbFilesRepository()
             await file_repo.update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, msg)
             return False
 

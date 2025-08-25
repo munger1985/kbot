@@ -1,12 +1,9 @@
-import os
-import oracledb
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy import text
 from typing import AsyncIterator
 from loguru import logger
 from contextlib import asynccontextmanager
 from core.nacos_manager import load_config, DBConfig
-
 
 
 # 通过 nacos_manager 获取 database 配置
@@ -34,35 +31,6 @@ except Exception as e:
     logger.error(f"Failed to get database config from nacos: {str(e)}")
     raise RuntimeError(f"Failed to get database config from nacos: {str(e)}") from e
 
-try:
-    # 检查常见的 Oracle Instant Client 路径
-    possible_lib_dirs = [
-        "/usr/lib/oracle/21/client64/lib",
-        "/usr/lib/oracle/19/client64/lib", 
-        "/usr/lib/oracle/18/client64/lib",
-        "/opt/oracle/instantclient",
-        "/opt/oracle/instantclient_21_10",
-        "/opt/oracle/instantclient_19_20"
-    ]
-    
-    lib_dir = None
-    for possible_dir in possible_lib_dirs:
-        if os.path.exists(possible_dir) and os.path.isdir(possible_dir):
-            lib_dir = possible_dir
-            break
-    
-    if lib_dir:
-        oracledb.init_oracle_client(lib_dir=lib_dir)
-        logger.info(f"Oracle Thick mode initialized with lib_dir: {lib_dir}")
-    else:
-        # 尝试自动查找（如果 Instant Client 在标准路径）
-        oracledb.init_oracle_client()
-        logger.info("Oracle Thick mode initialized with auto-detection")
-        
-except Exception as e:
-    logger.warning(f"Failed to initialize Oracle Thick mode: {str(e)}")
-    logger.warning("Falling back to Thin mode. Some features may be limited.")
-    # 继续使用 Thin 模式，但某些功能可能不可用
 
 try:
     async_engine = create_async_engine(

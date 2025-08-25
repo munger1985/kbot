@@ -9,7 +9,7 @@ from utils.oracle_vec_handler import OracleVecHandler
 from utils.decimal_encoder import DecimalEncoder
 from utils.call_models import CallModel
 from utils.common_methods import lob_to_string
-
+from .chinese_preprocessor import preprocess_cn_query
 
 class KBSearch:
     """Knowledge base search"""
@@ -18,6 +18,10 @@ class KBSearch:
 
     async def search(self, question: str, security: int) -> list[KBResult] | None:
         """Search"""
+        # 0. 预处理问题，用于向量检索和全文检索，语义检索需要字符串，全文检索需要词元列表
+        vector_search_question = preprocess_cn_query(question, return_string=True)
+        full_text_question = preprocess_cn_query(question, return_string=False)
+
         # 1. Get model ID
         repo = KbotMdKbRepository()
         models = await repo.get_model_by_kbid(self.tool_params.tool_id)
@@ -39,10 +43,10 @@ class KBSearch:
         if self.tool_params.kb_catogory == KbCategory.KBOT.value:
             if self.tool_params.search_type == KBSearchType.VECTOR.value:
                 logger.debug("Search method: vector")
-                return await self.search_by_vector(question, security)
+                return await self.search_by_vector(vector_search_question, security) # type: ignore
             elif self.tool_params.search_type == KBSearchType.FULLTEXT.value:
                 logger.debug("Search method: full text")
-                return await self.serch_by_full_text(question, security)
+                return await self.serch_by_full_text(full_text_question, security) # type: ignore
             elif self.tool_params.search_type == KBSearchType.SUMMARY.value:
                 logger.debug("Search method: summary")
                 return await self.search_by_summary(question, security)
@@ -129,19 +133,27 @@ class KBSearch:
             logger.debug(f"Vector search failed: {str(e)}")
             return None
         
-    async def serch_by_full_text(self, question: str, security: int) -> list[KBResult] | None:
+    async def serch_by_full_text(self, keywords: list[str], security: int) -> list[KBResult] | None:
         """Search by full text"""
         repo = KbotBizTxtEmbeddingRepository()
         try:
             logger.debug(f"Full text search KB ID: {self.tool_params.tool_id}")
-            logger.debug(f"Full text search keyword: {question}")
-            dataset = await repo.full_text_search(kb_id=self.tool_params.tool_id, keyword=question, security=security)
-            if not dataset:
+            logger.debug(f"Full text search keywords: {keywords}")
+            datasets = []
+            unique_keys = set(keywords)  # 去除重复的关键字
+
+            for key in unique_keys:
+                logger.debug(f"Full text search token: {key}")
+                ds = await repo.full_text_search(kb_id=self.tool_params.tool_id, keyword=key, security=security)
+                if ds:
+                    datasets.extend(ds)
+
+            if not datasets:
                 logger.info(f"Full text search returned no results")
                 return None
             else:
                 results = []
-                for data in dataset:
+                for data in datasets:
                     chunk_meta = json.loads(json.dumps(data[2], cls=DecimalEncoder))
                     result = KBResult()
                     result.file_id = data[0]

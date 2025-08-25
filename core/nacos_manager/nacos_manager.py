@@ -7,7 +7,7 @@ from typing import Callable
 from nacos import NacosClient
 from pydantic import Field
 from pydantic_settings import BaseSettings
-from .config_type import AppConfig, DBConfig, ModelConfig
+from configuration.config_type import AppConfig, DBConfig, ModelConfig
 
 
 class NacosSettings(BaseSettings):

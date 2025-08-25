@@ -1,0 +1,24 @@
+{
+  "oracle": {
+    "username": "kbot",
+    "password": "oracle",
+    "host": "localhost",
+    "port": 1521,
+    "service_name": "kbotdev"
+  },
+  "redis": {
+    "password": "welcome1",
+    "host": "localhost",
+    "port": 6379,
+    "db": 0,
+    "max_connections": 10
+  },
+  "sqlalchemy": {
+    "echo": false,
+    "pool_size": 5,
+    "pool_timeout": 30,
+    "max_overflow": 10,
+    "pool_pre_ping": false,
+    "pool_recycle": 3600
+  }
+}

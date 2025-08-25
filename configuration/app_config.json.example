@@ -1,0 +1,24 @@
+{
+  "kbot": {
+    "title": "KBOT",
+    "description": "KBot API Service",
+    "version": "3.0.0",
+    "debug": true,
+    "file_storage": "/home/chris/kbot/knowledge_base",
+    "upload_workers": 10,
+    "parser": {
+      "max_workers": 2,
+      "check_interval": 60
+    },
+    "log": {
+      "level": "DEBUG",
+      "dir": "/home/chris/kbot3/logs/",
+      "rotation": "100 MB",
+      "retention": "10 days"
+    }
+  },
+  "libre": {
+    "host": "172.21.158.55",
+    "port": 9316
+  }
+}

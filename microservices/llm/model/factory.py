@@ -6,9 +6,7 @@ from .oci_client import OCIClient
 class LLMProvider(str, Enum):
     """Enum of supported LLM providers."""
     OPENAI = "openai"
-    OCI_GROK = "oci-grok"
-    OCI_COHERE = "oci-cohere"
-    OCI_LLAMA = "oci-llama"
+    OCI = "oci"
     # Add more providers as they are implemented
     # AZURE = "azure"
     # HUGGINGFACE = "huggingface"
@@ -28,7 +26,7 @@ def create_llm_model(config: LLMConfig) -> BaseLLM:
     """
     if config.provider == LLMProvider.OPENAI.value:
         return OpenaiClient(config) # type: ignore
-    elif config.provider in [LLMProvider.OCI_GROK.value, LLMProvider.OCI_COHERE.value, LLMProvider.OCI_LLAMA.value]:
+    elif config.provider == LLMProvider.OCI.value:
         return OCIClient(config) # type: ignore
     # TODO: add more providers
     # Add more providers as they are implemented

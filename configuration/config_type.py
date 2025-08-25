@@ -118,9 +118,14 @@ class VLMConfig(BaseModel):
     service_port: int = Field(gt=0, lt=65536)
     timeout: int = Field(ge=1)
 
+class TokenizerConfig(BaseModel):
+    custom_dict_path: str
+    stop_words_path: str
+
 class ModelConfig(BaseModel):
     embed: EmbedConfig
     llm: LLMConfig
     reranker: RerankerConfig
     vlm: VLMConfig
+    tokenizer: TokenizerConfig
 

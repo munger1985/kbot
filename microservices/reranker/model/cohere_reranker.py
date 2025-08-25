@@ -1,4 +1,3 @@
-import os
 import cohere
 
 from typing import Any
@@ -9,9 +8,8 @@ from .base import RerankerConfig, BaseReranker
 
 class CohereRerankerConfig(RerankerConfig):
     """Reranker 模型配置类"""
-    model_name: str = Field(..., description="Name of the reranker model")
     api_endpoint: str = Field("https://api.cohere.ai", description="Cohere API endpoint")
-    api_key: str | None = Field(None, description="Cohere API key")
+    api_key: str = Field(..., description="Cohere API key")
     timeout: int = Field(10, description="Timeout for API requests in seconds")
     
 class CohereReranker(BaseReranker):
@@ -32,7 +30,7 @@ class CohereReranker(BaseReranker):
         # Runtime state
         self._is_initialized = False
             
-        logger.info(f"Initializing {self.__class__.__name__} with model: {self.model_name}")
+        logger.info(f"Initializing {self.__class__.__name__} with model: {self.config.model_name}")
     
     
     async def startup(self) -> None:
@@ -41,7 +39,7 @@ class CohereReranker(BaseReranker):
             return
 
         timeout = self.config.timeout if hasattr(self.config, 'timeout') else 10
-        self.client = cohere.ClientV2(timeout=timeout)
+        self.client = cohere.Client(api_key=self.config.api_key, timeout=timeout)
         
 
         self._is_initialized = True
@@ -85,18 +83,9 @@ class CohereReranker(BaseReranker):
                     top_n=top_k,
             )
 
-            # # Create list of (index, score) tuples
-            # scored_results = [(i, score) for i, score in enumerate(scores)]
-            
-            # # Sort by score in descending order
-            # scored_results.sort(key=lambda x: x[1], reverse=True)
-            
-            # # Limit to top_k results
-            # scored_results = scored_results[:top_k]
-            
             # # Return results in requested format
             # return [{"index": idx, "score": float(score)} for idx, score in scored_results]
-            return response
+            return [{"index": result["index"], "score": float(result["relevance_score"])} for result in response["results"]] # type: ignore
         
         except Exception as e:
             logger.error(f"Error during reranking: {str(e)}")

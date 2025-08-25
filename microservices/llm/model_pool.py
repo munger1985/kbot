@@ -3,9 +3,7 @@
 import os
 import sys
 import asyncio
-import configparser
 from loguru import logger
-from typing import Optional
 from datetime import datetime, timedelta
 from model import(
     BaseLLM, 
@@ -38,7 +36,7 @@ class ModelPool:
         self._models: dict[str, BaseLLM] = {}
         self._last_used: dict[str, datetime] = {}
         self._health_check_interval = health_check_interval
-        self._health_check_task: Optional[asyncio.Task] = None
+        self._health_check_task: asyncio.Task | None = None
 
     async def initialize(self):
         """Initialize the model pool and start health check task"""
@@ -133,20 +131,24 @@ class ModelPool:
                 presence_penalty=model_entity.model_params.get("presence_penalty", presence_penalty),
                 timeout=model_entity.model_params.get("timeout", timeout)
             )
-        elif model_entity.provider in [LLMProvider.OCI_COHERE.value, LLMProvider.OCI_GROK.value, LLMProvider.OCI_LLAMA.value]:
-            if model_entity.model_name is None or model_entity.api_endpoint is None or model_entity.model_params.get("compartment_id") is None:
-                raise ValueError(f"Model {model_unique_name} has no model_name, api_endpoint or compartment_id")
+        elif model_entity.provider == LLMProvider.OCI.value:
+            compartment_id = model_entity.model_params.get("compartment_id")
+            config_file = model_entity.model_params.get("config_file")
+            if model_entity.model_name is None or model_entity.api_endpoint is None or compartment_id is None or config_file is None:
+                raise ValueError(f"Model {model_unique_name} has no model_name, api_endpoint, compartment_id or config_file")
+
             model_config = OCILLMConfig(
                 provider=model_entity.provider,
                 api_endpoint=model_entity.api_endpoint,
                 model_name=model_entity.model_name,
                 temperature=model_entity.model_params.get("temperature", temperature),
-                compartment_id=str(model_entity.model_params.get("compartment_id")),
+                compartment_id=str(compartment_id),
                 max_tokens=model_entity.model_params.get("max_tokens", max_tokens),
                 top_p=model_entity.model_params.get("top_p", top_p),
                 top_k=model_entity.model_params.get("top_k", top_k),
                 frequency_penalty=model_entity.model_params.get("frequency_penalty", frequency_penalty),
-                presence_penalty=model_entity.model_params.get("presence_penalty", presence_penalty)
+                presence_penalty=model_entity.model_params.get("presence_penalty", presence_penalty),
+                config_file=config_file
             )
         else:
             # TODO: support other providers

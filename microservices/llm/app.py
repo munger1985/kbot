@@ -298,150 +298,153 @@ async def chat(
                 }
             )
 
-        elif request.stream and provider == LLMProvider.OCI_COHERE.value:
-            async def generate_oci_cohere_sse():
-                try:
-                    # 获取流式响应
-                    chunk_stream = await llm_service.chat(
-                        model_unique_name=request.model_unique_name,
-                        messages=request.messages,
-                        stream=True,
-                        max_tokens=request.max_tokens,
-                        temperature=request.temperature,
-                        timeout=request.timeout,
-                        top_p=request.top_p,
-                        frequency_penalty=request.frequency_penalty,
-                        presence_penalty=request.presence_penalty
-                    )
-                    
-                    async for chunk in chunk_stream: # type: ignore
-                        if chunk == "[DONE]":
-                            break
-                        try:
-                            content = chunk["message"]["content"][0]["text"]
-                            chunk_dict = {
-                                "id": response_id,
-                                "object": "chat.completion.chunk",
-                                "created": created_time,
-                                "model": model_name,
-                                "choices": [{
-                                    "delta": {"content": content},
-                                    "index": 0,
-                                    "finish_reason": None
-                                }]
-                            }
-                            yield f"data: {json.dumps(chunk_dict)}\n\n"
-                        except KeyError:
-                            continue
-                    
-                    # 发送结束标记
-                    end_chunk = {
-                        "id": response_id,
-                        "object": "chat.completion.chunk",
-                        "created": created_time,
-                        "model": model_name,
-                        "choices": [{
-                            "delta": {},
-                            "index": 0,
-                            "finish_reason": "stop"
-                        }]
-                    }
-                    yield f"data: {json.dumps(end_chunk)}\n\n"
-                    yield "data: [DONE]\n\n"
-                    
-                except Exception as e:
-                    logger.exception(f"Stream error: {str(e)}")
-                    error_chunk = {
-                        "error": {
-                            "message": str(e),
-                            "type": e.__class__.__name__,
-                            "code": 500
+        elif request.stream and provider == LLMProvider.OCI.value:
+            if "cohere" in request.model_unique_name.lower():
+                async def generate_oci_cohere_sse():
+                    try:
+                        # 获取流式响应
+                        chunk_stream = await llm_service.chat(
+                            model_unique_name=request.model_unique_name,
+                            messages=request.messages,
+                            stream=True,
+                            max_tokens=request.max_tokens,
+                            temperature=request.temperature,
+                            timeout=request.timeout,
+                            top_p=request.top_p,
+                            frequency_penalty=request.frequency_penalty,
+                            presence_penalty=request.presence_penalty
+                        )
+                        
+                        async for chunk in chunk_stream: # type: ignore
+                            if chunk == "[DONE]":
+                                break
+                            try:
+                                content = chunk["message"]["content"][0]["text"]
+                                chunk_dict = {
+                                    "id": response_id,
+                                    "object": "chat.completion.chunk",
+                                    "created": created_time,
+                                    "model": model_name,
+                                    "choices": [{
+                                        "delta": {"content": content},
+                                        "index": 0,
+                                        "finish_reason": None
+                                    }]
+                                }
+                                yield f"data: {json.dumps(chunk_dict)}\n\n"
+                            except KeyError:
+                                continue
+                        
+                        # 发送结束标记
+                        end_chunk = {
+                            "id": response_id,
+                            "object": "chat.completion.chunk",
+                            "created": created_time,
+                            "model": model_name,
+                            "choices": [{
+                                "delta": {},
+                                "index": 0,
+                                "finish_reason": "stop"
+                            }]
                         }
-                    }
-                    yield f"data: {json.dumps(error_chunk)}\n\n"
-                    yield "data: [DONE]\n\n"
-
-            return StreamingResponse(
-                generate_oci_cohere_sse(),
-                media_type="text/event-stream",
-                headers={
-                    "Cache-Control": "no-cache",
-                    "Connection": "keep-alive"
-                }
-            )
-        
-        elif request.stream and provider in [LLMProvider.OCI_GROK.value, LLMProvider.OCI_LLAMA.value]:
-            async def generate_oci_grok_sse():
-                try:
-                    # 获取流式响应
-                    chunk_stream = await llm_service.chat(
-                        model_unique_name=request.model_unique_name,
-                        messages=request.messages,
-                        stream=True,
-                        max_tokens=request.max_tokens,
-                        temperature=request.temperature,
-                        timeout=request.timeout,
-                        top_p=request.top_p,
-                        frequency_penalty=request.frequency_penalty,
-                        presence_penalty=request.presence_penalty
-                    )
-                    
-                    async for chunk in chunk_stream: # type: ignore
-                        if chunk == "[DONE]":
-                            break
-                        try:
-                            content = chunk["message"]["content"][0]["text"]
-                            chunk_dict = {
-                                "id": response_id,
-                                "object": "chat.completion.chunk",
-                                "created": created_time,
-                                "model": model_name,
-                                "choices": [{
-                                    "delta": {"content": content},
-                                    "index": 0,
-                                    "finish_reason": None
-                                }]
+                        yield f"data: {json.dumps(end_chunk)}\n\n"
+                        yield "data: [DONE]\n\n"
+                        
+                    except Exception as e:
+                        logger.exception(f"Stream error: {str(e)}")
+                        error_chunk = {
+                            "error": {
+                                "message": str(e),
+                                "type": e.__class__.__name__,
+                                "code": 500
                             }
-                            yield f"data: {json.dumps(chunk_dict)}\n\n"
-                        except KeyError:
-                            continue
-                    
-                    # 发送结束标记
-                    end_chunk = {
-                        "id": response_id,
-                        "object": "chat.completion.chunk",
-                        "created": created_time,
-                        "model": model_name,
-                        "choices": [{
-                            "delta": {},
-                            "index": 0,
-                            "finish_reason": "stop"
-                        }]
-                    }
-                    yield f"data: {json.dumps(end_chunk)}\n\n"
-                    yield "data: [DONE]\n\n"
-                    
-                except Exception as e:
-                    logger.exception(f"Stream error: {str(e)}")
-                    error_chunk = {
-                        "error": {
-                            "message": str(e),
-                            "type": e.__class__.__name__,
-                            "code": 500
                         }
-                    }
-                    yield f"data: {json.dumps(error_chunk)}\n\n"
-                    yield "data: [DONE]\n\n"
+                        yield f"data: {json.dumps(error_chunk)}\n\n"
+                        yield "data: [DONE]\n\n"
 
-            return StreamingResponse(
-                generate_oci_grok_sse(),
-                media_type="text/event-stream",
-                headers={
-                    "Cache-Control": "no-cache",
-                    "Connection": "keep-alive"
-                }
-            )
+                return StreamingResponse(
+                    generate_oci_cohere_sse(),
+                    media_type="text/event-stream",
+                    headers={
+                        "Cache-Control": "no-cache",
+                        "Connection": "keep-alive"
+                    }
+                )
         
+            elif request.stream and ("grok" in request.model_unique_name.lower() or "llama" in request.model_unique_name.lower()):
+                async def generate_oci_grok_sse():
+                    try:
+                        # 获取流式响应
+                        chunk_stream = await llm_service.chat(
+                            model_unique_name=request.model_unique_name,
+                            messages=request.messages,
+                            stream=True,
+                            max_tokens=request.max_tokens,
+                            temperature=request.temperature,
+                            timeout=request.timeout,
+                            top_p=request.top_p,
+                            frequency_penalty=request.frequency_penalty,
+                            presence_penalty=request.presence_penalty
+                        )
+                        
+                        async for chunk in chunk_stream: # type: ignore
+                            if chunk == "[DONE]":
+                                break
+                            try:
+                                content = chunk["message"]["content"][0]["text"]
+                                chunk_dict = {
+                                    "id": response_id,
+                                    "object": "chat.completion.chunk",
+                                    "created": created_time,
+                                    "model": model_name,
+                                    "choices": [{
+                                        "delta": {"content": content},
+                                        "index": 0,
+                                        "finish_reason": None
+                                    }]
+                                }
+                                yield f"data: {json.dumps(chunk_dict)}\n\n"
+                            except KeyError:
+                                continue
+                        
+                        # 发送结束标记
+                        end_chunk = {
+                            "id": response_id,
+                            "object": "chat.completion.chunk",
+                            "created": created_time,
+                            "model": model_name,
+                            "choices": [{
+                                "delta": {},
+                                "index": 0,
+                                "finish_reason": "stop"
+                            }]
+                        }
+                        yield f"data: {json.dumps(end_chunk)}\n\n"
+                        yield "data: [DONE]\n\n"
+                        
+                    except Exception as e:
+                        logger.exception(f"Stream error: {str(e)}")
+                        error_chunk = {
+                            "error": {
+                                "message": str(e),
+                                "type": e.__class__.__name__,
+                                "code": 500
+                            }
+                        }
+                        yield f"data: {json.dumps(error_chunk)}\n\n"
+                        yield "data: [DONE]\n\n"
+
+                return StreamingResponse(
+                    generate_oci_grok_sse(),
+                    media_type="text/event-stream",
+                    headers={
+                        "Cache-Control": "no-cache",
+                        "Connection": "keep-alive"
+                    }
+                )
+            else:
+                raise HTTPException(status_code=400, detail="Unsupported model for streaming")
+            
         elif not request.stream:
             # OpenAI 非流式响应
             response = await llm_service.chat(
@@ -465,7 +468,7 @@ async def chat(
                 content = response.choices[0].message.content # type: ignore
                 usage_data = response.usage # type: ignore
 
-            elif provider in [LLMProvider.OCI_COHERE.value, LLMProvider.OCI_GROK.value, LLMProvider.OCI_LLAMA.value]:
+            elif provider == LLMProvider.OCI.value:
                 content = response.data.chat_response.text # type: ignore
                 usage_data = response.data.chat_response.usage # type: ignore
 

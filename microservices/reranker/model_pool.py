@@ -83,6 +83,7 @@ class ModelPool:
         config = load_config("model_config")
         if not isinstance(config, ModelConfig):
             raise ValueError
+  
 
         # 根据模型类型创建相应的配置
         if model_entity.provider == RerankerProvider.LOCAL.value:
@@ -106,7 +107,7 @@ class ModelPool:
                 provider = model_entity.provider,
                 model_name = model_entity.model_name,
                 max_tokens = model_entity.model_params.get("max_tokens", 8192),
-                api_key = model_entity.api_key,
+                api_key = model_entity.api_key, # type: ignore
                 api_endpoint = model_entity.api_endpoint, # type: ignore
                 timeout  = model_entity.model_params.get("timeout", 10)
             )

@@ -32,8 +32,8 @@ async def test_call_llm_model():
     测试调用LLM模型的方法
     """
     # 测试参数
-    # model_name = "KBOT1/OCI-llama"
-    model_name = "KBOT1/xai.grok-4"
+    model_name = "KBOT1/OCI-GROK4-II"
+    # model_name = "KBOT1/xai.grok-4"
     test_prompt = "文艺复兴是什么"
     
     print(f"测试开始，使用模型: {model_name}")
@@ -76,7 +76,8 @@ async def test_call_reranker_model():
     测试调用reranker模型的方法
     """
     # 测试参数
-    rerank_model_unique_name = "KBOT1/JINA-RANKER"
+    rerank_model_unique_name = "KBOT1/BGE-RANKER"
+    # rerank_model_unique_name = "KBOT1/JINA-RANKER"
     # rerank_model_unique_name = "KBOT1/cohere-reranker"
     question = "招聘数据工程师"
     inputs_list = [
@@ -86,16 +87,26 @@ async def test_call_reranker_model():
         "<|im_end|>我的研究兴趣是量子计算，我想寻找一份相关专业的工作。"
     ]
     
-    rerank = await CallModel().call_reranker_model(
-        rerank_model_unique_name,
-        question,
-        inputs_list,
-        2
-    )
-
-    print(f"测试开始，使用模型: {rerank_model_unique_name}")
-    print(f"结果: {rerank}")
-    print("=" * 50)
+    # 添加重试逻辑
+    max_retries = 2
+    for attempt in range(max_retries):
+        try:
+            rerank = await CallModel().call_reranker_model(
+                rerank_model_unique_name,
+                question,
+                inputs_list,
+                2
+            )
+            print(f"测试开始，使用模型: {rerank_model_unique_name}")
+            print(f"结果: {rerank}")
+            print("=" * 50)
+            break
+        except Exception as e:
+            if attempt == max_retries - 1:
+                print(f"测试失败: {str(e)}")
+            else:
+                print(f"第 {attempt + 1} 次尝试失败，正在重试...")
+                await asyncio.sleep(1)
     
 
 async def test_call_vlm_model():
@@ -116,8 +127,5 @@ async def test_call_vlm_model():
 
 # 运行测试
 if __name__ == "__main__":
-<<<<<<< HEAD
-    asyncio.run(test_call_reranker_model())
-=======
-    asyncio.run(test_call_embedding_model())
->>>>>>> ce801dd0b8fab6d595e0f6fb7e18ff43fe0c3891
+
+    asyncio.run(test_call_llm_model())

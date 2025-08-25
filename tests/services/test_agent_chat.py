@@ -18,7 +18,7 @@ async def main():
     load_dotenv()
     
     # 1. Prepare test text
-    test_text = "文艺复兴"
+    test_text = "文艺复兴是什么时候，郑和下西洋又是什么时候？"
     
     agent = Agent(1,9)
     r = await agent.chat(test_text)

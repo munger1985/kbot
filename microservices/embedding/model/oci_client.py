@@ -5,8 +5,7 @@ from .base import BaseEmbedding, EmbeddingConfig, EmbeddingResponse, EmbeddingDa
 class OCIEmbeddingConfig(EmbeddingConfig):
     """Configuration for OCI embedding client."""
     compartment_id: str
-    config_profile: str
-    config_file: str
+    config_file: dict
     api_endpoint: str
 
 
@@ -26,7 +25,12 @@ class OCIEmbedding(BaseEmbedding):
     async def startup(self) -> None:
         """Initialize the OCI client."""
         try:
-            oci_config = oci.config.from_file(self.config.config_file, self.config.config_profile) # type: ignore
+            if isinstance(self.config.config_file, str):  # type: ignore
+                oci_config = json.loads(self.config.config_file) # type: ignore
+            else:
+                oci_config = self.config.config_file # type: ignore
+
+            oci_config = oci_config
 
             self.client = oci.generative_ai_inference.GenerativeAiInferenceClient(
                 config=oci_config,

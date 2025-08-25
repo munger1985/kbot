@@ -3,7 +3,7 @@ from dotenv import load_dotenv
 from datetime import datetime, timezone, timedelta
 from jose import JWTError, jwt, ExpiredSignatureError
 from passlib.context import CryptContext
-from core.dictionary import AccessorType
+from .dictionary import AccessorType
 
 
 
