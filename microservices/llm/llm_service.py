@@ -166,3 +166,13 @@ class LLMService:
             logger.exception(f"Error generating chat response: {e}")
             logger.error(f"Detailed error context - Model: {model_unique_name}, Messages: {messages}, Stream: {stream}")
             raise RuntimeError(f"Failed to generate chat response: {e}. Context: Model={model_unique_name}, Messages={messages}, Stream={stream}")
+
+
+    async def warmup(self):
+        """
+        Warm up all models in the pool 
+        """
+        if not self._initialized:
+            await self.initialize()
+        
+        await self._model_pool.warmup()

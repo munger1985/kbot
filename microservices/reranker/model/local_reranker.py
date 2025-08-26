@@ -278,7 +278,7 @@ class LocalReranker(BaseReranker):
             return [{"index": idx, "score": float(score)} for idx, score in scored_results]
         
         except Exception as e:
-            logger.error(f"Error during reranking: {str(e)}")
+            logger.exception(f"Error during reranking: {str(e)}")
             raise
     
     async def shutdown(self) -> None:

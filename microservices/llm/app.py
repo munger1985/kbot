@@ -97,6 +97,7 @@ async def lifespan(app: FastAPI):
     # 初始化LLM服务
     try:
         await llm_service.initialize()
+        await llm_service.warmup()
         logger.info(f"LLM service started successfully, elapsed time: {time.time() - start_time:.2f} seconds")
 
         # 注册服务到 Nacos

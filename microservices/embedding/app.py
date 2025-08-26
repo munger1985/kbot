@@ -87,6 +87,7 @@ async def lifespan(app: FastAPI):
     # 初始化微服务
     try:
         await embedding_service.initialize()
+        await embedding_service.warmup()
         logger.info(f"Embedding service started successfully, elapsed time: {time.time() - start_time:.2f} seconds")
 
         # 注册服务到 Nacos

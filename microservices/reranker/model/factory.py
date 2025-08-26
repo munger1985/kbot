@@ -2,6 +2,8 @@ from enum import Enum
 from .base import BaseReranker, RerankerConfig
 from .local_reranker import LocalReranker, LocalRerankerConfig
 from .cohere_reranker import CohereReranker, CohereRerankerConfig
+from .jina_reranker import JinaReranker, JinaRerankerConfig
+
 
 class RerankerProvider(str, Enum):
     """Enumeration of supported reranker models."""
@@ -23,6 +25,8 @@ def create_reranker_model(config: RerankerConfig) -> BaseReranker:
     if config.provider == RerankerProvider.LOCAL.value:
         if isinstance(config, LocalRerankerConfig):
             return LocalReranker(config)
+        elif isinstance(config, JinaRerankerConfig):
+            return JinaReranker(config)
         else:
             raise ValueError("Invalid configuration for local reranker")
     elif config.provider == RerankerProvider.COHERE.value:

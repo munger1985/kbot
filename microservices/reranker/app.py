@@ -85,6 +85,7 @@ async def lifespan(app: FastAPI):
     # 初始化reranker服务
     try:
         await reranker_service.initialize()
+        await reranker_service.warmup()
         logger.info(f"Reranker service started successfully, elapsed time: {time.time() - start_time:.2f} seconds")
 
         # 注册服务到 Nacos

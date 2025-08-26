@@ -109,3 +109,12 @@ class RerankerService:
             await self.initialize()
         
         return await self._model_pool.reload_model(model_unique_name)
+    
+    async def warmup(self):
+        """
+        Warm up all models in the pool 
+        """
+        if not self._initialized:
+            await self.initialize()
+        
+        await self._model_pool.warmup()

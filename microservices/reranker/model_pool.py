@@ -4,7 +4,7 @@ import asyncio
 from loguru import logger
 from datetime import datetime, timedelta
 from model import *
-from ms_core import load_config, ModelConfig
+from ms_core import load_config, ModelConfig, ModelCategory
 
 
 # 添加项目根目录到 Python 路径，确保可以导入项目模块
@@ -87,20 +87,36 @@ class ModelPool:
 
         # 根据模型类型创建相应的配置
         if model_entity.provider == RerankerProvider.LOCAL.value:
-            model_config = LocalRerankerConfig(
-                provider = model_entity.provider,
-                model_name = model_entity.model_name,
-                model_path = model_entity.model_params.get("model_path", None),
-                device = model_entity.model_params.get("device", None),
-                device_map = model_entity.model_params.get("device_map", None),
-                max_tokens = model_entity.model_params.get("max_tokens", 8192),
-                compile_model = model_entity.model_params.get("compile_model", True),
-                use_fp16 = model_entity.model_params.get("use_fp16", False),
-                trust_remote_code = model_entity.model_params.get("trust_remote_code", True),
-                local_files_only = model_entity.model_params.get("local_files_only", False),
-                max_memory = model_entity.model_params.get("max_memory", None),
-                cache_dir = config.reranker.cache_dir or "./cached_models"
-            )
+            if "jina" in model_entity.model_name.lower():
+                model_config = JinaRerankerConfig(
+                    provider = model_entity.provider,
+                    model_name = model_entity.model_name,
+                    model_path = model_entity.model_params.get("model_path", None),
+                    device = model_entity.model_params.get("device", None),
+                    device_map = model_entity.model_params.get("device_map", None),
+                    max_tokens = model_entity.model_params.get("max_tokens", 512),
+                    compile_model = model_entity.model_params.get("compile_model", True),
+                    use_fp16 = model_entity.model_params.get("use_fp16", True),
+                    trust_remote_code = model_entity.model_params.get("trust_remote_code", True),
+                    local_files_only = model_entity.model_params.get("local_files_only", False),
+                    max_memory = model_entity.model_params.get("max_memory", None),
+                    cache_dir = config.reranker.cache_dir or "./cached_models"
+                )
+            else:
+                model_config = LocalRerankerConfig(
+                    provider = model_entity.provider,
+                    model_name = model_entity.model_name,
+                    model_path = model_entity.model_params.get("model_path", None),
+                    device = model_entity.model_params.get("device", None),
+                    device_map = model_entity.model_params.get("device_map", None),
+                    max_tokens = model_entity.model_params.get("max_tokens", 8192),
+                    compile_model = model_entity.model_params.get("compile_model", True),
+                    use_fp16 = model_entity.model_params.get("use_fp16", False),
+                    trust_remote_code = model_entity.model_params.get("trust_remote_code", True),
+                    local_files_only = model_entity.model_params.get("local_files_only", False),
+                    max_memory = model_entity.model_params.get("max_memory", None),
+                    cache_dir = config.reranker.cache_dir or "./cached_models"
+                )
             
         elif model_entity.provider == RerankerProvider.COHERE.value:
             model_config = CohereRerankerConfig(
@@ -162,8 +178,8 @@ class ModelPool:
             try:
                 # Check if model is inactive
                 if self._last_used.get(model_unique_name, now) < inactive_threshold:
-                    logger.info(f"Unloading inactive model {model_unique_name}")
-                    await self.unload_model(model_unique_name)
+                    logger.warning(f"Model {model_unique_name} is inactive for more than 1 hour")
+                    # await self.unload_model(model_unique_name)
                     continue
                     
                 # Simple health check by calling embed with a test text
@@ -204,3 +220,15 @@ class ModelPool:
                 except Exception as restart_error:
                     logger.error(f"Failed to restart model {model_unique_name}: {restart_error}")
                     await self.unload_model(model_unique_name)
+
+    async def warmup(self) -> None:
+        """Warm up all models in the pool"""
+        model_repo = KbotMdModelsRepository()
+        all_embed_models = await model_repo.get_all_models_by_category(ModelCategory.RERANKER.value)
+        for model in all_embed_models:
+            try:
+                await self.load_model(model.model_unique_name)
+                logger.success(f"Model {model.model_unique_name} warmed up successfully")
+            except Exception as e:
+                logger.warning(f"Failed to warm up models: {e}")
+                continue

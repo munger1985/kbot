@@ -46,7 +46,7 @@ class OpenaiClient(BaseLLM):
                 timeout=self.config.timeout # type: ignore
             )
             self._is_running = True
-            logger.info("OpenAI AsyncOpenAI client initialized")
+            logger.info("OpenAI client initialized")
         except Exception as e:
             logger.error(f"Error initializing OpenAI client: {str(e)}")
             raise

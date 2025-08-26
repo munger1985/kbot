@@ -264,3 +264,13 @@ class VLMService:
         except Exception as e:
             logger.error(f"Error generating chat response: {e}")
             raise RuntimeError(f"Failed to generate chat response: {e}")
+
+
+    async def warmup(self):
+        """
+        Warm up all models in the pool 
+        """
+        if not self._initialized:
+            await self.initialize()
+        
+        await self._model_pool.warmup()

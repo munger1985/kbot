@@ -128,4 +128,4 @@ async def test_call_vlm_model():
 # 运行测试
 if __name__ == "__main__":
 
-    asyncio.run(test_call_llm_model())
+    asyncio.run(test_call_reranker_model())

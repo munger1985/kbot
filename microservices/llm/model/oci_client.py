@@ -37,6 +37,7 @@ class OCIClient(BaseLLM):
                 oci_config = json.loads(self.config.config_file) # type: ignore
             else:
                 oci_config = self.config.config_file # type: ignore
+            
             self.client = oci.generative_ai_inference.GenerativeAiInferenceClient(
                 config=oci_config,
                 service_endpoint=self.config.api_endpoint, # type: ignore

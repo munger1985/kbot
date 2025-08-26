@@ -8,39 +8,23 @@ from core.database.meta_oracle import get_session
 class KbotMdModelsRepository:
     """Repository for KBOT_MD_KB_MODELS table operations."""
     
-    async def get_all_embedding_models(self) -> Sequence[KbotMdModels]:
+    async def get_all_models_by_category(self, model_category: int) -> Sequence[KbotMdModels]:
         """
-        获取所有嵌入模型
+        获取所有指定类型的可用模型
         
         Returns:
-            Sequence[KbotMdModels]: 嵌入模型列表
+            Sequence[KbotMdModels]: 可用模型列表
         """
         async with get_session() as session:
             query = select(KbotMdModels).where(
                 and_(
-                    KbotMdModels.category == ModelCategory.EMBEDDING.value,
+                    KbotMdModels.category == model_category,
                     KbotMdModels.status == Status.ENABLED.value  # 只获取启用状态的模型
                 )
             )
             result = await session.execute(query)
             return result.scalars().all()
         
-    async def get_all_llm_models(self) -> Sequence[KbotMdModels]:
-        """
-        获取所有LLM模型
-        
-        Returns:
-            Sequence[KbotMdModels]: LLM模型列表
-        """
-        async with get_session() as session:
-            query = select(KbotMdModels).where(
-                and_(
-                    KbotMdModels.category == ModelCategory.LLM.value,
-                    KbotMdModels.status == Status.ENABLED.value  # 只获取启用状态的模型
-                )
-            )
-            result = await session.execute(query)
-            return result.scalars().all()
     
     async def create(self, model: KbotMdModels) -> KbotMdModels:
         """Create a new knowledge base model record."""

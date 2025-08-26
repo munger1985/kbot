@@ -9,6 +9,7 @@ from model import (
     OpenAIVLMConfig,
     create_vlm_model
 )
+from ms_core import ModelCategory
 
 # 添加项目根目录到 Python 路径，确保可以导入项目模块
 current_file = os.path.abspath(__file__)
@@ -148,8 +149,8 @@ class ModelPool:
             try:
                 # Check if model is inactive
                 if self._last_used.get(model_unique_name, now) < inactive_threshold:
-                    logger.info(f"Unloading inactive model {model_unique_name}")
-                    await self.unload_model(model_unique_name)
+                    logger.warning(f"Model {model_unique_name} is inactive for more than 1 hour")
+                    # await self.unload_model(model_unique_name)
                     continue
                     
                 # Simple health check by calling embed with a test text
@@ -190,3 +191,15 @@ class ModelPool:
                 except Exception as restart_error:
                     logger.error(f"Failed to restart model {model_unique_name}: {restart_error}")
                     await self.unload_model(model_unique_name)
+
+    async def warmup(self) -> None:
+        """Warm up all models in the pool"""
+        model_repo = KbotMdModelsRepository()
+        all_embed_models = await model_repo.get_all_models_by_category(ModelCategory.VLM.value)
+        for model in all_embed_models:
+            try:
+                await self.load_model(model.model_unique_name)
+                logger.success(f"Model {model.model_unique_name} warmed up successfully")
+            except Exception as e:
+                logger.warning(f"Failed to warm up models: {e}")
+                continue

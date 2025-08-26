@@ -144,7 +144,7 @@ class LocalEmbedding(BaseEmbedding):
             self._optimize_model()
             
             self._is_initialized = True
-            logger.success(f"Embedding model {self.model_name} initialized successfully")
+            logger.info(f"Embedding model {self.model_name} initialized")
             
         except Exception as e:
             self._is_initialized = False
