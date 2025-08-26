@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 
 
 # Add both project root and backend directory to Python path
-project_root = Path(__file__).resolve().parent.parent.parent
+project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(project_root))
 
 # Use absolute imports from project root
@@ -39,5 +39,5 @@ async def main():
 
 
 if __name__ == '__main__':
-    print("Starting embedding similarity test...")
+    print("Starting agent chat similarity test...")
     asyncio.run(main())

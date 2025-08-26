@@ -1,7 +1,7 @@
 import sys
 from pathlib import Path
 # Add both project root and backend directory to Python path
-project_root = Path(__file__).resolve().parent.parent.parent
+project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(project_root))
 from utils.call_models import CallModel
 
@@ -108,6 +108,33 @@ async def test_call_reranker_model():
                 print(f"第 {attempt + 1} 次尝试失败，正在重试...")
                 await asyncio.sleep(1)
     
+
+async def test_call_synonym_model():
+    """
+    测试调用synonym模型的方法
+    """
+    # 测试参数
+    words = ["DNA", "Python", "AI"]
+    top_n_words = 2
+    threshold = 0.6
+    
+    print(f"输入单词: {words}")
+    print(f"top_n_words: {top_n_words}")
+    print(f"threshold: {threshold}")
+    print("=" * 50)
+    
+    try:
+        synonyms = await CallModel().call_synonym_model(
+            words,
+            top_n_words,
+            threshold
+        )
+        print(f"模型响应: {synonyms}")
+    except Exception as e:
+        print(f"测试失败: {str(e)}")
+    finally:
+        print("\n\n测试结束")
+
 
 async def test_call_vlm_model():
     """

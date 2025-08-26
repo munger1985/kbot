@@ -19,8 +19,14 @@ class KBSearch:
     async def search(self, question: str, security: int) -> list[KBResult] | None:
         """Search"""
         # 0. 预处理问题，用于向量检索和全文检索，语义检索需要字符串，全文检索需要词元列表
-        vector_search_question = preprocess_cn_query(question, return_string=True)
-        full_text_question = preprocess_cn_query(question, return_string=False)
+        expand_question = await preprocess_cn_query(question)
+        if expand_question is None:
+            logger.warning(f"Expand question failed: {question}")
+            vector_search_question = question
+            full_text_question = question
+        else:
+            vector_search_question = expand_question.get("semantic", question)
+            full_text_question = expand_question.get("fulltext", question)
 
         # 1. Get model ID
         repo = KbotMdKbRepository()

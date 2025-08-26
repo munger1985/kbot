@@ -278,3 +278,58 @@ class CallModel():
         except Exception as e:
             logger.error(f"VLM service error: {str(e)}")
             return None 
+        
+    async def call_synonym_model(
+            self,
+            words: list[str],
+            top_k: int | None = None,
+            threshold: float | None = None
+            ) -> dict[str, list[str]]| None:
+        """调用同义词微服务
+        
+        Parameters:
+        - **words**: 输入的单词列表
+        - **top_k**: 要返回的同义词数量
+        - **threshold**: 同义词的相似度阈值
+        
+        Returns:
+        - 同义词响应对象，包含每个单词的同义词列表
+        """
+        
+        try:
+            service_host = self.model_config.synonym.service_host or "0.0.0.0" # 微服务地址
+            service_port = self.model_config.synonym.service_port or 9205 # 微服务通信端口
+            total = self.model_config.synonym.timeout or 30
+            timeout = aiohttp.ClientTimeout(total=total)
+        except Exception as e:
+            # 如果从 nacos 获取 vlm 服务配置失败，则使用默认配置
+            service_host = "0.0.0.0"
+            service_port = 9205
+            timeout = aiohttp.ClientTimeout(total=30)
+
+        url = f"http://{service_host}:{service_port}/synonym"
+        headers = {"Content-Type": "application/json"}
+        
+        # 构建请求负载
+        payload = {
+            "words": words,
+            "top_k": top_k,
+            "threshold": threshold
+        }
+        
+        # 发送请求
+        try:
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.post(url, headers=headers, json=payload) as response:
+                    if response.status != 200:
+                        logger.error(f"Synonym service response error: HTTP {response.status}")
+                        return None
+                        
+                    response_data = await response.json()
+                    output = response_data["synonyms"]
+                    logger.info("Successfully got synonym response")
+                    return output
+        except Exception as e:
+            logger.error(f"Synonym service error: {str(e)}")
+            return None 
+

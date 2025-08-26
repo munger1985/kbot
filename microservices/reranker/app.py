@@ -3,7 +3,7 @@
 This module provides a FastAPI application that exposes HTTP endpoints for interacting
 with various reranker providers. It supports text rerank.
 
-该模块提供 FastAPI 微服务应用程序，用于公开与各种嵌入提供者交互的 HTTP 端点。它支持文本嵌入。
+该模块提供 FastAPI 微服务应用程序，用于提供 rerank 服务。
 
 """
 
@@ -181,7 +181,7 @@ async def rerank_texts(
     try:
         logger.info(f"Received reranker request: model={request.model_unique_name}, query={request.query}, documents={len(request.documents)}, top_k={request.top_k}")
         
-        # 使用嵌入服务将文本转换为向量
+        # 使用重排序服务将文本列表进行rerank
         rerankers = await reranker_service.rerank(
             model_unique_name=request.model_unique_name,
             query=request.query,
@@ -219,13 +219,13 @@ def start_reranker_service():
         # 检查进程是否成功启动
         if process.poll() is not None:
             stderr = process.stderr.read().decode('utf-8') if process.stderr else ""
-            raise RuntimeError(f"Failed to start LLM service: {stderr}")
+            raise RuntimeError(f"Failed to start reranker service: {stderr}")
             
-        logger.success(f"LLM service started successfully with PID {process.pid}")
+        logger.success(f"reranker service started successfully with PID {process.pid}")
         return process
         
     except Exception as e:
-        logger.exception(f"Error starting LLM service: {str(e)}")
+        logger.exception(f"Error starting reranker service: {str(e)}")
         raise
 
 def shutdown_reranker_service():

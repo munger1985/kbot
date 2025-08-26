@@ -2,8 +2,10 @@ import re
 import jieba
 import jieba.posseg as pseg
 from pathlib import Path
+from typing import Any
 from loguru import logger
 from core.nacos_manager import load_config, ModelConfig
+from utils.call_models import CallModel
 
 class ChinesePreprocessor:
     """
@@ -11,17 +13,9 @@ class ChinesePreprocessor:
     主要针对中文环境，兼顾英文专业词汇
     """
     
-    def __init__(self, 
-                 stopwords_file: str | None = None,
-                 custom_dict_file: str | None = None,
-                 enable_pos_filtering: bool = True):
+    def __init__(self):
         """
         初始化预处理器
-        
-        Args:
-            stopwords_file: 停用词文件路径
-            custom_dict_file: 自定义词典文件路径
-            enable_pos_filtering: 是否启用词性过滤
         """
         # 通过 nacos_manager 获取 database 配置
         try:
@@ -36,14 +30,15 @@ class ChinesePreprocessor:
         except Exception as e:
             # 如果获取 database 配置失败，则抛出异常
             logger.warning(f"无法从 nacos 获取 tokenizer 配置，使用默认路径: {str(e)}")
-            stopwords_file = "stopwords.txt"
-            custom_dict_file = "custom_dict.txt"
+            stopwords_path = "stopwords.txt"
+            custom_dict_path = "custom_dict.txt"
 
-        self.stopwords_file = stopwords_file or stopwords_path
-        self.custom_dict_file = custom_dict_file or custom_dict_path
+        self.stopwords_file = stopwords_path
+        self.custom_dict_file = custom_dict_path
         self.stopwords: set[str] = self._load_stopwords(self.stopwords_file)
-        self.enable_pos_filtering = enable_pos_filtering
         self._setup_jieba(self.custom_dict_file)
+
+        
         
     def _load_stopwords(self, file_path: str) -> set[str]:
         """加载停用词表"""
@@ -77,7 +72,7 @@ class ChinesePreprocessor:
         except Exception as e:
             logger.warning(f"加载自定义词典失败: {e}")
     
-    def clean_and_normalize(self, text: str) -> str:
+    async def clean_and_normalize(self, text: str) -> str:
         """
         清理和归一化文本
         
@@ -101,12 +96,12 @@ class ChinesePreprocessor:
         cleaned = re.sub(r'\s+', ' ', cleaned).strip()
         
         # 4. 全角转半角
-        cleaned = self._full_to_half_width(cleaned)
+        cleaned = await self._full_to_half_width(cleaned)
         
         logger.debug(f"清理后: '{text}' -> '{cleaned}'")
         return cleaned
     
-    def _full_to_half_width(self, text: str) -> str:
+    async def _full_to_half_width(self, text: str) -> str:
         """全角字符转半角字符"""
         result = []
         for char in text:
@@ -120,7 +115,7 @@ class ChinesePreprocessor:
                 result.append(char)
         return ''.join(result)
     
-    def tokenize_with_jieba(self, text: str) -> list[str]:
+    async def tokenize_with_jieba(self, text: str) -> list[str]:
         """
         使用jieba进行分词，保留英文专业词汇
         
@@ -160,7 +155,7 @@ class ChinesePreprocessor:
         logger.debug(f"分词结果: {tokens}")
         return tokens
     
-    def filter_stopwords(self, tokens: list[str]) -> list[str]:
+    async def filter_stopwords(self, tokens: list[str]) -> list[str]:
         """
         过滤停用词
         
@@ -187,12 +182,12 @@ class ChinesePreprocessor:
         logger.debug(f"停用词过滤后: {filtered_tokens}")
         return filtered_tokens
     
-    def pos_filter(self, tokens: list[str]) -> list[str]:
+    async def pos_filter(self, tokens: list[str]) -> list[str]:
         """
         基于词性过滤（可选）
         保留名词、动词、形容词等实词，过滤虚词
         """
-        if not self.enable_pos_filtering or not tokens:
+        if not tokens:
             return tokens
         
         # 使用jieba进行词性标注
@@ -210,46 +205,98 @@ class ChinesePreprocessor:
         logger.debug(f"词性过滤后: {filtered_tokens}")
         return filtered_tokens
     
-    def preprocess(self, query: str, return_string: bool = True) -> str | list[str]:
+    async def synonym_expansion(self, tokens: list[str],
+                                synonym_similarity_threshold: float | None = 0.65,  # 较低的阈值获取更多同义词
+                                max_synonyms_per_word: int | None = 2            # 每个词最多扩展2个同义词
+                            ) -> list[str]:
+        """
+        同义词扩展
+        
+        Args:
+            tokens: 分词后的词元列表
+            synonym_similarity_threshold: 同义词相似度阈值
+            max_synonyms_per_word: 每个词最多扩展的同义词数量
+            
+        Returns:
+            扩展后的词元列表
+        """
+
+        # 同义词扩展
+        synonyms = await CallModel().call_synonym_model(words=tokens, top_k=max_synonyms_per_word, threshold=synonym_similarity_threshold)
+        
+        if not synonyms:
+            logger.warning(f"同义词扩展失败: {tokens}")
+            return tokens
+        
+        # 合并原始词元和同义词
+        expanded_tokens = tokens + [synonym for token in tokens for synonym in synonyms.get(token, [])]
+        
+        logger.debug(f"同义词扩展后: {expanded_tokens}")
+        return expanded_tokens
+
+
+    async def preprocess(self, query: str,
+                         enable_pos_filtering: bool | None = True,
+                         enable_synonym_expansion: bool | None = True,
+                         synonym_similarity_threshold: float | None = 0.65,  # 较低的阈值获取更多同义词
+                         max_synonyms_per_word: int | None = 2            # 每个词最多扩展2个同义词
+                 ) -> dict[str, str|list[str]] | None:
         """
         完整的预处理流程
         
         Args:
             query: 用户原始查询
-            return_string: 是否返回字符串（用于语义检索）或列表（用于全文检索）
+            enable_pos_filtering: 是否启用词性过滤
+            enable_synonym_expansion: 是否启用同义词扩展
+            synonym_similarity_threshold: 同义词相似度阈值
+            max_synonyms_per_word: 每个词最多扩展的同义词数量
             
         Returns:
             处理后的查询字符串或词元列表
         """
         try:
             # 1. 清理与归一化
-            cleaned = self.clean_and_normalize(query)
+            cleaned = await self.clean_and_normalize(query)
             
             if not cleaned:
-                return "" if return_string else []
+                return None
             
             # 2. 分词
-            tokens = self.tokenize_with_jieba(cleaned)
+            tokens = await self.tokenize_with_jieba(cleaned)
             
             # 3. 停用词过滤
-            tokens = self.filter_stopwords(tokens)
+            tokens = await self.filter_stopwords(tokens)
             
             # 4. （可选）词性过滤
-            tokens = self.pos_filter(tokens)
+            if enable_pos_filtering:
+                tokens = await self.pos_filter(tokens)
+
+            # 去重
+            tokens = list(set(tokens))
             
-            if return_string:
-                # 用于语义检索：用空格连接
-                result = " ".join(tokens)
-                logger.info(f"预处理完成: '{query}' -> '{result}'")
-                return result
+            # 构建返回结果
+            results = {}
+
+            # 用于语义检索：用空格连接
+            result = " ".join(tokens)
+            logger.debug(f"语义检索预处理完成: '{query}' -> '{result}'")
+            results["semantic"] = result
+
+            # 用于全文检索：返回词元列表
+            logger.debug(f"全文检索预处理完成: '{query}' -> {tokens}")
+            # 5. （可选）同义词扩展
+            if enable_synonym_expansion:
+                logger.debug(f"全文检索开始同义词扩展...")
+                expanded_tokens = await self.synonym_expansion(tokens, synonym_similarity_threshold, max_synonyms_per_word)
+                results["fulltext"] = expanded_tokens
             else:
-                # 用于全文检索：返回词元列表
-                logger.info(f"预处理完成: '{query}' -> {tokens}")
-                return tokens
+                results["fulltext"] = tokens
+            
+            return results
                 
         except Exception as e:
             logger.error(f"预处理失败: {e}", exc_info=True)
-            return query if return_string else [query]
+            return None
 
 # 单例模式，方便全局使用
 _preprocessor_instance = None
@@ -261,16 +308,31 @@ def get_preprocessor() -> ChinesePreprocessor:
         _preprocessor_instance = ChinesePreprocessor()
     return _preprocessor_instance
 
-def preprocess_cn_query(query: str, return_string: bool = True) -> str | list[str]:
+async def preprocess_cn_query(
+        query: str,
+        enable_pos_filtering: bool | None = True,
+        enable_synonym_expansion: bool | None = True,
+        synonym_similarity_threshold: float | None = 0.65,  # 较低的阈值获取更多同义词
+        max_synonyms_per_word: int | None = 2            # 每个词最多扩展2个同义词
+        ) -> dict[str, str|list[str]] | None:
     """
     便捷函数：预处理查询
     
     Args:
         query: 用户原始查询
-        return_string: 是否返回字符串
+        enable_pos_filtering: 是否启用词性过滤
+        enable_synonym_expansion: 是否启用同义词扩展
+        synonym_similarity_threshold: 同义词相似度阈值
+        max_synonyms_per_word: 每个词最多扩展的同义词数量
         
     Returns:
-        处理后的结果
+        处理后的结果字典，包含语义检索和全文检索的预处理结果
     """
     preprocessor = get_preprocessor()
-    return preprocessor.preprocess(query, return_string)
+    return await preprocessor.preprocess(
+        query,
+        enable_pos_filtering,
+        enable_synonym_expansion,
+        synonym_similarity_threshold,
+        max_synonyms_per_word
+        )

@@ -122,10 +122,21 @@ class TokenizerConfig(BaseModel):
     custom_dict_path: str
     stop_words_path: str
 
+class SynonymConfig(BaseModel):
+    service_name: str
+    service_version: str
+    service_host: str
+    service_port: int = Field(gt=0, lt=65536)
+    timeout: int = Field(ge=1)
+    model_path: str
+    top_n_words: int = Field(ge=1)
+    preload_top: int = Field(ge=0)
+
 class ModelConfig(BaseModel):
     embed: EmbedConfig
     llm: LLMConfig
     reranker: RerankerConfig
     vlm: VLMConfig
     tokenizer: TokenizerConfig
+    synonym: SynonymConfig
 

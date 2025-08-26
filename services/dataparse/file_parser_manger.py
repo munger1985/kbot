@@ -78,7 +78,7 @@ class FileParserManager:
             retention = "10 days"
             
         # 初始化日志
-        conf = LogConfig(service_name="main", log_dir=log_dir, level=log_level, rotation=rotation, retention=retention)
+        conf = LogConfig(service_name="file-parser", log_dir=log_dir, level=log_level, rotation=rotation, retention=retention)
         LogManager(conf).setup()
 
         logger.info("File parse service process starting")

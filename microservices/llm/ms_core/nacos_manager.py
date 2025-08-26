@@ -2,6 +2,7 @@ import signal
 import atexit
 import socket
 import threading
+import time
 from loguru import logger
 from typing import Callable
 from nacos import NacosClient
@@ -66,8 +67,7 @@ class NacosConfigManager:
                 if attempt == max_retries - 1:
                     logger.error(f"Failed to initialize Nacos client after {max_retries} attempts: {e}")
                     raise
-                logger.warning(f"Nacos client initialization failed (attempt {attempt + 1}/{max_retries}), retrying in {retry_delay} seconds...")
-                import time
+                logger.warning(f"Nacos client initialization failed (attempt {attempt + 1}/{max_retries}), retrying in {retry_delay} seconds...")                
                 time.sleep(retry_delay)
 
     def get_config(self, data_id: str, group: str | None = None) -> str | None:
@@ -110,7 +110,7 @@ class NacosConfigManager:
                         ip=host,
                         port=port
                     )
-                    logger.debug(f"Heartbeat sent for {service_name} at {host}:{port}")
+                    # logger.debug(f"Heartbeat sent for {service_name} at {host}:{port}")
             except Exception as e:
                 logger.error(f"Heartbeat error for {service_name}: {e}")
             
