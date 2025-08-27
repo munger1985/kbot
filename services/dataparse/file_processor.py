@@ -1,6 +1,8 @@
 import json
 from loguru import logger
 from datetime import datetime
+
+from .excel_parser_openpyxl import process_excel
 from .txt_parser import process_txt
 from .pdf_parser_pdfplumber import process_pdf
 from .office_parser import process_word_ppt_by_converter
@@ -103,6 +105,9 @@ class FileProcessor:
             elif file_params.file_ext == ".pdf":
                 logger.info(f"Processing pdf file {file_params.file_path}...")
                 return await process_pdf(file_params)
+            elif file_params.file_ext == ".xlsx":
+                logger.info(f"Processing Excel file {file_params.file_path}...")
+                return await process_excel(file_params)
             elif file_params.file_ext in [".doc", ".docx", ".pptx", ".ppt"]:
                 logger.info(f"Processing word/ppt file {file_params.file_path}...")
                 return await process_word_ppt_by_converter(file_params)
