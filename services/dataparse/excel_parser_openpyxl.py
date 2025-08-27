@@ -68,9 +68,9 @@ class ExcelParser:
         self.images_info: list[dict] = []
         self.tables_info: Dict[str, Any] = {}
         # 创建输出目录
-        self.output_dir.mkdir(exist_ok=True)
-        self.images_dir.mkdir(exist_ok=True)
-        self.data_dir.mkdir(exist_ok=True)
+        self.output_dir.mkdir(parents=True,exist_ok=True)
+        self.images_dir.mkdir(parents=True,exist_ok=True)
+        self.data_dir.mkdir(parents=True,exist_ok=True)
 
         # 存储提取的数据
         self.extracted_data = {}
@@ -178,7 +178,7 @@ class ExcelParser:
                         images.append(image_info)
 
                     except Exception as e:
-                        print(f"提取图片时出错: {e}")
+                        logger.error(f"提取图片时出错: {e}")
                         continue
 
             # 尝试从Excel的压缩文件中提取图片（适用于某些Excel版本）
@@ -186,7 +186,7 @@ class ExcelParser:
                 images.extend(self._extract_images_from_zip(sheet_name))
 
         except Exception as e:
-            print(f"从工作表 {sheet_name} 提取图片时出错: {e}")
+            logger.error(f"从工作表 {sheet_name} 提取图片时出错: {e}")
 
         return images
 
@@ -228,7 +228,7 @@ class ExcelParser:
                         except Exception:
                             continue
         except Exception as e:
-            print(f"提取图片元数据时出错: {e}")
+            logger.error(f"提取图片元数据时出错: {e}")
         return metadata
 
     def save_image_metadata(self, metadata: List[Dict[str, Any]], filename: str = "image_info.json") -> str:
@@ -243,17 +243,17 @@ class ExcelParser:
             保存的文件路径
         """
         if not metadata:
-            print("没有图片元数据可保存")
+            logger.info("没有图片元数据可保存")
             return ""
         json_path = self.data_dir / filename
         try:
             json_str = json.dumps({"images": metadata}, ensure_ascii=False, indent=2)
             with open("output.json", "w", encoding="utf-8") as f:
                 f.write(json_str)
-            print(f"图片元数据已保存到: {json_path.absolute()}")
+            logger.info(f"图片元数据已保存到: {json_path.absolute()}")
             return json_str
         except Exception as e:
-            print(f"保存图片元数据时出错: {e}")
+            logger.error(f"保存图片元数据时出错: {e}")
             return ""
 
     def __await__(self):
@@ -453,11 +453,11 @@ class ExcelParser:
                         images.append(image_info)
 
                     except Exception as e:
-                        print(f"从ZIP提取图片时出错: {e}")
+                        logger.info(f"从ZIP提取图片时出错: {e}")
                         continue
 
         except Exception as e:
-            print(f"从ZIP文件提取图片时出错: {e}")
+            logger.error(f"从ZIP文件提取图片时出错: {e}")
 
         return images
 
@@ -505,7 +505,7 @@ class ExcelParser:
             return sheet_data
 
         except Exception as e:
-            print(f"提取工作表 {sheet_name} 数据时出错: {e}")
+            logger.error(f"提取工作表 {sheet_name} 数据时出错: {e}")
             return {
                 "sheet_name": sheet_name,
                 "formatted_name": self.get_sheet_naming_convention(sheet_name),
@@ -536,7 +536,7 @@ class ExcelParser:
             }
 
             for sheet_name in sheet_names:
-                print(f"正在处理工作表: {sheet_name}")
+                logger.info(f"正在处理工作表: {sheet_name}")
                 sheet_data = self.extract_sheet_data(sheet_name)
 
                 # 使用格式化后的名称作为键
@@ -555,7 +555,7 @@ class ExcelParser:
             return extraction_summary
 
         except Exception as e:
-            print(f"提取Excel数据时出错: {e}")
+            logger.error(f"提取Excel数据时出错: {e}")
             return {"error": str(e)}
 
     def save_to_json(self, filename: str = None) -> str:
@@ -569,7 +569,7 @@ class ExcelParser:
             保存的文件路径
         """
         if not self.extracted_data:
-            print("没有数据可保存，请先运行extract_all_data()")
+            logger.info("没有数据可保存，请先运行extract_all_data()")
             return ""
 
         if filename is None:
@@ -582,11 +582,11 @@ class ExcelParser:
             with open(json_path, 'w', encoding='utf-8') as f:
                 json.dump(self.extracted_data, f, ensure_ascii=False, indent=2)
 
-            print(f"数据已保存到: {json_path}")
+            logger.info(f"数据已保存到: {json_path}")
             return str(json_path)
 
         except Exception as e:
-            print(f"保存JSON文件时出错: {e}")
+            logger.error(f"保存JSON文件时出错: {e}")
             return ""
 
     def generate_report(self) -> str:
@@ -653,7 +653,7 @@ Excel数据提取报告
             }
 
             for current_sheet_name in sheet_names:
-                print(f"正在提取工作表 '{current_sheet_name}' 的文字数据...")
+                logger.info(f"正在提取工作表 '{current_sheet_name}' 的文字数据...")
                 worksheet = workbook[current_sheet_name]
 
                 # 获取第一行作为列名
@@ -697,12 +697,12 @@ Excel数据提取报告
                     "data": rows_data
                 }
 
-                print(f"工作表 '{current_sheet_name}' 提取完成: {len(rows_data)} 行数据")
+                logger.info(f"工作表 '{current_sheet_name}' 提取完成: {len(rows_data)} 行数据")
 
             return text_data
 
         except Exception as e:
-            print(f"提取文字数据时出错: {e}")
+            logger.error(f"提取文字数据时出错: {e}")
             return {"error": str(e)}
 
     def save_text_data_to_json(self, text_data: Dict[str, Any], filename: str = None) -> str:
@@ -717,7 +717,7 @@ Excel数据提取报告
             保存的文件路径
         """
         if not text_data or "error" in text_data:
-            print("没有文字数据可保存")
+            logger.info("没有文字数据可保存")
             return ""
 
         if filename is None:
@@ -730,11 +730,11 @@ Excel数据提取报告
             with open(json_path, 'w', encoding='utf-8') as f:
                 json.dump(text_data, f, ensure_ascii=False, indent=2)
 
-            print(f"文字数据已保存到: {json_path}")
+            logger.info(f"文字数据已保存到: {json_path}")
             return str(json_path)
 
         except Exception as e:
-            print(f"保存文字数据JSON文件时出错: {e}")
+            logger.error(f"保存文字数据JSON文件时出错: {e}")
             return ""
 
     async def parse(self) -> bool:
@@ -749,8 +749,8 @@ Excel数据提取报告
                 # Extract all content by page
                 all_text_data = self.extract_text_data_to_json()
                 if "error" not in all_text_data:
-                    print("✓ 成功提取所有工作表数据")
-                    print(f"  工作表数: {len(all_text_data['sheets'])}")
+                    logger.info("✓ 成功提取所有工作表数据")
+                    logger.info(f"  工作表数: {len(all_text_data['sheets'])}")
 
                     # 构造最简JSON结构：顶层以sheet名为key，仅保留 total_rows 与 data
                     minimal_data = {}
@@ -761,7 +761,7 @@ Excel数据提取报告
                     # 保存到JSON文件（只输出 demo_all_sheets.json）
                     json_file = self.save_text_data_to_json(minimal_data, "text_info.json")
                     self.tables_info=minimal_data
-                    print(f"  最简数据已保存到: {json_file}")
+                    logger.info(f"  最简数据已保存到: {json_file}")
 
 
                     combined_list = []
@@ -773,27 +773,27 @@ Excel数据提取报告
                     combined_json_path = self.save_text_data_to_json({"combined": combined_list},
                                                                           "combined_rows_list.json")
                     if combined_json_path:
-                        print(f"  合并字符串列表已保存到: {combined_json_path}")
+                        logger.info(f"  合并字符串列表已保存到: {combined_json_path}")
                     # 如果某sheet有图片，抽取并生成 image_info.json（文件名为随机ID，记录 image_id 与 sheet_name）
 
 
                     # 显示每个工作表的摘要
                     for sheet_name, sheet_info in all_text_data['sheets'].items():
-                        print(f"\n  工作表: {sheet_name}")
-                        print(f"    列数: {len(sheet_info['headers'])}")
-                        print(f"    数据行数: {sheet_info['total_rows']}")
-                        print(
+                        logger.info(f"\n  工作表: {sheet_name}")
+                        logger.info(f"    列数: {len(sheet_info['headers'])}")
+                        logger.info(f"    数据行数: {sheet_info['total_rows']}")
+                        logger.info(
                             f"    列名: {', '.join(sheet_info['headers'][:5])}{'...' if len(sheet_info['headers']) > 5 else ''}")
 
                         # 显示前几行数据
                         if sheet_info['data']:
-                            print(f"    前2行数据预览:")
+                            logger.info(f"    前2行数据预览:")
                             for i, row in enumerate(sheet_info['data'][:2]):
                                 # 只显示前3列
                                 preview_data = {k: v for k, v in list(row.items())[:3]}
-                                print(f"      行{i + 1}: {preview_data}")
+                                logger.info(f"      行{i + 1}: {preview_data}")
                 else:
-                    print(f"✗ 提取失败: {all_text_data['error']}")
+                    logger.info(f"✗ 提取失败: {all_text_data['error']}")
                     return False
 
                     # 仅输出 demo_all_sheets.json，不进行单表与图片元数据输出
