@@ -1,6 +1,7 @@
 
 import json
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, status, Depends
+from fastapi.responses import HTMLResponse
 from api.controllers.security_controller import AuthController
 from fastapi.responses import FileResponse
 from api.controllers.kb_controller import upload_kb_files, delete_kb_files, get_kb_files, reparse_kb_files
@@ -114,8 +115,8 @@ async def handle_download_file(
         
         if result:
             return FileResponse(
-                path=result[0],  # type: ignore
-                filename=result[1], # type: ignore
+                path=result["file_path"],
+                filename=result["file_name"],
                 media_type="multipart/form-data",
                 content_disposition_type=None # type: ignore
                 )
@@ -146,12 +147,40 @@ async def handle_preview_file(
         result = await get_kb_files(file_id, download=False, page_num=page_num)
         
         if result:
-            return FileResponse(
-                    path=result,  # type: ignore
-                    filename="preview.png", # type: ignore
-                    media_type="image/png",
-                    headers={"Content-Disposition": "inline"}
-                )
+            if result["file_ext"] == ".txt":
+                with open(result["file_path"], 'r', encoding='utf-8') as f:
+                    content = f.read()
+                
+                html_content = f"""
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>文本预览</title>
+                    <style>
+                        body {{ font-family: Arial, sans-serif; margin: 40px; }}
+                        .content {{ 
+                            white-space: pre-wrap; 
+                            border: 1px solid #ddd; 
+                            padding: 20px; 
+                            background-color: #f9f9f9;
+                        }}
+                    </style>
+                </head>
+                <body>
+                    <h1>文本文件预览</h1>
+                    <div class="content">{content}</div>
+                </body>
+                </html>
+                """
+                return HTMLResponse(content=html_content)
+            
+            else:
+                return FileResponse(
+                        path=result["file_path"],
+                        filename=result["file_name"],
+                        media_type="image/png",
+                        headers={"Content-Disposition": "inline"}
+                    )
         else:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,

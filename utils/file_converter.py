@@ -1,6 +1,5 @@
 import os
 import shutil
-import configparser
 import aiohttp
 from tempfile import mkdtemp
 from pdf2image import convert_from_path
@@ -163,22 +162,25 @@ class FileToImage:
         
         # 根据不同的文件类型进行处理
         file_extension = file_path.suffix.lower()
+        temp_dir = mkdtemp()
 
         if file_extension == '.pdf':
             # 使用 pdf2image 将 PDF 文件转换为Base64图片列表
-            images = []
-            pdf_images = convert_from_path(file_path, first_page=page_num, last_page=page_num)
-            image = pdf_images[0]
-            
-            temp_dir = mkdtemp()
-            img_path = os.path.join(temp_dir, "output.img")
-            image.save(img_path, format="PNG")
-
-            return img_path
+            try:
+                images = []
+                pdf_images = convert_from_path(file_path, first_page=page_num, last_page=page_num)
+                image = pdf_images[0]
+                
+                img_path = os.path.join(temp_dir, "output.img")
+                image.save(img_path, format="PNG")
+                return img_path
+                
+            except Exception as e:
+                logger.exception(f"PDF文件转换失败: {str(e)}")
+                raise e
         
         elif file_extension in ['.ppt', '.pptx', '.doc', '.docx']:
             # 使用LibreOffice先将Word文档转换为PDF，再转换为Base64图片列表
-            temp_dir = mkdtemp()
     
             try:
                 # 第一步：将文件转为PDF
@@ -187,32 +189,10 @@ class FileToImage:
                 
                 # 第二步：将PDF转为图片
                 return await self.convert_to_image(pdf_path, page_num)
-                
-            finally:
-                # 清理临时文件
-                shutil.rmtree(temp_dir)
+            except Exception as e:
+                logger.exception(f"Office文件转换失败: {str(e)}")
+                raise e
 
-        # elif file_extension == 'txt':
-            # # 分割文本文件并转换为图像
-            # with open(file_path, 'r', encoding='utf-8') as f:
-            #     text = f.read()
-            
-            # # 分割文本到合适的大小以便生成图像
-            # chunk_size = 500  # 每个文本块500字符
-            # chunks = [text[i:i+chunk_size] for i in range(0, len(text), chunk_size)]
-            
-            # # 将每一个文本块渲染为图像
-            # images = []
-            # for page_num, chunk in enumerate(chunks, start=1):
-            #     img = Image.new('RGB', (800, 600), color=(255, 255, 255))
-            #     draw = ImageDraw.Draw(img)
-            #     font = ImageFont.load_default()
-            #     draw.text((10, 10), chunk, fill="black", font=font)
-            #     buffered = BytesIO()
-            #     img.save(buffered, format="PNG")
-            #     img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
-            #     images.append({"page": page_num, "image": img_str})
-            # return images
         else:
             raise ValueError("Unsupported file type for image conversion")
     

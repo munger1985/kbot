@@ -1,3 +1,4 @@
+from pathlib import Path
 from services.kb.kb_file_operator import KBFileOperator
 from services.kb.kb_procedure import KBProcedure
 from api.schemas.kb_schema import KBUploadForm, KBDeleteForm, KBReparseForm
@@ -53,7 +54,7 @@ async def get_kb_files(
         file_id: str,
         download: bool = False,
         page_num: int = 0
-) -> tuple[str, str | None] | str | None:
+) -> dict[str, str] | None:
     """
     Get file content for download or preview.
     获取文件内容用于下载或预览
@@ -72,22 +73,34 @@ async def get_kb_files(
     
     file_path = file.file_path
     file_name = file.file_name
+    file_ext = file.file_ext
 
     if file_path is None:
         return None
+    
+    if file_name is None:
+        file_name = Path(file_path).name
+    
+    if file_ext is None:
+        file_ext = Path(file_path).suffix
     
     try:
         if download:
             # 下载文件
             
-            return file_path, file_name
+            return {"file_path": file_path, "file_name": file_name, "file_ext": file_ext}
         else:
-            # 预览文件
-            img = FileToImage()
-            try:
-                return await img.convert_to_image(input_path=file_path, page_num=page_num)
-            except Exception as e:
-                raise e
+            if file_ext == ".txt":
+                # 预览文本文件
+                return {"file_path": file_path, "file_name": file_name, "file_ext": file_ext}
+            else:
+                # 预览其他文件
+                img = FileToImage()
+                try:
+                    img_path = await img.convert_to_image(input_path=file_path, page_num=page_num)
+                    return {"file_path": img_path, "file_name": file_name, "file_ext": ".png"}
+                except Exception as e:
+                    raise e
 
     except Exception as e:
         raise e
