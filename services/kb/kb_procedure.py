@@ -10,7 +10,7 @@ class KBProcedure():
     def __init__(self):
         pass
 
-    async def reparse_files(self, kb_id: int, files: list[str]) -> bool:
+    async def reparse_files(self, kb_id: int, file_ids: list[str]) -> bool:
         """
         将KB中的文件标记为未解析，触发重新解析
 
@@ -24,14 +24,14 @@ class KBProcedure():
         chunk_repo = KbotBizTxtEmbeddingRepository()
         # 1. 删除文件对应的chunk数据
         try:
-            await chunk_repo.delete_by_file_ids(kb_id=kb_id, file_ids=files)
-            logger.debug(f"Deleted chunks for files: {files} of KB {kb_id}.")
+            await chunk_repo.delete_by_file_ids(kb_id=kb_id, file_ids=file_ids)
+            logger.debug(f"Deleted chunks for files: {file_ids} of KB {kb_id}.")
             # 2. 删除文件对应的解析图片和表格数据（部分PDF，PPT等文件有）
             # todo: ...
             #logger.debug(f"Deleted images and tables for files: {files} of KB {kb_id}.")
             # 3. 重置文件状态为未解析
-            await file_repo.batch_update_file_status(file_ids=files, status=FileStatus.APPROVED, log_msg="reparse")
-            logger.info(f"Files {files} are marked for reprocessing.")
+            await file_repo.batch_update_file_status(file_ids=file_ids, status=FileStatus.APPROVED, log_msg="reparse")
+            logger.info(f"Files {file_ids} are marked for reprocessing.")
             return True
         except Exception as e:
             logger.exception(e)

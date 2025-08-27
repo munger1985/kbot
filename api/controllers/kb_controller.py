@@ -114,7 +114,7 @@ async def reparse_kb_files(
     """
     try:
         kbproc = KBProcedure()
-        result = await kbproc.reparse_files(kb_id=form.kb_id, files=form.files)
+        result = await kbproc.reparse_files(kb_id=form.kb_id, file_ids=form.file_ids)
         return result
     except Exception as e:
         raise e

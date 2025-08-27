@@ -28,5 +28,5 @@ class KBDeleteForm(BaseModel):
 class KBReparseForm(BaseModel):
     """知识库重新解析表单模型"""
     kb_id: int
-    files: list[str]
+    file_ids: list[str]
         
