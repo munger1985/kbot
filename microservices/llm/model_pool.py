@@ -1,7 +1,4 @@
-"""LLM model pool implementation."""
-
-import os
-import sys
+import json
 import asyncio
 from loguru import logger
 from datetime import datetime, timedelta
@@ -12,14 +9,7 @@ from model import(
     OCILLMConfig,
     create_llm_model
 )
-from ms_core import load_config, ModelConfig, ModelCategory
-
-# 添加项目根目录到 Python 路径，确保可以导入项目模块
-current_file = os.path.abspath(__file__)
-backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(current_file)))
-if backend_dir not in sys.path:
-    sys.path.insert(0, backend_dir)
-from dao.repositories.kbot_md_models_repo import KbotMdModelsRepository
+from ms_core import load_config, ModelConfig, ModelCategory, AsyncRedisPool
 
 
 class ModelPool:
@@ -37,6 +27,7 @@ class ModelPool:
         self._last_used: dict[str, datetime] = {}
         self._health_check_interval = health_check_interval
         self._health_check_task: asyncio.Task | None = None
+        self.redis = AsyncRedisPool(db=1)
 
     async def initialize(self):
         """Initialize the model pool and start health check task"""
@@ -78,18 +69,31 @@ class ModelPool:
             self._last_used[model_unique_name] = datetime.now()
             return self._models[model_unique_name]
             
-        # Load model config from database
-        md_repo = KbotMdModelsRepository()
-        model_entity = await md_repo.get_by_unique_name(model_unique_name)
-        if not model_entity:
-            raise ValueError(f"Model {model_unique_name} not found in database")
+        # 根据 model_unique_name 从 Redis 获取模型信息
+        async with self.redis as redis:
+            # 1. 先通过 unique_name 获取 model_id
+            model_id = await redis.get(f"index:unique_name:{model_unique_name}")
+            if not model_id:
+                raise ValueError(f"Model {model_unique_name} not found in redis")
+            
+            # 2. 通过 model_id 获取所有字段
+            model_data = await redis.hgetall(f"model:{model_id}")
+            if not model_data:
+                raise ValueError(f"Model {model_unique_name} not found in redis")
+            
+            # 处理 JSON 字符串字段
+            if model_data.get("model_params"):
+                model_params = json.loads(model_data["model_params"])
+
+        provider = model_data.get("provider")
+        if not provider:
+            raise ValueError(f"Model {model_unique_name} has no provider")
         
-        if model_entity.model_params is None:
-            raise ValueError(f"Model {model_unique_name} has no model_params")      
-        
-        if model_entity.model_params.get("temperature") is not None and not (0 <= model_entity.model_params["temperature"] <= 2):
-            raise ValueError(f"Model {model_unique_name} has invalid temperature {model_entity.model_params['temperature']}. Temperature must be between 0 and 2.")
-        
+        # 从模型数据中获取参数
+        model_name = model_data.get("model_name")
+        if not model_name:
+            raise ValueError(f"Model {model_unique_name} has no model_name")
+
         # 从 Nacos 获取 llm 默认参数
         try:
             config = load_config("model_config")
@@ -115,45 +119,51 @@ class ModelPool:
             presence_penalty = 0.0
 
         # 根据模型类型创建相应的配置
-        if model_entity.provider == LLMProvider.OPENAI.value:
-            if model_entity.api_key is None or model_entity.api_endpoint is None:
+        if provider == LLMProvider.OPENAI.value:
+            api_endpoint = model_data.get("api_endpoint")
+            api_key = model_data.get("api_key")
+
+            if api_key is None or api_endpoint is None:
                 raise ValueError(f"Model {model_unique_name} has no api_key or api_endpoint")
             
             model_config = OpenaiLLMConfig(
-                provider=model_entity.provider,
-                api_key=model_entity.api_key,
-                api_endpoint=model_entity.api_endpoint,
-                model_name=model_entity.model_name,
-                temperature=model_entity.model_params.get("temperature", temperature),
-                max_tokens=model_entity.model_params.get("max_tokens", max_tokens),
-                top_p=model_entity.model_params.get("top_p", top_p),
-                frequency_penalty=model_entity.model_params.get("frequency_penalty", frequency_penalty),
-                presence_penalty=model_entity.model_params.get("presence_penalty", presence_penalty),
-                timeout=model_entity.model_params.get("timeout", timeout)
+                provider=provider,
+                api_key=api_key,
+                api_endpoint=api_endpoint,
+                model_name=model_name,
+                temperature=model_params.get("temperature", temperature),
+                max_tokens=model_params.get("max_tokens", max_tokens),
+                top_p=model_params.get("top_p", top_p),
+                frequency_penalty=model_params.get("frequency_penalty", frequency_penalty),
+                presence_penalty=model_params.get("presence_penalty", presence_penalty),
+                timeout=model_params.get("timeout", timeout)
             )
-        elif model_entity.provider == LLMProvider.OCI.value:
-            compartment_id = model_entity.model_params.get("compartment_id")
-            config_file = model_entity.model_params.get("config_file")
-            if model_entity.model_name is None or model_entity.api_endpoint is None or compartment_id is None or config_file is None:
+        elif provider == LLMProvider.OCI.value:
+            compartment_id = model_params.get("compartment_id")
+            config_file = model_params.get("config_file")
+            api_endpoint = model_data.get("api_endpoint")
+            api_key = model_data.get("api_key")
+
+            if model_name is None or api_endpoint is None or compartment_id is None or config_file is None:
                 raise ValueError(f"Model {model_unique_name} has no model_name, api_endpoint, compartment_id or config_file")
 
             model_config = OCILLMConfig(
-                provider=model_entity.provider,
-                api_endpoint=model_entity.api_endpoint,
-                model_name=model_entity.model_name,
-                temperature=model_entity.model_params.get("temperature", temperature),
+                provider=provider,
+                api_endpoint=api_endpoint,
+                model_name=model_name,
+                temperature=model_params.get("temperature", temperature),
                 compartment_id=str(compartment_id),
-                max_tokens=model_entity.model_params.get("max_tokens", max_tokens),
-                top_p=model_entity.model_params.get("top_p", top_p),
-                top_k=model_entity.model_params.get("top_k", top_k),
-                frequency_penalty=model_entity.model_params.get("frequency_penalty", frequency_penalty),
-                presence_penalty=model_entity.model_params.get("presence_penalty", presence_penalty),
+                max_tokens=model_params.get("max_tokens", max_tokens),
+                top_p=model_params.get("top_p", top_p),
+                top_k=model_params.get("top_k", top_k),
+                frequency_penalty=model_params.get("frequency_penalty", frequency_penalty),
+                presence_penalty=model_params.get("presence_penalty", presence_penalty),
                 config_file=config_file
             )
         else:
             # TODO: support other providers
-            logger.error(f"Provider {model_entity.provider} is not supported yet")
-            raise ValueError(f"Model {model_unique_name} has unsupported provider {model_entity.provider}")
+            logger.error(f"Provider {provider} is not supported yet")
+            raise ValueError(f"Model {model_unique_name} has unsupported provider {provider}")
         
         # Create and initialize model //创建和初始化模型
         try:
@@ -228,12 +238,13 @@ class ModelPool:
 
     async def warmup(self) -> None:
         """Warm up all models in the pool"""
-        model_repo = KbotMdModelsRepository()
-        all_embed_models = await model_repo.get_all_models_by_category(ModelCategory.LLM.value)
-        for model in all_embed_models:
+        async with self.redis as redis:
+            # 直接获取对应 category 集合中的所有 model_unique_names
+            model_unique_names = await redis.execute_command('SMEMBERS', f'index:category:{ModelCategory.LLM.value}')
+        for unique_name in model_unique_names:
             try:
-                await self.load_model(model.model_unique_name)
-                logger.success(f"Model {model.model_unique_name} warmed up successfully")
+                await self.load_model(unique_name)
+                logger.success(f"Model {unique_name} warmed up successfully")
             except Exception as e:
                 logger.warning(f"Failed to warm up models: {e}")
                 continue

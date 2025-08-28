@@ -118,4 +118,11 @@ cd /home/ubuntu/kbot3
 ./stop_kbot.sh
 ```
 
+### 8.准备同义词模型 fasttext cc.zh.300.bin
+```bash
+# 使用 wget 下载
+wget https://dl.fbaipublicfiles.com/fasttext/vectors-crawl/cc.zh.300.bin.gz
 
+# 或者使用 curl 下载
+curl -O https://dl.fbaipublicfiles.com/fasttext/vectors-crawl/cc.zh.300.bin.gz
+```

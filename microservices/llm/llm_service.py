@@ -1,19 +1,7 @@
-"""LLM service implementation."""
-
-from loguru import logger
-import os
-import sys
 import json
+from loguru import logger
 from model_pool import ModelPool
 from model import BaseLLM, LLMProvider
-
-# 添加项目根目录到 Python 路径，确保可以导入项目模块
-current_file = os.path.abspath(__file__)
-backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(current_file)))
-if backend_dir not in sys.path:
-    sys.path.insert(0, backend_dir)
-
-
 
 
 class LLMService:

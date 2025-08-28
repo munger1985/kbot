@@ -76,8 +76,8 @@ async def test_call_reranker_model():
     测试调用reranker模型的方法
     """
     # 测试参数
-    rerank_model_unique_name = "KBOT1/BGE-RANKER"
-    # rerank_model_unique_name = "KBOT1/JINA-RANKER"
+    # rerank_model_unique_name = "KBOT1/BGE-RANKER"
+    rerank_model_unique_name = "KBOT1/JINA-RANKER"
     # rerank_model_unique_name = "KBOT1/cohere-reranker"
     question = "招聘数据工程师"
     inputs_list = [

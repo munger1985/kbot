@@ -2,7 +2,7 @@ from typing import Any, AsyncIterator
 from contextlib import asynccontextmanager
 from redis.asyncio import Redis, ConnectionPool
 from redis.exceptions import RedisError, ConnectionError, TimeoutError
-from core.nacos_manager import load_config, DBConfig
+from .nacos_manager import load_config, DBConfig
 
 class AsyncRedisPool:
     """

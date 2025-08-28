@@ -1,9 +1,8 @@
-import os
-import sys
 import asyncio
+import json
 from loguru import logger
 from datetime import datetime, timedelta
-from ms_core import load_config, ModelConfig
+from ms_core import load_config, ModelConfig, ModelCategory, AsyncRedisPool
 from model import (
     BaseEmbedding, 
     EmbeddingProvider,
@@ -11,17 +10,6 @@ from model import (
     OCIEmbeddingConfig,
     create_embedding_model
 )
-from ms_core import ModelCategory
-
-# 添加项目根目录到 Python 路径，确保可以导入项目模块
-current_file = os.path.abspath(__file__)
-backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(current_file)))
-if backend_dir not in sys.path:
-    sys.path.insert(0, backend_dir)
-
-
-from dao.repositories.kbot_md_models_repo import KbotMdModelsRepository
-
 
 
 class ModelPool:
@@ -36,6 +24,7 @@ class ModelPool:
         self._last_used: dict[str, datetime] = {}
         self._health_check_interval = health_check_interval
         self._health_check_task: asyncio.Task | None = None
+        self.redis = AsyncRedisPool(db=1)
         
     async def initialize(self):
         """Initialize the model pool and start health check task"""
@@ -77,14 +66,30 @@ class ModelPool:
             self._last_used[model_unique_name] = datetime.now()
             return self._models[model_unique_name]
             
-        # Load model config from database
-        md_repo = KbotMdModelsRepository()
-        model_entity = await md_repo.get_by_unique_name(model_unique_name)
-        if not model_entity:
-            raise ValueError(f"Model {model_unique_name} not found in database")
+        # 根据 model_unique_name 从 Redis 获取模型信息
+        async with self.redis as redis:
+            # 1. 先通过 unique_name 获取 model_id
+            model_id = await redis.get(f"index:unique_name:{model_unique_name}")
+            if not model_id:
+                raise ValueError(f"Model {model_unique_name} not found in redis")
+            
+            # 2. 通过 model_id 获取所有字段
+            model_data = await redis.hgetall(f"model:{model_id}")
+            if not model_data:
+                raise ValueError(f"Model {model_unique_name} not found in redis")
+            
+            # 处理 JSON 字符串字段
+            if model_data.get("model_params"):
+                model_params = json.loads(model_data["model_params"])
+
+        provider = model_data.get("provider")
+        if not provider:
+            raise ValueError(f"Model {model_unique_name} has no provider")
         
-        if model_entity.model_params is None:
-            raise ValueError(f"Model {model_unique_name} has no model_params")
+        # 从模型数据中获取参数
+        model_name = model_data.get("model_name")
+        if not model_name:
+            raise ValueError(f"Model {model_unique_name} has no model_name")
 
         # 从 Nacos 获取 embedding 默认参数
         try:
@@ -103,36 +108,40 @@ class ModelPool:
             timeout = 30
             max_retries = 0
             cache_dir = "./cached_models"
+                   
         
         # 根据模型类型创建相应的配置
-        if model_entity.provider == EmbeddingProvider.LOCAL.value:
+        if provider == EmbeddingProvider.LOCAL.value:
             model_config = LocalEmbeddingConfig(
-                model_name=model_entity.model_name,
-                provider=model_entity.provider,
-                max_tokens=model_entity.model_params.get("max_tokens", max_tokens),
-                model_path=model_entity.model_params.get("model_path", None),
-                device=model_entity.model_params.get("device", None),
-                device_map=model_entity.model_params.get("device_map", None),
-                max_memory=model_entity.model_params.get("max_memory", None),
-                trust_remote_code=model_entity.model_params.get("trust_remote_code", False),
-                use_fp16=model_entity.model_params.get("use_fp16", False),
-                local_files_only=model_entity.model_params.get("local_files_only", False),
-                compile_model=model_entity.model_params.get("compile_model", True),
+                model_name=model_name,
+                provider=provider,
+                max_tokens=model_params.get("max_tokens", max_tokens),
+                model_path=model_params.get("model_path", None),
+                device=model_params.get("device", None),
+                device_map=model_params.get("device_map", None),
+                max_memory=model_params.get("max_memory", None),
+                trust_remote_code=model_params.get("trust_remote_code", False),
+                use_fp16=model_params.get("use_fp16", False),
+                local_files_only=model_params.get("local_files_only", False),
+                compile_model=model_params.get("compile_model", True),
                 cache_dir=cache_dir
             )
-        elif model_entity.provider == EmbeddingProvider.OCI.value:
-            compartment_id = model_entity.model_params.get("compartment_id")
-            config_file = model_entity.model_params.get("config_file")
-            if model_entity.model_name is None or model_entity.api_endpoint is None or compartment_id is None or config_file is None:
+        elif provider == EmbeddingProvider.OCI.value:
+            compartment_id = model_params.get("compartment_id")
+            config_file = model_params.get("config_file")
+            api_endpoint = model_data.get("api_endpoint")
+            if model_name is None or api_endpoint is None or compartment_id is None or config_file is None:
                 raise ValueError(f"Model {model_unique_name} has no model_name, api_endpoint, compartment_id or config_file")
             model_config = OCIEmbeddingConfig(
-                model_name=model_entity.model_name,
-                provider=model_entity.provider,
-                max_tokens=model_entity.model_params.get("max_tokens", max_tokens),
-                api_endpoint=model_entity.api_endpoint,
+                model_name=model_name,
+                provider=provider,
+                max_tokens=model_params.get("max_tokens", max_tokens),
+                api_endpoint=api_endpoint,
                 compartment_id=compartment_id,
                 config_file=config_file
             )
+        else:
+            raise ValueError(f"Unsupported provider {provider}")
 
         # Create and initialize model //创建和初始化模型
         try:
@@ -229,12 +238,13 @@ class ModelPool:
 
     async def warmup(self) -> None:
         """Warm up all models in the pool"""
-        model_repo = KbotMdModelsRepository()
-        all_embed_models = await model_repo.get_all_models_by_category(ModelCategory.EMBEDDING.value)
-        for model in all_embed_models:
+        async with self.redis as redis:
+            # 直接获取对应 category 集合中的所有 model_unique_names
+            model_unique_names = await redis.execute_command('SMEMBERS', f'index:category:{ModelCategory.EMBEDDING.value}')
+        for unique_name in model_unique_names:
             try:
-                await self.load_model(model.model_unique_name)
-                logger.success(f"Model {model.model_unique_name} warmed up successfully")
+                await self.load_model(unique_name)
+                logger.success(f"Model {unique_name} warmed up successfully")
             except Exception as e:
                 logger.warning(f"Failed to warm up models: {e}")
                 continue

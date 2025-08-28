@@ -25,16 +25,9 @@ from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from loguru import logger
-from ms_core import load_config, AppConfig, ModelConfig, nacos_manager, LogManager, LogConfig
+from ms_core import load_config, AppConfig, ModelConfig, nacos_manager, LogManager, LogConfig, AsyncRedisPool
 from llm_service import LLMService
 from model import LLMProvider
-
-# 添加项目根目录到 Python 路径，确保可以导入项目模块
-current_file = os.path.abspath(__file__)
-backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(current_file)))
-if backend_dir not in sys.path:
-    sys.path.insert(0, backend_dir)
-from dao.repositories.kbot_md_models_repo import KbotMdModelsRepository
 
 
 # 加载环境变量配置
@@ -225,8 +218,21 @@ async def chat(
     response_id = f"chatcmpl-{uuid.uuid4()}"  # OpenAI格式的ID
     created_time = int(time.time())
     model_name = request.model_unique_name
-    provider = await KbotMdModelsRepository().get_provider_by_unique_name(model_name)
-    logger.info(f"Generating chat response using model {request.model_unique_name}")
+
+    async with AsyncRedisPool(db=1) as redis:
+        # 1. 先通过 unique_name 获取 model_id
+        model_id = await redis.get(f"index:unique_name:{model_name}")
+        if not model_id:
+            raise ValueError(f"Model {model_name} not found in redis")
+        
+        # 2. 通过 model_id 获取所有字段
+        model_data = await redis.hgetall(f"model:{model_id}")
+        if not model_data:
+            raise ValueError(f"Model {model_name} not found in redis")
+
+        provider = model_data.get("provider")
+
+    logger.info(f"Generating chat response using model {model_name}")
     
     try:
         # OpenAI streaming 格式响应

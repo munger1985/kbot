@@ -13,11 +13,9 @@ import signal
 import uuid
 import time
 import json
-import configparser
 import uvicorn
 import subprocess
 import atexit
-import socket
 from datetime import datetime
 from PIL import Image
 from typing import Any, Type
@@ -29,7 +27,6 @@ from fastapi.responses import StreamingResponse
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
-from nacos import NacosClient
 from vlm_service import VLMService
 from ms_core import nacos_manager, ModelConfig, AppConfig, load_config, LogManager, LogConfig
 

@@ -1,5 +1,4 @@
-import os
-import sys
+import json
 import asyncio
 from loguru import logger
 from datetime import datetime, timedelta
@@ -9,15 +8,7 @@ from model import (
     OpenAIVLMConfig,
     create_vlm_model
 )
-from ms_core import ModelCategory
-
-# 添加项目根目录到 Python 路径，确保可以导入项目模块
-current_file = os.path.abspath(__file__)
-backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(current_file)))
-if backend_dir not in sys.path:
-    sys.path.insert(0, backend_dir)
-from dao.repositories.kbot_md_models_repo import KbotMdModelsRepository
-
+from ms_core import ModelCategory, AsyncRedisPool
 
 
 class ModelPool:
@@ -32,6 +23,7 @@ class ModelPool:
         self._last_used: dict[str, datetime] = {}
         self._health_check_interval = health_check_interval
         self._health_check_task: asyncio.Task | None = None
+        self.redis = AsyncRedisPool(db=1)
         
     async def initialize(self):
         """Initialize the model pool and start health check task"""
@@ -73,31 +65,67 @@ class ModelPool:
             self._last_used[model_unique_name] = datetime.now()
             return self._models[model_unique_name]
             
-        # Load model config from database
-        md_repo = KbotMdModelsRepository()
-        model_entity = await md_repo.get_by_unique_name(model_unique_name)
-        if not model_entity:
-            raise ValueError(f"Model {model_unique_name} not found in database")
+        # 根据 model_unique_name 从 Redis 获取模型信息
+        async with self.redis as redis:
+            # 1. 先通过 unique_name 获取 model_id
+            model_id = await redis.get(f"index:unique_name:{model_unique_name}")
+            if not model_id:
+                raise ValueError(f"Model {model_unique_name} not found in redis")
+            
+            # 2. 通过 model_id 获取所有字段
+            model_data = await redis.hgetall(f"model:{model_id}")
+            if not model_data:
+                raise ValueError(f"Model {model_unique_name} not found in redis")
+            
+            # 处理 JSON 字符串字段
+            if model_data.get("model_params"):
+                model_params = json.loads(model_data["model_params"])
+
+        provider = model_data.get("provider")
+        if not provider:
+            raise ValueError(f"Model {model_unique_name} has no provider")
         
-        if model_entity.model_params is None:
-            raise ValueError(f"Model {model_unique_name} has no model_params")
+        # 从模型数据中获取参数
+        model_name = model_data.get("model_name")
+        if not model_name:
+            raise ValueError(f"Model {model_unique_name} has no model_name")
+        
+        # # 从 Nacos 获取 embedding 默认参数
+        # try:
+        #     config = load_config("model_config")
+        #     if not isinstance(config, ModelConfig):
+        #         raise ValueError
+        #     max_tokens = config.embed.max_tokens or 8192
+        #     timeout = config.embed.timeout or 30
+            
+        # except Exception as e:
+        #     logger.warning(f"Failed to get embedding config from Nacos: {e}")
+        #     # 设置默认值
+        #     max_tokens = 8192
+        #     timeout = 30
+
 
         # 根据模型类型创建相应的配置
         
-        if model_entity.provider == VLMProvider.OPENAI.value:           
+        if provider == VLMProvider.OPENAI.value:
+            api_endpoint = model_data.get("api_endpoint")
+            api_key = model_data.get("api_key")
+            if not api_endpoint or not api_key:
+                raise ValueError(f"Model {model_unique_name} has no api_endpoint or api_key")
+            
             model_config = OpenAIVLMConfig(
-                model_name=model_entity.model_name,
-                provider=model_entity.provider,
-                max_tokens=model_entity.model_params.get("max_tokens", 512),
-                api_key=model_entity.api_key, # type: ignore
-                api_endpoint=model_entity.api_endpoint, # type: ignore    
-                api_version=model_entity.model_params.get("api_version", ""),
-                timeout=model_entity.model_params.get("timeout", 30),
-                max_retries=model_entity.model_params.get("max_retries", 3),
-                temperature=model_entity.model_params.get("temperature", 0.1)
+                model_name=model_name,
+                provider=provider,
+                max_tokens=model_params.get("max_tokens", 512),
+                api_key=api_key,
+                api_endpoint=api_endpoint,
+                api_version=model_params.get("api_version", ""),
+                timeout=model_params.get("timeout", 30),
+                max_retries=model_params.get("max_retries", 3),
+                temperature=model_params.get("temperature", 0.1)
             )
         else:
-            raise NotImplementedError(f"Unsupported model provider: {model_entity.provider}")
+            raise NotImplementedError(f"Unsupported model provider: {provider}")
 
         # Create and initialize model //创建和初始化模型
         try:
@@ -194,12 +222,13 @@ class ModelPool:
 
     async def warmup(self) -> None:
         """Warm up all models in the pool"""
-        model_repo = KbotMdModelsRepository()
-        all_embed_models = await model_repo.get_all_models_by_category(ModelCategory.VLM.value)
-        for model in all_embed_models:
+        async with self.redis as redis:
+            # 直接获取对应 category 集合中的所有 model_unique_names
+            model_unique_names = await redis.execute_command('SMEMBERS', f'index:category:{ModelCategory.VLM.value}')
+        for unique_name in model_unique_names:
             try:
-                await self.load_model(model.model_unique_name)
-                logger.success(f"Model {model.model_unique_name} warmed up successfully")
+                await self.load_model(unique_name)
+                logger.success(f"Model {unique_name} warmed up successfully")
             except Exception as e:
                 logger.warning(f"Failed to warm up models: {e}")
                 continue

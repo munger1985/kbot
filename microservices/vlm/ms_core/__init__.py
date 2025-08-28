@@ -2,6 +2,7 @@ from .nacos_manager import nacos_manager, load_config
 from .config_type import AppConfig, DBConfig, ModelConfig
 from .logger_manager import LogManager, LogConfig
 from .dictionary import ModelCategory
+from .meta_redis import AsyncRedisPool
 
 __all__ = [
     "nacos_manager", 
@@ -11,5 +12,6 @@ __all__ = [
     "ModelConfig", 
     "LogManager", 
     "LogConfig",
-    "ModelCategory"
+    "ModelCategory", 
+    "AsyncRedisPool"
     ]

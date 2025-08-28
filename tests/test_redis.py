@@ -6,12 +6,12 @@ from pathlib import Path
 from datetime import datetime
 import time
 
-project_root = Path(__file__).resolve().parent.parent.parent
+project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(project_root))
 
 from dao.repositories.kbot_md_chat_session_repo import KbotMdChatSessionRepository
 
-key="session_1754552000.5921"
+key="session_1756366751.749874"
 
 
 
@@ -126,6 +126,7 @@ async def get_qa_data():
         print(json.dumps(result, indent=2, ensure_ascii=False))
     else:
         print("查询Redis失败，未找到数据")
+
 async def delete_session():
     repo = KbotMdChatSessionRepository()
     result = await repo.delete_session(key)
@@ -188,7 +189,7 @@ async def update_last_qa_data_answer():
 if __name__ == "__main__":
     print("Starting redis test...")
 
-    asyncio.run(get_all())
+    asyncio.run(delete_session())
 
     
     

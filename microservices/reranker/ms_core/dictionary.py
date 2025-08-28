@@ -84,6 +84,7 @@ class SplitStrategy(int, Enum):
     PARAGRAPH = 2
     PAGE = 3
     SEMANTIC = 4
+    ROW = 5
 
 class AgentStatus(int, Enum):
     """Agent status enumeration."""

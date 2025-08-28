@@ -64,7 +64,6 @@ class RedisConfig(BaseModel):
     host: str
     port: int = Field(gt=0, lt=65536)
     password: str
-    db: int = Field(ge=0)
     max_connections: int = Field(ge=1)
 
 class SQLAlchemyConfig(BaseModel):

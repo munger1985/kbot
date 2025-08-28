@@ -37,17 +37,24 @@ cp core/security/auth.py microservices/llm/ms_core/auth.py
 cp core/security/auth.py microservices/reranker/ms_core/auth.py 
 cp core/security/auth.py microservices/synonym/ms_core/auth.py 
 
-sed -i 's/from core.dictionary import AccessorType/from .dictionary import AccessorType/g' /home/chris/kbot3/microservices/embedding/ms_core/auth.py
-sed -i 's/from core.dictionary import AccessorType/from .dictionary import AccessorType/g' /home/chris/kbot3/microservices/llm/ms_core/auth.py
-sed -i 's/from core.dictionary import AccessorType/from .dictionary import AccessorType/g' /home/chris/kbot3/microservices/vlm/ms_core/auth.py
-sed -i 's/from core.dictionary import AccessorType/from .dictionary import AccessorType/g' /home/chris/kbot3/microservices/reranker/ms_core/auth.py
-sed -i 's/from core.dictionary import AccessorType/from .dictionary import AccessorType/g' /home/chris/kbot3/microservices/synonym/ms_core/auth.py
+cp core/database/meta_redis.py microservices/embedding/ms_core/meta_redis.py 
+cp core/database/meta_redis.py microservices/llm/ms_core/meta_redis.py 
+cp core/database/meta_redis.py microservices/vlm/ms_core/meta_redis.py 
+cp core/database/meta_redis.py microservices/reranker/ms_core/meta_redis.py 
 
-sed -i 's/from configuration.config_type import AppConfig, DBConfig, ModelConfig/from .config_type import AppConfig, DBConfig, ModelConfig/g' /home/chris/kbot3/microservices/embedding/ms_core/nacos_manager.py
-sed -i 's/from configuration.config_type import AppConfig, DBConfig, ModelConfig/from .config_type import AppConfig, DBConfig, ModelConfig/g' /home/chris/kbot3/microservices/llm/ms_core/nacos_manager.py
-sed -i 's/from configuration.config_type import AppConfig, DBConfig, ModelConfig/from .config_type import AppConfig, DBConfig, ModelConfig/g' /home/chris/kbot3/microservices/vlm/ms_core/nacos_manager.py
-sed -i 's/from configuration.config_type import AppConfig, DBConfig, ModelConfig/from .config_type import AppConfig, DBConfig, ModelConfig/g' /home/chris/kbot3/microservices/reranker/ms_core/nacos_manager.py
-sed -i 's/from configuration.config_type import AppConfig, DBConfig, ModelConfig/from .config_type import AppConfig, DBConfig, ModelConfig/g' /home/chris/kbot3/microservices/synonym/ms_core/nacos_manager.py
+sed -i 's/from core.dictionary import AccessorType/from .dictionary import AccessorType/g' microservices/embedding/ms_core/auth.py
+sed -i 's/from core.dictionary import AccessorType/from .dictionary import AccessorType/g' microservices/llm/ms_core/auth.py
+sed -i 's/from core.dictionary import AccessorType/from .dictionary import AccessorType/g' microservices/vlm/ms_core/auth.py
+sed -i 's/from core.dictionary import AccessorType/from .dictionary import AccessorType/g' microservices/reranker/ms_core/auth.py
+sed -i 's/from core.dictionary import AccessorType/from .dictionary import AccessorType/g' microservices/synonym/ms_core/auth.py
 
+sed -i 's/from configuration.config_type import AppConfig, DBConfig, ModelConfig/from .config_type import AppConfig, DBConfig, ModelConfig/g' microservices/embedding/ms_core/nacos_manager.py
+sed -i 's/from configuration.config_type import AppConfig, DBConfig, ModelConfig/from .config_type import AppConfig, DBConfig, ModelConfig/g' microservices/llm/ms_core/nacos_manager.py
+sed -i 's/from configuration.config_type import AppConfig, DBConfig, ModelConfig/from .config_type import AppConfig, DBConfig, ModelConfig/g' microservices/vlm/ms_core/nacos_manager.py
+sed -i 's/from configuration.config_type import AppConfig, DBConfig, ModelConfig/from .config_type import AppConfig, DBConfig, ModelConfig/g' microservices/reranker/ms_core/nacos_manager.py
+sed -i 's/from configuration.config_type import AppConfig, DBConfig, ModelConfig/from .config_type import AppConfig, DBConfig, ModelConfig/g' microservices/synonym/ms_core/nacos_manager.py
 
-
+sed -i 's/from core.nacos_manager import load_config, DBConfig/from .nacos_manager import load_config, DBConfig/g' microservices/embedding/ms_core/meta_redis.py
+sed -i 's/from core.nacos_manager import load_config, DBConfig/from .nacos_manager import load_config, DBConfig/g' microservices/llm/ms_core/meta_redis.py
+sed -i 's/from core.nacos_manager import load_config, DBConfig/from .nacos_manager import load_config, DBConfig/g' microservices/vlm/ms_core/meta_redis.py
+sed -i 's/from core.nacos_manager import load_config, DBConfig/from .nacos_manager import load_config, DBConfig/g' microservices/reranker/ms_core/meta_redis.py
