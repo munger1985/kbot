@@ -1,15 +1,4 @@
-import uuid
-import json
-import pdfplumber
-import pandas as pd
-import json
 
-from pathlib import Path
-from PIL import Image
-from pdfminer.pdfinterp import PDFResourceManager, PDFPageInterpreter
-from pdfminer.pdfpage import PDFPage
-from pdfminer.converter import PDFPageAggregator
-from pdfminer.layout import LAParams, LTImage, LTFigure
 from loguru import logger
 from .file_params import FileParams
 from dao.repositories.kbot_md_kb_files_repo import KbotMdKbFilesRepository
@@ -19,15 +8,11 @@ from dao.entities.kbot_biz_txt_embedding import KbotBizTxtEmbedding
 from core.dictionary import FileStatus, ChunkType, SplitStrategy
 from utils.call_models import CallModel
 from utils.common_methods import check_text_file
-import traceback
-
-import os
 import json
 import uuid
 import zipfile
 from pathlib import Path
 from typing import Dict, List, Any, Optional
-import xml.etree.ElementTree as ET
 from datetime import datetime
 import shutil
 
