@@ -15,7 +15,7 @@ from dao.repositories.kbot_md_models_repo import KbotMdModelsRepository
 from dao.entities.kbot_biz_txt_embedding import KbotBizTxtEmbedding
 from core.dictionary import FileStatus, ChunkType, SplitStrategy
 from utils.call_models import CallModel
-from utils.common_methods import check_text_file
+from utils.common_methods import check_text_file, update_file_status, save_embeddings
 import traceback
 
 import os
@@ -35,6 +35,8 @@ class MarkdownParser:
         self.base_dir = os.path.dirname(os.path.abspath(self.markdown_file))
         self.images_dir = os.path.join(self.base_dir, 'images')
         self.tables_dir = os.path.join(self.base_dir, 'tables')
+        self.md = markdown.Markdown(extensions=['tables'])
+        self.text_results= []
         self.create_dirs()
 
     def create_dirs(self):
@@ -49,16 +51,93 @@ class MarkdownParser:
         with open(self.markdown_file, 'r', encoding='utf-8') as f:
             return f.read()
 
+    def _parse_paragraphs(self, text):
+        """按照段落解析Markdown文本"""
+        # 将markdown转换为HTML
+        html = self.md.convert(text)
+        soup = BeautifulSoup(html, 'html.parser')
+
+        # 提取段落
+        paragraphs = []
+        for p in soup.find_all(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol']):
+            paragraphs.append(p.get_text().strip())
+
+        return paragraphs
+
+    def _parse_table(self, table_text):
+        """
+        解析markdown表格并转换为JSON，以表头作为key
+
+        Args:
+            table_text (str): Markdown表格文本
+
+        Returns:
+            list: 字典列表，每个字典代表一行，键为表头
+        """
+        # 将markdown表格转换为HTML
+        html = self.md.convert(table_text)
+        soup = BeautifulSoup(html, 'html.parser')
+
+        table = soup.find('table')
+        if not table:
+            return []
+
+        # 提取表头
+        headers = []
+        header_row = table.find('thead').find('tr')
+        for th in header_row.find_all('th'):
+            headers.append(th.get_text().strip())
+
+        # 提取行数据
+        result = []
+        for tr in table.find('tbody').find_all('tr'):
+            row_data = {}
+            cells = tr.find_all('td')
+            for i, cell in enumerate(cells):
+                if i < len(headers):
+                    row_data[headers[i]] = cell.get_text().strip()
+            result.append(row_data)
+
+        return result
     def extract_text_content(self, md_content):
         """提取纯文本内容"""
         html = markdown.markdown(md_content)
-        soup = BeautifulSoup(html, 'html.parser')
+        # soup = BeautifulSoup(html, 'html.parser')
+        text_results = {
+            'paragraphs': [],
+            'tables': []
+        }
 
-        # 移除表格和图片标签，只保留文本内容
-        for element in soup.find_all(['table', 'img']):
-            element.decompose()
+        # 首先，识别markdown中的表格部分
+        table_pattern = r'(\|[^\n]+\|\n\|[-:| ]+\|\n(?:\|[^\n]+\|\n)+)'
+        table_matches = re.finditer(table_pattern, md_content)
 
-        return soup.get_text().strip()
+        # 提取表格及其位置
+        table_positions = []
+        for match in table_matches:
+            start, end = match.span()
+            table_positions.append((start, end, match.group(0)))
+
+        # 处理文本，跳过表格部分
+        last_end = 0
+        for start, end, table_text in table_positions:
+            # 添加表格前的文本
+            if start > last_end:
+                paragraphs = self._parse_paragraphs(md_content[last_end:start])
+                text_results['paragraphs'].extend(paragraphs)
+
+            # 解析表格
+            table_json = self._parse_table(table_text)
+            text_results['tables'].append(table_json)
+
+            last_end = end
+
+        # 添加最后一个表格后的任何剩余文本
+        if last_end < len(md_content):
+            paragraphs = self._parse_paragraphs(md_content[last_end:])
+            text_results['paragraphs'].extend(paragraphs)
+        self.text_results= text_results
+        return text_results
 
     def extract_tables(self, md_content):
         """提取表格并转换为JSON格式，保存到文件"""
@@ -184,21 +263,164 @@ class MarkdownParser:
 
         return saved_images
 
-    def parse(self):
+    async def _process_images_embeddings(self) -> list:
+        ## 1 means yes
+        if self.file_params.img2txt == 1:
+            self.parsed_metadata = self.extract_images_and_save_metadata(filename="image_info.json")
+
+            # if self.file_params.parser.get("extract_images", False):
+            vlm_prompt_unique_name = "SYSTEM/image2text"
+            vlm_model_unique_name = await KbotMdModelsRepository().get_unique_name_by_id(
+                self.file_params.img2txt_model)  # type: ignore
+            chunks = []
+            chunk_metas = []
+
+            for eachImage in self.images_info:
+                description_file = Path(eachImage['file_path'] + ".description")
+                if not description_file.exists():
+
+                    image_description = await CallModel().call_vlm_model_for_parsing_picture(vlm_model_unique_name,
+                                                                                             vlm_prompt_unique_name,
+                                                                                             # type: ignore
+                                                                                             eachImage['file_path'])
+                    if image_description:
+                        description_file.write_text(
+                            image_description,
+                            encoding='utf-8'
+                        )
+                        chunk_metas.append({
+                            "chunk_type": ChunkType.IMAGE,
+                            "sheet_name": eachImage['sheet_name'],
+                            "image_id": eachImage['image_id'],
+                        })
+                        chunks.append(image_description)
+            text_embedding_model = await KbotMdModelsRepository().get_unique_name_by_id(
+                self.file_params.txt_embed_model  # type: ignore
+            )
+
+            if not text_embedding_model:
+                msg = f"text_embedding_model not found for id: {self.file_params.txt_embed_model}"
+                logger.error(msg)
+                await  update_file_status(FileStatus.PARSE_FAILED, msg)
+                return []
+            embeddings_list = []
+            if chunks:
+                embeddings_list = await CallModel().call_embedding_model(text_embedding_model, chunks)
+            if embeddings_list and len(embeddings_list) != len(chunks):
+                msg = f"text_embedding_model  {text_embedding_model} returned invalid results (expected {len(chunks)}, got {len(embeddings_list) if embeddings_list else 0})"
+                logger.error(msg)
+                logger.error("failed file: {}", self.file_params.file_path)
+                await  update_file_status(FileStatus.PARSE_FAILED, msg)
+                return []
+
+                # Create embedding entities
+            embed_entities = []
+            for idx, (chunk, meta) in enumerate(zip(chunks, chunk_metas)):
+                embed_entity = KbotBizTxtEmbedding(
+                    kb_id=self.file_params.kb_id,
+                    embed_id=meta['image_id'],
+                    chunk_doc=chunk,
+                    chunk_metadata=json.dumps(meta),
+                    file_id=self.file_params.file_id,
+                    embedding=embeddings_list[idx].embedding,  # type: ignore
+                    security_level=self.file_params.security_level
+                )
+                embed_entities.append(embed_entity)
+
+            # Save all embeddings in one batch
+            return embed_entities
+        else:
+            return []
+
+
+    async def _process_embeddings(self) -> bool:
+        """Process text and table embeddings for by fixed size"""
+        model_unique_name = await KbotMdModelsRepository().get_unique_name_by_id(
+            self.file_params.txt_embed_model  # type: ignore
+        )
+        if not model_unique_name:
+            msg = f"Embedding model not found for id: {self.file_params.txt_embed_model}"
+            logger.error(msg)
+            await  update_file_status(FileStatus.PARSE_FAILED, msg)
+            return False
+
+        # Prepare all content chunks for embedding
+        chunks = []
+        chunk_metas = []
+
+        # Add table content
+        for paragraph in self.text_results['paragraphs']:
+                    chunks.append(paragraph)
+                    chunk_metas.append({
+                        "chunk_type": ChunkType.TEXT,
+                    })
+        for table in self.text_results['tables']:
+                table_str = json.dumps(table, ensure_ascii=False, indent=2)
+                chunks.append(table_str )
+                chunk_metas.append({
+                    "chunk_type": ChunkType.TABLE,
+
+                })
+
+
+
+        if not chunks:
+            logger.warning("No valid content chunks found for embedding")
+            return True  # Consider empty content as success
+
+        # Get all embeddings in one call
+        embeddings_list = await CallModel().call_embedding_model(model_unique_name, chunks)
+        if not embeddings_list or len(embeddings_list) != len(chunks):
+            msg = f"Embedding model {model_unique_name} returned invalid results (expected {len(chunks)}, got {len(embeddings_list) if embeddings_list else 0})"
+            logger.error(msg)
+            await  update_file_status(FileStatus.PARSE_FAILED, msg)
+            return False
+
+        # Create embedding entities
+        embed_entities = []
+        for idx, (chunk, meta) in enumerate(zip(chunks, chunk_metas)):
+            embed_entity = KbotBizTxtEmbedding(
+                kb_id=self.file_params.kb_id,
+                embed_id=str(uuid.uuid4()),
+                chunk_doc=chunk,
+                chunk_metadata=json.dumps(meta),
+                file_id=self.file_params.file_id,
+                embedding=embeddings_list[idx].embedding,
+                security_level=self.file_params.security_level
+            )
+            embed_entities.append(embed_entity)
+        image_embed_entities= await self._process_images_embeddings()
+        embed_entities.extend(image_embed_entities)
+
+        # Save all embeddings in one batch
+        return await save_embeddings(embed_entities)
+    async def parse(self):
         """解析Markdown文件"""
-        md_content = self.read_markdown()
+        split_strategy = int(self.file_params.parser.get("split_strategy", SplitStrategy.SEMANTIC.value))
+        file_repo = KbotMdKbFilesRepository()
+        if split_strategy == SplitStrategy.SEMANTIC.value:
 
-        result = {
-            'text_content': self.extract_text_content(md_content),
-            'tables': self.extract_tables(md_content),
-            'images': self.extract_and_save_images(md_content),
-            'metadata': {
-                'source_file': self.markdown_file,
-                'images_directory': self.images_dir
+            md_content = self.read_markdown()
+            self.extract_text_content(md_content)
+            metadata = {
+                'tables': self.extract_tables(md_content),
+                'images': self.extract_and_save_images(md_content),
+                'metadata': {
+                    'source_file': self.markdown_file,
+                    # 'images_directory': self.images_dir
+                }
             }
-        }
+            if not await self._process_embeddings():
+                return False
+            json_str = json.dumps(metadata, ensure_ascii=False, indent=2)
 
-        return result
+            await file_repo.update_file_parsed_metadata(self.file_params.file_id, json_str)
+
+
+            return True
+        else:
+            logger.warning(f"Unrecognized split strategy: {split_strategy}")
+            return False
 
 
 async def process_markdown(file_params: FileParams) -> bool:
@@ -235,7 +457,7 @@ async def process_markdown(file_params: FileParams) -> bool:
             )
             return False
     except Exception as e:
-        msg = f"Error processing Excel file: {file_params.file_path}, error: {str(e)}"
+        msg = f"Error processing Markdown file: {file_params.file_path}, error: {str(e)}"
         logger.error(msg)
         await KbotMdKbFilesRepository().update_file_status(
             file_params.file_id,
@@ -243,23 +465,23 @@ async def process_markdown(file_params: FileParams) -> bool:
             msg
         )
         return False
-def main():
-    import sys
-    import json
-
-    if len(sys.argv) != 2:
-        print("用法: python markdown_parser.py <markdown文件路径>")
-        sys.exit(1)
-
-    markdown_file = sys.argv[1]
-
-    if not os.path.exists(markdown_file):
-        print(f"文件不存在: {markdown_file}")
-        sys.exit(1)
-
-    parser = MarkdownParser(markdown_file)
-    result = parser.parse()
-
-    # 输出结果
-    print("解析结果:")
-    print(json.dumps(result, indent=2, ensure_ascii=False))
+# def main():
+#     import sys
+#     import json
+#
+#     if len(sys.argv) != 2:
+#         print("用法: python markdown_parser.py <markdown文件路径>")
+#         sys.exit(1)
+#
+#     markdown_file = sys.argv[1]
+#
+#     if not os.path.exists(markdown_file):
+#         print(f"文件不存在: {markdown_file}")
+#         sys.exit(1)
+#
+#     parser = MarkdownParser(markdown_file)
+#     result = parser.parse()
+#
+#     # 输出结果
+#     print("解析结果:")
+#     print(json.dumps(result, indent=2, ensure_ascii=False))

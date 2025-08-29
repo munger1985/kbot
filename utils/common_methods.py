@@ -6,9 +6,42 @@ from typing import Callable, AsyncGenerator
 from loguru import logger
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from services.dataparse.file_params import FileParams
+
+from dao.entities.kbot_biz_txt_embedding import KbotBizTxtEmbedding
+from dao.repositories.kbot_biz_txt_embedding_repo import KbotBizTxtEmbeddingRepository
 from dao.repositories.kbot_md_kb_files_repo import KbotMdKbFilesRepository
 from core.dictionary import FileStatus
 
+
+async def  save_embeddings(self, embeddings: list[KbotBizTxtEmbedding]) -> bool:
+    """Save embeddings to database with error handling"""
+    if not embeddings:
+        return False
+
+    try:
+        repo = KbotBizTxtEmbeddingRepository()
+        result = await repo.create(kb_id=self.file_params.kb_id, embeddings=embeddings)
+        if not result:
+            msg = "Failed to save embeddings (repository returned False)"
+            logger.error(msg)
+            await self._update_file_status(FileStatus.PARSE_FAILED, msg)
+            return False
+
+        logger.info(f"Successfully saved {len(embeddings)} embeddings")
+        return True
+
+    except Exception as e:
+        msg = f"Exception while saving embeddings: {str(e)}"
+        logger.error(msg)
+        await self._update_file_status(FileStatus.PARSE_FAILED, msg)
+        return False
+async def update_file_status(self, status: FileStatus, message: str) -> None:
+    """Helper method to update file status"""
+    await KbotMdKbFilesRepository().update_file_status(
+        self.file_params.file_id,
+        status,
+        message
+    )
 @staticmethod
 async def check_text_file(file_params: FileParams) -> bool:
     """检查文件嵌入模型和文件存在性"""
