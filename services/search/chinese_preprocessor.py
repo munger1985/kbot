@@ -2,7 +2,6 @@ import re
 import jieba
 import jieba.posseg as pseg
 from pathlib import Path
-from typing import Any
 from loguru import logger
 from core.nacos_manager import load_config, ModelConfig
 from utils.call_models import CallModel
@@ -237,7 +236,7 @@ class ChinesePreprocessor:
 
     async def preprocess(self, query: str,
                          enable_pos_filtering: bool | None = True,
-                         enable_synonym_expansion: bool | None = True,
+                         enable_synonym_expansion: bool | None = False,
                          synonym_similarity_threshold: float | None = 0.65,  # 较低的阈值获取更多同义词
                          max_synonyms_per_word: int | None = 2            # 每个词最多扩展2个同义词
                  ) -> dict[str, str|list[str]] | None:
@@ -311,7 +310,7 @@ def get_preprocessor() -> ChinesePreprocessor:
 async def preprocess_cn_query(
         query: str,
         enable_pos_filtering: bool | None = True,
-        enable_synonym_expansion: bool | None = True,
+        enable_synonym_expansion: bool | None = False,
         synonym_similarity_threshold: float | None = 0.65,  # 较低的阈值获取更多同义词
         max_synonyms_per_word: int | None = 2            # 每个词最多扩展2个同义词
         ) -> dict[str, str|list[str]] | None:

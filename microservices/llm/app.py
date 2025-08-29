@@ -326,7 +326,8 @@ async def chat(
                             if chunk == "[DONE]":
                                 break
                             try:
-                                content = chunk["message"]["content"][0]["text"]
+                                # content = chunk["message"]["content"][0]["text"]
+                                content = chunk["text"]
                                 chunk_dict = {
                                     "id": response_id,
                                     "object": "chat.completion.chunk",

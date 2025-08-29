@@ -32,7 +32,8 @@ async def test_call_llm_model():
     测试调用LLM模型的方法
     """
     # 测试参数
-    model_name = "KBOT1/OCI-GROK4-II"
+    model_name = 'KBOT1/OCI-cohere'
+    # model_name = "KBOT1/OCI-GROK4-II"
     # model_name = "KBOT1/xai.grok-4"
     test_prompt = "文艺复兴是什么"
     
@@ -155,4 +156,4 @@ async def test_call_vlm_model():
 # 运行测试
 if __name__ == "__main__":
 
-    asyncio.run(test_call_reranker_model())
+    asyncio.run(test_call_llm_model())

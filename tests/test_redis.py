@@ -11,7 +11,7 @@ sys.path.insert(0, str(project_root))
 
 from dao.repositories.kbot_md_chat_session_repo import KbotMdChatSessionRepository
 
-key="session_1756366751.749874"
+key="session_1754010982.804123"
 
 
 
@@ -173,7 +173,7 @@ async def update_last_qa_data_answer():
     try:
         repo = KbotMdChatSessionRepository()
         print(f"正在写入Redis，session_id: {key}")
-        result = await repo.update_last_qa_data_answer(key, "Redis啊redis")
+        result = await repo.update_last_qa_data_answer(key, "您好！请问有什么可以帮助您的吗？")
         if result:
             print("写入Redis成功")
             await get_last_qa_data()
@@ -189,7 +189,7 @@ async def update_last_qa_data_answer():
 if __name__ == "__main__":
     print("Starting redis test...")
 
-    asyncio.run(delete_session())
+    asyncio.run(update_qa_feedback())
 
     
     

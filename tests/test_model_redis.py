@@ -2,6 +2,10 @@ import sys
 from pathlib import Path
 import asyncio
 
+
+from dotenv import load_dotenv
+load_dotenv()
+
 project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(project_root))
 
