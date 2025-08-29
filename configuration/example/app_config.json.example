@@ -4,7 +4,7 @@
     "description": "KBot API Service",
     "version": "3.0.0",
     "debug": true,
-    "file_storage": "/home/chris/kbot/knowledge_base",
+    "file_storage": "/your/path/kbot3/knowledge_base",
     "upload_workers": 10,
     "parser": {
       "max_workers": 2,
@@ -12,7 +12,7 @@
     },
     "log": {
       "level": "DEBUG",
-      "dir": "/home/chris/kbot3/logs/",
+      "dir": "/your/path/kbot3/logs/",
       "rotation": "100 MB",
       "retention": "10 days"
     }

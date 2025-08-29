@@ -45,9 +45,8 @@ class JinaReranker(LocalReranker):
                     inputs = inputs.to(self.device)
                 
                 # Jina 分数处理
-                outputs = self.model(**inputs)
-                scores = outputs.logits.squeeze(-1).cpu().tolist()
-            
+                logits = self.model(**inputs).logits.squeeze(-1)
+                scores = torch.sigmoid(logits).cpu().tolist()
             
             # Create list of (index, score) tuples
             scored_results = [(i, score) for i, score in enumerate(scores)]

@@ -10,8 +10,11 @@
     "password": "welcome1",
     "host": "localhost",
     "port": 6379,
-    "db": 0,
-    "max_connections": 10
+    "max_connections": 10,
+    "socket_connect_timeout": 3,
+    "socket_timeout": 5,
+    "retry_on_timeout": true,
+    "health_check_interval": 30
   },
   "sqlalchemy": {
     "echo": false,

@@ -87,7 +87,12 @@ class CallModel():
             return None
         
 
-    async def call_reranker_model(self, model_unique_name: str, query: str, documents: list[str], top_k: int | None) -> list[dict[str, Any]] | None:
+    async def call_reranker_model(self, 
+                                  model_unique_name: str, 
+                                  query: str, 
+                                  documents: list[str], 
+                                  top_k: int | None
+                                ) -> list[dict[str, Any]] | None:
         """Call reranker model to rerank documents
         调用reranker微服务将文本列表进行rerank
         - **model_unique_name**: Model unique name to use for reranking.

@@ -7,7 +7,7 @@
     "max_tokens": 8192,
     "timeout": 30,
     "max_retries": 3,
-    "cache_dir": "/home/chris/cached_models/"
+    "cache_dir": "/your/path/cached_models/"
   },
   "llm": {
     "service_name": "llm-service",
@@ -27,7 +27,7 @@
     "service_version": "1.0.0",
     "service_host": "0.0.0.0",
     "service_port": 9203,
-    "cache_dir": "/home/chris/cached_models/",
+    "cache_dir": "/your/path/cached_models/",
     "timeout": 30
   },
   "vlm": {
@@ -38,7 +38,17 @@
     "timeout": 30
   },
   "tokenizer": {
-    "custom_dict_path": "/home/chris/kbot3/configuration/custom_dict.txt",
-    "stop_words_path": "/home/chris/kbot3/configuration/stopwords.txt"
+    "custom_dict_path": "/your/path/kbot3/configuration/custom_dict.txt",
+    "stop_words_path": "/your/path/kbot3/configuration/stopwords.txt"
+  },
+  "synonym": {
+    "service_name": "synonym-service",
+    "service_version": "1.0.0",
+    "service_host": "0.0.0.0",
+    "service_port": 9205,
+    "timeout": 30,
+    "model_path": "/your/path/cached_models/cc.zh.300.bin",
+    "top_n_words": 50000,
+    "preload_top": 1000
   }
 }

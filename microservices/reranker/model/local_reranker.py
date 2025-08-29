@@ -263,7 +263,9 @@ class LocalReranker(BaseReranker):
                     pass
                 
                 # Get scores
-                scores = self.model(**inputs).logits.squeeze(-1).cpu().tolist()
+                # scores = self.model(**inputs).logits.squeeze(-1).cpu().tolist()
+                logits = self.model(**inputs).logits.squeeze(-1)  # 原始 logits
+                scores = torch.sigmoid(logits).cpu().tolist()  # 使用 sigmoid
             
             # Create list of (index, score) tuples
             scored_results = [(i, score) for i, score in enumerate(scores)]
