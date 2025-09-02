@@ -13,8 +13,8 @@ async def test_call_embedding_model():
     测试调用embedding模型的方法
     """
     # 测试参数
-    #embed_model_unique_name = "KBOT1/BGE-M3" # KBOT1/E5-LARGE-V2
-    embed_model_unique_name = "KBOT1/OCI-Embedding"
+    embed_model_unique_name = "KBOT1/BGE-M3" # KBOT1/E5-LARGE-V2
+    # embed_model_unique_name = "KBOT1/OCI-Embedding"
     embed_input_texts = ["苹果", "香蕉"]
     topk = 4
     emb = await CallModel().call_embedding_model(
@@ -156,4 +156,4 @@ async def test_call_vlm_model():
 # 运行测试
 if __name__ == "__main__":
 
-    asyncio.run(test_call_reranker_model())
+    asyncio.run(test_call_embedding_model())

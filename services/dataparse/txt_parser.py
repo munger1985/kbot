@@ -104,8 +104,7 @@ async def process_txt(file_params: FileParams) -> bool:
                 embed_entity = KbotBizTxtEmbedding(
                     embed_id=str(uuid.uuid4()),
                     chunk_doc=chunk,
-                    chunk_metadata=json.dumps({"chunk_type": ChunkType.TEXT,
-                                                "page_num": 1}),
+                    chunk_metadata={"chunk_type": ChunkType.TEXT, "page_num": 1},
                     file_id=file_params.file_id,
                     kb_id=file_params.kb_id,
                     embedding=embedding,
@@ -113,7 +112,8 @@ async def process_txt(file_params: FileParams) -> bool:
                 )
                 embed_entities.append(embed_entity)
                 
-            embedding_repo = KbotBizTxtEmbeddingRepository()
+            embedding_repo = KbotBizTxtEmbeddingRepository(kb_id=file_params.kb_id)
+            await embedding_repo.initialize()
             logger.debug(f"Attempting to save {len(embed_entities)} embeddings to database...")
             try:
                 result = await embedding_repo.create(kb_id=file_params.kb_id, embeddings=embed_entities)

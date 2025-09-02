@@ -159,7 +159,7 @@ class PDFPlumberParser:
                     kb_id=self.file_params.kb_id,
                     embed_id=meta['image_id'],
                     chunk_doc=chunk,
-                    chunk_metadata=json.dumps(meta),
+                    chunk_metadata=meta,
                     file_id=self.file_params.file_id,
                     embedding=embeddings_list[idx].embedding, # type: ignore
                     security_level=self.file_params.security_level
@@ -231,7 +231,7 @@ class PDFPlumberParser:
                 kb_id=self.file_params.kb_id,
                 embed_id=str(uuid.uuid4()),
                 chunk_doc=chunk,
-                chunk_metadata=json.dumps(meta),
+                chunk_metadata=meta,
                 file_id=self.file_params.file_id,
                 embedding=embeddings_list[idx].embedding,
                 security_level=self.file_params.security_level
@@ -304,7 +304,7 @@ class PDFPlumberParser:
                 kb_id=self.file_params.kb_id,
                 embed_id=str(uuid.uuid4()),
                 chunk_doc=chunk,
-                chunk_metadata=json.dumps(meta),
+                chunk_metadata=meta,
                 file_id=self.file_params.file_id,
                 embedding=embeddings_list[idx].embedding,
                 security_level=self.file_params.security_level
@@ -323,7 +323,8 @@ class PDFPlumberParser:
             return False
 
         try:
-            repo = KbotBizTxtEmbeddingRepository()
+            repo = KbotBizTxtEmbeddingRepository(kb_id=self.file_params.kb_id)
+            await repo.initialize()
             result = await repo.create(kb_id=self.file_params.kb_id, embeddings=embeddings)
             if not result:
                 msg = "Failed to save embeddings (repository returned False)"

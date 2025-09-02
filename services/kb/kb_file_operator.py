@@ -2,7 +2,6 @@ import os
 import uuid
 import json
 import shutil
-import configparser
 from pathlib import Path
 from fastapi import UploadFile
 from loguru import logger
@@ -437,7 +436,8 @@ class KBFileOperator:
             - This is an async function and needs to be awaited //这是一个异步函数，需要await调用
         """
 
-        embed_repo = KbotBizTxtEmbeddingRepository()
+        embed_repo = KbotBizTxtEmbeddingRepository(kb_id=kb_id)
+        await embed_repo.initialize()
         file_repo = KbotMdKbFilesRepository()
         vec_cnt = 0
         # Mode 1: Delete by file IDs //模式1：通过文件ID删除

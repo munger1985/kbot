@@ -88,7 +88,7 @@ class KBSearch:
             for result in results:
                 embedding = result.embedding
                 kb_result = await self.get_similar_records(embedding, security)
-                if kb_result is None:
+                if kb_result is None or kb_result == []:
                     continue
                 else:
                     kb_results.extend(kb_result)
@@ -101,7 +101,8 @@ class KBSearch:
     async def get_similar_records(self, query_vec: list[float], security: int) -> list[KBResult] | None:
         """Get similar records from the vector database"""
         # Perform similarity search
-        repo = KbotBizTxtEmbeddingRepository()
+        repo = KbotBizTxtEmbeddingRepository(kb_id=self.tool_params.tool_id)
+        await repo.initialize()
         convertor = OracleVecHandler()
         vec = convertor.convert(query_vec, to_string=True)
         try:
@@ -127,7 +128,7 @@ class KBSearch:
                 result.file_id = data[0]
                 result.chunk_type = chunk_meta.get("chunk_type", 1)
                 result.page_num = chunk_meta.get("page_num", 1)
-                result.content = await lob_to_string(data[1])
+                result.content = data[1].read()
                 result.similarity = data[3]
                 result.weight = self.tool_params.tool_weight # type: ignore
                 results.append(result)
@@ -137,11 +138,12 @@ class KBSearch:
 
         except Exception as e:
             logger.debug(f"Vector search failed: {str(e)}")
-            return None
+            raise ValueError(f"Vector search failed: {str(e)}")
         
     async def serch_by_full_text(self, keywords: list[str], security: int) -> list[KBResult] | None:
         """Search by full text"""
-        repo = KbotBizTxtEmbeddingRepository()
+        repo = KbotBizTxtEmbeddingRepository(kb_id=self.tool_params.tool_id)
+        await repo.initialize()
         try:
             logger.debug(f"Full text search KB ID: {self.tool_params.tool_id}")
             logger.debug(f"Full text search keywords: {keywords}")
@@ -165,7 +167,7 @@ class KBSearch:
                     result.file_id = data[0]
                     result.chunk_type = getattr(chunk_meta, "chunk_type", 1)
                     result.page_num = getattr(chunk_meta, "page_num", 1)
-                    result.content = await lob_to_string(data[1])
+                    result.content = data[1].read()
                     result.similarity = data[3]
                     result.weight = self.tool_params.tool_weight # type: ignore
                     results.append(result)

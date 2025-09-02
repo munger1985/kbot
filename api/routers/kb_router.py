@@ -154,20 +154,7 @@ async def handle_preview_file(
                 html_content = f"""
                 <!DOCTYPE html>
                 <html>
-                <head>
-                    <title>文本预览</title>
-                    <style>
-                        body {{ font-family: Arial, sans-serif; margin: 40px; }}
-                        .content {{ 
-                            white-space: pre-wrap; 
-                            border: 1px solid #ddd; 
-                            padding: 20px; 
-                            background-color: #f9f9f9;
-                        }}
-                    </style>
-                </head>
                 <body>
-                    <h1>文本文件预览</h1>
                     <div class="content">{content}</div>
                 </body>
                 </html>

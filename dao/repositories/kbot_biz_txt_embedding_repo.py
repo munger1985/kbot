@@ -1,44 +1,72 @@
+import json
 from typing import Sequence
 from sqlalchemy import select, delete
-from core.database.vec_oracle import create_session
+from core.database.vec_oracle_pool import OracleConnParams, AsyncOracleConnectionPoolManager
 from dao.entities.kbot_biz_txt_embedding import KbotBizTxtEmbedding
 from dao.repositories.kbot_md_db_conf_repo import KbotMdDbConfRepository
 from utils.oracle_vec_handler import OracleVecHandler
+from core.dictionary import DbType
 
 class KbotBizTxtEmbeddingRepository:
+    """Repository for KBOT_BIZ_TXT_EMBEDDING table operations."""
+    def __init__(self, kb_id: int):
+        self.kb_id = kb_id
+        self.db_conf = None
+        self.conn_params = None
+        self.pool_manager = AsyncOracleConnectionPoolManager()
+
+    async def initialize(self):
+        db_repo = KbotMdDbConfRepository()
+        self.db_conf = await db_repo.get_by_kbid(self.kb_id)
+        if self.db_conf is None:
+            return False
+        connstr = self.db_conf.db_conn_str
+        db_type = self.db_conf.db_type
+        if connstr is not None and db_type == DbType.ORACLE:
+            self.conn_params = OracleConnParams(
+                user=connstr.get("user"), # type: ignore
+                password=connstr.get("password"), # type: ignore
+                dsn=f"{connstr.get('host')}:{connstr.get('port')}/{connstr.get('service_name')}:pooled"
+            )
+          
 
     async def create(self, kb_id: int, embeddings: list[KbotBizTxtEmbedding]) -> bool:
         """Create a new embedding record."""
-        db_repo = KbotMdDbConfRepository()
-        db_conf = await db_repo.get_by_kbid(kb_id)
-        if db_conf is None:
+        if self.conn_params is None:
             return False
-        connstr = db_conf.db_conn_str
-        db_type = db_conf.db_type
-        if connstr is None or db_type is None:
-            return False
-        async with create_session(db_type=db_type, connection_info=connstr) as session:
-            for embedding in embeddings:
-                session.add(embedding)
-            await session.commit()
-            return True
+        
+        # Generate SQL
+        sql = """INSERT INTO KBOT_BIZ_TXT_EMBEDDING
+        (EMBED_ID, KB_ID, FILE_ID, CHUNK_DOC, CHUNK_METADATA, EMBEDDING, SECURITY_LEVEL)
+        VALUES
+        (:embed_id, :kb_id, :file_id, :chunk_doc, :chunk_metadata, :embedding, :security_level)"""
+        
+        for embedding in embeddings:
+            params = {
+                "embed_id": embedding.embed_id,
+                "kb_id": kb_id,
+                "file_id": embedding.file_id,
+                "chunk_doc": embedding.chunk_doc,
+                "chunk_metadata": json.dumps(embedding.chunk_metadata) if embedding.chunk_metadata is not None else None,
+                "embedding": OracleVecHandler().convert(vec=embedding.embedding, to_string=True),
+                "security_level": embedding.security_level
+            }
+            result = await self.pool_manager.execute_dml(self.conn_params, sql, params)
+        return True
     
     async def delete_by_file_ids(self, kb_id: int, file_ids: list[str]) -> int:
         """Delete embedding records by file IDs."""
-        db_repo = KbotMdDbConfRepository()
-        db_conf = await db_repo.get_by_kbid(kb_id)
-        if db_conf is None:
+        if self.conn_params is None:
             return 0
-        connstr = db_conf.db_conn_str
-        db_type = db_conf.db_type
-
-        if connstr is None or db_type is None:
-            return 0
-        async with create_session(db_type=db_type, connection_info=connstr) as session:
-            stmt = delete(KbotBizTxtEmbedding).where(KbotBizTxtEmbedding.file_id.in_(file_ids))
-            result = await session.execute(stmt)
-            await session.commit()
-            return result.rowcount
+        
+        # Generate SQL
+        sql = """DELETE FROM KBOT_BIZ_TXT_EMBEDDING
+        WHERE FILE_ID IN :file_ids"""
+        params = {
+            "file_ids": file_ids
+        }
+        result = await self.pool_manager.execute_dml(self.conn_params, sql, params)
+        return result
         
     async def get_similar_embeddings(self,
                                      kb_id: int,
@@ -59,54 +87,33 @@ class KbotBizTxtEmbeddingRepository:
         Returns:
             list of similar embeddings ordered by similarity score
         """
-        db_repo = KbotMdDbConfRepository()
-        db_conf = await db_repo.get_by_kbid(kb_id)
-        if db_conf is None:
+        if self.conn_params is None:
             return []
-        connstr = db_conf.db_conn_str
-        db_type = db_conf.db_type
-        if connstr is None or db_type is None:
-            return []
+        
+        sql = """
+            SELECT 
+                FILE_ID, CHUNK_DOC, CHUNK_METADATA,
+                1 - VECTOR_DISTANCE(EMBEDDING, :query_vec, COSINE) AS similarity
+            FROM KBOT_BIZ_TXT_EMBEDDING
+            WHERE 1 - VECTOR_DISTANCE(EMBEDDING, :query_vec, COSINE) >= :threshold
+            AND KB_ID = :kb_id
+            AND SECURITY_LEVEL <= :security
+            ORDER BY similarity DESC
+            FETCH FIRST :top_k ROWS ONLY
+        """
+        # 添加向量和阈值参数
+        params = {
+            "kb_id": kb_id,
+            "query_vec": query_vec,
+            "security": security,
+            "threshold": similarity_threshold,
+            "top_k": top_k
+        }
+        result = await self.pool_manager.query(self.conn_params, sql, params)
+           
+        return result
 
-        try:    
-            async with create_session(db_type=db_type, connection_info=connstr) as session:
-                # Use database's vector distance function (cosine similarity)
-                # Generate SQL
-                sql = """
-                    SELECT 
-                        FILE_ID, CHUNK_DOC, CHUNK_METADATA,
-                        1 - VECTOR_DISTANCE(EMBEDDING, :query_vec, COSINE) AS similarity
-                    FROM KBOT_BIZ_TXT_EMBEDDING
-                    WHERE 1 - VECTOR_DISTANCE(EMBEDDING, :query_vec, COSINE) >= :threshold
-                    AND KB_ID = :kb_id
-                    AND SECURITY_LEVEL <= :security
-                    ORDER BY similarity DESC
-                    FETCH FIRST :top_k ROWS ONLY
-                """
-                # 添加向量和阈值参数
-                params = {}
-                params["kb_id"] = kb_id
-                params["query_vec"] = query_vec
-                params["security"] = security
-                params["threshold"] = similarity_threshold
-                params["top_k"] = top_k
-
-                # 分步获取原生连接
-                conn = await session.connection()  # 获取AsyncConnection
-                raw_conn = await conn.get_raw_connection()  # 获取底层连接
-                driver_conn = raw_conn.driver_connection  # 获取驱动连接             
-                driver_conn.outputtypehandler = OracleVecHandler.vector_type_handler # type: ignore
-                
-                # 执行查询
-                cursor = driver_conn.cursor() # type: ignore
-                await cursor.execute(sql, params)
-                result = await cursor.fetchall()
-            
-                return result
-        except Exception as e:
-            raise e
-        finally:
-            await conn.close()
+        
         
     async def full_text_search(self,
                                kb_id: int,
@@ -124,50 +131,33 @@ class KbotBizTxtEmbeddingRepository:
         Returns:
             list of chunk records
         """
-        db_repo = KbotMdDbConfRepository()
-        db_conf = await db_repo.get_by_kbid(kb_id)
-        if db_conf is None:
+        if self.conn_params is None:
             return []
-        connstr = db_conf.db_conn_str
-        db_type = db_conf.db_type
-        if connstr is None or db_type is None:
-            return []
-            
-        async with create_session(db_type=db_type, connection_info=connstr) as session:
 
-            # Generate SQL
-            sql = """
-                SELECT FILE_ID, 
-                       CHUNK_DOC, 
-                       CHUNK_METADATA,
-                       SCORE(1) AS similarity
-                FROM KBOT_BIZ_TXT_EMBEDDING
-                WHERE KB_ID = :kb_id
-                AND SECURITY_LEVEL <= :security
-                AND CONTAINS(CHUNK_DOC, REGEXP_REPLACE(:keyword, '\\W+', ' ACCUM '), 1) > 0
-                ORDER BY similarity DESC
-                FETCH FIRST :top_k ROWS ONLY
-            """
-            # 添加向量和阈值参数
-            params = {}
-            params["kb_id"] = kb_id
-            params["keyword"] = keyword
-            params["security"] = security
-            #params["simularity_threshold"] = simularity_threshold
-            params["top_k"] = top_k
+        # Generate SQL
+        sql = """
+            SELECT FILE_ID, 
+                    CHUNK_DOC, 
+                    CHUNK_METADATA,
+                    SCORE(1) AS similarity
+            FROM KBOT_BIZ_TXT_EMBEDDING
+            WHERE KB_ID = :kb_id
+            AND SECURITY_LEVEL <= :security
+            AND CONTAINS(CHUNK_DOC, REGEXP_REPLACE(:keyword, '\\W+', ' ACCUM '), 1) > 0
+            ORDER BY similarity DESC
+            FETCH FIRST :top_k ROWS ONLY
+        """
+        # 添加向量和阈值参数
+        params = {
+            "kb_id": kb_id,
+            "keyword": keyword,
+            "security": security,
+            #"simularity_threshold": simularity_threshold,
+            "top_k": top_k
+        }
+        result = await self.pool_manager.query(self.conn_params, sql, params)
 
-            # 分步获取原生连接
-            conn = await session.connection()  # 获取AsyncConnection
-            raw_conn = await conn.get_raw_connection()  # 获取底层连接
-            driver_conn = raw_conn.driver_connection  # 获取驱动连接             
-            driver_conn.outputtypehandler = OracleVecHandler.vector_type_handler # type: ignore
-            
-            # 执行查询
-            cursor = driver_conn.cursor() # type: ignore
-            await cursor.execute(sql, params)
-            result = await cursor.fetchall()
-        
-            return result
+        return result
 
         
             

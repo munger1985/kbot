@@ -3,6 +3,7 @@ from loguru import logger
 from fastapi import APIRouter, status
 from fastapi.responses import StreamingResponse
 from api.schemas.agent_schema import AgentChatForm, AgentChatFeedbackForm
+from api.controllers.security_controller import AuthController
 from api.controllers.agent_controller import (
     agent_chat, 
     agent_feedback, 
@@ -23,9 +24,9 @@ router = APIRouter(
 
 @router.post(
     "/chat",
-    summary="Chat with the agent. 和智能体聊天",
     description="Chat with the agent. 和智能体聊天",
     response_model=SuccessQueryResponse | ErrorResponse,
+    # dependencies=[Depends(AuthController.get_current_accessor)] 
     status_code=status.HTTP_200_OK
 )
 async def handle_agent_chat(request: AgentChatForm) -> SuccessQueryResponse | ErrorResponse:
@@ -59,10 +60,10 @@ async def handle_agent_chat(request: AgentChatForm) -> SuccessQueryResponse | Er
 
 @router.get(
     "/stream",
-    summary="Get the stream response. 获取流式响应",
     description="Get the stream response. 获取流式响应",
     status_code=status.HTTP_200_OK,
     response_model=None,
+    # dependencies=[Depends(AuthController.get_current_accessor)] 
     response_class=StreamingResponse
 )
 async def handle_agent_stream_chat(session_id: str) -> StreamingResponse | ErrorResponse:
@@ -90,9 +91,9 @@ async def handle_agent_stream_chat(session_id: str) -> StreamingResponse | Error
 
 @router.post(
     "/feedback",
-    summary="Feedback the agent. 反馈智能体",
     description="Feedback the agent. 反馈智能体",
     response_model=SuccessResponse | ErrorResponse,
+    # dependencies=[Depends(AuthController.get_current_accessor)] 
     status_code=status.HTTP_200_OK
 )
 async def handle_agent_feedback(form: AgentChatFeedbackForm) -> SuccessResponse | ErrorResponse:
@@ -112,9 +113,9 @@ async def handle_agent_feedback(form: AgentChatFeedbackForm) -> SuccessResponse 
 
 @router.get(
     "/session/get",
-    summary="Get the session when login. 在登录智能体时获取session",
     description="Get the session when login. 在登录智能体时获取session",
     response_model=SuccessQueryResponse | ErrorResponse,
+    # dependencies=[Depends(AuthController.get_current_accessor)] 
     status_code=status.HTTP_200_OK
 )
 async def handle_agent_get_session(session_id: str) -> SuccessQueryResponse | ErrorResponse:
@@ -137,9 +138,9 @@ async def handle_agent_get_session(session_id: str) -> SuccessQueryResponse | Er
     
 @router.get(
     "/session/remove",
-    summary="Remove the session. 删除session",
     description="Remove the session. 删除session",
     response_model=SuccessResponse | ErrorResponse,
+    # dependencies=[Depends(AuthController.get_current_accessor)] 
     status_code=status.HTTP_200_OK
 )
 async def handle_agent_del_session(session_id: str) -> SuccessResponse | ErrorResponse:

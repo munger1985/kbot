@@ -10,7 +10,12 @@ router = APIRouter(
     tags=["API Security"]
 )
 
-@router.post("/get_token")
+@router.post(
+        "/get_token",
+        description="获取JWT令牌的端点",
+        response_model=SuccessResponse,
+        status_code=status.HTTP_200_OK
+)
 async def handle_login_for_access_token(form: OAuth2PasswordRequestForm = Depends()):
     """获取JWT令牌的端点"""
     token = await AuthController.login_for_access_token(
@@ -25,7 +30,13 @@ async def handle_login_for_access_token(form: OAuth2PasswordRequestForm = Depend
         )
     return {"access_token": token, "token_type": "bearer"}
 
-@router.post("/create_token")
+@router.post(
+        "/create_token",
+        description="创建访问者",
+        response_model=SuccessResponse,
+        # dependencies=[Depends(AuthController.get_current_accessor)] 
+        status_code=status.HTTP_200_OK
+)
 async def handle_create_accessor(form: AccessorForm):
     """创建访问者"""
     result = await AuthController.create_accessor(form)

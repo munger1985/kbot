@@ -47,6 +47,7 @@
     "service_host": "0.0.0.0",
     "service_port": 9205,
     "timeout": 30,
+    "enabled": false,
     "model_path": "/your/path/cached_models/cc.zh.300.bin",
     "top_n_words": 50000,
     "preload_top": 1000
