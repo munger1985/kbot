@@ -21,7 +21,8 @@ class KBProcedure():
             bool: 操作是否成功
         """
         file_repo = KbotMdKbFilesRepository()
-        chunk_repo = KbotBizTxtEmbeddingRepository()
+        chunk_repo = KbotBizTxtEmbeddingRepository(kb_id=kb_id)
+        await chunk_repo.initialize()
         # 1. 删除文件对应的chunk数据
         try:
             await chunk_repo.delete_by_file_ids(kb_id=kb_id, file_ids=file_ids)

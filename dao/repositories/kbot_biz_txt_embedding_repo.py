@@ -60,12 +60,10 @@ class KbotBizTxtEmbeddingRepository:
             return 0
         
         # Generate SQL
-        sql = """DELETE FROM KBOT_BIZ_TXT_EMBEDDING
-        WHERE FILE_ID IN :file_ids"""
-        params = {
-            "file_ids": file_ids
-        }
-        result = await self.pool_manager.execute_dml(self.conn_params, sql, params)
+        file_ids_str = ", ".join([f"'{file_id}'" for file_id in file_ids])
+        sql = f"""DELETE FROM KBOT_BIZ_TXT_EMBEDDING
+        WHERE FILE_ID IN ({file_ids_str})"""
+        result = await self.pool_manager.execute_dml(self.conn_params, sql, {})
         return result
         
     async def get_similar_embeddings(self,

@@ -3,7 +3,7 @@ import multiprocessing
 from loguru import logger
 from core.nacos_manager import load_config, AppConfig
 from core.logger_manager import LogManager, LogConfig
-from services.dataparse.parse_service import start_file_parse_service, shutdown_file_parse_service
+from services.dataparse.file_parser_service import start_file_parse_service, shutdown_file_parse_service
 
 
 class FileParserManager:
