@@ -77,7 +77,8 @@ class ExcelParser:
             return False
 
         try:
-            repo = KbotBizTxtEmbeddingRepository()
+            repo = KbotBizTxtEmbeddingRepository(kb_id=self.file_params.kb_id)
+            await repo.initialize()
             result = await repo.create(kb_id=self.file_params.kb_id, embeddings=embeddings)
             if not result:
                 msg = "Failed to save embeddings (repository returned False)"
@@ -131,7 +132,7 @@ class ExcelParser:
 
             # 检查是否有图片
             if hasattr(worksheet, '_images'):
-                for idx, img in enumerate(worksheet._images):
+                for idx, img in enumerate(worksheet._images): # type: ignore
                     try:
                         # 生成随机图片ID
                         image_id = self.generate_random_image_id()
@@ -195,8 +196,8 @@ class ExcelParser:
                 except Exception:
                     continue
                 # 仅使用 openpyxl 的 _images 获取该工作表内的图片，避免ZIP方式的跨表误关联
-                if hasattr(worksheet, '_images') and worksheet._images:
-                    for img in worksheet._images:
+                if hasattr(worksheet, '_images') and worksheet._images: # type: ignore
+                    for img in worksheet._images: # type: ignore
                         try:
                             image_id = self.generate_random_image_id()
                             image_filename = f"{image_id}.png"
@@ -308,7 +309,7 @@ class ExcelParser:
                 kb_id=self.file_params.kb_id,
                 embed_id=str(uuid.uuid4()),
                 chunk_doc=chunk,
-                chunk_metadata=json.dumps(meta),
+                chunk_metadata=meta,
                 file_id=self.file_params.file_id,
                 embedding=embeddings_list[idx].embedding,
                 security_level=self.file_params.security_level
@@ -318,7 +319,7 @@ class ExcelParser:
         embed_entities.extend(image_embed_entities)
 
         # Save all embeddings in one batch
-        return await self._save_embeddings(embed_entities)
+        return await self._save_embeddings(embeddings=embed_entities)
 
     async def _process_images_embeddings(self) -> list:
         ## 1 means yes
@@ -336,9 +337,8 @@ class ExcelParser:
                 description_file = Path(eachImage['file_path'] + ".description")
                 if not description_file.exists():
 
-                    image_description = await CallModel().call_vlm_model_for_parsing_picture(vlm_model_unique_name,
+                    image_description = await CallModel().call_vlm_model_for_parsing_picture(vlm_model_unique_name, # type: ignore
                                                                                              vlm_prompt_unique_name,
-                                                                                             # type: ignore
                                                                                              eachImage['file_path'])
                     if image_description:
                         description_file.write_text(
@@ -378,7 +378,7 @@ class ExcelParser:
                     kb_id=self.file_params.kb_id,
                     embed_id=meta['image_id'],
                     chunk_doc=chunk,
-                    chunk_metadata=json.dumps(meta),
+                    chunk_metadata=meta,
                     file_id=self.file_params.file_id,
                     embedding=embeddings_list[idx].embedding,  # type: ignore
                     security_level=self.file_params.security_level
@@ -543,7 +543,7 @@ class ExcelParser:
             logger.error(f"提取Excel数据时出错: {e}")
             return {"error": str(e)}
 
-    def save_to_json(self, filename: str = None) -> str:
+    def save_to_json(self, filename: str | None = None) -> str:
         """
         将提取的数据保存为JSON文件
 
@@ -609,7 +609,7 @@ Excel数据提取报告
 
         return report
 
-    def extract_text_data_to_json(self, sheet_name: str = None) -> Dict[str, Any]:
+    def extract_text_data_to_json(self, sheet_name: str | None = None) -> Dict[str, Any]:
         """
         提取Excel中的文字信息到JSON格式，JSON的key是第一行的列名
 
@@ -690,7 +690,7 @@ Excel数据提取报告
             logger.error(f"提取文字数据时出错: {e}")
             return {"error": str(e)}
 
-    def save_text_data_to_json(self, text_data: Dict[str, Any], filename: str = None) -> str:
+    def save_text_data_to_json(self, text_data: Dict[str, Any], filename: str | None = None) -> str:
         """
         将提取的文字数据保存为JSON文件
 

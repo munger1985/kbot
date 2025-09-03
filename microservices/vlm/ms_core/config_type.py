@@ -65,6 +65,10 @@ class RedisConfig(BaseModel):
     port: int = Field(gt=0, lt=65536)
     password: str
     max_connections: int = Field(ge=1)
+    socket_connect_timeout: int = Field(ge=1)
+    socket_timeout: int = Field(ge=1)
+    retry_on_timeout: bool
+    health_check_interval: int = Field(ge=1)
 
 class SQLAlchemyConfig(BaseModel):
     echo: bool

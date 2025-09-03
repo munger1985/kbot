@@ -25,7 +25,7 @@ class ChinesePreprocessor:
             else:
                 stopwords_path = "stopwords.txt"
                 custom_dict_path = "custom_dict.txt"
-            
+
         except Exception as e:
             # 如果获取 database 配置失败，则抛出异常
             logger.warning(f"无法从 nacos 获取 tokenizer 配置，使用默认路径: {str(e)}")
@@ -236,7 +236,7 @@ class ChinesePreprocessor:
 
     async def preprocess(self, query: str,
                          enable_pos_filtering: bool | None = True,
-                         enable_synonym_expansion: bool | None = False,
+                         enable_synonym_expansion: bool | None = None,
                          synonym_similarity_threshold: float | None = 0.65,  # 较低的阈值获取更多同义词
                          max_synonyms_per_word: int | None = 2            # 每个词最多扩展2个同义词
                  ) -> dict[str, str|list[str]] | None:
@@ -309,8 +309,8 @@ def get_preprocessor() -> ChinesePreprocessor:
 
 async def preprocess_cn_query(
         query: str,
-        enable_pos_filtering: bool | None = True,
-        enable_synonym_expansion: bool | None = False,
+        enable_pos_filtering: bool = True,
+        enable_synonym_expansion: bool | None = None,
         synonym_similarity_threshold: float | None = 0.65,  # 较低的阈值获取更多同义词
         max_synonyms_per_word: int | None = 2            # 每个词最多扩展2个同义词
         ) -> dict[str, str|list[str]] | None:

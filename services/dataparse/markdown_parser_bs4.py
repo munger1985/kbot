@@ -35,6 +35,7 @@ class MarkdownParser:
         self.base_dir = os.path.dirname(os.path.abspath(self.markdown_file))
         self.images_dir = os.path.join(self.base_dir, 'images')
         self.tables_dir = os.path.join(self.base_dir, 'tables')
+        self.image_dict= []
         self.md = markdown.Markdown(extensions=['tables'])
         self.text_results= []
         self.create_dirs()
@@ -124,7 +125,7 @@ class MarkdownParser:
             # 添加表格前的文本
             if start > last_end:
                 paragraphs = self._parse_paragraphs(md_content[last_end:start])
-                text_results['paragraphs'].extend(paragraphs)
+                # text_results['paragraphs'].extend(paragraphs)
 
             # 解析表格
             table_json = self._parse_table(table_text)
@@ -135,8 +136,17 @@ class MarkdownParser:
         # 添加最后一个表格后的任何剩余文本
         if last_end < len(md_content):
             paragraphs = self._parse_paragraphs(md_content[last_end:])
-            text_results['paragraphs'].extend(paragraphs)
+            # text_results['titles'].extend(paragraphs)
         self.text_results= text_results
+
+        blocks = self.parse_into_blocks(md_content)
+        for i, block in enumerate(blocks):
+            print(f"Block {i + 1}:")
+            semanticChunk = "Title: {block['title']} (Level {block['level']})\n" + f"Content: {block['content']}"
+            text_results['paragraphs'].extend(semanticChunk)
+            # print(semanticChunk)
+
+
         return text_results
 
     def extract_tables(self, md_content):
@@ -190,6 +200,56 @@ class MarkdownParser:
 
         return tables
 
+    def parse_into_blocks(self, text):
+        """
+        将Markdown文本解析成标题和标题后的内容块
+
+        Args:
+            text (str): 要解析的Markdown文本
+
+        Returns:
+            list: 包含标题和内容的块列表
+        """
+        # 使用正则表达式匹配标题
+        header_pattern = r'^(#{1,6})\s+(.+?)$'
+
+        # 按行分割文本
+        lines = text.split('\n')
+        blocks = []
+        current_title = ""
+        current_level = 0
+        current_content = []
+
+        for line in lines:
+            header_match = re.match(header_pattern, line)
+
+            if header_match:
+                # 如果已有内容，保存当前块
+                if current_title or current_content:
+                    blocks.append({
+                        "title": current_title,
+                        "level": current_level,
+                        "content": "\n".join(current_content)
+                    })
+
+                # 开始新块
+                current_level = len(header_match.group(1))
+                current_title = header_match.group(2).strip()
+                current_content = []
+            else:
+                # 将非标题行添加到当前内容中
+                if line.strip():  # 忽略空行
+                    current_content.append(line)
+
+        # 添加最后一个块
+        if current_title or current_content:
+            blocks.append({
+                "title": current_title,
+                "level": current_level,
+                "content": "\n".join(current_content)
+            })
+
+        return blocks
     def extract_and_save_images(self, md_content):
         """提取图片并保存到本地"""
         # 匹配完整的图片标记，包括alt文本和URL
@@ -234,7 +294,8 @@ class MarkdownParser:
                             'original_url': img_url,
                             'local_path': save_path,
                             'filename': filename,
-                            'alt_text': alt_text
+                            'alt_text': alt_text,
+                            'image_id':str(uuid.uuid4())
                         })
                     else:
                         print(f"图片下载失败: {img_url} (状态码: {response.status_code})")
@@ -252,7 +313,9 @@ class MarkdownParser:
                             'original_path': img_url,
                             'local_path': save_path,
                             'filename': filename,
-                            'alt_text': alt_text
+                            'alt_text': alt_text,
+                            'image_id': str(uuid.uuid4())
+
                         })
                     else:
                         print(f"本地图片不存在: {local_path}")
@@ -260,13 +323,13 @@ class MarkdownParser:
             except Exception as e:
                 print(f"图片处理错误 ({img_url}): {e}")
                 continue
-
+        self.image_dict= saved_images
         return saved_images
 
     async def _process_images_embeddings(self) -> list:
         ## 1 means yes
         if self.file_params.img2txt == 1:
-            self.parsed_metadata = self.extract_images_and_save_metadata(filename="image_info.json")
+
 
             # if self.file_params.parser.get("extract_images", False):
             vlm_prompt_unique_name = "SYSTEM/image2text"
@@ -275,8 +338,8 @@ class MarkdownParser:
             chunks = []
             chunk_metas = []
 
-            for eachImage in self.images_info:
-                description_file = Path(eachImage['file_path'] + ".description")
+            for eachImage in  self.image_dict :
+                description_file = Path(eachImage['local_path'] + ".description")
                 if not description_file.exists():
 
                     image_description = await CallModel().call_vlm_model_for_parsing_picture(vlm_model_unique_name,
@@ -290,7 +353,6 @@ class MarkdownParser:
                         )
                         chunk_metas.append({
                             "chunk_type": ChunkType.IMAGE,
-                            "sheet_name": eachImage['sheet_name'],
                             "image_id": eachImage['image_id'],
                         })
                         chunks.append(image_description)

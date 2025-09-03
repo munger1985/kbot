@@ -118,7 +118,8 @@ class KbotMdKbRepository:
                 select(KbotMdKb.kb_category,
                        KbotMdKb.img2txt_model_id,
                        KbotMdKb.img_embed_model_id,
-                       KbotMdKb.txt_embed_model_id)
+                       KbotMdKb.txt_embed_model_id,
+                       KbotMdKb.summary_model_id)
                 .where(KbotMdKb.kb_id == kbid)
             )
             return result.fetchone()

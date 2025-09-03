@@ -38,6 +38,11 @@ class AsyncRedisPool:
                     db_config.redis.max_connections or 
                     self._max_connections
                 )
+                self.socket_connect_timeout = db_config.redis.socket_connect_timeout or 3
+                self.socket_timeout = db_config.redis.socket_timeout or 5
+                self.retry_on_timeout = db_config.redis.retry_on_timeout or True
+                self.health_check_interval = db_config.redis.health_check_interval or 30
+
             else:
                 raise ValueError("Invalid database configuration")
                 
@@ -58,10 +63,10 @@ class AsyncRedisPool:
                 f"redis://:{self._password}@{self._host}:{self._port}/{self._db}",
                 max_connections=self._max_connections,
                 decode_responses=True,
-                socket_connect_timeout=5,
-                socket_timeout=10,
-                retry_on_timeout=True,
-                health_check_interval=30
+                socket_connect_timeout=self.socket_connect_timeout, # 连接建立超时（秒）
+                socket_timeout=self.socket_timeout,  # 读写操作超时（秒）
+                retry_on_timeout=self.retry_on_timeout,
+                health_check_interval=self.health_check_interval
             )
             
             self._redis = Redis(connection_pool=self._pool)

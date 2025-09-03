@@ -40,7 +40,7 @@ class FileProcessor:
             file_params.batch_id = file.batch_id
             file_params.file_path = file.file_path # type: ignore
             file_params.file_ext = file.file_ext
-            file_params.summary = file.enable_summary
+            file_params.enable_summary = True if file.enable_summary == 1 else False
             file_params.img2txt = file.is_img2txt
             file_params.tab_head = file.is_table_head_fill
             file_params.priority = file.process_priority or ProcessPriority.MEDIUM.value
@@ -69,6 +69,8 @@ class FileProcessor:
                 file_params.img2txt_model = models[1]
                 file_params.img_embed_model = models[2]
                 file_params.txt_embed_model = models[3]
+                if file_params.enable_summary:
+                    file_params.summary_model = models[4]
             else:
                 logger.warning(f"No models found for kb_id: {file.kb_id}")
                 return result
