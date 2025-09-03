@@ -8,7 +8,6 @@ from core.dictionary import KbCategory, KBSearchType
 from utils.oracle_vec_handler import OracleVecHandler
 from utils.decimal_encoder import DecimalEncoder
 from utils.call_models import CallModel
-from utils.common_methods import lob_to_string
 from .chinese_preprocessor import preprocess_cn_query
 
 class KBSearch:
@@ -16,10 +15,16 @@ class KBSearch:
     def __init__(self, tool_params: ToolParams):
         self.tool_params = tool_params
 
-    async def search(self, question: str, security: int) -> list[KBResult] | None:
+    async def search(self, question: str, security: int, enable_synonyms: bool = False) -> list[KBResult] | None:
         """Search"""
         # 0. 预处理问题，用于向量检索和全文检索，语义检索需要字符串，全文检索需要词元列表
-        expand_question = await preprocess_cn_query(question)
+        if enable_synonyms:
+            logger.debug(f"问题改写启用同义词扩展")
+        else:
+            logger.debug(f"问题改写禁用同义词扩展")
+
+        expand_question = await preprocess_cn_query(query=question, enable_synonym_expansion=enable_synonyms)
+        
         if expand_question is None:
             logger.warning(f"Expand question failed: {question}")
             vector_search_question = question

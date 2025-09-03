@@ -22,20 +22,16 @@ class ChinesePreprocessor:
             if isinstance(model_config, ModelConfig):
                 stopwords_path = model_config.tokenizer.stop_words_path
                 custom_dict_path = model_config.tokenizer.custom_dict_path
-                enable_synonyms = model_config.synonym.enabled
             else:
                 stopwords_path = "stopwords.txt"
                 custom_dict_path = "custom_dict.txt"
-                enable_synonyms = False
-            
+
         except Exception as e:
             # 如果获取 database 配置失败，则抛出异常
             logger.warning(f"无法从 nacos 获取 tokenizer 配置，使用默认路径: {str(e)}")
             stopwords_path = "stopwords.txt"
             custom_dict_path = "custom_dict.txt"
-            enable_synonyms = False
 
-        self.enable_synonyms = enable_synonyms
         self.stopwords_file = stopwords_path
         self.custom_dict_file = custom_dict_path
         self.stopwords: set[str] = self._load_stopwords(self.stopwords_file)
@@ -288,7 +284,7 @@ class ChinesePreprocessor:
             # 用于全文检索：返回词元列表
             logger.debug(f"全文检索预处理完成: '{query}' -> {tokens}")
             # 5. （可选）同义词扩展
-            if enable_synonym_expansion or self.enable_synonyms:
+            if enable_synonym_expansion:
                 logger.debug(f"全文检索开始同义词扩展...")
                 expanded_tokens = await self.synonym_expansion(tokens, synonym_similarity_threshold, max_synonyms_per_word)
                 results["fulltext"] = expanded_tokens

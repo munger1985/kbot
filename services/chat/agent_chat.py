@@ -72,7 +72,7 @@ class Agent:
             if tool_params.tool_type == ToolType.KB.value:
                 logger.debug("ToolType: knowledge base")
                 kb = KBSearch(tool_params)
-                result = await kb.search(question, self.security)
+                result = await kb.search(question, self.security, self.agent_params.synonym_similarity_flag)
                 if result:
                     # 如果开启了reranker，则将结果添加到rerank列表中
                     if tool_params.reranker_flag == YesNoEnum.YES.value:

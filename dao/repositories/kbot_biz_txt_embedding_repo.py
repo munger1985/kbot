@@ -1,6 +1,5 @@
 import json
 from typing import Sequence
-from sqlalchemy import select, delete
 from core.database.vec_oracle_pool import OracleConnParams, AsyncOracleConnectionPoolManager
 from dao.entities.kbot_biz_txt_embedding import KbotBizTxtEmbedding
 from dao.repositories.kbot_md_db_conf_repo import KbotMdDbConfRepository

@@ -131,7 +131,6 @@ class SynonymConfig(BaseModel):
     service_host: str
     service_port: int = Field(gt=0, lt=65536)
     timeout: int = Field(ge=1)
-    enabled: bool
     model_path: str
     top_n_words: int = Field(ge=1)
     preload_top: int = Field(ge=0)
