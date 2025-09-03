@@ -401,8 +401,9 @@ BEGIN
     );
 END;
 /
+
 --==============================================================================
---5.apex ui数据字典，执行完之后，需要更新app_id
+--6.apex ui数据字典，执行完之后，需要更新app_id
 --update KBOT_MD_DATA_DIC set app_id = ?;
 --==============================================================================
 Insert into  KBOT_MD_DATA_DIC (APP_ID,NAME,DISPLAY_NAME,RETURN_VALUE,LANG_CODE,DISPLAY_TRAN_VALUE,STATUS,DESCS,CREATED_BY,CREATED_TIME,UPDATED_BY,UPDATED_TIME,IS_DEFAULT) values (112,'ENABLE_FLAG','Enabled','1','zh-cn','启用',1,null,'ADMIN',to_date('01-7月 -25','DD-MON-RR'),'ADMIN',to_date('02-7月 -25','DD-MON-RR'),0);

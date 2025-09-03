@@ -31,3 +31,9 @@ http://132.145.81.123:8080/ords/r/kbotui_dev/ai-platform-portal/home  admin/1234
 
 ### nacos :
 http://64.181.236.219:8848/nacos
+
+### 数据库连接
+sqlplus kbotui_dev/BotWelcome123##@132.145.81.123:1521/DB1007_pdb1.regionalpublics.hysunhevcn.oraclevcn.com
+sqlplus sys/BotWelcome123##@132.145.81.123:1521/DB1007_pdb1.regionalpublics.hysunhevcn.oraclevcn.com as sysdba;
+sys/BotWelcome123##
+
