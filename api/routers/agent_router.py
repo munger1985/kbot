@@ -26,7 +26,7 @@ router = APIRouter(
     "/chat",
     description="Chat with the agent. 和智能体聊天",
     response_model=SuccessQueryResponse | ErrorResponse,
-    dependencies=[Depends(AuthController.get_current_accessor)],
+    # dependencies=[Depends(AuthController.get_current_accessor)],
     status_code=status.HTTP_200_OK
 )
 async def handle_agent_chat(request: AgentChatForm) -> SuccessQueryResponse | ErrorResponse:
@@ -63,7 +63,7 @@ async def handle_agent_chat(request: AgentChatForm) -> SuccessQueryResponse | Er
     description="Get the stream response. 获取流式响应",
     status_code=status.HTTP_200_OK,
     response_model=None,
-    dependencies=[Depends(AuthController.get_current_accessor)],
+    # dependencies=[Depends(AuthController.get_current_accessor)],
     response_class=StreamingResponse
 )
 async def handle_agent_stream_chat(session_id: str) -> StreamingResponse | ErrorResponse:
@@ -93,7 +93,7 @@ async def handle_agent_stream_chat(session_id: str) -> StreamingResponse | Error
     "/feedback",
     description="Feedback the agent. 反馈智能体",
     response_model=SuccessResponse | ErrorResponse,
-    dependencies=[Depends(AuthController.get_current_accessor)],
+    # dependencies=[Depends(AuthController.get_current_accessor)],
     status_code=status.HTTP_200_OK
 )
 async def handle_agent_feedback(form: AgentChatFeedbackForm) -> SuccessResponse | ErrorResponse:
@@ -115,7 +115,7 @@ async def handle_agent_feedback(form: AgentChatFeedbackForm) -> SuccessResponse 
     "/session/get",
     description="Get the session when login. 在登录智能体时获取session",
     response_model=SuccessQueryResponse | ErrorResponse,
-    dependencies=[Depends(AuthController.get_current_accessor)],
+    # dependencies=[Depends(AuthController.get_current_accessor)],
     status_code=status.HTTP_200_OK
 )
 async def handle_agent_get_session(session_id: str) -> SuccessQueryResponse | ErrorResponse:
@@ -140,7 +140,7 @@ async def handle_agent_get_session(session_id: str) -> SuccessQueryResponse | Er
     "/session/remove",
     description="Remove the session. 删除session",
     response_model=SuccessResponse | ErrorResponse,
-    dependencies=[Depends(AuthController.get_current_accessor)],
+    # dependencies=[Depends(AuthController.get_current_accessor)],
     status_code=status.HTTP_200_OK
 )
 async def handle_agent_del_session(session_id: str) -> SuccessResponse | ErrorResponse:

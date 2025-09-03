@@ -17,6 +17,6 @@ cd "${MICROSERVICES_DIR}/vlm" && python app.py >/dev/null 2>&1 &
 cd "${MICROSERVICES_DIR}/synonym" && python app.py >/dev/null 2>&1 &
 
 # 启动 main.py
-# cd "$(dirname "$0")" && python main.py >/dev/null 2>&1 &
+cd "$(dirname "$0")" && python main.py >/dev/null 2>&1 &
 
 echo "所有服务已启动。"

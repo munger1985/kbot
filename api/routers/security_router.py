@@ -34,7 +34,7 @@ async def handle_login_for_access_token(form: OAuth2PasswordRequestForm = Depend
         "/create_accessor",
         description="创建访问者",
         response_model=SuccessResponse,
-        dependencies=[Depends(AuthController.get_current_accessor)],
+        # dependencies=[Depends(AuthController.get_current_accessor)],
         status_code=status.HTTP_200_OK
 )
 async def handle_create_accessor(form: AccessorForm):
