@@ -295,7 +295,7 @@ class ExcelParser:
             return True  # Consider empty content as success
 
         # Get all embeddings in one call
-        embeddings_list = await CallModel().call_embedding_model(model_unique_name, chunks,20)
+        embeddings_list = await CallModel().call_embedding_model(model_unique_name, chunks)
         if not embeddings_list or len(embeddings_list) != len(chunks):
             msg = f"Embedding model {model_unique_name} returned invalid results (expected {len(chunks)}, got {len(embeddings_list) if embeddings_list else 0})"
             logger.error(msg)
@@ -363,7 +363,7 @@ class ExcelParser:
                 return []
             embeddings_list = []
             if chunks:
-                embeddings_list = await CallModel().call_embedding_model(text_embedding_model, chunks,20)
+                embeddings_list = await CallModel().call_embedding_model(text_embedding_model, chunks)
             if embeddings_list and len(embeddings_list) != len(chunks):
                 msg = f"text_embedding_model  {text_embedding_model} returned invalid results (expected {len(chunks)}, got {len(embeddings_list) if embeddings_list else 0})"
                 logger.error(msg)
