@@ -34,12 +34,13 @@ class KbotBizTxtEmbeddingRepository:
         if self.conn_params is None:
             return False
         
-        # Generate SQL
+        # Generate SQL for batch insert
         sql = """INSERT INTO KBOT_BIZ_TXT_EMBEDDING
         (EMBED_ID, KB_ID, FILE_ID, SECURITY_LEVEL, CHUNK_METADATA, EMBEDDING, CHUNK_DOC)
         VALUES
-        (:embed_id, :kb_id, :file_id, :security_level,  :chunk_metadata, :embedding, :chunk_doc)"""
+        (:embed_id, :kb_id, :file_id, :security_level, :chunk_metadata, :embedding, :chunk_doc)"""
         
+        params_list = []
         for embedding in embeddings:
             params = {
                 "embed_id": embedding.embed_id,
