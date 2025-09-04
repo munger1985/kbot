@@ -1,5 +1,7 @@
 import json
+import oracledb
 from typing import Sequence
+from loguru import logger
 from core.database.vec_oracle_pool import OracleConnParams, AsyncOracleConnectionPoolManager
 from dao.entities.kbot_biz_txt_embedding import KbotBizTxtEmbedding
 from dao.repositories.kbot_md_db_conf_repo import KbotMdDbConfRepository
@@ -30,29 +32,49 @@ class KbotBizTxtEmbeddingRepository:
           
 
     async def create(self, kb_id: int, embeddings: list[KbotBizTxtEmbedding]) -> bool:
-        """Create a new embedding record."""
-        if self.conn_params is None:
+        """批量创建嵌入记录。"""
+        if self.conn_params is None or not embeddings:
             return False
         
-        # Generate SQL for batch insert
+        # 准备批量插入的SQL语句
         sql = """INSERT INTO KBOT_BIZ_TXT_EMBEDDING
         (EMBED_ID, KB_ID, FILE_ID, SECURITY_LEVEL, CHUNK_METADATA, EMBEDDING, CHUNK_DOC)
         VALUES
-        (:embed_id, :kb_id, :file_id, :security_level, :chunk_metadata, :embedding, :chunk_doc)"""
+        (:1, :2, :3, :4, :5, :6, :7)"""
         
-        params_list = []
+        # 准备批量数据
+        data = []
         for embedding in embeddings:
-            params = {
-                "embed_id": embedding.embed_id,
-                "kb_id": kb_id,
-                "file_id": embedding.file_id,
-                "chunk_doc": embedding.chunk_doc,
-                "chunk_metadata": json.dumps(embedding.chunk_metadata) if embedding.chunk_metadata is not None else None,
-                "embedding": OracleVecHandler().convert(vec=embedding.embedding, to_string=True),
-                "security_level": embedding.security_level
-            }
-            result = await self.pool_manager.execute_dml(self.conn_params, sql, params)
-        return True
+            # 将每个嵌入对象转换为元组格式，适合executemany
+            data.append((
+                embedding.embed_id,
+                kb_id,
+                embedding.file_id,
+                embedding.security_level,
+                json.dumps(embedding.chunk_metadata) if embedding.chunk_metadata is not None else None,
+                OracleVecHandler().convert(vec=embedding.embedding, to_string=True),
+                embedding.chunk_doc
+            ))
+        
+        try:
+            # 使用连接池执行批量插入
+            async with self.pool_manager.get_connection_ctx(self.conn_params) as conn:
+                cursor = conn.cursor()
+                # 使用executemany进行批量插入
+                await self.pool_manager._loop.run_in_executor( # type: ignore
+                    None, cursor.executemany, sql, data
+                )
+                # 提交事务
+                await self.pool_manager._loop.run_in_executor(None, conn.commit)  # type: ignore
+                logger.info(f"成功批量插入 {len(data)} 条记录")
+                return True
+                
+        except oracledb.Error as e:
+            logger.error(f"批量插入失败: {e}")
+            return False
+        except Exception as e:
+            logger.error(f"批量插入过程中发生未知错误: {e}")
+            return False
     
     async def delete_by_file_ids(self, kb_id: int, file_ids: list[str]) -> int:
         """Delete embedding records by file IDs."""

@@ -164,7 +164,7 @@ class AsyncOracleConnectionPoolManager:
     ) -> int:
         """执行DML SQL（INSERT/UPDATE/DELETE）"""
         return await self.execute_sql(conn_params, sql, params, "dml") # type: ignore
-
+    
     async def close_all_pools(self):
         """异步关闭所有连接池。"""
         for key, pool in list(self._pools.items()):
