@@ -22,6 +22,12 @@ try:
         max_overflow = db_config.sqlalchemy.max_overflow
         pool_pre_ping = db_config.sqlalchemy.pool_pre_ping
         pool_recycle = db_config.sqlalchemy.pool_recycle
+        pool_use_lifo = db_config.sqlalchemy.pool_use_lifo
+        max_identifier_length = db_config.sqlalchemy.max_identifier_length
+        hide_parameters = db_config.sqlalchemy.hide_parameters
+        echo_pool = db_config.sqlalchemy.echo_pool
+
+        
     else:
         # 如果获取 database 配置失败，则抛出异常
         raise ValueError
@@ -42,6 +48,10 @@ try:
         pool_recycle=pool_recycle,
         pool_timeout=pool_timeout,
         future=True,  # Enable SQLAlchemy 2.0 features
+        pool_use_lifo=pool_use_lifo,
+        max_identifier_length=max_identifier_length,
+        hide_parameters=hide_parameters,
+        echo_pool=echo_pool
     )
     logger.info("Async database engine created successfully")
 except Exception as e:
