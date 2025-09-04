@@ -88,13 +88,13 @@ class LocalEmbedding(BaseEmbedding):
         
         # Model parameters with defaults
         self.max_tokens = getattr(config, 'max_tokens', 512)
+        self.batch_size = getattr(config, 'batch_size', 2)
         self.compile_model = getattr(config, 'compile_model', True)
         self.use_fp16 = getattr(config, 'use_fp16', False)
         self.local_files_only = getattr(config, 'local_files_only', False)
         self.trust_remote_code = getattr(config, 'trust_remote_code', False)
         
         # Runtime state
-        self._batch_size = 32  # Default, will be updated after model loading
         self._is_initialized = False
         self._using_device_map = False  # Track if using device_map loading
 
@@ -299,7 +299,7 @@ class LocalEmbedding(BaseEmbedding):
         self.REQUEST_SIZE_GAUGE.labels(model_name=self.model_name).set(total_chars)
         
         # Determine batch size
-        effective_batch_size = batch_size if batch_size > 0 else self._batch_size
+        effective_batch_size = batch_size if batch_size > 0 else self.batch_size
         
         try:
             with self.LATENCY_HIST.labels(model_name=self.model_name).time():
@@ -578,8 +578,4 @@ class LocalEmbedding(BaseEmbedding):
             raise RuntimeError("Model not initialized")
         return self.model.config.hidden_size  # type: ignore
 
-    @property
-    def recommended_batch_size(self) -> int:
-        """Get the currently recommended batch size."""
-        return self._batch_size
 

@@ -22,6 +22,7 @@ class OCIEmbedding(BaseEmbedding):
         self.config = config
         self.client = None
         self._is_running = False
+        self.batch_size = config.batch_size or 1
     
     async def startup(self) -> None:
         """Initialize the OCI client."""
@@ -55,13 +56,13 @@ class OCIEmbedding(BaseEmbedding):
     async def embed(
         self,
         texts: list[str],
-        batch_size: int = 1
+        batch_size: int = 0
     ) -> EmbeddingResponse:
         """Embed a list of texts in batches."""
         if not self._is_running:
             await self.startup()
         if batch_size <= 0:
-            batch_size = 1
+            batch_size = self.batch_size
 
         all_embeddings = []
 

@@ -8,6 +8,7 @@ class EmbeddingConfig(BaseModel):
     model_name: str
     provider: str
     max_tokens: int
+    batch_size: int
 
 class EmbeddingDataItem(BaseModel):
     embedding: list[float] = Field(..., description="The embedding vector.")

@@ -124,7 +124,7 @@ class ModelPool:
                 if not isinstance(config, ModelConfig):
                     raise ValueError("Invalid model config")
                 max_tokens = config.embed.max_tokens or 8192
-                timeout = config.embed.timeout or 30
+                timeout = config.embed.timeout or 300
                 max_retries = config.embed.max_retries or 0
                 cache_dir = config.embed.cache_dir
             except Exception as e:
@@ -140,6 +140,7 @@ class ModelPool:
                     model_name=model_name,
                     provider=provider,
                     max_tokens=model_params.get("max_tokens", max_tokens),
+                    batch_size=model_params.get("batch_size", 2),
                     model_path=model_params.get("model_path"),
                     device=model_params.get("device"),
                     device_map=model_params.get("device_map"),
@@ -160,6 +161,7 @@ class ModelPool:
                     model_name=model_name,
                     provider=provider,
                     max_tokens=model_params.get("max_tokens", max_tokens),
+                    batch_size=model_params.get("batch_size", 2),
                     api_endpoint=api_endpoint,
                     compartment_id=compartment_id, # type: ignore
                     config_file=config_file # type: ignore
