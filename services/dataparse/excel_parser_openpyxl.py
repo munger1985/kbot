@@ -282,7 +282,7 @@ class ExcelParser:
                 sheet_data = self.tables_info[sheet]
                 rows =sheet_data['data']
                 for row in rows:
-                    chunks.append(json.dumps(row))
+                    chunks.append(json.dumps(row,ensure_ascii=False))
                     chunk_metas.append({
                         "chunk_type": ChunkType.TABLE,
                         "sheet_name": sheet
