@@ -101,6 +101,7 @@ class ModelPool:
                     device = model_params.get("device", None),
                     device_map = model_params.get("device_map", None),
                     max_tokens = model_params.get("max_tokens", 512),
+                    batch_size = model_params.get("batch_size", 16),
                     compile_model = model_params.get("compile_model", True),
                     use_fp16 = model_params.get("use_fp16", True),
                     trust_remote_code = model_params.get("trust_remote_code", True),
@@ -116,6 +117,7 @@ class ModelPool:
                     device = model_params.get("device", None),
                     device_map = model_params.get("device_map", None),
                     max_tokens = model_params.get("max_tokens", 8192),
+                    batch_size = model_params.get("batch_size", 16),
                     compile_model = model_params.get("compile_model", True),
                     use_fp16 = model_params.get("use_fp16", False),
                     trust_remote_code = model_params.get("trust_remote_code", True),
@@ -196,33 +198,10 @@ class ModelPool:
                     
                 # Simple health check by calling embed with a test text
                 model = self._models[model_unique_name]
-                try:
-                    # 确保 health_check 返回的是可等待对象
-                    if asyncio.iscoroutinefunction(model.health_check):
-                        status = await model.health_check()
-                    else:
-                        # 如果 health_check 是同步方法，包装为异步结果
-                        status = await asyncio.to_thread(model.health_check)
-                    
-                    if isinstance(status, dict):
-                        if status.get('initialized', False):
-                            logger.info(f"Health check passed for model {model_unique_name}")
-                        else:
-                            logger.warning(f"Health check failed for model {model_unique_name}")
-                            # Try to restart the model
-                            await self.reload_model(model_unique_name)
-                    else:
-                        if getattr(status, 'initialized', False):
-                            logger.info(f"Health check passed for model {model_unique_name}")
-                        else:
-                            logger.warning(f"Health check failed for model {model_unique_name}")
-                            # Try to restart the model
-                            await self.reload_model(model_unique_name)
-                except Exception as e:
-                    logger.error(f"Health check failed for model {model_unique_name}: {e}")
-                    # Try to restart the model
-                    await self.reload_model(model_unique_name)
-                
+
+                await model.rerank(query="test", documents=["test"], top_k=1)
+                logger.success(f"Health check passed for model {model_unique_name}")
+
             except Exception as e:
                 logger.error(f"Health check failed for model {model_unique_name}: {e}")
                 # Try to restart the model

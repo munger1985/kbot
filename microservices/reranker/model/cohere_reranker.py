@@ -98,13 +98,3 @@ class CohereReranker(BaseReranker):
             self.client = None
             self._is_initialized = False
             logger.info(f"{self.__class__.__name__} model resources released")
-
-    def health_check(self) -> dict[str, Any]:
-        """Check model health and resource status."""
-        status = {
-            "initialized": self._is_initialized,
-            "model_loaded": self.client is not None,
-            "model_name": self.config.model_name
-        }
-        
-        return status

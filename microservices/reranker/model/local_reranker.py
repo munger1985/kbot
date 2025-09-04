@@ -1,18 +1,11 @@
 import os
 import torch
+import asyncio
 from typing import Any
 from pydantic import Field
 from loguru import logger
-# from prometheus_client import Histogram, Counter, Gauge
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 from .base import BaseReranker, RerankerConfig
-
-# # 启用高性能矩阵乘法
-# torch.set_float32_matmul_precision('high')
-# # 避免 Tensor.item() 导致的 Graph Break
-# torch._dynamo.config.capture_scalar_outputs = True
-# # 强制使用 FP16/BF16
-# torch.backends.cuda.matmul.allow_fp16_reduced_precision_reduction = True
 
 class LocalRerankerConfig(RerankerConfig):
     """Configuration for reranker models."""
@@ -27,28 +20,10 @@ class LocalRerankerConfig(RerankerConfig):
     cache_dir: str = Field("./cached_models", description="Local cache directory for model files")
     trust_remote_code: bool = Field(False, description="Trust custom model code from HuggingFace")
     max_memory: dict[str, str] | None = Field(None, description="Dict of GPU memory limits (e.g. {'0': '24GB', '1': '24GB'})")
+    batch_size: int = Field(16, description="Batch size for processing documents to avoid OOM")  # 新增批处理大小参数
 
 class LocalReranker(BaseReranker):
     """通用 Reranker 重排器基类"""
-
-    # # Prometheus metrics
-    # LATENCY_HIST = Histogram(
-    #     'local_reranker_latency_seconds',
-    #     'Latency for local reranker requests',
-    #     ['model_name']
-    # )
-    
-    # ERROR_COUNTER = Counter(
-    #     'local_reranker_errors_total',
-    #     'Count of local reranker errors',
-    #     ['model_name', 'error_type']
-    # )
-    
-    # MEMORY_GAUGE = Gauge(
-    #     'local_reranker_memory_usage_mb',
-    #     'GPU memory usage in MB',
-    #     ['device_id']
-    # )
 
     def __init__(self, config: LocalRerankerConfig):
         """
@@ -56,8 +31,6 @@ class LocalReranker(BaseReranker):
         
         Args:
             config: 模型配置
-            default_model_name: 默认模型名称
-            metrics_prefix: Prometheus指标前缀
         """
         # Model components
         self.model: torch.nn.Module | None = None
@@ -71,11 +44,11 @@ class LocalReranker(BaseReranker):
         self.device_map = config.device_map
         self.local_files_only = getattr(config, 'local_files_only', False)
         self.trust_remote_code = getattr(config, 'trust_remote_code', False)
-        self.max_tokens = getattr(config, 'max_tokens', 2048)
+        self.max_tokens = getattr(config, 'max_tokens', 512)  # 默认值调整为512以减少显存
         self.compile_model = getattr(config, 'compile_model', True)
         self.use_fp16 = getattr(config, 'use_fp16', False)
         self.max_memory = getattr(config, 'max_memory', None)
-        
+        self.batch_size = getattr(config, 'batch_size', 16)  # 批处理大小
 
         # Runtime state
         self._is_initialized = False
@@ -83,7 +56,7 @@ class LocalReranker(BaseReranker):
         logger.info(f"Initializing {self.__class__.__name__} with model: {self.model_name}")
     
     def _validate_reranker_model(self, model_path: str) -> bool:
-        """Check if the model directory contains necessary files. //检查模型目录是否包含必要文件"""
+        """Check if the model directory contains necessary files."""
         must_have = ["config.json", "tokenizer_config.json"]
         model_files = ["pytorch_model.bin", "model.safetensors"]
         vocab_files = ["vocab.txt", "vocab.json", "tokenizer.json"]
@@ -141,7 +114,7 @@ class LocalReranker(BaseReranker):
         self.tokenizer = AutoTokenizer.from_pretrained(
             pretrained_model_name_or_path = self.name_or_path,
             trust_remote_code = self.trust_remote_code,
-            use_fast = True,
+            use_fast = True,  # 使用快速分词器减少内存消耗 [4](@ref)
             model_max_length = self.max_tokens,
             padding_side = 'right',
             local_files_only = self.local_files_only
@@ -163,10 +136,9 @@ class LocalReranker(BaseReranker):
                     "max_memory": self.max_memory,
                 })
             else:  # Single GPU
-                # 移除device参数，稍后使用.to()方法
                 target_device = self.device or "cuda:0"
                 
-            # Precision control
+            # Precision control - 使用半精度显著减少显存占用 [1,2](@ref)
             load_kwargs["torch_dtype"] = torch.float16 if self.use_fp16 else torch.float32
         else:  # CPU fallback
             load_kwargs["device_map"] = "cpu"
@@ -208,6 +180,38 @@ class LocalReranker(BaseReranker):
         self._is_initialized = True
         logger.info(f"Reranker model {self.model_name} initialized successfully.")
     
+    async def _process_batch(self, query: str, batch_documents: list[str]) -> list[float]:
+        """处理一个批次的文档，返回分数列表"""
+        if not self.model or not self.tokenizer:
+            raise RuntimeError("Model not initialized. Call startup() first.")
+        
+        pairs = [(query, doc) for doc in batch_documents]
+        
+        # Tokenize pairs
+        with torch.no_grad():  # 禁用梯度计算以减少显存 [1](@ref)
+            inputs = self.tokenizer(
+                pairs,
+                padding=True,
+                truncation=True,
+                return_tensors="pt",
+                max_length=self.max_tokens  # 控制序列长度以减少显存 [1,5](@ref)
+            )
+            
+            # 根据模型配置方式处理设备分配
+            if self.device_map is None:
+                # 单设备模式：将输入移动到模型所在的设备
+                inputs = inputs.to(self.device)
+            
+            # Get scores
+            logits = self.model(**inputs).logits.squeeze(-1)
+            scores = torch.sigmoid(logits).cpu().tolist()
+            
+            # 显式释放中间变量 [2](@ref)
+            del inputs, logits
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        
+        return scores
     
     async def rerank(
         self,
@@ -222,7 +226,6 @@ class LocalReranker(BaseReranker):
             query: The search query
             documents: List of documents to rerank
             top_k: Number of top documents to return (None for all)
-            return_scores: Whether to return scores with indices
             
         Returns:
             List of dicts with 'index' and 'score' keys
@@ -240,35 +243,22 @@ class LocalReranker(BaseReranker):
             top_k = min(top_k, len(documents))
         
         try:
-            # Prepare pairs for reranking
-            pairs = [(query, doc) for doc in documents]
+            all_scores = []
             
-            # Tokenize pairs
-            with torch.no_grad():
-                inputs = self.tokenizer(
-                    pairs,
-                    padding=True,
-                    truncation=True,
-                    return_tensors="pt",
-                    max_length=self.max_tokens
-                )
+            # 分批处理文档以避免显存溢出 [7,8](@ref)
+            for i in range(0, len(documents), self.batch_size):
+                batch_docs = documents[i:i + self.batch_size]
+                batch_scores = await self._process_batch(query, batch_docs)
+                all_scores.extend(batch_scores)
                 
-                # 根据模型配置方式处理设备分配
-                if self.device_map is None:
-                    # 单设备模式：将输入移动到模型所在的设备
-                    inputs = inputs.to(self.device)
-                else:
-                    # 多设备模式：让模型处理设备分配
-                    # 不要手动移动输入张量，让模型的forward方法处理
-                    pass
-                
-                # Get scores
-                # scores = self.model(**inputs).logits.squeeze(-1).cpu().tolist()
-                logits = self.model(**inputs).logits.squeeze(-1)  # 原始 logits
-                scores = torch.sigmoid(logits).cpu().tolist()  # 使用 sigmoid
+                # 记录显存使用情况
+                if torch.cuda.is_available():
+                    allocated = torch.cuda.memory_allocated() / (1024 ** 2)
+                    cached = torch.cuda.memory_reserved() / (1024 ** 2)
+                    logger.debug(f"Batch {i//self.batch_size + 1}: GPU memory allocated: {allocated:.2f}MB, cached: {cached:.2f}MB")
             
             # Create list of (index, score) tuples
-            scored_results = [(i, score) for i, score in enumerate(scores)]
+            scored_results = [(i, score) for i, score in enumerate(all_scores)]
             
             # Sort by score in descending order
             scored_results.sort(key=lambda x: x[1], reverse=True)
@@ -301,22 +291,3 @@ class LocalReranker(BaseReranker):
             self.tokenizer = None
             
             logger.info(f"{self.__class__.__name__} model resources released")
-
-    def health_check(self) -> dict[str, Any]:
-        """Check model health and resource status."""
-        status = {
-            "initialized": self._is_initialized,
-            "model_loaded": self.model is not None,
-            "tokenizer_loaded": self.tokenizer is not None,
-            "model_name": self.model_name
-        }
-        
-        if torch.cuda.is_available():
-            device = self.model.device if self.model else "cuda:0"
-            status.update({
-                "gpu_memory_used_mb": torch.cuda.memory_allocated(device) / (1024**2), # type: ignore
-                "gpu_memory_total_mb": torch.cuda.get_device_properties(device).total_memory / (1024**2), # type: ignore
-                "device": str(device)
-            })
-        
-        return status

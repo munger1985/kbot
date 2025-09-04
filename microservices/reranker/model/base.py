@@ -31,8 +31,3 @@ class BaseReranker(ABC):
     async def shutdown(self) -> None:
         """Clean up resources."""
         pass
-
-    @abstractmethod
-    async def health_check(self) -> dict[str, Any]:
-        """Health check for a remote or local model"""
-        pass
