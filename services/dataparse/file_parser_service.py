@@ -16,6 +16,7 @@ class ParseService:
         self.check_interval = check_interval
         self.idle_timeout = 300  # worker空闲超时时间(秒)
         self.min_workers = 1     # 保持的最小worker数量
+        
 
     async def _db_check_loop(self):
         """独立的数据检查循环"""
@@ -108,6 +109,18 @@ class ParseService:
                 logger.error(f"Error in worker supervisor: {e}")
                 await asyncio.sleep(min(5, self.check_interval))
 
+    async def _queue_monitor_loop(self):
+        """独立循环，每秒检查队列大小并输出日志"""
+        logger.info("Starting queue monitor loop")
+        while not self.shutdown_event.is_set():
+            try:
+                qsize = self.file_queue.qsize()
+                logger.info(f"Current queue size: {qsize}")
+                await asyncio.sleep(1)
+            except Exception as e:
+                logger.error(f"Error in queue monitor loop: {e}")
+                await asyncio.sleep(5)
+
     async def start(self):
         """启动文件解析服务"""
         # 设置信号处理
@@ -117,9 +130,10 @@ class ParseService:
         # 等待embedding微服务加载
         await asyncio.sleep(10)
 
-        # 启动两个独立循环
+        # 启动三个独立循环
         db_task = asyncio.create_task(self._db_check_loop())
         worker_task = asyncio.create_task(self._worker_supervisor())
+        queue_task = asyncio.create_task(self._queue_monitor_loop())
         
         try:
             # 等待关闭信号
@@ -132,6 +146,7 @@ class ParseService:
             logger.info("Stopping parse service...")
             db_task.cancel()
             worker_task.cancel()
+            queue_task.cancel()
             
             # 取消所有worker任务
             for worker in self.workers:
@@ -139,7 +154,7 @@ class ParseService:
                 
             # 等待所有任务完成
             await asyncio.wait(
-                [db_task, worker_task] + self.workers,
+                [db_task, worker_task, queue_task] + self.workers,
                 timeout=5,
                 return_when=asyncio.ALL_COMPLETED
             )
@@ -166,6 +181,7 @@ class ParseService:
                             timeout=5
                         )
                         priority, timestamp, file_params = queue_item
+                        logger.debug(f"{worker_name} got file {file_params.file_path} (priority: {priority})")
                         is_processing = True
                         
                         # 如果收到空队列信号，检查是否处理完成

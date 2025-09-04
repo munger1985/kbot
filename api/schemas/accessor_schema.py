@@ -9,4 +9,10 @@ class AccessorForm(BaseModel):
     plain_password: str
     descs: str | None = None
     by: str | None = None
+
+class ChangePasswordForm(BaseModel):
+    """修改密码表单模型"""
+    username: str
+    plain_password: str
+
     

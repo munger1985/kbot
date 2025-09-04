@@ -59,7 +59,13 @@ class OCIEmbedding(BaseEmbedding):
         if not self._is_running or not self.client:
             return False
         try:
-            # Simple health check: verify client is initialized
+            # Perform a simple OCI service call to verify availability
+            embed_text_detail = oci.generative_ai_inference.models.EmbedTextDetails()
+            embed_text_detail.serving_mode = oci.generative_ai_inference.models.OnDemandServingMode(model_id=self.config.model_name)
+            embed_text_detail.inputs = ["test"]
+            embed_text_detail.truncate = "NONE"
+            embed_text_detail.compartment_id = self.config.compartment_id
+            self.client.embed_text(embed_text_detail)
             return True
         except Exception as e:
             logger.error(f"Health check failed: {str(e)}")
