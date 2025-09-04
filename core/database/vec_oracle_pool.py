@@ -74,9 +74,13 @@ class AsyncOracleConnectionPoolManager:
                 default_pool_params = {
                     'min': 2,
                     'max': 10,
-                    'increment': 1,
+                    'increment': 2,
                     'getmode': oracledb.POOL_GETMODE_WAIT,
                     'max_lifetime_session': 3600,  # 连接最大存活时间1小时
+                    'retry_delay': 3,
+                    'retry_count': 100,
+                    'ping_interval': 60,
+                    'ping_timeout': 5000
                 }
                 # 合并用户参数和默认参数
                 effective_params = {**default_pool_params, **conn_params.to_dict()}
@@ -176,59 +180,3 @@ class AsyncOracleConnectionPoolManager:
             except oracledb.Error as e:
                 logger.error(f"关闭连接池 {key} 时出错: {e}")
 
-
-# 使用示例
-async def main():
-    # 连接参数配置
-    conn_params = OracleConnParams(
-        user="kbot",
-        password="oracle",
-        dsn="localhost:1521/kbotdev:pooled"
-    )
-
-    # 初始化连接池管理器
-    pool_manager = AsyncOracleConnectionPoolManager()
-
-    try:
-        # 1. 执行查询示例
-        query_result = await pool_manager.query(
-            conn_params,
-            "select file_id,chunk_doc, chunk_metadata, security_level from kbot_biz_txt_embedding where file_id=:file_id",
-            {"file_id": "a3162c31-d797-42ea-b252-b53c4187bd9d"}
-        )
-        chunk_doc = query_result[0][1]
-        chunk_metadata = query_result[0][2]
-        security_level = query_result[0][3]
-        logger.info(f"chunk_doc: {chunk_doc}, chunk_metadata: {chunk_metadata}, security_level: {security_level}")
-
-        # # 2. 执行DML操作示例 - 插入
-        # insert_count = await pool_manager.execute_dml(
-        #     conn_params,
-        #     "INSERT INTO employees (employee_id, first_name, last_name, email) VALUES (:1, :2, :3, :4)",
-        #     [999, 'John', 'Doe', 'john.doe@example.com']
-        # )
-        # logger.info(f"插入操作影响行数: {insert_count}")
-
-        # # 3. 执行DML操作示例 - 更新
-        # update_count = await pool_manager.execute_dml(
-        #     conn_params,
-        #     "UPDATE employees SET salary = :salary WHERE employee_id = :emp_id",
-        #     {"salary": 75000, "emp_id": 999}
-        # )
-        # logger.info(f"更新操作影响行数: {update_count}")
-
-        # # 4. 执行DML操作示例 - 删除
-        # delete_count = await pool_manager.execute_dml(
-        #     conn_params,
-        #     "DELETE FROM employees WHERE employee_id = :emp_id",
-        #     {"emp_id": 999}
-        # )
-        # logger.info(f"删除操作影响行数: {delete_count}")
-
-    except Exception as e:
-        logger.error(f"操作过程中发生错误: {e}")
-
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
