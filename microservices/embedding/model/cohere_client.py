@@ -291,12 +291,3 @@ class CohereEmbedding(BaseEmbedding):
             "embed-multilingual-light-v3.0": 384
         }
         return dim_map.get(self.model_name, 1024)  # Default to 1024
-
-    async def health_check(self) -> dict[str, Any]:
-        """Check service health status."""
-        return {
-            "initialized": self._is_initialized,
-            "model": self.model_name,
-            "last_error": None,
-            "throughput": "N/A"
-        }

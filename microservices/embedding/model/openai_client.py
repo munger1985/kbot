@@ -327,11 +327,3 @@ class OpenAIEmbedding(BaseEmbedding):
         }
         return dim_map.get(self.model_name, 1536)  # Default to 1536 if unknown
 
-    async def health_check(self) -> dict[str, Any]:
-        """Check service health status."""
-        return {
-            "initialized": self._is_initialized,
-            "model": self.model_name,
-            "last_error": None,
-            "throughput": "N/A"  # Could track actual metrics
-        }

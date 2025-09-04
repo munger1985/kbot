@@ -36,9 +36,9 @@ class KbotBizTxtEmbeddingRepository:
         
         # Generate SQL
         sql = """INSERT INTO KBOT_BIZ_TXT_EMBEDDING
-        (EMBED_ID, KB_ID, FILE_ID, CHUNK_DOC, CHUNK_METADATA, EMBEDDING, SECURITY_LEVEL)
+        (EMBED_ID, KB_ID, FILE_ID, SECURITY_LEVEL, CHUNK_METADATA, EMBEDDING, CHUNK_DOC)
         VALUES
-        (:embed_id, :kb_id, :file_id, :chunk_doc, :chunk_metadata, :embedding, :security_level)"""
+        (:embed_id, :kb_id, :file_id, :security_level,  :chunk_metadata, :embedding, :chunk_doc)"""
         
         for embedding in embeddings:
             params = {

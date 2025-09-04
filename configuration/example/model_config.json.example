@@ -5,7 +5,7 @@
     "service_host": "0.0.0.0",
     "service_port": 9201,
     "max_tokens": 8192,
-    "timeout": 30,
+    "timeout": 300,
     "max_retries": 3,
     "cache_dir": "/your/path/cached_models/"
   },
@@ -18,7 +18,7 @@
     "temperature": 0.7,
     "top_p": 1.0,
     "top_k": 0,
-    "timeout": 30,
+    "timeout": 300,
     "frequency_penalty": 0.0,
     "presence_penalty": 0.0
   },
@@ -28,14 +28,14 @@
     "service_host": "0.0.0.0",
     "service_port": 9203,
     "cache_dir": "/your/path/cached_models/",
-    "timeout": 30
+    "timeout": 300
   },
   "vlm": {
     "service_name": "vlm-service",
     "service_version": "1.0.0",
     "service_host": "0.0.0.0",
     "service_port": 9204,
-    "timeout": 30
+    "timeout": 300
   },
   "tokenizer": {
     "custom_dict_path": "/your/path/kbot3/configuration/custom_dict.txt",
@@ -46,7 +46,7 @@
     "service_version": "1.0.0",
     "service_host": "0.0.0.0",
     "service_port": 9205,
-    "timeout": 30,
+    "timeout": 300,
     "enabled": false,
     "model_path": "/your/path/cached_models/cc.zh.300.bin",
     "top_n_words": 50000,

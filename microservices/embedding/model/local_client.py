@@ -583,24 +583,3 @@ class LocalEmbedding(BaseEmbedding):
         """Get the currently recommended batch size."""
         return self._batch_size
 
-    def health_check(self) -> Dict[str, Any]:
-        """Check model health and resource status."""
-        status = {
-            "initialized": self._is_initialized,
-            "model_loaded": self.model is not None,
-            "tokenizer_loaded": self.tokenizer is not None,
-            "batch_size": self._batch_size,
-            "model_name": self.model_name,
-            "device": self.device,
-            "using_device_map": self._using_device_map
-        }
-        
-        if torch.cuda.is_available():
-            device = self.model.device if self.model and hasattr(self.model, 'device') else "cuda:0"
-            status.update({
-                "gpu_memory_used_mb": torch.cuda.memory_allocated(device) / (1024**2), # type: ignore
-                "gpu_memory_total_mb": torch.cuda.get_device_properties(device).total_memory / (1024**2), # type: ignore
-                "device": str(device)
-            })
-        
-        return status

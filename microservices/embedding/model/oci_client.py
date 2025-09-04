@@ -1,4 +1,5 @@
 import oci
+import math
 from loguru import logger
 from .base import BaseEmbedding, EmbeddingConfig, EmbeddingResponse, EmbeddingDataItem
 
@@ -50,27 +51,6 @@ class OCIEmbedding(BaseEmbedding):
         self._is_running = False
         logger.info("OCI client shutdown")
 
-    async def health_check(self) -> bool:
-        """Check the health of the OCI client.
-        
-        Returns:
-            bool: True if the client is healthy, False otherwise.
-        """
-        if not self._is_running or not self.client:
-            return False
-        try:
-            # Perform a simple OCI service call to verify availability
-            embed_text_detail = oci.generative_ai_inference.models.EmbedTextDetails()
-            embed_text_detail.serving_mode = oci.generative_ai_inference.models.OnDemandServingMode(model_id=self.config.model_name)
-            embed_text_detail.inputs = ["test"]
-            embed_text_detail.truncate = "NONE"
-            embed_text_detail.compartment_id = self.config.compartment_id
-            self.client.embed_text(embed_text_detail)
-            return True
-        except Exception as e:
-            logger.error(f"Health check failed: {str(e)}")
-            return False
-
         
     async def embed(
         self,
@@ -88,7 +68,10 @@ class OCIEmbedding(BaseEmbedding):
         try:
             for i in range(0, len(texts), batch_size):
                 batch = texts[i:i + batch_size]
-                logger.debug(f"Processing batch {i//batch_size + 1}/{len(texts)//batch_size + 1}")
+                
+                current_batch = i // batch_size + 1
+                total_batches = math.ceil(len(texts) / batch_size)
+                logger.debug(f"Processing batch {current_batch}/{total_batches}")
 
                 embed_text_detail = oci.generative_ai_inference.models.EmbedTextDetails()
                 embed_text_detail.serving_mode = oci.generative_ai_inference.models.OnDemandServingMode(model_id=self.config.model_name)
