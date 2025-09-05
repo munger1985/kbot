@@ -7,6 +7,7 @@ class AccessorForm(BaseModel):
     accessor: str
     accessor_type: int
     plain_password: str
+    status: int = 0
     descs: str | None = None
     by: str | None = None
 

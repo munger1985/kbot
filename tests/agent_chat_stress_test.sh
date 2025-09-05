@@ -11,7 +11,7 @@ do
   # 执行curl命令
   curl -X POST "http://localhost:8000/api/agent/chat" \
     -H "Content-Type: application/json" \
-    -d '{"session_id": "session_1754010982.804123", "by":"chris", "agent_id":1, "security_level":3, "request_time":"2025-08-01 18:01:01", "question": "文艺复兴是什么?"}'
+    -d '{"session_id": "session_1754010982.804123", "by":"chris", "agent_id":2, "security_level":3, "request_time":"2025-08-01 18:01:01", "question": "黎曼几何是什么?"}'
   
   echo -e "\n"
   

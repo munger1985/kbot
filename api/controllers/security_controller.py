@@ -31,7 +31,7 @@ class AuthController:
         security.accessor = form.accessor
         security.accessor_type = form.accessor_type
         security.hashed_secret = get_password_hash(form.plain_password)
-        security.status = Status.ENABLED.value
+        security.status = form.status
         security.descs = form.descs
         security.created_by = form.by
         security.updated_by = form.by
