@@ -62,7 +62,7 @@ async def agent_chat(form: AgentChatForm) -> dict[str, Any]:
             
             if results and len(results) > 0:
                 # 获取到引用结果
-                host = os.getenv("KBOT_HOST", "localhost")
+                host = os.getenv("KBOT_IP", "localhost")
                 port = os.getenv("KBOT_PORT", "8000")
                 url = f"http://{host}:{port}"
                 for kb_result in results:

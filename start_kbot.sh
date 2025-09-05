@@ -26,7 +26,7 @@ echo
 echo "微服务已启动。"
 # 启动 main.py
 echo "正在启动 KBot 主程序..."
-cd "$(dirname "$0")" && python main.py >/dev/null 2>&1 &
+# cd "$(dirname "$0")" && python main.py >/dev/null 2>&1 &
 for i in {1..10}; do
   echo -n "*"
   sleep 1
