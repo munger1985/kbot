@@ -128,6 +128,7 @@ http://localhost:8848/nacos/
 SELECT STATUS, MAXSIZE FROM DBA_CPOOL_INFO;
 #执行下面的脚本，启动DRCP
 EXECUTE DBMS_CONNECTION_POOL.START_POOL();
+EXECUTE DBMS_CONNECTION_POOL.CONFIGURE_POOL(pool_name => 'SYS_DEFAULT_CONNECTION_POOL',minsize => 4,maxsize => 40,incrsize => 2,inactivity_timeout => 300,max_lifetime_session => 86400);
 #或者更详细的配置，例如：
 EXECUTE DBMS_CONNECTION_POOL.CONFIGURE_POOL(
     pool_name => 'SYS_DEFAULT_CONNECTION_POOL',

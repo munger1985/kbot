@@ -38,3 +38,12 @@ sqlplus kbotui_dev/BotWelcome123##@132.145.81.123:1521/DB1007_pdb1.regionalpubli
 sqlplus sys/BotWelcome123##@132.145.81.123:1521/DB1007_pdb1.regionalpublics.hysunhevcn.oraclevcn.com as sysdba;
 sys/BotWelcome123##
 
+
+
+# 在数据库端，使用CDB级别开启DRCP
+EXECUTE DBMS_CONNECTION_POOL.START_POOL();
+EXECUTE DBMS_CONNECTION_POOL.CONFIGURE_POOL(pool_name => 'SYS_DEFAULT_CONNECTION_POOL',minsize => 4,maxsize => 40,incrsize => 2,inactivity_timeout => 300,max_lifetime_session => 86400);
+
+
+
+
