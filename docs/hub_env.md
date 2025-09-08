@@ -10,7 +10,7 @@ cd /home/ubuntu/kbot3
 git pull                      #本地更新代码      
 git clone https://github.com/munger1985/kbot.git 
 git clone -b kbot3 https://github.com/munger1985/kbot.git
-git clone https://github.com/munger1985/kbot.git -b v3.0.1 
+git clone https://github.com/munger1985/kbot.git -b v3.0.3
 mv kbot kbot3
 git reset --hard origin/kbot3  # 强制将本地 main 分支重置为远程状态
 ```

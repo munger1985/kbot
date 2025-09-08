@@ -18,7 +18,7 @@ systemctl stop firewalld
 wget https://repo.anaconda.com/archive/Anaconda3-2024.10-1-Linux-x86_64.sh
 sh Anaconda3-2024.10-1-Linux-x86_64.sh -b -u -p ~/anaconda3
 ~/anaconda3/bin/conda init bash
-#3.2.Ubuntu安装docker
+#3.2.Ubuntu安装docker（27.5.1或以上）
 sudo apt install docker -y
 sudo apt install docker-compose -y
 sudo usermod -aG docker $USER
@@ -34,8 +34,8 @@ sudo apt install git -y
 
 ### 2.Kbot代码下载以及依赖包准备
 ```bash
-#1.下载Kbot3.0源代码
-git clone -b kbot3 https://github.com/munger1985/kbot.git
+#1.下载Kbot3.0源代码，Hub提供子版本的Tag
+git clone https://github.com/munger1985/kbot.git -b v3.0.3
 #2.创建conda虚拟环境
 cd kbot3
 conda create -n kbot3 python=3.12
@@ -107,9 +107,9 @@ docker-compose up -d
 
 #3.2 Kbot 3.0后端的配置文件：
 .env
-configconfiguration/app_config.json
-configconfiguration/db_config.json
-configconfiguration/model_config.json
+configuration/app_config.json
+configuration/db_config.json
+configuration/model_config.json
 每个微服务下有个.env，配置了默认值，可以不用修改。
 Kbot的主服务默认端口：18099，Nacos的默认端口：8848
 
@@ -175,6 +175,9 @@ cd /home/ubuntu/kbot3
 #1.系统设置=》系统配置=〉服务URL
 #2.系统设置=》向量DB连接
 #3.系统设置=》LLM配置
+# 在kbot v3.0.3版本中，需要登录到kbot后台服务器，切换到kbot3环境，并执行：python ./tests/test_model_redis.py，把模型同步到redis中。
+# 前端修改的模型，也需要执行这个脚本，同步模型信息到redis中。
+# 这个自动同步，后续v3.0.4版本会修复。
 #4.提示词管理=》提示词模版
 #5.完整流程跑通测试
 #创建业务域=》创建知识库=》上传数据=》待提交编辑=》待审批=》查询进度=〉创建智能体=》配置智能体=》Chat=》下载/预览文件
