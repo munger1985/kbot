@@ -357,7 +357,7 @@ class MarkdownParser:
             if not text_embedding_model:
                 msg = f"text_embedding_model not found for id: {self.file_params.txt_embed_model}"
                 logger.error(msg)
-                await  update_file_status(FileStatus.PARSE_FAILED, msg)
+                await  update_file_status( self.file_params.file_id,FileStatus.PARSE_FAILED, msg)
                 return []
             embeddings_list = []
             if chunks:
@@ -366,7 +366,7 @@ class MarkdownParser:
                 msg = f"text_embedding_model  {text_embedding_model} returned invalid results (expected {len(chunks)}, got {len(embeddings_list) if embeddings_list else 0})"
                 logger.error(msg)
                 logger.error("failed file: {}", self.file_params.file_path)
-                await  update_file_status(FileStatus.PARSE_FAILED, msg)
+                await  update_file_status(self.file_params.file_id,FileStatus.PARSE_FAILED, msg)
                 return []
 
                 # Create embedding entities
@@ -397,7 +397,7 @@ class MarkdownParser:
         if not model_unique_name:
             msg = f"Embedding model not found for id: {self.file_params.txt_embed_model}"
             logger.error(msg)
-            await  update_file_status(FileStatus.PARSE_FAILED, msg)
+            await  update_file_status(self.file_params.file_id,FileStatus.PARSE_FAILED, msg)
             return False
 
         # Prepare all content chunks for embedding
@@ -429,7 +429,7 @@ class MarkdownParser:
         if not embeddings_list or len(embeddings_list) != len(chunks):
             msg = f"Embedding model {model_unique_name} returned invalid results (expected {len(chunks)}, got {len(embeddings_list) if embeddings_list else 0})"
             logger.error(msg)
-            await  update_file_status(FileStatus.PARSE_FAILED, msg)
+            await  update_file_status(self.file_params.file_id,FileStatus.PARSE_FAILED, msg)
             return False
 
         # Create embedding entities
