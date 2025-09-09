@@ -1,19 +1,19 @@
 import sys
+import asyncio
 from pathlib import Path
 # Add both project root and backend directory to Python path
 project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(project_root))
 from utils.call_models import CallModel
 
-import asyncio
-from decimal import Decimal
 
 async def test_call_embedding_model():
     """
     测试调用embedding模型的方法
     """
     # 测试参数
-    # embed_model_unique_name = "KBOT1/BGE-M3" # KBOT1/E5-LARGE-V2
+    # embed_model_unique_name = "KBOT1/BGE-M3"
+    # embed_model_unique_name = "KBOT1/E5-LARGE-V2"
     embed_model_unique_name = "KBOT1/OCI-Embedding"
     embed_input_texts = ["苹果", "香蕉"]
     topk = 4
@@ -32,10 +32,10 @@ async def test_call_llm_model():
     测试调用LLM模型的方法
     """
     # 测试参数
-    model_name = 'KBOT1/OCI-cohere'
+    # model_name = 'KBOT1/OCI-cohere'
     # model_name = "KBOT1/OCI-GROK4-II"
-    # model_name = "KBOT1/xai.grok-4"
-    test_prompt = "文艺复兴是什么"
+    model_name = "KBOT1/DeepSeek V3"
+    test_prompt = "hello"
     
     print(f"测试开始，使用模型: {model_name}")
     print(f"输入提示: {test_prompt}")
@@ -77,9 +77,9 @@ async def test_call_reranker_model():
     测试调用reranker模型的方法
     """
     # 测试参数
-    rerank_model_unique_name = "KBOT1/BGE-RANKER"
+    # rerank_model_unique_name = "KBOT1/BGE-RANKER"
     # rerank_model_unique_name = "KBOT1/JINA-RANKER"
-    # rerank_model_unique_name = "KBOT1/cohere-reranker"
+    rerank_model_unique_name = "KBOT1/cohere-reranker"
     question = "招聘数据工程师"
     inputs_list = [
         "<|im_end|>你好，我想要找一份有关数据科学的数据集。",
@@ -156,4 +156,4 @@ async def test_call_vlm_model():
 # 运行测试
 if __name__ == "__main__":
 
-    asyncio.run(test_call_reranker_model())
+    asyncio.run(test_call_embedding_model())

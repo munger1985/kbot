@@ -6,20 +6,23 @@ from .jina_reranker import JinaReranker, JinaRerankerConfig
 
 
 class RerankerProvider(str, Enum):
-    """Enumeration of supported reranker models."""
+    """支持的 reranker 模型枚举"""
     LOCAL = "local"
     COHERE = "cohere"
 
 
 def create_reranker_model(config: RerankerConfig) -> BaseReranker:
     """
-    Create a reranker instance based on the provided configuration.
+    根据提供的配置创建 reranker 实例
     
     Args:
-        config: Configuration for the reranker
+        config: reranker 配置
         
     Returns:
-        An instance of BaseReranker
+        BaseReranker 实例
+        
+    Raises:
+        ValueError: 当配置无效或不支持时
     """
     model_name = config.model_name.lower()
     if config.provider == RerankerProvider.LOCAL.value:
@@ -28,11 +31,11 @@ def create_reranker_model(config: RerankerConfig) -> BaseReranker:
         elif isinstance(config, JinaRerankerConfig):
             return JinaReranker(config)
         else:
-            raise ValueError("Invalid configuration for local reranker")
+            raise ValueError("本地 reranker 配置无效")
     elif config.provider == RerankerProvider.COHERE.value:
         if isinstance(config, CohereRerankerConfig):
             return CohereReranker(config)
         else:
-            raise ValueError("Invalid configuration for Cohere reranker")
+            raise ValueError("Cohere reranker 配置无效")
     else:
-        raise ValueError(f"Unsupported reranker model: {config.model_name}")
+        raise ValueError(f"不支持的 reranker 模型: {config.model_name}")

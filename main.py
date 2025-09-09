@@ -9,7 +9,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from loguru import logger
 from dotenv import load_dotenv
-from core.nacos_manager import nacos_manager, load_config, AppConfig
+from configuration import ConfigManager
+from core.nacos_manager import nacos_manager
 from core.logger_manager import LogManager, LogConfig
 from api.routers import router
 from services.dataparse.file_parser_manger import FileParserManager
@@ -20,8 +21,6 @@ from pathlib import Path
 env_path = Path(__file__).parent / ".env"
 load_dotenv(env_path)
 
-# 验证环境变量加载
-print(f"KBOT_API_AUTH: {os.getenv('KBOT_API_AUTH')}")
 service_name = "main"
 service_host = os.getenv("KBOT_HOST") or "0.0.0.0"
 service_port = int(os.getenv("KBOT_PORT") or 8000)
@@ -46,33 +45,17 @@ def create_app() -> FastAPI:
     try:
         # Initiate loguru configuration
         # 通过 nacos_manager 获取 app 配置
-        try:
-            app_config = load_config("app_config")
-            if isinstance(app_config, AppConfig):
-                log_dir = app_config.kbot.log.dir
-                log_level = app_config.kbot.log.level
-                rotation = app_config.kbot.log.rotation
-                retention = app_config.kbot.log.retention
-                title = app_config.kbot.title
-                description = app_config.kbot.description
-                version = app_config.kbot.version
-                debug = app_config.kbot.debug
-            else:
-                # 如果获取 app 配置失败，则使用默认配置
-                raise ValueError
-
-        except Exception as e:
-            # 如果获取 logger 配置失败，则使用默认配置
-            logger.warning(f"Failed to get app config from nacos: {str(e)}")
-            log_dir = "logs/"
-            log_level = "DEBUG"
-            rotation = "10 MB"
-            retention = "10 days"
-            title = "KBot API 3.0"
-            description = "KBot API 3.0"
-            version = "1.0.0"
-            debug = True
-            
+        app_config = ConfigManager.get_app_config()
+        
+        log_dir = app_config.kbot.log.dir
+        log_level = app_config.kbot.log.level
+        rotation = app_config.kbot.log.rotation
+        retention = app_config.kbot.log.retention
+        title = app_config.kbot.title
+        description = app_config.kbot.description
+        version = app_config.kbot.version
+        debug = app_config.kbot.debug
+        
         # 初始化日志
         conf = LogConfig(service_name=service_name, log_dir=log_dir, level=log_level, rotation=rotation, retention=retention)
         LogManager(conf).setup()

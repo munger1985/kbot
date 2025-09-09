@@ -8,7 +8,6 @@ from typing import Callable
 from nacos import NacosClient
 from pydantic import Field
 from pydantic_settings import BaseSettings
-from .config_type import AppConfig, DBConfig, ModelConfig
 
 
 class NacosSettings(BaseSettings):
@@ -215,16 +214,3 @@ class NacosConfigManager:
 # 单例实例
 nacos_manager = NacosConfigManager()
 
-def load_config(data_id: str) -> AppConfig | DBConfig | ModelConfig:
-    # 从Nacos获取配置
-    config_str = nacos_manager.get_config(data_id)
-    if not config_str:
-        raise ValueError("Failed to get config from nacos")
-    if data_id == "app_config":
-        return AppConfig.model_validate_json(config_str)
-    elif data_id == "db_config":
-        return DBConfig.model_validate_json(config_str)
-    elif data_id == "model_config":
-        return ModelConfig.model_validate_json(config_str)
-    else:
-        raise ValueError("Invalid data_id") 

@@ -1,5 +1,5 @@
 from typing import Sequence
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from sqlalchemy import func
 from dao.entities.kbot_md_chat_history import KbotMdChatHistory
 from core.database.meta_oracle import get_session
@@ -23,4 +23,15 @@ class KbotMdChatHistoryRepository:
                 .where(KbotMdChatHistory.session_id == session_id)
             )
             return result.scalars().all()
+        
+    async def delete_by_agent_id(self, agent_id: int) -> int:
+        """Delete chat histories by agent ID."""
+        async with get_session() as session:
+            result = await session.execute(
+                delete(KbotMdChatHistory)
+                .where(KbotMdChatHistory.agent_id == agent_id)
+            )
+            
+            await session.commit()
+            return result.rowcount
             

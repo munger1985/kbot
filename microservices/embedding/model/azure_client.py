@@ -6,79 +6,80 @@ import asyncio
 from .base import BaseEmbedding, EmbeddingConfig, EmbeddingResponse, EmbeddingDataItem
 
 class AzureEmbeddingConfig(EmbeddingConfig):
-    api_endpoint: str
-    timeout: int = 30
-    max_retries: int = 3
-    api_key: str = ""
-    deployment_name: str = ""
-    api_version: str = "2023-05-15"
+    """Azure OpenAI 嵌入服务配置类"""
+    api_endpoint: str  # API 端点地址
+    timeout: int = 30  # 请求超时时间（秒）
+    max_retries: int = 3  # 最大重试次数
+    api_key: str = ""  # API 密钥
+    deployment_name: str = ""  # 部署名称
+    api_version: str = "2023-05-15"  # API 版本
     
 class AzureEmbedding(BaseEmbedding):
     """
-    Production-grade Azure OpenAI embedding service with:
-    - Intelligent batching
-    - Adaptive retry policies
-    - Comprehensive monitoring
-    - Azure-specific optimizations
+    生产级 Azure OpenAI 嵌入服务，具备以下特性：
+    - 智能批处理
+    - 自适应重试策略
+    - 全面的监控指标
+    - Azure 特定优化
     """
 
-    # Enhanced metrics with Azure-specific dimensions
+    # 增强的监控指标（包含 Azure 特定维度）
     LATENCY_HIST = Histogram(
         'azure_embedding_latency_seconds',
-        'Embedding request latency distribution',
+        '嵌入请求延迟分布',
         ['deployment', 'api_version', 'status']
     )
     
     ERROR_COUNTER = Counter(
         'azure_embedding_errors_total',
-        'Embedding error counts by type',
+        '按类型统计的嵌入错误次数',
         ['deployment', 'error_code']
     )
     
     REQUEST_COUNTER = Counter(
         'azure_embedding_requests_total',
-        'Total embedding requests processed',
+        '处理的嵌入请求总数',
         ['deployment', 'api_version']
     )
     
     BATCH_SIZE_GAUGE = Gauge(
         'azure_embedding_batch_size',
-        'Effective batch size per request',
+        '每个请求的有效批处理大小',
         ['deployment']
     )
     
     TOKEN_USAGE = Gauge(
         'azure_embedding_tokens_used',
-        'Tokens consumed per request',
+        '每个请求消耗的令牌数',
         ['deployment']
     )
 
     def __init__(self, config: AzureEmbeddingConfig):
         """
-        Initialize with Azure-specific configuration.
+        使用 Azure 特定配置进行初始化
         
         Args:
-            config: RemoteEmbeddingConfig containing:
-                - api_key: Azure API key
-                - deployment_name: Deployment name
-                - endpoint: Azure endpoint URL
-                - api_version: API version (default "2023-05-15")
-                - timeout: Request timeout (default 30s)
-                - max_retries: Maximum retries (default 3)
-                - max_batch_size: Maximum texts per request (default 16)
-                - min_batch_size: Minimum texts per request (default 1)
-                - retry_delay: Base retry delay (default 1.0s)
-                - headers: Custom HTTP headers
-                - azure_params: Additional Azure parameters
+            config: 包含以下参数的配置对象：
+                - api_key: Azure API 密钥
+                - deployment_name: 部署名称
+                - endpoint: Azure 端点 URL
+                - api_version: API 版本（默认 "2023-05-15"）
+                - timeout: 请求超时时间（默认 30 秒）
+                - max_retries: 最大重试次数（默认 3 次）
+                - max_batch_size: 每个请求的最大文本数（默认 16）
+                - min_batch_size: 每个请求的最小文本数（默认 1）
+                - retry_delay: 基础重试延迟（默认 1.0 秒）
+                - headers: 自定义 HTTP 头部
+                - azure_params: 额外的 Azure 参数
         """
         self._client: AsyncAzureOpenAI | None = None
         self.api_key = config.api_key
         self.deployment_name = config.deployment_name
         self.endpoint = config.api_endpoint
         self.api_version = config.api_version or "2023-05-15"
-        self.timeout = config.timeout #or settings['embed']['timeout']
+        self.timeout = config.timeout
         self.max_retries = getattr(config, 'max_retries', 3)
-        self.max_batch_size = getattr(config, 'max_batch_size', 16)  # Azure recommendation
+        self.max_batch_size = getattr(config, 'max_batch_size', 16)  # Azure 推荐值
         self.min_batch_size = getattr(config, 'min_batch_size', 1)
         self.retry_delay = getattr(config, 'retry_delay', 1.0)
         self.custom_headers = getattr(config, 'headers', {})
@@ -86,12 +87,12 @@ class AzureEmbedding(BaseEmbedding):
         self._is_initialized = False
 
     async def startup(self) -> None:
-        """Initialize client with connection validation."""
+        """初始化客户端并进行连接验证"""
         if self._is_initialized:
             return
             
         if not all([self.api_key, self.endpoint, self.deployment_name]):
-            raise ValueError("Missing required Azure configuration")
+            raise ValueError("缺少必要的 Azure 配置参数")
 
         try:
             headers = {
@@ -112,28 +113,28 @@ class AzureEmbedding(BaseEmbedding):
             
             await self._validate_connection()
             self._is_initialized = True
-            logger.success(f"Azure client ready for {self.deployment_name}")
+            logger.success(f"Azure 客户端已就绪，部署名称: {self.deployment_name}")
             
         except Exception as e:
-            logger.error(f"Initialization failed: {str(e)}")
-            raise RuntimeError("Azure client initialization failed") from e
+            logger.error(f"初始化失败: {str(e)}")
+            raise RuntimeError("Azure 客户端初始化失败") from e
 
     async def _validate_connection(self) -> None:
-        """Perform lightweight connection test."""
+        """执行轻量级连接测试"""
         try:
             test_response = await self._client.embeddings.create(  # type: ignore
                 model=self.deployment_name,
-                input=["connection test"],
+                input=["连接测试"],
                 encoding_format="float"
             )
             if not test_response.data:
-                raise ValueError("Empty test response")
+                raise ValueError("测试响应为空")
         except Exception as e:
             await self._client.close()  # type: ignore
-            raise RuntimeError(f"Connection test failed: {str(e)}") from e
+            raise RuntimeError(f"连接测试失败: {str(e)}") from e
 
     async def shutdown(self) -> None:
-        """Graceful shutdown with resource cleanup."""
+        """优雅关闭，清理资源"""
         if not self._is_initialized:
             return
             
@@ -142,9 +143,9 @@ class AzureEmbedding(BaseEmbedding):
                 await self._client.close()
             self._client = None
             self._is_initialized = False
-            logger.info("Azure client shutdown completed")
+            logger.info("Azure 客户端关闭完成")
         except Exception as e:
-            logger.error(f"Shutdown error: {str(e)}")
+            logger.error(f"关闭过程中发生错误: {str(e)}")
             raise
 
     async def embed(
@@ -155,28 +156,28 @@ class AzureEmbedding(BaseEmbedding):
         **kwargs: Any
     ) -> EmbeddingResponse:
         """
-        Generate embeddings with Azure-specific optimizations.
+        使用 Azure 特定优化生成嵌入向量
         
         Args:
-            texts: Input texts to embed
-            batch_size: Override auto batch size (0 for auto)
-            raise_on_error: Whether to raise exceptions
-            kwargs: Additional Azure API parameters
+            texts: 需要嵌入的输入文本列表
+            batch_size: 覆盖自动批处理大小（0 表示自动）
+            raise_on_error: 是否在出错时抛出异常
+            kwargs: 额外的 Azure API 参数
             
         Returns:
-            EmbeddingResponse: Standardized response
+            EmbeddingResponse: 标准化的响应对象
             
         Raises:
-            RuntimeError: If client not initialized
+            RuntimeError: 如果客户端未初始化
         """
         if not self._is_initialized:
-            raise RuntimeError("Client not initialized. Call startup() first.")
+            raise RuntimeError("客户端未初始化，请先调用 startup() 方法")
 
         if not texts:
-            logger.warning("Received empty input texts")
+            logger.warning("接收到空的输入文本")
             return self._empty_response()
 
-        # Calculate effective batch size
+        # 计算有效的批处理大小
         effective_batch = self._calculate_batch_size(len(texts), batch_size)
         self.REQUEST_COUNTER.labels(
             deployment=self.deployment_name,
@@ -205,13 +206,13 @@ class AzureEmbedding(BaseEmbedding):
         batch_size: int,
         **kwargs: Any
     ) -> EmbeddingResponse:
-        """Process batches with Azure-specific retry logic."""
+        """使用 Azure 特定的重试逻辑处理批处理"""
         all_embeddings = []
         total_tokens = 0
         
         for i in range(0, len(texts), batch_size):
             batch = texts[i:i + batch_size]
-            logger.debug(f"Processing batch {i//batch_size + 1}/{(len(texts)-1)//batch_size + 1}")
+            logger.debug(f"正在处理批次 {i//batch_size + 1}/{(len(texts)-1)//batch_size + 1}")
             
             for attempt in range(self.max_retries + 1):
                 try:
@@ -228,14 +229,14 @@ class AzureEmbedding(BaseEmbedding):
                     
                 except RateLimitError:
                     wait_time = self.retry_delay * (2 ** attempt)
-                    logger.warning(f"Rate limited, retrying in {wait_time}s...")
+                    logger.warning(f"受到速率限制，将在 {wait_time} 秒后重试...")
                     await asyncio.sleep(wait_time)
                 except APIConnectionError:
                     if attempt == self.max_retries:
                         raise
                     await asyncio.sleep(self.retry_delay)
                 except APIStatusError as e:
-                    if e.status_code >= 500:  # Retry server errors
+                    if e.status_code >= 500:  # 重试服务器错误
                         if attempt == self.max_retries:
                             raise
                         await asyncio.sleep(self.retry_delay * (attempt + 1))
@@ -246,13 +247,13 @@ class AzureEmbedding(BaseEmbedding):
         return self._build_response(all_embeddings, total_tokens)
 
     def _calculate_batch_size(self, num_texts: int, user_batch_size: int) -> int:
-        """Calculate optimal batch size considering Azure limits."""
+        """考虑 Azure 限制计算最优批处理大小"""
         if user_batch_size > 0:
             return min(user_batch_size, self.max_batch_size)
             
-        # Auto-calculate based on text length
+        # 基于文本长度自动计算
         avg_length = sum(len(t) for t in texts) / max(1, len(texts)) # type: ignore
-        if avg_length > 1000:  # Reduce batch size for long documents
+        if avg_length > 1000:  # 对于长文档减少批处理大小
             return min(8, self.max_batch_size)
         return min(
             max(self.min_batch_size, num_texts // 4),
@@ -260,7 +261,7 @@ class AzureEmbedding(BaseEmbedding):
         )
 
     def _build_response(self, embeddings: list[list[float]], total_tokens: int) -> EmbeddingResponse:
-        """Construct standardized response."""
+        """构建标准化响应"""
         data = [
             EmbeddingDataItem(
                 embedding=embedding,
@@ -280,7 +281,7 @@ class AzureEmbedding(BaseEmbedding):
         )
 
     def _handle_error(self, error: Exception) -> None:
-        """Centralized error handling."""
+        """集中错误处理"""
         error_code = "unknown"
         if isinstance(error, RateLimitError):
             error_code = "rate_limit"
@@ -300,10 +301,10 @@ class AzureEmbedding(BaseEmbedding):
             status="error"
         ).observe(0)
         
-        logger.error(f"Embedding failed - {self.deployment_name}: {str(error)}")
+        logger.error(f"嵌入失败 - 部署: {self.deployment_name}, 错误: {str(error)}")
 
     def _empty_response(self) -> EmbeddingResponse:
-        """Generate empty response for error cases."""
+        """为错误情况生成空响应"""
         return EmbeddingResponse(
             data=[],
             model=self.deployment_name,
@@ -313,20 +314,10 @@ class AzureEmbedding(BaseEmbedding):
 
     @property
     def embedding_dim(self) -> int:
-        """Get embedding dimension for the deployment."""
+        """获取部署的嵌入维度"""
         dim_map = {
             "text-embedding-ada-002": 1536,
             "text-embedding-3-small": 1536,
             "text-embedding-3-large": 3072
         }
-        return dim_map.get(self.deployment_name.split('-')[0], 1536)  # Default fallback
-
-    async def health_check(self) -> dict[str, Any]:
-        """Get service health status."""
-        return {
-            "initialized": self._is_initialized,
-            "deployment": self.deployment_name,
-            "api_version": self.api_version,
-            "last_error": None,
-            "throughput": "N/A"
-        }
+        return dim_map.get(self.deployment_name.split('-')[0], 1536)  # 默认回退值

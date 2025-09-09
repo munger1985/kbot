@@ -1,4 +1,3 @@
-import os
 import aiohttp
 from PIL import Image
 from decimal import Decimal
@@ -7,15 +6,12 @@ from typing import Any
 from microservices.embedding.model.base import EmbeddingDataItem
 from dao.repositories.kbot_md_prompt_repo import KbotMdPromptRepository
 from .common_methods import encode_image
-from core.nacos_manager import load_config, ModelConfig
+from configuration import ConfigManager
 
 class CallModel():
     """Call model"""
     def __init__(self):
-        model_config = load_config("model_config")
-        if not isinstance(model_config, ModelConfig):
-            raise ValueError("Model config is not loaded")
-        self.model_config = model_config # 获取模型配置
+        self.model_config = ConfigManager.get_model_config() # 获取模型配置
         self.kbot_md_prompt_repo = KbotMdPromptRepository() # 获取提示信息仓库
 
 
@@ -26,19 +22,10 @@ class CallModel():
                                 ) -> list[EmbeddingDataItem] | None:
         """Call embedding model"""
 
-        try:
-        # 从 nacos 获取 embedding 服务配置
-            service_host = self.model_config.embed.service_host or "0.0.0.0" # 微服务地址
-            service_port = self.model_config.embed.service_port or 9201 # 微服务通信端口
-            total = self.model_config.embed.timeout or 30
-            timeout = aiohttp.ClientTimeout(total=total)
-        except Exception as e:
-            # 如果从 nacos 获取 embedding 服务配置失败，则使用默认配置
-            service_host = "0.0.0.0"
-            service_port = 9201
-            timeout = aiohttp.ClientTimeout(total=30)
-
-        
+        service_host = self.model_config.embed.service_host
+        service_port = self.model_config.embed.service_port
+        total = self.model_config.embed.timeout
+        timeout = aiohttp.ClientTimeout(total=total)
         url = f"http://{service_host}:{service_port}/v1/embeddings"
         headers = {"Content-Type": "application/json"}
         payload = {
@@ -101,17 +88,10 @@ class CallModel():
         - **top_k**: Number of top documents to return (None for all)
         """
 
-        try:
-            service_host = self.model_config.reranker.service_host or "0.0.0.0" # 微服务地址
-            service_port = self.model_config.reranker.service_port or 9203 # 微服务通信端口
-            total = self.model_config.reranker.timeout or 30
-            timeout = aiohttp.ClientTimeout(total=total)
-        except Exception as e:
-            # 如果从 nacos 获取 reranker 服务配置失败，则使用默认配置
-            service_host = "0.0.0.0"
-            service_port = 9203
-            timeout = aiohttp.ClientTimeout(total=30)
-        
+        service_host = self.model_config.reranker.service_host
+        service_port = self.model_config.reranker.service_port
+        total = self.model_config.reranker.timeout
+        timeout = aiohttp.ClientTimeout(total=total)
         url = f"http://{service_host}:{service_port}/v1/rerank"
         headers = {"Content-Type": "application/json"}
         payload = {
@@ -149,17 +129,11 @@ class CallModel():
         返回:
             一个异步生成器，逐块产生LLM的响应
         """
-        try:
-        # 从 nacos 获取 llm 服务配置
-            service_host = self.model_config.llm.service_host or "0.0.0.0" # 微服务地址
-            service_port = self.model_config.llm.service_port or 9202 # 微服务通信端口
-            total = self.model_config.llm.timeout or 30
-            timeout = aiohttp.ClientTimeout(total=total)
-        except Exception as e:
-            # 如果从 nacos 获取 llm 服务配置失败，则使用默认配置
-            service_host = "0.0.0.0"
-            service_port = 9202
 
+        service_host = self.model_config.llm.service_host
+        service_port = self.model_config.llm.service_port
+        total = self.model_config.llm.timeout
+        timeout = aiohttp.ClientTimeout(total=total)
         url = f"http://{service_host}:{service_port}/v1/chat/completions"
         headers = {"Content-Type": "application/json"}
         
@@ -210,17 +184,10 @@ class CallModel():
         - Output text, or None on failure
         """
         
-        try:
-            service_host = self.model_config.vlm.service_host or "0.0.0.0" # 微服务地址
-            service_port = self.model_config.vlm.service_port or 9204 # 微服务通信端口
-            total = self.model_config.vlm.timeout or 30
-            timeout = aiohttp.ClientTimeout(total=total)
-        except Exception as e:
-            # 如果从 nacos 获取 vlm 服务配置失败，则使用默认配置
-            service_host = "0.0.0.0"
-            service_port = 9204
-            timeout = aiohttp.ClientTimeout(total=30)
-
+        service_host = self.model_config.vlm.service_host
+        service_port = self.model_config.vlm.service_port
+        total = self.model_config.vlm.timeout
+        timeout = aiohttp.ClientTimeout(total=total)
         url = f"http://{service_host}:{service_port}/v1/inference"
         headers = {"Content-Type": "application/json"}
 
@@ -301,17 +268,10 @@ class CallModel():
         - 同义词响应对象，包含每个单词的同义词列表
         """
         
-        try:
-            service_host = self.model_config.synonym.service_host or "0.0.0.0" # 微服务地址
-            service_port = self.model_config.synonym.service_port or 9205 # 微服务通信端口
-            total = self.model_config.synonym.timeout or 30
-            timeout = aiohttp.ClientTimeout(total=total)
-        except Exception as e:
-            # 如果从 nacos 获取 vlm 服务配置失败，则使用默认配置
-            service_host = "0.0.0.0"
-            service_port = 9205
-            timeout = aiohttp.ClientTimeout(total=30)
-
+        service_host = self.model_config.synonym.service_host
+        service_port = self.model_config.synonym.service_port
+        total = self.model_config.synonym.timeout
+        timeout = aiohttp.ClientTimeout(total=total)
         url = f"http://{service_host}:{service_port}/synonym"
         headers = {"Content-Type": "application/json"}
         

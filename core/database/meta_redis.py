@@ -1,8 +1,10 @@
-from typing import Any, AsyncIterator
 from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator
+from typing import Any
 from redis.asyncio import Redis, ConnectionPool
+from redis.asyncio.client import Pipeline
 from redis.exceptions import RedisError, ConnectionError, TimeoutError
-from core.nacos_manager import load_config, DBConfig
+from configuration import ConfigManager
 
 class AsyncRedisPool:
     """
@@ -12,6 +14,13 @@ class AsyncRedisPool:
         >>> async with AsyncRedisPool(db=1) as redis:
         >>>     await redis.hset("key", mapping={"field": "value"})
         >>>     data = await redis.hgetall("key")
+        
+        >>> # 使用 Pipeline
+        >>> async with AsyncRedisPool(db=1) as redis:
+        >>>     async with redis.pipeline() as pipe:
+        >>>         pipe.set("key1", "value1")
+        >>>         pipe.set("key2", "value2")
+        >>>         results = await pipe.execute()
     """
 
     def __init__(self, db: int = 0):
@@ -28,24 +37,18 @@ class AsyncRedisPool:
             return
             
         try:
-            db_config = load_config("db_config")
-            
-            if isinstance(db_config, DBConfig):
-                self._host = db_config.redis.host
-                self._port = db_config.redis.port
-                self._password = db_config.redis.password
-                self._max_connections = (
-                    db_config.redis.max_connections or 
-                    self._max_connections
-                )
-                self.socket_connect_timeout = db_config.redis.socket_connect_timeout or 3
-                self.socket_timeout = db_config.redis.socket_timeout or 5
-                self.retry_on_timeout = db_config.redis.retry_on_timeout or True
-                self.health_check_interval = db_config.redis.health_check_interval or 30
-
-            else:
-                raise ValueError("Invalid database configuration")
-                
+            db_config = ConfigManager.get_db_config()
+            self._host = db_config.redis.host
+            self._port = db_config.redis.port
+            self._password = db_config.redis.password
+            self._max_connections = (
+                db_config.redis.max_connections or 
+                self._max_connections
+            )
+            self.socket_connect_timeout = db_config.redis.socket_connect_timeout
+            self.socket_timeout = db_config.redis.socket_timeout
+            self.retry_on_timeout = db_config.redis.retry_on_timeout
+            self.health_check_interval = db_config.redis.health_check_interval
             self._config_loaded = True
             
         except Exception as e:
@@ -63,8 +66,8 @@ class AsyncRedisPool:
                 f"redis://:{self._password}@{self._host}:{self._port}/{self._db}",
                 max_connections=self._max_connections,
                 decode_responses=True,
-                socket_connect_timeout=self.socket_connect_timeout, # 连接建立超时（秒）
-                socket_timeout=self.socket_timeout,  # 读写操作超时（秒）
+                socket_connect_timeout=self.socket_connect_timeout,
+                socket_timeout=self.socket_timeout,
                 retry_on_timeout=self.retry_on_timeout,
                 health_check_interval=self.health_check_interval
             )
@@ -114,6 +117,39 @@ class AsyncRedisPool:
         except Exception as e:
             raise
 
+    @asynccontextmanager
+    async def pipeline(self, transaction: bool = True, shard_hint: str | None = None) -> AsyncIterator[Pipeline]:
+        """
+        获取 Redis Pipeline 的上下文管理器
+        
+        Args:
+            transaction: 是否启用事务
+            shard_hint: 分片提示
+            
+        Returns:
+            Redis Pipeline 实例
+        """
+        async with self.get_connection() as redis:
+            async with redis.pipeline(transaction=transaction, shard_hint=shard_hint) as pipe:
+                yield pipe
+
+    async def execute_pipeline(self, commands: list[tuple[str, tuple, dict]], transaction: bool = True) -> list:
+        """
+        快捷执行 Pipeline 命令
+        
+        Args:
+            commands: 命令列表，格式为 [(method_name, args, kwargs), ...]
+            transaction: 是否启用事务
+            
+        Returns:
+            执行结果列表
+        """
+        async with self.pipeline(transaction=transaction) as pipe:
+            for method_name, args, kwargs in commands:
+                method = getattr(pipe, method_name)
+                method(*args, **kwargs)
+            return await pipe.execute()
+
     def __getattr__(self, name: str):
         """动态代理未定义的方法到 Redis 客户端"""
         async def method(*args, **kwargs):
@@ -135,3 +171,14 @@ class AsyncRedisPool:
         """获取 Redis 服务器信息"""
         async with self.get_connection() as redis:
             return await redis.info()
+
+    @property
+    def connection_info(self) -> dict:
+        """获取连接信息"""
+        return {
+            "host": self._host,
+            "port": self._port,
+            "db": self._db,
+            "max_connections": self._max_connections,
+            "is_initialized": self._is_initialized
+        }

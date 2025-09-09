@@ -4,13 +4,7 @@ from fastapi import APIRouter, status, Depends
 from fastapi.responses import StreamingResponse
 from api.schemas.agent_schema import AgentChatForm, AgentChatFeedbackForm
 from api.controllers.security_controller import AuthController
-from api.controllers.agent_controller import (
-    agent_chat, 
-    agent_feedback, 
-    agent_stream_chat, 
-    agent_get_session,
-    agent_del_session
-)
+from api.controllers.agent_controller import *
 from api.schemas.agent_response import (
     SuccessResponse,
     ErrorResponse,
@@ -136,7 +130,7 @@ async def handle_agent_get_session(session_id: str) -> SuccessQueryResponse | Er
             message=f"Session get failed. {str(e)}"
         )
     
-@router.get(
+@router.delete(
     "/session/remove",
     description="Remove the session. 删除session",
     response_model=SuccessResponse | ErrorResponse,
@@ -162,5 +156,35 @@ async def handle_agent_del_session(session_id: str) -> SuccessResponse | ErrorRe
         return ErrorResponse(
             code=400,
             success=False,
-            message=f"Session get failed. {str(e)}"
+            message=f"Session failed to remove. {str(e)}"
+        )
+    
+
+@router.delete(
+    "/remove",
+    description="Remove the agent. 删除智能体",
+    response_model=SuccessResponse | ErrorResponse,
+    # dependencies=[Depends(AuthController.get_current_accessor)],
+    status_code=status.HTTP_200_OK
+)
+async def handle_del_agent(agent_id: int) -> SuccessResponse | ErrorResponse:
+    try:
+        if await del_agent(agent_id):
+            return SuccessResponse(
+                code=200,
+                success=True,
+                message="Agent successfully removed."
+                )
+        else:
+            return ErrorResponse(
+                code=400,
+                success=False,
+                message="Agent failed to remove."
+            )
+            
+    except Exception as e:
+        return ErrorResponse(
+            code=400,
+            success=False,
+            message=f"Agent failed to remove. {str(e)}"
         )

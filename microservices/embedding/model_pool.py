@@ -1,140 +1,96 @@
 import asyncio
-import json
+import aiohttp
+import os
+from typing import Any
 from datetime import datetime, timedelta
-from typing import Optional, Dict
-
 from loguru import logger
-from ms_core import load_config, ModelConfig, ModelCategory, AsyncRedisPool
-from model import (
-    BaseEmbedding,
-    EmbeddingProvider,
-    LocalEmbeddingConfig,
-    OCIEmbeddingConfig,
-    create_embedding_model
-)
+from ms_core import ConfigManager, ModelCategory
+from model import *
 
 
 class ModelPool:
-    """Manage a pool of embedding models with health checking and lifecycle management"""
+    """管理模型池，提供健康检查和生命周期管理功能"""
 
     def __init__(self, health_check_interval: int = 600):
-        """Initialize model pool.
+        """初始化模型池实例。
+        
         Args:
-            health_check_interval: Interval in seconds between health checks
+            health_check_interval: 健康检查间隔时间（秒）
         """
-        self._models: Dict[str, BaseEmbedding] = {}
-        self._last_used: Dict[str, datetime] = {}
+        self._models: dict[str, BaseEmbedding] = {}
+        self._last_used: dict[str, datetime] = {}
         self._health_check_interval = health_check_interval
-        self._health_check_task: Optional[asyncio.Task] = None
-        self.redis = AsyncRedisPool(db=1)
+        self._health_check_task: asyncio.Task | None = None
 
     async def initialize(self):
-        """Initialize the model pool and start health check task"""
-        try:
-            self._health_check_task = asyncio.create_task(self._health_check_loop())
-            logger.info("Model pool initialized successfully")
-        except Exception as e:
-            logger.error(f"Failed to initialize model pool: {e}")
-            raise
+        """初始化模型池并启动健康检查任务。"""
+        self._health_check_task = asyncio.create_task(self._health_check_loop())
 
     async def shutdown(self):
-        """Gracefully shutdown the model pool and all models"""
-        # Cancel health check task
+        """关闭模型池和所有模型资源。"""
+        # 取消健康检查任务
         if self._health_check_task:
             self._health_check_task.cancel()
             try:
                 await self._health_check_task
             except asyncio.CancelledError:
-                logger.info("Health check task cancelled")
+                logger.info("健康检查任务已取消")
             except Exception as e:
-                logger.error(f"Error cancelling health check task: {e}")
+                logger.error(f"取消健康检查任务时发生错误: {e}")
 
-        # Shutdown all models
+        # 关闭所有模型
         shutdown_tasks = []
-        for model_unique_name, model in self._models.items():
+        for model_id, model in self._models.items():
             shutdown_tasks.append(asyncio.create_task(
-                self._safe_shutdown_model(model_unique_name, model)
+                self._safe_shutdown_model(model_id, model)
             ))
 
-        # Wait for all shutdown tasks to complete
+        # 等待所有关闭任务完成
         if shutdown_tasks:
             await asyncio.wait(shutdown_tasks)
 
         self._models.clear()
         self._last_used.clear()
+        logger.info("模型池已关闭")
 
-        # Close Redis connection pool
-        try:
-            await self.redis.close()
-            logger.info("Redis connection pool closed")
-        except Exception as e:
-            logger.error(f"Error closing Redis connection pool: {e}")
-
-    async def _safe_shutdown_model(self, model_unique_name: str, model: BaseEmbedding):
-        """Safely shutdown a single model with error handling"""
+    async def _safe_shutdown_model(self, model_id: str, model: BaseEmbedding):
+        """安全关闭单个模型并进行错误处理。
+        
+        Args:
+            model_id: 模型ID
+            model: 模型实例
+        """
         try:
             await model.shutdown()
-            logger.info(f"Model {model_unique_name} shutdown successfully")
+            logger.info(f"模型 {model_id} 关闭成功")
         except Exception as e:
-            logger.error(f"Error shutting down model {model_unique_name}: {e}")
+            logger.error(f"关闭模型 {model_id} 时发生错误: {e}")
 
-    async def load_model(self, model_unique_name: str) -> BaseEmbedding:
-        """Load a model instance by model_unique_name"""
-        if not model_unique_name:
-            raise ValueError("model_unique_name cannot be empty")
+    async def _start_model(self, model_id: str, model_data: dict[str, Any]) -> BaseEmbedding:
+        """根据模型参数启动模型。"""
+        
+        # 从模型数据中提取参数
+        model_params = model_data["model_params"] if model_data.get("model_params") else {}
 
-        # Check if model is already loaded
-        if model_unique_name in self._models:
-            model = self._models[model_unique_name]
-            # Verify model is still healthy
-            try:
-                await model.embed(["test"], batch_size=1)  # Simple health check
-                self._last_used[model_unique_name] = datetime.now()
-                return model
-            except Exception:
-                logger.warning(f"Model {model_unique_name} found but failed health check, reloading...")
-                await self.unload_model(model_unique_name)
+        provider = model_data.get("provider")
+        if not provider:
+            raise ValueError(f"模型 {model_id} 缺少提供者信息")
 
+        model_name = model_data.get("model_name")
+        if not model_name:
+            raise ValueError(f"模型 {model_id} 缺少模型名称")
+
+
+        # 从Nacos加载配置或使用默认值
+        config = ConfigManager.get_model_config()
+        max_tokens = config.embed.max_tokens
+        timeout = config.embed.timeout
+        max_retries = config.embed.max_retries
+        cache_dir = config.embed.cache_dir
+
+        # 根据配置创建模型实例 
         try:
-            async with self.redis as redis:
-                # 1. Get model_id from unique_name
-                model_id = await redis.get(f"index:unique_name:{model_unique_name}")
-                if not model_id:
-                    raise ValueError(f"Model {model_unique_name} not found in redis")
-
-                # 2. Get all model data
-                model_data = await redis.hgetall(f"model:{model_id}")
-                if not model_data:
-                    raise ValueError(f"Model {model_unique_name} not found in redis")
-
-                # Parse JSON fields
-                model_params = json.loads(model_data["model_params"]) if model_data.get("model_params") else {}
-
-            provider = model_data.get("provider")
-            if not provider:
-                raise ValueError(f"Model {model_unique_name} has no provider")
-
-            model_name = model_data.get("model_name")
-            if not model_name:
-                raise ValueError(f"Model {model_unique_name} has no model_name")
-
-            # Load config from Nacos or use defaults
-            try:
-                config = load_config("model_config")
-                if not isinstance(config, ModelConfig):
-                    raise ValueError("Invalid model config")
-                max_tokens = config.embed.max_tokens or 8192
-                timeout = config.embed.timeout or 300
-                max_retries = config.embed.max_retries or 0
-                cache_dir = config.embed.cache_dir
-            except Exception as e:
-                logger.warning(f"Failed to get embedding config from Nacos: {e}")
-                max_tokens = 8192
-                timeout = 30
-                max_retries = 0
-                cache_dir = "./cached_models"
-
-            # Create appropriate config
+            # 不同的提供者需要不同的配置
             if provider == EmbeddingProvider.LOCAL.value:
                 model_config = LocalEmbeddingConfig(
                     model_name=model_name,
@@ -156,112 +112,217 @@ class ModelPool:
                 config_file = model_params.get("config_file")
                 api_endpoint = model_data.get("api_endpoint")
                 if not all([model_name, api_endpoint, compartment_id, config_file]):
-                    raise ValueError(f"Model {model_unique_name} missing required parameters")
+                    raise ValueError(f"模型 {model_id} 缺少必要参数")
                 model_config = OCIEmbeddingConfig(
                     model_name=model_name,
                     provider=provider,
                     max_tokens=model_params.get("max_tokens", max_tokens),
                     batch_size=model_params.get("batch_size", 2),
-                    api_endpoint=api_endpoint,
+                    api_endpoint=api_endpoint, # type: ignore
                     compartment_id=compartment_id, # type: ignore
                     config_file=config_file # type: ignore
                 )
             else:
-                raise ValueError(f"Unsupported provider {provider}")
+                raise ValueError(f"不支持的提供者: {provider}")
 
-            # Create and initialize model
+            # 创建并初始化模型
             model = create_embedding_model(model_config)
             await model.startup()
-            self._models[model_unique_name] = model
-            self._last_used[model_unique_name] = datetime.now()
-            logger.success(f"Model {model_unique_name} loaded successfully")
+            self._models[model_id] = model
+            self._last_used[model_id] = datetime.now()
+            logger.success(f"模型 {model_name} 加载成功")
             return model
 
         except Exception as e:
-            logger.exception(f"Failed to load model {model_unique_name}")
-            raise RuntimeError(f"Failed to load model {model_unique_name}: {e}")
+            logger.exception(f"加载模型 {model_id} 失败")
+            raise RuntimeError(f"加载模型 {model_id} 失败: {e}")
 
-    async def unload_model(self, model_unique_name: str):
-        """Unload a model from the pool"""
-        if model_unique_name in self._models:
-            model = self._models.pop(model_unique_name)
-            self._last_used.pop(model_unique_name, None)
-            try:
-                await model.shutdown()
-                logger.info(f"Model {model_unique_name} unloaded successfully")
-            except Exception as e:
-                logger.error(f"Error unloading model {model_unique_name}: {e}")
+    async def load_model(self, model_id: str) -> BaseEmbedding:
+        """通过模型ID加载模型实例。
+        
+        Args:
+            model_id: 模型唯一标识符
+            
+        Returns:
+            BaseEmbedding: 加载的模型实例
+            
+        Raises:
+            ValueError: 当模型未找到或缺少必要参数时抛出
+            RuntimeError: 当模型加载失败时抛出
+        """
+        # 检查模型是否已加载
+        if model_id in self._models:
+            self._last_used[model_id] = datetime.now()
+            return self._models[model_id]
+        
+        # 调用 main 服务从数据库获取模型信息
+        try:
+            # 从环境变量获取 main 服务的地址和端口
+            main_host = os.getenv("KBOT_HOST") or "0.0.0.0"
+            main_port = int(os.getenv("KBOT_PORT") or 8000)
+            
+            # 构建请求 URL
+            url = f"http://{main_host}:{main_port}/api/model/params"
+            headers = {"Content-Type": "application/json"}
+            payload = {"model_unique_name": model_id}
+            timeout = aiohttp.ClientTimeout(total=30)
+            
+            # 发送请求
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.post(url, headers=headers, json=payload) as response:
+                    if response.status != 200:
+                        error_msg = await response.text()
+                        logger.error(f"获取模型参数失败：HTTP {response.status} - {error_msg}")
+                        raise ValueError(f"获取模型参数失败：HTTP {response.status} - {error_msg}")
+                    
+                    model_data = await response.json()
+                  
+            # 启动模型
+            model = await self._start_model(model_id, model_data)
+            return model
 
-    async def reload_model(self, model_unique_name: str) -> BaseEmbedding:
-        """Reload a model in the pool"""
-        await self.unload_model(model_unique_name)
-        return await self.load_model(model_unique_name)
+        except Exception as e:
+            logger.exception(f"获取模型参数失败: {e}")
+            raise ValueError(f"获取模型参数失败: {e}")
+
+        
+
+    async def unload_model(self, model_id: str) -> bool:
+        """从模型池中卸载指定模型。
+        
+        Args:
+            model_id: 要卸载的模型ID
+            
+        Returns:
+            bool: 卸载成功返回True，否则返回False
+        """
+        if model_id not in self._models:
+            logger.warning(f"模型 {model_id} 未加载，无法卸载")
+            return True
+            
+        model = self._models.pop(model_id)
+        self._last_used.pop(model_id, None)
+        
+        try:
+            await model.shutdown()
+            logger.info(f"模型 {model_id} 卸载成功")
+            return True
+        except Exception as e:
+            logger.error(f"卸载模型 {model_id} 时发生错误: {e}")
+            return False
+
+    async def reload_model(self, model_id: str) -> bool:
+        """重新加载模型池中的指定模型。
+        
+        Args:
+            model_id: 要重新加载的模型ID
+            
+        Returns:
+            bool: 加载是否成功
+        """
+        if model_id in self._models:
+            await self.unload_model(model_id)
+
+        try:
+            await self.load_model(model_id)
+            logger.info(f"模型 {model_id} 加载成功")
+            return True
+        except Exception as e:
+            logger.error(f"加载模型 {model_id} 失败: {e}")
+            return False
 
     async def _health_check_loop(self):
-        """Background task to periodically check model health"""
+        """后台任务：定期检查模型健康状态"""
         try:
             while True:
                 try:
                     await asyncio.sleep(self._health_check_interval)
                     await self._perform_health_checks()
                 except asyncio.CancelledError:
-                    logger.info("Health check loop cancelled")
+                    logger.info("健康检查循环已取消")
                     break
                 except Exception as e:
-                    logger.error(f"Error in health check loop: {e}")
-                    await asyncio.sleep(5)  # Add delay before retry
+                    logger.error(f"健康检查循环中发生错误: {e}")
+                    await asyncio.sleep(5)  # 重试前添加延迟
         finally:
-            logger.info("Health check loop stopped")
+            logger.info("健康检查循环已停止")
 
     async def _perform_health_checks(self):
-        """Check health of all models and unload inactive ones"""
+        """检查所有模型的健康状态并卸载不活跃的模型"""
         now = datetime.now()
-        inactive_threshold = now - timedelta(hours=1)  # Unload after 1 hour of inactivity
+        inactive_threshold = now - timedelta(hours=1)  # 1小时不活动后卸载
 
-        for model_unique_name in list(self._models.keys()):
+        for model_id in list(self._models.keys()):
             try:
-                # Check if model is inactive
-                if self._last_used.get(model_unique_name, now) < inactive_threshold:
-                    logger.warning(f"Model {model_unique_name} inactive for >1 hour, unloading")
-                    # await self.unload_model(model_unique_name)
+                # 检查模型是否不活跃
+                if self._last_used.get(model_id, now) < inactive_threshold:
+                    logger.warning(f"模型 {model_id} 已超过1小时未使用，准备卸载")
+                    # await self.unload_model(model_id)
                     continue
 
-                # Perform health check
-                model = self._models[model_unique_name]
+                # 执行健康检查
+                model = self._models[model_id]
                 try:
-                    await model.embed(["health check"], batch_size=1)
-                    logger.debug(f"Model {model_unique_name} health check passed")
+                    # 如果模型不支持则跳过健康检查
+                    await model.embed(["健康检查"], batch_size=1)
+                    logger.debug(f"模型 {model_id} 健康检查通过")
                 except Exception as e:
-                    logger.error(f"Health check failed for {model_unique_name}: {e}")
-                    await self.reload_model(model_unique_name)
+                    logger.error(f"模型 {model_id} 健康检查失败: {e}")
+                    await self.reload_model(model_id)
 
             except Exception as e:
-                logger.error(f"Error during health check for {model_unique_name}: {e}")
+                logger.error(f"模型 {model_id} 健康检查过程中发生错误: {e}")
                 try:
-                    await self.reload_model(model_unique_name)
-                except Exception as reload_error:
-                    logger.error(f"Failed to reload {model_unique_name}: {reload_error}")
-                    await self.unload_model(model_unique_name)
+                    await self.reload_model(model_id)
+                except Exception as e:
+                    logger.error(f"重新加载模型 {model_id} 失败: {e}")
+                    await self.unload_model(model_id)
 
     async def warmup(self) -> None:
-        """Warm up all models in the pool"""
+        """预热模型池中的所有模型。
+        
+        Raises:
+            Exception: 预热过程中发生错误时抛出
+        """
+        # 调用 main 服务从数据库获取模型信息
         try:
-            async with self.redis as redis:
-                model_unique_names = await redis.execute_command(
-                    'SMEMBERS', f'index:category:{ModelCategory.EMBEDDING.value}'
-                )
+            # 从环境变量获取 main 服务的地址和端口
+            main_host = os.getenv("KBOT_HOST") or "0.0.0.0"
+            main_port = int(os.getenv("KBOT_PORT") or 8000)
             
-            for unique_name in model_unique_names:
-                try:
-                    await self.load_model(unique_name)
-                    logger.success(f"Model {unique_name} warmed up successfully")
-                except Exception as e:
-                    logger.warning(f"Failed to warm up model {unique_name}: {e}")
-        except Exception as e:
-            logger.error(f"Failed to warm up models: {e}")
+            # 构建请求 URL
+            url = f"http://{main_host}:{main_port}/api/model/available"
+            headers = {"Content-Type": "application/json"}
+            payload = {"model_category": ModelCategory.EMBEDDING.value}
+            timeout = aiohttp.ClientTimeout(total=30)
+            
+            # 发送请求
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.post(url, headers=headers, json=payload) as response:
+                    if response.status != 200:
+                        error_msg = await response.text()
+                        logger.error(f"获取模型参数失败：HTTP {response.status} - {error_msg}")
+                        raise ValueError(f"获取模型参数失败：HTTP {response.status} - {error_msg}")
+                    
+                    models = await response.json()
 
-    def get_pool_status(self) -> Dict:
-        """Get current status of the model pool"""
+        except Exception as e:
+            logger.exception(f"获取模型参数失败: {e}")
+            raise ValueError(f"获取模型参数失败: {e}")
+
+        try: 
+            for model in models:
+                await self._start_model(model["model_unique_name"], model)
+
+        except Exception as e:
+            logger.exception(f"模型预热失败: {e}")
+
+    def get_pool_status(self) -> dict:
+        """获取模型池的当前状态信息。
+        
+        Returns:
+            dict: 包含模型池状态信息的字典
+        """
         return {
             "loaded_models": list(self._models.keys()),
             "last_used": {k: v.isoformat() for k, v in self._last_used.items()},

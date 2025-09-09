@@ -1,7 +1,7 @@
 import asyncio
 import multiprocessing
 from loguru import logger
-from core.nacos_manager import load_config, AppConfig
+from configuration import ConfigManager
 from core.logger_manager import LogManager, LogConfig
 from services.dataparse.file_parser_service import start_file_parse_service, shutdown_file_parse_service
 
@@ -55,25 +55,13 @@ class FileParserManager:
         这个函数作为multiprocessing.Process的目标函数。
         """
         # 在子进程中初始化日志
-        # 通过 nacos_manager 获取logger配置
-        try:
-            log_config = load_config("app_config")
-            if not isinstance(log_config, AppConfig):
-                raise ValueError
-            log_dir = log_config.kbot.log.dir
-            log_level = log_config.kbot.log.level
-            rotation = log_config.kbot.log.rotation
-            retention = log_config.kbot.log.retention
-            max_parallel_workers = log_config.kbot.parser.max_workers
-            check_interval = log_config.kbot.parser.check_interval
-            
-        except Exception as e:
-            # 如果获取 logger 配置失败，则使用默认配置
-            logger.warning(f"Failed to get logger config from nacos: {str(e)}")
-            log_dir = "logs/"
-            log_level = "DEBUG"
-            rotation = "10 MB"
-            retention = "10 days"
+        log_config = ConfigManager.get_app_config()
+        log_dir = log_config.kbot.log.dir
+        log_level = log_config.kbot.log.level
+        rotation = log_config.kbot.log.rotation
+        retention = log_config.kbot.log.retention
+        max_parallel_workers = log_config.kbot.parser.max_workers
+        check_interval = log_config.kbot.parser.check_interval
             
         # 初始化日志
         conf = LogConfig(service_name="file-parser", log_dir=log_dir, level=log_level, rotation=rotation, retention=retention)

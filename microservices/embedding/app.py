@@ -1,10 +1,6 @@
-"""Embedding microservice application.
+"""嵌入微服务应用程序。
 
-This module provides a FastAPI application that exposes HTTP endpoints for interacting
-with various embedding providers. It supports text embedding.
-
-该模块提供 FastAPI 微服务应用程序，用于公开与各种嵌入提供者交互的 HTTP 端点。它支持文本嵌入。
-
+该模块提供 FastAPI 微服务应用程序，用于公开与各种嵌入提供者交互的 HTTP 端点。支持文本嵌入功能。
 """
 
 import os
@@ -22,7 +18,7 @@ from pydantic import BaseModel, Field
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
-from ms_core import LogConfig, LogManager, nacos_manager, load_config, AppConfig, ModelConfig
+from ms_core import LogConfig, LogManager, nacos_manager, ConfigManager
 from embed_service import EmbeddingService
 from model.base import EmbeddingResponse
 
@@ -30,125 +26,112 @@ from model.base import EmbeddingResponse
 # 加载环境变量配置
 load_dotenv()
 
-try:
-    # 从 nacos 获取 embedding 服务配置
-    config = load_config("model_config")
-    if not isinstance(config, ModelConfig):
-        raise ValueError
-    service_name = config.embed.service_name or "embedding-service" # 全局微服务名称
-    service_version = config.embed.service_version or "1.0.0" # 微服务版本
-    service_host = config.embed.service_host or "0.0.0.0" # 微服务地址
-    service_port = config.embed.service_port or 9201 # 微服务通信端口
-except Exception as e:
-    # 如果从 nacos 获取 embedding 服务配置失败，则使用默认配置
-    logger.warning("Failed to get embedding service config from nacos: {}".format(e))
-    service_name = "embedding-service"
-    service_version = "1.0.0"
-    service_host = "0.0.0.0"
-    service_port = 9201
+config = ConfigManager.get_model_config()
+service_name = config.embed.service_name
+service_version = config.embed.service_version
+service_host = config.embed.service_host
+service_port = config.embed.service_port
 
-# 创建embedding服务实例
+
+# 创建嵌入服务实例
 embedding_service = EmbeddingService()
 
-# 定义 lifespan 上下文管理器
+# 定义生命周期上下文管理器
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan context manager. //应用程序生命周期上下文管理器"""
-    # 通过 nacos_manager 获取 logger 配置
-    try:
-        log_config = load_config("app_config")
-        if not isinstance(log_config, AppConfig):
-            raise ValueError
+    """应用程序生命周期上下文管理器。"""
+
+    log_config = ConfigManager.get_app_config()
+    log_dir = log_config.kbot.log.dir
+    log_level = log_config.kbot.log.level
+    rotation = log_config.kbot.log.rotation
+    retention = log_config.kbot.log.retention
         
-        log_dir = log_config.kbot.log.dir or "logs/"
-        log_level = log_config.kbot.log.level or "DEBUG"
-        rotation = log_config.kbot.log.rotation or "10 MB"
-        retention = log_config.kbot.log.retention or "20 days"
-        
-    except Exception as e:
-        # 如果获取 logger 配置失败，则使用默认配置
-        logger.warning(f"Failed to get logger config from nacos: {str(e)}")
-        log_dir = "logs/"
-        log_level = "DEBUG"
-        rotation = "10 MB"
-        retention = "10 days"
-        
-    # 初始化日志
+    # 初始化日志配置
     conf = LogConfig(service_name=service_name, log_dir=log_dir, level=log_level, rotation=rotation, retention=retention)
     LogManager(conf).setup()
     
-    # 启动事件
+    # 启动事件处理
     start_time = time.time()
-    logger.info(f"Initializing embedding service at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}...") 
-    logger.info(f"Process ID: {os.getpid()}")
+    logger.info(f"正在初始化嵌入服务，时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}") 
+    logger.info(f"进程ID: {os.getpid()}")
     
-    
-     
     # 初始化微服务
     try:
         await embedding_service.initialize()
         await embedding_service.warmup()
-        logger.info(f"Embedding service started successfully, elapsed time: {time.time() - start_time:.2f} seconds")
+        logger.info(f"嵌入服务启动成功，耗时: {time.time() - start_time:.2f} 秒")
 
         # 注册服务到 Nacos
         nacos_manager.register_service(service_name=service_name, service_host=service_host, service_port=service_port)
-        logger.info("Embedding service registered to Nacos.")
+        logger.info("嵌入服务已注册到 Nacos。")
 
     except Exception as e:
-        logger.exception(f"Embedding service initialization failed: {e}")
-        # 在生产环境中，可能需要在这里退出应用程序
+        logger.exception(f"嵌入服务初始化失败: {e}")
+        # 生产环境初始化失败时退出应用
         current_env = os.getenv("NACOS_GROUP", "dev")
         if current_env == "prod":
             sys.exit(1)
     
     yield  # 服务运行期间
     
-    # 关闭事件
-    logger.info(f"Closing embedding service at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}...")
+    # 关闭事件处理
+    logger.info(f"正在关闭嵌入服务，时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     shutdown_start = time.time()
     
     try:
         await embedding_service.shutdown()
-        logger.info("Embedding service is closed.")
+        logger.info("嵌入服务已关闭。")
     except Exception as e:
-        logger.exception(f"Embedding service shutdown failed: {e}")
+        logger.exception(f"嵌入服务关闭失败: {e}")
     
-    logger.info(f"Embedding service closed successfully, elapsed time: {time.time() - shutdown_start:.2f} seconds")
-    logger.info(f"Total running time: {time.time() - start_time:.2f} seconds")
+    logger.info(f"嵌入服务关闭完成，耗时: {time.time() - shutdown_start:.2f} 秒")
+    logger.info(f"总运行时间: {time.time() - start_time:.2f} 秒")
 
-# 创建 FastAPI 应用
+# 创建 FastAPI 应用实例
 app = FastAPI(
     title=service_name,
-    description="Provides text embedding services to convert text into vector representations.",
+    description="提供文本嵌入服务，将文本转换为向量表示。",
     version=service_version,
     lifespan=lifespan,
 )
 
-# 添加 CORS 中间件
+# 添加 CORS 中间件配置
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 在生产环境中应该限制为特定的源
+    allow_origins=["*"],  # 生产环境应限制为特定源
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# 定义请求模型
+# 定义嵌入请求模型
 class EmbeddingRequest(BaseModel):
-    model_unique_name: str = Field(..., description="Embedding model unique name")
-    texts: list[str] = Field(..., description="list of texts to be embedded.")
-    batch_size: int | None = Field(32, description="Batch size")
+    """嵌入请求参数模型。"""
+    
+    model_unique_name: str = Field(..., description="模型唯一标识符")
+    texts: list[str] = Field(..., description="待嵌入的文本列表")
+    batch_size: int | None = Field(32, description="批处理大小")
 
+class ToggleModelRequest(BaseModel):
+    """启用或禁用模型请求表单。"""
+    model_unique_name: str = Field(..., description="模型唯一标识符")
+    operation: str = Field(..., description="操作类型，'load' 或 'unload'")
 
-# 依赖项：获取嵌入服务实例
 def get_embed_service():
+    """获取嵌入服务实例依赖项。
+    
+    Returns:
+        EmbeddingService: 嵌入服务实例
+    """
     return embedding_service
 
 @app.get("/health", response_model=dict, tags=["Embedding"])
 async def health() -> dict[str, Any]:
-    """Health check endpoint. //微服务接口健康检查
+    """微服务健康检查接口。
+    
     Returns:
-        Loaded models count. //已加载的模型数量
+        dict: 包含服务状态、已加载模型数量和时间戳的响应数据
     """
     
     # 获取已加载的模型信息
@@ -156,42 +139,63 @@ async def health() -> dict[str, Any]:
     if embedding_service._initialized and hasattr(embedding_service._model_pool, '_models'):
         loaded_models = embedding_service._model_pool._models
     
-    # 返回已加载模型数量
     return {
         "status": "ok",
         "loaded_models_count": len(loaded_models),
         "timestamp": datetime.now().isoformat()
     }
 
+@app.post("/load", response_model=dict, tags=["Embedding"])
+async def load_model(request: ToggleModelRequest) -> dict:
+    """通过模型ID加载模型到内存中。
+    
+    Args:
+        request: 启用或禁用模型请求表单，包含模型唯一名称和操作类型
+        
+    Returns:
+        dict: 包含操作状态和模型ID的响应数据
+        
+    Raises:
+        HTTPException: 当模型加载失败时抛出500错误
+    """
+    try:
+        if request.operation == "load":
+            logger.info(f"接收到指令：加载模型 {request.model_unique_name}")
+            success = await embedding_service.load_model(request.model_unique_name)
+        else:
+            logger.info(f"接收到指令：卸载模型 {request.model_unique_name}")
+            success = await embedding_service.unload_model(request.model_unique_name)
+        if not success:
+            raise HTTPException(status_code=500, detail=f"模型 {request.model_unique_name} 操作失败")
+        return {"status": "success", "model_unique_name": request.model_unique_name}
+    except Exception as e:
+        logger.exception(f"操作模型 {request.model_unique_name} 时发生错误: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+    
 @app.post("/v1/embeddings", response_model=EmbeddingResponse, tags=["Embedding"])
 async def embed_texts(
     request: EmbeddingRequest,
     embed_service: EmbeddingService = Depends(get_embed_service)
     ) -> EmbeddingResponse:
-    """
-    将文本列表转换为嵌入向量
+    """将文本列表转换为嵌入向量。
     
-    - **model_unique_name**: 要使用的嵌入模型的ID
-    - **texts**: 要嵌入的文本列表
-    - **batch_size**: 批处理大小（可选）
-    
-    返回:
-    - **data**: 嵌入向量列表
-    - **usage**: 使用情况信息，包括总令牌数和提示令牌数
-    - **model**: 使用的嵌入模型ID
-    - **object**: 响应对象类型，固定为 "list"
-    
+    Args:
+        request: 嵌入请求参数，包含模型名称、文本列表和批处理大小
+        embed_service: 嵌入服务实例依赖注入
+        
+    Returns:
+        EmbeddingResponse: 嵌入响应数据，包含向量数据和使用情况信息
+        
     Raises:
-    - **HTTPException**: 如果模型ID不存在或嵌入失败
-    - **RuntimeError**: 如果模型创建失败
-    - **Exception**: 如果发生其他错误
+        HTTPException: 当嵌入处理过程中发生错误时抛出500错误
     """
     try:
-        logger.info(f"Received embedding request: model={request.model_unique_name}, Number of texts.={len(request.texts)}")
+        logger.info(f"收到嵌入请求: 模型 {request.model_unique_name}, 文本数量：{len(request.texts)}")
         
         # 使用嵌入服务将文本转换为向量
         embeddings = await embed_service.embed_texts(
-            model_unique_name=request.model_unique_name,
+            model_id=request.model_unique_name,
             texts=request.texts,
             batch_size=request.batch_size # type: ignore
         )
@@ -199,17 +203,24 @@ async def embed_texts(
         return embeddings
     
     except Exception as e:
-        logger.exception(f"Error occurred during embedding.: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error occurred during embedding.: {str(e)}")
+        logger.exception(f"嵌入处理过程中发生错误: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"嵌入处理过程中发生错误: {str(e)}")
 
 
 # 全局变量，用于存储微服务进程
 embedding_service_process = None
 
 def start_embedding_service():
-    """Start the embedding microservice as an independent process."""
+    """启动嵌入微服务作为独立进程。
+    
+    Returns:
+        subprocess.Popen: 微服务进程对象
+        
+    Raises:
+        RuntimeError: 当进程启动失败时抛出运行时错误
+    """
     try:
-        logger.info("Starting embedding microservice as independent process...")
+        logger.info("正在启动嵌入微服务独立进程...")
         embedding_service_path = os.path.abspath(__file__)
         
         process = subprocess.Popen(
@@ -222,37 +233,40 @@ def start_embedding_service():
         # 检查进程是否成功启动
         if process.poll() is not None:
             stderr = process.stderr.read().decode('utf-8') if process.stderr else ""
-            raise RuntimeError(f"Failed to start embedding service: {stderr}")
+            raise RuntimeError(f"启动嵌入服务失败: {stderr}")
             
-        logger.success(f"Embedding service started successfully with PID {process.pid}")
+        logger.success(f"嵌入服务启动成功，进程ID: {process.pid}")
         return process
         
     except Exception as e:
-        logger.exception(f"Error starting embedding service: {str(e)}")
+        logger.exception(f"启动嵌入服务时发生错误: {str(e)}")
         raise
 
 def shutdown_embedding_service():
-    """Terminate the embedding microservice process."""
+    """终止嵌入微服务进程。"""
     global embedding_service_process
     if embedding_service_process:
-        logger.info("Terminating the embedding microservice process...")
+        logger.info("正在终止嵌入微服务进程...")
         try:
             embedding_service_process.terminate()
             embedding_service_process.wait(timeout=5)
         except subprocess.TimeoutExpired:
-            logger.warning("The embedding microservice process failed to terminate properly; forcing shutdown...")
+            logger.warning("嵌入微服务进程终止超时，强制关闭中...")
             embedding_service_process.kill()
         embedding_service_process = None
 
-    
-
 def signal_handler(sig, frame):
-    """Handling termination signal."""
-    logger.info(f"Signal received: {sig}, shutting down....")
+    """处理终止信号。
+    
+    Args:
+        sig: 信号类型
+        frame: 当前堆栈帧
+    """
+    logger.info(f"收到信号: {sig}，正在关闭服务...")
     shutdown_embedding_service()
     sys.exit(0)
 
-# 注册退出处理程序，确保在应用程序退出时关闭微服务
+# 注册退出处理程序，确保应用程序退出时关闭微服务
 atexit.register(shutdown_embedding_service)
 
 if __name__ == "__main__":
@@ -261,5 +275,5 @@ if __name__ == "__main__":
         signal.signal(signal.SIGINT, signal_handler)
         signal.signal(signal.SIGTERM, signal_handler)
     
-    logger.info(f"Started the embedding microservice, listening on {service_host}:{service_port}")
+    logger.info(f"嵌入微服务已启动，监听地址: {service_host}:{service_port}")
     uvicorn.run(app, host=service_host, port=service_port)

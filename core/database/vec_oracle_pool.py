@@ -4,7 +4,7 @@ import threading
 import hashlib
 from loguru import logger
 from contextlib import asynccontextmanager
-from typing import Optional, Any
+from typing import Any
 import time
 
 class OracleConnParams:

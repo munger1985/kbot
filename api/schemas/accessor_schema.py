@@ -1,5 +1,4 @@
 from pydantic import BaseModel
-from datetime import datetime
 
 class AccessorForm(BaseModel):
     """API安全访问者表单模型"""

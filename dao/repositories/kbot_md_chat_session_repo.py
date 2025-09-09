@@ -1,5 +1,6 @@
 import json
 from core.database.meta_redis import AsyncRedisPool
+import redis.exceptions
 
 class KbotMdChatSessionRepository:
     def __init__(self):
@@ -262,4 +263,69 @@ class KbotMdChatSessionRepository:
             
             # 更新答案
             await redis.hset(qa_key, "answer", answer)
+            return True
+        
+    async def delete_by_agent_id(self, agent_id: int) -> bool:
+        """
+        根据agent_id删除所有相关的会话和QA数据
+        :param agent_id: 要删除的agent ID
+        :return: 是否删除成功
+        """
+        async with self.redis as redis:
+            # 使用更安全的方式查找匹配的session
+            session_keys = []
+            all_session_keys = []
+            cursor = 0
+            
+            # 先收集所有session:*键
+            while True:
+                cursor, keys = await redis.scan(cursor, match="session:*", count=100)
+                all_session_keys.extend(keys)
+                if cursor == 0:
+                    break
+            
+            # 然后逐个检查类型和agent_id
+            for key in all_session_keys:
+                try:
+                    # 检查是否为hash类型
+                    if await redis.type(key) not in [b'hash', 'hash']:
+                        continue
+                    
+                    # 检查agent_id是否匹配
+                    agent_id_value = await redis.hget(key, "agent_id")
+                    if agent_id_value and int(agent_id_value) == agent_id:
+                        session_keys.append(key)
+                        
+                except (ValueError, TypeError):
+                    continue
+                except Exception:
+                    continue
+            
+            if not session_keys:
+                return False
+            
+            # 删除相关数据
+            for session_key in session_keys:
+                try:
+                    qa_data_key = f"{session_key}:qa_data"
+                    
+                    # 获取QA keys（如果存在）
+                    qa_keys = []
+                    if await redis.exists(qa_data_key):
+                        qa_keys = await redis.zrange(qa_data_key, 0, -1)
+                    
+                    # 收集所有要删除的key
+                    keys_to_delete = [session_key, qa_data_key]
+                    for qa_key in qa_keys:
+                        refs_key = f"{qa_key}:references"
+                        if await redis.exists(refs_key):
+                            keys_to_delete.append(refs_key)
+                        keys_to_delete.append(qa_key)
+                    
+                    # 删除所有相关的key
+                    await redis.delete(*[k for k in keys_to_delete if await redis.exists(k)])
+                    
+                except Exception:
+                    continue
+            
             return True

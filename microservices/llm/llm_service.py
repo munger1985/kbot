@@ -5,49 +5,38 @@ from model import BaseLLM, LLMProvider
 
 
 class LLMService:
-    """LLM service class."""
+    """LLM服务类"""
 
     def __init__(self) -> None:
-        """Initialize LLM service. //初始化LLM服务"""
+        """初始化LLM服务。"""
         self._model_pool = ModelPool()
         self._initialized = False
-        
 
     async def initialize(self):
-        """
-        Initialize LLM service and all model pools.//初始化LLM服务和所有模型池
-        """
+        """初始化LLM服务和所有模型池。 """
         if not self._initialized:
             await self._model_pool.initialize()
             self._initialized = True
-            logger.info("LLM service initialized")
+            logger.info("LLM服务初始化完成")
         
     async def shutdown(self):
-        """
-        Close all LLM service and model pools.//关闭LLM服务和所有模型池
-        """
+        """关闭LLM服务和所有模型池。"""
         if self._initialized:
             await self._model_pool.shutdown()
             self._initialized = False
-            logger.info("LLM service has been shutdown")
+            logger.info("LLM服务已关闭")
             
-    async def get_llm_model(self, model_unique_name: str) -> BaseLLM:
-        """Retrieve a LLM model by ID. //获取指定ID的LLM模型
-
-        Args:
-            model_unique_name: 模型ID
-
-        Returns:
-            LLM model instance //LLM模型实例
-        """
+    async def get_llm_model(self, model_id: str) -> BaseLLM:
+        """获取指定唯一名称的嵌入模型实例。"""
         if not self._initialized:
             await self.initialize()
-        
-        return await self._model_pool.load_model(model_unique_name)
+
+        return await self._model_pool.load_model(model_id)
+
 
     async def chat(
         self,
-        model_unique_name: str,
+        model_id: str,
         messages: list[dict[str, str]] | str,
         stream: bool = False,
         timeout: int | None = None,
@@ -57,30 +46,29 @@ class LLMService:
         frequency_penalty: float | None = None,
         presence_penalty: float | None = None
     ):
-        """Generate a chat response.
+        """生成聊天响应
 
         Args:
-            model_unique_name: Model ID
-            messages: list of messages or single prompt string
-            stream: Whether to stream the response
-            timeout: Timeout in seconds
-            max_tokens: Maximum number of tokens to generate
-            temperature: Sampling temperature
-            top_p: Top-p sampling parameter
-            frequency_penalty: Frequency penalty
-            presence_penalty: Presence penalty
+            model_id: 模型唯一标识符
+            messages: 消息列表或单个提示字符串
+            stream: 是否流式传输响应
+            timeout: 超时时间（秒）
+            max_tokens: 要生成的最大令牌数
+            temperature: 采样温度
+            top_p: Top-p采样参数
+            frequency_penalty: 频率惩罚
+            presence_penalty: 存在惩罚
 
         Returns:
-            If stream is True: AsyncGenerator yielding text chunks
-            If stream is False: Dictionary with content and usage stats
+            如果stream为True: 异步生成器，产生文本块
+            如果stream为False: 包含内容和使用统计信息的字典
         """
         try:
-            # Get model from pool
-            model = await self.get_llm_model(model_unique_name)
+            model = await self.get_llm_model(model_id)
         except Exception as e:
-            raise RuntimeError(f"Failed to get model {model_unique_name}: {e}")
+            raise RuntimeError(f"获取模型 {model_id} 失败: {e}")
         
-        # Prepare parameters
+        # 准备参数
         kwargs = {
             "timeout": timeout,
             "max_tokens": max_tokens,
@@ -91,9 +79,9 @@ class LLMService:
         }
         kwargs = {k: v for k, v in kwargs.items() if v is not None}
         
-        # Get response from model
+        # 从模型获取响应
         try:
-            # Ensure messages are in correct format
+            # 确保消息格式正确
             processed_messages = []
             if isinstance(messages, str):
                 processed_messages = [{"role": "user", "content": messages}]
@@ -102,65 +90,101 @@ class LLMService:
                     if isinstance(msg, dict):
                         processed_messages.append(msg)
                     else:
-                        # Convert message objects to dict if needed
+                        # 如果需要，将消息对象转换为字典
                         processed_messages.append({
                             "role": getattr(msg, "role", "user"),
                             "content": getattr(msg, "content", "")
                         })
             
-            logger.debug(f"Sending messages to model: {processed_messages}")
+            logger.debug(f"发送消息到模型: {processed_messages}")
 
-            # OpenAI stream mode
+            # OpenAI流模式
             if stream and model.provider == LLMProvider.OPENAI.value:
                 response = await model.chat(processed_messages, stream=True, **kwargs)
-                logger.debug("OpenAI streaming response received.")
+                logger.debug("收到OpenAI流式响应")
                 async def generate_openai_stream():
                     try:
                         async for chunk in response: # type: ignore
                                 yield chunk
                             
                     except Exception as e:
-                        logger.exception(f"Error in OpenAI streaming response: {e}")
+                        logger.exception(f"OpenAI流式响应错误: {e}")
                         raise
                         
                 return generate_openai_stream()
             
-            # OCI stream mode
+            # OCI流模式
             elif stream and model.provider == LLMProvider.OCI.value:
                 response = await model.chat(processed_messages, stream=True, **kwargs)
-                logger.debug("Non-openai streaming response received.")
+                logger.debug("收到非OpenAI流式响应")
                 async def generate_oci_stream():
                     try:
                         for event in response.data.events(): # type: ignore
                             output =  json.loads(event.data)
                             yield output
                     except Exception as e:
-                        logger.exception(f"Error in streaming response: {e}")
+                        logger.exception(f"流式响应错误: {e}")
                         raise   
 
                 return generate_oci_stream()
             
-            # non-stream mode
+            # 非流模式
             elif not stream:
                 response = await model.chat(processed_messages, stream=False, **kwargs) # type: ignore
-                logger.debug("Non-stream response received")
+                logger.debug("收到非流式响应")
                 return response
-            # Unknown response type
+            # 未知响应类型
             else:
-                logger.warning(f"Unknown response type.")
+                logger.warning(f"未知的响应类型")
                 return None
             
         except Exception as e:
-            logger.exception(f"Error generating chat response: {e}")
-            logger.error(f"Detailed error context - Model: {model_unique_name}, Messages: {messages}, Stream: {stream}")
-            raise RuntimeError(f"Failed to generate chat response: {e}. Context: Model={model_unique_name}, Messages={messages}, Stream={stream}")
+            logger.exception(f"生成聊天响应时出错: {e}")
+            logger.error(f"详细错误上下文 - 模型: {model_id}, 消息: {messages}, 流式: {stream}")
+            raise RuntimeError(f"生成聊天响应失败: {e}. 上下文: 模型 {model_id}, 消息：{messages}, 流式：{stream}")
 
 
     async def warmup(self):
         """
-        Warm up all models in the pool 
+        预热池中的所有模型
         """
         if not self._initialized:
             await self.initialize()
         
         await self._model_pool.warmup()
+
+    async def load_model(self, model_id: str) -> bool:
+        """通过模型唯一标识符加载模型到内存中
+        
+        Args:
+            model_id: 模型唯一标识符
+            
+        Returns:
+            bool: 加载是否成功
+        """
+        if not self._initialized:
+            await self.initialize()
+        
+        return await self._model_pool.reload_model(model_id)
+
+        
+    async def unload_model(self, model_id: str) -> bool:
+        """通过模型唯一标识符卸载模型到内存中。
+        
+        Args:
+            model_id: 模型唯一标识符
+            
+        Returns:
+            bool: 卸载是否成功
+        """
+        if not self._initialized:
+            await self.initialize()
+        
+        return await self._model_pool.unload_model(model_id)
+    
+    def get_provider(self, model_id: str) -> str | None:
+        """获取指定模型的提供者。"""
+        if not self._initialized:
+            raise RuntimeError("LLM服务未初始化")
+        
+        return self._model_pool.get_provider_in_pool(model_id)

@@ -5,9 +5,10 @@ import requests
 from typing import Any
 from pydantic import BaseModel, SecretStr
 from nacos_encryptor import ConfigEncryptor
+from dotenv import load_dotenv
 
-
-
+# 加载环境变量
+load_dotenv()
 
 # Nacos 配置中心地址
 NACOS_SERVER = os.getenv('NACOS_SERVER', 'http://localhost:8848')
@@ -112,7 +113,7 @@ def load_config_to_nacos():
             response = requests.post(url, params=params)
             if response.status_code == 200:
                 print(f"✅ 配置文件 {file} 已安全加载到 Nacos")
-                print(f"  原始文件敏感字段已加密，加密密钥来自环境变量 CONFIG_ENCRYPTION_KEY")
+                print(f"  原始文件敏感字段已加密，加密密钥来自环境变量 NACOS_ENCRYPTION_KEY")
             else:
                 print(f"❌ 配置文件 {file} 上传失败: {response.text}")
 

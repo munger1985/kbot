@@ -12,76 +12,34 @@ class VLMService:
     
     def __init__(self):
         """
-        Initialize VLM service // 初始化VLM服务
+        初始化VLM服务
         """
         self._model_pool = ModelPool()
         self._initialized = False
         
     async def initialize(self):
-        """
-        Initialize VLM service and model pool // 初始化VLM服务和模型池
-        """
+        """初始化VLM服务和模型池。"""
         if not self._initialized:
             await self._model_pool.initialize()
             self._initialized = True
-            logger.info("VLM service initialized")
+            logger.info("VLM 服务已初始化")
         
     async def shutdown(self):
-        """
-        Shutdown VLM service and all models // 关闭VLM服务和所有模型
-        """
+        """关闭VLM服务和所有模型。"""
         if self._initialized:
             await self._model_pool.shutdown()
             self._initialized = False
-            logger.info("VLM service has been shutdown")
+            logger.info("VLM 服务已关闭")
     
-    async def get_vlm_model(self, model_unique_name: str) -> BaseVLM:
-        """
-        Get a VLM model by unique name // 获取指定唯一名的VLM模型
-
-        Args:
-            model_unique_name: The unique name of the model to get // 要获取的模型ID
-
-        Returns:
-            VLM model instance // VLM模型实例
-
-        Raises:
-            ValueError: If model_unique_name is not found in database // 如果模型ID在数据库中不存在
-            RuntimeError: If model creation fails // 如果模型创建失败
-        """
+    async def get_vlm_model(self, model_id: str) -> BaseVLM:
+        """获取指定唯一名的VLM模型。"""
         if not self._initialized:
             await self.initialize()
-        
-        return await self._model_pool.load_model(model_unique_name)
-    
-    async def unload_model(self, model_unique_name: str):
-        """
-        从模型池中卸载模型
 
-        Args:
-            model_unique_name: 要卸载的模型ID
-        """
-        if self._initialized:
-            await self._model_pool.unload_model(model_unique_name)
-            logger.info(f"Model {model_unique_name} has been unloaded.")
-    
-    async def reload_model(self, model_unique_name: str) -> BaseVLM:
-        """
-        Reload a model from the pool // 重新加载模型
-
-        Args:
-            model_unique_name: The unique name of the model to reload // 要重新加载的模型ID
-
-        Returns:
-            The reloaded VLM model instance // 重新加载的VLM模型实例
-        """
-        if not self._initialized:
-            await self.initialize()
-        
-        return await self._model_pool.reload_model(model_unique_name)
+        return await self._model_pool.load_model(model_id)
     
     async def inference(self, 
-                        model_unique_name: str, 
+                        model_id: str, 
                         messages: list[dict[str, Any]],
                         stream: bool = False,
                         timeout: int | None = None,
@@ -94,8 +52,8 @@ class VLMService:
         """
         调用VLM模型进行推理
 
-        Args:
-            model_unique_name: 数据库内的模型唯一名
+        参数:
+            model_id: 模型唯一标识符
             messages: 消息列表
             stream: 是否开启流式输出，如果是，则输出 AsyncGenerator
             timeout: 超时时间，单位：秒
@@ -105,16 +63,16 @@ class VLMService:
             frequency_penalty: 生成惩罚参数
             presence_penalty: 存在惩罚参数
 
-        Returns:
-            If stream is True: AsyncGenerator yielding text chunks
-            If stream is False: Dictionary with content and usage stats
+        返回:
+            如果 stream 为 True: 生成文本块的异步生成器
+            如果 stream 为 False: 包含内容和使用统计信息的字典
         """
 
         try:
-            # Get model from pool
-            model = await self.get_vlm_model(model_unique_name)
+            # 从池中获取模型
+            model = await self.get_vlm_model(model_id)
             
-            # Prepare parameters
+            # 准备参数
             kwargs = {
                 "timeout": timeout,
                 "max_tokens": max_tokens,
@@ -125,35 +83,35 @@ class VLMService:
             }
             kwargs = {k: v for k, v in kwargs.items() if v is not None}
             
-            # Get response from model
+            # 从模型获取响应
             try:
-                logger.debug(f"Sending messages to model: {model_unique_name}")
+                logger.debug(f"向模型发送消息: {model_id}")
                 response = await model.inference(messages, stream=stream, **kwargs)
-                logger.debug(f"Received response type: {type(response)}")
+                logger.debug(f"收到响应类型: {type(response)}")
             except Exception as e:
-                logger.error(f"Error generating response: {e}")
+                logger.error(f"生成响应时出错: {e}")
 
             if stream:
-                # Stream response processing
+                # 流式响应处理
                 async def generate_stream():
                     try:
                         content_parts = []
                         last_chunk = None
                         
                         async for chunk in response: # type: ignore
-                            logger.debug(f"Received chunk type: {type(chunk)}")
+                            logger.debug(f"收到块类型: {type(chunk)}")
                             last_chunk = chunk
                             
                             if not hasattr(chunk, 'choices'):
-                                logger.warning("Received invalid chunk format")
+                                logger.warning("收到无效的块格式")
                                 continue
                             
                             if not chunk.choices:
-                                logger.warning("Received chunk with no choices")
+                                logger.warning("收到没有选择的块")
                                 continue
                             
                             if not hasattr(chunk.choices[0], 'delta'):
-                                logger.warning("Received invalid choice format")
+                                logger.warning("收到无效的选择格式")
                                 continue
                             
                             delta = chunk.choices[0].delta
@@ -163,11 +121,11 @@ class VLMService:
                                     content_parts.append(str(content))
                                     yield str(content)
                                 else:
-                                    logger.debug("Received delta with null content")
+                                    logger.debug("收到内容为空的 delta")
                             else:
-                                logger.debug("Received delta with no content")
+                                logger.debug("收到没有内容的 delta")
                         
-                        # After stream ends, check for usage data
+                        # 流结束后，检查使用数据
                         if hasattr(last_chunk, 'usage'):
                             yield "\n\n=== USAGE ===\n" + json.dumps({
                                 "total_tokens": int(last_chunk.usage.total_tokens), # type: ignore
@@ -181,7 +139,7 @@ class VLMService:
                                 "completion_tokens": int(response.usage.completion_tokens) # type: ignore
                             })
                         
-                        # Return the full response structure for the last chunk
+                        # 返回最后一个块的完整响应结构
                         if last_chunk:
                             yield "\n\n=== FULL RESPONSE ===\n" + json.dumps({
                                 "id": last_chunk.id,
@@ -203,39 +161,39 @@ class VLMService:
                             })
                             
                     except Exception as e:
-                        logger.error(f"Error in streaming response: {e}")
+                        logger.error(f"流式响应处理错误: {e}")
                         raise
                         
                 return generate_stream()
             else:
-                # Non-stream response processing
-                logger.debug(f"Received response type: {type(response)}")
+                # 非流式响应处理
+                logger.debug(f"收到响应类型: {type(response)}")
                 
                 if not hasattr(response, 'choices'):
-                    raise ValueError("Invalid response format: no choices attribute")
+                    raise ValueError("无效的响应格式: 没有 choices 属性")
                 
                 if not response.choices: # type: ignore
-                    raise ValueError("Invalid completion format: no choices available")
+                    raise ValueError("无效的完成格式: 没有可用的选择")
                 
                 if not hasattr(response.choices[0], 'message'): # type: ignore
-                    raise ValueError("Invalid choice format: no message attribute")
+                    raise ValueError("无效的选择格式: 没有 message 属性")
                 
                 message = response.choices[0].message # type: ignore
                 if not message or not hasattr(message, 'content'):
-                    raise ValueError("Invalid message format: no content attribute")
+                    raise ValueError("无效的消息格式: 没有 content 属性")
                 
                 if not message.content:
-                    raise ValueError("Invalid message format: empty content")
+                    raise ValueError("无效的消息格式: 内容为空")
                 
                 if not hasattr(response, 'usage'):
-                    raise ValueError("Invalid completion format: no usage attribute")
+                    raise ValueError("无效的完成格式: 没有 usage 属性")
                 
                 if not response.usage: # type: ignore
-                    raise ValueError("Invalid completion format: no usage data available")
+                    raise ValueError("无效的完成格式: 没有使用数据")
                 
                 if not all(hasattr(response.usage, attr)  # type: ignore
                           for attr in ['total_tokens', 'prompt_tokens', 'completion_tokens']):
-                    raise ValueError("Invalid usage format: missing required attributes")
+                    raise ValueError("无效的使用格式: 缺少必需的属性")
                 
                 return {
                     "id": response.id, # type: ignore
@@ -262,15 +220,43 @@ class VLMService:
                 }
                 
         except Exception as e:
-            logger.error(f"Error generating chat response: {e}")
-            raise RuntimeError(f"Failed to generate chat response: {e}")
-
-
+            logger.error(f"生成聊天响应时出错: {e}")
+            raise RuntimeError(f"生成聊天响应失败: {e}")
+        
     async def warmup(self):
         """
-        Warm up all models in the pool 
+        预热模型池中的所有模型
         """
         if not self._initialized:
             await self.initialize()
         
         await self._model_pool.warmup()
+
+    async def load_model(self, model_id: str) -> bool:
+        """通过模型唯一标识符加载模型到内存中
+        
+        Args:
+            model_id: 模型唯一标识符
+            
+        Returns:
+            bool: 加载是否成功
+        """
+        if not self._initialized:
+            await self.initialize()
+        
+        return await self._model_pool.reload_model(model_id)
+
+        
+    async def unload_model(self, model_id: str) -> bool:
+        """通过模型唯一标识符卸载模型到内存中。
+        
+        Args:
+            model_id: 模型唯一标识符
+            
+        Returns:
+            bool: 卸载是否成功
+        """
+        if not self._initialized:
+            await self.initialize()
+        
+        return await self._model_pool.unload_model(model_id)

@@ -3,8 +3,9 @@ import json
 from loguru import logger
 from .base import LLMConfig, BaseLLM
 
+
 class OCILLMConfig(LLMConfig):
-    """Configuration for OCI LLM client."""
+    """OCI LLM客户端配置"""
     temperature: float = 1.0
     max_tokens: int = 600
     top_p: float | None = None
@@ -17,44 +18,44 @@ class OCILLMConfig(LLMConfig):
 
 
 class OCIClient(BaseLLM):
-    """OCI LLM client implementation."""
+    """OCI LLM客户端实现"""
     
     def __init__(self, config: OCILLMConfig):
-        """Initialize OCI LLM client.
+        """初始化OCI LLM客户端
         
         Args:
-            config: OCI LLM configuration
+            config: OCI LLM配置对象
         """
         super().__init__(config)
         self.client = None
         self._is_running = False
     
     async def startup(self) -> None:
-        """Initialize the OCI client."""
+        """初始化OCI客户端"""
         try:
-            # Parse config_file from JSON string to dict if needed
+            # 如果需要，将config_file从JSON字符串解析为字典
             if isinstance(self.config.config_file, str):  # type: ignore
-                oci_config = json.loads(self.config.config_file) # type: ignore
+                oci_config = json.loads(self.config.config_file)  # type: ignore
             else:
-                oci_config = self.config.config_file # type: ignore
+                oci_config = self.config.config_file  # type: ignore
             
             self.client = oci.generative_ai_inference.GenerativeAiInferenceClient(
                 config=oci_config,
-                service_endpoint=self.config.api_endpoint, # type: ignore
+                service_endpoint=self.config.api_endpoint,  # type: ignore
                 retry_strategy=oci.retry.NoneRetryStrategy(),
-                timeout=(10,240))
+                timeout=(10, 240))
             self._is_running = True
-            logger.info("OCI client initialized")
+            logger.info("OCI客户端初始化成功")
         except Exception as e:
-            logger.error(f"Error initializing OCI client: {str(e)}")
-            raise RuntimeError(f"Error initializing OCI client: {str(e)}")
+            logger.error(f"初始化OCI客户端时出错: {str(e)}")
+            raise RuntimeError(f"初始化OCI客户端时出错: {str(e)}")
         
     async def shutdown(self) -> None:
-        """Shutdown the OCI client."""
+        """关闭OCI客户端"""
         if self.client:
             self.client = None
         self._is_running = False
-        logger.info("OCI client shutdown")
+        logger.info("OCI客户端已关闭")
 
     
     async def chat(
@@ -63,26 +64,29 @@ class OCIClient(BaseLLM):
         stream: bool = False,
         **kwargs
     ):
-        """Generate chat response with consistent return types.
+        """生成聊天响应（保持一致的返回类型）
         
         Args:
-            messages: List of messages or single prompt string
-            stream: Whether to stream the response
-            **kwargs: Additional generation parameters
+            messages: 消息列表或单个提示字符串
+            stream: 是否使用流式输出
+            **kwargs: 额外的生成参数
         
         Returns:
-            - chat repsonse
+            聊天响应对象
         
         Notes:
-            This method requires the OCI chat service.
+            此方法需要OCI聊天服务支持
         
+        Raises:
+            ValueError: 未提供消息或提供商不支持
+            Exception: 生成响应时出错
         """
         
         if not self._is_running:
             await self.startup()
         
         converted_messages = ""
-        # Convert string to message list if needed
+        # 如果需要，将字符串转换为消息列表
         if isinstance(messages, list):
             converted_messages = messages[0]['content'] if len(messages) > 0 else ''
         
@@ -90,24 +94,21 @@ class OCIClient(BaseLLM):
             converted_messages = messages
         
         if converted_messages == '':
-            raise ValueError("No message provided to generate response for.")
+            raise ValueError("未提供消息用于生成响应")
         
-        # OCI max_tokens has a max limit of 4000
-        max_tokens = kwargs.get('max_tokens', self.config.max_tokens) # type: ignore
-        
-
-        
+        # OCI max_tokens的最大限制为4000
+        max_tokens = kwargs.get('max_tokens', self.config.max_tokens)  # type: ignore
 
         if "cohere" in self.config.model_name.lower():
             chat_request = oci.generative_ai_inference.models.CohereChatRequest()
             chat_request.message = converted_messages
-            chat_request.frequency_penalty = kwargs.get('frequency_penalty', self.config.frequency_penalty) # type: ignore
-            chat_request.top_p = kwargs.get('top_p', self.config.top_p) # type: ignore
-            chat_request.top_k = kwargs.get('top_k', self.config.top_k) # type: ignore
+            chat_request.frequency_penalty = kwargs.get('frequency_penalty', self.config.frequency_penalty)  # type: ignore
+            chat_request.top_p = kwargs.get('top_p', self.config.top_p)  # type: ignore
+            chat_request.top_k = kwargs.get('top_k', self.config.top_k)  # type: ignore
 
             if max_tokens and max_tokens > 4000:
                 max_tokens = 4000
-                logger.warning("OCI cohere model max_tokens limit exceeded, setting max_tokens to 4000.")
+                logger.warning("OCI cohere模型max_tokens超过限制，已设置为4000")
 
         elif "grok" in self.config.model_name.lower():
             chat_request = oci.generative_ai_inference.models.GenericChatRequest()
@@ -119,11 +120,11 @@ class OCIClient(BaseLLM):
             message.content = [content]
             chat_request.messages = [message]
             
-            chat_request.top_p = kwargs.get('top_p', self.config.top_p) # type: ignore
-            chat_request.top_k = kwargs.get('top_k', self.config.top_k) # type: ignore
+            chat_request.top_p = kwargs.get('top_p', self.config.top_p)  # type: ignore
+            chat_request.top_k = kwargs.get('top_k', self.config.top_k)  # type: ignore
             if max_tokens and max_tokens > 20000:
                 max_tokens = 20000
-                logger.warning("OCI grok model max_tokens limit exceeded, setting max_tokens to 20000.")
+                logger.warning("OCI grok模型max_tokens超过限制，已设置为20000")
 
         elif "llama" in self.config.model_name.lower():
             chat_request = oci.generative_ai_inference.models.GenericChatRequest()
@@ -135,30 +136,30 @@ class OCIClient(BaseLLM):
             message.content = [content]
             chat_request.messages = [message]
             
-            chat_request.frequency_penalty = kwargs.get('frequency_penalty', self.config.frequency_penalty) # type: ignore
-            chat_request.presence_penalty = kwargs.get('presence_penalty', self.config.presence_penalty) # type: ignore
-            chat_request.top_p = kwargs.get('top_p', self.config.top_p) # type: ignore
+            chat_request.frequency_penalty = kwargs.get('frequency_penalty', self.config.frequency_penalty)  # type: ignore
+            chat_request.presence_penalty = kwargs.get('presence_penalty', self.config.presence_penalty)  # type: ignore
+            chat_request.top_p = kwargs.get('top_p', self.config.top_p)  # type: ignore
             if max_tokens and max_tokens > 600:
                 max_tokens = 600
-                logger.warning("OCI llama model max_tokens limit exceeded, setting max_tokens to 600.")
+                logger.warning("OCI llama模型max_tokens超过限制，已设置为600")
         else:
-            raise ValueError(f"Unsupported OCI provider: {self.provider}")
+            raise ValueError(f"不支持的OCI提供商: {self.provider}")
 
         chat_request.max_tokens = max_tokens
-        chat_request.temperature = kwargs.get('temperature', self.config.temperature) # type: ignore
+        chat_request.temperature = kwargs.get('temperature', self.config.temperature)  # type: ignore
         chat_request.is_stream = stream
 
         chat_detail = oci.generative_ai_inference.models.ChatDetails()
         chat_detail.serving_mode = oci.generative_ai_inference.models.OnDemandServingMode(model_id=self.config.model_name)
         chat_detail.chat_request = chat_request
-        chat_detail.compartment_id = self.config.compartment_id # type: ignore
+        chat_detail.compartment_id = self.config.compartment_id  # type: ignore
 
         try:
-            response = self.client.chat(chat_detail) # type: ignore
+            response = self.client.chat(chat_detail)  # type: ignore
             
             return response
 
         except Exception as e:
             self.ERROR_COUNTER.labels(provider="OCI").inc()
-            logger.error(f"Error generating chat response with OCI: {str(e)}")
-            raise Exception(f"Error generating chat response with OCI: {str(e)}")
+            logger.error(f"使用OCI生成聊天响应时出错: {str(e)}")
+            raise Exception(f"使用OCI生成聊天响应时出错: {str(e)}")

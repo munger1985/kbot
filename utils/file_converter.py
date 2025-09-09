@@ -5,7 +5,7 @@ from tempfile import mkdtemp
 from pdf2image import convert_from_path
 from pathlib import Path
 from loguru import logger
-from core.nacos_manager import load_config, AppConfig
+from configuration import ConfigManager
 
 
 class OfficeToPDF:
@@ -15,19 +15,11 @@ class OfficeToPDF:
         
         # 支持的文件扩展名
         self.supported_extensions = ['.ppt', '.pptx', '.doc', '.docx', '.odt', '.ods']
-        try:
-            # 从 nacos 获取 libreoffice 服务配置
-            app_config = load_config("app_config")
-            if not isinstance(app_config, AppConfig):
-                raise ValueError
-            libre_host = app_config.libre.host or "0.0.0.0" # libreoffice服务地址
-            libre_port = app_config.libre.port or 9316 # libreoffice服务通信端口
-        except Exception as e:
-            # 如果从 nacos 获取 libreoffice 服务配置失败，则使用默认配置
-            logger.warning("Failed to get libreoffice service config from nacos: {}".format(e))
-            libre_host = "0.0.0.0"
-            libre_port = 9316
 
+        app_config = ConfigManager.get_app_config()
+        libre_host = app_config.libre.host
+        libre_port = app_config.libre.port
+        
         # 调用微服务接口
         self.url = f"http://{libre_host}:{libre_port}/convert"
 

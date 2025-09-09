@@ -1,10 +1,6 @@
-"""LLM microservice application.
+"""LLM微服务应用程序。
 
-This module provides a FastAPI application that exposes HTTP endpoints for interacting
-with various LLM providers. It supports text generation and chat completion.
-
-该模块提供 FastAPI 微服务应用程序，用于与各种 LLM 提供者交互。它支持文本生成和聊天完成。
-
+该模块提供了一个FastAPI应用程序，用于与各种LLM提供者交互。它支持文本生成和聊天完成功能。
 """
 
 import os
@@ -25,7 +21,7 @@ from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from loguru import logger
-from ms_core import load_config, AppConfig, ModelConfig, nacos_manager, LogManager, LogConfig, AsyncRedisPool
+from ms_core import ConfigManager, nacos_manager, LogManager, LogConfig
 from llm_service import LLMService
 from model import LLMProvider
 
@@ -33,22 +29,12 @@ from model import LLMProvider
 # 加载环境变量配置
 load_dotenv()
 
-try:
-    # 从 nacos 获取 llm 服务配置
-    config = load_config("model_config")
-    if not isinstance(config, ModelConfig):
-        raise ValueError
-    service_name = config.llm.service_name or "llm-service" # 全局微服务名称
-    service_version = config.llm.service_version or "1.0.0" # 微服务版本
-    service_host = config.llm.service_host or "0.0.0.0" # 微服务地址
-    service_port = config.llm.service_port or 9202 # 微服务通信端口
-except Exception as e:
-    # 如果从 nacos 获取 llm 服务配置失败，则使用默认配置
-    logger.warning("Failed to get llm service config from nacos: {}".format(e))
-    service_name = "llm-service"
-    service_version = "1.0.0"
-    service_host = "0.0.0.0"
-    service_port = 9202
+# 获取模型服务配置
+config = ConfigManager.get_model_config()
+service_name = config.llm.service_name
+service_version = config.llm.service_version
+service_host = config.llm.service_host
+service_port = config.llm.service_port
 
 # 创建LLM服务实例
 llm_service = LLMService()
@@ -56,25 +42,13 @@ llm_service = LLMService()
 # 定义 lifespan 上下文管理器
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan context manager. //应用程序生命周期上下文管理器"""
+    """应用程序生命周期上下文管理器"""
     # 通过 nacos_manager 获取 logger 配置
-    try:
-        log_config = load_config("app_config")
-        if not isinstance(log_config, AppConfig):
-            raise ValueError
-        
-        log_dir = log_config.kbot.log.dir or "logs/"
-        log_level = log_config.kbot.log.level or "DEBUG"
-        rotation = log_config.kbot.log.rotation or "10 MB"
-        retention = log_config.kbot.log.retention or "20 days"
-        
-    except Exception as e:
-        # 如果获取 logger 配置失败，则使用默认配置
-        logger.warning(f"Failed to get logger config from nacos: {str(e)}")
-        log_dir = "logs/"
-        log_level = "DEBUG"
-        rotation = "10 MB"
-        retention = "10 days"
+    log_config = ConfigManager.get_app_config()
+    log_dir = log_config.kbot.log.dir
+    log_level = log_config.kbot.log.level
+    rotation = log_config.kbot.log.rotation
+    retention = log_config.kbot.log.retention
     
     # 初始化日志
     conf = LogConfig(service_name=service_name, log_dir=log_dir, level=log_level, rotation=rotation, retention=retention)
@@ -82,23 +56,21 @@ async def lifespan(app: FastAPI):
     
     # 启动事件
     start_time = time.time()
-    logger.info(f"Initializing LLM service at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}...")    
-    logger.info(f"Process ID: {os.getpid()}")
+    logger.info(f"正在初始化LLM服务，时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}...")    
+    logger.info(f"进程ID: {os.getpid()}")
 
-    
-    
     # 初始化LLM服务
     try:
         await llm_service.initialize()
         await llm_service.warmup()
-        logger.info(f"LLM service started successfully, elapsed time: {time.time() - start_time:.2f} seconds")
+        logger.info(f"LLM服务启动成功，耗时: {time.time() - start_time:.2f} 秒")
 
         # 注册服务到 Nacos
         nacos_manager.register_service(service_name=service_name, service_host=service_host, service_port=service_port)
-        logger.info("LLM service registered to Nacos.")
+        logger.info("LLM服务已注册到Nacos")
 
     except Exception as e:
-        logger.exception(f"Failed to initialize LLM service: {e}")
+        logger.exception(f"初始化LLM服务失败: {e}")
         # 在生产环境中，可能需要在这里退出应用程序
         current_env = os.getenv("NACOS_GROUP", "dev")
         if current_env == "prod":
@@ -107,22 +79,22 @@ async def lifespan(app: FastAPI):
     yield  # 服务运行期间
     
     # 关闭事件
-    logger.info(f"Closing LLM service at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}...")
+    logger.info(f"正在关闭LLM服务，时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}...")
     shutdown_start = time.time()
     
     try:
         await llm_service.shutdown()
-        logger.info("Successfully closed LLM service")
+        logger.info("LLM服务关闭成功")
     except Exception as e:
-        logger.exception(f"Error closing LLM service: {e}")
+        logger.exception(f"关闭LLM服务时出错: {e}")
     
-    logger.info(f"LLM service closed in {time.time() - shutdown_start:.2f} seconds")
-    logger.info(f"Total service runtime: {time.time() - start_time:.2f} seconds")
+    logger.info(f"LLM服务关闭耗时: {time.time() - shutdown_start:.2f} 秒")
+    logger.info(f"服务总运行时间: {time.time() - start_time:.2f} 秒")
 
 # 创建FastAPI应用
 app = FastAPI(
-    title="LLM service",
-    description="Provides text generation and chat completion services using various LLM providers.",
+    title="LLM服务",
+    description="提供使用各种LLM提供者的文本生成和聊天完成服务",
     version=service_version,
     lifespan=lifespan,
 )
@@ -137,38 +109,34 @@ app.add_middleware(
 )
 
 class ChatResponse(BaseModel):
-    """Response model for chat (OpenAI compatible). //聊天响应模型(兼容OpenAI)"""
+    """聊天响应模型(兼容OpenAI)"""
 
-    id: str = Field(default_factory=lambda: f"sse-{uuid.uuid4()}", 
-                   description="Unique identifier for the chat completion")
-    object: str = Field("chat.completion", 
-                       description="The object type, always 'chat.completion'")
-    created: int = Field(default_factory=lambda: int(time.time()), 
-                        description="Unix timestamp of when the response was created")
-    model: str = Field(..., description="The model used for the completion")
-    choices: list[dict[str, Any]] = Field(...,
-        description="list of chat completion choices containing messages")
-    usage: dict[str, int] = Field(...,
-        description="Token usage statistics including prompt_tokens, completion_tokens and total_tokens")
-    processing_time: float = Field(..., 
-                                 description="Processing time in seconds (custom field)")
+    id: str = Field(default_factory=lambda: f"sse-{uuid.uuid4()}", description="聊天完成的唯一标识符")
+    object: str = Field("chat.completion", description="对象类型，始终为'chat.completion'")
+    created: int = Field(default_factory=lambda: int(time.time()), description="响应创建时的Unix时间戳")
+    model: str = Field(..., description="用于完成的模型")
+    choices: list[dict[str, Any]] = Field(..., description="包含消息的聊天完成选项列表")
+    usage: dict[str, int] = Field(..., description="令牌使用统计，包括prompt_tokens、completion_tokens和total_tokens")
+    processing_time: float = Field(..., description="处理时间（秒）（自定义字段）")
 
 
 class ChatRequest(BaseModel):
-    """Request model for chat. //聊天请求模型"""
+    """聊天请求模型"""
 
-    model_unique_name: str = Field(..., description="Specific model id to use")
-    messages: list[dict[str, str]] | str = Field(..., description="list of chat messages")
-    max_tokens: int | None = Field(None, description="Maximum number of tokens to generate")
-    temperature: float | None = Field(
-        None, description="Sampling temperature (0.0-1.0, lower is more deterministic)"
-    )
-    stream: bool = Field(False, description="Whether to stream the response")
-    timeout: int | None = Field(None, description="Timeout in seconds")
-    top_p: float | None = Field(None, description="Top-p sampling parameter")
-    frequency_penalty: float | None = Field(None, description="Frequency penalty")
-    presence_penalty: float | None = Field(None, description="Presence penalty")
+    model_unique_name: str = Field(..., description="要使用的特定模型ID")
+    messages: list[dict[str, str]] | str = Field(..., description="聊天消息列表")
+    max_tokens: int | None = Field(None, description="要生成的最大令牌数")
+    temperature: float | None = Field(None, description="采样温度（0.0-1.0，越低越确定）")
+    stream: bool = Field(False, description="是否流式传输响应")
+    timeout: int | None = Field(None, description="超时时间（秒）")
+    top_p: float | None = Field(None, description="Top-p采样参数")
+    frequency_penalty: float | None = Field(None, description="频率惩罚")
+    presence_penalty: float | None = Field(None, description="存在惩罚")
 
+class ToggleModelRequest(BaseModel):
+    """启用或禁用模型请求表单。"""
+    model_unique_name: str = Field(..., description="模型唯一标识符")
+    operation: str = Field(..., description="操作类型，'load' 或 'unload'")
 
 # 依赖项：获取嵌入服务实例
 def get_llm_service():
@@ -176,9 +144,10 @@ def get_llm_service():
 
 @app.get("/health", response_model=dict, tags=["LLM"])
 async def health() -> dict[str, Any]:
-    """Health check endpoint. //微服务接口健康检查
+    """微服务健康检查接口
+    
     Returns:
-        Loaded models count. //已加载的模型数量
+        已加载的模型数量
     """
     # 获取已加载的模型信息
     loaded_models = {}
@@ -192,48 +161,63 @@ async def health() -> dict[str, Any]:
         "timestamp": datetime.now().isoformat()
     }
 
+@app.post("/load", response_model=dict, tags=["LLM"])
+async def load_model(request: ToggleModelRequest) -> dict:
+    """通过模型ID加载模型到内存中。
+    
+    Args:
+        request: 启用或禁用模型请求表单，包含模型唯一名称和操作类型
+        
+    Returns:
+        dict: 包含操作状态和模型ID的响应数据
+        
+    Raises:
+        HTTPException: 当模型加载失败时抛出500错误
+    """
+    try:
+        if request.operation == "load":
+            logger.info(f"接收到指令：加载模型 {request.model_unique_name}")
+            success = await llm_service.load_model(request.model_unique_name)
+        else:
+            logger.info(f"接收到指令：卸载模型 {request.model_unique_name}")
+            success = await llm_service.unload_model(request.model_unique_name)
+        if not success:
+            raise HTTPException(status_code=500, detail=f"模型 {request.model_unique_name} 操作失败")
+        return {"status": "success", "model_unique_name": request.model_unique_name}
+    except Exception as e:
+        logger.exception(f"操作模型 {request.model_unique_name} 时发生错误: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/v1/chat/completions", response_model=None, tags=["LLM"])
 async def chat(
     request: ChatRequest,
     llm_service: LLMService = Depends(get_llm_service)
 ) -> ChatResponse | StreamingResponse:
-    """Generate chat response //生成聊天响应
+    """生成聊天响应
     
-    - **model_unique_name**: 要使用的模型ID
-    - **messages**: 聊天消息列表
-    - **max_tokens**: 要生成的最大令牌数（可选）
-    - **temperature**: 采样温度（0.0-1.0，越低越确定）
-    - **stream**: 是否流式返回响应
-    - **timeout**: 超时时间（秒）
-    - **top_p**: Top-p采样参数
-    - **frequency_penalty**: 频率惩罚
-    - **presence_penalty**: 存在惩罚
+    Args:
+        model_unique_name: 要使用的模型ID
+        messages: 聊天消息列表
+        max_tokens: 要生成的最大令牌数（可选）
+        temperature: 采样温度（0.0-1.0，越低越确定）
+        stream: 是否流式返回响应
+        timeout: 超时时间（秒）
+        top_p: Top-p采样参数
+        frequency_penalty: 频率惩罚
+        presence_penalty: 存在惩罚
     
-    返回:
-    - 流式模式: 标准OpenAI SSE格式
-    - 非流式模式: 包含消息和处理时间的JSON对象
+    Returns:
+        流式模式: 标准OpenAI SSE格式
+        非流式模式: 包含消息和处理时间的JSON对象
     """
     start_time = time.time()
     response_id = f"chatcmpl-{uuid.uuid4()}"  # OpenAI格式的ID
     created_time = int(time.time())
     model_name = request.model_unique_name
 
-    async with AsyncRedisPool(db=1) as redis:
-        # 1. 先通过 unique_name 获取 model_id
-        model_id = await redis.get(f"index:unique_name:{model_name}")
-        if not model_id:
-            raise ValueError(f"Model {model_name} not found in redis")
-        
-        # 2. 通过 model_id 获取所有字段
-        model_data = await redis.hgetall(f"model:{model_id}")
-        if not model_data:
-            raise ValueError(f"Model {model_name} not found in redis")
-
-        provider = model_data.get("provider")
-
-    logger.info(f"Generating chat response using model {model_name}")
-    
+    provider = llm_service.get_provider(request.model_unique_name)
+    if provider is None:
+        raise HTTPException(status_code=404, detail=f"模型 {request.model_unique_name} 在模型池中未找到")
     try:
         # OpenAI streaming 格式响应
         if request.stream and provider == LLMProvider.OPENAI.value:
@@ -242,7 +226,7 @@ async def chat(
                     # 获取流式响应
                     max_tokens = min(request.max_tokens, 4000) if request.max_tokens else 4000
                     chunk_stream = await llm_service.chat(
-                        model_unique_name=request.model_unique_name,
+                        model_id=request.model_unique_name,
                         messages=request.messages,
                         stream=True,
                         max_tokens=max_tokens,
@@ -285,7 +269,7 @@ async def chat(
                     yield "data: [DONE]\n\n"
                     
                 except Exception as e:
-                    logger.exception(f"Stream error: {str(e)}")
+                    logger.exception(f"流式传输错误: {str(e)}")
                     error_chunk = {
                         "error": {
                             "message": str(e),
@@ -311,7 +295,7 @@ async def chat(
                     try:
                         # 获取流式响应
                         chunk_stream = await llm_service.chat(
-                            model_unique_name=request.model_unique_name,
+                            model_id=request.model_unique_name,
                             messages=request.messages,
                             stream=True,
                             max_tokens=request.max_tokens,
@@ -359,7 +343,7 @@ async def chat(
                         yield "data: [DONE]\n\n"
                         
                     except Exception as e:
-                        logger.exception(f"Stream error: {str(e)}")
+                        logger.exception(f"流式传输错误: {str(e)}")
                         error_chunk = {
                             "error": {
                                 "message": str(e),
@@ -384,7 +368,7 @@ async def chat(
                     try:
                         # 获取流式响应
                         chunk_stream = await llm_service.chat(
-                            model_unique_name=request.model_unique_name,
+                            model_id=request.model_unique_name,
                             messages=request.messages,
                             stream=True,
                             max_tokens=request.max_tokens,
@@ -431,7 +415,7 @@ async def chat(
                         yield "data: [DONE]\n\n"
                         
                     except Exception as e:
-                        logger.exception(f"Stream error: {str(e)}")
+                        logger.exception(f"流式传输错误: {str(e)}")
                         error_chunk = {
                             "error": {
                                 "message": str(e),
@@ -451,12 +435,12 @@ async def chat(
                     }
                 )
             else:
-                raise HTTPException(status_code=400, detail="Unsupported model for streaming")
+                raise HTTPException(status_code=400, detail="流式传输不支持该模型")
             
         elif not request.stream:
             # OpenAI 非流式响应
             response = await llm_service.chat(
-                model_unique_name=request.model_unique_name,
+                model_id=request.model_unique_name,
                 messages=request.messages,
                 stream=False,
                 max_tokens=request.max_tokens,
@@ -468,7 +452,7 @@ async def chat(
             )
             
             processing_time = time.time() - start_time
-            logger.info(f"Chat completion took {processing_time:.2f}s")
+            logger.info(f"聊天完成耗时: {processing_time:.2f}秒")
             content = None
             usage_data = None
             # 获取响应内容和usage数据
@@ -481,7 +465,7 @@ async def chat(
                 usage_data = response.data.chat_response.usage # type: ignore
 
             else:
-                logger.warning(f"Unsupported provider: {provider}")
+                logger.warning(f"不支持的提供者: {provider}")
 
             return ChatResponse(
                 id=response_id,
@@ -506,14 +490,14 @@ async def chat(
         
         else:
             # 响应格式不支持
-            raise HTTPException(400, detail="Response format not supported")
+            raise HTTPException(400, detail="不支持的响应格式")
 
     except ValidationError as e:
         raise HTTPException(400, detail=str(e))
     except TimeoutError:
-        raise HTTPException(408, detail="Request timeout")
+        raise HTTPException(408, detail="请求超时")
     except Exception as e:
-        logger.exception("Chat completion failed")
+        logger.exception("聊天完成失败")
         raise HTTPException(500, detail={
             "error": str(e),
             "type": e.__class__.__name__
@@ -524,9 +508,9 @@ async def chat(
 llm_service_process = None
 
 def start_llm_service():
-    """Start the LLM microservice as an independent process."""
+    """启动LLM微服务作为独立进程"""
     try:
-        logger.info("Starting LLM microservice as independent process...")
+        logger.info("正在启动LLM微服务作为独立进程...")
         llm_service_path = os.path.abspath(__file__)
         
         process = subprocess.Popen(
@@ -539,32 +523,32 @@ def start_llm_service():
         # 检查进程是否成功启动
         if process.poll() is not None:
             stderr = process.stderr.read().decode('utf-8') if process.stderr else ""
-            raise RuntimeError(f"Failed to start LLM service: {stderr}")
+            raise RuntimeError(f"启动LLM服务失败: {stderr}")
             
-        logger.success(f"LLM service started successfully with PID {process.pid}")
+        logger.success(f"LLM服务启动成功，进程ID: {process.pid}")
         return process
         
     except Exception as e:
-        logger.exception(f"Error starting LLM service: {str(e)}")
+        logger.exception(f"启动LLM服务时出错: {str(e)}")
         raise
 
 def shutdown_llm_service():
-    """Terminate the LLM microservice process."""
+    """终止LLM微服务进程"""
     global llm_service_process
     if llm_service_process:
-        logger.info("Terminating the LLM microservice process...")
+        logger.info("正在终止LLM微服务进程...")
         try:
             llm_service_process.terminate()
             llm_service_process.wait(timeout=5)
         except subprocess.TimeoutExpired:
-            logger.warning("The LLM microservice process failed to terminate properly; forcing shutdown...")
+            logger.warning("LLM微服务进程未能正常终止; 强制关闭...")
             llm_service_process.kill()
         llm_service_process = None
 
 
 def signal_handler(sig, frame):
-    """Handling termination signal."""
-    logger.info(f"Signal received: {sig}, shutting down....")
+    """处理终止信号"""
+    logger.info(f"收到信号: {sig}, 正在关闭...")
     shutdown_llm_service()
     sys.exit(0)
 
@@ -577,5 +561,5 @@ if __name__ == "__main__":
         signal.signal(signal.SIGINT, signal_handler)
         signal.signal(signal.SIGTERM, signal_handler)
     
-    logger.info(f"Started the LLM microservice, listening on {service_host}:{service_port}")
+    logger.info(f"已启动LLM微服务，监听地址: {service_host}:{service_port}")
     uvicorn.run(app, host=service_host, port=service_port)

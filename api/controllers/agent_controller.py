@@ -5,6 +5,7 @@ import json
 from typing import AsyncGenerator, Any
 from dao.repositories.kbot_md_chat_session_repo import KbotMdChatSessionRepository
 from dao.repositories.kbot_md_agent_repo import KbotMdAgentRepository
+from dao.repositories.kbot_md_agent_conf_repo import KbotMdAgentConfRepository
 from dao.repositories.kbot_md_prompt_repo import KbotMdPromptRepository
 from dao.repositories.kbot_md_models_repo import KbotMdModelsRepository
 from dao.repositories.kbot_md_chat_history_repo import KbotMdChatHistoryRepository
@@ -288,3 +289,18 @@ async def agent_del_session(session_id: str) -> bool:
     except Exception as e:  
         raise e
     
+async def del_agent(agent_id: int) -> bool:
+    try:
+        # 1. 删除agent
+        await KbotMdAgentRepository().delete(agent_id)
+        # 2. 删除agent和kb的关联信息
+        await KbotMdAgentConfRepository().delete_by_agent_id(agent_id)
+        # 3. 删除agent的聊天会话
+        await KbotMdChatSessionRepository().delete_by_agent_id(agent_id)
+        # 4. 删除agent的聊天历史
+        await KbotMdChatHistoryRepository().delete_by_agent_id(agent_id)
+        return True
+
+    except Exception as e:
+        logger.error(f"Delete agent error: {str(e)}")
+        return False

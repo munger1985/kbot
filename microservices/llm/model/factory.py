@@ -3,45 +3,47 @@ from .base import BaseLLM, LLMConfig
 from .openai_client import OpenaiClient
 from .oci_client import OCIClient
 
+
 class LLMProvider(str, Enum):
-    """Enum of supported LLM providers."""
+    """支持的LLM提供商枚举"""
     OPENAI = "openai"
     OCI = "oci"
-    # Add more providers as they are implemented
+    # 随着实现逐步添加更多提供商
     # AZURE = "azure"
     # HUGGINGFACE = "huggingface"
     # LOCAL = "local"
 
+
 def create_llm_model(config: LLMConfig) -> BaseLLM:
-    """Create an LLM model based on the provided configuration.
+    """根据提供的配置创建LLM模型
     
     Args:
-        config: LLM configuration
+        config: LLM配置对象
     
     Returns:
-        An instance of BaseLLM
+        BaseLLM实例
     
     Raises:
-        ValueError: If the provider is not supported
+        ValueError: 如果提供商不被支持
     """
     if config.provider == LLMProvider.OPENAI.value:
-        return OpenaiClient(config) # type: ignore
+        return OpenaiClient(config)  # type: ignore
     elif config.provider == LLMProvider.OCI.value:
-        return OCIClient(config) # type: ignore
-    # TODO: add more providers
-    # Add more providers as they are implemented
+        return OCIClient(config)  # type: ignore
+    # TODO: 添加更多提供商
+    # 随着实现逐步添加更多提供商
     # elif isinstance(config, AzureLLMConfig):
     #     return AzureClient(config)
     # elif isinstance(config, LocalLLMConfig):
     #     return LocalClient(config)
     else:
-        raise ValueError(f"Unsupported LLM provider: {config.provider}")
+        raise ValueError(f"不支持的LLM提供商: {config.provider}")
 
 
 def get_supported_providers() -> list[str]:
-    """Get a list of supported LLM providers.
+    """获取支持的LLM提供商列表
     
     Returns:
-        List of supported provider names
+        支持的提供商名称列表
     """
     return [provider.value for provider in LLMProvider]

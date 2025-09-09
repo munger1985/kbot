@@ -19,28 +19,18 @@ from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 from synonym_service import FastTextSynonymExpander
-from ms_core import nacos_manager, load_config, AppConfig, ModelConfig, LogManager, LogConfig
+from ms_core import nacos_manager, ConfigManager, LogManager, LogConfig
 
 
 # 加载环境变量配置
 load_dotenv()
 
-try:
-    # 从nacos获取同义词服务配置
-    config = load_config("model_config")
-    if not isinstance(config, ModelConfig):
-        raise ValueError
-    service_name = config.synonym.service_name or "synonym-service"  # 全局微服务名称
-    service_version = config.synonym.service_version or "1.0.0"  # 微服务版本
-    service_host = config.synonym.service_host or "0.0.0.0"  # 微服务地址
-    service_port = config.synonym.service_port or 9205  # 微服务通信端口
-except Exception as e:
-    # 如果从nacos获取同义词服务配置失败，则使用默认配置
-    logger.warning("从nacos获取同义词服务配置失败: {}".format(e))
-    service_name = "synonym-service"
-    service_version = "1.0.0"
-    service_host = "0.0.0.0"
-    service_port = 9205
+# 从nacos获取同义词服务配置
+config = ConfigManager.get_model_config()
+service_name = config.synonym.service_name
+service_version = config.synonym.service_version
+service_host = config.synonym.service_host
+service_port = config.synonym.service_port
 
 # 创建同义词服务实例
 synonym_service = FastTextSynonymExpander()
@@ -50,23 +40,11 @@ synonym_service = FastTextSynonymExpander()
 async def lifespan(app: FastAPI):
     """应用生命周期上下文管理器"""
     # 通过nacos_manager获取日志配置
-    try:
-        log_config = load_config("app_config")
-        if not isinstance(log_config, AppConfig):
-            raise ValueError
-        
-        log_dir = log_config.kbot.log.dir or "logs/"
-        log_level = log_config.kbot.log.level or "DEBUG"
-        rotation = log_config.kbot.log.rotation or "10 MB"
-        retention = log_config.kbot.log.retention or "20 days"
-        
-    except Exception as e:
-        # 如果获取日志配置失败，则使用默认配置
-        logger.warning(f"从nacos获取日志配置失败: {str(e)}")
-        log_dir = "logs/"
-        log_level = "DEBUG"
-        rotation = "10 MB"
-        retention = "10 days"
+    log_config = ConfigManager.get_app_config()
+    log_dir = log_config.kbot.log.dir
+    log_level = log_config.kbot.log.level
+    rotation = log_config.kbot.log.rotation
+    retention = log_config.kbot.log.retention
     
     # 初始化日志系统
     conf = LogConfig(service_name=service_name, log_dir=log_dir, level=log_level, rotation=rotation, retention=retention)

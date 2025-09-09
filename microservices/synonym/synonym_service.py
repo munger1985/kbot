@@ -3,7 +3,7 @@ import numpy as np
 import time
 from functools import lru_cache
 from loguru import logger
-from ms_core import load_config, ModelConfig
+from ms_core import ConfigManager
 
 
 class FastTextSynonymExpander:
@@ -16,20 +16,12 @@ class FastTextSynonymExpander:
             top_n_words: 加载的总词数
             preload_top: 预加载的高频词数量
         """
-        try:
-            # 从 nacos 获取 synonym 服务配置
-            config = load_config("model_config")
-            if not isinstance(config, ModelConfig):
-                raise ValueError
-            model_path = config.synonym.model_path or None # 同义词模型路径
-            top_n_words = config.synonym.top_n_words or 50000 # 加载的总词数
-            preload_top = config.synonym.preload_top or 1000 # 预加载的高频词数量
-        except Exception as e:
-            # 如果从 nacos 获取 synonym 服务配置失败，则使用默认配置
-            logger.warning("Failed to get synonym service config from nacos: {}".format(e))
-            model_path = None
-            top_n_words = 50000
-            preload_top = 1000
+
+        # 从 nacos 获取 synonym 服务配置
+        config = ConfigManager.get_model_config()
+        model_path = config.synonym.model_path
+        top_n_words = config.synonym.top_n_words
+        preload_top = config.synonym.preload_top
         
         if model_path is None:
             logger.exception("FastText模型路径未配置")

@@ -6,115 +6,101 @@ from model.base import BaseReranker
 
 class RerankerService:
     """
-    统一的reranker服务，用于管理和使用不同的reranker模型
+    统一的 reranker 服务，用于管理和使用不同的 reranker 模型
     """
     
     def __init__(self):
         """
-        初始化reranker服务
+        初始化 reranker 服务
         """
         self._model_pool = ModelPool()
         self._initialized = False
         
     async def initialize(self):
-        """
-        初始化reranker服务和模型池
-        """
+        """初始化 reranker 服务和模型池。"""
         if not self._initialized:
             await self._model_pool.initialize()
             self._initialized = True
-            logger.info("Reranker service initialized")
+            logger.info("Reranker 服务初始化完成")
         
     async def shutdown(self):
-        """
-        关闭reranker服务和所有模型
-        """
+        """关闭 reranker 服务和所有模型。"""
         if self._initialized:
             await self._model_pool.shutdown()
             self._initialized = False
-            logger.info("Reranker service has been shutdown")
+            logger.info("Reranker 服务已关闭")
     
-    async def get_reranker_model(self, model_unique_name: str) -> BaseReranker:
-        """
-        Get a reranker model by unique name // 获取指定unique name的reranker模型
-
-        Args:
-            model_unique_name: The unique name of the model to get // 要获取的模型unique name
-
-        Returns:
-            Reranker model instance // Reranker模型实例
-
-        Raises:
-            ValueError: If model_unique_name is not found in database // 如果模型unique name在数据库中不存在
-            RuntimeError: If model creation fails // 如果模型创建失败
-        """
+    async def get_reranker_model(self, model_id: str) -> BaseReranker:
+        """通过唯一名称获取 reranker 模型。"""
         if not self._initialized:
             await self.initialize()
-        
-        return await self._model_pool.load_model(model_unique_name)
+
+        return await self._model_pool.load_model(model_id)
     
     async def rerank(
         self,
-        model_unique_name: str,
+        model_id: str,
         query: str,
         documents: list[str],
         top_k: int | None = None
     ) -> list[dict[str, Any]]:
         """
-        Rerank documents based on relevance to query.
+        根据与查询的相关性对文档进行重排序
         
         Args:
-            query: The search query
-            documents: List of documents to rerank
-            top_k: Number of top documents to return (None for all)
-            return_scores: Whether to return scores with indices
+            model_id: 模型唯一标识符
+            query: 搜索查询
+            documents: 需要重排序的文档列表
+            top_k: 返回的顶部文档数量（None 表示返回所有）
             
         Returns:
-            List of dicts with 'index' and 'score' keys
+            包含 'index' 和 'score' 键的字典列表
         """
         if not documents:
             return []
         
         try:
-            model = await self.get_reranker_model(model_unique_name)
+            model = await self.get_reranker_model(model_id)
             return await model.rerank(query, documents, top_k)
                 
         except Exception as e:
-            logger.error(f"Failed to rerank documents: {e}")
-            raise RuntimeError("Failed to rerank documents") from e
-    
-    
-    async def unload_model(self, model_unique_name: str):
-        """
-        Unload a model from the pool // 从模型池中卸载模型
-
-        Args:
-            model_unique_name: The unique name of the model to unload // 要卸载的模型unique name
-        """
-        if self._initialized:
-            await self._model_pool.unload_model(model_unique_name)
-            logger.info(f"Model {model_unique_name} has been unloaded.")
-    
-    async def reload_model(self, model_unique_name: str) -> BaseReranker:
-        """
-        Reload a model from the pool // 重新加载模型
-
-        Args:
-            model_unique_name: 要重新加载的模型unique name
-
-        Returns:
-            The reloaded reranker model instance // 重新加载的reranker模型实例
-        """
-        if not self._initialized:
-            await self.initialize()
+            logger.error(f"文档重排序失败: {e}")
+            raise RuntimeError("文档重排序失败") from e
         
-        return await self._model_pool.reload_model(model_unique_name)
-    
     async def warmup(self):
         """
-        Warm up all models in the pool 
+        预热模型池中的所有模型
         """
         if not self._initialized:
             await self.initialize()
         
         await self._model_pool.warmup()
+
+    async def load_model(self, model_id: str) -> bool:
+        """通过模型唯一标识符加载模型到内存中
+        
+        Args:
+            model_id: 模型唯一标识符
+            
+        Returns:
+            bool: 加载是否成功
+        """
+        if not self._initialized:
+            await self.initialize()
+        
+        return await self._model_pool.reload_model(model_id)
+
+        
+    async def unload_model(self, model_id: str) -> bool:
+        """通过模型唯一标识符卸载模型到内存中。
+        
+        Args:
+            model_id: 模型唯一标识符
+            
+        Returns:
+            bool: 卸载是否成功
+        """
+        if not self._initialized:
+            await self.initialize()
+        
+        return await self._model_pool.unload_model(model_id)

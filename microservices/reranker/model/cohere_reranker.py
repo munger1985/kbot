@@ -7,10 +7,10 @@ from loguru import logger
 from .base import RerankerConfig, BaseReranker
 
 class CohereRerankerConfig(RerankerConfig):
-    """Reranker 模型配置类"""
-    api_endpoint: str = Field("https://api.cohere.ai", description="Cohere API endpoint")
-    api_key: str = Field(..., description="Cohere API key")
-    timeout: int = Field(10, description="Timeout for API requests in seconds")
+    """Cohere Reranker 模型配置类"""
+    api_endpoint: str = Field("https://api.cohere.ai", description="Cohere API 端点")
+    api_key: str = Field(..., description="Cohere API 密钥")
+    timeout: int = Field(10, description="API 请求超时时间（秒）")
     
 class CohereReranker(BaseReranker):
     """Cohere Reranker 重排器类"""
@@ -27,14 +27,14 @@ class CohereReranker(BaseReranker):
         self.config = config
         self.client = None
 
-        # Runtime state
+        # 运行时状态
         self._is_initialized = False
             
-        logger.info(f"Initializing {self.__class__.__name__} with model: {self.config.model_name}")
+        logger.info(f"正在初始化 {self.__class__.__name__}，模型: {self.config.model_name}")
     
     
     async def startup(self) -> None:
-        """Initialize the reranker model."""
+        """初始化 reranker 模型"""
         if self._is_initialized:
             return
 
@@ -43,7 +43,7 @@ class CohereReranker(BaseReranker):
         
 
         self._is_initialized = True
-        logger.info(f"Reranker model {self.config.model_name} initialized successfully.")
+        logger.info(f"Reranker 模型 {self.config.model_name} 初始化成功")
     
     
     async def rerank(
@@ -53,23 +53,23 @@ class CohereReranker(BaseReranker):
         top_k: int | None = None
     ) -> list[dict[str, Any]]:
         """
-        Rerank documents based on relevance to query.
+        根据与查询的相关性对文档进行重排序
         
         Args:
-            query: The search query
-            documents: List of documents to rerank
-            top_k: Number of top documents to return (None for all)
+            query: 搜索查询
+            documents: 需要重排序的文档列表
+            top_k: 返回的顶部文档数量（None 表示返回所有）
             
         Returns:
-            List of dicts with 'index' and 'score' keys
+            包含 'index' 和 'score' 键的字典列表
         """
         if not self.client:
-            raise RuntimeError("Model not initialized. Call startup() first.")
+            raise RuntimeError("模型未初始化，请先调用 startup() 方法")
         
         if not documents:
             return []
         
-        # Set top_k to number of documents if not specified
+        # 如果未指定 top_k，则设置为文档数量
         if top_k is None:
             top_k = len(documents)
         else:
@@ -83,18 +83,15 @@ class CohereReranker(BaseReranker):
                     top_n=top_k,
             )
 
-            # # Return results in requested format
-            # return [{"index": idx, "score": float(score)} for idx, score in scored_results]
             return [{"index": result["index"], "score": float(result["relevance_score"])} for result in response["results"]] # type: ignore
         
         except Exception as e:
-            logger.error(f"Error during reranking: {str(e)}")
+            logger.error(f"重排序过程中发生错误: {str(e)}")
             raise
     
     async def shutdown(self) -> None:
-        """Clean up resources."""
+        """清理资源"""
         if self.client:
-
             self.client = None
             self._is_initialized = False
-            logger.info(f"{self.__class__.__name__} model resources released")
+            logger.info(f"{self.__class__.__name__} 模型资源已释放")

@@ -3,7 +3,7 @@ import jieba
 import jieba.posseg as pseg
 from pathlib import Path
 from loguru import logger
-from core.nacos_manager import load_config, ModelConfig
+from configuration import ConfigManager
 from utils.call_models import CallModel
 
 class ChinesePreprocessor:
@@ -16,28 +16,13 @@ class ChinesePreprocessor:
         """
         初始化预处理器
         """
-        # 通过 nacos_manager 获取 database 配置
-        try:
-            model_config = load_config("model_config")
-            if isinstance(model_config, ModelConfig):
-                stopwords_path = model_config.tokenizer.stop_words_path
-                custom_dict_path = model_config.tokenizer.custom_dict_path
-            else:
-                stopwords_path = "stopwords.txt"
-                custom_dict_path = "custom_dict.txt"
 
-        except Exception as e:
-            # 如果获取 database 配置失败，则抛出异常
-            logger.warning(f"无法从 nacos 获取 tokenizer 配置，使用默认路径: {str(e)}")
-            stopwords_path = "stopwords.txt"
-            custom_dict_path = "custom_dict.txt"
-
-        self.stopwords_file = stopwords_path
-        self.custom_dict_file = custom_dict_path
+        model_config = ConfigManager.get_model_config()
+        self.stopwords_file = model_config.tokenizer.stop_words_path
+        self.custom_dict_file = model_config.tokenizer.custom_dict_path
         self.stopwords: set[str] = self._load_stopwords(self.stopwords_file)
         self._setup_jieba(self.custom_dict_file)
 
-        
         
     def _load_stopwords(self, file_path: str) -> set[str]:
         """加载停用词表"""

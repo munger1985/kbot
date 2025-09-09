@@ -4,33 +4,33 @@ from .openai_client import OpenAIVLM, OpenAIVLMConfig
 
 
 class VLMProvider(str, Enum):
-    """Enum of supported VLM providers."""
-    OPENAI = "openai"     # Currently only supports OpenAI-compatible cloud providers
-    # Add more providers as they are implemented
+    """支持的 VLM 提供商枚举"""
+    OPENAI = "openai"     # 目前仅支持 OpenAI 兼容的云提供商
+    # 随着实现添加更多提供商
 
 def create_vlm_model(config: OpenAIVLMConfig) -> BaseVLM:
-    """Create a VLM model based on the provided configuration.
+    """根据提供的配置创建 VLM 模型
     
-    Args:
-        config: VLM configuration
+    参数:
+        config: VLM 配置
     
-    Returns:
-        An instance of BaseVLM
+    返回:
+        BaseVLM 的实例
     
-    Raises:
-        ValueError: If the provider is not supported
+    异常:
+        ValueError: 如果不支持该提供商
     """
     if config.provider == VLMProvider.OPENAI.value:
         return OpenAIVLM(config)
     else:
-        # Add more providers as they are implemented
-        raise ValueError(f"Unsupported VLM provider: {config.provider}")
+        # 随着实现添加更多提供商
+        raise ValueError(f"不支持的 VLM 提供商: {config.provider}")
     
 
 def get_supported_providers() -> list[str]:
-    """Get a list of supported VLM providers.
+    """获取支持的 VLM 提供商列表
     
-    Returns:
-        List of supported provider names
+    返回:
+        支持的提供商名称列表
     """
     return [provider.value for provider in VLMProvider]

@@ -58,6 +58,15 @@ class KbotMdAgentConfRepository:
             await session.commit()
             return result.rowcount > 0
 
+    async def delete_by_agent_id(self, agent_id: int) -> int:
+        """delete agent config by agent id. """
+        async with get_session() as session:
+            result = await session.execute(
+                delete(KbotMdAgentConf).where(KbotMdAgentConf.agent_id == agent_id)
+            )
+            await session.commit()
+            return result.rowcount
+
     async def get_all(self) -> AsyncIterator[KbotMdAgentConf]:
         """get all agent config. """
         async with get_session() as session:

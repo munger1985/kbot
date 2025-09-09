@@ -11,7 +11,7 @@ sys.path.insert(0, str(project_root))
 
 from dao.repositories.kbot_md_chat_session_repo import KbotMdChatSessionRepository
 
-key="session_1754010982.804123"
+key="session_1757298499.536047"
 
 
 
@@ -186,10 +186,18 @@ async def update_last_qa_data_answer():
         print("\n堆栈跟踪:")
         print(traceback.format_exc())
 
+async def delete_by_agent():
+    repo = KbotMdChatSessionRepository()
+    result = await repo.delete_by_agent_id(1)
+    if result:
+        print("删除Redis成功")
+    else:
+        print("删除Redis失败")
+
 if __name__ == "__main__":
     print("Starting redis test...")
 
-    asyncio.run(update_qa_feedback())
+    asyncio.run(insert())
 
     
     

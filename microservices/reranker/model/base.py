@@ -4,17 +4,17 @@ from pydantic import BaseModel, Field
 
 
 class RerankerConfig(BaseModel):
-    """Configuration for reranker models."""
-    model_name: str = Field(..., description="Name of the reranker model")
-    provider: str = Field(..., description="Provider of the reranker model")
-    max_tokens: int | None = Field(512, description="Maximum input sequence length")
+    """Reranker 模型配置"""
+    model_name: str = Field(..., description="Reranker 模型名称")
+    provider: str = Field(..., description="Reranker 模型提供者")
+    max_tokens: int | None = Field(512, description="最大输入序列长度")
 
 class BaseReranker(ABC):
-    """Abstract base class for reranker models."""
+    """Reranker 模型抽象基类"""
     
     @abstractmethod
     async def startup(self) -> None:
-        """Initialize the reranker model."""
+        """初始化 reranker 模型"""
         pass
     
     @abstractmethod
@@ -24,10 +24,20 @@ class BaseReranker(ABC):
         documents: list[str],
         top_k: int | None = None
     ) -> list[dict[str, Any]]:
-        """Rerank documents based on relevance to query."""
+        """
+        根据与查询的相关性对文档进行重排序
+        
+        Args:
+            query: 查询文本
+            documents: 需要重排序的文档列表
+            top_k: 返回的顶部文档数量（None 表示返回所有）
+            
+        Returns:
+            包含重排序结果的字典列表
+        """
         pass
     
     @abstractmethod
     async def shutdown(self) -> None:
-        """Clean up resources."""
+        """清理资源"""
         pass

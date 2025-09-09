@@ -1,3 +1,12 @@
 oci==2.158.0
 python-dotenv==1.1.0
 fastapi==0.115.13
+loguru==0.7.3
+openai==1.93.0
+prometheus_client==0.22.1
+tokenizers==0.21.2
+torch==2.7.1
+tqdm==4.67.1
+transformers==4.53.1
+uvicorn==0.34.3
+redis==5.0.1

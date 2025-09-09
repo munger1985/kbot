@@ -5,7 +5,7 @@ import shutil
 from pathlib import Path
 from fastapi import UploadFile
 from loguru import logger
-from core.nacos_manager import load_config, AppConfig
+from configuration import ConfigManager
 from dao.entities.kbot_md_kb_batch import KbotMdKbBatch
 from dao.entities.kbot_md_kb_files import KbotMdKbFiles
 from core.dictionary import FileStatus, YesNoEnum
@@ -23,23 +23,9 @@ class KBFileOperator:
     def __init__(self) -> None:
         '''Initialize the file upload/delete service. '''
 
-        # 通过 nacos_manager 获取文件上传路径和并行度配置
-        try:
-            config = load_config("app_config")
-            if not isinstance(config, AppConfig):
-                raise ValueError
-
-            file_storage = config.kbot.file_storage or "./kbot_files"
-            upload_workers = int(config.kbot.upload_workers) or 1
-            
-        except Exception as e:
-            # 如果获取 logger 配置失败，则使用默认配置
-            logger.warning(f"Failed to get parser config from nacos: {str(e)}")
-            file_storage = "./kbot_files"
-            upload_workers = 1
-
-        self.file_storage = file_storage
-        self.upload_workers = upload_workers
+        config = ConfigManager.get_app_config()
+        self.file_storage = config.kbot.file_storage
+        self.upload_workers = config.kbot.upload_workers
 
 
     def save_file(self, file: UploadFile, domain_id: int, kb_id: int, batch_name:str, overwrite: bool) -> dict:
