@@ -25,6 +25,7 @@ from pathlib import Path
 class MarkdownParser:
     def __init__(self, file_params: FileParams ):
         self.markdown_file = file_params.file_path
+        self.file_params=file_params
         self.base_dir = os.path.dirname(os.path.abspath(self.markdown_file))
         self.images_dir = os.path.join(self.base_dir, 'images')
         self.tables_dir = os.path.join(self.base_dir, 'tables')
