@@ -1,6 +1,4 @@
 import re
-import os
-import uuid
 import pandas as pd
 import markdown
 from bs4 import BeautifulSoup
@@ -21,12 +19,7 @@ import traceback
 import os
 import json
 import uuid
-import zipfile
 from pathlib import Path
-from typing import Dict, List, Any, Optional
-import xml.etree.ElementTree as ET
-from datetime import datetime
-import shutil
 
 
 class MarkdownParser:
@@ -499,7 +492,7 @@ async def process_markdown(file_params: FileParams) -> bool:
         return False
 
     try:
-        logger.info(f"Processing Excel file: {file_params.file_path}")
+        logger.info(f"Processing Markdown file: {file_params.file_path}")
         parser = MarkdownParser(file_params)
         r = await parser.parse()
         if r:

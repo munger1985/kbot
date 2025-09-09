@@ -3,6 +3,7 @@ from loguru import logger
 from datetime import datetime
 
 from .excel_parser_openpyxl import process_excel
+from .markdown_parser_bs4 import process_markdown
 from .txt_parser import process_txt
 from .pdf_parser_pdfplumber import process_pdf
 from .office_parser import process_word_ppt_by_converter
@@ -104,6 +105,9 @@ class FileProcessor:
             if file_params.file_ext == ".txt":
                 logger.info(f"Processing text file {file_params.file_path}...")
                 return await process_txt(file_params)
+            elif file_params.file_ext == ".md":
+                logger.info(f"Processing markdown file {file_params.file_path}...")
+                return await process_markdown(file_params)
             elif file_params.file_ext == ".pdf":
                 logger.info(f"Processing pdf file {file_params.file_path}...")
                 return await process_pdf(file_params)
