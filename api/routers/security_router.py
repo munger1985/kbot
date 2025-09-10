@@ -24,14 +24,14 @@ async def handle_login_for_access_token(form: OAuth2PasswordRequestForm = Depend
         return SuccessQueryResponse(
             code=status.HTTP_200_OK,
             success=True,
-            message="Login successfully.",
+            message="登录成功",
             data={"access_token": token, "token_type": "bearer"}
         )
     else:
         return ErrorResponse(
             code=status.HTTP_401_UNAUTHORIZED,
             success=False,
-            message="Login failed."
+            message="登录失败"
         )
 
 @router.post(
@@ -45,13 +45,13 @@ async def handle_create_accessor(form: AccessorForm):
         return SuccessResponse(
         code=status.HTTP_200_OK,
         success=True,
-        message="Create accessor successfully."
+        message="创建访问者成功"
     )
     else:
         return ErrorResponse(
             code=status.HTTP_400_BAD_REQUEST,
             success=False,
-            message="Create accessor failed."
+            message="创建访问者失败"
         )
     
 
@@ -66,11 +66,11 @@ async def handle_change_password(form: ChangePasswordForm):
         return SuccessResponse(
             code=status.HTTP_200_OK,
             success=True,
-            message="change password successfully."
+            message="修改密码成功"
         )
     else:
         return ErrorResponse(
             code=status.HTTP_400_BAD_REQUEST,
             success=False,
-            message="change password failed."
+            message="修改密码失败"
         )

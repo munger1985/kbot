@@ -18,10 +18,10 @@ from utils.decimal_encoder import DecimalEncoder
 
 class KBFileOperator:
     '''
-    File upload and download service. 
+    文件上传和下载服务
     '''
     def __init__(self) -> None:
-        '''Initialize the file upload/delete service. '''
+        '''初始化文件上传/删除服务'''
 
         config = ConfigManager.get_app_config()
         self.file_storage = config.kbot.file_storage
@@ -30,16 +30,17 @@ class KBFileOperator:
 
     def save_file(self, file: UploadFile, domain_id: int, kb_id: int, batch_name:str, overwrite: bool) -> dict:
             '''
-            Save single file to disk and return the file path // 保存单个文件到磁盘并返回文件路径
-            Args:
-                file: File to upload // 要上传的文件
-                domain_id: Target domain id // 业务域id
-                kb_id: Target knowledge base id // 目标知识库id
-                batch_name: Batch name for this upload // 本次上传的批次名称
-                overwrite: Whether to overwrite existing files // 是否覆盖已存在的文件
+            保存单个文件到磁盘并返回文件路径
+            
+            参数:
+                file: 要上传的文件
+                domain_id: 业务域ID
+                kb_id: 目标知识库ID
+                batch_name: 本次上传的批次名称
+                overwrite: 是否覆盖已存在的文件
                 
-            Returns:
-                dict: File saving result containing: // 文件保存结果，包含:
+            返回:
+                dict: 文件保存结果，包含:
                     {
                         "file_path": str,  // 文件保存路径
                         "file_name": str,  // 文件名
@@ -48,13 +49,13 @@ class KBFileOperator:
                         "file_version": int,  // 文件版本号
                         "file_size": int     // 文件大小
                     }
-                or empty dict on error // 或出错时返回空字典
+                或出错时返回空字典
             '''
             filename = file.filename
             if filename is None:
-                    raise ValueError("Filename cannot be None")
+                    raise ValueError("文件名不能为空")
             try:
-                logger.debug(f"Start saving file: {filename} to knowledge base: {kb_id}")
+                logger.debug(f"开始保存文件: {filename} 到知识库: {kb_id}")
                 file_content = file.file.read()
 
                 root_path = Path(self.file_storage).resolve()  # 转换为绝对路径
@@ -62,7 +63,7 @@ class KBFileOperator:
                 target_path.mkdir(parents=True, exist_ok=True)
                 file_path = target_path / Path(filename)
 
-                # Get file parameters. // 获取文件相关参数
+                # 获取文件相关参数
                 name, ext = os.path.splitext(filename)
 
                 fileparams = {"file_path": str(file_path), 
@@ -72,15 +73,13 @@ class KBFileOperator:
                             "file_version": 1, 
                             "file_size": len(file_content)}          
                 
-                # Handle filename conflicts. // 处理文件名冲突
+                # 处理文件名冲突
                 if file_path.exists():
-                    logger.debug(f"File {filename} already exists.")
+                    logger.debug(f"文件 {filename} 已存在")
                     counter = 1
                     new_filename = ""
                     if overwrite:
-                        logger.debug(f"File {filename} already exists, will overwrite it.")
-                        # After retrieving the maximum version number, the original file must still be overwritten, 
-                        # and subsequent saves will continue using the same file_path.
+                        logger.debug(f"文件 {filename} 已存在，将覆盖该文件")
                         # 在获取最大版本号之后仍然需要覆盖最初的文件，后续保存文件仍然使用 file_path
                         new_path = file_path
                         while new_path.exists():
@@ -89,8 +88,8 @@ class KBFileOperator:
                             counter += 1
                         fileparams["file_version"] = counter
                     else:
-                        logger.debug(f"File {filename} already exists, will not overwrite it.")
-                        # Append a numeric suffix to the filename until the conflict is resolved. // 添加数字后缀直到文件名不冲突
+                        logger.debug(f"文件 {filename} 已存在，不进行覆盖")
+                        # 添加数字后缀直到文件名不冲突
                         while file_path.exists():
                             new_filename = f"{name}({counter}){ext}"
                             file_path = target_path / new_filename
@@ -100,15 +99,15 @@ class KBFileOperator:
                         fileparams["file_version"] = counter
                     
 
-                # Save the file. // 保存文件
+                # 保存文件
                 with open(file_path, "wb") as f:
                     f.write(file_content)
                 
-                logger.info(f"File saved successfully: {filename} -> {file_path}")
+                logger.info(f"文件保存成功: {filename} -> {file_path}")
                 return fileparams
 
             except Exception as e:
-                logger.error(f"Failed to save file {filename if 'filename' in locals() else 'unknown'}: {str(e)}")
+                logger.error(f"保存文件 {filename if 'filename' in locals() else '未知文件'} 失败: {str(e)}")
                 raise e
             
     async def _save_files_in_thread(self, 
@@ -118,16 +117,17 @@ class KBFileOperator:
                             batch_name: str,
                             overwrite: bool) -> list[dict]:
         '''
-        Save uploaded files to corresponding knowledge base directory using multi-threading. // 通过多线程将上传的文件保存到对应知识库目录内
-        Args:
-            files: List of files to upload // 要上传的文件列表
-            domain_id: Target domain id // 业务域id
-            kb_id: Target knowledge base id // 目标知识库id
-            batch_name: Batch name for this upload // 本次上传的批次名称
-            overwrite: Whether to overwrite existing files // 是否覆盖已存在的文件
+        通过多线程将上传的文件保存到对应知识库目录内
+            
+        参数:
+            files: 要上传的文件列表
+            domain_id: 业务域ID
+            kb_id: 目标知识库ID
+            batch_name: 本次上传的批次名称
+            overwrite: 是否覆盖已存在的文件
         
-        Returns:
-            List[dict]: List of file saving results, each contains: // 文件保存结果列表，每个结果包含:
+        返回:
+            List[dict]: 文件保存结果列表，每个结果包含:
                 {
                     "file_path": str,  // 文件保存路径
                     "file_name": str,  // 文件名
@@ -141,7 +141,7 @@ class KBFileOperator:
                 "batch_name": batch_name, "overwrite": overwrite} for file in files]
         results = [result async for result in run_in_thread_pool(func=self.save_file, params=file_params, workers=self.upload_workers)]
 
-        logger.debug(f"file save result: {results}")
+        logger.debug(f"文件保存结果: {results}")
         return results
 
     async def upload_file_service(self, 
@@ -156,36 +156,36 @@ class KBFileOperator:
                                 created_by: str | None = None,
                                 ) -> bool:
         '''
-        Upload files to knowledge base and save records to database. // 上传文件到知识库并保存记录到数据库
-        Args:
-            files: List of files to upload // 要上传的文件列表
-            app_id: Application ID // 应用ID
-            domain_id: Target domain id // 业务域id
-            kb_id: Target knowledge base id // 目标知识库id
-            batch_name: Batch name for this upload // 本次上传的批次名称
-            overwrite: Whether to overwrite existing files // 是否覆盖已存在的文件
-            batch_id: Optional batch ID // 可选的批次ID
-            biz_metadata: Business metadata in JSON format // 业务元数据(JSON格式)
-            created_by: Creator identifier // 创建者标识
+        上传文件到知识库并保存记录到数据库
+            
+        参数:
+            files: 要上传的文件列表
+            app_id: 应用ID
+            domain_id: 业务域ID
+            kb_id: 目标知识库ID
+            batch_name: 本次上传的批次名称
+            overwrite: 是否覆盖已存在的文件
+            batch_id: 可选的批次ID
+            biz_metadata: 业务元数据(JSON格式)
+            created_by: 创建者标识
         
-        Returns:
-            KBUploadResponse: On successful upload // 上传成功时返回
-            KBErrorResponse: On error // 出错时返回
+        返回:
+            bool: 上传是否成功
         '''
         
-        # Get default configuration from KB table. //从KB表获取默认配置
+        # 从KB表获取默认配置
         kb_repo = KbotMdKbRepository()
         kb_entity = await kb_repo.get_by_id(kb_id)
         if kb_entity is None:
-            logger.error(f"Knowledge base {kb_id} does not exist.")
+            logger.error(f"知识库 {kb_id} 不存在")
             return False
         
-        # Save the file. // 保存文件
-        logger.info(f"Start uploading {len(files)} files to knowledge base: {kb_id}")
+        # 保存文件
+        logger.info(f"开始上传 {len(files)} 个文件到知识库: {kb_id}")
         fileparams = await self._save_files_in_thread(files=files, domain_id=domain_id, kb_id=kb_id, batch_name=batch_name, overwrite=overwrite)
-        logger.debug(f"Files saved to disk: {[fp['file_name'] for fp in fileparams]}")
+        logger.debug(f"文件已保存到磁盘: {[fp['file_name'] for fp in fileparams]}")
 
-        # Construct the batch entities for saving to the database. //构造 batch 的实体用于保存到数据库
+        # 构造 batch 的实体用于保存到数据库
         batch_entity = KbotMdKbBatch(
             batch_id=batch_id,
             app_id=app_id,
@@ -195,7 +195,7 @@ class KBFileOperator:
             updated_by=created_by
         )
         
-        # Construct the file entities for batch saving to the database. //构造 file 的实体列表用于批量保存到数据库
+        # 构造 file 的实体列表用于批量保存到数据库
         file_entitities = []
         for fileparam in fileparams:
             file_entitity = KbotMdKbFiles(
@@ -222,15 +222,15 @@ class KBFileOperator:
             )
             file_entitities = file_entitities + [file_entitity]
         
-        # Save upload records to database. // 保存上传记录到数据库
+        # 保存上传记录到数据库
         kb_files_repo = KbotMdKbFilesRepository()
         try:
-            logger.debug(f"Start saving {len(file_entitities)} files to database for knowledge base: {kb_id}")
+            logger.debug(f"开始将 {len(file_entitities)} 个文件保存到数据库，知识库: {kb_id}")
             r = await kb_files_repo.create(batch_entity, file_entitities)
-            logger.info(f"Successfully saved {len(file_entitities)} files to database")
+            logger.info(f"成功将 {len(file_entitities)} 个文件保存到数据库")
             return r
         except Exception as e:
-            logger.error(f"Failed to save files to database for knowledge base: {kb_id}")
+            logger.error(f"保存文件到数据库失败，知识库: {kb_id}")
             logger.error(e)
             raise e
         
@@ -240,43 +240,37 @@ class KBFileOperator:
                         batch_name: str | None,
                         file_paths: list[str] | None) -> tuple[int, int]:
         '''
-        Delete files from disk by file IDs or batch ID or knowledge base ID.
         根据文件ID或批次ID或知识库ID从磁盘删除文件
         
-        Args/参数:
-            domain_id: ID of the domain where the files reside
-            文件所在的业务域ID
-            kb_id: ID of the knowledge base where the files reside (optional)
-            文件所在的知识库ID(可选)
-            batch_name: Name of the batch where the files reside (optional)
-            文件所在的批次名称(可选)
-            file_paths: List of file paths to delete (optional)
-            要删除的文件路径列表(可选)
+        参数:
+            domain_id: 文件所在的业务域ID
+            kb_id: 文件所在的知识库ID(可选)
+            batch_name: 文件所在的批次名称(可选)
+            file_paths: 要删除的文件路径列表(可选)
         
-        Returns/返回:
-            result: The number of successfully deleted files and the number of failed files
-            包含成功删除的文件数和失败文件数的结果对象
+        返回:
+            tuple: 包含成功删除的文件数和失败文件数的元组
         '''
         success_cnt = 0
         failed_cnt = 0
-        # 模式1: 通过文件ID删除
+        # 模式1: 通过文件路径删除
         if file_paths is not None:
             for file in file_paths:
-                logger.info("Deleting file: {}", file)
+                logger.info("正在删除文件: {}", file)
                 if os.path.exists(Path(file)):
                     try:
                         os.remove(Path(file))
-                        logger.info("Successfully deleted file: {}", file)
+                        logger.info("成功删除文件: {}", file)
                         success_cnt += 1
                     except Exception as e:
-                        logger.error(f"Failed to delete file {file}: {str(e)}")
+                        logger.error(f"删除文件 {file} 失败: {str(e)}")
                         failed_cnt += 1
                 else:
-                    logger.error(f"File {file} does not exist")
+                    logger.error(f"文件 {file} 不存在")
                     failed_cnt += 1
             return success_cnt, failed_cnt
         
-        # 模式2: 通过批次ID删除
+        # 模式2: 通过批次名称删除
         elif batch_name is not None and kb_id is not None:
             # 使用知识库ID和批次名称构建完整目标路径
             root_path = Path(self.file_storage).resolve()  # 转换为绝对路径
@@ -288,16 +282,16 @@ class KBFileOperator:
             
             # 添加存在性检查
             if not target_path.exists():
-                logger.warning(f"The batch {batch_name} in knowledge base {kb_id} has no files, skip deletion")
+                logger.warning(f"知识库 {kb_id} 中的批次 {batch_name} 没有文件，跳过删除")
                 return success_cnt, failed_cnt
         
             try:
-                logger.info(f"Deleting batch files: {str(target_path)}")
+                logger.info(f"正在删除批次文件: {str(target_path)}")
                 shutil.rmtree(target_path)
                 success_cnt = file_count            
                 return success_cnt, failed_cnt
             except Exception as e:
-                logger.error(f"Failed to delete batch files: {str(target_path)}: {str(e)}")
+                logger.error(f"删除批次文件失败: {str(target_path)}: {str(e)}")
                 failed_cnt = file_count    
                 return success_cnt, failed_cnt
         
@@ -313,21 +307,21 @@ class KBFileOperator:
             
             # 添加存在性检查
             if not target_path.exists():
-                logger.warning(f"Knowledge base {kb_id} has no files, skip deletion")
+                logger.warning(f"知识库 {kb_id} 没有文件，跳过删除")
                 return success_cnt, failed_cnt
 
             try:
-                logger.info(f"Deleting files in knowlodge base {str(kb_id)}: {str(target_path)}")
+                logger.info(f"正在删除知识库 {str(kb_id)} 中的文件: {str(target_path)}")
                 shutil.rmtree(target_path)
                 success_cnt = file_count            
                 return success_cnt, failed_cnt
             except Exception as e:
-                logger.error(f"Failed to delete files in knowlodge base {str(kb_id)}: {str(target_path)}, error: {str(e)}")
+                logger.error(f"删除知识库 {str(kb_id)} 中的文件失败: {str(target_path)}, 错误: {str(e)}")
                 failed_cnt = file_count    
                 return success_cnt, failed_cnt
         
         else:
-            logger.error("Invalid parameters")
+            logger.error("无效的参数")
             return success_cnt, failed_cnt
 
     async def _delete_metadata(self, 
@@ -335,71 +329,61 @@ class KBFileOperator:
                             batch_id: int | None, 
                             file_ids: list[str] | None) -> bool:
         """
-        Delete file metadata either by individual file IDs or by batch ID or by kb ID.
         根据文件ID或批次ID或知识库ID删除文件元数据
         
-        Args/参数:
-            kb_id: ID of the knowledge base to delete all contained files (optional)
-            知识库ID(用于整个知识库删除)(可选)
-            batch_id: ID of the batch to delete all contained files (optional)
-            要删除的批次ID(将删除该批次所有文件)(可选)
-            file_ids: List of specific file IDs to delete (optional)
-            要删除的特定文件ID列表(可选)
+        参数:
+            kb_id: 知识库ID(用于整个知识库删除)(可选)
+            batch_id: 要删除的批次ID(将删除该批次所有文件)(可选)
+            file_ids: 要删除的特定文件ID列表(可选)
             
-        Returns/返回:
-            result: Object containing counts of successfully and failed deletions
-            包含成功和失败删除计数的结果对象
+        返回:
+            bool: 删除是否成功
         
-        Note/注意:
-            - Either file_ids or batch_id or kb_id must be provided (but only one parameter at a time)
-            必须提供file_ids或batch_id或kb_id之一(但一次只能提供一个参数)
-            - This is an async function and needs to be awaited
-            这是一个异步函数，需要await调用
+        注意:
+            - 必须提供file_ids或batch_id或kb_id之一(但一次只能提供一个参数)
+            - 这是一个异步函数，需要await调用
         
-        Example/示例:
-            >>> # Delete by kb_id
+        示例:
+            >>> # 按知识库ID删除
             >>> result = await delete_file_metadata(kb_id=123, batch_id=None, file_ids=None)
-            >>> # Delete by batch
+            >>> # 按批次删除
             >>> result = await delete_file_metadata(kb_id=None, batch_id=456, file_ids=None)
-            >>> # Delete specific files
+            >>> # 删除特定文件
             >>> result = await delete_file_metadata(kb_id=None, batch_id=None, file_ids=[1,2,3])
         """
         file_repo = KbotMdKbFilesRepository()
 
-        # Delete all files in the knowledge base
         # 删除整个知识库中的所有文件
         if kb_id is not None:
             try:
                 rowcnt = await file_repo.delete(kb_id, None, None)
-                logger.info(f"Successfully deleted {rowcnt} files in kb {kb_id}")
+                logger.info(f"成功删除知识库 {kb_id} 中的 {rowcnt} 个文件")
                 return True
             except Exception as e:
-                logger.error(f"Failed to delete files in kb {kb_id}: {str(e)}")
+                logger.error(f"删除知识库 {kb_id} 中的文件失败: {str(e)}")
                 return False
             
-        # Batch deletion logic
         # 批次删除逻辑
         elif batch_id is not None:
             try:
                 rowcnt = await file_repo.delete(None, batch_id, None)
-                logger.info(f"Successfully deleted {rowcnt} files in batch {batch_id}")           
+                logger.info(f"成功删除批次 {batch_id} 中的 {rowcnt} 个文件")           
                 return True           
             except Exception as e:
-                logger.error(f"Failed to delete files in batch {batch_id}: {str(e)}")
+                logger.error(f"删除批次 {batch_id} 中的文件失败: {str(e)}")
                 return False
         
-        # Individual file deletion logic
         # 单个文件删除逻辑
         elif file_ids is not None:
             try:
                 rowcnt = await file_repo.delete(None, None, file_ids)
-                logger.info(f"Successfully deleted {rowcnt} files")
+                logger.info(f"成功删除 {rowcnt} 个文件")
                 return True
             except Exception as e:
-                logger.error(f"Failed to delete file(s): {str(file_ids)}: {str(e)}")
+                logger.error(f"删除文件失败: {str(file_ids)}: {str(e)}")
                 return False
         else:
-            logger.error("Invalid deletion parameters: must provide either kb_id, batch_id, or file_ids")
+            logger.error("无效的删除参数: 必须提供kb_id、batch_id或file_ids之一")
             return False
 
     async def _delete_vec_data(self, 
@@ -407,70 +391,69 @@ class KBFileOperator:
                             batch_id: int | None, 
                             file_ids: list[str] | None) -> int:
         """
-        Delete vector data from the database by file IDs and delete file metadata finally. 
-        根据文件ID从数据库中删除向量数据，最后彻底删除文件元数据。
+        根据文件ID从数据库中删除向量数据
         
-        Args/参数:
-            kb_id: Knowledge base ID //知识库ID
-            batch_id: Batch ID //批次ID
-            file_ids: List of file IDs to delete //要删除的文件ID列表
+        参数:
+            kb_id: 知识库ID
+            batch_id: 批次ID
+            file_ids: 要删除的文件ID列表
         
-        Returns/返回:
-            result: Row count of deleted records //删除的记录行数
+        返回:
+            int: 删除的记录行数
         
-        Note/注意:
-            - This is an async function and needs to be awaited //这是一个异步函数，需要await调用
+        注意:
+            - 这是一个异步函数，需要await调用
         """
 
         embed_repo = KbotBizTxtEmbeddingRepository(kb_id=kb_id)
         await embed_repo.initialize()
         file_repo = KbotMdKbFilesRepository()
         vec_cnt = 0
-        # Mode 1: Delete by file IDs //模式1：通过文件ID删除
+        # 模式1: 通过文件ID删除
         if file_ids is not None:
             try:
-                logger.debug(f"Deleting vector data for {len(file_ids)} files in vector base")
+                logger.debug(f"正在删除向量库中 {len(file_ids)} 个文件的向量数据")
                 vec_cnt = await embed_repo.delete_by_file_ids(kb_id, file_ids)
-                logger.debug(f"Successfully deleted {vec_cnt} records in vector base")
+                logger.debug(f"成功删除向量库中的 {vec_cnt} 条记录")
                 return vec_cnt
             except Exception as e:
-                logger.error(f"Failed to delete vector data: {str(e)}")
+                logger.error(f"删除向量数据失败: {str(e)}")
                 return 0
-        # Mode 2: Delete by batch ID //模式2：通过批次ID删除
+        # 模式2: 通过批次ID删除
         elif batch_id is not None:
             try:
                 file_repo = KbotMdKbFilesRepository()
                 files = await file_repo.get_by_batch_id(batch_id)
                 file_ids = []
                 if files is None:
-                    logger.error(f"Files in batch {batch_id} not found")
+                    logger.error(f"未找到批次 {batch_id} 中的文件")
                     return 0
                 for file in files:
                     file_ids.append(file.file_id)
-                logger.debug(f"Deleting vector data for {len(file_ids)} files in vector base")
+                logger.debug(f"正在删除向量库中 {len(file_ids)} 个文件的向量数据")
                 vec_cnt = await embed_repo.delete_by_file_ids(kb_id, file_ids)
-                logger.debug(f"Successfully deleted {vec_cnt} records in vector base")
+                logger.debug(f"成功删除向量库中的 {vec_cnt} 条记录")
                 return vec_cnt
             except Exception as e:
-                logger.error(f"Failed to delete vector data: {str(e)}")
+                logger.error(f"删除向量数据失败: {str(e)}")
                 return 0
-        # Mode 3: Delete by knowledge base ID //模式3：通过知识库ID删除
+        # 模式3: 通过知识库ID删除
         else:
             try:
                 file_repo = KbotMdKbFilesRepository()
                 files = await file_repo.get_by_kb_id(kb_id)
                 file_ids = []
                 if files is None:
-                    logger.error(f"Files in knowledge base {kb_id} not found")
+                    logger.error(f"未找到知识库 {kb_id} 中的文件")
                     return 0
                 for file in files:
                     file_ids.append(file.file_id)
-                logger.debug(f"Deleting vector data for {len(file_ids)} files in vector base")
+                logger.debug(f"正在删除向量库中 {len(file_ids)} 个文件的向量数据")
                 vec_cnt = await embed_repo.delete_by_file_ids(kb_id, file_ids)
-                logger.debug(f"Successfully deleted {vec_cnt} records in vector base")
+                logger.debug(f"成功删除向量库中的 {vec_cnt} 条记录")
                 return vec_cnt
             except Exception as e:
-                logger.error(f"Failed to delete vector data: {str(e)}")
+                logger.error(f"删除向量数据失败: {str(e)}")
                 return 0
 
 
@@ -485,78 +468,65 @@ class KBFileOperator:
         file_paths: list[str] | None
     ) -> dict:
         """
-        Unified file deletion service that handles multiple deletion scenarios.
         统一文件删除服务，处理多种删除场景
         
-        Args/参数:
-            kb_id: Knowledge base ID (for full KB deletion) 
-            知识库ID(用于整个知识库删除)
-            batch_id: Batch ID (for batch deletion)
-            批次ID(用于批次删除)
-            batch_name: Batch name (for file path construction)
-            批次名称(用于文件路径构建)
-            file_ids: List of file IDs (for specific file deletion)
-            文件ID列表(用于特定文件删除)
-            file_paths: List of file paths (for physical file deletion)
-            文件路径列表(用于物理文件删除)
+        参数:
+            app_id: 应用ID
+            domain_id: 业务域ID
+            kb_id: 知识库ID(用于整个知识库删除)
+            batch_id: 批次ID(用于批次删除)
+            batch_name: 批次名称(用于文件路径构建)
+            file_ids: 文件ID列表(用于特定文件删除)
+            file_paths: 文件路径列表(用于物理文件删除)
         
-        Returns/返回:
-            SuccessWithErrorResponse: Standard response object with detailed deletion results
-            标准响应对象，包含详细的删除结果
+        返回:
+            dict: 删除结果字典，包含成功和失败的文件数
         
-        Note/注意:
-            - Supports three deletion modes: single files, batch, or entire knowledge base
-            支持三种删除模式：单个文件、批次或整个知识库
-            - Returns HTTP 207 (Multi-Status) if partial failures occur
-            如果部分失败会返回HTTP 207(多状态)
+        注意:
+            - 支持三种删除模式：单个文件、批次或整个知识库
+            - 如果部分失败会返回详细的结果统计
         
-        Example/示例:
-            >>> # Delete specific files
+        示例:
+            >>> # 删除特定文件
             >>> await delete_file_service(None, "kb1", None, None, [1,2], ["/path1","/path2"])
-            >>> # Delete entire batch
+            >>> # 删除整个批次
             >>> await delete_file_service(None, "kb1", 123, "batch1", None, None)
-            >>> # Delete entire knowledge base
+            >>> # 删除整个知识库
             >>> await delete_file_service(None, "kb1", 123, None, None, None)
         """
-        # Initialize result objects
         # 初始化结果对象
         result = {"success_file_cnt": 0, "failed_file_cnt": 0, "meta_cnt": 0, "vec_cnt": 0}
 
-        # Mode 1: Delete specific files by IDs and paths
-        # 模式1：通过ID和路径删除特定文件
+        # 模式1: 通过ID和路径删除特定文件
         if file_paths is not None and file_ids is not None:
-            logger.info(f"Starting to delete files, total {len(file_paths)} files...")
-            # 1. Delete vector data //删除向量数据
+            logger.info(f"开始删除文件，共 {len(file_paths)} 个文件...")
+            # 1. 删除向量数据
             result["vec_cnt"] = await self._delete_vec_data(kb_id, None, file_ids)
-            # 2. Delete file metadata //删除文件元数据
+            # 2. 删除文件元数据
             result["meta_cnt"] = await self._delete_metadata(None, None, file_ids)
-            # 3. Delete files physically //物理删除文件
+            # 3. 物理删除文件
             result["success_file_cnt"], result["failed_file_cnt"] = await self._delete_files(domain_id, None, None, file_paths)
             return result
-        # Mode 2: Delete entire batch
-        # 模式2：删除整个批次
+        # 模式2: 删除整个批次
         elif batch_name is not None and batch_id is not None:
-            logger.info(f"Starting to delete files in batch: {batch_name}")
-            # 1. Delete vector data //删除向量数据
+            logger.info(f"开始删除批次中的文件: {batch_name}")
+            # 1. 删除向量数据
             result["vec_cnt"] = await self._delete_vec_data(kb_id, batch_id, None)
-            # 2. Delete file metadata //删除文件元数据
+            # 2. 删除文件元数据
             result["meta_cnt"] = await self._delete_metadata(None, batch_id, None)
-            # 3. Delete files physically //物理删除文件
+            # 3. 物理删除文件
             result["success_file_cnt"], result["failed_file_cnt"] = await self._delete_files(domain_id, kb_id, batch_name, None)
             return result
-        # Mode 3: Delete entire knowledge base
-        # 模式3：删除整个知识库
+        # 模式3: 删除整个知识库
         elif kb_id is not None and batch_id is None and file_ids is None:
-            logger.info(f"Starting to delete knowledge base: {kb_id}")
-            # 1. Delete vector data //删除向量数据
+            logger.info(f"开始删除知识库: {kb_id}")
+            # 1. 删除向量数据
             result["vec_cnt"] = await self._delete_vec_data(kb_id, None, None)
-            # 2. Delete file metadata //删除文件元数据
+            # 2. 删除文件元数据
             result["meta_cnt"] = await self._delete_metadata(kb_id, None, None)
-            # 3. Delete files physically //物理删除文件
+            # 3. 物理删除文件
             result["success_file_cnt"], result["failed_file_cnt"] = await self._delete_files(domain_id, kb_id, None, None)
             return result
         else:
-            logger.error("Invalid deletion parameters: must provide either kb_id, batch_id, or file_ids")
+            logger.error("无效的删除参数: 必须提供kb_id、batch_id或file_ids之一")
             return result
-
-    

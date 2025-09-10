@@ -193,8 +193,8 @@ class ParseService:
         signal.signal(signal.SIGINT, self._handle_shutdown)
 
         # 等待相关服务加载
-        logger.info("等待服务初始化...")
-        await asyncio.sleep(10)
+        logger.info("等待30秒微服务启动完成，然后开始轮询...")
+        await asyncio.sleep(30)
 
         # 启动两个独立的任务
         db_task = asyncio.create_task(self._db_check_loop())

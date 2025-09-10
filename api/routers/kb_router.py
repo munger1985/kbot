@@ -34,26 +34,26 @@ async def handle_upload_files(
             return SuccessResponse(
                 code=200,
                 success=True,
-                message="Upload files successfully."
+                message="文件上传成功"
             )
         else:
             return ErrorResponse(
                 code=400,
                 success=False,
-                message="Upload files failed."
+                message="文件上传失败"
             )
         
     except json.JSONDecodeError as e:
         return ErrorResponse(
             code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             success=False,
-            message=f"Invalid JSON format for metadata: {str(e)}"
+            message=f"请求参数格式错误: {str(e)}"
         )
     except Exception as e:
         return ErrorResponse(
             code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             success=False,
-            message=f"Internal server error: {str(e)}"
+            message=f"服务器内部错误: {str(e)}"
         )
     
 @router.post(
@@ -77,26 +77,26 @@ async def handle_delete_files(
             return SuccessResponse(
                 code=200,
                 success=True,
-                message="Delete files successfully."
+                message="删除文件成功"
             )
         else:
             return ErrorResponse(
                 code=400,
                 success=False,
-                message=f"Delete files failed. Result: {result}"
+                message=f"删除文件失败: {result['failed_file_cnt']}个文件删除失败，详情请查看日志"
                 )
         
     except json.JSONDecodeError as e:
         return ErrorResponse(
             code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             success=False,
-            message=f"Invalid JSON format for metadata: {str(e)}"
+            message=f"请求参数格式错误: {str(e)}"
         )
     except Exception as e:
         return ErrorResponse(
             code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             success=False,
-            message=f"Internal server error: {str(e)}"
+            message=f"服务器内部错误: {str(e)}"
         )
     
 @router.get(
@@ -123,14 +123,14 @@ async def handle_download_file(
             return ErrorResponse(
                 code=status.HTTP_404_NOT_FOUND,
                 success=False,
-                message="File not found."
+                message="文件不存在"
             )
         
     except Exception as e:
         return ErrorResponse(
             code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             success=False,
-            message=f"Internal server error: {str(e)}"
+            message=f"服务器内部错误: {str(e)}"
         )
 
 @router.get(
@@ -173,14 +173,14 @@ async def handle_preview_file(
             return ErrorResponse(
                 code=status.HTTP_404_NOT_FOUND,
                 success=False,
-                message="File not found."
+                message="文件不存在"
             )
         
     except Exception as e:
         return ErrorResponse(
             code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             success=False,
-            message=f"Internal server error: {str(e)}"
+            message=f"服务器内部错误: {str(e)}"
         )
     
 @router.post(
@@ -202,24 +202,24 @@ async def handle_reparse_files(
             return SuccessResponse(
                 code=200,
                 success=True,
-                message="Reparse successfully."
+                message="重解析文件成功"
                 )
         else:
             return ErrorResponse(
                 code=400,
                 success=False,
-                message="Reparse failed."
+                message="重解析文件失败"
             )
             
     except json.JSONDecodeError as e:
         return ErrorResponse(
             code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             success=False,
-            message=f"Invalid JSON format for metadata: {str(e)}"
+            message=f"请求参数格式错误: {str(e)}"
         )
     except Exception as e:
         return ErrorResponse(
             code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             success=False,
-            message=f"Internal server error: {str(e)}"
+            message=f"服务器内部错误: {str(e)}"
         )

@@ -14,19 +14,19 @@ router = APIRouter(
 
 @router.post(
     "/chat",
-    description="Chat with the agent. 和智能体聊天",
+    description="智能体聊天接口",
     dependencies=[Depends(AuthController.get_current_accessor)]
 )
 async def handle_agent_chat(request: AgentChatForm) -> SuccessQueryResponse | ErrorResponse:
     try:
         r = await agent_chat(request)
 
-        logger.debug(f"Chat result: {r}")
+        logger.debug(f"聊天结果: {r}")
 
         return SuccessQueryResponse(
             code=status.HTTP_200_OK,
             success=True,
-            message="Chat successfully.",
+            message="",
             data=r
         )
         
@@ -34,12 +34,12 @@ async def handle_agent_chat(request: AgentChatForm) -> SuccessQueryResponse | Er
         return ErrorResponse(
             code=status.HTTP_400_BAD_REQUEST,
             success=False,
-            message=f"Chat failed. {str(e)}"
+            message=f"聊天失败：{str(e)}"
         )
 
 @router.get(
     "/stream",
-    description="Get the stream response. 获取流式响应",
+    description="获取流式响应",
     dependencies=[Depends(AuthController.get_current_accessor)],
     response_class=StreamingResponse,
     response_model=None
@@ -50,7 +50,7 @@ async def handle_agent_stream_chat(session_id: str) -> StreamingResponse | Error
         return ErrorResponse(
             code=status.HTTP_400_BAD_REQUEST,
             success=False,
-            message="Agent chat has no response."
+            message="智能体无响应"
         )
     
     async def convert_to_bytes():
@@ -59,7 +59,7 @@ async def handle_agent_stream_chat(session_id: str) -> StreamingResponse | Error
                 data = json.dumps(chunk)
             else:
                 data = str(chunk)
-            # Format as proper SSE with data: prefix and double newline
+            # 标准 SSE 事件流格式
             yield data
     
     return StreamingResponse(
@@ -69,7 +69,7 @@ async def handle_agent_stream_chat(session_id: str) -> StreamingResponse | Error
 
 @router.post(
     "/feedback",
-    description="Feedback the agent. 反馈智能体",
+    description="反馈智能体",
     dependencies=[Depends(AuthController.get_current_accessor)]
 )
 async def handle_agent_feedback(form: AgentChatFeedbackForm):
@@ -78,18 +78,18 @@ async def handle_agent_feedback(form: AgentChatFeedbackForm):
         return SuccessResponse(
             code=status.HTTP_200_OK,
             success=True,
-            message="Feedback successfully."
+            message="反馈成功"
         )
     else:
         return ErrorResponse(
             code=status.HTTP_400_BAD_REQUEST,
             success=False,
-            message="Feedback failed."
+            message="反馈失败"
         )
 
 @router.get(
     "/session/get",
-    description="Get the session when login. 在登录智能体时获取session",
+    description="在登录智能体时获取会话信息",
     dependencies=[Depends(AuthController.get_current_accessor)]
 )
 async def handle_agent_get_session(session_id: str):
@@ -99,7 +99,7 @@ async def handle_agent_get_session(session_id: str):
         return SuccessQueryResponse(
             code=status.HTTP_200_OK,
             success=True,
-            message="Session get successfully.",
+            message="会话信息获取成功",
             data=r
             )
    
@@ -107,12 +107,12 @@ async def handle_agent_get_session(session_id: str):
         return ErrorResponse(
             code=status.HTTP_400_BAD_REQUEST,
             success=False,
-            message=f"Session get failed. {str(e)}"
+            message=f"会话信息获取失败: {str(e)}"
         )
     
 @router.delete(
     "/session/remove",
-    description="Remove the session. 删除session",
+    description="删除会话信息",
     dependencies=[Depends(AuthController.get_current_accessor)]
 )
 async def handle_agent_del_session(session_id: str):
@@ -121,26 +121,26 @@ async def handle_agent_del_session(session_id: str):
             return SuccessResponse(
                 code=status.HTTP_200_OK,
                 success=True,
-                message="Session successfully removed."
+                message="会话信息删除成功"
                 )
         else:
             return ErrorResponse(
                 code=status.HTTP_400_BAD_REQUEST,
                 success=False,
-                message="Session failed to remove."
+                message="会话信息删除失败"
             )
             
     except Exception as e:
         return ErrorResponse(
             code=status.HTTP_400_BAD_REQUEST,
             success=False,
-            message=f"Session failed to remove. {str(e)}"
+            message=f"会话信息删除失败: {str(e)}"
         )
     
 
 @router.delete(
     "/remove",
-    description="Remove the agent. 删除智能体",
+    description="删除智能体",
     dependencies=[Depends(AuthController.get_current_accessor)]
 )
 async def handle_del_agent(agent_id: int, del_prompt: bool = False) -> SuccessResponse | ErrorResponse:
@@ -149,18 +149,18 @@ async def handle_del_agent(agent_id: int, del_prompt: bool = False) -> SuccessRe
             return SuccessResponse(
                 code=status.HTTP_200_OK,
                 success=True,
-                message="Agent successfully removed."
+                message="智能体删除成功"
                 )
         else:
             return ErrorResponse(
                 code=status.HTTP_400_BAD_REQUEST,
                 success=False,
-                message="Agent failed to remove."
+                message="智能体删除失败"
             )
             
     except Exception as e:
         return ErrorResponse(
             code=status.HTTP_400_BAD_REQUEST,
             success=False,
-            message=f"Agent failed to remove. {str(e)}"
+            message=f"智能体删除失败: {str(e)}"
         )

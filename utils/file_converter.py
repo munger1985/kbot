@@ -9,7 +9,7 @@ from configuration import ConfigManager
 
 
 class OfficeToPDF:
-    """Office 文档转 PDF 类"""
+    """Office文档转PDF工具类"""
     
     def __init__(self):
         
@@ -25,7 +25,22 @@ class OfficeToPDF:
 
     
     async def convert_to_pdf(self, input_path: str, output_path: str | None = None, page: int | None = None) -> str | None:
-        """转换文档为PDF格式"""
+        """
+        转换文档为PDF格式
+        
+        Args:
+            input_path: 输入文件路径
+            output_path: 输出文件路径（可选）
+            page: 指定页码（可选）
+            
+        Returns:
+            str: 转换后的PDF文件路径或None（失败时）
+            
+        Raises:
+            FileNotFoundError: 输入文件不存在时抛出
+            ValueError: 不支持的文件格式时抛出
+            RuntimeError: 转换失败时抛出
+        """
         input_file = Path(input_path)
         
         if not input_file.exists():
@@ -72,7 +87,7 @@ class OfficeToPDF:
                         async with session.post(self.url, data=data) as response:
                             if response.status != 200:
                                 error = await response.text()
-                                logger.error(f"转换失败: HTTP {response.status}, {error}")
+                                logger.error(f"文档转换失败: HTTP {response.status}, {error}")
                                 return None
                             
                             # 提取转换结果并写入临时文件
@@ -80,23 +95,23 @@ class OfficeToPDF:
                             
                             # 检查是否确实收到了PDF内容
                             if not pdf_content:
-                                logger.error("Received empty PDF content")
+                                logger.error("接收到空的PDF内容")
                                 return None
                                 
                             # 检查内容类型是否为PDF
                             content_type = response.headers.get('Content-Type', '')
                             if 'application/pdf' not in content_type:
-                                logger.error("Unexpected content type: %s", content_type)
+                                logger.error(f"意外的内容类型: {content_type}")
                                 return None
                             
                             # 写入临时文件
                             with open(temp_file, 'wb') as f:
                                 f.write(pdf_content)
                             
-                            logger.info("Successfully got converted document")
+                            logger.info("成功获取转换后的文档")
                             
                 except Exception as e:
-                    logger.error(f"libreoffice service got error: {str(e)}")
+                    logger.error(f"LibreOffice服务发生错误: {str(e)}")
                     return None
             finally:
                 file_obj.close() # 确保文件最终被关闭
@@ -124,7 +139,7 @@ class OfficeToPDF:
         
 
 class FileToImage:
-    """文件转图片类"""
+    """文件转图片工具类"""
 
     def __init__(self):
     
@@ -133,16 +148,18 @@ class FileToImage:
 
     async def convert_to_image(self, input_path: str, page_num: int) -> str:
         """
-        Convert file to images.
         将文档转换为图片
-
-        Parameters        
-            - param input_path: Input file path
-            - param page_num: Page number
+        
+        Args:
+            input_path: 输入文件路径
+            page_num: 页码
             
-        Return
-            - temp image path (str)
-
+        Returns:
+            str: 临时图片文件路径
+            
+        Raises:
+            FileNotFoundError: 输入文件不存在时抛出
+            ValueError: 不支持的文件格式时抛出
         """
         file_path = Path(input_path)
         
@@ -157,7 +174,7 @@ class FileToImage:
         temp_dir = mkdtemp()
 
         if file_extension == '.pdf':
-            # 使用 pdf2image 将 PDF 文件转换为Base64图片列表
+            # 使用 pdf2image 将 PDF 文件转换为图片
             try:
                 images = []
                 pdf_images = convert_from_path(file_path, first_page=page_num, last_page=page_num)
@@ -172,7 +189,7 @@ class FileToImage:
                 raise e
         
         elif file_extension in ['.ppt', '.pptx', '.doc', '.docx']:
-            # 使用LibreOffice先将Word文档转换为PDF，再转换为Base64图片列表
+            # 使用LibreOffice先将Office文档转换为PDF，再转换为图片
     
             try:
                 # 第一步：将文件转为PDF
@@ -186,6 +203,4 @@ class FileToImage:
                 raise e
 
         else:
-            raise ValueError("Unsupported file type for image conversion")
-    
-        
+            raise ValueError("不支持的文件类型进行图片转换")

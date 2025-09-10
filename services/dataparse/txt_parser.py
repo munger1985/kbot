@@ -16,10 +16,10 @@ async def process_txt(file_params: FileParams) -> bool:
     处理文本文件，将其分割成指定大小的块，并调用嵌入微服务获取嵌入向量后写入数据库
     
     参数:
-        file_params: 文件参数类
+        file_params: 文件参数对象
         
     返回:
-        是否成功处理文件
+        bool: 文件处理是否成功
     """
     file_repo = KbotMdKbFilesRepository()
     
@@ -27,17 +27,17 @@ async def process_txt(file_params: FileParams) -> bool:
         return False
     
     try:
-        logger.debug(f"Processing text file: {file_params.file_path}")
+        logger.debug(f"正在处理文本文件: {file_params.file_path}")
 
-        # 1.读取文本文件
+        # 1. 读取文本文件
         with open(file_params.file_path, 'r', encoding='utf-8') as f:
             text = f.read()
         
-        # 2.文本分割
+        # 2. 文本分割
         text_length = len(text)
 
         if text_length == 0:
-            msg = f"Empty file: {file_params.file_path}"
+            msg = f"空文件: {file_params.file_path}"
             logger.info(msg)
             await file_repo.update_file_status(file_params.file_id, FileStatus.PARSED, msg)
             return True
@@ -49,13 +49,13 @@ async def process_txt(file_params: FileParams) -> bool:
         chunk_size = int(file_params.parser.get("chunk_size", 500))
         overlap = int(file_params.parser.get("chunk_overlap", 50))
 
-        logger.debug(f"Chunk size: {chunk_size}, chunk overlap: {overlap}")
+        logger.debug(f"分块大小: {chunk_size}, 重叠大小: {overlap}")
 
         # 根据策略选择分割方式: 根据chunk size和overlap切片
         if split_strategy == SplitStrategy.FIXED_SIZE.value:
             # 文本分割逻辑
             if text_length <= chunk_size:
-                logger.debug(f"Text length {text_length} <= chunk size {chunk_size}, no need to split.")
+                logger.debug(f"文本长度 {text_length} <= 分块大小 {chunk_size}, 无需分割")
                 chunks = [text]
             else:
                 chunks = chunk_text(text, chunk_size, overlap)
@@ -69,30 +69,30 @@ async def process_txt(file_params: FileParams) -> bool:
         elif split_strategy == SplitStrategy.SEMANTIC.value:
             pass
         else:
-            msg = f"Invalid split strategy: {split_strategy}"
+            msg = f"无效的分割策略: {split_strategy}"
             logger.error(msg)
             await file_repo.update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, msg)
             return False
         
-        # 获取embedding模型的unique name
+        # 获取embedding模型的唯一名称
         model_unique_name = await KbotMdModelsRepository().get_unique_name_by_id(file_params.txt_embed_model) # type: ignore
         if model_unique_name is None:
-            msg = f"Embedding model not found for id: {file_params.txt_embed_model}"
+            msg = f"未找到ID为 {file_params.txt_embed_model} 的嵌入模型"
             logger.error(msg)
             await file_repo.update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, msg)
             return False
 
-        # 3.调用嵌入微服务获取嵌入向量
-        logger.info(f"Calling embedding service, model name is {model_unique_name}")
+        # 3. 调用嵌入微服务获取嵌入向量
+        logger.info(f"正在调用嵌入服务，模型名称: {model_unique_name}")
 
         response_data = await CallModel().call_embedding_model(model_unique_name, chunks)
         if response_data is None:
-            msg = f"Failed to get embeddings for {file_params.file_path}"
+            msg = f"获取文件 {file_params.file_path} 的嵌入向量失败"
             logger.error(msg)
             await file_repo.update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, msg)
             return False
         else:
-            logger.info(f"Successfully obtained {len(response_data)} embeddings.")
+            logger.info(f"成功获取 {len(response_data)} 个嵌入向量")
 
             embeddings = [item.embedding for item in response_data]
             embed_entities = []
@@ -112,31 +112,31 @@ async def process_txt(file_params: FileParams) -> bool:
                 
             embedding_repo = KbotBizTxtEmbeddingRepository(kb_id=file_params.kb_id)
             await embedding_repo.initialize()
-            logger.debug(f"Attempting to save {len(embed_entities)} embeddings to database...")
+            logger.debug(f"正在尝试将 {len(embed_entities)} 个嵌入向量保存到数据库...")
             try:
                 result = await embedding_repo.create(kb_id=file_params.kb_id, embeddings=embed_entities)
                 if result:
-                    logger.info(f"Successfully saved {len(embed_entities)} embeddings for {file_params.file_path}")
-                    logger.debug(f"Database operation returned: {result}")
+                    logger.info(f"成功保存 {len(embed_entities)} 个嵌入向量，文件: {file_params.file_path}")
+                    logger.debug(f"数据库操作返回结果: {result}")
                 else:
-                    msg = f"Failed to save embeddings for {file_params.file_path} (repository returned False)"
+                    msg = f"保存文件 {file_params.file_path} 的嵌入向量失败（仓库返回False）"
                     logger.error(msg)     
                     await file_repo.update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, msg) 
                     return False
             except Exception as e:
-                msg = f"Exception while saving embeddings: {str(e)}"
+                msg = f"保存嵌入向量时发生异常: {str(e)}"
                 logger.exception(msg, exc_info=True)
                 await file_repo.update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, msg) 
                 return False
                 
         # 更新文件状态为已解析
-        msg = f"File {file_params.file_path} processed: {len(chunks)} chunks created"
+        msg = f"文件 {file_params.file_path} 处理完成: 创建了 {len(chunks)} 个文本块"
         logger.info(msg) 
         await file_repo.update_file_status(file_params.file_id, FileStatus.PARSED, msg)
         return True
         
     except Exception as e:
-        msg = f"Error in process_txt for {file_params.file_path}: {str(e)}"
+        msg = f"处理文本文件 {file_params.file_path} 时发生错误: {str(e)}"
         logger.exception(msg)  
         await file_repo.update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, msg[:3999]) #截取前3999个字符防止数据库报错
         return False

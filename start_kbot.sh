@@ -6,6 +6,18 @@ eval "$(conda shell.bash hook)"
 # 激活 conda 环境
 conda activate kbot3
 
+# 启动 main.py
+echo "正在启动 KBot 主程序..."
+
+cd "$(dirname "$0")" && python kbot_main.py >/dev/null 2>&1 &
+
+for i in {1..10}; do
+  echo -n "*"
+  sleep 1
+done
+echo
+echo "Kbot main 服务已启动。"
+
 # 定义微服务目录
 MICROSERVICES_DIR="$(dirname "$0")/microservices"
 
@@ -24,15 +36,4 @@ for i in {1..10}; do
 done
 echo
 echo "微服务已启动。"
-
-# 启动 main.py
-echo "正在启动 KBot 主程序..."
-
-cd "$(dirname "$0")" && python kbot_main.py >/dev/null 2>&1 &
-
-for i in {1..10}; do
-  echo -n "*"
-  sleep 1
-done
-echo
 echo "所有服务已启动。"
