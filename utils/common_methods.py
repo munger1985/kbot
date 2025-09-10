@@ -13,18 +13,21 @@ from dao.repositories.kbot_md_kb_files_repo import KbotMdKbFilesRepository
 from core.dictionary import FileStatus
 
 
-async def save_embeddings(self, kb_id: int, embeddings: list[KbotBizTxtEmbedding]) -> bool:
+async def save_embeddings(file_params: FileParams, embeddings: list[KbotBizTxtEmbedding]) -> bool:
     """Save embeddings to database with error handling"""
     if not embeddings:
         return False
 
     try:
-        repo = KbotBizTxtEmbeddingRepository(kb_id)
-        result = await repo.create(kb_id=kb_id, embeddings=embeddings)
+
+        repo = KbotBizTxtEmbeddingRepository(file_params.kb_id)
+        await repo.initialize()
+
+        result = await repo.create(kb_id=file_params.kb_id, embeddings=embeddings)
         if not result:
             msg = "Failed to save embeddings (repository returned False)"
             logger.error(msg)
-            await self._update_file_status(FileStatus.PARSE_FAILED, msg)
+            await update_file_status(file_params,FileStatus.PARSE_FAILED, msg)
             return False
 
         logger.info(f"Successfully saved {len(embeddings)} embeddings")
@@ -33,7 +36,7 @@ async def save_embeddings(self, kb_id: int, embeddings: list[KbotBizTxtEmbedding
     except Exception as e:
         msg = f"Exception while saving embeddings: {str(e)}"
         logger.error(msg)
-        await self._update_file_status(FileStatus.PARSE_FAILED, msg)
+        await  update_file_status(file_params , FileStatus.PARSE_FAILED, msg)
         return False
     
 async def update_file_status(file_params, status: FileStatus, message: str) -> None:

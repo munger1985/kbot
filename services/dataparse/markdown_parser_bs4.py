@@ -137,7 +137,7 @@ class MarkdownParser:
         for i, block in enumerate(blocks):
             print(f"Block {i + 1}:")
             semanticChunk = "Title: {block['title']} (Level {block['level']})\n" + f"Content: {block['content']}"
-            text_results['paragraphs'].extend(semanticChunk)
+            text_results['paragraphs'].append(semanticChunk)
             # print(semanticChunk)
 
 
@@ -286,7 +286,7 @@ class MarkdownParser:
                                 f.write(chunk)
                         saved_images.append({
                             'original_url': img_url,
-                            'local_path': save_path,
+                            'file_path': save_path,
                             'filename': filename,
                             'alt_text': alt_text,
                             'image_id':str(uuid.uuid4())
@@ -305,7 +305,7 @@ class MarkdownParser:
                         shutil.copy2(local_path, save_path)
                         saved_images.append({
                             'original_path': img_url,
-                            'local_path': save_path,
+                            'file_path': save_path,
                             'filename': filename,
                             'alt_text': alt_text,
                             'image_id': str(uuid.uuid4())
@@ -333,12 +333,11 @@ class MarkdownParser:
             chunk_metas = []
 
             for eachImage in  self.image_dict :
-                description_file = Path(eachImage['local_path'] + ".description")
+                description_file = Path(eachImage['file_path'] + ".description")
                 if not description_file.exists():
 
                     image_description = await CallModel().call_vlm_model_for_parsing_picture(vlm_model_unique_name,
                                                                                              vlm_prompt_unique_name,
-                                                                                             # type: ignore
                                                                                              eachImage['file_path'])
                     if image_description:
                         description_file.write_text(
@@ -449,7 +448,7 @@ class MarkdownParser:
         embed_entities.extend(image_embed_entities)
 
         # Save all embeddings in one batch
-        return await save_embeddings(embed_entities)
+        return await save_embeddings(self.file_params , embed_entities)
     async def parse(self):
         """解析Markdown文件"""
         split_strategy = int(self.file_params.parser.get("split_strategy", SplitStrategy.SEMANTIC.value))
@@ -514,6 +513,7 @@ async def process_markdown(file_params: FileParams) -> bool:
             return False
     except Exception as e:
         msg = f"Error processing Markdown file: {file_params.file_path}, error: {str(e)}"
+        logger.exception(e)
         logger.error(msg)
         await KbotMdKbFilesRepository().update_file_status(
             file_params.file_id,
