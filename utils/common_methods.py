@@ -36,10 +36,10 @@ async def save_embeddings(self, kb_id: int, embeddings: list[KbotBizTxtEmbedding
         await self._update_file_status(FileStatus.PARSE_FAILED, msg)
         return False
     
-async def update_file_status(self, status: FileStatus, message: str) -> None:
+async def update_file_status(file_params, status: FileStatus, message: str) -> None:
     """Helper method to update file status"""
     await KbotMdKbFilesRepository().update_file_status(
-        self.file_params.file_id,
+        file_params.file_id,
         status,
         message
     )
