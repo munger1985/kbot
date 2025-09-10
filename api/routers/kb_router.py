@@ -17,7 +17,7 @@ router = APIRouter(
     "/upload",
     description="上传一个或多个文件到指定知识库的接口",
     response_model=SuccessResponse,
-    # dependencies=[Depends(AuthController.get_current_accessor)],
+    dependencies=[Depends(AuthController.get_current_accessor)],
     status_code=status.HTTP_200_OK
     
 )
@@ -61,7 +61,7 @@ async def handle_upload_files(
     "/delete",
     description="从指定的知识库中删除文件或所有文件以及其知识库或批次的接口",
     response_model=SuccessResponse,
-    # dependencies=[Depends(AuthController.get_current_accessor)],
+    dependencies=[Depends(AuthController.get_current_accessor)],
     status_code=status.HTTP_200_OK
 )
 async def handle_delete_files(
@@ -104,7 +104,7 @@ async def handle_delete_files(
     "/download",
     description="从知识库中下载文件的接口",
     response_model=None,
-    # dependencies=[Depends(AuthController.get_current_accessor)],
+    dependencies=[Depends(AuthController.get_current_accessor)],
     status_code=status.HTTP_200_OK
 )
 async def handle_download_file(
@@ -136,7 +136,7 @@ async def handle_download_file(
     "/preview",
     description="从知识库中预览文件的接口",
     response_model=None,
-    # dependencies=[Depends(AuthController.get_current_accessor)],
+    dependencies=[Depends(AuthController.get_current_accessor)],
     status_code=status.HTTP_200_OK
 )
 async def handle_preview_file(
@@ -184,7 +184,7 @@ async def handle_preview_file(
     "/file/reparse",
     description="重新解析文件的接口",
     response_model=SuccessResponse,
-    # dependencies=[Depends(AuthController.get_current_accessor)],
+    dependencies=[Depends(AuthController.get_current_accessor)],
     status_code=status.HTTP_200_OK
 )
 async def handle_reparse_files(

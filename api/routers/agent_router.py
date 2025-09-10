@@ -20,21 +20,12 @@ router = APIRouter(
     "/chat",
     description="Chat with the agent. 和智能体聊天",
     response_model=SuccessQueryResponse | ErrorResponse,
-    # dependencies=[Depends(AuthController.get_current_accessor)],
+    dependencies=[Depends(AuthController.get_current_accessor)],
     status_code=status.HTTP_200_OK
 )
 async def handle_agent_chat(request: AgentChatForm) -> SuccessQueryResponse | ErrorResponse:
-    # Parse and validate as form model
-    form = AgentChatForm(
-        session_id=request.session_id,
-        by=request.by,
-        agent_id=request.agent_id,
-        security_level=request.security_level,
-        request_time=request.request_time,
-        question=request.question,
-    )
     try:
-        r = await agent_chat(form)
+        r = await agent_chat(request)
 
         logger.debug(f"Chat result: {r}")
 
@@ -57,7 +48,7 @@ async def handle_agent_chat(request: AgentChatForm) -> SuccessQueryResponse | Er
     description="Get the stream response. 获取流式响应",
     status_code=status.HTTP_200_OK,
     response_model=None,
-    # dependencies=[Depends(AuthController.get_current_accessor)],
+    dependencies=[Depends(AuthController.get_current_accessor)],
     response_class=StreamingResponse
 )
 async def handle_agent_stream_chat(session_id: str) -> StreamingResponse | ErrorResponse:
@@ -87,7 +78,7 @@ async def handle_agent_stream_chat(session_id: str) -> StreamingResponse | Error
     "/feedback",
     description="Feedback the agent. 反馈智能体",
     response_model=SuccessResponse | ErrorResponse,
-    # dependencies=[Depends(AuthController.get_current_accessor)],
+    dependencies=[Depends(AuthController.get_current_accessor)],
     status_code=status.HTTP_200_OK
 )
 async def handle_agent_feedback(form: AgentChatFeedbackForm) -> SuccessResponse | ErrorResponse:
@@ -109,7 +100,7 @@ async def handle_agent_feedback(form: AgentChatFeedbackForm) -> SuccessResponse 
     "/session/get",
     description="Get the session when login. 在登录智能体时获取session",
     response_model=SuccessQueryResponse | ErrorResponse,
-    # dependencies=[Depends(AuthController.get_current_accessor)],
+    dependencies=[Depends(AuthController.get_current_accessor)],
     status_code=status.HTTP_200_OK
 )
 async def handle_agent_get_session(session_id: str) -> SuccessQueryResponse | ErrorResponse:
@@ -134,7 +125,7 @@ async def handle_agent_get_session(session_id: str) -> SuccessQueryResponse | Er
     "/session/remove",
     description="Remove the session. 删除session",
     response_model=SuccessResponse | ErrorResponse,
-    # dependencies=[Depends(AuthController.get_current_accessor)],
+    dependencies=[Depends(AuthController.get_current_accessor)],
     status_code=status.HTTP_200_OK
 )
 async def handle_agent_del_session(session_id: str) -> SuccessResponse | ErrorResponse:
@@ -164,7 +155,7 @@ async def handle_agent_del_session(session_id: str) -> SuccessResponse | ErrorRe
     "/remove",
     description="Remove the agent. 删除智能体",
     response_model=SuccessResponse | ErrorResponse,
-    # dependencies=[Depends(AuthController.get_current_accessor)],
+    dependencies=[Depends(AuthController.get_current_accessor)],
     status_code=status.HTTP_200_OK
 )
 async def handle_del_agent(agent_id: int, del_prompt: bool = False) -> SuccessResponse | ErrorResponse:

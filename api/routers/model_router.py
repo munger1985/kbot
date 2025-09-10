@@ -12,7 +12,7 @@ router = APIRouter(
 @router.post(
         "/toggle",
         description="启用/禁用指定模型",
-        # dependencies=[Depends(AuthController.get_current_accessor)],
+        dependencies=[Depends(AuthController.get_current_accessor)],
         response_model=None,
         status_code=status.HTTP_200_OK
 )
