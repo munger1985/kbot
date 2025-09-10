@@ -8,7 +8,7 @@ from core.dictionary import AccessorType
 
 
 load_dotenv()
-SECRET_KEY = os.getenv("KBOT_API_AUTH")
+SECRET_KEY = os.getenv("KBOT_AUTH_ENCRYPTION_KEY")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("KBOT_AUTH_EXPIRE_MINUTES")) or 30 # type: ignore
 

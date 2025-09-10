@@ -1,9 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from fastapi.security import OAuth2PasswordRequestForm
 from core.security.auth import *
 from api.controllers.security_controller import AuthController
 from api.schemas.accessor_schema import *
-from api.schemas.kb_response import SuccessResponse
+from api.schemas.base_response import SuccessResponse, ErrorResponse, SuccessQueryResponse
 
 router = APIRouter(
     prefix="/security",
@@ -12,9 +12,7 @@ router = APIRouter(
 
 @router.post(
         "/get_token",
-        description="获取JWT令牌的端点",
-        response_model=None,
-        status_code=status.HTTP_200_OK
+        description="获取JWT令牌的端点"
 )
 async def handle_login_for_access_token(form: OAuth2PasswordRequestForm = Depends()):
     """获取JWT令牌的端点"""
@@ -22,52 +20,57 @@ async def handle_login_for_access_token(form: OAuth2PasswordRequestForm = Depend
         username=form.username,
         password=form.password
     )
-    if not token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Bearer"},
+    if token:
+        return SuccessQueryResponse(
+            code=status.HTTP_200_OK,
+            success=True,
+            message="Login successfully.",
+            data={"access_token": token, "token_type": "bearer"}
         )
-    return {"access_token": token, "token_type": "bearer"}
+    else:
+        return ErrorResponse(
+            code=status.HTTP_401_UNAUTHORIZED,
+            success=False,
+            message="Login failed."
+        )
 
 @router.post(
         "/create_accessor",
         description="创建访问者",
-        response_model=SuccessResponse,
-        dependencies=[Depends(AuthController.get_current_accessor)],
-        status_code=status.HTTP_200_OK
+        dependencies=[Depends(AuthController.get_current_accessor)]
 )
 async def handle_create_accessor(form: AccessorForm):
     """创建访问者"""
-    result = await AuthController.create_accessor(form)
-    if not result:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Create accessor failed"
-        )
-    return SuccessResponse(
-        code=200,
+    if await AuthController.create_accessor(form):
+        return SuccessResponse(
+        code=status.HTTP_200_OK,
         success=True,
         message="Create accessor successfully."
     )
+    else:
+        return ErrorResponse(
+            code=status.HTTP_400_BAD_REQUEST,
+            success=False,
+            message="Create accessor failed."
+        )
+    
 
-# @router.post(
-#         "/change_password",
-#         description="修改密码",
-#         response_model=SuccessResponse,
-#         # dependencies=[Depends(AuthController.get_current_accessor)],
-#         status_code=status.HTTP_200_OK
-# )
-# async def handle_change_password(form: ChangePasswordForm):
-#     """创建访问者"""
-#     result = await 
-#     if not result:
-#         raise HTTPException(
-#             status_code=status.HTTP_400_BAD_REQUEST,
-#             detail="Create accessor failed"
-#         )
-#     return SuccessResponse(
-#         code=200,
-#         success=True,
-#         message="Create accessor successfully."
-#     )
+@router.post(
+        "/change_password",
+        description="修改密码",
+        dependencies=[Depends(AuthController.get_current_accessor)]
+)
+async def handle_change_password(form: ChangePasswordForm):
+    """访问者修改密码"""
+    if await AuthController.change_password(form):      
+        return SuccessResponse(
+            code=status.HTTP_200_OK,
+            success=True,
+            message="change password successfully."
+        )
+    else:
+        return ErrorResponse(
+            code=status.HTTP_400_BAD_REQUEST,
+            success=False,
+            message="change password failed."
+        )

@@ -1,12 +1,12 @@
 
 import json
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException, status, Depends
+from fastapi import APIRouter, UploadFile, File, Form, status, Depends
 from fastapi.responses import HTMLResponse
 from api.controllers.security_controller import AuthController
 from fastapi.responses import FileResponse
 from api.controllers.kb_controller import upload_kb_files, delete_kb_files, get_kb_files, reparse_kb_files
 from api.schemas.kb_schema import KBUploadForm, KBDeleteForm, KBReparseForm
-from api.schemas.kb_response import SuccessResponse, ErrorResponse
+from api.schemas.base_response import SuccessResponse, ErrorResponse
 
 router = APIRouter(
     prefix="/kb",
@@ -16,10 +16,7 @@ router = APIRouter(
 @router.post(
     "/upload",
     description="上传一个或多个文件到指定知识库的接口",
-    response_model=SuccessResponse,
-    dependencies=[Depends(AuthController.get_current_accessor)],
-    status_code=status.HTTP_200_OK
-    
+    dependencies=[Depends(AuthController.get_current_accessor)]
 )
 async def handle_upload_files(
     files: list[UploadFile] = File(...),
@@ -47,22 +44,22 @@ async def handle_upload_files(
             )
         
     except json.JSONDecodeError as e:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"Invalid JSON format for metadata: {str(e)}"
+        return ErrorResponse(
+            code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            success=False,
+            message=f"Invalid JSON format for metadata: {str(e)}"
         )
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Internal server error: {str(e)}"
+        return ErrorResponse(
+            code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            success=False,
+            message=f"Internal server error: {str(e)}"
         )
     
 @router.post(
     "/delete",
     description="从指定的知识库中删除文件或所有文件以及其知识库或批次的接口",
-    response_model=SuccessResponse,
-    dependencies=[Depends(AuthController.get_current_accessor)],
-    status_code=status.HTTP_200_OK
+    dependencies=[Depends(AuthController.get_current_accessor)]
 )
 async def handle_delete_files(
     metadata: str = Form(...)
@@ -90,14 +87,16 @@ async def handle_delete_files(
                 )
         
     except json.JSONDecodeError as e:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"Invalid JSON format for metadata: {str(e)}"
+        return ErrorResponse(
+            code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            success=False,
+            message=f"Invalid JSON format for metadata: {str(e)}"
         )
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Internal server error: {str(e)}"
+        return ErrorResponse(
+            code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            success=False,
+            message=f"Internal server error: {str(e)}"
         )
     
 @router.get(
@@ -121,22 +120,24 @@ async def handle_download_file(
                 content_disposition_type=None # type: ignore
                 )
         else:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="File not found."
+            return ErrorResponse(
+                code=status.HTTP_404_NOT_FOUND,
+                success=False,
+                message="File not found."
             )
         
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Internal server error: {str(e)}"
+        return ErrorResponse(
+            code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            success=False,
+            message=f"Internal server error: {str(e)}"
         )
 
 @router.get(
     "/preview",
     description="从知识库中预览文件的接口",
     response_model=None,
-    dependencies=[Depends(AuthController.get_current_accessor)],
+    # dependencies=[Depends(AuthController.get_current_accessor)],
     status_code=status.HTTP_200_OK
 )
 async def handle_preview_file(
@@ -169,15 +170,17 @@ async def handle_preview_file(
                         headers={"Content-Disposition": "inline"}
                     )
         else:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="File not found."
+            return ErrorResponse(
+                code=status.HTTP_404_NOT_FOUND,
+                success=False,
+                message="File not found."
             )
         
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Internal server error: {str(e)}"
+        return ErrorResponse(
+            code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            success=False,
+            message=f"Internal server error: {str(e)}"
         )
     
 @router.post(
@@ -209,12 +212,14 @@ async def handle_reparse_files(
             )
             
     except json.JSONDecodeError as e:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"Invalid JSON format for metadata: {str(e)}"
+        return ErrorResponse(
+            code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            success=False,
+            message=f"Invalid JSON format for metadata: {str(e)}"
         )
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Internal server error: {str(e)}"
+        return ErrorResponse(
+            code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            success=False,
+            message=f"Internal server error: {str(e)}"
         )

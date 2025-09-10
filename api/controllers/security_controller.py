@@ -1,10 +1,9 @@
 from fastapi.security import OAuth2PasswordBearer
 from fastapi import HTTPException, status, Depends
 from core.security.auth import *
+from api.schemas.accessor_schema import *
 from dao.entities.kbot_md_api_security import KbotMdApiSecurity
 from dao.repositories.kbot_md_api_security_repo import KbotMdApiSecurityRepository
-from api.schemas.accessor_schema import AccessorForm
-from core.dictionary import Status
 from loguru import logger
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/security/get_token")
@@ -14,7 +13,7 @@ class AuthController:
     @staticmethod
     async def login_for_access_token(username: str, password: str):
         # 用户登录
-        result = await KbotMdApiSecurityRepository().get_hashed_secret(username, password)
+        result = await KbotMdApiSecurityRepository().get_hashed_secret(username)
         if not result:
             return None
         if verify_password(password, result.get("hashed_secret")): # type: ignore
@@ -61,3 +60,22 @@ class AuthController:
                 detail=f"Token validation failed: {str(e)}",
                 headers={"WWW-Authenticate": "Bearer"}
             )
+        
+    @staticmethod
+    async def change_password(form: ChangePasswordForm) -> bool:
+        """访问者修改密码"""
+        try:
+            # 获取访问者的密码哈希值
+            result = await KbotMdApiSecurityRepository().get_hashed_secret(form.username)
+            if not result:
+                return False
+            # 验证旧密码是否正确
+            if verify_password(form.old_password, result.get("hashed_secret")): # type: ignore
+                # 如果旧密码正确，则更新密码
+                hashed_new_secret = get_password_hash(form.plain_password)
+                return await KbotMdApiSecurityRepository().change_password(form.username, hashed_new_secret)
+            else:
+                return False
+        except Exception as e:
+            logger.exception(f"Change password failed: {e}")
+            return False

@@ -13,6 +13,7 @@ class AccessorForm(BaseModel):
 class ChangePasswordForm(BaseModel):
     """修改密码表单模型"""
     username: str
+    old_password: str
     plain_password: str
 
     

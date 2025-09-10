@@ -2,7 +2,7 @@
 
 # 获取所有微服务和 main.py 的进程ID
 PIDS=$(pgrep -f "python app.py")
-PIDS+=" $(pgrep -f "python main.py")"
+PIDS+=" $(pgrep -f "python kbot_main.py")"
 
 if [ -z "$PIDS" ]; then
     echo "没有找到运行中的服务。"

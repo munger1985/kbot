@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from api.controllers.model_controller import ModelController
 from api.controllers.security_controller import AuthController
 from api.schemas.model_schema import *
+from api.schemas.base_response import SuccessResponse, ErrorResponse
 
 router = APIRouter(
     prefix="/model",
@@ -12,9 +13,7 @@ router = APIRouter(
 @router.post(
         "/toggle",
         description="启用/禁用指定模型",
-        dependencies=[Depends(AuthController.get_current_accessor)],
-        response_model=None,
-        status_code=status.HTTP_200_OK
+        dependencies=[Depends(AuthController.get_current_accessor)]
 )
 async def handle_enable_model(form: ToggleModelForm):
     """
@@ -32,17 +31,24 @@ async def handle_enable_model(form: ToggleModelForm):
     controller = ModelController()
     result = await controller.toggle(form.model_unique_name, enable=form.enable)
     if result:
-        return {"message": f"模型 {form.model_unique_name} 操作成功"}
+        return SuccessResponse(
+            code=200,
+            success=True,
+            message="模型 {form.model_unique_name} 操作成功"
+        )
     else:
-        raise HTTPException(status_code=500, detail="模型操作失败")   
+        return ErrorResponse(
+            code=500,
+            success=False,
+            message="模型 {form.model_unique_name} 操作失败"
+        )
+    
     
     
 @router.post(
         "/params",
         description="从数据库中获取指定模型的参数",
-        # dependencies=[Depends(AuthController.get_current_accessor)],
-        response_model=dict,
-        status_code=status.HTTP_200_OK
+        # dependencies=[Depends(AuthController.get_current_accessor)]
 )
 async def handle_get_model_params(form: ModelForm):
     """
@@ -56,14 +62,16 @@ async def handle_get_model_params(form: ModelForm):
     if model:
         return model
     else:
-        raise HTTPException(status_code=404, detail="模型不存在")
+        return ErrorResponse(
+            code=404,
+            success=False,
+            message="模型 {form.model_unique_name} 未找到"
+        )
 
 @router.post(
         "/available",
         description="从数据库中获取指定类别的可用模型",
-        # dependencies=[Depends(AuthController.get_current_accessor)],
-        response_model=list[dict],
-        status_code=status.HTTP_200_OK
+        # dependencies=[Depends(AuthController.get_current_accessor)]
 )
 async def handle_get_all_model_params(form: AvailableModelForm):
     """
@@ -74,5 +82,12 @@ async def handle_get_all_model_params(form: AvailableModelForm):
     """
     controller = ModelController()
     models = await controller.get_all_available_models(form.model_category)
-    return models
+    if models:
+        return models
+    else:
+        return ErrorResponse(
+            code=404,
+            success=False,
+            message="未找到 {form.model_category} 类型的可用模型"
+        )
     

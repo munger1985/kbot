@@ -21,7 +21,7 @@ from pathlib import Path
 env_path = Path(__file__).parent / ".env"
 load_dotenv(env_path)
 
-service_name = "main"
+service_name = os.getenv("KBOT_SERVICE_NAME") or "main"
 service_host = os.getenv("KBOT_HOST") or "0.0.0.0"
 service_port = int(os.getenv("KBOT_PORT") or 8000)
 

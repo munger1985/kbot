@@ -1,4 +1,4 @@
-from sqlalchemy import select
+from sqlalchemy import select, update
 from dao.entities.kbot_md_api_security import KbotMdApiSecurity
 from core.database.meta_oracle import get_session
 
@@ -6,7 +6,7 @@ from core.database.meta_oracle import get_session
 class KbotMdApiSecurityRepository:
     """Repository for KBOT_MD_API_SECURITY table operations."""
         
-    async def get_hashed_secret(self, accessor: str, hashed_secret: str) -> dict[str, str] | None:
+    async def get_hashed_secret(self, accessor: str) -> dict[str, str] | None:
         """Verify the access pass."""
         async with get_session() as session:
             result = await session.execute(
@@ -23,5 +23,16 @@ class KbotMdApiSecurityRepository:
         """Create a new security."""
         async with get_session() as session:
             session.add(security)
+            await session.commit()
+            return True
+        
+    async def change_password(self, accessor: str, hashed_secret: str) -> bool:
+        """Change the password of the user."""
+        async with get_session() as session:
+            result = await session.execute(
+                update(KbotMdApiSecurity)
+                .where(KbotMdApiSecurity.accessor == accessor)
+                .values(hashed_secret=hashed_secret)
+            )
             await session.commit()
             return True

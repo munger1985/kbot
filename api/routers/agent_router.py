@@ -5,11 +5,7 @@ from fastapi.responses import StreamingResponse
 from api.schemas.agent_schema import AgentChatForm, AgentChatFeedbackForm
 from api.controllers.security_controller import AuthController
 from api.controllers.agent_controller import *
-from api.schemas.agent_response import (
-    SuccessResponse,
-    ErrorResponse,
-    SuccessQueryResponse
-)
+from api.schemas.base_response import *
 
 router = APIRouter(
     prefix="/agent",
@@ -19,9 +15,7 @@ router = APIRouter(
 @router.post(
     "/chat",
     description="Chat with the agent. 和智能体聊天",
-    response_model=SuccessQueryResponse | ErrorResponse,
-    dependencies=[Depends(AuthController.get_current_accessor)],
-    status_code=status.HTTP_200_OK
+    dependencies=[Depends(AuthController.get_current_accessor)]
 )
 async def handle_agent_chat(request: AgentChatForm) -> SuccessQueryResponse | ErrorResponse:
     try:
@@ -30,7 +24,7 @@ async def handle_agent_chat(request: AgentChatForm) -> SuccessQueryResponse | Er
         logger.debug(f"Chat result: {r}")
 
         return SuccessQueryResponse(
-            code=200,
+            code=status.HTTP_200_OK,
             success=True,
             message="Chat successfully.",
             data=r
@@ -38,7 +32,7 @@ async def handle_agent_chat(request: AgentChatForm) -> SuccessQueryResponse | Er
         
     except Exception as e:
         return ErrorResponse(
-            code=400,
+            code=status.HTTP_400_BAD_REQUEST,
             success=False,
             message=f"Chat failed. {str(e)}"
         )
@@ -46,16 +40,15 @@ async def handle_agent_chat(request: AgentChatForm) -> SuccessQueryResponse | Er
 @router.get(
     "/stream",
     description="Get the stream response. 获取流式响应",
-    status_code=status.HTTP_200_OK,
-    response_model=None,
     dependencies=[Depends(AuthController.get_current_accessor)],
-    response_class=StreamingResponse
+    response_class=StreamingResponse,
+    response_model=None
 )
 async def handle_agent_stream_chat(session_id: str) -> StreamingResponse | ErrorResponse:
     generator = agent_stream_chat(session_id)
     if generator is None:
         return ErrorResponse(
-            code=400,
+            code=status.HTTP_400_BAD_REQUEST,
             success=False,
             message="Agent chat has no response."
         )
@@ -77,21 +70,19 @@ async def handle_agent_stream_chat(session_id: str) -> StreamingResponse | Error
 @router.post(
     "/feedback",
     description="Feedback the agent. 反馈智能体",
-    response_model=SuccessResponse | ErrorResponse,
-    dependencies=[Depends(AuthController.get_current_accessor)],
-    status_code=status.HTTP_200_OK
+    dependencies=[Depends(AuthController.get_current_accessor)]
 )
-async def handle_agent_feedback(form: AgentChatFeedbackForm) -> SuccessResponse | ErrorResponse:
+async def handle_agent_feedback(form: AgentChatFeedbackForm):
     r = await agent_feedback(form)
     if r:
         return SuccessResponse(
-            code=200,
+            code=status.HTTP_200_OK,
             success=True,
             message="Feedback successfully."
         )
     else:
         return ErrorResponse(
-            code=400,
+            code=status.HTTP_400_BAD_REQUEST,
             success=False,
             message="Feedback failed."
         )
@@ -99,16 +90,14 @@ async def handle_agent_feedback(form: AgentChatFeedbackForm) -> SuccessResponse 
 @router.get(
     "/session/get",
     description="Get the session when login. 在登录智能体时获取session",
-    response_model=SuccessQueryResponse | ErrorResponse,
-    dependencies=[Depends(AuthController.get_current_accessor)],
-    status_code=status.HTTP_200_OK
+    dependencies=[Depends(AuthController.get_current_accessor)]
 )
-async def handle_agent_get_session(session_id: str) -> SuccessQueryResponse | ErrorResponse:
+async def handle_agent_get_session(session_id: str):
     try:
         r = await agent_get_session(session_id)
 
         return SuccessQueryResponse(
-            code=200,
+            code=status.HTTP_200_OK,
             success=True,
             message="Session get successfully.",
             data=r
@@ -116,7 +105,7 @@ async def handle_agent_get_session(session_id: str) -> SuccessQueryResponse | Er
    
     except Exception as e:
         return ErrorResponse(
-            code=400,
+            code=status.HTTP_400_BAD_REQUEST,
             success=False,
             message=f"Session get failed. {str(e)}"
         )
@@ -124,28 +113,26 @@ async def handle_agent_get_session(session_id: str) -> SuccessQueryResponse | Er
 @router.delete(
     "/session/remove",
     description="Remove the session. 删除session",
-    response_model=SuccessResponse | ErrorResponse,
-    dependencies=[Depends(AuthController.get_current_accessor)],
-    status_code=status.HTTP_200_OK
+    dependencies=[Depends(AuthController.get_current_accessor)]
 )
-async def handle_agent_del_session(session_id: str) -> SuccessResponse | ErrorResponse:
+async def handle_agent_del_session(session_id: str):
     try:
         if await agent_del_session(session_id):
             return SuccessResponse(
-                code=200,
+                code=status.HTTP_200_OK,
                 success=True,
                 message="Session successfully removed."
                 )
         else:
             return ErrorResponse(
-                code=400,
+                code=status.HTTP_400_BAD_REQUEST,
                 success=False,
                 message="Session failed to remove."
             )
             
     except Exception as e:
         return ErrorResponse(
-            code=400,
+            code=status.HTTP_400_BAD_REQUEST,
             success=False,
             message=f"Session failed to remove. {str(e)}"
         )
@@ -154,28 +141,26 @@ async def handle_agent_del_session(session_id: str) -> SuccessResponse | ErrorRe
 @router.delete(
     "/remove",
     description="Remove the agent. 删除智能体",
-    response_model=SuccessResponse | ErrorResponse,
-    dependencies=[Depends(AuthController.get_current_accessor)],
-    status_code=status.HTTP_200_OK
+    dependencies=[Depends(AuthController.get_current_accessor)]
 )
 async def handle_del_agent(agent_id: int, del_prompt: bool = False) -> SuccessResponse | ErrorResponse:
     try:
         if await del_agent(agent_id=agent_id, del_prompt=del_prompt):
             return SuccessResponse(
-                code=200,
+                code=status.HTTP_200_OK,
                 success=True,
                 message="Agent successfully removed."
                 )
         else:
             return ErrorResponse(
-                code=400,
+                code=status.HTTP_400_BAD_REQUEST,
                 success=False,
                 message="Agent failed to remove."
             )
             
     except Exception as e:
         return ErrorResponse(
-            code=400,
+            code=status.HTTP_400_BAD_REQUEST,
             success=False,
             message=f"Agent failed to remove. {str(e)}"
         )
