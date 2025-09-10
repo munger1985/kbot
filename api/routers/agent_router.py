@@ -167,9 +167,9 @@ async def handle_agent_del_session(session_id: str) -> SuccessResponse | ErrorRe
     # dependencies=[Depends(AuthController.get_current_accessor)],
     status_code=status.HTTP_200_OK
 )
-async def handle_del_agent(agent_id: int) -> SuccessResponse | ErrorResponse:
+async def handle_del_agent(agent_id: int, del_prompt: bool = False) -> SuccessResponse | ErrorResponse:
     try:
-        if await del_agent(agent_id):
+        if await del_agent(agent_id=agent_id, del_prompt=del_prompt):
             return SuccessResponse(
                 code=200,
                 success=True,

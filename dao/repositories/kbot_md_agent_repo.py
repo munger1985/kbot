@@ -58,3 +58,13 @@ class KbotMdAgentRepository:
             )
             result = await session.execute(stmt)
             return result.scalar_one_or_none()
+        
+    async def get_prompt(self, agent_id: int) -> int | None:
+        """get prompt id by agent id"""
+        async with get_session() as session:
+            stmt = (
+                select(KbotMdAgent.prompt_id)
+                .where(KbotMdAgent.agent_id == agent_id)
+            )
+            result = await session.execute(stmt)
+            return result.scalar_one_or_none()

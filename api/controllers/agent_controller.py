@@ -289,16 +289,28 @@ async def agent_del_session(session_id: str) -> bool:
     except Exception as e:  
         raise e
     
-async def del_agent(agent_id: int) -> bool:
+async def del_agent(agent_id: int, del_prompt: bool = False) -> bool:
     try:
+        if del_prompt:
+            # 删除agent关联的prompt
+            prompt_id = await KbotMdAgentRepository().get_prompt(agent_id)
+            if prompt_id:
+                await KbotMdPromptRepository().delete(prompt_id)
+                logger.debug(f"Prompt {prompt_id} deleted.")
+            else:
+                logger.debug(f"Prompt not found for agent {agent_id}, skip deleting.")
         # 1. 删除agent
         await KbotMdAgentRepository().delete(agent_id)
+        logger.debug(f"Agent {agent_id} deleted.")
         # 2. 删除agent和kb的关联信息
         await KbotMdAgentConfRepository().delete_by_agent_id(agent_id)
+        logger.debug(f"Agent conf of {agent_id} deleted.")
         # 3. 删除agent的聊天会话
         await KbotMdChatSessionRepository().delete_by_agent_id(agent_id)
+        logger.debug(f"Chat session of {agent_id} deleted.")
         # 4. 删除agent的聊天历史
         await KbotMdChatHistoryRepository().delete_by_agent_id(agent_id)
+        logger.debug(f"Chat history of {agent_id} deleted.")
         return True
 
     except Exception as e:
