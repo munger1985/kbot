@@ -9,10 +9,7 @@ from utils.file_converter import FileToImage
 async def upload_kb_files(
     form: KBUploadForm
 ) -> bool:
-    """
-    Upload files to the knowledge base.
-    上传文件到知识库
-    """
+    """上传文件到知识库"""
     try:
         result = await KBFileOperator().upload_file_service(
             files=form.files,
@@ -32,10 +29,7 @@ async def upload_kb_files(
 async def delete_kb_files(
     form: KBDeleteForm
 ) -> dict:
-    """
-    Delete files from the knowledge base.
-    从知识库中删除文件
-    """
+    """从知识库中删除文件"""
     try:
         result = await KBFileOperator().delete_file_service(
             app_id=form.app_id,
@@ -56,7 +50,6 @@ async def get_kb_files(
         page_num: int = 0
 ) -> dict[str, str] | None:
     """
-    Get file content for download or preview.
     获取文件内容用于下载或预览
 
     params:
@@ -108,10 +101,7 @@ async def get_kb_files(
 async def reparse_kb_files(
     form: KBReparseForm
 ) -> bool:
-    """
-    Re-parse files for the knowledge base.
-    重新解析知识库文件
-    """
+    """重新解析知识库文件"""
     try:
         kbproc = KBProcedure()
         result = await kbproc.reparse_files(kb_id=form.kb_id, file_ids=form.file_ids)

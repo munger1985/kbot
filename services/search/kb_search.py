@@ -11,12 +11,22 @@ from utils.call_models import CallModel
 from .chinese_preprocessor import preprocess_cn_query
 
 class KBSearch:
-    """Knowledge base search"""
+    """知识库搜索类"""
     def __init__(self, tool_params: ToolParams):
         self.tool_params = tool_params
 
     async def search(self, question: str, security: int, enable_synonyms: bool = False) -> list[KBResult] | None:
-        """Search"""
+        """
+        执行知识库搜索
+        
+        Args:
+            question (str): 搜索问题
+            security (int): 安全级别
+            enable_synonyms (bool, optional): 是否启用同义词扩展. 默认为False
+            
+        Returns:
+            list[KBResult] | None: 搜索结果列表，搜索失败时返回None
+        """
         # 0. 预处理问题，用于向量检索和全文检索，语义检索需要字符串，全文检索需要词元列表
         if enable_synonyms:
             logger.debug(f"问题改写启用同义词扩展")
@@ -26,68 +36,77 @@ class KBSearch:
         expand_question = await preprocess_cn_query(query=question, enable_synonym_expansion=enable_synonyms)
         
         if expand_question is None:
-            logger.warning(f"Expand question failed: {question}")
+            logger.warning(f"问题扩展失败: {question}")
             vector_search_question = question
             full_text_question = question
         else:
             vector_search_question = expand_question.get("semantic", question)
             full_text_question = expand_question.get("fulltext", question)
 
-        # 1. Get model ID
+        # 1. 获取模型ID
         repo = KbotMdKbRepository()
         models = await repo.get_model_by_kbid(self.tool_params.tool_id)
     
         if models:
             self.tool_params.kb_catogory = models[0]
-            logger.debug(f"KB category: {models[0]}")
+            logger.debug(f"知识库类别: {models[0]}")
             self.tool_params.img2txt_model = models[1]
-            logger.debug(f"Image to text model: {models[1]}")
+            logger.debug(f"图像转文本模型: {models[1]}")
             self.tool_params.img_embed_model = models[2]
-            logger.debug(f"Image embedding model: {models[2]}")
+            logger.debug(f"图像嵌入模型: {models[2]}")
             self.tool_params.txt_embed_model = models[3]
-            logger.debug(f"Text embedding model: {models[3]}")
+            logger.debug(f"文本嵌入模型: {models[3]}")
         else:
-            logger.warning(f"Embedding model not found for KB {self.tool_params.tool_id}")
+            logger.warning(f"未找到知识库 {self.tool_params.tool_id} 的嵌入模型")
             return None
         
-        # 2. Decide search method
+        # 2. 根据搜索类型决定搜索方法
         if self.tool_params.kb_catogory == KbCategory.KBOT.value:
             if self.tool_params.search_type == KBSearchType.VECTOR.value:
-                logger.debug("Search method: vector")
+                logger.debug("搜索方法: 向量搜索")
                 return await self.search_by_vector(vector_search_question, security) # type: ignore
             elif self.tool_params.search_type == KBSearchType.FULLTEXT.value:
-                logger.debug("Search method: full text")
+                logger.debug("搜索方法: 全文搜索")
                 return await self.serch_by_full_text(full_text_question, security) # type: ignore
             elif self.tool_params.search_type == KBSearchType.SUMMARY.value:
-                logger.debug("Search method: summary")
+                logger.debug("搜索方法: 摘要搜索")
                 return await self.search_by_summary(question, security)
             elif self.tool_params.search_type == KBSearchType.GRAPH.value:
-                logger.debug("Search method: graph")
+                logger.debug("搜索方法: 图谱搜索")
                 return await self.search_by_graph(question, security)
             else:
-                logger.warning(f"Search method not implemented for KB {self.tool_params.tool_id}")
-                pass
+                logger.warning(f"知识库 {self.tool_params.tool_id} 的搜索方法未实现")
+                return None
         else:
-            logger.warning(f"Search method not implemented for KB {self.tool_params.tool_id}")
-            pass
+            logger.warning(f"知识库 {self.tool_params.tool_id} 的搜索方法未实现")
+            return None
 
     
     async def search_by_vector(self, question: str, security: int) -> list[KBResult] | None:
-        """Search by vector"""
-        # Call embedding service
+        """
+        向量搜索方法
+        
+        Args:
+            question (str): 搜索问题
+            security (int): 安全级别
+            
+        Returns:
+            list[KBResult] | None: 搜索结果列表，搜索失败时返回None
+        """
+        # 调用嵌入服务
         model_id = self.tool_params.txt_embed_model
         if not model_id:
-            logger.warning(f"Embedding model not found for KB {self.tool_params.tool_id}")
+            logger.warning(f"未找到知识库 {self.tool_params.tool_id} 的嵌入模型")
             return None
         model_repo = KbotMdModelsRepository()
         model_unique_name = await model_repo.get_unique_name_by_id(model_id)
         if not model_unique_name:
-            logger.warning(f"Embedding model not found for KB {self.tool_params.tool_id}")
+            logger.warning(f"未找到知识库 {self.tool_params.tool_id} 的嵌入模型")
             return None
         try:
             results = await CallModel().call_embedding_model(model_unique_name, [question])
             if results is None:
-                logger.error("Embedding service returned no results")
+                logger.error("嵌入服务未返回结果")
                 return None
             kb_results = []
             for result in results:
@@ -100,21 +119,30 @@ class KBSearch:
             return kb_results
 
         except Exception as e:
-            logger.error(f"Embedding service error: {str(e)}")
+            logger.error(f"嵌入服务错误: {str(e)}")
             return None
 
     async def get_similar_records(self, query_vec: list[float], security: int) -> list[KBResult] | None:
-        """Get similar records from the vector database"""
-        # Perform similarity search
+        """
+        从向量数据库中获取相似记录
+        
+        Args:
+            query_vec (list[float]): 查询向量
+            security (int): 安全级别
+            
+        Returns:
+            list[KBResult] | None: 相似记录列表，查询失败时返回None
+        """
+        # 执行相似度搜索
         repo = KbotBizTxtEmbeddingRepository(kb_id=self.tool_params.tool_id)
         await repo.initialize()
         convertor = OracleVecHandler()
         vec = convertor.convert(query_vec, to_string=True)
         try:
-            logger.debug(f"Vector search KB ID: {self.tool_params.tool_id}")
-            logger.debug(f"Vector search security: {security}")
-            logger.debug(f"Vector search threshold: {self.tool_params.threshold}")
-            logger.debug(f"Vector search top_k: {self.tool_params.top_k}")
+            logger.debug(f"向量搜索知识库ID: {self.tool_params.tool_id}")
+            logger.debug(f"向量搜索安全级别: {security}")
+            logger.debug(f"向量搜索相似度阈值: {self.tool_params.threshold}")
+            logger.debug(f"向量搜索返回数量: {self.tool_params.top_k}")
             dataset = await repo.get_similar_embeddings(
                 kb_id = self.tool_params.tool_id,
                 query_vec = vec,  # type: ignore
@@ -123,7 +151,7 @@ class KBSearch:
                 top_k = self.tool_params.top_k
             )
             if not dataset:
-                logger.info(f"Vector search returned no results")
+                logger.info(f"向量搜索未找到结果")
                 return None
             results = []
 
@@ -138,31 +166,40 @@ class KBSearch:
                 result.weight = self.tool_params.tool_weight # type: ignore
                 results.append(result)
 
-            logger.debug(f"Vector search found {len(results)} results")
+            logger.debug(f"向量搜索找到 {len(results)} 条结果")
             return results
 
         except Exception as e:
-            logger.debug(f"Vector search failed: {str(e)}")
-            raise ValueError(f"Vector search failed: {str(e)}")
+            logger.debug(f"向量搜索失败: {str(e)}")
+            raise ValueError(f"向量搜索失败: {str(e)}")
         
     async def serch_by_full_text(self, keywords: list[str], security: int) -> list[KBResult] | None:
-        """Search by full text"""
+        """
+        全文搜索方法
+        
+        Args:
+            keywords (list[str]): 关键词列表
+            security (int): 安全级别
+            
+        Returns:
+            list[KBResult] | None: 搜索结果列表，搜索失败时返回None
+        """
         repo = KbotBizTxtEmbeddingRepository(kb_id=self.tool_params.tool_id)
         await repo.initialize()
         try:
-            logger.debug(f"Full text search KB ID: {self.tool_params.tool_id}")
-            logger.debug(f"Full text search keywords: {keywords}")
+            logger.debug(f"全文搜索知识库ID: {self.tool_params.tool_id}")
+            logger.debug(f"全文搜索关键词: {keywords}")
             datasets = []
             unique_keys = set(keywords)  # 去除重复的关键字
 
             for key in unique_keys:
-                logger.debug(f"Full text search token: {key}")
+                logger.debug(f"全文搜索词元: {key}")
                 ds = await repo.full_text_search(kb_id=self.tool_params.tool_id, keyword=key, security=security)
                 if ds:
                     datasets.extend(ds)
 
             if not datasets:
-                logger.info(f"Full text search returned no results")
+                logger.info(f"全文搜索未找到结果")
                 return None
             else:
                 results = []
@@ -176,15 +213,17 @@ class KBSearch:
                     result.similarity = data[3]
                     result.weight = self.tool_params.tool_weight # type: ignore
                     results.append(result)
-                logger.debug(f"Full text search found {len(results)} results")
+                logger.debug(f"全文搜索找到 {len(results)} 条结果")
                 return results
             
         except Exception as e:
-            logger.exception(f"Full text search failed: {str(e)}")
+            logger.exception(f"全文搜索失败: {str(e)}")
             return None
 
     async def search_by_summary(self, question: str, security: int) -> list[KBResult] | None:
+        """摘要搜索方法（待实现）"""
         pass
     
     async def search_by_graph(self, question: str, security: int) -> list[KBResult] | None:
+        """图谱搜索方法（待实现）"""
         pass

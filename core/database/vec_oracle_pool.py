@@ -80,7 +80,7 @@ class AsyncOracleConnectionPoolManager:
         异步获取或创建连接池，增加连接验证和重连机制。
         """
         if not conn_params.validate():
-            raise ValueError("Invalid connection parameters")
+            raise ValueError("无效的连接参数")
 
         pool_key = self._get_pool_key(conn_params)
 
@@ -168,10 +168,11 @@ class AsyncOracleConnectionPoolManager:
             raise ValueError(f"无效的连接池参数: {e}")
 
     @asynccontextmanager
-    async def get_connection_ctx(self, conn_params: OracleConnParams, retries: int = 3):
+    async def get_connection_ctx(self, conn_params: OracleConnParams, retries: int = 3, timeout: int = 30):
         """
-        异步上下文管理器，支持重试机制。
+        异步上下文管理器，支持重试机制和超时控制。
         """
+        start_time = time.time()
         for attempt in range(retries):
             try:
                 pool = await self.get_pool(conn_params)
@@ -195,7 +196,13 @@ class AsyncOracleConnectionPoolManager:
             except (oracledb.Error, oracledb.InterfaceError) as e:
                 if attempt == retries - 1:
                     logger.error(f"数据库连接失败，已达最大重试次数: {e}")
-                    raise
+                    raise oracledb.Error(f"数据库连接失败: {e}")
+                
+                # 检查是否超时
+                if time.time() - start_time > timeout:
+                    logger.error(f"数据库连接超时，总耗时超过 {timeout} 秒")
+                    raise oracledb.Error(f"数据库连接超时: {timeout} 秒")
+                
                 logger.warning(f"数据库连接失败，尝试 {attempt + 1}/{retries}: {e}")
                 await asyncio.sleep(2 ** attempt)  # 指数退避
 

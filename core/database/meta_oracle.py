@@ -28,8 +28,8 @@ try:
     
 except Exception as e:
     # 如果获取 database 配置失败，则抛出异常
-    logger.error(f"Failed to get database config from nacos: {str(e)}")
-    raise RuntimeError(f"Failed to get database config from nacos: {str(e)}") from e
+    logger.error(f"无法从 nacos 获取 database 配置: {str(e)}")
+    raise RuntimeError(f"无法从 nacos 获取 database 配置: {str(e)}") from e
 
 
 try:
@@ -47,18 +47,18 @@ try:
         hide_parameters=hide_parameters,
         echo_pool=echo_pool
     )
-    logger.info("Async database engine created successfully")
+    logger.info("成功创建数据库引擎")
 except Exception as e:
-    logger.error(f"Failed to create database engine: {str(e)}")
-    raise RuntimeError(f"Failed to create database engine: {str(e)}") from e
+    logger.error(f"创建数据库引擎失败: {str(e)}")
+    raise RuntimeError(f"创建数据库引擎失败: {str(e)}") from e
 
 async def close_engine() -> None:
-    """Dispose the database engine and clean up resources."""
+    """关闭数据库引擎并释放连接池资源。"""
     try:
         await async_engine.dispose()
-        logger.info("Database engine disposed successfully")
+        logger.info("数据库引擎已关闭")
     except Exception as e:
-        logger.error(f"Error disposing database engine: {str(e)}")
+        logger.error(f"数据库引擎关闭失败: {str(e)}")
         raise
 
 async_session = async_sessionmaker(
@@ -67,13 +67,13 @@ async_session = async_sessionmaker(
 
 @asynccontextmanager
 async def get_session() -> AsyncIterator[AsyncSession]:
-    """Asynchronous context manager for database sessions with automatic transaction handling.
+    """异步数据库会话上下文管理器，支持自动事务处理。
     
     Yields:
-        AsyncSession: An async database session
+        AsyncSession: 异步数据库会话
         
     Raises:
-        Exception: Any database operation errors will be raised after rollback
+        Exception: 数据库操作错误将在回滚后抛出
         
     Example:
         async with get_session() as session:
@@ -85,24 +85,24 @@ async def get_session() -> AsyncIterator[AsyncSession]:
             await session.commit()
         except Exception as e:
             await session.rollback()
-            logger.error(f"Database operation failed, rolled back: {str(e)}")
-            raise RuntimeError(f"Database operation failed: {str(e)}") from e
+            logger.error(f"数据库操作失败，已执行回滚: {str(e)}")
+            raise RuntimeError(f"数据库操作失败: {str(e)}") from e
         finally:
             await session.close()
 
 
 async def test_connection() -> bool:
-    """Test database connection."""
+    """测试数据库连接"""
     try:
         async with get_session() as session:
             result = await session.execute(text("SELECT 1 FROM DUAL"))
             test_result = result.scalar()
             if test_result == 1:
-                logger.info("Database connection test successful")
+                logger.info("数据库连接测试成功")
                 return True
             else:
-                logger.error("Database connection test failed: unexpected result")
+                logger.error("数据库连接测试失败：返回意外结果")
                 return False
     except Exception as e:
-        logger.error(f"Database connection test failed: {str(e)}")
+        logger.error(f"数据库连接测试失败: {str(e)}")
         return False

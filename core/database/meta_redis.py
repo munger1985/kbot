@@ -108,7 +108,7 @@ class AsyncRedisPool:
         await self.initialize()
         try:
             if self._redis is None:
-                raise RuntimeError("Redis connection not available")
+                raise RuntimeError("Redis 连接池未初始化")
             yield self._redis
         except RedisError as e:
             await self.close()
@@ -155,7 +155,7 @@ class AsyncRedisPool:
         async def method(*args, **kwargs):
             async with self.get_connection() as redis:
                 if not hasattr(redis, name):
-                    raise AttributeError(f"Redis method {name} not exists")
+                    raise AttributeError(f"Redis 方法 {name} 不存在")
                 return await getattr(redis, name)(*args, **kwargs)
         return method
 

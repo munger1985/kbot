@@ -111,14 +111,14 @@ async def agent_stream_chat(session_id: str) -> AsyncGenerator[str, None]:
     # 1. 根据session_id从Redis中获取问答pair
     sess_repo = KbotMdChatSessionRepository()
 
-    logger.debug(f"正在查询Redis，session_id: {session_id}")
+    logger.debug(f"正在查询 Redis，session_id: {session_id}")
 
     last_qa_data = await sess_repo.get_last_qa_data(session_id)
 
     logger.debug(f"last_qa_data: {last_qa_data}")
 
     if last_qa_data is None:
-        logger.warning("qa_data not found")
+        logger.warning("未找到问答记录")
         return
     
     refs = last_qa_data["references"]
@@ -132,7 +132,7 @@ async def agent_stream_chat(session_id: str) -> AsyncGenerator[str, None]:
     agent = await agent_repo.get_by_id(agent_id)
     
     if agent is None:
-        logger.warning("Agent not found")
+        logger.warning("智能体不存在")
         return
 
     prompt_id = agent.prompt_id
@@ -161,7 +161,7 @@ async def agent_stream_chat(session_id: str) -> AsyncGenerator[str, None]:
     # 6. 根据LLM模型ID获取LLM模型
     model_unique_name = await KbotMdModelsRepository().get_unique_name_by_id(model_id) # type: ignore
     if model_unique_name is None:
-        logger.warning("LLM model not found.")
+        logger.warning("智能体配置的 LLM 模型不存在")
         return
 
     # 7. 调用LLM模型并处理流式响应
@@ -217,7 +217,7 @@ async def agent_stream_chat(session_id: str) -> AsyncGenerator[str, None]:
             
 
     except Exception as e:
-        logger.error(f"Stream processing error: {str(e)}")
+        logger.error(f"流式响应错误: {str(e)}")
         raise
         
 
@@ -228,7 +228,7 @@ async def _write_to_redis(session_id: str,
         # 将问题和答案作为历史上下文，转换为embedding后存入redis
         # TODO
         
-        logger.debug(f"The LLM stream answer: {answer}")
+        logger.debug(f"大模型返回结果: {answer}")
 
         sess_repo = KbotMdChatSessionRepository()
         await sess_repo.update_last_qa_data_answer(
@@ -236,7 +236,7 @@ async def _write_to_redis(session_id: str,
             answer
         )
     except Exception as e:
-        logger.error(f"Error writing to Redis: {str(e)}")
+        logger.error(f"写入Redis错误: {str(e)}")
 
 async def _write_history(history: KbotMdChatHistory):
     """Write a history to database."""
@@ -245,7 +245,7 @@ async def _write_history(history: KbotMdChatHistory):
         await KbotMdChatHistoryRepository().create(history)
         return True
     except Exception as e:
-        logger.error(f"Write history error: {str(e)}")
+        logger.error(f"记录聊天历史错误: {str(e)}")
         return False
 
 async def agent_feedback(form: AgentChatFeedbackForm) -> bool:
@@ -296,23 +296,23 @@ async def del_agent(agent_id: int, del_prompt: bool = False) -> bool:
             prompt_id = await KbotMdAgentRepository().get_prompt(agent_id)
             if prompt_id:
                 await KbotMdPromptRepository().delete(prompt_id)
-                logger.debug(f"Prompt {prompt_id} deleted.")
+                logger.debug(f"提示词 {prompt_id} 已删除")
             else:
-                logger.debug(f"Prompt not found for agent {agent_id}, skip deleting.")
+                logger.debug(f"未找到 智能体 {agent_id} 关联的提示词")
         # 1. 删除agent
         await KbotMdAgentRepository().delete(agent_id)
-        logger.debug(f"Agent {agent_id} deleted.")
+        logger.debug(f"智能体 {agent_id} 已删除")
         # 2. 删除agent和kb的关联信息
         await KbotMdAgentConfRepository().delete_by_agent_id(agent_id)
-        logger.debug(f"Agent conf of {agent_id} deleted.")
+        logger.debug(f"智能体 {agent_id} 和知识库的关联信息已删除")
         # 3. 删除agent的聊天会话
         await KbotMdChatSessionRepository().delete_by_agent_id(agent_id)
-        logger.debug(f"Chat session of {agent_id} deleted.")
+        logger.debug(f"智能体 {agent_id} 的聊天会话已删除")
         # 4. 删除agent的聊天历史
         await KbotMdChatHistoryRepository().delete_by_agent_id(agent_id)
-        logger.debug(f"Chat history of {agent_id} deleted.")
+        logger.debug(f"智能体 {agent_id} 的聊天历史已删除")
         return True
 
     except Exception as e:
-        logger.error(f"Delete agent error: {str(e)}")
+        logger.error(f"智能体 {agent_id} 删除失败: {str(e)}")
         return False

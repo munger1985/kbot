@@ -9,18 +9,27 @@ from .common_methods import encode_image
 from configuration import ConfigManager
 
 class CallModel():
-    """Call model"""
+    """模型调用类"""
     def __init__(self):
-        self.model_config = ConfigManager.get_model_config() # 获取模型配置
-        self.kbot_md_prompt_repo = KbotMdPromptRepository() # 获取提示信息仓库
-
+        self.model_config = ConfigManager.get_model_config()  # 获取模型配置
+        self.kbot_md_prompt_repo = KbotMdPromptRepository()  # 获取提示信息仓库
 
     async def call_embedding_model(self, 
                                 model_unique_name: str, 
                                 texts: list[str], 
                                 batch_size: int = 0
                                 ) -> list[EmbeddingDataItem] | None:
-        """Call embedding model"""
+        """
+        调用嵌入模型获取文本向量
+        
+        Args:
+            model_unique_name: 模型唯一名称
+            texts: 文本列表
+            batch_size: 批处理大小
+            
+        Returns:
+            嵌入数据项列表或None（失败时）
+        """
 
         service_host = self.model_config.embed.service_host
         service_port = self.model_config.embed.service_port
@@ -39,12 +48,12 @@ class CallModel():
                 async with session.post(url, headers=headers, json=payload) as response:
                     if response.status != 200:
                         text = await response.text()
-                        logger.error(f"Embedding service error: HTTP {response.status}, {text}")
+                        logger.error(f"嵌入服务错误: HTTP {response.status}, {text}")
                         return None
                     
                     response_data = await response.json()
-                    # Support both OpenAI format and current format
-                    if "data" in response_data and isinstance(response_data["data"], list):  # OpenAI format
+                    # 支持OpenAI格式和当前格式
+                    if "data" in response_data and isinstance(response_data["data"], list):  # OpenAI格式
                         embeddings = [
                             EmbeddingDataItem(
                                 embedding=item["embedding"],
@@ -53,7 +62,7 @@ class CallModel():
                             )
                             for i, item in enumerate(response_data["data"])
                         ]
-                    elif isinstance(response_data, list):  # Current format
+                    elif isinstance(response_data, list):  # 当前格式
                         embeddings = [
                             EmbeddingDataItem(
                                 embedding=item["embedding"],
@@ -62,30 +71,34 @@ class CallModel():
                             )
                             for i, item in enumerate(response_data)
                         ]
-                    else:  # Unexpected format
-                        logger.error("Embedding service returned unexpected response format")
+                    else:  # 意外格式
+                        logger.error("嵌入服务返回了意外的响应格式")
                         return None
                     
-                    logger.info("Successfully got embedding vector")
+                    logger.info("成功获取嵌入向量")
                     return embeddings
                     
         except Exception as e:
-            logger.error(f"Embedding service got error: {str(e)}")
+            logger.error(f"嵌入服务发生错误: {str(e)}")
             return None
         
-
     async def call_reranker_model(self, 
                                   model_unique_name: str, 
                                   query: str, 
                                   documents: list[str], 
                                   top_k: int | None
                                 ) -> list[dict[str, Any]] | None:
-        """Call reranker model to rerank documents
-        调用reranker微服务将文本列表进行rerank
-        - **model_unique_name**: Model unique name to use for reranking.
-        - **query**: Query text to be reranked.
-        - **documents**: List of documents to be reranked.
-        - **top_k**: Number of top documents to return (None for all)
+        """
+        调用重排序模型对文档进行重新排序
+        
+        Args:
+            model_unique_name: 用于重排序的模型唯一名称
+            query: 查询文本
+            documents: 待重排序的文档列表
+            top_k: 返回的顶部文档数量（None表示返回所有）
+            
+        Returns:
+            重排序结果列表或None（失败时）
         """
 
         service_host = self.model_config.reranker.service_host
@@ -98,7 +111,7 @@ class CallModel():
             "model_unique_name": model_unique_name,
             "query": query,
             "documents": documents,
-            "top_k": int(top_k) if top_k else 99999 # 设置一个很大的值，防止rerank返回的文档数小于top_k
+            "top_k": int(top_k) if top_k else 99999  # 设置一个很大的值，防止rerank返回的文档数小于top_k
         }
         
         try:
@@ -106,28 +119,28 @@ class CallModel():
                 async with session.post(url, headers=headers, json=payload) as response:
                     if response.status != 200:
                         text = await response.text()
-                        logger.error(f"Reranking service error: HTTP {response.status}, {text}")
+                        logger.error(f"重排序服务错误: HTTP {response.status}, {text}")
                         return None
                     
                     response_data = await response.json()
                     rerank = response_data["rerankers"]
-                    logger.info("Successfully got reranking result")
+                    logger.info("成功获取重排序结果")
                     return rerank
         except Exception as e:
-            logger.error(f"Reranking service got error: {str(e)}")
+            logger.error(f"重排序服务发生错误: {str(e)}")
             return None
         
     async def call_llm_model(self, model_unique_name: str, prompt: str, **kwargs):
         """
         调用LLM微服务并处理SSE格式的响应
         
-        参数:
+        Args:
             model_unique_name: 模型唯一标识
             prompt: 输入的提示信息
             **kwargs: 其他可选参数，如stream、temperature等
             
-        返回:
-            一个异步生成器，逐块产生LLM的响应
+        Returns:
+            异步生成器，逐块产生LLM的响应
         """
 
         service_host = self.model_config.llm.service_host
@@ -137,7 +150,7 @@ class CallModel():
         url = f"http://{service_host}:{service_port}/v1/chat/completions"
         headers = {"Content-Type": "application/json"}
         
-        # 构建请求负载
+        # 构建请求体
         payload = {
             "model_unique_name": model_unique_name,
             "messages": prompt,
@@ -155,14 +168,14 @@ class CallModel():
                         processed_kwargs[k] = v
             payload.update(processed_kwargs)
         
-        logger.debug(f"Calling LLM service with payload: {payload}")
+        logger.debug(f"调用LLM服务，请求负载: {payload}")
 
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.post(url, headers=headers, json=payload) as response:
                 if response.status != 200:
                     error_msg = await response.text()
-                    logger.error(f"LLM service error: {error_msg}")
-                    raise Exception(f"LLM service error: {error_msg}")
+                    logger.error(f"LLM服务错误: {error_msg}")
+                    raise Exception(f"LLM服务错误: {error_msg}")
                     
                 async for raw_chunk in response.content:
                     yield raw_chunk.decode('utf-8')
@@ -172,16 +185,17 @@ class CallModel():
                                                 prompt_unique_name: str, 
                                                 image: str | Image.Image, 
                                                 **kwargs) -> str | None:
-        """Call vector language model.
+        """
+        调用视觉语言模型进行图片解析
         
-        Parameters:
-        - **model_unique_name**: Model unique name.
-        - **prompt_unique_name**: Get the prompt by unique name from the database.
-        - **image**: Input image (file path or PIL.Image object).
-        - **kwargs**: Additional arguments for inference.
-        
+        Args:
+            model_unique_name: 模型唯一名称
+            prompt_unique_name: 从数据库中获取提示信息的唯一名称
+            image: 输入图片（文件路径或PIL.Image对象）
+            **kwargs: 推理的额外参数
+            
         Returns:
-        - Output text, or None on failure
+            输出文本或None（失败时）
         """
         
         service_host = self.model_config.vlm.service_host
@@ -191,24 +205,24 @@ class CallModel():
         url = f"http://{service_host}:{service_port}/v1/inference"
         headers = {"Content-Type": "application/json"}
 
-        # Encode image to base64
+        # 将图片编码为base64
         try:
             image_base64 = await encode_image(image)
         except Exception as e:
-            logger.error(f"Failed to encode image: {str(e)}")
+            logger.error(f"图片编码失败: {str(e)}")
             return None
         
-        # Get prompt text
+        # 获取提示文本
         try:
             prompt_repo = KbotMdPromptRepository()
             prompt = await prompt_repo.get_prompt_by_unique_name(prompt_unique_name)
             if not prompt:
-                raise Exception(f"Prompt not found: {prompt_unique_name}")
+                raise Exception(f"提示信息未找到: {prompt_unique_name}")
         except Exception as e:
-            logger.error(f"Failed to get prompt text: {str(e)}")
+            logger.error(f"获取提示文本失败: {str(e)}")
             return None
 
-        # Build messages in required format
+        # 构建所需格式的消息
         messages = [
             {
                 "role": "user",
@@ -227,7 +241,7 @@ class CallModel():
             }
         ]
 
-        # Build request payload
+        # 构建请求体
         payload = {
             "model_unique_name": model_unique_name,
             "messages": messages,
@@ -235,20 +249,20 @@ class CallModel():
             **kwargs
         }
         
-        # Send request
+        # 发送请求
         try:
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.post(url, headers=headers, json=payload) as response:
                     if response.status != 200:
-                        logger.error(f"VLM service response error: HTTP {response.status}")
+                        logger.error(f"VLM服务响应错误: HTTP {response.status}")
                         return None
                         
                     response_data = await response.json()
                     output = response_data["choices"][0]["message"]["content"]
-                    logger.info("Successfully got VLM response")
+                    logger.info("成功获取VLM响应")
                     return output
         except Exception as e:
-            logger.error(f"VLM service error: {str(e)}")
+            logger.error(f"VLM服务发生错误: {str(e)}")
             return None 
         
     async def call_synonym_model(
@@ -257,15 +271,16 @@ class CallModel():
             top_k: int | None = None,
             threshold: float | None = None
             ) -> dict[str, list[str]]| None:
-        """调用同义词微服务
+        """
+        调用同义词微服务
         
-        Parameters:
-        - **words**: 输入的单词列表
-        - **top_k**: 要返回的同义词数量
-        - **threshold**: 同义词的相似度阈值
-        
+        Args:
+            words: 输入的单词列表
+            top_k: 要返回的同义词数量
+            threshold: 同义词的相似度阈值
+            
         Returns:
-        - 同义词响应对象，包含每个单词的同义词列表
+            同义词响应对象，包含每个单词的同义词列表或None（失败时）
         """
         
         service_host = self.model_config.synonym.service_host
@@ -275,7 +290,7 @@ class CallModel():
         url = f"http://{service_host}:{service_port}/synonym"
         headers = {"Content-Type": "application/json"}
         
-        # 构建请求负载
+        # 构建请求体
         payload = {
             "words": words,
             "top_k": top_k,
@@ -287,14 +302,13 @@ class CallModel():
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.post(url, headers=headers, json=payload) as response:
                     if response.status != 200:
-                        logger.error(f"Synonym service response error: HTTP {response.status}")
+                        logger.error(f"同义词服务响应错误: HTTP {response.status}")
                         return None
                         
                     response_data = await response.json()
                     output = response_data["synonyms"]
-                    logger.info("Successfully got synonym response")
+                    logger.info("成功获取同义词响应")
                     return output
         except Exception as e:
-            logger.error(f"Synonym service error: {str(e)}")
-            return None 
-
+            logger.error(f"同义词服务发生错误: {str(e)}")
+            return None

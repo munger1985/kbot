@@ -53,16 +53,16 @@ class FileProcessor:
             elif file.chunk_parser is None:
                 # 如果是 None，则使用空字典
                 file_params.parser = {}
-                logger.warning(f"chunk_parser is None for file_id: {file.file_id}, using empty dict")
+                logger.warning(f"文件ID {file.file_id} 的 chunk_parser 为 None，使用空字典")
             else:
                 # 如果是字符串，则解析为 JSON
                 file_params.parser = json.loads(file.chunk_parser, cls=DecimalEncoder) # type: ignore
             
-            logger.debug(f"File params: {file_params.__dict__}")
+            logger.debug(f"文件参数: {file_params.__dict__}")
 
             models = await kb_repo.get_model_by_kbid(file.kb_id)
 
-            logger.debug(f"Models: {models}")
+            logger.debug(f"模型配置: {models}")
 
             # 确保 models 不为空且至少有一个元素，并且第一个元素不为None
             if models:
@@ -73,7 +73,7 @@ class FileProcessor:
                 if file_params.enable_summary:
                     file_params.summary_model = models[4]
             else:
-                logger.warning(f"No models found for kb_id: {file.kb_id}")
+                logger.warning(f"未找到知识库ID {file.kb_id} 对应的模型配置")
                 return result
 
             timestamp = datetime.now().timestamp()  # 获取当前时间戳
@@ -81,7 +81,7 @@ class FileProcessor:
             await file_repo.update_file_status(file_params.file_id, FileStatus.PARSING)
             # 添加到结果列表
             result.append((file_params.priority, timestamp, file_params))
-            logger.info(f"Added file to process list: {file_params.file_path} (priority: {ProcessPriority(file_params.priority)})")
+            logger.info(f"已添加文件到处理队列: {file_params.file_path} (优先级: {ProcessPriority(file_params.priority)})")
             
         return result
 
@@ -91,7 +91,7 @@ class FileProcessor:
         处理文件的入口方法
         
         参数:
-            file_params: 文件参数
+            file_params: 文件参数对象
             
         返回:
             处理是否成功
@@ -99,36 +99,34 @@ class FileProcessor:
         file_repo = KbotMdKbFilesRepository()
 
         try:
-            logger.info(f"Processing {file_params.file_path}...")
+            logger.info(f"开始处理文件: {file_params.file_path}...")
 
             # 处理文本文件
             if file_params.file_ext == ".txt":
-                logger.info(f"Processing text file {file_params.file_path}...")
+                logger.info(f"处理文本文件: {file_params.file_path}...")
                 return await process_txt(file_params)
             elif file_params.file_ext == ".md":
-                logger.info(f"Processing markdown file {file_params.file_path}...")
+                logger.info(f"处理Markdown文件: {file_params.file_path}...")
                 return await process_markdown(file_params)
             elif file_params.file_ext == ".pdf":
-                logger.info(f"Processing pdf file {file_params.file_path}...")
+                logger.info(f"处理PDF文件: {file_params.file_path}...")
                 return await process_pdf(file_params)
             elif file_params.file_ext == ".xlsx":
-                logger.info(f"Processing Excel file {file_params.file_path}...")
+                logger.info(f"处理Excel文件: {file_params.file_path}...")
                 return await process_excel(file_params)
             elif file_params.file_ext in [".doc", ".docx", ".pptx", ".ppt"]:
-                logger.info(f"Processing word/ppt file {file_params.file_path}...")
+                logger.info(f"处理Word/PPT文件: {file_params.file_path}...")
                 return await process_word_ppt_by_converter(file_params)
             else:
-                msg = f"File type {file_params.file_ext} is not supported, skipping..."
+                msg = f"不支持的文件类型 {file_params.file_ext}，跳过处理..."
                 logger.info(msg)
                 # 更新文件状态为已处理
                 await file_repo.update_file_status(file_params.file_id, FileStatus.PARSED, msg)
                 return True
                 
         except Exception as e:
-            msg = f"Error processing {file_params.file_path}: {str(e)}"
+            msg = f"处理文件 {file_params.file_path} 时发生错误: {str(e)}"
             logger.error(msg)
             # 更新文件状态为处理失败
             await file_repo.update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, msg)
             return False
-
-    

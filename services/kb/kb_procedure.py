@@ -12,28 +12,39 @@ class KBProcedure():
 
     async def reparse_files(self, kb_id: int, file_ids: list[str]) -> bool:
         """
-        将KB中的文件标记为未解析，触发重新解析
-
+        重新解析知识库中的指定文件
+        
+        将指定文件标记为未解析状态，触发重新解析流程
+        
         Args:
-            files (list[str]): 文件ID列表
+            kb_id (int): 知识库ID
+            file_ids (list[str]): 需要重新解析的文件ID列表
             
         Returns:
-            bool: 操作是否成功
+            bool: 操作是否成功。True表示成功，False表示失败
         """
         file_repo = KbotMdKbFilesRepository()
         chunk_repo = KbotBizTxtEmbeddingRepository(kb_id=kb_id)
         await chunk_repo.initialize()
-        # 1. 删除文件对应的chunk数据
+        
         try:
+            # 1. 删除文件对应的文本片段数据
             await chunk_repo.delete_by_file_ids(kb_id=kb_id, file_ids=file_ids)
-            logger.debug(f"Deleted chunks for files: {file_ids} of KB {kb_id}.")
+            logger.debug(f"已删除知识库 {kb_id} 中文件 {file_ids} 对应的文本片段数据")
+            
             # 2. 删除文件对应的解析图片和表格数据（部分PDF，PPT等文件有）
-            # todo: ...
-            #logger.debug(f"Deleted images and tables for files: {files} of KB {kb_id}.")
+            # todo: 待实现图片和表格数据的删除逻辑
+            # logger.debug(f"已删除知识库 {kb_id} 中文件 {file_ids} 对应的图片和表格数据")
+            
             # 3. 重置文件状态为未解析
-            await file_repo.batch_update_file_status(file_ids=file_ids, status=FileStatus.APPROVED, log_msg="reparse")
-            logger.info(f"Files {file_ids} are marked for reprocessing.")
+            await file_repo.batch_update_file_status(
+                file_ids=file_ids, 
+                status=FileStatus.APPROVED, 
+                log_msg="重新解析文件"
+            )
+            logger.info(f"文件 {file_ids} 已标记为待重新解析状态")
             return True
+            
         except Exception as e:
-            logger.exception(e)
+            logger.exception(f"重新解析文件失败: {e}")
             return False

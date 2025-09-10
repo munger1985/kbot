@@ -37,7 +37,7 @@ class AuthController:
         try:
             await KbotMdApiSecurityRepository().create(security)
         except Exception as e:
-            logger.exception(f"Create accessor failed: {e}")
+            logger.exception(f"访问者创建失败: {e}")
             return False
         return True
 
@@ -77,5 +77,5 @@ class AuthController:
             else:
                 return False
         except Exception as e:
-            logger.exception(f"Change password failed: {e}")
+            logger.exception(f"密码修改失败: {e}")
             return False
