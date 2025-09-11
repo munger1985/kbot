@@ -121,8 +121,8 @@ class PDFPlumberParser:
                 if not description_file.exists():
 
 
-                    image_description = await CallModel().call_vlm_model_for_parsing_picture(vlm_model_unique_name, vlm_prompt_unique_name, # type: ignore
-                                                                           eachImage['file_path']) 
+                    image_description = await CallModel().call_vlm_model_for_parsing_picture(vlm_model_unique_name, # type: ignore
+                                                                           eachImage['file_path'], vlm_prompt_unique_name) 
                     if image_description:
                         description_file.write_text(
                             image_description,

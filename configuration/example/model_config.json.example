@@ -35,7 +35,8 @@
     "service_version": "1.0.0",
     "service_host": "0.0.0.0",
     "service_port": 9204,
-    "timeout": 300
+    "timeout": 300,
+    "sys_prompt_img2txt": "SYSTEM/image2text"
   },
   "tokenizer": {
     "custom_dict_path": "/your/path/kbot3/configuration/custom_dict.txt",

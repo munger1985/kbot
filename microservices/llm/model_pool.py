@@ -296,14 +296,12 @@ class ModelPool:
             main_port = int(os.getenv("KBOT_PORT") or 8000)
             
             # 构建请求 URL
-            url = f"http://{main_host}:{main_port}/api/model/available"
-            headers = {"Content-Type": "application/json"}
-            payload = {"model_category": ModelCategory.LLM.value}
+            url = f"http://{main_host}:{main_port}/api/model/available?model_category={ModelCategory.LLM.value}"
             timeout = aiohttp.ClientTimeout(total=30)
             
             # 发送请求
             async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.post(url, headers=headers, json=payload) as response:
+                async with session.get(url) as response:
                     if response.status != 200:
                         error_msg = await response.text()
                         logger.error(f"获取模型参数失败：HTTP {response.status} - {error_msg}")

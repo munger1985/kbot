@@ -3,6 +3,7 @@ from api.controllers.model_controller import ModelController
 from api.controllers.security_controller import AuthController
 from api.schemas.model_schema import *
 from api.schemas.base_response import SuccessResponse, ErrorResponse
+from core.dictionary import ModelCategory
 
 router = APIRouter(
     prefix="/model",
@@ -38,7 +39,7 @@ async def handle_enable_model(form: ToggleModelForm):
         )
     else:
         return ErrorResponse(
-            code=500,
+            code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             success=False,
             message="模型 {form.model_unique_name} 操作失败"
         )
@@ -52,10 +53,10 @@ async def handle_enable_model(form: ToggleModelForm):
 )
 async def handle_get_model_params(form: ModelForm):
     """
-    获取Redis中所有可用模型
+    获取指定模型的参数
     
     Returns:
-        list[dict]: 可用模型列表
+        dict: 指定模型的参数
     """
     controller = ModelController()
     model = await controller.get_model_params_by_uname(form.model_unique_name)
@@ -63,31 +64,52 @@ async def handle_get_model_params(form: ModelForm):
         return model
     else:
         return ErrorResponse(
-            code=404,
+            code=status.HTTP_404_NOT_FOUND,
             success=False,
             message="模型 {form.model_unique_name} 未找到"
         )
 
-@router.post(
+@router.get(
         "/available",
         description="从数据库中获取指定类别的可用模型",
         # dependencies=[Depends(AuthController.get_current_accessor)]
 )
-async def handle_get_all_model_params(form: AvailableModelForm):
+async def handle_get_all_model_params(model_category: int):
     """
-    获取Redis中所有可用模型
+    获取数据库中所有可用模型
     
     Returns:
         list[dict]: 可用模型列表
     """
     controller = ModelController()
-    models = await controller.get_all_available_models(form.model_category)
+    models = await controller.get_all_available_models(model_category)
     if models:
         return models
     else:
         return ErrorResponse(
-            code=404,
+            code=status.HTTP_404_NOT_FOUND,
             success=False,
-            message="未找到 {form.model_category} 类型的可用模型"
+            message=f"未找到可用的 {ModelCategory(model_category)} 模型"
         )
-    
+
+@router.post(
+        "/test",
+        description="测试指定模型是否可用",
+        dependencies=[Depends(AuthController.get_current_accessor)]
+)
+async def handle_test_model(form: TestModelForm):
+    """测试指定模型是否可用"""
+
+    controller = ModelController()
+    if await controller.verify_model(form.model_unique_name, form.model_category):
+        return SuccessResponse(
+            code=status.HTTP_200_OK,
+            success=True,
+            message="模型 {model_unique_name} 可用"
+        )
+    else:
+        return ErrorResponse(
+            code=status.HTTP_400_BAD_REQUEST,
+            success=False,
+            message="模型 {model_unique_name} 不可用"
+        )

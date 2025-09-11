@@ -124,6 +124,7 @@ class VLMConfig(BaseModel):
     service_host: str
     service_port: int = Field(gt=0, lt=65536)
     timeout: int = Field(ge=1)
+    sys_prompt_img2txt: str
 
 class TokenizerConfig(BaseModel):
     custom_dict_path: str

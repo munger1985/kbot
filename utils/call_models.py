@@ -182,16 +182,16 @@ class CallModel():
 
     async def call_vlm_model_for_parsing_picture(self,
                                                 model_unique_name: str, 
-                                                prompt_unique_name: str, 
                                                 image: str | Image.Image, 
+                                                prompt_unique_name: str | None = None, 
                                                 **kwargs) -> str | None:
         """
         调用视觉语言模型进行图片解析
         
         Args:
             model_unique_name: 模型唯一名称
-            prompt_unique_name: 从数据库中获取提示信息的唯一名称
             image: 输入图片（文件路径或PIL.Image对象）
+            prompt_unique_name: 从数据库中获取提示信息的唯一名称
             **kwargs: 推理的额外参数
             
         Returns:
@@ -212,6 +212,10 @@ class CallModel():
             logger.error(f"图片编码失败: {str(e)}")
             return None
         
+        # 如果没有传入prompt_unique_name，则使用默认的提示信息
+        if not prompt_unique_name:
+            prompt_unique_name = self.model_config.vlm.sys_prompt_img2txt
+
         # 获取提示文本
         try:
             prompt_repo = KbotMdPromptRepository()

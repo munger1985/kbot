@@ -1,8 +1,10 @@
 import aiohttp
 from loguru import logger
+from PIL import Image, ImageDraw
 from dao.repositories.kbot_md_models_repo import *
 from core.dictionary import ModelCategory
 from configuration import ConfigManager
+from utils.call_models import CallModel
 
 
 class ModelController:
@@ -132,3 +134,73 @@ class ModelController:
             for model in models
         ]
     
+    async def verify_model(self, model_unique_name: str, model_type: int) -> bool:
+        """
+        验证指定模型
+        
+        Args:
+            model_unique_name: 模型唯一名称
+            model_type: 模型类型
+            
+        Returns:
+            bool: 模型验证是否成功
+            
+        Raises:
+            ValueError: 未知的模型类型时抛出
+        """
+
+        
+        model_config = ConfigManager.get_model_config()
+
+        # 测试Embedding模型
+        if model_type == ModelCategory.EMBEDDING.value:
+            input_texts = ["test"]
+            result = await CallModel().call_embedding_model(
+                model_unique_name, 
+                input_texts
+            )
+            
+        # 测试LLM模型
+        elif model_type == ModelCategory.LLM.value:
+            input_text = "test"
+            async for chunk in CallModel().call_llm_model(
+                model_unique_name,
+                input_text,
+                stream=False,
+                max_tokens=5
+            ):
+                result = chunk
+
+        # 测试Reranker模型
+        elif model_type == ModelCategory.RERANKER.value:
+            question = "test"
+            inputs_list = [
+                "test1",
+                "test2"
+            ]
+            result = await CallModel().call_reranker_model(
+                model_unique_name,
+                question,
+                inputs_list,
+                1
+            )
+
+        # 测试VLM模型
+        elif model_type == ModelCategory.VLM.value:
+            prompt_unique_name = "KBOT1/pdf_parsing"
+            # 创建纯色图片的最简代码
+            image = Image.new('RGB', (100, 100), 'lightblue')
+            result = await CallModel().call_vlm_model_for_parsing_picture(
+                model_unique_name, 
+                image
+            )
+            
+        else:
+            raise ValueError(f"未知的模型类型: {model_type}")
+        
+        if result:
+            return True
+        else:
+            return False
+        
+        
