@@ -1,28 +1,16 @@
-import re
 import pandas as pd
-import markdown
-import csv
-import json
-from bs4 import BeautifulSoup
-from urllib.parse import urlparse
-import requests
-from io import StringIO
 from loguru import logger
 from .file_params import FileParams
 from dao.repositories.kbot_md_kb_files_repo import KbotMdKbFilesRepository
-from dao.repositories.kbot_biz_txt_embedding_repo import KbotBizTxtEmbeddingRepository
 from dao.repositories.kbot_md_models_repo import KbotMdModelsRepository
 from dao.entities.kbot_biz_txt_embedding import KbotBizTxtEmbedding
 from core.dictionary import FileStatus, ChunkType, SplitStrategy
 from utils.call_models import CallModel
 from utils.common_methods import check_text_file, update_file_status, save_embeddings
 import traceback
-from .config_manager import ConfigManager
 
-import os
 import json
 import uuid
-from pathlib import Path
 
 
 class CSVParser:
@@ -31,12 +19,13 @@ class CSVParser:
         self.file_params = file_params
 
     def parse_csv_to_json(self):
-        """Parse CSV file and convert to JSON format with headers as keys"""
+        """Parse CSV file using pandas DataFrame and convert to JSON format.
+        Returns a list where each item is a JSON object with headers as keys."""
         try:
-            with open(self.csv_file, 'r', encoding='utf-8') as f:
-                reader = csv.DictReader(f)
-                data = [row for row in reader]
-                return data
+            # Read CSV using pandas
+            df = pd.read_csv(self.csv_file)
+            # Convert DataFrame to list of dicts (JSON objects)
+            return df.to_dict('records')
         except Exception as e:
             logger.error(f"Error parsing CSV file: {e}")
             return None
@@ -56,7 +45,7 @@ class CSVParser:
             return False
 
         chunks = [json.dumps(row) for row in json_data]
-        chunk_metas = [{"chunk_type": ChunkType.TEXT} for _ in json_data]
+        chunk_metas = [{"chunk_type": ChunkType.TABLE} for _ in json_data]
 
         embeddings_list = await CallModel().call_embedding_model(model_unique_name, chunks)
         if not embeddings_list or len(embeddings_list) != len(chunks):
@@ -138,23 +127,3 @@ async def process_csv(file_params: FileParams) -> bool:
             msg
         )
         return False
-# def main():
-#     import sys
-#     import json
-#
-#     if len(sys.argv) != 2:
-#         print("用法: python markdown_parser.py <markdown文件路径>")
-#         sys.exit(1)
-#
-#     markdown_file = sys.argv[1]
-#
-#     if not os.path.exists(markdown_file):
-#         print(f"文件不存在: {markdown_file}")
-#         sys.exit(1)
-#
-#     parser = MarkdownParser(markdown_file)
-#     result = parser.parse()
-#
-#     # 输出结果
-#     print("解析结果:")
-#     print(json.dumps(result, indent=2, ensure_ascii=False))

@@ -2,6 +2,7 @@ import json
 from loguru import logger
 from datetime import datetime
 
+from .csv_parser_dataframe import process_csv
 from .excel_parser_openpyxl import process_excel
 from .markdown_parser_bs4 import process_markdown
 from .txt_parser import process_txt
@@ -108,6 +109,9 @@ class FileProcessor:
             elif file_params.file_ext == ".md":
                 logger.info(f"处理Markdown文件: {file_params.file_path}...")
                 return await process_markdown(file_params)
+            elif file_params.file_ext == ".csv":
+                logger.info(f"处理  CSV 文件: {file_params.file_path}...")
+                return await process_csv(file_params)
             elif file_params.file_ext == ".pdf":
                 logger.info(f"处理PDF文件: {file_params.file_path}...")
                 return await process_pdf(file_params)
