@@ -13,7 +13,7 @@ from core.dictionary import FileStatus, ChunkType, SplitStrategy
 from utils.call_models import CallModel
 from utils.common_methods import check_text_file, update_file_status, save_embeddings
 import traceback
-from .config_manager import ConfigManager
+from configuration.config_manager import ConfigManager
 
 import os
 import json
@@ -327,8 +327,13 @@ class MarkdownParser:
 
             # if self.file_params.parser.get("extract_images", False):
             vlm_prompt_unique_name = self.model_config.vlm.sys_prompt_img2txt
-            vlm_model_unique_name = await KbotMdModelsRepository().get_unique_name_by_id(
-                self.file_params.img2txt_model)
+            
+            if self.file_params.img2txt_model is None:
+                msg = f"img2txt_model not found for id: {self.file_params.img2txt_model}"
+                logger.error(msg)
+                await  update_file_status( self.file_params,FileStatus.PARSE_FAILED, msg)
+                return []
+
             chunks = []
             chunk_metas = []
 

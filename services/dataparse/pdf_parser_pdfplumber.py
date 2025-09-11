@@ -20,7 +20,7 @@ from core.dictionary import FileStatus, ChunkType, SplitStrategy
 from utils.call_models import CallModel
 from utils.common_methods import check_text_file
 import traceback
-from .config_manager import ConfigManager
+from configuration.config_manager import ConfigManager
 
 
 class PDFPlumberParser:
@@ -114,8 +114,13 @@ class PDFPlumberParser:
         if self.file_params.img2txt == 1:
         # if self.file_params.parser.get("extract_images", False):
             vlm_prompt_unique_name = self.model_config.vlm.sys_prompt_img2txt
-            vlm_model_unique_name = await KbotMdModelsRepository().get_unique_name_by_id(
-            self.file_params.img2txt_model)  # type: ignore
+            
+            if self.file_params.img2txt_model is None:
+                msg = f"Image to text model not found for id: {self.file_params.img2txt_model}"
+                logger.error(msg)
+                await self._update_file_status(FileStatus.PARSE_FAILED, msg)
+                return [] 
+
             chunks = []
             chunk_metas = []
             for eachImage in self.images_info:

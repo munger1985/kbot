@@ -35,10 +35,7 @@ class CSVParser:
         if not json_data:
             return False
 
-        model_unique_name = await KbotMdModelsRepository().get_unique_name_by_id(
-            self.file_params.txt_embed_model
-        )
-        if not model_unique_name:
+        if not self.file_params.txt_embed_model:
             msg = f"Embedding model not found for id: {self.file_params.txt_embed_model}"
             logger.error(msg)
             await update_file_status(self.file_params, FileStatus.PARSE_FAILED, msg)
@@ -47,7 +44,7 @@ class CSVParser:
         chunks = [json.dumps(row) for row in json_data]
         chunk_metas = [{"chunk_type": ChunkType.TABLE} for _ in json_data]
 
-        embeddings_list = await CallModel().call_embedding_model(model_unique_name, chunks)
+        embeddings_list = await CallModel().call_embedding_model(self.file_params.txt_embed_model, chunks)
         if not embeddings_list or len(embeddings_list) != len(chunks):
             msg = f"Embedding model returned invalid results"
             logger.error(msg)

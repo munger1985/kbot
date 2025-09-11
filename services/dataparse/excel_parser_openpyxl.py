@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Dict, List, Any, Optional
 from datetime import datetime
 import shutil
-from .config_manager import ConfigManager
+from configuration.config_manager import ConfigManager
 
 try:
     import openpyxl
