@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Dict, List, Any, Optional
 from datetime import datetime
 import shutil
+from .config_manager import ConfigManager
 
 try:
     import openpyxl
@@ -56,6 +57,7 @@ class ExcelParser:
         self.output_dir.mkdir(parents=True,exist_ok=True)
         self.images_dir.mkdir(parents=True,exist_ok=True)
         self.data_dir.mkdir(parents=True,exist_ok=True)
+        self.model_config = ConfigManager.get_model_config()
 
         # 存储提取的数据
         self.extracted_data = {}
@@ -327,7 +329,7 @@ class ExcelParser:
             self.parsed_metadata = self.extract_images_and_save_metadata(filename="image_info.json")
 
             # if self.file_params.parser.get("extract_images", False):
-            vlm_prompt_unique_name = "SYSTEM/image2text"
+            vlm_prompt_unique_name = self.model_config.vlm.sys_prompt_img2txt
             vlm_model_unique_name = await KbotMdModelsRepository().get_unique_name_by_id(
                 self.file_params.img2txt_model)  # type: ignore
             chunks = []

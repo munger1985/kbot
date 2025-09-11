@@ -20,6 +20,7 @@ from core.dictionary import FileStatus, ChunkType, SplitStrategy
 from utils.call_models import CallModel
 from utils.common_methods import check_text_file
 import traceback
+from .config_manager import ConfigManager
 
 
 class PDFPlumberParser:
@@ -42,6 +43,7 @@ class PDFPlumberParser:
         self.tables_info: list[dict] = []
         self.page_content: list[dict] = []  # Stores complete page content with placeholders
         self.remove_header_footer = remove_header_footer
+        self.model_config = ConfigManager.get_model_config()
 
         self.chunk_size = 0
         self.chunk_overlap = 0
@@ -111,7 +113,7 @@ class PDFPlumberParser:
     async def _process_images_embeddings(self) -> list:
         if self.file_params.img2txt == 1:
         # if self.file_params.parser.get("extract_images", False):
-            vlm_prompt_unique_name = "SYSTEM/image2text"
+            vlm_prompt_unique_name = self.model_config.vlm.sys_prompt_img2txt
             vlm_model_unique_name = await KbotMdModelsRepository().get_unique_name_by_id(
             self.file_params.img2txt_model)  # type: ignore
             chunks = []

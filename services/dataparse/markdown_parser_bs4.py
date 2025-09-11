@@ -15,6 +15,7 @@ from core.dictionary import FileStatus, ChunkType, SplitStrategy
 from utils.call_models import CallModel
 from utils.common_methods import check_text_file, update_file_status, save_embeddings
 import traceback
+from .config_manager import ConfigManager
 
 import os
 import json
@@ -32,6 +33,7 @@ class MarkdownParser:
         self.image_dict= []
         self.md = markdown.Markdown(extensions=['tables'])
         self.text_results= []
+        self.model_config = ConfigManager.get_model_config()
         self.create_dirs()
 
     def create_dirs(self):
@@ -326,9 +328,9 @@ class MarkdownParser:
 
 
             # if self.file_params.parser.get("extract_images", False):
-            vlm_prompt_unique_name = "SYSTEM/image2text"
+            vlm_prompt_unique_name = self.model_config.vlm.sys_prompt_img2txt
             vlm_model_unique_name = await KbotMdModelsRepository().get_unique_name_by_id(
-                self.file_params.img2txt_model)  # type: ignore
+                self.file_params.img2txt_model)
             chunks = []
             chunk_metas = []
 
