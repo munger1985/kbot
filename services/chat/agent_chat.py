@@ -1,3 +1,5 @@
+import asyncio
+from typing import Any
 from loguru import logger
 from dao.repositories.kbot_md_agent_conf_repo import KbotMdAgentConfRepository
 from dao.repositories.kbot_md_agent_repo import KbotMdAgentRepository
@@ -23,6 +25,240 @@ class Agent:
         self.security = security
         self.agent_params = AgentParams()
 
+    async def _run_kb_search_async(self, tool_params: ToolParams, question: str, security: int, enable_synonyms: bool) -> list[KBResult]:
+        """
+        异步运行KB搜索的方法
+        
+        Args:
+            tool_params: 工具参数
+            question: 用户问题
+            security: 安全级别
+            enable_synonyms: 是否启用同义词
+            
+        Returns:
+            list[KBResult]: 搜索结果列表
+        """
+        try:
+            kb = KBSearch(tool_params)
+            result = await kb.search(question, security, enable_synonyms)
+            return result or []
+        except Exception as e:
+            logger.error(f"KB搜索执行失败: {e}")
+            return []
+
+    async def _execute_kb_searches_parallel(self, kb_tasks: list[tuple]) -> list[list[KBResult]]:
+        """
+        并行执行所有KB搜索任务（使用线程池）
+        
+        Args:
+            kb_tasks: KB任务列表，每个任务为 (tool_params, question, security, enable_synonyms)
+            
+        Returns:
+            list[list[KBResult]]: 搜索结果列表
+        """
+        if not kb_tasks:
+            return []
+        
+        # 使用线程池而不是进程池，避免事件循环问题
+        results = []
+        
+        # 创建所有异步任务
+        async_tasks = []
+        for tool_params, question, security, enable_synonyms in kb_tasks:
+            async_tasks.append(
+                self._run_kb_search_async(tool_params, question, security, enable_synonyms)
+            )
+        
+        # 并行执行所有任务
+        try:
+            logger.debug(f"开始并行执行 {len(async_tasks)} 个KB搜索任务")
+            results = await asyncio.gather(*async_tasks, return_exceptions=True)
+            return self._process_kb_results(results)
+        except Exception as e:
+            logger.error(f"并行KB搜索执行失败: {e}")
+            return [[] for _ in async_tasks]
+
+    def _process_kb_results(self, results: list[Any]) -> list[list[KBResult]]:
+        """
+        处理KB搜索结果
+        
+        Args:
+            results: 原始结果列表
+            
+        Returns:
+            list[list[KBResult]]: 处理后的KBResult列表
+        """
+        processed_results = []
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                logger.error(f"KB搜索任务 {i} 执行失败: {result}")
+                processed_results.append([])
+            elif result is None:
+                logger.warning(f"KB搜索任务 {i} 返回空结果")
+                processed_results.append([])
+            elif isinstance(result, list):
+                logger.debug(f"KB搜索任务 {i} 找到 {len(result)} 条结果")
+                processed_results.append(result)
+            else:
+                logger.warning(f"KB搜索任务 {i} 返回未知类型结果: {type(result)}")
+                processed_results.append([])
+        return processed_results
+
+    async def _process_kb_tools(self, confs: list[Any], question: str) -> tuple:
+        """
+        处理知识库工具
+        
+        Args:
+            confs: 配置列表
+            question: 用户问题
+            
+        Returns:
+            tuple: (重排结果列表, 非重排结果列表)
+        """
+        kb_results_rerank: list[KBResult] = []
+        kb_results_non_rerank: list[KBResult] = []
+        
+        # 收集所有KB搜索任务
+        kb_tasks = []
+        kb_configs = []  # 保存配置信息
+        
+        for conf in confs:
+            if conf.tool_type == ToolType.KB.value:
+                logger.debug(f"知识库工具ID: {conf.tool_id}")
+                
+                # 直接从ORM对象创建ToolParams
+                tool_params = ToolParams.from_orm(conf)
+                
+                # 添加到并行任务列表
+                kb_tasks.append((
+                    tool_params,
+                    question,
+                    self.security,
+                    self.agent_params.synonym_similarity_flag
+                ))
+                kb_configs.append(conf)
+        
+        # 并行执行所有KB搜索
+        if kb_tasks:
+            all_kb_results = await self._execute_kb_searches_parallel(kb_tasks)
+            
+            # 处理搜索结果
+            for conf, kb_result_list in zip(kb_configs, all_kb_results):
+                if kb_result_list:
+                    # 如果开启了重排，则将结果添加到重排列表中
+                    if conf.reranker_flag == YesNoEnum.YES.value:
+                        kb_results_rerank.extend(kb_result_list)
+                        logger.debug(f"知识库 {conf.tool_id} 添加到重排列表: {len(kb_result_list)} 条结果")
+                    # 如果没有开启重排，则将结果添加到非重排列表中
+                    else:
+                        kb_results_non_rerank.extend(kb_result_list)
+                        logger.debug(f"知识库 {conf.tool_id} 添加到非重排列表: {len(kb_result_list)} 条结果")
+                else:
+                    logger.warning(f"知识库 {conf.tool_id} 搜索结果为空")
+        
+        logger.debug(f"重排结果数: {len(kb_results_rerank)}, 非重排结果数: {len(kb_results_non_rerank)}")
+        return kb_results_rerank, kb_results_non_rerank
+
+    async def _process_non_kb_tools(self, confs: list[Any], question: str) -> list[Any]:
+        """
+        处理非知识库工具
+        
+        Args:
+            confs: 配置列表
+            question: 用户问题
+            
+        Returns:
+            list[Any]: 非KB工具结果列表
+        """
+        non_kb_results = []
+        
+        for conf in confs:
+            if conf.tool_type != ToolType.KB.value:
+                logger.debug(f"处理非KB工具: {conf.tool_type}, 工具ID: {conf.tool_id}")
+                
+                # 函数调用工具
+                if conf.tool_type == ToolType.FUNCTIONCALL.value:
+                    logger.debug("工具类型: 函数调用")
+                    # 这里可以添加函数调用逻辑
+                    pass
+                
+                # 网络搜索工具
+                elif conf.tool_type == ToolType.INTERNET.value:
+                    logger.debug("工具类型: 网络搜索")
+                    # 这里可以添加网络搜索逻辑
+                    pass
+                
+                # 代理智能体工具
+                elif conf.tool_type == ToolType.AGENT.value:
+                    logger.debug("工具类型: 代理智能体")
+                    # 这里可以添加代理智能体逻辑
+                    pass
+                
+                # ChatAI工具
+                elif conf.tool_type == ToolType.CHATAI.value:
+                    logger.debug("工具类型: ChatAI")
+                    # 这里可以添加ChatAI逻辑
+                    pass
+                
+                # 其他类型暂不支持
+                else:
+                    logger.warning(f"不支持的工具类型: {conf.tool_type}")
+        
+        return non_kb_results
+
+    async def _rerank_and_process_results(self, question: str, kb_results_rerank: list[KBResult], 
+                                         kb_results_non_rerank: list[KBResult]) -> list[KBResult]:
+        """
+        重排和处理最终结果
+        
+        Args:
+            question: 用户问题
+            kb_results_rerank: 需要重排的结果
+            kb_results_non_rerank: 不需要重排的结果
+            
+        Returns:
+            list[KBResult]: 最终结果列表
+        """
+        kb_results: list[KBResult] = []
+        
+        # 如果重排结果大于1个，则进行重排
+        if len(kb_results_rerank) > 1:
+            reranker = AgentRerank(self.agent_params)
+            reranked = await reranker.rerank_kb(question, kb_results_rerank)
+            if reranked:
+                # 根据重排阈值，提取出大于等于阈值的重排结果
+                kb_results.extend([item for item in reranked if item.reranker_score >= self.agent_params.reranker_score_threshold])
+
+            # 计算重排结果的权重值
+            if kb_results:
+                total_weight = sum(item.weight for item in kb_results)
+                avg_weight = total_weight / len(kb_results)
+                for result in kb_results:
+                    result.weight = avg_weight
+
+        # 如果重排结果等于1个，则直接返回结果
+        elif len(kb_results_rerank) == 1:
+            logger.debug("只有1个结果，无需重排")
+            kb_results.extend(kb_results_rerank)
+
+        # 添加非重排结果
+        if kb_results_non_rerank:
+            kb_results.extend(kb_results_non_rerank)
+
+        # 根据权重进行排序
+        kb_results.sort(key=lambda x: x.weight, reverse=True)
+
+        # 对内容进行去重
+        seen = set()
+        unique_kb_results = []
+        for item in kb_results:
+            content = item.content.strip()
+            if content not in seen:
+                seen.add(content)
+                unique_kb_results.append(item)
+
+        return unique_kb_results
+
     async def chat(self, question: str) -> list[KBResult] | None:
         """
         智能体对话处理
@@ -47,16 +283,18 @@ class Agent:
             model_unique_name = await model_repo.get_unique_name_by_id(agent.reranker_model_id)
 
         # 设置智能体参数
-        self.agent_params.domain_id = agent.domain_id
-        self.agent_params.prompt_id = agent.prompt_id
-        self.agent_params.llm_id = agent.llm_id
-        self.agent_params.llm_params = agent.llm_params
-        self.agent_params.feedback_similarity_flag = True if agent.feedback_similarity_flag == 1 else False
-        self.agent_params.synonym_similarity_flag = True if agent.synonym_similarity_flag == 1 else False
-        self.agent_params.reranker_model_id = agent.reranker_model_id
-        self.agent_params.reranker_top_k = agent.reranker_topk
-        self.agent_params.reranker_score_threshold = agent.reranker_score_threshold
-        self.agent_params.reranker_model_name = model_unique_name
+        self.agent_params = AgentParams(
+            domain_id=agent.domain_id,
+            prompt_id=agent.prompt_id,
+            llm_id=agent.llm_id,
+            llm_params=agent.llm_params,
+            feedback_similarity_flag=agent.feedback_similarity_flag == 1,
+            synonym_similarity_flag=agent.synonym_similarity_flag == 1,
+            reranker_model_id=agent.reranker_model_id,
+            reranker_top_k=agent.reranker_topk,
+            reranker_score_threshold=agent.reranker_score_threshold or 0.0,
+            reranker_model_name=model_unique_name
+        )
 
         # 2. 获取智能体包含的知识库或工具配置信息
         agent_conf_repo = KbotMdAgentConfRepository()
@@ -65,99 +303,16 @@ class Agent:
             logger.warning("未找到智能体配置")
             return None
         
-        kb_results_rerank: list[KBResult] = []
-        kb_results_non_rerank: list[KBResult] = []
-        kb_results: list[KBResult] = []
-        
         logger.debug(f"找到 {len(confs)} 个工具")
-        for conf in confs:
-            # 生成工具参数，用于不同工具的调用
-            logger.debug(f"工具ID: {conf.tool_id}")
-            tool_params = ToolParams()
-            tool_params.conf_id = conf.conf_id
-            tool_params.tool_id = conf.tool_id
-            tool_params.tool_type = conf.tool_type
-            tool_params.tool_weight = conf.tool_weight or 0.0
-            tool_params.reranker_flag = conf.reranker_flag or 0
-            tool_params.search_type = conf.search_type
-            tool_params.top_k = conf.search_topk or 10
-            tool_params.threshold = conf.search_score_threshold or 0.7
-            
-            # 3. 根据配置的工具类型调用不同的工具
-            # 知识库工具
-            if tool_params.tool_type == ToolType.KB.value:
-                logger.debug("工具类型: 知识库")
-                kb = KBSearch(tool_params)
-                result = await kb.search(question, self.security, self.agent_params.synonym_similarity_flag)
-                if result:
-                    # 如果开启了重排，则将结果添加到重排列表中
-                    if tool_params.reranker_flag == YesNoEnum.YES.value:
-                        kb_results_rerank += result
-                    # 如果没有开启重排，则将结果添加到非重排列表中
-                    else:
-                        kb_results_non_rerank += result
-                else:
-                    logger.warning("知识库搜索结果为空")
-                    continue
-            # 函数调用工具
-            elif tool_params.tool_type == ToolType.FUNCTIONCALL.value:
-                logger.debug("工具类型: 函数调用")
-                pass
-            # 网络搜索工具
-            elif tool_params.tool_type == ToolType.INTERNET.value:
-                logger.debug("工具类型: 网络搜索")
-                pass
-            # 代理智能体工具
-            elif tool_params.tool_type == ToolType.AGENT.value:
-                logger.debug("工具类型: 代理智能体")
-                pass
-            # ChatAI工具
-            elif tool_params.tool_type == ToolType.CHATAI.value:
-                logger.debug("工具类型: ChatAI")
-                pass
-            # 其他类型暂不支持
-            else:
-                logger.warning("不支持的工具类型")
-                continue
         
-        # 4. 智能体范围内所有知识库查询和工具调用的结果合并后，进行重排（配置决定是否需要重排）
-        # 如果重排结果大于1个，则进行重排，否则不进行重排
-        if len(kb_results_rerank) > 1:
-            reranker = AgentRerank(self.agent_params)
-            reranked = await reranker.rerank_kb(question, kb_results_rerank)
-            if reranked:
-                # 根据重排阈值，提取出大于等于阈值的重排结果
-                kb_results += [item for item in reranked if item.reranker_score >= self.agent_params.reranker_score_threshold]  # type: ignore
-
-            # 计算重排结果的权重值，权重值等于数组中每个KBResult对象的weight值的加权平均值
-            for index, result in enumerate(kb_results):
-                result.weight = sum([item.weight for item in kb_results]) / len(kb_results)
-
-        # 如果重排结果等于1个，则直接返回结果
-        elif len(kb_results_rerank) == 1:
-            logger.debug("只有1个结果，无需重排")
-            kb_results += kb_results_rerank
-        # 没有需要重排的结果
-        else:
-            logger.debug("向量搜索未返回结果，无需重排")
-            pass
-
-        # 添加非重排结果
-        if len(kb_results_non_rerank) > 0:
-            kb_results += kb_results_non_rerank
-
-        # 5. 最后根据权重进行排序，权重值最大的排在前面
-        kb_results.sort(key=lambda x: x.weight, reverse=True)  # type: ignore
-
-        # 6. 对内容进行去重
-        seen = set()
-        unique_kb_results = []
-        for item in kb_results:
-            content = item.content.strip()  # 去除首尾空格
-            if content not in seen:
-                seen.add(content)
-                unique_kb_results.append(item)
-        kb_results = unique_kb_results
-
-        # 7. 返回最终结果
-        return kb_results
+        # 3. 并行处理知识库工具
+        kb_results_rerank, kb_results_non_rerank = await self._process_kb_tools(confs, question) # type: ignore
+        
+        # 4. 处理非知识库工具
+        non_kb_results = await self._process_non_kb_tools(confs, question) # type: ignore
+        
+        # 5. 重排和处理最终结果
+        final_results = await self._rerank_and_process_results(question, kb_results_rerank, kb_results_non_rerank)
+        
+        # 6. 返回最终结果
+        return final_results
