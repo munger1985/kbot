@@ -30,7 +30,8 @@ async def handle_enable_model(form: ToggleModelForm):
         HTTPException: 失败时抛出500错误
     """
     controller = ModelController()
-    result = await controller.toggle(form.model_unique_name, enable=form.enable)
+    enable = True if form.switch == 1 else False
+    result = await controller.toggle(form.model_unique_name, enable=enable)
     if result:
         return SuccessResponse(
             code=200,

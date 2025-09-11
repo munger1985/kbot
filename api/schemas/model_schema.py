@@ -6,7 +6,7 @@ class ModelForm(BaseModel):
 
 class ToggleModelForm(ModelForm):
     """启用或禁用模型请求表单"""
-    enable: bool
+    switch: int
 
 class TestModelForm(ModelForm):
     """测试模型可用性请求表单"""
