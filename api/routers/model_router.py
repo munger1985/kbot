@@ -36,13 +36,13 @@ async def handle_enable_model(form: ToggleModelForm):
         return SuccessResponse(
             code=200,
             success=True,
-            message="模型 {form.model_id} 操作成功"
+            message="操作成功"
         )
     else:
         return ErrorResponse(
             code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             success=False,
-            message="模型 {form.model_id} 操作失败"
+            message="操作失败"
         )
     
     
@@ -106,11 +106,11 @@ async def handle_test_model(form: TestModelForm):
         return SuccessResponse(
             code=status.HTTP_200_OK,
             success=True,
-            message="模型 {model_id} 可用"
+            message="模型可用"
         )
     else:
         return ErrorResponse(
             code=status.HTTP_400_BAD_REQUEST,
             success=False,
-            message="模型 {model_id} 不可用"
+            message="模型不可用"
         )
