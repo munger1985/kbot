@@ -26,7 +26,7 @@ class EmbeddingService:
             self._initialized = False
             logger.info("嵌入服务已关闭")
     
-    async def get_embedding_model(self, model_id: str) -> BaseEmbedding:
+    async def get_embedding_model(self, model_id: int) -> BaseEmbedding:
         """获取指定唯一名称的嵌入模型实例。"""
         if not self._initialized:
             await self.initialize()
@@ -36,7 +36,7 @@ class EmbeddingService:
     
     async def embed_texts(
         self, 
-        model_id: str, 
+        model_id: int, 
         texts: list[str], 
         batch_size: int = 0
     ) -> EmbeddingResponse:
@@ -56,7 +56,7 @@ class EmbeddingService:
         if not texts:
             return EmbeddingResponse(
                 data=[],
-                model=model_id,
+                model=self._model_pool._model_names.get(model_id, str(model_id)),
                 object="list",
                 usage={"prompt_tokens": 0, "total_tokens": 0}
             )
@@ -69,19 +69,19 @@ class EmbeddingService:
             if not response.data or len(response.data) == 0:
                 return EmbeddingResponse(
                     data=[],
-                    model=model_id,
+                    model=self._model_pool._model_names.get(model_id, str(model_id)),
                     object="list",
                     usage={"prompt_tokens": 0, "total_tokens": 0}
                 )
             return response
                 
         except Exception as e:
-            logger.exception(f"文本嵌入处理失败，模型: {model_id}, 错误: {e}")
+            logger.exception(f"文本嵌入处理失败，模型: {self._model_pool._model_names.get(model_id, str(model_id))}, 错误: {e}")
             # 处理底层模型返回的0维张量错误
             if "0-d tensor" in str(e):
                 return EmbeddingResponse(
                     data=[],
-                    model=model_id,
+                    model=self._model_pool._model_names.get(model_id, str(model_id)),
                     object="list",
                     usage={"prompt_tokens": 0, "total_tokens": 0}
                 )
@@ -137,7 +137,7 @@ class EmbeddingService:
         
         await self._model_pool.warmup()
 
-    async def load_model(self, model_id: str) -> bool:
+    async def load_model(self, model_id: int) -> bool:
         """通过模型唯一标识符加载模型到内存中
         
         Args:
@@ -152,7 +152,7 @@ class EmbeddingService:
         return await self._model_pool.reload_model(model_id)
 
         
-    async def unload_model(self, model_id: str) -> bool:
+    async def unload_model(self, model_id: int) -> bool:
         """通过模型唯一标识符卸载模型到内存中。
         
         Args:

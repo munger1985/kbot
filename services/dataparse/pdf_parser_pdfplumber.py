@@ -123,7 +123,7 @@ class PDFPlumberParser:
                 if not description_file.exists():
 
 
-                    image_description = await CallModel().call_vlm_model_for_parsing_picture(vlm_model_unique_name, # type: ignore
+                    image_description = await CallModel().call_vlm_model_for_parsing_picture(self.file_params.img2txt_model,
                                                                            eachImage['file_path'], vlm_prompt_unique_name) 
                     if image_description:
                         description_file.write_text(
@@ -136,19 +136,18 @@ class PDFPlumberParser:
                             "image_id": eachImage['uuid'],
                         })
                         chunks.append(image_description)
-            text_embedding_model = await KbotMdModelsRepository().get_unique_name_by_id(
-                self.file_params.txt_embed_model # type: ignore
-            )
-            if not text_embedding_model:
+            
+
+            if not self.file_params.txt_embed_model:
                 msg = f"text_embedding_model not found for id: {self.file_params.txt_embed_model}"
                 logger.error(msg)
                 await self._update_file_status(FileStatus.PARSE_FAILED, msg)
                 return []
             embeddings_list= []
             if chunks:
-                embeddings_list = await CallModel().call_embedding_model(text_embedding_model, chunks)
+                embeddings_list = await CallModel().call_embedding_model(self.file_params.txt_embed_model, chunks)
             if embeddings_list and len(embeddings_list) != len(chunks):
-                msg = f"text_embedding_model  {text_embedding_model} returned invalid results (expected {len(chunks)}, got {len(embeddings_list) if embeddings_list else 0})"
+                msg = f"text_embedding_model  {self.file_params.txt_embed_model} returned invalid results (expected {len(chunks)}, got {len(embeddings_list) if embeddings_list else 0})"
                 logger.error(msg)
                 logger.error("failed file: {}",self.file_params.file_path)
                 await self._update_file_status(FileStatus.PARSE_FAILED, msg)
@@ -176,10 +175,8 @@ class PDFPlumberParser:
 
     async def _process_embeddings_per_page(self) -> bool:
         """Process all content embeddings in a unified way"""
-        model_unique_name = await KbotMdModelsRepository().get_unique_name_by_id(
-            self.file_params.txt_embed_model  # type: ignore
-        )
-        if not model_unique_name:
+        
+        if not self.file_params.txt_embed_model:
             msg = f"Embedding model not found for id: {self.file_params.txt_embed_model}"
             logger.error(msg)
             await self._update_file_status(FileStatus.PARSE_FAILED, msg)
@@ -219,9 +216,9 @@ class PDFPlumberParser:
             return True  # Consider empty content as success
 
         # Get all embeddings in one call
-        embeddings_list = await CallModel().call_embedding_model(model_unique_name, chunks)
+        embeddings_list = await CallModel().call_embedding_model(self.file_params.txt_embed_model, chunks)
         if not embeddings_list or len(embeddings_list) != len(chunks):
-            msg = f"Embedding model {model_unique_name} returned invalid results (expected {len(chunks)}, got {len(embeddings_list) if embeddings_list else 0})"
+            msg = f"Embedding model {self.file_params.txt_embed_model} returned invalid results (expected {len(chunks)}, got {len(embeddings_list) if embeddings_list else 0})"
             logger.error(msg)
             await self._update_file_status(FileStatus.PARSE_FAILED, msg)
             return False
@@ -249,10 +246,8 @@ class PDFPlumberParser:
 
     async def _process_embeddings_by_fixed_size(self) -> bool:
         """Process text and table embeddings for by fixed size"""
-        model_unique_name = await KbotMdModelsRepository().get_unique_name_by_id(
-            self.file_params.txt_embed_model  # type: ignore
-        )
-        if not model_unique_name:
+        
+        if not self.file_params.txt_embed_model:
             msg = f"Embedding model not found for id: {self.file_params.txt_embed_model}"
             logger.error(msg)
             await self._update_file_status(FileStatus.PARSE_FAILED, msg)
@@ -292,9 +287,9 @@ class PDFPlumberParser:
             return True  # Consider empty content as success
 
         # Get all embeddings in one call
-        embeddings_list = await CallModel().call_embedding_model(model_unique_name, chunks)
+        embeddings_list = await CallModel().call_embedding_model(self.file_params.txt_embed_model, chunks)
         if not embeddings_list or len(embeddings_list) != len(chunks):
-            msg = f"Embedding model {model_unique_name} returned invalid results (expected {len(chunks)}, got {len(embeddings_list) if embeddings_list else 0})"
+            msg = f"Embedding model {self.file_params.txt_embed_model} returned invalid results (expected {len(chunks)}, got {len(embeddings_list) if embeddings_list else 0})"
             logger.error(msg)
             await self._update_file_status(FileStatus.PARSE_FAILED, msg)
             return False

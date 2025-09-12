@@ -31,18 +31,18 @@ async def handle_enable_model(form: ToggleModelForm):
     """
     controller = ModelController()
     enable = True if form.switch == 1 else False
-    result = await controller.toggle(form.model_unique_name, enable=enable)
+    result = await controller.toggle(form.model_id, enable=enable)
     if result:
         return SuccessResponse(
             code=200,
             success=True,
-            message="模型 {form.model_unique_name} 操作成功"
+            message="模型 {form.model_id} 操作成功"
         )
     else:
         return ErrorResponse(
             code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             success=False,
-            message="模型 {form.model_unique_name} 操作失败"
+            message="模型 {form.model_id} 操作失败"
         )
     
     
@@ -60,14 +60,14 @@ async def handle_get_model_params(form: ModelForm):
         dict: 指定模型的参数
     """
     controller = ModelController()
-    model = await controller.get_model_params_by_uname(form.model_unique_name)
+    model = await controller.get_model_by_id(form.model_id)
     if model:
         return model
     else:
         return ErrorResponse(
             code=status.HTTP_404_NOT_FOUND,
             success=False,
-            message="模型 {form.model_unique_name} 未找到"
+            message="模型 {form.model_id} 未找到"
         )
 
 @router.get(
@@ -102,15 +102,15 @@ async def handle_test_model(form: TestModelForm):
     """测试指定模型是否可用"""
 
     controller = ModelController()
-    if await controller.verify_model(form.model_unique_name, form.model_category):
+    if await controller.verify_model(form.model_id, form.model_category):
         return SuccessResponse(
             code=status.HTTP_200_OK,
             success=True,
-            message="模型 {model_unique_name} 可用"
+            message="模型 {model_id} 可用"
         )
     else:
         return ErrorResponse(
             code=status.HTTP_400_BAD_REQUEST,
             success=False,
-            message="模型 {model_unique_name} 不可用"
+            message="模型 {model_id} 不可用"
         )

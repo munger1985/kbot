@@ -274,13 +274,6 @@ class Agent:
         if not agent:
             logger.warning("未找到智能体")
             return None
-            
-        if agent.reranker_model_id is None:
-            logger.warning("智能体重排模型ID为空")
-            model_unique_name = None
-        else:
-            model_repo = KbotMdModelsRepository()
-            model_unique_name = await model_repo.get_unique_name_by_id(agent.reranker_model_id)
 
         # 设置智能体参数
         self.agent_params = AgentParams(
@@ -292,8 +285,7 @@ class Agent:
             synonym_similarity_flag=agent.synonym_similarity_flag == 1,
             reranker_model_id=agent.reranker_model_id,
             reranker_top_k=agent.reranker_topk,
-            reranker_score_threshold=agent.reranker_score_threshold or 0.0,
-            reranker_model_name=model_unique_name
+            reranker_score_threshold=agent.reranker_score_threshold or 0.0
         )
 
         # 2. 获取智能体包含的知识库或工具配置信息
@@ -312,7 +304,12 @@ class Agent:
         non_kb_results = await self._process_non_kb_tools(confs, question) # type: ignore
         
         # 5. 重排和处理最终结果
-        final_results = await self._rerank_and_process_results(question, kb_results_rerank, kb_results_non_rerank)
+        # 如果重排模型ID为空，则直接返回结果
+        if agent.reranker_model_id is None:
+            logger.warning("智能体重排模型ID为空")
+            final_results = kb_results_rerank + kb_results_non_rerank
+        else:
+            final_results = await self._rerank_and_process_results(question, kb_results_rerank, kb_results_non_rerank)
         
         # 6. 返回最终结果
         return final_results

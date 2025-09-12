@@ -17,8 +17,9 @@ class ModelPool:
         参数:
             health_check_interval: 健康检查间隔时间（秒）
         """
-        self._models: dict[str, BaseVLM] = {}
-        self._last_used: dict[str, datetime] = {}
+        self._models: dict[int, BaseVLM] = {}
+        self._model_names: dict[int, str] = {}
+        self._last_used: dict[int, datetime] = {}
         self._health_check_interval = health_check_interval
         self._health_check_task: asyncio.Task | None = None
         
@@ -53,7 +54,7 @@ class ModelPool:
         self._last_used.clear()
         logger.info("模型池已关闭")
 
-    async def _safe_shutdown_model(self, model_id: str, model: BaseVLM):
+    async def _safe_shutdown_model(self, model_id: int, model: BaseVLM):
         """安全关闭单个模型并进行错误处理。
         
         Args:
@@ -62,31 +63,38 @@ class ModelPool:
         """
         try:
             await model.shutdown()
-            logger.info(f"模型 {model_id} 关闭成功")
+            logger.info(f"模型 {self._model_names.get(model_id, str(model_id))} 关闭成功")
         except Exception as e:
-            logger.error(f"关闭模型 {model_id} 时发生错误: {e}")
+            logger.error(f"关闭模型 {self._model_names.get(model_id, str(model_id))} 时发生错误: {e}")
         
-    async def _start_model(self, model_id: str, model_data: dict[str, Any]) -> BaseVLM:
+    async def _start_model(self, model_id: int, model_data: dict[str, Any]) -> BaseVLM:
         """根据模型数据创建和启动模型实例。"""
+        
+        # 从模型数据中获取模型显示名称
+        display_name = model_data.get("display_name")
+        if not display_name:
+            logger.warning(f"模型 {model_id} 缺少模型显示名称")
+
+        # 从模型数据中获取模型名称
+        model_name = model_data.get("model_name")
+        if not model_name:
+            raise ValueError(f"模型 {display_name or model_id} 没有模型名称")
+        
+        # 从模型数据中获取提供商
+        provider = model_data.get("provider")
+        if not provider:
+            raise ValueError(f"模型 {display_name or model_name} 没有提供商")
         
         # 从模型数据中提取参数
         model_params = model_data["model_params"] if model_data.get("model_params") else {}
-
-        provider = model_data.get("provider")
-        if not provider:
-            raise ValueError(f"模型 {model_id} 没有提供者")
-        
-        # 从模型数据中获取参数
-        model_name = model_data.get("model_name")
-        if not model_name:
-            raise ValueError(f"模型 {model_id} 没有模型名称")
         
         # 根据模型类型创建相应的配置
         if provider == VLMProvider.OPENAI.value:
             api_endpoint = model_data.get("api_endpoint")
             api_key = model_data.get("api_key")
+
             if not api_endpoint or not api_key:
-                raise ValueError(f"模型 {model_id} 没有 API 端点或 API 密钥")
+                raise ValueError(f"模型 {display_name or model_name} 没有 API 端点或 API 密钥")
             
             model_config = OpenAIVLMConfig(
                 model_name=model_name,
@@ -107,15 +115,16 @@ class ModelPool:
             model = create_vlm_model(model_config)
             await model.startup()
             self._models[model_id] = model
+            self._model_names[model_id] = display_name or model_name
             self._last_used[model_id] = datetime.now()
-            logger.success(f"模型 {model_id} 加载成功")
+            logger.success(f"模型 {display_name or model_name} 加载成功")
             return model
         except Exception as e:
-            logger.error(f"创建模型 {model_id} 失败: {e}")
-            raise RuntimeError(f"创建模型 {model_id} 失败: {e}")
+            logger.error(f"创建模型 {display_name or model_name} 失败: {e}")
+            raise RuntimeError(f"创建模型 {display_name or model_name} 失败: {e}")
 
 
-    async def load_model(self, model_id: str) -> BaseVLM:
+    async def load_model(self, model_id: int) -> BaseVLM:
         """根据 model_id 加载模型实例
         
         参数:
@@ -142,7 +151,7 @@ class ModelPool:
             # 构建请求 URL
             url = f"http://{main_host}:{main_port}/api/model/params"
             headers = {"Content-Type": "application/json"}
-            payload = {"model_unique_name": model_id}
+            payload = {"model_id": model_id}
             timeout = aiohttp.ClientTimeout(total=30)
             
             # 发送请求
@@ -165,7 +174,7 @@ class ModelPool:
 
         
                     
-    async def unload_model(self, model_id: str) -> bool:
+    async def unload_model(self, model_id: int) -> bool:
         """从模型池中卸载指定模型。
         
         Args:
@@ -175,7 +184,7 @@ class ModelPool:
             bool: 卸载成功返回True，否则返回False
         """
         if model_id not in self._models:
-            logger.warning(f"模型 {model_id} 未加载，无法卸载")
+            logger.warning(f"模型 {self._model_names.get(model_id, str(model_id))} 未加载，无法卸载")
             return True
             
         model = self._models.pop(model_id)
@@ -183,13 +192,13 @@ class ModelPool:
         
         try:
             await model.shutdown()
-            logger.info(f"模型 {model_id} 卸载成功")
+            logger.info(f"模型 {self._model_names.get(model_id, str(model_id))} 卸载成功")
             return True
         except Exception as e:
-            logger.error(f"卸载模型 {model_id} 时发生错误: {e}")
+            logger.error(f"卸载模型 {self._model_names.get(model_id, str(model_id))} 时发生错误: {e}")
             return False
 
-    async def reload_model(self, model_id: str) -> bool:
+    async def reload_model(self, model_id: int) -> bool:
         """重新加载模型池中的指定模型。
         
         Args:
@@ -203,10 +212,10 @@ class ModelPool:
 
         try:
             await self.load_model(model_id)
-            logger.info(f"模型 {model_id} 加载成功")
+            logger.info(f"模型 {self._model_names.get(model_id, str(model_id))} 重新加载成功")
             return True
         except Exception as e:
-            logger.error(f"加载模型 {model_id} 失败: {e}")
+            logger.error(f"加载模型 {self._model_names.get(model_id, str(model_id))} 时发生错误: {e}")
             return False
 
     async def _health_check_loop(self):
@@ -224,7 +233,7 @@ class ModelPool:
             try:
                 # 检查模型是否不活跃
                 if self._last_used.get(model_id, now) < inactive_threshold:
-                    logger.warning(f"模型 {model_id} 已超过1小时未活动")
+                    logger.warning(f"模型 {self._model_names.get(model_id, str(model_id))} 已超过1小时未活动")
                     # await self.unload_model(model_id)
                     continue
                     
@@ -240,31 +249,31 @@ class ModelPool:
                     
                     if isinstance(status, dict):
                         if status.get('initialized', False):
-                            logger.info(f"模型 {model_id} 健康检查通过")
+                            logger.info(f"模型 {self._model_names.get(model_id, str(model_id))} 健康检查通过")
                         else:
-                            logger.warning(f"模型 {model_id} 健康检查失败")
+                            logger.warning(f"模型 {self._model_names.get(model_id, str(model_id))} 健康检查失败")
                             # 尝试重启模型
                             await self.reload_model(model_id)
                     else:
                         if getattr(status, 'initialized', False):
-                            logger.info(f"模型 {model_id} 健康检查通过")
+                            logger.info(f"模型 {self._model_names.get(model_id, str(model_id))} 健康检查通过")
                         else:
-                            logger.warning(f"模型 {model_id} 健康检查失败")
+                            logger.warning(f"模型 {self._model_names.get(model_id, str(model_id))} 健康检查失败")
                             # 尝试重启模型
                             await self.reload_model(model_id)
                 except Exception as e:
-                    logger.error(f"模型 {model_id} 健康检查失败: {e}")
+                    logger.error(f"模型 {self._model_names.get(model_id, str(model_id))} 健康检查失败: {e}")
                     # 尝试重启模型
                     await self.reload_model(model_id)
                 
             except Exception as e:
-                logger.error(f"模型 {model_id} 健康检查失败: {e}")
+                logger.error(f"模型 {self._model_names.get(model_id, str(model_id))} 健康检查失败: {e}")
                 # 尝试重启模型
                 try:
-                    logger.info(f"正在尝试重启模型 {model_id}")
+                    logger.info(f"正在尝试重启模型 {self._model_names.get(model_id, str(model_id))}")
                     await self.reload_model(model_id)
                 except Exception as e:
-                    logger.error(f"重启模型 {model_id} 失败: {e}")
+                    logger.error(f"重启模型 {self._model_names.get(model_id, str(model_id))} 失败: {e}")
                     await self.unload_model(model_id)
 
     async def warmup(self) -> None:
@@ -299,7 +308,7 @@ class ModelPool:
 
         try: 
             for model in models:
-                await self._start_model(model["model_unique_name"], model)
+                await self._start_model(model["model_id"], model)
 
         except Exception as e:
             logger.exception(f"模型预热失败: {e}")

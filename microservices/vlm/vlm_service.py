@@ -31,7 +31,7 @@ class VLMService:
             self._initialized = False
             logger.info("VLM 服务已关闭")
     
-    async def get_vlm_model(self, model_id: str) -> BaseVLM:
+    async def get_vlm_model(self, model_id: int) -> BaseVLM:
         """获取指定唯一名的VLM模型。"""
         if not self._initialized:
             await self.initialize()
@@ -39,7 +39,7 @@ class VLMService:
         return await self._model_pool.load_model(model_id)
     
     async def inference(self, 
-                        model_id: str, 
+                        model_id: int, 
                         messages: list[dict[str, Any]],
                         stream: bool = False,
                         timeout: int | None = None,
@@ -85,7 +85,7 @@ class VLMService:
             
             # 从模型获取响应
             try:
-                logger.debug(f"向模型发送消息: {model_id}")
+                logger.debug(f"向模型发送消息: {self._model_pool._model_names.get(model_id, str(model_id))}")
                 response = await model.inference(messages, stream=stream, **kwargs)
                 logger.debug(f"收到响应类型: {type(response)}")
             except Exception as e:
@@ -232,7 +232,7 @@ class VLMService:
         
         await self._model_pool.warmup()
 
-    async def load_model(self, model_id: str) -> bool:
+    async def load_model(self, model_id: int) -> bool:
         """通过模型唯一标识符加载模型到内存中
         
         Args:
@@ -247,7 +247,7 @@ class VLMService:
         return await self._model_pool.reload_model(model_id)
 
         
-    async def unload_model(self, model_id: str) -> bool:
+    async def unload_model(self, model_id: int) -> bool:
         """通过模型唯一标识符卸载模型到内存中。
         
         Args:

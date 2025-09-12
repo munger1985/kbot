@@ -19,9 +19,10 @@ class ModelPool:
         """
         
         # 用于按提供商管理模型的池
-        self._models: dict[str, BaseLLM] = {}
-        self._last_used: dict[str, datetime] = {}
-        self._providers: dict[str, str] = {}
+        self._models: dict[int, BaseLLM] = {}
+        self._model_names: dict[int, str] = {}
+        self._last_used: dict[int, datetime] = {}
+        self._providers: dict[int, str] = {}
         self._health_check_interval = health_check_interval
         self._health_check_task: asyncio.Task | None = None
 
@@ -56,7 +57,7 @@ class ModelPool:
         self._last_used.clear()
         logger.info("模型池已关闭")
 
-    async def _safe_shutdown_model(self, model_id: str, model: BaseLLM):
+    async def _safe_shutdown_model(self, model_id: int, model: BaseLLM):
         """安全关闭单个模型并进行错误处理。
         
         Args:
@@ -65,26 +66,31 @@ class ModelPool:
         """
         try:
             await model.shutdown()
-            logger.info(f"模型 {model_id} 关闭成功")
+            logger.info(f"模型 {self._model_names.get(model_id, str(model_id))} 关闭成功")
         except Exception as e:
-            logger.error(f"关闭模型 {model_id} 时发生错误: {e}")
+            logger.error(f"关闭模型 {self._model_names.get(model_id, str(model_id))} 时发生错误: {e}")
 
-    async def _start_model(self, model_id: str, model_data: dict[str, Any]) -> BaseLLM:
+    async def _start_model(self, model_id: int, model_data: dict[str, Any]) -> BaseLLM:
         """根据模型数据创建和启动模型实例。"""
+  
+        # 从模型数据中获取模型显示名称
+        display_name = model_data.get("display_name")
+        if not display_name:
+            logger.warning(f"模型 {model_id} 缺少模型显示名称")
 
-        # 从模型数据中提取参数
-        model_params = model_data["model_params"] if model_data.get("model_params") else {}
-
+        # 从模型数据中获取模型名称
+        model_name = model_data.get("model_name")
+        if not model_name:
+            raise ValueError(f"模型 {display_name or model_id} 没有模型名称")
+        
         # 从模型数据中获取提供商
         provider = model_data.get("provider")
         if not provider:
-            raise ValueError(f"模型 {model_id} 没有提供商")
+            raise ValueError(f"模型 {display_name or model_name} 没有提供商")
         
-        # 从模型数据中获取参数
-        model_name = model_data.get("model_name")
-        if not model_name:
-            raise ValueError(f"模型 {model_id} 没有模型名称")
-
+        # 从模型数据中提取参数
+        model_params = model_data["model_params"] if model_data.get("model_params") else {}
+        
         # 从 Nacos 获取 llm 默认参数
         config = ConfigManager.get_model_config()
         max_tokens = config.llm.max_tokens
@@ -101,7 +107,7 @@ class ModelPool:
             api_key = model_data.get("api_key")
 
             if api_key is None or api_endpoint is None:
-                raise ValueError(f"模型 {model_id} 缺少api_key或api_endpoint")
+                raise ValueError(f"模型 {display_name or model_name} 缺少api_key或api_endpoint")
             
             model_config = OpenaiLLMConfig(
                 provider=provider,
@@ -119,43 +125,43 @@ class ModelPool:
             compartment_id = model_params.get("compartment_id")
             config_file = model_params.get("config_file")
             api_endpoint = model_data.get("api_endpoint")
-            api_key = model_data.get("api_key")
 
-            if model_name is None or api_endpoint is None or compartment_id is None or config_file is None:
-                raise ValueError(f"模型 {model_id} 缺少模型名称、api_endpoint、compartment_id或config_file")
+            if not all([api_endpoint, compartment_id, config_file]):
+                raise ValueError(f"模型 {display_name or model_name} 缺少必要参数")
 
             model_config = OCILLMConfig(
                 provider=provider,
-                api_endpoint=api_endpoint,
+                api_endpoint=api_endpoint, # type: ignore
                 model_name=model_name,
                 temperature=model_params.get("temperature", temperature),
-                compartment_id=str(compartment_id),
+                compartment_id=compartment_id, # type: ignore
                 max_tokens=model_params.get("max_tokens", max_tokens),
                 top_p=model_params.get("top_p", top_p),
                 top_k=model_params.get("top_k", top_k),
                 frequency_penalty=model_params.get("frequency_penalty", frequency_penalty),
                 presence_penalty=model_params.get("presence_penalty", presence_penalty),
-                config_file=config_file
+                config_file=config_file # type: ignore
             )
         else:
             # TODO: 支持其他提供商
             logger.error(f"提供商 {provider} 暂不支持")
-            raise ValueError(f"模型 {model_id} 使用了不支持的提供商 {provider}")
+            raise ValueError(f"模型 {display_name or model_name} 使用了不支持的提供商 {provider}")
         
         # 创建和初始化模型
         try:
             model = create_llm_model(model_config)
             await model.startup()
             self._models[model_id] = model
+            self._model_names[model_id] = display_name or model_name
             self._providers[model_id] = provider
             self._last_used[model_id] = datetime.now()
-            logger.success(f"模型 {model_id} 加载成功")
+            logger.success(f"模型 {display_name or model_name} 加载成功")
             return model
         except Exception as e:
-            logger.exception(f"创建模型 {model_id} 失败: {e}")
-            raise RuntimeError(f"创建模型 {model_id} 失败: {str(e)}")
+            logger.exception(f"创建模型 {display_name or model_name} 失败: {e}")
+            raise RuntimeError(f"创建模型 {display_name or model_name} 失败: {str(e)}")
 
-    async def load_model(self, model_id: str) -> BaseLLM:
+    async def load_model(self, model_id: int) -> BaseLLM:
         """根据模型ID加载模型实例
         
         Args:
@@ -182,7 +188,7 @@ class ModelPool:
             # 构建请求 URL
             url = f"http://{main_host}:{main_port}/api/model/params"
             headers = {"Content-Type": "application/json"}
-            payload = {"model_unique_name": model_id}
+            payload = {"model_id": model_id}
             timeout = aiohttp.ClientTimeout(total=30)
             
             # 发送请求
@@ -205,7 +211,7 @@ class ModelPool:
         
         
 
-    async def unload_model(self, model_id: str) -> bool:
+    async def unload_model(self, model_id: int) -> bool:
         """从模型池中卸载指定模型。
         
         Args:
@@ -215,7 +221,7 @@ class ModelPool:
             bool: 卸载成功返回True，否则返回False
         """
         if model_id not in self._models:
-            logger.warning(f"模型 {model_id} 未加载，无法卸载")
+            logger.warning(f"模型 {self._model_names.get(model_id, str(model_id))} 未加载，无法卸载")
             return True
             
         model = self._models.pop(model_id)
@@ -223,13 +229,13 @@ class ModelPool:
         
         try:
             await model.shutdown()
-            logger.info(f"模型 {model_id} 卸载成功")
+            logger.info(f"模型 {self._model_names.get(model_id, str(model_id))} 卸载成功")
             return True
         except Exception as e:
-            logger.error(f"卸载模型 {model_id} 时发生错误: {e}")
+            logger.error(f"卸载模型 {self._model_names.get(model_id, str(model_id))} 时发生错误: {e}")
             return False
 
-    async def reload_model(self, model_id: str) -> bool:
+    async def reload_model(self, model_id: int) -> bool:
         """重新加载模型池中的指定模型。
         
         Args:
@@ -243,10 +249,10 @@ class ModelPool:
 
         try:
             await self.load_model(model_id)
-            logger.info(f"模型 {model_id} 加载成功")
+            logger.info(f"模型 {self._model_names.get(model_id, str(model_id))} 重新加载成功")
             return True
         except Exception as e:
-            logger.error(f"加载模型 {model_id} 失败: {e}")
+            logger.error(f"加载模型 {self._model_names.get(model_id, str(model_id))} 时发生错误: {e}")
             return False
         
     async def _health_check_loop(self):
@@ -264,23 +270,23 @@ class ModelPool:
             try:
                 # 检查模型是否不活跃
                 if self._last_used.get(model_id, now) < inactive_threshold:
-                    logger.warning(f"模型 {model_id} 已超过1小时未使用")
+                    logger.warning(f"模型 {self._model_names.get(model_id, str(model_id))} 已超过1小时未使用")
                     # await self.unload_model(model_id)
                     continue
                     
                 # 通过调用模型进行简单健康检查
                 model = self._models[model_id]
                 await model.chat("hello", False, **{"max_tokens": 5})
-                logger.debug(f"模型 {model_id} 健康检查成功")
+                logger.debug(f"模型 {self._model_names.get(model_id, str(model_id))} 健康检查成功")
                 
             except Exception as e:
-                logger.error(f"模型 {model_id} 健康检查失败: {e}")
+                logger.error(f"模型 {self._model_names.get(model_id, str(model_id))} 健康检查过程中发生错误: {e}")
                 # 尝试重启模型
                 try:
-                    logger.info(f"正在尝试重启模型 {model_id}")
+                    logger.info(f"正在尝试重启模型 {self._model_names.get(model_id, str(model_id))}")
                     await self.reload_model(model_id)
                 except Exception as e:
-                    logger.exception(f"重启模型 {model_id} 失败: {e}")
+                    logger.exception(f"重启模型 {self._model_names.get(model_id, str(model_id))} 失败: {e}")
                     await self.unload_model(model_id)
 
     async def warmup(self) -> None:
@@ -315,7 +321,7 @@ class ModelPool:
 
         try: 
             for model in models:
-                await self._start_model(model["model_unique_name"], model)
+                await self._start_model(model["model_id"], model)
 
         except Exception as e:
             logger.exception(f"模型预热失败: {e}")
@@ -333,6 +339,6 @@ class ModelPool:
             "health_check_interval": self._health_check_interval
         }
     
-    def get_provider_in_pool(self, model_id: str) -> str | None:
+    def get_provider_in_pool(self, model_id: int) -> str | None:
         """获取模型池中指定模型的提供商。"""
         return self._providers.get(model_id, None)

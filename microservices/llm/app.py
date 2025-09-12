@@ -123,7 +123,7 @@ class ChatResponse(BaseModel):
 class ChatRequest(BaseModel):
     """聊天请求模型"""
 
-    model_unique_name: str = Field(..., description="要使用的特定模型ID")
+    model_id: int = Field(..., description="要使用的特定模型ID")
     messages: list[dict[str, str]] | str = Field(..., description="聊天消息列表")
     max_tokens: int | None = Field(None, description="要生成的最大令牌数")
     temperature: float | None = Field(None, description="采样温度（0.0-1.0，越低越确定）")
@@ -135,7 +135,7 @@ class ChatRequest(BaseModel):
 
 class ToggleModelRequest(BaseModel):
     """启用或禁用模型请求表单。"""
-    model_unique_name: str = Field(..., description="模型唯一标识符")
+    model_id: int = Field(..., description="模型唯一标识符")
     operation: str = Field(..., description="操作类型，'load' 或 'unload'")
 
 # 依赖项：获取嵌入服务实例
@@ -174,18 +174,19 @@ async def load_model(request: ToggleModelRequest) -> dict:
     Raises:
         HTTPException: 当模型加载失败时抛出500错误
     """
+    model_name = llm_service._model_pool._model_names.get(request.model_id, str(request.model_id))
     try:
         if request.operation == "load":
-            logger.info(f"接收到指令：加载模型 {request.model_unique_name}")
-            success = await llm_service.load_model(request.model_unique_name)
+            logger.info(f"接收到指令：加载模型 {model_name}")
+            success = await llm_service.load_model(request.model_id)
         else:
-            logger.info(f"接收到指令：卸载模型 {request.model_unique_name}")
-            success = await llm_service.unload_model(request.model_unique_name)
+            logger.info(f"接收到指令：卸载模型 {model_name}")
+            success = await llm_service.unload_model(request.model_id)
         if not success:
-            raise HTTPException(status_code=500, detail=f"模型 {request.model_unique_name} 操作失败")
-        return {"status": "success", "model_unique_name": request.model_unique_name}
+            raise HTTPException(status_code=500, detail=f"模型 {model_name} 操作失败")
+        return {"status": "success", "model_name:": model_name}
     except Exception as e:
-        logger.exception(f"操作模型 {request.model_unique_name} 时发生错误: {e}")
+        logger.exception(f"操作模型 {model_name} 时发生错误: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/v1/chat/completions", response_model=None, tags=["LLM"])
@@ -196,7 +197,7 @@ async def chat(
     """生成聊天响应
     
     Args:
-        model_unique_name: 要使用的模型ID
+        model_id:: 要使用的模型ID
         messages: 聊天消息列表
         max_tokens: 要生成的最大令牌数（可选）
         temperature: 采样温度（0.0-1.0，越低越确定）
@@ -213,11 +214,11 @@ async def chat(
     start_time = time.time()
     response_id = f"chatcmpl-{uuid.uuid4()}"  # OpenAI格式的ID
     created_time = int(time.time())
-    model_name = request.model_unique_name
+    model_name = llm_service._model_pool._model_names.get(request.model_id, str(request.model_id))
 
-    provider = llm_service.get_provider(request.model_unique_name)
+    provider = llm_service.get_provider(request.model_id)
     if provider is None:
-        raise HTTPException(status_code=404, detail=f"模型 {request.model_unique_name} 在模型池中未找到")
+        raise HTTPException(status_code=404, detail=f"模型 {model_name} 在模型池中未找到")
     try:
         # OpenAI streaming 格式响应
         if request.stream and provider == LLMProvider.OPENAI.value:
@@ -226,7 +227,7 @@ async def chat(
                     # 获取流式响应
                     max_tokens = min(request.max_tokens, 4000) if request.max_tokens else 4000
                     chunk_stream = await llm_service.chat(
-                        model_id=request.model_unique_name,
+                        model_id=request.model_id,
                         messages=request.messages,
                         stream=True,
                         max_tokens=max_tokens,
@@ -290,12 +291,12 @@ async def chat(
             )
 
         elif request.stream and provider == LLMProvider.OCI.value:
-            if "cohere" in request.model_unique_name.lower():
+            if "cohere" in model_name:
                 async def generate_oci_cohere_sse():
                     try:
                         # 获取流式响应
                         chunk_stream = await llm_service.chat(
-                            model_id=request.model_unique_name,
+                            model_id=request.model_id,
                             messages=request.messages,
                             stream=True,
                             max_tokens=request.max_tokens,
@@ -363,12 +364,12 @@ async def chat(
                     }
                 )
         
-            elif request.stream and ("grok" in request.model_unique_name.lower() or "llama" in request.model_unique_name.lower()):
+            elif request.stream and ("grok" in model_name or "llama" in model_name):
                 async def generate_oci_grok_sse():
                     try:
                         # 获取流式响应
                         chunk_stream = await llm_service.chat(
-                            model_id=request.model_unique_name,
+                            model_id=request.model_id,
                             messages=request.messages,
                             stream=True,
                             max_tokens=request.max_tokens,
@@ -440,7 +441,7 @@ async def chat(
         elif not request.stream:
             # OpenAI 非流式响应
             response = await llm_service.chat(
-                model_id=request.model_unique_name,
+                model_id=request.model_id,
                 messages=request.messages,
                 stream=False,
                 max_tokens=request.max_tokens,

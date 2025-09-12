@@ -15,7 +15,7 @@ class CallModel():
         self.kbot_md_prompt_repo = KbotMdPromptRepository()  # 获取提示信息仓库
 
     async def call_embedding_model(self, 
-                                model_unique_name: str, 
+                                model_id: int, 
                                 texts: list[str], 
                                 batch_size: int = 0
                                 ) -> list[EmbeddingDataItem] | None:
@@ -23,7 +23,7 @@ class CallModel():
         调用嵌入模型获取文本向量
         
         Args:
-            model_unique_name: 模型唯一名称
+            model_id: 模型唯一标识符
             texts: 文本列表
             batch_size: 批处理大小
             
@@ -38,7 +38,7 @@ class CallModel():
         url = f"http://{service_host}:{service_port}/v1/embeddings"
         headers = {"Content-Type": "application/json"}
         payload = {
-            "model_unique_name": model_unique_name,
+            "model_id": model_id,
             "texts": texts,
             "batch_size": int(batch_size) if batch_size else 0
         }
@@ -83,7 +83,7 @@ class CallModel():
             return None
         
     async def call_reranker_model(self, 
-                                  model_unique_name: str, 
+                                  model_id: int, 
                                   query: str, 
                                   documents: list[str], 
                                   top_k: int | None
@@ -92,7 +92,7 @@ class CallModel():
         调用重排序模型对文档进行重新排序
         
         Args:
-            model_unique_name: 用于重排序的模型唯一名称
+            model_id: 用于重排序的模型唯一标识符
             query: 查询文本
             documents: 待重排序的文档列表
             top_k: 返回的顶部文档数量（None表示返回所有）
@@ -108,7 +108,7 @@ class CallModel():
         url = f"http://{service_host}:{service_port}/v1/rerank"
         headers = {"Content-Type": "application/json"}
         payload = {
-            "model_unique_name": model_unique_name,
+            "model_id": model_id,
             "query": query,
             "documents": documents,
             "top_k": int(top_k) if top_k else 99999  # 设置一个很大的值，防止rerank返回的文档数小于top_k
@@ -130,12 +130,12 @@ class CallModel():
             logger.error(f"重排序服务发生错误: {str(e)}")
             return None
         
-    async def call_llm_model(self, model_unique_name: str, prompt: str, **kwargs):
+    async def call_llm_model(self, model_id: int, prompt: str, **kwargs):
         """
         调用LLM微服务并处理SSE格式的响应
         
         Args:
-            model_unique_name: 模型唯一标识
+            model_id: 模型唯一标识
             prompt: 输入的提示信息
             **kwargs: 其他可选参数，如stream、temperature等
             
@@ -152,7 +152,7 @@ class CallModel():
         
         # 构建请求体
         payload = {
-            "model_unique_name": model_unique_name,
+            "model_id": model_id,
             "messages": prompt,
             "stream": kwargs.get("stream", True)  # 默认为流式
         }
@@ -181,7 +181,7 @@ class CallModel():
                     yield raw_chunk.decode('utf-8')
 
     async def call_vlm_model_for_parsing_picture(self,
-                                                model_unique_name: str, 
+                                                model_id: int, 
                                                 image: str | Image.Image, 
                                                 prompt_unique_name: str | None = None, 
                                                 **kwargs) -> str | None:
@@ -189,9 +189,9 @@ class CallModel():
         调用视觉语言模型进行图片解析
         
         Args:
-            model_unique_name: 模型唯一名称
+            model_id: 模型唯一标识符
             image: 输入图片（文件路径或PIL.Image对象）
-            prompt_unique_name: 从数据库中获取提示信息的唯一名称
+            prompt_unique_name: 从数据库中获取提示信息的唯一标识符
             **kwargs: 推理的额外参数
             
         Returns:
@@ -247,7 +247,7 @@ class CallModel():
 
         # 构建请求体
         payload = {
-            "model_unique_name": model_unique_name,
+            "model_id": model_id,
             "messages": messages,
             "stream": False,
             **kwargs

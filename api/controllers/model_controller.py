@@ -1,6 +1,6 @@
 import aiohttp
 from loguru import logger
-from PIL import Image, ImageDraw
+from PIL import Image
 from dao.repositories.kbot_md_models_repo import *
 from core.dictionary import ModelCategory
 from configuration import ConfigManager
@@ -13,7 +13,7 @@ class ModelController:
     def __init__(self):
         self.repo = KbotMdModelsRepository()
     
-    async def toggle(self, model_unique_name: str, enable: bool) -> bool:
+    async def toggle(self, model_id: int, enable: bool) -> bool:
         """
         启用/禁用指定模型
         
@@ -22,7 +22,7 @@ class ModelController:
         2. 调用对应微服务接口加载/卸载模型
         
         Args:
-            model_unique_name: 模型唯一名称
+            model_id: 模型唯一标识
             enable: 是否启用
             
         Returns:
@@ -34,17 +34,17 @@ class ModelController:
         # 1. 启用/禁用模型（修改数据库状态）
         try:
             if enable:
-                await self.repo.enable_model(model_unique_name)
+                await self.repo.enable_model(model_id)
             else:
-                await self.repo.disable_model(model_unique_name)
-            logger.info(f"模型 {model_unique_name}: 数据库操作成功")
+                await self.repo.disable_model(model_id)
+            logger.info(f"模型 {model_id}: 数据库操作成功")
 
         except Exception as e:
-            logger.error(f"模型 {model_unique_name}: 数据库操作失败: {e}")
+            logger.error(f"模型 {model_id}: 数据库操作失败: {e}")
             return False
 
         # 2. 调用对应微服务的接口，加载模型到内存中
-        model_type = await self.repo.get_category_by_uname(model_unique_name)
+        model_type = await self.repo.get_category_by_id(model_id)
         model_config = ConfigManager.get_model_config()
 
         if model_type == ModelCategory.EMBEDDING.value:
@@ -69,43 +69,44 @@ class ModelController:
         timeout = aiohttp.ClientTimeout(total=total)
         url = f"http://{service_host}:{service_port}/load"
         headers = {"Content-Type": "application/json"}
-        payload = {"model_unique_name": model_unique_name,
+        payload = {"model_id": model_id,
                    "operation": "load" if enable else "unload"}
         
         try:
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.post(url=url, headers=headers, json=payload) as response:
                     if response.status == 200:
-                        logger.info(f"模型 {model_unique_name} 微服务操作成功")
+                        logger.info(f"模型 {model_id} 微服务操作成功")
                         return True
                     else:
-                        logger.error(f"模型 {model_unique_name} 微服务操作失败，状态码: {response.status}")
+                        logger.error(f"模型 {model_id} 微服务操作失败，状态码: {response.status}")
                         return False
         except Exception as e:
             logger.error(f"调用微服务修改模型失败: {e}")
             return False
     
     
-    async def get_model_params_by_uname(self, model_unique_name: str) -> dict | None:
+    async def get_model_by_id(self, model_id: int) -> dict | None:
         """
-        通过模型唯一名称获取模型参数
+        通过模型唯一标识获取模型参数
         
         Args:
-            model_unique_name: 模型唯一名称
+            model_id: 模型唯一标识
             
         Returns:
             dict | None: 模型参数，如果不存在则返回None
         """
-        result = await self.repo.get_by_uname(model_unique_name)
-        if result:
+        model = await self.repo.get_by_id(model_id)
+        if model:
             return {
-                "model_name": result.model_name,
-                "category": result.category,
-                "provider": result.provider,
-                "model_params": result.model_params,
-                "model_unique_name": result.model_unique_name,
-                "api_endpoint": result.api_endpoint,
-                "api_key": result.api_key
+                "model_id": model_id,
+                "model_name": model.model_name,
+                "display_name": model.display_name,
+                "category": model.category,
+                "provider": model.provider,
+                "model_params": model.model_params,
+                "api_endpoint": model.api_endpoint,
+                "api_key": model.api_key
             }
         else:
             return None
@@ -123,23 +124,24 @@ class ModelController:
         models = await self.repo.get_available_by_category(model_category)
         return [
             {
+                "model_id": model.model_id,
                 "model_name": model.model_name,
+                "display_name": model.display_name,
                 "category": model.category,
                 "provider": model.provider,
                 "model_params": model.model_params,
-                "model_unique_name": model.model_unique_name,
                 "api_endpoint": model.api_endpoint,
                 "api_key": model.api_key
             }
             for model in models
         ]
     
-    async def verify_model(self, model_unique_name: str, model_type: int) -> bool:
+    async def verify_model(self, model_id: int, model_type: int) -> bool:
         """
         验证指定模型
         
         Args:
-            model_unique_name: 模型唯一名称
+            model_id: 模型唯一标识
             model_type: 模型类型
             
         Returns:
@@ -156,7 +158,7 @@ class ModelController:
         if model_type == ModelCategory.EMBEDDING.value:
             input_texts = ["test"]
             result = await CallModel().call_embedding_model(
-                model_unique_name, 
+                model_id, 
                 input_texts
             )
             
@@ -164,7 +166,7 @@ class ModelController:
         elif model_type == ModelCategory.LLM.value:
             input_text = "test"
             async for chunk in CallModel().call_llm_model(
-                model_unique_name,
+                model_id,
                 input_text,
                 stream=False,
                 max_tokens=5
@@ -179,7 +181,7 @@ class ModelController:
                 "test2"
             ]
             result = await CallModel().call_reranker_model(
-                model_unique_name,
+                model_id,
                 question,
                 inputs_list,
                 1
@@ -191,7 +193,7 @@ class ModelController:
             # 创建纯色图片的最简代码
             image = Image.new('RGB', (100, 100), 'lightblue')
             result = await CallModel().call_vlm_model_for_parsing_picture(
-                model_unique_name, 
+                model_id, 
                 image
             )
             

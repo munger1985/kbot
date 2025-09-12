@@ -134,9 +134,12 @@ async def agent_stream_chat(session_id: str) -> AsyncGenerator[str, None]:
     if agent is None:
         logger.warning("智能体不存在")
         return
-
-    prompt_id = agent.prompt_id
+    
     model_id = agent.llm_id
+    if model_id is None:
+        logger.warning("智能体配置的 LLM 模型不存在")
+        return
+    prompt_id = agent.prompt_id
     model_params = agent.llm_params if agent.llm_params else {}
     model_params["stream"] = True
     
@@ -158,16 +161,10 @@ async def agent_stream_chat(session_id: str) -> AsyncGenerator[str, None]:
 
     prompt = prompt_template.format(context=context.strip(), question=question) # type: ignore
         
-    # 6. 根据LLM模型ID获取LLM模型
-    model_unique_name = await KbotMdModelsRepository().get_unique_name_by_id(model_id) # type: ignore
-    if model_unique_name is None:
-        logger.warning("智能体配置的 LLM 模型不存在")
-        return
-
-    # 7. 调用LLM模型并处理流式响应
+    # 6. 调用LLM模型并处理流式响应
     chunks = []
     try:
-        async for chunk in CallModel().call_llm_model(model_unique_name, prompt, **model_params):
+        async for chunk in CallModel().call_llm_model(model_id, prompt, **model_params):
             # 直接传递SSE流
             yield chunk
             
@@ -184,7 +181,7 @@ async def agent_stream_chat(session_id: str) -> AsyncGenerator[str, None]:
                     except json.JSONDecodeError:
                         continue
             
-        # 8. 流结束后异步写入Redis
+        # 7. 流结束后异步写入Redis
         if chunks:
 
             # Convert all chunks to strings first

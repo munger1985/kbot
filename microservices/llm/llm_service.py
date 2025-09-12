@@ -26,7 +26,7 @@ class LLMService:
             self._initialized = False
             logger.info("LLM服务已关闭")
             
-    async def get_llm_model(self, model_id: str) -> BaseLLM:
+    async def get_llm_model(self, model_id: int) -> BaseLLM:
         """获取指定唯一名称的嵌入模型实例。"""
         if not self._initialized:
             await self.initialize()
@@ -36,7 +36,7 @@ class LLMService:
 
     async def chat(
         self,
-        model_id: str,
+        model_id: int,
         messages: list[dict[str, str]] | str,
         stream: bool = False,
         timeout: int | None = None,
@@ -66,7 +66,7 @@ class LLMService:
         try:
             model = await self.get_llm_model(model_id)
         except Exception as e:
-            raise RuntimeError(f"获取模型 {model_id} 失败: {e}")
+            raise RuntimeError(f"获取模型 {self._model_pool._model_names.get(model_id, str(model_id))} 失败: {e}")
         
         # 准备参数
         kwargs = {
@@ -153,7 +153,7 @@ class LLMService:
         
         await self._model_pool.warmup()
 
-    async def load_model(self, model_id: str) -> bool:
+    async def load_model(self, model_id: int) -> bool:
         """通过模型唯一标识符加载模型到内存中
         
         Args:
@@ -168,7 +168,7 @@ class LLMService:
         return await self._model_pool.reload_model(model_id)
 
         
-    async def unload_model(self, model_id: str) -> bool:
+    async def unload_model(self, model_id: int) -> bool:
         """通过模型唯一标识符卸载模型到内存中。
         
         Args:
@@ -182,7 +182,7 @@ class LLMService:
         
         return await self._model_pool.unload_model(model_id)
     
-    def get_provider(self, model_id: str) -> str | None:
+    def get_provider(self, model_id: int) -> str | None:
         """获取指定模型的提供者。"""
         if not self._initialized:
             raise RuntimeError("LLM服务未初始化")

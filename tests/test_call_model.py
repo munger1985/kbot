@@ -1,6 +1,7 @@
 import sys
 import asyncio
 from pathlib import Path
+from decimal import Decimal
 # Add both project root and backend directory to Python path
 project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(project_root))
@@ -12,16 +13,16 @@ async def test_call_embedding_model():
     测试调用embedding模型的方法
     """
     # 测试参数
-    # embed_model_unique_name = "KBOT1/BGE-M3"
-    # embed_model_unique_name = "KBOT1/E5-LARGE-V2"
-    embed_model_unique_name = "KBOT1/OCI-Embedding"
+    # embed_model_id = 21 #"KBOT1/BGE-M3"
+    # embed_model_id = 23 #"KBOT1/E5-LARGE-V2"
+    embed_model_id = 33 #"KBOT1/OCI-Embedding"
     embed_input_texts = ["苹果", "香蕉"]
     topk = 4
     emb = await CallModel().call_embedding_model(
-        embed_model_unique_name, 
+        embed_model_id, 
         embed_input_texts
     )
-    print(f"测试开始，使用模型: {embed_model_unique_name}")
+    print(f"测试开始，使用模型: {embed_model_id}")
     print(f"输入文本: {embed_input_texts}")
     print("=" * 50)
     print("\n向量列表: ", emb)
@@ -32,41 +33,41 @@ async def test_call_llm_model():
     测试调用LLM模型的方法
     """
     # 测试参数
-    model_name = 'KBOT1/OCI-cohere'
-    # model_name = "KBOT1/OCI-GROK4-II"
-    # model_name = "KBOT1/DeepSeek V3"
+    model_id = 39 #'KBOT1/OCI-cohere'
+    # model_id = 40 #"KBOT1/OCI-GROK4-II"
+    # model_id = 22 #"KBOT1/DeepSeek V3"
     test_prompt = "hello"
     
-    print(f"测试开始，使用模型: {model_name}")
+    print(f"测试开始，使用模型: {model_id}")
     print(f"输入提示: {test_prompt}")
     print("=" * 50)
     
     try:
         # 调用方法1：基本调用（流式）
         # print("\n测试1：基本流式调用")
-        # async for chunk in CallModel().call_llm_model(model_name, test_prompt):
+        # async for chunk in CallModel().call_llm_model(model_id, test_prompt):
         #     print(chunk, end="", flush=True)  # 实时打印响应
         
         # 调用方法2：带额外参数
-        # print("\n\n测试2：带额外参数调用")
-        # async for chunk in call_llm_model(
-        #     model_name, 
-        #     test_prompt,
-        #     temperature=0.7,
-        #     max_tokens=100,
-        #     top_p=Decimal('0.9')  # 测试Decimal参数转换
-        # ):
-        #     print(chunk, end="", flush=True)
+        print("\n\n测试2：带额外参数调用")
+        async for chunk in CallModel().call_llm_model(
+            model_id, 
+            test_prompt,
+            temperature=0.7,
+            max_tokens=100,
+            top_p=Decimal('0.9')  # 测试Decimal参数转换
+        ):
+            print(chunk, end="", flush=True)
             
         # 调用方法3：非流式模式（需要修改call_llm_model方法支持）
-        print("\n\n测试3：非流式调用")
-        async for chunk in CallModel().call_llm_model(
-            model_name,
-            test_prompt,
-            stream=False
-        ):
-            result = chunk
-        print(result)
+        # print("\n\n测试3：非流式调用")
+        # async for chunk in CallModel().call_llm_model(
+        #     model_id,
+        #     test_prompt,
+        #     stream=False
+        # ):
+        #     result = chunk
+        # print(result)
         
     except Exception as e:
         print(f"\n测试失败: {str(e)}")
@@ -78,8 +79,8 @@ async def test_call_reranker_model():
     测试调用reranker模型的方法
     """
     # 测试参数
-    rerank_model_unique_name = "KBOT1/BGE-RANKER"
-    # rerank_model_unique_name = "KBOT1/JINA-RANKER"
+    # rerank_model_id = 24 #"KBOT1/BGE-RANKER"
+    rerank_model_id = 25 #"KBOT1/JINA-RANKER"
     question = "招聘数据工程师"
     inputs_list = [
         "<|im_end|>你好，我想要找一份有关数据科学的数据集。",
@@ -93,12 +94,12 @@ async def test_call_reranker_model():
     for attempt in range(max_retries):
         try:
             rerank = await CallModel().call_reranker_model(
-                rerank_model_unique_name,
+                rerank_model_id,
                 question,
                 inputs_list,
                 3
             )
-            print(f"测试开始，使用模型: {rerank_model_unique_name}")
+            print(f"测试开始，使用模型: {rerank_model_id}")
             print(f"结果: {rerank}")
             print("=" * 50)
             break
@@ -142,18 +143,18 @@ async def test_call_vlm_model():
     测试调用VLM模型的方法
     """
     # 测试参数
-    model_unique_name = "KBOT1/Qwen-VL-MAX"
+    model_id = 30 #"KBOT1/Qwen-VL-MAX"
     prompt_unique_name = "KBOT1/pdf_parsing"
     image = "/mnt/f/docs/test_small.jpg"
 
 
-    print(f"测试开始，使用模型: {model_unique_name}")
+    print(f"测试开始，使用模型: {model_id}")
     print(f"输入提示的唯一标识: {prompt_unique_name}")
     print("=" * 50)
-    response = await CallModel().call_vlm_model_for_parsing_picture(model_unique_name,prompt_unique_name, image)
+    response = await CallModel().call_vlm_model_for_parsing_picture(model_id, image)
     print(f"模型响应: {response}")
 
 # 运行测试
 if __name__ == "__main__":
 
-    asyncio.run(test_call_llm_model())
+    asyncio.run(test_call_vlm_model())

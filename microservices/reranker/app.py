@@ -109,14 +109,14 @@ app.add_middleware(
 
 # 定义请求模型
 class RerankerRequest(BaseModel):
-    model_unique_name: str = Field(..., description="Reranker 模型唯一名称")
+    model_id: int = Field(..., description="Reranker 模型唯一名称")
     query: str = Field(..., description="查询文本")
     documents: list[str] = Field(..., description="需要重排序的文档列表")
     top_k: int | None = Field(10, description="返回的顶部文档数量（None 表示返回所有）")
 
 class ToggleModelRequest(BaseModel):
     """启用或禁用模型请求表单。"""
-    model_unique_name: str = Field(..., description="模型唯一标识符")
+    model_id: int = Field(..., description="模型唯一标识符")
     operation: str = Field(..., description="操作类型，'load' 或 'unload'")
 
 # 定义响应模型
@@ -160,18 +160,19 @@ async def load_model(request: ToggleModelRequest) -> dict:
     Raises:
         HTTPException: 当模型加载失败时抛出500错误
     """
+    model_name = reranker_service._model_pool._model_names.get(request.model_id, str(request.model_id))
     try:
         if request.operation == "load":
-            logger.info(f"接收到指令：加载模型 {request.model_unique_name}")
-            success = await reranker_service.load_model(request.model_unique_name)
+            logger.info(f"接收到指令：加载模型 {model_name}")
+            success = await reranker_service.load_model(request.model_id)
         else:
-            logger.info(f"接收到指令：卸载模型 {request.model_unique_name}")
-            success = await reranker_service.unload_model(request.model_unique_name)
+            logger.info(f"接收到指令：卸载模型 {model_name}")
+            success = await reranker_service.unload_model(request.model_id)
         if not success:
-            raise HTTPException(status_code=500, detail=f"模型 {request.model_unique_name} 操作失败")
-        return {"status": "success", "model_unique_name": request.model_unique_name}
+            raise HTTPException(status_code=500, detail=f"模型 {model_name} 操作失败")
+        return {"status": "success", "model_name": model_name}
     except Exception as e:
-        logger.exception(f"操作模型 {request.model_unique_name} 时发生错误: {e}")
+        logger.exception(f"操作模型 {model_name} 时发生错误: {e}")
         raise HTTPException(status_code=500, detail=str(e))
       
 @app.post("/v1/rerank", response_model=RerankerResponse, tags=["Reranker"])
@@ -182,18 +183,18 @@ async def rerank_texts(
     """
     将文本列表进行重排序
     
-    - **model_unique_name**: 用于重排序的模型唯一名称
+    - **model_id**: 用于重排序的模型唯一名称
     - **query**: 查询文本
     - **documents**: 需要重排序的文档列表
     - **top_k**: 返回的顶部文档数量（None 表示返回所有）
     """
-
+    model_name = reranker_service._model_pool._model_names.get(request.model_id, str(request.model_id))
     try:
-        logger.info(f"收到重排序请求，模型：{request.model_unique_name}, 查询：{request.query}, 文档数量：{len(request.documents)}, top_k：{request.top_k}")
+        logger.info(f"收到重排序请求，模型：{model_name}, 查询：{request.query}, 文档数量：{len(request.documents)}, top_k：{request.top_k}")
         
         # 使用重排序服务将文本列表进行重排序
         rerankers = await reranker_service.rerank(
-            model_id=request.model_unique_name,
+            model_id=request.model_id,
             query=request.query,
             documents=request.documents,
             top_k=request.top_k

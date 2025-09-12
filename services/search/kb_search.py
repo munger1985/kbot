@@ -3,7 +3,6 @@ from loguru import logger
 from ..chat.agent_params import ToolParams, KBResult
 from dao.repositories.kbot_md_kb_repo import KbotMdKbRepository
 from dao.repositories.kbot_biz_txt_embedding_repo import KbotBizTxtEmbeddingRepository
-from dao.repositories.kbot_md_models_repo import KbotMdModelsRepository
 from core.dictionary import KbCategory, KBSearchType
 from utils.oracle_vec_handler import OracleVecHandler
 from utils.decimal_encoder import DecimalEncoder
@@ -98,13 +97,9 @@ class KBSearch:
         if not model_id:
             logger.warning(f"未找到知识库 {self.tool_params.tool_id} 的嵌入模型")
             return None
-        model_repo = KbotMdModelsRepository()
-        model_unique_name = await model_repo.get_unique_name_by_id(model_id)
-        if not model_unique_name:
-            logger.warning(f"未找到知识库 {self.tool_params.tool_id} 的嵌入模型")
-            return None
+
         try:
-            results = await CallModel().call_embedding_model(model_unique_name, [question])
+            results = await CallModel().call_embedding_model(model_id, [question])
             if results is None:
                 logger.error("嵌入服务未返回结果")
                 return None

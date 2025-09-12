@@ -4,7 +4,6 @@ from .file_params import FileParams
 from dao.repositories.kbot_md_kb_files_repo import KbotMdKbFilesRepository
 from dao.repositories.kbot_biz_txt_embedding_repo import KbotBizTxtEmbeddingRepository
 from dao.entities.kbot_biz_txt_embedding import KbotBizTxtEmbedding
-from dao.repositories.kbot_md_models_repo import KbotMdModelsRepository
 from core.dictionary import FileStatus, ChunkType, SplitStrategy
 from utils.chunk_text import chunk_text
 from utils.call_models import CallModel
@@ -73,19 +72,17 @@ async def process_txt(file_params: FileParams) -> bool:
             logger.error(msg)
             await file_repo.update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, msg)
             return False
-        
-        # 获取embedding模型的唯一名称
-        model_unique_name = await KbotMdModelsRepository().get_unique_name_by_id(file_params.txt_embed_model) # type: ignore
-        if model_unique_name is None:
-            msg = f"未找到ID为 {file_params.txt_embed_model} 的嵌入模型"
+
+        if file_params.txt_embed_model is None:
+            msg = f"嵌入模型未指定，无法处理文件 {file_params.file_path}"
             logger.error(msg)
             await file_repo.update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, msg)
             return False
-
+    
         # 3. 调用嵌入微服务获取嵌入向量
-        logger.info(f"正在调用嵌入服务，模型名称: {model_unique_name}")
+        logger.info(f"正在调用嵌入服务")
 
-        response_data = await CallModel().call_embedding_model(model_unique_name, chunks)
+        response_data = await CallModel().call_embedding_model(file_params.txt_embed_model, chunks)
         if response_data is None:
             msg = f"获取文件 {file_params.file_path} 的嵌入向量失败"
             logger.error(msg)

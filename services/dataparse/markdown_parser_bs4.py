@@ -8,8 +8,6 @@ from io import StringIO
 from loguru import logger
 from .file_params import FileParams
 from dao.repositories.kbot_md_kb_files_repo import KbotMdKbFilesRepository
-from dao.repositories.kbot_biz_txt_embedding_repo import KbotBizTxtEmbeddingRepository
-from dao.repositories.kbot_md_models_repo import KbotMdModelsRepository
 from dao.entities.kbot_biz_txt_embedding import KbotBizTxtEmbedding
 from core.dictionary import FileStatus, ChunkType, SplitStrategy
 from utils.call_models import CallModel
@@ -338,7 +336,7 @@ class MarkdownParser:
                 description_file = Path(eachImage['file_path'] + ".description")
                 if not description_file.exists():
 
-                    image_description = await CallModel().call_vlm_model_for_parsing_picture(vlm_model_unique_name,
+                    image_description = await CallModel().call_vlm_model_for_parsing_picture(self.file_params.img2txt_model,
                                                                                              vlm_prompt_unique_name,
                                                                                              eachImage['file_path'])
                     if image_description:
@@ -351,20 +349,18 @@ class MarkdownParser:
                             "image_id": eachImage['image_id'],
                         })
                         chunks.append(image_description)
-            text_embedding_model = await KbotMdModelsRepository().get_unique_name_by_id(
-                self.file_params.txt_embed_model  # type: ignore
-            )
+            
 
-            if not text_embedding_model:
+            if not self.file_params.txt_embed_model:
                 msg = f"text_embedding_model not found for id: {self.file_params.txt_embed_model}"
                 logger.error(msg)
                 await  update_file_status( self.file_params,FileStatus.PARSE_FAILED, msg)
                 return []
             embeddings_list = []
             if chunks:
-                embeddings_list = await CallModel().call_embedding_model(text_embedding_model, chunks)
+                embeddings_list = await CallModel().call_embedding_model(self.file_params.txt_embed_model, chunks)
             if embeddings_list and len(embeddings_list) != len(chunks):
-                msg = f"text_embedding_model  {text_embedding_model} returned invalid results (expected {len(chunks)}, got {len(embeddings_list) if embeddings_list else 0})"
+                msg = f"text_embedding_model  {self.file_params.txt_embed_model} returned invalid results (expected {len(chunks)}, got {len(embeddings_list) if embeddings_list else 0})"
                 logger.error(msg)
                 logger.error("failed file: {}", self.file_params.file_path)
                 await  update_file_status(self.file_params,FileStatus.PARSE_FAILED, msg)
@@ -392,10 +388,8 @@ class MarkdownParser:
 
     async def _process_embeddings(self) -> bool:
         """Process text and table embeddings for by fixed size"""
-        model_unique_name = await KbotMdModelsRepository().get_unique_name_by_id(
-            self.file_params.txt_embed_model  # type: ignore
-        )
-        if not model_unique_name:
+        
+        if not self.file_params.txt_embed_model:
             msg = f"Embedding model not found for id: {self.file_params.txt_embed_model}"
             logger.error(msg)
             await  update_file_status(self.file_params,FileStatus.PARSE_FAILED, msg)
@@ -426,9 +420,9 @@ class MarkdownParser:
             return True  # Consider empty content as success
 
         # Get all embeddings in one call
-        embeddings_list = await CallModel().call_embedding_model(model_unique_name, chunks)
+        embeddings_list = await CallModel().call_embedding_model(self.file_params.txt_embed_model, chunks)
         if not embeddings_list or len(embeddings_list) != len(chunks):
-            msg = f"Embedding model {model_unique_name} returned invalid results (expected {len(chunks)}, got {len(embeddings_list) if embeddings_list else 0})"
+            msg = f"Embedding model {self.file_params.txt_embed_model} returned invalid results (expected {len(chunks)}, got {len(embeddings_list) if embeddings_list else 0})"
             logger.error(msg)
             await  update_file_status(self.file_params,FileStatus.PARSE_FAILED, msg)
             return False

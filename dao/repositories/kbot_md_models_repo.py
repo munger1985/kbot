@@ -13,40 +13,40 @@ class KbotMdModelsRepository:
         初始化模型仓库
         """
 
-    async def enable_model(self, model_unique_name: str) -> bool:
+    async def enable_model(self, model_id: int) -> bool:
         """启用模型"""
         async with get_session() as session:
             await session.execute(
-                update(KbotMdModels).where(KbotMdModels.model_unique_name == model_unique_name)
+                update(KbotMdModels).where(KbotMdModels.model_id == model_id)
                 .values(status=Status.ENABLED.value)
             )
             await session.commit()
             return True
 
-    async def disable_model(self, model_unique_name: str) -> bool:
+    async def disable_model(self, model_id: int) -> bool:
         """禁用模型"""
         async with get_session() as session:
             await session.execute(
-                update(KbotMdModels).where(KbotMdModels.model_unique_name == model_unique_name)
+                update(KbotMdModels).where(KbotMdModels.model_id == model_id)
                 .values(status=Status.DISABLED.value)
             )
             await session.commit()
             return True
 
-    async def get_category_by_uname(self, model_unique_name: str) -> int | None:
+    async def get_category_by_id(self, model_id: int) -> int | None:
         """Get the category of a model by its ID."""
         async with get_session() as session:
             result = await session.execute(
-                select(KbotMdModels.category).where(KbotMdModels.model_unique_name == model_unique_name)
+                select(KbotMdModels.category).where(KbotMdModels.model_id == model_id)
             )
             category = result.scalar_one_or_none()
             return category
     
-    async def get_unique_name_by_id(self, model_id: int) -> str | None:
+    async def get_display_name_by_id(self, model_id: int) -> str | None:
         """Get knowledge base model unique name by ID."""
         async with get_session() as session:
             result = await session.execute(
-                select(KbotMdModels.model_unique_name).where(KbotMdModels.model_id == model_id)
+                select(KbotMdModels.display_name).where(KbotMdModels.model_id == model_id)
             )
             return result.scalar_one_or_none()
 
@@ -62,11 +62,11 @@ class KbotMdModelsRepository:
             result = await session.execute(query)
             return result.scalars().all()
         
-    async def get_by_uname(self, model_unique_name: str) -> KbotMdModels | None:
+    async def get_by_id(self, model_id: int) -> KbotMdModels | None:
         """Get knowledge base model by ID."""
         async with get_session() as session:
             result = await session.execute(
-                select(KbotMdModels).where(KbotMdModels.model_unique_name == model_unique_name)
+                select(KbotMdModels).where(KbotMdModels.model_id == model_id)
             )
             return result.scalar_one_or_none()
         
@@ -84,7 +84,7 @@ class KbotMdModelsRepository:
     #             model_params = json.dumps(model.model_params, cls=DecimalEncoder) if model.model_params else {}
     #             model_data = {
     #                 "model_id": model_id,
-    #                 "model_unique_name": model.model_unique_name,
+    #                 "model_id": model.model_id,
     #                 "model_name": model.model_name,
     #                 "category": category,
     #                 "provider": model.provider,
@@ -95,17 +95,17 @@ class KbotMdModelsRepository:
 
     #             # 直接写入 Redis
     #             await redis.hset(f"model:{model_id}", mapping=model_data)
-    #             await redis.set(f"index:unique_name:{model.model_unique_name}", model_id)
+    #             await redis.set(f"index:unique_name:{model.model_id}", model_id)
     #             await redis.sadd(f"index:category:{category}", model_id)
 
     #         return model
     
         
-    # async def get_by_unique_name(self, model_unique_name: str) -> KbotMdModels | None:
+    # async def get_by_unique_name(self, model_id: int) -> KbotMdModels | None:
     #     """Get knowledge base model by model unique name."""
     #     async with get_session() as session:
     #         result = await session.execute(
-    #             select(KbotMdModels).where(KbotMdModels.model_unique_name == model_unique_name)
+    #             select(KbotMdModels).where(KbotMdModels.model_id == model_id)
     #         )
     #         return result.scalar_one_or_none()
     
@@ -130,7 +130,7 @@ class KbotMdModelsRepository:
     #             model_params = json.dumps(model.model_params, cls=DecimalEncoder) if model.model_params else {}
     #             model_data = {
     #                 "model_id": model_id,
-    #                 "model_unique_name": model.model_unique_name,
+    #                 "model_id": model.model_id,
     #                 "model_name": model.model_name,
     #                 "category": category,
     #                 "provider": model.provider,
@@ -141,7 +141,7 @@ class KbotMdModelsRepository:
 
     #             # 直接写入 Redis
     #             await redis.hset(f"model:{model_id}", mapping=model_data)
-    #             await redis.set(f"index:unique_name:{model.model_unique_name}", model_id)
+    #             await redis.set(f"index:unique_name:{model.model_id}", model_id)
     #             await redis.sadd(f"index:category:{category}", model_id)
 
     #         return merged_model
@@ -169,12 +169,12 @@ class KbotMdModelsRepository:
         
 
     
-    # async def get_provider_by_unique_name(self, model_unique_name: str) -> str | None:
+    # async def get_provider_by_unique_name(self, model_id: int) -> str | None:
     #     """Get knowledge base model provider by unique name."""
     #     async with get_session() as session:
     #         result = await session.execute(
     #             select(KbotMdModels.provider).where(
-    #                 KbotMdModels.model_unique_name == model_unique_name
+    #                 KbotMdModels.model_id == model_id
     #             )
     #         )
     #         return result.scalar_one_or_none()

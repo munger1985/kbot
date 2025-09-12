@@ -30,7 +30,7 @@ class RerankerService:
             self._initialized = False
             logger.info("Reranker 服务已关闭")
     
-    async def get_reranker_model(self, model_id: str) -> BaseReranker:
+    async def get_reranker_model(self, model_id: int) -> BaseReranker:
         """通过唯一名称获取 reranker 模型。"""
         if not self._initialized:
             await self.initialize()
@@ -39,7 +39,7 @@ class RerankerService:
     
     async def rerank(
         self,
-        model_id: str,
+        model_id: int,
         query: str,
         documents: list[str],
         top_k: int | None = None
@@ -76,7 +76,7 @@ class RerankerService:
         
         await self._model_pool.warmup()
 
-    async def load_model(self, model_id: str) -> bool:
+    async def load_model(self, model_id: int) -> bool:
         """通过模型唯一标识符加载模型到内存中
         
         Args:
@@ -91,7 +91,7 @@ class RerankerService:
         return await self._model_pool.reload_model(model_id)
 
         
-    async def unload_model(self, model_id: str) -> bool:
+    async def unload_model(self, model_id: int) -> bool:
         """通过模型唯一标识符卸载模型到内存中。
         
         Args:

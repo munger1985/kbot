@@ -109,13 +109,13 @@ app.add_middleware(
 class EmbeddingRequest(BaseModel):
     """嵌入请求参数模型。"""
     
-    model_unique_name: str = Field(..., description="模型唯一标识符")
+    model_id: int = Field(..., description="模型唯一标识符")
     texts: list[str] = Field(..., description="待嵌入的文本列表")
     batch_size: int | None = Field(32, description="批处理大小")
 
 class ToggleModelRequest(BaseModel):
     """启用或禁用模型请求表单。"""
-    model_unique_name: str = Field(..., description="模型唯一标识符")
+    model_id: int = Field(..., description="模型唯一标识符")
     operation: str = Field(..., description="操作类型，'load' 或 'unload'")
 
 def get_embed_service():
@@ -158,18 +158,19 @@ async def load_model(request: ToggleModelRequest) -> dict:
     Raises:
         HTTPException: 当模型加载失败时抛出500错误
     """
+    model_name = embedding_service._model_pool._model_names.get(request.model_id, str(request.model_id))
     try:
         if request.operation == "load":
-            logger.info(f"接收到指令：加载模型 {request.model_unique_name}")
-            success = await embedding_service.load_model(request.model_unique_name)
+            logger.info(f"接收到指令：加载模型 {model_name}")
+            success = await embedding_service.load_model(request.model_id)
         else:
-            logger.info(f"接收到指令：卸载模型 {request.model_unique_name}")
-            success = await embedding_service.unload_model(request.model_unique_name)
+            logger.info(f"接收到指令：卸载模型 {model_name}")
+            success = await embedding_service.unload_model(request.model_id)
         if not success:
-            raise HTTPException(status_code=500, detail=f"模型 {request.model_unique_name} 操作失败")
-        return {"status": "success", "model_unique_name": request.model_unique_name}
+            raise HTTPException(status_code=500, detail=f"模型 {model_name} 操作失败")
+        return {"status": "success", "model_name": model_name}
     except Exception as e:
-        logger.exception(f"操作模型 {request.model_unique_name} 时发生错误: {e}")
+        logger.exception(f"操作模型 {model_name} 时发生错误: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
     
@@ -190,12 +191,13 @@ async def embed_texts(
     Raises:
         HTTPException: 当嵌入处理过程中发生错误时抛出500错误
     """
+    model_name = embedding_service._model_pool._model_names.get(request.model_id, str(request.model_id))
     try:
-        logger.info(f"收到嵌入请求: 模型 {request.model_unique_name}, 文本数量：{len(request.texts)}")
+        logger.info(f"收到嵌入请求: 模型 {model_name}, 文本数量：{len(request.texts)}")
         
         # 使用嵌入服务将文本转换为向量
         embeddings = await embed_service.embed_texts(
-            model_id=request.model_unique_name,
+            model_id=request.model_id,
             texts=request.texts,
             batch_size=request.batch_size # type: ignore
         )

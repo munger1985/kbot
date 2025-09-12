@@ -2,7 +2,7 @@ from pydantic import BaseModel
 
 class ModelForm(BaseModel):
     """获取模型参数请求表单"""
-    model_unique_name: str
+    model_id: int
 
 class ToggleModelForm(ModelForm):
     """启用或禁用模型请求表单"""

@@ -42,7 +42,7 @@ class AgentRerank:
         
         # 调用重排模型
         rerankers = await CallModel().call_reranker_model(
-            model_unique_name=self.agent_params.reranker_model_name,
+            model_id=self.agent_params.reranker_model_id,
             query=question,
             documents=contents,
             top_k=top_k
