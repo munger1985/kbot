@@ -136,7 +136,7 @@ class MarkdownParser:
         blocks = self.parse_into_blocks(md_content)
         for i, block in enumerate(blocks):
             print(f"Block {i + 1}:")
-            semanticChunk = "Title: {block['title']} (Level {block['level']})\n" + f"Content: {block['content']}"
+            semanticChunk = f"Title: {block['title']} (Level {block['level']})\n" + f"Content: {block['content']}"
             text_results['paragraphs'].append(semanticChunk)
             # print(semanticChunk)
 

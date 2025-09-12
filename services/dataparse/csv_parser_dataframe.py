@@ -42,6 +42,7 @@ class CSVParser:
             return False
 
         chunks = [json.dumps(row) for row in json_data]
+        logger.debug(chunks)
         chunk_metas = [{"chunk_type": ChunkType.TABLE} for _ in json_data]
 
         embeddings_list = await CallModel().call_embedding_model(self.file_params.txt_embed_model, chunks)
@@ -67,8 +68,8 @@ class CSVParser:
         return await save_embeddings(self.file_params, embed_entities)
 
     async def parse(self):
-        split_strategy = int(self.file_params.parser.get("split_strategy", SplitStrategy.ROW.value))
-        if split_strategy == SplitStrategy.ROW.value:
+        split_strategy = int(self.file_params.parser.get("split_strategy", SplitStrategy.DOC_STRUCTURE.value))
+        if split_strategy == SplitStrategy.DOC_STRUCTURE.value:
 
             """Parse CSV file and save to database"""
             json_data = self.parse_csv_to_json()
@@ -96,7 +97,7 @@ async def process_csv(file_params: FileParams) -> bool:
         return False
 
     try:
-        logger.info(f"Processing Markdown file: {file_params.file_path}")
+        logger.info(f"Processing CSV file: {file_params.file_path}")
         parser = CSVParser(file_params)
         r = await parser.parse()
         if r:
