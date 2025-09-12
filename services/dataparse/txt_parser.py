@@ -59,7 +59,7 @@ async def process_txt(file_params: FileParams) -> bool:
             else:
                 chunks = chunk_text(text, chunk_size, overlap)
         # 根据策略选择分割方式: 根据文档结构和段落切片
-        elif split_strategy == SplitStrategy.PARAGRAPH.value:
+        elif split_strategy == SplitStrategy.DOC_STRUCTURE.value:
             pass
         # 根据策略选择分割方式: 根据文档分页切片
         elif split_strategy == SplitStrategy.PAGE.value:

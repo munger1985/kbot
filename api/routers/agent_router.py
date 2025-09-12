@@ -40,7 +40,6 @@ async def handle_agent_chat(request: AgentChatForm) -> SuccessQueryResponse | Er
 @router.get(
     "/stream",
     description="获取流式响应",
-    dependencies=[Depends(AuthController.get_current_accessor)],
     response_class=StreamingResponse,
     response_model=None
 )
@@ -143,9 +142,10 @@ async def handle_agent_del_session(session_id: str):
     description="删除智能体",
     dependencies=[Depends(AuthController.get_current_accessor)]
 )
-async def handle_del_agent(agent_id: int, del_prompt: bool = False) -> SuccessResponse | ErrorResponse:
+async def handle_del_agent(agent_id: int, del_prompt: int = 0) -> SuccessResponse | ErrorResponse:
+    delprompt = True if del_prompt == 1 else False
     try:
-        if await del_agent(agent_id=agent_id, del_prompt=del_prompt):
+        if await del_agent(agent_id=agent_id, del_prompt=delprompt):
             return SuccessResponse(
                 code=status.HTTP_200_OK,
                 success=True,

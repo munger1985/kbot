@@ -81,7 +81,7 @@ class PromptCategory(int, Enum):
 class SplitStrategy(int, Enum):
     """Split strategy enumeration."""
     FIXED_SIZE = 1
-    PARAGRAPH = 2
+    DOC_STRUCTURE = 2
     PAGE = 3
     SEMANTIC = 4
     ROW = 5
