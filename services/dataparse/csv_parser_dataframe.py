@@ -68,8 +68,8 @@ class CSVParser:
         return await save_embeddings(self.file_params, embed_entities)
 
     async def parse(self):
-        split_strategy = int(self.file_params.parser.get("split_strategy", SplitStrategy.DOC_STRUCTURE.value))
-        if split_strategy == SplitStrategy.DOC_STRUCTURE.value:
+        split_strategy = int(self.file_params.parser.get("split_strategy", SplitStrategy.ROW.value))
+        if split_strategy == SplitStrategy.ROW.value:
 
             """Parse CSV file and save to database"""
             json_data = self.parse_csv_to_json()

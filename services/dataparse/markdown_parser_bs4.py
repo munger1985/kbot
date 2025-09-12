@@ -452,9 +452,9 @@ class MarkdownParser:
         return await save_embeddings(self.file_params , embed_entities)
     async def parse(self):
         """解析Markdown文件"""
-        split_strategy = int(self.file_params.parser.get("split_strategy", SplitStrategy.SEMANTIC.value))
+        split_strategy = int(self.file_params.parser.get("split_strategy", SplitStrategy.DOC_STRUCTURE.value))
         file_repo = KbotMdKbFilesRepository()
-        if split_strategy == SplitStrategy.SEMANTIC.value:
+        if split_strategy == SplitStrategy.DOC_STRUCTURE.value:
 
             md_content = self.read_markdown()
             self.extract_text_content(md_content)
