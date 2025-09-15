@@ -26,6 +26,7 @@ class ChunkType(int, Enum):
     TEXT = 1
     IMAGE = 2
     TABLE = 3
+    SUMMARY = 4
 
 class FileStatus(int, Enum):
     """File status enumeration."""

@@ -1,16 +1,13 @@
 import pandas as pd
+import json
+import uuid
 from loguru import logger
 from .file_params import FileParams
 from dao.repositories.kbot_md_kb_files_repo import KbotMdKbFilesRepository
-from dao.repositories.kbot_md_models_repo import KbotMdModelsRepository
 from dao.entities.kbot_biz_txt_embedding import KbotBizTxtEmbedding
 from core.dictionary import FileStatus, ChunkType, SplitStrategy
 from utils.call_models import CallModel
-from utils.common_methods import check_text_file, update_file_status, save_embeddings
-import traceback
-
-import json
-import uuid
+from .common import check_text_file, update_file_status, save_embeddings
 
 
 class CSVParser:
@@ -38,7 +35,7 @@ class CSVParser:
         if not self.file_params.txt_embed_model:
             msg = f"Embedding model not found for id: {self.file_params.txt_embed_model}"
             logger.error(msg)
-            await update_file_status(self.file_params, FileStatus.PARSE_FAILED, msg)
+            await update_file_status(self.file_params.file_id, FileStatus.PARSE_FAILED, msg)
             return False
 
         chunks = [json.dumps(row) for row in json_data]
@@ -49,7 +46,7 @@ class CSVParser:
         if not embeddings_list or len(embeddings_list) != len(chunks):
             msg = f"Embedding model returned invalid results"
             logger.error(msg)
-            await update_file_status(self.file_params, FileStatus.PARSE_FAILED, msg)
+            await update_file_status(self.file_params.file_id, FileStatus.PARSE_FAILED, msg)
             return False
 
         embed_entities = [
@@ -57,7 +54,7 @@ class CSVParser:
                 kb_id=self.file_params.kb_id,
                 embed_id=str(uuid.uuid4()),
                 chunk_doc=chunk,
-                chunk_metadata=json.dumps(meta),
+                chunk_metadata=json.dumps(meta), # type: ignore
                 file_id=self.file_params.file_id,
                 embedding=embeddings_list[idx].embedding,
                 security_level=self.file_params.security_level

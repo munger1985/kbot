@@ -5,7 +5,7 @@ from loguru import logger
 from typing import Any
 from microservices.embedding.model.base import EmbeddingDataItem
 from dao.repositories.kbot_md_prompt_repo import KbotMdPromptRepository
-from .common_methods import encode_image
+from .common import encode_image
 from configuration import ConfigManager
 
 class CallModel():
@@ -183,7 +183,7 @@ class CallModel():
     async def call_vlm_model_for_parsing_picture(self,
                                                 model_id: int, 
                                                 image: str | Image.Image, 
-                                                prompt_unique_name: str | None = None, 
+                                                prompt_name: str | None = None, 
                                                 **kwargs) -> str | None:
         """
         调用视觉语言模型进行图片解析
@@ -191,7 +191,7 @@ class CallModel():
         Args:
             model_id: 模型唯一标识符
             image: 输入图片（文件路径或PIL.Image对象）
-            prompt_unique_name: 从数据库中获取提示信息的唯一标识符
+            prompt_name: 从数据库中获取的提示词名称
             **kwargs: 推理的额外参数
             
         Returns:
@@ -212,16 +212,16 @@ class CallModel():
             logger.error(f"图片编码失败: {str(e)}")
             return None
         
-        # 如果没有传入prompt_unique_name，则使用默认的提示信息
-        if not prompt_unique_name:
-            prompt_unique_name = self.model_config.vlm.sys_prompt_img2txt
+        # 如果没有传入 prompt_name，则使用默认的提示信息
+        if not prompt_name:
+            prompt_name = self.model_config.prompt.image2text
 
         # 获取提示文本
         try:
             prompt_repo = KbotMdPromptRepository()
-            prompt = await prompt_repo.get_prompt_by_unique_name(prompt_unique_name)
+            prompt = await prompt_repo.get_prompt_by_unique_name(prompt_name)
             if not prompt:
-                raise Exception(f"提示信息未找到: {prompt_unique_name}")
+                raise Exception(f"提示信息未找到: {prompt_name}")
         except Exception as e:
             logger.error(f"获取提示文本失败: {str(e)}")
             return None

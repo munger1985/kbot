@@ -124,7 +124,6 @@ class VLMConfig(BaseModel):
     service_host: str
     service_port: int = Field(gt=0, lt=65536)
     timeout: int = Field(ge=1)
-    sys_prompt_img2txt: str
 
 class TokenizerConfig(BaseModel):
     custom_dict_path: str
@@ -140,6 +139,10 @@ class SynonymConfig(BaseModel):
     top_n_words: int = Field(ge=1)
     preload_top: int = Field(ge=0)
 
+class PromptConfig(BaseModel):
+    image2text: str
+    summary: str
+
 class ModelConfig(BaseModel):
     embed: EmbedConfig
     llm: LLMConfig
@@ -147,4 +150,5 @@ class ModelConfig(BaseModel):
     vlm: VLMConfig
     tokenizer: TokenizerConfig
     synonym: SynonymConfig
+    prompt: PromptConfig
 

@@ -1,7 +1,7 @@
 from loguru import logger
 from .file_params import FileParams
 from .pdf_parser_pdfplumber import process_pdf
-from utils.common_methods import check_text_file
+from .common import check_text_file
 from utils.file_converter import OfficeToPDF
 
 

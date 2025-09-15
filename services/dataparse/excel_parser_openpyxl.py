@@ -1,13 +1,3 @@
-
-from loguru import logger
-from .file_params import FileParams
-from dao.repositories.kbot_md_kb_files_repo import KbotMdKbFilesRepository
-from dao.repositories.kbot_biz_txt_embedding_repo import KbotBizTxtEmbeddingRepository
-from dao.repositories.kbot_md_models_repo import KbotMdModelsRepository
-from dao.entities.kbot_biz_txt_embedding import KbotBizTxtEmbedding
-from core.dictionary import FileStatus, ChunkType, SplitStrategy
-from utils.call_models import CallModel
-from utils.common_methods import check_text_file
 import json
 import uuid
 import zipfile
@@ -16,7 +6,13 @@ from typing import Dict, List, Any, Optional
 from datetime import datetime
 import shutil
 from configuration.config_manager import ConfigManager
-
+from loguru import logger
+from .file_params import FileParams
+from .common import check_text_file, save_embeddings
+from dao.repositories.kbot_md_kb_files_repo import KbotMdKbFilesRepository
+from dao.entities.kbot_biz_txt_embedding import KbotBizTxtEmbedding
+from core.dictionary import FileStatus, ChunkType, SplitStrategy
+from utils.call_models import CallModel
 try:
     import openpyxl
     from openpyxl import load_workbook
@@ -73,29 +69,29 @@ class ExcelParser:
             status,
             message
         )
-    async def _save_embeddings(self, embeddings: list[KbotBizTxtEmbedding]) -> bool:
-        """Save embeddings to database with error handling"""
-        if not embeddings:
-            return False
+    # async def _save_embeddings(self, embeddings: list[KbotBizTxtEmbedding]) -> bool:
+    #     """Save embeddings to database with error handling"""
+    #     if not embeddings:
+    #         return False
 
-        try:
-            repo = KbotBizTxtEmbeddingRepository(kb_id=self.file_params.kb_id)
-            await repo.initialize()
-            result = await repo.create(kb_id=self.file_params.kb_id, embeddings=embeddings)
-            if not result:
-                msg = "Failed to save embeddings (repository returned False)"
-                logger.error(msg)
-                await self._update_file_status(FileStatus.PARSE_FAILED, msg)
-                return False
+    #     try:
+    #         repo = KbotBizTxtEmbeddingRepository(kb_id=self.file_params.kb_id)
+    #         await repo.initialize()
+    #         result = await repo.create(kb_id=self.file_params.kb_id, embeddings=embeddings)
+    #         if not result:
+    #             msg = "Failed to save embeddings (repository returned False)"
+    #             logger.error(msg)
+    #             await self._update_file_status(FileStatus.PARSE_FAILED, msg)
+    #             return False
 
-            logger.info(f"Successfully saved {len(embeddings)} embeddings")
-            return True
+    #         logger.info(f"Successfully saved {len(embeddings)} embeddings")
+    #         return True
 
-        except Exception as e:
-            msg = f"Exception while saving embeddings: {str(e)}"
-            logger.error(msg)
-            await self._update_file_status(FileStatus.PARSE_FAILED, msg)
-            return False
+    #     except Exception as e:
+    #         msg = f"Exception while saving embeddings: {str(e)}"
+    #         logger.error(msg)
+    #         await self._update_file_status(FileStatus.PARSE_FAILED, msg)
+    #         return False
     def get_sheet_naming_convention(self, sheet_name: str) -> str:
         """
         根据工作表名称应用命名约定
@@ -319,7 +315,7 @@ class ExcelParser:
         embed_entities.extend(image_embed_entities)
 
         # Save all embeddings in one batch
-        return await self._save_embeddings(embeddings=embed_entities)
+        return await save_embeddings(file_params=self.file_params, embeddings=embed_entities)
 
     async def _process_images_embeddings(self) -> list:
         ## 1 means yes

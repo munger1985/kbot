@@ -12,7 +12,7 @@ from core.dictionary import FileStatus, YesNoEnum
 from dao.repositories.kbot_md_kb_repo import KbotMdKbRepository
 from dao.repositories.kbot_md_kb_files_repo import KbotMdKbFilesRepository
 from dao.repositories.kbot_biz_txt_embedding_repo import KbotBizTxtEmbeddingRepository
-from utils.common_methods import run_in_thread_pool
+from utils.common import run_in_thread_pool
 from utils.decimal_encoder import DecimalEncoder
 
 

@@ -1,13 +1,8 @@
 from typing import Sequence
-from sqlalchemy import select, delete, and_, update
+from sqlalchemy import select, delete, and_, update, text
+from datetime import datetime
 from dao.entities.kbot_md_kb_files import KbotMdKbFiles
-from core.dictionary import (
-    FileStatus,
-    ProcessPriority,
-    YesNoEnum,
-    Status,
-    SecurityLevel
-)
+from core.dictionary import *
 from dao.entities.kbot_md_kb_batch import KbotMdKbBatch
 from dao.entities.kbot_md_kb import KbotMdKb
 from dao.repositories.kbot_md_kb_batch_repo import KbotMdKbBatchRepository
@@ -161,18 +156,32 @@ class KbotMdKbFilesRepository:
                 return True
             
     async def update_file_status(self, file_id: str, status: FileStatus, log_msg: str | None = None) -> bool:
-        """Update the status of a knowledge base file record."""
+        """Update the status of a knowledge base file record with log message appending."""
         async with get_session() as session:
-            # Start building the update query
-            query = update(KbotMdKbFiles).where(KbotMdKbFiles.file_id == file_id)
-            
-            # Prepare the values to update
-            values: dict[str, int | str] = {"status": status.value}
             if log_msg is not None:
-                values["log_msg"] = log_msg
+                # For log appending, use a separate query with text expression
+                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                new_log_entry = f"{timestamp}: {log_msg}"
                 
-            # Execute the update with the conditional values
-            await session.execute(query.values(**values))
+                # Use Oracle's string concatenation syntax
+                update_query = text("""
+                    UPDATE kbot_md_kb_files 
+                    SET status = :status, 
+                        log_msg = COALESCE(log_msg, '') || CHR(10) || :new_log
+                    WHERE file_id = :file_id
+                """)
+                
+                await session.execute(
+                    update_query, 
+                    {"status": status.value, "new_log": new_log_entry, "file_id": file_id}
+                )
+            else:
+                # If no log message, just update status
+                query = update(KbotMdKbFiles)\
+                    .where(KbotMdKbFiles.file_id == file_id)\
+                    .values(status=status.value)
+                await session.execute(query)
+            
             await session.commit()
             return True
         

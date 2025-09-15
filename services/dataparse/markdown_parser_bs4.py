@@ -1,4 +1,8 @@
 import re
+import os
+import json
+import uuid
+from pathlib import Path
 import pandas as pd
 import markdown
 from bs4 import BeautifulSoup
@@ -11,14 +15,8 @@ from dao.repositories.kbot_md_kb_files_repo import KbotMdKbFilesRepository
 from dao.entities.kbot_biz_txt_embedding import KbotBizTxtEmbedding
 from core.dictionary import FileStatus, ChunkType, SplitStrategy
 from utils.call_models import CallModel
-from utils.common_methods import check_text_file, update_file_status, save_embeddings
-import traceback
+from .common import check_text_file, update_file_status, save_embeddings
 from configuration.config_manager import ConfigManager
-
-import os
-import json
-import uuid
-from pathlib import Path
 
 
 class MarkdownParser:
@@ -79,15 +77,15 @@ class MarkdownParser:
 
         # 提取表头
         headers = []
-        header_row = table.find('thead').find('tr')
-        for th in header_row.find_all('th'):
+        header_row = table.find('thead').find('tr') # type: ignore
+        for th in header_row.find_all('th'): # type: ignore
             headers.append(th.get_text().strip())
 
         # 提取行数据
         result = []
-        for tr in table.find('tbody').find_all('tr'):
+        for tr in table.find('tbody').find_all('tr'): # type: ignore
             row_data = {}
-            cells = tr.find_all('td')
+            cells = tr.find_all('td') # type: ignore
             for i, cell in enumerate(cells):
                 if i < len(headers):
                     row_data[headers[i]] = cell.get_text().strip()
@@ -326,12 +324,12 @@ class MarkdownParser:
 
 
             # if self.file_params.parser.get("extract_images", False):
-            vlm_prompt_unique_name = self.model_config.vlm.sys_prompt_img2txt
+            vlm_prompt_unique_name = self.model_config.prompt.image2text
             
             if self.file_params.img2txt_model is None:
                 msg = f"img2txt_model not found for id: {self.file_params.img2txt_model}"
                 logger.error(msg)
-                await  update_file_status( self.file_params,FileStatus.PARSE_FAILED, msg)
+                await update_file_status(self.file_params.file_id, FileStatus.PARSE_FAILED, msg)
                 return []
 
             chunks = []
@@ -359,7 +357,7 @@ class MarkdownParser:
             if not self.file_params.txt_embed_model:
                 msg = f"text_embedding_model not found for id: {self.file_params.txt_embed_model}"
                 logger.error(msg)
-                await  update_file_status( self.file_params,FileStatus.PARSE_FAILED, msg)
+                await  update_file_status(self.file_params.file_id, FileStatus.PARSE_FAILED, msg)
                 return []
             embeddings_list = []
             if chunks:
@@ -368,17 +366,17 @@ class MarkdownParser:
                 msg = f"text_embedding_model  {self.file_params.txt_embed_model} returned invalid results (expected {len(chunks)}, got {len(embeddings_list) if embeddings_list else 0})"
                 logger.error(msg)
                 logger.error("failed file: {}", self.file_params.file_path)
-                await  update_file_status(self.file_params,FileStatus.PARSE_FAILED, msg)
+                await  update_file_status(self.file_params.file_id, FileStatus.PARSE_FAILED, msg)
                 return []
 
-                # Create embedding entities
+            # Create embedding entities
             embed_entities = []
             for idx, (chunk, meta) in enumerate(zip(chunks, chunk_metas)):
                 embed_entity = KbotBizTxtEmbedding(
                     kb_id=self.file_params.kb_id,
                     embed_id=meta['image_id'],
                     chunk_doc=chunk,
-                    chunk_metadata=json.dumps(meta),
+                    chunk_metadata=json.dumps(meta), # type: ignore
                     file_id=self.file_params.file_id,
                     embedding=embeddings_list[idx].embedding,  # type: ignore
                     security_level=self.file_params.security_level
@@ -397,7 +395,7 @@ class MarkdownParser:
         if not self.file_params.txt_embed_model:
             msg = f"Embedding model not found for id: {self.file_params.txt_embed_model}"
             logger.error(msg)
-            await  update_file_status(self.file_params,FileStatus.PARSE_FAILED, msg)
+            await update_file_status(self.file_params.file_id, FileStatus.PARSE_FAILED, msg)
             return False
 
         # Prepare all content chunks for embedding
@@ -405,20 +403,18 @@ class MarkdownParser:
         chunk_metas = []
 
         # Add table content
-        for paragraph in self.text_results['paragraphs']:
+        for paragraph in self.text_results['paragraphs']: # type: ignore
                     chunks.append(paragraph)
                     chunk_metas.append({
                         "chunk_type": ChunkType.TEXT,
                     })
-        for table in self.text_results['tables']:
+        for table in self.text_results['tables']: # type: ignore
                 table_str = json.dumps(table, ensure_ascii=False, indent=2)
                 chunks.append(table_str )
                 chunk_metas.append({
                     "chunk_type": ChunkType.TABLE,
 
                 })
-
-
 
         if not chunks:
             logger.warning("No valid content chunks found for embedding")
@@ -429,7 +425,7 @@ class MarkdownParser:
         if not embeddings_list or len(embeddings_list) != len(chunks):
             msg = f"Embedding model {self.file_params.txt_embed_model} returned invalid results (expected {len(chunks)}, got {len(embeddings_list) if embeddings_list else 0})"
             logger.error(msg)
-            await  update_file_status(self.file_params,FileStatus.PARSE_FAILED, msg)
+            await update_file_status(self.file_params.file_id, FileStatus.PARSE_FAILED, msg)
             return False
 
         # Create embedding entities
@@ -439,7 +435,7 @@ class MarkdownParser:
                 kb_id=self.file_params.kb_id,
                 embed_id=str(uuid.uuid4()),
                 chunk_doc=chunk,
-                chunk_metadata=json.dumps(meta),
+                chunk_metadata=json.dumps(meta), # type: ignore
                 file_id=self.file_params.file_id,
                 embedding=embeddings_list[idx].embedding,
                 security_level=self.file_params.security_level
@@ -450,6 +446,8 @@ class MarkdownParser:
 
         # Save all embeddings in one batch
         return await save_embeddings(self.file_params , embed_entities)
+    
+    
     async def parse(self):
         """解析Markdown文件"""
         split_strategy = int(self.file_params.parser.get("split_strategy", SplitStrategy.DOC_STRUCTURE.value))
@@ -471,7 +469,6 @@ class MarkdownParser:
             json_str = json.dumps(metadata, ensure_ascii=False, indent=2)
 
             await file_repo.update_file_parsed_metadata(self.file_params.file_id, json_str)
-
 
             return True
         else:
@@ -498,7 +495,7 @@ async def process_markdown(file_params: FileParams) -> bool:
         r = await parser.parse()
         if r:
             msg = f"Successfully parsed {file_params.file_path} (file id: {file_params.file_id})"
-            await KbotMdKbFilesRepository().update_file_status(
+            await update_file_status(
                 file_params.file_id,
                 FileStatus.PARSED,
                 str(msg)
@@ -506,7 +503,7 @@ async def process_markdown(file_params: FileParams) -> bool:
             return True
         else:
             msg = f"Failed to parse {file_params.file_path} (file id: {file_params.file_id})"
-            await KbotMdKbFilesRepository().update_file_status(
+            await update_file_status(
                 file_params.file_id,
                 FileStatus.PARSE_FAILED,
                 str(msg)
@@ -516,7 +513,7 @@ async def process_markdown(file_params: FileParams) -> bool:
         msg = f"Error processing Markdown file: {file_params.file_path}, error: {str(e)}"
         logger.exception(e)
         logger.error(msg)
-        await KbotMdKbFilesRepository().update_file_status(
+        await update_file_status(
             file_params.file_id,
             FileStatus.PARSE_FAILED,
             msg

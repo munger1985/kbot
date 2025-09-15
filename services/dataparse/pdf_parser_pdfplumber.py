@@ -18,7 +18,7 @@ from dao.repositories.kbot_md_models_repo import KbotMdModelsRepository
 from dao.entities.kbot_biz_txt_embedding import KbotBizTxtEmbedding
 from core.dictionary import FileStatus, ChunkType, SplitStrategy
 from utils.call_models import CallModel
-from utils.common_methods import check_text_file
+from .common import check_text_file
 import traceback
 from configuration.config_manager import ConfigManager
 
@@ -113,7 +113,7 @@ class PDFPlumberParser:
     async def _process_images_embeddings(self) -> list:
         if self.file_params.img2txt == 1:
         # if self.file_params.parser.get("extract_images", False):
-            vlm_prompt_unique_name = self.model_config.vlm.sys_prompt_img2txt
+            vlm_prompt_unique_name = self.model_config.prompt.image2text
             
             if self.file_params.img2txt_model is None:
                 msg = f"Image to text model not found for id: {self.file_params.img2txt_model}"

@@ -9,7 +9,6 @@ project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(project_root))
 
 # Use absolute imports from project root
-from utils.common_methods import lob_to_string
 from services.chat.agent_chat import Agent
 
 async def main():
