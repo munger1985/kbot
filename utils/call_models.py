@@ -38,7 +38,7 @@ class CallModel():
         url = f"http://{service_host}:{service_port}/v1/embeddings"
         headers = {"Content-Type": "application/json"}
         payload = {
-            "model_id": model_id,
+            "model_id": int(model_id),
             "texts": texts,
             "batch_size": int(batch_size) if batch_size else 0
         }
@@ -108,7 +108,7 @@ class CallModel():
         url = f"http://{service_host}:{service_port}/v1/rerank"
         headers = {"Content-Type": "application/json"}
         payload = {
-            "model_id": model_id,
+            "model_id": int(model_id),
             "query": query,
             "documents": documents,
             "top_k": int(top_k) if top_k else 99999  # 设置一个很大的值，防止rerank返回的文档数小于top_k
@@ -152,7 +152,7 @@ class CallModel():
         
         # 构建请求体
         payload = {
-            "model_id": model_id,
+            "model_id": int(model_id),
             "messages": prompt,
             "stream": kwargs.get("stream", True)  # 默认为流式
         }
@@ -247,7 +247,7 @@ class CallModel():
 
         # 构建请求体
         payload = {
-            "model_id": model_id,
+            "model_id": int(model_id),
             "messages": messages,
             "stream": False,
             **kwargs
