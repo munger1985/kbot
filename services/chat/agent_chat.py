@@ -6,8 +6,11 @@ from dao.repositories.kbot_md_agent_repo import KbotMdAgentRepository
 from dao.repositories.kbot_md_models_repo import KbotMdModelsRepository
 from core.dictionary import ToolType, YesNoEnum
 from .agent_params import AgentParams, ToolParams, KBResult
-from ..search.kb_search import KBSearch
 from .agent_rerank import AgentRerank
+from ..search.kb_search import KBSearch
+from ..search.chinese_preprocessor import preprocess_cn_query
+
+
 
 
 class Agent:
@@ -25,13 +28,17 @@ class Agent:
         self.security = security
         self.agent_params = AgentParams()
 
-    async def _run_kb_search_async(self, tool_params: ToolParams, question: str, security: int, enable_synonyms: bool) -> list[KBResult]:
+    async def _run_kb_search_async(self, tool_params: ToolParams, 
+                                   vector_search_question: str, 
+                                   full_text_question: list[str], 
+                                   security: int) -> list[KBResult]:
         """
         异步运行KB搜索的方法
         
         Args:
             tool_params: 工具参数
-            question: 用户问题
+            vector_search_question: 改写后的向量搜索问题
+            full_text_question: 改写后的全文搜索问题
             security: 安全级别
             enable_synonyms: 是否启用同义词
             
@@ -40,7 +47,7 @@ class Agent:
         """
         try:
             kb = KBSearch(tool_params)
-            result = await kb.search(question, security, enable_synonyms)
+            result = await kb.search(vector_search_question, full_text_question, security)
             return result or []
         except Exception as e:
             logger.error(f"KB搜索执行失败: {e}")
@@ -51,11 +58,12 @@ class Agent:
         并行执行所有KB搜索任务（使用线程池）
         
         Args:
-            kb_tasks: KB任务列表，每个任务为 (tool_params, question, security, enable_synonyms)
+            kb_tasks: KB任务列表，每个任务为 (tool_params, vector_search_question, full_text_question, security)
             
         Returns:
             list[list[KBResult]]: 搜索结果列表
         """
+
         if not kb_tasks:
             return []
         
@@ -64,9 +72,9 @@ class Agent:
         
         # 创建所有异步任务
         async_tasks = []
-        for tool_params, question, security, enable_synonyms in kb_tasks:
+        for tool_params, vector_search_question, full_text_question, security in kb_tasks:
             async_tasks.append(
-                self._run_kb_search_async(tool_params, question, security, enable_synonyms)
+                self._run_kb_search_async(tool_params, vector_search_question, full_text_question, security)
             )
         
         # 并行执行所有任务
@@ -104,17 +112,19 @@ class Agent:
                 processed_results.append([])
         return processed_results
 
-    async def _process_kb_tools(self, confs: list[Any], question: str) -> tuple:
+    async def _process_kb_tools(self, confs: list[Any], vector_search_question: str, full_text_question: list[str]) -> tuple:
         """
         处理知识库工具
         
         Args:
             confs: 配置列表
-            question: 用户问题
+            vector_search_question: 改写后的向量搜索问题
+            full_text_question: 改写后的全文搜索问题
             
         Returns:
             tuple: (重排结果列表, 非重排结果列表)
         """
+        
         kb_results_rerank: list[KBResult] = []
         kb_results_non_rerank: list[KBResult] = []
         
@@ -132,9 +142,9 @@ class Agent:
                 # 添加到并行任务列表
                 kb_tasks.append((
                     tool_params,
-                    question,
-                    self.security,
-                    self.agent_params.synonym_similarity_flag
+                    vector_search_question,
+                    full_text_question,
+                    self.security
                 ))
                 kb_configs.append(conf)
         
@@ -269,6 +279,7 @@ class Agent:
         Returns:
             list[KBResult] | None: 知识库结果列表或None
         """
+
         # 1. 获取智能体的默认配置信息
         agent = await KbotMdAgentRepository().get_by_id(self.agent_id)
         if not agent:
@@ -288,7 +299,23 @@ class Agent:
             reranker_score_threshold=agent.reranker_score_threshold or 0.0
         )
 
-        # 2. 获取智能体包含的知识库或工具配置信息
+        # 2. 预处理问题，用于向量检索和全文检索，语义检索需要字符串，全文检索需要词元列表
+        if self.agent_params.synonym_similarity_flag:
+            logger.debug(f"问题改写启用同义词扩展")
+        else:
+            logger.debug(f"问题改写禁用同义词扩展")
+
+        expand_question = await preprocess_cn_query(query=question, enable_synonym_expansion=self.agent_params.synonym_similarity_flag)
+        
+        if expand_question is None:
+            logger.warning(f"问题扩展失败: {question}")
+            vector_search_question = question
+            full_text_question = question
+        else:
+            vector_search_question = expand_question.get("semantic", question)
+            full_text_question = expand_question.get("fulltext", question)
+
+        # 3. 获取智能体包含的知识库或工具配置信息
         agent_conf_repo = KbotMdAgentConfRepository()
         confs = await agent_conf_repo.get_by_agent_id(self.agent_id)
         if not confs:
@@ -297,13 +324,14 @@ class Agent:
         
         logger.debug(f"找到 {len(confs)} 个工具")
         
-        # 3. 并行处理知识库工具
-        kb_results_rerank, kb_results_non_rerank = await self._process_kb_tools(confs, question) # type: ignore
+        # 4. 并行处理知识库工具
+        kb_results_rerank, kb_results_non_rerank = await self._process_kb_tools(confs, vector_search_question, full_text_question) # type: ignore
         
-        # 4. 处理非知识库工具
-        non_kb_results = await self._process_non_kb_tools(confs, question) # type: ignore
+        # 5. 处理非知识库工具
+        # TODO: 目前非知识库工具未实现具体功能
+        # non_kb_results = await self._process_non_kb_tools(confs, question) # type: ignore
         
-        # 5. 重排和处理最终结果
+        # 6. 重排和处理最终结果
         # 如果重排模型ID为空，则直接返回结果
         if agent.reranker_model_id is None:
             logger.warning("智能体重排模型ID为空")
@@ -311,5 +339,5 @@ class Agent:
         else:
             final_results = await self._rerank_and_process_results(question, kb_results_rerank, kb_results_non_rerank)
         
-        # 6. 返回最终结果
+        # 7. 返回最终结果
         return final_results

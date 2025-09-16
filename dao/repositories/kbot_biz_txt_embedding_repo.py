@@ -6,7 +6,7 @@ from core.database.vec_oracle_pool import OracleConnParams, AsyncOracleConnectio
 from dao.entities.kbot_biz_txt_embedding import KbotBizTxtEmbedding
 from dao.repositories.kbot_md_db_conf_repo import KbotMdDbConfRepository
 from utils.oracle_vec_handler import OracleVecHandler
-from core.dictionary import DbType
+from core.dictionary import DbType, ChunkType
 
 class KbotBizTxtEmbeddingRepository:
     """Repository for KBOT_BIZ_TXT_EMBEDDING table operations."""
@@ -93,7 +93,8 @@ class KbotBizTxtEmbeddingRepository:
                                      query_vec: str,
                                      security: int,
                                      similarity_threshold: float | None = 0.8,
-                                     top_k: int | None = 10
+                                     top_k: int | None = 10,
+                                     is_summary_search: bool = False
                                      ) -> Sequence:
         """Get similar embeddings using vector similarity search.
         
@@ -103,6 +104,7 @@ class KbotBizTxtEmbeddingRepository:
             security: Security level
             similarity_threshold: Minimum similarity score (0.0-1.0)
             top_k: Maximum number of results to return
+            is_summary_search: Whether to search in summary or not
             
         Returns:
             list of similar embeddings ordered by similarity score
@@ -114,10 +116,11 @@ class KbotBizTxtEmbeddingRepository:
             SELECT 
                 FILE_ID, CHUNK_DOC, CHUNK_METADATA,
                 1 - VECTOR_DISTANCE(EMBEDDING, :query_vec, COSINE) AS similarity
-            FROM KBOT_BIZ_TXT_EMBEDDING
+            FROM KBOT_BIZ_TXT_EMBEDDING emb
             WHERE 1 - VECTOR_DISTANCE(EMBEDDING, :query_vec, COSINE) >= :threshold
             AND KB_ID = :kb_id
             AND SECURITY_LEVEL <= :security
+            AND emb.CHUNK_METADATA.chunk_type = :chunk_type
             ORDER BY similarity DESC
             FETCH FIRST :top_k ROWS ONLY
         """
@@ -127,7 +130,8 @@ class KbotBizTxtEmbeddingRepository:
             "query_vec": query_vec,
             "security": security,
             "threshold": similarity_threshold,
-            "top_k": top_k
+            "top_k": top_k,
+            "chunk_type": ChunkType.SUMMARY.value if is_summary_search else ChunkType.TEXT.value
         }
         result = await self.pool_manager.query(self.conn_params, sql, params)
            

@@ -220,10 +220,10 @@ class ChinesePreprocessor:
 
 
     async def preprocess(self, query: str,
-                         enable_pos_filtering: bool | None = True,
-                         enable_synonym_expansion: bool | None = None,
-                         synonym_similarity_threshold: float | None = 0.65,  # 较低的阈值获取更多同义词
-                         max_synonyms_per_word: int | None = 2            # 每个词最多扩展2个同义词
+                         enable_pos_filtering: bool,
+                         enable_synonym_expansion: bool,
+                         synonym_similarity_threshold: float | None = 0.65,
+                         max_synonyms_per_word: int | None = 2
                  ) -> dict[str, str|list[str]] | None:
         """
         完整的预处理流程
@@ -268,6 +268,7 @@ class ChinesePreprocessor:
 
             # 用于全文检索：返回词元列表
             logger.debug(f"全文检索预处理完成: '{query}' -> {tokens}")
+            
             # 5. （可选）同义词扩展
             if enable_synonym_expansion:
                 logger.debug(f"全文检索开始同义词扩展...")
@@ -294,8 +295,8 @@ def get_preprocessor() -> ChinesePreprocessor:
 
 async def preprocess_cn_query(
         query: str,
-        enable_pos_filtering: bool = True,
-        enable_synonym_expansion: bool | None = None,
+        enable_pos_filtering: bool = False,
+        enable_synonym_expansion: bool = False,
         synonym_similarity_threshold: float | None = 0.65,  # 较低的阈值获取更多同义词
         max_synonyms_per_word: int | None = 2            # 每个词最多扩展2个同义词
         ) -> dict[str, str|list[str]] | None:

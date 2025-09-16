@@ -1,12 +1,12 @@
 from loguru import logger
 from utils.call_models import CallModel
-from .agent_params import KBResult
+from .agent_params import KBResult, AgentParams
 
 
 class AgentRerank:
     """智能体重排类"""
     
-    def __init__(self, agent_params):
+    def __init__(self, agent_params: AgentParams):
         """
         初始化智能体重排器
         
@@ -15,7 +15,7 @@ class AgentRerank:
         """
         self.agent_params = agent_params
 
-    async def rerank_kb(self, question: str, kb_results: list[KBResult]) -> list[KBResult] | None:
+    async def rerank_kb(self, question: str, kb_results: list[KBResult]) -> list[KBResult]:
         """
         对知识库结果进行重排
         
@@ -30,7 +30,7 @@ class AgentRerank:
             logger.warning("未提供知识库结果进行重排")
             return kb_results
         
-        if not hasattr(self.agent_params, 'reranker_model_name') or self.agent_params.reranker_model_name is None:
+        if self.agent_params.reranker_model_id is None:
             logger.warning("未配置重排模型，跳过重排")
             return kb_results
             
@@ -79,6 +79,6 @@ class AgentRerank:
             else:
                 logger.warning(f"无效的重排结果索引或分数: index={index}, score={score}")
 
-        logger.debug(f"使用重排模型 {self.agent_params.reranker_model_name} 重排了 {len(reranked_results)} 个结果")
+        logger.debug(f"使用重排模型 {self.agent_params.reranker_model_id} 重排了 {len(reranked_results)} 个结果")
 
         return reranked_results

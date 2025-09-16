@@ -26,7 +26,7 @@ async def process_summary(chunks: list[str], file_params: FileParams) -> bool:
     if not summary_prompt:
         msg = f"摘要总结提示词不存在，使用默认提示词"
         logger.warning(msg)
-        summary_prompt = "请对以下文本进行总结，生成一段简洁的摘要，要求涵盖核心内容与关键信息，保持客观准确，避免冗余细节。\n文本内容如下：\n{chunk}\n"
+        summary_prompt = "请对以下文本进行总结，提炼出核心内容和关键信息。要求摘要简洁、准确、连贯。待总结文本：\n{chunk}\n"
     else:
         summary_prompt = str(summary_prompt)
 

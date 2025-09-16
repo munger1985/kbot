@@ -50,7 +50,6 @@ class AgentParams(BaseModel):
     feedback_similarity_flag: bool = False
     synonym_similarity_flag: bool = False
     reranker_model_id: int | None = None
-    # reranker_model_name: str | None = None
     reranker_top_k: int | None = None
     reranker_score_threshold: float = 0.0
 
