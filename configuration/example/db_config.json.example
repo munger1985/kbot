@@ -23,9 +23,6 @@
     "max_overflow": 20,
     "pool_pre_ping": true,
     "pool_use_lifo": true,
-    "pool_recycle": 1800,
-    "max_identifier_length": 128,
-    "hide_parameters": true,
-    "echo_pool": "debug"
+    "pool_recycle": 1800
   }
 }

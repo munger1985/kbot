@@ -3,7 +3,7 @@ import sys
 from pathlib import Path
 
 # 添加项目根目录到Python路径，以便导入backend模块
-sys.path.append(str(Path(__file__).parent.parent.parent.parent))
+sys.path.append(str(Path(__file__).parent.parent.parent))
 
 from utils.chunk_text import chunk_text
 

@@ -291,7 +291,7 @@ async def chat(
             )
 
         elif request.stream and provider == LLMProvider.OCI.value:
-            if "cohere" in model_name:
+            if "cohere" in model_name.lower():
                 async def generate_oci_cohere_sse():
                     try:
                         # 获取流式响应
@@ -364,7 +364,7 @@ async def chat(
                     }
                 )
         
-            elif request.stream and ("grok" in model_name or "llama" in model_name):
+            elif request.stream and ("grok" in model_name.lower() or "llama" in model_name.lower()):
                 async def generate_oci_grok_sse():
                     try:
                         # 获取流式响应
@@ -462,8 +462,14 @@ async def chat(
                 usage_data = response.usage # type: ignore
 
             elif provider == LLMProvider.OCI.value:
-                content = response.data.chat_response.text # type: ignore
-                usage_data = response.data.chat_response.usage # type: ignore
+                # Grok 非流式响应
+                if "grok" in model_name.lower() or "llama" in model_name.lower():
+                    content = response.data.chat_response.choices[0].message.content[0].text # type: ignore
+                    usage_data = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+                # Cohere 非流式响应
+                else:
+                    content = response.data.chat_response.text # type: ignore
+                    usage_data = response.data.chat_response.usage # type: ignore
 
             else:
                 logger.warning(f"不支持的提供者: {provider}")

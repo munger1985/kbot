@@ -22,7 +22,7 @@ echo "Kbot main 服务已启动。"
 MICROSERVICES_DIR="$(dirname "$0")/microservices"
 
 # 启动四个微服务
-# echo "正在启动微服务..."
+echo "正在启动微服务..."
 
 cd "${MICROSERVICES_DIR}/embedding" && python app.py >/dev/null 2>&1 &
 cd "${MICROSERVICES_DIR}/llm" && python app.py >/dev/null 2>&1 &

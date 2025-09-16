@@ -91,21 +91,25 @@ async def process_txt(file_params: FileParams) -> bool:
 
             embeddings = [item.embedding for item in response_data]
             embed_entities = []
+            summary_result = True  # 默认值为 True
+            chunk_num = 1
 
             for chunk, embedding in zip(chunks, embeddings):
-                # 保存 embedding 向量到向量数据库
                 embed_entity = KbotBizTxtEmbedding(
                     embed_id=str(uuid.uuid4()),
                     chunk_doc=chunk,
-                    chunk_metadata={"chunk_type": ChunkType.TEXT, "page_num": 1},
+                    chunk_metadata={"chunk_type": ChunkType.TEXT, "chunk_num": chunk_num},
                     file_id=file_params.file_id,
                     kb_id=file_params.kb_id,
                     embedding=embedding,
                     security_level=file_params.security_level
                 )
                 embed_entities.append(embed_entity)
+                chunk_num += 1
+            
+            # 保存 embedding 向量到向量数据库
             save_result = await save_embeddings(file_params, embed_entities)
-
+            
             if file_params.enable_summary:
                 logger.debug("启用摘要处理")
                 summary_result = await process_summary(file_params=file_params, chunks=chunks)
@@ -115,5 +119,5 @@ async def process_txt(file_params: FileParams) -> bool:
     except Exception as e:
         msg = f"处理文本文件 {file_params.file_path} 时发生错误: {str(e)}"
         logger.exception(msg)  
-        await update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, msg[:400]) #截取字符防止数据库报错
+        await update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, msg)
         return False

@@ -1,4 +1,5 @@
 import uuid
+import json
 from loguru import logger
 from .file_params import FileParams
 from core.dictionary import FileStatus
@@ -25,7 +26,7 @@ async def process_summary(chunks: list[str], file_params: FileParams) -> bool:
     if not summary_prompt:
         msg = f"摘要总结提示词不存在，使用默认提示词"
         logger.warning(msg)
-        summary_prompt = "请对以下文本进行总结，生成一段简洁的摘要，要求涵盖核心内容与关键信息，保持客观准确，避免冗余细节。\n文本内容如下：\n{chunk}\n摘要："
+        summary_prompt = "请对以下文本进行总结，生成一段简洁的摘要，要求涵盖核心内容与关键信息，保持客观准确，避免冗余细节。\n文本内容如下：\n{chunk}\n"
     else:
         summary_prompt = str(summary_prompt)
 
@@ -33,14 +34,22 @@ async def process_summary(chunks: list[str], file_params: FileParams) -> bool:
 
     # 2.1 将文本块替换到摘要模板中
     for chunk in chunks:
-        summary_prompt = summary_prompt.replace("{chunk}", chunk)
+        prompt = summary_prompt.replace("{chunk}", chunk)
         
     # 2.2 调用模型进行摘要总结
-        async for summary in CallModel().call_llm_model(
+        async for response in CallModel().call_llm_model(
             file_params.summary_model,
-            summary_prompt,
+            prompt,
             stream=False
             ):
+            try:
+                json_response = json.loads(response)
+                summary = json_response.get("choices")[0].get("message").get("content", "").strip()
+                logger.debug(f"摘要总结模型返回 JSON 格式提取结果: {summary}")
+            except Exception as e:
+                logger.warning(f"摘要总结模型返回结果非 JSON 格式，直接使用文本结果，错误信息: {e}")
+                summary = response.strip()
+
             summary_results.append(summary)
 
             if not summary:
@@ -79,11 +88,11 @@ async def process_summary(chunks: list[str], file_params: FileParams) -> bool:
     embeddings = [item.embedding for item in response_data]
     embed_entities = []
     chunk_num = 1
-    for chunk, embedding in zip(chunks, embeddings):
+    for summary_result, embedding in zip(summary_results, embeddings):
         # 保存 embedding 向量到向量数据库
         embed_entity = KbotBizTxtEmbedding(
             embed_id=str(uuid.uuid4()),
-            chunk_doc=chunk,
+            chunk_doc=summary_result,
             chunk_metadata={"chunk_type": ChunkType.SUMMARY, "chunk_num": chunk_num},
             file_id=file_params.file_id,
             kb_id=file_params.kb_id,

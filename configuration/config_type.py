@@ -78,10 +78,7 @@ class SQLAlchemyConfig(BaseModel):
     pool_pre_ping: bool             # test connections for liveness before use
     pool_recycle: int = Field(ge=0) # recycle connections after 1 hour
     pool_use_lifo: bool
-    max_identifier_length: int = Field(ge=1)
-    hide_parameters: bool
-    echo_pool: Literal["debug", "info", "warn", "error", "off"]
-
+    
 class DBConfig(BaseModel):
     oracle: OracleConfig
     redis: RedisConfig

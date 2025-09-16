@@ -56,7 +56,7 @@ async def update_file_status(file_id: str, status: FileStatus, message: str) -> 
     await KbotMdKbFilesRepository().update_file_status(
         file_id,
         status,
-        message
+        message[:100]  # 截取字符防止过长导致数据库报错
     )
 
 
