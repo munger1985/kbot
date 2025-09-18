@@ -305,7 +305,7 @@ async def handle_preview_kb_file_v2(
                 filename=result["file_name"],
                 media_type=media_type,
                 headers={
-                    "Content-Disposition": f"inline; filename=\"{result['file_name']}\""
+                    "Content-Disposition": "inline; filename={}".format(result["file_name"])
                 }
             )
         else:

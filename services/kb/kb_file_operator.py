@@ -12,7 +12,6 @@ from core.dictionary import FileStatus, YesNoEnum
 from dao.repositories.kbot_md_kb_repo import KbotMdKbRepository
 from dao.repositories.kbot_md_kb_files_repo import KbotMdKbFilesRepository
 from dao.repositories.kbot_biz_txt_embedding_repo import KbotBizTxtEmbeddingRepository
-from dao.repositories.kbot_sys_parser_conf_repo import KbotSysParserConfRepository
 from dao.repositories.kbot_md_parser_conf_repo import KbotMdParserConfRepository
 from utils.common import run_in_thread_pool
 from utils.decimal_encoder import DecimalEncoder
@@ -198,7 +197,7 @@ class KBFileOperator:
         )
         
         # 构造 file 的实体列表用于批量保存到数据库
-        parser_repo = KbotSysParserConfRepository()
+        parser_repo = KbotMdParserConfRepository()
         file_entitities = []
         for fileparam in fileparams:
              # 从SYS_PARSER_CONF表获取默认配置
