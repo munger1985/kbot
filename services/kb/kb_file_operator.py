@@ -217,7 +217,7 @@ class KBFileOperator:
                 is_overwrite = fileparam["is_overwrite"],
                 security_level = kb_entity.security_level or 1,
                 #chunk_parser = json.dumps(kb_entity.chunk_parser, cls=DecimalEncoder) if kb_entity.chunk_parser is not None else None,
-                chunk_parser = json.dumps(parser_conf, cls=DecimalEncoder) if kb_entity.chunk_parser is not None else None,
+                chunk_parser = json.dumps(parser_conf, cls=DecimalEncoder) if parser_conf is not None else None,
                 enable_summary = kb_entity.enable_summary,
                 is_img2txt = kb_entity.is_img2txt,
                 is_table_head_fill = kb_entity.is_table_head_fill,
