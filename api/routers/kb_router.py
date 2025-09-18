@@ -1,5 +1,6 @@
 
 import json
+import os
 from fastapi import APIRouter, UploadFile, File, Form, status, Depends
 from fastapi.responses import HTMLResponse
 from api.controllers.security_controller import AuthController
@@ -118,7 +119,7 @@ async def handle_download_file(
                 filename=result["file_name"],
                 media_type="multipart/form-data",
                 headers={
-                    "Content-Disposition": "attachment"
+                    "Content-Disposition": "attachment; filename={}".format(result["file_name"])
                 },
                 content_disposition_type=None # type: ignore
                 )
@@ -229,13 +230,13 @@ async def handle_reparse_files(
     
 
 @router.post(
-    "/file/preview/v2",
+    "/file/preview/v1",
     description="从知识库中预览文件的接口",
     response_model=None,
     # dependencies=[Depends(AuthController.get_current_accessor)],
     status_code=status.HTTP_200_OK
 )
-async def handle_preview_kb_file(
+async def handle_preview_kb_file_v1(
     form: KBFilePreviewForm
 ):
     try:
@@ -255,6 +256,65 @@ async def handle_preview_kb_file(
         
         return await preview_kb_file(**kwargs)
          
+    except Exception as e:
+        return ErrorResponse(
+            code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            success=False,
+            message=f"服务器内部错误: {str(e)}"
+        )
+    
+@router.get(
+    "/file/preview/v2",
+    description="在浏览器中直接预览文件的接口",
+    response_model=None,
+    # dependencies=[Depends(AuthController.get_current_accessor)],
+    status_code=status.HTTP_200_OK
+)
+async def handle_preview_kb_file_v2(
+    file_id: str
+):
+    try:
+        result = await get_kb_files(file_id, download=True)
+        
+        if result:
+            # 获取文件扩展名以确定内容类型
+            file_extension = os.path.splitext(result["file_name"])[1].lower()
+            
+            # 常见文件类型的媒体类型映射
+            content_types = {
+                '.pdf': 'application/pdf',
+                '.jpg': 'image/jpeg',
+                '.jpeg': 'image/jpeg',
+                '.png': 'image/png',
+                '.gif': 'image/gif',
+                '.bmp': 'image/bmp',
+                '.txt': 'text/plain',
+                '.html': 'text/html',
+                '.htm': 'text/html',
+                '.css': 'text/css',
+                '.js': 'application/javascript',
+                '.json': 'application/json',
+                '.xml': 'application/xml',
+            }
+            
+            # 设置默认内容类型为二进制流
+            media_type = content_types.get(file_extension, 'application/octet-stream')
+            
+            return FileResponse(
+                path=result["file_path"],
+                filename=result["file_name"],
+                media_type=media_type,
+                headers={
+                    "Content-Disposition": f"inline; filename=\"{result['file_name']}\""
+                }
+            )
+        else:
+            return ErrorResponse(
+                code=status.HTTP_404_NOT_FOUND,
+                success=False,
+                message="文件不存在"
+            )
+        
     except Exception as e:
         return ErrorResponse(
             code=status.HTTP_500_INTERNAL_SERVER_ERROR,
