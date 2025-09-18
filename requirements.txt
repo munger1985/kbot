@@ -42,3 +42,5 @@ markdown==3.8.2
 beautifulsoup4==4.13.5
 lxml==6.0.1
 oci==2.158.0
+python-docx==1.2.0
+python-pptx==1.0.2

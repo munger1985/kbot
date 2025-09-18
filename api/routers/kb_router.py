@@ -4,8 +4,8 @@ from fastapi import APIRouter, UploadFile, File, Form, status, Depends
 from fastapi.responses import HTMLResponse
 from api.controllers.security_controller import AuthController
 from fastapi.responses import FileResponse
-from api.controllers.kb_controller import upload_kb_files, delete_kb_files, get_kb_files, reparse_kb_files
-from api.schemas.kb_schema import KBUploadForm, KBDeleteForm, KBReparseForm
+from api.controllers.kb_controller import *
+from api.schemas.kb_schema import *
 from api.schemas.base_response import SuccessResponse, ErrorResponse
 
 router = APIRouter(
@@ -217,6 +217,41 @@ async def handle_reparse_files(
             success=False,
             message=f"请求参数格式错误: {str(e)}"
         )
+    except Exception as e:
+        return ErrorResponse(
+            code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            success=False,
+            message=f"服务器内部错误: {str(e)}"
+        )
+    
+
+@router.post(
+    "/file/preview/v2",
+    description="从知识库中预览文件的接口",
+    response_model=None,
+    # dependencies=[Depends(AuthController.get_current_accessor)],
+    status_code=status.HTTP_200_OK
+)
+async def handle_preview_kb_file(
+    form: KBFilePreviewForm
+):
+    try:
+        kwargs = {
+            "file_id": form.file_id,
+            "max_text_length": form.max_text_length,
+            "max_pages": form.max_pages,
+            "max_sheets": form.max_sheets,
+            "max_slides": form.max_slides,
+            "pdf_pages": form.pdf_pages,
+            "word_page": form.word_page,
+            "sheet_index": form.sheet_index,
+            "start_index": form.start_index,
+            "slide": form.slide
+        }
+        kwargs = {k: v for k, v in kwargs.items() if v is not None}
+        
+        return await preview_kb_file(**kwargs)
+         
     except Exception as e:
         return ErrorResponse(
             code=status.HTTP_500_INTERNAL_SERVER_ERROR,

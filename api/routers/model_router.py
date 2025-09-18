@@ -7,7 +7,7 @@ from core.dictionary import ModelCategory
 
 router = APIRouter(
     prefix="/model",
-    tags=["API Security"]
+    tags=["Model Management"]
 )
 
    

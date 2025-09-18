@@ -20,6 +20,15 @@ class KbotMdKbFilesRepository:
             )
             return result.scalar_one_or_none()
     
+    async def get_path_by_id(self, file_id: str) -> str | None:
+        """Get file path by file ID."""
+        async with get_session() as session:
+            result = await session.execute(
+                select(KbotMdKbFiles.file_path).where(KbotMdKbFiles.file_id == file_id)
+            )
+            file_path = result.scalar_one_or_none()
+            return file_path
+
     async def get_all(self) -> Sequence[KbotMdKbFiles]:
         """Get all knowledge base file records."""
         async with get_session() as session:
