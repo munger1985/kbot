@@ -12,6 +12,8 @@ from core.dictionary import FileStatus, YesNoEnum
 from dao.repositories.kbot_md_kb_repo import KbotMdKbRepository
 from dao.repositories.kbot_md_kb_files_repo import KbotMdKbFilesRepository
 from dao.repositories.kbot_biz_txt_embedding_repo import KbotBizTxtEmbeddingRepository
+from dao.repositories.kbot_sys_parser_conf_repo import KbotSysParserConfRepository
+from dao.repositories.kbot_md_parser_conf_repo import KbotMdParserConfRepository
 from utils.common import run_in_thread_pool
 from utils.decimal_encoder import DecimalEncoder
 
@@ -196,8 +198,13 @@ class KBFileOperator:
         )
         
         # 构造 file 的实体列表用于批量保存到数据库
+        parser_repo = KbotSysParserConfRepository()
         file_entitities = []
         for fileparam in fileparams:
+             # 从SYS_PARSER_CONF表获取默认配置
+            parser_conf = await parser_repo.get_default_paser(fileparam.get("file_ext", "").lower())
+            
+            # 构造文件实体
             file_entitity = KbotMdKbFiles(
                 file_id = str(uuid.uuid4()),
                 app_id = app_id,
@@ -210,7 +217,8 @@ class KBFileOperator:
                 file_version = fileparam["file_version"],
                 is_overwrite = fileparam["is_overwrite"],
                 security_level = kb_entity.security_level or 1,
-                chunk_parser = json.dumps(kb_entity.chunk_parser, cls=DecimalEncoder) if kb_entity.chunk_parser is not None else None,
+                #chunk_parser = json.dumps(kb_entity.chunk_parser, cls=DecimalEncoder) if kb_entity.chunk_parser is not None else None,
+                chunk_parser = json.dumps(parser_conf, cls=DecimalEncoder) if kb_entity.chunk_parser is not None else None,
                 enable_summary = kb_entity.enable_summary,
                 is_img2txt = kb_entity.is_img2txt,
                 is_table_head_fill = kb_entity.is_table_head_fill,
@@ -354,10 +362,14 @@ class KBFileOperator:
         file_repo = KbotMdKbFilesRepository()
 
         # 删除整个知识库中的所有文件
-        if kb_id is not None:
+        if kb_id is not None and batch_id is None and file_ids is None:
             try:
                 rowcnt = await file_repo.delete(kb_id, None, None)
                 logger.info(f"成功删除知识库 {kb_id} 中的 {rowcnt} 个文件")
+                # 删除知识库对应的解析默认配置
+                parser_repo = KbotMdParserConfRepository()
+                await parser_repo.delete_by_kb_id(kb_id)
+                logger.info(f"成功删除知识库 {kb_id} 中的解析默认配置")
                 return True
             except Exception as e:
                 logger.error(f"删除知识库 {kb_id} 中的文件失败: {str(e)}")

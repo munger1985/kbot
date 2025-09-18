@@ -17,9 +17,9 @@ router = APIRouter(
     description="智能体聊天接口",
     dependencies=[Depends(AuthController.get_current_accessor)]
 )
-async def handle_agent_chat(request: AgentChatForm) -> SuccessQueryResponse | ErrorResponse:
+async def handle_agent_chat(form: AgentChatForm) -> SuccessQueryResponse | ErrorResponse:
     try:
-        r = await agent_chat(request)
+        r = await agent_chat(form)
 
         logger.debug(f"聊天结果: {r}")
 

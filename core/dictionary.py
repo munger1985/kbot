@@ -112,3 +112,11 @@ class AccessorType(int, Enum):
     """Accessor type enumeration."""
     USER = 1
     SERVICE = 2
+
+class FileCategory(int, Enum):
+    """File category enumeration."""
+    TEXT = 1
+    IMAGE = 2
+    AUDIO = 3
+    VIDEO = 4
+    OTHER = 5

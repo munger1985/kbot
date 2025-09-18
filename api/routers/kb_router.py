@@ -117,6 +117,9 @@ async def handle_download_file(
                 path=result["file_path"],
                 filename=result["file_name"],
                 media_type="multipart/form-data",
+                headers={
+                    "Content-Disposition": "attachment"
+                },
                 content_disposition_type=None # type: ignore
                 )
         else:
