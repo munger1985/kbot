@@ -103,7 +103,7 @@ async def handle_delete_files(
     "/download",
     description="从知识库中下载文件的接口",
     response_model=None,
-    dependencies=[Depends(AuthController.get_current_accessor)],
+    # dependencies=[Depends(AuthController.get_current_accessor)],
     status_code=status.HTTP_200_OK
 )
 async def handle_download_file(
