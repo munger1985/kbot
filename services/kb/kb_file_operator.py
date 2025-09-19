@@ -200,8 +200,8 @@ class KBFileOperator:
         parser_repo = KbotMdParserConfRepository()
         file_entitities = []
         for fileparam in fileparams:
-             # 从SYS_PARSER_CONF表获取默认配置
-            parser_conf = await parser_repo.get_default_paser(fileparam.get("file_ext", "").lower())
+             # 根据 kb id 从 PARSER_CONF 表获取默认配置
+            parser_conf = await parser_repo.get_default_paser(file_ext=fileparam.get("file_ext", "").lower(), kb_id=kb_id)
             
             # 构造文件实体
             file_entitity = KbotMdKbFiles(

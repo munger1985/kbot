@@ -16,12 +16,13 @@ class KbotMdParserConfRepository:
             await session.commit()
             return result.rowcount > 0
         
-    async def get_default_paser(self, file_ext: str) -> str | None:
-        """Get system configuration by file category."""
+    async def get_default_paser(self, file_ext: str, kb_id: int) -> str | None:
+        """Get default parser configuration by file category."""
         async with get_session() as session:
             result = await session.execute(
                 select(KbotMdParserConf.chunk_parser_param)
-                .where(KbotMdParserConf.file_ext == file_ext)
+                .where(KbotMdParserConf.file_ext == file_ext,
+                       KbotMdParserConf.kb_id == kb_id)
             )
             
             return result.scalar_one_or_none()
