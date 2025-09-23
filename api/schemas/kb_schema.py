@@ -42,4 +42,12 @@ class KBFilePreviewForm(BaseModel):
     sheet_index: int | None
     start_index: int | None
     slide: int | None
-        
+
+class KBFileChunkEditForm(BaseModel):
+    """知识库文件分片编辑表单模型"""
+    kb_id: int
+    file_id: str
+    embed_id: str
+    new_chunk: str | None = None
+    action: str
+    

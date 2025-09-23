@@ -6,7 +6,7 @@ from core.dictionary import FileStatus, ChunkType, SplitStrategy
 from utils.chunk_text import chunk_text
 from utils.call_models import CallModel
 from .common import check_text_file, update_file_status, save_embeddings
-from .summary_parser import process_summary
+from .summary_parser import SummaryParser
 
 
 async def process_txt(file_params: FileParams) -> bool:
@@ -112,7 +112,7 @@ async def process_txt(file_params: FileParams) -> bool:
             
             if file_params.enable_summary:
                 logger.debug("启用摘要处理")
-                summary_result = await process_summary(file_params=file_params, chunks=chunks)
+                summary_result = await SummaryParser.process_summary(file_params=file_params, embed_entities=embed_entities)
             
             return save_result and summary_result
         

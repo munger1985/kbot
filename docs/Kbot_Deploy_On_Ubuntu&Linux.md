@@ -55,6 +55,13 @@ sqlplus kbot_poc/VEctor#_123@10.45.151.152:1521/aipocpdb.databasessubnet.vcnpair
 wget https://dl.fbaipublicfiles.com/fasttext/vectors-crawl/cc.zh.300.bin.gz
 # 或者使用 curl 下载
 curl -O https://dl.fbaipublicfiles.com/fasttext/vectors-crawl/cc.zh.300.bin.gz
+# 准备Qwen3 rerank和embedding模型
+# 在下载前，请先通过如下命令安装ModelScope
+pip install modelscope
+# 命令行下载完整模型库
+modelscope download --model Qwen/Qwen3-Reranker-4B
+modelscope download --model Qwen/Qwen3-Embedding-4B
+# 下载完成后，请将模型文件放置到模型目录下，默认在 ~/.modelscope/models/Qwen/目录下
 ```
 
 ### 4.部署Docker容器：

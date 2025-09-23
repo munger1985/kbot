@@ -182,8 +182,82 @@ class KbotBizTxtEmbeddingRepository:
         result = await self.pool_manager.query(self.conn_params, sql, params)
 
         return result
-
+    
+    async def update_chunk(self,
+                            embed_id: str,
+                            new_chunk: str,
+                            new_embedding: list[float]
+                            ) -> bool:
+        """Update the embedding and content of a specific chunk.
         
+        Args:
+            embed_id: Embed ID of the chunk to update
+            new_chunk: The updated chunk text
+            new_embedding: The new embedding vector for the chunk
+            
+        Returns:
+            True if the update was successful, False otherwise
+        """
+        if self.conn_params is None:
+            return False
+        
+        # Generate SQL
+        sql = """
+            UPDATE KBOT_BIZ_TXT_EMBEDDING
+            SET CHUNK_DOC = :new_chunk,
+                EMBEDDING = :new_embedding
+            WHERE EMBED_ID = :embed_id
+        """
+        # 添加参数
+        params = {
+            "embed_id": embed_id,
+            "new_chunk": new_chunk,
+            "new_embedding": OracleVecHandler().convert(vec=new_embedding, to_string=True)
+        }
+        result = await self.pool_manager.execute_dml(self.conn_params, sql, params)
+        return result > 0
+
+    async def get_summary_id_by_chunk_id(self, file_id, chunk_id) -> str | None:
+        """Get the embed ID of the summary chunk corresponding to a given text chunk ID.
+        
+        Args:
+            file_id: File ID the chunk belongs to
+            chunk_id: Chunk number of the text chunk
+            
+        Returns:
+            The embed ID of the corresponding summary chunk, or None if not found
+        """
+        if self.conn_params is None:
+            return None
+        
+        sql = """
+            SELECT EMBED_ID
+            FROM KBOT_BIZ_TXT_EMBEDDING
+            WHERE FILE_ID = :file_id
+            AND JSON_VALUE(CHUNK_METADATA, '$.chunk_type') = :chunk_type
+            AND JSON_VALUE(CHUNK_METADATA, '$.source_embed_id') = :chunk_id
+        """
+        params = {
+            "file_id": file_id,
+            "chunk_type": ChunkType.SUMMARY.value,
+            "chunk_id": chunk_id
+        }
+        result = await self.pool_manager.query(self.conn_params, sql, params)
+        if result and len(result) > 0:
+            return result[0][0]  # Return the EMBED_ID
+        return None
+    
+    async def delete_by_embed_ids(self, embed_ids: list[str]) -> int:
+        """Delete embedding records by embed IDs."""
+        if self.conn_params is None or not embed_ids:
+            return 0
+        
+        # Generate SQL
+        embed_ids_str = ", ".join([f"'{embed_id}'" for embed_id in embed_ids])
+        sql = f"""DELETE FROM KBOT_BIZ_TXT_EMBEDDING
+        WHERE EMBED_ID IN ({embed_ids_str})"""
+        result = await self.pool_manager.execute_dml(self.conn_params, sql, {})
+        return result
             
             
 

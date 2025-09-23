@@ -321,3 +321,59 @@ async def handle_preview_kb_file_v2(
             success=False,
             message=f"服务器内部错误: {str(e)}"
         )
+    
+@router.post(
+    "/file/chunk",
+    description="更改或删除知识库文件的分片内容",
+    response_model=SuccessResponse | ErrorResponse,
+    dependencies=[Depends(AuthController.get_current_accessor)],
+    status_code=status.HTTP_200_OK
+)
+async def handle_edit_file_chunk(
+    form: KBFileChunkEditForm
+):
+    try:
+        if form.action == "update":
+            if form.new_chunk is None or form.new_chunk.strip() == "":
+                return ErrorResponse(
+                    code=400,
+                    success=False,
+                    message="更新操作需要提供新的分片内容"
+                )
+            result = await edit_kb_file_chunk(
+                kb_id=form.kb_id,
+                file_id=form.file_id,
+                embed_id=form.embed_id,
+                new_chunk=form.new_chunk
+            )
+        elif form.action == "delete":
+            result = await delete_kb_file_chunk(
+                kb_id=form.kb_id,
+                file_id=form.file_id,
+                embed_id=form.embed_id
+            )
+        else:
+            return ErrorResponse(
+                code=400,
+                success=False,
+                message="无效的操作类型，仅支持 'update' 或 'delete'"
+            )
+        if result:
+            return SuccessResponse(
+                code=200,
+                success=True,
+                message="编辑文件分片成功"
+                )
+        else:
+            return ErrorResponse(
+                code=400,
+                success=False,
+                message="编辑文件分片失败"
+            )
+            
+    except Exception as e:
+        return ErrorResponse(
+            code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            success=False,
+            message=f"服务器内部错误: {str(e)}"
+        )

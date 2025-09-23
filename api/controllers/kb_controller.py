@@ -140,3 +140,37 @@ async def preview_kb_file(
         return result
     except Exception as e:
         raise e
+
+async def edit_kb_file_chunk(
+    kb_id: int,
+    file_id: str,
+    embed_id: str,
+    new_chunk: str,
+) -> bool:
+    """编辑知识库文件的分片内容，并更新分片的向量"""
+    try:
+        result = await KBFileOperator().edit_file_chunk(
+            kb_id=kb_id,
+            file_id=file_id,
+            embed_id=embed_id,
+            new_chunk=new_chunk
+        )
+        return result
+    except Exception as e:
+        raise e
+    
+async def delete_kb_file_chunk(
+    kb_id: int,
+    file_id: str,
+    embed_id: str,
+) -> bool:
+    """删除知识库文件的分片内容，并更新分片的向量"""
+    try:
+        result = await KBFileOperator().delete_file_chunk(
+            kb_id=kb_id,
+            file_id=file_id,
+            embed_id=embed_id
+        )
+        return result
+    except Exception as e:
+        raise e
