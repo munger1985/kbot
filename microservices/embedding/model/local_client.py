@@ -304,6 +304,7 @@ class LocalEmbedding(BaseEmbedding):
         batch_size: int = 0,
         normalize: bool = True,
         raise_on_error: bool = True,
+        **kwargs
     ) -> EmbeddingResponse:
         """
         使用自动批处理和全面监控生成嵌入向量。

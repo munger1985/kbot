@@ -1,5 +1,4 @@
 from abc import ABC, abstractmethod
-from typing import Any
 from pydantic import BaseModel, Field
 from prometheus_client import Counter, Histogram
 
@@ -66,13 +65,14 @@ class BaseEmbedding(ABC):
         pass
     
     @abstractmethod
-    async def embed(self, texts: list[str], batch_size: int | None = None) -> EmbeddingResponse:
+    async def embed(self, texts: list[str], batch_size: int | None = None, is_query: bool = True) -> EmbeddingResponse:
         """
         为文本列表生成嵌入向量，遵循 OpenAI 标准格式
         
         Args:
             texts: 需要嵌入的文本列表
             batch_size: 批处理大小，如为 None 则使用默认值
+            is_query: 是否为查询文本，默认为 True
             
         Returns:
             EmbeddingResponse: 符合 OpenAI 标准的响应对象，包含：

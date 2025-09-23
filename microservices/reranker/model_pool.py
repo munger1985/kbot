@@ -110,6 +110,18 @@ class ModelPool:
                     max_memory = model_params.get("max_memory", None),
                     cache_dir = cache_dir
                 )
+            elif "qwen" in model_name.lower():
+                model_config = Qwen3RerankerConfig(
+                    provider=provider,
+                    model_name=model_name,
+                    model_path=model_params.get("model_path", None),
+                    device=model_params.get("device", None),
+                    max_tokens=model_params.get("max_tokens", 8192),
+                    batch_size=1,  # 关键：强制设置为1
+                    use_fp16=model_params.get("use_fp16", True),
+                    use_flash_attention=model_params.get("use_flash_attention", True),
+                    instruction=model_params.get("instruction", None)
+                )
             else:
                 model_config = LocalRerankerConfig(
                     provider = provider,

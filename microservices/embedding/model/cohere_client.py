@@ -126,7 +126,7 @@ class CohereEmbedding(BaseEmbedding):
         input_type: str | None = None,
         truncate: str | None = None,
         raise_on_error: bool = True,
-        **kwargs: Any
+        **kwargs
     ) -> EmbeddingResponse:
         """
         增强的 Cohere 嵌入功能，具备智能批处理和容错能力

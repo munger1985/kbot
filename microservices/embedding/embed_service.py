@@ -38,7 +38,8 @@ class EmbeddingService:
         self, 
         model_id: int, 
         texts: list[str], 
-        batch_size: int = 0
+        batch_size: int = 0,
+        is_query: bool = True
     ) -> EmbeddingResponse:
         """使用指定模型对文本列表进行嵌入处理。
         
@@ -46,6 +47,7 @@ class EmbeddingService:
             model_id: 嵌入模型唯一名称
             texts: 待嵌入的文本列表
             batch_size: 批处理大小，为0时由模型自动决定
+            is_query: 是否为查询文本，默认为True
             
         Returns:
             EmbeddingResponse: 标准OpenAI格式的嵌入响应，包含向量数据和使用情况
@@ -63,7 +65,7 @@ class EmbeddingService:
         
         try:
             model = await self.get_embedding_model(model_id)
-            response = await model.embed(texts=texts, batch_size=batch_size)
+            response = await model.embed(texts=texts, batch_size=batch_size, is_query=is_query)
             
             # 验证返回的响应数据有效性
             if not response.data or len(response.data) == 0:

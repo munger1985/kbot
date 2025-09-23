@@ -73,7 +73,8 @@ class OCIEmbedding(BaseEmbedding):
         texts: list[str],
         batch_size: int = 0,
         normalize: bool = True,  # 保持参数一致性，虽然OCI可能不支持
-        raise_on_error: bool = True
+        raise_on_error: bool = True,
+        **kwargs
     ) -> EmbeddingResponse:
         """批量处理文本列表并生成嵌入向量。
         

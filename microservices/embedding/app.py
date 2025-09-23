@@ -112,6 +112,7 @@ class EmbeddingRequest(BaseModel):
     model_id: int = Field(..., description="模型唯一标识符")
     texts: list[str] = Field(..., description="待嵌入的文本列表")
     batch_size: int | None = Field(32, description="批处理大小")
+    is_query: bool = Field(True, description="是否为查询文本")
 
 class ToggleModelRequest(BaseModel):
     """启用或禁用模型请求表单。"""
@@ -199,7 +200,8 @@ async def embed_texts(
         embeddings = await embed_service.embed_texts(
             model_id=request.model_id,
             texts=request.texts,
-            batch_size=request.batch_size # type: ignore
+            batch_size=request.batch_size, # type: ignore
+            is_query=request.is_query
         )
         
         return embeddings

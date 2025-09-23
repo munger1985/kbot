@@ -17,7 +17,8 @@ class CallModel():
     async def call_embedding_model(self, 
                                 model_id: int, 
                                 texts: list[str], 
-                                batch_size: int = 0
+                                batch_size: int = 0,
+                                is_query: bool = True
                                 ) -> list[EmbeddingDataItem] | None:
         """
         调用嵌入模型获取文本向量
@@ -40,7 +41,8 @@ class CallModel():
         payload = {
             "model_id": int(model_id),
             "texts": texts,
-            "batch_size": int(batch_size) if batch_size else 0
+            "batch_size": int(batch_size) if batch_size else 0,
+            "is_query": is_query
         }
         
         try:

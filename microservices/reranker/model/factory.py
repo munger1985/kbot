@@ -3,6 +3,7 @@ from .base import BaseReranker, RerankerConfig
 from .local_reranker import LocalReranker, LocalRerankerConfig
 from .cohere_reranker import CohereReranker, CohereRerankerConfig
 from .jina_reranker import JinaReranker, JinaRerankerConfig
+from .qwen3_reranker import Qwen3Reranker, Qwen3RerankerConfig
 
 
 class RerankerProvider(str, Enum):
@@ -30,6 +31,8 @@ def create_reranker_model(config: RerankerConfig) -> BaseReranker:
             return LocalReranker(config)
         elif isinstance(config, JinaRerankerConfig):
             return JinaReranker(config)
+        elif isinstance(config, Qwen3RerankerConfig):
+            return Qwen3Reranker(config)
         else:
             raise ValueError("本地 reranker 配置无效")
     elif config.provider == RerankerProvider.COHERE.value:

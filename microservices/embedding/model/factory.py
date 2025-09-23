@@ -32,7 +32,11 @@ def create_embedding_model(config: EmbeddingConfig) -> BaseEmbedding:
     provider = config.provider.lower()
     
     if provider == EmbeddingProvider.LOCAL:
-        return LocalEmbedding(config) # type: ignore
+        if "qwen" in config.model_name.lower():
+            from .qwen3_client import Qwen3Embedding
+            return Qwen3Embedding(config) # type: ignore
+        else:
+            return LocalEmbedding(config) # type: ignore
     elif provider == EmbeddingProvider.OPENAI:
         return OpenAIEmbedding(config) # type: ignore
     elif provider == EmbeddingProvider.AZURE:

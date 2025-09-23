@@ -13,15 +13,19 @@ async def test_call_embedding_model():
     测试调用embedding模型的方法
     """
     # 测试参数
-    # embed_model_id = 21 #"KBOT1/BGE-M3"
+    embed_model_id = 21 #"KBOT1/BGE-M3"
     # embed_model_id = 23 #"KBOT1/E5-LARGE-V2"
-    embed_model_id = 33 #"KBOT1/OCI-Embedding"
+    # embed_model_id = 33 #"KBOT1/OCI-Embedding"
+    # embed_model_id = 41	# Qwen3-Embedding
     embed_input_texts = ["苹果", "香蕉"]
     topk = 4
-    emb = await CallModel().call_embedding_model(
-        embed_model_id, 
-        embed_input_texts
-    )
+    kwargs = {}
+    kwargs['batch_size'] = 1
+    kwargs['model_id'] = embed_model_id
+    kwargs['texts'] = embed_input_texts
+    kwargs['is_query'] = False
+    emb = await CallModel().call_embedding_model(**kwargs)
+
     print(f"测试开始，使用模型: {embed_model_id}")
     print(f"输入文本: {embed_input_texts}")
     print("=" * 50)
@@ -81,7 +85,8 @@ async def test_call_reranker_model():
     """
     # 测试参数
     # rerank_model_id = 24 #"KBOT1/BGE-RANKER"
-    rerank_model_id = 25 #"KBOT1/JINA-RANKER"
+    # rerank_model_id = 25 #"KBOT1/JINA-RANKER"
+    rerank_model_id = 61 # Qwen3-RANKER
     question = "招聘数据工程师"
     inputs_list = [
         "<|im_end|>你好，我想要找一份有关数据科学的数据集。",
@@ -158,4 +163,4 @@ async def test_call_vlm_model():
 # 运行测试
 if __name__ == "__main__":
 
-    asyncio.run(test_call_llm_model())
+    asyncio.run(test_call_reranker_model())

@@ -146,7 +146,8 @@ class OpenAIEmbedding(BaseEmbedding):
         texts: list[str],
         batch_size: int = 0,
         normalize: bool = False,
-        raise_on_error: bool = True
+        raise_on_error: bool = True,
+        **kwargs
     ) -> EmbeddingResponse:
         """
         Enhanced embedding generation with intelligent batching and resilience.
