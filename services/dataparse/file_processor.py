@@ -6,6 +6,7 @@ from .csv_parser_dataframe import process_csv
 from .excel_parser_openpyxl import process_excel
 from .markdown_parser_bs4 import process_markdown
 from .txt_parser import process_txt
+from .img_parser import process_img
 from .pdf_parser_pdfplumber import process_pdf
 from .office_parser import process_word_ppt_by_converter
 from .file_params import FileParams
@@ -121,6 +122,9 @@ class FileProcessor:
             elif file_params.file_ext in [".doc", ".docx", ".pptx", ".ppt"]:
                 logger.info(f"处理Word/PPT文件: {file_params.file_path}...")
                 return await process_word_ppt_by_converter(file_params)
+            elif file_params.file_ext in [".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tiff"]:
+                logger.info(f"处理图片文件: {file_params.file_path}...")
+                return await process_img(file_params)
             else:
                 msg = f"不支持的文件类型 {file_params.file_ext}，跳过处理..."
                 logger.info(msg)

@@ -70,17 +70,11 @@ async def process_txt(file_params: FileParams) -> bool:
             logger.error(msg)
             await update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, msg)
             return False
-
-        if file_params.txt_embed_model is None:
-            msg = f" embedding 模型未指定，无法处理文件 {file_params.file_path}"
-            logger.error(msg)
-            await update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, msg)
-            return False
     
-        # 3. 调用 embedding 微服务获取 embedding 向量
-        logger.info(f"正在调用 embedding 服务")
+        # 3. 调用 embedding 微服务获取文本 chunk 的向量
+        logger.info(f"正在调用 embedding 微服务获取文本 chunk 的向量")
 
-        response_data = await CallModel().call_embedding_model(file_params.txt_embed_model, chunks)
+        response_data = await CallModel().call_embedding_model(file_params.txt_embed_model, chunks) # type: ignore
         if response_data is None:
             msg = f"获取文件 {file_params.file_path} 的 embedding 向量失败"
             logger.error(msg)

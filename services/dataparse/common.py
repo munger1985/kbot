@@ -97,3 +97,41 @@ async def check_text_file(file_params: FileParams) -> bool:
         return False
 
     return True
+
+@staticmethod
+async def check_image_file(file_params: FileParams) -> bool:
+    """
+    检查文件嵌入模型和文件存在性
+    
+    Args:
+        file_params: 文件参数对象
+        
+    Returns:
+        bool: 检查通过返回True，否则返回False
+    """
+    file_repo = KbotMdKbFilesRepository()
+    msg = "文件检查过程中发生未知错误"  # 初始化 msg 变量
+    
+    try:
+        # 检查文本嵌入模型是否指定
+        if file_params.img2txt_model is None:
+            msg = f"文件 {file_params.file_path} 未指定 vlm 模型，无法将图片转换为文本"
+            logger.error(msg)
+            # 更新文件状态为处理失败
+            await file_repo.update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, msg)
+            return False
+        
+        # 检查文件是否存在
+        if not os.path.exists(file_params.file_path):
+            msg = f"文件路径不存在: {file_params.file_path}"
+            logger.error(msg)
+            await file_repo.update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, msg)
+            return False
+            
+    except Exception as e:
+        msg = f"处理文本文件 {file_params.file_path} 时发生错误: {str(e)}"
+        logger.error(msg)
+        await file_repo.update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, msg)
+        return False
+    
+    return True
