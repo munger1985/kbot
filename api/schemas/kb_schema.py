@@ -33,15 +33,11 @@ class KBReparseForm(BaseModel):
 class KBFilePreviewForm(BaseModel):
     """知识库文件预览表单模型"""
     file_id: str
-    max_text_length: int | None
-    max_pages: int | None
-    max_sheets: int | None
-    max_slides: int | None
-    pdf_pages: int | None
-    word_page: int | None
-    sheet_index: int | None
-    start_index: int | None
-    slide: int | None
+    max_length: int | None = None
+    pages: int | list[int] | None = None
+    sheet_index: int | None = None
+    preview_rows: int | None = None
+    slide: int | None = None
 
 class KBFileChunkEditForm(BaseModel):
     """知识库文件分片编辑表单模型"""

@@ -1,6 +1,7 @@
 
 import json
 import os
+import urllib.parse
 from fastapi import APIRouter, UploadFile, File, Form, status, Depends
 from fastapi.responses import HTMLResponse
 from api.controllers.security_controller import AuthController
@@ -242,14 +243,10 @@ async def handle_preview_kb_file_v1(
     try:
         kwargs = {
             "file_id": form.file_id,
-            "max_text_length": form.max_text_length,
-            "max_pages": form.max_pages,
-            "max_sheets": form.max_sheets,
-            "max_slides": form.max_slides,
-            "pdf_pages": form.pdf_pages,
-            "word_page": form.word_page,
+            "max_length": form.max_length,
+            "pages": form.pages,
             "sheet_index": form.sheet_index,
-            "start_index": form.start_index,
+            "preview_rows": form.preview_rows,
             "slide": form.slide
         }
         kwargs = {k: v for k, v in kwargs.items() if v is not None}
@@ -295,17 +292,30 @@ async def handle_preview_kb_file_v2(
                 '.js': 'application/javascript',
                 '.json': 'application/json',
                 '.xml': 'application/xml',
+                '.csv': 'text/csv',
+                '.mp4': 'video/mp4',
+                '.mp3': 'audio/mpeg',
+                '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                '.doc': 'application/msword',
+                '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                '.xls': 'application/vnd.ms-excel',
+                '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+                '.ppt': 'application/vnd.ms-powerpoint'
             }
             
             # 设置默认内容类型为二进制流
             media_type = content_types.get(file_extension, 'application/octet-stream')
             
+            # 对中文文件名进行编码处理
+            filename = result["file_name"]
+            encoded_filename = urllib.parse.quote(filename, encoding='utf-8')
+            
             return FileResponse(
                 path=result["file_path"],
-                filename=result["file_name"],
+                filename=filename,
                 media_type=media_type,
                 headers={
-                    "Content-Disposition": "inline; filename={}".format(result["file_name"])
+                    "Content-Disposition": f"inline; filename*=UTF-8''{encoded_filename}"
                 }
             )
         else:

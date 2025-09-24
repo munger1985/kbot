@@ -2,7 +2,7 @@ from pathlib import Path
 from services.kb.kb_file_operator import KBFileOperator
 from services.kb.kb_procedure import KBProcedure
 from services.kb.kb_file_preview import FilePreview
-from api.schemas.kb_schema import KBUploadForm, KBDeleteForm, KBReparseForm
+from api.schemas.kb_schema import *
 from dao.repositories.kbot_md_kb_files_repo import KbotMdKbFilesRepository
 from utils.file_converter import FileToImage
 
@@ -99,9 +99,7 @@ async def get_kb_files(
     except Exception as e:
         raise e
     
-async def reparse_kb_files(
-    form: KBReparseForm
-) -> bool:
+async def reparse_kb_files(form: KBReparseForm) -> bool:
     """重新解析知识库文件"""
     try:
         kbproc = KBProcedure()
@@ -110,32 +108,22 @@ async def reparse_kb_files(
     except Exception as e:
         raise e
     
-async def preview_kb_file(
-    file_id: str,
-    max_text_length: int = 500,
-    max_pages: int = 2,
-    max_sheets: int = 2,
-    max_slides: int = 2,
-    pdf_pages: int | list[int] | None = None,
-    word_page: int | None = None,
-    sheet_index: int = 0,
-    start_index: int = 0,
-    slide: int | None = None
-) -> dict | None:
+async def preview_kb_file(file_id: str, 
+                          max_length: int = 10000, 
+                          pages: int | list[int] | None = None, 
+                          sheet_index: int = 0, 
+                          preview_rows: int = 20,
+                          slide: int | None = None) -> dict | None:
     """预览知识库文件"""
     try:
         preview_service = FilePreview()
         result = await preview_service.get_preview(
-            file_id=file_id,
-            max_text_length=max_text_length,
-            max_pages=max_pages,
-            max_sheets=max_sheets,
-            max_slides=max_slides,
-            pdf_pages=pdf_pages,
-            word_page=word_page,
-            sheet_index=sheet_index,
-            start_index=start_index,
-            slide=slide
+            file_id = file_id,
+            max_length = max_length,
+            pages = pages,
+            sheet_index = sheet_index,
+            preview_rows = preview_rows,
+            slide = slide
         )
         return result
     except Exception as e:
