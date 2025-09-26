@@ -22,7 +22,7 @@ cd ./kbot3
 pip install -r requirements.txt
 
 ### 后端API文档：
-http://64.181.236.219:18099/docs 
+http://64.181.236.219:18099/docs
 http://64.181.236.219:18099/redoc 
 http://64.181.236.219:18099/api/health
 
@@ -38,12 +38,39 @@ sqlplus kbotui_dev/BotWelcome123##@132.145.81.123:1521/DB1007_pdb1.regionalpubli
 sqlplus sys/BotWelcome123##@132.145.81.123:1521/DB1007_pdb1.regionalpublics.hysunhevcn.oraclevcn.com as sysdba;
 sys/BotWelcome123##
 
-
-
 # 在数据库端，使用CDB级别开启DRCP
 EXECUTE DBMS_CONNECTION_POOL.START_POOL();
 EXECUTE DBMS_CONNECTION_POOL.CONFIGURE_POOL(pool_name => 'SYS_DEFAULT_CONNECTION_POOL',minsize => 4,maxsize => 40,incrsize => 2,inactivity_timeout => 300,max_lifetime_session => 86400);
 
+# ssh穿透访问
+ssh -i /Users/zzou/Desktop/Work/Config/my_oci_putty_key.pem -C -v -t -L 127.0.0.1:5601:10.0.81.62:5601 opc@130.61.43.111
 
 
+# Embedding api
+curl -X POST "http://localhost:9201/v1/embeddings" \
+-H "Content-Type: application/json" -d '{"model_unique_name": "KBOT114/BGE_M3", "texts": ["这是一个测试文本", "这是另一个测试文本"], "batch_size": 32}'
 
+# 添加文件分块
+curl -X 'POST' \
+  'http://localhost:8000/api/kb/file/chunk' \
+  -H 'accept: application/json' \
+  -H 'Content-Type: application/json' \
+  -d '{
+  "kb_id": 30,
+  "file_id": "15c8c426-2f04-4db9-bd2e-82f2288780fa",
+  "embed_id": "9d99a0de-e832-440e-ad6b-f8e180a267e2",
+  "new_chunk": "abcabc",
+  "action": "update"
+}'
+
+
+curl -X 'POST' \
+  'http://localhost:8000/api/kb/file/chunk' \
+  -H 'accept: application/json' \
+  -H 'Content-Type: application/json' \
+  -d '{
+  "kb_id": 30,
+  "file_id": "15c8c426-2f04-4db9-bd2e-82f2288780fa",
+  "embed_id": "9d99a0de-e832-440e-ad6b-f8e180a267e2",
+  "action": "delete"
+}'
