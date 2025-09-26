@@ -13,6 +13,8 @@ from dao.repositories.kbot_md_kb_files_repo import KbotMdKbFilesRepository
 from dao.entities.kbot_biz_txt_embedding import KbotBizTxtEmbedding
 from core.dictionary import FileStatus, ChunkType, SplitStrategy
 from utils.call_models import CallModel
+from .summary_parser import SummaryParser
+
 try:
     import openpyxl
     from openpyxl import load_workbook
@@ -313,6 +315,11 @@ class ExcelParser:
             embed_entities.append(embed_entity)
         image_embed_entities= await self._process_images_embeddings()
         embed_entities.extend(image_embed_entities)
+
+        if self.file_params.enable_summary:
+            logger.debug("启用摘要处理")
+            summary_result = await SummaryParser.process_summary(file_params=self.file_params, embed_entities=embed_entities)
+            return summary_result
 
         # Save all embeddings in one batch
         return await save_embeddings(file_params=self.file_params, embeddings=embed_entities)

@@ -17,6 +17,7 @@ from core.dictionary import FileStatus, ChunkType, SplitStrategy
 from utils.call_models import CallModel
 from .common import check_text_file, update_file_status, save_embeddings
 from configuration.config_manager import ConfigManager
+from .summary_parser import SummaryParser
 
 
 class MarkdownParser:
@@ -443,6 +444,11 @@ class MarkdownParser:
             embed_entities.append(embed_entity)
         image_embed_entities= await self._process_images_embeddings()
         embed_entities.extend(image_embed_entities)
+        if self.file_params.enable_summary:
+            logger.debug("启用摘要处理")
+            summary_result = await SummaryParser.process_summary(file_params=self.file_params,
+                                                                 embed_entities=embed_entities)
+            return summary_result
 
         # Save all embeddings in one batch
         return await save_embeddings(self.file_params , embed_entities)

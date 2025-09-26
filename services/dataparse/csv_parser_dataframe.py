@@ -9,6 +9,7 @@ from core.dictionary import FileStatus, ChunkType, SplitStrategy
 from utils.call_models import CallModel
 from .common import check_text_file, update_file_status, save_embeddings
 
+from .summary_parser import SummaryParser
 
 class CSVParser:
     def __init__(self, file_params: FileParams):
@@ -61,7 +62,9 @@ class CSVParser:
             )
             for idx, (chunk, meta) in enumerate(zip(chunks, chunk_metas))
         ]
-
+        if self.file_params.enable_summary:
+            summary_result = await SummaryParser.process_summary(file_params=self.file_params, embed_entities=embed_entities)
+            return summary_result
         return await save_embeddings(self.file_params, embed_entities)
 
     async def parse(self):

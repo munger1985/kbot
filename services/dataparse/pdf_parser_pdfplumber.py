@@ -1,8 +1,7 @@
 import uuid
-import json
 import pdfplumber
-import pandas as pd
 import json
+from .summary_parser import SummaryParser
 
 from pathlib import Path
 from PIL import Image
@@ -14,7 +13,6 @@ from loguru import logger
 from .file_params import FileParams
 from dao.repositories.kbot_md_kb_files_repo import KbotMdKbFilesRepository
 from dao.repositories.kbot_biz_txt_embedding_repo import KbotBizTxtEmbeddingRepository
-from dao.repositories.kbot_md_models_repo import KbotMdModelsRepository
 from dao.entities.kbot_biz_txt_embedding import KbotBizTxtEmbedding
 from core.dictionary import FileStatus, ChunkType, SplitStrategy
 from utils.call_models import CallModel
@@ -244,6 +242,11 @@ class PDFPlumberParser:
 
         image_embed_entities= await self._process_images_embeddings()
         embed_entities.extend(image_embed_entities)
+        if self.file_params.enable_summary:
+            logger.debug("启用摘要处理")
+            summary_result = await SummaryParser.process_summary(file_params=self.file_params,
+                                                                 embed_entities=embed_entities)
+            return summary_result
 
         # Save all embeddings in one batch
         return await self._save_embeddings(embed_entities)
@@ -314,7 +317,11 @@ class PDFPlumberParser:
             embed_entities.append(embed_entity)
         image_embed_entities= await self._process_images_embeddings()
         embed_entities.extend(image_embed_entities)
-
+        if self.file_params.enable_summary:
+            logger.debug("启用摘要处理")
+            summary_result = await SummaryParser.process_summary(file_params=self.file_params,
+                                                                 embed_entities=embed_entities)
+            return summary_result
         # Save all embeddings in one batch
         return await self._save_embeddings(embed_entities)
 
