@@ -56,6 +56,7 @@ class CSVParser:
                 embed_id=str(uuid.uuid4()),
                 chunk_doc=chunk,
                 chunk_metadata=json.dumps(meta), # type: ignore
+                biz_metadata=self.file_params.biz_metadata,
                 file_id=self.file_params.file_id,
                 embedding=embeddings_list[idx].embedding,
                 security_level=self.file_params.security_level

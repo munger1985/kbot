@@ -38,9 +38,9 @@ class KbotBizTxtEmbeddingRepository:
         
         # 准备批量插入的SQL语句
         sql = """INSERT INTO KBOT_BIZ_TXT_EMBEDDING
-        (EMBED_ID, KB_ID, FILE_ID, SECURITY_LEVEL, CHUNK_METADATA, EMBEDDING, CHUNK_DOC)
+        (EMBED_ID, KB_ID, FILE_ID, SECURITY_LEVEL, CHUNK_METADATA, BIZ_METADATA, EMBEDDING, CHUNK_DOC)
         VALUES
-        (:1, :2, :3, :4, :5, :6, :7)"""
+        (:1, :2, :3, :4, :5, :6, :7, :8)"""
         
         # 准备批量数据
         data = []
@@ -52,6 +52,7 @@ class KbotBizTxtEmbeddingRepository:
                 embedding.file_id,
                 embedding.security_level,
                 json.dumps(embedding.chunk_metadata) if embedding.chunk_metadata is not None else None,
+                json.dumps(embedding.biz_metadata) if embedding.biz_metadata is not None else None,
                 OracleVecHandler().convert(vec=embedding.embedding, to_string=True),
                 embedding.chunk_doc
             ))
@@ -94,7 +95,8 @@ class KbotBizTxtEmbeddingRepository:
                                      security: int,
                                      similarity_threshold: float | None = 0.8,
                                      top_k: int | None = 10,
-                                     is_summary_search: bool = False
+                                     is_summary_search: bool = False,
+                                     tags: list[str] | None = None
                                      ) -> Sequence:
         """Get similar embeddings using vector similarity search.
         
@@ -105,6 +107,7 @@ class KbotBizTxtEmbeddingRepository:
             similarity_threshold: Minimum similarity score (0.0-1.0)
             top_k: Maximum number of results to return
             is_summary_search: Whether to search in summary or not
+            tags: List of tags to filter by
             
         Returns:
             list of similar embeddings ordered by similarity score
@@ -112,7 +115,8 @@ class KbotBizTxtEmbeddingRepository:
         if self.conn_params is None:
             return []
         
-        sql = """
+        # 基础SQL
+        base_sql = """
             SELECT 
                 FILE_ID, CHUNK_DOC, CHUNK_METADATA,
                 1 - VECTOR_DISTANCE(EMBEDDING, :query_vec, COSINE) AS similarity
@@ -121,8 +125,7 @@ class KbotBizTxtEmbeddingRepository:
             AND KB_ID = :kb_id
             AND SECURITY_LEVEL <= :security
             AND emb.CHUNK_METADATA.chunk_type = :chunk_type
-            ORDER BY similarity DESC
-            FETCH FIRST :top_k ROWS ONLY
+            
         """
         # 添加向量和阈值参数
         params = {
@@ -133,7 +136,27 @@ class KbotBizTxtEmbeddingRepository:
             "top_k": top_k,
             "chunk_type": ChunkType.SUMMARY.value if is_summary_search else ChunkType.TEXT.value
         }
-        result = await self.pool_manager.query(self.conn_params, sql, params)
+
+        # 如果有tag_list，构建多个OR条件
+        if tags and len(tags) > 0:
+            tag_conditions = []
+            for i, tag in enumerate(tags):
+                param_name = f"tag_{i}"
+                # 正确的JSON_EXISTS绑定语法
+                tag_conditions.append(f"JSON_EXISTS(BIZ_METADATA, '$.tags?(@ == $t)' PASSING :{param_name} AS \"t\")")
+                params[param_name] = tag
+            
+            base_sql += " AND (" + " OR ".join(tag_conditions) + ")"
+
+        # 如果tag_list为空或None，不添加tag条件
+        
+        # 添加排序和限制
+        base_sql += """
+            ORDER BY similarity DESC
+            FETCH FIRST :top_k ROWS ONLY
+        """
+
+        result = await self.pool_manager.query(self.conn_params, base_sql, params)
            
         return result
 
@@ -144,13 +167,18 @@ class KbotBizTxtEmbeddingRepository:
                                keyword: str,
                                security: int,
                                top_k: int | None = 10,
-                               simularity_threshold: float | None = 0.8
+                               simularity_threshold: float | None = 0.8,
+                               tags: list[str] | None = []
                                 ) -> Sequence:
         """Get chunk record by full text search.
         
         Args:
             kb_id: Knowledge base ID
             keyword: Target text to compare with
+            security: Security level
+            top_k: Maximum number of results to return
+            simularity_threshold: Minimum similarity score (0.0-1.0)
+            tags: List of tags to filter by
             
         Returns:
             list of chunk records
@@ -158,31 +186,70 @@ class KbotBizTxtEmbeddingRepository:
         if self.conn_params is None:
             return []
 
-        # Generate SQL
-        sql = """
-            SELECT FILE_ID, 
-                    CHUNK_DOC, 
-                    CHUNK_METADATA,
-                    SCORE(1) AS similarity
+        # 基础SQL
+        base_sql = """
+            SELECT FILE_ID, CHUNK_DOC, CHUNK_METADATA, SCORE(1) AS similarity
             FROM KBOT_BIZ_TXT_EMBEDDING
             WHERE KB_ID = :kb_id
             AND SECURITY_LEVEL <= :security
             AND CONTAINS(CHUNK_DOC, REGEXP_REPLACE(:keyword, '\\W+', ' ACCUM '), 1) > 0
+        """
+        
+        # 参数
+        params = {
+            'kb_id': kb_id,
+            'security': security,
+            'keyword': keyword,
+            'top_k': top_k
+        }
+        
+        # 如果有tag_list，构建多个OR条件
+        if tags and len(tags) > 0:
+            tag_conditions = []
+            for i, tag in enumerate(tags):
+                param_name = f"tag_{i}"
+                # 正确的JSON_EXISTS绑定语法
+                tag_conditions.append(f"JSON_EXISTS(BIZ_METADATA, '$.tags?(@ == $t)' PASSING :{param_name} AS \"t\")")
+                params[param_name] = tag
+            
+            base_sql += " AND (" + " OR ".join(tag_conditions) + ")"
+
+        # 如果tag_list为空或None，不添加tag条件
+        
+        # 添加排序和限制
+        base_sql += """
             ORDER BY similarity DESC
             FETCH FIRST :top_k ROWS ONLY
         """
-        # 添加向量和阈值参数
-        params = {
-            "kb_id": kb_id,
-            "keyword": keyword,
-            "security": security,
-            #"simularity_threshold": simularity_threshold,
-            "top_k": top_k
-        }
-        result = await self.pool_manager.query(self.conn_params, sql, params)
+
+        # sql = """
+        #     SELECT FILE_ID, 
+        #             CHUNK_DOC, 
+        #             CHUNK_METADATA,
+        #             SCORE(1) AS similarity
+        #     FROM KBOT_BIZ_TXT_EMBEDDING
+        #     WHERE KB_ID = :kb_id
+        #     AND SECURITY_LEVEL <= :security
+        #     AND CONTAINS(CHUNK_DOC, REGEXP_REPLACE(:keyword, '\\W+', ' ACCUM '), 1) > 0
+        #     ORDER BY similarity DESC
+        #     FETCH FIRST :top_k ROWS ONLY
+        # """
+
+        # # 添加向量和阈值参数
+        # params = {
+        #     "kb_id": kb_id,
+        #     "keyword": keyword,
+        #     "security": security,
+        #     #"simularity_threshold": simularity_threshold,
+        #     "top_k": top_k,
+        #     "tag_list": tags
+        # }
+
+        result = await self.pool_manager.query(self.conn_params, base_sql, params)
 
         return result
     
+
     async def update_chunk(self,
                             embed_id: str,
                             new_chunk: str,

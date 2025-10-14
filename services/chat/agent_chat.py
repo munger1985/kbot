@@ -16,22 +16,27 @@ from ..search.chinese_preprocessor import preprocess_cn_query
 class Agent:
     """智能体类"""
     
-    def __init__(self, agent_id: int, security: int):
+    def __init__(self, agent_id: int, security: int, tags: list[str] | None = None):
         """
         初始化智能体
         
         Args:
             agent_id: 智能体ID
             security: 安全级别
+            tags: 标签列表
         """
         self.agent_id = agent_id
         self.security = security
+        self.tags = tags
         self.agent_params = AgentParams()
 
-    async def _run_kb_search_async(self, tool_params: ToolParams, 
+    async def _run_kb_search_async(self, 
+                                   tool_params: ToolParams, 
                                    vector_search_question: str, 
                                    full_text_question: list[str], 
-                                   security: int) -> list[KBResult]:
+                                   security: int,
+                                   tags: list[str] | None = None
+                                   ) -> list[KBResult]:
         """
         异步运行KB搜索的方法
         
@@ -40,14 +45,14 @@ class Agent:
             vector_search_question: 改写后的向量搜索问题
             full_text_question: 改写后的全文搜索问题
             security: 安全级别
-            enable_synonyms: 是否启用同义词
+            tags: 标签列表
             
         Returns:
             list[KBResult]: 搜索结果列表
         """
         try:
             kb = KBSearch(tool_params)
-            result = await kb.search(vector_search_question, full_text_question, security)
+            result = await kb.search(vector_search_question, full_text_question, security, tags=tags)
             return result or []
         except Exception as e:
             logger.error(f"KB搜索执行失败: {e}")
@@ -72,9 +77,9 @@ class Agent:
         
         # 创建所有异步任务
         async_tasks = []
-        for tool_params, vector_search_question, full_text_question, security in kb_tasks:
+        for tool_params, vector_search_question, full_text_question, security, tags in kb_tasks:
             async_tasks.append(
-                self._run_kb_search_async(tool_params, vector_search_question, full_text_question, security)
+                self._run_kb_search_async(tool_params, vector_search_question, full_text_question, security, tags)
             )
         
         # 并行执行所有任务
@@ -144,7 +149,8 @@ class Agent:
                     tool_params,
                     vector_search_question,
                     full_text_question,
-                    self.security
+                    self.security,
+                    self.tags
                 ))
                 kb_configs.append(conf)
         

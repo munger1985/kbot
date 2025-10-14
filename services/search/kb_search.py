@@ -14,14 +14,20 @@ class KBSearch:
     def __init__(self, tool_params: ToolParams):
         self.tool_params = tool_params
 
-    async def search(self, vector_search_question: str, full_text_question: list[str], security: int) -> list[KBResult] | None:
+    async def search(self, 
+                     vector_search_question: str, 
+                     full_text_question: list[str], 
+                     security: int, 
+                     tags: list[str] | None = None
+                    ) -> list[KBResult] | None:
         """
         执行知识库搜索
         
         Args:
-            question (str): 搜索问题
+            vector_search_question (str): 语义搜索问题
+            full_text_question (list[str]): 全文搜索问题
             security (int): 安全级别
-            enable_synonyms (bool, optional): 是否启用同义词扩展. 默认为False
+            tags (list[str] | None, optional): 标签列表. 默认为None
             
         Returns:
             list[KBResult] | None: 搜索结果列表，搜索失败时返回None
@@ -49,13 +55,13 @@ class KBSearch:
         if self.tool_params.kb_catogory == KbCategory.KBOT.value:
             if self.tool_params.search_type == KBSearchType.VECTOR.value:
                 logger.debug("搜索方法: 向量搜索")
-                return await self.search_by_vector(vector_search_question, security, is_summary=False)
+                return await self.search_by_vector(vector_search_question, security, is_summary=False, tags=tags)
             elif self.tool_params.search_type == KBSearchType.FULLTEXT.value:
                 logger.debug("搜索方法: 全文搜索")
-                return await self.serch_by_full_text(full_text_question, security)
+                return await self.serch_by_full_text(full_text_question, security, tags=tags)
             elif self.tool_params.search_type == KBSearchType.SUMMARY.value:
                 logger.debug("搜索方法: 摘要搜索")
-                return await self.search_by_vector(vector_search_question, security, is_summary=True)
+                return await self.search_by_vector(vector_search_question, security, is_summary=True, tags=tags)
             elif self.tool_params.search_type == KBSearchType.GRAPH.value:
                 logger.debug("搜索方法: 图谱搜索")
                 return await self.search_by_graph("question", security)
@@ -67,7 +73,12 @@ class KBSearch:
             return None
 
     
-    async def search_by_vector(self, question: str, security: int, is_summary: bool = False) -> list[KBResult] | None:
+    async def search_by_vector(self, 
+                               question: str, 
+                               security: int, 
+                               is_summary: bool = False, 
+                               tags: list[str] | None = None
+                            ) -> list[KBResult] | None:
         """
         向量搜索方法
         
@@ -75,6 +86,7 @@ class KBSearch:
             question (str): 搜索问题
             security (int): 安全级别
             is_summary (bool, optional): 是否使用摘要搜索. 默认为False
+            tags (list[str] | None, optional): 标签列表. 默认为None
             
         Returns:
             list[KBResult] | None: 搜索结果列表，搜索失败时返回None
@@ -93,7 +105,7 @@ class KBSearch:
             kb_results = []
             for result in results:
                 embedding = result.embedding
-                kb_result = await self.get_similar_records(embedding, security, is_summary=is_summary)
+                kb_result = await self.get_similar_records(embedding, security, is_summary=is_summary, tags=tags)
                 if kb_result is None or kb_result == []:
                     continue
                 else:
@@ -104,13 +116,20 @@ class KBSearch:
             logger.error(f"嵌入服务错误: {str(e)}")
             return None
 
-    async def get_similar_records(self, query_vec: list[float], security: int, is_summary: bool = False) -> list[KBResult] | None:
+    async def get_similar_records(self, 
+                                  query_vec: list[float], 
+                                  security: int, 
+                                  is_summary: bool = False, 
+                                  tags: list[str] | None = None
+                                ) -> list[KBResult] | None:
         """
         从向量数据库中获取相似记录
         
         Args:
             query_vec (list[float]): 查询向量
             security (int): 安全级别
+            is_summary (bool, optional): 是否使用摘要搜索. 默认为False
+            tags (list[str] | None, optional): 标签列表. 默认为None
             
         Returns:
             list[KBResult] | None: 相似记录列表，查询失败时返回None
@@ -131,7 +150,8 @@ class KBSearch:
                 security = security,
                 similarity_threshold = self.tool_params.threshold,
                 top_k = self.tool_params.top_k,
-                is_summary_search=is_summary
+                is_summary_search=is_summary,
+                tags=tags
             )
             if not dataset:
                 logger.info(f"向量搜索未找到结果")
@@ -156,7 +176,7 @@ class KBSearch:
             logger.debug(f"向量搜索失败: {str(e)}")
             raise ValueError(f"向量搜索失败: {str(e)}")
         
-    async def serch_by_full_text(self, keywords: list[str], security: int) -> list[KBResult] | None:
+    async def serch_by_full_text(self, keywords: list[str], security: int, tags: list[str] | None = None) -> list[KBResult] | None:
         """
         全文搜索方法
         
@@ -177,7 +197,10 @@ class KBSearch:
 
             for key in unique_keys:
                 logger.debug(f"全文搜索词元: {key}")
-                ds = await repo.full_text_search(kb_id=self.tool_params.tool_id, keyword=key, security=security)
+                ds = await repo.full_text_search(kb_id=self.tool_params.tool_id, 
+                                                 keyword=key, 
+                                                 security=security,
+                                                 tags=tags)
                 if ds:
                     datasets.extend(ds)
 

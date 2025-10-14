@@ -20,7 +20,6 @@ class KbotMdKb(Base):
     img2txt_model_id: Mapped[int | None] = mapped_column(Numeric(38, 0), comment="图片转文本模型ID")
     kb_status: Mapped[int | None] = mapped_column(Numeric(1, 0), comment="知识库状态枚举类型")
     security_level: Mapped[int | None] = mapped_column(Numeric(1, 0), comment="文件安全等级枚举类型")
-    chunk_parser: Mapped[str | None] = mapped_column(CLOB, comment="数据Chunk参数")
     enable_summary: Mapped[int | None] = mapped_column(Numeric(1, 0), comment="1-启用,0-不启用")
     is_img2txt: Mapped[int | None] = mapped_column(Numeric(1, 0), comment="是否把IMAGE转成文本:1-是,0-否")
     is_table_head_fill: Mapped[int | None] = mapped_column(Numeric(1, 0), comment="Table表头是否拼装：1-是,0-否")

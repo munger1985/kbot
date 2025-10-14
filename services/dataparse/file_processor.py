@@ -59,6 +59,15 @@ class FileProcessor:
             else:
                 # 如果是字符串，则解析为 JSON
                 file_params.parser = json.loads(file.chunk_parser, cls=DecimalEncoder) # type: ignore
+
+            # 解析 biz_metadata 字段
+            if isinstance(file.biz_metadata, dict):
+                file_params.biz_metadata = file.biz_metadata
+            elif file.biz_metadata is None:
+                file_params.biz_metadata = {}
+                logger.warning(f"文件ID {file.file_id} 的 biz_metadata 为 None，使用空字典")
+            else:
+                file_params.biz_metadata = json.loads(file.biz_metadata, cls=DecimalEncoder) # type: ignore
             
             logger.debug(f"文件参数: {file_params.__dict__}")
 

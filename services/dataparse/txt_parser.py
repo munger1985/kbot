@@ -93,6 +93,7 @@ async def process_txt(file_params: FileParams) -> bool:
                     embed_id=str(uuid.uuid4()),
                     chunk_doc=chunk,
                     chunk_metadata={"chunk_type": ChunkType.TEXT, "chunk_num": chunk_num},
+                    biz_metadata=file_params.biz_metadata,
                     file_id=file_params.file_id,
                     kb_id=file_params.kb_id,
                     embedding=embedding,

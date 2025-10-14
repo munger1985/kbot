@@ -17,7 +17,7 @@ from api.schemas.agent_schema import AgentChatForm, AgentChatFeedbackForm
 
 async def agent_chat(form: AgentChatForm) -> dict[str, Any]:
     try:
-        agent = Agent(agent_id=form.agent_id, security=form.security_level)
+        agent = Agent(agent_id=form.agent_id, security=form.security_level, tags=form.tags)
         results = await agent.chat(question=form.question)
         sess_repo = KbotMdChatSessionRepository()
         

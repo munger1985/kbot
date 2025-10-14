@@ -12,6 +12,7 @@ class FileParams:
         self.tab_head: int = 0
         self.priority: int = 0
         self.parser: dict = {}
+        self.biz_metadata: dict = {}
         self.img2txt_model: int | None = None
         self.img_embed_model: int | None = None
         self.txt_embed_model: int | None = None
