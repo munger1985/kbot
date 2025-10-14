@@ -5,10 +5,7 @@ from api.controllers.security_controller import AuthController
 from api.schemas.accessor_schema import *
 from api.schemas.base_response import SuccessResponse, ErrorResponse, SuccessQueryResponse
 
-router = APIRouter(
-    prefix="/security",
-    tags=["API Security"]
-)
+router = APIRouter(prefix="/security", tags=["API Security"])
 
 @router.post(
         "/get_token",

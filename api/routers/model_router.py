@@ -5,11 +5,7 @@ from api.schemas.model_schema import *
 from api.schemas.base_response import SuccessResponse, ErrorResponse
 from core.dictionary import ModelCategory
 
-router = APIRouter(
-    prefix="/model",
-    tags=["Model Management"]
-)
-
+router = APIRouter(prefix="/model", tags=["Model Management"])
    
 @router.post(
         "/toggle",

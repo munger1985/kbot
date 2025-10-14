@@ -10,10 +10,7 @@ from api.controllers.kb_controller import *
 from api.schemas.kb_schema import *
 from api.schemas.base_response import SuccessResponse, ErrorResponse
 
-router = APIRouter(
-    prefix="/kb",
-    tags=["Knowledge Base"]
-)
+router = APIRouter(prefix="/kb", tags=["Knowledge Base"])
 
 @router.post(
     "/upload",
@@ -34,13 +31,13 @@ async def handle_upload_files(
         
         if result:
             return SuccessResponse(
-                code=200,
+                code=status.HTTP_200_OK,
                 success=True,
                 message="文件上传成功"
             )
         else:
             return ErrorResponse(
-                code=400,
+                code=status.HTTP_400_BAD_REQUEST,
                 success=False,
                 message="文件上传失败"
             )
@@ -77,13 +74,13 @@ async def handle_delete_files(
 
         if result["failed_file_cnt"] == 0 and result["meta_cnt"] > 0:
             return SuccessResponse(
-                code=200,
+                code=status.HTTP_200_OK,
                 success=True,
                 message="删除文件成功"
             )
         else:
             return ErrorResponse(
-                code=400,
+                code=status.HTTP_400_BAD_REQUEST,
                 success=False,
                 message=f"删除文件失败: {result['failed_file_cnt']}个文件删除失败，详情请查看日志"
                 )
@@ -205,13 +202,13 @@ async def handle_reparse_files(
         result = await reparse_kb_files(form=form)
         if result:
             return SuccessResponse(
-                code=200,
+                code=status.HTTP_200_OK,
                 success=True,
                 message="重解析文件成功"
                 )
         else:
             return ErrorResponse(
-                code=400,
+                code=status.HTTP_400_BAD_REQUEST,
                 success=False,
                 message="重解析文件失败"
             )
@@ -346,7 +343,7 @@ async def handle_edit_file_chunk(
         if form.action == "update":
             if form.new_chunk is None or form.new_chunk.strip() == "":
                 return ErrorResponse(
-                    code=400,
+                    code=status.HTTP_400_BAD_REQUEST,
                     success=False,
                     message="更新操作需要提供新的分片内容"
                 )
@@ -362,23 +359,37 @@ async def handle_edit_file_chunk(
                 file_id=form.file_id,
                 embed_id=form.embed_id
             )
+            
+        elif form.action == "enable":
+            result = await toogle_kb_file_chunk_status(
+                kb_id=form.kb_id,
+                chunk_id=form.embed_id,
+                status=1
+            )
+        elif form.action == "disable":
+            result = await toogle_kb_file_chunk_status(
+                kb_id=form.kb_id,
+                chunk_id=form.embed_id,
+                status=0
+            )
+
         else:
             return ErrorResponse(
-                code=400,
+                code=status.HTTP_400_BAD_REQUEST,
                 success=False,
-                message="无效的操作类型，仅支持 'update' 或 'delete'"
+                message="无效的操作类型，仅支持 'update', 'delete', 'enable' 和 'disable' 四种操作"
             )
         if result:
             return SuccessResponse(
-                code=200,
+                code=status.HTTP_200_OK,
                 success=True,
-                message="编辑文件分片成功"
+                message="切换文件分片状态成功"
                 )
         else:
             return ErrorResponse(
-                code=400,
+                code=status.HTTP_400_BAD_REQUEST,
                 success=False,
-                message="编辑文件分片失败"
+                message="切换文件分片状态失败"
             )
             
     except Exception as e:

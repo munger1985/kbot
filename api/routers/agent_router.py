@@ -7,10 +7,7 @@ from api.controllers.security_controller import AuthController
 from api.controllers.agent_controller import *
 from api.schemas.base_response import *
 
-router = APIRouter(
-    prefix="/agent",
-    tags=["Agent Chat"]
-)
+router = APIRouter(prefix="/agent", tags=["Agent Chat"])
 
 @router.post(
     "/chat",

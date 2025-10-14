@@ -109,7 +109,7 @@ sudo docker run --name libreoffice -d \
 
 #3.配置 nacos 容器
 #3.1 创建nacos容器镜像
-cd core/nacos_manager/nacos-init
+cd docs/nacos-init
 docker-compose up -d
 
 #3.2 Kbot 3.0后端的配置文件：
@@ -122,11 +122,43 @@ Kbot的主服务默认端口：18099，Nacos的默认端口：8848
 
 #3.3 然后将配置文档注入nacos，只需要运行一次，之后就不再需要初始化nacos，除非配置有变更需要重新运行下面的命令
 python load_config.sh
-#4.4 nacos默认管理界面，验证nacos安装
+#3.4 nacos默认管理界面，验证nacos安装
 http://localhost:8848/nacos/
+
+#4 部署elastic search容器
+#4.1 获取elastic search官方镜像
+docker pull docker.elastic.co/elasticsearch/elasticsearch:9.1.5
+#4.2 创建elastic search网络
+docker network create elastic
+#4.3 创建elastic search存储目录
+mkdir -p /home/ubuntu/elastic/eslog
+mkdir -p /home/ubuntu/elastic/eskb
+#4.4 启动elastic search容器：eslog容器用于记录全局日志，eskb用于作为kbot的全文索引库
+docker run --name eslog --net elastic \
+  -p 9201:9200 \
+  -p 9301:9300 \
+  -v /home/ubuntu/elastic/eslog:/usr/share/elasticsearch/data \
+  -d -m 1GB \
+  elasticsearch:9.1.5
+
+docker run --name eskb --net elastic \
+  -p 9202:9200 \
+  -p 9302:9300 \
+  -v /home/ubuntu/elastic/eskb:/usr/share/elasticsearch/data \
+  -d -m 2GB \
+  elasticsearch:9.1.5
+
+#4.5 修改初始密码，将输出到控制台的密码复制到configuration/db_config.json文件中
+docker exec -it eslog /usr/share/elasticsearch/bin/elasticsearch-reset-password -u elastic
+docker exec -it eskb /usr/share/elasticsearch/bin/elasticsearch-reset-password -u elastic
+
+#4.5 验证elastic search安装，使用前面修改过的初始密码登录，用户名默认elastic
+https://localhost:9201/
+https://localhost:9202/
+
 ```
 
-### 4.初始化Kbot数据库表信息
+### 5.初始化Kbot数据库表信息
 ```bash
 #1.在DBA用户创建Kbot元数据库（Oracle23ai的schema），并赋予权限
 #在CDB级别开启DRCP 
@@ -162,13 +194,13 @@ CREATE INDEX IDX_FULLSEARCH_TXT_EMBEDDING ON  KBOT_BIZ_TXT_EMBEDDING("CHUNK_DOC"
 --CREATE INDEX IDX_FULLSEARCH_TXT_EMBEDDING ON  KBOT_BIZ_TXT_EMBEDDING("CHUNK_DOC") INDEXTYPE IS "CTXSYS"."CONTEXT" PARAMETERS ('lexer english_lexer');
 ```
 
-### 5.前端apex安装以及kbot UI部署
+### 6.前端apex安装以及kbot UI部署
 ```bash
 #1.安装apex
 #2.部署Kbot UI到apex中
 ```
 
-### 6.启动后台服务
+### 7.启动后台服务
 ```bash
 cd /home/ubuntu/kbot3
 #5.1启动后台服务
@@ -177,7 +209,7 @@ cd /home/ubuntu/kbot3
 ./stop_kbot.sh
 ```
 
-### 7.apex UI系统基本配置以及验证
+### 8.apex UI系统基本配置以及验证
 ```bash
 #1.系统设置=》系统配置=〉服务URL
 #2.系统设置=》向量DB连接

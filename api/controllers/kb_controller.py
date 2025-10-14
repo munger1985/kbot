@@ -162,3 +162,19 @@ async def delete_kb_file_chunk(
         return result
     except Exception as e:
         raise e
+    
+async def toogle_kb_file_chunk_status(
+    kb_id: int,
+    chunk_id: str,
+    status: int
+) -> bool:
+    """切换知识库文件的分片状态"""
+    try:
+        result = await KBFileOperator().toogle_file_chunk_status(
+            kb_id=kb_id,
+            chunk_id=chunk_id,
+            status=status
+        )
+        return result
+    except Exception as e:
+        raise e

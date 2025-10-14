@@ -24,5 +24,23 @@
     "pool_pre_ping": true,
     "pool_use_lifo": true,
     "pool_recycle": 1800
+  },
+  "eslog": {
+    "hosts": [
+      "https://localhost:9201"
+    ],
+    "username": "elastic",
+    "password": "KsVEZ-KhNMVi9HHdjyTx",
+    "ca_certs": "/home/chris/http_ca.crt",
+    "index": "filebeat-*"
+  },
+  "eskb": {
+  "hosts": [
+      "https://localhost:9202"
+    ],
+    "username": "elastic",
+    "password": "KsVEZ-KhNMVi9HHdjyTx",
+    "ca_certs": "/home/chris/http_ca.crt",
+    "index": ""
   }
 }

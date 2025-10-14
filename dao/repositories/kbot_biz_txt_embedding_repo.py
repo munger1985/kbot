@@ -259,6 +259,23 @@ class KbotBizTxtEmbeddingRepository:
         result = await self.pool_manager.execute_dml(self.conn_params, sql, {})
         return result
             
+    async def update_status_by_chunk_id(self, chunk_id: str, status: int) -> int:
+        """Update the status of a chunk by its chunk ID. """
+        if self.conn_params is None:
+            return 0
+        
+        # Generate SQL
+        sql = """
+            UPDATE KBOT_BIZ_TXT_EMBEDDING
+            SET STATUS = :status
+            WHERE EMBED_ID = :chunk_id
+        """
+        params = {
+            "chunk_id": chunk_id,
+            "status": status
+        }
+        result = await self.pool_manager.execute_dml(self.conn_params, sql, params)
+        return result
             
 
 

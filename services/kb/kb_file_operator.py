@@ -689,4 +689,33 @@ class KBFileOperator:
             logger.error(f"删除文件 {file_id} 的分片 {embed_id} 失败: {str(e)}")
             return False
         
+    async def toogle_file_chunk_status(self, kb_id: int, chunk_id: str, status: int) -> bool:
+        """
+        切换文件分片状态
+        
+        参数:
+            kb_id: 知识库ID
+            chunk_id: 分片ID
+            status: 新状态(0-禁用 1-启用)
+        
+        返回:
+            bool: 切换是否成功
+        """
+        if status not in [0, 1]:
+            logger.error(f"无效的状态值: {status}，必须是0或1")
+            return False
+        embed_repo = KbotBizTxtEmbeddingRepository(kb_id=kb_id)
+        await embed_repo.initialize()
+        try:
+            r = await embed_repo.update_status_by_chunk_id(chunk_id=chunk_id, status=status)
+            if r > 0:
+                logger.info(f"成功切换文件分片 {chunk_id} 的状态为 {status}")
+                return True
+            else:
+                logger.warning(f"未找到文件分片 {chunk_id} ，未进行状态切换")
+                return False
+        except Exception as e:
+            logger.error(f"切换文件分片 {chunk_id} 状态失败: {str(e)}")
+            return False
+        
         
