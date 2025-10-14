@@ -157,6 +157,43 @@ https://localhost:9201/
 https://localhost:9202/
 
 ```
+### 5.部署filebeat用于收集日志到eslog
+```bash
+#5.1 安装filebeat必要依赖包并添加官方Elastic 的 GPG 密钥
+sudo apt update
+sudo apt install -y apt-transport-https ca-certificates curl software-properties-common
+wget -qO - https://artifacts.elastic.co/GPG-KEY-elasticsearch | sudo gpg --dearmor -o /usr/share/keyrings/elasticsearch-keyring.gpg
+echo "deb [signed-by=/usr/share/keyrings/elasticsearch-keyring.gpg] https://artifacts.elastic.co/packages/9.x/apt stable main" | sudo tee /etc/apt/sources.list.d/elastic-9.x.list
+
+#5.2 安装filebeat
+sudo apt update
+sudo apt install -y filebeat
+
+#5.3 修改filebeat配置文件
+sudo vim /etc/filebeat/filebeat.yml
+# 指定采集的日志（输入配置）
+filebeat.inputs:
+- type: log
+  enabled: true
+  paths:
+    - /var/log/syslog
+    - /var/log/auth.log
+  ignore_older: 72h  # 忽略超过72小时的旧文件
+
+# 配置输出的Elasticsearch服务器（输出配置）
+# 安全认证配置
+output.elasticsearch:
+  hosts: ["https://localhost:9200"]  # 注意是 https
+  index: "filebeat-%{[agent.version]}-%{+yyyy.MM.dd}"
+  username: "elastic"  # 替换为你的用户名
+  password: "your_password"  # 替换为对应用户的密码
+  ssl.enabled: true  # 8.x 版本通常需要SSL
+  ssl.verification_mode: certificate  # 根据你的证书配置调整
+
+# 启动并启用服务​
+sudo systemctl start filebeat
+sudo systemctl enable filebeat
+```
 
 ### 5.初始化Kbot数据库表信息
 ```bash
