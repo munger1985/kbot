@@ -12,7 +12,7 @@ from pdfminer.layout import LAParams, LTImage, LTFigure
 from loguru import logger
 from .file_params import FileParams
 from dao.repositories.kbot_md_kb_files_repo import KbotMdKbFilesRepository
-from dao.repositories.kbot_biz_txt_embedding_repo import KbotBizTxtEmbeddingRepository
+from dao.repositories.kbot_biz_txt_embedding_factory import EmbeddingRepositoryFactory
 from dao.entities.kbot_biz_txt_embedding import KbotBizTxtEmbedding
 from core.dictionary import FileStatus, ChunkType, SplitStrategy
 from utils.call_models import CallModel
@@ -335,8 +335,7 @@ class PDFPlumberParser:
             return False
 
         try:
-            repo = KbotBizTxtEmbeddingRepository(kb_id=self.file_params.kb_id)
-            await repo.initialize()
+            repo = await EmbeddingRepositoryFactory.create_repository(kb_id=self.file_params.kb_id)
             result = await repo.create(kb_id=self.file_params.kb_id, embeddings=embeddings)
             if not result:
                 msg = "Failed to save embeddings (repository returned False)"

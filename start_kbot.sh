@@ -25,10 +25,10 @@ MICROSERVICES_DIR="$(dirname "$0")/microservices"
 echo "正在启动微服务..."
 
 cd "${MICROSERVICES_DIR}/embedding" && python app.py >/dev/null 2>&1 &
-# cd "${MICROSERVICES_DIR}/llm" && python app.py >/dev/null 2>&1 &
-# cd "${MICROSERVICES_DIR}/reranker" && python app.py >/dev/null 2>&1 &
-# cd "${MICROSERVICES_DIR}/vlm" && python app.py >/dev/null 2>&1 &
-# cd "${MICROSERVICES_DIR}/synonym" && python app.py >/dev/null 2>&1 &
+cd "${MICROSERVICES_DIR}/llm" && python app.py >/dev/null 2>&1 &
+cd "${MICROSERVICES_DIR}/reranker" && python app.py >/dev/null 2>&1 &
+cd "${MICROSERVICES_DIR}/vlm" && python app.py >/dev/null 2>&1 &
+cd "${MICROSERVICES_DIR}/synonym" && python app.py >/dev/null 2>&1 &
 
 for i in {1..10}; do
   echo -n "*"

@@ -1,6 +1,6 @@
 from loguru import logger
 from dao.repositories.kbot_md_kb_files_repo import KbotMdKbFilesRepository
-from dao.repositories.kbot_biz_txt_embedding_repo import KbotBizTxtEmbeddingRepository
+from dao.repositories.kbot_biz_txt_embedding_factory import EmbeddingRepositoryFactory
 from core.dictionary import FileStatus
 
 class KBProcedure():
@@ -24,9 +24,8 @@ class KBProcedure():
             bool: 操作是否成功。True表示成功，False表示失败
         """
         file_repo = KbotMdKbFilesRepository()
-        chunk_repo = KbotBizTxtEmbeddingRepository(kb_id=kb_id)
-        await chunk_repo.initialize()
-        
+        chunk_repo = await EmbeddingRepositoryFactory.create_repository(kb_id=kb_id)
+
         try:
             # 1. 删除文件对应的文本片段数据
             await chunk_repo.delete_by_file_ids(kb_id=kb_id, file_ids=file_ids)

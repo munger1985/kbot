@@ -11,7 +11,8 @@ from dao.entities.kbot_md_kb_files import KbotMdKbFiles
 from core.dictionary import FileStatus, YesNoEnum
 from dao.repositories.kbot_md_kb_repo import KbotMdKbRepository
 from dao.repositories.kbot_md_kb_files_repo import KbotMdKbFilesRepository
-from dao.repositories.kbot_biz_txt_embedding_repo import KbotBizTxtEmbeddingRepository
+# from dao.repositories.kbot_biz_txt_embedding_repo import KbotBizTxtEmbeddingRepository
+from dao.repositories.kbot_biz_txt_embedding_factory import EmbeddingRepositoryFactory
 from dao.repositories.kbot_md_parser_conf_repo import KbotMdParserConfRepository
 from dao.repositories.kbot_md_prompt_repo import KbotMdPromptRepository
 from utils.common import run_in_thread_pool
@@ -416,8 +417,7 @@ class KBFileOperator:
 
         """
 
-        embed_repo = KbotBizTxtEmbeddingRepository(kb_id=kb_id)
-        await embed_repo.initialize()
+        embed_repo = await EmbeddingRepositoryFactory.create_repository(kb_id=kb_id)
         file_repo = KbotMdKbFilesRepository()
         vec_cnt = 0
         # 模式1: 通过文件ID删除
@@ -576,8 +576,7 @@ class KBFileOperator:
             embeddings = [item.embedding for item in response_data]
 
         # 更新向量库中的分片信息
-        embed_repo = KbotBizTxtEmbeddingRepository(kb_id=kb_id)
-        await embed_repo.initialize()
+        embed_repo = await EmbeddingRepositoryFactory.create_repository(kb_id=kb_id)
         try:
             r = await embed_repo.update_chunk(embed_id=embed_id, new_chunk=new_chunk, new_embedding=embeddings[0])
             if r:
@@ -665,8 +664,7 @@ class KBFileOperator:
             logger.error(f"知识库 {kb_id} 不存在，无法删除分片")
             return False
         
-        embed_repo = KbotBizTxtEmbeddingRepository(kb_id=kb_id)
-        await embed_repo.initialize()
+        embed_repo = await EmbeddingRepositoryFactory.create_repository(kb_id=kb_id)
         chunk_ids = [embed_id]
         # 如果知识库启用摘要，则删除该分片的摘要
         if kb.enable_summary:
@@ -704,8 +702,7 @@ class KBFileOperator:
         if status not in [0, 1]:
             logger.error(f"无效的状态值: {status}，必须是0或1")
             return False
-        embed_repo = KbotBizTxtEmbeddingRepository(kb_id=kb_id)
-        await embed_repo.initialize()
+        embed_repo = await EmbeddingRepositoryFactory.create_repository(kb_id=kb_id)
         try:
             r = await embed_repo.update_status_by_chunk_id(chunk_id=chunk_id, status=status)
             if r > 0:

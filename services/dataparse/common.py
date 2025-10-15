@@ -3,7 +3,7 @@ import os
 from loguru import logger
 from .file_params import FileParams
 from dao.entities.kbot_biz_txt_embedding import KbotBizTxtEmbedding
-from dao.repositories.kbot_biz_txt_embedding_repo import KbotBizTxtEmbeddingRepository
+from dao.repositories.kbot_biz_txt_embedding_factory import EmbeddingRepositoryFactory
 from dao.repositories.kbot_md_kb_files_repo import KbotMdKbFilesRepository
 from core.dictionary import FileStatus
 
@@ -20,8 +20,7 @@ async def save_embeddings(file_params: FileParams, embeddings: list[KbotBizTxtEm
         bool: 保存成功返回True，失败返回False
     """
     try:
-        repo = KbotBizTxtEmbeddingRepository(file_params.kb_id)
-        await repo.initialize()
+        repo = await EmbeddingRepositoryFactory.create_repository(file_params.kb_id)
 
         result = await repo.create(kb_id=file_params.kb_id, embeddings=embeddings)
         

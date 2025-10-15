@@ -2,7 +2,7 @@ import json
 from loguru import logger
 from ..chat.agent_params import ToolParams, KBResult
 from dao.repositories.kbot_md_kb_repo import KbotMdKbRepository
-from dao.repositories.kbot_biz_txt_embedding_repo import KbotBizTxtEmbeddingRepository
+from dao.repositories.kbot_biz_txt_embedding_factory import EmbeddingRepositoryFactory
 from core.dictionary import KbCategory, KBSearchType
 from utils.oracle_vec_handler import OracleVecHandler
 from utils.decimal_encoder import DecimalEncoder
@@ -135,8 +135,7 @@ class KBSearch:
             list[KBResult] | None: 相似记录列表，查询失败时返回None
         """
         # 执行相似度搜索
-        repo = KbotBizTxtEmbeddingRepository(kb_id=self.tool_params.tool_id)
-        await repo.initialize()
+        repo = await EmbeddingRepositoryFactory.create_repository(kb_id=self.tool_params.tool_id)
         convertor = OracleVecHandler()
         vec = convertor.convert(query_vec, to_string=True)
         try:
@@ -187,8 +186,7 @@ class KBSearch:
         Returns:
             list[KBResult] | None: 搜索结果列表，搜索失败时返回None
         """
-        repo = KbotBizTxtEmbeddingRepository(kb_id=self.tool_params.tool_id)
-        await repo.initialize()
+        repo = await EmbeddingRepositoryFactory.create_repository(kb_id=self.tool_params.tool_id)
         try:
             logger.debug(f"全文搜索知识库ID: {self.tool_params.tool_id}")
             logger.debug(f"全文搜索关键词: {keywords}")
