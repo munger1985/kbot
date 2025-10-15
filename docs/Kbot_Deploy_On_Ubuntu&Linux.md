@@ -126,19 +126,20 @@ python load_config.sh
 http://localhost:8848/nacos/
 
 #4 部署elastic search容器
-#4.1 获取elastic search官方镜像
-docker pull docker.elastic.co/elasticsearch/elasticsearch:9.1.5
-#4.2 创建elastic search网络
+#4.1 创建elastic search网络
 docker network create elastic
-#4.3 创建elastic search存储目录
+#4.2 创建elastic search存储目录
 mkdir -p /home/ubuntu/elastic/eslog
 mkdir -p /home/ubuntu/elastic/eskb
+#4.3 修改目录权限
+sudo chown -R 1000:1000 /home/ubuntu/elastic/
 #4.4 启动elastic search容器：eslog容器用于记录全局日志，eskb用于作为kbot的全文索引库
 docker run --name eslog --net elastic \
   -p 9201:9200 \
   -p 9301:9300 \
   -v /home/ubuntu/elastic/eslog:/usr/share/elasticsearch/data \
-  -d -m 1GB \
+  -d -m 2GB \
+  -e "discovery.type=single-node" \
   elasticsearch:9.1.5
 
 docker run --name eskb --net elastic \
@@ -146,13 +147,20 @@ docker run --name eskb --net elastic \
   -p 9302:9300 \
   -v /home/ubuntu/elastic/eskb:/usr/share/elasticsearch/data \
   -d -m 2GB \
+  -e "discovery.type=single-node" \
   elasticsearch:9.1.5
 
 #4.5 修改初始密码，将输出到控制台的密码复制到configuration/db_config.json文件中
 docker exec -it eslog /usr/share/elasticsearch/bin/elasticsearch-reset-password -u elastic
 docker exec -it eskb /usr/share/elasticsearch/bin/elasticsearch-reset-password -u elastic
 
-#4.5 验证elastic search安装，使用前面修改过的初始密码登录，用户名默认elastic
+#4.6 复制证书
+sudo docker cp eslog:/usr/share/elasticsearch/config/certs/http_ca.crt /home/ubuntu/elastic/eslog/
+sudo docker cp eskb:/usr/share/elasticsearch/config/certs/http_ca.crt /home/ubuntu/elastic/eskb/
+sudo chown -R ubuntu:ubuntu /home/ubuntu/elastic/eslog/http_ca.crt
+sudo chown -R ubuntu:ubuntu /home/ubuntu/elastic/eskb/http_ca.crt
+
+#4.7 验证elastic search安装，使用前面修改过的初始密码登录，用户名默认elastic
 https://localhost:9201/
 https://localhost:9202/
 
@@ -174,25 +182,27 @@ sudo vim /etc/filebeat/filebeat.yml
 # 指定采集的日志（输入配置）
 filebeat.inputs:
 - type: log
+  id: kblog-id
   enabled: true
   paths:
-    - /var/log/syslog
-    - /var/log/auth.log
-  ignore_older: 72h  # 忽略超过72小时的旧文件
+    - /home/ubuntu/kbot3/logs/*.log
+
 
 # 配置输出的Elasticsearch服务器（输出配置）
 # 安全认证配置
 output.elasticsearch:
   hosts: ["https://localhost:9200"]  # 注意是 https
-  index: "filebeat-%{[agent.version]}-%{+yyyy.MM.dd}"
   username: "elastic"  # 替换为你的用户名
   password: "your_password"  # 替换为对应用户的密码
-  ssl.enabled: true  # 8.x 版本通常需要SSL
-  ssl.verification_mode: certificate  # 根据你的证书配置调整
+  ssl.verification_mode: none
 
 # 启动并启用服务​
 sudo systemctl start filebeat
 sudo systemctl enable filebeat
+
+# 验证filebeat安装
+curl --cacert /home/ubuntu/elastic/eslog/http_ca.crt -u elastic:<PASSWORD> https://localhost:9201
+curl --cacert /home/ubuntu/elastic/eskb/http_ca.crt -u elastic:<PASSWORD> https://localhost:9202
 ```
 
 ### 5.初始化Kbot数据库表信息
