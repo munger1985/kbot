@@ -326,23 +326,79 @@ class OracleEmbeddingRepository(IEmbeddingRepository):
         result = await self.pool_manager.execute_dml(self.conn_params, sql, {})
         return result
             
+    # async def update_status_by_chunk_id(self, chunk_id: str, status: int) -> int:
+    #     """Update the status of a chunk by its chunk ID. """
+    #     if self.conn_params is None:
+    #         return 0
+        
+    #     # Generate SQL
+    #     sql = """
+    #         UPDATE KBOT_BIZ_TXT_EMBEDDING
+    #         SET STATUS = :status
+    #         WHERE EMBED_ID = :chunk_id
+    #     """
+    #     params = {
+    #         "chunk_id": chunk_id,
+    #         "status": status
+    #     }
+    #     result = await self.pool_manager.execute_dml(self.conn_params, sql, params)
+    #     return result
+
     async def update_status_by_chunk_id(self, chunk_id: str, status: int) -> int:
-        """Update the status of a chunk by its chunk ID. """
+        """更新块状态 - 包括对应的summary chunk（如果存在）"""
         if self.conn_params is None:
             return 0
         
-        # Generate SQL
-        sql = """
-            UPDATE KBOT_BIZ_TXT_EMBEDDING
-            SET STATUS = :status
-            WHERE EMBED_ID = :chunk_id
-        """
-        params = {
-            "chunk_id": chunk_id,
-            "status": status
-        }
-        result = await self.pool_manager.execute_dml(self.conn_params, sql, params)
-        return result
+        updated_count = 0
+        
+        try:
+            # 首先获取对应的summary chunk ID（如果存在）
+            sql_find_file_and_summary = """
+                SELECT e1.FILE_ID, e2.EMBED_ID as summary_embed_id
+                FROM KBOT_BIZ_TXT_EMBEDDING e1
+                LEFT JOIN KBOT_BIZ_TXT_EMBEDDING e2 ON (
+                    e1.FILE_ID = e2.FILE_ID 
+                    AND JSON_VALUE(e2.CHUNK_METADATA, '$.chunk_type') = :chunk_type 
+                    AND JSON_VALUE(e2.CHUNK_METADATA, '$.source_embed_id') = e1.EMBED_ID
+                )
+                WHERE e1.EMBED_ID = :chunk_id
+            """
+            params_find = {
+                "chunk_id": chunk_id,
+                "chunk_type": ChunkType.SUMMARY.value
+            }
             
-
+            result = await self.pool_manager.query(self.conn_params, sql_find_file_and_summary, params_find)
+            
+            if not result or len(result) == 0:
+                return 0  # 原chunk不存在
+            
+            file_id = result[0][0]
+            summary_embed_id = result[0][1]
+            
+            # 构建需要更新的embed_id列表
+            embed_ids_to_update = [chunk_id]
+            if summary_embed_id:
+                embed_ids_to_update.append(summary_embed_id)
+            
+            # 批量更新所有相关的chunk状态
+            sql_update = """
+                UPDATE KBOT_BIZ_TXT_EMBEDDING
+                SET STATUS = :status
+                WHERE EMBED_ID = :chunk_id
+            """
+            
+            for embed_id in embed_ids_to_update:
+                params_update = {
+                    "chunk_id": embed_id,
+                    "status": status
+                }
+                count = await self.pool_manager.execute_dml(self.conn_params, sql_update, params_update)
+                updated_count += count
+                
+        except Exception as e:
+            logger.error(f"Oracle更新状态失败: {e}")
+            return 0
+        
+        return updated_count
 

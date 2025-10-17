@@ -15,48 +15,6 @@ class ElasticsearchEmbeddingRepository(IEmbeddingRepository):
         self.es_client: Optional[AsyncElasticsearch] = None
         self.index_name = f"kbot_biz_txt_embedding_{kb_id}"
 
-    # async def initialize(self, connstr: dict) -> bool:
-    #     """初始化ES连接"""
-    #     try:
-
-    #         if connstr is not None:
-    #             # 创建ES客户端
-    #             hosts = connstr.get("hosts")
-    #             if not isinstance(hosts, list):
-    #                 hosts = [hosts]
-    #             http_auth = None
-    #             if connstr.get("user") and connstr.get("password"):
-    #                 http_auth = (connstr.get("user"), connstr.get("password"))
-
-    #             # 构建ES连接参数
-    #             es_params = {
-    #                 'hosts': hosts,
-    #                 'http_auth': http_auth,
-    #                 'verify_certs': True,
-    #                 'ca_certs': connstr.get("ca_certs")
-    #             }
-                
-    #             # 创建ES客户端
-    #             self.es_client = AsyncElasticsearch(**es_params)
-                
-    #             # 检查连接
-    #             if not await self.es_client.ping():
-    #                 logger.error("ES连接测试失败")
-    #                 return False
-                
-    #             # 检查索引是否存在，不存在则创建
-    #             if not await self.es_client.indices.exists(index=self.index_name):
-    #                 await self._create_index()
-                
-    #             logger.info(f"ES存储库初始化成功，索引: {self.index_name}")
-    #             return True
-    #         else:
-    #             logger.error("ES连接参数为空")
-    #             return False
-            
-    #     except Exception as e:
-    #         logger.exception(f"初始化ES连接失败: {e}")
-    #         return False
 
     async def initialize(self, connstr: dict) -> bool:
         """初始化ES连接"""
@@ -381,7 +339,7 @@ class ElasticsearchEmbeddingRepository(IEmbeddingRepository):
                     "must": [
                         {"term": {"file_id": file_id}},
                         {"term": {"chunk_metadata.chunk_type": ChunkType.SUMMARY.value}},
-                        {"term": {"chunk_metadata.source_embed_id": chunk_id}}
+                        {"term": {"chunk_metadata.source_embed_id.keyword": chunk_id}}  # 添加 .keyword
                     ]
                 }
             }
@@ -433,14 +391,54 @@ class ElasticsearchEmbeddingRepository(IEmbeddingRepository):
             return 0
 
     async def update_status_by_chunk_id(self, chunk_id: str, status: int) -> int:
-        """更新块状态 - 与Oracle接口完全一致"""
+        """更新块状态 - 包括对应的summary chunk（如果存在）"""
         if self.es_client is None:
+            logger.error("ES客户端未初始化")
             return 0
         
+        total_updated = 0
+        
         try:
-            # 构建更新查询
-            query = {
+            logger.info(f"开始更新chunk状态: {chunk_id}, status: {status}")
+            
+            # 第一步：先获取原chunk的file_id
+            query_original = {
                 "term": {"embed_id": chunk_id}
+            }
+            
+            response_original = await self.es_client.search(
+                index=self.index_name,
+                body={
+                    "query": query_original,
+                    "size": 1,
+                    "_source": ["file_id"]
+                }
+            )
+            
+            logger.info(f"查找原chunk结果: {response_original}")
+            
+            if not response_original["hits"]["hits"]:
+                logger.warning(f"ES未找到chunk_id: {chunk_id} 对应的记录")
+                return 0
+            
+            file_id = response_original["hits"]["hits"][0]["_source"]["file_id"]
+            logger.info(f"找到chunk {chunk_id} 对应的file_id: {file_id}")
+            
+            # 第二步：获取对应的summary chunk ID
+            summary_embed_id = await self.get_summary_id_by_chunk_id(file_id, chunk_id)
+            logger.info(f"找到summary_embed_id: {summary_embed_id}")
+            
+            # 第三步：构建需要更新的embed_id列表
+            embed_ids_to_update = [chunk_id]
+            if summary_embed_id:
+                embed_ids_to_update.append(summary_embed_id)
+                logger.info(f"将同时更新原chunk {chunk_id} 和summary chunk {summary_embed_id}")
+            else:
+                logger.info(f"未找到对应的summary chunk，仅更新原chunk {chunk_id}")
+            
+            # 第四步：批量更新
+            query_batch_update = {
+                "terms": {"embed_id": embed_ids_to_update}
             }
             
             update_body = {
@@ -450,26 +448,21 @@ class ElasticsearchEmbeddingRepository(IEmbeddingRepository):
                 }
             }
             
+            logger.info(f"执行批量更新，embed_ids: {embed_ids_to_update}")
+            
             response = await self.es_client.update_by_query(
                 index=self.index_name,
                 body={
-                    "query": query,
+                    "query": query_batch_update,
                     "script": update_body["script"]
                 },
                 refresh=True
             )
             
-            updated_count = response["updated"]
-            logger.info(f"ES成功更新 {updated_count} 条记录的状态，chunk_id: {chunk_id}, status: {status}")
-            return updated_count
+            total_updated = response["updated"]
+            logger.info(f"ES成功更新 {total_updated} 条记录的状态")
+            return total_updated
             
         except Exception as e:
             logger.error(f"ES更新状态失败: {e}")
             return 0
-
-    # async def close(self):
-    #     """关闭ES连接"""
-    #     if self.es_client:
-    #         await self.es_client.close()
-    #         logger.info("ES连接已关闭")
-
