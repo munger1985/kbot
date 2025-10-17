@@ -523,7 +523,7 @@ Insert into KBOT_MD_DATA_DIC (DIC_ID,APP_ID,NAME,DISPLAY_NAME,RETURN_VALUE,LANG_
 --7.apex ui Realse note
 --update KBOT_MD_RELEASE_NOTE set app_id = ?;
 --==============================================================================
-Insert into KBOT_MD_RELEASE_NOTE (RELEASE_ID,APP_ID,RELEASE_TITLE,RELEASE_CONTENT,CREATED_BY,CREATED_TIME,UPDATED_BY,UPDATED_TIME) values (21,112,'Kbot_v3.0.4_20251017','1.	支持知识库级别，按照不同文本类型配置默认chunk策略。同时，某一个文件粒度也可以修改chunk策略。
+Insert into KBOT_MD_RELEASE_NOTE (RELEASE_ID,APP_ID,RELEASE_TITLE,RELEASE_CONTENT,CREATED_BY,CREATED_TIME,UPDATED_BY,UPDATED_TIME) values (21,112,'Kbot_v3.1_20251017','1.	支持知识库级别，按照不同文本类型配置默认chunk策略。同时，某一个文件粒度也可以修改chunk策略。
 2.	后台REST API调用增加了安全认证功能
 3.	增加Markdown格式解析，按照Markdown文件结构进行解析。
 4.	支持Excel/csv格式解析，把excel/csv格式数据转成Json进行embedding。也可以支持里面的图片处理
