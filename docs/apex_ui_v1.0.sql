@@ -532,8 +532,9 @@ Insert into KBOT_MD_RELEASE_NOTE (RELEASE_ID,APP_ID,RELEASE_TITLE,RELEASE_CONTEN
 7.	增加了Chunk编辑/Disable/Enable功能
 8.	支持对图片格式数据构建RAG，把图片转成文本=》向量化，文搜图功能。
 9.	支持Qwen Embedding和Reranker模型。
-10.	增加了模型联通性校验接口
-11.	一些bug修复以及后台程序优化。','ADMIN',to_date('17-10月-25','DD-MON-RR'),'ADMIN',to_date('17-10月-25','DD-MON-RR'));
+10.	增加了模型联通性校验接口。
+11. 支持Elastic Search作为向量存储。
+12.	一些bug修复以及后台程序优化。','ADMIN',to_date('17-10月-25','DD-MON-RR'),'ADMIN',to_date('17-10月-25','DD-MON-RR'));
 
 
 
