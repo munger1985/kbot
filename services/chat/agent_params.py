@@ -19,8 +19,7 @@ class ToolParams(BaseModel):
     class Config:
         # 允许任意类型，避免序列化问题
         arbitrary_types_allowed = True
-        # 支持ORM模式
-        orm_mode = True
+        from_attributes = True
 
     @classmethod
     def from_orm(cls, obj: Any) -> 'ToolParams':
@@ -55,7 +54,7 @@ class AgentParams(BaseModel):
 
     class Config:
         arbitrary_types_allowed = True
-        orm_mode = True
+        from_attributes = True
 
 
 class KBResult(BaseModel):

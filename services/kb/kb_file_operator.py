@@ -418,6 +418,10 @@ class KBFileOperator:
         """
 
         embed_repo = await EmbeddingRepositoryFactory.create_repository(kb_id=kb_id)
+        if embed_repo is None:
+            logger.error(f"知识库 {kb_id} 对应的向量库不存在")
+            return 0
+
         file_repo = KbotMdKbFilesRepository()
         vec_cnt = 0
         # 模式1: 通过文件ID删除
@@ -577,6 +581,10 @@ class KBFileOperator:
 
         # 更新向量库中的分片信息
         embed_repo = await EmbeddingRepositoryFactory.create_repository(kb_id=kb_id)
+        if embed_repo is None:
+            logger.error(f"知识库 {kb_id} 对应的向量库不存在，无法更新分片")
+            return False
+
         try:
             r = await embed_repo.update_chunk(embed_id=embed_id, new_chunk=new_chunk, new_embedding=embeddings[0])
             if r:
@@ -665,6 +673,10 @@ class KBFileOperator:
             return False
         
         embed_repo = await EmbeddingRepositoryFactory.create_repository(kb_id=kb_id)
+        if embed_repo is None:
+            logger.error(f"知识库 {kb_id} 对应的向量库不存在，无法删除分片")
+            return False
+        
         chunk_ids = [embed_id]
         # 如果知识库启用摘要，则删除该分片的摘要
         if kb.enable_summary:
@@ -681,7 +693,7 @@ class KBFileOperator:
                 logger.info(f"成功删除文件 {file_id} 的分片 {embed_id}")
                 return True
             else:
-                logger.error(f"删除文件 {file_id} 的分片 {embed_id} 失败，未找到该分片")
+                logger.warning(f"删除文件 {file_id} 的分片 {embed_id} 失败，未找到该分片")
                 return False
         except Exception as e:
             logger.error(f"删除文件 {file_id} 的分片 {embed_id} 失败: {str(e)}")
@@ -703,6 +715,10 @@ class KBFileOperator:
             logger.error(f"无效的状态值: {status}，必须是0或1")
             return False
         embed_repo = await EmbeddingRepositoryFactory.create_repository(kb_id=kb_id)
+        if embed_repo is None:
+            logger.error(f"知识库 {kb_id} 对应的向量库不存在，无法切换分片状态")
+            return False
+
         try:
             r = await embed_repo.update_status_by_chunk_id(chunk_id=chunk_id, status=status)
             if r > 0:

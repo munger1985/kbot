@@ -3,10 +3,9 @@ from typing import Sequence, Optional
 from elasticsearch import AsyncElasticsearch
 from loguru import logger
 from dao.entities.kbot_biz_txt_embedding import KbotBizTxtEmbedding
-from dao.repositories.kbot_md_db_conf_repo import KbotMdDbConfRepository
 from core.dictionary import ChunkType
 from dao.repositories.kbot_biz_txt_embedding_interface import IEmbeddingRepository
-
+from core.database.vec_elasticsearch import es_client_manager
 
 class ElasticsearchEmbeddingRepository(IEmbeddingRepository):
     """Elasticsearch 9.1.5 实现 - 与Oracle接口完全兼容"""
@@ -15,66 +14,88 @@ class ElasticsearchEmbeddingRepository(IEmbeddingRepository):
         self.kb_id = kb_id
         self.es_client: Optional[AsyncElasticsearch] = None
         self.index_name = f"kbot_biz_txt_embedding_{kb_id}"
-        self.db_conf = None
 
-    async def initialize(self) -> bool:
+    # async def initialize(self, connstr: dict) -> bool:
+    #     """初始化ES连接"""
+    #     try:
+
+    #         if connstr is not None:
+    #             # 创建ES客户端
+    #             hosts = connstr.get("hosts")
+    #             if not isinstance(hosts, list):
+    #                 hosts = [hosts]
+    #             http_auth = None
+    #             if connstr.get("user") and connstr.get("password"):
+    #                 http_auth = (connstr.get("user"), connstr.get("password"))
+
+    #             # 构建ES连接参数
+    #             es_params = {
+    #                 'hosts': hosts,
+    #                 'http_auth': http_auth,
+    #                 'verify_certs': True,
+    #                 'ca_certs': connstr.get("ca_certs")
+    #             }
+                
+    #             # 创建ES客户端
+    #             self.es_client = AsyncElasticsearch(**es_params)
+                
+    #             # 检查连接
+    #             if not await self.es_client.ping():
+    #                 logger.error("ES连接测试失败")
+    #                 return False
+                
+    #             # 检查索引是否存在，不存在则创建
+    #             if not await self.es_client.indices.exists(index=self.index_name):
+    #                 await self._create_index()
+                
+    #             logger.info(f"ES存储库初始化成功，索引: {self.index_name}")
+    #             return True
+    #         else:
+    #             logger.error("ES连接参数为空")
+    #             return False
+            
+    #     except Exception as e:
+    #         logger.exception(f"初始化ES连接失败: {e}")
+    #         return False
+
+    async def initialize(self, connstr: dict) -> bool:
         """初始化ES连接"""
         try:
-            db_repo = KbotMdDbConfRepository()
-            self.db_conf = await db_repo.get_by_kbid(self.kb_id)
-            if self.db_conf is None:
-                logger.error(f"未找到知识库 {self.kb_id} 的数据库配置")
+            if connstr is not None:
+                self.connstr = connstr
+                
+                # 通过单例管理器获取ES客户端
+                self.es_client = await es_client_manager.get_client(connstr)
+                if self.es_client is None:
+                    logger.error("获取ES客户端失败")
+                    return False
+                
+                # 检查索引是否存在，不存在则创建
+                if not await self.es_client.indices.exists(index=self.index_name):
+                    await self._create_index()
+                
+                logger.info(f"ES存储库初始化成功，索引: {self.index_name}")
+                return True
+            else:
+                logger.error("ES连接参数为空")
                 return False
-            
-            es_config = self.db_conf.db_conn_str
-            if es_config is None:
-                logger.error(f"知识库 {self.kb_id} 的ES连接配置为空")
-                return False
-            
-            # 创建ES客户端
-            hosts = [f"{es_config.get('host', 'localhost')}:{es_config.get('port', 9200)}"]
-            http_auth = None
-            if es_config.get("user") and es_config.get("password"):
-                http_auth = (es_config.get("user"), es_config.get("password"))
-            
-            self.es_client = AsyncElasticsearch(
-                hosts=hosts,
-                http_auth=http_auth,
-                scheme=es_config.get("scheme", "http"), # type: ignore
-                verify_certs=es_config.get("verify_certs", False),
-                ssl_show_warn=es_config.get("ssl_show_warn", False)
-            )
-            
-            # 检查连接
-            if not await self.es_client.ping():
-                logger.error("ES连接测试失败")
-                return False
-            
-            # 检查索引是否存在，不存在则创建
-            if not await self.es_client.indices.exists(index=self.index_name):
-                await self._create_index()
-            
-            logger.info(f"ES存储库初始化成功，索引: {self.index_name}")
-            return True
             
         except Exception as e:
-            logger.error(f"初始化ES连接失败: {e}")
+            logger.exception(f"初始化ES连接失败: {e}")
             return False
 
+    async def close(self):
+        """关闭连接（实际上连接由管理器统一管理）"""
+        # 这里不需要关闭client，由管理器统一管理
+        self.es_client = None
+        logger.debug("ES存储库连接已释放")
+
     async def _create_index(self):
-        """创建ES索引和映射"""
+        """创建ES索引和映射 - 使用正确的向量维度"""
         mapping = {
             "settings": {
                 "number_of_shards": 1,
-                "number_of_replicas": 1,
-                "analysis": {
-                    "analyzer": {
-                        "chinese_analyzer": {
-                            "type": "custom",
-                            "tokenizer": "ik_max_word"
-                        }
-                    }
-                }
+                "number_of_replicas": 0  # 单节点环境可以设为0
             },
             "mappings": {
                 "properties": {
@@ -82,28 +103,12 @@ class ElasticsearchEmbeddingRepository(IEmbeddingRepository):
                     "kb_id": {"type": "integer"},
                     "file_id": {"type": "keyword"},
                     "security_level": {"type": "integer"},
-                    "chunk_metadata": {
-                        "type": "object",
-                        "properties": {
-                            "chunk_type": {"type": "keyword"},
-                            "source_embed_id": {"type": "keyword"},
-                            "chunk_number": {"type": "integer"}
-                        }
-                    },
-                    "biz_metadata": {
-                        "type": "object",
-                        "properties": {
-                            "tags": {"type": "keyword"}
-                        }
-                    },
-                    "chunk_doc": {
-                        "type": "text",
-                        "analyzer": "chinese_analyzer",
-                        "search_analyzer": "ik_smart"
-                    },
+                    "chunk_metadata": {"type": "object"},
+                    "biz_metadata": {"type": "object"},
+                    "chunk_doc": {"type": "text"},
                     "embedding": {
                         "type": "dense_vector",
-                        "dims": 1536,  # 根据你的向量维度调整
+                        "dims": 1024,  # 根据实际向量维度调整为1024
                         "index": True,
                         "similarity": "cosine"
                     },
@@ -111,8 +116,13 @@ class ElasticsearchEmbeddingRepository(IEmbeddingRepository):
                 }
             }
         }
-        await self.es_client.indices.create(index=self.index_name, body=mapping) # type: ignore
-        logger.info(f"创建ES索引: {self.index_name}")
+        
+        try:
+            await self.es_client.indices.create(index=self.index_name, body=mapping) # type: ignore
+            logger.info(f"创建ES索引成功: {self.index_name}")
+        except Exception as e:
+            logger.error(f"创建ES索引失败: {e}")
+            raise
 
     async def create(self, kb_id: int, embeddings: list[KbotBizTxtEmbedding]) -> bool:
         """批量创建嵌入记录 - 与Oracle接口完全一致"""
@@ -187,35 +197,36 @@ class ElasticsearchEmbeddingRepository(IEmbeddingRepository):
             return 0
 
     async def get_similar_embeddings(self,
-                                   kb_id: int,
-                                   query_vec: str,
-                                   security: int,
-                                   similarity_threshold: Optional[float] = 0.8,
-                                   top_k: Optional[int] = 10,
-                                   is_summary_search: bool = False,
-                                   tags: Optional[list[str]] = None) -> Sequence:
-        """向量相似度搜索 - 与Oracle接口完全一致"""
+                               kb_id: int,
+                               query_vec: str,
+                               security: int,
+                               similarity_threshold: Optional[float] = 0.8,
+                               top_k: Optional[int] = 10,
+                               is_summary_search: bool = False,
+                               tags: Optional[list[str]] = None) -> Sequence:
+        """向量相似度搜索"""
         if self.es_client is None:
             return []
         
         try:
-            # 解析查询向量（Oracle传入的是字符串格式）
+            # 解析查询向量
             if isinstance(query_vec, str):
                 query_vector = json.loads(query_vec)
             else:
                 query_vector = query_vec
             
-            # 构建过滤条件
+            # 构建基础过滤条件
             filter_conditions = [
                 {"term": {"kb_id": kb_id}},
                 {"range": {"security_level": {"lte": security}}},
                 {"term": {"chunk_metadata.chunk_type": ChunkType.SUMMARY.value if is_summary_search else ChunkType.TEXT.value}}
             ]
             
-            # 标签过滤
+            # 只有当tags非空时才添加条件
             if tags and len(tags) > 0:
                 tag_conditions = [{"term": {"biz_metadata.tags": tag}} for tag in tags]
                 filter_conditions.append({"bool": {"should": tag_conditions, "minimum_should_match": 1}})
+            # 如果tags为空或None，不添加任何tag条件
             
             # 构建向量搜索查询
             query = {
@@ -240,15 +251,15 @@ class ElasticsearchEmbeddingRepository(IEmbeddingRepository):
                     "query": query,
                     "size": top_k or 10,
                     "_source": ["file_id", "chunk_doc", "chunk_metadata"],
-                    "min_score": (similarity_threshold or 0.8) + 1.0,  # ES的cosineSimilarity返回0-2
+                    "min_score": (similarity_threshold or 0.8) + 1.0,
                     "sort": [{"_score": "desc"}]
                 }
             )
             
-            # 转换结果格式，与Oracle返回格式完全一致
+            # 转换结果格式
             results = []
             for hit in response["hits"]["hits"]:
-                similarity = hit["_score"] - 1.0  # 转换回0-1范围
+                similarity = hit["_score"] - 1.0
                 results.append((
                     hit["_source"]["file_id"],
                     hit["_source"]["chunk_doc"],
@@ -256,7 +267,7 @@ class ElasticsearchEmbeddingRepository(IEmbeddingRepository):
                     similarity
                 ))
             
-            logger.info(f"ES向量搜索返回 {len(results)} 条结果")
+            logger.info(f"ES向量搜索返回 {len(results)} 条结果，tags: {tags}")
             return results
             
         except Exception as e:
@@ -264,13 +275,13 @@ class ElasticsearchEmbeddingRepository(IEmbeddingRepository):
             return []
 
     async def full_text_search(self,
-                             kb_id: int,
-                             keyword: str,
-                             security: int,
-                             top_k: Optional[int] = 10,
-                             similarity_threshold: Optional[float] = 0.8,
-                             tags: Optional[list[str]] = None) -> Sequence:
-        """全文检索 - 与Oracle接口完全一致"""
+                            kb_id: int,
+                            keyword: str,
+                            security: int,
+                            top_k: Optional[int] = 10,
+                            similarity_threshold: Optional[float] = 0.8,
+                            tags: Optional[list[str]] = None) -> Sequence:
+        """全文检索"""
         if self.es_client is None:
             return []
         
@@ -289,10 +300,11 @@ class ElasticsearchEmbeddingRepository(IEmbeddingRepository):
                 }
             ]
             
-            # 标签过滤
+            # 修复tags处理：只有当tags非空时才添加条件
             if tags and len(tags) > 0:
                 tag_conditions = [{"term": {"biz_metadata.tags": tag}} for tag in tags]
                 must_conditions.append({"bool": {"should": tag_conditions, "minimum_should_match": 1}})
+            # 如果tags为空或None，不添加任何tag条件
             
             query = {"bool": {"must": must_conditions}}
             
@@ -307,7 +319,7 @@ class ElasticsearchEmbeddingRepository(IEmbeddingRepository):
                 }
             )
             
-            # 转换结果格式，与Oracle返回格式完全一致
+            # 转换结果格式
             results = []
             for hit in response["hits"]["hits"]:
                 results.append((
@@ -317,7 +329,7 @@ class ElasticsearchEmbeddingRepository(IEmbeddingRepository):
                     hit["_score"]
                 ))
             
-            logger.info(f"ES全文检索返回 {len(results)} 条结果")
+            logger.info(f"ES全文检索返回 {len(results)} 条结果，tags: {tags}")
             return results
             
         except Exception as e:
@@ -455,8 +467,9 @@ class ElasticsearchEmbeddingRepository(IEmbeddingRepository):
             logger.error(f"ES更新状态失败: {e}")
             return 0
 
-    async def close(self):
-        """关闭ES连接"""
-        if self.es_client:
-            await self.es_client.close()
-            logger.info("ES连接已关闭")
+    # async def close(self):
+    #     """关闭ES连接"""
+    #     if self.es_client:
+    #         await self.es_client.close()
+    #         logger.info("ES连接已关闭")
+

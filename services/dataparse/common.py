@@ -25,7 +25,7 @@ async def save_embeddings(file_params: FileParams, embeddings: list[KbotBizTxtEm
         result = await repo.create(kb_id=file_params.kb_id, embeddings=embeddings)
         
         if not result:
-            msg = "保存嵌入向量失败（数据库库写入返回False）"
+            msg = "保存嵌入向量失败（数据库写入返回False）"
             logger.error(msg)
             await update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, msg)
             return False

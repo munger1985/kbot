@@ -83,3 +83,13 @@ async def lob_to_string(async_lob) -> str:
     if isinstance(content, bytes):
         return content.decode('utf-8')  # 假设使用UTF-8编码
     return content
+
+@staticmethod
+def safe_read_content(content_obj):
+    """安全读取内容，兼容CLOB和普通字符串"""
+    if hasattr(content_obj, 'read'):
+        # Oracle CLOB类型
+        return content_obj.read()
+    else:
+        # ES字符串类型或其他
+        return str(content_obj)

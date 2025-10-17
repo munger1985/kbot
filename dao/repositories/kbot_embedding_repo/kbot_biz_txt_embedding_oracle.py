@@ -17,14 +17,9 @@ class OracleEmbeddingRepository(IEmbeddingRepository):
         self.conn_params = None
         self.pool_manager = AsyncOracleConnectionPoolManager()
 
-    async def initialize(self) -> bool:
-        db_repo = KbotMdDbConfRepository()
-        self.db_conf = await db_repo.get_by_kbid(self.kb_id)
-        if self.db_conf is None:
-            return False
-        connstr = self.db_conf.db_conn_str
-        db_type = self.db_conf.db_type
-        if connstr is not None and db_type == DbType.ORACLE:
+    async def initialize(self, connstr: dict) -> bool:
+
+        if connstr is not None:
             self.conn_params = OracleConnParams(
                 user=connstr.get("user"), # type: ignore
                 password=connstr.get("password"), # type: ignore
@@ -32,6 +27,7 @@ class OracleEmbeddingRepository(IEmbeddingRepository):
             )
             return True
         else:
+            logger.error("Oracle连接参数为空")
             return False
           
 

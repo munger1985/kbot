@@ -7,6 +7,7 @@ from core.dictionary import KbCategory, KBSearchType
 from utils.oracle_vec_handler import OracleVecHandler
 from utils.decimal_encoder import DecimalEncoder
 from utils.call_models import CallModel
+from utils.common import safe_read_content
 
 
 class KBSearch:
@@ -136,6 +137,10 @@ class KBSearch:
         """
         # 执行相似度搜索
         repo = await EmbeddingRepositoryFactory.create_repository(kb_id=self.tool_params.tool_id)
+        if repo is None:
+            logger.error(f"向量搜索知识库ID: {self.tool_params.tool_id} 的向量数据库未找到")
+            return None
+        
         convertor = OracleVecHandler()
         vec = convertor.convert(query_vec, to_string=True)
         try:
@@ -143,6 +148,7 @@ class KBSearch:
             logger.debug(f"向量搜索安全级别: {security}")
             logger.debug(f"向量搜索相似度阈值: {self.tool_params.threshold}")
             logger.debug(f"向量搜索返回数量: {self.tool_params.top_k}")
+
             dataset = await repo.get_similar_embeddings(
                 kb_id = self.tool_params.tool_id,
                 query_vec = vec,  # type: ignore
@@ -163,7 +169,7 @@ class KBSearch:
                 result.file_id = data[0]
                 result.chunk_type = chunk_meta.get("chunk_type", 1)
                 result.page_num = chunk_meta.get("page_num", 1)
-                result.content = data[1].read()
+                result.content = safe_read_content(data[1])
                 result.similarity = data[3]
                 result.weight = self.tool_params.tool_weight # type: ignore
                 results.append(result)
@@ -187,6 +193,10 @@ class KBSearch:
             list[KBResult] | None: 搜索结果列表，搜索失败时返回None
         """
         repo = await EmbeddingRepositoryFactory.create_repository(kb_id=self.tool_params.tool_id)
+        if repo is None:
+            logger.error(f"全文搜索知识库ID: {self.tool_params.tool_id} 的向量数据库未找到")
+            return None
+
         try:
             logger.debug(f"全文搜索知识库ID: {self.tool_params.tool_id}")
             logger.debug(f"全文搜索关键词: {keywords}")
@@ -195,6 +205,7 @@ class KBSearch:
 
             for key in unique_keys:
                 logger.debug(f"全文搜索词元: {key}")
+
                 ds = await repo.full_text_search(kb_id=self.tool_params.tool_id, 
                                                  keyword=key, 
                                                  security=security,
@@ -213,7 +224,7 @@ class KBSearch:
                     result.file_id = data[0]
                     result.chunk_type = getattr(chunk_meta, "chunk_type", 1)
                     result.page_num = getattr(chunk_meta, "page_num", 1)
-                    result.content = data[1].read()
+                    result.content = safe_read_content(data[1])
                     result.similarity = data[3]
                     result.weight = self.tool_params.tool_weight # type: ignore
                     results.append(result)

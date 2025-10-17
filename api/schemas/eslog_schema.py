@@ -22,7 +22,7 @@ class LogQueryRequest(BaseModel):
     size: int = Field(100, ge=1, le=1000, description="返回数量")
     
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "start_time": "2024-01-01T00:00:00",
                 "end_time": "2024-01-01T23:59:59",
@@ -40,7 +40,7 @@ class LogEntry(BaseModel):
     message: str
     
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "timestamp": "2024-01-01T12:00:00",
                 "host": "server-01",

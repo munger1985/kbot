@@ -181,7 +181,7 @@ sudo apt install -y filebeat
 sudo vim /etc/filebeat/filebeat.yml
 # 指定采集的日志（输入配置）
 filebeat.inputs:
-- type: log
+- type: filestream
   id: kblog-id
   enabled: true
   paths:
@@ -194,7 +194,11 @@ output.elasticsearch:
   hosts: ["https://localhost:9200"]  # 注意是 https
   username: "elastic"  # 替换为你的用户名
   password: "your_password"  # 替换为对应用户的密码
-  ssl.verification_mode: none
+  protocol: "https"
+  ssl:
+    enabled: true
+    verification_mode: full  # 或 "certificate"
+    certificate_authorities: ["/home/ubuntu/elastic/eslog/http_ca.crt"]
 
 # 启动并启用服务​
 sudo systemctl start filebeat
