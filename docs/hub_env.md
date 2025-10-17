@@ -30,6 +30,7 @@ http://64.181.236.219:18099/api/health
 http://132.145.81.123:8080/ords/r/kbotui_dev/km-chat/home     admin/12345678 chinase1/chinase1 
 http://132.145.81.123:8080/ords/r/kbotui_dev/ai-platform-portal/home  admin/12345678
 
+
 ### nacos :
 http://64.181.236.219:8848/nacos
 
@@ -37,6 +38,7 @@ http://64.181.236.219:8848/nacos
 sqlplus kbotui_dev/BotWelcome123##@132.145.81.123:1521/DB1007_pdb1.regionalpublics.hysunhevcn.oraclevcn.com
 sqlplus sys/BotWelcome123##@132.145.81.123:1521/DB1007_pdb1.regionalpublics.hysunhevcn.oraclevcn.com as sysdba;
 sys/BotWelcome123##
+APEX_PUBLIC_USER
 
 # 在数据库端，使用CDB级别开启DRCP
 EXECUTE DBMS_CONNECTION_POOL.START_POOL();
