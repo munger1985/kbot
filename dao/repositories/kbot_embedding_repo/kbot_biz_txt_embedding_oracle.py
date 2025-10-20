@@ -4,10 +4,10 @@ from typing import Sequence
 from loguru import logger
 from core.database.vec_oracle_pool import OracleConnParams, AsyncOracleConnectionPoolManager
 from dao.entities.kbot_biz_txt_embedding import KbotBizTxtEmbedding
-from dao.repositories.kbot_md_db_conf_repo import KbotMdDbConfRepository
 from utils.oracle_vec_handler import OracleVecHandler
-from core.dictionary import DbType, ChunkType
+from core.dictionary import ChunkType
 from dao.repositories.kbot_biz_txt_embedding_interface import IEmbeddingRepository
+
 
 class OracleEmbeddingRepository(IEmbeddingRepository):
     """Repository for KBOT_BIZ_TXT_EMBEDDING table operations."""
@@ -390,7 +390,7 @@ class OracleEmbeddingRepository(IEmbeddingRepository):
             return None
         
         sql = """
-            SELECT EMBED_ID, KB_ID, CHUNK_DOC, CHUNK_METADATA, BIZ_METADATA, EMBEDDING, SECURITY_LEVEL, STATUS
+            SELECT EMBED_ID, KB_ID, CHUNK_DOC, CHUNK_METADATA, BIZ_METADATA, SECURITY_LEVEL, STATUS
             FROM KBOT_BIZ_TXT_EMBEDDING
             WHERE FILE_ID = :file_id
         """
@@ -410,9 +410,9 @@ class OracleEmbeddingRepository(IEmbeddingRepository):
                 chunk_doc=row[2],
                 chunk_metadata=row[3],
                 biz_metadata=row[4],
-                embedding=row[5],
-                security_level=row[6],
-                status=row[7]
+                embedding=[], # embedding 不返回，防止接口数据过大
+                security_level=row[5],
+                status=row[6]
             )
             chunks.append(chunk)
             

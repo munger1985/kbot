@@ -507,13 +507,13 @@ class ElasticsearchEmbeddingRepository(IEmbeddingRepository):
                 source = hit["_source"]
                 
                 # 处理embedding字段，确保是列表格式
-                embedding = source.get("embedding")
-                if isinstance(embedding, str):
-                    try:
-                        embedding = json.loads(embedding)
-                    except json.JSONDecodeError:
-                        logger.warning(f"embedding字段解析失败: {embedding}")
-                        embedding = []
+                # embedding = source.get("embedding")
+                # if isinstance(embedding, str):
+                #     try:
+                #         embedding = json.loads(embedding)
+                #     except json.JSONDecodeError:
+                #         logger.warning(f"embedding字段解析失败: {embedding}")
+                #         embedding = []
                 
                 # 创建实体对象
                 chunk = KbotBizTxtEmbedding(
@@ -523,7 +523,7 @@ class ElasticsearchEmbeddingRepository(IEmbeddingRepository):
                     chunk_doc=source.get("chunk_doc", ""),
                     chunk_metadata=source.get("chunk_metadata", {}),
                     biz_metadata=source.get("biz_metadata", {}),
-                    embedding=embedding,
+                    embedding=[], # embedding 不返回，防止接口数据过大
                     security_level=source.get("security_level", 1),
                     status=source.get("status", 1)
                 )

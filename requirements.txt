@@ -46,3 +46,4 @@ python-docx==1.2.0
 python-pptx==1.0.2
 mammoth==1.11.0
 elasticsearch==9.1.1
+fastapi_offline==1.7.5
