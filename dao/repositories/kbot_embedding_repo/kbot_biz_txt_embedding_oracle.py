@@ -325,24 +325,6 @@ class OracleEmbeddingRepository(IEmbeddingRepository):
         WHERE EMBED_ID IN ({embed_ids_str})"""
         result = await self.pool_manager.execute_dml(self.conn_params, sql, {})
         return result
-            
-    # async def update_status_by_chunk_id(self, chunk_id: str, status: int) -> int:
-    #     """Update the status of a chunk by its chunk ID. """
-    #     if self.conn_params is None:
-    #         return 0
-        
-    #     # Generate SQL
-    #     sql = """
-    #         UPDATE KBOT_BIZ_TXT_EMBEDDING
-    #         SET STATUS = :status
-    #         WHERE EMBED_ID = :chunk_id
-    #     """
-    #     params = {
-    #         "chunk_id": chunk_id,
-    #         "status": status
-    #     }
-    #     result = await self.pool_manager.execute_dml(self.conn_params, sql, params)
-    #     return result
 
     async def update_status_by_chunk_id(self, chunk_id: str, status: int) -> int:
         """更新块状态 - 包括对应的summary chunk（如果存在）"""
@@ -401,4 +383,38 @@ class OracleEmbeddingRepository(IEmbeddingRepository):
             return 0
         
         return updated_count
+    
+    async def get_chunks_by_file_id(self, file_id: str) -> list[KbotBizTxtEmbedding] | None:
+        """根据文件ID获取所有chunk"""
+        if self.conn_params is None:
+            return None
+        
+        sql = """
+            SELECT EMBED_ID, KB_ID, CHUNK_DOC, CHUNK_METADATA, BIZ_METADATA, EMBEDDING, SECURITY_LEVEL, STATUS
+            FROM KBOT_BIZ_TXT_EMBEDDING
+            WHERE FILE_ID = :file_id
+        """
+        params = {
+            "file_id": file_id
+        }
+        result = await self.pool_manager.query(self.conn_params, sql, params)
+        if not result or len(result) == 0:
+            return None
+        
+        chunks = []
+        for row in result:
+            chunk = KbotBizTxtEmbedding(
+                embed_id=row[0],
+                kb_id=row[1],
+                file_id=file_id,
+                chunk_doc=row[2],
+                chunk_metadata=row[3],
+                biz_metadata=row[4],
+                embedding=row[5],
+                security_level=row[6],
+                status=row[7]
+            )
+            chunks.append(chunk)
+            
+        return chunks
 

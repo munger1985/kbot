@@ -12,7 +12,8 @@ class ErrorResponse(BaseModel):
     success: bool = Field(False, description="请求响应状态")
 
 class SuccessQueryResponse(SuccessResponse):
-    data: dict = Field(..., description="响应返回的数据")
+    """查询成功响应模型"""
+    data: dict | list[dict] = Field(..., description="响应返回的数据")
 
 class SuccessWithErrorResponse(SuccessResponse):
     """部分失败的成功响应模型"""

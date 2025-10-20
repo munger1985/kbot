@@ -8,7 +8,7 @@ from api.controllers.security_controller import AuthController
 from fastapi.responses import FileResponse
 from api.controllers.kb_controller import *
 from api.schemas.kb_schema import *
-from api.schemas.base_response import SuccessResponse, ErrorResponse
+from api.schemas.base_response import SuccessResponse, ErrorResponse, SuccessQueryResponse
 
 router = APIRouter(prefix="/kb", tags=["Knowledge Base"])
 
@@ -392,6 +392,42 @@ async def handle_edit_file_chunk(
                 message="切换文件分片状态失败"
             )
             
+    except Exception as e:
+        return ErrorResponse(
+            code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            success=False,
+            message=f"服务器内部错误: {str(e)}"
+        )
+    
+@router.get(
+    "/file/get_chunks",
+    description="根据文件ID获取文件的分片内容",
+    response_model=SuccessQueryResponse | ErrorResponse,
+    # dependencies=[Depends(AuthController.get_current_accessor)],
+    status_code=status.HTTP_200_OK
+)
+async def handle_get_file_chunks(
+    kb_id: int,
+    file_id: str
+):
+    try:
+        result = await get_kb_file_chunk_by_id(
+            kb_id=kb_id,
+            file_id=file_id
+        )
+        if result:
+            return SuccessQueryResponse(
+                code=status.HTTP_200_OK,
+                success=True,
+                message="获取文件分片成功",
+                data=result
+            )
+        else:
+            return ErrorResponse(
+                code=status.HTTP_404_NOT_FOUND,
+                success=False,
+                message="未找到文件分片"
+            )
     except Exception as e:
         return ErrorResponse(
             code=status.HTTP_500_INTERNAL_SERVER_ERROR,

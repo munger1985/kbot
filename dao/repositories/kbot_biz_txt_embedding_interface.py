@@ -65,3 +65,8 @@ class IEmbeddingRepository(ABC):
     async def update_status_by_chunk_id(self, chunk_id: str, status: int) -> int:
         """更新块状态"""
         pass
+
+    @abstractmethod
+    async def get_chunks_by_file_id(self, file_id: str) -> list[KbotBizTxtEmbedding] | None:
+        """根据文件ID获取块"""
+        pass

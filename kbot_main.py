@@ -5,6 +5,7 @@ import uvicorn
 import signal
 import sys
 from fastapi import FastAPI
+from fastapi_offline import FastAPIOffline
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from loguru import logger
@@ -62,7 +63,7 @@ def create_app() -> FastAPI:
 
         logger.debug("Starting application initialization...")
 
-        app = FastAPI(
+        app = FastAPIOffline(
             title=title,
             description=description,
             version=version,

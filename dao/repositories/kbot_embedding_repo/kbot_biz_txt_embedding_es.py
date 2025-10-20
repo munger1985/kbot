@@ -466,3 +466,72 @@ class ElasticsearchEmbeddingRepository(IEmbeddingRepository):
         except Exception as e:
             logger.error(f"ES更新状态失败: {e}")
             return 0
+
+    async def get_chunks_by_file_id(self, file_id: str) -> list[KbotBizTxtEmbedding] | None:
+        """根据文件ID获取所有chunk - ES版本"""
+        if self.es_client is None:
+            logger.error("ES客户端未初始化")
+            return None
+        
+        try:
+            # 构建查询
+            query = {
+                "bool": {
+                    "must": [
+                        {"term": {"file_id": file_id}}
+                    ]
+                }
+            }
+            
+            # 执行搜索，不限制数量
+            response = await self.es_client.search(
+                index=self.index_name,
+                body={
+                    "query": query,
+                    "size": 10000,  # 设置一个较大的值，或者可以分页查询
+                    "_source": [
+                        "embed_id", "kb_id", "file_id", "chunk_doc", 
+                        "chunk_metadata", "biz_metadata", "embedding", 
+                        "security_level", "status"
+                    ]
+                }
+            )
+            
+            hits = response["hits"]["hits"]
+            if not hits:
+                logger.info(f"未找到文件ID为 {file_id} 的chunk")
+                return None
+            
+            chunks = []
+            for hit in hits:
+                source = hit["_source"]
+                
+                # 处理embedding字段，确保是列表格式
+                embedding = source.get("embedding")
+                if isinstance(embedding, str):
+                    try:
+                        embedding = json.loads(embedding)
+                    except json.JSONDecodeError:
+                        logger.warning(f"embedding字段解析失败: {embedding}")
+                        embedding = []
+                
+                # 创建实体对象
+                chunk = KbotBizTxtEmbedding(
+                    embed_id=source.get("embed_id"),
+                    kb_id=source.get("kb_id"),
+                    file_id=source.get("file_id", file_id),  # 确保file_id正确
+                    chunk_doc=source.get("chunk_doc", ""),
+                    chunk_metadata=source.get("chunk_metadata", {}),
+                    biz_metadata=source.get("biz_metadata", {}),
+                    embedding=embedding,
+                    security_level=source.get("security_level", 1),
+                    status=source.get("status", 1)
+                )
+                chunks.append(chunk)
+            
+            logger.info(f"找到文件ID {file_id} 的 {len(chunks)} 个chunk")
+            return chunks
+            
+        except Exception as e:
+            logger.error(f"根据文件ID获取chunk失败: {e}")
+            return None

@@ -1,4 +1,5 @@
 from pathlib import Path
+from services.kb.kb_chunk_operator import KBChunkOperator
 from services.kb.kb_file_operator import KBFileOperator
 from services.kb.kb_procedure import KBProcedure
 from services.kb.kb_file_preview import FilePreview
@@ -137,7 +138,7 @@ async def edit_kb_file_chunk(
 ) -> bool:
     """编辑知识库文件的分片内容，并更新分片的向量"""
     try:
-        result = await KBFileOperator().edit_file_chunk(
+        result = await KBChunkOperator().edit_file_chunk(
             kb_id=kb_id,
             file_id=file_id,
             embed_id=embed_id,
@@ -154,7 +155,7 @@ async def delete_kb_file_chunk(
 ) -> bool:
     """删除知识库文件的分片内容，并更新分片的向量"""
     try:
-        result = await KBFileOperator().delete_file_chunk(
+        result = await KBChunkOperator().delete_file_chunk(
             kb_id=kb_id,
             file_id=file_id,
             embed_id=embed_id
@@ -170,11 +171,22 @@ async def toogle_kb_file_chunk_status(
 ) -> bool:
     """切换知识库文件的分片状态"""
     try:
-        result = await KBFileOperator().toogle_file_chunk_status(
+        result = await KBChunkOperator().toogle_file_chunk_status(
             kb_id=kb_id,
             chunk_id=chunk_id,
             status=status
         )
+        return result
+    except Exception as e:
+        raise e
+    
+async def get_kb_file_chunk_by_id(
+    kb_id: int,
+    file_id: str
+) -> list[dict]:
+    """获取知识库文件的分片"""
+    try:
+        result = await KBChunkOperator().get_chunks_by_file_id(kb_id=kb_id, file_id=file_id)
         return result
     except Exception as e:
         raise e
