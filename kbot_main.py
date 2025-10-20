@@ -89,8 +89,8 @@ def create_app() -> FastAPI:
             return get_swagger_ui_html(
                 openapi_url="/openapi.json",
                 title=app.title + " - Swagger UI",
-                swagger_js_url="/static/swagger-ui-bundle.js",
-                swagger_css_url="/static/swagger-ui.css"
+                # swagger_js_url="/static/swagger-ui-bundle.js",
+                # swagger_css_url="/static/swagger-ui.css"
             )
 
         # Add API documentation endpoint
@@ -99,7 +99,7 @@ def create_app() -> FastAPI:
             return get_redoc_html(
                 openapi_url="/openapi.json",
                 title=app.title + " - ReDoc",
-                redoc_js_url="/static/redoc.standalone.js"
+                # redoc_js_url="/static/redoc.standalone.js"
             )
 
         return app
