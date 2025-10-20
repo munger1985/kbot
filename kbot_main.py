@@ -7,7 +7,6 @@ import sys
 from fastapi import FastAPI
 from fastapi_offline import FastAPIOffline
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from loguru import logger
 from dotenv import load_dotenv
 from configuration import ConfigManager
@@ -63,11 +62,15 @@ def create_app() -> FastAPI:
 
         logger.debug("Starting application initialization...")
 
+        # 使用 FastAPIOffline 的默认配置，它会自动处理离线文档
         app = FastAPIOffline(
             title=title,
             description=description,
             version=version,
-            debug=debug
+            debug=debug,
+            # 这些参数让 FastAPIOffline 自动处理静态文件
+            docs_url="/docs" if debug else None,  # 生产环境可禁用
+            redoc_url="/redoc" if debug else None
         )
 
         # Add middleware with safer defaults
@@ -81,26 +84,6 @@ def create_app() -> FastAPI:
 
         # Add routers
         app.include_router(router)
-
-        # Add API documentation endpoint
-        @app.get("/", include_in_schema=False)
-        @app.get("/docs", include_in_schema=False)
-        async def custom_swagger_ui_html():
-            return get_swagger_ui_html(
-                openapi_url="/openapi.json",
-                title=app.title + " - Swagger UI",
-                swagger_js_url="/static/swagger-ui-bundle.js",
-                swagger_css_url="/static/swagger-ui.css"
-            )
-
-        # Add API documentation endpoint
-        @app.get("/redoc", include_in_schema=False)
-        async def redoc_html():
-            return get_redoc_html(
-                openapi_url="/openapi.json",
-                title=app.title + " - ReDoc",
-                redoc_js_url="/static/redoc.standalone.js"
-            )
 
         return app
 
