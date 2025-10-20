@@ -84,16 +84,20 @@ class ConfigManager:
                         max_overflow=10,
                         pool_pre_ping=True,
                         pool_recycle=3600,
-                        pool_use_lifo=False,
-                        max_identifier_length=128,
-                        hide_parameters=False,
-                        echo_pool="off"
+                        pool_use_lifo=False
+                    ),
+                    eslog=EslogConfig(
+                        hosts=["https://localhost:9201"],
+                        username="elastic",
+                        password="<PASSWORD>",
+                        ca_certs="",
+                        index="kbot_logs"
                     )
                 )
 
             return DBConfig.model_validate_json(config_str)
         except Exception as e:
-            print(f"从 Nacos 获取数据库配置失败:{e}")
+            print(f"Failed to get db config from Nacos: {e}")
             return DBConfig(
                 oracle=OracleConfig(
                     host="localhost",
@@ -119,10 +123,14 @@ class ConfigManager:
                     max_overflow=10,
                     pool_pre_ping=True,
                     pool_recycle=3600,
-                    pool_use_lifo=False,
-                    max_identifier_length=128,
-                    hide_parameters=False,
-                    echo_pool="off"
+                    pool_use_lifo=False
+                ),
+                eslog=EslogConfig(
+                    hosts=["https://localhost:9201"],
+                    username="elastic",
+                    password="<PASSWORD>",
+                    ca_certs="",
+                    index="kbot_logs"
                 )
             )
 
@@ -186,14 +194,18 @@ class ConfigManager:
                         service_port=9305,
                         timeout=30,
                         model_path="/tmp/synonym_model.bin",
-                        top_n_words=10,
-                        preload_top=100
+                        top_n_words=50000,
+                        preload_top=1000
+                    ),
+                    prompt=PromptConfig(
+                        image2text="SYSTEM/image2text",
+                        summary="SYSTEM/summary"
                     )
                 )
 
             return ModelConfig.model_validate_json(config_str)
         except Exception as e:
-            print(f"从 Nacos 获取模型配置失败:{e}")
+            print(f"Failed to get model config from Nacos: {e}")
             return ModelConfig(
                     embed=EmbedConfig(
                         service_name="embedding",
@@ -244,7 +256,11 @@ class ConfigManager:
                         service_port=9305,
                         timeout=30,
                         model_path="/tmp/synonym_model.bin",
-                        top_n_words=10,
-                        preload_top=100
+                        top_n_words=50000,
+                        preload_top=1000
+                    ),
+                    prompt=PromptConfig(
+                        image2text="SYSTEM/image2text",
+                        summary="SYSTEM/summary"
                     )
                 )

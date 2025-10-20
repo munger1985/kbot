@@ -69,9 +69,10 @@ class KbStatus(int, Enum):
 class ModelCategory(int, Enum):
     """Model category enumeration."""
     LLM = 1
-    EMBEDDING = 2
-    RERANKER = 3
-    VLM = 4
+    TXT_EMBEDDING = 2
+    IMG_EMBEDDING = 3
+    RERANKER = 4
+    VLM = 5
 
 class PromptCategory(int, Enum):
     """Prompt category enumeration."""

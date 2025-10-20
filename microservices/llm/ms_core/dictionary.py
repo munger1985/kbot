@@ -26,6 +26,7 @@ class ChunkType(int, Enum):
     TEXT = 1
     IMAGE = 2
     TABLE = 3
+    SUMMARY = 4
 
 class FileStatus(int, Enum):
     """File status enumeration."""
@@ -68,9 +69,10 @@ class KbStatus(int, Enum):
 class ModelCategory(int, Enum):
     """Model category enumeration."""
     LLM = 1
-    EMBEDDING = 2
-    RERANKER = 3
-    VLM = 4
+    TXT_EMBEDDING = 2
+    IMG_EMBEDDING = 3
+    RERANKER = 4
+    VLM = 5
 
 class PromptCategory(int, Enum):
     """Prompt category enumeration."""
@@ -81,7 +83,7 @@ class PromptCategory(int, Enum):
 class SplitStrategy(int, Enum):
     """Split strategy enumeration."""
     FIXED_SIZE = 1
-    PARAGRAPH = 2
+    DOC_STRUCTURE = 2
     PAGE = 3
     SEMANTIC = 4
     ROW = 5
@@ -111,3 +113,11 @@ class AccessorType(int, Enum):
     """Accessor type enumeration."""
     USER = 1
     SERVICE = 2
+
+class FileCategory(int, Enum):
+    """File category enumeration."""
+    TEXT = 1
+    IMAGE = 2
+    AUDIO = 3
+    VIDEO = 4
+    OTHER = 5

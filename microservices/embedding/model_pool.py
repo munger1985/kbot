@@ -297,7 +297,7 @@ class ModelPool:
             main_port = int(os.getenv("KBOT_PORT") or 8000)
             
             # 构建请求 URL
-            url = f"http://{main_host}:{main_port}/api/model/available?model_category={ModelCategory.EMBEDDING.value}"
+            url = f"http://{main_host}:{main_port}/api/model/available?model_category={ModelCategory.TXT_EMBEDDING.value}"
             timeout = aiohttp.ClientTimeout(total=30)
             
             # 发送请求

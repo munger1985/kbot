@@ -78,14 +78,19 @@ class SQLAlchemyConfig(BaseModel):
     pool_pre_ping: bool             # test connections for liveness before use
     pool_recycle: int = Field(ge=0) # recycle connections after 1 hour
     pool_use_lifo: bool
-    max_identifier_length: int = Field(ge=1)
-    hide_parameters: bool
-    echo_pool: Literal["debug", "info", "warn", "error", "off"]
 
+class EslogConfig(BaseModel):
+    hosts: list[str]
+    username: str
+    password: str
+    ca_certs: str
+    index: str
+    
 class DBConfig(BaseModel):
     oracle: OracleConfig
     redis: RedisConfig
     sqlalchemy: SQLAlchemyConfig
+    eslog: EslogConfig
 
 class EmbedConfig(BaseModel):
     service_name: str
@@ -139,6 +144,10 @@ class SynonymConfig(BaseModel):
     top_n_words: int = Field(ge=1)
     preload_top: int = Field(ge=0)
 
+class PromptConfig(BaseModel):
+    image2text: str
+    summary: str
+
 class ModelConfig(BaseModel):
     embed: EmbedConfig
     llm: LLMConfig
@@ -146,4 +155,5 @@ class ModelConfig(BaseModel):
     vlm: VLMConfig
     tokenizer: TokenizerConfig
     synonym: SynonymConfig
+    prompt: PromptConfig
 

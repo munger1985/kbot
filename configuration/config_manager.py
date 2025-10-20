@@ -84,10 +84,14 @@ class ConfigManager:
                         max_overflow=10,
                         pool_pre_ping=True,
                         pool_recycle=3600,
-                        pool_use_lifo=False,
-                        max_identifier_length=128,
-                        hide_parameters=False,
-                        echo_pool="off"
+                        pool_use_lifo=False
+                    ),
+                    eslog=EslogConfig(
+                        hosts=["https://localhost:9201"],
+                        username="elastic",
+                        password="<PASSWORD>",
+                        ca_certs="",
+                        index="kbot_logs"
                     )
                 )
 
@@ -119,10 +123,14 @@ class ConfigManager:
                     max_overflow=10,
                     pool_pre_ping=True,
                     pool_recycle=3600,
-                    pool_use_lifo=False,
-                    max_identifier_length=128,
-                    hide_parameters=False,
-                    echo_pool="off"
+                    pool_use_lifo=False
+                ),
+                eslog=EslogConfig(
+                    hosts=["https://localhost:9201"],
+                    username="elastic",
+                    password="<PASSWORD>",
+                    ca_certs="",
+                    index="kbot_logs"
                 )
             )
 
@@ -188,6 +196,10 @@ class ConfigManager:
                         model_path="/tmp/synonym_model.bin",
                         top_n_words=50000,
                         preload_top=1000
+                    ),
+                    prompt=PromptConfig(
+                        image2text="SYSTEM/image2text",
+                        summary="SYSTEM/summary"
                     )
                 )
 
@@ -246,5 +258,9 @@ class ConfigManager:
                         model_path="/tmp/synonym_model.bin",
                         top_n_words=50000,
                         preload_top=1000
+                    ),
+                    prompt=PromptConfig(
+                        image2text="SYSTEM/image2text",
+                        summary="SYSTEM/summary"
                     )
                 )
