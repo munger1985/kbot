@@ -59,7 +59,8 @@ class CSVParser:
                 biz_metadata=self.file_params.biz_metadata,
                 file_id=self.file_params.file_id,
                 embedding=embeddings_list[idx].embedding,
-                security_level=self.file_params.security_level
+                security_level=self.file_params.security_level,
+                status=1
             )
             for idx, (chunk, meta) in enumerate(zip(chunks, chunk_metas))
         ]

@@ -97,7 +97,8 @@ async def process_txt(file_params: FileParams) -> bool:
                     file_id=file_params.file_id,
                     kb_id=file_params.kb_id,
                     embedding=embedding,
-                    security_level=file_params.security_level
+                    security_level=file_params.security_level,
+                    status=1
                 )
                 embed_entities.append(embed_entity)
                 chunk_num += 1

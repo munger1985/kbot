@@ -238,7 +238,8 @@ class PDFPlumberParser:
                 biz_metadata=self.file_params.biz_metadata,
                 file_id=self.file_params.file_id,
                 embedding=embeddings_list[idx].embedding,
-                security_level=self.file_params.security_level
+                security_level=self.file_params.security_level,
+                status=1
             )
             embed_entities.append(embed_entity)
 
@@ -315,7 +316,8 @@ class PDFPlumberParser:
                 biz_metadata=self.file_params.biz_metadata,
                 file_id=self.file_params.file_id,
                 embedding=embeddings_list[idx].embedding,
-                security_level=self.file_params.security_level
+                security_level=self.file_params.security_level,
+                status=1
             )
             embed_entities.append(embed_entity)
         image_embed_entities= await self._process_images_embeddings()
@@ -336,7 +338,7 @@ class PDFPlumberParser:
 
         try:
             repo = await EmbeddingRepositoryFactory.create_repository(kb_id=self.file_params.kb_id)
-            result = await repo.create(kb_id=self.file_params.kb_id, embeddings=embeddings)
+            result = await repo.create(kb_id=self.file_params.kb_id, embeddings=embeddings) # type: ignore
             if not result:
                 msg = "Failed to save embeddings (repository returned False)"
                 logger.error(msg)
