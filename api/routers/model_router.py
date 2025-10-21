@@ -9,7 +9,7 @@ router = APIRouter(prefix="/model", tags=["Model Management"])
    
 @router.post(
         "/toggle",
-        description="启用/禁用指定模型",
+        summary="启用/禁用指定模型",
         dependencies=[Depends(AuthController.get_current_accessor)]
 )
 async def handle_enable_model(form: ToggleModelForm):
@@ -45,7 +45,7 @@ async def handle_enable_model(form: ToggleModelForm):
     
 @router.post(
         "/params",
-        description="从数据库中获取指定模型的参数",
+        summary="从数据库中获取指定模型的参数",
         # dependencies=[Depends(AuthController.get_current_accessor)]
 )
 async def handle_get_model_params(form: ModelForm):
@@ -68,7 +68,7 @@ async def handle_get_model_params(form: ModelForm):
 
 @router.get(
         "/available",
-        description="从数据库中获取指定类别的可用模型",
+        summary="从数据库中获取指定类别的可用模型",
         # dependencies=[Depends(AuthController.get_current_accessor)]
 )
 async def handle_get_all_model_params(model_category: int):
@@ -91,7 +91,7 @@ async def handle_get_all_model_params(model_category: int):
 
 @router.post(
         "/test",
-        description="测试指定模型是否可用",
+        summary="测试指定模型是否可用",
         dependencies=[Depends(AuthController.get_current_accessor)]
 )
 async def handle_test_model(form: TestModelForm):

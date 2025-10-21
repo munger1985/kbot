@@ -11,7 +11,7 @@ router = APIRouter(prefix="/agent", tags=["Agent Chat"])
 
 @router.post(
     "/chat",
-    description="智能体聊天接口",
+    summary="智能体聊天接口",
     dependencies=[Depends(AuthController.get_current_accessor)]
 )
 async def handle_agent_chat(form: AgentChatForm) -> SuccessQueryResponse | ErrorResponse:
@@ -36,7 +36,7 @@ async def handle_agent_chat(form: AgentChatForm) -> SuccessQueryResponse | Error
 
 @router.get(
     "/stream",
-    description="获取流式响应",
+    summary="智能体聊天流式响应接口",
     response_class=StreamingResponse,
     response_model=None
 )
@@ -65,7 +65,7 @@ async def handle_agent_stream_chat(session_id: str) -> StreamingResponse | Error
 
 @router.post(
     "/feedback",
-    description="反馈智能体",
+    summary="智能体回答结果反馈接口",
     dependencies=[Depends(AuthController.get_current_accessor)]
 )
 async def handle_agent_feedback(form: AgentChatFeedbackForm):
@@ -85,7 +85,7 @@ async def handle_agent_feedback(form: AgentChatFeedbackForm):
 
 @router.get(
     "/session/get",
-    description="在登录智能体时获取会话信息",
+    summary="登录智能体时获取会话信息",
     dependencies=[Depends(AuthController.get_current_accessor)]
 )
 async def handle_agent_get_session(session_id: str):
@@ -108,7 +108,7 @@ async def handle_agent_get_session(session_id: str):
     
 @router.delete(
     "/session/remove",
-    description="删除会话信息",
+    summary="删除聊天会话信息",
     dependencies=[Depends(AuthController.get_current_accessor)]
 )
 async def handle_agent_del_session(session_id: str):
@@ -136,7 +136,7 @@ async def handle_agent_del_session(session_id: str):
 
 @router.delete(
     "/remove",
-    description="删除智能体",
+    summary="删除智能体",
     dependencies=[Depends(AuthController.get_current_accessor)]
 )
 async def handle_del_agent(agent_id: int, del_prompt: int = 0) -> SuccessResponse | ErrorResponse:

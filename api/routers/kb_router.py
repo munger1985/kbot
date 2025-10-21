@@ -14,7 +14,7 @@ router = APIRouter(prefix="/kb", tags=["Knowledge Base"])
 
 @router.post(
     "/upload",
-    description="上传一个或多个文件到指定知识库的接口",
+    summary="上传一个或多个文件到指定知识库",
     dependencies=[Depends(AuthController.get_current_accessor)]
 )
 async def handle_upload_files(
@@ -57,7 +57,7 @@ async def handle_upload_files(
     
 @router.post(
     "/delete",
-    description="从指定的知识库中删除文件或所有文件以及其知识库或批次的接口",
+    summary="从指定的知识库中删除文件或所有文件以及其知识库或批次",
     dependencies=[Depends(AuthController.get_current_accessor)]
 )
 async def handle_delete_files(
@@ -100,7 +100,7 @@ async def handle_delete_files(
     
 @router.get(
     "/download",
-    description="从知识库中下载文件的接口",
+    summary="从知识库中下载文件",
     response_model=None,
     # dependencies=[Depends(AuthController.get_current_accessor)],
     status_code=status.HTTP_200_OK
@@ -137,7 +137,7 @@ async def handle_download_file(
 
 @router.get(
     "/preview",
-    description="从知识库中预览文件的接口",
+    summary="从知识库中预览文件",
     response_model=None,
     # dependencies=[Depends(AuthController.get_current_accessor)],
     status_code=status.HTTP_200_OK
@@ -187,7 +187,7 @@ async def handle_preview_file(
     
 @router.post(
     "/file/reparse",
-    description="重新解析文件的接口",
+    summary="重新解析文件",
     response_model=SuccessResponse,
     dependencies=[Depends(AuthController.get_current_accessor)],
     status_code=status.HTTP_200_OK
@@ -229,7 +229,7 @@ async def handle_reparse_files(
 
 @router.post(
     "/file/preview/v1",
-    description="从知识库中预览文件的接口",
+    summary="从知识库中预览文件 v1",
     response_model=None,
     # dependencies=[Depends(AuthController.get_current_accessor)],
     status_code=status.HTTP_200_OK
@@ -259,7 +259,7 @@ async def handle_preview_kb_file_v1(
     
 @router.get(
     "/file/preview/v2",
-    description="在浏览器中直接预览文件的接口",
+    summary="在浏览器中直接预览文件 v2",
     response_model=None,
     # dependencies=[Depends(AuthController.get_current_accessor)],
     status_code=status.HTTP_200_OK
@@ -331,7 +331,7 @@ async def handle_preview_kb_file_v2(
     
 @router.post(
     "/file/chunk",
-    description="更改或删除知识库文件的分片内容",
+    summary="更改或删除知识库文件的分片内容",
     response_model=SuccessResponse | ErrorResponse,
     dependencies=[Depends(AuthController.get_current_accessor)],
     status_code=status.HTTP_200_OK
@@ -401,7 +401,7 @@ async def handle_edit_file_chunk(
     
 @router.get(
     "/file/get_chunks",
-    description="根据文件ID获取文件的分片内容",
+    summary="根据文件ID获取文件的分片内容",
     response_model=SuccessQueryResponse | ErrorResponse,
     # dependencies=[Depends(AuthController.get_current_accessor)],
     status_code=status.HTTP_200_OK

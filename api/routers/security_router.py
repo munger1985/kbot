@@ -9,7 +9,7 @@ router = APIRouter(prefix="/security", tags=["API Security"])
 
 @router.post(
         "/get_token",
-        description="获取JWT令牌的端点"
+        summary="获取JWT令牌"
 )
 async def handle_login_for_access_token(form: OAuth2PasswordRequestForm = Depends()):
     """获取JWT令牌的端点"""
@@ -33,7 +33,7 @@ async def handle_login_for_access_token(form: OAuth2PasswordRequestForm = Depend
 
 @router.post(
         "/create_accessor",
-        description="创建访问者",
+        summary="创建访问者",
         dependencies=[Depends(AuthController.get_current_accessor)]
 )
 async def handle_create_accessor(form: AccessorForm):
@@ -54,7 +54,7 @@ async def handle_create_accessor(form: AccessorForm):
 
 @router.post(
         "/change_password",
-        description="修改密码",
+        summary="修改密码",
         dependencies=[Depends(AuthController.get_current_accessor)]
 )
 async def handle_change_password(form: ChangePasswordForm):
