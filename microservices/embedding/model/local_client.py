@@ -2,6 +2,7 @@ import os
 import gc
 import torch
 from typing import Any
+from pydantic import Field
 from loguru import logger
 from transformers import AutoModel, AutoTokenizer
 from prometheus_client import Histogram, Counter, Gauge
@@ -39,15 +40,15 @@ def auto_set_matmul_precision():
 auto_set_matmul_precision()
 
 class LocalEmbeddingConfig(EmbeddingConfig):
-    model_path: str | None = None
-    device: str | None = None
-    device_map: str | None = None
-    max_memory: dict | None = None
-    trust_remote_code: bool = False
-    use_fp16: bool = False
-    local_files_only: bool = False
-    compile_model: bool = True  # 当使用 PyTorch 2.0+ 时为 True，否则为 False
-    cache_dir: str = "./cached_models"  # 从 nacos manager 中读取 cache_dir 配置，用于缓存模型
+    model_path: str | None = Field(None, description="本地模型路径")
+    device: str | None = Field(None, description="模型设备")
+    device_map: str | None = Field(None, description="模型设备映射")
+    max_memory: dict | None = Field(None, description="最大内存")
+    trust_remote_code: bool = Field(False, description="信任远程代码")
+    use_fp16: bool = Field(False, description="使用 FP16 精度")
+    local_files_only: bool = Field(False, description="仅使用本地文件")
+    compile_model: bool = Field(True, description="编译模型") # 当使用 PyTorch 2.0+ 时为 True，否则为 False
+    cache_dir: str = Field("./cached_models", description="模型缓存目录") # 从 nacos manager 中读取 cache_dir 配置，用于缓存模型
 
 
 class LocalEmbedding(BaseEmbedding):
@@ -100,7 +101,7 @@ class LocalEmbedding(BaseEmbedding):
         self.tokenizer: Any | None = None
         
         # 带验证的配置
-        self.config = config
+        self.cache_dir = config.cache_dir
         self.model_name = config.model_name
         self.model_path = config.model_path
         self.predownload = False
@@ -144,7 +145,11 @@ class LocalEmbedding(BaseEmbedding):
                     self.predownload = True
                     logger.info(f"使用预下载的模型: {self.model_path}")
                 else:
-                    raise ValueError(f"模型路径 {self.model_path} 存在但包含无效的模型文件")
+                    logger.info(f"模型路径 {self.model_path} 存在但包含无效的模型文件")
+                    self.predownload = False
+                    # 确保缓存目录存在
+                    os.makedirs(self.cache_dir, exist_ok=True)
+                    logger.info(f"将从 hub 下载模型: {self.model_name}, 并缓存到: {self.cache_dir}")
             else:
                 # 检查缓存或从 hub 下载
                 if os.path.exists(self.cache_path) and self._validate_model_files(self.cache_path):
@@ -153,12 +158,13 @@ class LocalEmbedding(BaseEmbedding):
                     logger.info(f"使用缓存的模型: {self.cache_path}")
                 else:
                     self.predownload = False
-                    logger.info(f"将从 hub 下载模型: {self.model_name}")
+                    # 确保缓存目录存在
+                    os.makedirs(self.cache_dir, exist_ok=True)
+                    logger.info(f"将从 hub 下载模型: {self.model_name}, 并缓存到: {self.cache_dir}")
 
             self.name_or_path = self.model_path if self.predownload else self.model_name
 
-            logger.debug(f"嵌入模型名称: {self.model_name}, 路径: {self.model_path}")
-            logger.debug(f"嵌入模型名称或路径: {self.name_or_path}")
+            logger.debug(f"Embedding 模型名称: {self.model_name}")
 
             # 加载分词器（带错误处理）
             self.tokenizer = self._load_tokenizer()
@@ -184,6 +190,8 @@ class LocalEmbedding(BaseEmbedding):
     def _load_tokenizer(self) -> Any:
         """使用全面配置加载分词器。"""
         try:
+            
+            # 加载分词器
             tokenizer = AutoTokenizer.from_pretrained(
                 pretrained_model_name_or_path=self.name_or_path,
                 trust_remote_code=self.trust_remote_code,
@@ -191,7 +199,7 @@ class LocalEmbedding(BaseEmbedding):
                 model_max_length=self.max_tokens,
                 padding_side='right',
                 local_files_only=self.local_files_only,
-                cache_dir=self.config.cache_dir  # 使用配置的缓存目录
+                cache_dir=self.cache_dir  # 使用配置的缓存目录
             )
             logger.debug("分词器加载成功")
             return tokenizer
@@ -206,24 +214,30 @@ class LocalEmbedding(BaseEmbedding):
             "trust_remote_code": self.trust_remote_code,
             "low_cpu_mem_usage": True,
             "local_files_only": self.local_files_only,
-            "cache_dir": self.config.cache_dir  # 使用配置的缓存目录
+            "cache_dir": self.cache_dir  # 使用配置的缓存目录
         }
 
         # 确定设备配置
-        if self.device_map is not None:
-            # 使用 device_map 进行多 GPU 加载
-            load_kwargs.update({
-                "device_map": self.device_map,
-                "max_memory": self.max_memory,
-            })
-            self._using_device_map = True
-            target_device = None
-            logger.debug(f"使用 device_map 加载: {self.device_map}")
+        if torch.cuda.is_available():
+            if self.device_map is not None:
+                # 使用 device_map 进行多 GPU 加载
+                load_kwargs.update({
+                    "device_map": self.device_map,
+                    "max_memory": self.max_memory,
+                })
+                self._using_device_map = True
+                target_device = None
+                logger.debug(f"使用 device_map 加载: {self.device_map}")
+            else:
+                # 单设备加载
+                self._using_device_map = False
+                target_device = self.device
+                load_kwargs["torch_dtype"] = torch.float16 if self.use_fp16 else torch.float32
         else:
-            # 单设备加载
-            self._using_device_map = False
-            target_device = self.device
-            load_kwargs["torch_dtype"] = torch.float16 if self.use_fp16 else torch.float32
+            # 如果没有 GPU，则使用 CPU
+            load_kwargs["device_map"] = "cpu"
+            load_kwargs["torch_dtype"] = torch.float32
+            target_device = "cpu"
 
         try:
             model = AutoModel.from_pretrained(**load_kwargs)

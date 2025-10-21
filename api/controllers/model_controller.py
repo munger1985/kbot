@@ -47,7 +47,7 @@ class ModelController:
         model_type = await self.repo.get_category_by_id(model_id)
         model_config = ConfigManager.get_model_config()
 
-        if model_type == ModelCategory.EMBEDDING.value:
+        if model_type == ModelCategory.TXT_EMBEDDING.value:
             service_host = model_config.embed.service_host
             service_port = model_config.embed.service_port
             total = model_config.embed.timeout
@@ -155,7 +155,7 @@ class ModelController:
         model_config = ConfigManager.get_model_config()
 
         # 测试Embedding模型
-        if model_type == ModelCategory.EMBEDDING.value:
+        if model_type == ModelCategory.TXT_EMBEDDING.value:
             input_texts = ["test"]
             result = await CallModel().call_embedding_model(
                 model_id, 

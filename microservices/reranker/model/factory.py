@@ -25,7 +25,7 @@ def create_reranker_model(config: RerankerConfig) -> BaseReranker:
     Raises:
         ValueError: 当配置无效或不支持时
     """
-    model_name = config.model_name.lower()
+    # model_name = config.model_name.lower()
     if config.provider == RerankerProvider.LOCAL.value:
         if isinstance(config, LocalRerankerConfig):
             return LocalReranker(config)

@@ -40,7 +40,7 @@ class Qwen3Embedding(LocalEmbedding):
             "trust_remote_code": self.trust_remote_code,
             "low_cpu_mem_usage": True,
             "local_files_only": self.local_files_only,
-            "cache_dir": self.config.cache_dir
+            "cache_dir": self.cache_dir
         }
 
         # 添加 flash attention 2 支持
@@ -92,7 +92,7 @@ class Qwen3Embedding(LocalEmbedding):
                 model_max_length=self.max_length,
                 padding_side='left',  # Qwen3 需要 left padding
                 local_files_only=self.local_files_only,
-                cache_dir=self.config.cache_dir
+                cache_dir=self.cache_dir
             )
             logger.debug("Qwen3 分词器加载成功")
             return tokenizer

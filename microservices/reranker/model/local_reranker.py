@@ -38,6 +38,7 @@ class LocalReranker(BaseReranker):
         self.model_name = config.model_name
         self.model_path = config.model_path
         self.predownload = False  # 是否为本地预下载模型
+        self.cache_dir = config.cache_dir
         self.cache_path = os.path.join(config.cache_dir, self.model_name) # 模型缓存路径
         self.name_or_path = ""
         self.device = config.device
@@ -55,31 +56,30 @@ class LocalReranker(BaseReranker):
             
         logger.info(f"正在初始化 {self.__class__.__name__}，模型: {self.model_name}")
     
-    def _validate_reranker_model(self, model_path: str) -> bool:
-        """检查模型目录是否包含必要文件"""
-        must_have = ["config.json", "tokenizer_config.json"]
-        model_files = ["pytorch_model.bin", "model.safetensors"]
-        vocab_files = ["vocab.txt", "vocab.json", "tokenizer.json"]
-        
-        # 检查必备文件
-        for f in must_have:
-            if not os.path.exists(os.path.join(model_path, f)):
-                return False
-        
-        # 检查模型权重文件(至少存在一种)
-        if not any(os.path.exists(os.path.join(model_path, f)) for f in model_files):
+    def _validate_model_files(self, model_path: str) -> bool:
+        """
+        验证模型目录包含必需的文件。
+        这是尽力而为的检查；实际加载可能仍然失败。
+        """
+        try:
+            required_files = ["config.json", "tokenizer_config.json"]
+            
+            # 检查至少一个模型权重文件
+            model_files = ["pytorch_model.bin", "model.safetensors", "*.pt"]
+            found_model_file = any(os.path.exists(os.path.join(model_path, f)) for f in model_files)
+            
+            # 检查至少一个词汇文件
+            vocab_files = ["vocab.txt", "vocab.json", "tokenizer.json"]
+            found_vocab_file = any(os.path.exists(os.path.join(model_path, f)) for f in vocab_files)
+            
+            # 检查必需的配置文件
+            config_valid = all(os.path.exists(os.path.join(model_path, f)) for f in required_files)
+            
+            return config_valid and found_model_file and found_vocab_file
+            
+        except Exception as e:
+            logger.warning(f"模型验证检查失败: {str(e)}")
             return False
-        
-        # 检查词汇表文件(至少存在一种)
-        if not any(os.path.exists(os.path.join(model_path, f)) for f in vocab_files):
-            return False
-        
-        return True
-        
-    def _cache_model(self):
-        """将模型保存到缓存目录"""
-        self.model.save_pretrained(self.cache_path) # type: ignore
-        self.tokenizer.save_pretrained(self.cache_path) # type: ignore
     
     async def startup(self) -> None:
         """初始化 reranker 模型"""
@@ -89,35 +89,35 @@ class LocalReranker(BaseReranker):
         if self.model_path is None and self.local_files_only:
             raise ValueError("未指定本地模型路径")
         
-        if self.model_path is not None:
-            valid_path = self._validate_reranker_model(self.model_path)
-            if valid_path:
+        # 检查是否有有效的本地模型路径或需要下载
+        if self.model_path is not None and os.path.exists(self.model_path):
+            if self._validate_model_files(self.model_path):
                 self.predownload = True
+                logger.info(f"使用预下载的模型: {self.model_path}")
             else:
-                valid_cache = self._validate_reranker_model(self.cache_path)
-                if valid_cache:
-                    logger.info(f"使用缓存的 reranker 模型: {self.cache_path}")
-                    self.model_path = os.path.abspath(self.cache_path)
-                    self.predownload = True
-                else:
-                    self.predownload = False
-
-        if self.predownload:
-            self.name_or_path = self.model_path
+                logger.info(f"模型路径 {self.model_path} 存在但包含无效的模型文件")
+                self.predownload = False
+                # 确保缓存目录存在
+                os.makedirs(self.cache_dir, exist_ok=True)
+                logger.info(f"将从 hub 下载模型: {self.model_name}, 并缓存到: {self.cache_dir}")
         else:
-            self.name_or_path = self.model_name
+            # 检查缓存或从 hub 下载
+            if os.path.exists(self.cache_path) and self._validate_model_files(self.cache_path):
+                self.model_path = self.cache_path
+                self.predownload = True
+                logger.info(f"使用缓存的模型: {self.cache_path}")
+            else:
+                self.predownload = False
+                # 确保缓存目录存在
+                os.makedirs(self.cache_dir, exist_ok=True)
+                logger.info(f"将从 hub 下载模型: {self.model_name}, 并缓存到: {self.cache_dir}")
 
-        logger.debug(f"Reranker 模型名称: {self.model_name}, 路径: {self.model_path}")
+        self.name_or_path = self.model_path if self.predownload else self.model_name
+
+        logger.debug(f"Reranker 模型名称: {self.model_name}")
             
         # 加载分词器
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            pretrained_model_name_or_path = self.name_or_path,
-            trust_remote_code = self.trust_remote_code,
-            use_fast = True,  # 使用快速分词器减少内存消耗
-            model_max_length = self.max_tokens,
-            padding_side = 'right',
-            local_files_only = self.local_files_only
-        )
+        self.tokenizer = self._load_tokenizer()
             
         # 使用优化设置加载模型
         load_kwargs = {
@@ -125,6 +125,7 @@ class LocalReranker(BaseReranker):
             "trust_remote_code": self.trust_remote_code,
             "low_cpu_mem_usage": True,
             "local_files_only": self.local_files_only,
+            "cache_dir": self.cache_dir  # 使用配置的缓存目录
         }
             
         # 设备配置
@@ -145,14 +146,6 @@ class LocalReranker(BaseReranker):
             target_device = "cpu"
 
         self.model = AutoModelForSequenceClassification.from_pretrained(**load_kwargs)
-        
-        # 如果是首次使用从 HuggingFace 下载的模型，则将模型从默认缓存路径保存到本地
-        if self.predownload is not True:
-            try:
-                self._cache_model()
-                logger.debug(f"Reranker 模型 {self.model_name} 已下载到本地缓存: {self.cache_path}")
-            except Exception as e:
-                logger.error(f"保存 reranker 模型到本地缓存时出错: {e}")
 
         # 如果没有使用 device_map，则使用 .to() 方法将模型移动到指定设备
         if self.device_map is None:
@@ -179,6 +172,26 @@ class LocalReranker(BaseReranker):
         self._is_initialized = True
         logger.info(f"Reranker 模型 {self.model_name} 初始化成功")
     
+    def _load_tokenizer(self) -> Any:
+        """使用全面配置加载分词器。"""
+        try:
+            
+            # 加载分词器
+            tokenizer = AutoTokenizer.from_pretrained(
+                pretrained_model_name_or_path=self.name_or_path,
+                trust_remote_code=self.trust_remote_code,
+                use_fast=True,
+                model_max_length=self.max_tokens,
+                padding_side='right',
+                local_files_only=self.local_files_only,
+                cache_dir=self.cache_dir  # 使用配置的缓存目录
+            )
+            logger.debug("分词器加载成功")
+            return tokenizer
+        except Exception as e:
+            logger.error(f"加载分词器失败: {str(e)}")
+            raise
+
     async def _process_batch(self, query: str, batch_documents: list[str]) -> list[float]:
         """处理一个批次的文档，返回分数列表"""
         if not self.model or not self.tokenizer:
