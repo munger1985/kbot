@@ -16,6 +16,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 from typing import Any
 from contextlib import asynccontextmanager
+from fastapi_offline import FastAPIOffline
 from pydantic import BaseModel, Field
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
@@ -34,6 +35,14 @@ service_version = config.reranker.service_version
 service_host = config.reranker.service_host
 service_port = config.reranker.service_port
 
+# 获取应用配置
+app_config = ConfigManager.get_app_config()
+debug = app_config.kbot.debug
+log_dir = app_config.kbot.log.dir
+log_level = app_config.kbot.log.level
+rotation = app_config.kbot.log.rotation
+retention = app_config.kbot.log.retention
+
 # 创建 reranker 服务实例
 reranker_service = RerankerService()
 
@@ -41,12 +50,6 @@ reranker_service = RerankerService()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用程序生命周期上下文管理器"""
-    # 通过 nacos_manager 获取 logger 配置
-    log_config = ConfigManager.get_app_config()
-    log_dir = log_config.kbot.log.dir
-    log_level = log_config.kbot.log.level
-    rotation = log_config.kbot.log.rotation
-    retention = log_config.kbot.log.retention
     
     # 初始化日志
     conf = LogConfig(service_name=service_name, log_dir=log_dir, level=log_level, rotation=rotation, retention=retention)
@@ -71,8 +74,7 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Reranker 服务初始化失败: {e}")
         # 在生产环境中，可能需要在这里退出应用程序
-        current_env = os.getenv("NACOS_GROUP", "dev")
-        if current_env == "prod":
+        if not debug:
             sys.exit(1)
     
     yield  # 服务运行期间
@@ -91,11 +93,14 @@ async def lifespan(app: FastAPI):
     logger.info(f"总运行时间: {time.time() - start_time:.2f} 秒")
 
 # 创建 FastAPI 应用
-app = FastAPI(
-    title="Reranker 服务",
+app = FastAPIOffline(
+    title="Reranker 微服务",
     description="提供文本重排序服务",
     version=service_version,
     lifespan=lifespan,
+    # 这些参数让 FastAPIOffline 自动处理静态文件
+    docs_url="/docs" if debug else None,  # 生产环境可禁用
+    redoc_url="/redoc" if debug else None
 )
 
 # 添加 CORS 中间件
@@ -127,12 +132,19 @@ class RerankerResponse(BaseModel):
 def get_reranker_service():
     return reranker_service
 
-@app.get("/health", response_model=dict, tags=["Reranker"])
+@app.get("/health", response_model=dict, tags=["Reranker"], summary="Reranker服务健康检查接口")
 async def health() -> dict[str, Any]:
-    """健康检查端点
+    """微服务健康检查接口。
     
     Returns:
-        已加载的模型数量
+    - **dict**: 包含服务状态、已加载模型数量和时间戳的响应数据
+    ```
+        {
+        "status": "ok",
+        "loaded_models_count": len(loaded_models),
+        "timestamp": datetime.now().isoformat()
+        }
+    ```
     """
     
     # 获取已加载的模型信息
@@ -147,18 +159,19 @@ async def health() -> dict[str, Any]:
         "timestamp": datetime.now().isoformat()
     }
 
-@app.post("/load", response_model=dict, tags=["Reranker"])
+@app.post("/load", response_model=dict, tags=["Reranker"], summary="加载或卸载模型")
 async def load_model(request: ToggleModelRequest) -> dict:
     """通过模型ID加载模型到内存中。
     
     Args:
-        request: 启用或禁用模型请求表单，包含模型唯一名称和操作类型
+    - **model_id**: int = Field(..., description="模型唯一标识符")
+    - **operation**: str = Field(..., description="操作类型，'load' 或 'unload'")
         
     Returns:
-        dict: 包含操作状态和模型ID的响应数据
+    - **dict**: 包含操作状态和模型名称的响应数据
         
     Raises:
-        HTTPException: 当模型加载失败时抛出500错误
+    - **HTTPException**: 当模型加载失败时抛出500错误
     """
     model_name = reranker_service._model_pool._model_names.get(request.model_id, str(request.model_id))
     try:
@@ -175,7 +188,7 @@ async def load_model(request: ToggleModelRequest) -> dict:
         logger.exception(f"操作模型 {model_name} 时发生错误: {e}")
         raise HTTPException(status_code=500, detail=str(e))
       
-@app.post("/v1/rerank", response_model=RerankerResponse, tags=["Reranker"])
+@app.post("/v1/rerank", response_model=RerankerResponse, tags=["Reranker"], summary="重排序文本列表")
 async def rerank_texts(
     request: RerankerRequest,
     reranker_service: RerankerService = Depends(get_reranker_service)
@@ -183,10 +196,17 @@ async def rerank_texts(
     """
     将文本列表进行重排序
     
-    - **model_id**: 用于重排序的模型唯一名称
-    - **query**: 查询文本
-    - **documents**: 需要重排序的文档列表
-    - **top_k**: 返回的顶部文档数量（None 表示返回所有）
+    Args:
+    - **model_id**: int = Field(..., description="Reranker 模型唯一名称")
+    - **query**: str = Field(..., description="查询文本")
+    - **documents**: list[str] = Field(..., description="需要重排序的文档列表")
+    - **top_k**: int | None = Field(10, description="返回的文档数量（None 表示返回所有）")
+    
+    Returns:
+    - **rerankers**: list[dict[str, Any]] = Field(..., description="重排序后的文档列表")
+    
+    Raises:
+    - **HTTPException**: 当重排序过程中发生错误时抛出500错误
     """
     model_name = reranker_service._model_pool._model_names.get(request.model_id, str(request.model_id))
     try:

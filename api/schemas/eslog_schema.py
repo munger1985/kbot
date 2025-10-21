@@ -34,10 +34,10 @@ class LogQueryRequest(BaseModel):
         }
 
 class LogEntry(BaseModel):
-    timestamp: datetime
-    host: str
-    level: str
-    message: str
+    timestamp: datetime = Field(..., description="日志时间")
+    host: str = Field(..., description="主机名")
+    level: str = Field(..., description="日志级别")
+    message: str = Field(..., description="日志消息")
     
     class Config:
         json_schema_extra = {
@@ -50,7 +50,7 @@ class LogEntry(BaseModel):
         }
 
 class LogResponse(BaseModel):
-    code: int
-    success: bool
-    total: int
+    code: int = Field(200, description="状态码")
+    success: bool = Field(True, description="是否成功")
+    total: int = Field(0, description="总数")
     logs: list[LogEntry]

@@ -17,6 +17,7 @@ from PIL import Image
 from typing import Any, Type
 from dotenv import load_dotenv
 from contextlib import asynccontextmanager
+from fastapi_offline import FastAPIOffline
 from pydantic import BaseModel, Field, ValidationError
 from pydantic_core import core_schema
 from fastapi.responses import StreamingResponse
@@ -57,6 +58,14 @@ service_version = config.vlm.service_version
 service_host = config.vlm.service_host
 service_port = config.vlm.service_port
 
+# 获取应用配置
+app_config = ConfigManager.get_app_config()
+debug = app_config.kbot.debug
+log_dir = app_config.kbot.log.dir
+log_level = app_config.kbot.log.level
+rotation = app_config.kbot.log.rotation
+retention = app_config.kbot.log.retention
+
 # 创建VLM服务实例
 vlm_service = VLMService()
 
@@ -64,13 +73,7 @@ vlm_service = VLMService()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用程序生命周期上下文管理器"""
-    # 通过 nacos_manager 获取 logger 配置
-    log_config = ConfigManager.get_app_config()  
-    log_dir = log_config.kbot.log.dir
-    log_level = log_config.kbot.log.level
-    rotation = log_config.kbot.log.rotation
-    retention = log_config.kbot.log.retention
-    
+
     # 初始化日志
     conf = LogConfig(service_name=service_name, log_dir=log_dir, level=log_level, rotation=rotation, retention=retention)
     LogManager(conf).setup()
@@ -93,8 +96,7 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"VLM 服务初始化失败: {e}")
         # 在生产环境中，可能需要在这里退出应用程序
-        current_env = os.getenv("NACOS_GROUP", "dev")
-        if current_env == "prod":
+        if not debug:
             sys.exit(1)
     
     yield  # 服务运行期间
@@ -113,11 +115,14 @@ async def lifespan(app: FastAPI):
     logger.info(f"总运行时间: {time.time() - start_time:.2f} 秒")
 
 # 创建 FastAPI 应用
-app = FastAPI(
-    title="VLM 服务",
-    description="提供文本 VLM 服务，将文本转换为向量表示",
+app = FastAPIOffline(
+    title="VLM 微服务",
+    description="提供文本 VLM 服务，将图片转换为文本",
     version=service_version,
     lifespan=lifespan,
+    # 这些参数让 FastAPIOffline 自动处理静态文件
+    docs_url="/docs" if debug else None,  # 生产环境可禁用
+    redoc_url="/redoc" if debug else None
 )
 
 # 添加 CORS 中间件
@@ -136,9 +141,7 @@ class VLMRequest(BaseModel):
     model_id: int = Field(..., description="模型唯一标识符")
     messages: list[dict[str, Any]] = Field(..., description="消息列表")
     max_tokens: int | None = Field(None, description="要生成的最大令牌数")
-    temperature: float | None = Field(
-        None, description="采样温度 (0.0-1.0，越低越确定)"
-    )
+    temperature: float | None = Field(None, description="采样温度 (0.0-1.0，越低越确定)")
     stream: bool = Field(False, description="是否流式返回响应")
     timeout: int | None = Field(None, description="超时时间（秒）")
     top_p: float | None = Field(None, description="Top-p采样参数")
@@ -154,19 +157,13 @@ class ToggleModelRequest(BaseModel):
 class VLMResponse(BaseModel):
     """VLM推理响应模型(兼容OpenAI)"""
 
-    id: str = Field(default_factory=lambda: f"sse-{uuid.uuid4()}", 
-                   description="完成的唯一标识符")
-    object: str = Field("chat.completion", 
-                       description="对象类型，始终为 'chat.completion'")
-    created: int = Field(default_factory=lambda: int(time.time()), 
-                        description="响应创建时的Unix时间戳")
-    model: str = Field(..., description="用于完成的模型")
-    choices: list[dict[str, Any]] = Field(...,
-        description="包含消息的完成选择列表")
-    usage: dict[str, int] = Field(...,
-        description="令牌使用统计，包括 prompt_tokens、completion_tokens 和 total_tokens")
-    processing_time: float = Field(..., 
-                                 description="处理时间（秒）（自定义字段）")
+    id: str = Field(default_factory=lambda: f"sse-{uuid.uuid4()}", description="响应流的唯一标识符")
+    object: str = Field("chat.completion", description="对象类型，始终为 'chat.completion'")
+    created: int = Field(default_factory=lambda: int(time.time()), description="响应创建时的Unix时间戳")
+    model: str = Field(..., description="响应模型名称")
+    choices: list[dict[str, Any]] = Field(..., description="包含响应消息的列表")
+    usage: dict[str, int] = Field(..., description="令牌使用统计，包括 prompt_tokens、completion_tokens 和 total_tokens")
+    processing_time: float = Field(..., description="处理时间（秒）（自定义字段）")
 
 
 # 依赖项：获取VLM服务实例
@@ -175,10 +172,17 @@ def get_vlm_service():
 
 @app.get("/health", response_model=dict, tags=["VLM"])
 async def health() -> dict[str, Any]:
-    """微服务接口健康检查
+    """微服务健康检查接口。
     
-    返回:
-        已加载的模型数量
+    Returns:
+    - **dict**: 包含服务状态、已加载模型数量和时间戳的响应数据
+    ```
+        {
+        "status": "ok",
+        "loaded_models_count": len(loaded_models),
+        "timestamp": datetime.now().isoformat()
+        }
+    ```
     """
     
     # 获取已加载的模型信息
@@ -198,13 +202,14 @@ async def load_model(request: ToggleModelRequest) -> dict:
     """通过模型ID加载模型到内存中。
     
     Args:
-        request: 启用或禁用模型请求表单，包含模型唯一名称和操作类型
+    - **model_id**: int = Field(..., description="模型唯一标识符")
+    - **operation**: str = Field(..., description="操作类型，'load' 或 'unload'")
         
     Returns:
-        dict: 包含操作状态和模型ID的响应数据
+    - **dict**: 包含操作状态和模型名称的响应数据
         
     Raises:
-        HTTPException: 当模型加载失败时抛出500错误
+    - **HTTPException**: 当模型加载失败时抛出500错误
     """
     model_name = vlm_service._model_pool._model_names.get(request.model_id, str(request.model_id))
     try:
@@ -228,20 +233,46 @@ async def inference(
 ) -> VLMResponse | StreamingResponse:
     """生成VLM响应
     
-    参数:
-    - **model_id**: 要使用的模型ID
-    - **messages**: 消息列表
-    - **max_tokens**: 要生成的最大令牌数（可选）
-    - **temperature**: 采样温度（0.0-1.0，越低越确定）
-    - **stream**: 是否流式返回响应
-    - **timeout**: 超时时间（秒）
-    - **top_p**: Top-p采样参数
-    - **frequency_penalty**: 频率惩罚
-    - **presence_penalty**: 存在惩罚
+    Args:
+    - **model_id**: int = Field(..., description="模型唯一标识符")
+    - **messages**: list[dict[str, Any]] = Field(..., description="消息列表")
+    - **max_tokens**: int | None = Field(None, description="要生成的最大令牌数")
+    - **temperature**: float | None = Field(None, description="采样温度 (0.0-1.0，越低越确定)")
+    - **stream**: bool = Field(False, description="是否流式返回响应")
+    - **timeout**: int | None = Field(None, description="超时时间（秒）")
+    - **top_p**: float | None = Field(None, description="Top-p采样参数")
+    - **frequency_penalty**: float | None = Field(None, description="频率惩罚")
+    - **presence_penalty**: float | None = Field(None, description="存在惩罚")
     
-    返回:
-    - 流式模式: 标准OpenAI SSE格式
-    - 非流式模式: 包含消息和处理时间的JSON对象
+    Returns:
+
+    **非流式模式**: 包含消息和处理时间的JSON对象，标准OpenAI格式
+    - **id**: str = Field(default_factory=lambda: f"sse-{uuid.uuid4()}", description="响应流的唯一标识符")
+    - **object**: str = Field("chat.completion", description="对象类型，始终为 'chat.completion'")
+    - **created**: int = Field(default_factory=lambda: int(time.time()), description="响应创建时的Unix时间戳")
+    - **model**: str = Field(..., description="响应模型名称")
+    - **choices**: list[dict[str, Any]] = Field(..., description="包含响应消息的列表")
+    - **usage**: dict[str, int] = Field(..., description="令牌使用统计，包括 prompt_tokens、completion_tokens 和 total_tokens")
+    - **processing_time**: float = Field(..., description="处理时间（秒）（自定义字段）")
+
+    **流式模式**: 标准OpenAI SSE格式
+    ```
+    data: {
+        "id": response_id,
+        "object": "chat.completion.chunk",
+        "created": created_time,
+        "model": model_name,
+        "choices": [{
+            "delta": {},
+            "index": 0,
+            "finish_reason": "stop"
+        }],
+        "usage": usage_data
+    }
+    data: [DONE]
+    ```
+    Raises:
+    - **HTTPException**: 当聊天生成失败时抛出500错误，当响应格式不支持时抛出400错误，当请求超时时抛出408错误
     """
     start_time = time.time()
     response_id = f"vlmcmpl-{uuid.uuid4()}"  # OpenAI格式的ID

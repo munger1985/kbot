@@ -130,6 +130,8 @@ class LocalReranker(BaseReranker):
             
         # 设备配置
         if torch.cuda.is_available():
+            # 启用 TensorFloat32 张量核心以提高矩阵乘法性能
+            torch.set_float32_matmul_precision('high')
             if self.device_map is not None:  # 多 GPU
                 load_kwargs.update({
                     "device_map": self.device_map,

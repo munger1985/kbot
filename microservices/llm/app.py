@@ -16,6 +16,7 @@ from dotenv import load_dotenv
 from datetime import datetime
 from typing import Any
 from contextlib import asynccontextmanager
+from fastapi_offline import FastAPIOffline
 from pydantic import BaseModel, Field, ValidationError
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
@@ -29,12 +30,20 @@ from model import LLMProvider
 # 加载环境变量配置
 load_dotenv()
 
-# 获取模型服务配置
+# 获取模型配置
 config = ConfigManager.get_model_config()
 service_name = config.llm.service_name
 service_version = config.llm.service_version
 service_host = config.llm.service_host
 service_port = config.llm.service_port
+
+# 获取应用配置
+app_config = ConfigManager.get_app_config()
+debug = app_config.kbot.debug
+log_dir = app_config.kbot.log.dir
+log_level = app_config.kbot.log.level
+rotation = app_config.kbot.log.rotation
+retention = app_config.kbot.log.retention
 
 # 创建LLM服务实例
 llm_service = LLMService()
@@ -43,12 +52,6 @@ llm_service = LLMService()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用程序生命周期上下文管理器"""
-    # 通过 nacos_manager 获取 logger 配置
-    log_config = ConfigManager.get_app_config()
-    log_dir = log_config.kbot.log.dir
-    log_level = log_config.kbot.log.level
-    rotation = log_config.kbot.log.rotation
-    retention = log_config.kbot.log.retention
     
     # 初始化日志
     conf = LogConfig(service_name=service_name, log_dir=log_dir, level=log_level, rotation=rotation, retention=retention)
@@ -72,8 +75,7 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.exception(f"初始化LLM服务失败: {e}")
         # 在生产环境中，可能需要在这里退出应用程序
-        current_env = os.getenv("NACOS_GROUP", "dev")
-        if current_env == "prod":
+        if not debug:
             sys.exit(1)
     
     yield  # 服务运行期间
@@ -92,11 +94,14 @@ async def lifespan(app: FastAPI):
     logger.info(f"服务总运行时间: {time.time() - start_time:.2f} 秒")
 
 # 创建FastAPI应用
-app = FastAPI(
-    title="LLM服务",
+app = FastAPIOffline(
+    title="LLM 微服务",
     description="提供使用各种LLM提供者的文本生成和聊天完成服务",
     version=service_version,
     lifespan=lifespan,
+    # 这些参数让 FastAPIOffline 自动处理静态文件
+    docs_url="/docs" if debug else None,  # 生产环境可禁用
+    redoc_url="/redoc" if debug else None
 )
 
 # 添加CORS中间件
@@ -111,10 +116,10 @@ app.add_middleware(
 class ChatResponse(BaseModel):
     """聊天响应模型(兼容OpenAI)"""
 
-    id: str = Field(default_factory=lambda: f"sse-{uuid.uuid4()}", description="聊天完成的唯一标识符")
+    id: str = Field(default_factory=lambda: f"sse-{uuid.uuid4()}", description="响应流的唯一标识符")
     object: str = Field("chat.completion", description="对象类型，始终为'chat.completion'")
     created: int = Field(default_factory=lambda: int(time.time()), description="响应创建时的Unix时间戳")
-    model: str = Field(..., description="用于完成的模型")
+    model: str = Field(..., description="响应模型名称")
     choices: list[dict[str, Any]] = Field(..., description="包含消息的聊天完成选项列表")
     usage: dict[str, int] = Field(..., description="令牌使用统计，包括prompt_tokens、completion_tokens和total_tokens")
     processing_time: float = Field(..., description="处理时间（秒）（自定义字段）")
@@ -142,13 +147,21 @@ class ToggleModelRequest(BaseModel):
 def get_llm_service():
     return llm_service
 
-@app.get("/health", response_model=dict, tags=["LLM"])
+@app.get("/health", response_model=dict, tags=["LLM"], summary="LLM服务健康检查接口")
 async def health() -> dict[str, Any]:
-    """微服务健康检查接口
+    """微服务健康检查接口。
     
     Returns:
-        已加载的模型数量
+    - **dict**: 包含服务状态、已加载模型数量和时间戳的响应数据
+    ```
+        {
+        "status": "ok",
+        "loaded_models_count": len(loaded_models),
+        "timestamp": datetime.now().isoformat()
+        }
+    ```
     """
+
     # 获取已加载的模型信息
     loaded_models = {}
     if llm_service._initialized and hasattr(llm_service._model_pool, '_models'):
@@ -161,18 +174,19 @@ async def health() -> dict[str, Any]:
         "timestamp": datetime.now().isoformat()
     }
 
-@app.post("/load", response_model=dict, tags=["LLM"])
+@app.post("/load", response_model=dict, tags=["LLM"], summary="加载或卸载模型")
 async def load_model(request: ToggleModelRequest) -> dict:
     """通过模型ID加载模型到内存中。
     
     Args:
-        request: 启用或禁用模型请求表单，包含模型唯一名称和操作类型
+    - **model_id**: int = Field(..., description="模型唯一标识符")
+    - **operation**: str = Field(..., description="操作类型，'load' 或 'unload'")
         
     Returns:
-        dict: 包含操作状态和模型ID的响应数据
+    - **dict**: 包含操作状态和模型名称的响应数据
         
     Raises:
-        HTTPException: 当模型加载失败时抛出500错误
+    - **HTTPException**: 当模型加载失败时抛出500错误
     """
     model_name = llm_service._model_pool._model_names.get(request.model_id, str(request.model_id))
     try:
@@ -189,7 +203,7 @@ async def load_model(request: ToggleModelRequest) -> dict:
         logger.exception(f"操作模型 {model_name} 时发生错误: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/v1/chat/completions", response_model=None, tags=["LLM"])
+@app.post("/v1/chat/completions", response_model=None, tags=["LLM"], summary="生成聊天响应")
 async def chat(
     request: ChatRequest,
     llm_service: LLMService = Depends(get_llm_service)
@@ -197,19 +211,44 @@ async def chat(
     """生成聊天响应
     
     Args:
-        model_id:: 要使用的模型ID
-        messages: 聊天消息列表
-        max_tokens: 要生成的最大令牌数（可选）
-        temperature: 采样温度（0.0-1.0，越低越确定）
-        stream: 是否流式返回响应
-        timeout: 超时时间（秒）
-        top_p: Top-p采样参数
-        frequency_penalty: 频率惩罚
-        presence_penalty: 存在惩罚
+    - **model_id**: int = Field(..., description="要使用的特定模型ID")
+    - **messages**: list[dict[str, str]] | str = Field(..., description="聊天消息列表")
+    - **max_tokens**: int | None = Field(None, description="要生成的最大令牌数")
+    - **temperature**: float | None = Field(None, description="采样温度（0.0-1.0，越低越确定）")
+    - **stream**: bool = Field(False, description="是否流式传输响应")
+    - **timeout**: int | None = Field(None, description="超时时间（秒）")
+    - **top_p**: float | None = Field(None, description="Top-p采样参数")
+    - **frequency_penalty**: float | None = Field(None, description="频率惩罚")
+    - **presence_penalty**: float | None = Field(None, description="存在惩罚")
     
     Returns:
-        流式模式: 标准OpenAI SSE格式
-        非流式模式: 包含消息和处理时间的JSON对象
+    **非流式模式**: 包含消息和处理时间的JSON对象
+    - **id**: str = Field(default_factory=lambda: f"sse-{uuid.uuid4()}", description="响应流的唯一标识符")
+    - **object**: str = Field("chat.completion", description="对象类型，始终为'chat.completion'")
+    - **created**: int = Field(default_factory=lambda: int(time.time()), description="响应创建时的Unix时间戳")
+    - **model**: str = Field(..., description="响应模型名称")
+    - **choices**: list[dict[str, Any]] = Field(..., description="包含消息的聊天完成选项列表")
+    - **usage**: dict[str, int] = Field(..., description="令牌使用统计，包括prompt_tokens、completion_tokens和total_tokens")
+    - **processing_time**: float = Field(..., description="处理时间（秒）（自定义字段）")
+
+    **流式模式**: 标准OpenAI SSE格式
+    ```
+    data: {
+        "id": response_id,
+        "object": "chat.completion.chunk",
+        "created": created_time,
+        "model": model_name,
+        "choices": [{
+            "delta": {"content": content},
+            "index": 0,
+            "finish_reason": None
+        }]
+    }
+    data: [DONE]
+    ```
+
+    Raises:
+    - **HTTPException**: 当聊天生成失败时抛出500错误，当响应格式不支持时抛出400错误，当请求超时时抛出408错误
     """
     start_time = time.time()
     response_id = f"chatcmpl-{uuid.uuid4()}"  # OpenAI格式的ID
@@ -504,7 +543,7 @@ async def chat(
     except TimeoutError:
         raise HTTPException(408, detail="请求超时")
     except Exception as e:
-        logger.exception("聊天完成失败")
+        logger.exception("聊天生成失败")
         raise HTTPException(500, detail={
             "error": str(e),
             "type": e.__class__.__name__

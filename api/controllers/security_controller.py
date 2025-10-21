@@ -72,7 +72,7 @@ class AuthController:
             # 验证旧密码是否正确
             if verify_password(form.old_password, result.get("hashed_secret")): # type: ignore
                 # 如果旧密码正确，则更新密码
-                hashed_new_secret = get_password_hash(form.plain_password)
+                hashed_new_secret = get_password_hash(form.new_password)
                 return await KbotMdApiSecurityRepository().change_password(form.username, hashed_new_secret)
             else:
                 return False

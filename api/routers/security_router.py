@@ -11,8 +11,36 @@ router = APIRouter(prefix="/security", tags=["API Security"])
         "/get_token",
         summary="获取JWT令牌"
 )
-async def handle_login_for_access_token(form: OAuth2PasswordRequestForm = Depends()):
-    """获取JWT令牌的端点"""
+async def handle_login_for_access_token(form: OAuth2PasswordRequestForm = Depends()) -> SuccessQueryResponse | ErrorResponse:
+    """获取JWT令牌
+    Args:
+    - **form**: 登录请求表单
+    ```
+        username: str = Field(..., description="用户名")
+        password: str = Field(..., description="密码")
+    ```
+    Returns:
+    - **SuccessQueryResponse**: 成功响应
+    ```
+        code: int = Field(status.HTTP_200_OK, description="响应状态码")
+        message: str = Field("Success", description="返回的响应信息")
+        success: bool = Field(True, description="请求响应状态")
+        data: dict = Field(..., description="响应返回的数据")
+    ```
+    - **data**: 登录成功响应数据
+    ```
+        {
+            "access_token": "string",
+            "token_type": "bearer"
+        }
+    ```
+    - **ErrorResponse**: 失败响应
+    ```
+        code: int = Field(status.HTTP_400_BAD_REQUEST, description="响应状态码")
+        message: str = Field("Error", description="返回的响应信息")
+        success: bool = Field(False, description="请求响应状态")
+    ```
+    """
     token = await AuthController.login_for_access_token(
         username=form.username,
         password=form.password
@@ -36,8 +64,33 @@ async def handle_login_for_access_token(form: OAuth2PasswordRequestForm = Depend
         summary="创建访问者",
         dependencies=[Depends(AuthController.get_current_accessor)]
 )
-async def handle_create_accessor(form: AccessorForm):
-    """创建访问者"""
+async def handle_create_accessor(form: AccessorForm) -> SuccessResponse | ErrorResponse:
+    """创建访问者
+    Args:
+    - **form**: 访问者创建表单
+    ```
+        app_id: int = Field(..., description="应用ID")
+        accessor: str = Field(..., description="访问者")
+        accessor_type: int = Field(..., description="访问者类型")
+        plain_password: str = Field(..., description="明文密码")
+        status: int = Field(0, description="状态")
+        descs: str | None = Field(None, description="描述")
+        by: str | None = Field(None, description="创建人")
+    ```
+    Returns:
+    - **SuccessResponse**: 成功响应
+    ```
+        code: int = Field(status.HTTP_200_OK, description="响应状态码")
+        message: str = Field("Success", description="返回的响应信息")
+        success: bool = Field(True, description="请求响应状态")
+    ```
+    - **ErrorResponse**: 失败响应
+    ```
+        code: int = Field(status.HTTP_400_BAD_REQUEST, description="响应状态码")
+        message: str = Field("Error", description="返回的响应信息")
+        success: bool = Field(False, description="请求响应状态")
+    ```
+    """
     if await AuthController.create_accessor(form):
         return SuccessResponse(
         code=status.HTTP_200_OK,
@@ -57,8 +110,29 @@ async def handle_create_accessor(form: AccessorForm):
         summary="修改密码",
         dependencies=[Depends(AuthController.get_current_accessor)]
 )
-async def handle_change_password(form: ChangePasswordForm):
-    """访问者修改密码"""
+async def handle_change_password(form: ChangePasswordForm) -> SuccessResponse | ErrorResponse:
+    """访问者修改密码
+    Args:
+    - **form**: 访问者修改密码表单
+    ```
+        accessor: str = Field(..., description="访问者")
+        plain_password: str = Field(..., description="明文密码")
+        new_plain_password: str = Field(..., description="新明文密码")
+    ```
+    Returns:
+    - **SuccessResponse**: 成功响应
+    ```
+        code: int = Field(status.HTTP_200_OK, description="响应状态码")
+        message: str = Field("Success", description="返回的响应信息")
+        success: bool = Field(True, description="请求响应状态")
+    ```
+    - **ErrorResponse**: 失败响应
+    ```
+        code: int = Field(status.HTTP_400_BAD_REQUEST, description="响应状态码")
+        message: str = Field("Error", description="返回的响应信息")
+        success: bool = Field(False, description="请求响应状态")
+    ```
+    """
     if await AuthController.change_password(form):      
         return SuccessResponse(
             code=status.HTTP_200_OK,

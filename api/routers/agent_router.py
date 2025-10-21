@@ -11,10 +11,41 @@ router = APIRouter(prefix="/agent", tags=["Agent Chat"])
 
 @router.post(
     "/chat",
-    summary="智能体聊天接口",
+    summary="智能体聊天",
     dependencies=[Depends(AuthController.get_current_accessor)]
 )
 async def handle_agent_chat(form: AgentChatForm) -> SuccessQueryResponse | ErrorResponse:
+    """
+    智能体聊天接口
+    
+    Args:
+    - **form**: 智能体聊天表单
+    ```
+        session_id: str = Field(..., description="会话ID")
+        by: str = Field(..., description="请求用户ID")
+        agent_id: int = Field(..., description="智能体ID")
+        security_level: int = Field(0, description="安全级别")
+        request_time: str = Field(..., description="请求时间")
+        question: str = Field(..., description="问题")
+        tags: list[str] | None = Field(None, description="标签")
+    ```
+    
+    Returns:
+    - **SuccessQueryResponse**: 成功查询响应
+    ```
+        code: int = Field(status.HTTP_200_OK, description="响应状态码")
+        message: str = Field("Success", description="返回的响应信息")
+        success: bool = Field(True, description="请求响应状态")
+        data: dict | list[dict] = Field(..., description="响应返回的数据")
+    ```
+    - **ErrorResponse**: 失败响应
+    ```
+        code: int = Field(status.HTTP_400_BAD_REQUEST, description="响应状态码")
+        message: str = Field("Error", description="返回的响应信息")
+        success: bool = Field(False, description="请求响应状态")
+    ```
+
+    """
     try:
         r = await agent_chat(form)
 
@@ -36,11 +67,40 @@ async def handle_agent_chat(form: AgentChatForm) -> SuccessQueryResponse | Error
 
 @router.get(
     "/stream",
-    summary="智能体聊天流式响应接口",
+    summary="智能体聊天流式响应",
     response_class=StreamingResponse,
     response_model=None
 )
 async def handle_agent_stream_chat(session_id: str) -> StreamingResponse | ErrorResponse:
+    """
+    智能体聊天流式响应接口
+    
+    Args:
+    - **session_id**: 会话ID
+    
+    Returns:
+    - **StreamingResponse**: 流式响应
+    ```
+    data: {
+        "id": response_id,
+        "object": "chat.completion.chunk",
+        "created": created_time,
+        "model": model_name,
+        "choices": [{
+            "delta": {"content": content},
+            "index": 0,
+            "finish_reason": None
+        }]
+    }
+    data: [DONE]
+    ```
+    - **ErrorResponse**: 失败响应
+    ```
+        code: int = Field(status.HTTP_400_BAD_REQUEST, description="响应状态码")
+        message: str = Field("Error", description="返回的响应信息")
+        success: bool = Field(False, description="请求响应状态")
+    ```
+    """
     generator = agent_stream_chat(session_id)
     if generator is None:
         return ErrorResponse(
@@ -69,6 +129,31 @@ async def handle_agent_stream_chat(session_id: str) -> StreamingResponse | Error
     dependencies=[Depends(AuthController.get_current_accessor)]
 )
 async def handle_agent_feedback(form: AgentChatFeedbackForm):
+    """
+    智能体回答结果反馈接口
+    
+    Args:
+    - **form**: 智能体聊天获取反馈表单模型
+    ```
+        session_id: str = Field(..., description="会话ID")
+        question_index: int = Field(..., description="问题索引")
+        feedback: int = Field(..., description="问题反馈，0：不反馈，1：赞同，-1：不赞同")
+    ```
+    
+    Returns:
+    - **SuccessResponse**: 成功响应
+    ```
+        code: int = Field(status.HTTP_200_OK, description="响应状态码")
+        message: str = Field("Success", description="返回的响应信息")
+        success: bool = Field(True, description="请求响应状态")
+    ```
+    - **ErrorResponse**: 失败响应
+    ```
+        code: int = Field(status.HTTP_400_BAD_REQUEST, description="响应状态码")
+        message: str = Field("Error", description="返回的响应信息")
+        success: bool = Field(False, description="请求响应状态")
+    ```
+    """
     r = await agent_feedback(form)
     if r:
         return SuccessResponse(
@@ -89,6 +174,27 @@ async def handle_agent_feedback(form: AgentChatFeedbackForm):
     dependencies=[Depends(AuthController.get_current_accessor)]
 )
 async def handle_agent_get_session(session_id: str):
+    """
+    登录智能体时获取会话信息
+    
+    Args:
+    - **session_id**: 会话ID
+    
+    Returns:
+    - **SuccessQueryResponse**: 成功查询响应
+    ```
+        code: int = Field(status.HTTP_200_OK, description="响应状态码")
+        message: str = Field("Success", description="返回的响应信息")
+        success: bool = Field(True, description="请求响应状态")
+        data: dict | list[dict] = Field(..., description="响应返回的数据")
+    ```
+    - **ErrorResponse**: 失败响应
+    ```
+        code: int = Field(status.HTTP_400_BAD_REQUEST, description="响应状态码")
+        message: str = Field("Error", description="返回的响应信息")
+        success: bool = Field(False, description="请求响应状态")
+    ```
+    """
     try:
         r = await agent_get_session(session_id)
 
@@ -111,7 +217,27 @@ async def handle_agent_get_session(session_id: str):
     summary="删除聊天会话信息",
     dependencies=[Depends(AuthController.get_current_accessor)]
 )
-async def handle_agent_del_session(session_id: str):
+async def handle_agent_del_session(session_id: str) -> SuccessResponse | ErrorResponse:
+    """
+    删除聊天会话信息
+    
+    Args:
+    - **session_id**: 会话ID
+    
+    Returns:
+    - **SuccessResponse**: 成功响应
+    ```
+        code: int = Field(status.HTTP_200_OK, description="响应状态码")
+        message: str = Field("Success", description="返回的响应信息")
+        success: bool = Field(True, description="请求响应状态")
+    ```
+    - **ErrorResponse**: 失败响应
+    ```
+        code: int = Field(status.HTTP_400_BAD_REQUEST, description="响应状态码")
+        message: str = Field("Error", description="返回的响应信息")
+        success: bool = Field(False, description="请求响应状态")
+    ```
+    """
     try:
         if await agent_del_session(session_id):
             return SuccessResponse(
@@ -140,6 +266,27 @@ async def handle_agent_del_session(session_id: str):
     dependencies=[Depends(AuthController.get_current_accessor)]
 )
 async def handle_del_agent(agent_id: int, del_prompt: int = 0) -> SuccessResponse | ErrorResponse:
+    """
+    删除智能体
+    
+    Args:
+    - **agent_id**: 智能体ID
+    - **del_prompt**: 是否删除提示词，0：不删除，1：删除
+    
+    Returns:
+    - **SuccessResponse**: 成功响应
+    ```
+        code: int = Field(status.HTTP_200_OK, description="响应状态码")
+        message: str = Field("Success", description="返回的响应信息")
+        success: bool = Field(True, description="请求响应状态")
+    ```
+    - **ErrorResponse**: 失败响应
+    ```
+        code: int = Field(status.HTTP_400_BAD_REQUEST, description="响应状态码")
+        message: str = Field("Error", description="返回的响应信息")
+        success: bool = Field(False, description="请求响应状态")
+    ```
+    """
     delprompt = True if del_prompt == 1 else False
     try:
         if await del_agent(agent_id=agent_id, del_prompt=delprompt):

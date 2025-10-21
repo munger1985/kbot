@@ -14,6 +14,7 @@ from dotenv import load_dotenv
 from datetime import datetime
 from typing import Any
 from contextlib import asynccontextmanager
+from fastapi_offline import FastAPIOffline
 from pydantic import BaseModel, Field
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
@@ -26,11 +27,20 @@ from model.base import EmbeddingResponse
 # 加载环境变量配置
 load_dotenv()
 
+# 获取模型配置
 config = ConfigManager.get_model_config()
 service_name = config.embed.service_name
 service_version = config.embed.service_version
 service_host = config.embed.service_host
 service_port = config.embed.service_port
+
+# 获取应用配置
+app_config = ConfigManager.get_app_config()
+debug = app_config.kbot.debug
+log_dir = app_config.kbot.log.dir
+log_level = app_config.kbot.log.level
+rotation = app_config.kbot.log.rotation
+retention = app_config.kbot.log.retention
 
 
 # 创建嵌入服务实例
@@ -41,12 +51,6 @@ embedding_service = EmbeddingService()
 async def lifespan(app: FastAPI):
     """应用程序生命周期上下文管理器。"""
 
-    log_config = ConfigManager.get_app_config()
-    log_dir = log_config.kbot.log.dir
-    log_level = log_config.kbot.log.level
-    rotation = log_config.kbot.log.rotation
-    retention = log_config.kbot.log.retention
-        
     # 初始化日志配置
     conf = LogConfig(service_name=service_name, log_dir=log_dir, level=log_level, rotation=rotation, retention=retention)
     LogManager(conf).setup()
@@ -69,8 +73,7 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.exception(f"嵌入服务初始化失败: {e}")
         # 生产环境初始化失败时退出应用
-        current_env = os.getenv("NACOS_GROUP", "dev")
-        if current_env == "prod":
+        if not debug:
             sys.exit(1)
     
     yield  # 服务运行期间
@@ -89,11 +92,14 @@ async def lifespan(app: FastAPI):
     logger.info(f"总运行时间: {time.time() - start_time:.2f} 秒")
 
 # 创建 FastAPI 应用实例
-app = FastAPI(
-    title=service_name,
+app = FastAPIOffline(
+    title="Embedding 微服务",
     description="提供文本嵌入服务，将文本转换为向量表示。",
     version=service_version,
     lifespan=lifespan,
+    # 这些参数让 FastAPIOffline 自动处理静态文件
+    docs_url="/docs" if debug else None,  # 生产环境可禁用
+    redoc_url="/redoc" if debug else None
 )
 
 # 添加 CORS 中间件配置
@@ -120,19 +126,22 @@ class ToggleModelRequest(BaseModel):
     operation: str = Field(..., description="操作类型，'load' 或 'unload'")
 
 def get_embed_service():
-    """获取嵌入服务实例依赖项。
-    
-    Returns:
-        EmbeddingService: 嵌入服务实例
-    """
+    """获取嵌入服务实例依赖项。"""
     return embedding_service
 
-@app.get("/health", response_model=dict, tags=["Embedding"])
+@app.get("/health", response_model=dict, tags=["Embedding"], summary="Embedding服务健康检查接口")
 async def health() -> dict[str, Any]:
     """微服务健康检查接口。
     
     Returns:
-        dict: 包含服务状态、已加载模型数量和时间戳的响应数据
+    - **dict**: 包含服务状态、已加载模型数量和时间戳的响应数据
+    ```
+        {
+        "status": "ok",
+        "loaded_models_count": len(loaded_models),
+        "timestamp": datetime.now().isoformat()
+        }
+    ```
     """
     
     # 获取已加载的模型信息
@@ -146,18 +155,19 @@ async def health() -> dict[str, Any]:
         "timestamp": datetime.now().isoformat()
     }
 
-@app.post("/load", response_model=dict, tags=["Embedding"])
+@app.post("/load", response_model=dict, tags=["Embedding"], summary="加载或卸载模型")
 async def load_model(request: ToggleModelRequest) -> dict:
     """通过模型ID加载模型到内存中。
     
     Args:
-        request: 启用或禁用模型请求表单，包含模型唯一名称和操作类型
+    - **model_id**: int = Field(..., description="模型唯一标识符")
+    - **operation**: str = Field(..., description="操作类型，'load' 或 'unload'")
         
     Returns:
-        dict: 包含操作状态和模型ID的响应数据
+    - **dict**: 包含操作状态和模型名称的响应数据
         
     Raises:
-        HTTPException: 当模型加载失败时抛出500错误
+    - **HTTPException**: 当模型加载失败时抛出500错误
     """
     model_name = embedding_service._model_pool._model_names.get(request.model_id, str(request.model_id))
     try:
@@ -175,7 +185,7 @@ async def load_model(request: ToggleModelRequest) -> dict:
         raise HTTPException(status_code=500, detail=str(e))
 
     
-@app.post("/v1/embeddings", response_model=EmbeddingResponse, tags=["Embedding"])
+@app.post("/v1/embeddings", response_model=EmbeddingResponse, tags=["Embedding"], summary="将文本列表转换为嵌入向量")
 async def embed_texts(
     request: EmbeddingRequest,
     embed_service: EmbeddingService = Depends(get_embed_service)
@@ -183,14 +193,22 @@ async def embed_texts(
     """将文本列表转换为嵌入向量。
     
     Args:
-        request: 嵌入请求参数，包含模型名称、文本列表和批处理大小
-        embed_service: 嵌入服务实例依赖注入
+    - **model_id**: int = Field(..., description="模型唯一标识符")
+    - **texts**: list[str] = Field(..., description="待嵌入的文本列表")
+    - **batch_size**: int | None = Field(32, description="批处理大小")
+    - **is_query**: bool = Field(True, description="是否为查询文本")
         
     Returns:
-        EmbeddingResponse: 嵌入响应数据，包含向量数据和使用情况信息
+    - **data**: list[EmbeddingDataItem] = Field(..., description="嵌入数据项列表")
+        - **embedding**: list[float] = Field(..., description="嵌入向量")
+        - **index**: int = Field(..., description="在批次中的索引位置")
+        - **object**: str = Field("embedding", description="对象类型，始终为 'embedding'")
+    - **model**: str = Field(..., description="使用的嵌入模型名称")
+    - **object**: str = Field("list", description="对象类型，始终为 'list'")
+    - **usage**: dict[str, int] = Field(..., description="令牌使用信息")
         
     Raises:
-        HTTPException: 当嵌入处理过程中发生错误时抛出500错误
+    - **HTTPException**: 当嵌入处理过程中发生错误时抛出500错误
     """
     model_name = embedding_service._model_pool._model_names.get(request.model_id, str(request.model_id))
     try:

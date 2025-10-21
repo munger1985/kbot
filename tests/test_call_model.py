@@ -150,7 +150,7 @@ async def test_call_vlm_model():
     """
     # 测试参数
     model_id = 30 #"KBOT1/Qwen-VL-MAX"
-    prompt_unique_name = "KBOT1/pdf_parsing"
+    prompt_unique_name = "SYSTEM/image2text"
     image = "/mnt/f/docs/test_small.jpg"
 
 
@@ -163,4 +163,4 @@ async def test_call_vlm_model():
 # 运行测试
 if __name__ == "__main__":
 
-    asyncio.run(test_call_reranker_model())
+    asyncio.run(test_call_vlm_model())

@@ -2,13 +2,13 @@
 import json
 import os
 import urllib.parse
-from fastapi import APIRouter, UploadFile, File, Form, status, Depends
+from fastapi import APIRouter, UploadFile, File, Form, status, Depends, Body
 from fastapi.responses import HTMLResponse
 from api.controllers.security_controller import AuthController
 from fastapi.responses import FileResponse
 from api.controllers.kb_controller import *
 from api.schemas.kb_schema import *
-from api.schemas.base_response import SuccessResponse, ErrorResponse, SuccessQueryResponse
+from api.schemas.base_response import *
 
 router = APIRouter(prefix="/kb", tags=["Knowledge Base"])
 
@@ -20,13 +20,43 @@ router = APIRouter(prefix="/kb", tags=["Knowledge Base"])
 async def handle_upload_files(
     files: list[UploadFile] = File(...),
     metadata: str = Form(...)
-):
+) -> SuccessResponse | ErrorResponse:
+    """
+    上传一个或多个文件到指定知识库
+    
+    Args:
+    - **files**: 上传文件列表
+    - **metadata**: 上传文件元数据，json格式，包含以下字段
+    ```
+        app_id: int
+        domain_id: int
+        kb_id: int
+        overwrite: bool
+        batch_name: str
+        batch_id: int | None = None
+        biz_metadata: dict | None = None
+        created_by: str | None = None
+    ```
+    
+    Returns:
+    - **SuccessResponse**: 成功响应
+    ```
+        code: int = Field(status.HTTP_200_OK, description="响应状态码")
+        message: str = Field("Success", description="返回的响应信息")
+        success: bool = Field(True, description="请求响应状态")
+    ```
+    - **ErrorResponse**: 失败响应
+    ```
+        code: int = Field(status.HTTP_400_BAD_REQUEST, description="响应状态码")
+        message: str = Field("Error", description="返回的响应信息")
+        success: bool = Field(False, description="请求响应状态")
+    ```
+    """
     try:
-        # Parse and validate as form model
+        # 解析并验证为表单模型
         metadata_dict = json.loads(metadata)
         form = KBUploadForm(files=files, **metadata_dict)
         
-        # Call the controller
         result = await upload_kb_files(form)
         
         if result:
@@ -61,16 +91,40 @@ async def handle_upload_files(
     dependencies=[Depends(AuthController.get_current_accessor)]
 )
 async def handle_delete_files(
-    metadata: str = Form(...)
-):
+    form: KBDeleteForm = Body(...)
+) -> SuccessResponse | ErrorResponse:
+    """
+    从指定的知识库中删除文件或所有文件以及其知识库或批次
+    
+    Args:
+    - **form**: 删除文件元数据，json格式，包含以下字段
+    ```
+        app_id: int
+        domain_id: int
+        kb_id: int
+        batch_id: int | None = None
+        file_id: str | None = None
+        delete_batch: bool = False
+        delete_kb: bool = False
+    ```
+    
+    Returns:
+    - **SuccessResponse**: 成功响应
+    ```
+        code: int = Field(status.HTTP_200_OK, description="响应状态码")
+        message: str = Field("Success", description="返回的响应信息")
+        success: bool = Field(True, description="请求响应状态")
+    ```
+    - **ErrorResponse**: 失败响应
+    ```
+        code: int = Field(status.HTTP_400_BAD_REQUEST, description="响应状态码")
+        message: str = Field("Error", description="返回的响应信息")
+        success: bool = Field(False, description="请求响应状态")
+    ```
+    """
     try:
-        # Parse and validate as form model
-        metadata_dict = json.loads(metadata)
-        form = KBDeleteForm(**metadata_dict)
         
-        # Call the controller
         result = await delete_kb_files(form)
-
 
         if result["failed_file_cnt"] == 0 and result["meta_cnt"] > 0:
             return SuccessResponse(
@@ -107,7 +161,22 @@ async def handle_delete_files(
 )
 async def handle_download_file(
     file_id: str
-):
+) -> FileResponse | ErrorResponse:
+    """
+    从知识库中下载文件
+    
+    Args:
+    - **file_id**: 文件ID
+    
+    Returns:
+    - **FileResponse**: 文件响应
+    - **ErrorResponse**: 失败响应
+    ```
+        code: int = Field(status.HTTP_400_BAD_REQUEST, description="响应状态码")
+        message: str = Field("Error", description="返回的响应信息")
+        success: bool = Field(False, description="请求响应状态")
+    ```
+    """
     try:
         result = await get_kb_files(file_id, download=True)
         
@@ -145,7 +214,24 @@ async def handle_download_file(
 async def handle_preview_file(
     file_id: str,
     page_num: int = 0
-):
+) -> HTMLResponse | FileResponse | ErrorResponse:
+    """
+    从知识库中预览文件
+    
+    Args:
+    - **file_id**: 文件ID
+    - **page_num**: 页码
+    
+    Returns:
+    - **HTMLResponse**: HTML响应
+    - **FileResponse**: 图片响应
+    - **ErrorResponse**: 失败响应
+    ```
+        code: int = Field(status.HTTP_400_BAD_REQUEST, description="响应状态码")
+        message: str = Field("Error", description="返回的响应信息")
+        success: bool = Field(False, description="请求响应状态")
+    ```
+    """
     try:
         result = await get_kb_files(file_id, download=False, page_num=page_num)
         
@@ -193,13 +279,37 @@ async def handle_preview_file(
     status_code=status.HTTP_200_OK
 )
 async def handle_reparse_files(
-    metadata: str = Form(...)
-):
+    form: KBReparseForm = Body(...)
+) -> SuccessResponse | ErrorResponse:
+    """
+    重新解析文件
+    
+    Args:
+    - **form**: 重解析文件元数据
+    ```
+        kb_id: int
+        file_ids: list[str]
+    ```
+    
+    Returns:
+    - **SuccessResponse**: 成功响应
+    ```
+        code: int = Field(status.HTTP_200_OK, description="响应状态码")
+        message: str = Field("Success", description="返回的响应信息")
+        success: bool = Field(True, description="请求响应状态")
+    ```
+    - **ErrorResponse**: 失败响应
+    ```
+        code: int = Field(status.HTTP_400_BAD_REQUEST, description="响应状态码")
+        message: str = Field("Error", description="返回的响应信息")
+        success: bool = Field(False, description="请求响应状态")
+    ```
+    """
     try:
-        metadata_dict = json.loads(metadata)
-        form = KBReparseForm(**metadata_dict)
+        # metadata_dict = json.loads(metadata)
+        # form = KBReparseForm(**metadata_dict)
 
-        result = await reparse_kb_files(form=form)
+        result = await reparse_kb_files(form)
         if result:
             return SuccessResponse(
                 code=status.HTTP_200_OK,
@@ -237,6 +347,45 @@ async def handle_reparse_files(
 async def handle_preview_kb_file_v1(
     form: KBFilePreviewForm
 ):
+    """
+    从知识库中预览文件
+    
+    Args:
+    - **form**: 文件预览元数据
+    ```
+        file_id: str = Field(..., description="文件ID")
+        max_length: int | None = Field(None, description="最大长度")
+        pages: int | list[int] | None = Field(None, description="页数")
+        sheet_index: int | None = Field(None, description="Sheet索引")
+        preview_rows: int | None = Field(None, description="预览行数")
+        slide: int | None = Field(None, description="幻灯片页码")
+    ```
+    
+    Returns:
+    - **dict**: dict响应，包含文件预览信息
+    ```
+        {
+            "file_id": "文件ID",
+            "file_name": "文件名称",
+            "mime_type": "mime类型",
+            "file_size": "文件大小",
+            "success": True,
+            "preview_type": "预览文件的类型",
+            "content": "base64编码的文件内容",
+            "total_pages": "总页数",
+            "extracted_pages": "提取的页数",
+            "page_count": "提取的页码",
+            "message": "预览信息"
+        }
+    ```
+
+    - **ErrorResponse**: 失败响应
+    ```
+        code: int = Field(status.HTTP_400_BAD_REQUEST, description="响应状态码")
+        message: str = Field("Error", description="返回的响应信息")
+        success: bool = Field(False, description="请求响应状态")
+    ```
+    """
     try:
         kwargs = {
             "file_id": form.file_id,
@@ -266,7 +415,22 @@ async def handle_preview_kb_file_v1(
 )
 async def handle_preview_kb_file_v2(
     file_id: str
-):
+) -> FileResponse | ErrorResponse:
+    """
+    在浏览器中直接预览文件
+    
+    Args:
+    - **file_id**: str = Field(..., description="文件ID")
+    
+    Returns:
+    - **FileResponse**: 文件响应
+    - **ErrorResponse**: 失败响应
+    ```
+        code: int = Field(status.HTTP_400_BAD_REQUEST, description="响应状态码")
+        message: str = Field("Error", description="返回的响应信息")
+        success: bool = Field(False, description="请求响应状态")
+    ```
+    """
     try:
         result = await get_kb_files(file_id, download=True)
         
@@ -338,7 +502,34 @@ async def handle_preview_kb_file_v2(
 )
 async def handle_edit_file_chunk(
     form: KBFileChunkEditForm
-):
+) -> SuccessResponse | ErrorResponse:
+    """
+    更改或删除知识库文件的分片内容
+    
+    Args:
+    - **form**: 文件分片编辑元数据
+    ```
+        kb_id: int = Field(..., description="知识库ID")
+        file_id: str = Field(..., description="文件ID")
+        embed_id: str = Field(..., description="分片ID")
+        new_chunk: str | None = Field(None, description="新分片内容")
+        action: str = Field(..., description="操作类型")
+    ```
+    
+    Returns:
+    - **SuccessResponse**: 成功响应
+    ```
+        code: int = Field(status.HTTP_200_OK, description="响应状态码")
+        message: str = Field("Success", description="返回的响应信息")
+        success: bool = Field(True, description="请求响应状态")
+    ```
+    - **ErrorResponse**: 失败响应
+    ```
+        code: int = Field(status.HTTP_400_BAD_REQUEST, description="响应状态码")
+        message: str = Field("Error", description="返回的响应信息")
+        success: bool = Field(False, description="请求响应状态")
+    ```
+    """
     try:
         if form.action == "update":
             if form.new_chunk is None or form.new_chunk.strip() == "":
@@ -403,13 +594,49 @@ async def handle_edit_file_chunk(
     "/file/get_chunks",
     summary="根据文件ID获取文件的分片内容",
     response_model=SuccessQueryResponse | ErrorResponse,
-    # dependencies=[Depends(AuthController.get_current_accessor)],
+    dependencies=[Depends(AuthController.get_current_accessor)],
     status_code=status.HTTP_200_OK
 )
 async def handle_get_file_chunks(
     kb_id: int,
     file_id: str
-):
+) -> SuccessQueryResponse | ErrorResponse:
+    """
+    根据文件ID获取文件的分片内容
+    
+    Args:
+    - **kb_id**: int = Field(..., description="知识库ID")
+    - **file_id**: str = Field(..., description="文件ID")
+    
+    Returns:
+    - **SuccessQueryResponse**: 成功查询模型参数
+    ```
+        code: int = Field(status.HTTP_200_OK, description="响应状态码")
+        message: str = Field("Success", description="返回的响应信息")
+        success: bool = Field(True, description="请求响应状态")
+        data: dict | list[dict] = Field(..., description="响应返回的数据")
+    ```
+    - **data**: 模型参数
+    ```
+        {
+            embed_id: str = Field(..., description="分片ID")
+            kb_id: int = Field(..., description="知识库ID")
+            file_id: str = Field(..., description="文件ID")
+            chunk_doc: str = Field(..., description="分片内容")
+            chunk_metadata: str = Field(..., description="分片元数据")
+            biz_metadata: str = Field(..., description="业务元数据")
+            embedding = [], # embedding 不返回，防止接口数据过大
+            security_level: int = Field(..., description="安全级别")
+            status: int = Field(..., description="状态")
+        }
+    ```
+    - **ErrorResponse**: 失败响应
+    ```
+        code: int = Field(status.HTTP_400_BAD_REQUEST, description="响应状态码")
+        message: str = Field("Error", description="返回的响应信息")
+        success: bool = Field(False, description="请求响应状态")
+    ```
+    """
     try:
         result = await get_kb_file_chunk_by_id(
             kb_id=kb_id,

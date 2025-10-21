@@ -9,20 +9,20 @@ from utils.file_converter import FileToImage
 
 
 async def upload_kb_files(
-    form: KBUploadForm
+    upload_form: KBUploadForm
 ) -> bool:
     """上传文件到知识库"""
     try:
         result = await KBFileOperator().upload_file_service(
-            files=form.files,
-            app_id=form.app_id,
-            domain_id=form.domain_id,
-            kb_id=form.kb_id,
-            overwrite=form.overwrite,
-            batch_name=form.batch_name,
-            batch_id=form.batch_id,
-            biz_metadata=form.biz_metadata,
-            created_by=form.created_by
+            files=upload_form.files,
+            app_id=upload_form.app_id,
+            domain_id=upload_form.domain_id,
+            kb_id=upload_form.kb_id,
+            overwrite=upload_form.overwrite,
+            batch_name=upload_form.batch_name,
+            batch_id=upload_form.batch_id,
+            biz_metadata=upload_form.biz_metadata,
+            created_by=upload_form.created_by
         )
         return result
     except Exception as e:

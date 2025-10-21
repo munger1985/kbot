@@ -162,9 +162,12 @@ class ModelPool:
         """
         # 检查模型是否已加载
         if model_id in self._models:
+            logger.debug(f"模型 {model_id} 已缓存，直接返回")
             self._last_used[model_id] = datetime.now()
             return self._models[model_id]
         
+        logger.debug(f"模型 {model_id} 未缓存，尝试从数据库加载。当前缓存模型: {list(self._models.keys())}")
+
         # 调用 main 服务从数据库获取模型信息
         try:
             # 从环境变量获取 main 服务的地址和端口
@@ -186,9 +189,11 @@ class ModelPool:
                         raise ValueError(f"获取模型参数失败：HTTP {response.status} - {error_msg}")
                     
                     model_data = await response.json()
+                    model_params = model_data.get("data")
+                    logger.debug(f"获取模型参数成功：{model_params}")
                   
             # 启动模型
-            model = await self._start_model(model_id, model_data)
+            model = await self._start_model(model_id, model_params)
             return model
 
         except Exception as e:
@@ -315,8 +320,12 @@ class ModelPool:
             raise ValueError(f"获取模型参数失败: {e}")
 
         try: 
-            for model in models:
-                await self._start_model(model["model_id"], model)
+            for model in models.get("data", []):
+                model_id = int(model["model_id"])
+                logger.debug(f"正在预热模型 {model_id}，模型名称: {model.get('display_name', 'N/A')}")
+                await self._start_model(model_id, model)
+                logger.debug(f"模型 {model_id} 预热完成，已缓存: {model_id in self._models}")
+
 
         except Exception as e:
             logger.exception(f"模型预热失败: {e}")
