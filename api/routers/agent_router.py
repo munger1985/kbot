@@ -119,27 +119,6 @@ async def handle_agent_stream_chat(
             success=False,
             message="服务器内部错误"
         )
-    # generator = agent_controller.agent_stream_chat(session_id)
-    # if generator is None:
-    #     return ErrorResponse(
-    #         code=status.HTTP_400_BAD_REQUEST,
-    #         success=False,
-    #         message="智能体无响应"
-    #     )
-    
-    # async def convert_to_bytes():
-    #     async for chunk in generator: # type: ignore
-    #         if isinstance(chunk, dict):
-    #             data = json.dumps(chunk)
-    #         else:
-    #             data = str(chunk)
-    #         # 标准 SSE 事件流格式
-    #         yield data
-    
-    # return StreamingResponse(
-    #     convert_to_bytes(),
-    #     media_type="text/event-stream"
-    # )
 
 @router.post(
     "/feedback",

@@ -6,7 +6,7 @@ from fastapi import APIRouter, UploadFile, File, Form, status, Depends, Body
 from fastapi.responses import HTMLResponse
 from api.controllers.security_controller import AuthController
 from fastapi.responses import FileResponse
-from api.controllers.kb_controller import *
+from api.controllers.kb_controller import kb_controller as controller
 from api.schemas.kb_schema import *
 from api.schemas.base_response import *
 
@@ -57,7 +57,7 @@ async def handle_upload_files(
         metadata_dict = json.loads(metadata)
         form = KBUploadForm(files=files, **metadata_dict)
         
-        result = await upload_kb_files(form)
+        result = await controller.upload_kb_files(form)
         
         if result:
             return SuccessResponse(
@@ -124,7 +124,7 @@ async def handle_delete_files(
     """
     try:
         
-        result = await delete_kb_files(form)
+        result = await controller.delete_kb_files(form)
 
         if result["failed_file_cnt"] == 0 and result["meta_cnt"] > 0:
             return SuccessResponse(
@@ -178,7 +178,7 @@ async def handle_download_file(
     ```
     """
     try:
-        result = await get_kb_files(file_id, download=True)
+        result = await controller.get_kb_files(file_id, download=True)
         
         if result:
             return FileResponse(
@@ -233,7 +233,7 @@ async def handle_preview_file(
     ```
     """
     try:
-        result = await get_kb_files(file_id, download=False, page_num=page_num)
+        result = await controller.get_kb_files(file_id, download=False, page_num=page_num)
         
         if result:
             if result["file_ext"] == ".txt":
@@ -309,7 +309,7 @@ async def handle_reparse_files(
         # metadata_dict = json.loads(metadata)
         # form = KBReparseForm(**metadata_dict)
 
-        result = await reparse_kb_files(form)
+        result = await controller.reparse_kb_files(form)
         if result:
             return SuccessResponse(
                 code=status.HTTP_200_OK,
@@ -397,7 +397,7 @@ async def handle_preview_kb_file_v1(
         }
         kwargs = {k: v for k, v in kwargs.items() if v is not None}
         
-        return await preview_kb_file(**kwargs)
+        return await controller.preview_kb_file(**kwargs)
          
     except Exception as e:
         return ErrorResponse(
@@ -432,7 +432,7 @@ async def handle_preview_kb_file_v2(
     ```
     """
     try:
-        result = await get_kb_files(file_id, download=True)
+        result = await controller.get_kb_files(file_id, download=True)
         
         if result:
             # 获取文件扩展名以确定内容类型
@@ -538,27 +538,27 @@ async def handle_edit_file_chunk(
                     success=False,
                     message="更新操作需要提供新的分片内容"
                 )
-            result = await edit_kb_file_chunk(
+            result = await controller.edit_kb_file_chunk(
                 kb_id=form.kb_id,
                 file_id=form.file_id,
                 embed_id=form.embed_id,
                 new_chunk=form.new_chunk
             )
         elif form.action == "delete":
-            result = await delete_kb_file_chunk(
+            result = await controller.delete_kb_file_chunk(
                 kb_id=form.kb_id,
                 file_id=form.file_id,
                 embed_id=form.embed_id
             )
             
         elif form.action == "enable":
-            result = await toogle_kb_file_chunk_status(
+            result = await controller.toogle_kb_file_chunk_status(
                 kb_id=form.kb_id,
                 chunk_id=form.embed_id,
                 status=1
             )
         elif form.action == "disable":
-            result = await toogle_kb_file_chunk_status(
+            result = await controller.toogle_kb_file_chunk_status(
                 kb_id=form.kb_id,
                 chunk_id=form.embed_id,
                 status=0
@@ -638,7 +638,7 @@ async def handle_get_file_chunks(
     ```
     """
     try:
-        result = await get_kb_file_chunk_by_id(
+        result = await controller.get_kb_file_chunk_by_id(
             kb_id=kb_id,
             file_id=file_id
         )

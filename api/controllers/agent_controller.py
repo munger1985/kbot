@@ -2,14 +2,13 @@ import os
 import asyncio
 import datetime
 import json
-from typing import AsyncGenerator, Any
+from typing import Any
 from fastapi import Request, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from dao.repositories.kbot_md_chat_session_repo import KbotMdChatSessionRepository
 from dao.repositories.kbot_md_agent_repo import KbotMdAgentRepository
 from dao.repositories.kbot_md_agent_conf_repo import KbotMdAgentConfRepository
 from dao.repositories.kbot_md_prompt_repo import KbotMdPromptRepository
-# from dao.repositories.kbot_md_models_repo import KbotMdModelsRepository
 from dao.repositories.kbot_md_chat_history_repo import KbotMdChatHistoryRepository
 from dao.entities.kbot_md_chat_history import KbotMdChatHistory
 from services.chat.agent_chat import Agent
@@ -110,149 +109,6 @@ class AgentController:
         
         except Exception as e:
             raise e
-
-
-    # async def agent_stream_chat(session_id: str) -> AsyncGenerator[str, None]:
-    #     # 1. 根据session_id从Redis中获取问答pair
-    #     sess_repo = KbotMdChatSessionRepository()
-
-    #     logger.debug(f"正在查询 Redis，session_id: {session_id}")
-
-    #     last_qa_data = await sess_repo.get_last_qa_data(session_id)
-
-    #     logger.debug(f"last_qa_data: {last_qa_data}")
-
-    #     if last_qa_data is None:
-    #         logger.warning("未找到问答记录")
-    #         return
-        
-    #     refs = last_qa_data["references"]
-    #     agent_id = last_qa_data["agent_id"]
-
-    #     logger.debug(f"refs: {refs}")
-    #     logger.debug(f"agent_id: {agent_id}")
-        
-    #     # 2. 根据agent_id获取agent配置的提示词和LLM模型
-    #     agent_repo = KbotMdAgentRepository()
-    #     agent = await agent_repo.get_by_id(agent_id)
-        
-    #     if agent is None:
-    #         logger.warning("智能体不存在")
-    #         return
-        
-    #     model_id = agent.llm_id
-    #     if model_id is None:
-    #         logger.warning("智能体配置的 LLM 模型不存在")
-    #         return
-    #     prompt_id = agent.prompt_id
-    #     model_params = agent.llm_params if agent.llm_params else {}
-    #     model_params["stream"] = True
-        
-    #     # 3. 根据 prompt_id 获取提示词
-    #     prompt_template = ""
-    #     prompt_content = await KbotMdPromptRepository().get_prompt_by_id(prompt_id) # type: ignore
-    #     if prompt_content is None:
-    #         prompt_template = "根据参考内容回答问题。\n\n参考内容:{context}\n\n回答的问题:{question}"
-    #     else:
-    #         prompt_template = prompt_content
-            
-    #     # 4. 从返回的qa_data中提取问题参考答案构建LLM提示词
-    #     context = ""
-    #     for ref in refs:
-    #         context += f"{ref['content']}\n"  # 收集所有参考内容，每段后用换行分隔
-
-    #     # 5. 从返回的qa_data中提取问题构建LLM问题
-    #     question = last_qa_data["question"]
-
-    #     prompt = prompt_template.format(context=context.strip(), question=question) # type: ignore
-            
-    #     # 6. 调用LLM模型并处理流式响应
-    #     chunks = []
-    #     try:
-    #         async for chunk in CallModel().call_llm_model(model_id, prompt, **model_params):
-    #             # 直接传递SSE流
-    #             yield chunk
-                
-    #             # 解析内容并收集
-    #             if isinstance(chunk, str) and chunk.startswith('data: '):
-    #                 data = chunk[6:].strip()  # 去掉"data: "前缀
-    #                 if data != '[DONE]':
-    #                     try:
-    #                         json_data = json.loads(data)
-    #                         if "choices" in json_data and len(json_data["choices"]) > 0:
-    #                             if delta := json_data["choices"][0].get("delta"):
-    #                                 if content := delta.get("content"):
-    #                                     chunks.append(content)
-    #                     except json.JSONDecodeError:
-    #                         continue
-                
-    #     except Exception as e:
-    #         logger.error(f"流式响应错误: {str(e)}")
-    #         raise e
-        
-    #     finally:
-    #         # 7. 流结束后异步写入Redis
-    #         if chunks:
-
-    #             # 收集流式输出的所有chunk，并转换为字符串
-    #             str_chunks = []
-    #             for chunk in chunks:
-    #                 if isinstance(chunk, bytes):
-    #                     str_chunks.append(chunk.decode("utf-8"))
-    #                 else:
-    #                     str_chunks.append(str(chunk))
-                
-    #             full_response = "".join(str_chunks) if str_chunks else ""
-
-    #             # 创建聊天历史的数据结构
-    #             app_id = await agent_repo.get_app_id(agent_id=agent_id)
-    #             history = KbotMdChatHistory(
-    #                 app_id=app_id,
-    #                 agent_id=agent_id,
-    #                 session_id=session_id,
-    #                 question=question,
-    #                 answer=full_response,
-    #                 created_by=last_qa_data["by"],
-    #                 created_time=datetime.datetime.now(),
-    #                 updated_by=last_qa_data["by"],
-    #                 updated_time=datetime.datetime.now()
-    #             )
-                
-    #             # 异步写入Redis和历史表
-    #             logger.info("开始后台异步写入任务")
-    #             asyncio.create_task(_write_redis(session_id, full_response))
-    #             asyncio.create_task(_write_history(history))
-
-    # async def _write_redis(session_id: str, 
-    #                           #question: str, 
-    #                           answer: str
-    #                           ) -> None:
-    #     try:
-    #         # 将问题和答案作为历史上下文，转换为embedding后存入redis
-    #         # TODO
-    #         logger.debug(f"正在写入Redis，session_id: {session_id}")
-    #         sess_repo = KbotMdChatSessionRepository()
-    #         result = await sess_repo.update_last_qa_data_answer(session_id, answer)
-    #         if result:
-    #             logger.debug(f"写入Redis成功，session_id: {session_id}")
-    #         else:
-    #             logger.warning(f"写入Redis失败，session_id: {session_id}")
-            
-    #     except Exception as e:
-    #         logger.error(f"写入Redis错误: {str(e)}")
-
-    # async def _write_history(history: KbotMdChatHistory) -> None:
-    #     try:
-    #         # 填充历史表
-    #         logger.debug(f"正在写入历史表，session_id: {history.session_id}")
-    #         result = await KbotMdChatHistoryRepository().create(history)
-    #         if result:
-    #             logger.debug(f"写入历史表成功，session_id: {history.session_id}")
-    #         else:
-    #             logger.warning(f"写入历史表失败，session_id: {history.session_id}")
-            
-    #     except Exception as e:
-    #         logger.error(f"记录聊天历史错误: {str(e)}")
 
     async def agent_stream_chat(
             self,
@@ -385,7 +241,7 @@ class AgentController:
     async def _process_final_response(self, chunks, session_id, last_qa_data, agent, agent_repo):
         """处理最终响应并写入数据库"""
         try:
-            logger.info("开始处理最终响应")
+            logger.debug("开始处理最终响应")
             
             # 收集流式输出的所有chunk，并转换为字符串
             str_chunks = []
@@ -396,7 +252,7 @@ class AgentController:
                     str_chunks.append(str(chunk))
             
             full_response = "".join(str_chunks) if str_chunks else ""
-            logger.info(f"完整响应长度: {len(full_response)}")
+            logger.debug(f"完整响应长度: {len(full_response)}")
 
             # 创建聊天历史的数据结构
             app_id = await agent_repo.get_app_id(agent_id=agent.agent_id)
@@ -425,9 +281,9 @@ class AgentController:
                 if isinstance(result, Exception):
                     logger.error(f"写入任务 {i} 失败: {result}")
                 else:
-                    logger.info(f"写入任务 {i} 成功")
+                    logger.debug(f"写入任务 {i} 成功")
                     
-            logger.info("最终响应处理完成")
+            logger.info("成功写入redis和聊天历史表")
             
         except Exception as e:
             logger.error(f"处理最终响应时出错: {e}")

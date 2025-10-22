@@ -1,9 +1,8 @@
 from fastapi import HTTPException, APIRouter, Query, status
-from api.controllers.log_controller import LogController
+from api.controllers.log_controller import log_controller as controller
 from api.schemas.eslog_schema import LogQueryRequest, LogResponse
 
 router = APIRouter(prefix="/logs", tags=["Logs"])
-controller = LogController()
 
 @router.get("/tail", summary="流式获取最新日志")
 async def stream_recent_logs(

@@ -8,13 +8,14 @@ from api.schemas.eslog_schema import LogQueryRequest
 
 
 class LogController:
+    """日志控制器"""
+
     def __init__(self):
         self.eslog = EslogService()
     
     async def stream_recent_logs(self, size: int = 100) -> StreamingResponse:
-        """
-        流式输出最新的日志
-        """
+        """流式输出最新的日志"""
+
         async def generate() -> AsyncGenerator[str, None]:
             try:
                 logs = await self.eslog.get_recent_logs(size)
@@ -44,9 +45,8 @@ class LogController:
         )
     
     async def search_logs(self, query: LogQueryRequest) -> dict[str, Any]:
-        """
-        根据条件查询日志
-        """
+        """根据条件查询日志"""
+        
         try:
             # 处理日志级别筛选
             log_level = None
@@ -66,3 +66,5 @@ class LogController:
             
         except Exception as e:
             raise e
+        
+log_controller = LogController()

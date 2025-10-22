@@ -205,4 +205,4 @@ class ModelController:
         else:
             return False
         
-        
+model_controller = ModelController()      

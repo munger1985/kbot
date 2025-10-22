@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, status
-from api.controllers.model_controller import ModelController
+from api.controllers.model_controller import model_controller as controller
 from api.controllers.security_controller import AuthController
 from api.schemas.model_schema import *
 from api.schemas.base_response import *
@@ -36,7 +36,7 @@ async def handle_enable_model(form: ToggleModelForm) -> SuccessResponse | ErrorR
         success: bool = Field(False, description="请求响应状态")
     ```
     """
-    controller = ModelController()
+    
     enable = True if form.switch == 1 else False
     result = await controller.toggle(form.model_id, enable=enable)
     if result:
@@ -51,8 +51,6 @@ async def handle_enable_model(form: ToggleModelForm) -> SuccessResponse | ErrorR
             success=False,
             message="操作失败"
         )
-    
-    
     
 @router.post(
         "/params",
@@ -97,7 +95,7 @@ async def handle_get_model_params(form: ModelForm) -> SuccessQueryResponse | Err
         success: bool = Field(False, description="请求响应状态")
     ```
     """
-    controller = ModelController()
+    
     model = await controller.get_model_by_id(form.model_id)
     if model:
         return SuccessQueryResponse(
@@ -155,7 +153,7 @@ async def handle_get_all_model_params(model_category: int) -> SuccessQueryRespon
         success: bool = Field(False, description="请求响应状态")
     ```
     """
-    controller = ModelController()
+    
     models = await controller.get_all_available_models(model_category)
     if models:
         return SuccessQueryResponse(
@@ -198,8 +196,7 @@ async def handle_test_model(form: TestModelForm) -> SuccessResponse | ErrorRespo
         success: bool = Field(False, description="请求响应状态")
     ```
     """
-
-    controller = ModelController()
+    
     if await controller.verify_model(form.model_id, form.model_category):
         return SuccessResponse(
             code=status.HTTP_200_OK,
