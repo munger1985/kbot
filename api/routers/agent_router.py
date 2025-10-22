@@ -1,10 +1,11 @@
 import json
 from loguru import logger
 from fastapi import APIRouter, status, Depends
+from fastapi import Request, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from api.schemas.agent_schema import AgentChatForm, AgentChatFeedbackForm
 from api.controllers.security_controller import AuthController
-from api.controllers.agent_controller import *
+from api.controllers.agent_controller import agent_controller
 from api.schemas.base_response import *
 
 router = APIRouter(prefix="/agent", tags=["Agent Chat"])
@@ -47,7 +48,7 @@ async def handle_agent_chat(form: AgentChatForm) -> SuccessQueryResponse | Error
 
     """
     try:
-        r = await agent_chat(form)
+        r = await agent_controller.agent_chat(form)
 
         logger.debug(f"聊天结果: {r}")
 
@@ -71,7 +72,11 @@ async def handle_agent_chat(form: AgentChatForm) -> SuccessQueryResponse | Error
     response_class=StreamingResponse,
     response_model=None
 )
-async def handle_agent_stream_chat(session_id: str) -> StreamingResponse | ErrorResponse:
+async def handle_agent_stream_chat(
+    request: Request,           # FastAPI 自动注入
+    background_tasks: BackgroundTasks,  # FastAPI 自动注入
+    session_id: str             # 前端传入的查询参数
+) -> StreamingResponse | ErrorResponse:
     """
     智能体聊天流式响应接口
     
@@ -101,27 +106,40 @@ async def handle_agent_stream_chat(session_id: str) -> StreamingResponse | Error
         success: bool = Field(False, description="请求响应状态")
     ```
     """
-    generator = agent_stream_chat(session_id)
-    if generator is None:
-        return ErrorResponse(
-            code=status.HTTP_400_BAD_REQUEST,
-            success=False,
-            message="智能体无响应"
+    try:
+        return await agent_controller.agent_stream_chat(
+            request=request,
+            background_tasks=background_tasks,
+            session_id=session_id
         )
+    except Exception as e:
+        logger.error(f"流式聊天处理错误: {e}")
+        return ErrorResponse(
+            code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            success=False,
+            message="服务器内部错误"
+        )
+    # generator = agent_controller.agent_stream_chat(session_id)
+    # if generator is None:
+    #     return ErrorResponse(
+    #         code=status.HTTP_400_BAD_REQUEST,
+    #         success=False,
+    #         message="智能体无响应"
+    #     )
     
-    async def convert_to_bytes():
-        async for chunk in generator: # type: ignore
-            if isinstance(chunk, dict):
-                data = json.dumps(chunk)
-            else:
-                data = str(chunk)
-            # 标准 SSE 事件流格式
-            yield data
+    # async def convert_to_bytes():
+    #     async for chunk in generator: # type: ignore
+    #         if isinstance(chunk, dict):
+    #             data = json.dumps(chunk)
+    #         else:
+    #             data = str(chunk)
+    #         # 标准 SSE 事件流格式
+    #         yield data
     
-    return StreamingResponse(
-        convert_to_bytes(),
-        media_type="text/event-stream"
-    )
+    # return StreamingResponse(
+    #     convert_to_bytes(),
+    #     media_type="text/event-stream"
+    # )
 
 @router.post(
     "/feedback",
@@ -154,7 +172,7 @@ async def handle_agent_feedback(form: AgentChatFeedbackForm):
         success: bool = Field(False, description="请求响应状态")
     ```
     """
-    r = await agent_feedback(form)
+    r = await agent_controller.agent_feedback(form)
     if r:
         return SuccessResponse(
             code=status.HTTP_200_OK,
@@ -196,7 +214,7 @@ async def handle_agent_get_session(session_id: str):
     ```
     """
     try:
-        r = await agent_get_session(session_id)
+        r = await agent_controller.agent_get_session(session_id)
 
         return SuccessQueryResponse(
             code=status.HTTP_200_OK,
@@ -239,7 +257,7 @@ async def handle_agent_del_session(session_id: str) -> SuccessResponse | ErrorRe
     ```
     """
     try:
-        if await agent_del_session(session_id):
+        if await agent_controller.agent_del_session(session_id):
             return SuccessResponse(
                 code=status.HTTP_200_OK,
                 success=True,
@@ -289,7 +307,7 @@ async def handle_del_agent(agent_id: int, del_prompt: int = 0) -> SuccessRespons
     """
     delprompt = True if del_prompt == 1 else False
     try:
-        if await del_agent(agent_id=agent_id, del_prompt=delprompt):
+        if await agent_controller.del_agent(agent_id=agent_id, del_prompt=delprompt):
             return SuccessResponse(
                 code=status.HTTP_200_OK,
                 success=True,
