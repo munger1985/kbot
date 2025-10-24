@@ -27,7 +27,7 @@ class PDFPlumberParser:
     def __init__(self, file_params: FileParams, remove_header_footer: bool = True):
         self.file_params = file_params
         self.pdf_path = Path(file_params.file_path)
-        self.output_dir = self.pdf_path.parent / "output"/file_params.file_id
+        self.output_dir = self.pdf_path.parent / "output" / file_params.file_id
         self.images_dir = self.output_dir / "images"
         self.tables_dir = self.output_dir / "tables"
 
@@ -54,7 +54,7 @@ class PDFPlumberParser:
         if split_strategy == SplitStrategy.PAGE.value:
             try:
                 # Extract all content by page
-                _, self.images_info, _  = self.extract_all_per_page()
+                _, self.images_info, _ = self.extract_all_per_page()
                 if not await self._process_embeddings_per_page():
                     return False
 
@@ -67,7 +67,7 @@ class PDFPlumberParser:
 
             except Exception as e:
                 logger.error(f"Error processing PDF file: {str(e)}")
-                logger.exception('asdasd',e)
+                logger.exception('asdasd', e)
                 await file_repo.update_file_status(
                     self.file_params.file_id,
                     FileStatus.PARSE_FAILED,
@@ -79,7 +79,7 @@ class PDFPlumberParser:
                 self.chunk_size = int(self.file_params.parser.get("chunk_size", 500))
                 self.chunk_overlap = int(self.file_params.parser.get("chunk_overlap", 50))
 
-                _, self.images_info, _= self.extract_all_by_fixed_size()
+                _, self.images_info, _ = self.extract_all_by_fixed_size()
                 # if not await self._process_images_embeddings(images_info):
                 #     return False
 
@@ -97,7 +97,7 @@ class PDFPlumberParser:
             except Exception as e:
                 logger.exception("Error processing PDF file:  {}", e)
                 tb = traceback.TracebackException.from_exception(e)
-                errMsg= ''.join(tb.format())
+                errMsg = ''.join(tb.format())
                 await file_repo.update_file_status(
                     self.file_params.file_id,
                     FileStatus.PARSE_FAILED,
@@ -108,16 +108,17 @@ class PDFPlumberParser:
         else:
             logger.warning(f"Unrecognized split strategy: {split_strategy}")
             return False
+
     async def _process_images_embeddings(self) -> list:
         if self.file_params.img2txt == 1:
-        # if self.file_params.parser.get("extract_images", False):
+            # if self.file_params.parser.get("extract_images", False):
             vlm_prompt_unique_name = self.model_config.prompt.image2text
-            
+
             if self.file_params.img2txt_model is None:
                 msg = f"Image to text model not found for id: {self.file_params.img2txt_model}"
                 logger.error(msg)
                 await self._update_file_status(FileStatus.PARSE_FAILED, msg)
-                return [] 
+                return []
 
             chunks = []
             chunk_metas = []
@@ -125,9 +126,9 @@ class PDFPlumberParser:
                 description_file = Path(eachImage['file_path'] + ".description")
                 if not description_file.exists():
 
-
-                    image_description = await CallModel().call_vlm_model_for_parsing_picture(self.file_params.img2txt_model,
-                                                                           eachImage['file_path'], vlm_prompt_unique_name) 
+                    image_description = await CallModel().call_vlm_model_for_parsing_picture(
+                        self.file_params.img2txt_model,
+                        eachImage['file_path'], vlm_prompt_unique_name)
                     if image_description:
                         description_file.write_text(
                             image_description,
@@ -139,20 +140,19 @@ class PDFPlumberParser:
                             "image_id": eachImage['uuid'],
                         })
                         chunks.append(image_description)
-            
 
             if not self.file_params.txt_embed_model:
                 msg = f"text_embedding_model not found for id: {self.file_params.txt_embed_model}"
                 logger.error(msg)
                 await self._update_file_status(FileStatus.PARSE_FAILED, msg)
                 return []
-            embeddings_list= []
+            embeddings_list = []
             if chunks:
                 embeddings_list = await CallModel().call_embedding_model(self.file_params.txt_embed_model, chunks)
             if embeddings_list and len(embeddings_list) != len(chunks):
                 msg = f"text_embedding_model  {self.file_params.txt_embed_model} returned invalid results (expected {len(chunks)}, got {len(embeddings_list) if embeddings_list else 0})"
                 logger.error(msg)
-                logger.error("failed file: {}",self.file_params.file_path)
+                logger.error("failed file: {}", self.file_params.file_path)
                 await self._update_file_status(FileStatus.PARSE_FAILED, msg)
                 return []
 
@@ -166,7 +166,7 @@ class PDFPlumberParser:
                     chunk_metadata=meta,
                     biz_metadata=self.file_params.biz_metadata,
                     file_id=self.file_params.file_id,
-                    embedding=embeddings_list[idx].embedding, # type: ignore
+                    embedding=embeddings_list[idx].embedding,  # type: ignore
                     security_level=self.file_params.security_level
                 )
                 embed_entities.append(embed_entity)
@@ -175,11 +175,10 @@ class PDFPlumberParser:
             return embed_entities
         else:
             return []
-        
 
     async def _process_embeddings_per_page(self) -> bool:
         """Process all content embeddings in a unified way"""
-        
+
         if not self.file_params.txt_embed_model:
             msg = f"Embedding model not found for id: {self.file_params.txt_embed_model}"
             logger.error(msg)
@@ -243,7 +242,7 @@ class PDFPlumberParser:
             )
             embed_entities.append(embed_entity)
 
-        image_embed_entities= await self._process_images_embeddings()
+        image_embed_entities = await self._process_images_embeddings()
         embed_entities.extend(image_embed_entities)
         if self.file_params.enable_summary:
             logger.debug("启用摘要处理")
@@ -254,10 +253,9 @@ class PDFPlumberParser:
         # Save all embeddings in one batch
         return await self._save_embeddings(embed_entities)
 
-
     async def _process_embeddings_by_fixed_size(self) -> bool:
         """Process text and table embeddings for by fixed size"""
-        
+
         if not self.file_params.txt_embed_model:
             msg = f"Embedding model not found for id: {self.file_params.txt_embed_model}"
             logger.error(msg)
@@ -320,7 +318,7 @@ class PDFPlumberParser:
                 status=1
             )
             embed_entities.append(embed_entity)
-        image_embed_entities= await self._process_images_embeddings()
+        image_embed_entities = await self._process_images_embeddings()
         embed_entities.extend(image_embed_entities)
         if self.file_params.enable_summary:
             logger.debug("启用摘要处理")
@@ -330,7 +328,6 @@ class PDFPlumberParser:
         # Save all embeddings in one batch
         return await self._save_embeddings(embed_entities)
 
-
     async def _save_embeddings(self, embeddings: list[KbotBizTxtEmbedding]) -> bool:
         """Save embeddings to database with error handling"""
         if not embeddings:
@@ -338,7 +335,7 @@ class PDFPlumberParser:
 
         try:
             repo = await EmbeddingRepositoryFactory.create_repository(kb_id=self.file_params.kb_id)
-            result = await repo.create(kb_id=self.file_params.kb_id, embeddings=embeddings) # type: ignore
+            result = await repo.create(kb_id=self.file_params.kb_id, embeddings=embeddings)  # type: ignore
             if not result:
                 msg = "Failed to save embeddings (repository returned False)"
                 logger.error(msg)
@@ -458,6 +455,7 @@ class PDFPlumberParser:
         print(f"处理后元素数: {len(new_text_content)}")
 
         return new_text_content
+
     def extract_all_per_page(self) -> tuple[list[dict], list[dict], list[dict]]:
         """Extract all content from PDF by page"""
         logger.info(f"Parsing file: {self.pdf_path}")
@@ -550,6 +548,7 @@ class PDFPlumberParser:
         except Exception as e:
             print(f"过滤页眉页脚时出错: {e}，返回原始文本")
             return page_text
+
     def _extract_text_and_tables(self, page, page_num: int) -> tuple[str, list[dict]]:
         """Extract text and tables from a page"""
         page_text = ""
@@ -813,18 +812,45 @@ class PDFPlumberParser:
                 color_space = stream.get('ColorSpace')
                 data = stream.get_data()
 
+                bits_per_component = int(stream.get('BitsPerComponent', 8))
+
                 mode = 'RGB'  # default
                 if color_space:
                     if isinstance(color_space, list):
                         color_space = color_space[0]
                     if hasattr(color_space, 'name'):
-                        if color_space.name == 'DeviceGray':
+                        cs_name = color_space.name
+                        if cs_name == 'DeviceGray':
                             mode = 'L'
-                        elif color_space.name == 'DeviceCMYK':
+                        elif cs_name == 'DeviceRGB':
+                            mode = 'RGB'
+                        elif cs_name == 'DeviceCMYK':
                             mode = 'CMYK'
 
+                # Override for 1-bit grayscale images
+                if bits_per_component == 1 and mode == 'L':
+                    mode = '1'
+
+                # Calculate expected data size
+                channels = 1 if mode in ('L', '1') else 3 if mode == 'RGB' else 4 if mode == 'CMYK' else 0
+                expected_size = width * height * channels
+                if mode == '1':
+                    expected_size = ((width + 7) // 8) * height
+
+                if len(data) != expected_size:
+                    logger.error(f"Data size mismatch for mode {mode}: expected {expected_size}, got {len(data)}")
+                    return None
+
                 pil_image = Image.frombytes(mode, (width, height), data)
+
+                # Convert CMYK to RGB for PNG compatibility
+                if mode == 'CMYK':
+                    pil_image = pil_image.convert('RGB')
+
                 return data, 'png', pil_image
+            except ValueError as ve:
+                logger.error(f"ValueError in image creation: {ve}")
+                return None
             except Exception as e:
                 logger.error(f"Error decoding FlateDecode image: {e}")
                 return None
@@ -898,6 +924,7 @@ class PDFPlumberParser:
 
         except Exception:
             return False
+
     # def _is_table_valid(self, csv_path: str) -> bool:
     #     """Check if a table CSV file contains valid content"""
     #     try:
