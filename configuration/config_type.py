@@ -83,7 +83,6 @@ class EslogConfig(BaseModel):
     hosts: list[str]
     username: str
     password: str
-    ca_certs: str
     index: str
     
 class DBConfig(BaseModel):

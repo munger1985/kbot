@@ -108,24 +108,15 @@ sudo docker run --name libreoffice -d \
 # 容器所在服务器ip和容器端口需要更新到app.properties文件的 libre_host 和 libre_port 两项中
 
 
-#3 部署elastic search容器
+#3 部署elastic search容器（作为向量存储）
 #3.1 创建elastic search网络
 docker network create elastic
 #3.2 创建elastic search存储目录
-mkdir -p /home/ubuntu/elastic/eslog
 mkdir -p /home/ubuntu/elastic/eskb
 #3.3 修改目录权限
 sudo chown -R 1000:1000 /home/ubuntu/elastic/
 sudo chmod -R 777 /home/ubuntu/elastic/
-#3.4 启动elastic search容器：eslog容器用于记录全局日志，eskb用于作为kbot的全文索引库
-docker run --name eslog --net elastic \
-  -p 9201:9200 \
-  -p 9301:9300 \
-  -v /home/ubuntu/elastic/eslog:/usr/share/elasticsearch/data \
-  -d -m 2GB \
-  -e "discovery.type=single-node" \
-  elasticsearch:9.1.5
-
+#3.4 启动elastic search容器
 docker run --name eskb --net elastic \
   -p 9202:9200 \
   -p 9302:9300 \
@@ -135,23 +126,19 @@ docker run --name eskb --net elastic \
   elasticsearch:9.1.5
 
 #3.5 修改初始密码，将输出到控制台的密码复制到configuration/db_config.json文件中
-docker exec -it eslog /usr/share/elasticsearch/bin/elasticsearch-reset-password -u elastic
 docker exec -it eskb /usr/share/elasticsearch/bin/elasticsearch-reset-password -u elastic
 
 #3.6 复制证书
-sudo docker cp eslog:/usr/share/elasticsearch/config/certs/http_ca.crt /home/ubuntu/elastic/eslog/
 sudo docker cp eskb:/usr/share/elasticsearch/config/certs/http_ca.crt /home/ubuntu/elastic/eskb/
-sudo chown -R ubuntu:ubuntu /home/ubuntu/elastic/eslog/http_ca.crt
 sudo chown -R ubuntu:ubuntu /home/ubuntu/elastic/eskb/http_ca.crt
 
 #3.7 验证elastic search安装，使用前面修改过的初始密码登录，用户名默认elastic
-https://localhost:9201/
 https://localhost:9202/
 
 
 #3.配置 nacos 容器
 #3.1 创建nacos容器镜像
-cd docs/nacos-init
+cd docs/install/nacos-container
 docker-compose up -d
 
 #3.2 Kbot 3.0后端的配置文件：
@@ -316,50 +303,15 @@ Kbot的主服务默认端口：18099，Nacos的默认端口：8848
 http://localhost:8848/nacos/
 
 ```
-### 5.部署filebeat用于收集日志到eslog
+### 5.部署elk用于收集日志
 ```bash
-#5.1 安装filebeat必要依赖包并添加官方Elastic 的 GPG 密钥
-sudo apt update
-sudo apt install -y apt-transport-https ca-certificates curl software-properties-common
-wget -qO - https://artifacts.elastic.co/GPG-KEY-elasticsearch | sudo gpg --dearmor -o /usr/share/keyrings/elasticsearch-keyring.gpg
-echo "deb [signed-by=/usr/share/keyrings/elasticsearch-keyring.gpg] https://artifacts.elastic.co/packages/9.x/apt stable main" | sudo tee /etc/apt/sources.list.d/elastic-9.x.list
+cd docs/install/elk-log-container
 
-#5.2 安装filebeat
-sudo apt update
-sudo apt install -y filebeat
+# 根据实际情况修改.env文件中的配置，如果.env不存在则复制.env.example文件并重命名为.env
 
-#5.3 修改filebeat配置文件
-sudo vim /etc/filebeat/filebeat.yml
-# 指定采集的日志（输入配置）
-filebeat.inputs:
-- type: filestream
-  id: kblog-id
-  enabled: true
-  paths:
-    - /home/ubuntu/kbot3/logs/*.log
-
-# 配置输出的Elasticsearch服务器（输出配置）
-# 安全认证配置
-output.elasticsearch:
-  hosts: ["https://localhost:9201"]  # 注意是 https
-  username: "elastic"  # 替换为你的用户名
-  password: "your_password"  # 替换为对应用户的密码
-  protocol: "https"
-  ssl:
-    enabled: true
-    verification_mode: full  # 或 "certificate"
-    certificate_authorities: ["/home/ubuntu/elastic/eslog/http_ca.crt"]
-
-# 启动并启用服务​
-sudo systemctl start filebeat
-sudo systemctl enable filebeat
-sudo systemctl status filebeat
-
-# 验证filebeat安装
-curl --cacert /home/ubuntu/elastic/eslog/http_ca.crt -u elastic:<PASSWORD> https://localhost:9201
-curl --cacert /home/ubuntu/elastic/eskb/http_ca.crt -u elastic:<PASSWORD> https://localhost:9202
+# 启动容器
+./start_elk.sh
 ```
-
 ### 5.初始化Kbot数据库表信息
 ```bash
 #1.在DBA用户创建Kbot元数据库（Oracle23ai的schema），并赋予权限

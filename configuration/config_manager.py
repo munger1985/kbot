@@ -90,7 +90,6 @@ class ConfigManager:
                         hosts=["https://localhost:9201"],
                         username="elastic",
                         password="<PASSWORD>",
-                        ca_certs="",
                         index="kbot_logs"
                     )
                 )
@@ -129,7 +128,6 @@ class ConfigManager:
                     hosts=["https://localhost:9201"],
                     username="elastic",
                     password="<PASSWORD>",
-                    ca_certs="",
                     index="kbot_logs"
                 )
             )

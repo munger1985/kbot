@@ -1,0 +1,35 @@
+services:
+  kbot-eslog:
+    image: elastic/elasticsearch:${ELASTIC_STACK_VERSION:-9.1.5}
+    container_name: kbot-eslog
+    environment:
+      - discovery.type=single-node
+      - ES_JAVA_OPTS=${ES_JAVA_OPTS:-Xms1024m -Xmx1024m}
+      - xpack.security.enabled=true
+      - xpack.security.enrollment.enabled=true
+      - ELASTIC_PASSWORD=${ELASTIC_PASSWORD}
+    volumes:
+      - eslog-data:/usr/share/elasticsearch/data
+    ports:
+      - "${ES_PORT:-9201}:9200"
+    networks:
+      - elk-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s -u elastic:${ELASTIC_PASSWORD} http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=50s || exit 1"]
+      interval: 10s
+      timeout: 60s
+      retries: 20
+      start_period: 120s
+    restart: unless-stopped
+
+volumes:
+  eslog-data:
+    driver: local
+    driver_opts:
+      type: none
+      device: ${ESLOG_DATA}
+      o: bind
+
+networks:
+  elk-network:
+    driver: bridge

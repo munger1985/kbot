@@ -12,8 +12,8 @@ class EslogService:
         db_config = ConfigManager.get_db_config()
         self.es = Elasticsearch(
             db_config.eslog.hosts,
-            basic_auth=(db_config.eslog.username, db_config.eslog.password),
-            ca_certs=db_config.eslog.ca_certs  # 指定证书路径
+            basic_auth=(db_config.eslog.username, db_config.eslog.password)
+            # ca_certs=db_config.eslog.ca_certs  # 指定证书路径
         )
         self.es_index = db_config.eslog.index
     
