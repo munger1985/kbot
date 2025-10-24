@@ -9,6 +9,7 @@ from .txt_parser import process_txt
 from .img_parser import process_img
 from .pdf_parser_pdfplumber import process_pdf
 from .office_parser import process_word_ppt_by_converter
+from .html_parser import process_html
 from .file_params import FileParams
 from dao.repositories.kbot_md_kb_files_repo import KbotMdKbFilesRepository
 from dao.repositories.kbot_md_kb_repo import KbotMdKbRepository
@@ -134,6 +135,9 @@ class FileProcessor:
             elif file_params.file_ext in [".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tiff"]:
                 logger.info(f"处理图片文件: {file_params.file_path}...")
                 return await process_img(file_params)
+            elif file_params.file_ext == ".html":
+                logger.info(f"处理HTML文件: {file_params.file_path}...")
+                return await process_html(file_params)
             else:
                 msg = f"不支持的文件类型 {file_params.file_ext}，跳过处理..."
                 logger.info(msg)

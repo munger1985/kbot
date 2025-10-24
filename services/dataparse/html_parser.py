@@ -1,341 +1,750 @@
-import os
-import base64
-from typing import List, Dict, Any, Optional
-from bs4 import BeautifulSoup
-import pandas as pd
-from PIL import Image
-import io
+import uuid
+import json
 import re
+from pathlib import Path
+from typing import List, Dict, Tuple, Optional
+from loguru import logger
+from bs4 import BeautifulSoup
+from PIL import Image
+import requests
+import base64
+import io
+import traceback
 
-class HTMLRAGParser:
-    def __init__(self, chunk_size: int = 1000, chunk_overlap: int = 200):
-        """
-        初始化HTML解析器
+from .file_params import FileParams
+from dao.repositories.kbot_md_kb_files_repo import KbotMdKbFilesRepository
+from dao.repositories.kbot_biz_txt_embedding_factory import EmbeddingRepositoryFactory
+from dao.entities.kbot_biz_txt_embedding import KbotBizTxtEmbedding
+from core.dictionary import FileStatus, ChunkType, SplitStrategy
+from utils.call_models import CallModel
+from .common import update_file_status, check_text_file
+from configuration.config_manager import ConfigManager
+
+
+class HTMLParser:
+    """HTML file parser class with optimized processing and denoising"""
+
+    def __init__(self, file_params: FileParams, remove_noise: bool = True):
+        self.file_params = file_params
+        self.html_path = Path(file_params.file_path)
+        self.output_dir = self.html_path.parent / "output" / file_params.file_id
+        self.images_dir = self.output_dir / "images"
+        self.tables_dir = self.output_dir / "tables"
+
+        # Create output directories
+        self.images_dir.mkdir(parents=True, exist_ok=True)
+        self.tables_dir.mkdir(parents=True, exist_ok=True)
+
+        self.text_contents: List[Dict] = []
+        self.text_chunks: List[Dict] = []
+        self.images_info: List[Dict] = []
+        self.tables_info: List[Dict] = []
+        self.page_content: List[Dict] = []  # Stores complete page content with placeholders
+        self.remove_noise = remove_noise
+        self.model_config = ConfigManager.get_model_config()
+
+        self.chunk_size = 0
+        self.chunk_overlap = 0
         
-        Args:
-            chunk_size: 文本块大小
-            chunk_overlap: 文本块重叠大小
-        """
-        self.chunk_size = chunk_size
-        self.chunk_overlap = chunk_overlap
-        self.soup = None
-        
-    def parse_html(self, html_file_path: str) -> List[Dict[str, Any]]:
-        """
-        解析HTML文件的主要入口方法
-        
-        Args:
-            html_file_path: HTML文件路径
-            
-        Returns:
-            List of chunks, 每个chunk是一个字典
-        """
-        # 阶段一：HTML预处理与去噪
-        self._load_and_clean_html(html_file_path)
-        
-        # 阶段二：语义块识别与提取
-        chunks = []
-        
-        # 识别文档结构
-        structure = self._identify_document_structure()
-        
-        # 按结构顺序处理内容
-        for section in structure:
-            section_chunks = self._process_section(section)
-            chunks.extend(section_chunks)
-            
-        return chunks
-    
-    def _load_and_clean_html(self, html_file_path: str):
-        """阶段一：加载并清理HTML"""
-        with open(html_file_path, 'r', encoding='utf-8') as f:
-            html_content = f.read()
-        
-        self.soup = BeautifulSoup(html_content, 'lxml')
-        
-        # 移除噪音标签
-        noise_tags = ['script', 'style', 'meta', 'link', 'noscript']
-        for tag in noise_tags:
-            for element in self.soup.find_all(tag):
-                element.decompose()
+        # Noise patterns to remove
+        self.noise_patterns = [
+            r'<script.*?>.*?</script>',  # Script tags
+            r'<style.*?>.*?</style>',    # Style tags  
+            r'<!--.*?-->',               # HTML comments
+            r'<nav.*?>.*?</nav>',        # Navigation menus
+            r'<header.*?>.*?</header>',  # Headers
+            r'<footer.*?>.*?</footer>',  # Footers
+            r'<aside.*?>.*?</aside>',    # Sidebars
+            r'<meta.*?>',                # Meta tags
+            r'<link.*?>',                # Link tags
+        ]
+
+    async def parse(self) -> bool:
+        """Main parsing method with optimized flow"""
+        split_strategy = int(self.file_params.parser.get("split_strategy", SplitStrategy.FIXED_SIZE.value))
+        file_repo = KbotMdKbFilesRepository()
+
+        if split_strategy == SplitStrategy.PAGE.value:
+            try:
+                # Extract all content (HTML is treated as single "page")
+                self.extract_all_content()
+                if not await self._process_embeddings_per_page():
+                    return False
+
+                # Save parsed metadata
+                parsed_metadata = self.make_parsed_metadata()
+                await file_repo.update_file_parsed_metadata(self.file_params.file_id, parsed_metadata)
+
+                self.print_summary()
+                return True
+
+            except Exception as e:
+                logger.error(f"Error processing HTML file: {str(e)}")
+                await file_repo.update_file_status(self.file_params.file_id, 
+                    FileStatus.PARSE_FAILED,
+                    str(e)
+                )
+                return False
                 
-        # 移除特定的噪音元素（根据AWR报告结构调整）
-        noise_selectors = ['#header', '.header', '#footer', '.footer', '.navigation', '.nav']
-        for selector in noise_selectors:
-            for element in self.soup.select(selector):
-                element.decompose()
-    
-    def _identify_document_structure(self) -> List[Dict[str, Any]]:
-        """识别文档结构，返回章节列表"""
-        structure = []
-        
-        # 查找所有标题标签来构建文档结构
-        headings = self.soup.find_all(['h1', 'h2', 'h3', 'h4', 'h5', 'h6'])
-        
-        for heading in headings:
-            section = {
-                'title': heading.get_text().strip(),
-                'level': int(heading.name[1]),
-                'element': heading,
-                'content': self._get_section_content(heading)
-            }
-            structure.append(section)
-            
-        return structure
-    
-    def _get_section_content(self, heading_element) -> List:
-        """获取章节内容，直到下一个同级或更高级别的标题"""
-        content_elements = []
-        current = heading_element.next_sibling
-        
-        while current:
-            if current.name and current.name.startswith('h'):
-                current_level = int(current.name[1])
-                if current_level <= int(heading_element.name[1]):
-                    break
-                    
-            content_elements.append(current)
-            current = current.next_sibling
-            
-        return content_elements
-    
-    def _process_section(self, section: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """处理单个章节，生成chunks"""
-        chunks = []
-        section_title = section['title']
-        
-        # 首先添加章节标题作为独立的文本chunk
-        title_chunk = {
-            'content': f"# {section_title}",
-            'metadata': {
-                'type': 'section_title',
-                'section_title': section_title,
-                'content_type': 'text',
-                'chunk_id': f"title_{hash(section_title)}"
-            }
-        }
-        chunks.append(title_chunk)
-        
-        # 处理章节内容
-        for element in section['content']:
-            if not hasattr(element, 'name'):
-                continue
+        elif split_strategy == SplitStrategy.FIXED_SIZE.value:
+            try:
+                self.chunk_size = int(self.file_params.parser.get("chunk_size", 500))
+                self.chunk_overlap = int(self.file_params.parser.get("chunk_overlap", 50))
+
+                self.extract_all_content()
                 
-            if element.name == 'table':
-                # 处理表格
-                table_chunk = self._process_table(element, section_title)
-                if table_chunk:
-                    chunks.append(table_chunk)
-                    
-            elif element.name == 'img':
-                # 处理图片
-                img_chunk = self._process_image(element, section_title)
-                if img_chunk:
-                    chunks.append(img_chunk)
-                    
-            else:
-                # 处理文本内容
-                text_chunks = self._process_text_element(element, section_title)
-                chunks.extend(text_chunks)
-                
-        return chunks
-    
-    def _process_table(self, table_element, section_title: str) -> Optional[Dict[str, Any]]:
-        """阶段三：处理表格并转换为描述性文本"""
+                # Process text chunks by fixed size
+                if self.text_contents:
+                    content = self.text_contents[0]['text']
+                    for chunk_start in range(0, len(content), self.chunk_size - self.chunk_overlap):
+                        chunk_text = content[chunk_start:chunk_start + self.chunk_size]
+                        self.text_chunks.append({'page_num': 1, 'text': chunk_text})
+
+                # Process embeddings
+                if not await self._process_embeddings_by_fixed_size():
+                    return False
+
+                # Save parsed metadata
+                parsed_metadata = self.make_parsed_metadata()
+                await file_repo.update_file_parsed_metadata(self.file_params.file_id, parsed_metadata)
+
+                self.print_summary()
+                return True
+
+            except Exception as e:
+                logger.exception("Error processing HTML file: {}", e)
+                tb = traceback.TracebackException.from_exception(e)
+                errMsg = ''.join(tb.format())
+                await file_repo.update_file_status(self.file_params.file_id, 
+                    FileStatus.PARSE_FAILED,
+                    errMsg
+                )
+                return False
+
+        else:
+            logger.warning(f"Unrecognized split strategy: {split_strategy}")
+            return False
+
+    def extract_all_content(self) -> Tuple[List[Dict], List[Dict], List[Dict]]:
+        """Extract all content from HTML file"""
+        logger.info(f"Parsing HTML file: {self.html_path}")
+
         try:
-            # 使用pandas读取HTML表格
-            dfs = pd.read_html(str(table_element))
-            if not dfs:
+            # Read HTML content
+            with open(self.html_path, 'r', encoding='utf-8') as f:
+                html_content = f.read()
+
+            # Clean HTML content
+            cleaned_html = self._clean_html(html_content)
+            
+            # Parse with BeautifulSoup
+            soup = BeautifulSoup(cleaned_html, 'html.parser')
+            
+            # Extract text content
+            text_content = self._extract_text(soup)
+            
+            # Extract tables
+            tables = self._extract_tables(soup)
+            
+            # Extract images
+            images = self._extract_images(soup)
+            
+            # Store text content (HTML treated as single page)
+            if text_content.strip():
+                self.text_contents.append({
+                    'page_num': 1,
+                    'text': text_content.strip()
+                })
+
+            self.tables_info = tables
+            self.images_info = images
+            
+            # Combine content for page view
+            combined = self._combine_page_content(text_content, images, tables, 1)
+            self.page_content.append({'page_num': 1, 'content': combined})
+
+        except Exception as e:
+            logger.error(f"Error parsing HTML: {e}")
+            raise
+
+        return self.text_contents, self.images_info, self.tables_info
+
+    def _clean_html(self, html_content: str) -> str:
+        """Remove noise from HTML content"""
+        if not self.remove_noise:
+            return html_content
+
+        cleaned_content = html_content
+        
+        # Remove noise patterns
+        for pattern in self.noise_patterns:
+            cleaned_content = re.sub(pattern, '', cleaned_content, flags=re.DOTALL | re.IGNORECASE)
+        
+        # Remove extra whitespace
+        cleaned_content = re.sub(r'\s+', ' ', cleaned_content)
+        cleaned_content = re.sub(r'>\s+<', '><', cleaned_content)
+        
+        return cleaned_content.strip()
+
+    def _extract_text(self, soup: BeautifulSoup) -> str:
+        """Extract clean text content from HTML"""
+        try:
+            # Remove unwanted elements
+            for element in soup(['script', 'style', 'nav', 'header', 'footer', 'aside', 'meta', 'link']):
+                element.decompose()
+
+            # Get text content
+            text = soup.get_text(separator='\n', strip=True)
+            
+            # Clean up text
+            lines = [line.strip() for line in text.splitlines() if line.strip()]
+            cleaned_text = '\n'.join(lines)
+            
+            return cleaned_text
+
+        except Exception as e:
+            logger.error(f"Error extracting text: {e}")
+            return ""
+
+    def _extract_tables(self, soup: BeautifulSoup) -> List[Dict]:
+        """Extract tables from HTML"""
+        tables = []
+        
+        try:
+            table_elements = soup.find_all('table')
+            
+            for table_index, table in enumerate(table_elements):
+                table_uuid = str(uuid.uuid4())
+                
+                # Extract table data
+                table_data = self._parse_html_table(table)
+                
+                if table_data:
+                    # Save as JSON file
+                    json_filename = f"table_{table_uuid}.json"
+                    json_path = self.tables_dir / json_filename
+
+                    with open(json_path, 'w', encoding='utf-8') as f:
+                        json.dump(table_data, f, ensure_ascii=False, indent=2)
+
+                    # Record table info
+                    table_info = {
+                        'uuid': table_uuid,
+                        'filename': json_filename,
+                        'page_num': 1,
+                        'file_path': str(json_path.absolute()),
+                        'rows': len(table_data),
+                        'columns': len(table_data[0]) if table_data else 0,
+                        'headers': table_data[0] if table_data else [],
+                        'data': table_data[1:] if len(table_data) > 1 else []
+                    }
+
+                    tables.append(table_info)
+                    logger.debug(f"Extracted table: {json_path}")
+
+        except Exception as e:
+            logger.error(f"Error extracting tables: {e}")
+
+        return tables
+
+    def _parse_html_table(self, table) -> List[List[str]]:
+        """Parse HTML table into 2D list"""
+        try:
+            rows = table.find_all('tr')
+            table_data = []
+            
+            for row in rows:
+                cells = row.find_all(['td', 'th'])
+                row_data = [cell.get_text(strip=True) for cell in cells]
+                if row_data:  # Only add non-empty rows
+                    table_data.append(row_data)
+            
+            return table_data
+
+        except Exception as e:
+            logger.error(f"Error parsing HTML table: {e}")
+            return []
+
+    def _extract_images(self, soup: BeautifulSoup) -> List[Dict]:
+        """Extract images from HTML"""
+        images = []
+        
+        try:
+            img_elements = soup.find_all('img')
+            
+            for img_index, img in enumerate(img_elements):
+                image_uuid = str(uuid.uuid4())
+                
+                # Get image source
+                src = img.get('src', '') # type: ignore
+                if not src:
+                    continue
+                
+                # Handle different image sources
+                image_info = self._download_and_save_image(src, image_uuid) # type: ignore
+                if image_info:
+                    images.append(image_info)
+
+        except Exception as e:
+            logger.error(f"Error extracting images: {e}")
+
+        return images
+
+    def _download_and_save_image(self, src: str, image_uuid: str) -> Optional[Dict]:
+        """Download and save image from various sources"""
+        try:
+            # Handle data URLs
+            if src.startswith('data:'):
+                return self._handle_data_url_image(src, image_uuid)
+            
+            # Handle relative URLs
+            elif src.startswith('/'):
+                absolute_path = self.html_path.parent / src[1:]
+                if absolute_path.exists():
+                    return self._handle_local_image(absolute_path, image_uuid)
+            
+            # Handle relative paths
+            elif not src.startswith(('http://', 'https://')):
+                absolute_path = self.html_path.parent / src
+                if absolute_path.exists():
+                    return self._handle_local_image(absolute_path, image_uuid)
+            
+            # Handle absolute URLs (limited support for local parsing)
+            else:
+                logger.warning(f"Skipping remote image: {src}")
+                return None
+
+        except Exception as e:
+            logger.error(f"Error processing image {src}: {e}")
+            return None
+
+    def _handle_data_url_image(self, data_url: str, image_uuid: str) -> Optional[Dict]:
+        """Handle base64 encoded data URL images"""
+        try:
+            # Extract base64 data
+            match = re.match(r'data:image/(\w+);base64,(.+)', data_url)
+            if not match:
                 return None
                 
-            table_df = dfs[0]
+            img_format, base64_data = match.groups()
+            image_data = base64.b64decode(base64_data)
             
-            # 获取表格标题/上下文
-            table_context = self._get_table_context(table_element)
+            # Save image
+            image_path = self.images_dir / f"{image_uuid}.{img_format}"
+            with open(image_path, 'wb') as f:
+                f.write(image_data)
             
-            # 将DataFrame转换为描述性文本
-            table_text = self._dataframe_to_descriptive_text(table_df, table_context)
+            # Get image dimensions
+            with Image.open(io.BytesIO(image_data)) as img:
+                width, height = img.size
             
-            chunk = {
-                'content': table_text,
-                'metadata': {
-                    'type': 'table',
-                    'section_title': section_title,
-                    'content_type': 'table',
-                    'table_context': table_context,
-                    'table_data': table_df.to_dict('records'),  # 保存原始数据用于后续处理
-                    'chunk_id': f"table_{hash(str(table_df))}",
-                    'shape': f"{table_df.shape[0]}x{table_df.shape[1]}"
-                }
+            # Skip small images
+            if width < 200 or height < 200:
+                return None
+            
+            return {
+                'uuid': image_uuid,
+                'filename': image_path.name,
+                'page_num': 1,
+                'file_path': str(image_path.absolute()),
+                'width': width,
+                'height': height,
+                'format': img_format,
+                'source': 'data_url'
             }
-            return chunk
-            
+
         except Exception as e:
-            print(f"处理表格时出错: {e}")
+            logger.error(f"Error handling data URL image: {e}")
             return None
-    
-    def _get_table_context(self, table_element) -> str:
-        """获取表格的上下文描述"""
-        # 查找表格前面的标题或描述性文本
-        context = ""
-        
-        # 查找前一个兄弟元素
-        prev_element = table_element.previous_sibling
-        while prev_element:
-            if hasattr(prev_element, 'name'):
-                if prev_element.name in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6']:
-                    context = prev_element.get_text().strip()
-                    break
-                elif prev_element.name in ['p', 'div']:
-                    text = prev_element.get_text().strip()
-                    if len(text) > 10:  # 避免太短的文本
-                        context = text
-                        break
-            prev_element = prev_element.previous_sibling
-            
-        return context if context else "Data Table"
-    
-    def _dataframe_to_descriptive_text(self, df: pd.DataFrame, context: str) -> str:
-        """将DataFrame转换为描述性文本"""
-        descriptive_text = f"[Table: {context}]\n"
-        descriptive_text += f"Table Shape: {df.shape[0]} rows x {df.shape[1]} columns\n\n"
-        
-        # 添加列名
-        descriptive_text += "Columns: " + ", ".join([str(col) for col in df.columns]) + "\n\n"
-        
-        # 添加前几行数据作为示例（避免文本过长）
-        sample_rows = min(10, df.shape[0])
-        for i in range(sample_rows):
-            row_data = [str(df.iloc[i][col]) for col in df.columns]
-            descriptive_text += f"Row {i+1}: " + " | ".join(row_data) + "\n"
-            
-        if df.shape[0] > sample_rows:
-            descriptive_text += f"... and {df.shape[0] - sample_rows} more rows\n"
-            
-        return descriptive_text
-    
-    def _process_image(self, img_element, section_title: str) -> Optional[Dict[str, Any]]:
-        """阶段三：处理图片并生成描述"""
+
+    def _handle_local_image(self, image_path: Path, image_uuid: str) -> Optional[Dict]:
+        """Handle local image files"""
         try:
-            # 获取图片信息
-            img_src = img_element.get('src', '')
-            img_alt = img_element.get('alt', '')
+            if not image_path.exists():
+                return None
             
-            # 获取图片上下文
-            img_context = self._get_image_context(img_element)
+            # Copy image to output directory
+            extension = image_path.suffix.lower()[1:]  # Remove dot
+            if extension not in ['jpg', 'jpeg', 'png', 'gif', 'bmp']:
+                return None
             
-            # 模拟调用VLM生成图片描述
-            img_description = self._generate_image_description(img_src, img_context)
+            new_path = self.images_dir / f"{image_uuid}.{extension}"
             
-            chunk = {
-                'content': img_description,
-                'metadata': {
-                    'type': 'image',
-                    'section_title': section_title,
-                    'content_type': 'image',
-                    'image_context': img_context,
-                    'image_alt': img_alt,
-                    'image_src': img_src,
-                    'chunk_id': f"image_{hash(img_src)}",
-                    'description_source': 'vlm'  # 标记描述来源
-                }
+            # Copy file
+            import shutil
+            shutil.copy2(image_path, new_path)
+            
+            # Get image dimensions
+            with Image.open(new_path) as img:
+                width, height = img.size
+            
+            # Skip small images
+            if width < 200 or height < 200:
+                return None
+            
+            return {
+                'uuid': image_uuid,
+                'filename': new_path.name,
+                'page_num': 1,
+                'file_path': str(new_path.absolute()),
+                'width': width,
+                'height': height,
+                'format': extension,
+                'source': 'local_file'
             }
-            return chunk
-            
+
         except Exception as e:
-            print(f"处理图片时出错: {e}")
+            logger.error(f"Error handling local image {image_path}: {e}")
             return None
-    
-    def _get_image_context(self, img_element) -> str:
-        """获取图片的上下文描述"""
-        context = img_element.get('alt', '')
-        
-        if not context:
-            # 查找图片周围的文本
-            parent = img_element.parent
-            if parent and hasattr(parent, 'get_text'):
-                sibling_text = parent.get_text().strip()
-                if sibling_text and len(sibling_text) > 10:
-                    context = sibling_text
-                    
-        return context if context else "Chart or Diagram"
-    
-    def _generate_image_description(self, img_src: str, context: str) -> str:
-        """
-        模拟调用VLM生成图片描述
-        在实际应用中，这里会调用真正的多模态模型API
-        """
-        # 这里模拟VLM返回的描述
-        # 实际实现中，需要：
-        # 1. 如果是base64图片，解码并保存为临时文件
-        # 2. 如果是URL或文件路径，读取图片
-        # 3. 调用VLM API获取描述
-        
-        if img_src.startswith('data:image'):
-            # Base64图片
-            image_type = "embedded image"
-        else:
-            image_type = "external image"
+
+    def _combine_page_content(self, text: str, images: List[Dict], tables: List[Dict], page_num: int) -> str:
+        """Combine page content with placeholders"""
+        content = [f"\n{'=' * 20} HTML Content {'=' * 20}\n"]
+
+        if images:
+            content.append("\n=== Images ===\n")
+            content.extend(f"[image:{img['uuid']}]\n" for img in images)
+
+        if tables:
+            content.append("\n=== Tables ===\n")
+            content.extend(f"[table:{table['uuid']}]\n" for table in tables)
+
+        if text.strip():
+            content.append("\n=== Text ===\n")
+            content.append(text)
+
+        return ''.join(content)
+
+    async def _process_images_embeddings(self) -> List[KbotBizTxtEmbedding]:
+        """Process image embeddings"""
+        if self.file_params.img2txt == 1:
+            vlm_prompt_unique_name = self.model_config.prompt.image2text
             
-        # 模拟VLM生成的描述
-        vlm_description = f"[Image: {context}]\n"
-        vlm_description += f"This is a {image_type} from the AWR report. "
-        vlm_description += f"It shows performance metrics related to '{context}'. "
-        vlm_description += "The chart displays trends over time with key data points marked. "
-        vlm_description += "Peak values and important thresholds are visible in the visualization."
-        
-        return vlm_description
-    
-    def _process_text_element(self, element, section_title: str) -> List[Dict[str, Any]]:
-        """处理文本元素，进行分块"""
-        text_content = element.get_text().strip()
-        if not text_content or len(text_content) < 10:
-            return []
-        
-        # 简单的文本分块（实际应用中可以使用更复杂的分块策略）
-        chunks = []
-        words = text_content.split()
-        
-        for i in range(0, len(words), self.chunk_size - self.chunk_overlap):
-            chunk_words = words[i:i + self.chunk_size]
-            if len(chunk_words) < 50:  # 跳过太短的chunk
-                continue
+            if self.file_params.img2txt_model is None:
+                msg = f"Image to text model not found for id: {self.file_params.img2txt_model}"
+                logger.error(msg)
+                await update_file_status(self.file_params.file_id, FileStatus.PARSE_FAILED, msg)
+                return []
+
+            chunks = []
+            chunk_metas = []
+            for eachImage in self.images_info:
+                description_file = Path(eachImage['file_path'] + ".description")
+                if not description_file.exists():
+                    image_description = await CallModel().call_vlm_model_for_parsing_picture(
+                        self.file_params.img2txt_model,
+                        eachImage['file_path'], 
+                        vlm_prompt_unique_name
+                    )
+                    if image_description:
+                        description_file.write_text(image_description, encoding='utf-8')
+                        chunk_metas.append({
+                            "chunk_type": ChunkType.IMAGE,
+                            "page_num": eachImage['page_num'],
+                            "image_id": eachImage['uuid'],
+                        })
+                        chunks.append(image_description)
+
+            if not self.file_params.txt_embed_model:
+                msg = f"text_embedding_model not found for id: {self.file_params.txt_embed_model}"
+                logger.error(msg)
+                await update_file_status(self.file_params.file_id, FileStatus.PARSE_FAILED, msg)
+                return []
                 
-            chunk_text = ' '.join(chunk_words)
-            chunk = {
-                'content': chunk_text,
-                'metadata': {
-                    'type': 'text',
-                    'section_title': section_title,
-                    'content_type': 'text',
-                    'chunk_id': f"text_{hash(chunk_text)}",
-                    'word_count': len(chunk_words)
-                }
-            }
-            chunks.append(chunk)
-            
-        return chunks
+            embeddings_list = []
+            if chunks:
+                embeddings_list = await CallModel().call_embedding_model(self.file_params.txt_embed_model, chunks)
+                
+            if embeddings_list and len(embeddings_list) != len(chunks):
+                msg = f"text_embedding_model {self.file_params.txt_embed_model} returned invalid results (expected {len(chunks)}, got {len(embeddings_list) if embeddings_list else 0})"
+                logger.error(msg)
+                logger.error("failed file: {}", self.file_params.file_path)
+                await update_file_status(self.file_params.file_id, FileStatus.PARSE_FAILED, msg)
+                return []
+
+            # Create embedding entities
+            embed_entities = []
+            for idx, (chunk, meta) in enumerate(zip(chunks, chunk_metas)):
+                embed_entity = KbotBizTxtEmbedding(
+                    kb_id=self.file_params.kb_id,
+                    embed_id=meta['image_id'],
+                    chunk_doc=chunk,
+                    chunk_metadata=meta,
+                    biz_metadata=self.file_params.biz_metadata,
+                    file_id=self.file_params.file_id,
+                    embedding=embeddings_list[idx].embedding,  # type: ignore
+                    security_level=self.file_params.security_level
+                )
+                embed_entities.append(embed_entity)
+
+            return embed_entities
+        else:
+            return []
+
+    async def _process_embeddings_per_page(self) -> bool:
+        """Process all content embeddings for page strategy"""
+        if not self.file_params.txt_embed_model:
+            msg = f"Embedding model not found for id: {self.file_params.txt_embed_model}"
+            logger.error(msg)
+            await update_file_status(self.file_params.file_id, FileStatus.PARSE_FAILED, msg)
+            return False
+
+        # Prepare all content chunks for embedding
+        chunks = []
+        chunk_metas = []
+
+        # Add text content
+        for text_item in self.text_contents:
+            if not text_item['text'].strip():
+                continue
+            chunks.append(text_item['text'])
+            chunk_metas.append({
+                "chunk_type": ChunkType.TEXT,
+                "page_num": text_item['page_num']
+            })
+
+        # Add table content
+        for table in self.tables_info:
+            if not self.is_table_valid(table['file_path']):
+                continue
+            with open(table['file_path'], 'r', encoding='utf-8') as f:
+                table_text = f.read()
+                if table_text.strip():
+                    chunks.append(table_text)
+                    chunk_metas.append({
+                        "chunk_type": ChunkType.TABLE,
+                        "page_num": table['page_num']
+                    })
+
+        if not chunks:
+            logger.warning("No valid content chunks found for embedding")
+            return True
+
+        # Get all embeddings in one call
+        embeddings_list = await CallModel().call_embedding_model(self.file_params.txt_embed_model, chunks)
+        if not embeddings_list or len(embeddings_list) != len(chunks):
+            msg = f"Embedding model {self.file_params.txt_embed_model} returned invalid results (expected {len(chunks)}, got {len(embeddings_list) if embeddings_list else 0})"
+            logger.error(msg)
+            await update_file_status(self.file_params.file_id, FileStatus.PARSE_FAILED, msg)
+            return False
+
+        # Create embedding entities
+        embed_entities = []
+        for idx, (chunk, meta) in enumerate(zip(chunks, chunk_metas)):
+            embed_entity = KbotBizTxtEmbedding(
+                kb_id=self.file_params.kb_id,
+                embed_id=str(uuid.uuid4()),
+                chunk_doc=chunk,
+                chunk_metadata=meta,
+                biz_metadata=self.file_params.biz_metadata,
+                file_id=self.file_params.file_id,
+                embedding=embeddings_list[idx].embedding,
+                security_level=self.file_params.security_level,
+                status=1
+            )
+            embed_entities.append(embed_entity)
+
+        image_embed_entities = await self._process_images_embeddings()
+        embed_entities.extend(image_embed_entities)
+
+        # Save all embeddings in one batch
+        return await self._save_embeddings(embed_entities)
+
+    async def _process_embeddings_by_fixed_size(self) -> bool:
+        """Process embeddings for fixed size strategy"""
+        if not self.file_params.txt_embed_model:
+            msg = f"Embedding model not found for id: {self.file_params.txt_embed_model}"
+            logger.error(msg)
+            await update_file_status(self.file_params.file_id, FileStatus.PARSE_FAILED, msg)
+            return False
+
+        # Prepare all content chunks for embedding
+        chunks = []
+        chunk_metas = []
+
+        # Add text chunks
+        for text_item in self.text_chunks:
+            if not text_item['text'].strip():
+                continue
+            chunks.append(text_item['text'])
+            chunk_metas.append({
+                "chunk_type": ChunkType.TEXT,
+                "page_num": text_item['page_num']
+            })
+
+        # Add table content
+        for table in self.tables_info:
+            if not self.is_table_valid(table['file_path']):
+                continue
+            with open(table['file_path'], 'r', encoding='utf-8') as f:
+                table_text = f.read()
+                if table_text.strip():
+                    chunks.append(table_text)
+                    chunk_metas.append({
+                        "chunk_type": ChunkType.TABLE,
+                        "page_num": table['page_num']
+                    })
+
+        if not chunks:
+            logger.warning("No valid content chunks found for embedding")
+            return True
+
+        # Get all embeddings in one call
+        embeddings_list = await CallModel().call_embedding_model(self.file_params.txt_embed_model, chunks)
+        if not embeddings_list or len(embeddings_list) != len(chunks):
+            msg = f"Embedding model {self.file_params.txt_embed_model} returned invalid results (expected {len(chunks)}, got {len(embeddings_list) if embeddings_list else 0})"
+            logger.error(msg)
+            await update_file_status(self.file_params.file_id, FileStatus.PARSE_FAILED, msg)
+            return False
+
+        # Create embedding entities
+        embed_entities = []
+        for idx, (chunk, meta) in enumerate(zip(chunks, chunk_metas)):
+            embed_entity = KbotBizTxtEmbedding(
+                kb_id=self.file_params.kb_id,
+                embed_id=str(uuid.uuid4()),
+                chunk_doc=chunk,
+                chunk_metadata=meta,
+                biz_metadata=self.file_params.biz_metadata,
+                file_id=self.file_params.file_id,
+                embedding=embeddings_list[idx].embedding,
+                security_level=self.file_params.security_level,
+                status=1
+            )
+            embed_entities.append(embed_entity)
+
+        image_embed_entities = await self._process_images_embeddings()
+        embed_entities.extend(image_embed_entities)
+
+        # Save all embeddings in one batch
+        return await self._save_embeddings(embed_entities)
+
+    async def _save_embeddings(self, embeddings: List[KbotBizTxtEmbedding]) -> bool:
+        """Save embeddings to database with error handling"""
+        if not embeddings:
+            return False
+
+        try:
+            repo = await EmbeddingRepositoryFactory.create_repository(kb_id=self.file_params.kb_id)
+            result = await repo.create(kb_id=self.file_params.kb_id, embeddings=embeddings)  # type: ignore
+            if not result:
+                msg = "Failed to save embeddings (repository returned False)"
+                logger.error(msg)
+                await update_file_status(self.file_params.file_id, FileStatus.PARSE_FAILED, msg)
+                return False
+
+            logger.info(f"Successfully saved {len(embeddings)} embeddings")
+            return True
+
+        except Exception as e:
+            msg = f"Exception while saving embeddings: {str(e)}"
+            logger.error(msg)
+            await update_file_status(self.file_params.file_id, FileStatus.PARSE_FAILED, msg)
+            return False
 
 
-# 使用示例
-def main():
-    # 初始化解析器
-    parser = HTMLRAGParser(chunk_size=800, chunk_overlap=100)
-    
-    # 解析HTML文件
-    html_file = "oracle_awr_report.html"  # 替换为你的HTML文件路径
-    chunks = parser.parse_html(html_file)
-    
-    # 输出结果
-    print(f"共生成 {len(chunks)} 个chunks:")
-    for i, chunk in enumerate(chunks):
-        print(f"\n--- Chunk {i+1} ---")
-        print(f"类型: {chunk['metadata']['content_type']}")
-        print(f"章节: {chunk['metadata']['section_title']}")
-        print(f"内容预览: {chunk['content'][:200]}...")
-        print(f"元数据: {chunk['metadata']}")
+    def make_parsed_metadata(self) -> str:
+        """Generate metadata JSON with placeholders"""
+        valid_tables = [t for t in self.tables_info if self.is_table_valid(t['file_path'])]
+
+        metadata = {
+            'images': [
+                {
+                    'uuid': img['uuid'],
+                    'placeholder': f"[image:{img['uuid']}]",
+                    'filename': img['filename'],
+                    'page_num': img['page_num'],
+                    'file_path': img['file_path']
+                } for img in self.images_info
+            ],
+            'tables': [
+                {
+                    'uuid': table['uuid'],
+                    'placeholder': f"[table:{table['uuid']}]",
+                    'filename': table['filename'],
+                    'page_num': table['page_num'],
+                    'file_path': table['file_path']
+                } for table in valid_tables
+            ]
+        }
+
+        return json.dumps(metadata, ensure_ascii=False, indent=2)
+
+    def is_table_valid(self, json_path: str) -> bool:
+        """Check if a table JSON file contains valid content"""
+        try:
+            with open(json_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+
+                # Check if it's a list and not empty
+                if not isinstance(data, list) or len(data) == 0:
+                    return False
+
+                # Check if at least one row contains non-empty values
+                for row in data:
+                    if isinstance(row, (list, dict)):
+                        values = row.values() if isinstance(row, dict) else row
+                        if any(value.strip() if isinstance(value, str) else value for value in values):
+                            return True
+
+                return False
+
+        except Exception:
+            return False
+
+    def print_summary(self):
+        """Print parsing summary"""
+        logger.info("\n" + "=" * 50)
+        logger.info("HTML Parsing Complete!")
+        logger.info("=" * 50)
+        logger.info(f"Text content extracted: {len(self.text_contents)}")
+        logger.info(f"Images extracted: {len(self.images_info)}")
+        logger.info(f"Tables extracted: {len(self.tables_info)}")
+        logger.info(f"Output directory: {self.output_dir}")
+        logger.info("=" * 50)
+
+
+async def process_html(file_params: FileParams) -> bool:
+    """
+    Process HTML file by extracting content and generating embeddings
+
+    Args:
+        file_params: File parameters including path and processing options
+
+    Returns:
+        bool: True if processing succeeded, False otherwise
+    """
+    if not check_text_file(file_params):
+        return False
+
+    try:
+        logger.info(f"Processing HTML file: {file_params.file_path}")
+        parser = HTMLParser(file_params)
+        success = await parser.parse()
         
-    return chunks
-
-if __name__ == "__main__":
-    chunks = main()
+        if success:
+            msg = f"Successfully parsed {file_params.file_path} (file id: {file_params.file_id})"
+            await KbotMdKbFilesRepository().update_file_status( 
+                file_params.file_id,
+                FileStatus.PARSED,
+                str(msg)
+            )
+            return True
+        else:
+            msg = f"Failed to parse {file_params.file_path} (file id: {file_params.file_id})"
+            await KbotMdKbFilesRepository().update_file_status(
+                file_params.file_id,
+                FileStatus.PARSE_FAILED,
+                str(msg)
+            )
+            return False
+            
+    except Exception as e:
+        msg = f"Error processing HTML file: {file_params.file_path}, error: {str(e)}"
+        logger.error(msg)
+        await KbotMdKbFilesRepository().update_file_status(
+            file_params.file_id,
+            FileStatus.PARSE_FAILED,
+            msg
+        )
+        return False
