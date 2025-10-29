@@ -167,7 +167,8 @@ class PDFPlumberParser:
                     biz_metadata=self.file_params.biz_metadata,
                     file_id=self.file_params.file_id,
                     embedding=embeddings_list[idx].embedding,  # type: ignore
-                    security_level=self.file_params.security_level
+                    security_level=self.file_params.security_level,
+                    status=1
                 )
                 embed_entities.append(embed_entity)
 
