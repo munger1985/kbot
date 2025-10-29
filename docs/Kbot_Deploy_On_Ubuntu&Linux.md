@@ -333,7 +333,7 @@ EXECUTE DBMS_CONNECTION_POOL.CONFIGURE_POOL(
 #2.执行Kbot元数据表DDL脚本
 cd kbot3/docs
 sqlplus kbotui_dev/BotWelcome123##@132.145.81.123:1521/DB1007_pdb1.regionalpublics.hysunhevcn.oraclevcn.com @kbot_ddl_v1.0.sql
-#3.执行apex_ui_v1.0.sql脚本
+#3.执行apex_ui_v1.0.sql脚本,注意,里面的schema需要更换成自定义创建的schema
 #4.创建Oracle 23ai全文检索创建索引
 --对CHUNK_DOC字段创建全文检索索引
 --先用dba用户赋予kbotui_dev用户可执行权限

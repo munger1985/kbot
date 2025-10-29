@@ -9,6 +9,7 @@ cd /home/ubuntu/kbot3
 ```bash
 git pull                      #本地更新代码      
 git clone https://github.com/munger1985/kbot.git 
+https://github.com/munger1985/kbot/releases/tag/v3.1
 git clone -b kbot3 https://github.com/munger1985/kbot.git
 git clone https://github.com/munger1985/kbot.git -b v3.0.3
 mv kbot kbot3
@@ -76,3 +77,9 @@ curl -X 'POST' \
   "embed_id": "9d99a0de-e832-440e-ad6b-f8e180a267e2",
   "action": "delete"
 }'
+
+curl -X 'POST' \
+  'http://localhost:8000/api/security/get_token' \
+  -H 'accept: application/json' \
+  -H 'Content-Type: application/x-www-form-urlencoded' \
+  -d '{"username":"KBot_UI", "password":"xxxx"}'
