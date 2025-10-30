@@ -169,7 +169,7 @@ class ModelController:
                 model_id,
                 input_text,
                 stream=False,
-                max_tokens=5
+                max_tokens=16
             ):
                 result = chunk
 

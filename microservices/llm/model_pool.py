@@ -283,7 +283,7 @@ class ModelPool:
                     
                 # 通过调用模型进行简单健康检查
                 model = self._models[model_id]
-                await model.chat("hello", False, **{"max_tokens": 5})
+                await model.chat("hello", False, **{"max_tokens": 16})
                 logger.debug(f"模型 {self._model_names.get(model_id, str(model_id))} 健康检查成功")
                 
             except Exception as e:
