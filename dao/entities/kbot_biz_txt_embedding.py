@@ -13,7 +13,7 @@ class KbotBizTxtEmbedding():
                  biz_metadata: dict,
                  embedding: list, 
                  security_level: int,
-                 status: int):
+                 status: int = 1):
         self.embed_id = embed_id
         self.kb_id = kb_id
         self.file_id = file_id
