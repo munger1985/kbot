@@ -13,9 +13,9 @@ class ErrorResponse(BaseModel):
 
 class SuccessQueryResponse(SuccessResponse):
     """查询成功响应模型"""
-    data: dict | list[dict] = Field(..., description="响应返回的数据")
+    data: dict|list[dict] = Field(..., description="响应返回的数据")
 
 class SuccessWithErrorResponse(SuccessResponse):
     """部分失败的成功响应模型"""
     code: int = Field(status.HTTP_207_MULTI_STATUS, description="多状态码")
-    details: dict | None = Field(None, description="详情")
+    details: dict|None = Field(None, description="详情")

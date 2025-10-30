@@ -15,7 +15,7 @@ from .base import LLMConfig, BaseLLM
 class OpenaiLLMConfig(LLMConfig):
     """OpenAI LLM客户端配置"""
     temperature: float | None = None
-    max_tokens: int | None = None
+    max_tokens: int
     top_p: float | None = None
     frequency_penalty: float | None = None
     presence_penalty: float | None = None

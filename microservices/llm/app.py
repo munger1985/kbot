@@ -254,7 +254,7 @@ async def chat(
     response_id = f"chatcmpl-{uuid.uuid4()}"  # OpenAI格式的ID
     created_time = int(time.time())
     model_name = llm_service._model_pool._model_names.get(request.model_id, str(request.model_id))
-
+    model_token = llm_service._model_pool._max_tokens.get(request.model_id, 4000)
     provider = llm_service.get_provider(request.model_id)
     if provider is None:
         raise HTTPException(status_code=404, detail=f"模型 {model_name} 在模型池中未找到")
@@ -264,7 +264,7 @@ async def chat(
             async def generate_openai_sse():
                 try:
                     # 获取流式响应
-                    max_tokens = min(request.max_tokens, 4000) if request.max_tokens else 4000
+                    max_tokens = request.max_tokens if request.max_tokens else model_token
                     chunk_stream = await llm_service.chat(
                         model_id=request.model_id,
                         messages=request.messages,
@@ -277,35 +277,20 @@ async def chat(
                         presence_penalty=request.presence_penalty
                     )
                     
+                    # 直接返回OpenAI客户端的流式响应
                     async for chunk in chunk_stream: # type: ignore
-                        # ChatCompletionChunk
-                        content = chunk.choices[0].delta.content
-                        chunk_dict = {
-                            "id": response_id,
-                            "object": "chat.completion.chunk",
-                            "created": created_time,
-                            "model": model_name,
-                            "choices": [{
-                                "delta": {"content": content},
-                                "index": 0,
-                                "finish_reason": None
-                            }]
-                        }
-                        yield f"data: {json.dumps(chunk_dict)}\n\n"
+                        # 确保chunk是SSE格式
+                        if hasattr(chunk, 'model_dump_json'):
+                            # 如果是Pydantic模型，转换为JSON
+                            yield f"data: {chunk.model_dump_json()}\n\n"
+                        elif isinstance(chunk, str):
+                            # 如果是字符串，直接使用
+                            yield f"data: {chunk}\n\n"
+                        else:
+                            # 如果是字典，转换为JSON
+                            yield f"data: {json.dumps(chunk)}\n\n"
                     
                     # 发送结束标记
-                    end_chunk = {
-                        "id": response_id,
-                        "object": "chat.completion.chunk",
-                        "created": created_time,
-                        "model": model_name,
-                        "choices": [{
-                            "delta": {},
-                            "index": 0,
-                            "finish_reason": "stop"
-                        }]
-                    }
-                    yield f"data: {json.dumps(end_chunk)}\n\n"
                     yield "data: [DONE]\n\n"
                     
                 except Exception as e:
@@ -325,7 +310,8 @@ async def chat(
                 media_type="text/event-stream",
                 headers={
                     "Cache-Control": "no-cache",
-                    "Connection": "keep-alive"
+                    "Connection": "keep-alive",
+                    "X-Accel-Buffering": "no"  # 防止Nginx缓冲
                 }
             )
 

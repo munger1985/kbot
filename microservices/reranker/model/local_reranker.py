@@ -65,7 +65,7 @@ class LocalReranker(BaseReranker):
             required_files = ["config.json", "tokenizer_config.json"]
             
             # 检查至少一个模型权重文件
-            model_files = ["pytorch_model.bin", "model.safetensors", "*.pt"]
+            model_files = ["pytorch_model.bin", "model.safetensors*", "*.pt"]
             found_model_file = any(os.path.exists(os.path.join(model_path, f)) for f in model_files)
             
             # 检查至少一个词汇文件

@@ -23,6 +23,7 @@ class ModelPool:
         self._model_names: dict[int, str] = {}
         self._last_used: dict[int, datetime] = {}
         self._providers: dict[int, str] = {}
+        self._max_tokens: dict[int, int] = {}
         self._health_check_interval = health_check_interval
         self._health_check_task: asyncio.Task | None = None
 
@@ -155,6 +156,7 @@ class ModelPool:
             self._model_names[model_id] = display_name or model_name
             self._providers[model_id] = provider
             self._last_used[model_id] = datetime.now()
+            self._max_tokens[model_id] = model_config.max_tokens
             logger.success(f"模型 {display_name or model_name} 加载成功")
             return model
         except Exception as e:

@@ -16,9 +16,9 @@ class LogLevel(str, Enum):
 class LogQueryRequest(BaseModel):
     start_time: datetime = Field(..., description="开始时间")
     end_time: datetime = Field(..., description="结束时间")
-    host: str | None = Field(None, description="主机名")
+    host: str|None = Field(None, description="主机名")
     log_level: LogLevel | None = Field(None, description="日志级别")
-    message: str | None = Field(None, description="日志消息关键字")
+    message: str|None = Field(None, description="日志消息关键字")
     size: int = Field(100, ge=1, le=1000, description="返回数量")
     
     class Config:

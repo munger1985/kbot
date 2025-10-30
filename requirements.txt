@@ -47,3 +47,5 @@ python-pptx==1.0.2
 mammoth==1.11.0
 elasticsearch==9.1.1
 fastapi_offline==1.7.5
+fastapi-mcp==0.4.0
+mcp==1.19.0

@@ -8,7 +8,7 @@ class AgentChatForm(BaseModel):
     security_level: int = Field(0, description="安全级别")
     request_time: str = Field(..., description="请求时间")
     question: str = Field(..., description="问题")
-    tags: list[str] | None = Field(None, description="标签")
+    tags: list[str]|None = Field(None, description="标签")
 
 class AgentChatFeedbackForm(BaseModel):
     """智能体聊天获取反馈表单模型"""

@@ -7,8 +7,8 @@ class AccessorForm(BaseModel):
     accessor_type: int = Field(..., description="访问者类型")
     plain_password: str = Field(..., description="明文密码")
     status: int = Field(0, description="状态")
-    descs: str | None = Field(None, description="描述")
-    by: str | None = Field(None, description="创建人")
+    descs: str|None = Field(None, description="描述")
+    by: str|None = Field(None, description="创建人")
 
 class ChangePasswordForm(BaseModel):
     """修改密码表单模型"""

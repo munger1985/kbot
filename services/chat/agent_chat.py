@@ -11,8 +11,6 @@ from ..search.kb_search import KBSearch
 from ..search.chinese_preprocessor import preprocess_cn_query
 
 
-
-
 class Agent:
     """智能体类"""
     
