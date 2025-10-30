@@ -249,7 +249,7 @@ class PDFPlumberParser:
             logger.debug("启用摘要处理")
             summary_result = await SummaryParser.process_summary(file_params=self.file_params,
                                                                  embed_entities=embed_entities)
-            return summary_result
+            # return summary_result
 
         # Save all embeddings in one batch
         return await self._save_embeddings(embed_entities)
@@ -325,7 +325,7 @@ class PDFPlumberParser:
             logger.debug("启用摘要处理")
             summary_result = await SummaryParser.process_summary(file_params=self.file_params,
                                                                  embed_entities=embed_entities)
-            return summary_result
+            # return summary_result
         # Save all embeddings in one batch
         return await self._save_embeddings(embed_entities)
 
