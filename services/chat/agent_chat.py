@@ -313,11 +313,11 @@ class Agent:
         
         if expand_question is None:
             logger.warning(f"问题扩展失败: {question}")
-            vector_search_question = question
-            full_text_question = question
+            # vector_search_question = question
+            full_text_question = [question]
         else:
-            vector_search_question = expand_question.get("semantic", question)
-            full_text_question = expand_question.get("fulltext", question)
+            # vector_search_question = expand_question.get("semantic", question)
+            full_text_question = expand_question
 
         # 3. 获取智能体包含的知识库或工具配置信息
         agent_conf_repo = KbotMdAgentConfRepository()
@@ -329,7 +329,7 @@ class Agent:
         logger.debug(f"找到 {len(confs)} 个工具")
         
         # 4. 并行处理知识库工具
-        kb_results_rerank, kb_results_non_rerank = await self._process_kb_tools(confs, vector_search_question, full_text_question) # type: ignore
+        kb_results_rerank, kb_results_non_rerank = await self._process_kb_tools(confs, question, full_text_question) # type: ignore
         
         # 5. 处理非知识库工具
         # TODO: 目前非知识库工具未实现具体功能

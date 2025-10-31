@@ -183,10 +183,10 @@ async def handle_download_file(
         if result:
             return FileResponse(
                 path=result["file_path"],
-                filename=result["file_name"],
+                filename=urllib.parse.quote(result["file_name"], encoding='utf-8'),
                 media_type="multipart/form-data",
                 headers={
-                    "Content-Disposition": "attachment; filename={}".format(result["file_name"])
+                    "Content-Disposition": "attachment; filename*=UTF-8''{}".format(urllib.parse.quote(result["file_name"], encoding='utf-8'))
                 },
                 content_disposition_type=None # type: ignore
                 )
@@ -253,7 +253,7 @@ async def handle_preview_file(
             else:
                 return FileResponse(
                         path=result["file_path"],
-                        filename=result["file_name"],
+                        filename=urllib.parse.quote(result["file_name"], encoding='utf-8'),
                         media_type="image/png",
                         headers={"Content-Disposition": "inline"}
                     )

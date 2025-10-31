@@ -88,8 +88,13 @@ class KBController:
         try:
             if download:
                 # 下载文件
-                
-                return {"file_path": file_path, "file_name": file_name, "file_ext": file_ext}
+                try:
+                    # 确保文件路径和文件名以 UTF-8 编码处理
+                    file_path = str(Path(file_path).resolve())
+                    file_name = file_name.encode('utf-8').decode('utf-8') if file_name else Path(file_path).name
+                    return {"file_path": file_path, "file_name": file_name, "file_ext": file_ext}
+                except Exception as e:
+                    raise e
             else:
                 if file_ext == ".txt":
                     # 预览文本文件

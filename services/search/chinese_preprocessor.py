@@ -224,7 +224,7 @@ class ChinesePreprocessor:
                          enable_synonym_expansion: bool,
                          synonym_similarity_threshold: float | None = 0.65,
                          max_synonyms_per_word: int | None = 2
-                 ) -> dict[str, str|list[str]] | None:
+                 ) -> list[str] | None:
         """
         完整的预处理流程
         
@@ -264,7 +264,6 @@ class ChinesePreprocessor:
             # 用于语义检索：用空格连接
             result = " ".join(tokens)
             logger.debug(f"语义检索预处理完成: '{query}' -> '{result}'")
-            results["semantic"] = result
 
             # 用于全文检索：返回词元列表
             logger.debug(f"全文检索预处理完成: '{query}' -> {tokens}")
@@ -273,11 +272,9 @@ class ChinesePreprocessor:
             if enable_synonym_expansion:
                 logger.debug(f"全文检索开始同义词扩展...")
                 expanded_tokens = await self.synonym_expansion(tokens, synonym_similarity_threshold, max_synonyms_per_word)
-                results["fulltext"] = expanded_tokens
+                return expanded_tokens
             else:
-                results["fulltext"] = tokens
-            
-            return results
+                return tokens
                 
         except Exception as e:
             logger.error(f"预处理失败: {e}", exc_info=True)
@@ -299,7 +296,7 @@ async def preprocess_cn_query(
         enable_synonym_expansion: bool = False,
         synonym_similarity_threshold: float | None = 0.65,  # 较低的阈值获取更多同义词
         max_synonyms_per_word: int | None = 2            # 每个词最多扩展2个同义词
-        ) -> dict[str, str|list[str]] | None:
+        ) -> list[str] | None:
     """
     便捷函数：预处理查询
     
