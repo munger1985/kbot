@@ -58,12 +58,12 @@ async def process_img(file_params: FileParams) -> bool:
 
             embeddings = [item.embedding for item in embed_data]
             embed_entities = []
-
+            chunk_num = 1
             for chunk, embedding in zip(chunks, embeddings):
                 embed_entity = KbotBizTxtEmbedding(
                     embed_id=str(uuid.uuid4()),
                     chunk_doc=chunk,
-                    chunk_metadata={"chunk_type": ChunkType.IMAGE},
+                    chunk_metadata={"chunk_type": ChunkType.IMAGE, "chunk_num": chunk_num},
                     biz_metadata=file_params.biz_metadata,
                     file_id=file_params.file_id,
                     kb_id=file_params.kb_id,
@@ -72,6 +72,7 @@ async def process_img(file_params: FileParams) -> bool:
                     status=1
                 )
                 embed_entities.append(embed_entity)
+                chunk_num += 1
             
             # 保存 embedding 向量到向量数据库
             return await save_embeddings(file_params, embed_entities)

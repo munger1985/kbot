@@ -260,18 +260,17 @@ class LocalEmbedding(BaseEmbedding):
         这是尽力而为的检查；实际加载可能仍然失败。
         """
         try:
+            # 检查必需的配置文件
             required_files = ["config.json", "tokenizer_config.json"]
+            config_valid = all(os.path.exists(os.path.join(model_path, f)) for f in required_files)
             
             # 检查至少一个模型权重文件
-            model_files = ["pytorch_model.bin", "model.safetensors", "*.pt", "model.safetensors.*"]
+            model_files = ["pytorch_model.bin", "model.safetensors", "model.safetensors.index.json"]
             found_model_file = any(os.path.exists(os.path.join(model_path, f)) for f in model_files)
             
             # 检查至少一个词汇文件
             vocab_files = ["vocab.txt", "vocab.json", "tokenizer.json"]
             found_vocab_file = any(os.path.exists(os.path.join(model_path, f)) for f in vocab_files)
-            
-            # 检查必需的配置文件
-            config_valid = all(os.path.exists(os.path.join(model_path, f)) for f in required_files)
             
             return config_valid and found_model_file and found_vocab_file
             
