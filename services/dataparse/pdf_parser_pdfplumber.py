@@ -122,6 +122,8 @@ class PDFPlumberParser:
 
             chunks = []
             chunk_metas = []
+            imgChunkNum = 1
+
             for eachImage in self.images_info:
                 description_file = Path(eachImage['file_path'] + ".description")
                 if not description_file.exists():
@@ -135,10 +137,13 @@ class PDFPlumberParser:
                             encoding='utf-8'
                         )
                         chunk_metas.append({
+                            "chunk_file_path":eachImage['file_path'],
+                            'chunk_num':imgChunkNum,
                             "chunk_type": ChunkType.IMAGE,
                             "page_num": eachImage['page_num'],
                             "image_id": eachImage['uuid'],
                         })
+                        imgChunkNum+=1
                         chunks.append(image_description)
 
             if not self.file_params.txt_embed_model:
@@ -189,7 +194,7 @@ class PDFPlumberParser:
         # Prepare all content chunks for embedding
         chunks = []
         chunk_metas = []
-
+        textChunkNum = 1
         # Add text content
         for text_item in self.text_contents:
             if not text_item['text'].strip():
@@ -198,10 +203,14 @@ class PDFPlumberParser:
             chunks.append(text_item['text'])
             chunk_metas.append({
                 "chunk_type": ChunkType.TEXT,
-                "page_num": text_item['page_num']
+                "page_num": text_item['page_num'],
+                'chunk_num': textChunkNum
+
             })
+            textChunkNum+=1
 
         # Add table content
+        tableChunkNum= 1
         for table in self.tables_info:
             if not self.is_table_valid(table['file_path']):
                 continue
@@ -212,8 +221,11 @@ class PDFPlumberParser:
                     chunks.append(table_text)
                     chunk_metas.append({
                         "chunk_type": ChunkType.TABLE,
-                        "page_num": table['page_num']
+                        "page_num": table['page_num'],
+                        'chunk_file_path':table['file_path'],
+                        'chunk_num':tableChunkNum
                     })
+            tableChunkNum+=1
 
         if not chunks:
             logger.warning("No valid content chunks found for embedding")
@@ -266,6 +278,7 @@ class PDFPlumberParser:
         # Prepare all content chunks for embedding
         chunks = []
         chunk_metas = []
+        textChunkNum = 1
 
         # Add text content
         for text_item in self.text_chunks:
@@ -275,10 +288,15 @@ class PDFPlumberParser:
             chunks.append(text_item['text'])
             chunk_metas.append({
                 "chunk_type": ChunkType.TEXT,
-                "page_num": text_item['page_num']
+                "page_num": text_item['page_num'],
+                'chunk_num': textChunkNum
+
             })
+            textChunkNum+=1
 
         # Add table content
+        tableChunkNum= 1
+
         for table in self.tables_info:
             if not self.is_table_valid(table['file_path']):
                 continue
@@ -289,8 +307,12 @@ class PDFPlumberParser:
                     chunks.append(table_text)
                     chunk_metas.append({
                         "chunk_type": ChunkType.TABLE,
-                        "page_num": table['page_num']
+                        "page_num": table['page_num'],
+                        'chunk_file_path': table['file_path'],
+                        'chunk_num': tableChunkNum
                     })
+            tableChunkNum+= 1
+
 
         if not chunks:
             logger.warning("No valid content chunks found for embedding")
