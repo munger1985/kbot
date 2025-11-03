@@ -222,8 +222,8 @@ class KBSearch:
                     chunk_meta = json.loads(json.dumps(data[2], cls=DecimalEncoder))
                     result = KBResult()
                     result.file_id = data[0]
-                    result.chunk_type = getattr(chunk_meta, "chunk_type", 1)
-                    result.page_num = getattr(chunk_meta, "page_num", 1)
+                    result.chunk_type = chunk_meta.get("chunk_type", 1)
+                    result.page_num = chunk_meta.get("page_num", 1)
                     result.content = safe_read_content(data[1])
                     result.similarity = data[3]
                     result.weight = self.tool_params.tool_weight # type: ignore
