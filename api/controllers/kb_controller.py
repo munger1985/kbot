@@ -99,6 +99,9 @@ class KBController:
                 if file_ext == ".txt":
                     # 预览文本文件
                     return {"file_path": file_path, "file_name": file_name, "file_ext": file_ext}
+                elif file_ext in [".png", ".jpg", ".jpeg"]:
+                    # 预览图片文件
+                    return {"file_path": file_path, "file_name": file_name, "file_ext": file_ext}
                 else:
                     # 预览其他文件
                     img = FileToImage()
