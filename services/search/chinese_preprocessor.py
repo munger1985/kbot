@@ -261,9 +261,9 @@ class ChinesePreprocessor:
             # 构建返回结果
             results = {}
 
-            # 用于语义检索：用空格连接
-            result = " ".join(tokens)
-            logger.debug(f"语义检索预处理完成: '{query}' -> '{result}'")
+            # # 用于语义检索：用空格连接
+            # result = " ".join(tokens)
+            # logger.debug(f"语义检索预处理完成: '{query}' -> '{result}'")
 
             # 用于全文检索：返回词元列表
             logger.debug(f"全文检索预处理完成: '{query}' -> {tokens}")

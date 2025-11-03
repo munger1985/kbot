@@ -52,12 +52,33 @@ class AgentRerank:
             logger.warning("重排模型调用失败或返回为空")
             return kb_results
 
-        reranked_results: list[KBResult] = []    
-        
+        reranked_results: list[KBResult] = []
+
+        # 先收集所有分数
+        all_scores = []
+        for reranker in rerankers:
+            score = reranker.get("score")
+            if score is not None:
+                all_scores.append(score)
+
+        # 计算归一化参数
+        if all_scores:
+            min_score = min(all_scores)
+            max_score = max(all_scores)
+            score_range = max_score - min_score
+        else:
+            min_score = 0
+            score_range = 1  # 避免除零
+
         # 处理重排结果
         for reranker in rerankers:
             index = reranker.get("index")
             score = reranker.get("score")
+            
+            # 对score进行归一化处理
+            normalized_score = 0.0
+            if score is not None and score_range > 0:
+                normalized_score = (score - min_score) / score_range
             
             if index is not None and score is not None and 0 <= index < len(kb_results):
                 # 创建新的KBResult对象，保留原始属性并更新重排分数
@@ -69,12 +90,12 @@ class AgentRerank:
                     content=original_result.content,
                     similarity=original_result.similarity,
                     weight=original_result.weight,
-                    reranker_score=score
+                    reranker_score=normalized_score # 使用归一化后的分数
                 )
                 reranked_results.append(reranked_result)
 
                 logger.debug(f"知识库结果内容片段: {reranked_result.content[:20]}...")
-                logger.debug(f"知识库结果重排得分: {reranked_result.reranker_score}")
+                logger.debug(f"知识库结果重排得分(归一化后): {reranked_result.reranker_score}")
                 logger.debug(f"知识库结果权重: {reranked_result.weight}")
             else:
                 logger.warning(f"无效的重排结果索引或分数: index={index}, score={score}")

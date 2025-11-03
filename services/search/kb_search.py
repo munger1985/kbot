@@ -94,6 +94,8 @@ class KBSearch:
         """
         # 调用嵌入服务
         model_id = self.tool_params.txt_embed_model
+        logger.debug(f"启用语义检索，问题: {question}")
+
         if not model_id:
             logger.warning(f"未找到知识库 {self.tool_params.tool_id} 的嵌入模型")
             return None
