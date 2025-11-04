@@ -9,7 +9,7 @@ class ToolParams(BaseModel):
     tool_weight: float = 0.0
     reranker_flag: int = 0
     search_type: int = 0
-    top_k: int = 10
+    search_top_k: int = 10
     threshold: float = 0.7
     kb_catogory: int | None = None
     img2txt_model: int | None = None
@@ -31,7 +31,7 @@ class ToolParams(BaseModel):
             tool_weight=getattr(obj, 'tool_weight', 0.0) or 0.0,
             reranker_flag=getattr(obj, 'reranker_flag', 0) or 0,
             search_type=getattr(obj, 'search_type', 0),
-            top_k=getattr(obj, 'search_topk', 10) or 10,
+            search_top_k=getattr(obj, 'search_top_k', 10) or 10,
             threshold=getattr(obj, 'search_score_threshold', 0.7) or 0.7,
             kb_catogory=None,
             img2txt_model=None,

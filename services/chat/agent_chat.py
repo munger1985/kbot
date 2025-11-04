@@ -3,7 +3,6 @@ from typing import Any
 from loguru import logger
 from dao.repositories.kbot_md_agent_conf_repo import KbotMdAgentConfRepository
 from dao.repositories.kbot_md_agent_repo import KbotMdAgentRepository
-from dao.repositories.kbot_md_models_repo import KbotMdModelsRepository
 from core.dictionary import ToolType, YesNoEnum
 from .agent_params import AgentParams, ToolParams, KBResult
 from .agent_rerank import AgentRerank
@@ -21,7 +20,7 @@ class Agent:
         Args:
             agent_id: 智能体ID
             security: 安全级别
-            tags: 标签列表
+            tags: 标签列表. 默认为空列表
         """
         self.agent_id = agent_id
         self.security = security
@@ -33,7 +32,7 @@ class Agent:
                                    vector_search_question: str, 
                                    full_text_question: list[str], 
                                    security: int,
-                                   tags: list[str] | None = None
+                                   tags: list[str] = []
                                    ) -> list[KBResult]:
         """
         异步运行KB搜索的方法
@@ -43,7 +42,7 @@ class Agent:
             vector_search_question: 改写后的向量搜索问题
             full_text_question: 改写后的全文搜索问题
             security: 安全级别
-            tags: 标签列表
+            tags: 标签列表. 默认为空列表
             
         Returns:
             list[KBResult]: 搜索结果列表

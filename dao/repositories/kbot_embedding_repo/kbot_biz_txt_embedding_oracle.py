@@ -93,10 +93,10 @@ class OracleEmbeddingRepository(IEmbeddingRepository):
                                      kb_id: int,
                                      query_vec: str,
                                      security: int,
-                                     similarity_threshold: float | None = 0.8,
-                                     top_k: int | None = 10,
+                                     similarity_threshold: float = 0.8,
+                                     search_top_k: int = 10,
                                      is_summary_search: bool = False,
-                                     tags: list[str] | None = None
+                                     tags: list[str] = []
                                      ) -> Sequence:
         """Get similar embeddings using vector similarity search.
         
@@ -105,7 +105,7 @@ class OracleEmbeddingRepository(IEmbeddingRepository):
             query_vec: Target embedding vector to compare with
             security: Security level
             similarity_threshold: Minimum similarity score (0.0-1.0)
-            top_k: Maximum number of results to return
+            search_top_k: Maximum number of results to return
             is_summary_search: Whether to search in summary or not
             tags: List of tags to filter by
             
@@ -133,7 +133,7 @@ class OracleEmbeddingRepository(IEmbeddingRepository):
             "query_vec": query_vec,
             "security": security,
             "threshold": similarity_threshold,
-            "top_k": top_k,
+            "top_k": search_top_k,
             "chunk_type": ChunkType.SUMMARY.value if is_summary_search else ChunkType.TEXT.value
         }
 
@@ -166,9 +166,9 @@ class OracleEmbeddingRepository(IEmbeddingRepository):
                                kb_id: int,
                                keyword: str,
                                security: int,
-                               top_k: int | None = 10,
-                               simularity_threshold: float | None = 0.8,
-                               tags: list[str] | None = []
+                               search_top_k: int = 10,
+                               simularity_threshold: float = 0.8,
+                               tags: list[str] = []
                                 ) -> Sequence:
         """Get chunk record by full text search.
         
@@ -176,7 +176,7 @@ class OracleEmbeddingRepository(IEmbeddingRepository):
             kb_id: Knowledge base ID
             keyword: Target text to compare with
             security: Security level
-            top_k: Maximum number of results to return
+            search_top_k: Maximum number of results to return
             simularity_threshold: Minimum similarity score (0.0-1.0)
             tags: List of tags to filter by
             
@@ -200,7 +200,7 @@ class OracleEmbeddingRepository(IEmbeddingRepository):
             'kb_id': kb_id,
             'security': security,
             'keyword': keyword,
-            'top_k': top_k
+            'top_k': search_top_k
         }
         
         # 如果有tag_list，构建多个OR条件

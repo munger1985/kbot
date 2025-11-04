@@ -19,7 +19,7 @@ class KBSearch:
                      vector_search_question: str, 
                      full_text_question: list[str], 
                      security: int, 
-                     tags: list[str] | None = None
+                     tags: list[str] = []
                     ) -> list[KBResult] | None:
         """
         执行知识库搜索
@@ -28,7 +28,7 @@ class KBSearch:
             vector_search_question (str): 语义搜索问题
             full_text_question (list[str]): 全文搜索问题
             security (int): 安全级别
-            tags (list[str] | None, optional): 标签列表. 默认为None
+            tags (list[str], optional): 标签列表. 默认为空列表
             
         Returns:
             list[KBResult] | None: 搜索结果列表，搜索失败时返回None
@@ -78,7 +78,7 @@ class KBSearch:
                                question: str, 
                                security: int, 
                                is_summary: bool = False, 
-                               tags: list[str] | None = None
+                               tags: list[str] = []
                             ) -> list[KBResult] | None:
         """
         向量搜索方法
@@ -87,7 +87,7 @@ class KBSearch:
             question (str): 搜索问题
             security (int): 安全级别
             is_summary (bool, optional): 是否使用摘要搜索. 默认为False
-            tags (list[str] | None, optional): 标签列表. 默认为None
+            tags (list[str], optional): 标签列表. 默认为空列表
             
         Returns:
             list[KBResult] | None: 搜索结果列表，搜索失败时返回None
@@ -123,7 +123,7 @@ class KBSearch:
                                   query_vec: list[float], 
                                   security: int, 
                                   is_summary: bool = False, 
-                                  tags: list[str] | None = None
+                                  tags: list[str] = []
                                 ) -> list[KBResult] | None:
         """
         从向量数据库中获取相似记录
@@ -132,7 +132,7 @@ class KBSearch:
             query_vec (list[float]): 查询向量
             security (int): 安全级别
             is_summary (bool, optional): 是否使用摘要搜索. 默认为False
-            tags (list[str] | None, optional): 标签列表. 默认为None
+            tags (list[str], optional): 标签列表. 默认为空列表
             
         Returns:
             list[KBResult] | None: 相似记录列表，查询失败时返回None
@@ -149,14 +149,14 @@ class KBSearch:
             logger.debug(f"向量搜索知识库ID: {self.tool_params.tool_id}")
             logger.debug(f"向量搜索安全级别: {security}")
             logger.debug(f"向量搜索相似度阈值: {self.tool_params.threshold}")
-            logger.debug(f"向量搜索返回数量: {self.tool_params.top_k}")
+            logger.debug(f"向量搜索返回数量: {self.tool_params.search_top_k}")
 
             dataset = await repo.get_similar_embeddings(
                 kb_id = self.tool_params.tool_id,
                 query_vec = vec,  # type: ignore
                 security = security,
                 similarity_threshold = self.tool_params.threshold,
-                top_k = self.tool_params.top_k,
+                search_top_k = self.tool_params.search_top_k,
                 is_summary_search=is_summary,
                 tags=tags
             )
@@ -183,13 +183,14 @@ class KBSearch:
             logger.debug(f"向量搜索失败: {str(e)}")
             raise ValueError(f"向量搜索失败: {str(e)}")
         
-    async def serch_by_full_text(self, keywords: list[str], security: int, tags: list[str] | None = None) -> list[KBResult] | None:
+    async def serch_by_full_text(self, keywords: list[str], security: int, tags: list[str] = []) -> list[KBResult] | None:
         """
         全文搜索方法
         
         Args:
             keywords (list[str]): 关键词列表
             security (int): 安全级别
+            tags (list[str], optional): 标签列表. 默认为空列表
             
         Returns:
             list[KBResult] | None: 搜索结果列表，搜索失败时返回None

@@ -1,5 +1,5 @@
 import json
-from typing import Sequence, Optional
+from typing import Sequence
 from elasticsearch import AsyncElasticsearch
 from loguru import logger
 from dao.entities.kbot_biz_txt_embedding import KbotBizTxtEmbedding
@@ -12,7 +12,7 @@ class ElasticsearchEmbeddingRepository(IEmbeddingRepository):
     
     def __init__(self, kb_id: int):
         self.kb_id = kb_id
-        self.es_client: Optional[AsyncElasticsearch] = None
+        self.es_client: AsyncElasticsearch | None = None
         self.index_name = f"kbot_biz_txt_embedding_{kb_id}"
 
 
@@ -158,10 +158,11 @@ class ElasticsearchEmbeddingRepository(IEmbeddingRepository):
                                kb_id: int,
                                query_vec: str,
                                security: int,
-                               similarity_threshold: Optional[float] = 0.8,
-                               top_k: Optional[int] = 10,
+                               similarity_threshold: float = 0.8,
+                               search_top_k: int = 10,
                                is_summary_search: bool = False,
-                               tags: Optional[list[str]] = None) -> Sequence:
+                               tags: list[str] = []
+                               ) -> Sequence:
         """向量相似度搜索"""
         if self.es_client is None:
             return []
@@ -207,7 +208,7 @@ class ElasticsearchEmbeddingRepository(IEmbeddingRepository):
                 index=self.index_name,
                 body={
                     "query": query,
-                    "size": top_k or 10,
+                    "size": search_top_k or 10,
                     "_source": ["file_id", "chunk_doc", "chunk_metadata"],
                     "min_score": (similarity_threshold or 0.8) + 1.0,
                     "sort": [{"_score": "desc"}]
@@ -236,9 +237,10 @@ class ElasticsearchEmbeddingRepository(IEmbeddingRepository):
                             kb_id: int,
                             keyword: str,
                             security: int,
-                            top_k: Optional[int] = 10,
-                            similarity_threshold: Optional[float] = 0.8,
-                            tags: Optional[list[str]] = None) -> Sequence:
+                            search_top_k: int = 10,
+                            similarity_threshold: float = 0.8,
+                            tags: list[str] = []
+                            ) -> Sequence:
         """全文检索"""
         if self.es_client is None:
             return []
@@ -270,7 +272,7 @@ class ElasticsearchEmbeddingRepository(IEmbeddingRepository):
                 index=self.index_name,
                 body={
                     "query": query,
-                    "size": top_k or 10,
+                    "size": search_top_k or 10,
                     "_source": ["file_id", "chunk_doc", "chunk_metadata"],
                     "min_score": similarity_threshold or 0.0,
                     "sort": [{"_score": "desc"}]
@@ -328,7 +330,7 @@ class ElasticsearchEmbeddingRepository(IEmbeddingRepository):
             logger.error(f"ES更新块失败: {e}")
             return False
 
-    async def get_summary_id_by_chunk_id(self, file_id: str, chunk_id: str) -> Optional[str]:
+    async def get_summary_id_by_chunk_id(self, file_id: str, chunk_id: str) -> str | None:
         """根据块ID获取摘要ID - 与Oracle接口完全一致"""
         if self.es_client is None:
             return None

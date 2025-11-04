@@ -1,4 +1,3 @@
-from enum import Enum
 from loguru import logger
 from .kbot_embedding_repo.kbot_biz_txt_embedding_oracle import OracleEmbeddingRepository
 from .kbot_embedding_repo.kbot_biz_txt_embedding_es import ElasticsearchEmbeddingRepository

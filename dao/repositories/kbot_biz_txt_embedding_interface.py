@@ -26,7 +26,7 @@ class IEmbeddingRepository(ABC):
                                    query_vec: str,
                                    security: int,
                                    similarity_threshold: float | None = 0.8,
-                                   top_k: int | None = 10,
+                                   search_top_k: int | None = 10,
                                    is_summary_search: bool = False,
                                    tags: list[str] | None = None) -> Sequence:
         """向量相似度搜索"""
@@ -37,7 +37,7 @@ class IEmbeddingRepository(ABC):
                              kb_id: int,
                              keyword: str,
                              security: int,
-                             top_k: int | None = 10,
+                             search_top_k: int | None = 10,
                              similarity_threshold: float | None = 0.8,
                              tags: list[str] | None = None) -> Sequence:
         """全文检索"""
