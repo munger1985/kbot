@@ -60,7 +60,7 @@ class JinaReranker(LocalReranker):
                 # Jina 分数处理
                 logits = self.model(**inputs).logits.squeeze(-1)
                 scores = torch.sigmoid(logits).cpu().tolist()
-            
+                
             # 创建 (索引, 分数) 元组列表
             scored_results = [(i, score) for i, score in enumerate(scores)]
             
@@ -69,6 +69,11 @@ class JinaReranker(LocalReranker):
             
             # 限制到 top_k 个结果
             scored_results = scored_results[:top_k]
+            
+            # 清理内存
+            del inputs, logits, scores
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
             
             # 返回请求格式的结果
             return [{"index": idx, "score": float(score)} for idx, score in scored_results]

@@ -1,4 +1,5 @@
 import torch
+import numpy as np
 from typing import Any
 from pydantic import Field
 from loguru import logger
@@ -191,6 +192,8 @@ class Qwen3Reranker(BaseReranker):
             true_vector = batch_scores[:, self.token_true_id]
             false_vector = batch_scores[:, self.token_false_id]
             batch_scores = torch.stack([false_vector, true_vector], dim=1)
+
+            # 归一化分数到 [0, 1] 范围
             batch_scores = torch.nn.functional.log_softmax(batch_scores, dim=1)
             score = batch_scores[:, 1].exp().item()
             

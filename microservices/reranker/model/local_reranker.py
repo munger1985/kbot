@@ -217,13 +217,13 @@ class LocalReranker(BaseReranker):
             # 获取分数
             logits = self.model(**inputs).logits.squeeze(-1)
             scores = torch.sigmoid(logits).cpu().tolist()
-            
+
             # 显式释放中间变量
             del inputs, logits
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
         
-        return scores
+            return scores
     
     async def rerank(
         self,

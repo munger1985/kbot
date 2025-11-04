@@ -84,15 +84,16 @@ async def test_call_reranker_model():
     测试调用reranker模型的方法
     """
     # 测试参数
-    # rerank_model_id = 24 #"KBOT1/BGE-RANKER"
+    rerank_model_id = 24 #"KBOT1/BGE-RANKER"
     # rerank_model_id = 25 #"KBOT1/JINA-RANKER"
-    rerank_model_id = 61 # Qwen3-RANKER
+    # rerank_model_id = 61 # Qwen3-RANKER
     question = "招聘数据工程师"
     inputs_list = [
         "<|im_end|>你好，我想要找一份有关数据科学的数据集。",
-        "<|im_end|>我想做些有关数据科学的工作。",
+        "<|im_end|>我想做些有关数学专业的工作。",
         "<|im_end|>我想要找一份与量子计算相关的工作。",
-        "<|im_end|>我的研究兴趣是量子计算，我想寻找一份相关专业的工作。"
+        "<|im_end|>我的研究兴趣是量子计算，我想寻找一份相关专业的工作。",
+        "<|im_end|>你好，我想要找一份数据工程师的工作。",
     ]
     
     # 添加重试逻辑
@@ -103,7 +104,7 @@ async def test_call_reranker_model():
                 rerank_model_id,
                 question,
                 inputs_list,
-                3
+                5
             )
             print(f"测试开始，使用模型: {rerank_model_id}")
             print(f"结果: {rerank}")
@@ -163,4 +164,4 @@ async def test_call_vlm_model():
 # 运行测试
 if __name__ == "__main__":
 
-    asyncio.run(test_call_llm_model())
+    asyncio.run(test_call_reranker_model())
