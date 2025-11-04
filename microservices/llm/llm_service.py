@@ -1,4 +1,5 @@
 import json
+from typing import Any
 from loguru import logger
 from model_pool import ModelPool
 from model import BaseLLM, LLMProvider
@@ -44,9 +45,11 @@ class LLMService:
         temperature: float | None = None,
         top_p: float | None = None,
         frequency_penalty: float | None = None,
-        presence_penalty: float | None = None
+        presence_penalty: float | None = None,
+        tools: list[dict[str, Any]] | None = None,
+        tool_choice: str | None = None,
     ):
-        """生成聊天响应
+        """生成聊天响应，支持MCP工具调用
 
         Args:
             model_id: 模型唯一标识符
@@ -58,6 +61,8 @@ class LLMService:
             top_p: Top-p采样参数
             frequency_penalty: 频率惩罚
             presence_penalty: 存在惩罚
+            tools: MCP工具列表，支持工具调用功能
+            tool_choice: 工具选择策略，可选值为"auto"或"none"
 
         Returns:
             如果stream为True: 异步生成器，产生文本块
@@ -77,6 +82,13 @@ class LLMService:
             "frequency_penalty": frequency_penalty,
             "presence_penalty": presence_penalty
         }
+
+        # 添加工具调用参数（如果提供）
+        if tools is not None:
+            kwargs["tools"] = tools
+        if tool_choice is not None:
+            kwargs["tool_choice"] = tool_choice
+
         kwargs = {k: v for k, v in kwargs.items() if v is not None}
         
         # 从模型获取响应
@@ -97,6 +109,8 @@ class LLMService:
                         })
             
             logger.debug(f"发送消息到模型: {processed_messages}")
+            if tools:
+                logger.debug(f"工具调用配置 - 工具数量: {len(tools)}, 工具选择: {tool_choice}")
 
             # OpenAI流模式
             if stream and model.provider == LLMProvider.OPENAI.value:
@@ -140,7 +154,7 @@ class LLMService:
             
         except Exception as e:
             logger.exception(f"生成聊天响应时出错: {e}")
-            logger.error(f"详细错误上下文 - 模型: {model_id}, 消息: {messages}, 流式: {stream}")
+            logger.error(f"详细错误上下文 - 模型: {model_id}, 消息: {messages}, 流式: {stream}, 工具: {len(tools) if tools else 0}")
             raise RuntimeError(f"生成聊天响应失败: {e}. 上下文: 模型 {model_id}, 消息：{messages}, 流式：{stream}")
 
 

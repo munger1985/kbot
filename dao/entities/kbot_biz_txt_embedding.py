@@ -1,6 +1,4 @@
 import json
-import array
-from pydantic import BaseModel, field_serializer
 from utils.common import safe_read_content
 
 class KbotBizTxtEmbedding():
@@ -23,22 +21,6 @@ class KbotBizTxtEmbedding():
         self.embedding = embedding
         self.security_level = security_level
         self.status = status
-
-# class KbotBizTxtEmbedding(BaseModel):
-#     embed_id: str
-#     kb_id: int
-#     file_id: str
-#     chunk_doc: str
-#     chunk_metadata: dict
-#     biz_metadata: dict
-#     embedding: array.array  # 或者使用 Any 类型
-#     security_level: int
-#     status: int
-    
-#     @field_serializer('embedding')
-#     def serialize_embedding(self, embedding: array.array, _info) -> list[float]:
-#         # 将 array.array 转换为 list
-#         return list(embedding)
          
     def to_dict(self) -> dict:
         return {

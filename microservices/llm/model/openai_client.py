@@ -70,7 +70,7 @@ class OpenaiClient(BaseLLM):
         Args:
             messages: 消息列表或单个提示字符串
             stream: 是否使用流式输出
-            **kwargs: 额外的生成参数
+            **kwargs: 额外的生成参数, 包括tools和tool_choice
             
         Returns:
             - 如果不使用流式: ChatCompletion对象
@@ -101,9 +101,33 @@ class OpenaiClient(BaseLLM):
             "presence_penalty": kwargs.get('presence_penalty', self.config.presence_penalty),  # type: ignore
             "stream": stream,
         }
+
+        # 添加工具调用参数（如果提供）
+        tools = kwargs.get('tools')
+        if tools is not None:
+            params["tools"] = tools
+            logger.debug(f"启用工具调用，工具数量: {len(tools)}")
         
+        tool_choice = kwargs.get('tool_choice')
+        if tool_choice is not None:
+            params["tool_choice"] = tool_choice
+            logger.debug(f"工具选择策略: {tool_choice}")
+        
+        # 清理None值参数
+        params = {k: v for k, v in params.items() if v is not None}
+        
+        # 调用OpenAI API
         try:
+            logger.debug(f"调用OpenAI API，参数: { {k: v for k, v in params.items() if k not in ['messages', 'tools']} }")
+            
             response = await self.client.chat.completions.create(**params)  # type: ignore
+            
+            # 记录工具调用信息（如果存在）
+            if not stream and hasattr(response, 'choices') and response.choices:
+                if hasattr(response.choices[0].message, 'tool_calls') and response.choices[0].message.tool_calls:
+                    tool_calls_count = len(response.choices[0].message.tool_calls)
+                    logger.info(f"OpenAI响应包含 {tool_calls_count} 个工具调用")
+
             return response
             
         except APIError as e:

@@ -1,6 +1,6 @@
 """LLM微服务应用程序。
 
-该模块提供了一个FastAPI应用程序，用于与各种LLM提供者交互。它支持文本生成、聊天完成和MCP工具调用功能。
+该模块提供了一个FastAPI应用程序，用于与各种LLM提供者交互。它支持文本生成和聊天完成功能。
 """
 
 import os
@@ -17,7 +17,7 @@ from datetime import datetime
 from typing import Any
 from contextlib import asynccontextmanager
 from fastapi_offline import FastAPIOffline
-from pydantic import ValidationError
+from pydantic import BaseModel, Field, ValidationError
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -25,7 +25,6 @@ from loguru import logger
 from ms_core import ConfigManager, nacos_manager, LogManager, LogConfig
 from llm_service import LLMService
 from model import LLMProvider
-from schema import *
 
 
 # 加载环境变量配置
@@ -49,8 +48,7 @@ retention = app_config.kbot.log.retention
 # 创建LLM服务实例
 llm_service = LLMService()
 
-# ==================== 应用生命周期 ====================
-
+# 定义 lifespan 上下文管理器
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用程序生命周期上下文管理器"""
@@ -95,30 +93,59 @@ async def lifespan(app: FastAPI):
     logger.info(f"LLM服务关闭耗时: {time.time() - shutdown_start:.2f} 秒")
     logger.info(f"服务总运行时间: {time.time() - start_time:.2f} 秒")
 
-# ==================== FastAPI应用创建 ====================
-
 # 创建FastAPI应用
 app = FastAPIOffline(
     title="LLM 微服务",
-    description="提供使用各种LLM提供者的文本生成、聊天完成和MCP工具调用服务",
+    description="提供使用各种LLM提供者的文本生成和聊天完成服务",
     version=service_version,
     lifespan=lifespan,
-    docs_url="/docs" if debug else None,
+    # 这些参数让 FastAPIOffline 自动处理静态文件
+    docs_url="/docs" if debug else None,  # 生产环境可禁用
     redoc_url="/redoc" if debug else None
 )
 
 # 添加CORS中间件
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # 在生产环境中应该限制为特定的源
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ==================== API路由 ====================
+class ChatResponse(BaseModel):
+    """聊天响应模型(兼容OpenAI)"""
 
-# 依赖项：获取LLM服务实例
+    id: str = Field(default_factory=lambda: f"sse-{uuid.uuid4()}", description="响应流的唯一标识符")
+    object: str = Field("chat.completion", description="对象类型，始终为'chat.completion'")
+    created: int = Field(default_factory=lambda: int(time.time()), description="响应创建时的Unix时间戳")
+    model: str = Field(..., description="响应模型名称")
+    choices: list[dict[str, Any]] = Field(..., description="包含消息的聊天完成选项列表")
+    usage: dict[str, int] = Field(..., description="令牌使用统计，包括prompt_tokens、completion_tokens和total_tokens")
+    processing_time: float = Field(..., description="处理时间（秒）（自定义字段）")
+
+
+class ChatRequest(BaseModel):
+    """聊天请求模型"""
+
+    model_id: int = Field(..., description="要使用的特定模型ID")
+    messages: list[dict[str, str]] | str = Field(..., description="聊天消息列表")
+    max_tokens: int | None = Field(None, description="要生成的最大令牌数")
+    temperature: float | None = Field(None, description="采样温度（0.0-1.0，越低越确定）")
+    stream: bool = Field(False, description="是否流式传输响应")
+    timeout: int | None = Field(None, description="超时时间（秒）")
+    top_p: float | None = Field(None, description="Top-p采样参数")
+    frequency_penalty: float | None = Field(None, description="频率惩罚")
+    presence_penalty: float | None = Field(None, description="存在惩罚")
+    tools: list[dict[str, Any]] | None = Field(None, description="工具列表")
+    tool_choice: Any | None = Field(None, description="工具选择")
+
+class ToggleModelRequest(BaseModel):
+    """启用或禁用模型请求表单。"""
+    model_id: int = Field(..., description="模型唯一标识符")
+    operation: str = Field(..., description="操作类型，'load' 或 'unload'")
+
+# 依赖项：获取嵌入服务实例
 def get_llm_service():
     return llm_service
 
@@ -142,6 +169,7 @@ async def health() -> dict[str, Any]:
     if llm_service._initialized and hasattr(llm_service._model_pool, '_models'):
         loaded_models = llm_service._model_pool._models
     
+    # 返回已加载模型数量
     return {
         "status": "ok",
         "loaded_models_count": len(loaded_models),
@@ -150,7 +178,18 @@ async def health() -> dict[str, Any]:
 
 @app.post("/load", response_model=dict, tags=["LLM"], summary="加载或卸载模型")
 async def load_model(request: ToggleModelRequest) -> dict:
-    """通过模型ID加载模型到内存中。"""
+    """通过模型ID加载模型到内存中。
+    
+    Args:
+    - **model_id**: int = Field(..., description="模型唯一标识符")
+    - **operation**: str = Field(..., description="操作类型，'load' 或 'unload'")
+        
+    Returns:
+    - **dict**: 包含操作状态和模型名称的响应数据
+        
+    Raises:
+    - **HTTPException**: 当模型加载失败时抛出500错误
+    """
     model_name = llm_service._model_pool._model_names.get(request.model_id, str(request.model_id))
     try:
         if request.operation == "load":
@@ -166,14 +205,12 @@ async def load_model(request: ToggleModelRequest) -> dict:
         logger.exception(f"操作模型 {model_name} 时发生错误: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-# ==================== 主要的聊天接口（重点改造部分） ====================
-
 @app.post("/v1/chat/completions", response_model=None, tags=["LLM"], summary="生成聊天响应")
 async def chat(
     request: ChatRequest,
     llm_service: LLMService = Depends(get_llm_service)
 ) -> ChatResponse | StreamingResponse:
-    """生成聊天响应，支持MCP工具调用
+    """生成聊天响应
     
     Args:
     - **model_id**: int = Field(..., description="要使用的特定模型ID")
@@ -185,9 +222,6 @@ async def chat(
     - **top_p**: float | None = Field(None, description="Top-p采样参数")
     - **frequency_penalty**: float | None = Field(None, description="频率惩罚")
     - **presence_penalty**: float | None = Field(None, description="存在惩罚")
-    - **tools**: list[dict[str, Any]] | None = Field(None, description="MCP工具列表")
-    - **tool_choice**: Any | None = Field(None, description="工具选择策略")
-    - **enable_tool_calls**: bool = Field(False, description="是否启用工具调用")
     
     Returns:
     **非流式模式**: 包含消息和处理时间的JSON对象
@@ -218,33 +252,20 @@ async def chat(
     Raises:
     - **HTTPException**: 当聊天生成失败时抛出500错误，当响应格式不支持时抛出400错误，当请求超时时抛出408错误
     """
-    
     start_time = time.time()
-    response_id = f"chatcmpl-{uuid.uuid4()}"
+    response_id = f"chatcmpl-{uuid.uuid4()}"  # OpenAI格式的ID
     created_time = int(time.time())
     model_name = llm_service._model_pool._model_names.get(request.model_id, str(request.model_id))
     model_token = llm_service._model_pool._max_tokens.get(request.model_id, 4000)
     provider = llm_service.get_provider(request.model_id)
-    
     if provider is None:
         raise HTTPException(status_code=404, detail=f"模型 {model_name} 在模型池中未找到")
-    
     try:
-        # 准备工具调用参数
-        tools = request.tools
-        tool_choice = request.tool_choice
-        
-        # 如果启用了工具调用但没有提供工具，记录警告
-        if request.enable_tool_calls and not tools:
-            logger.warning("启用了工具调用但没有提供工具列表")
-        
-        logger.debug(f"工具调用配置 - tools: {len(tools) if tools else 0}, tool_choice: {tool_choice}")
-        
-        # 处理流式响应
+        # OpenAI streaming 格式响应
         if request.stream and provider == LLMProvider.OPENAI.value:
             async def generate_openai_sse():
                 try:
-                    # 获取流式响应，包含工具调用支持
+                    # 获取流式响应
                     max_tokens = request.max_tokens if request.max_tokens else model_token
                     chunk_stream = await llm_service.chat(
                         model_id=request.model_id,
@@ -255,20 +276,23 @@ async def chat(
                         timeout=request.timeout,
                         top_p=request.top_p,
                         frequency_penalty=request.frequency_penalty,
-                        presence_penalty=request.presence_penalty,
-                        tools=tools,
-                        tool_choice=tool_choice
+                        presence_penalty=request.presence_penalty
                     )
                     
                     # 直接返回OpenAI客户端的流式响应
                     async for chunk in chunk_stream: # type: ignore
+                        # 确保chunk是SSE格式
                         if hasattr(chunk, 'model_dump_json'):
+                            # 如果是Pydantic模型，转换为JSON
                             yield f"data: {chunk.model_dump_json()}\n\n"
                         elif isinstance(chunk, str):
+                            # 如果是字符串，直接使用
                             yield f"data: {chunk}\n\n"
                         else:
+                            # 如果是字典，转换为JSON
                             yield f"data: {json.dumps(chunk)}\n\n"
                     
+                    # 发送结束标记
                     yield "data: [DONE]\n\n"
                     
                 except Exception as e:
@@ -289,11 +313,10 @@ async def chat(
                 headers={
                     "Cache-Control": "no-cache",
                     "Connection": "keep-alive",
-                    "X-Accel-Buffering": "no"
+                    "X-Accel-Buffering": "no"  # 防止Nginx缓冲
                 }
             )
-        
-        # 处理OCI流式响应（保持原有逻辑）
+
         elif request.stream and provider == LLMProvider.OCI.value:
             if "cohere" in model_name.lower():
                 async def generate_oci_cohere_sse():
@@ -315,6 +338,7 @@ async def chat(
                             if chunk == "[DONE]":
                                 break
                             try:
+                                # content = chunk["message"]["content"][0]["text"]
                                 content = chunk["text"]
                                 chunk_dict = {
                                     "id": response_id,
@@ -441,9 +465,8 @@ async def chat(
             else:
                 raise HTTPException(status_code=400, detail="流式传输不支持该模型")
             
-        # 处理非流式响应
         elif not request.stream:
-            # 调用LLM服务，支持工具调用
+            # OpenAI 非流式响应
             response = await llm_service.chat(
                 model_id=request.model_id,
                 messages=request.messages,
@@ -453,27 +476,17 @@ async def chat(
                 timeout=request.timeout,
                 top_p=request.top_p,
                 frequency_penalty=request.frequency_penalty,
-                presence_penalty=request.presence_penalty,
-                tools=tools,
-                tool_choice=tool_choice
+                presence_penalty=request.presence_penalty
             )
             
             processing_time = time.time() - start_time
             logger.info(f"聊天完成耗时: {processing_time:.2f}秒")
-            
             content = None
             usage_data = None
-            tool_calls = None
-            
-            # 处理不同提供者的响应
+            # 获取响应内容和usage数据
             if provider == LLMProvider.OPENAI.value:
                 content = response.choices[0].message.content # type: ignore
                 usage_data = response.usage # type: ignore
-                
-                # 检查是否有工具调用
-                if hasattr(response.choices[0].message, 'tool_calls') and response.choices[0].message.tool_calls: # type: ignore
-                    tool_calls = response.choices[0].message.tool_calls # type: ignore
-                    logger.info(f"检测到工具调用: {len(tool_calls)} 个")
 
             elif provider == LLMProvider.OCI.value:
                 # Grok 非流式响应
@@ -488,8 +501,7 @@ async def chat(
             else:
                 logger.warning(f"不支持的提供者: {provider}")
 
-            # 构建响应
-            chat_response = ChatResponse(
+            return ChatResponse(
                 id=response_id,
                 object="chat.completion",
                 created=created_time,
@@ -509,12 +521,6 @@ async def chat(
                 },
                 processing_time=processing_time
             )
-            
-            # 如果有工具调用，添加到响应中
-            if tool_calls:
-                chat_response.tool_calls = tool_calls # type: ignore
-            
-            return chat_response
         
         else:
             # 响应格式不支持
@@ -573,6 +579,7 @@ def shutdown_llm_service():
             llm_service_process.kill()
         llm_service_process = None
 
+
 def signal_handler(sig, frame):
     """处理终止信号"""
     logger.info(f"收到信号: {sig}, 正在关闭...")
@@ -589,5 +596,4 @@ if __name__ == "__main__":
         signal.signal(signal.SIGTERM, signal_handler)
     
     logger.info(f"已启动LLM微服务，监听地址: {service_host}:{service_port}")
-    logger.info("MCP工具调用支持已启用")
     uvicorn.run(app, host=service_host, port=service_port)

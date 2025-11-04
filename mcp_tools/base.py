@@ -1,23 +1,14 @@
 from abc import ABC, abstractmethod
 from typing import Any
-from enum import Enum
 from dataclasses import dataclass
 from loguru import logger
+from core.dictionary import MCPToolType
 
-class ToolType(Enum):
-    """工具类型枚举"""
-    KB_SEARCH = "kb_search"
-    FUNCTION_CALL = "function_call"
-    INTERNET_SEARCH = "internet_search"
-    AGENT_CALL = "agent_call"
-    CHAT_AI = "chat_ai"
-    CALCULATOR = "calculator"
-    CODE_EXECUTION = "code_execution"
 
 @dataclass
 class ToolCall:
     """工具调用请求"""
-    tool_type: ToolType
+    tool_type: MCPToolType
     tool_name: str
     parameters: dict[str, Any]
     description: str = ""
@@ -25,7 +16,7 @@ class ToolCall:
 @dataclass
 class ToolResult:
     """工具执行结果"""
-    tool_type: ToolType
+    tool_type: MCPToolType
     tool_name: str
     content: Any
     confidence: float = 1.0
@@ -34,10 +25,12 @@ class ToolResult:
 class MCPTool(ABC):
     """MCP工具基类"""
     
-    def __init__(self, tool_type: ToolType, tool_name: str, description: str):
+    def __init__(self, tool_type: MCPToolType, tool_name: str, description: str):
         self.tool_type = tool_type
         self.tool_name = tool_name
         self.description = description
+        self.security = 0
+        self.tags = []
     
     @abstractmethod
     async def execute(self, parameters: dict[str, Any]) -> ToolResult:
@@ -64,6 +57,7 @@ class MCPToolRegistry:
         """注销工具"""
         if tool_name in self._tools:
             del self._tools[tool_name]
+            logger.debug(f"注销MCP工具: {tool_name}")
     
     def get_tool(self, tool_name: str) -> MCPTool | None:
         """获取工具"""

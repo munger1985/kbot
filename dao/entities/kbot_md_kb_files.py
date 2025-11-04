@@ -1,5 +1,4 @@
-from datetime import datetime, timezone
-from sqlalchemy import String, Date, Numeric, CLOB
+from sqlalchemy import String, Date, Numeric, CLOB, func
 from sqlalchemy.orm import Mapped, mapped_column
 from .base import Base
 
@@ -29,11 +28,11 @@ class KbotMdKbFiles(Base):
     parsed_metadata: Mapped[str | None] = mapped_column(CLOB, comment="解析之后的元数据，会保存数据文件中抽取的图片/表格等映射关系。")
     log_msg: Mapped[str | None] = mapped_column(String(1000), comment="处理日志信息")
     created_by: Mapped[str | None] = mapped_column(String(256), comment="创建用户")
-    created_time: Mapped[Date] = mapped_column(Date, default=datetime.now(timezone.utc), comment="创建时间")
+    created_time: Mapped[Date] = mapped_column(Date, server_default=func.now(), comment="创建时间")
     updated_by: Mapped[str | None] = mapped_column(String(256), comment="修改用户")
-    updated_time: Mapped[Date] = mapped_column(Date, default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc), comment="修改时间")
+    updated_time: Mapped[Date] = mapped_column(Date, server_default=func.now(), onupdate=func.now(), comment="修改时间")
     approved_by: Mapped[str | None] = mapped_column(String(256), comment="审批用户")
-    approved_time: Mapped[Date | None] = mapped_column(Date, default=datetime.now(timezone.utc), comment="审批时间")
+    approved_time: Mapped[Date | None] = mapped_column(Date, server_default=func.now(), comment="审批时间")
     approve_comments: Mapped[str | None] = mapped_column(String(1024), comment="审批意见")
 
     def __repr__(self):

@@ -135,7 +135,7 @@ class Agent:
         kb_configs = []  # 保存配置信息
         
         for conf in confs:
-            if conf.tool_type == ToolType.KB.value:
+            if conf.tool_type == ToolType.KB_SEARCH.value:
                 logger.debug(f"知识库工具ID: {conf.tool_id}")
                 
                 # 直接从ORM对象创建ToolParams
@@ -186,36 +186,21 @@ class Agent:
         non_kb_results = []
         
         for conf in confs:
-            if conf.tool_type != ToolType.KB.value:
-                logger.debug(f"处理非KB工具: {conf.tool_type}, 工具ID: {conf.tool_id}")
-                
-                # 函数调用工具
-                if conf.tool_type == ToolType.FUNCTIONCALL.value:
-                    logger.debug("工具类型: 函数调用")
-                    # 这里可以添加函数调用逻辑
-                    pass
-                
-                # 网络搜索工具
-                elif conf.tool_type == ToolType.INTERNET.value:
-                    logger.debug("工具类型: 网络搜索")
-                    # 这里可以添加网络搜索逻辑
-                    pass
-                
-                # 代理智能体工具
-                elif conf.tool_type == ToolType.AGENT.value:
-                    logger.debug("工具类型: 代理智能体")
-                    # 这里可以添加代理智能体逻辑
-                    pass
-                
-                # ChatAI工具
-                elif conf.tool_type == ToolType.CHATAI.value:
-                    logger.debug("工具类型: ChatAI")
-                    # 这里可以添加ChatAI逻辑
-                    pass
-                
-                # 其他类型暂不支持
-                else:
-                    logger.warning(f"不支持的工具类型: {conf.tool_type}")
+            # 函数调用工具
+            if conf.tool_type == ToolType.FUNCTION_CALL.value:
+                logger.debug("工具类型: 函数调用")
+                # 这里可以添加函数调用逻辑
+                pass
+            
+            # 网络搜索工具
+            elif conf.tool_type == ToolType.INTERNET_SEARCH.value:
+                logger.debug("工具类型: 网络搜索")
+                # 这里可以添加网络搜索逻辑
+                pass
+            
+            # 其他类型暂不支持
+            else:
+                logger.warning(f"不支持的工具类型: {conf.tool_type}")
         
         return non_kb_results
 
