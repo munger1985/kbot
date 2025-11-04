@@ -1,5 +1,4 @@
-from datetime import datetime, timezone
-from sqlalchemy import String, Date, Numeric, CLOB
+from sqlalchemy import String, Date, Numeric, CLOB, func
 from sqlalchemy.orm import Mapped, mapped_column
 from .base import Base
 
@@ -16,6 +15,6 @@ class KbotSysParserConf(Base):
     is_default: Mapped[int | None] = mapped_column(Numeric(1, 0), comment="是否为默认配置：1-是，0-否")
     status: Mapped[int | None] = mapped_column(Numeric(1, 0), comment="配置状态：1-启用, 0-禁用")
     created_by: Mapped[str | None] = mapped_column(String(256), comment="创建用户")
-    created_time: Mapped[Date] = mapped_column(Date, default=datetime.now(timezone.utc), comment="创建时间")
+    created_time: Mapped[Date] = mapped_column(Date, server_default=func.now(), comment="创建时间")
     updated_by: Mapped[str | None] = mapped_column(String(256), comment="修改用户")
-    updated_time: Mapped[Date] = mapped_column(Date, default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc), comment="修改时间")
+    updated_time: Mapped[Date] = mapped_column(Date, server_default=func.now(), onupdate=func.now(), comment="修改时间")

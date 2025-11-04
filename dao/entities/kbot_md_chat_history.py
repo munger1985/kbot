@@ -1,5 +1,4 @@
-from datetime import datetime, timezone
-from sqlalchemy import String, Date, Numeric, CLOB
+from sqlalchemy import String, Date, Numeric, CLOB, func
 from sqlalchemy.orm import Mapped, mapped_column
 from .base import Base
 
@@ -14,9 +13,9 @@ class KbotMdChatHistory(Base):
     question: Mapped[str | None] = mapped_column( String(4000), comment="数据库显示名称（用户友好名称）")
     answer: Mapped[str | None] = mapped_column(CLOB, comment="数据库类型枚举")
     created_by: Mapped[str | None] = mapped_column(String(256), comment="创建用户")
-    created_time: Mapped[Date] = mapped_column(Date, default=datetime.now(timezone.utc), comment="创建时间")
+    created_time: Mapped[Date] = mapped_column(Date, server_default=func.now(), comment="创建时间")
     updated_by: Mapped[str | None] = mapped_column(String(256), comment="修改用户")
-    updated_time: Mapped[Date] = mapped_column(Date, default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc), comment="修改时间")
-
+    updated_time: Mapped[Date] = mapped_column(Date, server_default=func.now(), onupdate=func.now(), comment="修改时间")
+    
     def __repr__(self):
         return f"KbotMdDbConf(session_id={self.session_id!r})"
