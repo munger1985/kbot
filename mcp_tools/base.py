@@ -1,26 +1,24 @@
 from abc import ABC, abstractmethod
 from typing import Any
-from dataclasses import dataclass
 from loguru import logger
 from core.dictionary import MCPToolType
+from pydantic import BaseModel, Field
 
+ 
+class Tool(BaseModel):
+    """工具定义"""
+    tool_type: MCPToolType = Field(..., description="工具类型")
+    tool_name: str = Field(..., description="工具函数名称")
+    description: str = Field(..., description="工具函数描述")
+    parameters: dict[str, Any] = Field(..., description="工具函数参数schema")
 
-@dataclass
-class ToolCall:
-    """工具调用请求"""
-    tool_type: MCPToolType
-    tool_name: str
-    parameters: dict[str, Any]
-    description: str = ""
-
-@dataclass
-class ToolResult:
+class ToolResult(BaseModel):
     """工具执行结果"""
-    tool_type: MCPToolType
-    tool_name: str
+    tool_type: MCPToolType = Field(..., description="工具类型")
+    tool_name: str = Field(..., description="工具函数名称")
     content: Any
     confidence: float = 1.0
-    metadata: dict[str, Any] | None = None
+    metadata: list[dict[str, Any]] | None = None
 
 class MCPTool(ABC):
     """MCP工具基类"""

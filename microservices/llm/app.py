@@ -22,7 +22,7 @@ from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from loguru import logger
-from ms_core import ConfigManager, nacos_manager, LogManager, LogConfig
+from ms_core import *
 from llm_service import LLMService
 from model import LLMProvider
 from schema import *
@@ -262,12 +262,16 @@ async def chat(
                     
                     # 直接返回OpenAI客户端的流式响应
                     async for chunk in chunk_stream: # type: ignore
-                        if hasattr(chunk, 'model_dump_json'):
-                            yield f"data: {chunk.model_dump_json()}\n\n"
-                        elif isinstance(chunk, str):
-                            yield f"data: {chunk}\n\n"
-                        else:
-                            yield f"data: {json.dumps(chunk)}\n\n"
+                        try:
+                            if hasattr(chunk, 'model_dump_json') and callable(getattr(chunk, 'model_dump_json')):
+                                yield f"data: {chunk.model_dump_json()}\n\n"
+                            elif isinstance(chunk, str):
+                                yield f"data: {chunk}\n\n"
+                            else:
+                                yield f"data: {json.dumps(chunk)}\n\n"
+                        except Exception as e:
+                            logger.error(f"序列化失败: {e}, chunk类型: {type(chunk)}, 内容: {chunk}")
+                            yield f"data: {json.dumps({'error': '序列化失败'})}\n\n"
                     
                     yield "data: [DONE]\n\n"
                     
@@ -495,7 +499,7 @@ async def chat(
                 created=created_time,
                 model=model_name,
                 choices=[{
-                    "message": {
+                     "message": {
                         "role": "assistant",
                         "content": content
                     },
@@ -512,7 +516,57 @@ async def chat(
             
             # 如果有工具调用，添加到响应中
             if tool_calls:
-                chat_response.tool_calls = tool_calls # type: ignore
+                # 转换工具调用格式
+                converted_tool_calls: list[ToolCall] = []
+    
+                for tool_call_item in tool_calls:
+                    # 确保 function 字段是字典格式
+                    function_dict = {}
+                    
+                    if hasattr(tool_call_item, 'function'):
+                        func_data = tool_call_item.function
+                        
+                        # 处理 Function 对象
+                        if hasattr(func_data, 'name') and hasattr(func_data, 'arguments'):
+                            function_dict = {
+                                "name": func_data.name,
+                                "arguments": (
+                                    func_data.arguments 
+                                    if isinstance(func_data.arguments, str)
+                                    else json.dumps(func_data.arguments)
+                                )
+                            }
+                        # 处理字典格式
+                        elif isinstance(func_data, dict):
+                            function_dict = {
+                                "name": func_data.get('name', 'unknown'),
+                                "arguments": (
+                                    func_data.get('arguments', '{}')
+                                    if isinstance(func_data.get('arguments'), str)
+                                    else json.dumps(func_data.get('arguments', {}))
+                                )
+                            }
+                    else:
+                        # 处理其他格式
+                        function_dict = {
+                            "name": getattr(tool_call_item, 'tool_name', getattr(tool_call_item, 'name', 'unknown')),
+                            "arguments": (
+                                getattr(tool_call_item, 'arguments', '{}')
+                                if isinstance(getattr(tool_call_item, 'arguments', '{}'), str)
+                                else json.dumps(getattr(tool_call_item, 'parameters', getattr(tool_call_item, 'arguments', {})))
+                            )
+                        }
+                    
+                    # 创建 ToolCall
+                    converted_tool_calls.append(
+                        ToolCall(
+                            id=getattr(tool_call_item, 'id', str(uuid.uuid4())),
+                            type=getattr(tool_call_item, 'type', 'function'),
+                            function=function_dict  # type: ignore
+                        )
+                    )
+                
+                chat_response.tool_calls = converted_tool_calls
             
             return chat_response
         

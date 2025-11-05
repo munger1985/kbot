@@ -1,9 +1,9 @@
 import asyncio
+import json
 from loguru import logger
 from typing import Any
 from .agent_params import AgentParams, KBResult, ToolParams
 from .agent_rerank import AgentRerank
-from ..search.chinese_preprocessor import preprocess_cn_query
 from mcp_tools import *
 from core.dictionary import MCPToolType, ToolType
 from dao.repositories.kbot_md_agent_conf_repo import KbotMdAgentConfRepository
@@ -37,9 +37,9 @@ class Agent:
             tool.security = self.security
             tool.tags = self.tags
             self.tool_registry.register(tool)
-        logger.info(f"成功注册 {len(tools)} 个工具")
+        logger.info(f"成功注册 {len(tools)} 个工具: {[tool.tool_name for tool in tools]}")
     
-    async def _call_llm_for_tool_selection(self, question: str, context: dict[str, Any]) -> list[ToolCall]:
+    async def _call_llm_for_tool_selection(self, question: str, context: dict[str, Any]) -> list[Tool]:
         """
         调用大模型选择要使用的工具
         
@@ -48,7 +48,7 @@ class Agent:
             context: 上下文信息
             
         Returns:
-            List[ToolCall]: 工具调用列表
+            List[Tool]: 工具调用列表
         """
         try:
             # 获取所有可用工具的schema
@@ -65,90 +65,109 @@ class Agent:
             tools = self._format_tools_for_llm(tools_schema)
             
             # 调用真实的LLM服务进行工具选择
-            llm_response = await self._call_llm_for_tool_selection_internal(
-                prompt=prompt,
-                tools=tools
-            )
+            model_id = self.agent_params.llm_id  # 使用智能体配置的LLM ID
+            if model_id is None:
+                raise ValueError("智能体配置中未指定 LLM")
+            
+            # 调用LLM服务
+            try:
+                async for chunk in CallModel().call_llm_model(
+                    model_id=model_id,
+                    prompt=prompt,
+                    tools=tools,
+                    tool_choice="auto",
+                    stream=False,  # 工具选择使用非流式
+                    temperature=0.1  # 使用较低的温度以获得更确定的工具选择
+                ):
+                    logger.debug(f"LLM工具选择响应chunk: {chunk}")
+                    llm_response = chunk
+                    
+            except Exception as e:
+                logger.error(f"LLM工具选择失败: {e}")
+                return []
             
             # 解析LLM返回的工具调用
             tool_calls = []
-            if llm_response and hasattr(llm_response, 'choices') and llm_response.choices:
-                message = llm_response.choices[0].message
+
+            if not llm_response:
+                logger.warning("LLM响应为空")
+                return []
                 
-                # 检查是否有工具调用
-                if hasattr(message, 'tool_calls') and message.tool_calls:
-                    for tool_call in message.tool_calls:
-                        tool_name = tool_call.function.name
-                        tool_info = tools_schema.get(tool_name, {})
-                        
-                        # 解析参数
-                        import json
-                        try:
-                            parameters = json.loads(tool_call.function.arguments)
-                        except json.JSONDecodeError:
-                            logger.warning(f"工具参数解析失败: {tool_call.function.arguments}")
-                            parameters = {}
-                        
-                        # 确定工具类型
-                        tool_type_str = tool_info.get('type', 'kb_search')
-                        try:
-                            tool_type = MCPToolType(tool_type_str)
-                        except ValueError:
-                            tool_type = MCPToolType.KB_SEARCH
-                        
-                        tool_calls.append(ToolCall(
-                            tool_type=tool_type,
-                            tool_name=tool_name,
-                            parameters=parameters,
-                            description=tool_info.get('description', '')
-                        ))
-                        
-                        logger.debug(f"LLM选择工具: {tool_name} with params: {parameters}")
+            logger.debug(f"LLM响应类型: {type(llm_response)}")
             
+            # 检查响应格式并解析
+            if isinstance(llm_response, str):
+                # 如果是字符串，尝试解析JSON
+                try:
+                    llm_response = json.loads(llm_response)
+                    logger.debug("成功将字符串响应解析为JSON")
+                except json.JSONDecodeError:
+                    logger.warning(f"LLM响应不是有效的JSON: {llm_response}")
+                    return []
+            
+            # 直接从根级别解析 tool_calls
+            if isinstance(llm_response, dict):
+                if 'tool_calls' in llm_response:
+                    response_tool_calls = llm_response['tool_calls']
+                    logger.info(f"从根级别找到 {len(response_tool_calls)} 个工具调用")
+                    
+                    for tool_call_data in response_tool_calls:
+                        try:
+                            if isinstance(tool_call_data, dict) and 'function' in tool_call_data:
+                                function_data = tool_call_data['function']
+                                tool_name = function_data.get('name')
+                                arguments_str = function_data.get('arguments', '{}')
+                                
+                                if tool_name:
+                                    # 解析参数
+                                    try:
+                                        parameters = json.loads(arguments_str)
+                                    except json.JSONDecodeError:
+                                        logger.warning(f"工具参数解析失败: {arguments_str}")
+                                        parameters = {}
+                                    
+                                    # 确定工具类型
+                                    tool_info = tools_schema.get(tool_name, {})
+                                    tool_type_str = tool_info.get('type', 'kb_search')
+                                    try:
+                                        tool_type = MCPToolType(tool_type_str)
+                                    except ValueError:
+                                        tool_type = MCPToolType.KB_SEARCH
+                                    
+                                    tool_calls.append(Tool(
+                                        tool_type=tool_type,
+                                        tool_name=tool_name,
+                                        parameters=parameters,
+                                        description=tool_info.get('description', '')
+                                    ))
+                                    
+                                    logger.info(f"成功解析工具调用: {tool_name} with params: {parameters}")
+                                else:
+                                    logger.warning(f"工具调用缺少name字段: {tool_call_data}")
+                            else:
+                                logger.warning(f"工具调用格式不正确: {tool_call_data}")
+                                
+                        except Exception as e:
+                            logger.error(f"解析工具调用失败: {e}, 数据: {tool_call_data}")
+                            continue
+                else:
+                    logger.warning("响应中未找到tool_calls字段")
+                    # 记录所有可用字段用于调试
+                    logger.debug(f"响应字段: {list(llm_response.keys())}")
+            else:
+                logger.warning(f"LLM响应不是字典类型: {type(llm_response)}")
+            
+            logger.info(f"总共解析出 {len(tool_calls)} 个工具调用")
             return tool_calls
             
         except Exception as e:
             logger.error(f"LLM工具选择失败: {e}")
             return []
 
-    async def _call_llm_for_tool_selection_internal(self, prompt: str, tools: list[dict[str, Any]]) -> Any:
-        """
-        内部方法：调用LLM进行工具选择
-        
-        Args:
-            prompt: 提示词
-            tools: 工具列表
-            
-        Returns:
-            LLM响应对象
-        """
-        try:
-            # 使用非流式模式调用LLM
-            model_id = self.agent_params.llm_id  # 使用智能体配置的LLM ID
-            if model_id is None:
-                raise ValueError("智能体配置中未指定 LLM")
-            
-            # 调用LLM服务
-            async for chunk in CallModel().call_llm_model(
-                model_id=model_id,
-                prompt=prompt,
-                tools=tools,
-                tool_choice="auto",
-                stream=False,  # 工具选择使用非流式
-                temperature=0.1,  # 使用较低的温度以获得更确定的工具选择
-                max_tokens=1000
-            ):
-                response = chunk
-            
-            return response
-            
-        except Exception as e:
-            logger.error(f"调用LLM服务失败: {e}")
-            raise
     
     def _build_tool_selection_prompt(self, question: str, context: dict[str, Any], tools_schema: dict) -> str:
         """构建工具选择提示词"""
-        prompt = f"""你是一个智能助手，需要根据用户问题选择合适的工具来解决问题。
+        prompt = f"""你是一个智能助手，需要根据用户问题，改写问题以适用于知识库搜索，并选择合适的工具来解决问题。
 
 用户问题: {question}
 
@@ -184,7 +203,7 @@ class Agent:
             })
         return tools
     
-    async def _execute_tools_parallel(self, tool_calls: list[ToolCall]) -> list[ToolResult]:
+    async def _execute_tools_parallel(self, tool_calls: list[Tool]) -> list[ToolResult]:
         """并行执行工具调用"""
         if not tool_calls:
             return []
@@ -219,18 +238,38 @@ class Agent:
     async def _combine_and_rerank_results(self, question: str, tool_results: list[ToolResult]) -> list[KBResult]:
         """合并和重排结果"""
         all_kb_results = []
+        calculator_results = []
         
-        # 提取所有知识库结果
+        # 分类处理不同类型的结果
         for tool_result in tool_results:
             if (tool_result.tool_type in [MCPToolType.KB_SEARCH, MCPToolType.INTERNET_SEARCH] and 
                 isinstance(tool_result.content, list)):
+                # 知识库和网络搜索结果
                 all_kb_results.extend(tool_result.content)
+            elif tool_result.tool_type == MCPToolType.CALCULATOR:
+                # 计算器结果
+                calculator_results.append(tool_result)
         
-        logger.debug(f"合并后总结果数: {len(all_kb_results)}")
+        logger.debug(f"合并后知识库结果数: {len(all_kb_results)}")
+        logger.debug(f"计算器结果数: {len(calculator_results)}")
         
-        # 应用重排逻辑
+        # 如果有计算器结果，直接返回计算器结果（不参与重排）
+        if calculator_results:
+            logger.debug("检测到计算器结果，直接返回")
+            # 将计算器结果转换为KBResult格式
+            kb_calculator_results = []
+            for calc_result in calculator_results:
+                kb_result = KBResult(
+                    content=str(calc_result.content),
+                    weight=1.0,  # 计算器结果权重最高
+                    reranker_score=1.0
+                )
+                kb_calculator_results.append(kb_result)
+            return kb_calculator_results
+        
+        # 如果没有计算器结果，继续原有的知识库结果处理逻辑
         if len(all_kb_results) > 1 and self.agent_params.reranker_model_id:
-            logger.debug("开始重排结果")
+            logger.debug("开始重排知识库结果")
             reranker = AgentRerank(self.agent_params)
             reranked = await reranker.rerank_kb(question, all_kb_results)
             if reranked:
@@ -268,46 +307,37 @@ class Agent:
             reranker_score_threshold=agent.reranker_score_threshold or 0.0
         )
     
-    async def _initialize_tools(self, agent):
+    async def _initialize_tools(self):
         """初始化工具"""
-        # 获取智能体的工具配置
-        agent_conf_repo = KbotMdAgentConfRepository()
-        confs = await agent_conf_repo.get_by_agent_id(self.agent_id)
-        
+
         tools = []
-        for conf in confs:
-            if conf.tool_type == ToolType.KB_SEARCH.value:
-                tool_params = ToolParams.from_orm(conf)
-                kb_tool = KBSearchTool(tool_params)
-                tools.append(kb_tool)
-                logger.debug(f"创建知识库搜索工具: {conf.tool_id}")
-            elif conf.tool_type == ToolType.INTERNET_SEARCH.value:
-                tools.append(InternetSearchTool())
-                logger.debug("创建网络搜索工具")
-            # 可以继续添加其他工具类型
+        # 注册知识库搜索工具
+        kb_search_tool = KBSearchTool(self.agent_id)
+        tools.append(kb_search_tool)
         
         # 注册默认工具
+        tools.append(InternetSearchTool())
         tools.append(CalculatorTool())
         
         self.register_tools(tools)
     
-    async def _preprocess_question(self, question: str) -> str:
-        """预处理问题"""
-        if self.agent_params.synonym_similarity_flag:
-            logger.debug("问题改写启用同义词扩展")
-        else:
-            logger.debug("问题改写禁用同义词扩展")
+    # async def _preprocess_question(self, question: str) -> str:
+    #     """预处理问题"""
+    #     if self.agent_params.synonym_similarity_flag:
+    #         logger.debug("问题改写启用同义词扩展")
+    #     else:
+    #         logger.debug("问题改写禁用同义词扩展")
 
-        expand_question = await preprocess_cn_query(
-            query=question, 
-            enable_synonym_expansion=self.agent_params.synonym_similarity_flag
-        )
+    #     expand_question = await preprocess_cn_query(
+    #         query=question, 
+    #         enable_synonym_expansion=self.agent_params.synonym_similarity_flag
+    #     )
         
-        if expand_question is None:
-            logger.warning(f"问题扩展失败: {question}")
-            return question
-        else:
-            return ' '.join(expand_question) if isinstance(expand_question, list) else str(expand_question)
+    #     if expand_question is None:
+    #         logger.warning(f"问题扩展失败: {question}")
+    #         return question
+    #     else:
+    #         return ' '.join(expand_question) if isinstance(expand_question, list) else str(expand_question)
     
     async def chat(self, question: str) -> list[KBResult] | None:
         """
@@ -331,18 +361,18 @@ class Agent:
         logger.debug("智能体参数设置完成")
         
         # 2. 初始化工具注册表
-        await self._initialize_tools(agent)
+        await self._initialize_tools()
         logger.debug("工具初始化完成")
         
         # 3. 预处理问题
-        processed_question = await self._preprocess_question(question)
-        logger.debug(f"问题预处理完成: {processed_question}")
+        # processed_question = await self._preprocess_question(question)
+        # logger.debug(f"问题预处理完成: {processed_question}")
         
         # 4. 让LLM选择工具
         context = {
             "security": self.security,
             "tags": self.tags,
-            "processed_question": processed_question
+            # "processed_question": processed_question
         }
         
         tool_calls = await self._call_llm_for_tool_selection(question, context)

@@ -22,6 +22,24 @@ class KbotMdAgentConfRepository:
                 select(KbotMdAgentConf).where(KbotMdAgentConf.agent_id == agent_id)
             )
             return result.scalars().all()
+        
+    async def get_unique_kb_id(self, agent_id: int) -> Sequence[int]:
+        """get unique kb id by agent id. """
+        async with get_session() as session:
+            result = await session.execute(
+                select(KbotMdAgentConf.tool_id).where(KbotMdAgentConf.agent_id == agent_id).distinct()
+            )
+            return result.scalars().all()
+        
+    async def get_by_agnet_and_kb(self, agent_id: int, kb_id: int) -> KbotMdAgentConf | None:
+        """get agent config by agent id and kb id. """
+        async with get_session() as session:
+            result = await session.execute(
+                select(KbotMdAgentConf).where(KbotMdAgentConf.agent_id == agent_id,
+                                              KbotMdAgentConf.tool_id == kb_id,
+                                              KbotMdAgentConf.search_type == 1)
+            )
+            return result.scalar_one_or_none()
 
     async def create(self, conf_data: dict) -> KbotMdAgentConf:
         """create agent config. """

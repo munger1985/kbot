@@ -12,6 +12,7 @@ from dao.repositories.kbot_md_prompt_repo import KbotMdPromptRepository
 from dao.repositories.kbot_md_chat_history_repo import KbotMdChatHistoryRepository
 from dao.entities.kbot_md_chat_history import KbotMdChatHistory
 from services.chat.agent_chat import Agent
+from services.chat.mcp_chat import Agent as MCPAgent
 from loguru import logger
 from utils.call_models import CallModel
 from api.schemas.agent_schema import AgentChatForm, AgentChatFeedbackForm
@@ -21,7 +22,16 @@ from api.schemas.base_response import *
 class AgentController:
     async def agent_chat(self, form: AgentChatForm) -> dict[str, Any]:
         try:
-            agent = Agent(agent_id=form.agent_id, security=form.security_level, tags=form.tags)
+            # 确定 API 版本
+            deep_mind = form.deep_mind or 0
+            if deep_mind == 0:
+                agent = Agent(agent_id=form.agent_id, security=form.security_level, tags=form.tags)
+            elif deep_mind == 1:
+                # 处理深度思考版本的逻辑
+                agent = MCPAgent(agent_id=form.agent_id, security=form.security_level, tags=form.tags)
+            else:
+                raise ValueError(f"不支持的深度思考版本: {deep_mind}")
+
             results = await agent.chat(question=form.question)
             sess_repo = KbotMdChatSessionRepository()
             

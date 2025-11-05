@@ -6,7 +6,7 @@ from .kb_search_tool import KBSearchTool
 __all__ = [
     "MCPTool",
     "MCPToolRegistry",
-    "ToolCall",
+    "Tool",
     "ToolResult",
     "CalculatorTool",
     "InternetSearchTool",

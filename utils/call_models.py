@@ -178,7 +178,7 @@ class CallModel():
                     error_msg = await response.text()
                     logger.error(f"LLM服务错误: {error_msg}")
                     raise Exception(f"LLM服务错误: {error_msg}")
-                    
+                
                 async for raw_chunk in response.content:
                     yield raw_chunk.decode('utf-8')
 

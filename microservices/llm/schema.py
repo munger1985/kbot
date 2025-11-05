@@ -1,4 +1,3 @@
-
 from pydantic import BaseModel, Field
 from typing import Any
 import uuid
@@ -11,17 +10,22 @@ class ToolFunction(BaseModel):
     name: str = Field(..., description="工具函数名称")
     description: str = Field(..., description="工具函数描述")
     parameters: dict[str, Any] = Field(..., description="工具函数参数schema")
-
+    
 class Tool(BaseModel):
     """工具定义"""
     type: str = Field("function", description="工具类型")
     function: ToolFunction = Field(..., description="工具函数定义")
 
+class FunctionCall(BaseModel):
+    """函数调用详情"""
+    name: str = Field(..., description="函数名称")
+    arguments: str = Field(..., description="函数参数JSON字符串")
+
 class ToolCall(BaseModel):
     """工具调用请求"""
     id: str = Field(..., description="工具调用ID")
     type: str = Field("function", description="工具调用类型")
-    function: dict[str, Any] = Field(..., description="函数调用详情")
+    function: FunctionCall = Field(..., description="函数调用详情")
 
 # ==================== 聊天请求/响应模型 ====================
 

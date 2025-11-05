@@ -15,13 +15,13 @@ from datetime import datetime
 from typing import Any
 from contextlib import asynccontextmanager
 from fastapi_offline import FastAPIOffline
-from pydantic import BaseModel, Field
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
-from ms_core import LogConfig, LogManager, nacos_manager, ConfigManager
+from ms_core import *
 from embed_service import EmbeddingService
 from model.base import EmbeddingResponse
+from schema import *
 
 
 # 加载环境变量配置
@@ -110,20 +110,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# 定义嵌入请求模型
-class EmbeddingRequest(BaseModel):
-    """嵌入请求参数模型。"""
-    
-    model_id: int = Field(..., description="模型唯一标识符")
-    texts: list[str] = Field(..., description="待嵌入的文本列表")
-    batch_size: int | None = Field(32, description="批处理大小")
-    is_query: bool = Field(True, description="是否为查询文本")
-
-class ToggleModelRequest(BaseModel):
-    """启用或禁用模型请求表单。"""
-    model_id: int = Field(..., description="模型唯一标识符")
-    operation: str = Field(..., description="操作类型，'load' 或 'unload'")
 
 def get_embed_service():
     """获取嵌入服务实例依赖项。"""

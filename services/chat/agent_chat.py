@@ -13,7 +13,7 @@ from ..search.chinese_preprocessor import preprocess_cn_query
 class Agent:
     """智能体类"""
     
-    def __init__(self, agent_id: int, security: int, tags: list[str] | None = None):
+    def __init__(self, agent_id: int, security: int, tags: list[str] = []):
         """
         初始化智能体
         

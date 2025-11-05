@@ -17,12 +17,12 @@ from dotenv import load_dotenv
 from typing import Any
 from contextlib import asynccontextmanager
 from fastapi_offline import FastAPIOffline
-from pydantic import BaseModel, Field
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 from reranker_service import RerankerService
-from ms_core import nacos_manager, ConfigManager, LogManager, LogConfig
+from ms_core import *
+from schema import *
 
 
 # 加载环境变量配置
@@ -111,22 +111,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# 定义请求模型
-class RerankerRequest(BaseModel):
-    model_id: int = Field(..., description="Reranker 模型唯一名称")
-    query: str = Field(..., description="查询文本")
-    documents: list[str] = Field(..., description="需要重排序的文档列表")
-    top_k: int | None = Field(10, description="返回的顶部文档数量（None 表示返回所有）")
-
-class ToggleModelRequest(BaseModel):
-    """启用或禁用模型请求表单。"""
-    model_id: int = Field(..., description="模型唯一标识符")
-    operation: str = Field(..., description="操作类型，'load' 或 'unload'")
-
-# 定义响应模型
-class RerankerResponse(BaseModel):
-    rerankers: list[dict[str, Any]] = Field(..., description="重排序后的文档列表")
 
 # 依赖项：获取 reranker 服务实例
 def get_reranker_service():
