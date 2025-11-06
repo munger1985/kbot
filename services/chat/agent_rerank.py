@@ -1,6 +1,7 @@
 from loguru import logger
 from utils.call_models import CallModel
-from .agent_params import KBResult, AgentParams
+from .agent_params import AgentParams
+from mcp_tools import KBSearchResult
 
 
 class AgentRerank:
@@ -15,16 +16,16 @@ class AgentRerank:
         """
         self.agent_params = agent_params
 
-    async def rerank_kb(self, question: str, kb_results: list[KBResult]) -> list[KBResult]:
+    async def rerank_kb(self, question: str, kb_results: list[KBSearchResult]) -> list[KBSearchResult]:
         """
         对知识库结果进行重排
         
         Args:
             question: 查询文本
-            kb_results: 需要重排的KBResult对象列表
+            kb_results: 需要重排的KBSearchResult对象列表
             
         Returns:
-            list[KBResult] | None: 更新了reranker_scores的重排后KBResult列表，出错时返回None
+            list[KBSearchResult] | None: 更新了reranker_scores的重排后KBSearchResult列表，出错时返回None
         """
         if not kb_results:
             logger.warning("未提供知识库结果进行重排")
@@ -34,7 +35,7 @@ class AgentRerank:
             logger.warning("未配置重排模型，跳过重排")
             return kb_results
             
-        # 从KBResult对象中提取内容
+        # 从KBSearchResult对象中提取内容
         contents = [result.content for result in kb_results]
         
         # 获取重排参数
@@ -52,7 +53,7 @@ class AgentRerank:
             logger.warning("重排模型调用失败或返回为空")
             return kb_results
 
-        reranked_results: list[KBResult] = []
+        reranked_results: list[KBSearchResult] = []
 
         # 处理重排结果
         for reranker in rerankers:
@@ -60,9 +61,9 @@ class AgentRerank:
             score = reranker.get("score")
             
             if index is not None and score is not None and 0 <= index < len(kb_results):
-                # 创建新的KBResult对象，保留原始属性并更新重排分数
+                # 创建新的KBSearchResult对象，保留原始属性并更新重排分数
                 original_result = kb_results[index]
-                reranked_result = KBResult(
+                reranked_result = KBSearchResult(
                     file_id=original_result.file_id,
                     chunk_type=original_result.chunk_type,
                     page_num=original_result.page_num,

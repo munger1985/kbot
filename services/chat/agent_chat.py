@@ -4,10 +4,11 @@ from loguru import logger
 from dao.repositories.kbot_md_agent_conf_repo import KbotMdAgentConfRepository
 from dao.repositories.kbot_md_agent_repo import KbotMdAgentRepository
 from core.dictionary import ToolType, YesNoEnum
-from .agent_params import AgentParams, ToolParams, KBResult
+from mcp_tools import KBSearchResult, KBSearchToolParams
+from .agent_params import AgentParams
 from .agent_rerank import AgentRerank
 from ..search.kb_search import KBSearch
-from ..search.chinese_preprocessor import preprocess_cn_query
+from ..search.fulltext_preprocessor import preprocess_for_fulltext
 
 
 class Agent:
@@ -28,12 +29,12 @@ class Agent:
         self.agent_params = AgentParams()
 
     async def _run_kb_search_async(self, 
-                                   tool_params: ToolParams, 
+                                   tool_params: KBSearchToolParams, 
                                    vector_search_question: str, 
-                                   full_text_question: list[str], 
+                                   full_text_question: str, 
                                    security: int,
                                    tags: list[str] = []
-                                   ) -> list[KBResult]:
+                                   ) -> list[KBSearchResult]:
         """
         异步运行KB搜索的方法
         
@@ -45,7 +46,7 @@ class Agent:
             tags: 标签列表. 默认为空列表
             
         Returns:
-            list[KBResult]: 搜索结果列表
+            list[KBSearchResult]: 搜索结果列表
         """
         try:
             kb = KBSearch(tool_params)
@@ -55,7 +56,7 @@ class Agent:
             logger.error(f"KB搜索执行失败: {e}")
             return []
 
-    async def _execute_kb_searches_parallel(self, kb_tasks: list[tuple]) -> list[list[KBResult]]:
+    async def _execute_kb_searches_parallel(self, kb_tasks: list[tuple]) -> list[list[KBSearchResult]]:
         """
         并行执行所有KB搜索任务（使用线程池）
         
@@ -63,7 +64,7 @@ class Agent:
             kb_tasks: KB任务列表，每个任务为 (tool_params, vector_search_question, full_text_question, security)
             
         Returns:
-            list[list[KBResult]]: 搜索结果列表
+            list[list[KBSearchResult]]: 搜索结果列表
         """
 
         if not kb_tasks:
@@ -88,7 +89,7 @@ class Agent:
             logger.error(f"并行KB搜索执行失败: {e}")
             return [[] for _ in async_tasks]
 
-    def _process_kb_results(self, results: list[Any]) -> list[list[KBResult]]:
+    def _process_kb_results(self, results: list[Any]) -> list[list[KBSearchResult]]:
         """
         处理KB搜索结果
         
@@ -96,7 +97,7 @@ class Agent:
             results: 原始结果列表
             
         Returns:
-            list[list[KBResult]]: 处理后的KBResult列表
+            list[list[KBSearchResult]]: 处理后的KBSearchResult列表
         """
         processed_results = []
         for i, result in enumerate(results):
@@ -114,7 +115,7 @@ class Agent:
                 processed_results.append([])
         return processed_results
 
-    async def _process_kb_tools(self, confs: list[Any], vector_search_question: str, full_text_question: list[str]) -> tuple:
+    async def _process_kb_tools(self, confs: list[Any], vector_search_question: str, full_text_question: str) -> tuple:
         """
         处理知识库工具
         
@@ -127,8 +128,8 @@ class Agent:
             tuple: (重排结果列表, 非重排结果列表)
         """
         
-        kb_results_rerank: list[KBResult] = []
-        kb_results_non_rerank: list[KBResult] = []
+        kb_results_rerank: list[KBSearchResult] = []
+        kb_results_non_rerank: list[KBSearchResult] = []
         
         # 收集所有KB搜索任务
         kb_tasks = []
@@ -138,8 +139,8 @@ class Agent:
             if conf.tool_type == ToolType.KB_SEARCH.value:
                 logger.debug(f"知识库工具ID: {conf.tool_id}")
                 
-                # 直接从ORM对象创建ToolParams
-                tool_params = ToolParams.from_orm(conf)
+                # 直接从ORM对象创建KBSearchToolParams
+                tool_params = KBSearchToolParams.from_orm(conf)
                 
                 # 添加到并行任务列表
                 kb_tasks.append((
@@ -204,8 +205,8 @@ class Agent:
         
         return non_kb_results
 
-    async def _rerank_and_process_results(self, question: str, kb_results_rerank: list[KBResult], 
-                                         kb_results_non_rerank: list[KBResult]) -> list[KBResult]:
+    async def _rerank_and_process_results(self, question: str, kb_results_rerank: list[KBSearchResult], 
+                                         kb_results_non_rerank: list[KBSearchResult]) -> list[KBSearchResult]:
         """
         重排和处理最终结果
         
@@ -215,9 +216,9 @@ class Agent:
             kb_results_non_rerank: 不需要重排的结果
             
         Returns:
-            list[KBResult]: 最终结果列表
+            list[KBSearchResult]: 最终结果列表
         """
-        kb_results: list[KBResult] = []
+        kb_results: list[KBSearchResult] = []
         
         # 如果重排结果大于1个，则进行重排
         if len(kb_results_rerank) > 1:
@@ -257,7 +258,7 @@ class Agent:
 
         return unique_kb_results
 
-    async def chat(self, question: str) -> list[KBResult] | None:
+    async def chat(self, question: str) -> list[KBSearchResult] | None:
         """
         智能体对话处理
         
@@ -265,7 +266,7 @@ class Agent:
             question: 用户问题
             
         Returns:
-            list[KBResult] | None: 知识库结果列表或None
+            list[KBSearchResult] | None: 知识库结果列表或None
         """
 
         # 1. 获取智能体的默认配置信息
@@ -293,12 +294,16 @@ class Agent:
         else:
             logger.debug(f"问题改写禁用同义词扩展")
 
-        expand_question = await preprocess_cn_query(query=question, enable_synonym_expansion=self.agent_params.synonym_similarity_flag)
+        expand_question: str | None = None
+        if agent.llm_id is not None:   
+            expand_question = await preprocess_for_fulltext(model_id=agent.llm_id, query=question)
+        else:
+            logger.warning("智能体LLM模型ID为空，无法进行问题扩展")
         
         if expand_question is None:
             logger.warning(f"问题扩展失败: {question}")
             # vector_search_question = question
-            full_text_question = [question]
+            full_text_question = question
         else:
             # vector_search_question = expand_question.get("semantic", question)
             full_text_question = expand_question

@@ -3,8 +3,9 @@ from typing import Any
 import math
 import numpy as np
 import re
-from mcp_tools import MCPTool, ToolResult
+from mcp_tools import MCPTool
 from core.dictionary import MCPToolType
+from .base import ToolResult, CalculatorResult
 
 
 class CalculatorTool(MCPTool):
@@ -115,30 +116,55 @@ class CalculatorTool(MCPTool):
             else:
                 formatted_result = str(result)
             
-            content = f"计算结果: {expression} = {formatted_result}"
+            # 构建计算步骤
+            steps = [
+                f"输入表达式: {expression}",
+                f"预处理后: {processed_expression}",
+                f"计算结果: {formatted_result}"
+            ]
             
+            # 创建 CalculatorResult
+            calculator_result = CalculatorResult(
+                expression=expression,
+                result=formatted_result,
+                steps=steps,
+                confidence=1.0
+            )
+            
+            # 返回新的 ToolResult 格式
             return ToolResult(
                 tool_type=self.tool_type,
-                tool_name=self.tool_name,
-                content=[content],
+                calculator_result=calculator_result,
                 confidence=1.0,
-                metadata={
-                    "expression": expression,
+                metadata=[{
                     "processed_expression": processed_expression,
-                    "result": result,
-                    "formatted_result": formatted_result
-                }
+                    "raw_result": str(result),
+                    "formatted_result": formatted_result,
+                    "tool_name": self.tool_name
+                }]
             )
             
         except Exception as e:
             logger.error(f"计算失败: {e}")
             error_msg = f"计算失败: {str(e)}"
+            
+            # 创建包含错误信息的 CalculatorResult
+            calculator_result = CalculatorResult(
+                expression=parameters.get("expression", ""),
+                result=error_msg,
+                steps=[f"计算错误: {str(e)}"],
+                confidence=0.0
+            )
+            
             return ToolResult(
                 tool_type=self.tool_type,
-                tool_name=self.tool_name,
-                content=[error_msg],
+                calculator_result=calculator_result,
                 confidence=0.0,
-                metadata={"error": str(e), "expression": parameters.get("expression", "")}
+                metadata=[{
+                    "error": str(e),
+                    "tool_name": self.tool_name,
+                    "error_type": type(e).__name__
+                }]
             )
     
     def get_schema(self) -> dict[str, Any]:

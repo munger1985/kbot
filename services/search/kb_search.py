@@ -1,6 +1,6 @@
 import json
 from loguru import logger
-from ..chat.agent_params import ToolParams, KBResult
+from mcp_tools import KBSearchResult, KBSearchToolParams
 from dao.repositories.kbot_md_kb_repo import KbotMdKbRepository
 from dao.repositories.kbot_biz_txt_embedding_factory import EmbeddingRepositoryFactory
 from core.dictionary import KbCategory, KBSearchType
@@ -12,15 +12,15 @@ from utils.common import safe_read_content
 
 class KBSearch:
     """知识库搜索类"""
-    def __init__(self, tool_params: ToolParams):
+    def __init__(self, tool_params: KBSearchToolParams):
         self.tool_params = tool_params
 
     async def search(self, 
                      vector_search_question: str, 
-                     full_text_question: list[str], 
+                     full_text_question: str, 
                      security: int, 
                      tags: list[str] = []
-                    ) -> list[KBResult] | None:
+                    ) -> list[KBSearchResult] | None:
         """
         执行知识库搜索
         
@@ -31,7 +31,7 @@ class KBSearch:
             tags (list[str], optional): 标签列表. 默认为空列表
             
         Returns:
-            list[KBResult] | None: 搜索结果列表，搜索失败时返回None
+            list[KBSearchResult] | None: 搜索结果列表，搜索失败时返回None
         """
         
 
@@ -79,7 +79,7 @@ class KBSearch:
                                security: int, 
                                is_summary: bool = False, 
                                tags: list[str] = []
-                            ) -> list[KBResult] | None:
+                            ) -> list[KBSearchResult] | None:
         """
         向量搜索方法
         
@@ -90,7 +90,7 @@ class KBSearch:
             tags (list[str], optional): 标签列表. 默认为空列表
             
         Returns:
-            list[KBResult] | None: 搜索结果列表，搜索失败时返回None
+            list[KBSearchResult] | None: 搜索结果列表，搜索失败时返回None
         """
         # 调用嵌入服务
         model_id = self.tool_params.txt_embed_model
@@ -124,7 +124,7 @@ class KBSearch:
                                   security: int, 
                                   is_summary: bool = False, 
                                   tags: list[str] = []
-                                ) -> list[KBResult] | None:
+                                ) -> list[KBSearchResult] | None:
         """
         从向量数据库中获取相似记录
         
@@ -135,7 +135,7 @@ class KBSearch:
             tags (list[str], optional): 标签列表. 默认为空列表
             
         Returns:
-            list[KBResult] | None: 相似记录列表，查询失败时返回None
+            list[KBSearchResult] | None: 相似记录列表，查询失败时返回None
         """
         # 执行相似度搜索
         repo = await EmbeddingRepositoryFactory.create_repository(kb_id=self.tool_params.tool_id)
@@ -167,7 +167,7 @@ class KBSearch:
 
             for data in dataset:
                 chunk_meta = json.loads(json.dumps(data[2], cls=DecimalEncoder))
-                result = KBResult()
+                result = KBSearchResult()
                 result.file_id = data[0]
                 result.chunk_type = chunk_meta.get("chunk_type", 1)
                 result.page_num = chunk_meta.get("page_num", 1)
@@ -183,17 +183,17 @@ class KBSearch:
             logger.debug(f"向量搜索失败: {str(e)}")
             raise ValueError(f"向量搜索失败: {str(e)}")
         
-    async def serch_by_full_text(self, keywords: list[str], security: int, tags: list[str] = []) -> list[KBResult] | None:
+    async def serch_by_full_text(self, keywords: str, security: int, tags: list[str] = []) -> list[KBSearchResult] | None:
         """
         全文搜索方法
         
         Args:
-            keywords (list[str]): 关键词列表
+            keywords (str): 关键词
             security (int): 安全级别
             tags (list[str], optional): 标签列表. 默认为空列表
             
         Returns:
-            list[KBResult] | None: 搜索结果列表，搜索失败时返回None
+            list[KBSearchResult] | None: 搜索结果列表，搜索失败时返回None
         """
         repo = await EmbeddingRepositoryFactory.create_repository(kb_id=self.tool_params.tool_id)
         if repo is None:
@@ -203,19 +203,11 @@ class KBSearch:
         try:
             logger.debug(f"全文搜索知识库ID: {self.tool_params.tool_id}")
             logger.debug(f"全文搜索关键词: {keywords}")
-            datasets = []
-            unique_keys = set(keywords)  # 去除重复的关键字
 
-            for key in unique_keys:
-                logger.debug(f"全文搜索词元: {key}")
-
-                ds = await repo.full_text_search(kb_id=self.tool_params.tool_id, 
-                                                 keyword=key, 
-                                                 security=security,
-                                                 tags=tags)
-                if ds:
-                    datasets.extend(ds)
-
+            datasets = await repo.full_text_search(kb_id=self.tool_params.tool_id, 
+                                                keyword=keywords, 
+                                                security=security,
+                                                tags=tags)
             if not datasets:
                 logger.info(f"全文搜索未找到结果")
                 return None
@@ -223,7 +215,7 @@ class KBSearch:
                 results = []
                 for data in datasets:
                     chunk_meta = json.loads(json.dumps(data[2], cls=DecimalEncoder))
-                    result = KBResult()
+                    result = KBSearchResult()
                     result.file_id = data[0]
                     result.chunk_type = chunk_meta.get("chunk_type", 1)
                     result.page_num = chunk_meta.get("page_num", 1)
@@ -239,6 +231,6 @@ class KBSearch:
             return None
 
     
-    async def search_by_graph(self, question: str, security: int) -> list[KBResult] | None:
+    async def search_by_graph(self, question: str, security: int) -> list[KBSearchResult] | None:
         """图谱搜索方法（待实现）"""
         pass

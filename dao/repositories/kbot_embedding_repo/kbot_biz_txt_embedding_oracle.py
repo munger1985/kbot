@@ -167,7 +167,7 @@ class OracleEmbeddingRepository(IEmbeddingRepository):
                                keyword: str,
                                security: int,
                                search_top_k: int = 10,
-                               simularity_threshold: float = 0.8,
+                               similarity_threshold: float = 0.8,
                                tags: list[str] = []
                                 ) -> Sequence:
         """Get chunk record by full text search.

@@ -1,13 +1,16 @@
 import json
+import asyncio
 from loguru import logger
-from ..chat.agent_params import KBResult
+from mcp_tools import KBSearchResult
 from dao.repositories.kbot_md_kb_repo import KbotMdKbRepository
 from dao.repositories.kbot_biz_txt_embedding_factory import EmbeddingRepositoryFactory
 from dao.repositories.kbot_md_agent_conf_repo import KbotMdAgentConfRepository
+from dao.repositories.kbot_md_agent_repo import KbotMdAgentRepository
 from utils.oracle_vec_handler import OracleVecHandler
 from utils.decimal_encoder import DecimalEncoder
 from utils.call_models import CallModel
 from utils.common import safe_read_content
+from .fulltext_preprocessor import preprocess_for_fulltext
 
 
 class KBSearch:
@@ -22,22 +25,23 @@ class KBSearch:
         
 
     async def search(self, 
-                     questions: list[str], 
+                     questions: str, 
                      search_type: str,
                      security: int, 
                      tags: list[str] = []
-                    ) -> list[KBResult]:
+                    ) -> list[KBSearchResult]:
         """
         执行知识库搜索
         
         Args:
-            question (list[str]): 搜索问题
+            question (str): 搜索问题
+            llm_model_id (int): LLM模型ID
             search_type (str): 搜索类型
             security (int): 安全级别
             tags (list[str], optional): 标签列表. 默认为空列表
             
         Returns:
-            list[KBResult]: 搜索结果列表，搜索失败时返回[]
+            list[KBSearchResult]: 搜索结果列表，搜索失败时返回[]
         """
         
 
@@ -78,22 +82,22 @@ class KBSearch:
 
     
     async def search_by_vector(self, 
-                               question: list[str], 
+                               question: str, 
                                security: int, 
                                is_summary: bool = False, 
                                tags: list[str] = []
-                            ) -> list[KBResult]:
+                            ) -> list[KBSearchResult]:
         """
         向量搜索方法
         
         Args:
-            question (list[str]): 搜索问题列表
+            question (str): 搜索问题
             security (int): 安全级别
             is_summary (bool, optional): 是否使用摘要搜索. 默认为False
             tags (list[str], optional): 标签列表. 默认为空列表
             
         Returns:
-            list[KBResult]: 搜索结果列表，搜索失败时返回None
+            list[KBSearchResult]: 搜索结果列表，搜索失败时返回None
         """
         # 调用嵌入服务
         model_id = self.txt_embed_model
@@ -107,7 +111,7 @@ class KBSearch:
             return []
 
         try:
-            results = await CallModel().call_embedding_model(model_id, question)
+            results = await CallModel().call_embedding_model(model_id, [question])
             if results is None:
                 logger.error("嵌入服务未返回结果")
                 return []
@@ -131,7 +135,7 @@ class KBSearch:
                                   security: int, 
                                   is_summary: bool = False, 
                                   tags: list[str] = []
-                                ) -> list[KBResult]:
+                                ) -> list[KBSearchResult]:
         """
         从向量数据库中获取相似记录
         
@@ -142,7 +146,7 @@ class KBSearch:
             tags (list[str]): 标签列表. 默认为空列表
             
         Returns:
-            list[KBResult] | None: 相似记录列表，查询失败时返回None
+            list[KBSearchResult] | None: 相似记录列表，查询失败时返回None
         """
         # 执行相似度搜索
         repo = await EmbeddingRepositoryFactory.create_repository(kb_id=self.kb_id)
@@ -185,7 +189,7 @@ class KBSearch:
 
             for data in dataset:
                 chunk_meta = json.loads(json.dumps(data[2], cls=DecimalEncoder))
-                result = KBResult()
+                result = KBSearchResult()
                 result.file_id = data[0]
                 result.chunk_type = chunk_meta.get("chunk_type", 1)
                 result.page_num = chunk_meta.get("page_num", 1)
@@ -201,17 +205,17 @@ class KBSearch:
             logger.debug(f"向量搜索失败: {str(e)}")
             raise ValueError(f"向量搜索失败: {str(e)}")
         
-    async def serch_by_full_text(self, question: list[str], security: int, tags: list[str] = []) -> list[KBResult]:
+    async def serch_by_full_text(self, question: str, security: int, tags: list[str] = []) -> list[KBSearchResult]:
         """
         全文搜索方法
         
         Args:
-            question (list[str]): 搜索问题列表
+            question (str): 搜索问题
             security (int): 安全级别
             tags (list[str]): 标签列表. 默认为空列表
             
         Returns:
-            list[KBResult] | None: 搜索结果列表，搜索失败时返回None
+            list[KBSearchResult] | None: 搜索结果列表，搜索失败时返回None
         """
         repo = await EmbeddingRepositoryFactory.create_repository(kb_id=self.kb_id)
         if repo is None:
@@ -227,22 +231,42 @@ class KBSearch:
         if conf:
             weight = conf.tool_weight or 0.1
         
-        # 执行全文搜索
+        # 根据agent_id获取LLM模型ID，用于问题分词和同义词扩展
+        agent = await KbotMdAgentRepository().get_by_id(self.agent_id)
+        if not agent:
+            logger.error(f"未找到 Agent {self.agent_id}")
+            return []
+        
+        llm_model_id = agent.llm_id
+        synonym_similarity_flag = True if agent.synonym_similarity_flag == 1 else False # 是否启用同义词扩展
+
+        # 1. 将问题分词
+
+        if not llm_model_id:
+            logger.warning(f"Agent {self.agent_id} 未配置LLM模型ID，无法进行问题分词和同义词扩展")
+            logger.warning(f"回退至jieba分词进行问题分词")
+            key = await preprocess_for_fulltext(model_id=None, query=question, 
+                                            enable_synonym_expansion=synonym_similarity_flag)
+        else:
+            key = await preprocess_for_fulltext(model_id=llm_model_id, query=question, 
+                                            enable_synonym_expansion=synonym_similarity_flag)
+
+        if not key:
+            logger.warning(f"全文搜索问题分词失败，使用原始问题: {question}")
+            key = question
+        
+        # 2. 执行全文搜索
         try:
-            logger.debug(f"启用全文检索，问题: {question}")
-            datasets = []
-            unique_keys = set(question)  # 去除重复的关键字
+            logger.debug(f"启用全文检索，问题: {question}, 搜索关键字: {key}")
 
-            for key in unique_keys:
-                logger.debug(f"全文搜索词元: {key}")
+            datasets = await repo.full_text_search(kb_id=self.kb_id, 
+                                                keyword=key, 
+                                                security=security,
+                                                search_top_k=search_top_k,
+                                                similarity_threshold=threshold,
+                                                tags=tags)
 
-                ds = await repo.full_text_search(kb_id=self.kb_id, 
-                                                 keyword=key, 
-                                                 security=security,
-                                                 tags=tags)
-                if ds:
-                    datasets.extend(ds)
-
+        # 3. 处理搜索结果
             if not datasets:
                 logger.info(f"全文搜索未找到结果")
                 return []
@@ -250,7 +274,7 @@ class KBSearch:
                 results = []
                 for data in datasets:
                     chunk_meta = json.loads(json.dumps(data[2], cls=DecimalEncoder))
-                    result = KBResult()
+                    result = KBSearchResult()
                     result.file_id = data[0]
                     result.chunk_type = chunk_meta.get("chunk_type", 1)
                     result.page_num = chunk_meta.get("page_num", 1)
@@ -266,10 +290,14 @@ class KBSearch:
             return []
 
     
-    async def search_by_hybrid(self, question: list[str], security: int, tags: list[str]) -> list[KBResult]:
+    async def search_by_hybrid(self, question: str, security: int, tags: list[str]) -> list[KBSearchResult]:
         """混合搜索方式"""
-        vector_search_result = await self.search_by_vector(question=question, security=security, is_summary=False, tags=tags)
-        fulltext_search_result = await self.serch_by_full_text(question=question, security=security, tags=tags)
-        summary_search_result = await self.search_by_vector(question=question, security=security, is_summary=True, tags=tags)
+        # 并行执行三个搜索任务
+        vector_search_result, fulltext_search_result, summary_search_result = await asyncio.gather(
+            self.search_by_vector(question=question, security=security, is_summary=False, tags=tags),
+            self.serch_by_full_text(question=question, security=security, tags=tags),
+            self.search_by_vector(question=question, security=security, is_summary=True, tags=tags)
+        )
+        
         total_result = vector_search_result + fulltext_search_result + summary_search_result
         return total_result
