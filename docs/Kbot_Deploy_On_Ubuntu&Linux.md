@@ -2,7 +2,8 @@
 # 在Ubuntu境部署Kbot步骤概述
 ### 1.Kbot后台服务器以及系统准备
 ```bash
-#1.准备Ubuntu 22或者以上版本 64位，或者Linux8或以上，CPU 至少4核心；Memory至少32GB；Disk Storage至少：200GB
+#1.准备Ubuntu 22或者以上版本 64位，或者Linux8或以上，CPU 至少8核心；Memory至少64GB；Disk Storage至少：200GB
+# 如果要效果好，推荐至少有一块8G显存的显卡来运行Qwen Embedding 和 rerank 模型
 ##推荐Ubuntu 22.0464位
 #2.安装必要的包以及网络等配置
 #在OCI上部署时，需要放开端口，以及关闭防火墙
@@ -47,14 +48,10 @@ sqlplus kbot_poc/VEctor#_123@10.45.151.152:1521/aipocpdb.databasessubnet.vcnpair
 
 ### 3.准备模型
 ```bash
-#1.准备开源模型和LLM模型，或者准备LLM模型的api key信息。
+# 准备开源模型和LLM模型，或者准备LLM模型的api key信息。
 #huggingface-cli download  BAAI/bge-reranker-v2-m3 --local-dir /home/opc/Models/bge-reranker-v2-m3
 #huggingface-cli download  BAAI/bge-m3 --local-dir /home/opc/Models/bge-m3
-#2.准备同义词模型 fasttext cc.zh.300.bin
-# 使用 wget 下载
-wget https://dl.fbaipublicfiles.com/fasttext/vectors-crawl/cc.zh.300.bin.gz
-# 或者使用 curl 下载
-curl -O https://dl.fbaipublicfiles.com/fasttext/vectors-crawl/cc.zh.300.bin.gz
+
 # 准备Qwen3 rerank和embedding模型
 # 在下载前，请先通过如下命令安装ModelScope
 pip install modelscope
@@ -280,16 +277,6 @@ configuration/model_config.json
     "custom_dict_path": "/home/ubuntu/kbot3/configuration/custom_dict.txt",
     "stop_words_path": "/home/ubuntu/kbot3/configuration/stopwords.txt"
   },
-  "synonym": {
-    "service_name": "synonym-service",
-    "service_version": "1.0.0",
-    "service_host": "0.0.0.0",
-    "service_port": 9905,
-    "timeout": 300,
-    "model_path": "/home/ubuntu/kbot_data/cached_models/cc.zh.300.bin",
-    "top_n_words": 50000,
-    "preload_top": 1000
-  },
   "prompt": {
     "image2text": "SYSTEM/image2text",
     "summary": "SYSTEM/summary"
@@ -309,7 +296,7 @@ cd docs/install/elk-log-container
 
 # 根据实际情况修改.env文件中的配置，如果.env不存在则复制.env.example文件并重命名为.env
 
-# 启动容器
+# 启动容器集群
 ./start_elk.sh
 ```
 ### 5.初始化Kbot数据库表信息
