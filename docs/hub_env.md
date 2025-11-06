@@ -8,8 +8,9 @@ cd /home/ubuntu/kbot3
 ```
 ```bash
 git pull                      #本地更新代码      
+https://github.com/munger1985/kbot/tree/kbot3 #下载kbot3.0
 git clone https://github.com/munger1985/kbot.git 
-https://github.com/munger1985/kbot/releases/tag/v3.1
+https://github.com/munger1985/kbot/releases/tag/v3.2
 git clone -b kbot3 https://github.com/munger1985/kbot.git
 git clone https://github.com/munger1985/kbot.git -b v3.0.3
 mv kbot kbot3

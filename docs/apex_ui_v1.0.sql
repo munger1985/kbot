@@ -522,9 +522,7 @@ Insert into KBOT_MD_DATA_DIC (DIC_ID,APP_ID,NAME,DISPLAY_NAME,RETURN_VALUE,LANG_
 --==============================================================================
 Insert into KBOT_MD_PROMPT (APP_ID,DOMAIN_ID,NAME,PROMPT_CATEGORY,TEMPLATE,STATUS,DESCS,CREATED_BY,CREATED_TIME,UPDATED_BY,UPDATED_TIME,PROMPT_UNIQUE_NAME) values (112,null,'Common_CN',2,'你是一个乐于助人、尊重他人、诚实的AI助手。 请参考下面的上下文内容，回答后面的问题。如果您不知道答案，就回答说不知道，不要试图编造答案，也不要漏掉任何相關内容。 上下文： {context} 回答的问题：{question}',1,null,'ADMIN',to_date('13-8月 -25','DD-MON-RR'),'ADMIN',to_date('13-8月 -25','DD-MON-RR'),'TEMPLATE/Common_CN');
 Insert into KBOT_MD_PROMPT (APP_ID,DOMAIN_ID,NAME,PROMPT_CATEGORY,TEMPLATE,STATUS,DESCS,CREATED_BY,CREATED_TIME,UPDATED_BY,UPDATED_TIME,PROMPT_UNIQUE_NAME) values (112,161,'image2text',1,'Analyze the image carefully and identify its key visual elements and important details. Detect and read any prominent text within the image, determine the main language of that text, and use that same language to provide a clear, accurate, and detailed description of the image, focusing on its essential content',1,null,'ADMIN',to_date('13-8月 -25','DD-MON-RR'),'ADMIN',to_date('13-8月 -25','DD-MON-RR'),'SYSTEM/image2text');
-Insert into KBOT_MD_PROMPT (APP_ID,DOMAIN_ID,NAME,PROMPT_CATEGORY,TEMPLATE,STATUS,DESCS,CREATED_BY,CREATED_TIME,UPDATED_BY,UPDATED_TIME,PROMPT_UNIQUE_NAME) values (112,161,'summary_prompt',1,'请对以下文本进行总结，提炼出核心内容和关键信息。要求摘要简洁、准确、连贯。待总结文本：\n{chunk}\n',1,null,'ADMIN',to_date('13-8月 -25','DD-MON-RR'),'ADMIN',to_date('13-8月 -25','DD-MON-RR'),'SYSTEM/summary_prompt');
-
-
+Insert into KBOT_MD_PROMPT (APP_ID,DOMAIN_ID,NAME,PROMPT_CATEGORY,TEMPLATE,STATUS,DESCS,CREATED_BY,CREATED_TIME,UPDATED_BY,UPDATED_TIME,PROMPT_UNIQUE_NAME) values (112,161,'summary',1,'请对以下文本进行总结，提炼出核心内容和关键信息。要求摘要简洁、准确、连贯。待总结文本：\n{chunk}\n',1,null,'ADMIN',to_date('13-8月 -25','DD-MON-RR'),'ADMIN',to_date('13-8月 -25','DD-MON-RR'),'SYSTEM/summary');
 
 --==============================================================================
 --8.apex ui KBOT_MD_API_SECURITY
