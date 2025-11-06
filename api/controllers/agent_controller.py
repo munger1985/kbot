@@ -26,11 +26,11 @@ class AgentController:
             deep_mind = form.deep_mind or 0
             kb_results = []
             if deep_mind == 0:
-                agent = Agent(agent_id=form.agent_id, security=form.security_level, tags=form.tags)
+                agent = Agent(agent_id=form.agent_id, security=form.security_level, tags=form.tags or [])
                 kb_results = await agent.chat(question=form.question)
             elif deep_mind == 1:
                 # 处理深度思考版本的逻辑
-                agent = MCPAgent(agent_id=form.agent_id, security=form.security_level, tags=form.tags)
+                agent = MCPAgent(agent_id=form.agent_id, security=form.security_level, tags=form.tags or [])
                 tool_results = await agent.chat(question=form.question)
                 # 目前只处理知识库结果
                 for tool_result in tool_results:
