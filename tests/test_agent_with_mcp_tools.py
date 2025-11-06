@@ -23,10 +23,9 @@ async def test_agent_with_mcp_tools():
         print("\n🚀 测试完整chat流程")
         print("=" * 50)
         
-        question = "文艺复兴是什么时候？距今多少年了？"
-        
-        # "最近的新闻热搜有哪些？",
-        # "查找机器学习的最新发展"
+        question = "文艺复兴是什么时候?"
+        # question = "查找机器学习的最新发展"
+        # question = "计算一下5的平方根乘以3的对数是多少"
         
         
 
@@ -38,7 +37,7 @@ async def test_agent_with_mcp_tools():
             if results:
                 print(f"✅ 成功获取 {len(results)} 个结果")
                 for i, result in enumerate(results[:2], 1):  # 只显示前2个结果
-                    print(f"  结果 {i}: {result.content[:100]}...")
+                    print(f"  结果 {i}: {result.kb_results[0].content[:100]}...")
             else:
                 print("❌ 未获取到结果")
                     

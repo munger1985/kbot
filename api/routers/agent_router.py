@@ -29,6 +29,7 @@ async def handle_agent_chat(form: AgentChatForm) -> SuccessQueryResponse | Error
         request_time: str = Field(..., description="请求时间")
         question: str = Field(..., description="问题")
         tags: list[str] | None = Field(None, description="标签")
+        deep_mind: int = Field(0, description="是否使用深度思考, 0：不使用，1：使用")
     ```
     
     Returns:

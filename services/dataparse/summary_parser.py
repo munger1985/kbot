@@ -81,7 +81,10 @@ class SummaryParser:
             summary_entity = KbotBizTxtEmbedding(
                 embed_id=str(uuid.uuid4()),
                 chunk_doc=summary_result,
-                chunk_metadata={"chunk_type": ChunkType.SUMMARY, "chunk_num": chunk_num, "source_embed_id": embed_entities[chunk_num - 1].embed_id, "page_num": embed_entities[chunk_num - 1].chunk_metadata.get("page_num", 1)},
+                chunk_metadata={"chunk_type": ChunkType.SUMMARY, 
+                                "chunk_num": chunk_num, 
+                                "source_embed_id": embed_entities[chunk_num - 1].embed_id, 
+                                "page_num": embed_entities[chunk_num - 1].chunk_metadata.get("page_num", 1)},
                 biz_metadata=file_params.biz_metadata,
                 file_id=file_params.file_id,
                 kb_id=file_params.kb_id,

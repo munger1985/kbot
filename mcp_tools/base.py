@@ -12,13 +12,49 @@ class Tool(BaseModel):
     description: str = Field(..., description="工具函数描述")
     parameters: dict[str, Any] = Field(..., description="工具函数参数schema")
 
-class ToolResult(BaseModel):
-    """工具执行结果"""
-    tool_type: MCPToolType = Field(..., description="工具类型")
-    tool_name: str = Field(..., description="工具函数名称")
-    content: Any
+class KBSearchResult(BaseModel):
+    """知识库搜索结果"""
+    file_id: str = ""
+    chunk_type: int = 1
+    page_num: int = 0
+    content: str = ""
+    similarity: float = 0.0
+    weight: float = 0.0
+    reranker_score: float = 0.0
+
+    class Config:
+        arbitrary_types_allowed = True
+
+class InternetSearchResult(BaseModel):
+    """网络搜索结果"""
+    title: str = ""
+    url: str = ""
+    content: str = ""
+    snippet: str = ""
+    relevance_score: float = 0.0
+    weight: float = 0.0
+    reranker_score: float = 0.0
+
+class CalculatorResult(BaseModel):
+    """计算器结果"""
+    expression: str = ""
+    result: str = ""
+    steps: list[str] = []  # 计算步骤
     confidence: float = 1.0
-    metadata: list[dict[str, Any]] | None = None
+
+class ToolResult(BaseModel):
+    """最终组合结果 - 三种结果的并集"""
+    tool_type: MCPToolType
+    
+    # 明确表示是三种结果之一的并集
+    kb_results: list[KBSearchResult] = []
+    internet_results: list[InternetSearchResult] = []
+    calculator_result: CalculatorResult | None = None
+    
+    confidence: float = 0.0
+    metadata: list[dict[str, Any]] = []
+    
+    
 
 class MCPTool(ABC):
     """MCP工具基类"""

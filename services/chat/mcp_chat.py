@@ -2,14 +2,12 @@ import asyncio
 import json
 from loguru import logger
 from typing import Any
-from .agent_params import AgentParams, KBResult, ToolParams
+from .agent_params import AgentParams
 from .agent_rerank import AgentRerank
 from mcp_tools import *
-from core.dictionary import MCPToolType, ToolType
-from dao.repositories.kbot_md_agent_conf_repo import KbotMdAgentConfRepository
+from core.dictionary import MCPToolType
 from dao.repositories.kbot_md_agent_repo import KbotMdAgentRepository
 from utils.call_models import CallModel
-
 
 
 class Agent:
@@ -64,7 +62,7 @@ class Agent:
             # 格式化工具供LLM使用
             tools = self._format_tools_for_llm(tools_schema)
             
-            # 调用真实的LLM服务进行工具选择
+            # 调用LLM服务进行工具选择
             model_id = self.agent_params.llm_id  # 使用智能体配置的LLM ID
             if model_id is None:
                 raise ValueError("智能体配置中未指定 LLM")
@@ -174,7 +172,6 @@ class Agent:
 上下文信息:
 - 安全级别: {context.get('security', 0)}
 - 标签: {context.get('tags', [])}
-- 预处理问题: {context.get('processed_question', 'N/A')}
 
 可用工具:
 """
@@ -184,8 +181,29 @@ class Agent:
             prompt += f"  参数schema: {schema_str}\n"
         
         prompt += """
-请根据用户问题选择最合适的工具，并给出调用参数。优先选择知识库搜索工具来获取准确信息。
-如果涉及数学计算，使用计算器工具。如果需要最新信息，使用网络搜索工具。
+
+## 问题改写优化指南
+
+**原始问题**: "{question}"
+
+请将问题改写成更适合知识库检索的版本：
+
+### 改写原则：
+1. **保持自然语言**：不要简单堆砌关键词，要使用完整的自然语句
+2. **语义完整性**：确保改写后的问题能完整表达原问题的意思  
+3. **检索友好**：既要便于语义理解，也要包含核心实体和概念
+
+### 针对当前问题的改写建议：
+- 避免简单的"关键词 关键词"堆砌
+- 使用完整的疑问句或陈述句
+
+### 搜索模式选择：
+- **hybrid** (推荐): 兼顾语义理解和关键词匹配
+- **vector**: 当问题复杂需要深度语义理解时
+- **fulltext**: 当问题包含具体术语需要精确匹配时
+- **summary**: 当问题宽泛需要主题检索时
+
+请输出优化后的问题，确保既自然又适合检索。
 """
         return prompt
     
@@ -235,63 +253,6 @@ class Agent:
                 logger.warning(f"工具返回未知类型结果: {type(result)}")
         return processed_results
     
-    async def _combine_and_rerank_results(self, question: str, tool_results: list[ToolResult]) -> list[KBResult]:
-        """合并和重排结果"""
-        all_kb_results = []
-        calculator_results = []
-        
-        # 分类处理不同类型的结果
-        for tool_result in tool_results:
-            if (tool_result.tool_type in [MCPToolType.KB_SEARCH, MCPToolType.INTERNET_SEARCH] and 
-                isinstance(tool_result.content, list)):
-                # 知识库和网络搜索结果
-                all_kb_results.extend(tool_result.content)
-            elif tool_result.tool_type == MCPToolType.CALCULATOR:
-                # 计算器结果
-                calculator_results.append(tool_result)
-        
-        logger.debug(f"合并后知识库结果数: {len(all_kb_results)}")
-        logger.debug(f"计算器结果数: {len(calculator_results)}")
-        
-        # 如果有计算器结果，直接返回计算器结果（不参与重排）
-        if calculator_results:
-            logger.debug("检测到计算器结果，直接返回")
-            # 将计算器结果转换为KBResult格式
-            kb_calculator_results = []
-            for calc_result in calculator_results:
-                kb_result = KBResult(
-                    content=str(calc_result.content),
-                    weight=1.0,  # 计算器结果权重最高
-                    reranker_score=1.0
-                )
-                kb_calculator_results.append(kb_result)
-            return kb_calculator_results
-        
-        # 如果没有计算器结果，继续原有的知识库结果处理逻辑
-        if len(all_kb_results) > 1 and self.agent_params.reranker_model_id:
-            logger.debug("开始重排知识库结果")
-            reranker = AgentRerank(self.agent_params)
-            reranked = await reranker.rerank_kb(question, all_kb_results)
-            if reranked:
-                all_kb_results = [
-                    item for item in reranked 
-                    if item.reranker_score >= self.agent_params.reranker_score_threshold
-                ]
-                logger.debug(f"重排后结果数: {len(all_kb_results)}")
-        
-        # 去重和排序
-        seen = set()
-        unique_results = []
-        for item in all_kb_results:
-            content = item.content.strip()
-            if content not in seen:
-                seen.add(content)
-                unique_results.append(item)
-        
-        unique_results.sort(key=lambda x: x.weight, reverse=True)
-        logger.debug(f"去重后最终结果数: {len(unique_results)}")
-        
-        return unique_results
     
     def _setup_agent_params(self, agent):
         """设置智能体参数"""
@@ -315,31 +276,14 @@ class Agent:
         kb_search_tool = KBSearchTool(self.agent_id)
         tools.append(kb_search_tool)
         
+        # tools.append(InternetSearchTool())  # 互联网搜索工具需要付费API，暂不启用
+
         # 注册默认工具
-        tools.append(InternetSearchTool())
         tools.append(CalculatorTool())
         
         self.register_tools(tools)
     
-    # async def _preprocess_question(self, question: str) -> str:
-    #     """预处理问题"""
-    #     if self.agent_params.synonym_similarity_flag:
-    #         logger.debug("问题改写启用同义词扩展")
-    #     else:
-    #         logger.debug("问题改写禁用同义词扩展")
-
-    #     expand_question = await preprocess_cn_query(
-    #         query=question, 
-    #         enable_synonym_expansion=self.agent_params.synonym_similarity_flag
-    #     )
-        
-    #     if expand_question is None:
-    #         logger.warning(f"问题扩展失败: {question}")
-    #         return question
-    #     else:
-    #         return ' '.join(expand_question) if isinstance(expand_question, list) else str(expand_question)
-    
-    async def chat(self, question: str) -> list[KBResult] | None:
+    async def chat(self, question: str) -> list[ToolResult]:
         """
         基于MCP的智能体对话处理
         
@@ -347,7 +291,7 @@ class Agent:
             question: 用户问题
             
         Returns:
-            list[KBResult] | None: 知识库结果列表或None
+            list[ToolResult] | None: 工具结果列表或None
         """
         logger.info(f"开始处理问题: {question}")
         
@@ -355,7 +299,7 @@ class Agent:
         agent = await KbotMdAgentRepository().get_by_id(self.agent_id)
         if not agent:
             logger.warning("未找到智能体")
-            return None
+            return []
         
         self._setup_agent_params(agent)
         logger.debug("智能体参数设置完成")
@@ -364,26 +308,17 @@ class Agent:
         await self._initialize_tools()
         logger.debug("工具初始化完成")
         
-        # 3. 预处理问题
-        # processed_question = await self._preprocess_question(question)
-        # logger.debug(f"问题预处理完成: {processed_question}")
-        
-        # 4. 让LLM选择工具
+        # 3. 让LLM选择工具，同时预处理问题
         context = {
             "security": self.security,
-            "tags": self.tags,
-            # "processed_question": processed_question
+            "tags": self.tags
         }
         
         tool_calls = await self._call_llm_for_tool_selection(question, context)
         logger.info(f"LLM选择了 {len(tool_calls)} 个工具: {[tc.tool_name for tc in tool_calls]}")
         
-        # 5. 并行执行工具
+        # 4. 并行执行工具
         tool_results = await self._execute_tools_parallel(tool_calls)
         logger.info(f"工具执行完成，获得 {len(tool_results)} 个结果")
         
-        # 6. 合并和重排结果
-        final_results = await self._combine_and_rerank_results(question, tool_results)
-        logger.info(f"最终返回 {len(final_results)} 个结果")
-        
-        return final_results
+        return tool_results

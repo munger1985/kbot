@@ -24,15 +24,22 @@ class AgentController:
         try:
             # 确定 API 版本
             deep_mind = form.deep_mind or 0
+            kb_results = []
             if deep_mind == 0:
                 agent = Agent(agent_id=form.agent_id, security=form.security_level, tags=form.tags)
+                kb_results = await agent.chat(question=form.question)
             elif deep_mind == 1:
                 # 处理深度思考版本的逻辑
                 agent = MCPAgent(agent_id=form.agent_id, security=form.security_level, tags=form.tags)
+                tool_results = await agent.chat(question=form.question)
+                # 目前只处理知识库结果
+                for tool_result in tool_results:
+                    if tool_result.kb_results:
+                        kb_results.extend(tool_result.kb_results)
             else:
                 raise ValueError(f"不支持的深度思考版本: {deep_mind}")
 
-            results = await agent.chat(question=form.question)
+            
             sess_repo = KbotMdChatSessionRepository()
             
             # 1. 根据session_id从Redis中获取问答pair
@@ -44,9 +51,9 @@ class AgentController:
                 host = os.getenv("KBOT_IP", "localhost")
                 port = os.getenv("KBOT_PORT", "8000")
                 url = f"http://{host}:{port}"
-                if results and len(results) > 0:
+                if kb_results and len(kb_results) > 0:
                     # 获取到引用结果
-                    for kb_result in results:
+                    for kb_result in kb_results:
                         reference = {
                             "chunk_type": kb_result.chunk_type,
                             "page_num": kb_result.page_num,
@@ -75,12 +82,12 @@ class AgentController:
                 # 第一次提问
                 references = []
                 
-                if results and len(results) > 0:
+                if kb_results and len(kb_results) > 0:
                     # 获取到引用结果
                     host = os.getenv("KBOT_IP", "localhost")
                     port = os.getenv("KBOT_PORT", "8000")
                     url = f"http://{host}:{port}"
-                    for kb_result in results:
+                    for kb_result in kb_results:
                         reference = {
                             "chunk_type": kb_result.chunk_type,
                             "page_num": kb_result.page_num,
