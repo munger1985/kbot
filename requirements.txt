@@ -49,3 +49,5 @@ elasticsearch==9.1.1
 fastapi_offline==1.7.5
 fastapi-mcp==0.4.0
 mcp==1.19.0
+chardet==5.2.0
+langid==1.1.6

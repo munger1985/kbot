@@ -2,52 +2,56 @@
 
 # 初始化 conda 环境
 eval "$(conda shell.bash hook)"
-
-# 激活 conda 环境
 conda activate kbot3
 
-# 启动 main.py
-echo "正在启动 KBot 主程序..."
+# 使用 /tmp 目录存储启动日志
+LOG_DIR="/tmp/kbot_startup_logs" # 主要变更点
+mkdir -p "$LOG_DIR"
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
-cd "$(dirname "$0")" && python kbot_main.py >/dev/null 2>&1 &
+# 函数：启动服务并检查状态
+start_service() {
+    local service_name=$1
+    local directory=$2
+    local script=$3
+    local log_file="${LOG_DIR}/${service_name}_${TIMESTAMP}.log" # 主要变更点
+    
+    echo "正在启动 ${service_name}..."
+    
+    # 切换到目录并启动服务
+    cd "$directory" && python "$script" >"$log_file" 2>&1 &
+    local pid=$!
+    
+    sleep 3
+    if kill -0 $pid 2>/dev/null; then
+        echo "✅ ${service_name} 已启动 (PID: $pid)"
+        return 0
+    else
+        echo "❌ ${service_name} 启动失败！错误信息："
+        cat "$log_file"
+        return 1
+    fi
+}
 
-for i in {1..10}; do
-  echo -n "*"
-  sleep 1
-done
-echo
-echo "Kbot 主程序已启动。"
+# 启动主程序
+start_service "KBot主程序" "$(dirname "$0")" "kbot_main.py" || exit 1
 
 # 定义微服务目录
 MICROSERVICES_DIR="$(dirname "$0")/microservices"
 
-# 启动四个微服务
-echo "正在启动微服务..."
+# 启动微服务数组
+declare -A services=(
+    ["Embedding"]="embedding/app.py"
+    ["LLM"]="llm/app.py" 
+    ["Reranker"]="reranker/app.py"
+    ["VLM"]="vlm/app.py"
+)
 
-# 启动 Embedding 微服务
-cd "${MICROSERVICES_DIR}/embedding" && python app.py >/dev/null 2>&1 &
-for i in {1..3}; do
-  echo -n "*"
-  sleep 1
+# 遍历启动所有微服务
+for service_name in "${!services[@]}"; do
+    start_service "${service_name}微服务" "${MICROSERVICES_DIR}/$(dirname "${services[$service_name]}")" "$(basename "${services[$service_name]}")" || exit 1
 done
+
 echo
-echo "Embedding 微服务已启动。"
-
-# 启动 LLM 微服务
-cd "${MICROSERVICES_DIR}/llm" && python app.py >/dev/null 2>&1 &
-echo "LLM 微服务已启动。"
-
-# 启动 Reranker 微服务
-cd "${MICROSERVICES_DIR}/reranker" && python app.py >/dev/null 2>&1 &
-for i in {1..3}; do
-  echo -n "*"
-  sleep 1
-done
-echo "Reranker 微服务已启动。"
-
-# 启动 VLM 微服务
-cd "${MICROSERVICES_DIR}/vlm" && python app.py >/dev/null 2>&1 &
-echo "VLM 微服务已启动。"
-echo
-echo "微服务已启动。"
-echo "所有服务已启动。"
+echo "🎉 所有服务已成功启动！"
+echo "📋 本次启动日志位置: $LOG_DIR"

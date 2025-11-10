@@ -90,7 +90,6 @@ class ConfigManager:
                         hosts=["https://localhost:9201"],
                         username="elastic",
                         password="<PASSWORD>",
-                        ca_certs="",
                         index="kbot_logs"
                     )
                 )
@@ -129,7 +128,6 @@ class ConfigManager:
                     hosts=["https://localhost:9201"],
                     username="elastic",
                     password="<PASSWORD>",
-                    ca_certs="",
                     index="kbot_logs"
                 )
             )
@@ -187,16 +185,6 @@ class ConfigManager:
                         custom_dict_path="configuration/custom_dict.txt",
                         stop_words_path="configuration/stop_words.txt"
                     ),
-                    synonym=SynonymConfig(
-                        service_name="synonym",
-                        service_version="1.0.0",
-                        service_host="localhost",
-                        service_port=9305,
-                        timeout=30,
-                        model_path="/tmp/synonym_model.bin",
-                        top_n_words=50000,
-                        preload_top=1000
-                    ),
                     prompt=PromptConfig(
                         image2text="SYSTEM/image2text",
                         summary="SYSTEM/summary"
@@ -248,16 +236,6 @@ class ConfigManager:
                     tokenizer=TokenizerConfig(
                         custom_dict_path="configuration/custom_dict.txt",
                         stop_words_path="configuration/stop_words.txt"
-                    ),
-                    synonym=SynonymConfig(
-                        service_name="synonym",
-                        service_version="1.0.0",
-                        service_host="localhost",
-                        service_port=9305,
-                        timeout=30,
-                        model_path="/tmp/synonym_model.bin",
-                        top_n_words=50000,
-                        preload_top=1000
                     ),
                     prompt=PromptConfig(
                         image2text="SYSTEM/image2text",

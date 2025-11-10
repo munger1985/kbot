@@ -1,5 +1,5 @@
 import os
-
+import chardet
 from loguru import logger
 from .file_params import FileParams
 from dao.entities.kbot_biz_txt_embedding import KbotBizTxtEmbedding
@@ -134,3 +134,37 @@ async def check_image_file(file_params: FileParams) -> bool:
         return False
     
     return True
+
+
+@staticmethod
+def detect_file_encoding(file_path):
+    """
+    检测文件的编码格式
+    """
+    with open(file_path, 'rb') as f:
+        raw_data = f.read()
+        # 使用chardet检测编码，confidence表示可信度
+        result = chardet.detect(raw_data)
+        encoding = result['encoding']
+        confidence = result['confidence']
+        logger.debug(f"文件编码检测结果: {encoding} (可信度: {confidence:.2f})")
+        
+        # 如果可信度较低或检测为None，则使用备选方案
+        if encoding is None or confidence < 0.7:
+            # 常见的ANSI编码备选列表，可根据实际情况调整优先级
+            fallback_encodings = ['gbk', 'gb2312', 'gb18030', 'windows-1252', 'iso-8859-1']
+            for enc in fallback_encodings:
+                try:
+                    # 尝试用备选编码解码
+                    raw_data.decode(enc)
+                    encoding = enc
+                    logger.debug(f"使用备选编码: {encoding}")
+                    break
+                except UnicodeDecodeError:
+                    continue
+        # 如果依然无法确定，默认使用utf-8并记录警告
+        if encoding is None:
+            encoding = 'utf-8'
+            logger.warning("无法确定文件编码，默认使用UTF-8")
+            
+        return encoding

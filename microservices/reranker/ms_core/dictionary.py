@@ -96,12 +96,24 @@ class AgentStatus(int, Enum):
 
 class ToolType(int, Enum):
     """Tool type enumeration."""
-    KB = 1
-    FUNCTIONCALL = 2
-    INTERNET = 3
-    AGENT = 4
-    CHATAI = 5
+    KB_SEARCH = 1
+    FUNCTION_CALL = 2
+    INTERNET_SEARCH = 3
+    AGENT_CALL = 4
+    CHAT_AI = 5
+    CALCULATOR = 6
+    CODE_EXECUTION = 7
 
+class MCPToolType(Enum):
+    """MCP工具类型枚举"""
+    KB_SEARCH = "kb_search"
+    FUNCTION_CALL = "function_call"
+    INTERNET_SEARCH = "internet_search"
+    AGENT_CALL = "agent_call"
+    CHAT_AI = "chat_ai"
+    CALCULATOR = "calculator"
+    CODE_EXECUTION = "code_execution"
+    
 class KBSearchType(int, Enum):
     """Knowledge base search type enumeration."""
     VECTOR = 1
