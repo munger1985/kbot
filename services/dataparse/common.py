@@ -167,4 +167,4 @@ def detect_file_encoding(file_path):
             encoding = 'utf-8'
             logger.warning("无法确定文件编码，默认使用UTF-8")
             
-        return encoding
+        return encoding.lower()

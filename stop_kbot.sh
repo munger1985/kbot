@@ -11,38 +11,50 @@ get_service_pid() {
     
     # 使用pgrep查找进程，并结合pwdx检查进程的工作目录是否匹配
     # 这确保了只杀死在指定目录下运行的特定脚本
+    local pids=""
     pgrep -f "python.*${script_name}" | while read pid; do
         # 检查进程的工作目录是否在服务根目录下
-        if pwdx "$pid" 2>/dev/null | grep -q "${SERVICE_ROOT}"; then
+        if pwdx "$pid" 2>/dev/null | grep -q "${script_dir}"; then
             echo "$pid"
         fi
     done
 }
 
 # 收集需要关闭的进程PID
-PIDS=""
+declare -A PID_MAP  # 使用关联数组来去重
 
 # 获取主程序PID（确保只在当前项目目录下运行的那个）
-MAIN_PID=$(get_service_pid "${SERVICE_ROOT}" "kbot_main.py")
-if [ -n "$MAIN_PID" ]; then
-    PIDS+=" $MAIN_PID"
-    echo "找到主程序进程: $MAIN_PID"
+MAIN_PIDS=$(get_service_pid "${SERVICE_ROOT}" "kbot_main.py")
+if [ -n "$MAIN_PIDS" ]; then
+    while read pid; do
+        if [ -n "$pid" ]; then
+            PID_MAP["$pid"]=1
+            echo "找到主程序进程: $pid"
+        fi
+    done <<< "$MAIN_PIDS"
 fi
 
 # 获取各个微服务的PID
 for service_dir in "embedding" "llm" "reranker" "vlm"; do
-    SERVICE_PID=$(get_service_pid "${MICROSERVICES_DIR}/${service_dir}" "app.py")
-    if [ -n "$SERVICE_PID" ]; then
-        PIDS+=" $SERVICE_PID"
-        echo "找到${service_dir}微服务进程: $SERVICE_PID"
+    SERVICE_PIDS=$(get_service_pid "${MICROSERVICES_DIR}/${service_dir}" "app.py")
+    if [ -n "$SERVICE_PIDS" ]; then
+        while read pid; do
+            if [ -n "$pid" ]; then
+                PID_MAP["$pid"]=1
+                echo "找到${service_dir}微服务进程: $pid"
+            fi
+        done <<< "$SERVICE_PIDS"
     fi
 done
 
 # 检查是否有进程需要关闭
-if [ -z "$PIDS" ]; then
+if [ ${#PID_MAP[@]} -eq 0 ]; then
     echo "没有找到运行中的KBot服务。"
     exit 0
 fi
+
+# 将去重后的PID转换为空格分隔的字符串
+PIDS="${!PID_MAP[@]}"
 
 echo "即将关闭以下进程: $PIDS"
 # read -p "确认关闭这些服务? (y/n): " -n 1 -r

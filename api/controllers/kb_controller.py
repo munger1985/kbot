@@ -6,6 +6,7 @@ from services.kb.kb_file_preview import FilePreview
 from api.schemas.kb_schema import *
 from dao.repositories.kbot_md_kb_files_repo import KbotMdKbFilesRepository
 from utils.file_converter import FileToImage
+from services.dataparse.common import detect_file_encoding
 
 
 class KBController:
@@ -78,12 +79,14 @@ class KBController:
 
         if file_path is None:
             return None
-        
+
         if file_name is None:
             file_name = Path(file_path).name
         
         if file_ext is None:
             file_ext = Path(file_path).suffix
+        
+        encoding = detect_file_encoding(file_path)
         
         try:
             if download:
@@ -92,13 +95,13 @@ class KBController:
                     # 确保文件路径和文件名以 UTF-8 编码处理
                     file_path = str(Path(file_path).resolve())
                     file_name = file_name.encode('utf-8').decode('utf-8') if file_name else Path(file_path).name
-                    return {"file_path": file_path, "file_name": file_name, "file_ext": file_ext}
+                    return {"file_path": file_path, "file_name": file_name, "file_ext": file_ext, "encoding": encoding}
                 except Exception as e:
                     raise e
             else:
                 if file_ext == ".txt":
                     # 预览文本文件
-                    return {"file_path": file_path, "file_name": file_name, "file_ext": file_ext}
+                    return {"file_path": file_path, "file_name": file_name, "file_ext": file_ext, "encoding": encoding}
                 elif file_ext in [".png", ".jpg", ".jpeg"]:
                     # 预览图片文件
                     return {"file_path": file_path, "file_name": file_name, "file_ext": file_ext}

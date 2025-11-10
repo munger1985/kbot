@@ -1,6 +1,5 @@
 
 import json
-import os
 import urllib.parse
 from fastapi import APIRouter, UploadFile, File, Form, status, Depends, Body
 from fastapi.responses import HTMLResponse
@@ -237,7 +236,8 @@ async def handle_preview_file(
         
         if result:
             if result["file_ext"] == ".txt":
-                with open(result["file_path"], 'r', encoding='utf-8') as f:
+                encoding = result.get("encoding", "utf-8")
+                with open(result["file_path"], 'r', encoding=encoding) as f:
                     content = f.read()
                 
                 html_content = f"""
@@ -436,7 +436,7 @@ async def handle_preview_kb_file_v2(
         
         if result:
             # 获取文件扩展名以确定内容类型
-            file_extension = os.path.splitext(result["file_name"])[1].lower()
+            file_extension = result["file_ext"].lower()
             
             # 常见文件类型的媒体类型映射
             content_types = {
@@ -467,17 +467,25 @@ async def handle_preview_kb_file_v2(
             # 设置默认内容类型为二进制流
             media_type = content_types.get(file_extension, 'application/octet-stream')
             
-            # 对中文文件名进行编码处理
+            file_path = result["file_path"]
             filename = result["file_name"]
-            encoded_filename = urllib.parse.quote(filename, encoding='utf-8')
+            encoding = result.get("encoding", "utf-8")
             
+            # 对于文本文件，检测实际编码
+            headers = {}
+            encoded_filename = urllib.parse.quote(filename, encoding=encoding)
+            
+            # 如果是文本文件，根据编码设置字符集
+            if file_extension in ['.txt', '.csv', '.html', '.htm', '.css', '.js', '.json', '.xml']:
+                media_type = f"{media_type}; charset={encoding}"
+                    
+            headers["Content-Disposition"] = f"inline; filename*=UTF-8''{encoded_filename}"
+
             return FileResponse(
-                path=result["file_path"],
+                path=file_path,
                 filename=filename,
                 media_type=media_type,
-                headers={
-                    "Content-Disposition": f"inline; filename*=UTF-8''{encoded_filename}"
-                }
+                headers=headers
             )
         else:
             return ErrorResponse(
