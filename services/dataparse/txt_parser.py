@@ -60,8 +60,13 @@ class EnhancedTextSplitter:
         if not text or not text.strip():
             return []
         
-        # 检测文本语言
+        # 检测文本语言和内容类型
         lang = self._detect_language(text)
+        content_type = self._detect_content_type(text)
+        
+        # 对代码类内容使用特殊处理
+        if content_type in ['sql', 'code']:
+            return self._split_code_like_text(text, content_type)
         
         # 预处理文本
         cleaned_text = self._preprocess_text(text, lang)
@@ -123,6 +128,10 @@ class EnhancedTextSplitter:
                 
             sent_length = len(sentence)
             
+            # 计算添加后的新长度（包括连接符）
+            separator_length = 1 if current_chunk else 0  # 空格或空字符串的长度
+            new_length = current_length + sent_length + separator_length
+            
             # 如果单句就超过最大限制，需要特殊处理
             if sent_length > self.max_chunk_size:
                 if current_chunk:
@@ -142,33 +151,32 @@ class EnhancedTextSplitter:
                 continue
             
             # 检查添加该句子是否会超过限制
-            if current_length + sent_length > self.chunk_size:
+            if new_length > self.chunk_size and current_chunk:
                 # 寻找最佳分割点
-                if current_chunk:
-                    best_split_index = self._find_best_split_point(current_chunk, sentences, i, lang)
+                best_split_index = self._find_best_split_point(current_chunk, sentences, i, lang)
+                
+                if best_split_index > 0:
+                    # 在最佳点分割
+                    chunk_text = self._join_sentences(current_chunk[:best_split_index], lang)
+                    if self.min_chunk_size <= len(chunk_text) <= self.max_chunk_size:
+                        chunks.append(chunk_text)
                     
-                    if best_split_index > 0:
-                        # 在最佳点分割
-                        chunk_text = self._join_sentences(current_chunk[:best_split_index], lang)
-                        if self.min_chunk_size <= len(chunk_text) <= self.max_chunk_size:
-                            chunks.append(chunk_text)
-                        
-                        # 保留重叠部分
-                        overlap_start = max(0, best_split_index - self._get_overlap_sentence_count(current_chunk))
-                        current_chunk = current_chunk[overlap_start:]
-                        current_length = sum(len(s) for s in current_chunk)
-                    else:
-                        # 没有找到好的分割点，强制分割
-                        chunk_text = self._join_sentences(current_chunk, lang)
-                        if self.min_chunk_size <= len(chunk_text) <= self.max_chunk_size:
-                            chunks.append(chunk_text)
-                        current_chunk = []
-                        current_length = 0
-            
-            # 添加当前句子到块中
-            current_chunk.append(sentence)
-            current_length += sent_length
-            i += 1
+                    # 保留重叠部分
+                    overlap_start = max(0, best_split_index - self._get_overlap_sentence_count(current_chunk))
+                    current_chunk = current_chunk[overlap_start:]
+                    current_length = sum(len(s) for s in current_chunk) + max(0, len(current_chunk) - 1)  # 包括连接符
+                else:
+                    # 没有找到好的分割点，强制分割
+                    chunk_text = self._join_sentences(current_chunk, lang)
+                    if self.min_chunk_size <= len(chunk_text) <= self.max_chunk_size:
+                        chunks.append(chunk_text)
+                    current_chunk = []
+                    current_length = 0
+            else:
+                # 添加当前句子到块中
+                current_chunk.append(sentence)
+                current_length = new_length
+                i += 1
         
         # 处理最后一个块
         if current_chunk:
@@ -186,6 +194,10 @@ class EnhancedTextSplitter:
         # 按段落分割
         paragraphs = [p.strip() for p in text.split('\n\n') if p.strip()]
         
+        # 如果没有段落，返回空列表
+        if not paragraphs:
+            return []
+        
         chunks = []
         current_chunk = []
         current_length = 0
@@ -197,19 +209,24 @@ class EnhancedTextSplitter:
             is_heading = self._is_heading(paragraph)
             is_important = self._is_important_paragraph(paragraph, i, len(paragraphs))
             
-            # 如果当前段落是标题或重要段落，考虑分割
+            # 计算新块的长度（包括段落间的分隔符）
+            new_length = current_length + para_length + (2 if current_chunk else 0)  # +2 for '\n\n'
+            
+            # 判断是否需要分割
             should_split = False
             if is_heading and current_length >= self.min_chunk_size:
                 should_split = True
-            elif is_important and current_length + para_length > self.chunk_size and current_length >= self.min_chunk_size:
+            elif is_important and new_length > self.chunk_size and current_length >= self.min_chunk_size:
                 should_split = True
-            elif current_length + para_length > self.max_chunk_size:
+            elif new_length > self.max_chunk_size:
                 should_split = True
             
-            if should_split and current_chunk:
-                chunk_text = '\n\n'.join(current_chunk)
-                if self.min_chunk_size <= len(chunk_text) <= self.max_chunk_size:
-                    chunks.append(chunk_text)
+            # 执行分割逻辑
+            if should_split:
+                if current_chunk:  # 当前块不为空，保存当前块
+                    chunk_text = '\n\n'.join(current_chunk)
+                    if self.min_chunk_size <= len(chunk_text) <= self.max_chunk_size:
+                        chunks.append(chunk_text)
                 
                 # 开始新块，重要段落单独成块
                 if is_heading or is_important:
@@ -219,8 +236,9 @@ class EnhancedTextSplitter:
                     current_chunk = [paragraph]
                     current_length = para_length
             else:
+                # 添加到当前块
                 current_chunk.append(paragraph)
-                current_length += para_length + 2
+                current_length = new_length  # 更新当前长度
         
         # 处理最后一个块
         if current_chunk:
@@ -258,44 +276,6 @@ class EnhancedTextSplitter:
                 final_chunks.append(chunk)
         
         return final_chunks
-    
-    def _split_into_sentences(self, text: str, lang: str) -> list[str]:
-        """
-        增强版句子分割
-        更准确的句子边界检测
-        """
-        if lang == 'zh':
-            # 中文句子分割，考虑更多结束符和特殊情况
-            pattern = r'([。！？；\.!?;]+\s*)'
-        else:
-            # 英文句子分割，避免在缩写处错误分割
-            pattern = r'(?<!\w\.\w.)(?<![A-Z][a-z]\.)(?<=\.|\?|!)\s+'
-        
-        # 使用更复杂的分割逻辑
-        parts = re.split(pattern, text)
-        
-        # 重新组合句子和标点
-        sentences = []
-        current_sentence = ""
-        
-        for i, part in enumerate(parts):
-            if re.match(pattern, part) and current_sentence:
-                # 当前部分是结束符，添加到句子末尾
-                current_sentence += part
-                sentences.append(current_sentence.strip())
-                current_sentence = ""
-            else:
-                # 检查是否需要开始新句子
-                if not current_sentence and part.strip():
-                    current_sentence = part
-                elif current_sentence:
-                    current_sentence += part
-        
-        # 添加最后一个句子
-        if current_sentence.strip():
-            sentences.append(current_sentence.strip())
-        
-        return [s for s in sentences if s.strip()]
     
     def _find_best_split_point(self, current_chunk: list[str], all_sentences: list[str], next_index: int, lang: str) -> int:
         """
@@ -528,9 +508,14 @@ class EnhancedTextSplitter:
     
     def _join_sentences(self, sentences: list[str], lang: str) -> str:
         """根据语言连接句子"""
+        if not sentences:
+            return ""
+        
         if lang == 'zh':
+            # 中文直接连接，不加空格
             return ''.join(sentences)
         else:
+            # 英文用空格连接
             return ' '.join(sentences)
     
     def _get_overlap_sentence_count(self, sentences: list[str]) -> int:
@@ -591,6 +576,149 @@ class EnhancedTextSplitter:
                 i += 1
         
         return result
+    
+    def _detect_content_type(self, text: str) -> str:
+        """检测内容类型"""
+        # 检查是否是SQL代码
+        sql_indicators = [
+            r'\b(SELECT|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|FROM|WHERE|JOIN|UNION)\b',
+            r'\b(TABLE|INDEX|VIEW|SEQUENCE|PROCEDURE|FUNCTION)\b',
+            r'\b(dba_|all_|user_)[a-z_]+\b',
+            r'\.(owner|table_name|column_name|index_name)\b'
+        ]
+        
+        sql_count = 0
+        for pattern in sql_indicators:
+            if re.search(pattern, text, re.IGNORECASE):
+                sql_count += 1
+        
+        if sql_count >= 2:  # 至少匹配2个SQL特征
+            return 'sql'
+        
+        # 检查其他代码类型
+        code_indicators = [r'\{.*\}', r'\(.*\)', r'\[.*\]', r'=\s*[\w\(]', r'\.\w+\s*\(']
+        code_count = sum(1 for pattern in code_indicators if re.search(pattern, text))
+        
+        if code_count > 3:
+            return 'code'
+        
+        return 'text'
+    
+    def _split_code_like_text(self, text: str, content_type: str) -> list[str]:
+        """
+        专门处理SQL和代码类文本的分割
+        """
+        # 按行分割，但保持逻辑完整性
+        lines = text.split('\n')
+        
+        chunks = []
+        current_chunk = []
+        current_length = 0
+        
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+                
+            line_length = len(line)
+            
+            # 如果是SQL，尝试在逻辑边界处分割
+            if content_type == 'sql':
+                # 检测SQL子句边界
+                sql_keywords = ['SELECT', 'FROM', 'WHERE', 'GROUP BY', 'HAVING', 'ORDER BY', 
+                            'UNION', 'JOIN', 'ON', 'AND', 'OR']
+                
+                is_clause_start = any(line.strip().upper().startswith(keyword) for keyword in sql_keywords)
+                
+                if is_clause_start and current_length >= self.min_chunk_size and current_chunk:
+                    # 保存当前块
+                    chunk_text = '\n'.join(current_chunk)
+                    if self.min_chunk_size <= len(chunk_text) <= self.max_chunk_size:
+                        chunks.append(chunk_text)
+                    current_chunk = [line]
+                    current_length = line_length
+                else:
+                    # 检查长度限制
+                    if current_length + line_length > self.max_chunk_size and current_chunk:
+                        chunk_text = '\n'.join(current_chunk)
+                        if self.min_chunk_size <= len(chunk_text) <= self.max_chunk_size:
+                            chunks.append(chunk_text)
+                        current_chunk = [line]
+                        current_length = line_length
+                    else:
+                        current_chunk.append(line)
+                        current_length += line_length + 1  # +1 for newline
+            else:
+                # 通用代码处理
+                if current_length + line_length > self.max_chunk_size and current_chunk:
+                    chunk_text = '\n'.join(current_chunk)
+                    if self.min_chunk_size <= len(chunk_text) <= self.max_chunk_size:
+                        chunks.append(chunk_text)
+                    current_chunk = [line]
+                    current_length = line_length
+                else:
+                    current_chunk.append(line)
+                    current_length += line_length + 1
+        
+        # 处理最后一个块
+        if current_chunk:
+            chunk_text = '\n'.join(current_chunk)
+            if self.min_chunk_size <= len(chunk_text) <= self.max_chunk_size:
+                chunks.append(chunk_text)
+        
+        # 如果还是太大，按字符数分割
+        final_chunks = []
+        for chunk in chunks:
+            if len(chunk) > self.max_chunk_size:
+                sub_chunks = self._split_by_length_with_boundary(chunk, 'en')  # 代码用英文处理
+                final_chunks.extend(sub_chunks)
+            else:
+                final_chunks.append(chunk)
+        
+        return final_chunks
+
+    def _split_into_sentences(self, text: str, lang: str) -> list[str]:
+        """
+        增强版句子分割
+        更准确的句子边界检测
+        """
+        # 如果是代码类内容，直接返回整段
+        content_type = self._detect_content_type(text)
+        if content_type in ['sql', 'code']:
+            return [text]
+        
+        if lang == 'zh':
+            # 中文句子分割，考虑更多结束符和特殊情况
+            pattern = r'([。！？；\.!?;]+\s*)'
+        else:
+            # 英文句子分割，避免在缩写处错误分割
+            pattern = r'(?<!\w\.\w.)(?<![A-Z][a-z]\.)(?<=\.|\?|!)\s+'
+        
+        # 使用更复杂的分割逻辑
+        parts = re.split(pattern, text)
+        
+        # 重新组合句子和标点
+        sentences = []
+        current_sentence = ""
+        
+        for i, part in enumerate(parts):
+            if re.match(pattern, part) and current_sentence:
+                # 当前部分是结束符，添加到句子末尾
+                current_sentence += part
+                sentences.append(current_sentence.strip())
+                current_sentence = ""
+            else:
+                # 检查是否需要开始新句子
+                if not current_sentence and part.strip():
+                    current_sentence = part
+                elif current_sentence:
+                    current_sentence += part
+        
+        # 添加最后一个句子
+        if current_sentence.strip():
+            sentences.append(current_sentence.strip())
+        
+        return [s for s in sentences if s.strip()]
 
 
 async def process_txt(file_params: FileParams) -> bool:
@@ -603,12 +731,47 @@ async def process_txt(file_params: FileParams) -> bool:
     try:
         logger.debug(f"正在处理文本文件: {file_params.file_path}")
 
-        # 1. 读取文本文件
+        # 1. 读取文本文件，增强编码处理
         file_encoding = detect_file_encoding(file_params.file_path)
         logger.debug(f"将使用编码 [{file_encoding}] 读取文件: {file_params.file_path}")
 
-        with open(file_params.file_path, 'r', encoding=file_encoding) as f:
-            text = f.read()
+        text = None
+        # 尝试使用检测到的编码读取
+        try:
+            with open(file_params.file_path, 'r', encoding=file_encoding, errors='strict') as f:
+                text = f.read()
+        except UnicodeDecodeError as decode_error:
+            logger.warning(f"使用编码 {file_encoding} 读取失败: {decode_error}")
+            
+            # 尝试备选编码
+            fallback_encodings = ['utf-8', 'gbk', 'gb18030', 'gb2312']
+            for enc in fallback_encodings:
+                if enc == file_encoding:
+                    continue  # 跳过已经尝试过的编码
+                try:
+                    with open(file_params.file_path, 'r', encoding=enc, errors='strict') as f:
+                        text = f.read()
+                    logger.info(f"成功使用备选编码 {enc} 读取文件")
+                    file_encoding = enc  # 更新使用的编码
+                    break
+                except UnicodeDecodeError:
+                    continue
+            
+            # 如果所有严格模式都失败，尝试宽松模式
+            if text is None:
+                logger.warning("所有严格编码尝试失败，尝试使用错误忽略模式")
+                for enc in ['utf-8', 'gbk', 'gb18030']:
+                    try:
+                        with open(file_params.file_path, 'r', encoding=enc, errors='ignore') as f:
+                            text = f.read()
+                        logger.warning(f"使用编码 {enc} 并忽略错误字符")
+                        file_encoding = enc
+                        break
+                    except Exception:
+                        continue
+        
+        if text is None:
+            raise UnicodeDecodeError("utf-8", b"", 0, 1, "无法使用任何编码读取文件")
         
         # 2. 文本分割
         text_length = len(text)

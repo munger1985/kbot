@@ -139,32 +139,57 @@ async def check_image_file(file_params: FileParams) -> bool:
 @staticmethod
 def detect_file_encoding(file_path):
     """
-    检测文件的编码格式
+    检测文件的编码格式，增强错误处理
     """
     with open(file_path, 'rb') as f:
         raw_data = f.read()
+        
         # 使用chardet检测编码，confidence表示可信度
         result = chardet.detect(raw_data)
         encoding = result['encoding']
         confidence = result['confidence']
         logger.debug(f"文件编码检测结果: {encoding} (可信度: {confidence:.2f})")
         
-        # 如果可信度较低或检测为None，则使用备选方案
-        if encoding is None or confidence < 0.7:
-            # 常见的ANSI编码备选列表，可根据实际情况调整优先级
-            fallback_encodings = ['gbk', 'gb2312', 'gb18030', 'windows-1252', 'iso-8859-1']
-            for enc in fallback_encodings:
-                try:
-                    # 尝试用备选编码解码
-                    raw_data.decode(enc)
-                    encoding = enc
-                    logger.debug(f"使用备选编码: {encoding}")
-                    break
-                except UnicodeDecodeError:
-                    continue
+        # 如果检测到编码，先验证是否能正确解码
+        if encoding is not None and confidence >= 0.7:
+            try:
+                # 验证检测到的编码是否能正确解码
+                raw_data.decode(encoding, errors='strict')
+                logger.debug(f"编码 {encoding} 验证通过")
+                return encoding.lower()
+            except UnicodeDecodeError as e:
+                logger.warning(f"检测到的编码 {encoding} 无法正确解码: {e}")
+                # 继续尝试其他编码
+        
+        # 常见的编码备选列表，按优先级排序
+        fallback_encodings = ['utf-8', 'gbk', 'gb18030', 'gb2312', 'windows-1252', 'iso-8859-1']
+        
+        # 记录尝试的编码
+        tried_encodings = []
+        
+        for enc in fallback_encodings:
+            try:
+                # 尝试用备选编码解码
+                raw_data.decode(enc, errors='strict')
+                encoding = enc
+                logger.debug(f"使用备选编码: {encoding}")
+                return encoding.lower()
+            except UnicodeDecodeError as e:
+                tried_encodings.append(f"{enc}: {str(e)}")
+                continue
+        
+        # 如果所有编码都失败，尝试使用更宽松的错误处理
+        logger.warning("所有编码尝试失败，尝试使用错误忽略模式")
+        for enc in ['utf-8', 'gbk', 'gb18030']:
+            try:
+                # 使用错误忽略模式
+                raw_data.decode(enc, errors='ignore')
+                encoding = enc
+                logger.warning(f"使用编码 {encoding} 并忽略错误字符")
+                return encoding.lower()
+            except Exception:
+                continue
+        
         # 如果依然无法确定，默认使用utf-8并记录警告
-        if encoding is None:
-            encoding = 'utf-8'
-            logger.warning("无法确定文件编码，默认使用UTF-8")
-            
-        return encoding.lower()
+        logger.error(f"无法确定文件编码，所有尝试失败: {tried_encodings}")
+        return 'utf-8'
