@@ -589,4 +589,4 @@ Insert into KBOT_MD_RELEASE_NOTE (RELEASE_ID,APP_ID,RELEASE_TITLE,RELEASE_CONTEN
 10.	增加了模型联通性校验接口。
 11. 支持Elastic Search作为向量存储。
 12.	一些bug修复以及后台程序优化。','ADMIN',to_date('2025-09-12 15:47:32','YYYY-MM-DD HH24:MI:SS'),'ADMIN',to_date('2025-09-12 15:47:32','YYYY-MM-DD HH24:MI:SS'));
-
+commit;
