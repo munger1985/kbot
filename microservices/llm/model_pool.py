@@ -4,8 +4,10 @@ import asyncio
 from loguru import logger
 from typing import Any
 from datetime import datetime, timedelta
-from model import *
-from ms_core import ConfigManager, ModelCategory
+
+from .model import *
+from core.dictionary import ModelCategory
+from core.config.settings import get_llm_config
 
 
 class ModelPool:
@@ -92,15 +94,15 @@ class ModelPool:
         # 从模型数据中提取参数
         model_params = model_data["model_params"] if model_data.get("model_params") else {}
         
-        # 从 Nacos 获取 llm 默认参数
-        config = ConfigManager.get_model_config()
-        max_tokens = config.llm.max_tokens
-        timeout = config.llm.timeout
-        temperature = config.llm.temperature
-        top_p = config.llm.top_p
-        top_k = config.llm.top_k
-        frequency_penalty = config.llm.frequency_penalty
-        presence_penalty = config.llm.presence_penalty
+        # 获取 llm 默认参数
+        config = get_llm_config()
+        max_tokens = config.max_tokens
+        timeout = config.timeout
+        temperature = config.temperature
+        top_p = config.top_p
+        top_k = config.top_k
+        frequency_penalty = config.frequency_penalty
+        presence_penalty = config.presence_penalty
 
         # 根据模型类型创建相应的配置
         if provider == LLMProvider.OPENAI.value:

@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import Dict, List, Any, Optional
 from datetime import datetime
 import shutil
-from configuration.config_manager import ConfigManager
 from loguru import logger
 from .file_params import FileParams
 from .common import check_text_file, save_embeddings
@@ -55,7 +54,6 @@ class ExcelParser:
         self.output_dir.mkdir(parents=True,exist_ok=True)
         self.images_dir.mkdir(parents=True,exist_ok=True)
         self.data_dir.mkdir(parents=True,exist_ok=True)
-        self.model_config = ConfigManager.get_model_config()
 
         # 存储提取的数据
         self.extracted_data = {}

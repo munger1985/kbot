@@ -6,6 +6,7 @@ from typing import Any
 from fastapi import Request, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from dao.repositories.kbot_md_chat_session_repo import KbotMdChatSessionRepository
+# from dao.repositories.kbot_biz_chat_session_factory import ChatSessionRepositoryFactory
 from dao.repositories.kbot_md_agent_repo import KbotMdAgentRepository
 from dao.repositories.kbot_md_agent_conf_repo import KbotMdAgentConfRepository
 from dao.repositories.kbot_md_prompt_repo import KbotMdPromptRepository
@@ -40,6 +41,7 @@ class AgentController:
                 raise ValueError(f"不支持的深度思考版本: {deep_mind}")
 
             
+            # sess_repo = await ChatSessionRepositoryFactory.create_repository(kb_id=form.)
             sess_repo = KbotMdChatSessionRepository()
             
             # 1. 根据session_id从Redis中获取问答pair

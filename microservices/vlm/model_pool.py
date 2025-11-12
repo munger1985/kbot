@@ -4,8 +4,9 @@ import asyncio
 from loguru import logger
 from typing import Any
 from datetime import datetime, timedelta
-from model import *
-from ms_core import ModelCategory
+
+from .model import *
+from core.dictionary import ModelCategory
 
 
 class ModelPool:

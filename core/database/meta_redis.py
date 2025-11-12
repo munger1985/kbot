@@ -4,7 +4,7 @@ from typing import Any
 from redis.asyncio import Redis, ConnectionPool
 from redis.asyncio.client import Pipeline
 from redis.exceptions import RedisError, ConnectionError, TimeoutError
-from configuration import ConfigManager
+from core.config.settings import get_settings
 
 class AsyncRedisPool:
     """
@@ -37,7 +37,7 @@ class AsyncRedisPool:
             return
             
         try:
-            db_config = ConfigManager.get_db_config()
+            db_config = get_settings()
             self._host = db_config.redis.host
             self._port = db_config.redis.port
             self._password = db_config.redis.password

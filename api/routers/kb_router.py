@@ -669,3 +669,118 @@ async def handle_get_file_chunks(
             success=False,
             message=f"服务器内部错误: {str(e)}"
         )
+    
+@router.post(
+    "/file/chunk/update_description",
+    summary="更新知识库文件的分片描述",
+    response_model=SuccessResponse | ErrorResponse,
+    dependencies=[Depends(AuthController.get_current_accessor)],
+    status_code=status.HTTP_200_OK
+)
+async def handle_update_chunk_description(
+    form: KBFileChunkUpdateDescriptionForm
+) -> SuccessResponse | ErrorResponse:
+    """
+    更新知识库文件的分片描述
+    
+    Args:
+    - **kb_id**: int = Field(..., description="知识库ID")
+    - **embed_id**: str = Field(..., description="分片ID")
+    - **description**: str = Field(..., description="分片描述")
+    
+    Returns:
+    - **SuccessResponse**: 成功响应
+    ```
+        code: int = Field(status.HTTP_200_OK, description="响应状态码")
+        message: str = Field("Success", description="返回的响应信息")
+        success: bool = Field(True, description="请求响应状态")
+    ```
+    - **ErrorResponse**: 失败响应
+    ```
+        code: int = Field(status.HTTP_400_BAD_REQUEST, description="响应状态码")
+        message: str = Field("Error", description="返回的响应信息")
+        success: bool = Field(False, description="请求响应状态")
+    ```
+    """
+    try:
+        result = await controller.update_kb_file_chunk_description(
+            kb_id=form.kb_id,
+            embed_id=form.embed_id,
+            description=form.description
+        )
+        if result:
+            return SuccessResponse(
+                code=status.HTTP_200_OK,
+                success=True,
+                message="更新文件分片描述成功"
+            )
+        else:
+            return ErrorResponse(
+                code=status.HTTP_404_NOT_FOUND,
+                success=False,
+                message="未找到文件分片"
+            )
+    except Exception as e:
+        return ErrorResponse(
+            code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            success=False,
+            message=f"服务器内部错误: {str(e)}"
+        )
+
+@router.post(
+    "/file/chunk/update_tags",
+    summary="更新知识库文件的分片标签",
+    response_model=SuccessResponse | ErrorResponse,
+    dependencies=[Depends(AuthController.get_current_accessor)],
+    status_code=status.HTTP_200_OK
+)
+async def handle_update_chunk_tags(
+    form: KBFileChunkUpdateTagsForm
+) -> SuccessResponse | ErrorResponse:
+    """
+    更新知识库文件的分片标签
+    
+    Args:
+    - **kb_id**: int = Field(..., description="知识库ID")
+    - **embed_id**: str = Field(..., description="分片ID")
+    - **tags**: list[str] = Field(..., description="分片标签")
+    
+    Returns:
+    - **SuccessResponse**: 成功响应
+    ```
+        code: int = Field(status.HTTP_200_OK, description="响应状态码")
+        message: str = Field("Success", description="返回的响应信息")
+        success: bool = Field(True, description="请求响应状态")
+    ```
+    - **ErrorResponse**: 失败响应
+    ```
+        code: int = Field(status.HTTP_400_BAD_REQUEST, description="响应状态码")
+        message: str = Field("Error", description="返回的响应信息")
+        success: bool = Field(False, description="请求响应状态")
+    ```
+    """
+    try:
+        result = await controller.update_kb_file_chunk_tags(
+            kb_id=form.kb_id,
+            file_id=form.file_id,
+            embed_id=form.embed_id,
+            tags=form.tags
+        )
+        if result:
+            return SuccessResponse(
+                code=status.HTTP_200_OK,
+                success=True,
+                message="更新文件分片标签成功"
+            )
+        else:
+            return ErrorResponse(
+                code=status.HTTP_404_NOT_FOUND,
+                success=False,
+                message="未找到文件分片"
+            )
+    except Exception as e:
+        return ErrorResponse(
+            code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            success=False,
+            message=f"服务器内部错误: {str(e)}"
+        )

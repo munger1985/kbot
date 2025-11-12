@@ -4,8 +4,9 @@ import os
 from typing import Any
 from datetime import datetime, timedelta
 from loguru import logger
-from ms_core import ConfigManager, ModelCategory
-from model import *
+from core.config.settings import get_embed_config
+from core.dictionary import ModelCategory
+from .model import *
 
 
 class ModelPool:
@@ -89,11 +90,11 @@ class ModelPool:
         model_params = model_data["model_params"] if model_data.get("model_params") else {}
 
         # 从Nacos加载配置或使用默认值
-        config = ConfigManager.get_model_config()
-        max_tokens = config.embed.max_tokens
-        timeout = config.embed.timeout
-        max_retries = config.embed.max_retries
-        cache_dir = config.embed.cache_dir
+        config = get_embed_config()
+        max_tokens = config.max_tokens
+        timeout = config.timeout
+        max_retries = config.max_retries
+        cache_dir = config.cache_dir
 
         # 根据配置创建模型实例 
         try:

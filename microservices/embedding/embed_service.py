@@ -1,7 +1,7 @@
 import numpy as np
 from loguru import logger
-from model_pool import ModelPool
-from model.base import BaseEmbedding, EmbeddingResponse
+from .model_pool import ModelPool
+from .model import BaseEmbedding, EmbeddingResponse
 
 
 class EmbeddingService:

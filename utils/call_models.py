@@ -6,12 +6,16 @@ from typing import Any
 from microservices.embedding.model.base import EmbeddingDataItem
 from dao.repositories.kbot_md_prompt_repo import KbotMdPromptRepository
 from .common import encode_image
-from configuration import ConfigManager
+from core.config.settings import get_embed_config, get_llm_config, get_reranker_config, get_vlm_config, get_prompt_config
 
 class CallModel():
     """模型调用类"""
     def __init__(self):
-        self.model_config = ConfigManager.get_model_config()  # 获取模型配置
+        self.embedding_config = get_embed_config()  # 获取 Embedding 模型配置
+        self.llm_config = get_llm_config()  # 获取 LLM 模型配置
+        self.reranker_config = get_reranker_config()  # 获取 Reranker 模型配置
+        self.vlm_config = get_vlm_config()  # 获取 VLMPrompt 模型配置
+        self.prompt_config = get_prompt_config()  # 获取 Prompt 配置
         self.kbot_md_prompt_repo = KbotMdPromptRepository()  # 获取提示信息仓库
 
     async def call_embedding_model(self, 
@@ -32,9 +36,9 @@ class CallModel():
             嵌入数据项列表或None（失败时）
         """
 
-        service_host = self.model_config.embed.service_host
-        service_port = self.model_config.embed.service_port
-        total = self.model_config.embed.timeout
+        service_host = self.embedding_config.service_host
+        service_port = self.embedding_config.service_port
+        total = self.embedding_config.timeout
         timeout = aiohttp.ClientTimeout(total=total)
         url = f"http://{service_host}:{service_port}/v1/embeddings"
         headers = {"Content-Type": "application/json"}
@@ -103,9 +107,9 @@ class CallModel():
             重排序结果列表或None（失败时）
         """
 
-        service_host = self.model_config.reranker.service_host
-        service_port = self.model_config.reranker.service_port
-        total = self.model_config.reranker.timeout
+        service_host = self.reranker_config.service_host
+        service_port = self.reranker_config.service_port
+        total = self.reranker_config.timeout
         timeout = aiohttp.ClientTimeout(total=total)
         url = f"http://{service_host}:{service_port}/v1/rerank"
         headers = {"Content-Type": "application/json"}
@@ -145,9 +149,9 @@ class CallModel():
             异步生成器，逐块产生LLM的响应
         """
 
-        service_host = self.model_config.llm.service_host
-        service_port = self.model_config.llm.service_port
-        total = self.model_config.llm.timeout
+        service_host = self.llm_config.service_host
+        service_port = self.llm_config.service_port
+        total = self.llm_config.timeout
         timeout = aiohttp.ClientTimeout(total=total)
         url = f"http://{service_host}:{service_port}/v1/chat/completions"
         headers = {"Content-Type": "application/json"}
@@ -200,9 +204,9 @@ class CallModel():
             输出文本或None（失败时）
         """
         
-        service_host = self.model_config.vlm.service_host
-        service_port = self.model_config.vlm.service_port
-        total = self.model_config.vlm.timeout
+        service_host = self.vlm_config.service_host
+        service_port = self.vlm_config.service_port
+        total = self.vlm_config.timeout
         timeout = aiohttp.ClientTimeout(total=total)
         url = f"http://{service_host}:{service_port}/v1/inference"
         headers = {"Content-Type": "application/json"}
@@ -216,7 +220,7 @@ class CallModel():
         
         # 如果没有传入 prompt_name，则使用默认的提示信息
         if not prompt_name:
-            prompt_name = self.model_config.prompt.image2text
+            prompt_name = self.prompt_config.image2text
 
         # 获取提示文本
         try:

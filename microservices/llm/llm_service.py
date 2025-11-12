@@ -1,8 +1,8 @@
 import json
 from typing import Any
 from loguru import logger
-from model_pool import ModelPool
-from model import BaseLLM, LLMProvider
+from .model_pool import ModelPool
+from .model import BaseLLM, LLMProvider
 
 
 class LLMService:

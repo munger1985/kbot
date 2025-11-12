@@ -42,11 +42,6 @@ class ElasticsearchEmbeddingRepository(IEmbeddingRepository):
             logger.exception(f"初始化ES连接失败: {e}")
             return False
 
-    async def close(self):
-        """关闭连接（实际上连接由管理器统一管理）"""
-        # 这里不需要关闭client，由管理器统一管理
-        self.es_client = None
-        logger.debug("ES存储库连接已释放")
 
     async def _create_index(self):
         """创建ES索引和映射 - 使用正确的向量维度"""
@@ -537,3 +532,204 @@ class ElasticsearchEmbeddingRepository(IEmbeddingRepository):
         except Exception as e:
             logger.error(f"根据文件ID获取chunk失败: {e}")
             return None
+        
+    async def get_chunk_doc_by_id(self, embed_id: str) -> str | None:
+        """根据ID获取chunk文档 - ES版本"""
+        if self.es_client is None:
+            logger.error("ES客户端未初始化")
+            return None
+        
+        try:
+            # 构建查询
+            query = {
+                "term": {"embed_id": embed_id}
+            }
+            
+            response = await self.es_client.search(
+                index=self.index_name,
+                body={
+                    "query": query,
+                    "size": 1,
+                    "_source": ["chunk_doc"]
+                }
+            )
+            
+            if response["hits"]["hits"]:
+                chunk_doc = response["hits"]["hits"][0]["_source"]["chunk_doc"]
+                logger.info(f"ES成功获取chunk文档，ID: {embed_id}")
+                return chunk_doc
+            
+            logger.info(f"ES未找到embed_id: {embed_id} 对应的记录")
+            return None
+            
+        except Exception as e:
+            logger.error(f"ES获取chunk文档失败: {e}")
+            return None
+
+    async def update_chunk_description(self, embed_id: str, description: str, embeddings: list[float]) -> bool:
+        """更新块描述和嵌入向量 - ES版本"""
+        if self.es_client is None:
+            logger.error("ES客户端未初始化")
+            return False
+        
+        try:
+            # 构建更新文档
+            update_body = {
+                "doc": {
+                    "chunk_metadata": {
+                        "description": description
+                    },
+                    "embedding": embeddings
+                }
+            }
+            
+            response = await self.es_client.update(
+                index=self.index_name,
+                id=embed_id,
+                body=update_body,
+                refresh=True
+            )
+            
+            if response["result"] in ["updated", "noop"]:
+                logger.info(f"ES成功更新chunk描述和向量，ID: {embed_id}")
+                return True
+            else:
+                logger.error(f"ES更新chunk描述和向量失败: {response['result']}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"ES更新chunk描述和向量失败: {e}")
+            return False
+        
+    async def get_all_embeddings(self, 
+                           kb_id: int | None = None,
+                           page_size: int = 1000,
+                           scroll_time: str = "2m") -> list[KbotBizTxtEmbedding]:
+        """查询全部记录 - 支持分页滚动获取所有数据
+        
+        Args:
+            kb_id: 知识库ID，如果为None则查询所有kb_id的记录
+            page_size: 每页大小，默认1000
+            scroll_time: 滚动查询保持时间，默认2分钟
+        
+        Returns:
+            嵌入记录列表
+        """
+        if self.es_client is None:
+            logger.error("ES客户端未初始化")
+            return []
+        
+        try:
+            all_embeddings = []
+            scroll_id = None
+            
+            # 构建查询条件
+            query = {}
+            if kb_id is not None:
+                query = {
+                    "bool": {
+                        "filter": [
+                            {"term": {"kb_id": kb_id}}
+                        ]
+                    }
+                }
+            else:
+                # 如果kb_id为None，查询所有记录
+                query = {"match_all": {}}
+            
+            # 第一次滚动查询
+            response = await self.es_client.search(
+                index=self.index_name,
+                body={
+                    "query": query,
+                    "size": page_size,
+                    "_source": [
+                        "embed_id", "kb_id", "file_id", "chunk_doc", 
+                        "chunk_metadata", "biz_metadata", "embedding", 
+                        "security_level", "status"
+                    ]
+                },
+                scroll=scroll_time
+            )
+            
+            scroll_id = response["_scroll_id"]
+            hits = response["hits"]["hits"]
+            
+            # 处理第一批结果
+            while hits:
+                for hit in hits:
+                    source = hit["_source"]
+                    
+                    # 创建实体对象
+                    embedding = KbotBizTxtEmbedding(
+                        embed_id=source.get("embed_id"),
+                        kb_id=source.get("kb_id"),
+                        file_id=source.get("file_id"),
+                        chunk_doc=source.get("chunk_doc", ""),
+                        chunk_metadata=source.get("chunk_metadata", {}),
+                        biz_metadata=source.get("biz_metadata", {}),
+                        embedding=source.get("embedding", []),  # 这里返回完整的嵌入向量
+                        security_level=source.get("security_level", 1),
+                        status=source.get("status", 1)
+                    )
+                    all_embeddings.append(embedding)
+                
+                # 获取下一批结果
+                response = await self.es_client.scroll(
+                    scroll_id=scroll_id,
+                    scroll=scroll_time
+                )
+                
+                scroll_id = response["_scroll_id"]
+                hits = response["hits"]["hits"]
+            
+            # 清理scroll上下文
+            if scroll_id:
+                await self.es_client.clear_scroll(scroll_id=scroll_id)
+            
+            logger.info(f"ES成功查询到 {len(all_embeddings)} 条记录，kb_id: {kb_id}")
+            return all_embeddings
+            
+        except Exception as e:
+            logger.error(f"ES查询全部记录失败: {e}")
+            # 确保清理scroll上下文
+            if 'scroll_id' in locals() and scroll_id:
+                try:
+                    await self.es_client.clear_scroll(scroll_id=scroll_id)
+                except Exception:
+                    pass
+            return []
+        
+    async def update_tags(self, embed_id: str, tags: list[str]) -> bool:
+        """更新块标签 - ES版本"""
+        if self.es_client is None:
+            logger.error("ES客户端未初始化")
+            return False
+        
+        try:
+            # 构建更新文档
+            update_body = {
+                "doc": {
+                    "biz_metadata": {
+                        "tags": tags  # 直接更新tags字段
+                    }
+                }
+            }
+            
+            response = await self.es_client.update(
+                index=self.index_name,
+                id=embed_id,
+                body=update_body,
+                refresh=True
+            )
+            
+            if response["result"] in ["updated", "noop"]:
+                logger.info(f"ES成功更新标签，ID: {embed_id}, 标签: {tags}")
+                return True
+            else:
+                logger.error(f"ES更新标签失败: {response['result']}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"ES更新标签失败: {e}")
+            return False

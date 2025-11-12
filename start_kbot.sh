@@ -79,20 +79,18 @@ start_service() {
 # 启动主程序（并等待其完全启动）
 start_service "KBot主程序" "$(dirname "$0")" "kbot_main.py" "true" || exit 1
 
-# 定义微服务目录
-MICROSERVICES_DIR="$(dirname "$0")/microservices"
 
 # 启动微服务数组
 declare -A services=(
-    ["Embedding"]="embedding/app.py"
-    ["LLM"]="llm/app.py" 
-    ["Reranker"]="reranker/app.py"
-    ["VLM"]="vlm/app.py"
+    ["Embedding"]="kbot_app_embedding.py"
+    ["LLM"]="kbot_app_llm.py" 
+    ["Reranker"]="kbot_app_reranker.py"
+    ["VLM"]="kbot_app_vlm.py"
 )
 
 # 遍历启动所有微服务
 for service_name in "${!services[@]}"; do
-    start_service "${service_name}微服务" "${MICROSERVICES_DIR}/$(dirname "${services[$service_name]}")" "$(basename "${services[$service_name]}")" "false" || exit 1
+    start_service "${service_name}微服务" "$(dirname "${services[$service_name]}")" "$(basename "${services[$service_name]}")" "false" || exit 1
 done
 
 echo

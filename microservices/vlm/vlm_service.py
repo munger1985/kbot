@@ -1,8 +1,8 @@
 import json
 from loguru import logger
 from typing import Any, AsyncGenerator    
-from model_pool import ModelPool
-from model import BaseVLM
+from .model_pool import ModelPool
+from .model import BaseVLM
 
 
 class VLMService:

@@ -16,7 +16,7 @@ from dao.entities.kbot_biz_txt_embedding import KbotBizTxtEmbedding
 from core.dictionary import FileStatus, ChunkType, SplitStrategy
 from utils.call_models import CallModel
 from .common import check_text_file, update_file_status, save_embeddings
-from configuration.config_manager import ConfigManager
+from core.config.settings import get_prompt_config
 from .summary_parser import SummaryParser
 
 
@@ -30,7 +30,7 @@ class MarkdownParser:
         self.image_dict= []
         self.md = markdown.Markdown(extensions=['tables'])
         self.text_results= []
-        self.model_config = ConfigManager.get_model_config()
+        self.prompt_config = get_prompt_config()
         self.create_dirs()
 
     def create_dirs(self):
@@ -325,7 +325,7 @@ class MarkdownParser:
 
 
             # if self.file_params.parser.get("extract_images", False):
-            vlm_prompt_unique_name = self.model_config.prompt.image2text
+            vlm_prompt_unique_name = self.prompt_config.image2text
             
             if self.file_params.img2txt_model is None:
                 msg = f"img2txt_model not found for id: {self.file_params.img2txt_model}"

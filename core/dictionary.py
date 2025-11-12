@@ -1,16 +1,16 @@
-from enum import Enum, unique
+from enum import IntEnum, Enum
 
-class Status(int, Enum):
+class Status(IntEnum):
     """Status enumeration."""
     ENABLED = 1
     DISABLED = 0
 
-class YesNoEnum(int, Enum):
+class YesNoEnum(IntEnum):
     """Yes or No enumeration."""
     YES = 1
     NO = 0
 
-class DbType(int, Enum):
+class DbType(IntEnum):
     """Database type enumeration."""
     ORACLE = 1
     ADB = 2
@@ -21,14 +21,20 @@ class DbType(int, Enum):
     PINECONE = 7
     WEAVIATE = 8
 
-class ChunkType(int, Enum):
-    """Chunk type enumeration."""
+class ChunkType(IntEnum):
+    """知识块类型枚举"""
     TEXT = 1
     IMAGE = 2
     TABLE = 3
     SUMMARY = 4
 
-class FileStatus(int, Enum):
+class FeedbackType(IntEnum):
+    """反馈类型枚举"""
+    NEUTRAL = 0
+    POSITIVE = 1
+    NEGATIVE = -1
+
+class FileStatus(IntEnum):
     """File status enumeration."""
     UPLOADED = 1
     PENDING_APPROVE = 2
@@ -39,20 +45,19 @@ class FileStatus(int, Enum):
     PARSE_FAILED = 7
     ARCHIVED = 8
 
-@unique
-class ProcessPriority(int, Enum):
+class ProcessPriority(IntEnum):
     """Process priority enumeration."""
     HIGH = 3
     MEDIUM = 2
     LOW = 1
 
-class SecurityLevel(int, Enum):
+class SecurityLevel(IntEnum):
     """Process priority enumeration."""
     LOW = 1
     MEDIUM = 2
     HIGH = 3
 
-class KbCategory(int, Enum):
+class KbCategory(IntEnum):
     """Knowledge base category enumeration."""
     KBOT = 1
     IMAGE_SEARCH = 2
@@ -60,13 +65,13 @@ class KbCategory(int, Enum):
     TRANSLATE = 4
     SUMMARY = 5
 
-class KbStatus(int, Enum):
+class KbStatus(IntEnum):
     """Knowledge base status enumeration."""
     DISABLED = 0
     ENABLED = 1
     ARCHIVED = 2
 
-class ModelCategory(int, Enum):
+class ModelCategory(IntEnum):
     """Model category enumeration."""
     LLM = 1
     TXT_EMBEDDING = 2
@@ -74,13 +79,13 @@ class ModelCategory(int, Enum):
     RERANKER = 4
     VLM = 5
 
-class PromptCategory(int, Enum):
+class PromptCategory(IntEnum):
     """Prompt category enumeration."""
     SYSTEM_PROMPT = 1
     PROMPT_TEMPLATE = 2
     AGENT_PROMPT = 3
 
-class SplitStrategy(int, Enum):
+class SplitStrategy(IntEnum):
     """Split strategy enumeration."""
     FIXED_SIZE = 1
     DOC_STRUCTURE = 2
@@ -88,13 +93,13 @@ class SplitStrategy(int, Enum):
     SEMANTIC = 4
     ROW = 5
 
-class AgentStatus(int, Enum):
+class AgentStatus(IntEnum):
     """Agent status enumeration."""
     DISABLED = 0
     ENABLED = 1
     ARCHIVED = 2
 
-class ToolType(int, Enum):
+class ToolType(IntEnum):
     """Tool type enumeration."""
     KB_SEARCH = 1
     FUNCTION_CALL = 2
@@ -114,19 +119,19 @@ class MCPToolType(Enum):
     CALCULATOR = "calculator"
     CODE_EXECUTION = "code_execution"
     
-class KBSearchType(int, Enum):
+class KBSearchType(IntEnum):
     """Knowledge base search type enumeration."""
     VECTOR = 1
     FULLTEXT = 2
     SUMMARY = 3
     GRAPH = 4
 
-class AccessorType(int, Enum):
+class AccessorType(IntEnum):
     """Accessor type enumeration."""
     USER = 1
     SERVICE = 2
 
-class FileCategory(int, Enum):
+class FileCategory(IntEnum):
     """File category enumeration."""
     TEXT = 1
     IMAGE = 2

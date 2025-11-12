@@ -4,7 +4,7 @@ import jieba
 import jieba.analyse
 from pathlib import Path
 from loguru import logger
-from configuration import ConfigManager
+from core.config.settings import get_tokenizer_config
 from utils.call_models import CallModel
 
 
@@ -17,9 +17,9 @@ class LLMFullTextPreprocessor:
         self.llm_client = CallModel()
         
         # 初始化Jieba配置（用于降级方案）
-        model_config = ConfigManager.get_model_config()
-        self.stopwords_file = model_config.tokenizer.stop_words_path
-        self.custom_dict_file = model_config.tokenizer.custom_dict_path
+        model_config = get_tokenizer_config()
+        self.stopwords_file = model_config.stop_words_path
+        self.custom_dict_file = model_config.custom_dict_path
         self.stopwords: set[str] = self._load_stopwords(self.stopwords_file)
         self._setup_jieba(self.custom_dict_file)
         

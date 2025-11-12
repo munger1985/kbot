@@ -7,6 +7,7 @@ from dao.entities.kbot_biz_txt_embedding import KbotBizTxtEmbedding
 from utils.oracle_vec_handler import OracleVecHandler
 from core.dictionary import ChunkType
 from dao.repositories.kbot_biz_txt_embedding_interface import IEmbeddingRepository
+from utils.common import safe_read_content
 
 
 class OracleEmbeddingRepository(IEmbeddingRepository):
@@ -20,9 +21,15 @@ class OracleEmbeddingRepository(IEmbeddingRepository):
     async def initialize(self, connstr: dict) -> bool:
 
         if connstr is not None:
+            username = connstr.get("user")
+            password = connstr.get("password")
+            if username is None or password is None:
+                logger.error("Oracle连接参数中缺少用户名或密码")
+                return False
+            
             self.conn_params = OracleConnParams(
-                user=connstr.get("user"), # type: ignore
-                password=connstr.get("password"), # type: ignore
+                user=username,
+                password=password,
                 dsn=f"{connstr.get('host')}:{connstr.get('port')}/{connstr.get('service_name')}:pooled"
             )
             return True
@@ -62,11 +69,13 @@ class OracleEmbeddingRepository(IEmbeddingRepository):
             async with self.pool_manager.get_connection_ctx(self.conn_params) as conn:
                 cursor = conn.cursor()
                 # 使用executemany进行批量插入
-                await self.pool_manager._loop.run_in_executor( # type: ignore
-                    None, cursor.executemany, sql, data
-                )
+                if self.pool_manager._loop is None:
+                    logger.error("连接池事件循环不存在")
+                    return False
+                
+                await self.pool_manager._loop.run_in_executor(None, cursor.executemany, sql, data)
                 # 提交事务
-                await self.pool_manager._loop.run_in_executor(None, conn.commit)  # type: ignore
+                await self.pool_manager._loop.run_in_executor(None, conn.commit)
                 logger.info(f"成功批量插入 {len(data)} 条记录")
                 return True
                 
@@ -418,3 +427,88 @@ class OracleEmbeddingRepository(IEmbeddingRepository):
             
         return chunks
 
+    async def get_chunk_doc_by_id(self, embed_id: str) -> str | None:
+        """根据ID获取chunk文档"""
+        if self.conn_params is None:
+            return None
+
+        sql = """
+            SELECT CHUNK_DOC
+            FROM KBOT_BIZ_TXT_EMBEDDING
+            WHERE EMBED_ID = :embed_id
+        """
+        params = {
+            "embed_id": embed_id
+        }
+        result = await self.pool_manager.query(self.conn_params, sql, params)
+        if not result or len(result) == 0:
+            return None
+        
+        row = result[0]
+        chunk_doc = safe_read_content(row[0])
+        return chunk_doc
+
+
+
+    async def update_chunk_description(self, embed_id: str, description: str, embeddings: list[float]) -> bool:
+        """更新块描述"""
+        if self.conn_params is None:
+            return False
+        
+        try:
+            # 构建更新SQL
+            sql = """
+                UPDATE KBOT_BIZ_TXT_EMBEDDING
+                SET CHUNK_METADATA = JSON_MERGEPATCH(
+                    CHUNK_METADATA,
+                    JSON_OBJECT('description' VALUE :description)
+                ),
+                EMBEDDING = :embeddings
+                WHERE EMBED_ID = :embed_id
+            """
+            params = {
+                "embed_id": embed_id,
+                "description": description,
+                "embeddings": OracleVecHandler().convert(vec=embeddings, to_string=True),
+            }
+            result = await self.pool_manager.execute_dml(self.conn_params, sql, params)
+            return result > 0
+            
+        except Exception as e:
+            logger.error(f"Oracle更新描述失败: {e}")
+            return False
+        
+    
+    async def update_tags(self, embed_id: str, tags: list[str]) -> bool:
+        """更新块标签 - 简化版本，直接设置BIZ_METADATA"""
+        if self.conn_params is None:
+            return False
+        
+        try:
+            # 构建完整的biz_metadata JSON
+            biz_metadata = {"tags": tags}
+            biz_metadata_json = json.dumps(biz_metadata, ensure_ascii=False)
+            
+            sql = """
+                UPDATE KBOT_BIZ_TXT_EMBEDDING
+                SET BIZ_METADATA = :biz_metadata
+                WHERE EMBED_ID = :embed_id
+            """
+            params = {
+                "embed_id": embed_id,
+                "biz_metadata": biz_metadata_json
+            }
+            
+            result = await self.pool_manager.execute_dml(self.conn_params, sql, params)
+            success = result > 0
+            
+            if success:
+                logger.info(f"Oracle成功更新标签，ID: {embed_id}, 标签: {tags}")
+            else:
+                logger.warning(f"Oracle未找到记录或更新失败，ID: {embed_id}")
+                
+            return success
+                
+        except Exception as e:
+            logger.error(f"Oracle更新标签失败: {e}")
+            return False

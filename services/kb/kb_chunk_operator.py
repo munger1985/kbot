@@ -1,5 +1,5 @@
 from loguru import logger
-from configuration import ConfigManager
+from core.config.settings import get_prompt_config
 from dao.repositories.kbot_md_kb_repo import KbotMdKbRepository
 from dao.repositories.kbot_md_prompt_repo import KbotMdPromptRepository
 from dao.repositories.kbot_biz_txt_embedding_factory import EmbeddingRepositoryFactory
@@ -77,8 +77,8 @@ class KBChunkOperator:
                 return False
             
             # 获取摘要提示词
-            model_config = ConfigManager.get_model_config() 
-            prompt_name = model_config.prompt.summary
+            model_config = get_prompt_config() 
+            prompt_name = model_config.summary
             summary_prompt = await KbotMdPromptRepository().get_prompt_by_unique_name(prompt_name)
             if not summary_prompt:
                 msg = f"摘要总结提示词不存在，使用默认提示词"
@@ -228,3 +228,86 @@ class KBChunkOperator:
         except Exception as e:
             logger.error(f"获取文件 {file_id} 的分片失败: {str(e)}")
             return []
+        
+    async def update_chunk_description(
+            self,
+            embed_id: str,
+            kb_id: int,
+            description: str
+        ) -> bool:
+        """更新知识库文件的分片描述"""
+        kb = await KbotMdKbRepository().get_by_id(kb_id)
+        if kb is None:
+            logger.error(f"知识库 {kb_id} 不存在，无法更新分片 {embed_id} 的描述")
+            return False
+        embed_model = kb.txt_embed_model_id
+        if embed_model is None:
+            logger.error(f"知识库 {kb_id} 没有向量模型，无法更新分片")
+            return False
+        
+        embed_repo = await EmbeddingRepositoryFactory.create_repository(kb_id=kb_id)
+        if embed_repo is None:
+            logger.error(f"知识库 {kb_id} 对应的向量库不存在，无法更新分片 {embed_id} 的描述")
+            return False
+        
+        # 1. 获取分片原文
+        chunk_doc = await embed_repo.get_chunk_doc_by_id(embed_id=embed_id)
+        if chunk_doc is None:
+            logger.error(f"未找到分片 {embed_id} 的原文，无法更新描述")
+            return False
+        
+        # 2. 将描述添加到分片原文中后重新生成向量
+        chunk_doc_with_desc = f"文本描述: {description}\n 原文: {chunk_doc}"
+        
+        
+        # 3. 获取新分片的向量
+        response_data = await CallModel().call_embedding_model(embed_model, [chunk_doc_with_desc])
+        if response_data is None:
+            logger.error(f"获取分片 chunk: {embed_id} 描述后的 embedding 向量失败")
+            return False
+        else:
+            logger.info(f"成功获取分片 chunk: {embed_id} 描述后的 embedding 向量")
+            embeddings = [item.embedding for item in response_data]
+
+        # 4. 更新分片描述和向量
+        try:
+            r = await embed_repo.update_chunk_description(embed_id=embed_id, description=description, embeddings=embeddings[0])
+            if r:
+                logger.info(f"成功更新分片 {embed_id} 的描述")
+            else:
+                logger.warning(f"未找到分片 {embed_id} ，未更新描述")
+            
+            return r
+        except Exception as e:
+            logger.error(f"更新分片 {embed_id} 的描述失败: {str(e)}")
+            return False
+
+    async def update_chunk_tags(
+            self,
+            embed_id: str,
+            kb_id: int,
+            tags: list[str]
+        ) -> bool:
+        """更新知识库文件的分片标签"""
+        kb = await KbotMdKbRepository().get_by_id(kb_id)
+        if kb is None:
+            logger.error(f"知识库 {kb_id} 不存在，无法更新分片 {embed_id} 的标签")
+            return False
+        
+        embed_repo = await EmbeddingRepositoryFactory.create_repository(kb_id=kb_id)
+        if embed_repo is None:
+            logger.error(f"知识库 {kb_id} 对应的向量库不存在，无法更新分片 {embed_id} 的标签")
+            return False
+        
+        # 更新分片标签
+        try:
+            r = await embed_repo.update_tags(embed_id=embed_id, tags=tags)
+            if r:
+                logger.info(f"成功更新分片 {embed_id} 的标签")
+            else:
+                logger.warning(f"未找到分片 {embed_id} ，未更新标签")
+            
+            return r
+        except Exception as e:
+            logger.error(f"更新分片 {embed_id} 的标签失败: {str(e)}")
+            return False

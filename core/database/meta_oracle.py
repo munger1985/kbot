@@ -3,31 +3,25 @@ from sqlalchemy import text
 from typing import AsyncIterator
 from loguru import logger
 from contextlib import asynccontextmanager
-from configuration import ConfigManager
+from core.config.settings import get_settings
 
-
-# 通过 nacos_manager 获取 database 配置
-try:
-    db_config = ConfigManager.get_db_config()
-    username = db_config.oracle.username
-    password = db_config.oracle.password
-    host = db_config.oracle.host
-    port = db_config.oracle.port
-    service_name = db_config.oracle.service_name
-    url = f"oracle+oracledb://{username}:{password}@{host}:{port}/?service_name={service_name}"
-    echo = db_config.sqlalchemy.echo
-    pool_size = db_config.sqlalchemy.pool_size
-    pool_timeout = db_config.sqlalchemy.pool_timeout
-    max_overflow = db_config.sqlalchemy.max_overflow
-    pool_pre_ping = db_config.sqlalchemy.pool_pre_ping
-    pool_recycle = db_config.sqlalchemy.pool_recycle
-    pool_use_lifo = db_config.sqlalchemy.pool_use_lifo
+# 从配置中获取数据库连接信息
+db_config = get_settings()
+username = db_config.oracle.username
+password = db_config.oracle.password
+host = db_config.oracle.host
+port = db_config.oracle.port
+service_name = db_config.oracle.service_name
+url = f"oracle+oracledb://{username}:{password}@{host}:{port}/?service_name={service_name}"
+echo = db_config.sqlalchemy.echo
+pool_size = db_config.sqlalchemy.pool_size
+pool_timeout = db_config.sqlalchemy.pool_timeout
+max_overflow = db_config.sqlalchemy.max_overflow
+pool_pre_ping = db_config.sqlalchemy.pool_pre_ping
+pool_recycle = db_config.sqlalchemy.pool_recycle
+pool_use_lifo = db_config.sqlalchemy.pool_use_lifo
     
-except Exception as e:
-    # 如果获取 database 配置失败，则抛出异常
-    logger.error(f"无法从 nacos 获取 database 配置: {str(e)}")
-    raise RuntimeError(f"无法从 nacos 获取 database 配置: {str(e)}") from e
-
+# 创建数据库引擎
 try:
     async_engine = create_async_engine(
         url,

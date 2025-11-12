@@ -1,7 +1,6 @@
 import asyncio
 import sys
 from pathlib import Path
-from loguru import logger
 
 # Add both project root and backend directory to Python path
 project_root = Path(__file__).resolve().parent.parent
@@ -43,19 +42,16 @@ async def test_agent_with_mcp_tools():
                     
         except Exception as e:
             print(f"❌ chat流程失败: {e}")
-            logger.error(f"chat流程测试失败: {e}")
+            print(f"chat流程测试失败: {e}")
         
     except Exception as e:
         print(f"💥 测试过程中发生严重错误: {e}")
-        logger.error(f"测试失败: {e}")
+        print(f"测试失败: {e}")
         raise
 
 
 async def main():
     """主测试函数"""
-    
-    # 配置日志
-    logger.add("mcp_test.log", rotation="10 MB", retention="7 days", level="DEBUG")
     
     print("🚀 开始MCP工具调用系统测试")
     

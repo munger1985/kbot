@@ -4,8 +4,10 @@ import asyncio
 from loguru import logger
 from typing import Any
 from datetime import datetime, timedelta
-from model import *
-from ms_core import ConfigManager, ModelCategory
+
+from .model import *
+from core.dictionary import ModelCategory
+from core.config.settings import get_reranker_config
 
 
 class ModelPool:
@@ -89,8 +91,8 @@ class ModelPool:
         model_params = model_data["model_params"] if model_data.get("model_params") else {}
         
         # 从 Nacos 获取配置信息
-        config = ConfigManager.get_model_config()
-        cache_dir = config.embed.cache_dir
+        config = get_reranker_config()
+        cache_dir = config.cache_dir
 
         # 根据模型类型创建相应的配置
         if provider == RerankerProvider.LOCAL.value:
@@ -136,7 +138,7 @@ class ModelPool:
                     trust_remote_code = model_params.get("trust_remote_code", True),
                     local_files_only = model_params.get("local_files_only", False),
                     max_memory = model_params.get("max_memory", None),
-                    cache_dir = config.reranker.cache_dir or "./cached_models"
+                    cache_dir = cache_dir or "./cached_models"
                 )
             
         elif provider == RerankerProvider.COHERE.value:

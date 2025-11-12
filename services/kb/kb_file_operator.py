@@ -5,7 +5,7 @@ import shutil
 from pathlib import Path
 from fastapi import UploadFile
 from loguru import logger
-from configuration import ConfigManager
+from core.config.settings import get_app_config
 from dao.entities.kbot_md_kb_batch import KbotMdKbBatch
 from dao.entities.kbot_md_kb_files import KbotMdKbFiles
 from core.dictionary import FileStatus, YesNoEnum
@@ -25,9 +25,9 @@ class KBFileOperator:
     def __init__(self) -> None:
         '''初始化文件上传/删除服务'''
 
-        config = ConfigManager.get_app_config()
-        self.file_storage = config.kbot.file_storage
-        self.upload_workers = config.kbot.upload_workers
+        config = get_app_config()
+        self.file_storage = config.file_storage
+        self.upload_workers = config.upload_workers
 
 
     def save_file(self, file: UploadFile, domain_id: int, kb_id: int, batch_name:str, overwrite: bool) -> dict:
@@ -544,4 +544,18 @@ class KBFileOperator:
             logger.error("无效的删除参数: 必须提供kb_id、batch_id或file_ids之一")
             return result
         
-
+    async def update_file_tags(
+        self,
+        file_id: str,
+        tags: list[str]
+    ) -> bool:
+        """更新知识库文件的标签"""
+        try:
+            result = await KbotMdKbFilesRepository().update_tags(
+                file_id=file_id,
+                tags=tags
+            )
+            return result
+        except Exception as e:
+            logger.error(f"更新文件标签失败: {str(e)}")
+            return False

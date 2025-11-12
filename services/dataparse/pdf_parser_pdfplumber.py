@@ -18,7 +18,7 @@ from core.dictionary import FileStatus, ChunkType, SplitStrategy
 from utils.call_models import CallModel
 from .common import check_text_file
 import traceback
-from configuration.config_manager import ConfigManager
+from core.config.settings import get_prompt_config
 
 
 class PDFPlumberParser:
@@ -41,7 +41,7 @@ class PDFPlumberParser:
         self.tables_info: list[dict] = []
         self.page_content: list[dict] = []  # Stores complete page content with placeholders
         self.remove_header_footer = remove_header_footer
-        self.model_config = ConfigManager.get_model_config()
+        self.prompt_config = get_prompt_config()
 
         self.chunk_size = 0
         self.chunk_overlap = 0
@@ -112,7 +112,7 @@ class PDFPlumberParser:
     async def _process_images_embeddings(self) -> list:
         if self.file_params.img2txt == 1:
             # if self.file_params.parser.get("extract_images", False):
-            vlm_prompt_unique_name = self.model_config.prompt.image2text
+            vlm_prompt_unique_name = self.prompt_config.image2text
 
             if self.file_params.img2txt_model is None:
                 msg = f"Image to text model not found for id: {self.file_params.img2txt_model}"
