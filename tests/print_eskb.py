@@ -2,10 +2,15 @@
 import asyncio
 from pathlib import Path
 import sys
+from dotenv import load_dotenv
 
 # Add both project root and backend directory to Python path
 project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(project_root))
+
+# 加载环境变量
+env_path = project_root / ".env"
+load_dotenv(env_path)
 
 # Use absolute imports from project root
 from dao.repositories.kbot_biz_txt_embedding_factory import EmbeddingRepositoryFactory
@@ -20,7 +25,7 @@ async def print_all_embeddings(max_display: int = 50) -> bool:
     Returns:
         是否执行成功
     """
-    kb_id = 104
+    kb_id = 30 # 104
     try:
         print(f"开始获取嵌入记录，kb_id: {kb_id}")
         embed_repo = await EmbeddingRepositoryFactory().create_repository(kb_id)
