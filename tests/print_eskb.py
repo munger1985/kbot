@@ -25,7 +25,7 @@ async def print_all_embeddings(max_display: int = 50) -> bool:
     Returns:
         是否执行成功
     """
-    kb_id = 30 # 104
+    kb_id = 104
     try:
         print(f"开始获取嵌入记录，kb_id: {kb_id}")
         embed_repo = await EmbeddingRepositoryFactory().create_repository(kb_id)

@@ -479,36 +479,59 @@ class OracleEmbeddingRepository(IEmbeddingRepository):
             return False
         
     
-    async def update_tags(self, embed_id: str, tags: list[str]) -> bool:
-        """更新块标签 - 简化版本，直接设置BIZ_METADATA"""
+    async def update_tags(self, file_id: str, tags: list[str]) -> bool:
+        """根据文件ID批量更新块标签"""
         if self.conn_params is None:
             return False
         
         try:
-            # 构建完整的biz_metadata JSON
-            biz_metadata = {"tags": tags}
-            biz_metadata_json = json.dumps(biz_metadata, ensure_ascii=False)
+            # 先查询现有的biz_metadata
+            query_sql = """
+                SELECT BIZ_METADATA 
+                FROM KBOT_BIZ_TXT_EMBEDDING 
+                WHERE FILE_ID = :file_id 
+                AND ROWNUM = 1
+            """
+            query_params = {"file_id": file_id}
             
-            sql = """
+            result = await self.pool_manager.query(self.conn_params, query_sql, query_params)
+            
+            if not result:
+                logger.warning(f"Oracle未找到记录，文件ID: {file_id}")
+                return False
+            
+            # 处理biz_metadata（可能为None、空字符串或有效JSON）
+            existing_metadata = {}
+            current_metadata = result[0][0]
+            
+            if current_metadata:
+                if isinstance(current_metadata, str):
+                    try:
+                        existing_metadata = json.loads(current_metadata)
+                    except json.JSONDecodeError:
+                        logger.warning(f"Oracle解析biz_metadata失败，文件ID: {file_id}，内容: {current_metadata}")
+                        existing_metadata = {}
+                elif isinstance(current_metadata, dict):
+                    existing_metadata = current_metadata
+            
+            # 更新tags字段，保留其他字段
+            existing_metadata["tags"] = tags
+            updated_metadata_json = json.dumps(existing_metadata, ensure_ascii=False)
+            
+            # 更新数据库
+            update_sql = """
                 UPDATE KBOT_BIZ_TXT_EMBEDDING
                 SET BIZ_METADATA = :biz_metadata
-                WHERE EMBED_ID = :embed_id
+                WHERE FILE_ID = :file_id
             """
-            params = {
-                "embed_id": embed_id,
-                "biz_metadata": biz_metadata_json
+            update_params = {
+                "file_id": file_id,
+                "biz_metadata": updated_metadata_json
             }
             
-            result = await self.pool_manager.execute_dml(self.conn_params, sql, params)
-            success = result > 0
-            
-            if success:
-                logger.info(f"Oracle成功更新标签，ID: {embed_id}, 标签: {tags}")
-            else:
-                logger.warning(f"Oracle未找到记录或更新失败，ID: {embed_id}")
-                
-            return success
-                
+            result = await self.pool_manager.execute_dml(self.conn_params, update_sql, update_params)
+            return result > 0
+                      
         except Exception as e:
             logger.error(f"Oracle更新标签失败: {e}")
             return False

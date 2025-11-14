@@ -284,30 +284,32 @@ class KBChunkOperator:
 
     async def update_chunk_tags(
             self,
-            embed_id: str,
+            file_id: str,
             kb_id: int,
             tags: list[str]
         ) -> bool:
         """更新知识库文件的分片标签"""
         kb = await KbotMdKbRepository().get_by_id(kb_id)
         if kb is None:
-            logger.error(f"知识库 {kb_id} 不存在，无法更新分片 {embed_id} 的标签")
+            logger.error(f"知识库 {kb_id} 不存在，无法更新文件 {file_id} 的标签")
             return False
         
         embed_repo = await EmbeddingRepositoryFactory.create_repository(kb_id=kb_id)
         if embed_repo is None:
-            logger.error(f"知识库 {kb_id} 对应的向量库不存在，无法更新分片 {embed_id} 的标签")
+            logger.error(f"知识库 {kb_id} 对应的向量库不存在，无法更新文件 {file_id} 的标签")
             return False
         
         # 更新分片标签
         try:
-            r = await embed_repo.update_tags(embed_id=embed_id, tags=tags)
+            r = await embed_repo.update_tags(file_id=file_id, tags=tags)
+
             if r:
-                logger.info(f"成功更新分片 {embed_id} 的标签")
+                logger.info(f"成功更新文件 {file_id} 分片的标签")
             else:
-                logger.warning(f"未找到分片 {embed_id} ，未更新标签")
+                logger.warning(f"更新文件 {file_id} 分片的标签失败")
             
             return r
+        
         except Exception as e:
-            logger.error(f"更新分片 {embed_id} 的标签失败: {str(e)}")
+            logger.error(f"更新文件 {file_id} 分片的标签失败: {str(e)}")
             return False

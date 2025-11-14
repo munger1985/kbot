@@ -731,7 +731,7 @@ async def handle_update_chunk_description(
     "/file/chunk/update_tags",
     summary="更新知识库文件的分片标签",
     response_model=SuccessResponse | ErrorResponse,
-    dependencies=[Depends(AuthController.get_current_accessor)],
+    # dependencies=[Depends(AuthController.get_current_accessor)],
     status_code=status.HTTP_200_OK
 )
 async def handle_update_chunk_tags(
@@ -742,8 +742,8 @@ async def handle_update_chunk_tags(
     
     Args:
     - **kb_id**: int = Field(..., description="知识库ID")
-    - **embed_id**: str = Field(..., description="分片ID")
-    - **tags**: list[str] = Field(..., description="分片标签")
+    - **file_id**: str = Field(..., description="文件ID")
+    - **tags**: list[str] = Field(..., description="文件分片标签")
     
     Returns:
     - **SuccessResponse**: 成功响应
@@ -763,7 +763,6 @@ async def handle_update_chunk_tags(
         result = await controller.update_kb_file_chunk_tags(
             kb_id=form.kb_id,
             file_id=form.file_id,
-            embed_id=form.embed_id,
             tags=form.tags
         )
         if result:

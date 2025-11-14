@@ -235,7 +235,6 @@ class KBController:
             self,
             kb_id: int,
             file_id: str,
-            embed_id: str,
             tags: list[str]
         ) -> bool:
         """更新知识库文件的分片标签"""
@@ -243,7 +242,7 @@ class KBController:
             # 1. 更新分片标签
             chunk_result = await KBChunkOperator().update_chunk_tags(
                 kb_id=kb_id,
-                embed_id=embed_id,
+                file_id=file_id,
                 tags=tags
             )
             if not chunk_result:
@@ -255,7 +254,7 @@ class KBController:
                 tags=tags
             )
             if not file_result:
-                logger.warning(f"文件chunk标签更新成功，但是文件标签更新失败, file_id: {file_id}")
+                logger.warning(f"文件 {file_id} 分片标签更新成功，但是文件标签更新失败")
             
             return file_result
         

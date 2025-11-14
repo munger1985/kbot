@@ -1,3 +1,5 @@
+import json
+from loguru import logger
 from typing import Sequence
 from sqlalchemy import select, delete, and_, update, text
 from datetime import datetime
@@ -218,13 +220,48 @@ class KbotMdKbFilesRepository:
     
     async def update_tags(self, file_id: str, tags: list[str]) -> bool:
         """更新知识库文件的标签"""
-        async with get_session() as session:
-            await session.execute(
-                update(KbotMdKbFiles)
-                .where(
-                        KbotMdKbFiles.file_id == file_id
+        try:
+            async with get_session() as session:
+                # 先查询现有的biz_metadata
+                result = await session.execute(
+                    select(KbotMdKbFiles.biz_metadata)
+                    .where(KbotMdKbFiles.file_id == file_id)
                 )
-                .values(tags=tags)
+                record = result.scalar_one_or_none()
+                
+                if record is None:
+                    logger.warning(f"KbotMdKbFiles未找到记录，文件ID: {file_id}")
+                    return False
+                
+                # 处理biz_metadata（可能为None、空字典或有效JSON）
+                existing_metadata = {}
+                if record:
+                    if isinstance(record, dict):
+                        existing_metadata = record
+                    elif isinstance(record, str):
+                        try:
+                            existing_metadata = json.loads(record)
+                        except json.JSONDecodeError:
+                            logger.warning(f"KbotMdKbFiles解析biz_metadata失败，文件ID: {file_id}，内容: {record}")
+                            existing_metadata = {}
+                
+                # 更新tags字段，保留其他字段
+                existing_metadata["tags"] = tags
+                
+                # 将字典转换为JSON字符串
+                updated_metadata_json = json.dumps(existing_metadata, ensure_ascii=False)
+                
+                # 更新数据库
+                await session.execute(
+                    update(KbotMdKbFiles)
+                    .where(KbotMdKbFiles.file_id == file_id)
+                    .values(biz_metadata=updated_metadata_json)
                 )
-            await session.commit()
-            return True
+                await session.commit()
+                
+                logger.info(f"KbotMdKbFiles成功更新标签，文件ID: {file_id}, 标签: {tags}")
+                return True
+                
+        except Exception as e:
+            logger.error(f"KbotMdKbFiles更新标签失败: {e}")
+            return False

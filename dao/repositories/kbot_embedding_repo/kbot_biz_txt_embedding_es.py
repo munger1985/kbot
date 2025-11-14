@@ -700,35 +700,44 @@ class ElasticsearchEmbeddingRepository(IEmbeddingRepository):
                     pass
             return []
         
-    async def update_tags(self, embed_id: str, tags: list[str]) -> bool:
-        """更新块标签 - ES版本"""
+    async def update_tags(self, file_id: str, tags: list[str]) -> bool:
+        """根据文件ID更新块标签 - ES版本"""
         if self.es_client is None:
             logger.error("ES客户端未初始化")
             return False
         
         try:
-            # 构建更新文档
-            update_body = {
-                "doc": {
-                    "biz_metadata": {
-                        "tags": tags  # 直接更新tags字段
-                    }
-                }
-            }
-            
-            response = await self.es_client.update(
+            # 使用update_by_query和script来只更新tags字段，保留其他字段
+            response = await self.es_client.update_by_query(
                 index=self.index_name,
-                id=embed_id,
-                body=update_body,
+                body={
+                    "query": {
+                        "term": {
+                            "file_id": file_id
+                        }
+                    },
+                    "script": {
+                        "source": """
+                            if (ctx._source.biz_metadata == null) {
+                                ctx._source.biz_metadata = [:];
+                            }
+                            if (ctx._source.biz_metadata instanceof Map) {
+                                ctx._source.biz_metadata.tags = params.tags;
+                            } else {
+                                ctx._source.biz_metadata = ['tags': params.tags];
+                            }
+                        """,
+                        "params": {
+                            "tags": tags
+                        },
+                        "lang": "painless"
+                    }
+                },
                 refresh=True
             )
             
-            if response["result"] in ["updated", "noop"]:
-                logger.info(f"ES成功更新标签，ID: {embed_id}, 标签: {tags}")
-                return True
-            else:
-                logger.error(f"ES更新标签失败: {response['result']}")
-                return False
+            updated_count = response.get("updated", 0)
+            return updated_count > 0
                 
         except Exception as e:
             logger.error(f"ES更新标签失败: {e}")
