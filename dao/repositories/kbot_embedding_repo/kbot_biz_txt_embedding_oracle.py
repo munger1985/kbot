@@ -459,8 +459,8 @@ class OracleEmbeddingRepository(IEmbeddingRepository):
             # 构建更新SQL
             sql = """
                 UPDATE KBOT_BIZ_TXT_EMBEDDING
-                SET CHUNK_METADATA = JSON_MERGEPATCH(
-                    CHUNK_METADATA,
+                SET BIZ_METADATA = JSON_MERGEPATCH(
+                    BIZ_METADATA,
                     JSON_OBJECT('description' VALUE :description)
                 ),
                 EMBEDDING = :embeddings

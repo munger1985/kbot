@@ -576,7 +576,7 @@ class ElasticsearchEmbeddingRepository(IEmbeddingRepository):
             # 构建更新文档
             update_body = {
                 "doc": {
-                    "chunk_metadata": {
+                    "biz_metadata": {
                         "description": description
                     },
                     "embedding": embeddings
