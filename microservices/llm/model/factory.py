@@ -1,17 +1,7 @@
-from enum import Enum
 from .base import BaseLLM, LLMConfig
 from .openai_client import OpenaiClient
 from .oci_client import OCIClient
-
-
-class LLMProvider(str, Enum):
-    """支持的LLM提供商枚举"""
-    OPENAI = "openai"
-    OCI = "oci"
-    # 随着实现逐步添加更多提供商
-    # AZURE = "azure"
-    # HUGGINGFACE = "huggingface"
-    # LOCAL = "local"
+from core.dictionary import LLMProvider
 
 
 def create_llm_model(config: LLMConfig) -> BaseLLM:

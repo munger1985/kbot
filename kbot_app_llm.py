@@ -25,9 +25,10 @@ from loguru import logger
 
 from core.config.settings import get_settings, get_app_config
 from core.logger_manager import LogConfig, LogManager
+from core.dictionary import LLMProvider
 from microservices.llm.llm_service import LLMService
 from microservices.llm.schema import *
-from microservices.llm.model import LLMProvider
+
 
 
 # 加载环境变量配置

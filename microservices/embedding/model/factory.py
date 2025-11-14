@@ -1,19 +1,10 @@
-from enum import Enum
 from .base import BaseEmbedding, EmbeddingConfig
 from .local_client import LocalEmbedding
 from .openai_client import OpenAIEmbedding
 from .azure_client import AzureEmbedding
 from .cohere_client import CohereEmbedding
 from .oci_client import OCIEmbedding
-
-
-class EmbeddingProvider(str, Enum):
-    """支持的嵌入服务提供商枚举"""
-    LOCAL = "local"
-    OPENAI = "openai"
-    AZURE = "azure"
-    COHERE = "cohere"
-    OCI = "oci"
+from core.dictionary import EmbeddingProvider
 
 
 def create_embedding_model(config: EmbeddingConfig) -> BaseEmbedding:

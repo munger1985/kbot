@@ -1,6 +1,6 @@
 import numpy as np
 from loguru import logger
-from .model_pool import ModelPool
+from .model_pool import EmbeddingModelPool
 from .model import BaseEmbedding, EmbeddingResponse
 
 
@@ -9,7 +9,7 @@ class EmbeddingService:
     
     def __init__(self):
         """初始化嵌入服务实例。"""
-        self._model_pool = ModelPool()
+        self._model_pool = EmbeddingModelPool()
         self._initialized = False
         
     async def initialize(self):

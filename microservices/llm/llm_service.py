@@ -1,8 +1,9 @@
 import json
 from typing import Any
 from loguru import logger
-from .model_pool import ModelPool
-from .model import BaseLLM, LLMProvider
+from .model_pool import LLMModelPool
+from .model import BaseLLM
+from core.dictionary import LLMProvider
 
 
 class LLMService:
@@ -10,7 +11,7 @@ class LLMService:
 
     def __init__(self) -> None:
         """初始化LLM服务。"""
-        self._model_pool = ModelPool()
+        self._model_pool = LLMModelPool()
         self._initialized = False
 
     async def initialize(self):

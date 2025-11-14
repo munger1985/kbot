@@ -138,3 +138,30 @@ class FileCategory(IntEnum):
     AUDIO = 3
     VIDEO = 4
     OTHER = 5
+
+class EmbeddingProvider(str, Enum):
+    """支持的嵌入服务提供商枚举"""
+    LOCAL = "local"
+    OPENAI = "openai"
+    AZURE = "azure"
+    COHERE = "cohere"
+    OCI = "oci"
+
+class LLMProvider(str, Enum):
+    """支持的LLM提供商枚举"""
+    OPENAI = "openai"
+    OCI = "oci"
+    # 随着实现逐步添加更多提供商
+    # AZURE = "azure"
+    # HUGGINGFACE = "huggingface"
+    # LOCAL = "local"
+
+class RerankerProvider(str, Enum):
+    """支持的 reranker 模型枚举"""
+    LOCAL = "local"
+    COHERE = "cohere"
+
+class VLMProvider(str, Enum):
+    """支持的 VLM 提供商枚举"""
+    OPENAI = "openai"     # 目前仅支持 OpenAI 兼容的云提供商
+    # 随着实现添加更多提供商
