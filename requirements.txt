@@ -20,7 +20,6 @@ numpy==2.3.1
 spacy==3.8.7
 transformers==4.53.1
 uvicorn==0.34.3
-redis==6.4.0
 pdfplumber==0.11.7
 pdfminer.six==20250506
 pillow==11.3.0
@@ -28,7 +27,6 @@ pandas==2.3.1
 anthropic==0.57.1
 python-multipart==0.0.20
 pdf2image==1.17.0
-nacos-sdk-python==2.0.9
 PyPDF2==3.0.1
 humanfriendly==10.0
 python-jose==3.5.0

@@ -216,4 +216,15 @@ class KbotMdKbFilesRepository:
             await session.commit()
             return True
     
-        
+    async def update_tags(self, file_id: str, tags: list[str]) -> bool:
+        """更新知识库文件的标签"""
+        async with get_session() as session:
+            await session.execute(
+                update(KbotMdKbFiles)
+                .where(
+                        KbotMdKbFiles.file_id == file_id
+                )
+                .values(tags=tags)
+                )
+            await session.commit()
+            return True

@@ -1,12 +1,8 @@
 from enum import Enum
 from .base import BaseVLM
 from .openai_client import OpenAIVLM, OpenAIVLMConfig
+from core.dictionary import VLMProvider
 
-
-class VLMProvider(str, Enum):
-    """支持的 VLM 提供商枚举"""
-    OPENAI = "openai"     # 目前仅支持 OpenAI 兼容的云提供商
-    # 随着实现添加更多提供商
 
 def create_vlm_model(config: OpenAIVLMConfig) -> BaseVLM:
     """根据提供的配置创建 VLM 模型

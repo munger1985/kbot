@@ -1,8 +1,8 @@
 import json
 from loguru import logger
 from typing import Any, AsyncGenerator    
-from model_pool import ModelPool
-from model import BaseVLM
+from .model_pool import VLMModelPool
+from .model import BaseVLM
 
 
 class VLMService:
@@ -14,7 +14,7 @@ class VLMService:
         """
         初始化VLM服务
         """
-        self._model_pool = ModelPool()
+        self._model_pool = VLMModelPool()
         self._initialized = False
         
     async def initialize(self):

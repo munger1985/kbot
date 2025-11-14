@@ -1,0 +1,11 @@
+# core/config/production.toml
+[app]
+debug = false
+file_storage = "/app/knowledge_base"
+
+[app.log]
+level = "INFO"
+dir = "/app/logs/"
+
+[llm]
+temperature = 0.3

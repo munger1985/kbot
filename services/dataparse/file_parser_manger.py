@@ -1,7 +1,7 @@
 import asyncio
 import multiprocessing
 from loguru import logger
-from configuration import ConfigManager
+from core.config.settings import get_app_config
 from core.logger_manager import LogManager, LogConfig
 from services.dataparse.file_parser_service import start_file_parse_service, shutdown_file_parse_service
 
@@ -55,13 +55,13 @@ class FileParserManager:
         此函数作为multiprocessing.Process的目标函数。
         """
         # 在子进程中初始化日志
-        log_config = ConfigManager.get_app_config()
-        log_dir = log_config.kbot.log.dir
-        log_level = log_config.kbot.log.level
-        rotation = log_config.kbot.log.rotation
-        retention = log_config.kbot.log.retention
-        max_parallel_workers = log_config.kbot.parser.max_workers
-        check_interval = log_config.kbot.parser.check_interval
+        log_config = get_app_config()
+        log_dir = log_config.log.dir
+        log_level = log_config.log.level
+        rotation = log_config.log.rotation
+        retention = log_config.log.retention
+        max_parallel_workers = log_config.parser.max_workers
+        check_interval = log_config.parser.check_interval
             
         # 初始化日志
         conf = LogConfig(service_name="file-parser", log_dir=log_dir, level=log_level, rotation=rotation, retention=retention)

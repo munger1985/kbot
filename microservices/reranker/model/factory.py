@@ -4,12 +4,7 @@ from .local_reranker import LocalReranker, LocalRerankerConfig
 from .cohere_reranker import CohereReranker, CohereRerankerConfig
 from .jina_reranker import JinaReranker, JinaRerankerConfig
 from .qwen3_reranker import Qwen3Reranker, Qwen3RerankerConfig
-
-
-class RerankerProvider(str, Enum):
-    """支持的 reranker 模型枚举"""
-    LOCAL = "local"
-    COHERE = "cohere"
+from core.dictionary import RerankerProvider
 
 
 def create_reranker_model(config: RerankerConfig) -> BaseReranker:

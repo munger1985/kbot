@@ -89,7 +89,9 @@ def safe_read_content(content_obj):
     """安全读取内容，兼容CLOB和普通字符串"""
     if hasattr(content_obj, 'read'):
         # Oracle CLOB类型
-        return content_obj.read()
+        content = content_obj.read()
+        # 确保返回的是字符串，而不是LOB对象
+        return str(content) if content is not None else ""
     else:
         # ES字符串类型或其他
-        return str(content_obj)
+        return str(content_obj) if content_obj is not None else ""

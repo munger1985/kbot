@@ -3,7 +3,7 @@ from loguru import logger
 from PIL import Image
 from dao.repositories.kbot_md_models_repo import *
 from core.dictionary import ModelCategory
-from configuration import ConfigManager
+from core.config.settings import get_settings
 from utils.call_models import CallModel
 
 
@@ -45,7 +45,7 @@ class ModelController:
 
         # 2. 调用对应微服务的接口，加载模型到内存中
         model_type = await self.repo.get_category_by_id(model_id)
-        model_config = ConfigManager.get_model_config()
+        model_config = get_settings()
 
         if model_type == ModelCategory.TXT_EMBEDDING.value:
             service_host = model_config.embed.service_host
@@ -150,9 +150,6 @@ class ModelController:
         Raises:
             ValueError: 未知的模型类型时抛出
         """
-
-        
-        model_config = ConfigManager.get_model_config()
 
         # 测试Embedding模型
         if model_type == ModelCategory.TXT_EMBEDDING.value:

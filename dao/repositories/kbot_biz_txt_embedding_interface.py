@@ -70,3 +70,18 @@ class IEmbeddingRepository(ABC):
     async def get_chunks_by_file_id(self, file_id: str) -> list[KbotBizTxtEmbedding] | None:
         """根据文件ID获取块"""
         pass
+    
+    @abstractmethod
+    async def get_chunk_doc_by_id(self, embed_id: str) -> str | None:
+        """根据ID获取chunk文档"""
+        pass
+
+    @abstractmethod
+    async def update_chunk_description(self, embed_id: str, description: str) -> int:
+        """更新块描述"""
+        pass
+
+    @abstractmethod
+    async def update_tags(self, embed_id: str, tags: list[str]) -> bool:
+        """更新块标签"""
+        pass

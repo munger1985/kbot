@@ -1,4 +1,5 @@
 from pathlib import Path
+from loguru import logger
 from services.kb.kb_chunk_operator import KBChunkOperator
 from services.kb.kb_file_operator import KBFileOperator
 from services.kb.kb_procedure import KBProcedure
@@ -210,6 +211,54 @@ class KBController:
         try:
             result = await KBChunkOperator().get_chunks_by_file_id(kb_id=kb_id, file_id=file_id)
             return result
+        except Exception as e:
+            raise e
+        
+    async def update_kb_file_chunk_description(
+            self,
+            kb_id: int,
+            embed_id: str,
+            description: str
+        ) -> bool:
+        """更新知识库文件的分片描述"""
+        try:
+            result = await KBChunkOperator().update_chunk_description(
+                kb_id=kb_id,
+                embed_id=embed_id,
+                description=description
+            )
+            return result
+        except Exception as e:
+            raise e
+        
+    async def update_kb_file_chunk_tags(
+            self,
+            kb_id: int,
+            file_id: str,
+            embed_id: str,
+            tags: list[str]
+        ) -> bool:
+        """更新知识库文件的分片标签"""
+        try:
+            # 1. 更新分片标签
+            chunk_result = await KBChunkOperator().update_chunk_tags(
+                kb_id=kb_id,
+                embed_id=embed_id,
+                tags=tags
+            )
+            if not chunk_result:
+                return chunk_result
+            
+            # 2. 更新文件的标签
+            file_result = await KBFileOperator().update_file_tags(
+                file_id=file_id,
+                tags=tags
+            )
+            if not file_result:
+                logger.warning(f"文件chunk标签更新成功，但是文件标签更新失败, file_id: {file_id}")
+            
+            return file_result
+        
         except Exception as e:
             raise e
         

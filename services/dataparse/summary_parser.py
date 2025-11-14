@@ -3,7 +3,7 @@ import json
 from loguru import logger
 from .file_params import FileParams
 from core.dictionary import FileStatus
-from configuration import ConfigManager
+from core.config.settings import get_prompt_config
 from .common import update_file_status, save_embeddings
 from utils.call_models import CallModel
 from dao.repositories.kbot_md_prompt_repo import KbotMdPromptRepository
@@ -24,8 +24,8 @@ class SummaryParser:
             return False
         
         # 2. 调用模型进行摘要总结
-        model_config = ConfigManager.get_model_config() 
-        prompt_name = model_config.prompt.summary
+        prompt_config = get_prompt_config() 
+        prompt_name = prompt_config.summary
         summary_prompt = await KbotMdPromptRepository().get_prompt_by_unique_name(prompt_name)
         if not summary_prompt:
             msg = f"摘要总结提示词不存在，使用默认提示词"
@@ -126,42 +126,3 @@ class SummaryParser:
             logger.error(f"调用摘要模型失败: {e}")
         
         return summary
-    
-    # # 2. 调用模型进行摘要总结
-        # model_config = ConfigManager.get_model_config() 
-        # prompt_name = model_config.prompt.summary
-        # summary_prompt = await KbotMdPromptRepository().get_prompt_by_unique_name(prompt_name)
-        # if not summary_prompt:
-        #     msg = f"摘要总结提示词不存在，使用默认提示词"
-        #     logger.warning(msg)
-        #     summary_prompt = "请对以下文本进行总结，提炼出核心内容和关键信息。要求摘要简洁、准确、连贯。待总结文本：\n{chunk}\n"
-        # else:
-        #     summary_prompt = str(summary_prompt)
-
-        # summary_results = []
-
-        # # 2.1 将文本块替换到摘要模板中
-        # for chunk in chunks:
-        #     prompt = summary_prompt.replace("{chunk}", chunk)
-            
-        # # 2.2 调用模型进行摘要总结
-        #     async for response in CallModel().call_llm_model(
-        #         file_params.summary_model,
-        #         prompt,
-        #         stream=False
-        #         ):
-        #         try:
-        #             json_response = json.loads(response)
-        #             summary = json_response.get("choices")[0].get("message").get("content", "").strip()
-        #             logger.debug(f"摘要总结模型返回 JSON 格式提取结果: {summary}")
-        #         except Exception as e:
-        #             logger.warning(f"摘要总结模型返回结果非 JSON 格式，直接使用文本结果，错误信息: {e}")
-        #             summary = response.strip()
-
-        #         summary_results.append(summary)
-
-        #         if not summary:
-        #             msg = f"摘要总结模型调用失败，文本块: {chunk}"
-        #             logger.warning(msg)
-                    
-        #     logger.debug(f"摘要总结结果: {summary}")

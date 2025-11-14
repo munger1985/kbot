@@ -37,4 +37,7 @@ kbot_files/
 settings.toml
 local_model_cache/
 nacos-data/
+
+# configuration files
 configuration/*.json
+*.toml

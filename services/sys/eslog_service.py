@@ -4,18 +4,18 @@ from elasticsearch import Elasticsearch
 from typing import Any
 from datetime import datetime
 from loguru import logger
-from configuration import ConfigManager
+from core.config.settings import get_eslog_config
 
 
 class EslogService:
     def __init__(self):
-        db_config = ConfigManager.get_db_config()
+        es_config = get_eslog_config()
         self.es = Elasticsearch(
-            db_config.eslog.hosts,
-            basic_auth=(db_config.eslog.username, db_config.eslog.password)
-            # ca_certs=db_config.eslog.ca_certs  # 指定证书路径
+            es_config.hosts,
+            basic_auth=(es_config.username, es_config.password)
+            # ca_certs=es_config.ca_certs  # 指定证书路径
         )
-        self.es_index = db_config.eslog.index
+        self.es_index = es_config.index
     
     async def get_recent_logs(self, size: int = 100) -> list[dict[str, Any]]:
         """

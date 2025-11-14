@@ -1,0 +1,35 @@
+services:
+  kbot-eskb:
+    image: elastic/elasticsearch:${ELASTIC_STACK_VERSION:-9.1.5}
+    container_name: eskb
+    environment:
+      - discovery.type=single-node
+      - ES_JAVA_OPTS=${ES_JAVA_OPTS:-Xms1024m -Xmx1024m}
+      - xpack.security.enabled=true
+      - xpack.security.enrollment.enabled=true
+      - ELASTIC_PASSWORD=${ELASTIC_PASSWORD}
+    volumes:
+      - eskb-data:/usr/share/elasticsearch/data
+    ports:
+      - "${ES_PORT:-9202}:9200"
+    networks:
+      - eskb-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s -u elastic:${ELASTIC_PASSWORD} http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=50s || exit 1"]
+      interval: 10s
+      timeout: 60s
+      retries: 20
+      start_period: 120s
+    restart: unless-stopped
+
+volumes:
+  eskb-data:
+    driver: local
+    driver_opts:
+      type: none
+      device: ${ESKB_DATA}
+      o: bind
+
+networks:
+  eskb-network:
+    driver: bridge

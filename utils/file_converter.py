@@ -5,7 +5,7 @@ from tempfile import mkdtemp
 from pdf2image import convert_from_path
 from pathlib import Path
 from loguru import logger
-from configuration import ConfigManager
+from core.config.settings import get_libre_config
 
 
 class OfficeToPDF:
@@ -16,9 +16,9 @@ class OfficeToPDF:
         # 支持的文件扩展名
         self.supported_extensions = ['.ppt', '.pptx', '.doc', '.docx', '.odt', '.ods']
 
-        app_config = ConfigManager.get_app_config()
-        libre_host = app_config.libre.host
-        libre_port = app_config.libre.port
+        libre_config = get_libre_config()
+        libre_host = libre_config.host
+        libre_port = libre_config.port
         
         # 调用微服务接口
         self.url = f"http://{libre_host}:{libre_port}/convert"

@@ -1,0 +1,100 @@
+# core/config/base.toml
+[app]
+title = "KBOT"
+description = "KBot API Service"
+version = "3.0.0"
+debug = true
+file_storage = "/home/chris/kbot3/knowledge_base"
+upload_workers = 10
+
+[app.parser]
+max_workers = 2
+check_interval = 60
+
+[app.log]
+level = "DEBUG"
+dir = "/home/chris/kbot3/logs/"
+rotation = "100 MB"
+retention = "10 days"
+
+[libre]
+host = "localhost"
+port = 9316
+
+[oracle]
+username = "kbot"
+password = "oracle"
+host = "localhost"
+port = 1521
+service_name = "kbotdev"
+
+[redis]
+password = "welcome1"
+host = "localhost"
+port = 6379
+max_connections = 10
+socket_connect_timeout = 3
+socket_timeout = 5
+retry_on_timeout = true
+health_check_interval = 30
+
+[sqlalchemy]
+echo = false
+pool_size = 10
+pool_timeout = 60
+max_overflow = 20
+pool_pre_ping = true
+pool_use_lifo = true
+pool_recycle = 1800
+
+[eslog]
+hosts = ["http://localhost:9201"]
+username = "elastic"
+password = "KsVEZ-KhNMVi9HHdjyTx"
+index = "filebeat-kblogs-*"
+
+[embed]
+service_name = "embedding-service"
+service_version = "1.0.0"
+service_host = "0.0.0.0"
+service_port = 9901
+max_tokens = 8192
+timeout = 300
+max_retries = 3
+cache_dir = "/home/chris/cached_models/"
+
+[llm]
+service_name = "llm-service"
+service_version = "1.0.0"
+service_host = "0.0.0.0"
+service_port = 9902
+max_tokens = 8192
+temperature = 0.7
+top_p = 1.0
+top_k = 0
+timeout = 300
+frequency_penalty = 0.0
+presence_penalty = 0.0
+
+[reranker]
+service_name = "reranker-service"
+service_version = "1.0.0"
+service_host = "0.0.0.0"
+service_port = 9903
+cache_dir = "/home/chris/cached_models/"
+timeout = 300
+
+[vlm]
+service_name = "vlm-service"
+service_version = "1.0.0"
+service_host = "0.0.0.0"
+service_port = 9904
+timeout = 300
+
+[tokenizer]
+custom_dict_path = "/home/chris/kbot3/configuration/custom_dict.txt"
+stop_words_path = "/home/chris/kbot3/configuration/stopwords.txt"
+
+[prompt]
+image2text = "SYSTEM/image2text"
+summary = "SYSTEM/summary"

@@ -18,7 +18,7 @@ from dao.entities.kbot_biz_txt_embedding import KbotBizTxtEmbedding
 from core.dictionary import FileStatus, ChunkType, SplitStrategy
 from utils.call_models import CallModel
 from .common import update_file_status, check_text_file
-from configuration.config_manager import ConfigManager
+from core.config.settings import get_prompt_config
 
 
 class HTMLParser:
@@ -41,7 +41,7 @@ class HTMLParser:
         self.tables_info: List[Dict] = []
         self.page_content: List[Dict] = []  # Stores complete page content with placeholders
         self.remove_noise = remove_noise
-        self.model_config = ConfigManager.get_model_config()
+        self.prompt_config = get_prompt_config()
 
         self.chunk_size = 0
         self.chunk_overlap = 0
@@ -418,7 +418,7 @@ class HTMLParser:
     async def _process_images_embeddings(self) -> List[KbotBizTxtEmbedding]:
         """Process image embeddings"""
         if self.file_params.img2txt == 1:
-            vlm_prompt_unique_name = self.model_config.prompt.image2text
+            vlm_prompt_unique_name = self.prompt_config.image2text
             
             if self.file_params.img2txt_model is None:
                 msg = f"Image to text model not found for id: {self.file_params.img2txt_model}"

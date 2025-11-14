@@ -2,7 +2,6 @@
 
 # 定义服务根目录（根据您的启动脚本调整）
 SERVICE_ROOT="$(dirname "$0")"
-MICROSERVICES_DIR="${SERVICE_ROOT}/microservices"
 
 # 函数：安全获取指定目录下特定Python脚本的进程PID
 get_service_pid() {
@@ -34,14 +33,21 @@ if [ -n "$MAIN_PIDS" ]; then
     done <<< "$MAIN_PIDS"
 fi
 
-# 获取各个微服务的PID
-for service_dir in "embedding" "llm" "reranker" "vlm"; do
-    SERVICE_PIDS=$(get_service_pid "${MICROSERVICES_DIR}/${service_dir}" "app.py")
+# 获取各个微服务的PID（现在都在项目根目录下）
+MICROSERVICES=(
+    "kbot_app_embedding.py"
+    "kbot_app_llm.py" 
+    "kbot_app_vlm.py"
+    "kbot_app_reranker.py"
+)
+
+for service_script in "${MICROSERVICES[@]}"; do
+    SERVICE_PIDS=$(get_service_pid "${SERVICE_ROOT}" "${service_script}")
     if [ -n "$SERVICE_PIDS" ]; then
         while read pid; do
             if [ -n "$pid" ]; then
                 PID_MAP["$pid"]=1
-                echo "找到${service_dir}微服务进程: $pid"
+                echo "找到${service_script}微服务进程: $pid"
             fi
         done <<< "$SERVICE_PIDS"
     fi

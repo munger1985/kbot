@@ -25,30 +25,24 @@ class LocalReranker(BaseReranker):
     """通用 Reranker 重排器基类"""
 
     def __init__(self, config: LocalRerankerConfig):
-        """
-        初始化通用 Transformer 重排器
-        
-        Args:
-            config: 模型配置
-        """
         # 模型组件
         self.model: torch.nn.Module | None = None
         self.tokenizer: Any | None = None
         self.model_name = config.model_name
         self.model_path = config.model_path
-        self.predownload = False  # 是否为本地预下载模型
+        self.predownload = False
         self.cache_dir = config.cache_dir
-        self.cache_path = os.path.join(config.cache_dir, self.model_name) # 模型缓存路径
+        self.cache_path = os.path.join(config.cache_dir, self.model_name.replace('/', '_'))  # 处理模型名中的斜杠
         self.name_or_path = ""
         self.device = config.device
         self.device_map = config.device_map
-        self.local_files_only = getattr(config, 'local_files_only', False)
-        self.trust_remote_code = getattr(config, 'trust_remote_code', False)
-        self.max_tokens = getattr(config, 'max_tokens', 512)  # 默认值调整为512以减少显存
-        self.compile_model = getattr(config, 'compile_model', True)
-        self.use_fp16 = getattr(config, 'use_fp16', False)
-        self.max_memory = getattr(config, 'max_memory', None)
-        self.batch_size = getattr(config, 'batch_size', 16)  # 批处理大小
+        self.local_files_only = config.local_files_only
+        self.trust_remote_code = config.trust_remote_code
+        self.max_tokens = config.max_tokens
+        self.compile_model = config.compile_model
+        self.use_fp16 = config.use_fp16
+        self.max_memory = config.max_memory
+        self.batch_size = config.batch_size
 
         # 运行时状态
         self._is_initialized = False
@@ -56,28 +50,80 @@ class LocalReranker(BaseReranker):
         logger.info(f"正在初始化 {self.__class__.__name__}，模型: {self.model_name}")
     
     def _validate_model_files(self, model_path: str) -> bool:
-        """
-        验证模型目录包含必需的文件。
-        这是尽力而为的检查；实际加载可能仍然失败。
-        """
+        """验证模型目录包含必需的文件"""
         try:
-            # 检查必需的配置文件
-            required_files = ["config.json", "tokenizer_config.json"]
-            config_valid = all(os.path.exists(os.path.join(model_path, f)) for f in required_files)
+            # 使用集合操作提高可读性和性能
+            required_files = {"config.json", "tokenizer_config.json"}
+            model_files = {"pytorch_model.bin", "model.safetensors", "model.safetensors.index.json"}
+            vocab_files = {"vocab.txt", "vocab.json", "tokenizer.json"}
             
-            # 检查至少一个模型权重文件
-            model_files = ["pytorch_model.bin", "model.safetensors", "model.safetensors.index.json"]
-            found_model_file = any(os.path.exists(os.path.join(model_path, f)) for f in model_files)
+            existing_files = set(os.listdir(model_path))
             
-            # 检查至少一个词汇文件
-            vocab_files = ["vocab.txt", "vocab.json", "tokenizer.json"]
-            found_vocab_file = any(os.path.exists(os.path.join(model_path, f)) for f in vocab_files)
+            config_valid = required_files.issubset(existing_files)
+            found_model_file = bool(model_files & existing_files)
+            found_vocab_file = bool(vocab_files & existing_files)
             
             return config_valid and found_model_file and found_vocab_file
             
         except Exception as e:
             logger.warning(f"模型验证检查失败: {str(e)}")
             return False
+
+    def _determine_model_source(self) -> None:
+        """确定模型来源：本地路径、缓存或下载"""
+        # 优先检查显式指定的模型路径
+        if self.model_path and os.path.exists(self.model_path):
+            if self._validate_model_files(self.model_path):
+                self.predownload = True
+                logger.info(f"使用预下载的模型: {self.model_path}")
+                return
+        
+        # 检查缓存
+        if os.path.exists(self.cache_path) and self._validate_model_files(self.cache_path):
+            self.model_path = self.cache_path
+            self.predownload = True
+            logger.info(f"使用缓存的模型: {self.cache_path}")
+            return
+        
+        # 需要下载
+        self.predownload = False
+        os.makedirs(self.cache_dir, exist_ok=True)
+        logger.info(f"将从 hub 下载模型: {self.model_name}, 并缓存到: {self.cache_dir}")
+    
+    def _setup_device_config(self) -> tuple[str, dict]:
+        """设置设备配置并返回目标设备和加载参数"""
+        target_device = self.device or ("cuda:0" if torch.cuda.is_available() else "cpu")
+        load_kwargs = {
+            "pretrained_model_name_or_path": self.name_or_path,
+            "trust_remote_code": self.trust_remote_code,
+            "low_cpu_mem_usage": True,
+            "local_files_only": self.local_files_only,
+            "cache_dir": self.cache_dir
+        }
+        
+        if torch.cuda.is_available():
+            torch.set_float32_matmul_precision('high')
+            
+            if self.device_map:
+                load_kwargs.update({
+                    "device_map": self.device_map,
+                    "max_memory": self.max_memory,
+                })
+            else:
+                # 验证设备字符串
+                if not target_device.startswith(('cuda:', 'cpu')):
+                    target_device = "cuda:0"
+            
+            # 精度控制
+            load_kwargs["torch_dtype"] = torch.float16 if self.use_fp16 else torch.float32
+        else:
+            load_kwargs.update({
+                "device_map": "cpu",
+                "torch_dtype": torch.float32
+            })
+            target_device = "cpu"
+            
+        return target_device, load_kwargs
     
     async def startup(self) -> None:
         """初始化 reranker 模型"""
@@ -87,29 +133,7 @@ class LocalReranker(BaseReranker):
         if self.model_path is None and self.local_files_only:
             raise ValueError("未指定本地模型路径")
         
-        # 检查是否有有效的本地模型路径或需要下载
-        if self.model_path is not None and os.path.exists(self.model_path):
-            if self._validate_model_files(self.model_path):
-                self.predownload = True
-                logger.info(f"使用预下载的模型: {self.model_path}")
-            else:
-                logger.info(f"模型路径 {self.model_path} 存在但包含无效的模型文件")
-                self.predownload = False
-                # 确保缓存目录存在
-                os.makedirs(self.cache_dir, exist_ok=True)
-                logger.info(f"将从 hub 下载模型: {self.model_name}, 并缓存到: {self.cache_dir}")
-        else:
-            # 检查缓存或从 hub 下载
-            if os.path.exists(self.cache_path) and self._validate_model_files(self.cache_path):
-                self.model_path = self.cache_path
-                self.predownload = True
-                logger.info(f"使用缓存的模型: {self.cache_path}")
-            else:
-                self.predownload = False
-                # 确保缓存目录存在
-                os.makedirs(self.cache_dir, exist_ok=True)
-                logger.info(f"将从 hub 下载模型: {self.model_name}, 并缓存到: {self.cache_dir}")
-
+        self._determine_model_source()
         self.name_or_path = self.model_path if self.predownload else self.model_name
 
         logger.debug(f"Reranker 模型名称: {self.model_name}")
@@ -117,66 +141,48 @@ class LocalReranker(BaseReranker):
         # 加载分词器
         self.tokenizer = self._load_tokenizer()
             
-        # 使用优化设置加载模型
-        load_kwargs = {
-            "pretrained_model_name_or_path": self.name_or_path,
-            "trust_remote_code": self.trust_remote_code,
-            "low_cpu_mem_usage": True,
-            "local_files_only": self.local_files_only,
-            "cache_dir": self.cache_dir  # 使用配置的缓存目录
-        }
-            
-        # 设备配置
-        if torch.cuda.is_available():
-            # 启用 TensorFloat32 张量核心以提高矩阵乘法性能
-            torch.set_float32_matmul_precision('high')
-            if self.device_map is not None:  # 多 GPU
-                load_kwargs.update({
-                    "device_map": self.device_map,
-                    "max_memory": self.max_memory,
-                })
-            else:  # 单 GPU
-                target_device = self.device or "cuda:0"
-                
-            # 精度控制 - 使用半精度显著减少显存占用
-            load_kwargs["torch_dtype"] = torch.float16 if self.use_fp16 else torch.float32
-        else:  # CPU 回退
-            load_kwargs["device_map"] = "cpu"
-            load_kwargs["torch_dtype"] = torch.float32
-            target_device = "cpu"
+        # 设置设备配置
+        target_device, load_kwargs = self._setup_device_config()
 
-        self.model = AutoModelForSequenceClassification.from_pretrained(**load_kwargs)
+        try:
+            self.model = AutoModelForSequenceClassification.from_pretrained(**load_kwargs)
+        except Exception as e:
+            logger.warning(f"首次加载失败: {str(e)}，尝试不使用低CPU内存模式")
+            load_kwargs["low_cpu_mem_usage"] = False
+            self.model = AutoModelForSequenceClassification.from_pretrained(**load_kwargs)
 
-        # 如果没有使用 device_map，则使用 .to() 方法将模型移动到指定设备
+        # 单设备模式：手动移动模型
         if self.device_map is None:
-            self.model = self.model.to(target_device) # type: ignore
-            # 确保 self.device 与实际使用的设备一致
+            self.model = self.model.to(target_device)
             self.device = target_device
             logger.debug(f"Reranker 模型已加载到设备: {target_device}")
         else:
             logger.debug(f"Reranker 模型已使用 device_map 加载: {self.device_map}")
         
-        # 记录模型参数所在的设备
-        sample_param = next(self.model.parameters()) # type: ignore
+        # 记录模型参数设备
+        sample_param = next(self.model.parameters())
         logger.debug(f"Reranker 模型参数位于设备: {sample_param.device}")
         
-        self.model.eval() # type: ignore
+        self.model.eval()
 
-        # 模型编译 (PyTorch 2.0+)
+        # 模型编译
         if self.compile_model and hasattr(torch, 'compile'):
-            self.model = torch.compile( # type: ignore
-                self.model,
-                mode='max-autotune' if torch.cuda.is_available() else None
-            )
+            try:
+                self.model = torch.compile(
+                    self.model,
+                    mode='max-autotune' if torch.cuda.is_available() else None,
+                    fullgraph=False  # 允许部分图编译以提高兼容性
+                )
+                logger.info("模型编译成功")
+            except Exception as e:
+                logger.warning(f"模型编译失败: {str(e)}，将继续使用未编译的模型")
 
         self._is_initialized = True
         logger.info(f"Reranker 模型 {self.model_name} 初始化成功")
     
     def _load_tokenizer(self) -> Any:
-        """使用全面配置加载分词器。"""
+        """使用全面配置加载分词器"""
         try:
-            
-            # 加载分词器
             tokenizer = AutoTokenizer.from_pretrained(
                 pretrained_model_name_or_path=self.name_or_path,
                 trust_remote_code=self.trust_remote_code,
@@ -184,8 +190,15 @@ class LocalReranker(BaseReranker):
                 model_max_length=self.max_tokens,
                 padding_side='right',
                 local_files_only=self.local_files_only,
-                cache_dir=self.cache_dir  # 使用配置的缓存目录
+                cache_dir=self.cache_dir
             )
+            
+            # 确保分词器有填充token
+            if tokenizer.pad_token is None:
+                tokenizer.pad_token = tokenizer.eos_token or '[PAD]'
+                if tokenizer.pad_token == '[PAD]':
+                    tokenizer.add_special_tokens({'pad_token': '[PAD]'})
+                    
             logger.debug("分词器加载成功")
             return tokenizer
         except Exception as e:
@@ -199,31 +212,72 @@ class LocalReranker(BaseReranker):
         
         pairs = [(query, doc) for doc in batch_documents]
         
-        # 分词处理
-        with torch.no_grad():  # 禁用梯度计算以减少显存
+        with torch.inference_mode():  # 使用 inference_mode 替代 no_grad，性能更好
+            try:
+                inputs = self.tokenizer(
+                    pairs,
+                    padding=True,
+                    truncation=True,
+                    return_tensors="pt",
+                    max_length=self.max_tokens,
+                    return_attention_mask=True
+                )
+                
+                # 设备转移
+                if self.device_map is None:
+                    inputs = {k: v.to(self.device) for k, v in inputs.items()}
+                
+                # 确保attention mask存在
+                if 'attention_mask' not in inputs:
+                    inputs['attention_mask'] = (inputs['input_ids'] != self.tokenizer.pad_token_id).long()
+                
+                # 获取分数
+                outputs = self.model(**inputs)
+                logits = outputs.logits
+                
+                # 统一分数处理逻辑
+                if logits.dim() == 2:
+                    if logits.size(1) == 1:  # 二元分类或回归分数
+                        scores = torch.sigmoid(logits.squeeze(-1)).cpu().tolist()
+                    else:  # 多分类
+                        scores = torch.softmax(logits, dim=-1)[:, -1].cpu().tolist()
+                else:
+                    scores = torch.sigmoid(logits).cpu().tolist()
+
+            except RuntimeError as e:
+                if "attention mask" in str(e).lower():
+                    logger.warning(f"Attention mask 错误: {e}，尝试手动创建attention mask")
+                    return await self._process_batch_with_manual_mask(query, batch_documents)
+                else:
+                    raise
+
+        return scores if isinstance(scores, list) else [scores]
+    
+    async def _process_batch_with_manual_mask(self, query: str, batch_documents: list[str]) -> list[float]:
+        """手动创建attention mask的处理批次方法"""
+        pairs = [(query, doc) for doc in batch_documents]
+        
+        with torch.inference_mode():
             inputs = self.tokenizer(
                 pairs,
                 padding=True,
                 truncation=True,
                 return_tensors="pt",
-                max_length=self.max_tokens  # 控制序列长度以减少显存
+                max_length=self.max_tokens,
+                return_attention_mask=False
             )
             
-            # 根据模型配置方式处理设备分配
             if self.device_map is None:
-                # 单设备模式：将输入移动到模型所在的设备
-                inputs = inputs.to(self.device)
+                inputs = {k: v.to(self.device) for k, v in inputs.items()}
             
-            # 获取分数
-            logits = self.model(**inputs).logits.squeeze(-1)
+            # 手动创建attention mask
+            inputs['attention_mask'] = (inputs['input_ids'] != self.tokenizer.pad_token_id).long()
+            
+            outputs = self.model(**inputs)
+            logits = outputs.logits.squeeze(-1)
             scores = torch.sigmoid(logits).cpu().tolist()
-
-            # 显式释放中间变量
-            del inputs, logits
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-        
-            return scores
+            
+        return scores if isinstance(scores, list) else [scores]
     
     async def rerank(
         self,
@@ -233,17 +287,6 @@ class LocalReranker(BaseReranker):
     ) -> list[dict[str, Any]]:
         """
         根据与查询的相关性对文档进行重排序
-        
-        Args:
-            query: 搜索查询
-            documents: 需要重排序的文档列表
-            top_k: 返回的顶部文档数量（None 表示返回所有）
-            
-        Returns:
-            包含 'index' 和 'score' 键的字典列表
-            
-        Raises:
-            RuntimeError: 模型未初始化时抛出
         """
         if not self.model or not self.tokenizer:
             raise RuntimeError("模型未初始化，请先调用 startup() 方法")
@@ -251,38 +294,27 @@ class LocalReranker(BaseReranker):
         if not documents:
             return []
         
-        # 如果未指定 top_k，则设置为文档数量
-        if top_k is None:
-            top_k = len(documents)
-        else:
-            top_k = min(top_k, len(documents))
+        top_k = len(documents) if top_k is None else min(top_k, len(documents))
         
         try:
             all_scores = []
             
-            # 分批处理文档以避免显存溢出
+            # 分批处理文档
             for i in range(0, len(documents), self.batch_size):
                 batch_docs = documents[i:i + self.batch_size]
                 batch_scores = await self._process_batch(query, batch_docs)
                 all_scores.extend(batch_scores)
                 
-                # 记录显存使用情况
-                if torch.cuda.is_available():
+                # 可选：记录内存使用情况
+                if logger.level("DEBUG").no <= logger._core.min_level and torch.cuda.is_available():
                     allocated = torch.cuda.memory_allocated() / (1024 ** 2)
-                    cached = torch.cuda.memory_reserved() / (1024 ** 2)
-                    logger.debug(f"批次 {i//self.batch_size + 1}: GPU 内存已分配: {allocated:.2f}MB, 已缓存: {cached:.2f}MB")
+                    logger.debug(f"批次 {i//self.batch_size + 1}: GPU 内存: {allocated:.2f}MB")
             
-            # 创建 (索引, 分数) 元组列表
-            scored_results = [(i, score) for i, score in enumerate(all_scores)]
-            
-            # 按分数降序排序
+            # 使用 enumerate 和 zip 避免重复索引操作
+            scored_results = list(enumerate(all_scores))
             scored_results.sort(key=lambda x: x[1], reverse=True)
             
-            # 限制到 top_k 个结果
-            scored_results = scored_results[:top_k]
-            
-            # 返回请求格式的结果
-            return [{"index": idx, "score": float(score)} for idx, score in scored_results]
+            return [{"index": idx, "score": float(score)} for idx, score in scored_results[:top_k]]
         
         except Exception as e:
             logger.exception(f"重排序过程中发生错误: {str(e)}")
@@ -290,19 +322,25 @@ class LocalReranker(BaseReranker):
     
     async def shutdown(self) -> None:
         """清理资源"""
+        if not self._is_initialized:
+            return
+            
         if self.model:
-            # 将模型移动到 CPU 以释放 GPU 内存
+            # 单设备模式：移动到 CPU
             if self.device != "cpu" and not self.device_map:
                 self.model = self.model.to("cpu")
             
-            # 清除 CUDA 缓存（如果可用）
+            # 清除 CUDA 缓存
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
             
-            # 删除模型和分词器
+            # 显式删除
             del self.model
-            del self.tokenizer
             self.model = None
+            
+        if self.tokenizer:
+            del self.tokenizer
             self.tokenizer = None
             
-            logger.info(f"{self.__class__.__name__} 模型资源已释放")
+        self._is_initialized = False
+        logger.info(f"{self.__class__.__name__} 模型资源已释放")

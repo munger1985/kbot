@@ -1,7 +1,7 @@
 from typing import Any
 from loguru import logger
-from model_pool import ModelPool
-from model.base import BaseReranker
+from .model_pool import RerankerModelPool
+from .model import BaseReranker
 
 
 class RerankerService:
@@ -13,7 +13,7 @@ class RerankerService:
         """
         初始化 reranker 服务
         """
-        self._model_pool = ModelPool()
+        self._model_pool = RerankerModelPool()
         self._initialized = False
         
     async def initialize(self):
