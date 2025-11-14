@@ -29,7 +29,7 @@ http://64.181.236.219:18099/redoc
 http://64.181.236.219:18099/api/health
 
 ### Kbot3.0前端：
-http://132.145.81.123:8080/ords/r/kbotui_dev/km-chat/home     admin/12345678 chinase1/chinase1 
+http://132.145.81.123:8080/ords/r/kbotui_dev/km-chat/home    custdemo1/12345678 admin/12345678 chinase1/chinase1  custdemo1/12345678 audemo1/12345678
 http://132.145.81.123:8080/ords/r/kbotui_dev/ai-platform-portal/home  admin/12345678
 
 
