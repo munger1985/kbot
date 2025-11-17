@@ -222,9 +222,9 @@ class KbotMdKbFilesRepository:
         """更新知识库文件的标签"""
         try:
             async with get_session() as session:
-                # 先查询现有的biz_metadata
+                # 先查询记录是否存在，不限于biz_metadata
                 result = await session.execute(
-                    select(KbotMdKbFiles.biz_metadata)
+                    select(KbotMdKbFiles)
                     .where(KbotMdKbFiles.file_id == file_id)
                 )
                 record = result.scalar_one_or_none()
@@ -233,17 +233,21 @@ class KbotMdKbFilesRepository:
                     logger.warning(f"KbotMdKbFiles未找到记录，文件ID: {file_id}")
                     return False
                 
+                # 获取当前的biz_metadata值
+                current_metadata = record.biz_metadata
+                
                 # 处理biz_metadata（可能为None、空字典或有效JSON）
                 existing_metadata = {}
-                if record:
-                    if isinstance(record, dict):
-                        existing_metadata = record
-                    elif isinstance(record, str):
+                if current_metadata is not None:
+                    if isinstance(current_metadata, dict):
+                        existing_metadata = current_metadata
+                    elif isinstance(current_metadata, str):
                         try:
-                            existing_metadata = json.loads(record)
+                            existing_metadata = json.loads(current_metadata)
                         except json.JSONDecodeError:
-                            logger.warning(f"KbotMdKbFiles解析biz_metadata失败，文件ID: {file_id}，内容: {record}")
+                            logger.warning(f"KbotMdKbFiles解析biz_metadata失败，文件ID: {file_id}，内容: {current_metadata}")
                             existing_metadata = {}
+                # 如果current_metadata为None，existing_metadata保持空字典
                 
                 # 更新tags字段，保留其他字段
                 existing_metadata["tags"] = tags
