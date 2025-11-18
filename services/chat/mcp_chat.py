@@ -3,7 +3,6 @@ import json
 from loguru import logger
 from typing import Any
 from .agent_params import AgentParams
-from .agent_rerank import AgentRerank
 from mcp_tools import *
 from core.dictionary import MCPToolType
 from dao.repositories.kbot_md_agent_repo import KbotMdAgentRepository
@@ -254,7 +253,7 @@ class Agent:
         return processed_results
     
     
-    def _setup_agent_params(self, agent):
+    def _setup_agent_params(self, agent, topk: int | None = None, score_threshold: float | None = None):
         """设置智能体参数"""
         self.agent_params = AgentParams(
             domain_id=agent.domain_id,
@@ -264,8 +263,8 @@ class Agent:
             feedback_similarity_flag=agent.feedback_similarity_flag == 1,
             synonym_similarity_flag=agent.synonym_similarity_flag == 1,
             reranker_model_id=agent.reranker_model_id,
-            reranker_top_k=agent.reranker_topk,
-            reranker_score_threshold=agent.reranker_score_threshold or 0.0
+            reranker_top_k=topk or agent.reranker_topk,
+            reranker_score_threshold=score_threshold or agent.reranker_score_threshold or 0.0,
         )
     
     async def _initialize_tools(self):
@@ -283,12 +282,14 @@ class Agent:
         
         self.register_tools(tools)
     
-    async def chat(self, question: str) -> list[ToolResult]:
+    async def chat(self, question: str, topk: int | None = None, score_threshold: float | None = None) -> list[ToolResult]:
         """
         基于MCP的智能体对话处理
         
         Args:
             question: 用户问题
+            topk: 知识库检索TopK，默认None
+            score_threshold: 知识库检索分数阈值，默认None
             
         Returns:
             list[ToolResult] | None: 工具结果列表或None
@@ -301,7 +302,7 @@ class Agent:
             logger.warning("未找到智能体")
             return []
         
-        self._setup_agent_params(agent)
+        self._setup_agent_params(agent, topk, score_threshold)
         logger.debug("智能体参数设置完成")
         
         # 2. 初始化工具注册表

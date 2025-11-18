@@ -1,6 +1,5 @@
 import json
 import array
-import decimal
 import asyncio
 import sys
 import traceback
@@ -19,7 +18,7 @@ load_dotenv(env_path)
 from dao.repositories.kbot_md_chat_session_repo import KbotMdChatSessionRepository
 from dao.entities.kbot_biz_chat_session import KbotBizChatSession, QAData, Reference
 
-key = "session_1763020747.04609"
+key = "session_1763437969.373111"
 kb_id = 66
 repo = KbotMdChatSessionRepository()
 
@@ -37,7 +36,6 @@ def create_sample_data():
                     Reference(
                         chunk_type=1,
                         chunk_file_path="",
-                        file_ext=".pdf",
                         page_num=1,
                         content="人工智能(AI)是指由机器展示的智能...",
                         download_link="https://example.com/ai.pdf",
@@ -48,8 +46,8 @@ def create_sample_data():
                 ],
                 feedback=0,
                 by="chris",
-                request_time="2025-07-31 12:00:00",
-                response_time="2025-07-31 12:00:01"
+                request_time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                response_time=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             )
         ]
     )
@@ -132,7 +130,6 @@ async def get_all():
                                     ref_dict = {
                                         'chunk_type': safe_convert(ref.chunk_type),
                                         'chunk_file_path': safe_convert(ref.chunk_file_path),
-                                        'file_ext': safe_convert(ref.file_ext),
                                         'page_num': safe_convert(ref.page_num),
                                         'content': safe_convert(ref.content),
                                         'download_link': safe_convert(ref.download_link),
@@ -186,8 +183,7 @@ async def insert_qa_data():
         references=[
             Reference(
                 chunk_type=2,
-                chunk_file_path="",
-                file_ext=".pdf",
+                chunk_file_path="/path/to/Oracle.pdf",
                 page_num=2,
                 content="Oracle是一个开源的、支持网络、基于内存...",
                 download_link="https://example.com/Oracle.pdf",
@@ -198,8 +194,8 @@ async def insert_qa_data():
         ],
         feedback=1,
         by="chris",
-        request_time="2025-07-31 12:00:00",
-        response_time="2025-07-31 12:00:01"
+        request_time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        response_time=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     )
     
     # 写入Oracle
@@ -342,10 +338,10 @@ async def main():
     # await insert_qa_data()
     # await get_qa_data()
     # await update_qa_feedback()
-    # await update_last_qa_data_answer()
+    await update_last_qa_data_answer()
     # await get_last_qa_data()
     # await delete_session()
-    await delete_by_agent()
+    # await delete_by_agent()
     print("Oracle test finished.")
 
 if __name__ == "__main__":

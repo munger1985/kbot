@@ -7,7 +7,6 @@ class Reference:
     def __init__(self, 
                  chunk_type: int,
                  chunk_file_path: str,
-                 file_ext: str,
                  page_num: int,
                  content: str,
                  download_link: str,
@@ -16,7 +15,6 @@ class Reference:
                  reranker_score: float | None = None):
         self.chunk_type = chunk_type
         self.chunk_file_path = chunk_file_path
-        self.file_ext = file_ext
         self.page_num = page_num
         self.content = content
         self.download_link = download_link
@@ -28,7 +26,6 @@ class Reference:
         return {
             "chunk_type": self.chunk_type,
             "chunk_file_path": self.chunk_file_path,
-            "file_ext": self.file_ext,
             "page_num": self.page_num,
             "content": safe_read_content(self.content),
             "download_link": self.download_link,

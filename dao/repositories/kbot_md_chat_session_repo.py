@@ -73,7 +73,6 @@ class KbotMdChatSessionRepository():
                             qa_id=chat_session.qa_id,  # 手动设置关联
                             chunk_type=ref.chunk_type,
                             chunk_file_path=ref.chunk_file_path,
-                            file_ext=ref.file_ext,
                             page_num=ref.page_num,
                             chunk_content=ref.content,
                             download_link=ref.download_link,
@@ -135,7 +134,6 @@ class KbotMdChatSessionRepository():
                             qa_id=chat_session.qa_id,  # 手动设置关联
                             chunk_type=ref.chunk_type,
                             chunk_file_path=ref.chunk_file_path,
-                            file_ext=ref.file_ext,
                             page_num=ref.page_num,
                             chunk_content=ref.content,
                             download_link=ref.download_link,
@@ -194,7 +192,6 @@ class KbotMdChatSessionRepository():
                         references.append(Reference(
                             chunk_type=ref_row.chunk_type,
                             chunk_file_path=ref_row.chunk_file_path,
-                            file_ext=ref_row.file_ext,
                             page_num=ref_row.page_num,
                             content=safe_read_content(ref_row.chunk_content),
                             download_link=ref_row.download_link,
@@ -380,7 +377,6 @@ class KbotMdChatSessionRepository():
                     references.append(Reference(
                         chunk_type=ref_row.chunk_type,
                         chunk_file_path=ref_row.chunk_file_path,
-                        file_ext=ref_row.file_ext,
                         page_num=ref_row.page_num,
                         content=safe_read_content(ref_row.chunk_content),
                         download_link=ref_row.download_link,
@@ -458,7 +454,6 @@ class KbotMdChatSessionRepository():
                     references.append(Reference(
                         chunk_type=ref_row.chunk_type,
                         chunk_file_path=ref_row.chunk_file_path,
-                        file_ext=ref_row.file_ext,
                         page_num=ref_row.page_num,
                         content=safe_read_content(ref_row.chunk_content),
                         download_link=ref_row.download_link,

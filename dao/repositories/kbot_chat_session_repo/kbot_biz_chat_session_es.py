@@ -144,7 +144,6 @@ class ElasticsearchChatSessionRepository(IChatSessionRepository):
                 references_dict.append({
                     "chunk_type": ref.chunk_type,
                     "chunk_file_path": ref.chunk_file_path,
-                    "file_ext": ref.file_ext,
                     "page_num": ref.page_num,
                     "content": ref.content,
                     "download_link": ref.download_link,
@@ -229,7 +228,6 @@ class ElasticsearchChatSessionRepository(IChatSessionRepository):
                     reference_objects.append(Reference(
                         chunk_type=ref_dict["chunk_type"],
                         chunk_file_path=ref_dict["chunk_file_path"],
-                        file_ext=ref_dict["file_ext"],
                         page_num=ref_dict["page_num"],
                         content=ref_dict["content"],
                         download_link=ref_dict["download_link"],
@@ -471,7 +469,6 @@ class ElasticsearchChatSessionRepository(IChatSessionRepository):
                 reference_objects.append(Reference(
                     chunk_type=ref_dict["chunk_type"],
                     chunk_file_path=ref_dict["chunk_file_path"],
-                    file_ext=ref_dict["file_ext"],
                     page_num=ref_dict["page_num"],
                     content=ref_dict["content"],
                     download_link=ref_dict["download_link"],

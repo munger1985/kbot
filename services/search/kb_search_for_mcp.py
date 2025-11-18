@@ -193,6 +193,7 @@ class KBSearch:
                 result.file_id = data[0]
                 result.chunk_type = chunk_meta.get("chunk_type", 1)
                 result.page_num = chunk_meta.get("page_num", 1)
+                result.chunk_file_path = chunk_meta.get("chunk_file_path", "")
                 result.content = safe_read_content(data[1])
                 result.similarity = data[3]
                 result.weight = weight
@@ -278,6 +279,7 @@ class KBSearch:
                     result.file_id = data[0]
                     result.chunk_type = chunk_meta.get("chunk_type", 1)
                     result.page_num = chunk_meta.get("page_num", 1)
+                    result.chunk_file_path = chunk_meta.get("chunk_file_path", "")
                     result.content = safe_read_content(data[1])
                     result.similarity = data[3]
                     result.weight = weight

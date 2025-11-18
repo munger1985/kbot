@@ -53,9 +53,9 @@ class KBFileChunkUpdateDescriptionForm(BaseModel):
     embed_id: str = Field(..., description="分片ID")
     description: str = Field(..., description="新描述")
 
-
 class KBFileChunkUpdateTagsForm(BaseModel):
     """知识库文件分片更新标签表单模型"""
     kb_id: int = Field(..., description="知识库ID")
     file_id: str = Field(..., description="文件ID")
     tags: list[str] = Field(..., description="文件分片标签")
+

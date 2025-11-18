@@ -17,6 +17,7 @@ class KBSearchResult(BaseModel):
     file_id: str = ""
     chunk_type: int = 1
     page_num: int = 0
+    chunk_file_path: str = ""
     content: str = ""
     similarity: float = 0.0
     weight: float = 0.0

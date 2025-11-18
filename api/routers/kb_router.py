@@ -731,7 +731,7 @@ async def handle_update_chunk_description(
     "/file/chunk/update_tags",
     summary="更新知识库文件的分片标签",
     response_model=SuccessResponse | ErrorResponse,
-    # dependencies=[Depends(AuthController.get_current_accessor)],
+    dependencies=[Depends(AuthController.get_current_accessor)],
     status_code=status.HTTP_200_OK
 )
 async def handle_update_chunk_tags(

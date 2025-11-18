@@ -1,9 +1,9 @@
-import json
+import uuid
 from loguru import logger
-from fastapi import APIRouter, status, Depends
+from fastapi import APIRouter, status, Depends, HTTPException
 from fastapi import Request, BackgroundTasks
 from fastapi.responses import StreamingResponse
-from api.schemas.agent_schema import AgentChatForm, AgentChatFeedbackForm
+from api.schemas.agent_schema import *
 from api.controllers.security_controller import AuthController
 from api.controllers.agent_controller import agent_controller
 from api.schemas.base_response import *
@@ -306,3 +306,39 @@ async def handle_del_agent(agent_id: int, del_prompt: int = 0) -> SuccessRespons
             success=False,
             message=f"智能体删除失败: {str(e)}"
         )
+    
+@router.post(
+    "/dify/retrieval",
+    summary="智能体Dify检索",
+    dependencies=[Depends(AuthController.get_current_accessor)]
+)
+async def handle_agent_retrieval(form: AgentChatDifyForm) -> dict:
+    """
+    智能体 Dify 检索接口
+    # 参考：https://docs.dify.ai/en/guides/knowledge-base/external-knowledge-api
+    
+    Args:
+    - **knowledge_id**: Kbot 智能体 ID
+    - **query**: 查询文本
+    - **retrieval_setting**: 检索设置
+    - **metadata_condition**: 元数据条件
+    
+    Returns:
+    - **records**: 检索结果
+    """
+    try:
+        session_id = uuid.uuid4().hex
+        return await agent_controller.agent_chat_dify(
+            agent_id=form.knowledge_id, 
+            question=form.query, 
+            session_id=session_id,
+            topk=form.retrieval_setting.get("topk", 10),
+            score_threshold=form.retrieval_setting.get("score_threshold", 0.75)
+        )
+    
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"检索失败: {str(e)}"
+        )
+    

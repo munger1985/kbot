@@ -88,10 +88,10 @@ class OracleChatSessionRepository(IChatSessionRepository):
                 if qa_data.references:
                     sql_ref = """
                         INSERT INTO kbot_biz_chat_references (
-                            qa_id, chunk_type, chunk_file_path, file_ext, page_num,
+                            qa_id, chunk_type, chunk_file_path, page_num,
                             chunk_content, download_link, preview_link, similarity_score, reranker_score
                         ) VALUES (
-                            :qa_id, :chunk_type, :chunk_file_path, :file_ext, :page_num,
+                            :qa_id, :chunk_type, :chunk_file_path, :page_num,
                             :chunk_content, :download_link, :preview_link, :similarity_score, :reranker_score
                         )
                     """
@@ -102,7 +102,6 @@ class OracleChatSessionRepository(IChatSessionRepository):
                             qa_id,
                             ref.chunk_type,
                             ref.chunk_file_path,
-                            ref.file_ext,
                             ref.page_num,
                             ref.content,
                             ref.download_link,
@@ -144,7 +143,7 @@ class OracleChatSessionRepository(IChatSessionRepository):
                     s.agent_id,
                     s.question, s.answer, s.qa_embedding, s.feedback, s.username,
                     s.request_time, s.response_time,
-                    r.chunk_type, r.chunk_file_path, r.file_ext, r.page_num,
+                    r.chunk_type, r.chunk_file_path, r.page_num,
                     r.chunk_content, r.download_link, r.preview_link,
                     r.similarity_score, r.reranker_score
                 FROM kbot_biz_chat_session s
@@ -196,13 +195,12 @@ class OracleChatSessionRepository(IChatSessionRepository):
                     ref = Reference(
                         chunk_type=row[8],
                         chunk_file_path=row[9],
-                        file_ext=row[10],
-                        page_num=row[11],
-                        content=safe_read_content(row[12]),
-                        download_link=row[13],
-                        preview_link=row[14],
-                        similarity_score=row[15],
-                        reranker_score=row[16]
+                        page_num=row[10],
+                        content=safe_read_content(row[11]),
+                        download_link=row[12],
+                        preview_link=row[13],
+                        similarity_score=row[14],
+                        reranker_score=row[15]
                     )
                     qa_data_map[qa_key]["references"].append(ref)
             
@@ -282,10 +280,10 @@ class OracleChatSessionRepository(IChatSessionRepository):
                 if qa_data.references:
                     sql_ref = """
                         INSERT INTO kbot_biz_chat_references (
-                            qa_id, chunk_type, chunk_file_path, file_ext, page_num,
+                            qa_id, chunk_type, chunk_file_path, page_num,
                             chunk_content, download_link, preview_link, similarity_score, reranker_score
                         ) VALUES (
-                            :qa_id, :chunk_type, :chunk_file_path, :file_ext, :page_num,
+                            :qa_id, :chunk_type, :chunk_file_path, :page_num,
                             :chunk_content, :download_link, :preview_link, :similarity_score, :reranker_score
                         )
                     """
@@ -296,7 +294,6 @@ class OracleChatSessionRepository(IChatSessionRepository):
                             qa_id,
                             ref.chunk_type,
                             ref.chunk_file_path,
-                            ref.file_ext,
                             ref.page_num,
                             ref.content,
                             ref.download_link,
@@ -435,7 +432,7 @@ class OracleChatSessionRepository(IChatSessionRepository):
             row = result[0]
             # 获取参考文献数据
             refs_sql = """
-                SELECT chunk_type, chunk_file_path, file_ext, page_num, chunk_content,
+                SELECT chunk_type, chunk_file_path, page_num, chunk_content,
                        download_link, preview_link, similarity_score, reranker_score
                 FROM kbot_biz_chat_references 
                 WHERE qa_id = (
@@ -452,13 +449,12 @@ class OracleChatSessionRepository(IChatSessionRepository):
                 references.append(Reference(
                     chunk_type=ref_row[0],
                     chunk_file_path=ref_row[1],
-                    file_ext=ref_row[2],
-                    page_num=ref_row[3],
-                    content=safe_read_content(ref_row[4]),
-                    download_link=ref_row[5],
-                    preview_link=ref_row[6],
-                    similarity_score=ref_row[7],
-                    reranker_score=ref_row[8]
+                    page_num=ref_row[2],
+                    content=safe_read_content(ref_row[3]),
+                    download_link=ref_row[4],
+                    preview_link=ref_row[5],
+                    similarity_score=ref_row[6],
+                    reranker_score=ref_row[7]
                 ))
             
             # 转换向量数据
@@ -530,7 +526,7 @@ class OracleChatSessionRepository(IChatSessionRepository):
             
             # 获取参考文献数据
             refs_sql = """
-                SELECT chunk_type, chunk_file_path, file_ext, page_num, chunk_content,
+                SELECT chunk_type, chunk_file_path, page_num, chunk_content,
                        download_link, preview_link, similarity_score, reranker_score
                 FROM kbot_biz_chat_references 
                 WHERE qa_id = (
@@ -548,13 +544,12 @@ class OracleChatSessionRepository(IChatSessionRepository):
                 references.append(Reference(
                     chunk_type=ref_row[0],
                     chunk_file_path=ref_row[1],
-                    file_ext=ref_row[2],
-                    page_num=ref_row[3],
-                    content=safe_read_content(ref_row[4]),
-                    download_link=ref_row[5],
-                    preview_link=ref_row[6],
-                    similarity_score=ref_row[7],
-                    reranker_score=ref_row[8]
+                    page_num=ref_row[2],
+                    content=safe_read_content(ref_row[3]),
+                    download_link=ref_row[4],
+                    preview_link=ref_row[5],
+                    similarity_score=ref_row[6],
+                    reranker_score=ref_row[7]
                 ))
             
             # 转换向量数据

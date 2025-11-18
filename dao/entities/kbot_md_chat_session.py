@@ -30,7 +30,6 @@ class KbotMdChatReferences(Base):
     qa_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False, comment="关联的问答ID")
     chunk_type: Mapped[int | None] = mapped_column(NUMBER(1), comment="引用类型")
     chunk_file_path: Mapped[str | None] = mapped_column(String(256), comment="引用文件路径")
-    file_ext: Mapped[str | None] = mapped_column(String(10), comment="文件扩展名")
     page_num: Mapped[int | None] = mapped_column(NUMBER(5), comment="页码")
     chunk_content: Mapped[str | None] = mapped_column(CLOB, comment="引用内容")
     download_link: Mapped[str | None] = mapped_column(String(512), comment="下载链接")

@@ -57,8 +57,7 @@ class AgentController:
                 for kb_result in kb_results:
                     reference = Reference(
                         chunk_type=kb_result.chunk_type,
-                        chunk_file_path=kb_result.file_path or "",  # 确保有默认值
-                        file_ext=kb_result.file_ext or "",
+                        chunk_file_path=kb_result.chunk_file_path or "",  # 确保有默认值
                         page_num=kb_result.page_num,
                         content=kb_result.content,
                         download_link=f"{url}/api/kb/download?file_id={kb_result.file_id}",
@@ -101,9 +100,9 @@ class AgentController:
                 r = await sess_repo.create_session(session_data)
 
             if r:
-                logger.debug(f"Successfully writed to KbotMdChatSession，session id: {form.session_id}")
+                logger.debug(f"成功写入会话数据，session id: {form.session_id}")
             else:
-                logger.warning(f"Fail to write to KbotMdChatSession，session id: {form.session_id}")
+                logger.warning(f"写入会话数据失败，session id: {form.session_id}")
             
             # 返回字典格式的数据给前端
             return {
@@ -394,6 +393,172 @@ class AgentController:
             logger.error(f"智能体 {agent_id} 删除失败: {str(e)}")
             return False
         
+    async def agent_chat_dify(self, 
+                              agent_id: int, 
+                              question: str, 
+                            #   request: Request,
+                            #   background_tasks: BackgroundTasks,
+                              session_id: str,
+                              topk: int | None = None,
+                              score_threshold: float | None = None,
+                        ) -> dict:
+        """
+        智能体对话 (Dify版)
+        # Dify 调用使用深度思考版本的逻辑
+        """
+        try:
+            request_time=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
+            logger.info(f"[{request_time}] 开始处理 Dify 请求: {question}")
+            
+            # # 1. 获取智能体信息
+            # agent_repo = KbotMdAgentRepository()
+            # agent_info = await agent_repo.get_by_id(agent_id)
+            
+            # if agent_info is None:
+            #     logger.warning("智能体不存在")
+            #     return None
+            
+            # model_id = agent_info.llm_id
+            # if model_id is None:
+            #     logger.warning("智能体配置的 LLM 模型不存在")
+            #     return None
+            
+            # # 2. 获取 LLM 配置参数
+            # prompt_id = agent_info.prompt_id
+            # model_params = agent_info.llm_params if agent_info.llm_params else {}
+            # model_params["stream"] = True
+            
+            # # 3. 根据 prompt_id 获取提示词
+            # prompt_template = ""
+            # prompt_content = await KbotMdPromptRepository().get_prompt_by_id(prompt_id)
+            # if prompt_content is None:
+            #     prompt_template = "根据参考内容回答问题。\n\n参考内容:{context}\n\n回答的问题:{question}"
+            # else:
+            #     prompt_template = prompt_content
+            
+            # 4. 查询向量库获取相关文档
+            agent = MCPAgent(agent_id=agent_id, security=9, tags=[]) # security_level 9 表示不校验安全等级
+            results  = await agent.chat(question=question, topk=topk, score_threshold=score_threshold)
+            # 目前只处理知识库结果
+            kb_results = []
+            for result in results:
+                if result.kb_results:
+                    kb_results.extend(result.kb_results)
+        
+            
+            # 5. 构建参考文献列表和上下文
+            references = []
+            # context = ""
+            records = []
+            host = os.getenv("KBOT_IP", "localhost")
+            port = os.getenv("KBOT_PORT", "8000")
+            url = f"http://{host}:{port}"
+            
+            if kb_results and len(kb_results) > 0:
+                # 获取到引用结果
+                for kb_result in kb_results:
+                    reference = Reference(
+                        chunk_type=kb_result.chunk_type,
+                        chunk_file_path=kb_result.chunk_file_path or "",
+                        page_num=kb_result.page_num,
+                        content=kb_result.content,
+                        download_link=f"{url}/api/kb/download?file_id={kb_result.file_id}",
+                        preview_link=f"{url}/api/kb/preview?file_id={kb_result.file_id}&page_num={kb_result.page_num}",
+                        similarity_score=kb_result.similarity,
+                        reranker_score=kb_result.reranker_score
+                    )
+                    references.append(reference)
+
+                    # 构建 dify 返回结果
+                    record = {
+                        "metadata": {
+                            "path": kb_result.chunk_file_path or "",
+                            "description": f"page: {kb_result.page_num}"
+                        },
+                        "score": kb_result.similarity,
+                        "title": kb_result.file_id,
+                        "content": kb_result.content
+                    }
+                    records.append(record)
+                    
+
+            # 8. 构建 QAData 对象
+            default_embedding = [0.0] * 2  # Oracle 向量不允许为空，先设置一个默认值
+            qa_data = QAData(
+                question=question,
+                answer="",  # 初始为空答案
+                qa_embedding=default_embedding, # 先设置一个默认值，防止 Oracle 向量为空
+                references=references,
+                feedback=0,
+                by="dify",
+                request_time=request_time,
+                response_time=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")  # 添加微秒
+            )
+
+            # 9. 将完整session数据写入Oracle
+            session_data = KbotBizChatSession(
+                    session_id=session_id, 
+                    agent_id=agent_id, 
+                    qa_data=[qa_data]  # 传入 QAData 对象列表
+                )
+                
+            sess_repo = KbotMdChatSessionRepository()
+            try:
+                r = await sess_repo.create_session(session_data)
+                if r:
+                    logger.info(f"Oracle 写入会话数据成功")
+                else:
+                    logger.error(f"Oracle 写入会话数据失败")
+            except Exception as e:
+                logger.error(f"Oracle 写入会话数据失败: {e}")
+
+            # # 10. 调用 LLM 获取回答
+            # async def generate_stream():
+            #     chunks = []
+            #     try:
+            #         # 调用模型生成流
+            #         async for chunk in CallModel().call_llm_model(model_id, prompt, **model_params):
+            #             # 检查客户端是否断开连接
+            #             if await request.is_disconnected():
+            #                 logger.info("检测到客户端断开连接，结束流")
+            #                 break
+                            
+            #             yield chunk
+                        
+            #             # 收集内容块
+            #             await self._collect_chunks(chunk, chunks)
+                            
+            #     except Exception as e:
+            #         logger.error(f"流生成错误: {e}")
+            #     finally:
+            #         # 无论流如何结束，都执行清理
+            #         if chunks:
+            #             logger.info(f"收集到 {len(chunks)} 个内容块，执行后台写入")
+            #             background_tasks.add_task(
+            #                 self._process_final_response,
+            #                 chunks, session_id, qa_data, agent, agent_repo
+            #             )
+            
+            # return StreamingResponse(
+            #     generate_stream(),
+            #     media_type="text/event-stream",
+            #     headers={
+            #         "Cache-Control": "no-cache",
+            #         "Connection": "keep-alive",
+            #         "Access-Control-Allow-Origin": "*",
+            #         "Access-Control-Allow-Headers": "*",
+            #     }
+            # )
+
+            #11 返回结果
+
+            return {"records": records}
+            
+
+
+        except Exception as e:
+            logger.error(f"Agent chat dify failed: {e}")
+            raise e
 
 # 创建控制器实例
 agent_controller = AgentController()

@@ -64,7 +64,7 @@ class KBSearchTool(MCPTool):
             query = parameters.get("query", "")
 
             search_type = parameters.get("search_type", "hybrid")
-            limit = parameters.get("limit", 10)
+            limit = parameters.get("limit", 100)
             
             results = []
             metadata_list = []
@@ -159,7 +159,7 @@ class KBSearchTool(MCPTool):
                 "limit": {
                     "type": "integer",
                     "description": "返回结果数量限制",
-                    "default": 10
+                    "default": 100
                 }
             },
             "required": ["query"]

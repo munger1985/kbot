@@ -239,24 +239,24 @@ class KBController:
         ) -> bool:
         """更新知识库文件的分片标签"""
         try:
-            # 1. 更新分片标签
+            # 1. 更新文件的标签
+            file_result = await KBFileOperator().update_file_tags(
+                file_id=file_id,
+                tags=tags
+            )
+            if not file_result:
+                logger.warning(f"文件 {file_id} 文件标签更新失败")
+
+            # 2. 更新分片标签
             chunk_result = await KBChunkOperator().update_chunk_tags(
                 kb_id=kb_id,
                 file_id=file_id,
                 tags=tags
             )
             if not chunk_result:
-                return chunk_result
-            
-            # 2. 更新文件的标签
-            file_result = await KBFileOperator().update_file_tags(
-                file_id=file_id,
-                tags=tags
-            )
-            if not file_result:
-                logger.warning(f"文件 {file_id} 分片标签更新成功，但是文件标签更新失败")
-            
-            return file_result
+                logger.warning(f"文件 {file_id} 分片标签更新失败")
+
+            return file_result or chunk_result
         
         except Exception as e:
             raise e

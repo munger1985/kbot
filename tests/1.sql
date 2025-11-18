@@ -31,7 +31,6 @@ CREATE TABLE kbot_md_chat_references (
   qa_id NUMBER NOT NULL,
   chunk_type NUMBER(1),
   chunk_file_path VARCHAR2(256),
-  file_ext VARCHAR2(10),
   page_num NUMBER(5),
   chunk_content CLOB,
   download_link VARCHAR2(512),
@@ -44,7 +43,6 @@ CREATE TABLE kbot_md_chat_references (
   COMMENT ON COLUMN kbot_md_chat_references.qa_id IS '关联的问答ID';
   COMMENT ON COLUMN kbot_md_chat_references.chunk_type IS '引用类型';
   COMMENT ON COLUMN kbot_md_chat_references.chunk_file_path IS '引用文件路径';
-  COMMENT ON COLUMN kbot_md_chat_references.file_ext IS '文件扩展名';
   COMMENT ON COLUMN kbot_md_chat_references.page_num IS '页码';
   COMMENT ON COLUMN kbot_md_chat_references.chunk_content IS '引用内容';
   COMMENT ON COLUMN kbot_md_chat_references.download_link IS '下载链接';
