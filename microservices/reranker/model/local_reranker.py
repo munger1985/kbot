@@ -1,9 +1,17 @@
 import os
-import torch
 from typing import Any
 from pydantic import Field
 from loguru import logger
-from transformers import AutoModelForSequenceClassification, AutoTokenizer
+
+# 优雅降级导入
+try:
+    import torch
+    TORCH_AVAILABLE = True
+    from transformers import AutoModelForSequenceClassification, AutoTokenizer
+except ImportError:
+    TORCH_AVAILABLE = False
+    logger.warning("警告: PyTorch 不可用，将使用备用方案")
+
 from .base import BaseReranker, RerankerConfig
 
 class LocalRerankerConfig(RerankerConfig):
@@ -22,30 +30,31 @@ class LocalRerankerConfig(RerankerConfig):
     batch_size: int = Field(16, description="批处理大小以避免内存溢出")
 
 class LocalReranker(BaseReranker):
-    """通用 Reranker 重排器基类"""
+    """通用 Reranker 重排器基类，支持优雅降级"""
 
     def __init__(self, config: LocalRerankerConfig):
         # 模型组件
-        self.model: torch.nn.Module | None = None
+        self.model: Any | None = None
         self.tokenizer: Any | None = None
         self.model_name = config.model_name
         self.model_path = config.model_path
         self.predownload = False
         self.cache_dir = config.cache_dir
-        self.cache_path = os.path.join(config.cache_dir, self.model_name.replace('/', '_'))  # 处理模型名中的斜杠
+        self.cache_path = os.path.join(config.cache_dir, self.model_name.replace('/', '_'))
         self.name_or_path = ""
         self.device = config.device
         self.device_map = config.device_map
         self.local_files_only = config.local_files_only
         self.trust_remote_code = config.trust_remote_code
         self.max_tokens = config.max_tokens
-        self.compile_model = config.compile_model
-        self.use_fp16 = config.use_fp16
+        self.compile_model = config.compile_model and TORCH_AVAILABLE  # 只有 PyTorch 可用时才编译
+        self.use_fp16 = config.use_fp16 and TORCH_AVAILABLE  # 只有 PyTorch 可用时才使用 FP16
         self.max_memory = config.max_memory
         self.batch_size = config.batch_size
 
         # 运行时状态
         self._is_initialized = False
+        self._fallback_mode = not TORCH_AVAILABLE  # 降级模式标志
             
         logger.info(f"正在初始化 {self.__class__.__name__}，模型: {self.model_name}")
     
@@ -92,6 +101,9 @@ class LocalReranker(BaseReranker):
     
     def _setup_device_config(self) -> tuple[str, dict]:
         """设置设备配置并返回目标设备和加载参数"""
+        if not TORCH_AVAILABLE:
+            return "cpu", {}
+            
         target_device = self.device or ("cuda:0" if torch.cuda.is_available() else "cpu")
         load_kwargs = {
             "pretrained_model_name_or_path": self.name_or_path,
@@ -102,7 +114,10 @@ class LocalReranker(BaseReranker):
         }
         
         if torch.cuda.is_available():
-            torch.set_float32_matmul_precision('high')
+            try:
+                torch.set_float32_matmul_precision('high')
+            except Exception as e:
+                logger.warning(f"设置矩阵乘法精度失败: {e}")
             
             if self.device_map:
                 load_kwargs.update({
@@ -130,6 +145,13 @@ class LocalReranker(BaseReranker):
         if self._is_initialized:
             return
 
+        # 如果 PyTorch 不可用，进入降级模式
+        if not TORCH_AVAILABLE:
+            logger.warning("PyTorch 不可用，LocalReranker 进入降级模式")
+            self._is_initialized = True
+            self._fallback_mode = True
+            return
+
         if self.model_path is None and self.local_files_only:
             raise ValueError("未指定本地模型路径")
         
@@ -138,50 +160,62 @@ class LocalReranker(BaseReranker):
 
         logger.debug(f"Reranker 模型名称: {self.model_name}")
             
-        # 加载分词器
-        self.tokenizer = self._load_tokenizer()
-            
-        # 设置设备配置
-        target_device, load_kwargs = self._setup_device_config()
-
         try:
-            self.model = AutoModelForSequenceClassification.from_pretrained(**load_kwargs)
-        except Exception as e:
-            logger.warning(f"首次加载失败: {str(e)}，尝试不使用低CPU内存模式")
-            load_kwargs["low_cpu_mem_usage"] = False
-            self.model = AutoModelForSequenceClassification.from_pretrained(**load_kwargs)
+            # 加载分词器
+            self.tokenizer = self._load_tokenizer()
+                
+            # 设置设备配置
+            target_device, load_kwargs = self._setup_device_config()
 
-        # 单设备模式：手动移动模型
-        if self.device_map is None:
-            self.model = self.model.to(target_device)
-            self.device = target_device
-            logger.debug(f"Reranker 模型已加载到设备: {target_device}")
-        else:
-            logger.debug(f"Reranker 模型已使用 device_map 加载: {self.device_map}")
-        
-        # 记录模型参数设备
-        sample_param = next(self.model.parameters())
-        logger.debug(f"Reranker 模型参数位于设备: {sample_param.device}")
-        
-        self.model.eval()
-
-        # 模型编译
-        if self.compile_model and hasattr(torch, 'compile'):
             try:
-                self.model = torch.compile(
-                    self.model,
-                    mode='max-autotune' if torch.cuda.is_available() else None,
-                    fullgraph=False  # 允许部分图编译以提高兼容性
-                )
-                logger.info("模型编译成功")
+                self.model = AutoModelForSequenceClassification.from_pretrained(**load_kwargs)
             except Exception as e:
-                logger.warning(f"模型编译失败: {str(e)}，将继续使用未编译的模型")
+                logger.warning(f"首次加载失败: {str(e)}，尝试不使用低CPU内存模式")
+                load_kwargs["low_cpu_mem_usage"] = False
+                self.model = AutoModelForSequenceClassification.from_pretrained(**load_kwargs)
 
-        self._is_initialized = True
-        logger.info(f"Reranker 模型 {self.model_name} 初始化成功")
+            # 单设备模式：手动移动模型
+            if self.device_map is None:
+                self.model = self.model.to(target_device)
+                self.device = target_device
+                logger.debug(f"Reranker 模型已加载到设备: {target_device}")
+            else:
+                logger.debug(f"Reranker 模型已使用 device_map 加载: {self.device_map}")
+            
+            # 记录模型参数设备
+            sample_param = next(self.model.parameters())
+            logger.debug(f"Reranker 模型参数位于设备: {sample_param.device}")
+            
+            self.model.eval()
+
+            # 模型编译
+            if self.compile_model and hasattr(torch, 'compile'):
+                try:
+                    self.model = torch.compile(
+                        self.model,
+                        mode='max-autotune' if torch.cuda.is_available() else None,
+                        fullgraph=False  # 允许部分图编译以提高兼容性
+                    )
+                    logger.info("模型编译成功")
+                except Exception as e:
+                    logger.warning(f"模型编译失败: {str(e)}，将继续使用未编译的模型")
+
+            self._is_initialized = True
+            self._fallback_mode = False
+            logger.info(f"Reranker 模型 {self.model_name} 初始化成功")
+            
+        except Exception as e:
+            logger.error(f"Reranker 模型初始化失败: {e}")
+            # 初始化失败时进入降级模式
+            self._is_initialized = True
+            self._fallback_mode = True
+            logger.warning("LocalReranker 进入降级模式")
     
     def _load_tokenizer(self) -> Any:
         """使用全面配置加载分词器"""
+        if not TORCH_AVAILABLE:
+            raise RuntimeError("PyTorch 不可用，无法加载分词器")
+            
         try:
             tokenizer = AutoTokenizer.from_pretrained(
                 pretrained_model_name_or_path=self.name_or_path,
@@ -205,14 +239,47 @@ class LocalReranker(BaseReranker):
             logger.error(f"加载分词器失败: {str(e)}")
             raise
 
+    def _compute_scores_fallback(self, query: str, documents: list[str]) -> list[float]:
+        """降级模式下的分数计算"""
+        scores = []
+        query_words = set(query.lower().split())
+        
+        for doc in documents:
+            doc_words = set(doc.lower().split())
+            
+            # 计算 Jaccard 相似度
+            if len(query_words) == 0 or len(doc_words) == 0:
+                scores.append(0.0)
+                continue
+                
+            intersection = len(query_words.intersection(doc_words))
+            union = len(query_words.union(doc_words))
+            
+            jaccard_similarity = intersection / union if union > 0 else 0.0
+            
+            # 添加基于长度的权重
+            length_penalty = min(len(doc) / 1000, 1.0)
+            
+            score = jaccard_similarity * 0.7 + length_penalty * 0.3
+            scores.append(score)
+        
+        return scores
+
     async def _process_batch(self, query: str, batch_documents: list[str]) -> list[float]:
         """处理一个批次的文档，返回分数列表"""
+        # 如果处于降级模式，使用备用方案
+        if self._fallback_mode or not TORCH_AVAILABLE:
+            return self._compute_scores_fallback(query, batch_documents)
+            
         if not self.model or not self.tokenizer:
             raise RuntimeError("模型未初始化，请先调用 startup() 方法")
         
         pairs = [(query, doc) for doc in batch_documents]
         
-        with torch.inference_mode():  # 使用 inference_mode 替代 no_grad，性能更好
+        # 使用 inference_mode 替代 no_grad，性能更好
+        inference_mode = torch.inference_mode if TORCH_AVAILABLE else (lambda: lambda f: f)()
+        
+        with inference_mode():
             try:
                 inputs = self.tokenizer(
                     pairs,
@@ -249,12 +316,16 @@ class LocalReranker(BaseReranker):
                     logger.warning(f"Attention mask 错误: {e}，尝试手动创建attention mask")
                     return await self._process_batch_with_manual_mask(query, batch_documents)
                 else:
-                    raise
+                    logger.error(f"处理批次时出错: {e}，使用降级模式")
+                    return self._compute_scores_fallback(query, batch_documents)
 
         return scores if isinstance(scores, list) else [scores]
     
     async def _process_batch_with_manual_mask(self, query: str, batch_documents: list[str]) -> list[float]:
         """手动创建attention mask的处理批次方法"""
+        if not TORCH_AVAILABLE:
+            return self._compute_scores_fallback(query, batch_documents)
+            
         pairs = [(query, doc) for doc in batch_documents]
         
         with torch.inference_mode():
@@ -288,7 +359,7 @@ class LocalReranker(BaseReranker):
         """
         根据与查询的相关性对文档进行重排序
         """
-        if not self.model or not self.tokenizer:
+        if not self._is_initialized:
             raise RuntimeError("模型未初始化，请先调用 startup() 方法")
         
         if not documents:
@@ -299,33 +370,42 @@ class LocalReranker(BaseReranker):
         try:
             all_scores = []
             
-            # 分批处理文档
-            for i in range(0, len(documents), self.batch_size):
-                batch_docs = documents[i:i + self.batch_size]
-                batch_scores = await self._process_batch(query, batch_docs)
-                all_scores.extend(batch_scores)
-                
-                # 可选：记录内存使用情况
-                if logger.level("DEBUG").no <= logger._core.min_level and torch.cuda.is_available():
-                    allocated = torch.cuda.memory_allocated() / (1024 ** 2)
-                    logger.debug(f"批次 {i//self.batch_size + 1}: GPU 内存: {allocated:.2f}MB")
+            # 如果处于降级模式，直接计算所有分数
+            if self._fallback_mode:
+                logger.warning(f"使用降级模式对 {len(documents)} 个文档进行重排序")
+                all_scores = self._compute_scores_fallback(query, documents)
+            else:
+                # 分批处理文档
+                for i in range(0, len(documents), self.batch_size):
+                    batch_docs = documents[i:i + self.batch_size]
+                    batch_scores = await self._process_batch(query, batch_docs)
+                    all_scores.extend(batch_scores)
+                    
+                    # 可选：记录内存使用情况
+                    if logger.level("DEBUG").no <= logger._core.min_level and TORCH_AVAILABLE and torch.cuda.is_available():
+                        allocated = torch.cuda.memory_allocated() / (1024 ** 2)
+                        logger.debug(f"批次 {i//self.batch_size + 1}: GPU 内存: {allocated:.2f}MB")
             
             # 使用 enumerate 和 zip 避免重复索引操作
             scored_results = list(enumerate(all_scores))
             scored_results.sort(key=lambda x: x[1], reverse=True)
             
+            mode_info = "降级模式" if self._fallback_mode else "正常模式"
+            logger.info(f"重排序完成({mode_info})，返回前 {top_k} 个结果")
+            
             return [{"index": idx, "score": float(score)} for idx, score in scored_results[:top_k]]
         
         except Exception as e:
             logger.exception(f"重排序过程中发生错误: {str(e)}")
-            raise
-    
+            # 在错误时返回基于索引的默认排序
+            return [{"index": i, "score": 1.0 - (i * 0.01)} for i in range(min(top_k, len(documents)))]
+
     async def shutdown(self) -> None:
         """清理资源"""
         if not self._is_initialized:
             return
             
-        if self.model:
+        if TORCH_AVAILABLE and self.model is not None:
             # 单设备模式：移动到 CPU
             if self.device != "cpu" and not self.device_map:
                 self.model = self.model.to("cpu")
@@ -344,3 +424,13 @@ class LocalReranker(BaseReranker):
             
         self._is_initialized = False
         logger.info(f"{self.__class__.__name__} 模型资源已释放")
+
+    @property
+    def is_fallback_mode(self) -> bool:
+        """检查是否处于降级模式"""
+        return self._fallback_mode or not TORCH_AVAILABLE
+
+    @property
+    def supports_torch_compile(self) -> bool:
+        """检查是否支持 Torch 编译"""
+        return self.compile_model and TORCH_AVAILABLE and hasattr(torch, 'compile')

@@ -13,10 +13,10 @@ async def test_call_embedding_model():
     测试调用embedding模型的方法
     """
     # 测试参数
-    embed_model_id = 21 #"KBOT1/BGE-M3"
+    # embed_model_id = 21 #"KBOT1/BGE-M3"
     # embed_model_id = 23 #"KBOT1/E5-LARGE-V2"
     # embed_model_id = 33 #"KBOT1/OCI-Embedding"
-    # embed_model_id = 41	# Qwen3-Embedding
+    embed_model_id = 41	# Qwen3-Embedding
     embed_input_texts = ["苹果", "香蕉"]
     topk = 4
     kwargs = {}
@@ -84,8 +84,8 @@ async def test_call_reranker_model():
     测试调用reranker模型的方法
     """
     # 测试参数
-    rerank_model_id = 24 #"KBOT1/BGE-RANKER"
-    # rerank_model_id = 25 #"KBOT1/JINA-RANKER"
+    # rerank_model_id = 24 #"KBOT1/BGE-RANKER"
+    rerank_model_id = 25 #"KBOT1/JINA-RANKER"
     # rerank_model_id = 61 # Qwen3-RANKER
     question = "招聘数据工程师"
     inputs_list = [
@@ -134,6 +134,39 @@ async def test_call_vlm_model():
     print("=" * 50)
     response = await CallModel().call_vlm_model_for_parsing_picture(model_id, image)
     print(f"模型响应: {response}")
+
+
+async def test_call_similarity_model():
+    """
+    测试调用相似度模型的方法
+    """
+    # 测试参数
+    # 测试参数
+    # embed_model_id = 21 #"KBOT1/BGE-M3"
+    # embed_model_id = 23 #"KBOT1/E5-LARGE-V2"
+    # embed_model_id = 33 #"KBOT1/OCI-Embedding"
+    embed_model_id = 41	# Qwen3-Embedding
+    text1 = "你好"
+    text2 = "你好吗"
+    method = "cosine"
+
+    print(f"测试开始，使用模型: {embed_model_id}")
+    print(f"输入文本1: {text1}")
+    print(f"输入文本2: {text2}")
+    print(f"相似度计算方法: {method}")
+    print("=" * 50)
+    
+    try:
+        similarity = await CallModel().compute_similarity(embed_model_id, text1, text2, method)
+        print(f"相似度: {similarity}")
+    except Exception as e:
+        print(f"测试失败: {str(e)}")
+        print("可能的原因：")
+        print("1. CUDA设备不可用或不兼容")
+        print("2. 模型加载失败")
+        print("3. 内存不足")
+        print("4. 模型服务未启动")
+
 
 # 运行测试
 if __name__ == "__main__":

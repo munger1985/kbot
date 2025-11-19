@@ -1,7 +1,7 @@
 from .base import BaseEmbedding, EmbeddingConfig
 from .local_client import LocalEmbedding
 from .openai_client import OpenAIEmbedding
-from .azure_client import AzureEmbedding
+# from .azure_client import AzureEmbedding
 from .cohere_client import CohereEmbedding
 from .oci_client import OCIEmbedding
 from core.dictionary import EmbeddingProvider
@@ -30,8 +30,8 @@ def create_embedding_model(config: EmbeddingConfig) -> BaseEmbedding:
             return LocalEmbedding(config) # type: ignore
     elif provider == EmbeddingProvider.OPENAI:
         return OpenAIEmbedding(config) # type: ignore
-    elif provider == EmbeddingProvider.AZURE:
-        return AzureEmbedding(config) # type: ignore
+    # elif provider == EmbeddingProvider.AZURE:
+    #     return AzureEmbedding(config) # type: ignore
     elif provider == EmbeddingProvider.COHERE:
         return CohereEmbedding(config) # type: ignore
     elif provider == EmbeddingProvider.OCI:

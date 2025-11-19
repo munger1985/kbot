@@ -1,5 +1,5 @@
 from .base import BaseEmbedding, EmbeddingConfig, EmbeddingResponse, EmbeddingDataItem
-from .azure_client import AzureEmbeddingConfig
+# from .azure_client import AzureEmbeddingConfig
 from .cohere_client import CohereEmbeddingConfig
 from .local_client import LocalEmbeddingConfig
 from .oci_client import OCIEmbeddingConfig
@@ -11,7 +11,7 @@ __all__ = [
     "EmbeddingConfig",
     "EmbeddingResponse",
     "EmbeddingDataItem",
-    "AzureEmbeddingConfig",
+    # "AzureEmbeddingConfig",
     "CohereEmbeddingConfig",
     "LocalEmbeddingConfig",
     "OCIEmbeddingConfig",

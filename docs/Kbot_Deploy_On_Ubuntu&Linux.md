@@ -42,11 +42,43 @@ cd kbot3
 conda create -n kbot3 python=3.12
 conda activate kbot3
 pip install -r requirements.txt
-#3.准备Kbot元数据库（Oracle23ai的schema）连接信息
+# 2.1 根据cuda版本安装torch和transformers，如果没有GPU则跳过这一步，直接到步骤3，准备Kbot元数据库
+# 验证cuda版本
+nvcc --version
+# 配置nvidia官方源并升级cuda，如果需要
+# 添加NVIDIA官方仓库 (适用于Ubuntu 22.04)
+wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-ubuntu2204.pin
+sudo mv cuda-ubuntu2204.pin /etc/apt/preferences.d/cuda-repository-pin-600
+sudo apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/3bf863cc.pub
+sudo add-apt-repository "deb https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/ /"
+# 安装CUDA 13.0
+sudo apt-get update
+sudo apt-get install cuda-13-0
+# 添加NVIDIA官方仓库 (适用于Ubuntu 24.04)
+wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-ubuntu2404.pin
+sudo mv cuda-ubuntu2404.pin /etc/apt/preferences.d/cuda-repository-pin-600
+sudo apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/3bf863cc.pub
+sudo add-apt-repository "deb https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/ /"
+# 安装CUDA 13.0
+sudo apt-get update
+sudo apt-get install cuda-13-0
+# 安装完CUDA后配置环境变量
+export PATH=/usr/local/cuda-13.0/bin:${PATH}
+export LD_LIBRARY_PATH=/usr/local/cuda-13.0/lib64:${LD_LIBRARY_PATH}
+
+# 根据cuda版本安装torch和transformers，例如：如果cuda版本为12.6，则安装torch和transformers如下
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
+pip install transformers
+# 2.2 安装flash-attn
+pip install flash-attn --no-build-isolation --force-reinstall
+
+```
+### 3.准备Kbot元数据库（Oracle23ai的schema）连接信息
+```bash
 sqlplus kbot_poc/VEctor#_123@10.45.151.152:1521/aipocpdb.databasessubnet.vcnpairs.oraclevcn.com
 ```
 
-### 3.准备模型
+### 4.准备模型
 ```bash
 # 准备开源模型和LLM模型，或者准备LLM模型的api key信息。
 #huggingface-cli download  BAAI/bge-reranker-v2-m3 --local-dir /home/opc/Models/bge-reranker-v2-m3
@@ -61,7 +93,7 @@ modelscope download --model Qwen/Qwen3-Embedding-4B
 # 下载完成后，请将模型文件放置到模型目录下，默认在 ~/.modelscope/models/Qwen/目录下
 ```
 
-### 4.部署Docker容器：
+### 5.部署Docker容器：
 ```bash
 #1.安装Redis以及启动Redis
 #1.1 下载Redis 镜像
@@ -290,7 +322,7 @@ Kbot的主服务默认端口：18099，Nacos的默认端口：8848
 http://localhost:8848/nacos/
 
 ```
-### 5.部署elk用于收集日志
+### 6.部署elk用于收集日志
 ```bash
 cd docs/install/elk-log-container
 
@@ -299,7 +331,7 @@ cd docs/install/elk-log-container
 # 启动容器集群
 ./start_elk.sh
 ```
-### 5.初始化Kbot数据库表信息
+### 7.初始化Kbot数据库表信息
 ```bash
 #1.在DBA用户创建Kbot元数据库（Oracle23ai的schema），并赋予权限
 #在CDB级别开启DRCP 
@@ -335,13 +367,13 @@ CREATE INDEX IDX_FULLSEARCH_TXT_EMBEDDING ON  KBOT_BIZ_TXT_EMBEDDING("CHUNK_DOC"
 --CREATE INDEX IDX_FULLSEARCH_TXT_EMBEDDING ON  KBOT_BIZ_TXT_EMBEDDING("CHUNK_DOC") INDEXTYPE IS "CTXSYS"."CONTEXT" PARAMETERS ('lexer english_lexer');
 ```
 
-### 6.前端apex安装以及kbot UI部署
+### 8.前端apex安装以及kbot UI部署
 ```bash
 #1.安装apex
 #2.部署Kbot UI到apex中
 ```
 
-### 7.启动后台服务
+### 9.启动后台服务
 ```bash
 cd /home/ubuntu/kbot3
 #5.1启动后台服务
@@ -350,7 +382,7 @@ cd /home/ubuntu/kbot3
 ./stop_kbot.sh
 ```
 
-### 8.apex UI系统基本配置以及验证
+### 10.apex UI系统基本配置以及验证
 ```bash
 #1.系统设置=》系统配置=〉服务URL
 #2.系统设置=》向量DB连接

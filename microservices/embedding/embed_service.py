@@ -90,16 +90,18 @@ class EmbeddingService:
             raise RuntimeError(f"文本嵌入处理失败: {e}")
     
     async def compute_similarity(
-        self, 
-        embedding1: np.ndarray, 
-        embedding2: np.ndarray, 
+        self,
+        model_id: int,
+        text1: str, 
+        text2: str, 
         method: str = "cosine"
     ) -> float:
         """计算两个嵌入向量之间的相似度分数。
         
         Args:
-            embedding1: 第一个嵌入向量
-            embedding2: 第二个嵌入向量
+            model_id: 嵌入模型唯一名称
+            text1: 第一个文本
+            text2: 第二个文本
             method: 相似度计算方法，支持"cosine"(余弦相似度)和"dot"(点积)
             
         Returns:
@@ -108,6 +110,20 @@ class EmbeddingService:
         Raises:
             ValueError: 当向量维度不匹配或方法不支持时抛出
         """
+        # 获取两个文本的嵌入向量
+        embed_texts = [text1, text2]
+        response = await self.embed_texts(model_id, embed_texts, batch_size=2)
+        
+        # 检查响应数据是否为空
+        if not response.data or len(response.data) < 2:
+            logger.error(f"嵌入响应数据无效，期望2个向量，实际得到{len(response.data) if response.data else 0}个")
+            raise ValueError(f"无法获取文本嵌入向量，可能由于模型错误或CUDA问题")
+        
+        # 提取嵌入向量
+        embedding1 = np.array(response.data[0].embedding)
+        embedding2 = np.array(response.data[1].embedding)
+        
+        # 验证向量维度是否匹配
         if embedding1.shape != embedding2.shape:
             raise ValueError(f"嵌入向量维度不匹配: {embedding1.shape} 与 {embedding2.shape}")
         

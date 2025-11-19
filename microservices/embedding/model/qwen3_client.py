@@ -1,17 +1,18 @@
-import torch
-import torch.nn.functional as F
-from loguru import logger
-from transformers import AutoModel, AutoTokenizer
+import os
 from typing import Any
+from loguru import logger
+
+# 优雅降级导入
+try:
+    import torch
+    import torch.nn.functional as F
+    TORCH_AVAILABLE = True
+    from transformers import AutoModel, AutoTokenizer
+except ImportError:
+    TORCH_AVAILABLE = False
+    logger.warning("警告: PyTorch 不可用，将使用备用方案")
 
 from .local_client import LocalEmbedding, LocalEmbeddingConfig, EmbeddingResponse, EmbeddingDataItem
-
-
-# class Qwen3EmbeddingConfig(LocalEmbeddingConfig):
-#     """Qwen3 Embedding 模型的专用配置"""
-#     use_flash_attention: bool = True  # 是否使用 flash attention 2
-#     task_description: str = "Generate the embedding vector."  # 任务描述
-#     max_length: int = 8192  # Qwen3 Embedding 支持的最大长度
 
 
 class Qwen3Embedding(LocalEmbedding):
@@ -27,14 +28,45 @@ class Qwen3Embedding(LocalEmbedding):
         参数:
             config: LocalEmbeddingConfig 配置对象
         """
-        
         super().__init__(config)
         self.task_description: str = "Generate the embedding vector."  # 任务描述
         self.max_length: int = 8192  # Qwen3 Embedding 支持的最大长度
-        self.use_flash_attention: bool = True  # 是否使用 flash attention 2
+        
+        # 检查 flash attention 2 是否可用
+        self.use_flash_attention = self._check_flash_attention_available()
+        
+        if self.use_flash_attention:
+            logger.info("Flash Attention 2 可用，将启用加速")
+        else:
+            logger.info("Flash Attention 2 不可用，使用标准注意力")
 
-    def _load_model(self) -> torch.nn.Module:
-        """使用 flash attention 2 加载 Qwen3 模型"""
+    def _check_flash_attention_available(self) -> bool:
+        """检查 flash attention 2 是否可用"""
+        if not TORCH_AVAILABLE:
+            return False
+            
+        try:
+            # 尝试导入 flash attention 2
+            import flash_attn
+            # 检查 CUDA 是否可用
+            if not torch.cuda.is_available():
+                logger.warning("CUDA 不可用，禁用 Flash Attention 2")
+                return False
+            # 检查 transformers 版本是否支持
+            from transformers.utils import is_flash_attn_2_available
+            return is_flash_attn_2_available()
+        except ImportError:
+            logger.warning("Flash Attention 2 不可用，安装 flash-attn 包以启用加速")
+            return False
+        except Exception as e:
+            logger.warning(f"检查 Flash Attention 2 可用性时出错: {e}")
+            return False
+
+    def _load_model(self) -> Any:
+        """使用 flash attention 2 加载 Qwen3 模型（如果可用）"""
+        if not TORCH_AVAILABLE:
+            raise RuntimeError("PyTorch 不可用，无法加载模型")
+            
         load_kwargs = {
             "pretrained_model_name_or_path": self.name_or_path,
             "trust_remote_code": self.trust_remote_code,
@@ -43,7 +75,7 @@ class Qwen3Embedding(LocalEmbedding):
             "cache_dir": self.cache_dir
         }
 
-        # 添加 flash attention 2 支持
+        # 添加 flash attention 2 支持（仅在可用时）
         if self.use_flash_attention and torch.cuda.is_available():
             try:
                 load_kwargs.update({
@@ -53,6 +85,19 @@ class Qwen3Embedding(LocalEmbedding):
                 logger.info("启用 flash_attention_2 加速")
             except Exception as e:
                 logger.warning(f"启用 flash_attention_2 失败: {e}")
+                # 失败时回退到标准注意力
+                self.use_flash_attention = False
+                if self.use_fp16:
+                    load_kwargs["torch_dtype"] = torch.float16
+                else:
+                    load_kwargs["torch_dtype"] = torch.float32
+
+        # 如果没有设置 torch_dtype，根据配置设置
+        if "torch_dtype" not in load_kwargs:
+            if self.use_fp16 and torch.cuda.is_available():
+                load_kwargs["torch_dtype"] = torch.float16
+            else:
+                load_kwargs["torch_dtype"] = torch.float32
 
         # 确定设备配置
         if self.device_map is not None:
@@ -65,8 +110,6 @@ class Qwen3Embedding(LocalEmbedding):
         else:
             self._using_device_map = False
             target_device = self.device
-            if "torch_dtype" not in load_kwargs:
-                load_kwargs["torch_dtype"] = torch.float16 if self.use_fp16 else torch.float32
 
         try:
             model = AutoModel.from_pretrained(**load_kwargs)
@@ -80,10 +123,19 @@ class Qwen3Embedding(LocalEmbedding):
             
         except Exception as e:
             logger.error(f"加载 Qwen3 embedding 模型失败: {str(e)}")
+            # 如果 flash attention 2 失败，尝试使用标准注意力重试
+            if self.use_flash_attention:
+                logger.info("使用 Flash Attention 2 失败，尝试使用标准注意力重试...")
+                self.use_flash_attention = False
+                load_kwargs.pop("attn_implementation", None)
+                return self._load_model()
             raise
 
     def _load_tokenizer(self) -> Any:
         """加载 Qwen3 分词器，设置 padding_side='left'"""
+        if not TORCH_AVAILABLE:
+            raise RuntimeError("PyTorch 不可用，无法加载分词器")
+            
         try:
             tokenizer = AutoTokenizer.from_pretrained(
                 pretrained_model_name_or_path=self.name_or_path,
@@ -94,6 +146,11 @@ class Qwen3Embedding(LocalEmbedding):
                 local_files_only=self.local_files_only,
                 cache_dir=self.cache_dir
             )
+            
+            # 检查分词器是否有 pad_token，如果没有则设置
+            if tokenizer.pad_token is None:
+                tokenizer.pad_token = tokenizer.eos_token
+                
             logger.debug("Qwen3 分词器加载成功")
             return tokenizer
         except Exception as e:
@@ -112,21 +169,6 @@ class Qwen3Embedding(LocalEmbedding):
         """
         return f'Instruct: {self.task_description}\nQuery: {text}'
 
-    # def _is_query_text(self, text: str) -> bool:
-    #     """
-    #     判断文本是否为查询文本（需要添加指令前缀）
-        
-    #     参数:
-    #         text: 待判断的文本
-            
-    #     返回:
-    #         bool: 是否为查询文本
-    #     """
-    #     # 简单的启发式判断：如果文本看起来像问题或查询
-    #     query_indicators = ['?', 'what', 'how', 'why', 'when', 'where', 'explain', 'describe']
-    #     text_lower = text.lower()
-    #     return any(indicator in text_lower for indicator in query_indicators)
-
     async def embed(
         self,
         texts: list[str],
@@ -144,15 +186,26 @@ class Qwen3Embedding(LocalEmbedding):
             batch_size: 批次大小，0 表示自动选择
             normalize: 是否归一化嵌入向量
             raise_on_error: 是否在错误时抛出异常
-            is_query: 是否为查询文本（None 表示自动判断）
+            is_query: 是否为查询文本
             
         返回:
             EmbeddingResponse: 嵌入向量响应
         """
+        # 如果处于降级模式，使用父类的降级处理
+        if self.is_fallback_mode or not TORCH_AVAILABLE:
+            logger.warning("使用降级模式生成 Qwen3 嵌入向量")
+            return await super().embed(
+                texts=texts,
+                batch_size=batch_size,
+                normalize=normalize,
+                raise_on_error=raise_on_error,
+                **kwargs
+            )
+
         # 预处理文本：为查询文本添加指令前缀
         processed_texts = []
         for text in texts:
-            if is_query is True:
+            if is_query:
                 processed_texts.append(self._format_query_text(text))
             else:
                 processed_texts.append(text)  # 文档文本保持原样
@@ -162,7 +215,8 @@ class Qwen3Embedding(LocalEmbedding):
             texts=processed_texts,
             batch_size=batch_size,
             normalize=normalize,
-            raise_on_error=raise_on_error
+            raise_on_error=raise_on_error,
+            **kwargs
         )
 
     async def embed_queries(self, queries: list[str], **kwargs) -> EmbeddingResponse:
@@ -206,6 +260,9 @@ class Qwen3Embedding(LocalEmbedding):
         返回:
             torch.Tensor: 池化后的嵌入向量，形状为 (batch_size, hidden_size)
         """
+        if not TORCH_AVAILABLE:
+            raise RuntimeError("PyTorch 不可用")
+            
         # 检查是否为左填充
         left_padding = (attention_mask[:, -1].sum() == attention_mask.shape[0])
         
@@ -225,8 +282,11 @@ class Qwen3Embedding(LocalEmbedding):
         self,
         batch: list[str],
         normalize: bool
-    ) -> tuple[torch.Tensor, int]:
+    ) -> tuple[Any, int]:
         """处理单个文本批次，使用 Qwen3 的特殊池化方法"""
+        if not TORCH_AVAILABLE:
+            raise RuntimeError("PyTorch 不可用")
+            
         if self.tokenizer is None or self.model is None:
             raise RuntimeError("模型和分词器必须已初始化")
         
@@ -267,9 +327,17 @@ class Qwen3Embedding(LocalEmbedding):
         
         return embeddings.cpu(), tokens
 
-    # @property
-    # def embedding_dim(self) -> int:
-    #     """获取 Qwen3 嵌入向量的输出维度"""
-    #     if self.model is None:
-    #         raise RuntimeError("模型未初始化")
-    #     return self.model.config.hidden_size
+    @property
+    def embedding_dim(self) -> int:
+        """获取 Qwen3 嵌入向量的输出维度"""
+        if self.is_fallback_mode or not TORCH_AVAILABLE:
+            return 1024  # Qwen3 嵌入向量的典型维度
+            
+        if self.model is None:
+            raise RuntimeError("模型未初始化")
+        return self.model.config.hidden_size
+
+    @property
+    def supports_flash_attention(self) -> bool:
+        """检查是否支持 Flash Attention 2"""
+        return self.use_flash_attention and TORCH_AVAILABLE

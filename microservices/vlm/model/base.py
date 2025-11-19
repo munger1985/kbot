@@ -6,7 +6,6 @@ VLM (视觉语言模型) 基础配置和接口定义。
 """
 from abc import ABC, abstractmethod
 from pydantic import BaseModel
-from prometheus_client import Counter, Histogram
 from typing import Any, AsyncGenerator
 from openai.types.chat import ChatCompletion, ChatCompletionChunk
 
@@ -19,17 +18,6 @@ class VLMConfig(BaseModel):
 
 class BaseVLM(ABC):
     """VLM 实现的基类"""
-    
-    LATENCY_HIST = Histogram(
-        'vlm_latency_seconds', 
-        'VLM 延迟时间（秒）',
-        ['model_type']
-    )
-    ERROR_COUNTER = Counter(
-        'vlm_errors_total', 
-        'VLM 错误总数', 
-        ['provider']
-    )
     
     @abstractmethod
     async def startup(self) -> None:

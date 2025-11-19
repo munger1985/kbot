@@ -2,7 +2,6 @@ from openai import AsyncOpenAI
 from loguru import logger
 from typing import Any, AsyncGenerator
 from pydantic import field_validator
-from prometheus_client import Histogram, Counter
 from openai.types.chat import ChatCompletion, ChatCompletionChunk
 from .base import BaseVLM, VLMConfig
 
@@ -27,18 +26,6 @@ class OpenAIVLM(BaseVLM):
     使用 OpenAI SDK 实现的 Open AI 云 API
     支持与阿里云 DashScope 兼容的 OpenAI 兼容模式
     """
-
-    # 监控指标
-    API_LATENCY = Histogram(
-        'qwenvl_cloud_latency_seconds', 
-        'API 调用延迟',
-        ['api_endpoint']
-    )
-    API_ERRORS = Counter(
-        'qwenvl_cloud_errors_total',
-        'API 错误计数',
-        ['error_code']
-    )
 
     def __init__(self, config: OpenAIVLMConfig):
         if not isinstance(config, OpenAIVLMConfig):

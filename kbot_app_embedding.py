@@ -170,7 +170,7 @@ async def load_model(request: ToggleModelRequest) -> dict:
 
     
 @app.post("/v1/embeddings", response_model=EmbeddingResponse, tags=["Embedding"], summary="将文本列表转换为嵌入向量")
-async def embed_texts(
+async def handle_embed_texts(
     request: EmbeddingRequest,
     embed_service: EmbeddingService = Depends(get_embed_service)
     ) -> EmbeddingResponse:
@@ -211,6 +211,47 @@ async def embed_texts(
     except Exception as e:
         logger.exception(f"嵌入处理过程中发生错误: {str(e)}")
         raise HTTPException(status_code=500, detail=f"嵌入处理过程中发生错误: {str(e)}")
+
+
+@app.post("/v1/similarity", response_model=dict, tags=["Embedding"], summary="计算文本相似度")
+async def handle_compute_similarity(
+    request: SimilarityRequest,
+    embed_service: EmbeddingService = Depends(get_embed_service)
+):
+    """计算两个文本之间的相似度分数。
+
+    Args:
+    - **model_id**: int = Field(..., description="模型唯一标识符")
+    - **text1**: str = Field(..., description="第一个文本")
+    - **text2**: str = Field(..., description="第二个文本")
+    - **method**: str = Field("cosine", description="相似度计算方法，支持'cosine'(余弦相似度)和'dot'(点积)")
+        
+    Returns:
+    - **dict**: 包含相似度分数的响应数据
+        
+    Raises:
+    - **HTTPException**: 当相似度计算过程中发生错误时抛出500错误
+    """
+    model_name = embedding_service._model_pool._model_names.get(request.model_id, str(request.model_id))
+    try:
+        logger.info(f"收到相似度请求: 模型 {model_name}, 文本1: {request.text1}, 文本2: {request.text2}")
+        
+        # 使用嵌入服务计算相似度
+        similarity = await embed_service.compute_similarity(
+            model_id=request.model_id,
+            text1=request.text1,
+            text2=request.text2,
+            method=request.method
+        )
+        
+        return {"similarity": similarity}
+    
+    except Exception as e:
+        logger.exception(f"相似度计算过程中发生错误: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"相似度计算过程中发生错误: {str(e)}")
+
+
+
 
 
 # 全局变量，用于存储微服务进程

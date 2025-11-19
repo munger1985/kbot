@@ -1,8 +1,7 @@
 import asyncio
 import numpy as np
-from typing import Any, cast
+from typing import cast
 from openai import AsyncOpenAI, APIError, APIConnectionError, RateLimitError
-from prometheus_client import Histogram, Counter, Gauge
 from .base import BaseEmbedding, EmbeddingConfig, EmbeddingResponse, EmbeddingDataItem
 from loguru import logger
 
@@ -25,37 +24,6 @@ class OpenAIEmbedding(BaseEmbedding):
     - Adaptive retry mechanism
     - Resource cleanup safeguards
     """
-
-    # Prometheus metrics
-    LATENCY_HIST = Histogram(
-        'openai_embedding_latency_seconds',
-        'Latency for embedding requests',
-        ['model_name', 'status']
-    )
-    
-    ERROR_COUNTER = Counter(
-        'openai_embedding_errors_total',
-        'Count of embedding errors',
-        ['model_name', 'error_type']
-    )
-    
-    REQUEST_COUNTER = Counter(
-        'openai_embedding_requests_total',
-        'Count of embedding requests',
-        ['model_name']
-    )
-    
-    BATCH_SIZE_GAUGE = Gauge(
-        'openai_embedding_batch_size',
-        'Effective batch size used',
-        ['model_name']
-    )
-    
-    TOKEN_USAGE = Gauge(
-        'openai_embedding_tokens_used',
-        'Tokens consumed per request',
-        ['model_name']
-    )
 
     def __init__(self, config: OpenAIEmbeddingConfig):
         """

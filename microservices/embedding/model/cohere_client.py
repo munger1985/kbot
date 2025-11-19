@@ -1,9 +1,9 @@
 from typing import Any
 from cohere import AsyncClient
-from prometheus_client import Histogram, Counter, Gauge
 from loguru import logger
 import asyncio
 from .base import BaseEmbedding, EmbeddingConfig, EmbeddingResponse, EmbeddingDataItem
+
 
 class CohereEmbeddingConfig(EmbeddingConfig):
     """Cohere 嵌入服务配置"""
@@ -20,37 +20,6 @@ class CohereEmbedding(BaseEmbedding):
     - 全面的监控指标
     - 资源优化
     """
-
-    # Prometheus 监控指标（Cohere 特定维度）
-    LATENCY_HIST = Histogram(
-        'cohere_embedding_latency_seconds',
-        '嵌入请求延迟时间（秒）',
-        ['model_name', 'input_type', 'status']
-    )
-    
-    ERROR_COUNTER = Counter(
-        'cohere_embedding_errors_total',
-        '嵌入错误次数统计',
-        ['model_name', 'error_type']
-    )
-    
-    REQUEST_COUNTER = Counter(
-        'cohere_embedding_requests_total',
-        '嵌入请求次数统计',
-        ['model_name', 'input_type']
-    )
-    
-    BATCH_SIZE_GAUGE = Gauge(
-        'cohere_embedding_batch_size',
-        '使用的有效批处理大小',
-        ['model_name']
-    )
-    
-    TOKEN_USAGE = Gauge(
-        'cohere_embedding_tokens_estimated',
-        '预估消耗的令牌数',
-        ['model_name']
-    )
 
     def __init__(self, config: CohereEmbeddingConfig):
         """

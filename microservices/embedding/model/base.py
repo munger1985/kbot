@@ -1,6 +1,5 @@
 from abc import ABC, abstractmethod
 from pydantic import BaseModel, Field
-from prometheus_client import Counter, Histogram
 
 
 class EmbeddingConfig(BaseModel):
@@ -31,18 +30,6 @@ class BaseEmbedding(ABC):
     嵌入模型抽象基类
     定义所有嵌入模型实现的标准接口
     """
-    
-    # 监控指标
-    LATENCY_HIST = Histogram(
-        'embedding_latency_seconds', 
-        '嵌入延迟时间（秒）',
-        ['model_type']
-    )
-    ERROR_COUNTER = Counter(
-        'embedding_errors_total', 
-        '嵌入错误总数', 
-        ['provider']
-    )
 
     @abstractmethod
     async def startup(self) -> None:

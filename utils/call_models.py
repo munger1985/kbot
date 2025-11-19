@@ -87,7 +87,56 @@ class CallModel():
         except Exception as e:
             logger.error(f"嵌入服务发生错误: {str(e)}")
             return None
+    
+    async def compute_similarity(self, 
+                                model_id: int, 
+                                text1: str, 
+                                text2: str, 
+                                method: str = "cosine"
+                                ) -> float | None:
+        """
+        计算两个文本之间的相似度
         
+        Args:
+            model_id: 用于计算相似度的模型唯一标识符
+            text1: 第一个文本
+            text2: 第二个文本
+            method: 相似度计算方法，支持"cosine"(余弦相似度)和"dot"(点积)
+            
+        Returns:
+            相似度分数或None（失败时）
+        """
+        service_host = self.embedding_config.service_host
+        service_port = self.embedding_config.service_port
+        total = self.embedding_config.timeout
+        timeout = aiohttp.ClientTimeout(total=total)
+        url = f"http://{service_host}:{service_port}/v1/similarity"
+        headers = {"Content-Type": "application/json"}
+        payload = {
+            "model_id": int(model_id),
+            "text1": text1,
+            "text2": text2,
+            "method": method
+        }
+
+        try:
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.post(url, headers=headers, json=payload) as response:
+                    if response.status != 200:
+                        text = await response.text()
+                        logger.error(f"相似度计算服务错误: HTTP {response.status}, {text}")
+                        return None
+                    
+                    response_data = await response.json()
+                    similarity = response_data["similarity"]
+                    logger.info("成功计算相似度")
+                    return similarity
+                    
+        except Exception as e:
+            logger.error(f"相似度计算服务发生错误: {str(e)}")
+            return None
+
+
     async def call_reranker_model(self, 
                                   model_id: int, 
                                   query: str, 
