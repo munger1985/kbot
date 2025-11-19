@@ -59,18 +59,22 @@ wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/
 sudo mv cuda-ubuntu2404.pin /etc/apt/preferences.d/cuda-repository-pin-600
 sudo apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/3bf863cc.pub
 sudo add-apt-repository "deb https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/ /"
-# 安装CUDA 13.0
+# 安装CUDA 12.8
 sudo apt-get update
-sudo apt-get install cuda-13-0
+sudo apt-get install cuda-12-8
+#sudo apt-get remove --purge cuda-12-8
 # 安装完CUDA后配置环境变量
-export PATH=/usr/local/cuda-13.0/bin:${PATH}
-export LD_LIBRARY_PATH=/usr/local/cuda-13.0/lib64:${LD_LIBRARY_PATH}
+export PATH=/usr/local/cuda-12.8/bin:${PATH}
+export LD_LIBRARY_PATH=/usr/local/cuda-12.8/lib64:${LD_LIBRARY_PATH}
+export CUDA_HOME=/usr/local/cuda-12.8
 
-# 根据cuda版本安装torch和transformers，例如：如果cuda版本为12.6，则安装torch和transformers如下
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
+# 根据cuda版本安装torch和transformers，例如：如果cuda版本为12.8，则安装torch和transformers如下
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
 pip install transformers
 # 2.2 安装flash-attn
-pip install flash-attn --no-build-isolation --force-reinstall
+# 安装 flash-attn 所需的构建依赖
+pip install psutil ninja packaging
+pip install flash-attn --no-build-isolation
 
 ```
 ### 3.准备Kbot元数据库（Oracle23ai的schema）连接信息
