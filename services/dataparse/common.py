@@ -141,6 +141,19 @@ def detect_file_encoding(file_path):
     """
     检测文件的编码格式，增强错误处理
     """
+    
+    # 获取文件扩展名
+    file_ext = os.path.splitext(file_path)[1].lower()
+    
+    # 对于PDF等二进制文件，不需要编码检测
+    binary_extensions = ['.pdf', '.doc', '.docx', '.ppt', '.pptx', '.xls', '.xlsx', 
+                        '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', 
+                        '.mp3', '.mp4', '.avi', '.mov', '.zip', '.rar']
+    
+    if file_ext in binary_extensions:
+        logger.debug(f"二进制文件 {file_ext} 不需要编码检测，返回 None")
+        return None  # 返回 None 而不是 'binary'
+    
     with open(file_path, 'rb') as f:
         raw_data = f.read()
         

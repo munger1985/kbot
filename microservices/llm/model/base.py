@@ -9,7 +9,6 @@ from abc import ABC, abstractmethod
 from pydantic import BaseModel
 from typing import Any, AsyncGenerator
 from openai.types.chat import ChatCompletion, ChatCompletionChunk
-from prometheus_client import Counter, Histogram
 
 
 class LLMConfig(BaseModel):
@@ -20,10 +19,6 @@ class LLMConfig(BaseModel):
 
 class BaseLLM(ABC):
     """LLM实现的基类"""
-    
-    # Prometheus监控指标
-    ERROR_COUNTER = Counter('llm_errors', '按提供商统计的错误次数', ['provider'])
-    LATENCY_HIST = Histogram('llm_latency', '生成延迟', ['model_type'])
     
     def __init__(self, config: LLMConfig) -> None:
         """使用配置初始化LLM
