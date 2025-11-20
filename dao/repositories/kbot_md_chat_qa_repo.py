@@ -1,5 +1,5 @@
-from dao.entities.kbot_md_chat_session import KbotMdChatSession, KbotMdChatReferences
-from sqlalchemy import insert, select, update, delete, func
+from dao.entities.kbot_md_chat_qa import KbotMdChatQa, KbotMdChatReferences
+from sqlalchemy import select, update, delete, func
 from utils.oracle_vec_handler import OracleVecHandler
 from core.database.meta_oracle import get_session
 from utils.common import safe_read_content
@@ -8,7 +8,7 @@ from loguru import logger
 from datetime import datetime
 
 
-class KbotMdChatSessionRepository():
+class KbotMdChatQaRepository():
     """Oracle 23ai 会话存储库 - SQLAlchemy 2.0 ORM版本"""
 
     def _parse_datetime(self, datetime_str: str | None) -> datetime | None:
@@ -50,7 +50,7 @@ class KbotMdChatSessionRepository():
                 response_time = self._parse_datetime(qa_data.response_time)
 
                 # 创建会话记录 - 只使用ORM模型中定义的字段
-                chat_session = KbotMdChatSession(
+                chat_session = KbotMdChatQa(
                     session_id=session_data.session_id,
                     agent_id=session_data.agent_id,
                     question=qa_data.question,
@@ -97,8 +97,8 @@ class KbotMdChatSessionRepository():
         try:
             async with get_session() as session:
                 # 获取agent_id
-                stmt = select(KbotMdChatSession.agent_id).where(
-                    KbotMdChatSession.session_id == session_id
+                stmt = select(KbotMdChatQa.agent_id).where(
+                    KbotMdChatQa.session_id == session_id
                 ).limit(1)
                 result = await session.execute(stmt)
                 agent_row = result.scalar_one_or_none()
@@ -112,7 +112,7 @@ class KbotMdChatSessionRepository():
                 response_time = self._parse_datetime(qa_data.response_time)
                 
                 # 创建新的QA记录 - 只使用ORM模型中定义的字段
-                chat_session = KbotMdChatSession(
+                chat_session = KbotMdChatQa(
                     session_id=session_id,
                     agent_id=agent_row,
                     question=qa_data.question,
@@ -151,29 +151,64 @@ class KbotMdChatSessionRepository():
             logger.error(f"添加QA数据失败: {e}")
             return False
 
-    async def get_session(self, session_id: str) -> KbotMdChatSession | None:
+    async def get_session(self, session_id: str) -> dict | None:
         """
-        获取完整会话数据 - 手动关联版本
+        获取完整会话数据 - SQLAlchemy版本
+        :param session_id: 会话ID
+        :return: 会话数据或None
         """
         try:
             async with get_session() as session:
-                # 获取所有QA记录
-                stmt = select(KbotMdChatSession).where(
-                    KbotMdChatSession.session_id == session_id
+                # 获取该会话的所有QA记录
+                stmt = select(KbotMdChatQa).where(
+                    KbotMdChatQa.session_id == session_id
+                ).order_by(
+                    KbotMdChatQa.request_time
                 )
+
                 result = await session.execute(stmt)
-                sessions = result.scalars().all()
-                
-                if not sessions:
+                session_rows = result.scalars().all()
+
+                if not session_rows:
                     logger.debug(f"会话不存在: {session_id}")
                     return None
-                
-                # 按时间排序
-                sessions_sorted = sorted(sessions, key=lambda x: x.request_time or datetime.min)
-                
-                # 构建QAData列表
-                qa_data_list = []
-                for session_row in sessions_sorted:
+
+                # 按QA分组处理数据
+                qa_data_map = {}
+                for session_row in session_rows:
+                    # 提取QA基本信息
+                    agent_id = session_row.agent_id
+                    question = safe_read_content(session_row.question)
+                    answer = safe_read_content(session_row.answer)
+                    qa_embedding_str = session_row.qa_embedding
+                    feedback = session_row.feedback
+                    username = session_row.username
+                    request_time = session_row.request_time
+                    response_time = session_row.response_time
+                    
+                    qa_key = f"{question}_{request_time}"
+                    if qa_key not in qa_data_map:
+                        # 转换向量数据
+                        qa_embedding = []
+                        if qa_embedding_str:
+                            qa_embedding = OracleVecHandler().convert(vec=qa_embedding_str, to_string=False)
+                            # 确保qa_embedding是Python列表
+                            if hasattr(qa_embedding, 'tolist'):
+                                qa_embedding = qa_embedding.tolist()  # type: ignore
+                            elif isinstance(qa_embedding, list):
+                                qa_embedding = list(qa_embedding)
+                        
+                        qa_data_map[qa_key] = {
+                            "question": question,
+                            "answer": answer,
+                            "qa_embedding": qa_embedding,
+                            "references": [],
+                            "feedback": feedback,
+                            "by": username,
+                            "request_time": request_time.strftime("%Y-%m-%d %H:%M:%S.%f") if request_time else None, # type: ignore
+                            "response_time": response_time.strftime("%Y-%m-%d %H:%M:%S.%f") if response_time else None # type: ignore
+                        }
+                    
                     # 获取对应的参考文献
                     ref_stmt = select(KbotMdChatReferences).where(
                         KbotMdChatReferences.qa_id == session_row.qa_id
@@ -181,15 +216,9 @@ class KbotMdChatSessionRepository():
                     ref_result = await session.execute(ref_stmt)
                     references_rows = ref_result.scalars().all()
                     
-                    # 转换向量数据
-                    qa_embedding = []
-                    if session_row.qa_embedding:
-                        qa_embedding = OracleVecHandler().convert(vec=session_row.qa_embedding, to_string=False)
-                    
-                    # 构建参考文献列表
-                    references = []
+                    # 添加参考文献数据（如果有）
                     for ref_row in references_rows:
-                        references.append(Reference(
+                        ref = Reference(
                             chunk_type=ref_row.chunk_type,
                             chunk_file_path=ref_row.chunk_file_path,
                             page_num=ref_row.page_num,
@@ -198,28 +227,29 @@ class KbotMdChatSessionRepository():
                             preview_link=ref_row.preview_link,
                             similarity_score=ref_row.similarity_score,
                             reranker_score=ref_row.reranker_score
-                        ))
-                    
+                        )
+                        qa_data_map[qa_key]["references"].append(ref)
+                
+                # 构建QAData列表
+                qa_data_list = []
+                for qa_info in qa_data_map.values():
                     qa_data_list.append(QAData(
-                        question=safe_read_content(session_row.question),
-                        answer=safe_read_content(session_row.answer),
-                        qa_embedding=qa_embedding,
-                        references=references,
-                        feedback=session_row.feedback,
-                        by=session_row.username,
-                        request_time=session_row.request_time.strftime("%Y-%m-%d %H:%M:%S.%f") if session_row.request_time else None,
-                        response_time=session_row.response_time.strftime("%Y-%m-%d %H:%M:%S.%f") if session_row.response_time else None
+                        question=qa_info["question"],
+                        answer=qa_info["answer"],
+                        qa_embedding=qa_info["qa_embedding"],
+                        references=qa_info["references"],
+                        feedback=qa_info["feedback"],
+                        by=qa_info["by"],
+                        request_time=qa_info["request_time"],
+                        response_time=qa_info["response_time"]
                     ))
                 
-                # 创建返回对象，但不传入qa_data参数
-                result_session = KbotMdChatSession(
-                    session_id=session_id,
-                    agent_id=sessions_sorted[0].agent_id
-                )
-                # 通过属性设置qa_data
-                result_session.qa_data = qa_data_list
-                return result_session
-            
+                return {
+                    "session_id": session_id,
+                    "agent_id": agent_id,
+                    "qa_data": qa_data_list
+                }
+                
         except Exception as e:
             logger.error(f"获取会话失败: {e}")
             return None
@@ -231,8 +261,8 @@ class KbotMdChatSessionRepository():
         try:
             async with get_session() as session:
                 # 先获取所有相关的qa_id
-                stmt = select(KbotMdChatSession.qa_id).where(
-                    KbotMdChatSession.session_id == session_id
+                stmt = select(KbotMdChatQa.qa_id).where(
+                    KbotMdChatQa.session_id == session_id
                 )
                 result = await session.execute(stmt)
                 qa_ids = result.scalars().all()
@@ -245,8 +275,8 @@ class KbotMdChatSessionRepository():
                     await session.execute(ref_delete_stmt)
                     
                     # 删除会话记录
-                    session_delete_stmt = delete(KbotMdChatSession).where(
-                        KbotMdChatSession.session_id == session_id
+                    session_delete_stmt = delete(KbotMdChatQa).where(
+                        KbotMdChatQa.session_id == session_id
                     )
                     await session.execute(session_delete_stmt)
                 
@@ -265,8 +295,8 @@ class KbotMdChatSessionRepository():
         try:
             async with get_session() as session:
                 # 先获取所有相关的qa_id
-                stmt = select(KbotMdChatSession.qa_id).where(
-                    KbotMdChatSession.agent_id == agent_id
+                stmt = select(KbotMdChatQa.qa_id).where(
+                    KbotMdChatQa.agent_id == agent_id
                 )
                 result = await session.execute(stmt)
                 qa_ids = result.scalars().all()
@@ -279,8 +309,8 @@ class KbotMdChatSessionRepository():
                     await session.execute(ref_delete_stmt)
                     
                     # 删除会话记录
-                    session_delete_stmt = delete(KbotMdChatSession).where(
-                        KbotMdChatSession.agent_id == agent_id
+                    session_delete_stmt = delete(KbotMdChatQa).where(
+                        KbotMdChatQa.agent_id == agent_id
                     )
                     await session.execute(session_delete_stmt)
                 
@@ -304,17 +334,17 @@ class KbotMdChatSessionRepository():
             async with get_session() as session:
                 # 使用窗口函数获取指定索引的QA记录
                 subquery = select(
-                    KbotMdChatSession.qa_id,
+                    KbotMdChatQa.qa_id,
                     func.row_number().over(
-                        order_by=KbotMdChatSession.request_time
+                        order_by=KbotMdChatQa.request_time
                     ).label('rn')
                 ).where(
-                    KbotMdChatSession.session_id == session_id
+                    KbotMdChatQa.session_id == session_id
                 ).subquery()
 
                 # 更新指定索引的QA反馈
-                update_stmt = update(KbotMdChatSession).where(
-                    KbotMdChatSession.qa_id == select(subquery.c.qa_id).where(
+                update_stmt = update(KbotMdChatQa).where(
+                    KbotMdChatQa.qa_id == select(subquery.c.qa_id).where(
                         subquery.c.rn == qa_index_num + 1  # ROW_NUMBER从1开始
                     ).scalar_subquery()
                 ).values(feedback=feedback)
@@ -342,10 +372,10 @@ class KbotMdChatSessionRepository():
         try:
             async with get_session() as session:
                 # 获取最后一个QA记录
-                stmt = select(KbotMdChatSession).where(
-                    KbotMdChatSession.session_id == session_id
+                stmt = select(KbotMdChatQa).where(
+                    KbotMdChatQa.session_id == session_id
                 ).order_by(
-                    KbotMdChatSession.request_time.desc()
+                    KbotMdChatQa.qa_id.desc()
                 ).limit(1)
 
                 result = await session.execute(stmt)
@@ -367,7 +397,7 @@ class KbotMdChatSessionRepository():
                     qa_embedding = OracleVecHandler().convert(vec=last_session.qa_embedding, to_string=False)
                     # 确保qa_embedding是Python列表
                     if hasattr(qa_embedding, 'tolist'):
-                        qa_embedding = qa_embedding.tolist()
+                        qa_embedding = qa_embedding.tolist() # type: ignore
                     elif isinstance(qa_embedding, list):
                         qa_embedding = list(qa_embedding)
 
@@ -395,8 +425,8 @@ class KbotMdChatSessionRepository():
                     "references": references_dict,
                     "feedback": last_session.feedback,
                     "by": last_session.username,
-                    "request_time": last_session.request_time.strftime("%Y-%m-%d %H:%M:%S.%f") if last_session.request_time else None,
-                    "response_time": last_session.response_time.strftime("%Y-%m-%d %H:%M:%S.%f") if last_session.response_time else None,
+                    "request_time": last_session.request_time.strftime("%Y-%m-%d %H:%M:%S.%f") if last_session.request_time else None, # type: ignore
+                    "response_time": last_session.response_time.strftime("%Y-%m-%d %H:%M:%S.%f") if last_session.response_time else None, # type: ignore
                     "agent_id": last_session.agent_id
                 }
 
@@ -415,17 +445,17 @@ class KbotMdChatSessionRepository():
             async with get_session() as session:
                 # 使用窗口函数获取指定索引的QA记录
                 subquery = select(
-                    KbotMdChatSession.qa_id,
+                    KbotMdChatQa.qa_id,
                     func.row_number().over(
-                        order_by=KbotMdChatSession.request_time
+                        order_by=KbotMdChatQa.request_time
                     ).label('rn')
                 ).where(
-                    KbotMdChatSession.session_id == session_id
+                    KbotMdChatQa.session_id == session_id
                 ).subquery()
 
                 # 获取指定索引的QA记录
-                stmt = select(KbotMdChatSession).where(
-                    KbotMdChatSession.qa_id == select(subquery.c.qa_id).where(
+                stmt = select(KbotMdChatQa).where(
+                    KbotMdChatQa.qa_id == select(subquery.c.qa_id).where(
                         subquery.c.rn == qa_index_num + 1  # ROW_NUMBER从1开始
                     ).scalar_subquery()
                 )
@@ -465,12 +495,12 @@ class KbotMdChatSessionRepository():
                 return QAData(
                     question=safe_read_content(session_row.question),
                     answer=safe_read_content(session_row.answer),
-                    qa_embedding=qa_embedding,
+                    qa_embedding=qa_embedding, # type: ignore
                     references=references,
                     feedback=session_row.feedback,
                     by=session_row.username,
-                    request_time=session_row.request_time.strftime("%Y-%m-%d %H:%M:%S.%f") if session_row.request_time else None,
-                    response_time=session_row.response_time.strftime("%Y-%m-%d %H:%M:%S.%f") if session_row.response_time else None
+                    request_time=session_row.request_time.strftime("%Y-%m-%d %H:%M:%S.%f") if session_row.request_time else None, # type: ignore
+                    response_time=session_row.response_time.strftime("%Y-%m-%d %H:%M:%S.%f") if session_row.response_time else None # type: ignore
                 )
 
         except Exception as e:
@@ -487,15 +517,15 @@ class KbotMdChatSessionRepository():
         try:
             async with get_session() as session:
                 # 获取最后一个QA记录的qa_id
-                subquery = select(KbotMdChatSession.qa_id).where(
-                    KbotMdChatSession.session_id == session_id
+                subquery = select(KbotMdChatQa.qa_id).where(
+                    KbotMdChatQa.session_id == session_id
                 ).order_by(
-                    KbotMdChatSession.request_time.desc()
+                    KbotMdChatQa.request_time.desc()
                 ).limit(1).scalar_subquery()
 
                 # 更新答案
-                update_stmt = update(KbotMdChatSession).where(
-                    KbotMdChatSession.qa_id == subquery
+                update_stmt = update(KbotMdChatQa).where(
+                    KbotMdChatQa.qa_id == subquery
                 ).values(answer=answer)
 
                 result = await session.execute(update_stmt)
@@ -523,8 +553,8 @@ class KbotMdChatSessionRepository():
         try:
             async with get_session() as session:
                 # 获取唯一的会话ID列表
-                distinct_stmt = select(KbotMdChatSession.session_id).where(
-                    KbotMdChatSession.agent_id == agent_id
+                distinct_stmt = select(KbotMdChatQa.session_id).where(
+                    KbotMdChatQa.agent_id == agent_id
                 ).distinct()
 
                 # 计算总数
@@ -535,8 +565,8 @@ class KbotMdChatSessionRepository():
                 # 分页查询会话ID
                 session_ids_stmt = distinct_stmt.order_by(
                     # 按最新会话时间排序
-                    select(func.max(KbotMdChatSession.request_time)).where(
-                        KbotMdChatSession.session_id == distinct_stmt.c.session_id
+                    select(func.max(KbotMdChatQa.request_time)).where(
+                        KbotMdChatQa.session_id == distinct_stmt.c.session_id
                     ).scalar_subquery().desc()
                 ).offset((page - 1) * page_size).limit(page_size)
 
@@ -547,16 +577,16 @@ class KbotMdChatSessionRepository():
                 sessions_list = []
                 for session_id in session_ids:
                     # 获取会话的基本信息（第一条记录）
-                    first_qa_stmt = select(KbotMdChatSession).where(
-                        KbotMdChatSession.session_id == session_id
-                    ).order_by(KbotMdChatSession.request_time).limit(1)
+                    first_qa_stmt = select(KbotMdChatQa).where(
+                        KbotMdChatQa.session_id == session_id
+                    ).order_by(KbotMdChatQa.request_time).limit(1)
 
                     first_qa_result = await session.execute(first_qa_stmt)
                     first_qa = first_qa_result.scalar_one()
 
                     # 获取QA总数
                     qa_count_stmt = select(func.count()).where(
-                        KbotMdChatSession.session_id == session_id
+                        KbotMdChatQa.session_id == session_id
                     )
                     qa_count_result = await session.execute(qa_count_stmt)
                     qa_count = qa_count_result.scalar_one()
@@ -565,7 +595,7 @@ class KbotMdChatSessionRepository():
                         "session_id": session_id,
                         "agent_id": first_qa.agent_id,
                         "first_question": safe_read_content(first_qa.question),
-                        "create_time": first_qa.request_time.strftime("%Y-%m-%d %H:%M:%S.%f") if first_qa.request_time else None,
+                        "create_time": first_qa.request_time.strftime("%Y-%m-%d %H:%M:%S.%f") if first_qa.request_time else None, # type: ignore
                         "qa_count": qa_count
                     })
 

@@ -99,17 +99,6 @@ modelscope download --model Qwen/Qwen3-Embedding-4B
 
 ### 5.部署Docker容器：
 ```bash
-#1.安装Redis以及启动Redis
-#1.1 下载Redis 镜像
-sudo docker pull redis:latest
-#1.2 启动redis容器
-sudo docker run --name kbot-redis -d \
-  -p 6379:6379 \
-  -v /home/ubuntu/kbot_data/redis:/data \
-  redis:latest \
-  redis-server --appendonly yes --requirepass "welcome1"
-#1.3.设置容器自动重启
-docker update --restart unless-stopped kbot-redis #容器名或ID
 
 #2.配置 libreoffice 容器(把word/ppt数据转成pdf)
 ##方法一：从开发环境导出容器，并导入镜像
@@ -140,193 +129,8 @@ sudo docker run --name libreoffice -d \
 # 服务端口修改docker-compose.yaml里的端口号。默认为9316
 # 容器所在服务器ip和容器端口需要更新到app.properties文件的 libre_host 和 libre_port 两项中
 
-
-#3 部署elastic search容器（作为向量存储）
-#3.1 创建elastic search网络
-docker network create elastic
-#3.2 创建elastic search存储目录
-mkdir -p /home/ubuntu/elastic/eskb
-#3.3 修改目录权限
-sudo chown -R 1000:1000 /home/ubuntu/elastic/
-sudo chmod -R 777 /home/ubuntu/elastic/
-#3.4 启动elastic search容器
-docker run --name eskb --net elastic \
-  -p 9202:9200 \
-  -p 9302:9300 \
-  -v /home/ubuntu/elastic/eskb:/usr/share/elasticsearch/data \
-  -d -m 2GB \
-  -e "discovery.type=single-node" \
-  elasticsearch:9.1.5
-
-#3.5 修改初始密码，将输出到控制台的密码复制到configuration/db_config.json文件中
-docker exec -it eskb /usr/share/elasticsearch/bin/elasticsearch-reset-password -u elastic
-
-#3.6 复制证书
-sudo docker cp eskb:/usr/share/elasticsearch/config/certs/http_ca.crt /home/ubuntu/elastic/eskb/
-sudo chown -R ubuntu:ubuntu /home/ubuntu/elastic/eskb/http_ca.crt
-
-#3.7 验证elastic search安装，使用前面修改过的初始密码登录，用户名默认elastic
-https://localhost:9202/
-
-
-#3.配置 nacos 容器
-#3.1 创建nacos容器镜像
-cd docs/install/nacos-container
-docker-compose up -d
-
-#3.2 Kbot 3.0后端的配置文件：
-#3.2.1 .env配置
-.env
-  .env配置示例：
-  # NACOS config
-  NACOS_SERVER_ADDR="0.0.0.0:8848"
-  NACOS_GROUP="dev"
-  NACOS_USERNAME="nacos"
-  NACOS_PASSWORD="nacos"
-  NACOS_ENCRYPTION_KEY="aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789+ab="
-
-  # main app config
-  KBOT_SERVICE_NAME="kbot_main"
-  KBOT_HOST=0.0.0.0
-  KBOT_PORT=18099
-  KBOT_IP=64.181.236.219
-  KBOT_AUTH_ENCRYPTION_KEY="aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789+ab="
-  KBOT_AUTH_EXPIRE_MINUTES=600
-cp .env ./microservices/embedding/
-cp .env ./microservices/llm/
-cp .env ./microservices/reranker/
-cp .env ./microservices/vlm/
-
-#3.2.2 app_config.json 配置文件说明：
-configuration/app_config.json
-配置示例：
-{
-  "kbot": {
-    "service_name": "Kbot_Main",
-    "title": "KBOT",
-    "description": "KBot API Service",
-    "version": "3.0.0",
-    "debug": true,
-    "file_storage": "/home/ubuntu/kbot_data/files",
-    "upload_workers": 10,
-    "parser": {
-      "max_workers": 2,
-      "check_interval": 60
-    },
-    "log": {
-      "level": "DEBUG",
-      "dir": "/home/ubuntu/kbot3/logs/",
-      "rotation": "100 MB",
-      "retention": "10 days"
-    }
-  },
-  "libre": {
-    "host": "localhost",
-    "port": 9316
-  }
-}
-
-#3.2.3  db_config.json 配置文件说明：
-configuration/db_config.json
-配置示例：
-{
-  "oracle": {
-    "username": "kbotui_dev",
-    "password": "xxx##",
-    "host": "132.145.81.123",
-    "port": 1521,
-    "service_name": "DB1007_pdb1.regionalpublics.hysunhevcn.oraclevcn.com"
-  },
-  "redis": {
-    "password": "welcome1",
-    "host": "localhost",
-    "port": 6379,
-    "max_connections": 10,
-    "socket_connect_timeout": 3,
-    "socket_timeout": 5,
-    "retry_on_timeout": true,
-    "health_check_interval": 30
-  },
-  "sqlalchemy": {
-    "echo": false,
-    "pool_size": 10,
-    "pool_timeout": 60,
-    "max_overflow": 20,
-    "pool_pre_ping": true,
-    "pool_use_lifo": true,
-    "pool_recycle": 1800
-  },
-  "eslog": {
-    "hosts": [
-      "https://localhost:9201"
-    ],
-    "username": "elastic",
-    "password": "=5n3exXB4J+3Ays1muHO",
-    "ca_certs": "/home/ubuntu/elastic/eslog/http_ca.crt",
-    "index": "filebeat-*"
-  }
-}
-
-#3.2.4  model_config.json 配置文件说明：
-configuration/model_config.json
-配置示例：
-{
-  "embed": {
-    "service_name": "KBot_Embedding_Service",
-    "service_version": "1.0.0",
-    "service_host": "0.0.0.0",
-    "service_port": 9901,
-    "max_tokens": 8192,
-    "timeout": 300,
-    "max_retries": 3,
-    "cache_dir": "/home/ubuntu/kbot_data/cached_models"
-  },
-  "llm": {
-    "service_name": "KBot_LLM_Service",
-    "service_version": "1.0.0",
-    "service_host": "0.0.0.0",
-    "service_port": 9902,
-    "max_tokens": 8192,
-    "temperature": 0.7,
-    "top_p": 1.0,
-    "top_k": 0,
-    "timeout": 300,
-    "frequency_penalty": 0.0,
-    "presence_penalty": 0.0
-  },
-  "reranker": {
-    "service_name": "KBot_Reranker_Service",
-    "service_version": "1.0.0",
-    "service_host": "0.0.0.0",
-    "service_port": 9903,
-    "cache_dir": "/home/ubuntu/kbot_data/cached_models",
-    "timeout": 300
-  },
-  "vlm": {
-    "service_name": "KBot_VLM_Service",
-    "service_version": "1.0.0",
-    "service_host": "0.0.0.0",
-    "service_port": 9904,
-    "timeout": 300
-  },
-  "tokenizer": {
-    "custom_dict_path": "/home/ubuntu/kbot3/configuration/custom_dict.txt",
-    "stop_words_path": "/home/ubuntu/kbot3/configuration/stopwords.txt"
-  },
-  "prompt": {
-    "image2text": "SYSTEM/image2text",
-    "summary": "SYSTEM/summary"
-  }
-}
-Kbot的主服务默认端口：18099，Nacos的默认端口：8848
-
-#3.3 然后将配置文档注入nacos，只需要运行一次，之后就不再需要初始化nacos，除非配置有变更需要重新运行下面的命令
-./load_config.sh
-#3.4 nacos默认管理界面，验证nacos安装
-http://localhost:8848/nacos/
-
 ```
-### 6.部署elk用于收集日志
+### 6.部署elk用于收集日志（可选）
 ```bash
 cd docs/install/elk-log-container
 
@@ -335,6 +139,7 @@ cd docs/install/elk-log-container
 # 启动容器集群
 ./start_elk.sh
 ```
+
 ### 7.初始化Kbot数据库表信息
 ```bash
 #1.在DBA用户创建Kbot元数据库（Oracle23ai的schema），并赋予权限

@@ -6,7 +6,7 @@ from typing import Any
 from fastapi import Request, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from dao.entities.kbot_biz_chat_session import KbotBizChatSession
-from dao.repositories.kbot_md_chat_session_repo import KbotMdChatSessionRepository
+from dao.repositories.kbot_md_chat_qa_repo import KbotMdChatQaRepository
 from dao.entities.kbot_biz_chat_session import QAData, Reference
 from dao.repositories.kbot_md_agent_repo import KbotMdAgentRepository
 from dao.repositories.kbot_md_agent_conf_repo import KbotMdAgentConfRepository
@@ -17,6 +17,8 @@ from services.chat.agent_chat import Agent
 from services.chat.mcp_chat import Agent as MCPAgent
 from loguru import logger
 from utils.call_models import CallModel
+from utils.common import model_to_dict
+from utils.serializer import SerializerUtils
 from api.schemas.agent_schema import AgentChatForm, AgentChatFeedbackForm
 from api.schemas.base_response import *
 
@@ -47,7 +49,7 @@ class AgentController:
         return references
     
     def _build_qa_data(self, question: str, references: list[Reference], by: str, 
-                      request_time: str = None) -> QAData:
+                      request_time: str | None = None) -> QAData:
         """构建 QAData 对象"""
         if request_time is None:
             request_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
@@ -65,7 +67,7 @@ class AgentController:
             response_time=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
         )
     
-    def _create_agent(self, agent_id: int, deep_mind: int, security: int = None, tags: list = None):
+    def _create_agent(self, agent_id: int, deep_mind: int, security: int, tags: list = []):
         """创建 Agent 实例"""
         if deep_mind == 0:
             return Agent(agent_id=agent_id, security=security, tags=tags)
@@ -85,10 +87,12 @@ class AgentController:
                 if tool_result.kb_results:
                     kb_results.extend(tool_result.kb_results)
             return kb_results
+        else:
+            raise ValueError(f"不支持的深度思考版本: {deep_mind}")
     
     async def _process_session_data(self, session_id: str, agent_id: int, qa_data: QAData) -> bool:
         """处理会话数据写入"""
-        sess_repo = KbotMdChatSessionRepository()
+        sess_repo = KbotMdChatQaRepository()
         
         # 检查是否已存在会话
         existing_session = await sess_repo.get_session(session_id=session_id)
@@ -123,9 +127,11 @@ class AgentController:
         if agent.llm_id is None:
             raise ValueError("智能体配置的 LLM 模型不存在")
         
+        
         # 获取提示词
         prompt_repo = KbotMdPromptRepository()
-        prompt_content = await prompt_repo.get_prompt_by_id(agent.prompt_id)
+        if agent.prompt_id:
+            prompt_content = await prompt_repo.get_prompt_by_id(agent.prompt_id)
         prompt_template = prompt_content or "根据参考内容回答问题。\n\n参考内容:{context}\n\n回答的问题:{question}"
         
         # 获取模型参数
@@ -228,7 +234,7 @@ class AgentController:
         """写入Oracle"""
         try:
             logger.debug(f"正在写入Oracle，session_id: {session_id}")
-            sess_repo = KbotMdChatSessionRepository()
+            sess_repo = KbotMdChatQaRepository()
             result = await sess_repo.update_last_qa_data_answer(session_id, answer)
             if result:
                 logger.debug(f"写入Oracle成功，session_id: {session_id}")
@@ -287,7 +293,7 @@ class AgentController:
                 "question": qa_data.question,
                 "answer": qa_data.answer,
                 "qa_embedding": qa_data.qa_embedding,
-                "references": [ref.to_dict() for ref in qa_data.references],
+                "references": [ref.to_dict() for ref in qa_data.references] if qa_data.references else [],
                 "feedback": qa_data.feedback,
                 "by": qa_data.by,
                 "request_time": qa_data.request_time,
@@ -351,7 +357,7 @@ class AgentController:
     async def _prepare_chat_data(self, session_id: str):
         """准备聊天数据"""
         # 1. 根据session_id从Oracle中获取问答pair
-        sess_repo = KbotMdChatSessionRepository()
+        sess_repo = KbotMdChatQaRepository()
         logger.debug(f"正在查询 Oracle，session_id: {session_id}")
 
         last_qa_data = await sess_repo.get_last_qa_data(session_id)
@@ -384,7 +390,7 @@ class AgentController:
 
     async def agent_feedback(self, form: AgentChatFeedbackForm) -> bool:
         try:
-            sess_repo = KbotMdChatSessionRepository()
+            sess_repo = KbotMdChatQaRepository()
             session_id = form.session_id
             idx= form.question_index
             feedback = form.feedback
@@ -397,26 +403,24 @@ class AgentController:
         except Exception as e:  
             raise e
         
-    async def agent_get_session(self, session_id: str) -> dict:
+    async def agent_get_session(self, session_id: str) -> dict | None:
         try:
-            sess_repo = KbotMdChatSessionRepository()
-            # 根据session_id 和问题索引，更新Oracle对应的问答pair中的feedback数据
+            sess_repo = KbotMdChatQaRepository()
             r = await sess_repo.get_session(session_id)
+            
             if r:
-                return r
+                # 直接使用安全序列化，返回完整的字典结构
+                return SerializerUtils.serialize_value(r)
             else:
-                return {
-                    "session_id": session_id, 
-                    "qa_data": []
-                    }
-    
+                return None
+        
         except Exception as e:  
             raise e
         
 
     async def agent_del_session(self, session_id: str) -> bool:
         try:
-            sess_repo = KbotMdChatSessionRepository()
+            sess_repo = KbotMdChatQaRepository()
             # 根据session_id删除聊天会话
             return await sess_repo.delete_session(session_id)
     
@@ -440,7 +444,7 @@ class AgentController:
             await KbotMdAgentConfRepository().delete_by_agent_id(agent_id)
             logger.debug(f"智能体 {agent_id} 和知识库的关联信息已删除")
             # 3. 删除agent的聊天会话
-            await KbotMdChatSessionRepository().delete_by_agent_id(agent_id)
+            await KbotMdChatQaRepository().delete_by_agent_id(agent_id)
             logger.debug(f"智能体 {agent_id} 的聊天会话已删除")
             # 4. 删除agent的聊天历史
             await KbotMdChatHistoryRepository().delete_by_agent_id(agent_id)

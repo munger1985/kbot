@@ -195,7 +195,12 @@ async def handle_agent_get_session(session_id: str):
     """
     try:
         r = await agent_controller.agent_get_session(session_id)
-
+        if r is None:
+            return ErrorResponse(
+                code=status.HTTP_400_BAD_REQUEST,
+                success=False,
+                message="会话不存在"
+            )
         return SuccessQueryResponse(
             code=status.HTTP_200_OK,
             success=True,
@@ -327,9 +332,10 @@ async def handle_agent_retrieval(form: AgentChatDifyForm) -> dict:
     - **records**: 检索结果
     """
     try:
+        agent_id = int(form.knowledge_id)
         session_id = uuid.uuid4().hex
         return await agent_controller.agent_chat_dify(
-            agent_id=form.knowledge_id, 
+            agent_id=agent_id, 
             question=form.query, 
             session_id=session_id,
             topk=form.retrieval_setting.get("topk", 10),

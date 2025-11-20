@@ -15,12 +15,12 @@ sys.path.insert(0, str(project_root))
 env_path = project_root / ".env"
 load_dotenv(env_path)
 
-from dao.repositories.kbot_md_chat_session_repo import KbotMdChatSessionRepository
+from dao.repositories.kbot_md_chat_qa_repo import KbotMdChatQaRepository
 from dao.entities.kbot_biz_chat_session import KbotBizChatSession, QAData, Reference
+from utils.serializer import safe_serialize
 
-key = "session_1763437969.373111"
-kb_id = 66
-repo = KbotMdChatSessionRepository()
+
+repo = KbotMdChatQaRepository()
 
 def create_sample_data():
     """创建符合要求的测试数据"""
@@ -52,7 +52,7 @@ def create_sample_data():
         ]
     )
 
-async def insert():
+async def insert(key: str):
     """将数据写入Oracle"""
     try:
         data = create_sample_data()
@@ -72,7 +72,7 @@ async def insert():
         print(f"写入Oracle失败: {str(e)}")
         return False
 
-async def get_all():
+async def get_all(key: str):
     try:
         # 查询Oracle
         if repo is None:
@@ -85,86 +85,10 @@ async def get_all():
         
         if retrieved_data:
             print("\n从Oracle查询到的数据:")
-            
-            # 增强的序列化函数 - 处理所有常见的数据类型
-            def serialize_chat_session(obj):
-                # 处理 Decimal 类型
-                if isinstance(obj, Decimal):
-                    return float(obj)
-                
-                # 处理 array 类型
-                if isinstance(obj, array.array):
-                    return list(obj)
-                
-                # 处理 datetime 类型
-                if isinstance(obj, datetime):
-                    return obj.isoformat()
-                
-                # 处理其他数值类型
-                if isinstance(obj, (int, float)):
-                    return obj
-                
-                # 处理 KbotMdChatSession 对象
-                if hasattr(obj, '__class__') and obj.__class__.__name__ == 'KbotMdChatSession':
-                    result = {
-                        'session_id': obj.session_id,
-                        'agent_id': int(obj.agent_id) if obj.agent_id else None,
-                        'qa_data': []
-                    }
-                    
-                    if hasattr(obj, 'qa_data') and obj.qa_data:
-                        for qa in obj.qa_data:
-                            qa_dict = {
-                                'question': safe_convert(qa.question),
-                                'answer': safe_convert(qa.answer),
-                                'qa_embedding': safe_convert(qa.qa_embedding),
-                                'feedback': safe_convert(qa.feedback),
-                                'by': safe_convert(qa.by),
-                                'request_time': safe_convert(qa.request_time),
-                                'response_time': safe_convert(qa.response_time),
-                                'references': []
-                            }
-                            
-                            if hasattr(qa, 'references') and qa.references:
-                                for ref in qa.references:
-                                    ref_dict = {
-                                        'chunk_type': safe_convert(ref.chunk_type),
-                                        'chunk_file_path': safe_convert(ref.chunk_file_path),
-                                        'page_num': safe_convert(ref.page_num),
-                                        'content': safe_convert(ref.content),
-                                        'download_link': safe_convert(ref.download_link),
-                                        'preview_link': safe_convert(ref.preview_link),
-                                        'similarity_score': safe_convert(ref.similarity_score),
-                                        'reranker_score': safe_convert(ref.reranker_score)
-                                    }
-                                    qa_dict['references'].append(ref_dict)
-                            
-                            result['qa_data'].append(qa_dict)
-                    return result
-                
-                # 处理其他无法序列化的类型
-                return str(obj)
-            
-            # 辅助函数用于安全转换各种数据类型
-            def safe_convert(value):
-                if value is None:
-                    return None
-                elif isinstance(value, (str, int, float, bool)):
-                    return value
-                elif isinstance(value, Decimal):
-                    return float(value)
-                elif isinstance(value, array.array):
-                    return list(value)
-                elif isinstance(value, datetime):
-                    return value.isoformat()
-                else:
-                    return str(value)
-            
-            # 使用安全的序列化方式
-            serialized_data = serialize_chat_session(retrieved_data)
-            print(json.dumps(serialized_data, indent=2, ensure_ascii=False))
+            print(json.dumps(retrieved_data, indent=2, ensure_ascii=False, default=safe_serialize))
         else:
             print("查询Oracle失败，未找到数据")
+            
     except Exception as e:
         print("\n查询Oracle失败，完整错误信息:")
         print(f"异常类型: {type(e).__name__}")
@@ -172,9 +96,8 @@ async def get_all():
         print("\n堆栈跟踪:")
         print(traceback.format_exc())
 
-# 其他函数保持不变...
 
-async def insert_qa_data():
+async def insert_qa_data(key: str):
     # 创建测试数据
     data = QAData(
         question="Oracle是什么?",
@@ -208,7 +131,7 @@ async def insert_qa_data():
     else:
         print("写入Oracle失败")
 
-async def get_qa_data():
+async def get_qa_data(key: str):
     if repo is None:
         print("创建会话存储库实例失败")
         return False
@@ -237,7 +160,7 @@ async def get_qa_data():
     else:
         print("查询Oracle失败，未找到数据")
 
-async def delete_session():
+async def delete_session(key: str):
     if repo is None:
         print("创建会话存储库实例失败")
         return False
@@ -247,7 +170,7 @@ async def delete_session():
     else:
         print("删除Oracle失败")
 
-async def update_qa_feedback():
+async def update_qa_feedback(key: str):
     try:
         if repo is None:
             print("创建会话存储库实例失败")
@@ -256,7 +179,7 @@ async def update_qa_feedback():
         result = await repo.update_qa_feedback(key, 0, -3)
         if result:
             print("写入Oracle成功")
-            await get_qa_data()
+            await get_qa_data(key)
         else:
             print("写入Oracle失败")
     except Exception as e:
@@ -266,7 +189,7 @@ async def update_qa_feedback():
         print("\n堆栈跟踪:")
         print(traceback.format_exc())
 
-async def get_last_qa_data():
+async def get_last_qa_data(key: str):
     try:
         if repo is None:
             print("创建会话存储库实例失败")
@@ -300,7 +223,7 @@ async def get_last_qa_data():
         print("\n堆栈跟踪:")
         print(traceback.format_exc())
 
-async def update_last_qa_data_answer():
+async def update_last_qa_data_answer(key: str):
     try:
         if repo is None:
             print("创建会话存储库实例失败")
@@ -309,7 +232,7 @@ async def update_last_qa_data_answer():
         result = await repo.update_last_qa_data_answer(key, "您好！请问有什么可以帮助您的吗？")
         if result:
             print("写入Oracle成功")
-            await get_last_qa_data()
+            await get_last_qa_data(key)
         else:
             print("写入Oracle失败")
     except Exception as e:
@@ -319,11 +242,11 @@ async def update_last_qa_data_answer():
         print("\n堆栈跟踪:")
         print(traceback.format_exc())
 
-async def delete_by_agent():
+async def delete_by_agent(agent_id: int):
     if repo is None:
         print("创建会话存储库实例失败")
         return False
-    result = await repo.delete_by_agent_id(1)
+    result = await repo.delete_by_agent_id(agent_id)
     if result:
         print("删除Oracle成功")
     else:
@@ -332,16 +255,19 @@ async def delete_by_agent():
 async def main():
     """主测试函数，确保连接正确关闭"""
     print("Starting Oracle test...")
+    key = "session_1763610729.431471"
+    kb_id = 66
+    agent_id = 1
     # 执行测试
-    # await insert()
-    # await get_all()
-    # await insert_qa_data()
-    # await get_qa_data()
-    # await update_qa_feedback()
-    await update_last_qa_data_answer()
-    # await get_last_qa_data()
-    # await delete_session()
-    # await delete_by_agent()
+    # await insert(key)
+    await get_all(key)
+    # await insert_qa_data(key)
+    # await get_qa_data(key)
+    # await update_qa_feedback(key)
+    # await update_last_qa_data_answer(key)
+    # await get_last_qa_data(key)
+    # await delete_session(key)
+    # await delete_by_agent(agent_id)
     print("Oracle test finished.")
 
 if __name__ == "__main__":

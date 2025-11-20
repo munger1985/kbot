@@ -4,6 +4,7 @@ from PIL import Image
 from typing import Callable, AsyncGenerator
 from loguru import logger
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime
 
 
 
@@ -69,22 +70,6 @@ async def encode_image(image: str | Image.Image) -> str:
 
 
 @staticmethod
-async def lob_to_string(async_lob) -> str:
-    """
-    将AsyncLOB对象转换为字符串
-    
-    Args:
-        async_lob: oracledb.AsyncLOB对象
-        
-    Returns:
-        str: 字符串内容
-    """
-    content = await async_lob.read()
-    if isinstance(content, bytes):
-        return content.decode('utf-8')  # 假设使用UTF-8编码
-    return content
-
-@staticmethod
 def safe_read_content(content_obj):
     """安全读取内容，兼容CLOB和普通字符串"""
     if hasattr(content_obj, 'read'):
@@ -95,3 +80,24 @@ def safe_read_content(content_obj):
     else:
         # ES字符串类型或其他
         return str(content_obj) if content_obj is not None else ""
+    
+@staticmethod
+def model_to_dict(obj):
+    """递归将SQLAlchemy对象转换为字典"""
+
+    if hasattr(obj, '__dict__'):
+        # 过滤掉私有属性和SQLAlchemy内部属性
+        result = {}
+        for key, value in obj.__dict__.items():
+            if not key.startswith('_') and key != 'metadata' and key != 'registry':
+                if hasattr(value, '__dict__'):
+                    result[key] = model_to_dict(value)
+                elif isinstance(value, list):
+                    result[key] = [model_to_dict(item) for item in value]
+                elif isinstance(value, datetime):
+                    result[key] = value.isoformat() if value else None
+                else:
+                    result[key] = value
+        return result
+    else:
+        return obj

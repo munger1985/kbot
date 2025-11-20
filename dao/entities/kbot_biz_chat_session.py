@@ -6,12 +6,12 @@ class Reference:
     """参考文献数据类"""
     def __init__(self, 
                  chunk_type: int,
-                 chunk_file_path: str,
-                 page_num: int,
-                 content: str,
-                 download_link: str,
-                 preview_link: str,
-                 similarity_score: float,
+                 chunk_file_path: str | None = None,
+                 page_num: int | None = None,
+                 content: str | None = None,
+                 download_link: str | None = None,
+                 preview_link: str | None = None,
+                 similarity_score: float | None = None,
                  reranker_score: float | None = None):
         self.chunk_type = chunk_type
         self.chunk_file_path = chunk_file_path
@@ -41,11 +41,11 @@ class QAData:
     """问答数据类"""
     def __init__(self,
                  question: str,
-                 answer: str,
-                 qa_embedding: list,
-                 references: list[Reference],
-                 feedback: int,
-                 by: str,
+                 answer: str | None = None,
+                 qa_embedding: list | None = None,
+                 references: list[Reference] | None = None,
+                 feedback: int | None = None,
+                 by: str | None = None,
                  request_time: str | None = None,
                  response_time: str | None = None):
         self.question = question
@@ -69,7 +69,7 @@ class QAData:
             "question": self.question,
             "answer": self.answer,
             "qa_embedding": qa_embedding_list,
-            "references": [ref.to_dict() for ref in self.references],
+            "references": [ref.to_dict() for ref in self.references] if self.references else None,
             "feedback": self.feedback,
             "by": self.by,
             "request_time": self.request_time,
