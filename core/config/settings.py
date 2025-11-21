@@ -48,24 +48,6 @@ class OracleConfig(BaseModel):
         """生成 Oracle DSN"""
         return f"{self.username}/{self.password}@{self.host}:{self.port}/{self.service_name}"
 
-class RedisConfig(BaseModel):
-    """Redis 配置"""
-    password: str|None = Field(default=None)
-    host: str = Field(default="localhost")
-    port: int = Field(default=6379, ge=1, le=65535)
-    max_connections: int = Field(default=10, ge=1, le=100)
-    socket_connect_timeout: int = Field(default=3, ge=1, le=30)
-    socket_timeout: int = Field(default=5, ge=1, le=30)
-    retry_on_timeout: bool = Field(default=True)
-    health_check_interval: int = Field(default=30, ge=0, le=300)
-    
-    @property
-    def url(self) -> str:
-        """生成 Redis URL"""
-        if self.password:
-            return f"redis://:{self.password}@{self.host}:{self.port}/0"
-        return f"redis://{self.host}:{self.port}/0"
-
 class SQLAlchemyConfig(BaseModel):
     """SQLAlchemy 配置"""
     echo: bool = Field(default=False)
@@ -175,7 +157,6 @@ class Settings(BaseSettings):
     app: AppConfig = AppConfig()
     libre: LibreConfig = LibreConfig()
     oracle: OracleConfig = OracleConfig()
-    redis: RedisConfig = RedisConfig()
     sqlalchemy: SQLAlchemyConfig = SQLAlchemyConfig()
     eslog: ESLogConfig = ESLogConfig()
     embed: EmbedConfig = EmbedConfig()
@@ -299,10 +280,6 @@ def get_embed_config() -> EmbedConfig:
 def get_llm_config() -> LLMConfig:
     """获取 LLM 配置"""
     return get_settings().llm
-
-def get_redis_config() -> RedisConfig:
-    """获取 Redis 配置"""
-    return get_settings().redis
 
 def get_oracle_config() -> OracleConfig:
     """获取 Oracle 配置"""

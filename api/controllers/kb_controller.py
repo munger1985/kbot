@@ -16,10 +16,10 @@ class KBController:
     async def upload_kb_files(
             self,
             upload_form: KBUploadForm
-        ) -> bool:
+        ) -> tuple[bool, str | None]:
         """上传文件到知识库"""
         try:
-            result = await KBFileOperator().upload_file_service(
+            result, error_msg = await KBFileOperator().upload_file_service(
                 files=upload_form.files,
                 app_id=upload_form.app_id,
                 domain_id=upload_form.domain_id,
@@ -30,7 +30,7 @@ class KBController:
                 biz_metadata=upload_form.biz_metadata,
                 created_by=upload_form.created_by
             )
-            return result
+            return result, error_msg
         except Exception as e:
             raise e
 
@@ -58,7 +58,7 @@ class KBController:
             file_id: str,
             download: bool = False,
             page_num: int = 0
-        ) -> dict[str, str] | None:
+        ) -> dict | None:
         """
         获取文件内容用于下载或预览
 

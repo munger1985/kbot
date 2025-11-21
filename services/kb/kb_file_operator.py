@@ -156,7 +156,7 @@ class KBFileOperator:
                                 batch_id: int | None = None,
                                 biz_metadata: dict | None = None,
                                 created_by: str | None = None,
-                                ) -> bool:
+                                ) -> tuple[bool, str | None]:
         '''
         上传文件到知识库并保存记录到数据库
             
@@ -172,20 +172,26 @@ class KBFileOperator:
             created_by: 创建者标识
         
         返回:
-            bool: 上传是否成功
+            tuple[bool, str | None]: (上传是否成功, 错误信息)
         '''
         
         # 从KB表获取默认配置
         kb_repo = KbotMdKbRepository()
         kb_entity = await kb_repo.get_by_id(kb_id)
         if kb_entity is None:
-            logger.error(f"知识库 {kb_id} 不存在")
-            return False
+            error_msg = f"知识库 {kb_id} 不存在"
+            logger.error(error_msg)
+            return False, error_msg
         
         # 保存文件
         logger.info(f"开始上传 {len(files)} 个文件到知识库: {kb_id}")
-        fileparams = await self._save_files_in_thread(files=files, domain_id=domain_id, kb_id=kb_id, batch_name=batch_name, overwrite=overwrite)
-        logger.debug(f"文件已保存到磁盘: {[fp['file_name'] for fp in fileparams]}")
+        try:
+            fileparams = await self._save_files_in_thread(files=files, domain_id=domain_id, kb_id=kb_id, batch_name=batch_name, overwrite=overwrite)
+            logger.debug(f"文件已保存到磁盘: {[fp['file_name'] for fp in fileparams]}")
+        except Exception as e:
+            error_msg = f"保存文件到磁盘失败: {str(e)}"
+            logger.error(error_msg)
+            return False, error_msg
 
         # 构造 batch 的实体用于保存到数据库
         batch_entity = KbotMdKbBatch(
@@ -236,11 +242,11 @@ class KBFileOperator:
             logger.debug(f"开始将 {len(file_entitities)} 个文件保存到数据库，知识库: {kb_id}")
             r = await kb_files_repo.create(batch_entity, file_entitities)
             logger.info(f"成功将 {len(file_entitities)} 个文件保存到数据库")
-            return r
+            return True, None
         except Exception as e:
-            logger.error(f"保存文件到数据库失败，知识库: {kb_id}")
-            logger.error(e)
-            raise e
+            error_msg = f"保存文件到数据库失败: {str(e)}"
+            logger.error(error_msg)
+            return False, error_msg
         
     async def _delete_files(self, 
                         domain_id: int, 

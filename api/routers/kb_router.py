@@ -56,7 +56,7 @@ async def handle_upload_files(
         metadata_dict = json.loads(metadata)
         form = KBUploadForm(files=files, **metadata_dict)
         
-        result = await controller.upload_kb_files(form)
+        result, error_msg = await controller.upload_kb_files(form)
         
         if result:
             return SuccessResponse(
@@ -65,10 +65,19 @@ async def handle_upload_files(
                 message="文件上传成功"
             )
         else:
+            # 如果有具体的错误信息，使用它；否则使用默认消息
+            message = error_msg if error_msg else "文件上传失败"
+            
+            # 根据错误类型设置适当的状态码
+            if error_msg and "知识库" in error_msg and "不存在" in error_msg:
+                code = status.HTTP_404_NOT_FOUND
+            else:
+                code = status.HTTP_400_BAD_REQUEST
+                
             return ErrorResponse(
-                code=status.HTTP_400_BAD_REQUEST,
+                code=code,
                 success=False,
-                message="文件上传失败"
+                message=message
             )
         
     except json.JSONDecodeError as e:
