@@ -1,11 +1,11 @@
 # core/config/development.toml
 [app]
 debug = true
-file_storage = "/home/chris/kbot3/knowledge_base"
+# file_storage = "/home/chris/kbot3/knowledge_base"
 
 [app.log]
 level = "DEBUG"
-dir = "/home/chris/kbot3/logs/"
+# dir = "/home/chris/kbot3/logs/"
 
 [llm]
 temperature = 0.8

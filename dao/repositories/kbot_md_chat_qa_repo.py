@@ -202,7 +202,7 @@ class KbotMdChatQaRepository():
                             "question": question,
                             "answer": answer,
                             "qa_embedding": qa_embedding,
-                            "references": [],
+                            "references": [],  # 初始化为空列表
                             "feedback": feedback,
                             "by": username,
                             "request_time": request_time.strftime("%Y-%m-%d %H:%M:%S.%f") if request_time else None, # type: ignore
@@ -237,7 +237,7 @@ class KbotMdChatQaRepository():
                         question=qa_info["question"],
                         answer=qa_info["answer"],
                         qa_embedding=qa_info["qa_embedding"],
-                        references=qa_info["references"],
+                        references=qa_info["references"] or [],  # 确保不为None
                         feedback=qa_info["feedback"],
                         by=qa_info["by"],
                         request_time=qa_info["request_time"],
