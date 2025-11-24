@@ -42,6 +42,10 @@ sqlplus sys/BotWelcome123##@132.145.81.123:1521/DB1007_pdb1.regionalpublics.hysu
 sys/BotWelcome123##
 APEX_PUBLIC_USER
 
+APEX Console:
+http://132.145.81.123:8080/ords/r/apex/workspace-sign-in/oracle-apex-sign-in?session=10699776456547
+KBOTUI_DEV/KBOTUI_DEV/BotWelcome123##
+
 # 在数据库端，使用CDB级别开启DRCP
 EXECUTE DBMS_CONNECTION_POOL.START_POOL();
 EXECUTE DBMS_CONNECTION_POOL.CONFIGURE_POOL(pool_name => 'SYS_DEFAULT_CONNECTION_POOL',minsize => 4,maxsize => 40,incrsize => 2,inactivity_timeout => 300,max_lifetime_session => 86400);
