@@ -1,5 +1,6 @@
 dynaconf==3.2.11
 loguru==0.7.3
+numpy==2.3.5
 oracledb==3.3.0
 pydantic==2.11.7
 pydantic-settings==2.12.0

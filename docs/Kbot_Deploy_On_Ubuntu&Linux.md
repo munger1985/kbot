@@ -35,25 +35,16 @@ sudo apt install git -y
 
 ### 2.Kbot代码下载以及依赖包准备
 ```bash
-#1.下载Kbot3.0源代码，Hub提供子版本的Tag
+# 1.下载Kbot3.0源代码，Hub提供子版本的Tag
 git clone https://github.com/munger1985/kbot.git -b v3.1
-#2.创建conda虚拟环境
-cd kbot3
-conda create -n kbot3 python=3.12
-conda activate kbot3
-pip install -r requirements.txt
-# 2.1 根据cuda版本安装torch和transformers，如果没有GPU则跳过这一步，直接到步骤3，准备Kbot元数据库
-# 验证cuda版本
-nvcc --version
+
+# 2 根据GPU版本安装cuda,torch和transformers，如果没有GPU则跳过这一步，直接到步骤3
 # 配置nvidia官方源并升级cuda，如果需要
 # 添加NVIDIA官方仓库 (适用于Ubuntu 22.04)
 wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-ubuntu2204.pin
 sudo mv cuda-ubuntu2204.pin /etc/apt/preferences.d/cuda-repository-pin-600
 sudo apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/3bf863cc.pub
 sudo add-apt-repository "deb https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/ /"
-# 安装CUDA 13.0
-sudo apt-get update
-sudo apt-get install cuda-13-0
 # 添加NVIDIA官方仓库 (适用于Ubuntu 24.04)
 wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-ubuntu2404.pin
 sudo mv cuda-ubuntu2404.pin /etc/apt/preferences.d/cuda-repository-pin-600
@@ -67,7 +58,14 @@ sudo apt-get install cuda-12-8
 export PATH=/usr/local/cuda-12.8/bin:${PATH}
 export LD_LIBRARY_PATH=/usr/local/cuda-12.8/lib64:${LD_LIBRARY_PATH}
 export CUDA_HOME=/usr/local/cuda-12.8
+# 验证cuda版本
+nvcc --version
 
+# 3.创建conda虚拟环境
+cd kbot3
+conda create -n kbot3 python=3.12
+conda activate kbot3
+pip install -r requirements.txt
 # 根据cuda版本安装torch和transformers，例如：如果cuda版本为12.8，则安装torch和transformers如下
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
 pip install transformers

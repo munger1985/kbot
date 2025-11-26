@@ -338,7 +338,7 @@ async def handle_agent_retrieval(form: AgentChatDifyForm) -> dict:
             agent_id=agent_id, 
             question=form.query, 
             session_id=session_id,
-            topk=form.retrieval_setting.get("topk", 10),
+            topk=form.retrieval_setting.get("top_k", 100),
             score_threshold=form.retrieval_setting.get("score_threshold", 0.75)
         )
     
