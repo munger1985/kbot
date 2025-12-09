@@ -15,7 +15,7 @@ class LLMModelPool(BaseModelPool[BaseLLM]):
         self._providers: dict[int, str] = {}
         self._max_tokens: dict[int, int] = {}
 
-    def _get_model_category(self) -> str:
+    def _get_model_category(self) -> int:
         return ModelCategory.LLM.value
 
     async def _shutdown_model_instance(self, model: BaseLLM):

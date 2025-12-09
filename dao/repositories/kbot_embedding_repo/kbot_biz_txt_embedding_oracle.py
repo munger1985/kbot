@@ -128,14 +128,15 @@ class OracleEmbeddingRepository(IEmbeddingRepository):
         base_sql = """
             SELECT 
                 FILE_ID, CHUNK_DOC, CHUNK_METADATA,
-                1 - VECTOR_DISTANCE(EMBEDDING, :query_vec, COSINE) AS similarity
+                2 - VECTOR_DISTANCE(EMBEDDING, :query_vec, COSINE) AS similarity
             FROM KBOT_BIZ_TXT_EMBEDDING emb
-            WHERE 1 - VECTOR_DISTANCE(EMBEDDING, :query_vec, COSINE) >= :threshold
+            WHERE 2 - VECTOR_DISTANCE(EMBEDDING, :query_vec, COSINE) >= :threshold
             AND KB_ID = :kb_id
             AND SECURITY_LEVEL <= :security
             AND emb.CHUNK_METADATA.chunk_type = :chunk_type
             
         """
+
         # 添加向量和阈值参数
         params = {
             "kb_id": kb_id,
@@ -145,6 +146,8 @@ class OracleEmbeddingRepository(IEmbeddingRepository):
             "top_k": search_top_k,
             "chunk_type": ChunkType.SUMMARY.value if is_summary_search else ChunkType.TEXT.value
         }
+
+        logger.debug(f"params: {params}")
 
         # 如果有tag_list，构建多个OR条件
         if tags and len(tags) > 0:

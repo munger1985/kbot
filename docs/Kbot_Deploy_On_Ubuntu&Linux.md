@@ -7,11 +7,11 @@
 ##推荐Ubuntu 22.0464位
 #2.安装必要的包以及网络等配置
 #在OCI上部署时，需要放开端口，以及关闭防火墙
-#在VCN的security list中添加端口（8848、18099、1521、22）
+#在VCN的security list中添加端口（18099、1521、22）
 #Ubuntu系统层面放开端口
 sudo iptables -nvL
-sudo iptables -I INPUT -p tcp --dport 8848 -j ACCEPT
 sudo iptables -I INPUT -p tcp --dport 18099 -j ACCEPT
+sudo sh -c "iptables-save > /etc/iptables/rules.v4"
 #Linux关闭防火墙
 systemctl stop firewalld
 #3.安装必要的软件包
