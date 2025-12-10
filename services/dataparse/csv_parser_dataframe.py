@@ -2,7 +2,6 @@ import pandas as pd
 import json
 import uuid
 
-from lazy_object_proxy.utils import await_
 from loguru import logger
 from .file_params import FileParams
 from dao.repositories.kbot_md_kb_files_repo import KbotMdKbFilesRepository
