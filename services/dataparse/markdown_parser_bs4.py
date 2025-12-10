@@ -21,15 +21,15 @@ from .summary_parser import SummaryParser
 
 
 class MarkdownParser:
-    def __init__(self, file_params: FileParams ):
+    def __init__(self, file_params: FileParams):
         self.markdown_file = file_params.file_path
-        self.file_params=file_params
+        self.file_params = file_params
         self.base_dir = os.path.dirname(os.path.abspath(self.markdown_file))
         self.images_dir = os.path.join(self.base_dir, 'images')
         self.tables_dir = os.path.join(self.base_dir, 'tables')
-        self.image_dict= []
+        self.image_dict = []
         self.md = markdown.Markdown(extensions=['tables'])
-        self.text_results= []
+        self.text_results = []
         self.prompt_config = get_prompt_config()
         self.create_dirs()
 
@@ -78,21 +78,22 @@ class MarkdownParser:
 
         # 提取表头
         headers = []
-        header_row = table.find('thead').find('tr') # type: ignore
-        for th in header_row.find_all('th'): # type: ignore
+        header_row = table.find('thead').find('tr')  # type: ignore
+        for th in header_row.find_all('th'):  # type: ignore
             headers.append(th.get_text().strip())
 
         # 提取行数据
         result = []
-        for tr in table.find('tbody').find_all('tr'): # type: ignore
+        for tr in table.find('tbody').find_all('tr'):  # type: ignore
             row_data = {}
-            cells = tr.find_all('td') # type: ignore
+            cells = tr.find_all('td')  # type: ignore
             for i, cell in enumerate(cells):
                 if i < len(headers):
                     row_data[headers[i]] = cell.get_text().strip()
             result.append(row_data)
 
         return result
+
     def extract_text_content(self, md_content):
         """提取纯文本内容"""
         html = markdown.markdown(md_content)
@@ -130,7 +131,7 @@ class MarkdownParser:
         if last_end < len(md_content):
             paragraphs = self._parse_paragraphs(md_content[last_end:])
             # text_results['titles'].extend(paragraphs)
-        self.text_results= text_results
+        self.text_results = text_results
 
         blocks = self.parse_into_blocks(md_content)
         for i, block in enumerate(blocks):
@@ -138,7 +139,6 @@ class MarkdownParser:
             semanticChunk = f"Title: {block['title']} (Level {block['level']})\n" + f"Content: {block['content']}"
             text_results['paragraphs'].append(semanticChunk)
             # print(semanticChunk)
-
 
         return text_results
 
@@ -243,6 +243,7 @@ class MarkdownParser:
             })
 
         return blocks
+
     def extract_and_save_images(self, md_content):
         """提取图片并保存到本地"""
         # 匹配完整的图片标记，包括alt文本和URL
@@ -288,7 +289,7 @@ class MarkdownParser:
                             'file_path': save_path,
                             'filename': filename,
                             'alt_text': alt_text,
-                            'image_id':str(uuid.uuid4())
+                            'image_id': str(uuid.uuid4())
                         })
                     else:
                         print(f"图片下载失败: {img_url} (状态码: {response.status_code})")
@@ -316,17 +317,16 @@ class MarkdownParser:
             except Exception as e:
                 print(f"图片处理错误 ({img_url}): {e}")
                 continue
-        self.image_dict= saved_images
+        self.image_dict = saved_images
         return saved_images
 
     async def _process_images_embeddings(self) -> list:
         ## 1 means yes
         if self.file_params.img2txt == 1:
 
-
             # if self.file_params.parser.get("extract_images", False):
             vlm_prompt_unique_name = self.prompt_config.image2text
-            
+
             if self.file_params.img2txt_model is None:
                 msg = f"img2txt_model not found for id: {self.file_params.img2txt_model}"
                 logger.error(msg)
@@ -336,13 +336,14 @@ class MarkdownParser:
             chunks = []
             chunk_metas = []
 
-            for eachImage in  self.image_dict :
+            for eachImage in self.image_dict:
                 description_file = Path(eachImage['file_path'] + ".description")
                 if not description_file.exists():
 
-                    image_description = await CallModel().call_vlm_model_for_parsing_picture(self.file_params.img2txt_model,
-                                                                                             vlm_prompt_unique_name,
-                                                                                             eachImage['file_path'])
+                    image_description = await CallModel().call_vlm_model_for_parsing_picture(
+                        self.file_params.img2txt_model,
+                        vlm_prompt_unique_name,
+                        eachImage['file_path'])
                     if image_description:
                         description_file.write_text(
                             image_description,
@@ -351,11 +352,10 @@ class MarkdownParser:
                         chunk_metas.append({
                             "chunk_type": ChunkType.IMAGE,
                             "image_id": eachImage['image_id'],
-                            "page_num":1
+                            "page_num": 1
 
                         })
                         chunks.append(image_description)
-            
 
             if not self.file_params.txt_embed_model:
                 msg = f"text_embedding_model not found for id: {self.file_params.txt_embed_model}"
@@ -379,7 +379,7 @@ class MarkdownParser:
                     kb_id=self.file_params.kb_id,
                     embed_id=meta['image_id'],
                     chunk_doc=chunk,
-                    chunk_metadata=json.dumps(meta), # type: ignore
+                    chunk_metadata=meta,  # type: ignore
                     biz_metadata=self.file_params.biz_metadata,
                     file_id=self.file_params.file_id,
                     embedding=embeddings_list[idx].embedding,  # type: ignore
@@ -393,10 +393,9 @@ class MarkdownParser:
         else:
             return []
 
-
     async def _process_embeddings(self) -> bool:
         """Process text and table embeddings for by fixed size"""
-        
+
         if not self.file_params.txt_embed_model:
             msg = f"Embedding model not found for id: {self.file_params.txt_embed_model}"
             logger.error(msg)
@@ -408,20 +407,20 @@ class MarkdownParser:
         chunk_metas = []
 
         # Add table content
-        for paragraph in self.text_results['paragraphs']: # type: ignore
-                    chunks.append(paragraph)
-                    chunk_metas.append({
-                        "chunk_type": ChunkType.TEXT,
-                        "page_num":1
-                    })
-        for table in self.text_results['tables']: # type: ignore
-                table_str = json.dumps(table, ensure_ascii=False, indent=2)
-                chunks.append(table_str )
-                chunk_metas.append({
-                    "chunk_type": ChunkType.TABLE,
-                    "page_num": 1
+        for paragraph in self.text_results['paragraphs']:  # type: ignore
+            chunks.append(paragraph)
+            chunk_metas.append({
+                "chunk_type": ChunkType.TEXT,
+                "page_num": 1
+            })
+        for table in self.text_results['tables']:  # type: ignore
+            table_str = json.dumps(table, ensure_ascii=False, indent=2)
+            chunks.append(table_str)
+            chunk_metas.append({
+                "chunk_type": ChunkType.TABLE,
+                "page_num": 1
 
-                })
+            })
 
         if not chunks:
             logger.warning("No valid content chunks found for embedding")
@@ -442,7 +441,7 @@ class MarkdownParser:
                 kb_id=self.file_params.kb_id,
                 embed_id=str(uuid.uuid4()),
                 chunk_doc=chunk,
-                chunk_metadata=json.dumps(meta), # type: ignore
+                chunk_metadata=meta,  # type: ignore
                 biz_metadata=self.file_params.biz_metadata,
                 file_id=self.file_params.file_id,
                 embedding=embeddings_list[idx].embedding,
@@ -450,7 +449,7 @@ class MarkdownParser:
                 status=1
             )
             embed_entities.append(embed_entity)
-        image_embed_entities= await self._process_images_embeddings()
+        image_embed_entities = await self._process_images_embeddings()
         embed_entities.extend(image_embed_entities)
         if self.file_params.enable_summary:
             logger.debug("启用摘要处理")
@@ -459,9 +458,8 @@ class MarkdownParser:
             return summary_result
 
         # Save all embeddings in one batch
-        return await save_embeddings(self.file_params , embed_entities)
-    
-    
+        return await save_embeddings(self.file_params, embed_entities)
+
     async def parse(self):
         """解析Markdown文件"""
         split_strategy = int(self.file_params.parser.get("split_strategy", SplitStrategy.DOC_STRUCTURE.value))
