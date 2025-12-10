@@ -149,6 +149,9 @@ class OracleEmbeddingRepository(IEmbeddingRepository):
         if is_summary_search:
             params["chunk_type"] = ChunkType.SUMMARY.value
             base_sql += " AND emb.CHUNK_METADATA.chunk_type = :chunk_type"
+        else:
+            params["chunk_type"] = ChunkType.SUMMARY.value
+            base_sql += " AND emb.CHUNK_METADATA.chunk_type <> :chunk_type"
             
 
         # 如果有tag_list，构建多个OR条件
