@@ -335,7 +335,7 @@ class MarkdownParser:
 
             chunks = []
             chunk_metas = []
-
+            img_chunk_num=1
             for eachImage in self.image_dict:
                 description_file = Path(eachImage['file_path'] + ".description")
                 if not description_file.exists():
@@ -352,9 +352,11 @@ class MarkdownParser:
                         chunk_metas.append({
                             "chunk_type": ChunkType.IMAGE,
                             "image_id": eachImage['image_id'],
-                            "page_num": 1
+                            "page_num": 1,
+                            'chunk_num': img_chunk_num,
 
                         })
+                        img_chunk_num+=1
                         chunks.append(image_description)
 
             if not self.file_params.txt_embed_model:
@@ -405,22 +407,28 @@ class MarkdownParser:
         # Prepare all content chunks for embedding
         chunks = []
         chunk_metas = []
-
+        paragraph_chunk_num=1
+        table_chunk_num=1
         # Add table content
         for paragraph in self.text_results['paragraphs']:  # type: ignore
             chunks.append(paragraph)
             chunk_metas.append({
                 "chunk_type": ChunkType.TEXT,
-                "page_num": 1
+                "page_num": 1,
+                'chunk_num': paragraph_chunk_num,
+
             })
+            paragraph_chunk_num+=1
         for table in self.text_results['tables']:  # type: ignore
             table_str = json.dumps(table, ensure_ascii=False, indent=2)
             chunks.append(table_str)
             chunk_metas.append({
                 "chunk_type": ChunkType.TABLE,
-                "page_num": 1
+                "page_num": 1,
+                'chunk_num': table_chunk_num,
 
             })
+            table_chunk_num+=1
 
         if not chunks:
             logger.warning("No valid content chunks found for embedding")
