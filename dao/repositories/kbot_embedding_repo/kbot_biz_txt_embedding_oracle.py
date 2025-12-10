@@ -133,7 +133,7 @@ class OracleEmbeddingRepository(IEmbeddingRepository):
             WHERE 2 - VECTOR_DISTANCE(EMBEDDING, :query_vec, COSINE) >= :threshold
             AND KB_ID = :kb_id
             AND SECURITY_LEVEL <= :security
-            AND emb.CHUNK_METADATA.chunk_type = :chunk_type
+            
             
         """
 
@@ -148,8 +148,8 @@ class OracleEmbeddingRepository(IEmbeddingRepository):
 
         if is_summary_search:
             params["chunk_type"] = ChunkType.SUMMARY.value
+            base_sql += " AND emb.CHUNK_METADATA.chunk_type = :chunk_type"
             
-        logger.debug(f"params: {params}")
 
         # 如果有tag_list，构建多个OR条件
         if tags and len(tags) > 0:
@@ -170,12 +170,9 @@ class OracleEmbeddingRepository(IEmbeddingRepository):
             FETCH FIRST :top_k ROWS ONLY
         """
 
-        result = await self.pool_manager.query(self.conn_params, base_sql, params)
-           
-        return result
+        return await self.pool_manager.query(self.conn_params, base_sql, params)
 
-        
-        
+
     async def full_text_search(self,
                                kb_id: int,
                                keyword: str,
