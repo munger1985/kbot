@@ -10,7 +10,7 @@ from .model import *
 class RerankerModelPool(BaseModelPool[BaseReranker]):
     """Reranker 模型池"""
     
-    def _get_model_category(self) -> str:
+    def _get_model_category(self) -> int:
         return ModelCategory.RERANKER.value
 
     async def _shutdown_model_instance(self, model: BaseReranker):
@@ -32,10 +32,10 @@ class RerankerModelPool(BaseModelPool[BaseReranker]):
         config = get_reranker_config()
         
         if provider == RerankerProvider.LOCAL.value:
-            if "jina" in model_name.lower():
+            if "jina" in model_name.lower(): # type: ignore
                 model_config = JinaRerankerConfig(
                     provider=provider,
-                    model_name=model_name,
+                    model_name=model_name, # type: ignore
                     model_path=model_params.get("model_path", None),
                     device=model_params.get("device", None),
                     device_map=model_params.get("device_map", None),
@@ -48,10 +48,10 @@ class RerankerModelPool(BaseModelPool[BaseReranker]):
                     max_memory=model_params.get("max_memory", None),
                     cache_dir=config.cache_dir
                 )
-            elif "qwen" in model_name.lower():
+            elif "qwen" in model_name.lower(): # type: ignore
                 model_config = Qwen3RerankerConfig(
                     provider=provider,
-                    model_name=model_name,
+                    model_name=model_name, # type: ignore
                     model_path=model_params.get("model_path", None),
                     device=model_params.get("device", None),
                     max_tokens=model_params.get("max_tokens", 8192),
@@ -63,7 +63,7 @@ class RerankerModelPool(BaseModelPool[BaseReranker]):
             else:
                 model_config = LocalRerankerConfig(
                     provider=provider,
-                    model_name=model_name,
+                    model_name=model_name, # type: ignore
                     model_path=model_params.get("model_path", None),
                     device=model_params.get("device", None),
                     device_map=model_params.get("device_map", None),
@@ -86,7 +86,7 @@ class RerankerModelPool(BaseModelPool[BaseReranker]):
             
             model_config = CohereRerankerConfig(
                 provider=provider,
-                model_name=model_name,
+                model_name=model_name, # type: ignore
                 max_tokens=model_params.get("max_tokens", 8192),
                 api_key=api_key,
                 api_endpoint=api_endpoint,
@@ -98,7 +98,7 @@ class RerankerModelPool(BaseModelPool[BaseReranker]):
         model = create_reranker_model(model_config)
         await model.startup()
         self._models[model_id] = model
-        self._model_names[model_id] = display_name or model_name
+        self._model_names[model_id] = display_name or model_name # type: ignore
         self._last_used[model_id] = datetime.now()
         logger.success(f"模型 {display_name or model_name} 加载成功")
         return model

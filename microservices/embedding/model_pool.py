@@ -10,7 +10,7 @@ from .model import *
 class EmbeddingModelPool(BaseModelPool[BaseEmbedding]):
     """Embedding 模型池"""
     
-    def _get_model_category(self) -> str:
+    def _get_model_category(self) -> int:
         return ModelCategory.TXT_EMBEDDING.value
 
     async def _shutdown_model_instance(self, model: BaseEmbedding):
@@ -33,7 +33,7 @@ class EmbeddingModelPool(BaseModelPool[BaseEmbedding]):
         
         if provider == EmbeddingProvider.LOCAL.value:
             model_config = LocalEmbeddingConfig(
-                model_name=model_name,
+                model_name=model_name, # type: ignore
                 provider=provider,
                 max_tokens=model_params.get("max_tokens", config.max_tokens),
                 batch_size=model_params.get("batch_size", 2),
@@ -56,11 +56,11 @@ class EmbeddingModelPool(BaseModelPool[BaseEmbedding]):
                 raise ValueError(f"模型 {display_name or model_name} 缺少必要参数")
             
             model_config = OCIEmbeddingConfig(
-                model_name=model_name,
+                model_name=model_name, # type: ignore
                 provider=provider,
                 max_tokens=model_params.get("max_tokens", config.max_tokens),
                 batch_size=model_params.get("batch_size", 2),
-                api_endpoint=api_endpoint,
+                api_endpoint=api_endpoint, # type: ignore
                 compartment_id=compartment_id,
                 config_file=config_file
             )
@@ -70,7 +70,7 @@ class EmbeddingModelPool(BaseModelPool[BaseEmbedding]):
         model = create_embedding_model(model_config)
         await model.startup()
         self._models[model_id] = model
-        self._model_names[model_id] = display_name or model_name
+        self._model_names[model_id] = display_name or model_name # type: ignore
         self._last_used[model_id] = datetime.now()
         logger.success(f"模型 {display_name or model_name} 加载成功")
         return model

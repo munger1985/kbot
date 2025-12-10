@@ -47,7 +47,7 @@ class LLMModelPool(BaseModelPool[BaseLLM]):
                 provider=provider,
                 api_key=api_key,
                 api_endpoint=api_endpoint,
-                model_name=model_name,
+                model_name=model_name, # type: ignore
                 temperature=model_params.get("temperature", config.temperature),
                 max_tokens=model_params.get("max_tokens", config.max_tokens),
                 top_p=model_params.get("top_p", config.top_p),
@@ -65,8 +65,8 @@ class LLMModelPool(BaseModelPool[BaseLLM]):
 
             model_config = OCILLMConfig(
                 provider=provider,
-                api_endpoint=api_endpoint,
-                model_name=model_name,
+                api_endpoint=api_endpoint, # type: ignore
+                model_name=model_name, # type: ignore
                 temperature=model_params.get("temperature", config.temperature),
                 compartment_id=compartment_id,
                 max_tokens=model_params.get("max_tokens", config.max_tokens),
@@ -82,7 +82,7 @@ class LLMModelPool(BaseModelPool[BaseLLM]):
         model = create_llm_model(model_config)
         await model.startup()
         self._models[model_id] = model
-        self._model_names[model_id] = display_name or model_name
+        self._model_names[model_id] = display_name or model_name # type: ignore
         self._providers[model_id] = provider
         self._last_used[model_id] = datetime.now()
         self._max_tokens[model_id] = model_config.max_tokens

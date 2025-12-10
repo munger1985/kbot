@@ -143,10 +143,12 @@ class OracleEmbeddingRepository(IEmbeddingRepository):
             "query_vec": query_vec,
             "security": security,
             "threshold": similarity_threshold,
-            "top_k": search_top_k,
-            "chunk_type": ChunkType.SUMMARY.value if is_summary_search else ChunkType.TEXT.value
+            "top_k": search_top_k
         }
 
+        if is_summary_search:
+            params["chunk_type"] = ChunkType.SUMMARY.value
+            
         logger.debug(f"params: {params}")
 
         # 如果有tag_list，构建多个OR条件

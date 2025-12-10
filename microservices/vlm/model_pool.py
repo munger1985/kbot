@@ -10,7 +10,7 @@ from .model import *
 class VLMModelPool(BaseModelPool[BaseVLM]):
     """VLM 模型池"""
     
-    def _get_model_category(self) -> str:
+    def _get_model_category(self) -> int:
         return ModelCategory.VLM.value
 
     async def _shutdown_model_instance(self, model: BaseVLM):
@@ -52,7 +52,7 @@ class VLMModelPool(BaseModelPool[BaseVLM]):
                 raise ValueError(f"模型 {display_name or model_name} 没有 API 端点或 API 密钥")
             
             model_config = OpenAIVLMConfig(
-                model_name=model_name,
+                model_name=model_name, # type: ignore
                 provider=provider,
                 max_tokens=model_params.get("max_tokens", 512),
                 api_key=api_key,
@@ -68,7 +68,7 @@ class VLMModelPool(BaseModelPool[BaseVLM]):
         model = create_vlm_model(model_config)
         await model.startup()
         self._models[model_id] = model
-        self._model_names[model_id] = display_name or model_name
+        self._model_names[model_id] = display_name or model_name # type: ignore
         self._last_used[model_id] = datetime.now()
         logger.success(f"模型 {display_name or model_name} 加载成功")
         return model
