@@ -455,7 +455,6 @@ class MarkdownParser:
             logger.debug("启用摘要处理")
             summary_result = await SummaryParser.process_summary(file_params=self.file_params,
                                                                  embed_entities=embed_entities)
-            return summary_result
 
         # Save all embeddings in one batch
         return await save_embeddings(self.file_params, embed_entities)
