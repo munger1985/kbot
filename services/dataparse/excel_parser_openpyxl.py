@@ -822,7 +822,7 @@ async def process_excel(file_params: FileParams) -> bool:
     Returns:
         bool: True if processing succeeded, False otherwise
     """
-    if not check_text_file(file_params):
+    if not await check_text_file(file_params):
         return False
 
     try:

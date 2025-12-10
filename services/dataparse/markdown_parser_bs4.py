@@ -351,6 +351,8 @@ class MarkdownParser:
                         chunk_metas.append({
                             "chunk_type": ChunkType.IMAGE,
                             "image_id": eachImage['image_id'],
+                            "page_num":1
+
                         })
                         chunks.append(image_description)
             
@@ -410,12 +412,14 @@ class MarkdownParser:
                     chunks.append(paragraph)
                     chunk_metas.append({
                         "chunk_type": ChunkType.TEXT,
+                        "page_num":1
                     })
         for table in self.text_results['tables']: # type: ignore
                 table_str = json.dumps(table, ensure_ascii=False, indent=2)
                 chunks.append(table_str )
                 chunk_metas.append({
                     "chunk_type": ChunkType.TABLE,
+                    "page_num": 1
 
                 })
 
@@ -496,7 +500,7 @@ async def process_markdown(file_params: FileParams) -> bool:
     Returns:
         bool: True if processing succeeded, False otherwise
     """
-    if not check_text_file(file_params):
+    if not await check_text_file(file_params):
         return False
 
     try:

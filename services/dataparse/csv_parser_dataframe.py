@@ -1,6 +1,8 @@
 import pandas as pd
 import json
 import uuid
+
+from lazy_object_proxy.utils import await_
 from loguru import logger
 from .file_params import FileParams
 from dao.repositories.kbot_md_kb_files_repo import KbotMdKbFilesRepository
@@ -95,7 +97,7 @@ async def process_csv(file_params: FileParams) -> bool:
     """
     is_success=False
     file_status=FileStatus.PARSE_FAILED
-    if not check_text_file(file_params):
+    if not await check_text_file(file_params):
         return False
 
     try:
