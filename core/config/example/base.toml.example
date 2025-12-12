@@ -19,7 +19,7 @@ retention = "10 days"
 
 [libre]
 host = "localhost"
-port = 9316
+port = 9905
 
 [oracle]
 username = "kbot"

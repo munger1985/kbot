@@ -19,17 +19,7 @@ systemctl stop firewalld
 wget https://repo.anaconda.com/archive/Anaconda3-2024.10-1-Linux-x86_64.sh
 sh Anaconda3-2024.10-1-Linux-x86_64.sh -b -u -p ~/anaconda3
 ~/anaconda3/bin/conda init bash
-#3.2.Ubuntu安装docker（27.5.1或以上）
-sudo apt install docker -y
-sudo apt install docker-compose -y
-sudo usermod -aG docker $USER
-#3.2.Linux安装docker
-sudo yum install -y yum-utils
-sudo yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
-# 注意：由于 Oracle Linux 与 RHEL/CentOS 的二进制兼容性，我们使用 CentOS 的仓库。
-sudo yum install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin --allowerasing
-sudo usermod -aG docker $USER
-#3.3 git安装
+#3.2 git安装
 sudo apt install git -y
 ```
 
@@ -95,40 +85,7 @@ modelscope download --model Qwen/Qwen3-Embedding-4B
 # 下载完成后，请将模型文件放置到模型目录下，默认在 ~/.modelscope/models/Qwen/目录下
 ```
 
-### 5.部署Docker容器：
-```bash
-
-#2.配置 libreoffice 容器(把word/ppt数据转成pdf)
-##方法一：从开发环境导出容器，并导入镜像
-#2.1 docker export -o my_nginx.tar 容器名  
-#2.2 然后到新的开发机，docker load -i my_nginx.tar
-#2.3 再给导入的镜像重新命名即可 docker tag 镜像名 《名字》
-#安装示例：
-docker load -i libre-images.tar
-docker tag f9b5dc8f2fb5 libreoffice
-#如果关闭了防火墙，需要重启docker。
-sudo systemctl restart docker
-#2.4 启动容器
-sudo docker run --name libreoffice -d \
-  -p 9316:9316 \
-  -v /home/opc/kbot_data/libreoffice:/data \
-  libreoffice:latest 
-
-##方法二：安装部署libreoffice
-#2.1 安装从libreoffice 的docker-compose文件中部署
-cd microservices/libreoffice
-sudo docker-compose up -d
-#2.2 启动容器
-sudo docker run --name libreoffice -d \
-  -p 9316:9316 \
-  -v /home/opc/kbot_data/libreoffice:/data \
-  libreoffice:latest 
-
-# 服务端口修改docker-compose.yaml里的端口号。默认为9316
-# 容器所在服务器ip和容器端口需要更新到app.properties文件的 libre_host 和 libre_port 两项中
-
-```
-### 6.部署elk用于收集日志（可选）
+### 5.部署elk用于收集日志（可选）
 ```bash
 cd docs/install/elk-log-container
 
@@ -138,7 +95,7 @@ cd docs/install/elk-log-container
 ./start_elk.sh
 ```
 
-### 7.初始化Kbot数据库表信息
+### 6.初始化Kbot数据库表信息
 ```bash
 #1.在DBA用户创建Kbot元数据库（Oracle23ai的schema），并赋予权限
 #在CDB级别开启DRCP 
@@ -174,13 +131,13 @@ CREATE INDEX IDX_FULLSEARCH_TXT_EMBEDDING ON  KBOT_BIZ_TXT_EMBEDDING("CHUNK_DOC"
 --CREATE INDEX IDX_FULLSEARCH_TXT_EMBEDDING ON  KBOT_BIZ_TXT_EMBEDDING("CHUNK_DOC") INDEXTYPE IS "CTXSYS"."CONTEXT" PARAMETERS ('lexer english_lexer');
 ```
 
-### 8.前端apex安装以及kbot UI部署
+### 7.前端apex安装以及kbot UI部署
 ```bash
 #1.安装apex
 #2.部署Kbot UI到apex中
 ```
 
-### 9.启动后台服务
+### 8.启动后台服务
 ```bash
 cd /home/ubuntu/kbot3
 #5.1启动后台服务
@@ -189,7 +146,7 @@ cd /home/ubuntu/kbot3
 ./stop_kbot.sh
 ```
 
-### 10.apex UI系统基本配置以及验证
+### 9.apex UI系统基本配置以及验证
 ```bash
 #1.系统设置=》系统配置=〉服务URL
 #2.系统设置=》向量DB连接
