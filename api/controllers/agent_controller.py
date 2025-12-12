@@ -616,6 +616,26 @@ class AgentController:
                 agent_id=form.agent_id,
                 qa_data=qa_data
             )
+
+            try:
+                # 写入历史聊天记录表
+                agent_repo = KbotMdAgentRepository()
+                app_id = await agent_repo.get_app_id(agent_id=agent.agent_id)
+                history = KbotMdChatHistory(
+                    app_id=app_id,
+                    agent_id=agent.agent_id,
+                    session_id=form.session_id,
+                    question=form.question,
+                    answer=answer,
+                    created_by=form.by,
+                    created_time=datetime.now(),
+                    updated_by=form.by,
+                    updated_time=datetime.now()
+                )
+                await self._write_history(history)
+                logger.info(f"写入历史聊天记录成功")
+            except Exception as e:
+                logger.error(f"写入历史聊天记录失败: {e}")
             
             # 返回结果
             return {
