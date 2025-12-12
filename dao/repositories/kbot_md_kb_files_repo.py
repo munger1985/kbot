@@ -269,3 +269,12 @@ class KbotMdKbFilesRepository:
         except Exception as e:
             logger.error(f"KbotMdKbFiles更新标签失败: {e}")
             return False
+        
+    async def get_name_by_id(self, file_id: str) -> str | None:
+        """根据文件ID获取文件名"""
+        async with get_session() as session:
+            result = await session.execute(
+                select(KbotMdKbFiles.file_name)
+                .where(KbotMdKbFiles.file_id == file_id)
+            )
+            return result.scalar_one_or_none()

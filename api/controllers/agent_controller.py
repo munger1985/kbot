@@ -1,6 +1,6 @@
 import os
 import asyncio
-import datetime
+from datetime import datetime
 import json
 from typing import Any
 from fastapi import Request, BackgroundTasks
@@ -12,6 +12,7 @@ from dao.repositories.kbot_md_agent_repo import KbotMdAgentRepository
 from dao.repositories.kbot_md_agent_conf_repo import KbotMdAgentConfRepository
 from dao.repositories.kbot_md_prompt_repo import KbotMdPromptRepository
 from dao.repositories.kbot_md_chat_history_repo import KbotMdChatHistoryRepository
+from dao.repositories.kbot_md_kb_files_repo import KbotMdKbFilesRepository
 from dao.entities.kbot_md_chat_history import KbotMdChatHistory
 from services.chat.agent_chat import Agent
 from services.chat.mcp_chat import Agent as MCPAgent
@@ -22,11 +23,12 @@ from utils.serializer import SerializerUtils
 from api.schemas.agent_schema import AgentChatForm, AgentChatFeedbackForm
 from api.schemas.base_response import *
 from services.chat.agent_dify import DifyAgent
+from mcp_tools import KBSearchResult
 
 
 class AgentController:
     
-    def _build_references(self, kb_results: list) -> list[Reference]:
+    def _build_references(self, kb_results: list[KBSearchResult]) -> list[Reference]:
         """构建参考文献列表"""
         references = []
         host = os.getenv("KBOT_IP", "localhost")
@@ -53,7 +55,7 @@ class AgentController:
                       request_time: str | None = None) -> QAData:
         """构建 QAData 对象"""
         if request_time is None:
-            request_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
+            request_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
         
         default_embedding = [0.0] * 2  # Oracle 向量默认值
         
@@ -65,7 +67,7 @@ class AgentController:
             feedback=0,
             by=by,
             request_time=request_time,
-            response_time=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
+            response_time=datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
         )
     
     def _create_agent(self, agent_id: int, deep_mind: int, security: int, tags: list = []):
@@ -77,7 +79,7 @@ class AgentController:
         else:
             raise ValueError(f"不支持的深度思考版本: {deep_mind}")
     
-    async def _get_kb_results(self, agent, question: str, deep_mind: int) -> list:
+    async def _get_kb_results(self, agent, question: str, deep_mind: int) -> list[KBSearchResult]:
         """获取知识库结果"""
         if deep_mind == 0:
             return await agent.chat(question=question)
@@ -130,6 +132,7 @@ class AgentController:
         
         
         # 获取提示词
+        prompt_content = None
         prompt_repo = KbotMdPromptRepository()
         if agent.prompt_id:
             prompt_content = await prompt_repo.get_prompt_by_id(agent.prompt_id)
@@ -140,7 +143,7 @@ class AgentController:
         
         return agent, prompt_template, model_params
     
-    def _build_context_from_references(self, references: list) -> str:
+    def _build_context_from_references(self, references: list[Reference]) -> str:
         """从参考文献构建上下文"""
         context_parts = []
         for ref in references:
@@ -206,9 +209,9 @@ class AgentController:
                 question=last_qa_data["question"],
                 answer=full_response,
                 created_by=last_qa_data["by"],
-                created_time=datetime.datetime.now(),
+                created_time=datetime.now(),
                 updated_by=last_qa_data["by"],
-                updated_time=datetime.datetime.now()
+                updated_time=datetime.now()
             )
             
             # 并行写入Oracle和历史表
@@ -256,7 +259,11 @@ class AgentController:
         except Exception as e:
             logger.error(f"记录聊天历史错误: {str(e)}")
 
-    async def agent_chat(self, form: AgentChatForm) -> dict[str, Any]:
+
+    async def agent_search(self, form: AgentChatForm) -> dict[str, Any]:
+        """
+        智能体搜索知识库获取结果
+        """
         try:
             deep_mind = form.deep_mind or 0
             
@@ -305,7 +312,7 @@ class AgentController:
             logger.error(f"Agent chat failed: {e}")
             raise e
 
-    async def agent_stream_chat(
+    async def agent_chat_stream(
             self,
             request: Request,
             background_tasks: BackgroundTasks,
@@ -466,7 +473,7 @@ class AgentController:
         智能体对话 (Dify版)
         """
         try:
-            request_time=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
+            request_time=datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
             logger.info(f"[{request_time}] 开始处理 Dify 请求: {question}")
             
             # 查询向量库获取相关文档
@@ -475,8 +482,8 @@ class AgentController:
             
         
             # 构建参考文献列表和 Dify 记录
-            references = self._build_references(kb_results)
-            records = self._build_dify_records(references)
+            references, file_names = await self._build_references_dify(kb_results)
+            records = self._build_dify_records(references, file_names)
             
             # 构建 QAData 对象
             qa_data = self._build_qa_data(
@@ -495,22 +502,136 @@ class AgentController:
             logger.error(f"Agent chat dify failed: {e}")
             raise e
     
-    def _build_dify_records(self, references: list[Reference]) -> list[dict]:
+    async def _build_references_dify(self, kb_results: list[KBSearchResult]) -> tuple[list[Reference], list[dict]]:
+        """构建参考文献列表"""
+        references = []
+        file_names = []
+        host = os.getenv("KBOT_IP", "localhost")
+        port = os.getenv("KBOT_PORT", "8000")
+        url = f"http://{host}:{port}"
+        
+        if kb_results:
+            for kb_result in kb_results:
+                reference = Reference(
+                    chunk_type=kb_result.chunk_type,
+                    chunk_file_path=kb_result.chunk_file_path or "",
+                    page_num=kb_result.page_num,
+                    content=kb_result.content,
+                    download_link=f"{url}/api/kb/download?file_id={kb_result.file_id}",
+                    preview_link=f"{url}/api/kb/preview?file_id={kb_result.file_id}&page_num={kb_result.page_num}",
+                    similarity_score=kb_result.similarity,
+                    reranker_score=kb_result.reranker_score
+                )
+                file_name = await KbotMdKbFilesRepository().get_name_by_id(kb_result.file_id)
+                file_names.append(file_name)
+                references.append(reference)
+        
+        return references, file_names
+    
+    def _build_dify_records(self, references: list[Reference], file_names: list) -> list[dict]:
         """构建 Dify 返回记录"""
         records = []
-        for ref in references:
+        for ref, file_name in zip(references, file_names):
             record = {
                 "metadata": {
                     "path": ref.download_link,
                     "description": f"page: {ref.page_num}"
                 },
                 "score": ref.similarity_score,
-                "title": "",
+                "title": file_name or "",
                 "content": ref.content
             }
             records.append(record)
         return records
 
+    async def agent_chat_nonstream(self, form: AgentChatForm) -> dict[str, Any]:
+        """
+        智能体对话 (非流式)
+        """
+        try:
+            deep_mind = form.deep_mind or 0
+            
+            # 创建 Agent
+            agent = self._create_agent(
+                agent_id=form.agent_id, 
+                deep_mind=deep_mind,
+                security=form.security_level,
+                tags=form.tags
+            )
+            
+            # 获取知识库结果
+            kb_results = await self._get_kb_results(agent, form.question, deep_mind)
 
+            # 准备LLM参数
+            # 2. 获取智能体配置
+            try:
+                agent, prompt_template, model_params = await self._get_agent_config(form.agent_id)
+            except ValueError as e:
+                logger.warning(str(e))
+                return {"error": str(e)}
+                
+            model_params["stream"] = False
+
+            # 构建参考文献
+            references = self._build_references(kb_results)
+            
+            # 构建上下文和问题
+            context = self._build_context_from_references(references)
+            question = form.question
+            prompt = prompt_template.format(context=context.strip(), question=question)
+            response = None
+
+            # 调用LLM获取答案
+            try:
+                # 调用模型生成回答
+                async for chunk in CallModel().call_llm_model(agent.llm_id, prompt, **model_params):
+                    response = chunk
+                        
+            except Exception as e:
+                logger.error(f"大模型响应错误: {e}")
+            
+            if not response:
+                return {"error": "大模型响应为空"}
+            response_dict = json.loads(response)
+            answer = response_dict["choices"][0]["message"]["content"]
+            
+            # 构建 QAData
+            qa_data = self._build_qa_data(
+                question=form.question,
+                references=references,
+                by=form.by,
+                request_time=form.request_time
+            )
+
+            # 记录答案
+            qa_data.answer = answer
+            logger.debug(f"生成的回答: {answer}")
+
+            # 记录响应时间
+            qa_data.response_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
+            
+            # 处理会话数据
+            await self._process_session_data(
+                session_id=form.session_id,
+                agent_id=form.agent_id,
+                qa_data=qa_data
+            )
+            
+            # 返回结果
+            return {
+                "question": qa_data.question,
+                "answer": qa_data.answer,
+                "qa_embedding": qa_data.qa_embedding,
+                "references": [ref.to_dict() for ref in qa_data.references] if qa_data.references else [],
+                "feedback": qa_data.feedback,
+                "by": qa_data.by,
+                "request_time": qa_data.request_time,
+                "response_time": qa_data.response_time
+            }
+        
+        except Exception as e:
+            logger.error(f"Agent chat failed: {e}")
+            raise e
+        
 # 创建控制器实例
 agent_controller = AgentController()

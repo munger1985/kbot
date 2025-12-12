@@ -196,7 +196,7 @@ class DifyAgent:
         return non_kb_results
 
 
-    async def search(self, question: str, override_question: bool = False) -> list:
+    async def search(self, question: str, override_question: bool = False) -> list[KBSearchResult]:
         """
         智能体对话处理
         

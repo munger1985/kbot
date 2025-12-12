@@ -21,6 +21,8 @@ sh Anaconda3-2024.10-1-Linux-x86_64.sh -b -u -p ~/anaconda3
 ~/anaconda3/bin/conda init bash
 #3.2 git安装
 sudo apt install git -y
+#3.3 安装libreoffice
+sudo apt install libreoffice -y
 ```
 
 ### 2.Kbot代码下载以及依赖包准备

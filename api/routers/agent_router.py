@@ -49,7 +49,7 @@ async def handle_agent_chat(form: AgentChatForm) -> SuccessQueryResponse | Error
 
     """
     try:
-        r = await agent_controller.agent_chat(form)
+        r = await agent_controller.agent_search(form)
 
         logger.debug(f"聊天结果: {r}")
 
@@ -108,7 +108,7 @@ async def handle_agent_stream_chat(
     ```
     """
     try:
-        return await agent_controller.agent_stream_chat(
+        return await agent_controller.agent_chat_stream(
             request=request,
             background_tasks=background_tasks,
             session_id=session_id
@@ -348,35 +348,36 @@ async def handle_agent_retrieval(form: AgentChatDifyForm) -> dict:
         )
     
 
-@router.get(
+@router.post(
     "/nonstream",
     summary="智能体聊天非流式响应",
-    response_model=None
+    response_model=None,
+    # dependencies=[Depends(AuthController.get_current_accessor)]
 )
-async def handle_non_stream_chat(
-    session_id: str             # 前端传入的查询参数
-) -> StreamingResponse | ErrorResponse:
+async def handle_non_stream_chat(form: AgentChatForm) -> SuccessQueryResponse | ErrorResponse:
     """
-    智能体聊天流式响应接口
+    智能体聊天接口(非流式)
     
     Args:
-    - **session_id**: 会话ID
+    - **form**: 智能体聊天表单
+    ```
+        session_id: str = Field(..., description="会话ID")
+        by: str = Field(..., description="请求用户ID")
+        agent_id: int = Field(..., description="智能体ID")
+        security_level: int = Field(0, description="安全级别")
+        request_time: str = Field(..., description="请求时间")
+        question: str = Field(..., description="问题")
+        tags: list[str] | None = Field(None, description="标签")
+        deep_mind: int = Field(0, description="是否使用深度思考, 0：不使用，1：使用")
+    ```
     
     Returns:
-    - **StreamingResponse**: 流式响应
+    - **SuccessQueryResponse**: 成功查询响应
     ```
-    data: {
-        "id": response_id,
-        "object": "chat.completion.chunk",
-        "created": created_time,
-        "model": model_name,
-        "choices": [{
-            "delta": {"content": content},
-            "index": 0,
-            "finish_reason": None
-        }]
-    }
-    data: [DONE]
+        code: int = Field(status.HTTP_200_OK, description="响应状态码")
+        message: str = Field("Success", description="返回的响应信息")
+        success: bool = Field(True, description="请求响应状态")
+        data: dict | list[dict] = Field(..., description="响应返回的数据")
     ```
     - **ErrorResponse**: 失败响应
     ```
@@ -384,17 +385,21 @@ async def handle_non_stream_chat(
         message: str = Field("Error", description="返回的响应信息")
         success: bool = Field(False, description="请求响应状态")
     ```
+
     """
     try:
-        return await agent_controller.agent_stream_chat(
-            request=request,
-            background_tasks=background_tasks,
-            session_id=session_id
+        r = await agent_controller.agent_chat_nonstream(form)
+
+        return SuccessQueryResponse(
+            code=status.HTTP_200_OK,
+            success=True,
+            message="",
+            data=r
         )
+        
     except Exception as e:
-        logger.error(f"流式聊天处理错误: {e}")
         return ErrorResponse(
             code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             success=False,
-            message="服务器内部错误"
+            message=f"服务器内部错误: {str(e)}"
         )
