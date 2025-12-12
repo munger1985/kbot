@@ -124,13 +124,21 @@ class OracleEmbeddingRepository(IEmbeddingRepository):
         if self.conn_params is None:
             return []
         
+        # Oracle VECTOR_DISTANCE returns a value between 0 and 2, where 0 means identical vectors
+        # We need to convert similarity_threshold to a distance value between 0 and 2 
+        # to match the VECTOR_DISTANCE function's output range
+        # Then use "1 - VECTOR_DISTANCE(EMBEDDING, :query_vec, COSINE) / 2 AS similarity" clause
+        # to get the similarity score between 0 and 1
+
+        distance = (1 - similarity_threshold) * 2
+
         # 基础SQL
         base_sql = """
             SELECT 
                 FILE_ID, CHUNK_DOC, CHUNK_METADATA,
-                2 - VECTOR_DISTANCE(EMBEDDING, :query_vec, COSINE) AS similarity
+                1 - VECTOR_DISTANCE(EMBEDDING, :query_vec, COSINE) / 2 AS similarity
             FROM KBOT_BIZ_TXT_EMBEDDING emb
-            WHERE 2 - VECTOR_DISTANCE(EMBEDDING, :query_vec, COSINE) >= :threshold
+            WHERE VECTOR_DISTANCE(EMBEDDING, :query_vec, COSINE) <= :distance
             AND KB_ID = :kb_id
             AND SECURITY_LEVEL <= :security
             
@@ -142,7 +150,7 @@ class OracleEmbeddingRepository(IEmbeddingRepository):
             "kb_id": kb_id,
             "query_vec": query_vec,
             "security": security,
-            "threshold": similarity_threshold,
+            "distance": distance,
             "top_k": search_top_k
         }
 

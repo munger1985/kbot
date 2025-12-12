@@ -39,3 +39,4 @@ mcp==1.19.0
 chardet==5.2.0
 langid==1.1.6
 scikit-learn==1.7.1
+aiofiles==23.2.1

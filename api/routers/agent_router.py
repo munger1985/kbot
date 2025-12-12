@@ -315,12 +315,12 @@ async def handle_del_agent(agent_id: int, del_prompt: int = 0) -> SuccessRespons
 @router.post(
     "/dify/retrieval",
     summary="智能体Dify检索",
-    dependencies=[Depends(AuthController.get_current_accessor)]
+    # dependencies=[Depends(AuthController.get_current_accessor)]
 )
 async def handle_agent_retrieval(form: AgentChatDifyForm) -> dict:
     """
     智能体 Dify 检索接口
-    # 参考：https://docs.dify.ai/en/guides/knowledge-base/external-knowledge-api
+    参考：https://docs.dify.ai/en/guides/knowledge-base/external-knowledge-api
     
     Args:
     - **knowledge_id**: Kbot 智能体 ID
@@ -334,12 +334,11 @@ async def handle_agent_retrieval(form: AgentChatDifyForm) -> dict:
     try:
         agent_id = int(form.knowledge_id)
         session_id = uuid.uuid4().hex
-        return await agent_controller.agent_chat_dify(
+        return await agent_controller.agent_search_dify(
             agent_id=agent_id, 
             question=form.query, 
             session_id=session_id,
-            topk=form.retrieval_setting.get("top_k", 100),
-            score_threshold=form.retrieval_setting.get("score_threshold", 0.75)
+            override_question=form.retrieval_setting.get("override_question", False)
         )
     
     except Exception as e:
@@ -348,3 +347,54 @@ async def handle_agent_retrieval(form: AgentChatDifyForm) -> dict:
             detail=f"检索失败: {str(e)}"
         )
     
+
+@router.get(
+    "/nonstream",
+    summary="智能体聊天非流式响应",
+    response_model=None
+)
+async def handle_non_stream_chat(
+    session_id: str             # 前端传入的查询参数
+) -> StreamingResponse | ErrorResponse:
+    """
+    智能体聊天流式响应接口
+    
+    Args:
+    - **session_id**: 会话ID
+    
+    Returns:
+    - **StreamingResponse**: 流式响应
+    ```
+    data: {
+        "id": response_id,
+        "object": "chat.completion.chunk",
+        "created": created_time,
+        "model": model_name,
+        "choices": [{
+            "delta": {"content": content},
+            "index": 0,
+            "finish_reason": None
+        }]
+    }
+    data: [DONE]
+    ```
+    - **ErrorResponse**: 失败响应
+    ```
+        code: int = Field(status.HTTP_400_BAD_REQUEST, description="响应状态码")
+        message: str = Field("Error", description="返回的响应信息")
+        success: bool = Field(False, description="请求响应状态")
+    ```
+    """
+    try:
+        return await agent_controller.agent_stream_chat(
+            request=request,
+            background_tasks=background_tasks,
+            session_id=session_id
+        )
+    except Exception as e:
+        logger.error(f"流式聊天处理错误: {e}")
+        return ErrorResponse(
+            code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            success=False,
+            message="服务器内部错误"
+        )

@@ -4,7 +4,7 @@ import shutil
 import os
 from io import BytesIO
 from tempfile import mkdtemp
-from app.converter import OfficeToPDF
+from microservices.libreoffice.app import OfficeToPDF
 from PyPDF2 import PdfReader, PdfWriter
 
 app = FastAPI()
@@ -67,10 +67,10 @@ async def convert_office(
         
 
 
-# if __name__ == "__main__":
-#     import uvicorn
+if __name__ == "__main__":
+    import uvicorn
     
-#     service_host = "0.0.0.0"
-#     service_port = 20303
+    service_host = "0.0.0.0"
+    service_port = 9905
     
-#     uvicorn.run(app, host=service_host, port=service_port)
+    uvicorn.run(app, host=service_host, port=service_port)

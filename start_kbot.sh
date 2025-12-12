@@ -86,6 +86,7 @@ declare -A services=(
     ["LLM"]="kbot_app_llm.py" 
     ["Reranker"]="kbot_app_reranker.py"
     ["VLM"]="kbot_app_vlm.py"
+    ["LibreOffice"]="kbot_app_libreoffice.py"
 )
 
 # 遍历启动所有微服务

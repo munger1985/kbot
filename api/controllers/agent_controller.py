@@ -21,6 +21,7 @@ from utils.common import model_to_dict
 from utils.serializer import SerializerUtils
 from api.schemas.agent_schema import AgentChatForm, AgentChatFeedbackForm
 from api.schemas.base_response import *
+from services.chat.agent_dify import DifyAgent
 
 
 class AgentController:
@@ -455,34 +456,27 @@ class AgentController:
             logger.error(f"智能体 {agent_id} 删除失败: {str(e)}")
             return False
         
-    async def agent_chat_dify(self, 
+    async def agent_search_dify(self, 
                               agent_id: int, 
                               question: str, 
                               session_id: str,
-                              topk: int | None = None,
-                              score_threshold: float | None = None,
+                              override_question: bool = False
                         ) -> dict:
         """
         智能体对话 (Dify版)
-        # Dify 调用使用深度思考版本的逻辑
         """
         try:
             request_time=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
             logger.info(f"[{request_time}] 开始处理 Dify 请求: {question}")
             
             # 查询向量库获取相关文档
-            agent = MCPAgent(agent_id=agent_id, security=9, tags=[]) # security_level 9 表示不校验安全等级
-            results  = await agent.chat(question=question, topk=topk, score_threshold=score_threshold)
+            agent = DifyAgent(agent_id=agent_id, security=9, tags=[]) # security_level 9 表示不校验安全等级
+            kb_results  = await agent.search(question=question, override_question=override_question)
             
-            # 处理知识库结果
-            kb_results = []
-            for result in results:
-                if result.kb_results:
-                    kb_results.extend(result.kb_results)
         
             # 构建参考文献列表和 Dify 记录
             references = self._build_references(kb_results)
-            records = self._build_dify_records(kb_results)
+            records = self._build_dify_records(references)
             
             # 构建 QAData 对象
             qa_data = self._build_qa_data(
@@ -501,21 +495,20 @@ class AgentController:
             logger.error(f"Agent chat dify failed: {e}")
             raise e
     
-    def _build_dify_records(self, kb_results: list) -> list[dict]:
+    def _build_dify_records(self, references: list[Reference]) -> list[dict]:
         """构建 Dify 返回记录"""
         records = []
-        if kb_results:
-            for kb_result in kb_results:
-                record = {
-                    "metadata": {
-                        "path": kb_result.chunk_file_path or "",
-                        "description": f"page: {kb_result.page_num}"
-                    },
-                    "score": kb_result.similarity,
-                    "title": kb_result.file_id,
-                    "content": kb_result.content
-                }
-                records.append(record)
+        for ref in references:
+            record = {
+                "metadata": {
+                    "path": ref.download_link,
+                    "description": f"page: {ref.page_num}"
+                },
+                "score": ref.similarity_score,
+                "title": "",
+                "content": ref.content
+            }
+            records.append(record)
         return records
 
 
