@@ -1,25 +1,26 @@
 
 import json
 import urllib.parse
-from fastapi import APIRouter, UploadFile, File, Form, status, Depends, Body
+from loguru import logger
+from fastapi import APIRouter, UploadFile, File, Form, status, HTTPException, Body
 from fastapi.responses import HTMLResponse
-from api.controllers.security_controller import AuthController
 from fastapi.responses import FileResponse
 from api.controllers.kb_controller import kb_controller as controller
 from api.schemas.kb_schema import *
 from api.schemas.base_response import *
+from core.auth.shortcuts import *
 
 router = APIRouter(prefix="/kb", tags=["Knowledge Base"])
 
 @router.post(
     "/upload",
-    summary="上传一个或多个文件到指定知识库",
-    dependencies=[Depends(AuthController.get_current_accessor)]
+    summary="上传一个或多个文件到指定知识库"
 )
 async def handle_upload_files(
+    auth: UserAuth,
     files: list[UploadFile] = File(...),
     metadata: str = Form(...)
-) -> SuccessResponse | ErrorResponse:
+) -> SuccessResponse:
     """
     上传一个或多个文件到指定知识库
     
@@ -74,33 +75,35 @@ async def handle_upload_files(
             else:
                 code = status.HTTP_400_BAD_REQUEST
                 
-            return ErrorResponse(
-                code=code,
-                success=False,
-                message=message
+            logger.error(f"文件上传失败: {message}")
+            raise HTTPException(
+                status_code=code,
+                detail=message
             )
         
     except json.JSONDecodeError as e:
-        return ErrorResponse(
-            code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            success=False,
-            message=f"请求参数格式错误: {str(e)}"
+        msg = f"请求参数格式错误: {str(e)}"
+        logger.error(msg)
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=msg
         )
     except Exception as e:
-        return ErrorResponse(
-            code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            success=False,
-            message=f"服务器内部错误: {str(e)}"
+        msg = f"服务器内部错误: {str(e)}"
+        logger.error(msg)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=msg
         )
     
 @router.post(
     "/delete",
-    summary="从指定的知识库中删除文件或所有文件以及其知识库或批次",
-    dependencies=[Depends(AuthController.get_current_accessor)]
+    summary="从指定的知识库中删除文件或所有文件以及其知识库或批次"
 )
 async def handle_delete_files(
+    auth: UserAuth,
     form: KBDeleteForm = Body(...)
-) -> SuccessResponse | ErrorResponse:
+) -> SuccessResponse:
     """
     从指定的知识库中删除文件或所有文件以及其知识库或批次
     
@@ -141,35 +144,38 @@ async def handle_delete_files(
                 message="删除文件成功"
             )
         else:
-            return ErrorResponse(
-                code=status.HTTP_400_BAD_REQUEST,
-                success=False,
-                message=f"删除文件失败: {result['failed_file_cnt']}个文件删除失败，详情请查看日志"
+            msg = f"删除文件失败: {result['failed_file_cnt']}个文件删除失败，详情请查看日志"
+            logger.error(msg)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=msg
                 )
         
     except json.JSONDecodeError as e:
-        return ErrorResponse(
-            code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            success=False,
-            message=f"请求参数格式错误: {str(e)}"
+        msg = f"请求参数格式错误: {str(e)}"
+        logger.error(msg)
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=msg
         )
     except Exception as e:
-        return ErrorResponse(
-            code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            success=False,
-            message=f"服务器内部错误: {str(e)}"
+        msg = f"服务器内部错误: {str(e)}"
+        logger.error(msg)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=msg
         )
     
 @router.get(
     "/download",
     summary="从知识库中下载文件",
     response_model=None,
-    # dependencies=[Depends(AuthController.get_current_accessor)],
     status_code=status.HTTP_200_OK
 )
 async def handle_download_file(
+    auth: UserAuth,
     file_id: str
-) -> FileResponse | ErrorResponse:
+) -> FileResponse:
     """
     从知识库中下载文件
     
@@ -199,30 +205,32 @@ async def handle_download_file(
                 content_disposition_type=None # type: ignore
                 )
         else:
-            return ErrorResponse(
-                code=status.HTTP_404_NOT_FOUND,
-                success=False,
-                message="文件不存在"
+            msg = f"文件不存在: {file_id}"
+            logger.error(msg)
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=msg
             )
         
     except Exception as e:
-        return ErrorResponse(
-            code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            success=False,
-            message=f"服务器内部错误: {str(e)}"
+        msg = f"服务器内部错误: {str(e)}"
+        logger.error(msg)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=msg
         )
 
 @router.get(
     "/preview",
     summary="从知识库中预览文件",
     response_model=None,
-    # dependencies=[Depends(AuthController.get_current_accessor)],
     status_code=status.HTTP_200_OK
 )
 async def handle_preview_file(
+    auth: UserAuth,
     file_id: str,
     page_num: int = 0
-) -> HTMLResponse | FileResponse | ErrorResponse:
+) -> HTMLResponse | FileResponse:
     """
     从知识库中预览文件
     
@@ -267,29 +275,31 @@ async def handle_preview_file(
                         headers={"Content-Disposition": "inline"}
                     )
         else:
-            return ErrorResponse(
-                code=status.HTTP_404_NOT_FOUND,
-                success=False,
-                message="文件不存在"
+            msg = f"文件不存在: {file_id}"
+            logger.error(msg)
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=msg
             )
         
     except Exception as e:
-        return ErrorResponse(
-            code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            success=False,
-            message=f"服务器内部错误: {str(e)}"
+        msg = f"服务器内部错误: {str(e)}"
+        logger.error(msg)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=msg
         )
     
 @router.post(
     "/file/reparse",
     summary="重新解析文件",
     response_model=SuccessResponse,
-    dependencies=[Depends(AuthController.get_current_accessor)],
     status_code=status.HTTP_200_OK
 )
 async def handle_reparse_files(
+    auth: UserAuth,
     form: KBReparseForm = Body(...)
-) -> SuccessResponse | ErrorResponse:
+) -> SuccessResponse:
     """
     重新解析文件
     
@@ -326,23 +336,26 @@ async def handle_reparse_files(
                 message="重解析文件成功"
                 )
         else:
-            return ErrorResponse(
-                code=status.HTTP_400_BAD_REQUEST,
-                success=False,
-                message="重解析文件失败"
+            msg = "重解析文件失败"
+            logger.error(msg)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=msg
             )
             
     except json.JSONDecodeError as e:
-        return ErrorResponse(
-            code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            success=False,
-            message=f"请求参数格式错误: {str(e)}"
+        msg = f"请求参数格式错误: {str(e)}"
+        logger.error(msg)
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=msg
         )
     except Exception as e:
-        return ErrorResponse(
-            code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            success=False,
-            message=f"服务器内部错误: {str(e)}"
+        msg = f"服务器内部错误: {str(e)}"
+        logger.error(msg)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=msg
         )
     
 
@@ -350,10 +363,10 @@ async def handle_reparse_files(
     "/file/preview/v1",
     summary="从知识库中预览文件 v1",
     response_model=None,
-    # dependencies=[Depends(AuthController.get_current_accessor)],
     status_code=status.HTTP_200_OK
 )
 async def handle_preview_kb_file_v1(
+    auth: UserAuth,
     form: KBFilePreviewForm
 ):
     """
@@ -409,22 +422,23 @@ async def handle_preview_kb_file_v1(
         return await controller.preview_kb_file(**kwargs)
          
     except Exception as e:
-        return ErrorResponse(
-            code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            success=False,
-            message=f"服务器内部错误: {str(e)}"
+        msg = f"服务器内部错误: {str(e)}"
+        logger.error(msg)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=msg
         )
     
 @router.get(
     "/file/preview/v2",
     summary="在浏览器中直接预览文件 v2",
     response_model=None,
-    # dependencies=[Depends(AuthController.get_current_accessor)],
     status_code=status.HTTP_200_OK
 )
 async def handle_preview_kb_file_v2(
+    auth: UserAuth,
     file_id: str
-) -> FileResponse | ErrorResponse:
+) -> FileResponse:
     """
     在浏览器中直接预览文件
     
@@ -497,29 +511,31 @@ async def handle_preview_kb_file_v2(
                 headers=headers
             )
         else:
-            return ErrorResponse(
-                code=status.HTTP_404_NOT_FOUND,
-                success=False,
-                message="文件不存在"
+            msg = "文件不存在"
+            logger.error(msg)
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=msg
             )
         
     except Exception as e:
-        return ErrorResponse(
-            code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            success=False,
-            message=f"服务器内部错误: {str(e)}"
+        msg = f"服务器内部错误: {str(e)}"
+        logger.error(msg)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=msg
         )
     
 @router.post(
     "/file/chunk",
     summary="更改或删除知识库文件的分片内容",
-    response_model=SuccessResponse | ErrorResponse,
-    dependencies=[Depends(AuthController.get_current_accessor)],
+    response_model=SuccessResponse,
     status_code=status.HTTP_200_OK
 )
 async def handle_edit_file_chunk(
+    auth: UserAuth,
     form: KBFileChunkEditForm
-) -> SuccessResponse | ErrorResponse:
+) -> SuccessResponse:
     """
     更改或删除知识库文件的分片内容
     
@@ -550,10 +566,11 @@ async def handle_edit_file_chunk(
     try:
         if form.action == "update":
             if form.new_chunk is None or form.new_chunk.strip() == "":
-                return ErrorResponse(
-                    code=status.HTTP_400_BAD_REQUEST,
-                    success=False,
-                    message="更新操作需要提供新的分片内容"
+                msg = "更新操作需要提供新的分片内容"
+                logger.error(msg)
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=msg
                 )
             result = await controller.edit_kb_file_chunk(
                 kb_id=form.kb_id,
@@ -582,10 +599,11 @@ async def handle_edit_file_chunk(
             )
 
         else:
-            return ErrorResponse(
-                code=status.HTTP_400_BAD_REQUEST,
-                success=False,
-                message="无效的操作类型，仅支持 'update', 'delete', 'enable' 和 'disable' 四种操作"
+            msg = "无效的操作类型，仅支持 'update', 'delete', 'enable' 和 'disable' 四种操作"
+            logger.error(msg)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=msg
             )
         if result:
             return SuccessResponse(
@@ -594,30 +612,32 @@ async def handle_edit_file_chunk(
                 message="切换文件分片状态成功"
                 )
         else:
-            return ErrorResponse(
-                code=status.HTTP_400_BAD_REQUEST,
-                success=False,
-                message="切换文件分片状态失败"
+            msg = "切换文件分片状态失败"
+            logger.error(msg)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=msg
             )
             
     except Exception as e:
-        return ErrorResponse(
-            code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            success=False,
-            message=f"服务器内部错误: {str(e)}"
+        msg = f"服务器内部错误: {str(e)}"
+        logger.error(msg)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=msg
         )
     
 @router.get(
     "/file/get_chunks",
     summary="根据文件ID获取文件的分片内容",
-    response_model=SuccessQueryResponse | ErrorResponse,
-    dependencies=[Depends(AuthController.get_current_accessor)],
+    response_model=SuccessQueryResponse,
     status_code=status.HTTP_200_OK
 )
 async def handle_get_file_chunks(
+    auth: UserAuth,
     kb_id: int,
     file_id: str
-) -> SuccessQueryResponse | ErrorResponse:
+) -> SuccessQueryResponse:
     """
     根据文件ID获取文件的分片内容
     
@@ -667,28 +687,30 @@ async def handle_get_file_chunks(
                 data=result
             )
         else:
-            return ErrorResponse(
-                code=status.HTTP_404_NOT_FOUND,
-                success=False,
-                message="未找到文件分片"
+            msg = "未找到文件分片"
+            logger.error(msg)
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=msg
             )
     except Exception as e:
-        return ErrorResponse(
-            code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            success=False,
-            message=f"服务器内部错误: {str(e)}"
+        msg = f"服务器内部错误: {str(e)}"
+        logger.error(msg)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=msg
         )
     
 @router.post(
     "/file/chunk/update_description",
     summary="更新知识库文件的分片描述",
-    response_model=SuccessResponse | ErrorResponse,
-    dependencies=[Depends(AuthController.get_current_accessor)],
+    response_model=SuccessResponse,
     status_code=status.HTTP_200_OK
 )
 async def handle_update_chunk_description(
+    auth: UserAuth,
     form: KBFileChunkUpdateDescriptionForm
-) -> SuccessResponse | ErrorResponse:
+) -> SuccessResponse:
     """
     更新知识库文件的分片描述
     
@@ -724,28 +746,30 @@ async def handle_update_chunk_description(
                 message="更新文件分片描述成功"
             )
         else:
-            return ErrorResponse(
-                code=status.HTTP_404_NOT_FOUND,
-                success=False,
-                message="未找到文件分片"
+            msg = "未找到文件分片"
+            logger.error(msg)
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=msg
             )
     except Exception as e:
-        return ErrorResponse(
-            code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            success=False,
-            message=f"服务器内部错误: {str(e)}"
+        msg = f"服务器内部错误: {str(e)}"
+        logger.error(msg)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=msg
         )
 
 @router.post(
     "/file/chunk/update_tags",
     summary="更新知识库文件的分片标签",
-    response_model=SuccessResponse | ErrorResponse,
-    dependencies=[Depends(AuthController.get_current_accessor)],
+    response_model=SuccessResponse,
     status_code=status.HTTP_200_OK
 )
 async def handle_update_chunk_tags(
+    auth: UserAuth,
     form: KBFileChunkUpdateTagsForm
-) -> SuccessResponse | ErrorResponse:
+) -> SuccessResponse:
     """
     更新知识库文件的分片标签
     
@@ -781,14 +805,16 @@ async def handle_update_chunk_tags(
                 message="更新文件分片标签成功"
             )
         else:
-            return ErrorResponse(
-                code=status.HTTP_404_NOT_FOUND,
-                success=False,
-                message="未找到文件分片"
+            msg = "未找到文件分片"
+            logger.error(msg)
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=msg
             )
     except Exception as e:
-        return ErrorResponse(
-            code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            success=False,
-            message=f"服务器内部错误: {str(e)}"
+        msg = f"服务器内部错误: {str(e)}"
+        logger.error(msg)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=msg
         )

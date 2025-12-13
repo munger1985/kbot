@@ -165,3 +165,23 @@ class VLMProvider(str, Enum):
     """支持的 VLM 提供商枚举"""
     OPENAI = "openai"     # 目前仅支持 OpenAI 兼容的云提供商
     # 随着实现添加更多提供商
+
+# 服务类型枚举
+class ServiceType(str, Enum):
+    INTERNAL = "internal"    # 内部服务
+    EXTERNAL = "external"    # 外部服务
+    THIRD_PARTY = "third_party"  # 第三方服务
+
+# API Key状态枚举
+class APIKeyStatus(str, Enum):
+    ACTIVE = "active"
+    REVOKED = "revoked"
+    EXPIRED = "expired"
+    SUSPENDED = "suspended"
+
+# 用户Token状态枚举
+class UserTokenStatus(str, Enum):
+    ACTIVE = "active"
+    REVOKED = "revoked"
+    EXPIRED = "expired"
+    LOGGED_OUT = "logged_out"

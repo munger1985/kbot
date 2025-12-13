@@ -3,6 +3,7 @@ from .kbot_embedding_repo.kbot_biz_txt_embedding_oracle import OracleEmbeddingRe
 from .kbot_embedding_repo.kbot_biz_txt_embedding_es import ElasticsearchEmbeddingRepository
 from dao.repositories.kbot_md_db_conf_repo import KbotMdDbConfRepository
 from core.dictionary import DbType
+from core.exceptions import ResourceNotFoundException, ValidationException, InternalServerError
 
 
 class EmbeddingRepositoryFactory:
@@ -25,9 +26,13 @@ class EmbeddingRepositoryFactory:
         db_conf = await db_repo.get_by_kbid(kb_id)
         if db_conf is None:
             logger.error(f"未找到知识库 {kb_id} 的向量库配置")
-            return None
+            raise ResourceNotFoundException(message=f"知识库 {kb_id} 对应的向量库配置", resource_type="DB_CONF", resource_id=kb_id)
         
         connstr = db_conf.db_conn_str
+        if connstr is None:
+            logger.error(f"知识库 {kb_id} 的数据库连接字符串为空")
+            raise ResourceNotFoundException(message=f"知识库 {kb_id} 对应的向量数据库连接字符串", resource_type="DB_CONF_CONNSTR", resource_id=kb_id)
+        
         db_type = db_conf.db_type
         
         if db_type == DbType.ORACLE:
@@ -35,11 +40,11 @@ class EmbeddingRepositoryFactory:
         elif db_type == DbType.ELASTICSEARCH:
             repository = ElasticsearchEmbeddingRepository(kb_id)
         else:
-            raise ValueError(f"不支持的存储库类型: {DbType(db_type) or db_type}")
+            raise ValidationException(message=f"不支持的存储库类型: {DbType(db_type) or db_type}", db_type=db_type)
         
         # 初始化连接
-        if await repository.initialize(connstr): # type: ignore
+        if await repository.initialize(connstr):
             logger.info(f"成功创建 {DbType(db_type)} 存储库实例")
             return repository
         else:
-            raise Exception(f"初始化{DbType(db_type)}存储库失败")
+            raise InternalServerError(message=f"初始化{DbType(db_type)}存储库失败")

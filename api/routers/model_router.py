@@ -1,18 +1,18 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, status, HTTPException
+from loguru import logger
 from api.controllers.model_controller import model_controller as controller
-from api.controllers.security_controller import AuthController
 from api.schemas.model_schema import *
 from api.schemas.base_response import *
 from core.dictionary import ModelCategory
+from core.auth.shortcuts import *
 
 router = APIRouter(prefix="/model", tags=["Model Management"])
    
 @router.post(
         "/toggle",
-        summary="启用/禁用指定模型",
-        dependencies=[Depends(AuthController.get_current_accessor)]
+        summary="启用/禁用指定模型"
 )
-async def handle_enable_model(form: ToggleModelForm) -> SuccessResponse | ErrorResponse:
+async def handle_enable_model(form: ToggleModelForm, auth: UserAuth) -> SuccessResponse:
     """
     启用/禁用指定模型
     
@@ -46,18 +46,17 @@ async def handle_enable_model(form: ToggleModelForm) -> SuccessResponse | ErrorR
             message="操作成功"
         )
     else:
-        return ErrorResponse(
-            code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            success=False,
-            message="操作失败"
+        logger.error("操作失败")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="操作失败"
         )
     
 @router.post(
         "/params",
-        summary="从数据库中获取指定模型的参数",
-        # dependencies=[Depends(AuthController.get_current_accessor)]
+        summary="从数据库中获取指定模型的参数"
 )
-async def handle_get_model_params(form: ModelForm) -> SuccessQueryResponse | ErrorResponse:
+async def handle_get_model_params(form: ModelForm, auth: UserAuth) -> SuccessQueryResponse:
     """
     获取指定模型的参数
     
@@ -105,18 +104,16 @@ async def handle_get_model_params(form: ModelForm) -> SuccessQueryResponse | Err
             data=model
         )
     else:
-        return ErrorResponse(
-            code=status.HTTP_404_NOT_FOUND,
-            success=False,
-            message="模型 {form.model_id} 未找到"
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"模型 {form.model_id} 未找到"
         )
 
 @router.get(
         "/available",
-        summary="从数据库中获取指定类别的可用模型",
-        # dependencies=[Depends(AuthController.get_current_accessor)]
+        summary="从数据库中获取指定类别的可用模型"
 )
-async def handle_get_all_model_params(model_category: int) -> SuccessQueryResponse | ErrorResponse:
+async def handle_get_all_model_params(model_category: int, auth: AnyAuth) -> SuccessQueryResponse:
     """
     获取数据库中所有可用模型
     
@@ -163,18 +160,18 @@ async def handle_get_all_model_params(model_category: int) -> SuccessQueryRespon
             data=list(models)
         )
     else:
-        return ErrorResponse(
-            code=status.HTTP_404_NOT_FOUND,
-            success=False,
-            message=f"未找到可用的 {ModelCategory(model_category)} 模型"
+        msg = f"未找到类型 {ModelCategory(model_category)} 的可用模型"
+        logger.error(msg)
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=msg
         )
 
 @router.post(
         "/test",
-        summary="测试指定模型是否可用",
-        dependencies=[Depends(AuthController.get_current_accessor)]
+        summary="测试指定模型是否可用"
 )
-async def handle_test_model(form: TestModelForm) -> SuccessResponse | ErrorResponse:
+async def handle_test_model(form: TestModelForm, auth: AnyAuth) -> SuccessResponse:
     """测试指定模型是否可用
     Args:
     - **form**: 测试模型请求表单
@@ -204,8 +201,9 @@ async def handle_test_model(form: TestModelForm) -> SuccessResponse | ErrorRespo
             message="模型可用"
         )
     else:
-        return ErrorResponse(
-            code=status.HTTP_400_BAD_REQUEST,
-            success=False,
-            message="模型不可用"
+        msg = f"模型 {form.model_id} 不可用"
+        logger.error(msg)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=msg
         )

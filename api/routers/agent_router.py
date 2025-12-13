@@ -4,7 +4,7 @@ from fastapi import APIRouter, status, Depends, HTTPException
 from fastapi import Request, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from api.schemas.agent_schema import *
-from api.controllers.security_controller import AuthController
+from core.auth.shortcuts import *
 from api.controllers.agent_controller import agent_controller
 from api.schemas.base_response import *
 
@@ -12,10 +12,9 @@ router = APIRouter(prefix="/agent", tags=["Agent Chat"])
 
 @router.post(
     "/chat",
-    summary="智能体聊天",
-    dependencies=[Depends(AuthController.get_current_accessor)]
+    summary="智能体聊天"
 )
-async def handle_agent_chat(form: AgentChatForm) -> SuccessQueryResponse | ErrorResponse:
+async def handle_agent_chat(form: AgentChatForm, auth: UserAuth) -> SuccessQueryResponse:
     """
     智能体聊天接口
     
@@ -61,10 +60,10 @@ async def handle_agent_chat(form: AgentChatForm) -> SuccessQueryResponse | Error
         )
         
     except Exception as e:
-        return ErrorResponse(
-            code=status.HTTP_400_BAD_REQUEST,
-            success=False,
-            message=f"聊天失败：{str(e)}"
+        logger.error(f"聊天失败：{str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"聊天失败：{str(e)}"
         )
 
 @router.get(
@@ -77,7 +76,7 @@ async def handle_agent_stream_chat(
     request: Request,           # FastAPI 自动注入
     background_tasks: BackgroundTasks,  # FastAPI 自动注入
     session_id: str             # 前端传入的查询参数
-) -> StreamingResponse | ErrorResponse:
+) -> StreamingResponse:
     """
     智能体聊天流式响应接口
     
@@ -115,18 +114,16 @@ async def handle_agent_stream_chat(
         )
     except Exception as e:
         logger.error(f"流式聊天处理错误: {e}")
-        return ErrorResponse(
-            code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            success=False,
-            message="服务器内部错误"
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"流式聊天处理错误: {e}"
         )
 
 @router.post(
     "/feedback",
-    summary="智能体回答结果反馈接口",
-    dependencies=[Depends(AuthController.get_current_accessor)]
+    summary="智能体回答结果反馈接口"
 )
-async def handle_agent_feedback(form: AgentChatFeedbackForm):
+async def handle_agent_feedback(form: AgentChatFeedbackForm, auth: UserAuth) -> SuccessResponse:
     """
     智能体回答结果反馈接口
     
@@ -160,18 +157,17 @@ async def handle_agent_feedback(form: AgentChatFeedbackForm):
             message="反馈成功"
         )
     else:
-        return ErrorResponse(
-            code=status.HTTP_400_BAD_REQUEST,
-            success=False,
-            message="反馈失败"
+        logger.error("反馈失败")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="反馈失败"
         )
 
 @router.get(
     "/session/get",
-    summary="登录智能体时获取会话信息",
-    dependencies=[Depends(AuthController.get_current_accessor)]
+    summary="登录智能体时获取会话信息"
 )
-async def handle_agent_get_session(session_id: str):
+async def handle_agent_get_session(session_id: str, auth: UserAuth):
     """
     登录智能体时获取会话信息
     
@@ -196,10 +192,9 @@ async def handle_agent_get_session(session_id: str):
     try:
         r = await agent_controller.agent_get_session(session_id)
         if r is None:
-            return ErrorResponse(
-                code=status.HTTP_400_BAD_REQUEST,
-                success=False,
-                message="会话不存在"
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="会话不存在"
             )
         return SuccessQueryResponse(
             code=status.HTTP_200_OK,
@@ -209,18 +204,17 @@ async def handle_agent_get_session(session_id: str):
             )
    
     except Exception as e:
-        return ErrorResponse(
-            code=status.HTTP_400_BAD_REQUEST,
-            success=False,
-            message=f"会话信息获取失败: {str(e)}"
+        logger.error(f"会话信息获取失败: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"会话信息获取失败: {str(e)}"
         )
     
 @router.delete(
     "/session/remove",
-    summary="删除聊天会话信息",
-    dependencies=[Depends(AuthController.get_current_accessor)]
+    summary="删除聊天会话信息"
 )
-async def handle_agent_del_session(session_id: str) -> SuccessResponse | ErrorResponse:
+async def handle_agent_del_session(session_id: str, auth: UserAuth) -> SuccessResponse:
     """
     删除聊天会话信息
     
@@ -249,26 +243,24 @@ async def handle_agent_del_session(session_id: str) -> SuccessResponse | ErrorRe
                 message="会话信息删除成功"
                 )
         else:
-            return ErrorResponse(
-                code=status.HTTP_400_BAD_REQUEST,
-                success=False,
-                message="会话信息删除失败"
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="会话信息删除失败"
             )
             
     except Exception as e:
-        return ErrorResponse(
-            code=status.HTTP_400_BAD_REQUEST,
-            success=False,
-            message=f"会话信息删除失败: {str(e)}"
+        logger.error(f"会话信息删除失败: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"会话信息删除失败: {str(e)}"
         )
     
 
 @router.delete(
     "/remove",
-    summary="删除智能体",
-    dependencies=[Depends(AuthController.get_current_accessor)]
+    summary="删除智能体"
 )
-async def handle_del_agent(agent_id: int, del_prompt: int = 0) -> SuccessResponse | ErrorResponse:
+async def handle_del_agent(auth: UserAuth, agent_id: int, del_prompt: int = 0) -> SuccessResponse:
     """
     删除智能体
     
@@ -299,25 +291,23 @@ async def handle_del_agent(agent_id: int, del_prompt: int = 0) -> SuccessRespons
                 message="智能体删除成功"
                 )
         else:
-            return ErrorResponse(
-                code=status.HTTP_400_BAD_REQUEST,
-                success=False,
-                message="智能体删除失败"
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="智能体删除失败"
             )
             
     except Exception as e:
-        return ErrorResponse(
-            code=status.HTTP_400_BAD_REQUEST,
-            success=False,
-            message=f"智能体删除失败: {str(e)}"
+        logger.error(f"智能体删除失败: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"智能体删除失败: {str(e)}"
         )
     
 @router.post(
     "/dify/retrieval",
-    summary="智能体Dify检索",
-    # dependencies=[Depends(AuthController.get_current_accessor)]
+    summary="智能体Dify检索"
 )
-async def handle_agent_retrieval(form: AgentChatDifyForm) -> dict:
+async def handle_agent_retrieval(auth: ServiceAuth, form: AgentChatDifyForm) -> dict:
     """
     智能体 Dify 检索接口
     参考：https://docs.dify.ai/en/guides/knowledge-base/external-knowledge-api
@@ -351,10 +341,9 @@ async def handle_agent_retrieval(form: AgentChatDifyForm) -> dict:
 @router.post(
     "/nonstream",
     summary="智能体聊天非流式响应",
-    response_model=None,
-    # dependencies=[Depends(AuthController.get_current_accessor)]
+    response_model=None
 )
-async def handle_non_stream_chat(form: AgentChatForm) -> SuccessQueryResponse | ErrorResponse:
+async def handle_non_stream_chat(auth: ServiceAuth, form: AgentChatForm) -> SuccessQueryResponse:
     """
     智能体聊天接口(非流式)
     
@@ -398,8 +387,8 @@ async def handle_non_stream_chat(form: AgentChatForm) -> SuccessQueryResponse | 
         )
         
     except Exception as e:
-        return ErrorResponse(
-            code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            success=False,
-            message=f"服务器内部错误: {str(e)}"
+        logger.error(f"服务器内部错误: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"服务器内部错误: {str(e)}"
         )

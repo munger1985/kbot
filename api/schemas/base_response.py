@@ -6,11 +6,6 @@ class SuccessResponse(BaseModel):
     message: str = Field("Success", description="返回的响应信息")
     success: bool = Field(True, description="请求响应状态")
 
-class ErrorResponse(BaseModel):
-    code: int = Field(status.HTTP_400_BAD_REQUEST, description="响应状态码")
-    message: str = Field("Error", description="返回的响应信息")
-    success: bool = Field(False, description="请求响应状态")
-
 class SuccessQueryResponse(SuccessResponse):
     """查询成功响应模型"""
     data: dict|list[dict] = Field(..., description="响应返回的数据")

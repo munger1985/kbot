@@ -8,6 +8,7 @@ from api.schemas.kb_schema import *
 from dao.repositories.kbot_md_kb_files_repo import KbotMdKbFilesRepository
 from utils.file_converter import FileToImage
 from services.dataparse.common import detect_file_encoding
+from core.exceptions import ValidationException, InternalServerError, ResourceNotFoundException
 
 
 class KBController:
@@ -32,7 +33,9 @@ class KBController:
             )
             return result, error_msg
         except Exception as e:
-            raise e
+            msg = f"上传文件到知识库 {upload_form.kb_id} 失败: {str(e)}"
+            logger.error(msg)
+            raise InternalServerError(message=msg)
 
     async def delete_kb_files(
             self,
@@ -51,7 +54,9 @@ class KBController:
             )
             return result
         except Exception as e:
-            raise e
+            msg = f"从知识库 {form.kb_id} 删除文件 {form.file_ids} 失败: {str(e)}"
+            logger.error(msg)
+            raise InternalServerError(message=msg)
         
     async def get_kb_files(
             self,
@@ -72,14 +77,14 @@ class KBController:
         """
         file = await KbotMdKbFilesRepository().get_by_id(file_id=file_id)
         if file is None:
-            return None
+            raise ResourceNotFoundException(f"文件 {file_id} 不存在")
         
         file_path = file.file_path
         file_name = file.file_name
         file_ext = file.file_ext
 
         if file_path is None:
-            return None
+            raise ResourceNotFoundException(f"文件 {file_id} 不存在")
 
         if file_name is None:
             file_name = Path(file_path).name
@@ -98,7 +103,9 @@ class KBController:
                     file_name = file_name.encode('utf-8').decode('utf-8') if file_name else Path(file_path).name
                     return {"file_path": file_path, "file_name": file_name, "file_ext": file_ext, "encoding": encoding}
                 except Exception as e:
-                    raise e
+                    msg = f"下载文件 {file_id} 失败: {str(e)}"
+                    logger.error(msg)
+                    raise InternalServerError(message=msg)
             else:
                 if file_ext == ".txt":
                     # 预览文本文件
@@ -113,10 +120,14 @@ class KBController:
                         img_path = await img.convert_to_image(input_path=file_path, page_num=page_num)
                         return {"file_path": img_path, "file_name": file_name, "file_ext": ".png"}
                     except Exception as e:
-                        raise e
+                        msg = f"预览文件 {file_id} 失败: {str(e)}"
+                        logger.error(msg)
+                        raise InternalServerError(message=msg)
 
         except Exception as e:
-            raise e
+            msg = f"获取文件 {file_id} 失败: {str(e)}"
+            logger.error(msg)
+            raise InternalServerError(message=msg)
         
     async def reparse_kb_files(self, form: KBReparseForm) -> bool:
         """重新解析知识库文件"""
@@ -125,7 +136,9 @@ class KBController:
             result = await kbproc.reparse_files(kb_id=form.kb_id, file_ids=form.file_ids)
             return result
         except Exception as e:
-            raise e
+            msg = f"重新解析知识库 {form.kb_id} 文件 {form.file_ids} 失败: {str(e)}"
+            logger.error(msg)
+            raise InternalServerError(message=msg)
         
     async def preview_kb_file(self,
                             file_id: str, 
@@ -147,7 +160,9 @@ class KBController:
             )
             return result
         except Exception as e:
-            raise e
+            msg = f"预览文件 {file_id} 失败: {str(e)}"
+            logger.error(msg)
+            raise InternalServerError(message=msg)
 
     async def edit_kb_file_chunk(
             self,
@@ -166,7 +181,9 @@ class KBController:
             )
             return result
         except Exception as e:
-            raise e
+            msg = f"编辑文件 {file_id} 分片 {embed_id} 失败: {str(e)}"
+            logger.error(msg)
+            raise InternalServerError(message=msg)
         
     async def delete_kb_file_chunk(
             self,
@@ -183,7 +200,9 @@ class KBController:
             )
             return result
         except Exception as e:
-            raise e
+            msg = f"删除文件 {file_id} 分片 {embed_id} 失败: {str(e)}"
+            logger.error(msg)
+            raise InternalServerError(message=msg)
         
     async def toogle_kb_file_chunk_status(
             self,
@@ -200,7 +219,9 @@ class KBController:
             )
             return result
         except Exception as e:
-            raise e
+            msg = f"切换知识库 {kb_id} 中的分片 {chunk_id} 状态失败: {str(e)}"
+            logger.error(msg)
+            raise InternalServerError(message=msg)
         
     async def get_kb_file_chunk_by_id(
             self,
@@ -212,7 +233,9 @@ class KBController:
             result = await KBChunkOperator().get_chunks_by_file_id(kb_id=kb_id, file_id=file_id)
             return result
         except Exception as e:
-            raise e
+            msg = f"获取知识库 {kb_id} 文件 {file_id} 分片失败: {str(e)}"
+            logger.error(msg)
+            raise InternalServerError(message=msg)
         
     async def update_kb_file_chunk_description(
             self,
@@ -229,7 +252,9 @@ class KBController:
             )
             return result
         except Exception as e:
-            raise e
+            msg = f"更新知识库 {kb_id} 文件分片 {embed_id} 描述失败: {str(e)}"
+            logger.error(msg)
+            raise InternalServerError(message=msg)
         
     async def update_kb_file_chunk_tags(
             self,
@@ -259,6 +284,8 @@ class KBController:
             return file_result or chunk_result
         
         except Exception as e:
-            raise e
+            msg = f"更新知识库 {kb_id} 文件 {file_id} 分片标签失败: {str(e)}"
+            logger.error(msg)
+            raise InternalServerError(message=msg)
         
 kb_controller = KBController()

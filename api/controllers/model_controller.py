@@ -5,6 +5,7 @@ from dao.repositories.kbot_md_models_repo import *
 from core.dictionary import ModelCategory
 from core.config.settings import get_settings
 from utils.call_models import CallModel
+from core.exceptions import ValidationException, InternalServerError, ResourceNotFoundException
 
 
 class ModelController:
@@ -40,8 +41,9 @@ class ModelController:
             logger.info(f"模型 {model_id}: 数据库操作成功")
 
         except Exception as e:
-            logger.error(f"模型 {model_id}: 数据库操作失败: {e}")
-            return False
+            msg = f"模型 {model_id}: 数据库操作失败: {str(e)}"
+            logger.error(msg)
+            raise InternalServerError(message=msg)
 
         # 2. 调用对应微服务的接口，加载模型到内存中
         model_type = await self.repo.get_category_by_id(model_id)
@@ -64,7 +66,7 @@ class ModelController:
             service_port = model_config.vlm.service_port
             total = model_config.vlm.timeout
         else:
-            raise ValueError(f"未知的模型类型: {model_type}")
+            raise ValidationException(f"未知的模型类型: {model_type}")
             
         timeout = aiohttp.ClientTimeout(total=total)
         url = f"http://{service_host}:{service_port}/load"
@@ -80,10 +82,11 @@ class ModelController:
                         return True
                     else:
                         logger.error(f"模型 {model_id} 微服务操作失败，状态码: {response.status}")
-                        return False
+                        raise InternalServerError(message=f"模型 {model_id} 微服务操作失败，状态码: {response.status}")
         except Exception as e:
-            logger.error(f"调用微服务修改模型失败: {e}")
-            return False
+            msg = f"调用微服务修改模型 {model_id} 失败: {str(e)}"
+            logger.error(msg)
+            raise InternalServerError(message=msg)
     
     
     async def get_model_by_id(self, model_id: int) -> dict | None:
@@ -109,7 +112,7 @@ class ModelController:
                 "api_key": model.api_key
             }
         else:
-            return None
+            raise ResourceNotFoundException(f"模型 {model_id} 不存在")
 
     async def get_all_available_models(self, model_category: int) -> Sequence[dict]:
         """
@@ -195,11 +198,11 @@ class ModelController:
             )
             
         else:
-            raise ValueError(f"未知的模型类型: {model_type}")
+            raise ValidationException(f"未知的模型类型: {model_type}")
         
         if result:
             return True
         else:
-            return False
+            raise InternalServerError(message=f"模型 {model_id} 验证失败")
         
 model_controller = ModelController()      

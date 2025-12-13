@@ -3,6 +3,7 @@ from .kbot_chat_session_repo.kbot_biz_chat_session_es import ElasticsearchChatSe
 from .kbot_chat_session_repo.kbot_biz_chat_session_oracle import OracleChatSessionRepository
 from dao.repositories.kbot_md_db_conf_repo import KbotMdDbConfRepository
 from core.dictionary import DbType
+from core.exceptions import ResourceNotFoundException, ValidationException, InternalServerError
 
 
 class ChatSessionRepositoryFactory:
@@ -25,12 +26,12 @@ class ChatSessionRepositoryFactory:
         db_conf = await db_repo.get_by_kbid(kb_id)
         if db_conf is None:
             logger.error(f"未找到知识库 {kb_id} 的向量库配置")
-            raise ValueError(f"未找到知识库 {kb_id} 的向量库配置")
+            raise ResourceNotFoundException(message=f"知识库 {kb_id} 对应的向量库配置", resource_type="DB_CONF", resource_id=kb_id)
         
         connstr = db_conf.db_conn_str
         if connstr is None:
             logger.error(f"知识库 {kb_id} 的数据库连接字符串为空")
-            raise ValueError(f"知识库 {kb_id} 的数据库连接字符串为空")
+            raise ResourceNotFoundException(message=f"知识库 {kb_id} 对应的向量数据库连接字符串", resource_type="DB_CONF_CONNSTR", resource_id=kb_id)
         
         db_type = db_conf.db_type
         
@@ -39,11 +40,11 @@ class ChatSessionRepositoryFactory:
         elif db_type == DbType.ELASTICSEARCH:
             repository = ElasticsearchChatSessionRepository(kb_id)
         else:
-            raise ValueError(f"不支持的存储库类型: {DbType(db_type) or db_type}")
+            raise ValidationException(message=f"不支持的存储库类型: {DbType(db_type) or db_type}", db_type=db_type)
         
         # 初始化连接
         if await repository.initialize(connstr):
             logger.info(f"成功创建 {DbType(db_type)} 存储库实例")
             return repository
         else:
-            raise Exception(f"初始化{DbType(db_type)}存储库失败")
+            raise InternalServerError(message=f"初始化{DbType(db_type)}存储库失败")

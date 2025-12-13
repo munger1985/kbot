@@ -24,6 +24,7 @@ from api.schemas.agent_schema import AgentChatForm, AgentChatFeedbackForm
 from api.schemas.base_response import *
 from services.chat.agent_dify import DifyAgent
 from mcp_tools import KBSearchResult
+from core.exceptions import ValidationException, InternalServerError, ResourceNotFoundException
 
 
 class AgentController:
@@ -77,7 +78,7 @@ class AgentController:
         elif deep_mind == 1:
             return MCPAgent(agent_id=agent_id, security=security, tags=tags)
         else:
-            raise ValueError(f"不支持的深度思考版本: {deep_mind}")
+            raise ValidationException(message=f"不支持的深度思考版本: {deep_mind}", deep_mind=deep_mind)
     
     async def _get_kb_results(self, agent, question: str, deep_mind: int) -> list[KBSearchResult]:
         """获取知识库结果"""
@@ -91,7 +92,7 @@ class AgentController:
                     kb_results.extend(tool_result.kb_results)
             return kb_results
         else:
-            raise ValueError(f"不支持的深度思考版本: {deep_mind}")
+            raise ValidationException(message=f"不支持的深度思考版本: {deep_mind}", deep_mind=deep_mind)
     
     async def _process_session_data(self, session_id: str, agent_id: int, qa_data: QAData) -> bool:
         """处理会话数据写入"""
@@ -125,10 +126,10 @@ class AgentController:
         agent = await agent_repo.get_by_id(agent_id)
         
         if agent is None:
-            raise ValueError("智能体不存在")
+            raise ResourceNotFoundException(message="智能体不存在", resource_type="AGENT", resource_id=agent_id)
         
         if agent.llm_id is None:
-            raise ValueError("智能体配置的 LLM 模型不存在")
+            raise ResourceNotFoundException(message="智能体配置的 LLM 模型不存在", resource_type="LLM", resource_id=agent.llm_id)
         
         
         # 获取提示词
@@ -310,23 +311,19 @@ class AgentController:
         
         except Exception as e:
             logger.error(f"Agent chat failed: {e}")
-            raise e
+            raise InternalServerError(message=str(e))
 
     async def agent_chat_stream(
             self,
             request: Request,
             background_tasks: BackgroundTasks,
             session_id: str
-        ) -> StreamingResponse | ErrorResponse:
+        ) -> StreamingResponse:
             """处理流式聊天"""
             # 准备数据
             data = await self._prepare_chat_data(session_id)
             if data is None:
-                return ErrorResponse(
-                    code=status.HTTP_400_BAD_REQUEST,
-                    success=False,
-                    message="智能体无响应"
-                )
+                raise InternalServerError(message="智能体无响应")
             
             last_qa_data, agent, prompt, model_id, model_params, agent_repo = data
             
@@ -373,7 +370,7 @@ class AgentController:
 
         if last_qa_data is None:
             logger.warning("未找到问答记录")
-            return None
+            raise ResourceNotFoundException(message="未找到问答记录", resource_type="SESSION", resource_id=session_id)
 
         refs = last_qa_data["references"]
         agent_id = last_qa_data["agent_id"]
@@ -385,7 +382,7 @@ class AgentController:
             agent, prompt_template, model_params = await self._get_agent_config(agent_id)
         except ValueError as e:
             logger.warning(str(e))
-            return None
+            raise ResourceNotFoundException(message=str(e), resource_type="AGENT", resource_id=agent_id)
             
         model_params["stream"] = True
         
@@ -407,9 +404,9 @@ class AgentController:
             if r:
                 return True
             else:
-                return False       
+                return False
         except Exception as e:  
-            raise e
+            raise InternalServerError(message=str(e))
         
     async def agent_get_session(self, session_id: str) -> dict | None:
         try:
@@ -420,10 +417,10 @@ class AgentController:
                 # 直接使用安全序列化，返回完整的字典结构
                 return SerializerUtils.serialize_value(r)
             else:
-                return None
+                raise ResourceNotFoundException(message="未找到会话记录", resource_type="SESSION", resource_id=session_id)
         
         except Exception as e:  
-            raise e
+            raise InternalServerError(message=str(e))
         
 
     async def agent_del_session(self, session_id: str) -> bool:
@@ -433,7 +430,7 @@ class AgentController:
             return await sess_repo.delete_session(session_id)
     
         except Exception as e:  
-            raise e
+            raise InternalServerError(message=str(e))
         
     async def del_agent(self, agent_id: int, del_prompt: bool = False) -> bool:
         try:
@@ -461,7 +458,7 @@ class AgentController:
 
         except Exception as e:
             logger.error(f"智能体 {agent_id} 删除失败: {str(e)}")
-            return False
+            raise InternalServerError(message=str(e))
         
     async def agent_search_dify(self, 
                               agent_id: int, 
@@ -499,8 +496,9 @@ class AgentController:
             return {"records": records}
             
         except Exception as e:
-            logger.error(f"Agent chat dify failed: {e}")
-            raise e
+            msg = f"智能体 {agent_id} 对话 Dify 失败: {str(e)}"
+            logger.error(msg)
+            raise InternalServerError(message=msg)
     
     async def _build_references_dify(self, kb_results: list[KBSearchResult]) -> tuple[list[Reference], list[dict]]:
         """构建参考文献列表"""
@@ -650,8 +648,9 @@ class AgentController:
             }
         
         except Exception as e:
-            logger.error(f"Agent chat failed: {e}")
-            raise e
+            msg = f"智能体 {form.agent_id} 对话失败: {str(e)}"
+            logger.error(msg)
+            raise InternalServerError(message=msg)
         
 # 创建控制器实例
 agent_controller = AgentController()
