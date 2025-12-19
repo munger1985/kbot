@@ -15,7 +15,10 @@ load_dotenv()
 
 SECRET_KEY = os.getenv("KBOT_AUTH_ENCRYPTION_KEY")
 if not SECRET_KEY:
-    raise ValueError("KBOT_AUTH_ENCRYPTION_KEY must be set in environment")
+    raise HTTPException(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        detail="KBOT_AUTH_ENCRYPTION_KEY must be set in environment"
+    )
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("KBOT_AUTH_EXPIRE_MINUTES", "30"))
 

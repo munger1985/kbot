@@ -5,7 +5,7 @@ from .base import Base
 from core.dictionary import ServiceType
 
 class Service(Base):
-    __tablename__ = "KBOT_MD_SERVICES"
+    __tablename__ = "KBOT_SYS_SERVICES"
     
     id: Mapped[int] = mapped_column(Numeric(38, 0), primary_key=True)
     service_code: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, comment="服务代码，如: 'order-service', 'payment-service'")

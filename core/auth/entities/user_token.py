@@ -9,7 +9,7 @@ from sqlalchemy import Enum
 
 class UserToken(Base):
 
-    __tablename__ = "KBOT_MD_USER_TOKEN"
+    __tablename__ = "KBOT_SYS_AUTH_TOKEN"
     
     id: Mapped[int] = mapped_column(Numeric(38, 0), primary_key=True, comment="用户令牌ID")
     jti: Mapped[str] = mapped_column(String(36), unique=True, nullable=False, comment="JWT ID")

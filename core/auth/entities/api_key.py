@@ -8,7 +8,7 @@ from .service import Service
 
 class APIKey(Base):
 
-    __tablename__ = "KBOT_MD_API_KEYS"
+    __tablename__ = "KBOT_SYS_API_KEYS"
     
     id: Mapped[int] = mapped_column(Numeric(38, 0), primary_key=True)
     key_id: Mapped[str] = mapped_column(String(50), unique=True, index=True, nullable=False, comment="密钥ID（公开部分，用于识别）")

@@ -252,7 +252,7 @@ async def handle_preview_file(
         result = await controller.get_kb_files(file_id, download=False, page_num=page_num)
         
         if result:
-            if result["file_ext"] == ".txt":
+            if result["file_ext"] in [".txt", ".html"]:
                 encoding = result.get("encoding", "utf-8")
                 with open(result["file_path"], 'r', encoding=encoding) as f:
                     content = f.read()
@@ -265,7 +265,7 @@ async def handle_preview_file(
                 </body>
                 </html>
                 """
-                return HTMLResponse(content=html_content)
+                return HTMLResponse(content=html_content, media_type="text/html")
             
             else:
                 return FileResponse(

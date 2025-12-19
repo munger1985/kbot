@@ -4,7 +4,7 @@ from datetime import datetime
 from .base import Base
 
 class User(Base):
-    __tablename__ = "KBOT_MD_USERS"
+    __tablename__ = "KBOT_SYS_AUTH"
     
     id: Mapped[int] = mapped_column(Numeric(38, 0), primary_key=True, index=True, comment="用户ID")
     username: Mapped[str] = mapped_column(String(50), unique=True, index=True, nullable=False, comment="用户名")
