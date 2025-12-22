@@ -67,7 +67,7 @@ class CSVParser:
         ]
         if self.file_params.enable_summary:
             summary_result = await SummaryParser.process_summary(file_params=self.file_params, embed_entities=embed_entities)
-            return summary_result
+            # return summary_result
         return await save_embeddings(self.file_params, embed_entities)
 
     async def parse(self):
