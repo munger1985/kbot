@@ -272,6 +272,7 @@ class ExcelParser:
         # Prepare all content chunks for embedding
         chunks = []
         chunk_metas = []
+        tableChunkNum = 1
 
         # Add table content
         for sheet in self.tables_info:
@@ -281,8 +282,11 @@ class ExcelParser:
                     chunks.append(json.dumps(row,ensure_ascii=False))
                     chunk_metas.append({
                         "chunk_type": ChunkType.TABLE,
-                        "sheet_name": sheet
+                        "sheet_name": sheet,
+                        'chunk_num': tableChunkNum
+
                     })
+                    tableChunkNum+=1
 
 
 
@@ -340,6 +344,7 @@ class ExcelParser:
             
             chunks = []
             chunk_metas = []
+            imageChunkNum=1
 
             for eachImage in self.images_info:
                 description_file = Path(eachImage['file_path'] + ".description")
@@ -357,7 +362,9 @@ class ExcelParser:
                             "chunk_type": ChunkType.IMAGE,
                             "sheet_name": eachImage['sheet_name'],
                             "image_id": eachImage['image_id'],
+                            "chunk_num": imageChunkNum
                         })
+                        imageChunkNum+=1
                         chunks.append(image_description)
 
             if not self.file_params.txt_embed_model:

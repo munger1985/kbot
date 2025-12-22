@@ -42,7 +42,12 @@ class CSVParser:
 
         chunks = [json.dumps(row) for row in json_data]
         logger.debug(chunks)
-        chunk_metas = [{"chunk_type": ChunkType.TABLE} for _ in json_data]
+        chunkNum=1
+        chunk_metas= []
+        for _ in json_data:
+            chunk_metas.append({"chunk_type": ChunkType.TABLE, "chunk_num": chunkNum})
+            chunkNum+=1
+        # chunk_metas = [{"chunk_type": ChunkType.TABLE, "chunk_num": chunkNum} for _ in json_data]
 
         embeddings_list = await CallModel().call_embedding_model(self.file_params.txt_embed_model, chunks)
         if not embeddings_list or len(embeddings_list) != len(chunks):
@@ -67,7 +72,6 @@ class CSVParser:
         ]
         if self.file_params.enable_summary:
             summary_result = await SummaryParser.process_summary(file_params=self.file_params, embed_entities=embed_entities)
-            # return summary_result
         return await save_embeddings(self.file_params, embed_entities)
 
     async def parse(self):
