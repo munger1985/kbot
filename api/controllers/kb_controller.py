@@ -9,6 +9,7 @@ from dao.repositories.kbot_md_kb_files_repo import KbotMdKbFilesRepository
 from utils.file_converter import FileToImage
 from services.dataparse.common import detect_file_encoding
 from core.exceptions import ValidationException, InternalServerError, ResourceNotFoundException
+from utils.sanitize import sanitize_text_for_oracle_json
 
 
 class KBController:
@@ -244,6 +245,9 @@ class KBController:
             description: str
         ) -> bool:
         """更新知识库文件的分片描述"""
+        # 1. 清理描述中的特殊字符
+        description = sanitize_text_for_oracle_json(description, max_length=4000)
+        
         try:
             result = await KBChunkOperator().update_chunk_description(
                 kb_id=kb_id,

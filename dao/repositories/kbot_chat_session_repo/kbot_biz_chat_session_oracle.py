@@ -207,11 +207,18 @@ class OracleChatSessionRepository(IChatSessionRepository):
             # 构建QAData列表
             qa_data_list = []
             for qa_info in qa_data_map.values():
+                # 对参考文献按照reranker_score从高到低排序
+                sorted_references = sorted(
+                    qa_info["references"], 
+                    key=lambda x: x.reranker_score if x.reranker_score is not None else float('-inf'),
+                    reverse=True  # 从高到低排序
+                )
+
                 qa_data_list.append(QAData(
                     question=qa_info["question"],
                     answer=qa_info["answer"],
                     qa_embedding=qa_info["qa_embedding"],
-                    references=qa_info["references"],
+                    references=sorted_references,
                     feedback=qa_info["feedback"],
                     by=qa_info["by"],
                     request_time=qa_info["request_time"],
