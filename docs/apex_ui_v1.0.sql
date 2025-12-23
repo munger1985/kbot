@@ -1,7 +1,7 @@
 --==============================================================================
 --1.KBOT_MD_UI_UTL
 --==============================================================================
-create or replace package "KBOT_MD_UI_UTL" 
+create or replace package "KBOT_MD_UI_UTL"
 as
 
 --==============================================================================
@@ -48,7 +48,7 @@ return varchar2;
 end "KBOT_MD_UI_UTL";
 /
 
-create or replace package body "KBOT_MD_UI_UTL" 
+create or replace package body "KBOT_MD_UI_UTL"
 as
 --==============================================================================
 -- Record operation logs
@@ -75,8 +75,8 @@ BEGIN
         V('APP_USER'),
         current_date,
         V('APP_USER'),
-        current_date  
-    );    
+        current_date
+    );
    COMMIT;
 EXCEPTION
     WHEN OTHERS THEN
@@ -92,9 +92,9 @@ FUNCTION get_dic_dname (
 RETURN VARCHAR2
 IS
     lv_lang_code  VARCHAR2(100) := apex_util.get_session_lang;
-    lv_dname      VARCHAR2(256); 
+    lv_dname      VARCHAR2(256);
 BEGIN
-    SELECT CASE 
+    SELECT CASE
            WHEN lv_lang_code = lang_code
            THEN  display_tran_value
            ELSE  display_name
@@ -164,13 +164,13 @@ IS
     lv_lang_code   VARCHAR2(100) := apex_util.get_session_lang;
 BEGIN
     SELECT return_value,
-        CASE 
+        CASE
            WHEN lv_lang_code = lang_code THEN  display_tran_value
            ELSE  display_name
         END CASE
     INTO   lv_value,
            lv_d_name
-    FROM   kbot_md_data_dic 
+    FROM   kbot_md_data_dic
     WHERE  NAME = iv_dic_type
     AND    status = '1'
     AND    is_default = '1'
@@ -196,13 +196,13 @@ RETURN VARCHAR2
 IS
     lv_sql  VARCHAR2(32766);
 BEGIN
-    lv_sql := 'SELECT  
-               CASE 
+    lv_sql := 'SELECT
+               CASE
                     WHEN apex_util.get_session_lang = lang_code THEN  display_tran_value
                     ELSE  display_name
                     END CASE AS D,
                     return_value AS r
-               FROM kbot_md_data_dic 
+               FROM kbot_md_data_dic
                WHERE name = '''||iv_dic_type||'''
                AND   status = ''1''
                AND   app_id = V(''APP_ID'')
@@ -221,7 +221,7 @@ end "KBOT_MD_UI_UTL";
 --==============================================================================
 --2.KBOT_DOMAIN_POLICY
 --==============================================================================
-create or replace function "KBOT_DOMAIN_POLICY" (   
+create or replace function "KBOT_DOMAIN_POLICY" (
     schema_var IN VARCHAR2,
     table_var IN VARCHAR2
 )
@@ -235,11 +235,11 @@ AS
     v_user_name             VARCHAR2(50) := SYS_CONTEXT('USERENV', 'SESSION_USER');
     v_login                 VARCHAR2(50);
 BEGIN
-    v_login := V('APP_USER'); 
+    v_login := V('APP_USER');
 
     IF v_login IS NULL OR v_login = UPPER('KBOTUI_DEV') OR v_user_name IN ('SYS')THEN
         predicate := '1 = 1';
-    ELSE 
+    ELSE
         SELECT JSON_VALUE(ar.KBOT_SUB, '$."KBOT".domain')
               ,ar.KBOT
               ,ar.SUPER
@@ -247,7 +247,7 @@ BEGIN
               ,v_role
               ,l_super
         FROM AI_PLATFORM_USERS au
-        JOIN AI_PLATFORM_PRIVILEGES_MU ar 
+        JOIN AI_PLATFORM_PRIVILEGES_MU ar
         ON   au.id = ar.USER_ID
         WHERE UPPER(au.USER_NAME) = UPPER(v_login);
 
@@ -255,8 +255,10 @@ BEGIN
             predicate := '1 = 1';
         -- ELSIF v_role = 'KB_VIEWER' THEN
         --     predicate := '1 = 2';
+        ELSIF lv_available_view_agent is null THEN
+            predicate := '1=2';
         ELSE
-            predicate := 'DOMAIN_ID IN ( 
+            predicate := 'DOMAIN_ID IN (
                 ' || lv_available_view_agent || '
             )';
             
@@ -272,7 +274,7 @@ END;
 --==============================================================================
 --3.KBOT_AGENT_POLICY
 --==============================================================================
-create or replace function "KBOT_AGENT_POLICY" (   
+create or replace function "KBOT_AGENT_POLICY" (
     schema_var IN VARCHAR2,
     table_var IN VARCHAR2
 )
@@ -286,11 +288,11 @@ AS
     v_user_name             VARCHAR2(50) := SYS_CONTEXT('USERENV', 'SESSION_USER');
     v_login                 VARCHAR2(50);
 BEGIN
-    v_login := V('APP_USER'); 
+    v_login := V('APP_USER');
 
     IF v_login IS NULL OR v_login = UPPER('KBOTUI_DEV') OR v_user_name IN ('SYS')THEN
         predicate := '1 = 1';
-    ELSE 
+    ELSE
         SELECT JSON_VALUE(ar.KBOT_SUB, '$."KBOT".agent')
               ,ar.KBOT
               ,ar.SUPER
@@ -298,14 +300,16 @@ BEGIN
               ,v_role
               ,l_super
         FROM AI_PLATFORM_USERS au
-        JOIN AI_PLATFORM_PRIVILEGES_MU ar 
+        JOIN AI_PLATFORM_PRIVILEGES_MU ar
         ON   au.id = ar.USER_ID
         WHERE UPPER(au.USER_NAME) = UPPER(v_login);
 
         IF l_super = 'Y' OR v_role IN ('KB_ADMIN','KB_MANAGEMENT')  THEN
-            predicate := '1 = 1';  
+            predicate := '1 = 1';
+        ELSIF lv_available_view_agent is null THEN
+            predicate := '1=2';
         ELSE
-            predicate := 'AGENT_ID IN ( 
+            predicate := 'AGENT_ID IN (
                 ' || lv_available_view_agent || '
             )';
 
@@ -322,7 +326,7 @@ END;
 --==============================================================================
 --4.KBOT_CHAT_HISTORY_POLICY
 --==============================================================================
-create or replace function "KBOT_CHAT_HISTORY_POLICY" (   
+create or replace function "KBOT_CHAT_HISTORY_POLICY" (
     schema_var IN VARCHAR2,
     table_var IN VARCHAR2
 )
@@ -336,22 +340,24 @@ AS
     v_user_name             VARCHAR2(50) := SYS_CONTEXT('USERENV', 'SESSION_USER');
     v_login                 VARCHAR2(50);
 BEGIN
-    v_login := V('APP_USER'); 
+    v_login := V('APP_USER');
 
     IF v_login IS NULL OR v_login = UPPER('KBOTUI_DEV') OR v_user_name IN ('SYS')THEN
         predicate := '1 = 1';
-    ELSE 
+    ELSE
         SELECT ar.KBOT
               ,ar.SUPER
         INTO   v_role
               ,l_super
         FROM AI_PLATFORM_USERS au
-        JOIN AI_PLATFORM_PRIVILEGES_MU ar 
+        JOIN AI_PLATFORM_PRIVILEGES_MU ar
         ON   au.id = ar.USER_ID
         WHERE UPPER(au.USER_NAME) = UPPER(v_login);
 
         IF l_super = 'Y' OR v_role = 'KB_ADMIN'  THEN
-            predicate := '1 = 1';  
+            predicate := '1 = 1';
+        ELSIF v_login is null THEN
+            predicate := '1=2';
         ELSE
             predicate := 'UPPER(CREATED_BY) = '''|| v_login ||'''';
         END IF;
