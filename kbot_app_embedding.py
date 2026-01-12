@@ -1,324 +1,278 @@
 """嵌入微服务应用程序。
 
-该模块提供 FastAPI 微服务应用程序，用于公开与各种嵌入提供者交互的 HTTP 端点。支持文本嵌入功能。
+本模块提供基于 FastAPI 的微服务，用于公开与各种嵌入提供者（Embedding Providers）交互的 HTTP 端点。
+支持文本向量化、相似度计算以及模型的动态加载与卸载。
 """
 
 import os
 import sys
 import signal
-import subprocess
 import time
 import atexit
-import uvicorn
-from dotenv import load_dotenv
 from datetime import datetime
 from typing import Any
 from contextlib import asynccontextmanager
-from fastapi_offline import FastAPIOffline
+
+import uvicorn
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi_offline import FastAPIOffline
 from loguru import logger
 
-from core.config.settings import get_settings, get_app_config
-from core.logger_manager import LogConfig, LogManager
+from core.config.settings import get_embed_config, get_app_config
+from core.logger import LogConfig, LogManager
+from core.middleware.log_middleware import log_requests
 from microservices.embedding.embed_service import EmbeddingService
-from microservices.embedding.schema import *
+from microservices.embedding.schema import (
+    EmbeddingRequest, SimilarityRequest, ToggleModelRequest
+)
 from microservices.embedding.model import EmbeddingResponse
 
-
-# 加载环境变量配置
+# 加载环境变量
 load_dotenv()
 
-# 获取模型配置
-config = get_settings()
-service_name = config.embed.service_name
-service_version = config.embed.service_version
-service_host = config.embed.service_host
-service_port = config.embed.service_port
+# 从配置中提取服务参数
+config = get_embed_config()
+SERVICE_NAME = config.service_name
+SERVICE_VERSION = config.service_version
+SERVICE_HOST = config.service_host
+SERVICE_PORT = config.service_port
 
-# 获取应用配置
+# 日志参数
 app_config = get_app_config()
-debug = app_config.debug
-log_dir = app_config.log.dir
-log_level = app_config.log.level
-rotation = app_config.log.rotation
-retention = app_config.log.retention
+LOG_DIR = app_config.log.dir
+LOG_LEVEL = app_config.log.level
+LOG_ROTATION = app_config.log.rotation
+LOG_RETENTION = app_config.log.retention
+DEBUG_MODE = app_config.debug
 
-
-# 创建嵌入服务实例
+# 实例化嵌入服务单例
 embedding_service = EmbeddingService()
 
-# 定义生命周期上下文管理器
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """应用程序生命周期上下文管理器。"""
+    """管理应用程序的生命周期。
 
-    # 初始化日志配置
-    conf = LogConfig(service_name=service_name, log_dir=log_dir, level=log_level, rotation=rotation, retention=retention)
-    LogManager(conf).setup()
-    
-    # 启动事件处理
+    在服务启动时：初始化日志系统、加载嵌入模型资源并执行预热。
+    在服务关闭时：释放模型占用的显存或内存资源。
+
+    Args:
+        app: FastAPI 应用程序实例。
+    """
+    # 设置服务名称到 app.state（供中间件使用）
+    app.state.service_name = SERVICE_NAME
+
+    # 1. 初始化日志系统
+    log_conf = LogConfig(
+        service_name=SERVICE_NAME,
+        log_dir=LOG_DIR,
+        level=LOG_LEVEL,
+        rotation=LOG_ROTATION,
+        retention=LOG_RETENTION
+    )
+    LogManager(log_conf).setup()
+
+    # 2. 启动初始化流程
     start_time = time.time()
-    logger.info(f"正在初始化嵌入服务，时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}") 
-    logger.info(f"进程ID: {os.getpid()}")
-    
-    # 初始化微服务
+    logger.info(f"正在初始化嵌入服务 | 进程ID: {os.getpid()} | 时间: {datetime.now()}")
+
     try:
         await embedding_service.initialize()
         await embedding_service.warmup()
-        logger.info(f"嵌入服务启动成功，耗时: {time.time() - start_time:.2f} 秒")
-
+        logger.info(f"嵌入服务启动成功 | 耗时: {time.time() - start_time:.2f}s")
     except Exception as e:
         logger.exception(f"嵌入服务初始化失败: {e}")
-        # 生产环境初始化失败时退出应用
-        if not debug:
+        # 在生产环境下，核心服务初始化失败应强制退出
+        if not DEBUG_MODE:
             sys.exit(1)
-    
-    yield  # 服务运行期间
-    
-    # 关闭事件处理
-    logger.info(f"正在关闭嵌入服务，时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+
+    yield  # --- 服务运行中 ---
+
+    # 3. 关闭清理流程
+    logger.info("正在关闭嵌入服务并释放资源...")
     shutdown_start = time.time()
-    
     try:
         await embedding_service.shutdown()
-        logger.info("嵌入服务已关闭。")
+        logger.info(f"资源释放完成 | 销毁耗时: {time.time() - shutdown_start:.2f}s")
     except Exception as e:
-        logger.exception(f"嵌入服务关闭失败: {e}")
-    
-    logger.info(f"嵌入服务关闭完成，耗时: {time.time() - shutdown_start:.2f} 秒")
-    logger.info(f"总运行时间: {time.time() - start_time:.2f} 秒")
+        logger.error(f"释放资源时发生异常: {e}")
 
-# 创建 FastAPI 应用实例
+
+# 创建 FastAPI 应用程序实例
 app = FastAPIOffline(
     title="Embedding 微服务",
-    description="提供文本嵌入服务，将文本转换为向量表示。",
-    version=service_version,
+    description="提供高性能文本嵌入（Text Embedding）与向量相似度计算服务。",
+    version=SERVICE_VERSION,
     lifespan=lifespan,
-    # 这些参数让 FastAPIOffline 自动处理静态文件
-    docs_url="/docs" if debug else None,  # 生产环境可禁用
-    redoc_url="/redoc" if debug else None
+    docs_url="/docs" if DEBUG_MODE else None,
+    redoc_url="/redoc" if DEBUG_MODE else None
 )
 
-# 添加 CORS 中间件配置
+# CORS 中间件配置
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 生产环境应限制为特定源
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-def get_embed_service():
-    """获取嵌入服务实例依赖项。"""
+# 请求日志中间件
+app.middleware("http")(log_requests)
+
+
+# --- 依赖注入 ---
+
+def get_embed_service() -> EmbeddingService:
+    """提供嵌入服务单例的依赖项注入。
+
+    Returns:
+        EmbeddingService: 全局嵌入服务实例。
+    """
     return embedding_service
 
-@app.get("/health", response_model=dict, tags=["Embedding"], summary="Embedding服务健康检查接口")
-async def health() -> dict[str, Any]:
-    """微服务健康检查接口。
-    
+
+# --- API 端点定义 ---
+
+@app.get("/health", response_model=dict[str, Any], tags=["System"], summary="健康检查接口")
+async def health_check() -> dict[str, Any]:
+    """获取微服务的运行状态和已加载模型信息。
+
     Returns:
-    - **dict**: 包含服务状态、已加载模型数量和时间戳的响应数据
-    ```
-        {
-        "status": "ok",
-        "loaded_models_count": len(loaded_models),
-        "timestamp": datetime.now().isoformat()
-        }
-    ```
+        包含服务状态、模型计数和时间戳的字典。
     """
-    
-    # 获取已加载的模型信息
-    loaded_models = {}
+    loaded_models_count = 0
     if embedding_service._initialized and hasattr(embedding_service._model_pool, '_models'):
-        loaded_models = embedding_service._model_pool._models
-    
+        loaded_models_count = len(embedding_service._model_pool._models)
+
     return {
         "status": "ok",
-        "loaded_models_count": len(loaded_models),
+        "service": SERVICE_NAME,
+        "loaded_models_count": loaded_models_count,
         "timestamp": datetime.now().isoformat()
     }
 
-@app.post("/load", response_model=dict, tags=["Embedding"], summary="加载或卸载模型")
-async def load_model(request: ToggleModelRequest) -> dict:
-    """通过模型ID加载模型到内存中。
-    
+
+@app.post("/load", response_model=dict[str, Any], tags=["Management"], summary="动态管理模型状态")
+async def handle_toggle_model(request: ToggleModelRequest) -> dict[str, Any]:
+    """根据指令加载或卸载特定的嵌入模型。
+
     Args:
-    - **model_id**: int = Field(..., description="模型唯一标识符")
-    - **operation**: str = Field(..., description="操作类型，'load' 或 'unload'")
-        
+        request: 包含模型名称和操作类型（load/unload）的请求对象。
+
     Returns:
-    - **dict**: 包含操作状态和模型名称的响应数据
-        
+        操作结果状态。
+
     Raises:
-    - **HTTPException**: 当模型加载失败时抛出500错误
+        HTTPException: 当操作失败或模型不存在时抛出 500 错误。
     """
-    model_name = embedding_service._model_pool._model_names.get(request.model_id, str(request.model_id))
     try:
         if request.operation == "load":
-            logger.info(f"接收到指令：加载模型 {model_name}")
+            logger.info(f"执行模型加载任务: {request.model_id}")
             success = await embedding_service.load_model(request.model_id)
         else:
-            logger.info(f"接收到指令：卸载模型 {model_name}")
+            logger.info(f"执行模型卸载任务: {request.model_id}")
             success = await embedding_service.unload_model(request.model_id)
+
         if not success:
-            raise HTTPException(status_code=500, detail=f"模型 {model_name} 操作失败")
-        return {"status": "success", "model_name": model_name}
+            raise ValueError(f"模型 {request.model_id} 执行 {request.operation} 失败")
+
+        return {"status": "success", "model_id": request.model_id, "operation": request.operation}
+
     except Exception as e:
-        logger.exception(f"操作模型 {model_name} 时发生错误: {e}")
+        logger.error(f"模型管理操作异常: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-    
-@app.post("/v1/embeddings", response_model=EmbeddingResponse, tags=["Embedding"], summary="将文本列表转换为嵌入向量")
+
+@app.post("/v1/embeddings", response_model=EmbeddingResponse, tags=["AI Service"], summary="文本向量化接口")
 async def handle_embed_texts(
     request: EmbeddingRequest,
     embed_service: EmbeddingService = Depends(get_embed_service)
-    ) -> EmbeddingResponse:
-    """将文本列表转换为嵌入向量。
-    
+) -> EmbeddingResponse:
+    """将输入的文本列表转换为向量嵌入。
+
     Args:
-    - **model_id**: int = Field(..., description="模型唯一标识符")
-    - **texts**: list[str] = Field(..., description="待嵌入的文本列表")
-    - **batch_size**: int | None = Field(32, description="批处理大小")
-    - **is_query**: bool = Field(True, description="是否为查询文本")
-        
+        request: 嵌入请求参数，包括模型名、文本列表、批处理大小等。
+        embed_service: 注入的嵌入服务实例。
+
     Returns:
-    - **data**: list[EmbeddingDataItem] = Field(..., description="嵌入数据项列表")
-        - **embedding**: list[float] = Field(..., description="嵌入向量")
-        - **index**: int = Field(..., description="在批次中的索引位置")
-        - **object**: str = Field("embedding", description="对象类型，始终为 'embedding'")
-    - **model**: str = Field(..., description="使用的嵌入模型名称")
-    - **object**: str = Field("list", description="对象类型，始终为 'list'")
-    - **usage**: dict[str, int] = Field(..., description="令牌使用信息")
-        
+        包含嵌入向量、索引和 Token 使用情况的响应对象。
+
     Raises:
-    - **HTTPException**: 当嵌入处理过程中发生错误时抛出500错误
+        HTTPException: 处理过程中发生任何逻辑错误时抛出 500 错误。
     """
-    model_name = embedding_service._model_pool._model_names.get(request.model_id, str(request.model_id))
     try:
-        logger.info(f"收到嵌入请求: 模型 {model_name}, 文本数量：{len(request.texts)}")
-        
-        # 使用嵌入服务将文本转换为向量
-        embeddings = await embed_service.embed_texts(
+        logger.info(f"处理嵌入请求 | 模型: {request.model_id} | 文本量: {len(request.texts)}")
+        return await embed_service.embed_texts(
             model_id=request.model_id,
             texts=request.texts,
-            batch_size=request.batch_size, # type: ignore
+            batch_size=request.batch_size or 2,
             is_query=request.is_query
         )
-        
-        return embeddings
-    
     except Exception as e:
-        logger.exception(f"嵌入处理过程中发生错误: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"嵌入处理过程中发生错误: {str(e)}")
+        logger.exception(f"文本向量化失败: {e}")
+        raise HTTPException(status_code=500, detail=f"嵌入处理异常: {str(e)}")
 
 
-@app.post("/v1/similarity", response_model=dict, tags=["Embedding"], summary="计算文本相似度")
+@app.post("/v1/similarity", response_model=dict[str, Any], tags=["AI Service"], summary="计算文本相似度接口")
 async def handle_compute_similarity(
     request: SimilarityRequest,
     embed_service: EmbeddingService = Depends(get_embed_service)
-):
-    """计算两个文本之间的相似度分数。
+) -> dict[str, Any]:
+    """计算两个指定文本之间的相似度得分。
 
     Args:
-    - **model_id**: int = Field(..., description="模型唯一标识符")
-    - **text1**: str = Field(..., description="第一个文本")
-    - **text2**: str = Field(..., description="第二个文本")
-    - **method**: str = Field("cosine", description="相似度计算方法，支持'cosine'(余弦相似度)和'dot'(点积)")
-        
+        request: 包含模型名、文本对以及计算方法（cosine/dot）的请求对象。
+        embed_service: 注入的嵌入服务实例。
+
     Returns:
-    - **dict**: 包含相似度分数的响应数据
-        
+        包含相似度分数的字典。
+
     Raises:
-    - **HTTPException**: 当相似度计算过程中发生错误时抛出500错误
+        HTTPException: 计算过程中发生异常时抛出 500 错误。
     """
-    model_name = embedding_service._model_pool._model_names.get(request.model_id, str(request.model_id))
     try:
-        logger.info(f"收到相似度请求: 模型 {model_name}, 文本1: {request.text1}, 文本2: {request.text2}")
-        
-        # 使用嵌入服务计算相似度
-        similarity = await embed_service.compute_similarity(
+        logger.info(f"处理相似度请求 | 模型: {request.model_id} | 方法: {request.method}")
+        score = await embed_service.compute_similarity(
             model_id=request.model_id,
             text1=request.text1,
             text2=request.text2,
             method=request.method
         )
-        
-        return {"similarity": similarity}
-    
+        return {"similarity": score, "method": request.method}
     except Exception as e:
-        logger.exception(f"相似度计算过程中发生错误: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"相似度计算过程中发生错误: {str(e)}")
+        logger.exception(f"相似度计算失败: {e}")
+        raise HTTPException(status_code=500, detail=f"计算过程异常: {str(e)}")
 
 
+# --- 进程信号管理 ---
 
+def signal_handler(sig: int, frame: Any):
+    """处理操作系统发送的终止信号，确保优雅停机。
 
-
-# 全局变量，用于存储微服务进程
-embedding_service_process = None
-
-def start_embedding_service():
-    """启动嵌入微服务作为独立进程。
-    
-    Returns:
-        subprocess.Popen: 微服务进程对象
-        
-    Raises:
-        RuntimeError: 当进程启动失败时抛出运行时错误
-    """
-    try:
-        logger.info("正在启动嵌入微服务独立进程...")
-        embedding_service_path = os.path.abspath(__file__)
-        
-        process = subprocess.Popen(
-            [sys.executable, embedding_service_path],
-            env={**os.environ, "EMBEDDING_SERVICE_STANDALONE": "1"},
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE
-        )
-        
-        # 检查进程是否成功启动
-        if process.poll() is not None:
-            stderr = process.stderr.read().decode('utf-8') if process.stderr else ""
-            raise RuntimeError(f"启动嵌入服务失败: {stderr}")
-            
-        logger.success(f"嵌入服务启动成功，进程ID: {process.pid}")
-        return process
-        
-    except Exception as e:
-        logger.exception(f"启动嵌入服务时发生错误: {str(e)}")
-        raise
-
-def shutdown_embedding_service():
-    """终止嵌入微服务进程。"""
-    global embedding_service_process
-    if embedding_service_process:
-        logger.info("正在终止嵌入微服务进程...")
-        try:
-            embedding_service_process.terminate()
-            embedding_service_process.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            logger.warning("嵌入微服务进程终止超时，强制关闭中...")
-            embedding_service_process.kill()
-        embedding_service_process = None
-
-def signal_handler(sig, frame):
-    """处理终止信号。
-    
     Args:
-        sig: 信号类型
-        frame: 当前堆栈帧
+        sig: 信号编号。
+        frame: 当前堆栈帧。
     """
-    logger.info(f"收到信号: {sig}，正在关闭服务...")
-    shutdown_embedding_service()
+    logger.warning(f"接收到系统信号: {sig}，准备关闭服务...")
+    # sys.exit(0) 会触发 atexit 和 lifespan 的清理逻辑
     sys.exit(0)
 
-# 注册退出处理程序，确保应用程序退出时关闭微服务
-atexit.register(shutdown_embedding_service)
+
+# 注册退出钩子
+atexit.register(lambda: logger.info("微服务进程已安全退出"))
 
 if __name__ == "__main__":
+    # 注册信号监听
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
-    
-    logger.info(f"嵌入微服务已启动，监听地址: {service_host}:{service_port}")
-    uvicorn.run(app, host=service_host, port=service_port)
+
+    logger.info(f"启动嵌入微服务，监听地址: {SERVICE_HOST}:{SERVICE_PORT}")
+    uvicorn.run(
+        app,
+        host=SERVICE_HOST,
+        port=SERVICE_PORT,
+        log_config=None  # 使用 loguru 接管所有日志
+    )

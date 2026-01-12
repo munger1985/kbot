@@ -14,7 +14,7 @@ from .file_params import FileParams
 from dao.repositories.kbot_md_kb_files_repo import KbotMdKbFilesRepository
 from dao.entities.kbot_biz_txt_embedding import KbotBizTxtEmbedding
 from core.dictionary import FileStatus, ChunkType, SplitStrategy
-from utils.call_models import CallModel
+from utils.model_client import CallModel
 from .common import check_text_file, update_file_status, save_embeddings
 from core.config.settings import get_prompt_config
 from .summary_parser import SummaryParser

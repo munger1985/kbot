@@ -28,7 +28,7 @@ class KBProcedure():
 
         try:
             # 1. 删除文件对应的文本片段数据
-            await chunk_repo.delete_by_file_ids(kb_id=kb_id, file_ids=file_ids)
+            await chunk_repo.delete_by_file_ids(kb_id=kb_id, file_ids=file_ids) # type: ignore
             logger.debug(f"已删除知识库 {kb_id} 中文件 {file_ids} 对应的文本片段数据")
             
             # 2. 删除文件对应的解析图片和表格数据（部分PDF，PPT等文件有）

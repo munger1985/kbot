@@ -17,7 +17,7 @@ from dao.entities.kbot_md_chat_history import KbotMdChatHistory
 from services.chat.agent_chat import Agent
 from services.chat.mcp_chat import Agent as MCPAgent
 from loguru import logger
-from utils.call_models import CallModel
+from utils.model_client import CallModel
 from utils.common import model_to_dict
 from utils.serializer import SerializerUtils
 from api.schemas.agent_schema import AgentChatForm, AgentChatFeedbackForm
@@ -389,7 +389,8 @@ class AgentController:
         # 3. 构建上下文和问题
         context = self._build_context_from_references(refs)
         question = last_qa_data["question"]
-        prompt = prompt_template.format(context=context.strip(), question=question) # type: ignore
+
+        prompt = prompt_template.replace("{context}", context).replace("{question}", question)
         
         return last_qa_data, agent, prompt, agent.llm_id, model_params, KbotMdAgentRepository()
 

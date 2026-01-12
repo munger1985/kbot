@@ -36,6 +36,12 @@ user_auth_service = UserAuthService(
 service_auth_service = ServiceAuthService(jwt_service=jwt_service)
 
 
+def is_jwt_token(token: str) -> bool:
+    """判断是否为JWT令牌"""
+    parts = token.split('.')
+    return len(parts) == 3
+
+
 def get_current_user(
     required_scopes: list[str] | None = None,
     allow_api_key: bool = True
@@ -54,18 +60,17 @@ def get_current_user(
             # Bearer Token 认证
             if auth_header.startswith("Bearer "):
                 token = auth_header[7:]
-                return await _authenticate_user_token(token, request, required_scopes)
-            
-            # API Key 认证
-            elif auth_header.startswith("ApiKey "):
-                if not allow_api_key:
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail="API Key not allowed for this endpoint"
-                    )
                 
-                api_key = auth_header[7:]
-                return await _authenticate_api_key(api_key, request, required_scopes)
+                # 判断是 JWT 还是 API Key
+                if is_jwt_token(token):
+                    return await _authenticate_user_token(token, request, required_scopes)
+                else:
+                    if not allow_api_key:
+                        raise HTTPException(
+                            status_code=status.HTTP_403_FORBIDDEN,
+                            detail="API Key not allowed for this endpoint"
+                        )
+                    return await _authenticate_api_key(token, request, required_scopes)
             
             else:
                 raise HTTPException(
@@ -76,7 +81,7 @@ def get_current_user(
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Authentication error: {str(e)}")
+            logger.error(f"Authentication error: {e}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Authentication failed"
@@ -167,14 +172,38 @@ def require_api_key(required_scopes: list[str] | None = None) -> Callable:
     
     async def dependency(request: Request) -> dict:
         auth_header = request.headers.get("Authorization")
-        if not auth_header or not auth_header.startswith("ApiKey "):
+        if not auth_header:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="API Key required"
             )
         
-        api_key = auth_header[7:]
-        return await _authenticate_api_key(api_key, request, required_scopes)
+        try:
+            # 只支持 Bearer 头
+            if auth_header.startswith("Bearer "):
+                token = auth_header[7:]
+                # 验证是否为API Key格式
+                if is_jwt_token(token):
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="API Key required, not JWT"
+                    )
+                return await _authenticate_api_key(token, request, required_scopes)
+            
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid authentication scheme"
+                )
+        
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"API Key authentication error: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid API Key"
+            )
     
     return dependency
 
@@ -191,7 +220,44 @@ def require_user_token(required_scopes: list[str] | None = None) -> Callable:
             )
         
         token = auth_header[7:]
+        # 验证是否为JWT格式
+        if not is_jwt_token(token):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User token required, not API Key"
+            )
         return await _authenticate_user_token(token, request, required_scopes)
     
     return dependency
 
+
+def require_superuser(required_scopes: list[str] | None = None) -> Callable:
+    """要求超级管理员权限的依赖工厂函数"""
+    
+    async def dependency(request: Request) -> dict:
+        auth_header = request.headers.get("Authorization")
+        if not auth_header or not auth_header.startswith("Bearer "):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Bearer token required"
+            )
+        
+        token = auth_header[7:]
+        # 验证是否为JWT格式
+        if not is_jwt_token(token):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User token required, not API Key"
+            )
+        auth_info = await _authenticate_user_token(token, request, required_scopes)
+        
+        # 检查是否为超级管理员
+        if not auth_info.get("is_superuser", False):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Superuser privileges required"
+            )
+        
+        return auth_info
+    
+    return dependency

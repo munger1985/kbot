@@ -1,20 +1,21 @@
-class FileParams:
-    def __init__(self):
-        self.file_id: str
-        self.app_id: int = 0
-        self.kb_id: int = 0
-        self.batch_id: int | None = None
-        self.file_path: str
-        self.file_ext: str | None = None
-        self.enable_summary: bool = False
-        self.kb_category: int = 0
-        self.img2txt: int = 0
-        self.tab_head: int = 0
-        self.priority: int = 0
-        self.parser: dict = {}
-        self.biz_metadata: dict = {}
-        self.img2txt_model: int | None = None
-        self.img_embed_model: int | None = None
-        self.txt_embed_model: int | None = None
-        self.summary_model: int | None = None
-        self.security_level: int = 0
+from pydantic import BaseModel, Field
+
+class FileParams(BaseModel):
+    file_id: str = Field(..., description="文件唯一标识符")
+    app_id: int = Field(0, description="应用ID")
+    kb_id: int = Field(0, description="知识库ID")
+    batch_id: int | None = Field(None, description="批次ID")
+    file_path: str = Field(..., description="文件路径")
+    file_ext: str | None = Field(None, description="文件扩展名")
+    enable_summary: bool = Field(False, description="是否启用摘要")
+    kb_category: int = Field(0, description="知识库分类")
+    img2txt: int = Field(0, description="是否启用图片转文本")
+    tab_head: int = Field(0, description="是否启用表格头解析")
+    priority: int = Field(0, description="解析优先级")
+    parser: dict = Field({}, description="解析器配置")
+    biz_metadata: dict = Field({}, description="业务元数据")
+    img2txt_model: int | None = Field(None, description="图片转文本模型ID")
+    img_embed_model: int | None = Field(None, description="图片嵌入模型ID")
+    txt_embed_model: int | None = Field(None, description="文本嵌入模型ID")
+    summary_model: int | None = Field(None, description="摘要模型ID")
+    security_level: int = Field(0, description="安全级别")

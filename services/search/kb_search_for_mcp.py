@@ -7,8 +7,8 @@ from dao.repositories.kbot_biz_txt_embedding_factory import EmbeddingRepositoryF
 from dao.repositories.kbot_md_agent_conf_repo import KbotMdAgentConfRepository
 from dao.repositories.kbot_md_agent_repo import KbotMdAgentRepository
 from utils.oracle_vec_handler import OracleVecHandler
-from utils.decimal_encoder import DecimalEncoder
-from utils.call_models import CallModel
+from utils.encoder import DecimalEncoder
+from utils.model_client import CallModel
 from utils.common import safe_read_content
 from .fulltext_preprocessor import preprocess_for_fulltext
 

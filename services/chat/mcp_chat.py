@@ -6,7 +6,7 @@ from .agent_params import AgentParams
 from mcp_tools import *
 from core.dictionary import MCPToolType
 from dao.repositories.kbot_md_agent_repo import KbotMdAgentRepository
-from utils.call_models import CallModel
+from utils.model_client import CallModel
 
 
 class Agent:

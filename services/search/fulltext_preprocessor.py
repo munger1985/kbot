@@ -5,7 +5,7 @@ import jieba.analyse
 from pathlib import Path
 from loguru import logger
 from core.config.settings import get_tokenizer_config
-from utils.call_models import CallModel
+from utils.model_client import CallModel
 
 
 class LLMFullTextPreprocessor:

@@ -4,29 +4,24 @@ title = "KBOT"
 description = "KBot API Service"
 version = "3.0.0"
 debug = true
-file_storage = "/home/chris/kbot3/knowledge_base"
+file_storage = "/home/ubuntu/kbot3/knowledge_base"
 upload_workers = 10
-
-[app.parser]
-max_workers = 2
-check_interval = 60
+parser_workers = 2
+parser_check_interval = 120
 
 [app.log]
 level = "DEBUG"
-dir = "/home/chris/kbot3/logs/"
+dir = "/home/ubuntu/kbot3/logs/"
 rotation = "100 MB"
 retention = "10 days"
-
-[libre]
-host = "localhost"
-port = 9905
+api_log_enabled = true
 
 [oracle]
 username = "kbot"
-password = "oracle"
+password = "password"
 host = "localhost"
 port = 1521
-service_name = "kbotdev"
+service_name = "servicename"
 
 [sqlalchemy]
 echo = false
@@ -47,17 +42,17 @@ index = "filebeat-kblogs-*"
 service_name = "embedding-service"
 service_version = "1.0.0"
 service_host = "0.0.0.0"
-service_port = 9901
+service_port = 18091
 max_tokens = 8192
 timeout = 300
 max_retries = 3
-cache_dir = "/home/chris/cached_models/"
+cache_dir = "/home/ubuntu/cached_models/"
 
 [llm]
 service_name = "llm-service"
 service_version = "1.0.0"
 service_host = "0.0.0.0"
-service_port = 9902
+service_port = 18092
 max_tokens = 8192
 temperature = 0.7
 top_p = 1.0
@@ -70,20 +65,31 @@ presence_penalty = 0.0
 service_name = "reranker-service"
 service_version = "1.0.0"
 service_host = "0.0.0.0"
-service_port = 9903
-cache_dir = "/home/chris/cached_models/"
+service_port = 18093
+cache_dir = "/home/ubuntu/cached_models/"
 timeout = 300
 
 [vlm]
 service_name = "vlm-service"
 service_version = "1.0.0"
 service_host = "0.0.0.0"
-service_port = 9904
+service_port = 18094
 timeout = 300
 
-[tokenizer]
-custom_dict_path = "/home/chris/kbot3/configuration/custom_dict.txt"
-stop_words_path = "/home/chris/kbot3/configuration/stopwords.txt"
+[parser]
+service_name = "parser-service"
+service_version = "1.0.0"
+service_host = "0.0.0.0"
+service_port = 18095
+timeout = 300
+
+[parser.tokenizer]
+en = "/home/ubuntu/models/embedding/bge-small-en-v1.5"
+zh = "/home/ubuntu/models/embedding/bge-base-zh-v1.5"
+
+[jieba]
+custom_dict_path = "/home/ubuntu/kbot3/configuration/custom_dict.txt"
+stop_words_path = "/home/ubuntu/kbot3/configuration/stopwords.txt"
 
 [prompt]
 image2text = "SYSTEM/image2text"

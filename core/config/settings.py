@@ -7,17 +7,13 @@ import tomli
 from pydantic import BaseModel, Field, field_validator
 from pydantic_settings import BaseSettings
 
-class ParserConfig(BaseModel):
-    """文档解析器配置"""
-    max_workers: int = Field(default=2, ge=1, le=20)
-    check_interval: int = Field(default=60, ge=10, le=3600)
-
 class LogConfig(BaseModel):
     """日志配置"""
     level: str = Field(default="INFO")
     dir: str = Field(default="./logs")
     rotation: str = Field(default="100 MB")
     retention: str = Field(default="10 days")
+    api_log_enabled: bool = Field(default=True, description="是否启用API请求日志记录")
 
 class AppConfig(BaseModel):
     """主应用配置"""
@@ -27,13 +23,9 @@ class AppConfig(BaseModel):
     debug: bool = Field(default=False)
     file_storage: str = Field(default="./knowledge_base")
     upload_workers: int = Field(default=5, ge=1, le=50)
-    parser: ParserConfig = Field(default_factory=ParserConfig)
-    log: LogConfig = Field(default_factory=LogConfig)
-
-class LibreConfig(BaseModel):
-    """LibreOffice 配置"""
-    host: str = Field(default="localhost")
-    port: int = Field(default=9316, ge=1, le=65535)
+    parser_workers: int = Field(default=2, ge=1, le=20)
+    parser_check_interval: int = Field(default=60, ge=10, le=3600)
+    log: LogConfig = LogConfig()
 
 class OracleConfig(BaseModel):
     """Oracle 数据库配置"""
@@ -73,6 +65,7 @@ class EmbedConfig(BaseModel):
     service_port: int = Field(default=9901, ge=1, le=65535)
     max_tokens: int = Field(default=8192, ge=512, le=32768)
     timeout: int = Field(default=300, ge=10, le=1800)
+    health_check_timeout: int = Field(default=10, ge=5, le=60)
     max_retries: int = Field(default=3, ge=0, le=10)
     cache_dir: str = Field(default="./cached_models")
     
@@ -92,6 +85,7 @@ class LLMConfig(BaseModel):
     top_p: float = Field(default=1.0, ge=0.0, le=1.0)
     top_k: int = Field(default=0, ge=0, le=100)
     timeout: int = Field(default=300, ge=10, le=1800)
+    health_check_timeout: int = Field(default=10, ge=5, le=60)
     frequency_penalty: float = Field(default=0.0, ge=0.0, le=2.0)
     presence_penalty: float = Field(default=0.0, ge=0.0, le=2.0)
     
@@ -108,6 +102,7 @@ class RerankerConfig(BaseModel):
     service_port: int = Field(default=9903, ge=1, le=65535)
     cache_dir: str = Field(default="./cached_models")
     timeout: int = Field(default=300, ge=10, le=1800)
+    health_check_timeout: int = Field(default=10, ge=5, le=60)
     
     @property
     def service_url(self) -> str:
@@ -121,6 +116,7 @@ class VLMConfig(BaseModel):
     service_host: str = Field(default="0.0.0.0")
     service_port: int = Field(default=9904, ge=1, le=65535)
     timeout: int = Field(default=300, ge=10, le=1800)
+    health_check_timeout: int = Field(default=10, ge=5, le=60)
     
     @property
     def service_url(self) -> str:
@@ -129,6 +125,20 @@ class VLMConfig(BaseModel):
 
 class TokenizerConfig(BaseModel):
     """分词器配置"""
+    zh: str = Field(default="")
+    en: str = Field(default="")
+
+class ParserConfig(BaseModel):
+    """文档解析器配置"""
+    service_name: str = Field(default="parser-service")
+    service_version: str = Field(default="1.0.0")
+    service_host: str = Field(default="0.0.0.0")
+    service_port: int = Field(default=18095, ge=1, le=65535)
+    timeout: int = Field(default=300, ge=10, le=1800)
+    tokenizer: TokenizerConfig = TokenizerConfig()
+
+class JiebaConfig(BaseModel):
+    """Jieba分词器配置"""
     custom_dict_path: str = Field(default="./configuration/custom_dict.txt")
     stop_words_path: str = Field(default="./configuration/stopwords.txt")
     
@@ -140,7 +150,7 @@ class TokenizerConfig(BaseModel):
             # 这里可以记录警告日志，但不会抛出异常
             print(f"Warning: Config path {v} does not exist, using default behavior")
         return v
-
+    
 class PromptConfig(BaseModel):
     """提示词配置"""
     image2text: str = Field(default="SYSTEM/image2text")
@@ -155,7 +165,6 @@ class Settings(BaseSettings):
     
     # 各模块配置
     app: AppConfig = AppConfig()
-    libre: LibreConfig = LibreConfig()
     oracle: OracleConfig = OracleConfig()
     sqlalchemy: SQLAlchemyConfig = SQLAlchemyConfig()
     eslog: ESLogConfig = ESLogConfig()
@@ -163,7 +172,8 @@ class Settings(BaseSettings):
     llm: LLMConfig = LLMConfig()
     reranker: RerankerConfig = RerankerConfig()
     vlm: VLMConfig = VLMConfig()
-    tokenizer: TokenizerConfig = TokenizerConfig()
+    parser: ParserConfig = ParserConfig()
+    jieba: JiebaConfig = JiebaConfig()
     prompt: PromptConfig = PromptConfig()
     
     model_config = {
@@ -289,17 +299,9 @@ def get_sqlalchemy_config() -> SQLAlchemyConfig:
     """获取 SQLAlchemy 配置"""
     return get_settings().sqlalchemy
 
-def get_tokenizer_config() -> TokenizerConfig:
-    """获取分词器配置"""
-    return get_settings().tokenizer
-
 def get_prompt_config() -> PromptConfig:
     """获取提示词配置"""
     return get_settings().prompt
-
-def get_libre_config() -> LibreConfig:
-    """获取 LibreOffice 配置"""
-    return get_settings().libre
 
 def get_eslog_config() -> ESLogConfig:
     """获取 ES 日志配置"""
@@ -312,3 +314,11 @@ def get_reranker_config() -> RerankerConfig:
 def get_vlm_config() -> VLMConfig:
     """获取 VLM 配置"""
     return get_settings().vlm
+
+def get_parser_config() -> ParserConfig:
+    """获取解析器配置"""
+    return get_settings().parser
+
+def get_jieba_config() -> JiebaConfig:
+    """获取 Jieba 分词器配置"""
+    return get_settings().jieba

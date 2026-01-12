@@ -3,7 +3,7 @@ from core.config.settings import get_prompt_config
 from dao.repositories.kbot_md_kb_repo import KbotMdKbRepository
 from dao.repositories.kbot_md_prompt_repo import KbotMdPromptRepository
 from dao.repositories.kbot_biz_txt_embedding_factory import EmbeddingRepositoryFactory
-from utils.call_models import CallModel
+from utils.model_client import CallModel
 from services.dataparse.summary_parser import SummaryParser
 
 

@@ -1,6 +1,7 @@
 """VLM 微服务应用程序。
 
-该模块提供了一个 FastAPI 应用程序，用于暴露与各种 VLM 提供商交互的 HTTP 端点。它支持文本 VLM。
+本模块提供基于 FastAPI 的视觉语言模型 (VLM) 服务。
+支持将图像与文本结合进行多模态推理，并兼容 OpenAI 风格的流式 (SSE) 与非流式响应。
 """
 
 import os
@@ -9,37 +10,45 @@ import signal
 import uuid
 import time
 import json
-import uvicorn
-import subprocess
 import atexit
+import subprocess
 from datetime import datetime
-from PIL import Image
-from typing import Any, Type
-from dotenv import load_dotenv
+from typing import Any, Type, AsyncGenerator
 from contextlib import asynccontextmanager
-from fastapi_offline import FastAPIOffline
-from pydantic import ValidationError
-from pydantic_core import core_schema
-from fastapi.responses import StreamingResponse
+
+import uvicorn
+from PIL import Image
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
+from fastapi_offline import FastAPIOffline
 from loguru import logger
+from pydantic import ValidationError
+from pydantic_core import core_schema
 
-from core.config.settings import get_settings, get_app_config
-from core.logger_manager import LogConfig, LogManager
+from core.config.settings import get_vlm_config, get_app_config
+from core.logger import LogConfig, LogManager
+from core.middleware.log_middleware import log_requests
 from microservices.vlm.vlm_service import VLMService
-from microservices.vlm.schema import *
+from microservices.vlm.schema import VLMRequest, VLMResponse, ToggleModelRequest
 
+# --- Pydantic 对 PIL.Image 的增强支持 ---
 
-
-# 添加对 PIL.Image.Image 的 Pydantic 支持
 def get_pydantic_core_schema(
     cls: Type[Image.Image],
     handler: Any,
 ) -> core_schema.CoreSchema:
-    """
-    为 PIL.Image.Image 实现 __get_pydantic_core_schema__。
-    这允许 Pydantic 正确处理 PIL.Image.Image 类型。
+    """为 PIL.Image.Image 实现 Pydantic 核心 Schema。
+
+    允许 Pydantic 验证逻辑识别并处理 PIL 图像对象，增强多模态数据的类型安全。
+
+    Args:
+        cls: 目标类类型。
+        handler: Pydantic 内部处理器。
+
+    Returns:
+        配置好的 CoreSchema 对象。
     """
     return core_schema.no_info_after_validator_function(
         lambda x: x,
@@ -49,136 +58,120 @@ def get_pydantic_core_schema(
         ),
     )
 
-# 为 PIL.Image.Image 注册 schema
-Image.Image.__get_pydantic_core_schema__ = get_pydantic_core_schema # type: ignore
+# 注册 PIL 图像对象的 Schema 处理器
+Image.Image.__get_pydantic_core_schema__ = get_pydantic_core_schema  # type: ignore
 
-# 加载环境变量配置
+
+# 加载环境变量
 load_dotenv()
 
-# 获取 vlm 服务配置
-config = get_settings()
-service_name = config.vlm.service_name
-service_version = config.vlm.service_version
-service_host = config.vlm.service_host
-service_port = config.vlm.service_port
+# 从配置中心获取服务配置
+config = get_vlm_config()
+SERVICE_NAME: str = config.service_name
+SERVICE_VERSION: str = config.service_version
+SERVICE_HOST: str = config.service_host
+SERVICE_PORT: int = config.service_port
 
-# 获取应用配置
+# 获取通用应用配置
 app_config = get_app_config()
-debug = app_config.debug
-log_dir = app_config.log.dir
-log_level = app_config.log.level
-rotation = app_config.log.rotation
-retention = app_config.log.retention
+DEBUG: bool = app_config.debug
+LOG_DIR: str = app_config.log.dir
+LOG_LEVEL: str = app_config.log.level
+LOG_ROTATION: str = app_config.log.rotation
+LOG_RETENTION: str = app_config.log.retention
 
-# 创建VLM服务实例
+# 初始化 VLM 业务服务
 vlm_service = VLMService()
 
-# 定义 lifespan 上下文管理器
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """应用程序生命周期上下文管理器"""
+    """管理 VLM 服务的生命周期。
 
-    # 初始化日志
-    conf = LogConfig(service_name=service_name, log_dir=log_dir, level=log_level, rotation=rotation, retention=retention)
-    LogManager(conf).setup()
+    负责日志初始化、模型加载、预热以及服务关闭时的资源释放。
+    """
+    # 设置服务名称到 app.state（供中间件使用）
+    app.state.service_name = SERVICE_NAME
+
+    # 1. 初始化日志配置
+    log_conf = LogConfig(
+        service_name=SERVICE_NAME, 
+        log_dir=LOG_DIR, 
+        level=LOG_LEVEL, 
+        rotation=LOG_ROTATION, 
+        retention=LOG_RETENTION
+    )
+    LogManager(log_conf).setup()
     
-    # 启动事件
+    # 2. 启动初始化
     start_time = time.time()
-    logger.info(f"正在初始化 VLM 服务，时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}...") 
-    logger.info(f"进程ID: {os.getpid()}")
+    logger.info(f"正在启动 VLM 服务 | PID: {os.getpid()} | 时间: {datetime.now()}")
     
-    # 初始化VLM服务
     try:
         await vlm_service.initialize()
         await vlm_service.warmup()
-        logger.info(f"VLM 服务启动成功，耗时: {time.time() - start_time:.2f} 秒")
-
+        logger.info(f"VLM 服务就绪 | 耗时: {time.time() - start_time:.2f}s")
     except Exception as e:
         logger.error(f"VLM 服务初始化失败: {e}")
-        # 在生产环境中，可能需要在这里退出应用程序
-        if not debug:
+        if not app_config.debug:
             sys.exit(1)
     
-    yield  # 服务运行期间
+    yield  # --- 运行状态 ---
     
-    # 关闭事件
-    logger.info(f"正在关闭 VLM 服务，时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}...")
-    shutdown_start = time.time()
-    
+    # 3. 资源清理
+    logger.info("正在关闭 VLM 服务并释放资源...")
     try:
         await vlm_service.shutdown()
-        logger.info("VLM 服务已关闭")
+        logger.success("VLM 服务已安全退出")
     except Exception as e:
-        logger.error(f"VLM 服务关闭失败: {e}")
-    
-    logger.info(f"VLM 服务关闭成功，耗时: {time.time() - shutdown_start:.2f} 秒")
-    logger.info(f"总运行时间: {time.time() - start_time:.2f} 秒")
+        logger.error(f"清理资源时发生异常: {e}")
 
-# 创建 FastAPI 应用
+
+# --- 应用实例配置 ---
+
 app = FastAPIOffline(
     title="VLM 微服务",
-    description="提供文本 VLM 服务，将图片转换为文本",
-    version=service_version,
+    description="提供多模态视觉语言模型推理服务",
+    version=SERVICE_VERSION,
     lifespan=lifespan,
-    # 这些参数让 FastAPIOffline 自动处理静态文件
-    docs_url="/docs" if debug else None,  # 生产环境可禁用
-    redoc_url="/redoc" if debug else None
+    docs_url="/docs" if app_config.debug else None,
+    redoc_url="/redoc" if app_config.debug else None
 )
 
-# 添加 CORS 中间件
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 在生产环境中应该限制为特定的源
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# 依赖项：获取VLM服务实例
-def get_vlm_service():
+# 请求日志中间件
+app.middleware("http")(log_requests)
+
+
+def get_vlm_service() -> VLMService:
+    """获取 VLM 服务实例依赖。"""
     return vlm_service
 
-@app.get("/health", response_model=dict, tags=["VLM"])
-async def health() -> dict[str, Any]:
-    """微服务健康检查接口。
-    
-    Returns:
-    - **dict**: 包含服务状态、已加载模型数量和时间戳的响应数据
-    ```
-        {
-        "status": "ok",
-        "loaded_models_count": len(loaded_models),
-        "timestamp": datetime.now().isoformat()
-        }
-    ```
-    """
-    
-    # 获取已加载的模型信息
-    loaded_models = {}
+
+@app.get("/health", response_model=dict, tags=["System"])
+async def health_check() -> dict[str, Any]:
+    """系统健康检查。"""
+    loaded_models_count = 0
     if vlm_service._initialized and hasattr(vlm_service._model_pool, '_models'):
-        loaded_models = vlm_service._model_pool._models
+        loaded_models_count = len(vlm_service._model_pool._models)
     
-    # 返回已加载模型数量
     return {
         "status": "ok",
-        "loaded_models_count": len(loaded_models),
+        "loaded_models_count": loaded_models_count,
         "timestamp": datetime.now().isoformat()
     }
 
-@app.post("/load", response_model=dict, tags=["VLM"])
-async def load_model(request: ToggleModelRequest) -> dict:
-    """通过模型ID加载模型到内存中。
-    
-    Args:
-    - **model_id**: int = Field(..., description="模型唯一标识符")
-    - **operation**: str = Field(..., description="操作类型，'load' 或 'unload'")
-        
-    Returns:
-    - **dict**: 包含操作状态和模型名称的响应数据
-        
-    Raises:
-    - **HTTPException**: 当模型加载失败时抛出500错误
-    """
+
+@app.post("/load", response_model=dict, tags=["Management"])
+async def toggle_vlm_model(request: ToggleModelRequest) -> dict[str, str]:
+    """动态加载或卸载 VLM 模型。"""
     model_name = vlm_service._model_pool._model_names.get(request.model_id, str(request.model_id))
     try:
         if request.operation == "load":
@@ -194,53 +187,21 @@ async def load_model(request: ToggleModelRequest) -> dict:
         logger.exception(f"操作模型 {model_name} 时发生错误: {e}")
         raise HTTPException(status_code=500, detail=str(e))
       
-@app.post("/v1/inference", response_model=VLMResponse, tags=["VLM"])
-async def inference(
+@app.post("/v1/inference", response_model=VLMResponse, tags=["Inference"])
+async def run_vlm_inference(
     request: VLMRequest,
-    vlm_service: VLMService = Depends(get_vlm_service)
+    service: VLMService = Depends(get_vlm_service)
 ) -> VLMResponse | StreamingResponse:
-    """生成VLM响应
-    
+    """执行 VLM 推理任务。
+
+    支持单次返回和 SSE 流式返回。遵循 OpenAI 聊天补全接口规范。
+
     Args:
-    - **model_id**: int = Field(..., description="模型唯一标识符")
-    - **messages**: list[dict[str, Any]] = Field(..., description="消息列表")
-    - **max_tokens**: int | None = Field(None, description="要生成的最大令牌数")
-    - **temperature**: float | None = Field(None, description="采样温度 (0.0-1.0，越低越确定)")
-    - **stream**: bool = Field(False, description="是否流式返回响应")
-    - **timeout**: int | None = Field(None, description="超时时间（秒）")
-    - **top_p**: float | None = Field(None, description="Top-p采样参数")
-    - **frequency_penalty**: float | None = Field(None, description="频率惩罚")
-    - **presence_penalty**: float | None = Field(None, description="存在惩罚")
-    
+        request: 包含模型、消息流（含图片）和采样参数的请求体。
+        service: VLM 业务逻辑服务。
+
     Returns:
-
-    **非流式模式**: 包含消息和处理时间的JSON对象，标准OpenAI格式
-    - **id**: str = Field(default_factory=lambda: f"sse-{uuid.uuid4()}", description="响应流的唯一标识符")
-    - **object**: str = Field("chat.completion", description="对象类型，始终为 'chat.completion'")
-    - **created**: int = Field(default_factory=lambda: int(time.time()), description="响应创建时的Unix时间戳")
-    - **model**: str = Field(..., description="响应模型名称")
-    - **choices**: list[dict[str, Any]] = Field(..., description="包含响应消息的列表")
-    - **usage**: dict[str, int] = Field(..., description="令牌使用统计，包括 prompt_tokens、completion_tokens 和 total_tokens")
-    - **processing_time**: float = Field(..., description="处理时间（秒）（自定义字段）")
-
-    **流式模式**: 标准OpenAI SSE格式
-    ```
-    data: {
-        "id": response_id,
-        "object": "chat.completion.chunk",
-        "created": created_time,
-        "model": model_name,
-        "choices": [{
-            "delta": {},
-            "index": 0,
-            "finish_reason": "stop"
-        }],
-        "usage": usage_data
-    }
-    data: [DONE]
-    ```
-    Raises:
-    - **HTTPException**: 当聊天生成失败时抛出500错误，当响应格式不支持时抛出400错误，当请求超时时抛出408错误
+        JSON 响应或 SSE 文本流。
     """
     start_time = time.time()
     response_id = f"vlmcmpl-{uuid.uuid4()}"  # OpenAI格式的ID
@@ -390,63 +351,35 @@ async def inference(
         })
 
 
+# --- 进程管理与信号监控 ---
 
-# 全局变量，用于存储微服务进程
-vlm_service_process = None
+vlm_process: subprocess.Popen | None = None
 
-def start_vlm_service():
-    """以独立进程方式启动 VLM 微服务"""
-    try:
-        logger.info("正在以独立进程方式启动 VLM 微服务")
-        vlm_service_path = os.path.abspath(__file__)
-        
-        process = subprocess.Popen(
-            [sys.executable, vlm_service_path],
-            env={**os.environ, "VLM_SERVICE_STANDALONE": "1"},
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE
-        )
-        
-        # 检查进程是否成功启动
-        if process.poll() is not None:
-            stderr = process.stderr.read().decode('utf-8') if process.stderr else ""
-            raise RuntimeError(f"启动 VLM 服务失败: {stderr}")
-            
-        logger.success(f"VLM 服务启动成功，进程ID: {process.pid}")
-        return process
-        
-    except Exception as e:
-        logger.exception(f"启动 VLM 服务时出错: {str(e)}")
-        raise
-
-def shutdown_vlm_service():
-    """终止 VLM 微服务进程"""
-    global vlm_service_process
-    if vlm_service_process:
-        logger.info("正在终止 VLM 微服务进程...")
+def stop_standalone_vlm():
+    """清理并关闭独立的 VLM 进程。"""
+    global vlm_process
+    if vlm_process:
+        logger.info(f"正在终止 VLM 独立进程 [PID: {vlm_process.pid}]...")
+        vlm_process.terminate()
         try:
-            vlm_service_process.terminate()
-            vlm_service_process.wait(timeout=5)
+            vlm_process.wait(timeout=5)
         except subprocess.TimeoutExpired:
-            logger.warning("VLM 微服务进程未能正常终止; 强制关闭...")
-            vlm_service_process.kill()
-        vlm_service_process = None
+            vlm_process.kill()
+        vlm_process = None
 
-
-def signal_handler(sig, frame):
-    """处理终止信号"""
-    logger.info(f"收到信号: {sig}, 正在关闭...")
-    shutdown_vlm_service()
+def handle_system_signal(sig: int, frame: Any):
+    """处理操作系统发送的终止信号。"""
+    logger.warning(f"接收到系统信号: {sig}，正在触发安全退出...")
+    stop_standalone_vlm()
     sys.exit(0)
 
-# 注册退出处理程序，确保在应用程序退出时关闭微服务
-atexit.register(shutdown_vlm_service)
+atexit.register(stop_standalone_vlm)
 
 if __name__ == "__main__":
-    # 如果是作为独立进程启动，则注册信号处理器
-    if os.environ.get("vlm_service_STANDALONE") == "1":
-        signal.signal(signal.SIGINT, signal_handler)
-        signal.signal(signal.SIGTERM, signal_handler)
+    # 针对独立运行模式注册信号
+    if os.environ.get("VLM_SERVICE_STANDALONE") == "1":
+        signal.signal(signal.SIGINT, handle_system_signal)
+        signal.signal(signal.SIGTERM, handle_system_signal)
     
-    logger.info(f"已启动 VLM 微服务，监听地址: {service_host}:{service_port}")
-    uvicorn.run(app, host=service_host, port=service_port)
+    logger.info(f"VLM 服务启动 | 端口: {SERVICE_PORT}")
+    uvicorn.run(app, host=SERVICE_HOST, port=SERVICE_PORT, access_log=False)

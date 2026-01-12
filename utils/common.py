@@ -1,14 +1,10 @@
-import io
-import base64
-from PIL import Image
+import re
 from typing import Callable, AsyncGenerator
 from loguru import logger
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
 
-
-@staticmethod
 async def run_in_thread_pool(
         func: Callable,
         params: list[dict] = [],
@@ -39,34 +35,6 @@ async def run_in_thread_pool(
 
     for obj in as_completed(tasks):
         yield obj.result()
-
-
-@staticmethod
-async def encode_image(image: str | Image.Image) -> str:
-    """
-    将图像转换为base64编码（包含验证）
-    
-    Args:
-        image: 图像文件路径或PIL图像对象
-        
-    Returns:
-        str: base64编码的图像字符串
-        
-    Raises:
-        ValueError: 当图像大小超过20MB限制时
-    """
-    if isinstance(image, str):
-        with open(image, "rb") as f:
-            img_data = f.read()
-    else:
-        buf = io.BytesIO()
-        image.save(buf, format="JPEG")
-        img_data = buf.getvalue()
-
-    if len(img_data) > 20 * 1024 * 1024:  # 20MB限制
-        raise ValueError("图像大小超过20MB限制")
-
-    return base64.b64encode(img_data).decode('utf-8')
 
 
 @staticmethod
@@ -101,3 +69,33 @@ def model_to_dict(obj):
         return result
     else:
         return obj
+    
+@staticmethod
+def detect_language(text: str, threshold: float = 0.1) -> str:
+    """
+    探测文本语言
+    :param text: 待检测的文本
+    :param threshold: 中文字符占比阈值，超过此比例视为中文
+    :return: 'zh' 或 'en'
+    """
+    if not text:
+        return "en"
+    
+    # 过滤掉非字母和非中文字符（如标点、数字、空格）
+    clean_text = re.sub(r'[^\u4e00-\u9fa5a-zA-Z]', '', text)
+    if not clean_text:
+        return "en"
+        
+    # 统计中文字符数量 (\u4e00-\u9fff 是基本汉字范围)
+    chinese_chars = re.findall(r'[\u4e00-\u9fff]', clean_text)
+    chinese_ratio = len(chinese_chars) / len(clean_text)
+    
+    return "zh" if chinese_ratio > threshold else "en"
+
+@staticmethod
+def get_embedding_dimension(embedding: list[float]) -> int:
+    """从 embedding 结果中获取维度"""
+    if isinstance(embedding, list):
+        return len(embedding)
+    else:
+        return 0

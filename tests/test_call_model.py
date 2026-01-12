@@ -5,7 +5,7 @@ from decimal import Decimal
 # Add both project root and backend directory to Python path
 project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(project_root))
-from utils.call_models import CallModel
+from utils.model_client import CallModel
 
 
 

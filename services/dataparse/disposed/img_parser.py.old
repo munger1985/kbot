@@ -3,7 +3,7 @@ from loguru import logger
 from .file_params import FileParams
 from dao.entities.kbot_biz_txt_embedding import KbotBizTxtEmbedding
 from core.dictionary import FileStatus, ChunkType, SplitStrategy
-from utils.call_models import CallModel
+from utils.model_client import CallModel
 from .common import update_file_status, save_embeddings, check_image_file
 
 

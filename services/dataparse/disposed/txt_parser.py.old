@@ -7,7 +7,7 @@ from .common import *
 from .file_params import FileParams
 from dao.entities.kbot_biz_txt_embedding import KbotBizTxtEmbedding
 from core.dictionary import FileStatus, ChunkType
-from utils.call_models import CallModel
+from utils.model_client import CallModel
 
 
 class SimpleTextSplitter:

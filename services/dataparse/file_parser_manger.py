@@ -2,7 +2,7 @@ import asyncio
 import multiprocessing
 from loguru import logger
 from core.config.settings import get_app_config
-from core.logger_manager import LogManager, LogConfig
+from core.logger import LogManager, LogConfig
 from services.dataparse.file_parser_service import start_file_parse_service, shutdown_file_parse_service
 
 
@@ -30,23 +30,19 @@ class FileParserManager:
         # 关闭文件解析服务
         if self.file_parse_service_process:
             logger.info(f"{message_prefix}正在关闭文件解析服务...")
-            if shutdown_file_parse_service():
-                self.file_parse_service_process.join(timeout=30)
-                if self.file_parse_service_process.is_alive():
-                    logger.warning("文件解析服务未能正常关闭，正在发送SIGTERM信号...")
-                    self.file_parse_service_process.terminate()
-                    self.file_parse_service_process.join(timeout=10)
-                    if self.file_parse_service_process.is_alive():
-                        logger.warning("SIGTERM信号后文件解析服务仍然存活，强制终止进程...")
-                        self.file_parse_service_process.kill()
-                        self.file_parse_service_process.join()
-            else:
-                logger.warning("发送关闭信号失败，正在强制终止进程...")
+            
+            # 先尝试优雅关闭
+            self.file_parse_service_process.join(timeout=30)
+            
+            if self.file_parse_service_process.is_alive():
+                logger.warning("文件解析服务未能正常关闭，正在发送SIGTERM信号...")
                 self.file_parse_service_process.terminate()
                 self.file_parse_service_process.join(timeout=10)
                 if self.file_parse_service_process.is_alive():
+                    logger.warning("SIGTERM信号后文件解析服务仍然存活，强制终止进程...")
                     self.file_parse_service_process.kill()
                     self.file_parse_service_process.join()
+            
             self.file_parse_service_process = None
 
     def run_file_parse_service(self):
@@ -55,13 +51,13 @@ class FileParserManager:
         此函数作为multiprocessing.Process的目标函数。
         """
         # 在子进程中初始化日志
-        log_config = get_app_config()
-        log_dir = log_config.log.dir
-        log_level = log_config.log.level
-        rotation = log_config.log.rotation
-        retention = log_config.log.retention
-        max_parallel_workers = log_config.parser.max_workers
-        check_interval = log_config.parser.check_interval
+        config = get_app_config()
+        log_dir = config.log.dir
+        log_level = config.log.level
+        rotation = config.log.rotation
+        retention = config.log.retention
+        max_parallel_workers = config.parser_workers
+        check_interval = config.parser_check_interval
             
         # 初始化日志
         conf = LogConfig(service_name="file-parser", log_dir=log_dir, level=log_level, rotation=rotation, retention=retention)

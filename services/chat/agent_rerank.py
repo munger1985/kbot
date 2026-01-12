@@ -1,5 +1,5 @@
 from loguru import logger
-from utils.call_models import CallModel
+from utils.model_client import CallModel
 from .agent_params import AgentParams
 from mcp_tools import KBSearchResult
 

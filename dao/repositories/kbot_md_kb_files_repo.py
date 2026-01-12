@@ -1,7 +1,7 @@
 import json
 from loguru import logger
 from typing import Sequence
-from sqlalchemy import select, delete, and_, update, text
+from sqlalchemy import select, delete, and_, update, text, func, case
 from datetime import datetime
 from dao.entities.kbot_md_kb_files import KbotMdKbFiles
 from core.dictionary import *
@@ -169,32 +169,35 @@ class KbotMdKbFilesRepository:
     async def update_file_status(self, file_id: str, status: FileStatus, log_msg: str | None = None) -> bool:
         """Update the status of a knowledge base file record with log message appending."""
         async with get_session() as session:
-            if log_msg is not None:
-                # For log appending, use a separate query with text expression
-                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                new_log_entry = f"{timestamp}: {log_msg}"
+                if log_msg is not None:
+                    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    new_log_entry = f"{timestamp}: {log_msg}"
+                    
+                    # 使用CASE语句在SQL中处理日志追加
+                    await session.execute(
+                        update(KbotMdKbFiles)
+                        .where(KbotMdKbFiles.file_id == file_id)
+                        .values(
+                            status=status.value,
+                            # 如果log_msg不为空，则追加；否则设置为新日志
+                            log_msg=case(
+                                (KbotMdKbFiles.log_msg.isnot(None), 
+                                func.concat(KbotMdKbFiles.log_msg, "\n", new_log_entry)),
+                                else_=new_log_entry
+                            )
+                        )
+                    )
+                    
+                else:
+                    # 只更新状态
+                    await session.execute(
+                        update(KbotMdKbFiles)
+                        .where(KbotMdKbFiles.file_id == file_id)
+                        .values(status=status.value)
+                    )
                 
-                # Use Oracle's string concatenation syntax
-                update_query = text("""
-                    UPDATE kbot_md_kb_files 
-                    SET status = :status, 
-                        log_msg = COALESCE(log_msg, '') || CHR(10) || :new_log
-                    WHERE file_id = :file_id
-                """)
-                
-                await session.execute(
-                    update_query, 
-                    {"status": status.value, "new_log": new_log_entry, "file_id": file_id}
-                )
-            else:
-                # If no log message, just update status
-                query = update(KbotMdKbFiles)\
-                    .where(KbotMdKbFiles.file_id == file_id)\
-                    .values(status=status.value)
-                await session.execute(query)
-            
-            await session.commit()
-            return True
+                await session.commit()
+                return True
         
     async def update_file_parsed_metadata(self, file_id: str, parsed_metadata: str) -> bool:
         """Update the parse metadata of a knowledge base file record."""

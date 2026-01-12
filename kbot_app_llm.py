@@ -1,112 +1,110 @@
-"""LLM微服务应用程序。
+"""LLM 微服务应用程序。
 
-该模块提供了一个FastAPI应用程序，用于与各种LLM提供者交互。它支持文本生成、聊天完成和MCP工具调用功能。
+本模块提供基于 FastAPI 的 LLM 接入层，支持文本生成、对话补全、流式响应（SSE）
+以及基于 MCP 协议的工具调用（Tool Calling）功能。
 """
 
 import os
 import sys
 import signal
 import json
-import subprocess
 import time
 import atexit
 import uuid
-import uvicorn
-from dotenv import load_dotenv
 from datetime import datetime
 from typing import Any
 from contextlib import asynccontextmanager
-from fastapi_offline import FastAPIOffline
-from pydantic import ValidationError
+
+import uvicorn
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from fastapi_offline import FastAPIOffline
+from pydantic import ValidationError
 from loguru import logger
 
-from core.config.settings import get_settings, get_app_config
-from core.logger_manager import LogConfig, LogManager
+from core.config.settings import get_llm_config, get_app_config
+from core.logger import LogConfig, LogManager
+from core.middleware.log_middleware import log_requests
 from core.dictionary import LLMProvider
 from microservices.llm.llm_service import LLMService
 from microservices.llm.schema import *
 
-
-
-# 加载环境变量配置
+# 加载环境变量
 load_dotenv()
 
-# 获取模型配置
-config = get_settings()
-service_name = config.llm.service_name
-service_version = config.llm.service_version
-service_host = config.llm.service_host
-service_port = config.llm.service_port
+# 服务基础信息
+config = get_llm_config()
+SERVICE_NAME = config.service_name
+SERVICE_VERSION = config.service_version
+SERVICE_HOST = config.service_host
+SERVICE_PORT = config.service_port
 
-# 获取应用配置
+# 日志与调试配置
 app_config = get_app_config()
-debug = app_config.debug
-log_dir = app_config.log.dir
-log_level = app_config.log.level
-rotation = app_config.log.rotation
-retention = app_config.log.retention
+DEBUG_MODE = app_config.debug
+LOG_DIR = app_config.log.dir
+LOG_LEVEL = app_config.log.level
+LOG_ROTATION = app_config.log.rotation
+LOG_RETENTION = app_config.log.retention
 
-# 创建LLM服务实例
+# 初始化 LLM 逻辑服务单例
 llm_service = LLMService()
 
-# ==================== 应用生命周期 ====================
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """应用程序生命周期上下文管理器"""
-    
-    # 初始化日志
-    conf = LogConfig(service_name=service_name, log_dir=log_dir, level=log_level, rotation=rotation, retention=retention)
-    LogManager(conf).setup()
-    
-    # 启动事件
-    start_time = time.time()
-    logger.info(f"正在初始化LLM服务，时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}...")    
-    logger.info(f"进程ID: {os.getpid()}")
+    """管理应用程序生命周期。
 
-    # 初始化LLM服务
+    Args:
+        app: FastAPI 实例。
+    """
+    # 设置服务名称到 app.state（供中间件使用）
+    app.state.service_name = SERVICE_NAME
+
+    # 初始化日志系统
+    log_conf = LogConfig(
+        service_name=SERVICE_NAME,
+        log_dir=LOG_DIR,
+        level=LOG_LEVEL,
+        rotation=LOG_ROTATION,
+        retention=LOG_RETENTION
+    )
+    LogManager(log_conf).setup()
+
+    start_time = time.time()
+    logger.info(f"正在启动 LLM 服务 | PID: {os.getpid()} | 时间: {datetime.now()}")
+
     try:
         await llm_service.initialize()
         await llm_service.warmup()
-        logger.info(f"LLM服务启动成功，耗时: {time.time() - start_time:.2f} 秒")
-
+        logger.info(f"LLM 服务初始化完成 | 耗时: {time.time() - start_time:.2f}s")
     except Exception as e:
-        logger.exception(f"初始化LLM服务失败: {e}")
-        # 在生产环境中，可能需要在这里退出应用程序
-        if not debug:
+        logger.exception(f"LLM 服务启动失败: {e}")
+        if not DEBUG_MODE:
             sys.exit(1)
-    
-    yield  # 服务运行期间
-    
-    # 关闭事件
-    logger.info(f"正在关闭LLM服务，时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}...")
-    shutdown_start = time.time()
-    
+
+    yield  # --- 运行阶段 ---
+
+    logger.info("正在执行关机清理...")
     try:
         await llm_service.shutdown()
-        logger.info("LLM服务关闭成功")
+        logger.info("LLM 服务已安全关闭")
     except Exception as e:
-        logger.exception(f"关闭LLM服务时出错: {e}")
-    
-    logger.info(f"LLM服务关闭耗时: {time.time() - shutdown_start:.2f} 秒")
-    logger.info(f"服务总运行时间: {time.time() - start_time:.2f} 秒")
+        logger.error(f"关闭服务时发生异常: {e}")
 
-# ==================== FastAPI应用创建 ====================
 
-# 创建FastAPI应用
+# 初始化 FastAPI 应用
 app = FastAPIOffline(
     title="LLM 微服务",
-    description="提供使用各种LLM提供者的文本生成、聊天完成和MCP工具调用服务",
-    version=service_version,
+    description="提供多供应商 LLM 适配、流式聊天及工具调用支持。",
+    version=SERVICE_VERSION,
     lifespan=lifespan,
-    docs_url="/docs" if debug else None,
-    redoc_url="/redoc" if debug else None
+    docs_url="/docs" if DEBUG_MODE else None,
+    redoc_url="/redoc" if DEBUG_MODE else None
 )
 
-# 添加CORS中间件
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -115,54 +113,54 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ==================== API路由 ====================
+# 4. 请求日志中间件
+app.middleware("http")(log_requests)
 
-# 依赖项：获取LLM服务实例
-def get_llm_service():
+
+def get_llm_service() -> LLMService:
+    """依赖注入获取 LLM 服务实例。"""
     return llm_service
 
-@app.get("/health", response_model=dict, tags=["LLM"], summary="LLM服务健康检查接口")
-async def health() -> dict[str, Any]:
-    """微服务健康检查接口。
-    
-    Returns:
-    - **dict**: 包含服务状态、已加载模型数量和时间戳的响应数据
-    ```
-        {
-        "status": "ok",
-        "loaded_models_count": len(loaded_models),
-        "timestamp": datetime.now().isoformat()
-        }
-    ```
-    """
 
-    # 获取已加载的模型信息
-    loaded_models = {}
+@app.get("/health", response_model=dict, tags=["System"], summary="健康检查")
+async def health_check() -> dict[str, Any]:
+    """检查服务健康状态。
+
+    Returns:
+        包含状态、加载模型数和时间戳的字典。
+    """
+    loaded_models_count = 0
     if llm_service._initialized and hasattr(llm_service._model_pool, '_models'):
-        loaded_models = llm_service._model_pool._models
-    
+        loaded_models_count = len(llm_service._model_pool._models)
+
     return {
         "status": "ok",
-        "loaded_models_count": len(loaded_models),
+        "loaded_models_count": loaded_models_count,
         "timestamp": datetime.now().isoformat()
     }
 
-@app.post("/load", response_model=dict, tags=["LLM"], summary="加载或卸载模型")
-async def load_model(request: ToggleModelRequest) -> dict:
-    """通过模型ID加载模型到内存中。"""
-    model_name = llm_service._model_pool._model_names.get(request.model_id, str(request.model_id))
+
+@app.post("/load", response_model=dict, tags=["Management"], summary="加载/卸载模型")
+async def handle_toggle_model(request: ToggleModelRequest) -> dict[str, Any]:
+    """动态管理内存中的模型。
+
+    Args:
+        request: 模型操作请求。
+
+    Returns:
+        操作结果。
+    """
     try:
-        if request.operation == "load":
-            logger.info(f"接收到指令：加载模型 {model_name}")
-            success = await llm_service.load_model(request.model_id)
-        else:
-            logger.info(f"接收到指令：卸载模型 {model_name}")
-            success = await llm_service.unload_model(request.model_id)
+        method = llm_service.load_model if request.operation == "load" else llm_service.unload_model
+        logger.info(f"执行模型操作: {request.operation} -> {request.model_id}")
+        
+        success = await method(request.model_id)
         if not success:
-            raise HTTPException(status_code=500, detail=f"模型 {model_name} 操作失败")
-        return {"status": "success", "model_name:": model_name}
+            raise HTTPException(status_code=500, detail=f"模型 {request.model_id} {request.operation} 失败")
+            
+        return {"status": "success", "model_id": request.model_id}
     except Exception as e:
-        logger.exception(f"操作模型 {model_name} 时发生错误: {e}")
+        logger.exception(f"模型管理异常: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 # ==================== 主要的聊天接口（重点改造部分） ====================
@@ -204,7 +202,7 @@ async def chat(
         "id": response_id,
         "object": "chat.completion.chunk",
         "created": created_time,
-        "model": model_name,
+        "model": model_id,
         "choices": [{
             "delta": {"content": content},
             "index": 0,
@@ -585,62 +583,22 @@ async def chat(
         })
 
 
-# 全局变量，用于存储微服务进程
-llm_service_process = None
-
-def start_llm_service():
-    """启动LLM微服务作为独立进程"""
-    try:
-        logger.info("正在启动LLM微服务作为独立进程...")
-        llm_service_path = os.path.abspath(__file__)
-        
-        process = subprocess.Popen(
-            [sys.executable, llm_service_path],
-            env={**os.environ, "LLM_SERVICE_STANDALONE": "1"},
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE
-        )
-        
-        # 检查进程是否成功启动
-        if process.poll() is not None:
-            stderr = process.stderr.read().decode('utf-8') if process.stderr else ""
-            raise RuntimeError(f"启动LLM服务失败: {stderr}")
-            
-        logger.success(f"LLM服务启动成功，进程ID: {process.pid}")
-        return process
-        
-    except Exception as e:
-        logger.exception(f"启动LLM服务时出错: {str(e)}")
-        raise
-
-def shutdown_llm_service():
-    """终止LLM微服务进程"""
-    global llm_service_process
-    if llm_service_process:
-        logger.info("正在终止LLM微服务进程...")
-        try:
-            llm_service_process.terminate()
-            llm_service_process.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            logger.warning("LLM微服务进程未能正常终止; 强制关闭...")
-            llm_service_process.kill()
-        llm_service_process = None
-
-def signal_handler(sig, frame):
-    """处理终止信号"""
-    logger.info(f"收到信号: {sig}, 正在关闭...")
-    shutdown_llm_service()
+def signal_handler(sig: int, frame: Any):
+    """捕捉系统信号实现优雅停机。"""
+    logger.warning(f"接收到信号 {sig}，正在退出...")
     sys.exit(0)
 
-# 注册退出处理程序，确保在应用程序退出时关闭微服务
-atexit.register(shutdown_llm_service)
 
 if __name__ == "__main__":
-    # 如果是作为独立进程启动，则注册信号处理器
+    # 仅在独立模式下注册信号处理
     if os.environ.get("LLM_SERVICE_STANDALONE") == "1":
         signal.signal(signal.SIGINT, signal_handler)
         signal.signal(signal.SIGTERM, signal_handler)
-    
-    logger.info(f"已启动LLM微服务，监听地址: {service_host}:{service_port}")
-    logger.info("MCP工具调用支持已启用")
-    uvicorn.run(app, host=service_host, port=service_port)
+
+    logger.info(f"LLM 适配层已就绪 -> {SERVICE_HOST}:{SERVICE_PORT}")
+    uvicorn.run(
+        app,
+        host=SERVICE_HOST,
+        port=SERVICE_PORT,
+        log_config=None  # 完全由 Loguru 接管
+    )

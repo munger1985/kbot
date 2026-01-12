@@ -4,7 +4,7 @@ from PIL import Image
 from dao.repositories.kbot_md_models_repo import *
 from core.dictionary import ModelCategory
 from core.config.settings import get_settings
-from utils.call_models import CallModel
+from utils.model_client import CallModel
 from core.exceptions import ValidationException, InternalServerError, ResourceNotFoundException
 
 

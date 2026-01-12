@@ -1,128 +1,172 @@
-import os
-import atexit
+"""主程序启动入口。
+
+本模块负责初始化 FastAPI 应用、加载全局配置、管理文件解析服务的生命周期，
+并启动 Uvicorn 服务器。
+"""
+# --- 修复：屏蔽 jieba 警告 ---
+# jieba 内部使用了旧版本的 setuptools 接口导致日志第一行显示的 UserWarning: pkg_resources is deprecated
+import warnings
+# 屏蔽 jieba 引起的 pkg_resources 弃用警告
+warnings.filterwarnings("ignore", category=UserWarning, module="jieba")
+# ----------------------------
+
 import asyncio
-import uvicorn
+import os
 import signal
 import sys
-from fastapi import FastAPI
-from fastapi_offline import FastAPIOffline
-from fastapi.middleware.cors import CORSMiddleware
-from loguru import logger
+from contextlib import asynccontextmanager
+from pathlib import Path
+
+import uvicorn
 from dotenv import load_dotenv
-from core.logger_manager import LogManager, LogConfig
-from core.config.settings import get_app_config
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi_offline import FastAPIOffline
+from loguru import logger
+
 from api.routers import router
+from core.config.settings import get_app_config
+from core.logger import LogConfig, LogManager
+from core.middleware.log_middleware import log_requests
 from services.dataparse.file_parser_manger import FileParserManager
 
+# --- 环境初始化 ---
+ENV_PATH = Path(__file__).parent / ".env"
+load_dotenv(ENV_PATH)
 
-# 加载环境变量
-from pathlib import Path
-env_path = Path(__file__).parent / ".env"
-load_dotenv(env_path)
+SERVICE_NAME = os.getenv("KBOT_SERVICE_NAME", "main")
+SERVICE_HOST = os.getenv("KBOT_HOST", "0.0.0.0")
+SERVICE_PORT = int(os.getenv("KBOT_PORT", 18090))
 
-service_name = os.getenv("KBOT_SERVICE_NAME") or "main"
-service_host = os.getenv("KBOT_HOST") or "0.0.0.0"
-service_port = int(os.getenv("KBOT_PORT") or 8000)
 
-# 注册退出时的清理函数
-def cleanup():
-    """在应用程序退出时关闭文件解析服务"""
-    # shutdown_services("Application exiting, shutting down file parse service")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """管理应用程序的生命周期。
+
+    在应用启动时初始化文件解析管理器并启动服务；
+    在应用关闭时确保资源安全回收。
+
+    Args:
+        app: FastAPI 实例。
+    """
+    # 设置服务名称到 app.state（供中间件使用）
+    app.state.service_name = SERVICE_NAME
+
+    # 启动阶段
     fp_manager = FileParserManager()
-    fp_manager.shutdown_service("应用退出，关闭文件解析服务")
+    logger.info("正在启动文件解析服务管理器...")
+    try:
+        fp_manager.start_service()
+        logger.info("所有解析子服务已就绪")
+    except Exception as e:
+        logger.error(f"解析服务启动失败: {e}")
+        # 根据业务需求决定是否在启动失败时退出进程
 
+    yield  # 应用运行中
 
-atexit.register(cleanup)
+    # 关闭阶段
+    logger.info("应用正在关闭，执行清理任务...")
+    try:
+        fp_manager.shutdown_service("应用程序生命周期结束...")
+        logger.info("解析服务管理器已安全关闭")
+    except Exception as e:
+        logger.error(f"清理资源时发生异常: {e}")
 
 
 def create_app() -> FastAPI:
-    """创建并配置FastAPI应用程序
+    """创建并配置 FastAPI 应用程序。
+
+    读取全局配置，初始化日志系统，挂载路由及中间件。
 
     Returns:
-        FastAPI: 配置好的应用实例
+        FastAPI: 配置完成的应用实例。
     """
     try:
-        # 读取日志配置
         app_config = get_app_config()
-        
-        log_dir = app_config.log.dir
-        log_level = app_config.log.level
-        rotation = app_config.log.rotation
-        retention = app_config.log.retention
-        title = app_config.title
-        description = app_config.description
-        version = app_config.version
-        debug = app_config.debug
 
-        
-        # 初始化日志
-        conf = LogConfig(service_name=service_name, log_dir=log_dir, level=log_level, rotation=rotation, retention=retention)
-        LogManager(conf).setup()
+        # 1. 初始化日志中心
+        log_conf = LogConfig(
+            service_name=SERVICE_NAME,
+            log_dir=app_config.log.dir,
+            level=app_config.log.level,
+            rotation=app_config.log.rotation,
+            retention=app_config.log.retention,
+        )
+        LogManager(log_conf).setup()
 
-        logger.debug("开始创建FastAPI应用...")
+        logger.debug("正在配置 FastAPI 实例...")
 
-        # 使用 FastAPIOffline 的默认配置，它会自动处理离线文档
+        # 2. 实例化应用 (支持离线文档)
         app = FastAPIOffline(
-            title=title,
-            description=description,
-            version=version,
-            debug=debug,
-            # 这些参数让 FastAPIOffline 自动处理静态文件
-            docs_url="/docs" if debug else None,  # 生产环境可禁用
-            redoc_url="/redoc" if debug else None
+            title=app_config.title,
+            description=app_config.description,
+            version=app_config.version,
+            debug=app_config.debug,
+            lifespan=lifespan,  # 注入生命周期管理器
+            docs_url="/docs" if app_config.debug else None,
+            redoc_url="/redoc" if app_config.debug else None,
         )
 
-        # Add middleware with safer defaults
+        # 3. 中间件配置
         app.add_middleware(
             CORSMiddleware,
             allow_origins=["*"],
             allow_credentials=True,
             allow_methods=["*"],
-            allow_headers=["*"]
+            allow_headers=["*"],
         )
 
-        # Add routers
+        # 4. 请求日志中间件
+        app.middleware("http")(log_requests)
+
+        # 5. 路由注册
         app.include_router(router)
 
         return app
 
     except Exception as e:
-        logger.critical(f"无法创建FastAPI应用: {str(e)}")
+        logger.critical(f"应用创建失败: {e}")
         raise
 
-def signal_handler(sig, frame):
-    """处理终止信号"""
-    logger.info(f"收到信号 {sig}, 正在关闭应用...")
+
+def handle_exit_signal(sig, frame):
+    """处理系统退出信号 (SIGINT, SIGTERM)。
+
+    Args:
+        sig: 信号编号。
+        frame: 当前堆栈帧。
+    """
+    logger.warning(f"接收到信号 {sig}，准备强制退出...")
+    # 注意：在 lifespan 模式下，uvicorn 会优雅处理正常关闭，
+    # 这里的 sys.exit 主要是针对双击 Ctrl+C 等强制情况
     sys.exit(0)
 
 
-async def main():
-
-    # 创建文件解析服务管理器实例
-    fp_manager = FileParserManager()
-    # 启动所有文件解析服务
-    fp_manager.start_service()
-
-    # 创建主应用程序
+async def start_server():
+    """配置并运行 Uvicorn 异步服务器。"""
     app = create_app()
-    logger.info("应用创建完成")
 
-    # 配置uvicorn服务器
-    logger.debug(f"应用正在使用主机: {service_host}, 端口: {service_port}")
-    config = uvicorn.Config(app, host=service_host, port=service_port)
+    logger.info(f"服务启动于: http://{SERVICE_HOST}:{SERVICE_PORT}")
+
+    config = uvicorn.Config(
+        app=app,
+        host=SERVICE_HOST,
+        port=SERVICE_PORT,
+        log_level="info",
+        access_log=False,  # 交由 loguru 处理以减少冗余
+    )
     server = uvicorn.Server(config)
-    logger.info("开始启动Uvicorn服务器...")
-
-    # 运行服务器
     await server.serve()
-    logger.info("Uvicorn服务器启动完成")
-    
 
 
 if __name__ == "__main__":
+    # 注册退出信号处理
+    signal.signal(signal.SIGINT, handle_exit_signal)
+    signal.signal(signal.SIGTERM, handle_exit_signal)
 
-    # 注册信号处理器
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
-
-    asyncio.run(main())
+    try:
+        asyncio.run(start_server())
+    except KeyboardInterrupt:
+        pass
+    except Exception as e:
+        logger.exception(f"服务器异常崩溃: {e}")

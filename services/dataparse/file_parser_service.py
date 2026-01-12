@@ -12,148 +12,62 @@ class ParseService:
         # 共享状态
         self.workers: list[asyncio.Task] = []
         self.file_queue = asyncio.Queue()
+        self.file_processor = FileProcessor()
         
         # 配置参数
         self.parallel_workers = parallel_workers
         self.check_interval = check_interval
 
     async def _db_check_loop(self):
-        """数据库检查循环 - 定期检查数据库并将文件添加到队列"""
-        logger.info("开始数据库轮询循环...")
-        
+        """生产者循环：只负责往队列丢数据"""
         while not self.shutdown_event.is_set():
             try:
-                logger.debug("查询数据库中待解析的文件...")
                 await self._check_new_files()
-                
-                # 固定间隔检查
-                for i in range(self.check_interval):
-                    if self.shutdown_event.is_set():
-                        break
+                # 优化：支持快速响应关闭的 sleep
+                for _ in range(self.check_interval):
+                    if self.shutdown_event.is_set(): break
                     await asyncio.sleep(1)
-                    
             except Exception as e:
-                logger.error(f"数据库轮询错误: {e}")
-                await asyncio.sleep(5)
-        
-        logger.info("数据库轮询循环已停止")
+                logger.error(f"DB轮询错误: {e}")
+                await asyncio.sleep(10)
 
-    async def _queue_processor_loop(self):
-        """队列处理循环 - 每5秒检查一次队列并处理文件"""
-        logger.info("开始队列处理循环...")
+    async def _worker_loop(self, worker_id):
+        """常驻工作协程：只要不关闭，就一直从队列拿活干"""
+        logger.debug(f"Worker-{worker_id} 已启动并等待任务...")
         
         while not self.shutdown_event.is_set():
             try:
-                # 检查队列状态
-                qsize = self.file_queue.qsize()
-                
-                if qsize > 0:
-                    logger.info(f"队列中有 {qsize} 个文件待处理，开始处理...")
-                    
-                    # 确保有足够的工作协程
-                    active_workers = len([w for w in self.workers if not w.done()])
-                    workers_needed = min(qsize, self.parallel_workers - active_workers)
-                    
-                    if workers_needed > 0:
-                        logger.info(f"启动 {workers_needed} 个工作协程处理队列")
-                        for i in range(workers_needed):
-                            worker = asyncio.create_task(
-                                self._worker_loop(),
-                                name=f"FileWorker-{len(self.workers)}"
-                            )
-                            self.workers.append(worker)
-                
-                # 清理已完成的工作协程
-                for worker in list(self.workers):
-                    if worker.done():
-                        self.workers.remove(worker)
-                        try:
-                            await worker  # 获取可能存在的异常
-                        except Exception as e:
-                            logger.error(f"工作协程异常: {e}")
-                
-                # 每5秒检查一次
-                for i in range(5):
-                    if self.shutdown_event.is_set():
-                        break
-                    await asyncio.sleep(1)
-                    
-            except Exception as e:
-                logger.error(f"队列处理循环错误: {e}")
-                await asyncio.sleep(5)
-        
-        logger.info("队列处理循环已停止")
-
-    async def _worker_loop(self):
-        """工作协程的主循环 - 处理队列中的文件"""
-        worker_name = f"Worker-{id(self)}"
-        logger.debug(f"{worker_name} 协程已启动")
-        
-        try:
-            while not self.shutdown_event.is_set():
+                # 使用 timeout 确保能定期回到循环头部检查 shutdown_event
                 try:
-                    # 从队列获取文件（带超时）
-                    try:
-                        queue_item = await asyncio.wait_for(
-                            self.file_queue.get(),
-                            timeout=3.0
-                        )
-                    except asyncio.TimeoutError:
-                        # 超时后检查是否需要继续等待
-                        if self.shutdown_event.is_set():
-                            break
-                        continue
-                    
-                    priority, timestamp, file_params = queue_item
-                    
-                    if priority is None:  # 结束信号
-                        logger.debug(f"{worker_name} 接收到结束信号")
-                        break
-                    
-                    # 处理文件
-                    logger.info(f"{worker_name} 正在处理文件 {file_params.file_path} (优先级: {priority})")
-                    
-                    try:
-                        success = await FileProcessor.process_file(file_params)
-                        
-                        if success:
-                            logger.success(f"{worker_name} 成功处理文件 {file_params.file_path}")
-                        else:
-                            logger.error(f"{worker_name} 处理文件 {file_params.file_path} 失败")
-                            
-                    except Exception as process_error:
-                        logger.error(
-                            f"{worker_name} 处理文件 {file_params.file_path} 时发生错误: {str(process_error)}",
-                            exc_info=True
-                        )
-                    
-                    finally:
-                        self.file_queue.task_done()
-                        
-                except asyncio.CancelledError:
-                    logger.info(f"{worker_name} 接收到取消信号")
-                    break
-                    
-                except Exception as e:
-                    logger.error(
-                        f"{worker_name} 遇到意外错误: {str(e)}",
-                        exc_info=True
+                    queue_item = await asyncio.wait_for(
+                        self.file_queue.get(), 
+                        timeout=1.0
                     )
-                    await asyncio.sleep(1)
-                    
-        except Exception as fatal_error:
-            logger.critical(
-                f"{worker_name} 致命错误: {str(fatal_error)}",
-                exc_info=True
-            )
-        finally:
-            logger.debug(f"{worker_name} 协程已停止")
+                except asyncio.TimeoutError:
+                    continue
+
+                priority, timestamp, file_params = queue_item
+                
+                try:
+                    logger.info(f"Worker-{worker_id} 开始处理: {file_params.file_path}")
+                    await self.file_processor.process_file(file_params)
+                except Exception as e:
+                    logger.error(f"Worker-{worker_id} 处理出错: {e}")
+                finally:
+                    # 必须调用 task_done，否则 join() 会阻塞
+                    self.file_queue.task_done()
+
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Worker-{worker_id} 意外错误: {e}")
+                await asyncio.sleep(1)
 
     async def _check_new_files(self):
         """检查数据库中的新文件并加入队列"""
         try:
             logger.debug("正在检查数据库中的待处理文件...")
-            pending_files = await FileProcessor.get_pending_files()
+            pending_files = await self.file_processor.get_pending_files()
             logger.debug(f"从数据库中检索到 {len(pending_files)} 个待处理文件")
             
             if pending_files:
@@ -187,37 +101,29 @@ class ParseService:
         self.shutdown_event.set()
 
     async def start_services(self):
-        """启动两个独立服务循环"""
-        # 设置信号处理
+        # 1. 信号处理
         signal.signal(signal.SIGTERM, self._handle_shutdown)
         signal.signal(signal.SIGINT, self._handle_shutdown)
 
-        # 等待相关服务加载
-        logger.info("等待30秒微服务启动完成，然后开始轮询...")
-        await asyncio.sleep(30)
+        logger.info("等待微服务就绪...")
+        await asyncio.sleep(10)
 
-        # 启动两个独立的任务
+        # 2. 预先启动固定数量的 Worker (常驻)
+        for i in range(self.parallel_workers):
+            task = asyncio.create_task(self._worker_loop(i), name=f"Worker-{i}")
+            self.workers.append(task)
+
+        # 3. 启动数据库轮询 (生产者)
         db_task = asyncio.create_task(self._db_check_loop())
-        processor_task = asyncio.create_task(self._queue_processor_loop())
         
-        logger.info("文件解析服务已启动")
-        
+        logger.info(f"服务已启动，并发 Worker 数: {self.parallel_workers}")
+
         try:
-            # 等待关闭事件或任务完成
+            # 只需等待 db_task 或 shutdown 事件
             await asyncio.wait(
-                [db_task, processor_task],
+                [db_task], 
                 return_when=asyncio.FIRST_COMPLETED
             )
-            
-            # 如果有任务意外完成，记录日志
-            if db_task.done():
-                logger.warning("数据库检查循环意外停止")
-                
-            if processor_task.done():
-                logger.warning("队列处理循环意外停止")
-                
-        except Exception as e:
-            logger.error(f"服务运行错误: {e}")
         finally:
             await self._shutdown_services()
 

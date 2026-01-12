@@ -4,24 +4,25 @@ from loguru import logger
 from .file_params import FileParams
 from core.dictionary import FileStatus
 from core.config.settings import get_prompt_config
-from .common import update_file_status, save_embeddings
-from utils.call_models import CallModel
+from .file_processor import FileProcessor
+from utils.model_client import CallModel
 from dao.repositories.kbot_md_prompt_repo import KbotMdPromptRepository
 from dao.entities.kbot_biz_txt_embedding import KbotBizTxtEmbedding
 from core.dictionary import ChunkType
 
 class SummaryParser:
     """摘要总结处理器"""
+    def __init__(self):
+        self.file_processor = FileProcessor()
 
-    @staticmethod
-    async def process_summary(file_params: FileParams, embed_entities: list[KbotBizTxtEmbedding]) -> bool:
+
+    async def process_summary(self, file_params: FileParams, embed_entities: list[KbotBizTxtEmbedding]):
         """处理摘要总结"""
         # 1. 检查摘要总结模型是否存在
         if file_params.summary_model is None:
             msg = f"摘要总结模型不存在，无法进行摘要总结，file_id: {file_params.file_id}"
             logger.error(msg)
-            await update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, msg)
-            return False
+            return
         
         # 2. 调用模型进行摘要总结
         prompt_config = get_prompt_config() 
@@ -39,25 +40,23 @@ class SummaryParser:
         # 2.1 将文本块替换到摘要模板中
         for embed_entity in embed_entities:
             prompt = summary_prompt.replace("{chunk}", embed_entity.chunk_doc)
-            summary = await SummaryParser.generate_summary(embed_entity.chunk_doc, file_params.summary_model, prompt)
+            summary = await self._generate_summary(embed_entity.chunk_doc, file_params.summary_model, prompt)
             if summary:
                 summary_results.append(summary)
             else:
-                msg = f"摘要总结模型调用失败，文本块: {embed_entity.chunk_doc}"
+                msg = f"摘要总结为空，文本块: {embed_entity.chunk_doc}"
                 logger.warning(msg)
 
         if len(summary_results) == 0:
-            msg = f"摘要总结模型调用失败，文件: {file_params.file_path}"
+            msg = f"摘要总结为空，文件: {file_params.file_path}"
             logger.error(msg)
-            await update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, msg)
-            return False
+            return
 
         # 3. 调用 embedding 模型将摘要结果转换为向量
         if file_params.txt_embed_model is None:
             msg = f"文本 embedding 模型不存在，无法将摘要结果转换为向量，文件: {file_params.file_path}"
             logger.error(msg)
-            await update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, msg)
-            return False
+            return
         
         response_data = await CallModel().call_embedding_model(
             file_params.txt_embed_model,
@@ -67,8 +66,7 @@ class SummaryParser:
         if response_data is None:
                 msg = f"获取文件 {file_params.file_path} 的 embedding 向量失败"
                 logger.error(msg)
-                await update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, msg)
-                return False
+                return
         else:
             logger.info(f"成功获取 {len(response_data)} 个 embedding 向量")
 
@@ -94,10 +92,12 @@ class SummaryParser:
             )
             summary_entities.append(summary_entity)
             chunk_num += 1
-        return await save_embeddings(file_params, summary_entities)
+        await self.file_processor.save_chunks(file_id=file_params.file_id, kb_id=file_params.kb_id, chunks=summary_entities)
+        return
 
-    @staticmethod
-    async def generate_summary(chunk: str, summary_model_id: int, prompt: str) -> str:
+
+
+    async def _generate_summary(self, chunk: str, summary_model_id: int, prompt: str) -> str:
         """生成摘要"""
         if summary_model_id is None:
             logger.error("摘要模型ID未提供，无法生成摘要")

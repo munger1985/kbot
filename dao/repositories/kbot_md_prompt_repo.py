@@ -50,7 +50,7 @@ class KbotMdPromptRepository:
             )
             return result.scalar_one_or_none()
         
-    async def get_prompt_by_unique_name(self, prompt_unique_name: str) -> Sequence[str] | None:
+    async def get_prompt_by_unique_name(self, prompt_unique_name: str) -> str | None:
         """Get prompt content by unique name."""
         async with get_session() as session:
             result = await session.execute(
