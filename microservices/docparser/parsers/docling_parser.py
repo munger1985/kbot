@@ -1,24 +1,22 @@
-"""Docling 文档处理模块。
-
-本模块提供基于 Docling 的文档解析能力，集成 VLM 进行图片描述增强，
-支持自定义 VLM Prompt，并提供灵活的切分与格式导出功能。
-"""
-
 import os
 import re
 import asyncio
-import tempfile
 from enum import Enum
-from typing import Any
+from typing import Any, List, Dict, Union, Optional
 from concurrent.futures import ThreadPoolExecutor
 
 from loguru import logger
+from pydantic import BaseModel, Field, model_validator
 from typing_extensions import override
 from transformers import AutoTokenizer
 
 # Docling 核心
 from docling.datamodel.base_models import InputFormat
-from docling.datamodel.pipeline_options import PdfPipelineOptions
+from docling.datamodel.pipeline_options import (
+    PdfPipelineOptions, 
+    EasyOcrOptions, 
+    TesseractOcrOptions
+)
 from docling.document_converter import DocumentConverter, PdfFormatOption
 
 # Docling Core 切分与序列化
@@ -42,9 +40,7 @@ from docling_core.types.doc.document import (
 from utils.model_client import CallModel
 from ..parser_schema import ParserParams
 
-
 class OutputFormat(str, Enum):
-    """支持的输出格式枚举。"""
     MARKDOWN = "markdown"
     HTML = "html"
     JSON = "json"
@@ -52,11 +48,12 @@ class OutputFormat(str, Enum):
     CHUNKS = "chunks"
 
 
+
 class VLMAnnotationPictureSerializer(MarkdownPictureSerializer):
     """自定义图片序列化器：输出 VLM 注入的描述。"""
     @override
-    def serialize(self, *, item: PictureItem, doc_serializer: Any, doc: DoclingDocument, **kwargs: Any) -> SerializationResult:
-        text_parts: list[str] = []
+    def serialize(self, *, item: PictureItem, doc: DoclingDocument, **kwargs: Any) -> SerializationResult:
+        text_parts = []
         for annotation in item.annotations:
             if isinstance(annotation, DescriptionAnnotation):
                 text_parts.append(f"\n> [图片内容描述: {annotation.text}]\n")
@@ -64,9 +61,7 @@ class VLMAnnotationPictureSerializer(MarkdownPictureSerializer):
         text_res = "\n".join(text_parts) if text_parts else ""
         return create_ser_result(text=text_res, span_source=item)
 
-
 class VLMEnabledMarkdownProvider(ChunkingSerializerProvider):
-    """Markdown 序列化提供者。"""
     def get_serializer(self, doc: DoclingDocument) -> MarkdownDocSerializer:
         return MarkdownDocSerializer(
             doc=doc,
@@ -74,138 +69,41 @@ class VLMEnabledMarkdownProvider(ChunkingSerializerProvider):
             picture_serializer=VLMAnnotationPictureSerializer(),
         )
 
-
 class DoclingDocProcessor:
-    """Docling 文档处理器。"""
-
     def __init__(self, en_tokenizer_path: str, zh_tokenizer_path: str):
-        """初始化处理器。
-
-        Args:
-            en_tokenizer_path: 英文 Tokenizer 模型路径。
-            zh_tokenizer_path: 中文 Tokenizer 模型路径。
-        """
         self.executor = ThreadPoolExecutor(max_workers=4)
         self.vlm_semaphore = asyncio.Semaphore(5)
         self.en_tk = AutoTokenizer.from_pretrained(en_tokenizer_path)
         self.zh_tk = AutoTokenizer.from_pretrained(zh_tokenizer_path)
 
     def _detect_is_zh(self, doc: DoclingDocument) -> bool:
-        """检测文档是否主要为中文。"""
         sample = "".join([t.text for t in doc.texts[:10]])
         if not sample: return False
         zh_chars = len(re.findall(r'[\u4e00-\u9fff]', sample))
         return zh_chars / (len(sample) + 1) > 0.1
 
-    async def _process_vlm_descriptions(
-        self, 
-        doc: DoclingDocument, 
-        vlm_model_id: int | None,
-        vlm_prompt: str | None = None
-    ) -> None:
-        """遍历图片并调用 VLM，使用内存对象直传图片，支持自定义 Prompt。
-
-        Args:
-            doc: 文档对象。
-            vlm_model_id: 模型ID。
-            vlm_prompt: 发送给 VLM 的提示词。
-        """
-        if not vlm_model_id or not doc.pictures:
+    async def _process_vlm_descriptions(self, doc: DoclingDocument, params: ParserParams) -> None:
+        if not params.use_vlm or not params.vlm_model or not doc.pictures:
             return
-            
         vlm_client = CallModel()
-        # 默认 Prompt（如果用户未提供）
-        default_prompt = "请详细描述这张图片的内容，如果是图表请提取关键数据。"
-        target_prompt = vlm_prompt or default_prompt
-
-        tasks = []
-        for i, pic in enumerate(doc.pictures):
-            # 直接检查 PIL 对象是否存在
-            if not pic.image or not pic.image.pil_image:
-                continue
-            
-            # 直接传递 pic.image.pil_image (内存对象)
-            tasks.append(
-                self._vlm_task(
-                    client=vlm_client, 
-                    model_id=vlm_model_id, 
-                    prompt=target_prompt, 
-                    index=i, 
-                    image_obj=pic.image.pil_image  # 传入对象而非路径
-                )
-            )
-        
+        target_prompt = params.vlm_prompt or "请详细描述这张图片的内容，如果是图表请提取关键数据。"
+        tasks = [self._vlm_task(vlm_client, params.vlm_model, target_prompt, i, pic.image.pil_image)
+                 for i, pic in enumerate(doc.pictures) if pic.image and pic.image.pil_image]
         if tasks:
             results = await asyncio.gather(*tasks)
             for idx, desc in results:
                 if desc:
-                    doc.pictures[idx].annotations.append(
-                        DescriptionAnnotation(
-                            text=desc, 
-                            provenance=f"vlm_{vlm_model_id}"
-                        )
-                    )
+                    doc.pictures[idx].annotations.append(DescriptionAnnotation(text=desc, provenance=f"vlm_{params.vlm_model}"))
 
-    async def _vlm_task(
-        self, 
-        client: CallModel, 
-        model_id: int, 
-        prompt: str, 
-        index: int, 
-        image_obj: Any
-    ) -> tuple[int, str | None]:
-        """执行单个 VLM 推理任务（内存直传）。"""
+    async def _vlm_task(self, client, model_name, prompt, index, image_obj) -> tuple:
         async with self.vlm_semaphore:
             try:
-                # client 的 call_vlm_model_for_parsing_picture 已经支持 PIL 对象
-                res = await client.call_vlm_model(
-                    model_id=model_id, 
-                    image=image_obj,  # 直接传 PIL 对象
-                    prompt=prompt
-                )
+                res = await client.call_vlm_model(model_name=model_name, image=image_obj, prompt=prompt)
                 return index, res
             except Exception as e:
-                logger.error(f"VLM 推理失败 (Index {index}): {e}")
-                return index, None
+                logger.error(f"VLM 失败: {e}"); return index, None
 
-    async def convert_document(
-        self, 
-        file_path: str, 
-        params: ParserParams,
-        vlm_model: int | None = None,
-        vlm_prompt: str | None = None,
-        output_format: OutputFormat = OutputFormat.MARKDOWN,
-    ) -> str | dict | list[str]:
-        """转换文档。
-
-        Args:
-            file_path: 文件路径。
-            params: 解析参数。
-            vlm_model: VLM 模型ID。
-            vlm_prompt: VLM 提示词。
-            output_format: 输出格式。
-        """
-        pipeline_opts = PdfPipelineOptions()
-        pipeline_opts.do_ocr = params.do_ocr
-        pipeline_opts.generate_picture_images = params.generate_picture_images
-        
-        converter = DocumentConverter(
-            format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_opts)}
-        )
-        
-        loop = asyncio.get_running_loop()
-        result = await loop.run_in_executor(self.executor, converter.convert, file_path)
-        doc = result.document
-
-        # 注入自定义 Prompt 处理
-        await self._process_vlm_descriptions(doc, vlm_model, vlm_prompt)
-
-        if output_format == OutputFormat.CHUNKS:
-            return self._generate_chunks(doc, params)
-        return self._serialize(doc, output_format)
-
-    def _generate_chunks(self, doc: DoclingDocument, params: ParserParams) -> list[str]:
-        """生成文档分块。"""
+    def _generate_chunks(self, doc: DoclingDocument, params: ParserParams) -> list[dict]:
         is_zh = self._detect_is_zh(doc)
         tk = self.zh_tk if is_zh else self.en_tk
         
@@ -214,21 +112,63 @@ class DoclingDocProcessor:
             serializer_provider=VLMEnabledMarkdownProvider()
         )
         
-        return [chunker.contextualize(c).strip() for c in chunker.chunk(doc) 
-                if len(chunker.contextualize(c).strip()) >= params.min_chunk_len]
+        chunk_results = []
+        for chunk in chunker.chunk(doc):
+            content = chunker.contextualize(chunk).strip()
+            if len(content) < params.min_chunk_len:
+                continue
+
+            # 修复 Pylance 警告：使用 .items 访问元数据关联项
+            doc_items = [item_ref.item for item_ref in getattr(chunk.meta, "items", [])]
+            
+            # 类型判定
+            pics = [item for item in doc_items if isinstance(item, PictureItem)]
+            has_vlm = any(isinstance(ann, DescriptionAnnotation) for p in pics for ann in p.annotations)
+            
+            # 逻辑控制：G=True, VLM=False 且是纯图片块时跳过
+            if pics and not has_vlm and params.generate_picture_images:
+                if all(isinstance(item, PictureItem) for item in doc_items):
+                    continue
+            
+            # 页码提取
+            page_num = next((item.prov[0].page_no for item in doc_items if item.prov), None)
+
+            chunk_results.append({
+                "text": content,
+                "metadata": {
+                    "chunk_type": "picture" if pics else "text",
+                    "page_num": page_num,
+                    "has_vlm": has_vlm
+                }
+            })
+        return chunk_results
+
+    async def convert_document(self, params: ParserParams) -> Union[str, Dict, List[Dict]]:
+        pipeline_opts = PdfPipelineOptions()
+        pipeline_opts.do_ocr = params.do_ocr
+        pipeline_opts.generate_picture_images = params.generate_picture_images
+        pipeline_opts.images_scale = params.images_scale
+        
+        engine = (params.ocr_engine or "easyocr").lower()
+        pipeline_opts.ocr_options = TesseractOcrOptions() if engine == "tesseract" else EasyOcrOptions()
+        pipeline_opts.ocr_options.lang = ["ch_sim", "en"]
+
+        converter = DocumentConverter(format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_opts)})
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(self.executor, converter.convert, params.file_path)
+        doc = result.document
+
+        await self._process_vlm_descriptions(doc, params)
+
+        if params.output_format == OutputFormat.CHUNKS:
+            return self._generate_chunks(doc, params)
+        
+        return self._serialize(doc, OutputFormat(params.output_format))
 
     def _serialize(self, doc: DoclingDocument, fmt: OutputFormat) -> str | dict:
-        """序列化输出。"""
-        match fmt:
-            case OutputFormat.MARKDOWN:
-                provider = VLMEnabledMarkdownProvider()
-                return provider.get_serializer(doc).serialize().text 
-            case OutputFormat.HTML:
-                return doc.export_to_html()
-            case OutputFormat.JSON:
-                return doc.export_to_dict()
-            case OutputFormat.DOCTAGS:
-                return doc.export_to_doctags()
-            case _:
-                logger.warning(f"未知的输出格式请求: {fmt}")
-                return ""
+        if fmt == OutputFormat.MARKDOWN:
+            return VLMEnabledMarkdownProvider().get_serializer(doc).serialize().text
+        if fmt == OutputFormat.HTML: return doc.export_to_html()
+        if fmt == OutputFormat.JSON: return doc.export_to_dict()
+        if fmt == OutputFormat.DOCTAGS: return doc.export_to_doctags()
+        return ""

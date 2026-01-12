@@ -18,10 +18,10 @@ api_log_enabled = true
 
 [oracle]
 username = "kbot"
-password = "password"
+password = "oracle"
 host = "localhost"
 port = 1521
-service_name = "servicename"
+service_name = "kbotdev"
 
 [sqlalchemy]
 echo = false
@@ -42,7 +42,7 @@ index = "filebeat-kblogs-*"
 service_name = "embedding-service"
 service_version = "1.0.0"
 service_host = "0.0.0.0"
-service_port = 18091
+service_port = 9901
 max_tokens = 8192
 timeout = 300
 max_retries = 3
@@ -52,7 +52,7 @@ cache_dir = "/home/ubuntu/cached_models/"
 service_name = "llm-service"
 service_version = "1.0.0"
 service_host = "0.0.0.0"
-service_port = 18092
+service_port = 9902
 max_tokens = 8192
 temperature = 0.7
 top_p = 1.0
@@ -65,7 +65,7 @@ presence_penalty = 0.0
 service_name = "reranker-service"
 service_version = "1.0.0"
 service_host = "0.0.0.0"
-service_port = 18093
+service_port = 9903
 cache_dir = "/home/ubuntu/cached_models/"
 timeout = 300
 
@@ -73,14 +73,14 @@ timeout = 300
 service_name = "vlm-service"
 service_version = "1.0.0"
 service_host = "0.0.0.0"
-service_port = 18094
+service_port = 9904
 timeout = 300
 
 [parser]
 service_name = "parser-service"
 service_version = "1.0.0"
 service_host = "0.0.0.0"
-service_port = 18095
+service_port = 9905
 timeout = 300
 
 [parser.tokenizer]

@@ -25,6 +25,7 @@ class CallParser:
         file_content: str | None = None,
         output_format: str = "chunks",
         do_ocr: bool = False,
+        ocr_engine: str | None = None,
         generate_picture_images: bool = False,
         images_scale: float = 2.0,
         use_vlm: bool = False,
@@ -42,6 +43,7 @@ class CallParser:
             file_content: 待解析的文件内容，根据 in_memory 参数判断。
             output_format: 输出格式 (markdown, html, json, chunks)。
             do_ocr: 是否开启 OCR。
+            ocr_engine: OCR 引擎 (easyocr, tesseract, paddle)。
             generate_picture_images: 是否生成图片副本。
             images_scale: 图片缩放比例。
             use_vlm: 是否开启 VLM 增强。
@@ -70,6 +72,7 @@ class CallParser:
         kwargs = {
             "output_format": output_format,
             "do_ocr": do_ocr,
+            "ocr_engine": ocr_engine,
             "generate_picture_images": generate_picture_images,
             "images_scale": images_scale,
             "use_vlm": use_vlm,

@@ -57,7 +57,7 @@ class ParserService:
             zh_tokenizer_path=zh_model_path
         )
 
-    async def parse_file(self, parser_params: ParserParams) -> str | dict | list[str]:
+    async def parse_file(self, parser_params: ParserParams) -> str | dict | list[dict]:
         """执行文件解析任务。
 
         Args:
@@ -101,13 +101,7 @@ class ParserService:
             )
             
             # 直接调用更新后的接口，传入模型名称和提示词
-            return await self.processor.convert_document(
-                file_path=file_path,
-                params=parser_params,
-                vlm_model=parser_params.vlm_model,   # 动态模型名称
-                vlm_prompt=parser_params.vlm_prompt, # 动态提示词
-                output_format=target_fmt
-            )
+            return await self.processor.convert_document(parser_params)
             
         except Exception as e:
             logger.exception(f"文件 [{os.path.basename(file_path)}] 解析过程中发生异常")

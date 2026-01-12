@@ -1,4 +1,6 @@
 import re
+import os
+from charset_normalizer import from_path
 from typing import Callable, AsyncGenerator
 from loguru import logger
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -99,3 +101,23 @@ def get_embedding_dimension(embedding: list[float]) -> int:
         return len(embedding)
     else:
         return 0
+    
+
+@staticmethod
+def detect_file_encoding(file_path):
+    # 依然保留二进制扩展名过滤（提高速度）
+    file_ext = os.path.splitext(file_path)[1].lower()
+    if file_ext in ['.pdf', '.docx', '.xlsx', '.png']: # 简写示意
+        return None
+
+    try:
+        # 一行代码：检测内容、尝试多种编码、验证解码可行性
+        results = from_path(file_path).best()
+        
+        if results:
+            logger.debug(f"检测到编码: {results.encoding} 可信度: {results.coherence}")
+            return results.encoding.lower()
+    except Exception as e:
+        logger.error(f"编码检测异常: {e}")
+        
+    return 'utf-8' # 兜底

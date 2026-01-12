@@ -2,18 +2,17 @@ import uuid
 import json
 from loguru import logger
 from .file_params import FileParams
-from core.dictionary import FileStatus
 from core.config.settings import get_prompt_config
-from .file_processor import FileProcessor
 from utils.model_client import CallModel
 from dao.repositories.kbot_md_prompt_repo import KbotMdPromptRepository
 from dao.entities.kbot_biz_txt_embedding import KbotBizTxtEmbedding
 from core.dictionary import ChunkType
+from .parser_common import ParserCommonMethods
 
 class SummaryParser:
     """摘要总结处理器"""
     def __init__(self):
-        self.file_processor = FileProcessor()
+        self.common = ParserCommonMethods()
 
 
     async def process_summary(self, file_params: FileParams, embed_entities: list[KbotBizTxtEmbedding]):
@@ -92,7 +91,7 @@ class SummaryParser:
             )
             summary_entities.append(summary_entity)
             chunk_num += 1
-        await self.file_processor.save_chunks(file_id=file_params.file_id, kb_id=file_params.kb_id, chunks=summary_entities)
+        await self.common.save_chunks(file_id=file_params.file_id, kb_id=file_params.kb_id, chunks=summary_entities)
         return
 
 

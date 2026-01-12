@@ -6,15 +6,15 @@ from services.kb.kb_procedure import KBProcedure
 from services.kb.kb_file_preview import FilePreview
 from api.schemas.kb_schema import *
 from dao.repositories.kbot_md_kb_files_repo import KbotMdKbFilesRepository
-from utils.file_converter import FileToImage
-from services.dataparse.common import detect_file_encoding
+# from utils.file_converter import FileToImage
+from utils.common import detect_file_encoding
 from core.exceptions import ValidationException, InternalServerError, ResourceNotFoundException
 from utils.sanitize import sanitize_text_for_oracle_json
 
 
 class KBController:
     """知识库控制器"""
-
+    
     async def upload_kb_files(
             self,
             upload_form: KBUploadForm
@@ -115,15 +115,8 @@ class KBController:
                     # 预览图片文件
                     return {"file_path": file_path, "file_name": file_name, "file_ext": file_ext}
                 else:
-                    # 预览其他文件
-                    img = FileToImage()
-                    try:
-                        img_path = await img.convert_to_image(input_path=file_path, page_num=page_num)
-                        return {"file_path": img_path, "file_name": file_name, "file_ext": ".png"}
-                    except Exception as e:
-                        msg = f"预览文件 {file_id} 失败: {str(e)}"
-                        logger.error(msg)
-                        raise InternalServerError(message=msg)
+                    # TODO: 预览其他文件
+                    pass
 
         except Exception as e:
             msg = f"获取文件 {file_id} 失败: {str(e)}"
