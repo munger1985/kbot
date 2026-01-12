@@ -39,7 +39,7 @@ MICROSERVICES=(
     "kbot_app_llm.py" 
     "kbot_app_vlm.py"
     "kbot_app_reranker.py"
-    "kbot_app_libreoffice.py"
+    "kbot_app_parser.py"
 )
 
 for service_script in "${MICROSERVICES[@]}"; do
