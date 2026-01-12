@@ -15,7 +15,7 @@ class APIKey(Base):
     hashed_key: Mapped[str] = mapped_column(String(255), nullable=False, comment="哈希后的密钥（不存储明文）")
     key_prefix: Mapped[str] = mapped_column(String(8), nullable=False, comment="原始密钥前缀，用于显示给用户（只存储前8位）")
     name: Mapped[str] = mapped_column(String(100), nullable=False, comment="密钥名称/描述")
-    service_id: Mapped[int] = mapped_column(Numeric(38, 0), ForeignKey("KBOT_MD_SERVICES.id"), nullable=False, index=True, comment="关联服务ID")
+    service_id: Mapped[int] = mapped_column(Numeric(38, 0), ForeignKey("KBOT_SYS_SERVICES.id"), nullable=False, index=True, comment="关联服务ID")
     scopes: Mapped[str] = mapped_column(String(4000), default="[]", comment="权限范围（JSON格式，存储该key能访问的API列表）")
     status: Mapped[APIKeyStatus] = mapped_column(Enum(APIKeyStatus), default=APIKeyStatus.ACTIVE, index=True, comment="密钥状态")
     expires_at: Mapped[datetime | None] = mapped_column(Date, nullable=True, index=True, comment="过期时间（None表示永不过期）")
