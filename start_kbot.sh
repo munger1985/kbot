@@ -2,10 +2,10 @@
 
 # 初始化 conda 环境
 eval "$(conda shell.bash hook)"
-conda activate cube
+conda activate kbot3
 
 # 使用 /tmp 目录存储启动日志
-LOG_DIR="/tmp/nexus_cube_logs"
+LOG_DIR="/tmp/kbot3_logs"
 mkdir -p "$LOG_DIR"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
