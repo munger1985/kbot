@@ -1,32 +1,24 @@
 # exceptions.py
 from fastapi import HTTPException, status
-from typing import Any
 
 # --------------------------------------------------
 # 1. 基础设施层异常（DAO层使用）
 # --------------------------------------------------
-class DataAccessException(Exception):
-    """数据访问异常基类"""
-    pass
-
-class DatabaseException(DataAccessException):
+class DatabaseException(Exception):
     """数据库异常"""
     def __init__(self, message: str, original_error: Exception | None = None):
         self.message = message
         self.original_error = original_error
 
-class NotFoundException(DataAccessException):
-    """记录不存在异常"""
-    def __init__(self, resource: str, identifier: Any):
-        self.resource = resource
-        self.identifier = identifier
+class DataNotFoundException(DatabaseException):
+    """数据不存在异常"""
+    def __init__(self, message: str):
+        super().__init__(message)
 
-class DuplicateRecordException(DataAccessException):
-    """重复记录异常"""
-    def __init__(self, resource: str, field: str, value: Any):
-        self.resource = resource
-        self.field = field
-        self.value = value
+class DataConflictException(DatabaseException):
+    """数据冲突异常"""
+    def __init__(self, message: str):
+        super().__init__(message)
 
 # --------------------------------------------------
 # 2. 业务层异常（Service层使用）
@@ -58,8 +50,8 @@ class APIException(HTTPException):
             }
         )
 
-class ResourceNotFoundException(APIException):
-    """资源不存在异常 - 极简版"""
+class NotFoundError(APIException):
+    """资源不存在异常"""
     def __init__(self, message: str, **extra_details):
         """
         Args:
@@ -76,68 +68,54 @@ class ResourceNotFoundException(APIException):
             detail=extra_details or None
         )
 
-class UnauthorizedException(APIException):
-    """未认证异常"""
-    def __init__(self, message: str = "请先登录", **extra_details):
-        super().__init__(
-            code="UNAUTHORIZED",
-            message=message,
-            http_status=status.HTTP_401_UNAUTHORIZED,
-            detail=extra_details or None
-        )
-
-class ForbiddenException(APIException):
-    """无权限异常"""
-    def __init__(self, message: str = "权限不足", **extra_details):
-        super().__init__(
-            code="FORBIDDEN",
-            message=message,
-            http_status=status.HTTP_403_FORBIDDEN,
-            detail=extra_details or None
-        )
-
-class BadRequestException(APIException):
-    """请求错误异常"""
+class ParamValueError(APIException):
+    """参数错误异常"""
     def __init__(self, message: str, **extra_details):
         """
         Args:
-            message: 消息模板，如"余额不足，需要{required}，当前{current}"
-            **kwargs: 格式化参数
+            message: 消息模板，如"选择的{param}值无效"
+            **kwargs: 格式化参数，如param="颜色"
         """
         super().__init__(
-            code="BAD_REQUEST",
+            code="VALUE_ERROR",
             message=message,
             http_status=status.HTTP_400_BAD_REQUEST,
             detail=extra_details or None
         )
 
-class ValidationException(APIException):
-    """参数验证异常"""
+class AuthorizationError(APIException):
+    """授权错误异常"""
     def __init__(self, message: str, **extra_details):
         """
         Args:
-            message: 直接显示给用户的错误信息
-            **extra_details: 额外的调试信息（可选）
+            message: 授权失败的具体描述
+            **extra_details: 额外信息（如required_role、current_role等）
         """
+        # 如果没有指定code，默认使用通用的UNAUTHORIZED
+        code = extra_details.pop("code", "UNAUTHORIZED")
+        
         super().__init__(
-            code="VALIDATION_ERROR",  # 固定错误码
-            message=message,          # 直接使用传入的消息
-            http_status=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=extra_details or None  # 可选附加信息
+            code=code,
+            message=message,
+            http_status=status.HTTP_401_UNAUTHORIZED,
+            detail=extra_details or None
         )
 
-class ConflictException(APIException):
-    """资源冲突异常"""
+class PrivilegeError(APIException):
+    """权限错误异常"""
     def __init__(self, message: str, **extra_details):
         """
         Args:
-            message: 冲突的具体描述
-            **extra_details: 额外信息（如resource、field、value等）
+            message: 权限不足的具体描述
+            **extra_details: 额外信息（如required_privilege、current_privilege等）
         """
+        # 如果没有指定code，默认使用通用的FORBIDDEN
+        code = extra_details.pop("code", "FORBIDDEN")
+        
         super().__init__(
-            code="CONFLICT",
+            code=code,
             message=message,
-            http_status=status.HTTP_409_CONFLICT,
+            http_status=status.HTTP_403_FORBIDDEN,
             detail=extra_details or None
         )
 

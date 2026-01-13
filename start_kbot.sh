@@ -36,7 +36,7 @@ start_service() {
 }
 
 # 启动主程序（并等待其完全启动）
-start_service "Nexus Cube 主程序" "$(dirname "$0")" "kbot_main.py" "true" || exit 1
+start_service "KBOT3 主程序" "$(dirname "$0")" "kbot_main.py" "true" || exit 1
 
 
 # 启动微服务数组

@@ -71,16 +71,16 @@ class CallParser:
         # 填充解析控制参数
         kwargs = {
             "output_format": output_format,
-            "do_ocr": do_ocr,
+            "do_ocr": str(do_ocr),
             "ocr_engine": ocr_engine,
-            "generate_picture_images": generate_picture_images,
-            "images_scale": images_scale,
-            "use_vlm": use_vlm,
+            "generate_picture_images": str(generate_picture_images),
+            "images_scale": str(images_scale),
+            "use_vlm": str(use_vlm),
             "vlm_model": vlm_model,
             "vlm_prompt": vlm_prompt,
-            "chunk_size": chunk_size,
-            "overlap": overlap,
-            "min_chunk_len": min_chunk_len,
+            "chunk_size": str(chunk_size),
+            "overlap": str(overlap),
+            "min_chunk_len": str(min_chunk_len),
         }
         for k, v in kwargs.items():
             data.add_field(k, v)

@@ -40,13 +40,13 @@ from docling_core.types.doc.document import (
 from utils.model_client import CallModel
 from ..parser_schema import ParserParams
 
+
 class OutputFormat(str, Enum):
     MARKDOWN = "markdown"
     HTML = "html"
     JSON = "json"
     DOCTAGS = "doctags"
     CHUNKS = "chunks"
-
 
 
 class VLMAnnotationPictureSerializer(MarkdownPictureSerializer):
@@ -160,7 +160,7 @@ class DoclingDocProcessor:
 
         await self._process_vlm_descriptions(doc, params)
 
-        if params.output_format == OutputFormat.CHUNKS:
+        if params.output_format == OutputFormat.CHUNKS.value:
             return self._generate_chunks(doc, params)
         
         return self._serialize(doc, OutputFormat(params.output_format))
