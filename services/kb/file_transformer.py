@@ -9,7 +9,7 @@ from dao.repositories.kbot_md_kb_repo import KbotMdKbRepository
 from core.config.settings import get_prompt_config
 
 
-from core.exceptions import DataNotFoundException, DatabaseException, NotFoundError, InternalServerError
+from core.exceptions import ResourceNotFoundException, DatabaseException, ValidationException, InternalServerError
 from utils.parser_client import CallParser
 
 
@@ -31,8 +31,8 @@ class FileTransformService:
         """
         try:
             file = await self.file_repo.get_by_id(file_id=file_id)
-        except DataNotFoundException as e:
-            logger.warning(e.message)
+        except ResourceNotFoundException as e:
+            logger.warning(e.detail)
             return None
         except DatabaseException as e:
             logger.error(f"数据库查询错误: {str(e)}")
@@ -82,7 +82,7 @@ class FileTransformService:
 
         result = await self._get_file_params(file_id=file_id)
         if not result:
-            raise NotFoundError(f"未找到文件 {file_id} 的文件路径或解析器参数")
+            raise ResourceNotFoundException(f"未找到文件 {file_id} 的文件路径或解析器参数", resource_type="KB_FILE", resource_id=file_id)
         file_path, parser_params = result
 
         # 获取目录路径
