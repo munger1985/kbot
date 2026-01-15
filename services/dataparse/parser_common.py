@@ -62,7 +62,7 @@ class ParserCommonMethods:
                 log_msg=message
             )
 
-    async def get_embeddings(self, texts: list[str], file_params: FileParams) -> list[KbotBizTxtEmbedding] | None:
+    async def get_embeddings(self, parser_results: list[dict], file_params: FileParams) -> list[KbotBizTxtEmbedding] | None:
         """
         获取文本的嵌入向量
         
@@ -78,16 +78,20 @@ class ParserCommonMethods:
             logger.error(f"知识库 {file_params.kb_id} 未配置文本嵌入模型")
             return None
         
+        # 提取文本和元数据
+        texts = [item["text"] for item in parser_results]
+        metadatas = [item["metadata"] for item in parser_results]
+        
         try:
             batch_size = len(texts) if len(texts) <= 8 else 8
             response = await CallModel().call_embedding_model(model, texts, batch_size)
             chunks = []
             if response:
                 chunk_num = 0
-                for embedding, text in zip(response, texts):
+                for embedding, text, metadata in zip(response, texts, metadatas):
                     chunk = KbotBizTxtEmbedding(
                         embed_id=str(uuid.uuid4()),
-                        chunk_metadata={"chunk_num": chunk_num},
+                        chunk_metadata=metadata,
                         biz_metadata=file_params.biz_metadata,
                         security_level=file_params.security_level,
                         kb_id=file_params.kb_id,

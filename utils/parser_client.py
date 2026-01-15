@@ -5,10 +5,12 @@
 import os
 import aiohttp
 from loguru import logger
-from pydantic import BaseModel, Field
+from api.schemas.parser_schema import ParserParams
 
-from core.config.settings import get_parser_config
+from core.config.settings import get_parser_config, get_prompt_config
 from core.exceptions import InternalServerError
+from services.dataparse.txt_to_md import TxtToMarkdownParser
+from services.dataparse.parser_common import ParserCommonMethods
 
 
 class CallParser:
@@ -17,44 +19,25 @@ class CallParser:
     def __init__(self):
         """初始化配置。"""
         self.parser_config = get_parser_config()
+        self.common = ParserCommonMethods()
 
     async def call_doc_parser_service(
         self, 
         file_path: str,
-        in_memory: bool = False,
+        parser_params: ParserParams,
         file_content: str | None = None,
-        output_format: str = "chunks",
-        do_ocr: bool = False,
-        ocr_engine: str | None = None,
-        generate_picture_images: bool = False,
-        images_scale: float = 2.0,
-        use_vlm: bool = False,
-        vlm_model: str | None = None,
-        vlm_prompt: str | None = None,
-        chunk_size: int = 512,
-        overlap: int = 50,
-        min_chunk_len: int = 10
-    ) -> str | list[str]:
-        """调用文档解析微服务（平铺参数版）。
+        output_format: str = "chunks"
+    ) -> str | list[dict]:
+        """调用文档解析微服务。
 
         Args:
             file_path: 待上传的本地文件路径。
-            in_memory: 是否在内存中处理文件内容，默认 False。
-            file_content: 待解析的文件内容，根据 in_memory 参数判断。
+            parser_params: 解析参数对象。
+            file_content: 待解析的文件内容，如果有则表示直接解析内容，否则从文件路径读取。
             output_format: 输出格式 (markdown, html, json, chunks)。
-            do_ocr: 是否开启 OCR。
-            ocr_engine: OCR 引擎 (easyocr, tesseract, paddle)。
-            generate_picture_images: 是否生成图片副本。
-            images_scale: 图片缩放比例。
-            use_vlm: 是否开启 VLM 增强。
-            vlm_model: 指定 VLM 模型。
-            vlm_prompt: 自定义 VLM 提示词。
-            chunk_size: 切分窗口大小。
-            overlap: 切分窗口重叠部分。
-            min_chunk_len: 最小切分长度。
 
         Returns:
-            str | list[str]: 解析结果。
+            str | list[dict]: 解析结果。
         """
         service_host = self.parser_config.service_host
         service_port = self.parser_config.service_port
@@ -67,23 +50,42 @@ class CallParser:
 
         # 1. 构造 Multipart 报文
         data = aiohttp.FormData()
-        
+
+        # 处理文件内容
+        if file_path.endswith(".txt"):
+            # 因为docling不支持直接解析txt文件，所以先转换为md
+            file_content = TxtToMarkdownParser().process(file_path)
+            file_path = file_path.replace(".txt", ".md")
+            in_memory = True
+        else:
+            in_memory = False
+
+        # 获取 VLM 提示词
+        prompt_content = None
+        prompt_unique_name = parser_params.vlm_prompt
+        if parser_params.use_vlm:
+            if prompt_unique_name:
+                prompt_content = await self.common.get_prompt_content(prompt_unique_name=prompt_unique_name)
+            else:
+                prompt_name = get_prompt_config().image2text
+                prompt_content = await self.common.get_prompt_content(prompt_unique_name=prompt_name)
+
+
         # 填充解析控制参数
-        kwargs = {
-            "output_format": output_format,
-            "do_ocr": str(do_ocr),
-            "ocr_engine": ocr_engine,
-            "generate_picture_images": str(generate_picture_images),
-            "images_scale": str(images_scale),
-            "use_vlm": str(use_vlm),
-            "vlm_model": vlm_model,
-            "vlm_prompt": vlm_prompt,
-            "chunk_size": str(chunk_size),
-            "overlap": str(overlap),
-            "min_chunk_len": str(min_chunk_len),
-        }
+        kwargs = parser_params.model_dump()
+        kwargs["output_format"] = output_format
+        kwargs["vlm_prompt"] = prompt_content
+
+        # 在循环中添加类型检查和转换
         for k, v in kwargs.items():
-            data.add_field(k, v)
+            if v is not None:
+                # 根据类型进行适当的转换
+                if isinstance(v, (int, float)):
+                    data.add_field(k, str(v))
+                elif isinstance(v, bool):
+                    data.add_field(k, str(v).lower())  # 布尔值转为小写字符串
+                else:
+                    data.add_field(k, v)  # 字符串和其他类型直接添加
 
         # 2. 读取并添加文件流
         try:

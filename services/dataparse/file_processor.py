@@ -12,6 +12,7 @@ from dao.repositories.kbot_md_kb_repo import KbotMdKbRepository
 from core.dictionary import FileStatus, ProcessPriority
 from utils.encoder import DecimalEncoder
 from utils.parser_client import CallParser
+from api.schemas.parser_schema import ParserParams
 
 
 
@@ -37,6 +38,8 @@ class FileProcessor:
             return result
             
         for file in files:
+            
+
             file_params = FileParams(
                 file_id=file.file_id,
                 app_id=file.app_id,
@@ -49,34 +52,43 @@ class FileProcessor:
                 tab_head = file.is_table_head_fill,
                 priority = file.process_priority or ProcessPriority.MEDIUM.value,
                 security_level = file.security_level,
-                parser={},
-                biz_metadata={},
+                parser=None,
+                biz_metadata=None,
                 img2txt_model=None,
                 img_embed_model=None,
                 txt_embed_model=None,
                 summary_model=None,
                 )
-            # 检查 chunk_parser 是否已经是字典类型
-            if isinstance(file.chunk_parser, dict):
-                file_params.parser = file.chunk_parser
-            elif file.chunk_parser is None:
-                # 如果是 None，则使用空字典
-                file_params.parser = {}
-                logger.warning(f"文件ID {file.file_id} 的 chunk_parser 为 None，使用空字典")
+            # 解析 chunk_parser 字段
+            if file.chunk_parser:
+                if isinstance(file.chunk_parser, str):
+                    parser_dict = json.loads(file.chunk_parser, cls=DecimalEncoder) # type: ignore
+                    parser_params = ParserParams(**parser_dict)
+                    file_params.parser = parser_params
+                
+                elif isinstance(file.chunk_parser, dict):
+                    parser_dict = file.chunk_parser
+                    parser_params = ParserParams(**parser_dict)
+                    file_params.parser = parser_params
+                else:
+                    logger.warning(f"文件ID {file.file_id} 的 chunk_parser 格式未知，使用默认值") 
             else:
-                # 如果是字符串，则解析为 JSON
-                file_params.parser = json.loads(file.chunk_parser, cls=DecimalEncoder) # type: ignore
+                msg = f"文件ID {file.file_id} 的 chunk_parser 为空，跳过解析"
+                logger.warning(msg)
+                await self.common.update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, msg)
+                return []
 
             # 解析 biz_metadata 字段
-            if isinstance(file.biz_metadata, dict):
-                file_params.biz_metadata = file.biz_metadata
-            elif file.biz_metadata is None:
-                file_params.biz_metadata = {}
-                logger.warning(f"文件ID {file.file_id} 的 biz_metadata 为 None，使用空字典")
+            if file.biz_metadata:
+                if isinstance(file.biz_metadata, str):
+                    file_params.biz_metadata = json.loads(file.biz_metadata, cls=DecimalEncoder) # type: ignore
+                elif isinstance(file.biz_metadata, dict):
+                    file_params.biz_metadata = file.biz_metadata
+                else:
+                    logger.warning(f"文件ID {file.file_id} 的 biz_metadata 格式未知，使用空字典")
             else:
-                file_params.biz_metadata = json.loads(file.biz_metadata, cls=DecimalEncoder) # type: ignore
+                logger.warning(f"文件ID {file.file_id} 的 biz_metadata 为 None，使用空字典")
             
-            logger.debug(f"文件参数: {file_params.__dict__}")
 
             models = await self.kb_repo.get_model_by_kbid(file.kb_id)
 
@@ -96,7 +108,7 @@ class FileProcessor:
 
             timestamp = datetime.now().timestamp()  # 获取当前时间戳
             # 将文件状态更新为处理中
-            await self.file_repo.update_file_status(file_params.file_id, FileStatus.PARSING)
+            await self.common.update_file_status(file_params.file_id, FileStatus.PARSING, "文件解析中")
             # 添加到结果列表
             result.append((file_params.priority, timestamp, file_params))
             logger.info(f"已添加文件到处理队列: {file_params.file_path} (优先级: {ProcessPriority(file_params.priority)})")
@@ -112,76 +124,40 @@ class FileProcessor:
             file_params: 文件参数对象
 
         """
+        if not await self.common.check_file(file_params):
+            return
 
         try:
             logger.info(f"开始处理文件: {file_params.file_path}...")
-
             chunks = []
 
-            # 生成解析参数
-            kwargs = {
-                "file_path": file_params.file_path,
-                "in_memory": False,
-                "file_content": None,
-                "output_format": "chunks", # 固定为 "chunks", 切片后用于RAG
-                "do_ocr": file_params.parser.get("do_ocr", False),
-                "ocr_engine": file_params.parser.get("ocr_engine", "easyocr"),
-                "generate_picture_images": file_params.parser.get("generate_picture_images", False),
-                "images_scale": file_params.parser.get("images_scale", 2.0),
-                "use_vlm": False,
-                "vlm_model": file_params.img2txt_model,
-                "vlm_prompt": None,
-                "chunk_size": file_params.parser.get("chunk_size", 512),
-                "overlap": file_params.parser.get("overlap", 50),
-                "min_chunk_len": file_params.parser.get("min_chunk_len", 10)
-            }
-            
-            if file_params.file_ext == ".txt":
-                # 因为docling不支持直接解析txt文件，所以先转换为md
-                md_content = TxtToMarkdownParser().process(file_params.file_path)
-                # 注入转换后的md内容
-                kwargs["file_content"] = md_content
-                kwargs["in_memory"] = True
-            else:
-                # 获取 VLM 提示词
-                prompt_unique_name = file_params.parser.get("image_parse_prompt_unique_name", None)
-                if prompt_unique_name:
-                    vlm_prompt = await self.common.get_prompt_content(prompt_unique_name)
-                    if vlm_prompt:
-                        kwargs["vlm_prompt"] = vlm_prompt
-                        kwargs["use_vlm"] = True
-                    else:
-                        logger.warning(f"提示词唯一名称 {prompt_unique_name} 不存在")
-                        kwargs["use_vlm"] = False
-                else:
-                    kwargs["use_vlm"] = False
-
             # 调用 Docling 处理文件
-            chunks = await CallParser().call_doc_parser_service(**kwargs)
+            result = await CallParser().call_doc_parser_service(
+                file_path=file_params.file_path,
+                parser_params=file_params.parser,
+                output_format="chunks") # 期望返回 chunks 格式
         
-            if not chunks:
-                logger.error(f"文件 {file_params.file_path} 解析结果为空")
-                # 更新文件状态为处理失败
-                await self.common.update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, "文件解析结果为空")
-            
-            txt_chunks = None
-            if isinstance(chunks, list):
-                txt_chunks= await self.common.get_embeddings(chunks, file_params)
+            if isinstance(result, list):
+                embeddings = await self.common.get_embeddings(result, file_params)
+                if embeddings is None:
+                    logger.error(f"获取文件 {file_params.file_path} 的 embedding 向量失败")
+                    # 更新文件状态为处理失败
+                    await self.common.update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, "获取 embedding 向量失败")
+                    return
+                else:
+                    # 保存嵌入向量
+                    await self.common.save_chunks(file_params.kb_id, file_params.file_id, embeddings)
             else:
-                logger.error(f"文件 {file_params.file_path} 解析结果不是列表")
+                logger.error(f"文件 {file_params.file_path} 解析结果不是期望的列表格式")
                 # 更新文件状态为处理失败
-                await self.common.update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, "文件解析结果不是列表")
-
-            # 保存嵌入向量
-            if txt_chunks:
-                await self.common.save_chunks(file_params.kb_id, file_params.file_id, txt_chunks)
+                await self.common.update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, "文件解析结果不是期望的列表格式")
+                return
 
             # 生成摘要
-            if file_params.enable_summary and txt_chunks:
+            if file_params.enable_summary and embeddings:
                 logger.info(f"开始生成摘要...")
                 summary_parser = SummaryParser()
-                await summary_parser.process_summary(file_params=file_params, embed_entities=txt_chunks)
-           
+                await summary_parser.process_summary(file_params=file_params, embed_entities=embeddings)
                 
         except Exception as e:
             msg = f"处理文件 {file_params.file_path} 时发生错误: {str(e)}"

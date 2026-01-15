@@ -1,4 +1,6 @@
 from pydantic import BaseModel, Field
+from api.schemas.parser_schema import ParserParams
+
 
 class FileParams(BaseModel):
     file_id: str = Field(..., description="文件唯一标识符")
@@ -12,7 +14,7 @@ class FileParams(BaseModel):
     img2txt: int = Field(0, description="是否启用图片转文本")
     tab_head: int = Field(0, description="是否启用表格头解析")
     priority: int = Field(0, description="解析优先级")
-    parser: dict = Field({}, description="解析器配置")
+    parser: ParserParams = Field(..., description="解析器配置")
     biz_metadata: dict = Field({}, description="业务元数据")
     img2txt_model: int | None = Field(None, description="图片转文本模型ID")
     img_embed_model: int | None = Field(None, description="图片嵌入模型ID")
