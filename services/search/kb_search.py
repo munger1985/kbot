@@ -169,8 +169,27 @@ class KBSearch:
                 chunk_meta = json.loads(json.dumps(data[2], cls=DecimalEncoder))
                 result = KBSearchResult()
                 result.file_id = data[0]
-                result.chunk_type = chunk_meta.get("chunk_type", 1)
-                result.page_num = chunk_meta.get("page_num", 1)
+
+                # 处理 chunk_type: 如果是字符串则转换为整数，否则使用默认值
+                chunk_type_raw = chunk_meta.get("chunk_type", 1)
+                if isinstance(chunk_type_raw, str):
+                    try:
+                        result.chunk_type = int(chunk_type_raw)
+                    except (ValueError, TypeError):
+                        result.chunk_type = 1
+                else:
+                    result.chunk_type = int(chunk_type_raw) if chunk_type_raw is not None else 1
+
+                # 处理 page_num: 如果是 None 或无效值则使用默认值
+                page_num_raw = chunk_meta.get("page_num", 1)
+                if page_num_raw is None:
+                    result.page_num = 1
+                else:
+                    try:
+                        result.page_num = int(page_num_raw)
+                    except (ValueError, TypeError):
+                        result.page_num = 1
+
                 result.chunk_file_path = chunk_meta.get("chunk_file_path", "")
                 result.content = safe_read_content(data[1])
                 result.similarity = data[3]
@@ -218,8 +237,27 @@ class KBSearch:
                     chunk_meta = json.loads(json.dumps(data[2], cls=DecimalEncoder))
                     result = KBSearchResult()
                     result.file_id = data[0]
-                    result.chunk_type = chunk_meta.get("chunk_type", 1)
-                    result.page_num = chunk_meta.get("page_num", 1)
+
+                    # 处理 chunk_type: 如果是字符串则转换为整数，否则使用默认值
+                    chunk_type_raw = chunk_meta.get("chunk_type", 1)
+                    if isinstance(chunk_type_raw, str):
+                        try:
+                            result.chunk_type = int(chunk_type_raw)
+                        except (ValueError, TypeError):
+                            result.chunk_type = 1
+                    else:
+                        result.chunk_type = int(chunk_type_raw) if chunk_type_raw is not None else 1
+
+                    # 处理 page_num: 如果是 None 或无效值则使用默认值
+                    page_num_raw = chunk_meta.get("page_num", 1)
+                    if page_num_raw is None:
+                        result.page_num = 1
+                    else:
+                        try:
+                            result.page_num = int(page_num_raw)
+                        except (ValueError, TypeError):
+                            result.page_num = 1
+
                     result.chunk_file_path = chunk_meta.get("chunk_file_path", "")
                     result.content = safe_read_content(data[1])
                     result.similarity = data[3]
