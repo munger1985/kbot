@@ -192,9 +192,10 @@ class ModelController:
             prompt_unique_name = "KBOT1/pdf_parsing"
             # 创建纯色图片的最简代码
             image = Image.new('RGB', (100, 100), 'lightblue')
-            result = await CallModel().call_vlm_model_for_parsing_picture(
+            result = await CallModel().call_vlm_model(
                 model_id, 
-                image
+                image,
+                prompt="描述该图片"
             )
             
         else:
