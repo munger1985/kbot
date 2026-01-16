@@ -142,7 +142,7 @@ class FileCategory(IntEnum):
 class EmbeddingProvider(str, Enum):
     """支持的嵌入服务提供商枚举"""
     LOCAL_BGE = "local_bge"
-    LOCAL_QWEN = "local_qwen3"
+    LOCAL_QWEN = "local_qwen"
     API_QWEN = "api_qwen"
     CHATGPT = "chatgpt"
     COHERE = "cohere"
@@ -157,7 +157,7 @@ class LLMProvider(str, Enum):
 class RerankerProvider(str, Enum):
     """支持的 reranker 模型枚举"""
     LOCAL_BGE = "local_bge"
-    LOCAL_QWEN = "local_qwen3"
+    LOCAL_QWEN = "local_qwen"
     API_QWEN = "api_qwen"
     CHATGPT = "chatgpt"
     COHERE = "cohere"
