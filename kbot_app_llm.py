@@ -11,6 +11,7 @@ import json
 import time
 import atexit
 import uuid
+import oci
 from datetime import datetime
 from typing import Any
 from contextlib import asynccontextmanager
@@ -277,13 +278,29 @@ async def handle_chat_completions(
                     ))
 
         elif provider == LLMProvider.OCI.value:
-            # 兼容处理 OCI 响应
-            if any(x in request.model_name.lower() for x in ["grok", "llama"]):
-                content = raw_resp.data.chat_response.choices[0].message.content[0].text # type: ignore
-            else:
-                content = raw_resp.data.chat_response.text # type: ignore
+            # 1. 获取内部响应对象
+            oci_resp = raw_resp.data.chat_response # type: ignore
             
-            usage = raw_resp.data.chat_response.usage.model_dump() # type: ignore
+            # 2. 提取 Content (区分 Generic 格式和 Cohere 格式)
+            if hasattr(oci_resp, 'choices'): # Generic 格式 (Llama, Grok 等)
+                content = oci_resp.choices[0].message.content[0].text
+            else: # Cohere 格式
+                content = getattr(oci_resp, 'text', "")
+
+            # 3. 提取 Usage (核心修复点)
+            # 使用 oci.util.to_dict 将 SDK 对象转为字典，安全获取 usage 字段
+            resp_dict = oci.util.to_dict(oci_resp)
+            raw_usage = resp_dict.get("usage")
+            
+            if raw_usage:
+                # 转换 OCI 字段名到 OpenAI 标准字段名
+                usage = {
+                    "prompt_tokens": raw_usage.get("input_tokens", 0),
+                    "completion_tokens": raw_usage.get("output_tokens", 0),
+                    "total_tokens": raw_usage.get("total_tokens", 0)
+                }
+            else:
+                usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 
         return ChatResponse(
             id=resp_id,

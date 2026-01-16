@@ -46,7 +46,7 @@ async def test_call_llm_model():
     # 测试参数
     # model_id = 39 #'KBOT1/OCI-cohere'
     # model_id = 40 #"KBOT1/OCI-GROK4-II"
-    model_id = 22 #"KBOT1/DeepSeek V3"
+    model_id = 66 #"KBOT1/DeepSeek V3"
     test_prompt = "hello"
 
     print(f"测试开始，使用模型: {model_id}")
