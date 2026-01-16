@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 import torch
 import torch.nn.functional as F
 from pydantic import Field
@@ -41,22 +42,32 @@ class Qwen3Embedding(BaseEmbedding[Qwen3EmbeddingConfig]):
 
         attn_impl = get_optimal_attn_implementation()
         model_path = self.config.model_path or self.model_name
-        
+
+        # 修正本地路径格式：确保 Hugging Face 识别为本地路径
+        if model_path and not model_path.startswith('/') and not model_path.startswith('./'):
+            if '/' in model_path:
+                # 可能是相对路径，转换为绝对路径
+                model_path = str(Path(model_path).resolve())
+            else:
+                model_path = f"./{model_path}"
+            logger.info(f"修正模型路径: {self.config.model_path} -> {model_path}")
+
         logger.info(f"🚀 正在初始化 Qwen Embedding: {model_path} (Impl: {attn_impl})")
 
         load_kwargs = {
             "pretrained_model_name_or_path": model_path,
             "trust_remote_code": True,
+            "local_files_only": True,  # 强制从本地加载
             "attn_implementation": attn_impl,
             "torch_dtype": torch.float16 if self.config.use_fp16 and "cuda" in self.device.type else torch.float32,
         }
 
         try:
-            self.tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+            self.tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True, local_files_only=True)
             # Qwen Embedding 通常需要 padding 在右侧以配合 Last Token Pooling 逻辑
             self.tokenizer.padding_side = "right" 
             
-            self.model = AutoModel.from_pretrained(**load_kwargs)
+            self.model = AutoModel.from_pretrained(model_path, trust_remote_code=True, local_files_only=True, **{k: v for k, v in load_kwargs.items() if k != 'pretrained_model_name_or_path'})
             self.model.to(self.device).eval()
             
             # CUDA 预热

@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 import torch
 from typing import Any
 from pydantic import Field
@@ -44,11 +45,23 @@ class Qwen3Reranker(BaseReranker[Qwen3RerankerConfig]):
             return
 
         from ...common.utils import get_optimal_attn_implementation
-        attn_impl = get_optimal_attn_implementation() 
-        
+        attn_impl = get_optimal_attn_implementation()
+
+        # 修正本地路径格式：如果路径以 / 开头，需要确保是绝对路径
+        # Hugging Face 的 from_pretrained() 需要绝对路径格式
+        model_path = self.config.model_path
+        if model_path and not model_path.startswith('/') and not model_path.startswith('./'):
+            # 如果是相对路径但不是 ./ 开头，添加 ./
+            if '/' in model_path:
+                # 可能是相对路径，转换为绝对路径
+                model_path = str(Path(model_path).resolve())
+            else:
+                model_path = f"./{model_path}"
+            logger.info(f"修正模型路径: {self.config.model_path} -> {model_path}")
+
         try:
             # 1. 初始化 Tokenizer
-            self.tokenizer = AutoTokenizer.from_pretrained(self.config.model_path, trust_remote_code=True)
+            self.tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True, local_files_only=True)
             self.tokenizer.padding_side = "left" # 生成式 Reranker 必须左填充
             if self.tokenizer.pad_token is None:
                 self.tokenizer.pad_token = self.tokenizer.eos_token
@@ -60,11 +73,12 @@ class Qwen3Reranker(BaseReranker[Qwen3RerankerConfig]):
             # 3. 加载模型：优先使用 bfloat16 (RTX 5080/4090/A100 等显卡)
             compute_dtype = torch.bfloat16 if (self.config.use_fp16 and "cuda" in self.device.type) else torch.float32
             
-            logger.info(f"🚀 加载 Qwen Reranker: {self.config.model_path} (Dtype: {compute_dtype}, Impl: {attn_impl})")
+            logger.info(f"🚀 加载 Qwen Reranker: {model_path} (Dtype: {compute_dtype}, Impl: {attn_impl})")
 
             self.model = AutoModelForCausalLM.from_pretrained(
-                self.config.model_path,
+                model_path,
                 trust_remote_code=True,
+                local_files_only=True,  # 强制从本地加载
                 attn_implementation=attn_impl,
                 torch_dtype=compute_dtype,
                 device_map={"": self.device} # 明确映射到单个设备
