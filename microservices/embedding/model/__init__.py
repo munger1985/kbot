@@ -1,21 +1,20 @@
 from .base import BaseEmbedding, EmbeddingConfig, EmbeddingResponse, EmbeddingDataItem
-# from .azure_client import AzureEmbeddingConfig
-from .cohere_client import CohereEmbeddingConfig
-from .local_client import LocalEmbeddingConfig
-from .oci_client import OCIEmbeddingConfig
-from .openai_client import OpenAIEmbeddingConfig
-from .factory import create_embedding_model, get_supported_providers
+from .cohere_client import CohereEmbeddingConfig, CohereEmbedding
+from .bge_local import BGEEmbeddingConfig, BGEEmbedding
+from .openai_client import OpenAIEmbeddingConfig, OpenAIEmbedding
+from .qwen3_local import Qwen3EmbeddingConfig, Qwen3Embedding
 
 __all__ = [
     "BaseEmbedding",
     "EmbeddingConfig",
     "EmbeddingResponse",
     "EmbeddingDataItem",
-    # "AzureEmbeddingConfig",
     "CohereEmbeddingConfig",
-    "LocalEmbeddingConfig",
-    "OCIEmbeddingConfig",
+    "BGEEmbeddingConfig",
+    "Qwen3EmbeddingConfig",
     "OpenAIEmbeddingConfig",
-    "create_embedding_model",
-    "get_supported_providers"
+    "CohereEmbedding",
+    "BGEEmbedding",
+    "Qwen3Embedding",
+    "OpenAIEmbedding"
 ]

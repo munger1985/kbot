@@ -70,6 +70,14 @@ class KbotMdModelsRepository:
             )
             return result.scalar_one_or_none()
         
+    async def get_name_by_id(self, model_id: int) -> str | None:
+        """Get knowledge base model name by ID."""
+        async with get_session() as session:
+            result = await session.execute(
+                select(KbotMdModels.model_name).where(KbotMdModels.model_id == model_id)
+            )
+            return result.scalar_one_or_none()
+        
     
     # async def create(self, model: KbotMdModels) -> KbotMdModels:
     #     """Create a new knowledge base model record."""

@@ -145,7 +145,7 @@ async def health_check() -> dict[str, Any]:
 
 
 @app.post("/load", response_model=dict, tags=["Management"], summary="模型动态加载/卸载")
-async def toggle_model(request: ToggleModelRequest) -> dict[str, str|int]:
+async def toggle_model(request: ToggleModelRequest) -> dict[str, str]:
     """根据请求动态加载或从内存中卸载指定模型。
 
     Args:
@@ -157,19 +157,19 @@ async def toggle_model(request: ToggleModelRequest) -> dict[str, str|int]:
     Raises:
         HTTPException: 操作失败时抛出 500 错误。
     """
-    model_id = request.model_id
+    model_name = request.model_name
     try:
         if request.operation == "load":
-            logger.info(f"执行模型加载指令: {model_id}")
-            success = await reranker_service.load_model(model_id)
+            logger.info(f"执行模型加载指令: {model_name}")
+            success = await reranker_service.load_model(model_name)
         else:
-            logger.info(f"执行模型卸载指令: {model_id}")
-            success = await reranker_service.unload_model(model_id)
+            logger.info(f"执行模型卸载指令: {model_name}")
+            success = await reranker_service.unload_model(model_name)
             
         if not success:
-            raise HTTPException(status_code=500, detail=f"模型 {model_id} {request.operation} 操作未成功")
+            raise HTTPException(status_code=500, detail=f"模型 {model_name} {request.operation} 操作未成功")
             
-        return {"status": "success", "model_id": model_id}
+        return {"status": "success", "model_name": model_name}
     except Exception as e:
         logger.exception(f"执行模型操作时发生异常: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -194,12 +194,12 @@ async def rerank_documents(
     """
     try:
         logger.info(
-            f"收到重排序请求 | 模型: {request.model_id} | "
+            f"收到重排序请求 | 模型: {request.model_name} | "
             f"文档数: {len(request.documents)} | top_k: {request.top_k}"
         )
         
         results = await service.rerank(
-            model_id=request.model_id,
+            model_name=request.model_name,
             query=request.query,
             documents=request.documents,
             top_k=request.top_k

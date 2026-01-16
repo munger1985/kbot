@@ -30,16 +30,16 @@ class RerankerService:
             self._initialized = False
             logger.info("Reranker 服务已关闭")
     
-    async def get_reranker_model(self, model_id: int) -> BaseReranker:
+    async def get_reranker_model(self, model_name: str) -> BaseReranker:
         """通过唯一名称获取 reranker 模型。"""
         if not self._initialized:
             await self.initialize()
 
-        return await self._model_pool.load_model(model_id)
+        return await self._model_pool.load_model(model_name)
     
     async def rerank(
         self,
-        model_id: int,
+        model_name: str,
         query: str,
         documents: list[str],
         top_k: int | None = None
@@ -48,7 +48,7 @@ class RerankerService:
         根据与查询的相关性对文档进行重排序
         
         Args:
-            model_id: 模型唯一标识符
+            model_name: 模型技术名称
             query: 搜索查询
             documents: 需要重排序的文档列表
             top_k: 返回的顶部文档数量（None 表示返回所有）
@@ -60,7 +60,7 @@ class RerankerService:
             return []
         
         try:
-            model = await self.get_reranker_model(model_id)
+            model = await self.get_reranker_model(model_name)
             return await model.rerank(query, documents, top_k)
                 
         except Exception as e:
@@ -76,11 +76,11 @@ class RerankerService:
         
         await self._model_pool.warmup()
 
-    async def load_model(self, model_id: int) -> bool:
-        """通过模型唯一标识符加载模型到内存中
+    async def load_model(self, model_name: str) -> bool:
+        """通过模型技术名称加载模型到内存中
         
         Args:
-            model_id: 模型唯一标识符
+            model_name: 模型技术名称
             
         Returns:
             bool: 加载是否成功
@@ -88,14 +88,14 @@ class RerankerService:
         if not self._initialized:
             await self.initialize()
         
-        return await self._model_pool.reload_model(model_id)
+        return await self._model_pool.reload_model(model_name)
 
         
-    async def unload_model(self, model_id: int) -> bool:
-        """通过模型唯一标识符卸载模型到内存中。
+    async def unload_model(self, model_name: str) -> bool:
+        """通过模型技术名称卸载模型到内存中。
         
         Args:
-            model_id: 模型唯一标识符
+            model_name: 模型技术名称
             
         Returns:
             bool: 卸载是否成功
@@ -103,4 +103,4 @@ class RerankerService:
         if not self._initialized:
             await self.initialize()
         
-        return await self._model_pool.unload_model(model_id)
+        return await self._model_pool.unload_model(model_name)

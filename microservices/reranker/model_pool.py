@@ -1,104 +1,115 @@
 from core.config.settings import get_reranker_config
 from core.dictionary import ModelCategory, RerankerProvider
 from loguru import logger
-from datetime import datetime
 from typing import Any
+
 from microservices.common.model_pool import BaseModelPool
 from .model import *
+from .model_factory import create_reranker_model
 
-
-class RerankerModelPool(BaseModelPool[BaseReranker]):
-    """Reranker 模型池"""
+class RerankerModelPool(BaseModelPool[BaseReranker[Any]]):
+    """
+    Reranker 模型池
+    优化点：
+    1. 统一配置映射逻辑
+    2. 移除子类中的重复 self._models 赋值（由父类 load_model 统一管理）
+    3. 增强类型提示，适配泛型基类
+    """
     
     def _get_model_category(self) -> int:
+        """返回 Reranker 类别枚举"""
         return ModelCategory.RERANKER.value
 
-    async def _shutdown_model_instance(self, model: BaseReranker):
+    async def _shutdown_model_instance(self, model: BaseReranker[Any]):
+        """关闭重排序模型实例"""
         await model.shutdown()
 
-    async def _perform_model_health_check(self, model_id: int, model: BaseReranker):
-        await model.rerank(query="test", documents=["test"], top_k=1)
-        logger.success(f"模型 {self._model_names.get(model_id, str(model_id))} 健康检查通过")
+    async def _perform_model_health_check(self, model_name: str, model: BaseReranker[Any]):
+        """
+        执行模型健康检查
+        通过一次极简的重排序任务验证模型存活性
+        """
+        await model.rerank(query="ping", documents=["pong"], top_k=1)
+        logger.debug(f"🔍 Reranker 模型 {model_name} 健康检查通过")
 
-    async def _start_model(self, model_id: int, model_data: dict[str, Any]) -> BaseReranker:
-        display_name = model_data.get("display_name")
-        model_name = model_data.get("model_name")
+    async def _start_model(self, model_name: str, model_data: dict[str, Any]) -> BaseReranker[Any]:
+        """
+        构造配置并启动 Reranker
+        """
         provider = model_data.get("provider")
-        model_params = model_data.get("model_params", {})
-        
-        if not all([model_name, provider]):
-            raise ValueError(f"模型 {display_name or model_id} 缺少必要参数")
+        if not provider:
+            raise ValueError(f"模型 {model_name} 缺少必要参数: provider")
 
-        config = get_reranker_config()
+        # 1. 获取基础全局配置
+        global_config = get_reranker_config()
         
-        if provider == RerankerProvider.LOCAL.value:
-            if "jina" in model_name.lower(): # type: ignore
-                model_config = JinaRerankerConfig(
-                    provider=provider,
-                    model_name=model_name, # type: ignore
-                    model_path=model_params.get("model_path", None),
-                    device=model_params.get("device", None),
-                    device_map=model_params.get("device_map", None),
-                    max_tokens=model_params.get("max_tokens", 512),
-                    batch_size=model_params.get("batch_size", 16),
-                    compile_model=model_params.get("compile_model", True),
-                    use_fp16=model_params.get("use_fp16", True),
-                    trust_remote_code=model_params.get("trust_remote_code", True),
-                    local_files_only=model_params.get("local_files_only", False),
-                    max_memory=model_params.get("max_memory", None),
-                    cache_dir=config.cache_dir
-                )
-            elif "qwen" in model_name.lower(): # type: ignore
-                model_config = Qwen3RerankerConfig(
-                    provider=provider,
-                    model_name=model_name, # type: ignore
-                    model_path=model_params.get("model_path", None),
-                    device=model_params.get("device", None),
-                    max_tokens=model_params.get("max_tokens", 8192),
-                    batch_size=1,
-                    use_fp16=model_params.get("use_fp16", True),
-                    use_flash_attention=model_params.get("use_flash_attention", True),
-                    instruction=model_params.get("instruction", None)
-                )
-            else:
-                model_config = LocalRerankerConfig(
-                    provider=provider,
-                    model_name=model_name, # type: ignore
-                    model_path=model_params.get("model_path", None),
-                    device=model_params.get("device", None),
-                    device_map=model_params.get("device_map", None),
-                    max_tokens=model_params.get("max_tokens", 8192),
-                    batch_size=model_params.get("batch_size", 16),
-                    compile_model=model_params.get("compile_model", True),
-                    use_fp16=model_params.get("use_fp16", False),
-                    trust_remote_code=model_params.get("trust_remote_code", True),
-                    local_files_only=model_params.get("local_files_only", False),
-                    max_memory=model_params.get("max_memory", None),
-                    cache_dir=config.cache_dir or "./cached_models"
-                )
-            
-        elif provider == RerankerProvider.COHERE.value:
-            api_endpoint = model_data.get("api_endpoint")
-            api_key = model_data.get("api_key")
+        # 2. 映射具体的 Config 对象
+        model_config = self._build_config(model_name, provider, model_data, global_config)
 
-            if not api_endpoint or not api_key:
-                raise ValueError(f"模型 {display_name or model_name} 缺少 API 端点或 API 密钥")
+        # 3. 通过工厂创建并启动
+        model = create_reranker_model(model_config)
+        try:
+            await model.startup()
+            # 注意：此处不再手动赋值 self._models[model_name]，交由基类处理以保证状态一致性
+            logger.success(f"🚀 Reranker 模型 {model_name} ({provider}) 已就绪")
+            return model
+        except Exception as e:
+            logger.error(f"❌ Reranker 模型 {model_name} 启动异常: {e}")
+            raise
+
+    def _build_config(self, name: str, provider: str, data: dict[str, Any], global_cfg: Any) -> RerankerConfig:
+        """
+        将数据库原始数据转换为强类型配置类
+        """
+        params = data.get("model_params", {})
+        path = data.get("model_path")
+        api_key = data.get("api_key")
+        api_endpoint = data.get("api_endpoint")
+
+        # 公共参数快捷映射
+        common_kwargs = {
+            "provider": provider,
+            "model_name": name,
+            "max_tokens": params.get("max_tokens", 8192),
+            "batch_size": params.get("batch_size", 16),
+        }
+
+        # 1. 本地模型处理 (Qwen/BGE)
+        if provider in [RerankerProvider.LOCAL_QWEN.value, RerankerProvider.LOCAL_BGE.value]:
+            if not path:
+                raise ValueError(f"本地模型 {name} 缺失 model_path")
             
-            model_config = CohereRerankerConfig(
-                provider=provider,
-                model_name=model_name, # type: ignore
-                max_tokens=model_params.get("max_tokens", 8192),
+            config_cls: Any = Qwen3RerankerConfig if provider == RerankerProvider.LOCAL_QWEN.value else BGERerankerConfig
+            return config_cls(
+                **common_kwargs,
+                model_path=path,
+                device=params.get("device"),
+                use_fp16=params.get("use_fp16", provider == RerankerProvider.LOCAL_QWEN.value),
+                score_threshold=params.get("score_threshold", 0.0),
+                # Qwen 可能需要的特定指令
+                instruction=params.get("instruction") if provider == RerankerProvider.LOCAL_QWEN.value else None
+            )
+
+        # 2. Cohere API 处理
+        if provider == RerankerProvider.COHERE.value:
+            if not api_key:
+                raise ValueError(f"Cohere 模型 {name} 缺失 api_key")
+            return CohereRerankerConfig(
+                **common_kwargs,
+                api_key=api_key,
+                batch_size=params.get("batch_size", 1000), # Cohere 支持极大 batch
+                timeout=params.get("timeout", global_cfg.timeout)
+            )
+
+        # 3. 通用 OpenAI 兼容接口处理
+        if provider in [RerankerProvider.API_QWEN.value, RerankerProvider.CHATGPT.value]:
+            if not api_key or not api_endpoint:
+                raise ValueError(f"API 模型 {name} 缺失 api_key 或 api_endpoint")
+            return OpenAIRerankerConfig(
+                **common_kwargs,
                 api_key=api_key,
                 api_endpoint=api_endpoint,
-                timeout=model_params.get("timeout", 10)
+                timeout=params.get("timeout", global_cfg.timeout)
             )
-        else:
-            raise ValueError(f"不支持的 reranker 模型: {provider}")
-        
-        model = create_reranker_model(model_config)
-        await model.startup()
-        self._models[model_id] = model
-        self._model_names[model_id] = display_name or model_name # type: ignore
-        self._last_used[model_id] = datetime.now()
-        logger.success(f"模型 {display_name or model_name} 加载成功")
-        return model
+
+        raise ValueError(f"未知的 Reranker Provider: {provider}")

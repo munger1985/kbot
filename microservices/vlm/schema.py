@@ -8,7 +8,7 @@ import time
 class VLMRequest(BaseModel):
     """VLM推理请求模型"""
 
-    model_id: int = Field(..., description="模型唯一标识符")
+    model_name: str = Field(..., description="模型名称")
     messages: list[dict[str, Any]] = Field(..., description="消息列表")
     max_tokens: int | None = Field(None, description="要生成的最大令牌数")
     temperature: float | None = Field(None, description="采样温度 (0.0-1.0，越低越确定)")
@@ -20,7 +20,7 @@ class VLMRequest(BaseModel):
 
 class ToggleModelRequest(BaseModel):
     """启用或禁用模型请求表单。"""
-    model_id: int = Field(..., description="模型唯一标识符")
+    model_name: str = Field(..., description="模型名称")
     operation: str = Field(..., description="操作类型，'load' 或 'unload'")
     
 # 定义响应模型

@@ -31,15 +31,15 @@ class VLMService:
             self._initialized = False
             logger.info("VLM 服务已关闭")
     
-    async def get_vlm_model(self, model_id: int) -> BaseVLM:
+    async def get_vlm_model(self, model_name: str) -> BaseVLM:
         """获取指定唯一名的VLM模型。"""
         if not self._initialized:
             await self.initialize()
 
-        return await self._model_pool.load_model(model_id)
+        return await self._model_pool.load_model(model_name)
     
     async def inference(self, 
-                        model_id: int, 
+                        model_name: str, 
                         messages: list[dict[str, Any]],
                         stream: bool = False,
                         timeout: int | None = None,
@@ -53,7 +53,7 @@ class VLMService:
         调用VLM模型进行推理
 
         参数:
-            model_id: 模型唯一标识符
+            model_name: 模型技术名称
             messages: 消息列表
             stream: 是否开启流式输出，如果是，则输出 AsyncGenerator
             timeout: 超时时间，单位：秒
@@ -70,7 +70,7 @@ class VLMService:
 
         try:
             # 从池中获取模型
-            model = await self.get_vlm_model(model_id)
+            model = await self.get_vlm_model(model_name)
             
             # 准备参数
             kwargs = {
@@ -85,11 +85,12 @@ class VLMService:
             
             # 从模型获取响应
             try:
-                logger.debug(f"向模型发送消息: {self._model_pool._model_names.get(model_id, str(model_id))}")
+                logger.debug(f"向模型发送消息: {model_name}")
                 response = await model.inference(messages, stream=stream, **kwargs)
                 logger.debug(f"收到响应类型: {type(response)}")
             except Exception as e:
                 logger.error(f"生成响应时出错: {e}")
+                raise RuntimeError(f"生成聊天响应失败: {e}")
 
             if stream:
                 # 流式响应处理
@@ -232,11 +233,11 @@ class VLMService:
         
         await self._model_pool.warmup()
 
-    async def load_model(self, model_id: int) -> bool:
-        """通过模型唯一标识符加载模型到内存中
+    async def load_model(self, model_name: str) -> bool:
+        """通过模型技术名称加载模型到内存中
         
         Args:
-            model_id: 模型唯一标识符
+            model_name: 模型技术名称
             
         Returns:
             bool: 加载是否成功
@@ -244,14 +245,14 @@ class VLMService:
         if not self._initialized:
             await self.initialize()
         
-        return await self._model_pool.reload_model(model_id)
+        return await self._model_pool.reload_model(model_name)
 
         
-    async def unload_model(self, model_id: int) -> bool:
-        """通过模型唯一标识符卸载模型到内存中。
+    async def unload_model(self, model_name: str) -> bool:
+        """通过模型技术名称卸载模型到内存中。
         
         Args:
-            model_id: 模型唯一标识符
+            model_name: 模型技术名称
             
         Returns:
             bool: 卸载是否成功
@@ -259,4 +260,4 @@ class VLMService:
         if not self._initialized:
             await self.initialize()
         
-        return await self._model_pool.unload_model(model_id)
+        return await self._model_pool.unload_model(model_name)

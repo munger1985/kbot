@@ -155,6 +155,8 @@ def get_vlm_service() -> VLMService:
     return vlm_service
 
 
+# --- API 端点实现 ---
+
 @app.get("/health", response_model=dict, tags=["System"])
 async def health_check() -> dict[str, Any]:
     """系统健康检查。"""
@@ -172,21 +174,21 @@ async def health_check() -> dict[str, Any]:
 @app.post("/load", response_model=dict, tags=["Management"])
 async def toggle_vlm_model(request: ToggleModelRequest) -> dict[str, str]:
     """动态加载或卸载 VLM 模型。"""
-    model_name = vlm_service._model_pool._model_names.get(request.model_id, str(request.model_id))
+    model_name = request.model_name
     try:
         if request.operation == "load":
-            logger.info(f"接收到指令：加载模型 {model_name}")
-            success = await vlm_service.load_model(request.model_id)
+            success = await vlm_service.load_model(model_name)
         else:
-            logger.info(f"接收到指令：卸载模型 {model_name}")
-            success = await vlm_service.unload_model(request.model_id)
+            success = await vlm_service.unload_model(model_name)
+            
         if not success:
-            raise HTTPException(status_code=500, detail=f"模型 {model_name} 操作失败")
+            raise HTTPException(status_code=500, detail=f"模型 {model_name} 操作未成功")
         return {"status": "success", "model_name": model_name}
     except Exception as e:
-        logger.exception(f"操作模型 {model_name} 时发生错误: {e}")
+        logger.exception(f"模型管理异常: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-      
+
+
 @app.post("/v1/inference", response_model=VLMResponse, tags=["Inference"])
 async def run_vlm_inference(
     request: VLMRequest,
@@ -204,151 +206,88 @@ async def run_vlm_inference(
         JSON 响应或 SSE 文本流。
     """
     start_time = time.time()
-    response_id = f"vlmcmpl-{uuid.uuid4()}"  # OpenAI格式的ID
-    created_time = int(time.time())
-    model_name = vlm_service._model_pool._model_names.get(request.model_id, str(request.model_id))
-    
-    logger.info(f"正在使用模型 {request.model_id} 生成 VLM 响应")
-    
+    resp_id = f"vlm-chat-{uuid.uuid4()}"
+    created_ts = int(time.time())
+
+    logger.info(f"收到推理请求 | 模型: {request.model_name} | 流模式: {request.stream}")
+
     try:
         if request.stream:
-            async def generate():
+            async def sse_generator() -> AsyncGenerator[str, None]:
+                usage_stats = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+                
                 try:
-                    # 获取流式响应
-                    chunk_stream = await vlm_service.inference(
-                        model_id=request.model_id,
-                        messages=request.messages,
-                        stream=True,
-                        max_tokens=request.max_tokens,
-                        temperature=request.temperature,
-                        timeout=request.timeout,
-                        top_p=request.top_p,
-                        frequency_penalty=request.frequency_penalty,
-                        presence_penalty=request.presence_penalty
+                    stream_raw = await service.inference(
+                        **request.model_dump(exclude={"stream"}), stream=True
                     )
                     
-                    # 初始化usage数据
-                    usage_data = {
-                        "prompt_tokens": 0,
-                        "completion_tokens": 0,
-                        "total_tokens": 0
-                    }
-                    
-                    async for content in chunk_stream: # type: ignore
-                        # 如果是usage数据，更新usage_data
-                        if content.startswith("\n\n=== USAGE ==="):
+                    async for content in stream_raw:  # type: ignore
+                        # 处理元数据与 Token 统计
+                        if isinstance(content, str) and content.startswith("\n\n=== USAGE ==="):
                             try:
-                                usage_data.update(json.loads(content.replace("\n\n=== USAGE ===\n", "")))
-                            except json.JSONDecodeError:
-                                logger.warning("解析使用数据失败")
+                                stats = json.loads(content.replace("\n\n=== USAGE ===\n", ""))
+                                usage_stats.update(stats)
+                            except (json.JSONDecodeError, ValueError):
+                                pass
                             continue
-                            
-                        # 标准OpenAI SSE格式
-                        chunk_data = {
-                            "id": response_id,
+
+                        # 构造标准的 OpenAI 风格 Chunk
+                        chunk = {
+                            "id": resp_id,
                             "object": "chat.completion.chunk",
-                            "created": created_time,
-                            "model": model_name,
-                            "choices": [{
-                                "delta": {"content": content},
-                                "index": 0,
-                                "finish_reason": None
-                            }]
+                            "created": created_ts,
+                            "model": request.model_name,
+                            "choices": [{"delta": {"content": content}, "index": 0, "finish_reason": None}]
                         }
-                        yield f"data: {json.dumps(chunk_data)}\n\n"
-                    
-                    # 发送结束标记
-                    end_chunk = {
-                        "id": response_id,
+                        yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
+
+                    # 流结束：发送带 Usage 的最后一个包
+                    final_chunk = {
+                        "id": resp_id,
                         "object": "chat.completion.chunk",
-                        "created": created_time,
-                        "model": model_name,
-                        "choices": [{
-                            "delta": {},
-                            "index": 0,
-                            "finish_reason": "stop"
-                        }],
-                        "usage": usage_data
+                        "created": created_ts,
+                        "model": request.model_name,
+                        "choices": [{"delta": {}, "index": 0, "finish_reason": "stop"}],
+                        "usage": usage_stats
                     }
-                    yield f"data: {json.dumps(end_chunk)}\n\n"
-                    yield "data: [DONE]\n\n"
-                    
-                except Exception as e:
-                    logger.error(f"流处理错误: {str(e)}")
-                    error_chunk = {
-                        "error": {
-                            "message": str(e),
-                            "type": e.__class__.__name__,
-                            "code": 500
-                        }
-                    }
-                    yield f"data: {json.dumps(error_chunk)}\n\n"
+                    yield f"data: {json.dumps(final_chunk, ensure_ascii=False)}\n\n"
                     yield "data: [DONE]\n\n"
 
-            return StreamingResponse(
-                generate(),
-                media_type="text/event-stream",
-                headers={
-                    "Cache-Control": "no-cache",
-                    "Connection": "keep-alive"
-                }
-            )
-            
-        else:
-            # 非流式响应
-            response = await vlm_service.inference(
-                model_id=request.model_id,
-                messages=request.messages,
-                stream=False,
-                max_tokens=request.max_tokens,
-                temperature=request.temperature,
-                timeout=request.timeout,
-                top_p=request.top_p,
-                frequency_penalty=request.frequency_penalty,
-                presence_penalty=request.presence_penalty
-            )
-            
-            processing_time = time.time() - start_time
-            logger.info(f"VLM 完成耗时 {processing_time:.2f} 秒")
-            
-            # 获取usage数据
-            usage_data = response.get("usage", { # type: ignore
-                "prompt_tokens": 0,
-                "completion_tokens": 0,
-                "total_tokens": 0
-            })
-            
-            return VLMResponse(
-                id=response_id,
-                object="chat.completion",
-                created=created_time,
-                model=model_name,
-                choices=[{
-                    "message": {
-                        "role": "assistant",
-                        "content": response["choices"][0]["message"]["content"] # type: ignore
-                    },
-                    "finish_reason": "stop",
-                    "index": 0
-                }],
-                usage={
-                    "prompt_tokens": usage_data.get("prompt_tokens", 0),
-                    "completion_tokens": usage_data.get("completion_tokens", 0),
-                    "total_tokens": usage_data.get("total_tokens", 0)
-                },
-                processing_time=processing_time
-            )
+                except Exception as stream_err:
+                    logger.error(f"流生成中断: {stream_err}")
+                    yield f"data: {json.dumps({'error': str(stream_err)})}\n\n"
+                    yield "data: [DONE]\n\n"
 
-    except ValidationError as e:
-        raise HTTPException(400, detail=str(e))
+            return StreamingResponse(sse_generator(), media_type="text/event-stream")
+
+        # --- 非流式逻辑 ---
+        raw_resp = await service.inference(**request.model_dump(exclude={"stream"}), stream=False)
+        duration = time.time() - start_time
+        
+        usage = raw_resp.get("usage", {}) # type: ignore
+        content = raw_resp["choices"][0]["message"]["content"] # type: ignore
+
+        return VLMResponse(
+            id=resp_id,
+            object="chat.completion",
+            created=created_ts,
+            model=request.model_name,
+            choices=[{
+                "message": {"role": "assistant", "content": content},
+                "finish_reason": "stop",
+                "index": 0
+            }],
+            usage=usage,
+            processing_time=duration
+        )
+
+    except ValidationError as ve:
+        raise HTTPException(status_code=400, detail=ve.errors())
     except TimeoutError:
-        raise HTTPException(408, detail="请求超时")
+        raise HTTPException(status_code=408, detail="Model inference timeout")
     except Exception as e:
-        logger.exception("VLM 完成失败")
-        raise HTTPException(500, detail={
-            "error": str(e),
-            "type": e.__class__.__name__
-        })
+        logger.exception("推理执行失败")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # --- 进程管理与信号监控 ---

@@ -5,6 +5,7 @@ from loguru import logger
 from typing import Any
 from microservices.embedding.model.base import EmbeddingDataItem
 from dao.repositories.kbot_md_prompt_repo import KbotMdPromptRepository
+from dao.repositories.kbot_md_models_repo import KbotMdModelsRepository
 from .encoder import ImageEncoder
 from core.config.settings import get_embed_config, get_llm_config, get_reranker_config, get_vlm_config, get_prompt_config
 from core.exceptions import *
@@ -19,6 +20,14 @@ class CallModel():
         self.vlm_config = get_vlm_config()  # 获取 VLMPrompt 模型配置
         self.prompt_config = get_prompt_config()  # 获取 Prompt 配置
         self.prompt_repo = KbotMdPromptRepository()  # 获取提示信息仓库
+        self.model_repo = KbotMdModelsRepository()  # 获取模型仓库
+
+    async def _get_model_name(self, model_id: int) -> str:
+        """根据模型ID获取模型名称"""
+        model_name = await self.model_repo.get_name_by_id(model_id)
+        if not model_name:
+            raise ValueError(f"模型ID {model_id} 不存在 model_name")
+        return model_name
 
     async def call_embedding_model(self,
                                 model_id: int,
@@ -40,7 +49,7 @@ class CallModel():
         Returns:
             嵌入数据项列表
         """
-
+        model_name = await self._get_model_name(model_id)
         service_host = self.embedding_config.service_host
         service_port = self.embedding_config.service_port
         total = self.embedding_config.health_check_timeout if use_health_check_timeout else self.embedding_config.timeout
@@ -48,7 +57,7 @@ class CallModel():
         url = f"http://{service_host}:{service_port}/v1/embeddings"
         headers = {"Content-Type": "application/json"}
         payload = {
-            "model_id": model_id,
+            "model_name": model_name,
             "texts": texts,
             "batch_size": batch_size,
             "is_query": is_query
@@ -122,6 +131,7 @@ class CallModel():
         Returns:
             相似度分数
         """
+        model_name = await self._get_model_name(model_id)
         service_host = self.embedding_config.service_host
         service_port = self.embedding_config.service_port
         total = self.embedding_config.timeout
@@ -129,7 +139,7 @@ class CallModel():
         url = f"http://{service_host}:{service_port}/v1/similarity"
         headers = {"Content-Type": "application/json"}
         payload = {
-            "model_id": model_id,
+            "model_name": model_name,
             "text1": text1,
             "text2": text2,
             "method": method
@@ -174,7 +184,7 @@ class CallModel():
         Returns:
             重排序结果列表
         """
-
+        model_name = await self._get_model_name(model_id)
         service_host = self.reranker_config.service_host
         service_port = self.reranker_config.service_port
         total = self.reranker_config.health_check_timeout if use_health_check_timeout else self.reranker_config.timeout
@@ -182,7 +192,7 @@ class CallModel():
         url = f"http://{service_host}:{service_port}/v1/rerank"
         headers = {"Content-Type": "application/json"}
         payload = {
-            "model_id": model_id,
+            "model_name": model_name,
             "query": query,
             "documents": documents,
             "top_k": int(top_k) if top_k else 99999  # 设置一个很大的值，防止rerank返回的文档数小于top_k
@@ -226,7 +236,7 @@ class CallModel():
         Returns:
             异步生成器，逐块产生LLM的响应
         """
-
+        model_name = await self._get_model_name(model_id)
         service_host = self.llm_config.service_host
         service_port = self.llm_config.service_port
         use_health_check_timeout = kwargs.pop("use_health_check_timeout", False)
@@ -237,7 +247,7 @@ class CallModel():
 
         # 构建请求体
         payload = {
-            "model_id": model_id,
+            "model_name": model_name,
             "messages": prompt,
             "stream": kwargs.get("stream", True)  # 默认为流式
         }
@@ -298,6 +308,7 @@ class CallModel():
             Returns:
                 str: 模型生成的输出文本。
             """
+            model_name = await self._get_model_name(model_id)
             service_host = self.vlm_config.service_host
             service_port = self.vlm_config.service_port
             
@@ -337,7 +348,7 @@ class CallModel():
 
             # 4. 构建请求体
             payload = {
-                "model_id": model_id,
+                "model_name": model_name,
                 "messages": messages,
                 "stream": False,
                 **kwargs

@@ -26,27 +26,27 @@ class EmbeddingService:
             self._initialized = False
             logger.info("嵌入服务已关闭")
     
-    async def get_embedding_model(self, model_id: int) -> BaseEmbedding:
+    async def get_embedding_model(self, model_name: str) -> BaseEmbedding:
         """获取指定唯一名称的嵌入模型实例。"""
         if not self._initialized:
             await self.initialize()
 
-        return await self._model_pool.load_model(model_id)
+        return await self._model_pool.load_model(model_name)
 
     
     async def embed_texts(
         self, 
-        model_id: int, 
+        model_name: str, 
         texts: list[str], 
-        batch_size: int = 0,
+        batch_size: int | None = None,
         is_query: bool = True
     ) -> EmbeddingResponse:
         """使用指定模型对文本列表进行嵌入处理。
         
         Args:
-            model_id: 嵌入模型唯一名称
+            model_name: 嵌入模型唯一名称
             texts: 待嵌入的文本列表
-            batch_size: 批处理大小，为0时由模型自动决定
+            batch_size: 批处理大小，为 None 时由模型自动决定
             is_query: 是否为查询文本，默认为True
             
         Returns:
@@ -58,32 +58,32 @@ class EmbeddingService:
         if not texts:
             return EmbeddingResponse(
                 data=[],
-                model=self._model_pool._model_names.get(model_id, str(model_id)),
+                model=model_name,
                 object="list",
                 usage={"prompt_tokens": 0, "total_tokens": 0}
             )
         
         try:
-            model = await self.get_embedding_model(model_id)
+            model = await self.get_embedding_model(model_name)
             response = await model.embed(texts=texts, batch_size=batch_size, is_query=is_query)
             
             # 验证返回的响应数据有效性
             if not response.data or len(response.data) == 0:
                 return EmbeddingResponse(
                     data=[],
-                    model=self._model_pool._model_names.get(model_id, str(model_id)),
+                    model=model_name,
                     object="list",
                     usage={"prompt_tokens": 0, "total_tokens": 0}
                 )
             return response
                 
         except Exception as e:
-            logger.exception(f"文本嵌入处理失败，模型: {self._model_pool._model_names.get(model_id, str(model_id))}, 错误: {e}")
+            logger.exception(f"文本嵌入处理失败，模型: {model_name}, 错误: {e}")
             # 处理底层模型返回的0维张量错误
             if "0-d tensor" in str(e):
                 return EmbeddingResponse(
                     data=[],
-                    model=self._model_pool._model_names.get(model_id, str(model_id)),
+                    model=model_name,
                     object="list",
                     usage={"prompt_tokens": 0, "total_tokens": 0}
                 )
@@ -91,7 +91,7 @@ class EmbeddingService:
     
     async def compute_similarity(
         self,
-        model_id: int,
+        model_name: str,
         text1: str, 
         text2: str, 
         method: str = "cosine"
@@ -99,7 +99,7 @@ class EmbeddingService:
         """计算两个嵌入向量之间的相似度分数。
         
         Args:
-            model_id: 嵌入模型唯一名称
+            model_name: 嵌入模型唯一名称
             text1: 第一个文本
             text2: 第二个文本
             method: 相似度计算方法，支持"cosine"(余弦相似度)和"dot"(点积)
@@ -112,7 +112,7 @@ class EmbeddingService:
         """
         # 获取两个文本的嵌入向量
         embed_texts = [text1, text2]
-        response = await self.embed_texts(model_id, embed_texts, batch_size=2)
+        response = await self.embed_texts(model_name, embed_texts, batch_size=2)
         
         # 检查响应数据是否为空
         if not response.data or len(response.data) < 2:
@@ -155,11 +155,11 @@ class EmbeddingService:
         
         await self._model_pool.warmup()
 
-    async def load_model(self, model_id: int) -> bool:
+    async def load_model(self, model_name: str) -> bool:
         """通过模型唯一标识符加载模型到内存中
         
         Args:
-            model_id: 模型唯一标识符
+            model_name: 模型唯一标识符
             
         Returns:
             bool: 加载是否成功
@@ -167,14 +167,14 @@ class EmbeddingService:
         if not self._initialized:
             await self.initialize()
         
-        return await self._model_pool.reload_model(model_id)
+        return await self._model_pool.reload_model(model_name)
 
         
-    async def unload_model(self, model_id: int) -> bool:
+    async def unload_model(self, model_name: str) -> bool:
         """通过模型唯一标识符卸载模型到内存中。
         
         Args:
-            model_id: 模型唯一标识符
+            model_name: 模型唯一标识符
             
         Returns:
             bool: 卸载是否成功
@@ -182,4 +182,4 @@ class EmbeddingService:
         if not self._initialized:
             await self.initialize()
         
-        return await self._model_pool.unload_model(model_id)
+        return await self._model_pool.unload_model(model_name)

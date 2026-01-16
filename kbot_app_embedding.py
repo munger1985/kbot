@@ -170,16 +170,16 @@ async def handle_toggle_model(request: ToggleModelRequest) -> dict[str, Any]:
     """
     try:
         if request.operation == "load":
-            logger.info(f"执行模型加载任务: {request.model_id}")
-            success = await embedding_service.load_model(request.model_id)
+            logger.info(f"执行模型加载任务: {request.model_name}")
+            success = await embedding_service.load_model(request.model_name)
         else:
-            logger.info(f"执行模型卸载任务: {request.model_id}")
-            success = await embedding_service.unload_model(request.model_id)
+            logger.info(f"执行模型卸载任务: {request.model_name}")
+            success = await embedding_service.unload_model(request.model_name)
 
         if not success:
-            raise ValueError(f"模型 {request.model_id} 执行 {request.operation} 失败")
+            raise ValueError(f"模型 {request.model_name} 执行 {request.operation} 失败")
 
-        return {"status": "success", "model_id": request.model_id, "operation": request.operation}
+        return {"status": "success", "model_name": request.model_name, "operation": request.operation}
 
     except Exception as e:
         logger.error(f"模型管理操作异常: {e}")
@@ -204,11 +204,11 @@ async def handle_embed_texts(
         HTTPException: 处理过程中发生任何逻辑错误时抛出 500 错误。
     """
     try:
-        logger.info(f"处理嵌入请求 | 模型: {request.model_id} | 文本量: {len(request.texts)}")
+        logger.info(f"处理嵌入请求 | 模型: {request.model_name} | 文本量: {len(request.texts)}")
         return await embed_service.embed_texts(
-            model_id=request.model_id,
+            model_name=request.model_name,
             texts=request.texts,
-            batch_size=request.batch_size or 2,
+            batch_size=request.batch_size,
             is_query=request.is_query
         )
     except Exception as e:
@@ -234,9 +234,9 @@ async def handle_compute_similarity(
         HTTPException: 计算过程中发生异常时抛出 500 错误。
     """
     try:
-        logger.info(f"处理相似度请求 | 模型: {request.model_id} | 方法: {request.method}")
+        logger.info(f"处理相似度请求 | 模型: {request.model_name} | 方法: {request.method}")
         score = await embed_service.compute_similarity(
-            model_id=request.model_id,
+            model_name=request.model_name,
             text1=request.text1,
             text2=request.text2,
             method=request.method

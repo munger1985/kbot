@@ -1,165 +1,153 @@
 import oci
 import json
+import asyncio
+from typing import Any
+from pydantic import Field
 from loguru import logger
-from .base import LLMConfig, BaseLLM
 
+from .base import LLMConfig, BaseLLM
 
 class OCILLMConfig(LLMConfig):
     """OCI LLM客户端配置"""
-    temperature: float = 1.0
-    max_tokens: int = 600
-    top_p: float | None = None
-    top_k: int | None = None
-    frequency_penalty: float = 0
-    presence_penalty: float = 0
-    api_endpoint: str
-    compartment_id: str
-    config_file: dict
+    temperature: float | None = Field(None, ge=0, le=2, description="温度参数，控制输出随机性")
+    top_p: float | None = Field(None, ge=0, le=1, description="Top-p 采样参数")
+    top_k: int | None = Field(None, ge=0, description="Top-k 采样参数")
+    frequency_penalty: float | None = Field(None, ge=-2, le=2, description="频率惩罚参数")
+    presence_penalty: float | None = Field(None, ge=-2, le=2, description="存在惩罚参数")
+    api_endpoint: str = Field(..., description="OCI Generative AI Endpoint")
+    compartment_id: str = Field(..., description="OCI Compartment OCID")
+    config_file: dict | str = Field(..., description="OCI Auth Config (dict or JSON string)")
 
-
-class OCIClient(BaseLLM):
-    """OCI LLM客户端实现"""
+class OCIClient(BaseLLM[OCILLMConfig]):
+    """
+    针对 OCI Generative AI 优化的 LLM 实现
+    支持 Cohere, Llama 3, Grok 等多种模型格式适配
+    """
     
     def __init__(self, config: OCILLMConfig):
-        """初始化OCI LLM客户端
-        
-        Args:
-            config: OCI LLM配置对象
-        """
         super().__init__(config)
-        self.client = None
-        self._is_running = False
-    
+        self.client: oci.generative_ai_inference.GenerativeAiInferenceClient | None = None
+        self._is_initialized = False
+        self.config = config
+
     async def startup(self) -> None:
-        """初始化OCI客户端"""
+        """异步初始化 OCI 客户端"""
+        if self._is_initialized:
+            return
+
         try:
-            # 如果需要，将config_file从JSON字符串解析为字典
-            if isinstance(self.config.config_file, str):  # type: ignore
-                oci_config = json.loads(self.config.config_file)  # type: ignore
-            else:
-                oci_config = self.config.config_file  # type: ignore
+            # 1. 自动解析配置
+            oci_config = self.config.config_file
+            if isinstance(oci_config, str):
+                oci_config = json.loads(oci_config)
             
+            # 2. 初始化推理客户端
+            # 注意：OCI SDK 是同步的，连接过程通常很快，但在高并发场景下需注意
             self.client = oci.generative_ai_inference.GenerativeAiInferenceClient(
                 config=oci_config,
-                service_endpoint=self.config.api_endpoint,  # type: ignore
-                retry_strategy=oci.retry.NoneRetryStrategy(),
-                timeout=(10, 240))
-            self._is_running = True
-            logger.info("OCI客户端初始化成功")
+                service_endpoint=self.config.api_endpoint,
+                retry_strategy=oci.retry.DEFAULT_RETRY_STRATEGY, # 使用默认重试策略
+                timeout=(10, 240)
+            )
+            self._is_initialized = True
+            logger.info(f"✅ OCI LLM 客户端初始化成功 (Model: {self.config.model_name})")
         except Exception as e:
-            logger.error(f"初始化OCI客户端时出错: {str(e)}")
-            raise RuntimeError(f"初始化OCI客户端时出错: {str(e)}")
-        
-    async def shutdown(self) -> None:
-        """关闭OCI客户端"""
-        if self.client:
-            self.client = None
-        self._is_running = False
-        logger.info("OCI客户端已关闭")
+            logger.error(f"❌ OCI 初始化失败: {e}")
+            raise
 
-    
+    def _convert_to_oci_messages(self, messages: list[dict[str, str]] | str) -> list[Any]:
+        """将标准消息格式转换为 OCI Message 对象"""
+        if isinstance(messages, str):
+            messages = [{"role": "USER", "content": messages}]
+        
+        oci_msgs = []
+        for msg in messages:
+            content = oci.generative_ai_inference.models.TextContent()
+            content.text = msg.get("content", "")
+            
+            oci_msg = oci.generative_ai_inference.models.Message()
+            # OCI 角色通常为 USER 或 ASSISTANT (大写)
+            oci_msg.role = msg.get("role", "USER").upper()
+            oci_msg.content = [content]
+            oci_msgs.append(oci_msg)
+        return oci_msgs
+
+    def _build_chat_request(self, messages: list[dict[str, str]] | str, **kwargs) -> Any:
+        """根据模型类型构建特定的请求对象"""
+        model_name = self.config.model_name.lower()
+        
+        # 基础参数提取
+        params = {
+            "max_tokens": kwargs.get('max_tokens', self.config.max_tokens),
+            "temperature": kwargs.get('temperature', self.config.temperature),
+            "top_p": kwargs.get('top_p', self.config.top_p),
+            "top_k": kwargs.get('top_k', self.config.top_k),
+        }
+
+        # 1. Cohere 模型适配
+        if "cohere" in model_name:
+            request = oci.generative_ai_inference.models.CohereChatRequest()
+            # Cohere 在 OCI 上通常接受单一 message 字符串
+            request.message = messages[-1]['content'] if isinstance(messages, list) else messages
+            request.frequency_penalty = kwargs.get('frequency_penalty', self.config.frequency_penalty)
+            params["max_tokens"] = min(params["max_tokens"], 4000)
+            
+        # 2. Llama / Grok / Generic 模型适配
+        else:
+            request = oci.generative_ai_inference.models.GenericChatRequest()
+            request.api_format = oci.generative_ai_inference.models.GenericChatRequest.API_FORMAT_GENERIC
+            request.messages = self._convert_to_oci_messages(messages)
+            
+            if "llama" in model_name:
+                params["max_tokens"] = min(params["max_tokens"], 4096) # Llama 3 限制较宽
+            elif "grok" in model_name:
+                params["max_tokens"] = min(params["max_tokens"], 20000)
+
+        # 注入通用参数
+        for key, value in params.items():
+            if value is not None and hasattr(request, key):
+                setattr(request, key, value)
+        
+        return request
+
     async def chat(
         self,
         messages: list[dict[str, str]] | str,
         stream: bool = False,
         **kwargs
-    ):
-        """生成聊天响应（保持一致的返回类型）
-        
-        Args:
-            messages: 消息列表或单个提示字符串
-            stream: 是否使用流式输出
-            **kwargs: 额外的生成参数
-        
-        Returns:
-            聊天响应对象
-        
-        Notes:
-            此方法需要OCI聊天服务支持
-        
-        Raises:
-            ValueError: 未提供消息或提供商不支持
-            Exception: 生成响应时出错
-        """
-        
-        if not self._is_running:
+    ) -> Any:
+        """异步生成聊天响应"""
+        if not self._is_initialized:
             await self.startup()
-        
-        converted_messages = ""
-        # 如果需要，将字符串转换为消息列表
-        if isinstance(messages, list):
-            converted_messages = messages[0]['content'] if len(messages) > 0 else ''
-        
-        if isinstance(messages, str):
-            converted_messages = messages
-        
-        if converted_messages == '':
-            raise ValueError("未提供消息用于生成响应")
-        
-        # OCI max_tokens的最大限制为4000
-        max_tokens = kwargs.get('max_tokens', self.config.max_tokens)  # type: ignore
 
-        if "cohere" in self.config.model_name.lower():
-            chat_request = oci.generative_ai_inference.models.CohereChatRequest()
-            chat_request.message = converted_messages
-            chat_request.frequency_penalty = kwargs.get('frequency_penalty', self.config.frequency_penalty)  # type: ignore
-            chat_request.top_p = kwargs.get('top_p', self.config.top_p)  # type: ignore
-            chat_request.top_k = kwargs.get('top_k', self.config.top_k)  # type: ignore
+        if self.client is None:
+            raise ValueError("OCI 客户端未初始化")
 
-            if max_tokens and max_tokens > 4000:
-                max_tokens = 4000
-                logger.warning("OCI cohere模型max_tokens超过限制，已设置为4000")
-
-        elif "grok" in self.config.model_name.lower():
-            chat_request = oci.generative_ai_inference.models.GenericChatRequest()
-            chat_request.api_format = oci.generative_ai_inference.models.BaseChatRequest.API_FORMAT_GENERIC
-            content = oci.generative_ai_inference.models.TextContent()
-            content.text = converted_messages
-            message = oci.generative_ai_inference.models.Message()
-            message.role = "USER"
-            message.content = [content]
-            chat_request.messages = [message]
-            
-            chat_request.top_p = kwargs.get('top_p', self.config.top_p)  # type: ignore
-            chat_request.top_k = kwargs.get('top_k', self.config.top_k)  # type: ignore
-            if max_tokens and max_tokens > 20000:
-                max_tokens = 20000
-                logger.warning("OCI grok模型max_tokens超过限制，已设置为20000")
-
-        elif "llama" in self.config.model_name.lower():
-            chat_request = oci.generative_ai_inference.models.GenericChatRequest()
-            chat_request.api_format = oci.generative_ai_inference.models.BaseChatRequest.API_FORMAT_GENERIC
-            content = oci.generative_ai_inference.models.TextContent()
-            content.text = converted_messages
-            message = oci.generative_ai_inference.models.Message()
-            message.role = "USER"
-            message.content = [content]
-            chat_request.messages = [message]
-            
-            chat_request.frequency_penalty = kwargs.get('frequency_penalty', self.config.frequency_penalty)  # type: ignore
-            chat_request.presence_penalty = kwargs.get('presence_penalty', self.config.presence_penalty)  # type: ignore
-            chat_request.top_p = kwargs.get('top_p', self.config.top_p)  # type: ignore
-            if max_tokens and max_tokens > 600:
-                max_tokens = 600
-                logger.warning("OCI llama模型max_tokens超过限制，已设置为600")
-        else:
-            raise ValueError(f"不支持的OCI提供商: {self.provider}")
-
-        chat_request.max_tokens = max_tokens
-        chat_request.temperature = kwargs.get('temperature', self.config.temperature)  # type: ignore
+        # 1. 构建请求细节
+        chat_request = self._build_chat_request(messages, **kwargs)
         chat_request.is_stream = stream
 
         chat_detail = oci.generative_ai_inference.models.ChatDetails()
-        chat_detail.serving_mode = oci.generative_ai_inference.models.OnDemandServingMode(model_id=self.config.model_name)
+        chat_detail.serving_mode = oci.generative_ai_inference.models.OnDemandServingMode(
+            model_id=self.config.model_name
+        )
         chat_detail.chat_request = chat_request
-        chat_detail.compartment_id = self.config.compartment_id  # type: ignore
+        chat_detail.compartment_id = self.config.compartment_id
 
         try:
-            response = self.client.chat(chat_detail)  # type: ignore
-            
+            # 2. 异步执行同步 SDK 调用
+            # OCI SDK 本身不支持 await，使用 run_in_executor 防止阻塞事件循环
+            loop = asyncio.get_event_loop()
+            response = await loop.run_in_executor(
+                None, 
+                lambda: self.client.chat(chat_detail) # type: ignore
+            )
             return response
-
         except Exception as e:
-            self.ERROR_COUNTER.labels(provider="OCI").inc()
-            logger.error(f"使用OCI生成聊天响应时出错: {str(e)}")
-            raise Exception(f"使用OCI生成聊天响应时出错: {str(e)}")
+            logger.error(f"❌ OCI 生成响应失败: {e}")
+            raise
+
+    async def shutdown(self) -> None:
+        self.client = None
+        self._is_initialized = False
+        logger.info("♻️ OCI LLM 客户端已关闭")

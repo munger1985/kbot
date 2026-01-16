@@ -1,6 +1,6 @@
 from typing import Sequence
 from sqlalchemy import select, and_
-from dao.entities.kbot_md_models import KbotMdModels
+from .model_entity import KbotMdModels
 from core.dictionary import Status
 from core.database.meta_oracle import get_session
 
@@ -25,10 +25,10 @@ class KbotMdModelsRepository:
             result = await session.execute(query)
             return result.scalars().all()
         
-    async def get_by_id(self, model_id: int) -> KbotMdModels | None:
+    async def get_by_name(self, model_name: str) -> KbotMdModels | None:
         """Get knowledge base model by ID."""
         async with get_session() as session:
             result = await session.execute(
-                select(KbotMdModels).where(KbotMdModels.model_id == model_id)
+                select(KbotMdModels).where(KbotMdModels.model_name == model_name)
             )
             return result.scalar_one_or_none()

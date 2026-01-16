@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from pydantic import BaseModel, Field
+from typing import TypeVar, Generic
 
 
 class EmbeddingConfig(BaseModel):
@@ -9,6 +10,7 @@ class EmbeddingConfig(BaseModel):
     max_tokens: int = Field(..., description="最大令牌数")
     batch_size: int = Field(..., description="批处理大小")
 
+T = TypeVar("T", bound=EmbeddingConfig)
 
 class EmbeddingDataItem(BaseModel):
     """嵌入数据项"""
@@ -25,11 +27,21 @@ class EmbeddingResponse(BaseModel):
     usage: dict[str, int] = Field(..., description="令牌使用信息")
 
 
-class BaseEmbedding(ABC):
+class BaseEmbedding(ABC, Generic[T]):
     """
     嵌入模型抽象基类
     定义所有嵌入模型实现的标准接口
     """
+    def __init__(self, config: T) -> None:
+        """使用配置初始化嵌入模型
+        
+        Args:
+            config: 嵌入模型配置对象
+        """
+        self.config: T = config
+        self.model_name = config.model_name
+        self.max_tokens = config.max_tokens
+        self.batch_size = config.batch_size
 
     @abstractmethod
     async def startup(self) -> None:
@@ -51,6 +63,47 @@ class BaseEmbedding(ABC):
         """
         pass
     
+    def _build_standard_response(
+        self, 
+        embeddings: list[list[float]], 
+        model_name: str, 
+        tokens: int = 0
+    ) -> EmbeddingResponse:
+        """
+        统一构建符合 OpenAI 标准的响应对象
+        
+        Args:
+            embeddings: 嵌套的向量列表
+            model_name: 使用的模型标识
+            tokens: 消耗的 token 总数
+        """
+        data = [
+            EmbeddingDataItem(
+                embedding=emb,
+                index=i,
+                object="embedding"
+            ) for i, emb in enumerate(embeddings)
+        ]
+        
+        return EmbeddingResponse(
+            data=data,
+            model=model_name,
+            object="list",
+            usage={
+                "prompt_tokens": tokens,
+                "total_tokens": tokens
+            }
+        )
+
+    def _build_empty_response(self, model_name: str) -> EmbeddingResponse:
+        """统一构建空响应"""
+        return EmbeddingResponse(
+            data=[],
+            model=model_name,
+            object="list",
+            usage={"prompt_tokens": 0, "total_tokens": 0}
+        )
+
     @abstractmethod
     async def embed(self, texts: list[str], batch_size: int | None = None, is_query: bool = True) -> EmbeddingResponse:
         """

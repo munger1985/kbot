@@ -141,30 +141,31 @@ class FileCategory(IntEnum):
 
 class EmbeddingProvider(str, Enum):
     """支持的嵌入服务提供商枚举"""
-    LOCAL = "local"
-    OPENAI = "openai"
-    AZURE = "azure"
+    LOCAL_BGE = "local_bge"
+    LOCAL_QWEN = "local_qwen3"
+    API_QWEN = "api_qwen"
+    CHATGPT = "chatgpt"
     COHERE = "cohere"
-    OCI = "oci"
 
 class LLMProvider(str, Enum):
     """支持的LLM提供商枚举"""
-    OPENAI = "openai"
+    API_DEEPSEEK = "api_deepseek"
+    API_QWEN = "api_qwen"
+    CHATGPT = "chatgpt"
     OCI = "oci"
-    # 随着实现逐步添加更多提供商
-    # AZURE = "azure"
-    # HUGGINGFACE = "huggingface"
-    # LOCAL = "local"
 
 class RerankerProvider(str, Enum):
     """支持的 reranker 模型枚举"""
-    LOCAL = "local"
+    LOCAL_BGE = "local_bge"
+    LOCAL_QWEN = "local_qwen3"
+    API_QWEN = "api_qwen"
+    CHATGPT = "chatgpt"
     COHERE = "cohere"
 
 class VLMProvider(str, Enum):
     """支持的 VLM 提供商枚举"""
-    OPENAI = "openai"     # 目前仅支持 OpenAI 兼容的云提供商
-    # 随着实现添加更多提供商
+    API_QWEN = "api_qwen"
+    CHATGPT = "chatgpt"
 
 # 服务类型枚举
 class ServiceType(str, Enum):

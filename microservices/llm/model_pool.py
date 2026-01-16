@@ -1,94 +1,123 @@
 from core.config.settings import get_llm_config
 from core.dictionary import ModelCategory, LLMProvider
 from loguru import logger
-from datetime import datetime
 from typing import Any
 from microservices.common.model_pool import BaseModelPool
 from .model import *
+from .model_factory import create_llm_model
 
 
-class LLMModelPool(BaseModelPool[BaseLLM]):
-    """LLM 模型池"""
-    
-    def __init__(self, health_check_interval: int = 600):
-        super().__init__(health_check_interval)
-        self._providers: dict[int, str] = {}
-        self._max_tokens: dict[int, int] = {}
+class LLMModelPool(BaseModelPool[BaseLLM[Any]]):
+    """
+    LLM 模型池
+    负责大语言模型（OpenAI 兼容接口、OCI 等）的实例管理
+    """
 
     def _get_model_category(self) -> int:
+        """返回 LLM 类别枚举"""
         return ModelCategory.LLM.value
 
-    async def _shutdown_model_instance(self, model: BaseLLM):
+    async def _shutdown_model_instance(self, model: BaseLLM[Any]):
+        """执行 LLM 资源释放（如关闭 HTTP 客户端 Session）"""
         await model.shutdown()
 
-    async def _perform_model_health_check(self, model_id: int, model: BaseLLM):
-        await model.chat("hello", False, **{"max_tokens": 16})
-        logger.debug(f"模型 {self._model_names.get(model_id, str(model_id))} 健康检查成功")
+    async def _perform_model_health_check(self, model_name: str, model: BaseLLM[Any]):
+        """
+        通过一次极简对话检查 API 连通性
+        使用 stream=False 和极小的 max_tokens 以节省 Token 并降低延迟
+        """
+        # 探测调用
+        await model.chat(
+            messages=[{"role": "user", "content": "hi"}],
+            stream=False,
+            max_tokens=2
+        )
+        logger.debug(f"🔍 LLM 模型 {model_name} 响应正常")
 
-    async def _start_model(self, model_id: int, model_data: dict[str, Any]) -> BaseLLM:
-        display_name = model_data.get("display_name")
-        model_name = model_data.get("model_name")
+    async def _start_model(self, model_name: str, model_data: dict[str, Any]) -> BaseLLM[Any]:
+        """
+        创建并启动 LLM 实例
+        """
         provider = model_data.get("provider")
-        model_params = model_data.get("model_params", {})
-        
-        if not all([model_name, provider]):
-            raise ValueError(f"模型 {display_name or model_id} 缺少必要参数")
+        if not provider:
+            raise ValueError(f"模型 {model_name} 缺少必要参数: provider")
 
-        config = get_llm_config()
+        # 1. 获取全局默认配置
+        global_config = get_llm_config()
         
-        if provider == LLMProvider.OPENAI.value:
-            api_endpoint = model_data.get("api_endpoint")
-            api_key = model_data.get("api_key")
+        # 2. 构造特定 Provider 的 Config 对象
+        model_config = self._build_config(model_name, provider, model_data, global_config)
 
-            if api_key is None or api_endpoint is None:
-                raise ValueError(f"模型 {display_name or model_name} 缺少api_key或api_endpoint")
+        # 3. 通过工厂创建实例
+        model = create_llm_model(model_config)
+        
+        try:
+            await model.startup()
+            # 状态记录由父类 load_model 统一处理，此处不再手动操作 self._models
+            logger.success(f"🚀 LLM 模型 {model_name} ({provider}) 已接入模型池")
+            return model
+        except Exception as e:
+            logger.error(f"❌ LLM 模型 {model_name} 启动失败: {e}")
+            raise
+
+    def _build_config(self, name: str, provider: str, data: dict[str, Any], global_cfg: Any) -> LLMConfig:
+        """
+        将数据库配置映射为强类型 Config 对象
+        """
+        params = data.get("model_params", {})
+        api_key = data.get("api_key")
+        api_endpoint = data.get("api_endpoint")
+
+        # 公共参数快捷提取
+        common_kwargs = {
+            "model_name": name,
+            "provider": provider,
+            "temperature": params.get("temperature", global_cfg.temperature),
+            "max_tokens": params.get("max_tokens", global_cfg.max_tokens),
+            "top_p": params.get("top_p", global_cfg.top_p),
+            "frequency_penalty": params.get("frequency_penalty", global_cfg.frequency_penalty),
+            "presence_penalty": params.get("presence_penalty", global_cfg.presence_penalty),
+        }
+
+        # 1. OpenAI 兼容接口 (DeepSeek, Qwen API, GPT)
+        openai_providers = [
+            LLMProvider.API_DEEPSEEK.value, 
+            LLMProvider.API_QWEN.value, 
+            LLMProvider.CHATGPT.value
+        ]
+        if provider in openai_providers:
+            if not api_key or not api_endpoint:
+                raise ValueError(f"API 模型 {name} 缺失 api_key 或 api_endpoint")
             
-            model_config = OpenaiLLMConfig(
-                provider=provider,
+            return OpenaiLLMConfig(
+                **common_kwargs,
                 api_key=api_key,
                 api_endpoint=api_endpoint,
-                model_name=model_name, # type: ignore
-                temperature=model_params.get("temperature", config.temperature),
-                max_tokens=model_params.get("max_tokens", config.max_tokens),
-                top_p=model_params.get("top_p", config.top_p),
-                frequency_penalty=model_params.get("frequency_penalty", config.frequency_penalty),
-                presence_penalty=model_params.get("presence_penalty", config.presence_penalty),
-                timeout=model_params.get("timeout", config.timeout)
+                timeout=params.get("timeout", global_cfg.timeout)
             )
-        elif provider == LLMProvider.OCI.value:
-            compartment_id = model_params.get("compartment_id")
-            config_file = model_params.get("config_file")
-            api_endpoint = model_data.get("api_endpoint")
 
+        # 2. Oracle Cloud Infrastructure (OCI) 接口
+        if provider == LLMProvider.OCI.value:
+            compartment_id = params.get("compartment_id")
+            config_file = params.get("config_file")
+            
             if not all([api_endpoint, compartment_id, config_file]):
-                raise ValueError(f"模型 {display_name or model_name} 缺少必要参数")
+                raise ValueError(f"OCI 模型 {name} 缺少必要参数 (compartment_id/config_file/endpoint)")
 
-            model_config = OCILLMConfig(
-                provider=provider,
+            return OCILLMConfig(
+                **common_kwargs,
                 api_endpoint=api_endpoint, # type: ignore
-                model_name=model_name, # type: ignore
-                temperature=model_params.get("temperature", config.temperature),
                 compartment_id=compartment_id,
-                max_tokens=model_params.get("max_tokens", config.max_tokens),
-                top_p=model_params.get("top_p", config.top_p),
-                top_k=model_params.get("top_k", config.top_k),
-                frequency_penalty=model_params.get("frequency_penalty", config.frequency_penalty),
-                presence_penalty=model_params.get("presence_penalty", config.presence_penalty),
-                config_file=config_file
+                config_file=config_file,
+                top_k=params.get("top_k", global_cfg.top_k)
             )
-        else:
-            raise ValueError(f"模型 {display_name or model_name} 使用了不支持的提供商 {provider}")
-        
-        model = create_llm_model(model_config)
-        await model.startup()
-        self._models[model_id] = model
-        self._model_names[model_id] = display_name or model_name # type: ignore
-        self._providers[model_id] = provider
-        self._last_used[model_id] = datetime.now()
-        self._max_tokens[model_id] = model_config.max_tokens
-        logger.success(f"模型 {display_name or model_name} 加载成功")
-        return model
 
-    def get_provider_in_pool(self, model_id: int) -> str | None:
-        """获取模型池中指定模型的提供商"""
-        return self._providers.get(model_id, None)
+        raise ValueError(f"不支持的 LLM Provider: {provider}")
+
+    def get_provider_in_pool(self, model_name: str) -> str | None:
+        """
+        获取已加载模型的 Provider
+        直接从模型实例的 config 中读取，确保数据源唯一
+        """
+        model = self._models.get(model_name)
+        return model.config.provider if model else None
