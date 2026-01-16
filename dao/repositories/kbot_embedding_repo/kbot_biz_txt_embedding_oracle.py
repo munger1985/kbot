@@ -51,16 +51,29 @@ class OracleEmbeddingRepository(IEmbeddingRepository):
         
         # 准备批量数据
         data = []
-        for embedding in embeddings:
+        for idx, embedding in enumerate(embeddings):
             # 将每个嵌入对象转换为元组格式，适合executemany
+            # Oracle VECTOR 类型需要 array.array 或 list，不要转换为字符串
+            vec_handler = OracleVecHandler()
+            vec_array = vec_handler.convert(vec=embedding.embedding, to_string=False)
+
+            # 检查数据长度
+            chunk_metadata_json = json.dumps(embedding.chunk_metadata) if embedding.chunk_metadata is not None else None
+            biz_metadata_json = json.dumps(embedding.biz_metadata) if embedding.biz_metadata is not None else None
+
+            logger.debug(f"准备插入第 {idx+1} 条记录: embed_id={embedding.embed_id}, "
+                        f"chunk_metadata_len={len(chunk_metadata_json) if chunk_metadata_json else 0}, "
+                        f"biz_metadata_len={len(biz_metadata_json) if biz_metadata_json else 0}, "
+                        f"embedding_type={type(vec_array).__name__}")
+
             data.append((
                 embedding.embed_id,
                 kb_id,
                 embedding.file_id,
                 embedding.security_level,
-                json.dumps(embedding.chunk_metadata) if embedding.chunk_metadata is not None else None,
-                json.dumps(embedding.biz_metadata) if embedding.biz_metadata is not None else None,
-                OracleVecHandler().convert(vec=embedding.embedding, to_string=True),
+                chunk_metadata_json,
+                biz_metadata_json,
+                vec_array,  # 直接传递 array.array，不要转字符串
                 embedding.chunk_doc
             ))
         
@@ -298,10 +311,11 @@ class OracleEmbeddingRepository(IEmbeddingRepository):
             WHERE EMBED_ID = :embed_id
         """
         # 添加参数
+        vec_handler = OracleVecHandler()
         params = {
             "embed_id": embed_id,
             "new_chunk": new_chunk,
-            "new_embedding": OracleVecHandler().convert(vec=new_embedding, to_string=True)
+            "new_embedding": vec_handler.convert(vec=new_embedding, to_string=False)
         }
         result = await self.pool_manager.execute_dml(self.conn_params, sql, params)
         return result > 0
@@ -479,10 +493,11 @@ class OracleEmbeddingRepository(IEmbeddingRepository):
                 EMBEDDING = :embeddings
                 WHERE EMBED_ID = :embed_id
             """
+            vec_handler = OracleVecHandler()
             params = {
                 "embed_id": embed_id,
                 "description": description,
-                "embeddings": OracleVecHandler().convert(vec=embeddings, to_string=True),
+                "embeddings": vec_handler.convert(vec=embeddings, to_string=False),
             }
             result = await self.pool_manager.execute_dml(self.conn_params, sql, params)
             return result > 0
