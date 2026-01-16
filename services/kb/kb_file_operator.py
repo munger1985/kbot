@@ -223,7 +223,7 @@ class KBFileOperator:
                 file_version = fileparam["file_version"],
                 is_overwrite = fileparam["is_overwrite"],
                 security_level = kb_entity.security_level or 1,
-                chunk_parser = {"do_ocr": True, "overlap": 50, "use_vlm": True, "vlm_model": 68, "chunk_size": 512, "vlm_prompt": "SYSTEM/image2text", "images_scale": 2.0, "min_chunk_len": 10, "generate_picture_images": True},
+                chunk_parser = json.dumps({"do_ocr": True, "overlap": 50, "use_vlm": True, "vlm_model": 68, "chunk_size": 512, "vlm_prompt": "SYSTEM/image2text", "images_scale": 2.0, "min_chunk_len": 10, "generate_picture_images": True}, cls=DecimalEncoder),
                 # chunk_parser = json.dumps(parser_conf, cls=DecimalEncoder) if parser_conf is not None else None,
                 enable_summary = kb_entity.enable_summary,
                 is_img2txt = kb_entity.is_img2txt,
