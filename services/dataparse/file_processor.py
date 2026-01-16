@@ -38,7 +38,50 @@ class FileProcessor:
             return result
             
         for file in files:
-            
+
+            # 先解析 chunk_parser 字段
+            parser_dict = None
+            if file.chunk_parser:
+                if isinstance(file.chunk_parser, str):
+                    try:
+                        parser_dict = json.loads(file.chunk_parser)
+                    except json.JSONDecodeError as e:
+                        logger.warning(f"文件ID {file.file_id} 的 chunk_parser JSON 解析失败: {e}")
+                        parser_dict = None
+                elif isinstance(file.chunk_parser, dict):
+                    parser_dict = file.chunk_parser
+                else:
+                    logger.warning(f"文件ID {file.file_id} 的 chunk_parser 格式未知")
+                    parser_dict = None
+
+            # 如果没有有效的 parser_dict，使用默认值
+            if parser_dict is None:
+                parser_dict = {
+                    "chunk_size": 512,
+                    "overlap": 50,
+                    "min_chunk_len": 10,
+                    "generate_picture_images": True,
+                    "do_ocr": True,
+                    "ocr_engine": None,
+                    "images_scale": 2.0,
+                    "use_vlm": True,
+                    "vlm_model": 68,
+                    "vlm_prompt": "SYSTEM/image2text"
+                }
+                logger.warning(f"文件ID {file.file_id} 使用默认 parser 配置")
+
+            # 解析 biz_metadata 字段
+            biz_metadata_dict = {}
+            if file.biz_metadata:
+                if isinstance(file.biz_metadata, str):
+                    try:
+                        biz_metadata_dict = json.loads(file.biz_metadata)
+                    except json.JSONDecodeError as e:
+                        logger.warning(f"文件ID {file.file_id} 的 biz_metadata JSON 解析失败: {e}")
+                elif isinstance(file.biz_metadata, dict):
+                    biz_metadata_dict = file.biz_metadata
+                else:
+                    logger.warning(f"文件ID {file.file_id} 的 biz_metadata 格式未知")
 
             file_params = FileParams(
                 file_id=file.file_id,
@@ -52,44 +95,13 @@ class FileProcessor:
                 tab_head = file.is_table_head_fill,
                 priority = file.process_priority or ProcessPriority.MEDIUM.value,
                 security_level = file.security_level,
-                parser=None,
-                biz_metadata=None,
+                parser=ParserParams(**parser_dict),
+                biz_metadata=biz_metadata_dict,
                 img2txt_model=None,
                 img_embed_model=None,
                 txt_embed_model=None,
                 summary_model=None,
-                )
-            # 解析 chunk_parser 字段
-            if file.chunk_parser:
-                if isinstance(file.chunk_parser, str):
-                    parser_dict = json.loads(file.chunk_parser, cls=DecimalEncoder) # type: ignore
-                    parser_params = ParserParams(**parser_dict)
-                    file_params.parser = parser_params
-                
-                elif isinstance(file.chunk_parser, dict):
-                    parser_dict = file.chunk_parser
-                    parser_params = ParserParams(**parser_dict)
-                    file_params.parser = parser_params
-                else:
-                    logger.warning(f"文件ID {file.file_id} 的 chunk_parser 格式未知，使用默认值") 
-            else:
-                msg = f"文件ID {file.file_id} 的 chunk_parser 为空，跳过解析"
-                logger.warning(msg)
-                await self.common.update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, msg)
-                return []
-
-            # 解析 biz_metadata 字段
-            if file.biz_metadata:
-                if isinstance(file.biz_metadata, str):
-                    file_params.biz_metadata = json.loads(file.biz_metadata, cls=DecimalEncoder) # type: ignore
-                elif isinstance(file.biz_metadata, dict):
-                    file_params.biz_metadata = file.biz_metadata
-                else:
-                    logger.warning(f"文件ID {file.file_id} 的 biz_metadata 格式未知，使用空字典")
-            else:
-                logger.warning(f"文件ID {file.file_id} 的 biz_metadata 为 None，使用空字典")
-            
-
+            )
             models = await self.kb_repo.get_model_by_kbid(file.kb_id)
 
             logger.debug(f"模型配置: {models}")
