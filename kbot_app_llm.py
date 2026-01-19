@@ -9,9 +9,8 @@ import sys
 import signal
 import json
 import time
-import atexit
-import uuid
 import oci
+import uuid
 from datetime import datetime
 from typing import Any
 from contextlib import asynccontextmanager
@@ -22,7 +21,6 @@ from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi_offline import FastAPIOffline
-from pydantic import ValidationError
 from loguru import logger
 
 from core.config.settings import get_llm_config, get_app_config
@@ -185,15 +183,13 @@ async def handle_chat_completions(
     start_time = time.time()
     resp_id = f"chatcmpl-{uuid.uuid4()}"
     created_ts = int(time.time())
-    
-    # 1. 获取 Provider（现在 get_provider 内部会自动检查内存和元数据缓存）
-    provider = service.get_provider(request.model_name)
-    if not provider:
-        raise HTTPException(status_code=404, detail=f"未找到模型: {request.model_name}")
 
-    # 2. 异步获取最大 Token 限制（如果模型未加载，此步会触发异步加载）
-    max_tokens_limit = await service.get_max_tokens_limit(request.model_name)
-    # 如果用户没传 max_tokens，则使用模型配置的默认值
+    # 先加载模型（如果模型未加载，此步会触发异步加载）
+    model = await service.get_model_instance(request.model_name)
+    provider = model.config.provider
+
+    # 获取最大 Token 限制（如果用户没传，则使用模型配置的默认值）
+    max_tokens_limit = getattr(model.config, "max_tokens", 4096)
     current_max_tokens = request.max_tokens or max_tokens_limit
 
     try:
@@ -215,17 +211,52 @@ async def handle_chat_completions(
                     async for chunk in stream_iter: # type: ignore
                         if chunk == "[DONE]":
                             break
-                        
+
                         # 统一序列化不同 Provider 的 Chunk
                         if hasattr(chunk, 'model_dump_json'):
+                            # OpenAI 兼容格式的 Chunk
                             data = chunk.model_dump_json()
                         elif isinstance(chunk, dict):
-                            data = json.dumps(chunk)
+                            # 检查是否为 OCI 原生格式，需要转换为 OpenAI 格式
+                            text = None
+
+                            # 1. OCI Cohere 格式: {"apiFormat": "COHERE", "text": "你好", "pad": "..."}
+                            if 'apiFormat' in chunk and chunk.get('apiFormat') == 'COHERE':
+                                text = chunk.get('text', '')
+
+                            # 2. OCI Generic/Grok 格式: {"index": 0, "message": {"role": "ASSISTANT", "content": [{"type": "TEXT", "text": "你好"}]}, "pad": "..."}
+                            elif 'message' in chunk and isinstance(chunk.get('message'), dict):
+                                message = chunk['message']
+                                content = message.get('content', [])
+                                if content and isinstance(content, list) and len(content) > 0:
+                                    # 提取 content[0].text
+                                    first_content = content[0]
+                                    if isinstance(first_content, dict) and first_content.get('type') == 'TEXT':
+                                        text = first_content.get('text', '')
+
+                            if text is not None:
+                                # 转换为 OpenAI 标准格式
+                                openai_chunk = {
+                                    "id": resp_id,
+                                    "object": "chat.completion.chunk",
+                                    "created": created_ts,
+                                    "model": request.model_name,
+                                    "choices": [
+                                        {
+                                            "index": 0,
+                                            "delta": {"content": text},
+                                            "finish_reason": None
+                                        }
+                                    ]
+                                }
+                                data = json.dumps(openai_chunk, ensure_ascii=False)
+                            else:
+                                data = json.dumps(chunk)
                         else:
                             data = str(chunk)
-                            
+
                         yield f"data: {data}\n\n"
-                    
+
                     yield "data: [DONE]\n\n"
                 except Exception as stream_err:
                     logger.exception(f"流式响应中断: {stream_err}")
@@ -260,38 +291,52 @@ async def handle_chat_completions(
 
         # 归一化 OpenAI 家族的 Provider 判断
         openai_family = [
-            LLMProvider.CHATGPT.value, 
-            LLMProvider.API_DEEPSEEK.value, 
+            LLMProvider.CHATGPT.value,
+            LLMProvider.API_DEEPSEEK.value,
             LLMProvider.API_QWEN.value
         ]
 
+        logger.debug(f"开始解析响应 | Provider: {provider} | Raw Response Type: {type(raw_resp)}")
+
         if provider in openai_family:
-            msg = raw_resp.choices[0].message # type: ignore
-            content = msg.content
-            usage = raw_resp.usage if isinstance(raw_resp.usage, dict) else raw_resp.usage.model_dump() # type: ignore
-            
-            if hasattr(msg, 'tool_calls') and msg.tool_calls:
-                for tc in msg.tool_calls:
-                    tool_calls.append(ToolCall(
-                        id=tc.id, type="function",
-                        function={"name": tc.function.name, "arguments": tc.function.arguments} # type: ignore
-                    ))
+            try:
+                msg = raw_resp.choices[0].message # type: ignore
+                content = msg.content
+                logger.debug(f"OpenAI 响应 content 长度: {len(content) if content else 0}")
+                usage = raw_resp.usage if isinstance(raw_resp.usage, dict) else raw_resp.usage.model_dump() # type: ignore
+
+                if hasattr(msg, 'tool_calls') and msg.tool_calls:
+                    for tc in msg.tool_calls:
+                        tool_calls.append(ToolCall(
+                            id=tc.id, type="function",
+                            function={"name": tc.function.name, "arguments": tc.function.arguments} # type: ignore
+                        ))
+            except Exception as e:
+                logger.error(f"解析 OpenAI 响应失败: {e}")
+                logger.error(f"Raw Response: {raw_resp}")
+                content = ""
 
         elif provider == LLMProvider.OCI.value:
             # 1. 获取内部响应对象
             oci_resp = raw_resp.data.chat_response # type: ignore
-            
+            logger.debug(f"OCI 响应对象: {type(oci_resp)}")
+
             # 2. 提取 Content (区分 Generic 格式和 Cohere 格式)
             if hasattr(oci_resp, 'choices'): # Generic 格式 (Llama, Grok 等)
                 content = oci_resp.choices[0].message.content[0].text
-            else: # Cohere 格式
+            elif hasattr(oci_resp, 'text'): # Cohere 格式
                 content = getattr(oci_resp, 'text', "")
+            else:
+                logger.warning(f"未知的 OCI 响应格式: {dir(oci_resp)}")
+                content = ""
+
+            logger.debug(f"OCI 响应 content 长度: {len(content) if content else 0}")
 
             # 3. 提取 Usage (核心修复点)
             # 使用 oci.util.to_dict 将 SDK 对象转为字典，安全获取 usage 字段
             resp_dict = oci.util.to_dict(oci_resp)
             raw_usage = resp_dict.get("usage")
-            
+
             if raw_usage:
                 # 转换 OCI 字段名到 OpenAI 标准字段名
                 usage = {
@@ -302,12 +347,16 @@ async def handle_chat_completions(
             else:
                 usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 
+        else:
+            logger.warning(f"未知的 Provider: {provider}")
+            content = ""
+
         return ChatResponse(
             id=resp_id,
             object="chat.completion",
             created=created_ts,
             model=request.model_name,
-            choices=[{"message": {"role": "assistant", "content": content}, "finish_reason": "stop", "index": 0}],
+            choices=[{"message": {"role": "assistant", "content": content or ""}, "finish_reason": "stop", "index": 0}],
             usage=UsageInfo(**usage),
             processing_time=proc_time,
             tool_calls=tool_calls if tool_calls else None
