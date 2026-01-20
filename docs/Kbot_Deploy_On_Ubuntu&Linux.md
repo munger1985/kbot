@@ -67,6 +67,12 @@ pip install psutil ninja packaging
 pip install flash-attn --no-build-isolation
 
 ```
+
+### 3.安装Tesseract OCR引擎（可选）
+```bash
+conda install -c conda-forge tesserocr tesseract
+```
+
 ### 3.准备Kbot元数据库（Oracle23ai的schema）连接信息
 ```bash
 sqlplus kbot_poc/VEctor#_123@10.45.151.152:1521/aipocpdb.databasessubnet.vcnpairs.oraclevcn.com
