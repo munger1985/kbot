@@ -870,7 +870,7 @@ CREATE TABLE kbot_sys_api_keys (
     usage_count NUMBER(38,0) DEFAULT 0,
     allowed_ips VARCHAR2(4000) DEFAULT '[]',
     rate_limit NUMBER(38,0) DEFAULT 0,
-    created_by NUMBER(38,0),
+    created_by VARCHAR2(50),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP,
     revoked_reason VARCHAR2(500),
