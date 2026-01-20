@@ -23,7 +23,7 @@ class APIKey(Base):
     usage_count: Mapped[int] = mapped_column(Numeric(38, 0), default=0, comment="使用次数")
     allowed_ips: Mapped[str] = mapped_column(String(4000), default="[]", comment="IP白名单（JSON数组，空表示不限制）")
     rate_limit: Mapped[int] = mapped_column(Numeric(38, 0), default=0, comment="速率限制（每分钟请求数，0表示不限制）")
-    created_by: Mapped[int | None] = mapped_column(Numeric(38, 0), nullable=True, comment="创建者ID")
+    created_by: Mapped[str | None] = mapped_column(String(50), nullable=True, comment="创建者用户名")
     created_at: Mapped[datetime] = mapped_column(Date, server_default=func.now(), comment="创建时间")
     updated_at: Mapped[datetime | None] = mapped_column(Date, onupdate=func.now(), comment="更新时间")
     revoked_reason: Mapped[str | None] = mapped_column(String(500), nullable=True, comment="撤销原因")

@@ -22,6 +22,7 @@ class CreateAPIKeyRequest(BaseModel):
     expires_days: int | None = Field(None, description="过期时间（天）")
     allowed_ips: list[str] | None = Field(None, description="允许IP列表")
     rate_limit: int = Field(0, description="速率限制（次/秒）")
+    created_by: str = Field(..., description="创建者用户名")
 
 class CreateServiceRequest(BaseModel):
     service_code: str = Field(..., description="服务代码")

@@ -32,7 +32,7 @@ class APIKeyRepository:
         expires_at: datetime | None = None,
         allowed_ips: list[str] | None = None,
         rate_limit: int = 0,
-        created_by: int | None = None
+        created_by: str | None = None
     ) -> APIKey:
         async with get_session() as session:
             api_key = APIKey(

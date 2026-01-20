@@ -113,7 +113,7 @@ class AuthController:
                 expires_days=request_data.expires_days,
                 allowed_ips=request_data.allowed_ips,
                 rate_limit=request_data.rate_limit,
-                created_by=auth_info["user_id"]
+                created_by=request_data.created_by
             )
             
             return {

@@ -289,7 +289,7 @@ class ServiceAuthService:
         expires_days: int | None = None,
         allowed_ips: list[str] | None = None,
         rate_limit: int = 0,
-        created_by: int | None = None
+        created_by: str | None = None
     ) -> tuple[dict, str]:
         """创建服务API Key"""
         # 检查服务是否存在
