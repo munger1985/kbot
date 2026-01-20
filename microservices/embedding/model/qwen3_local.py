@@ -55,7 +55,6 @@ class Qwen3Embedding(BaseEmbedding[Qwen3EmbeddingConfig]):
         logger.info(f"🚀 正在初始化 Qwen Embedding: {model_path} (Impl: {attn_impl})")
 
         load_kwargs = {
-            "pretrained_model_name_or_path": model_path,
             "trust_remote_code": True,
             "local_files_only": True,  # 强制从本地加载
             "attn_implementation": attn_impl,
@@ -65,9 +64,9 @@ class Qwen3Embedding(BaseEmbedding[Qwen3EmbeddingConfig]):
         try:
             self.tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True, local_files_only=True)
             # Qwen Embedding 通常需要 padding 在右侧以配合 Last Token Pooling 逻辑
-            self.tokenizer.padding_side = "right" 
+            self.tokenizer.padding_side = "right"
             
-            self.model = AutoModel.from_pretrained(model_path, trust_remote_code=True, local_files_only=True, **{k: v for k, v in load_kwargs.items() if k != 'pretrained_model_name_or_path'})
+            self.model = AutoModel.from_pretrained(model_path, **load_kwargs)
             self.model.to(self.device).eval()
             
             # CUDA 预热

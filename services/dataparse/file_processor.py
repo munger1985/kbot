@@ -10,7 +10,6 @@ from dao.repositories.kbot_md_kb_files_repo import KbotMdKbFilesRepository
 from dao.repositories.kbot_md_kb_repo import KbotMdKbRepository
 
 from core.dictionary import FileStatus, ProcessPriority
-from utils.encoder import DecimalEncoder
 from utils.parser_client import CallParser
 from api.schemas.parser_schema import ParserParams
 
