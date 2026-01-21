@@ -156,7 +156,7 @@ async def handle_agent_feedback(form: AgentChatFeedbackForm, auth: UserAuth) -> 
     "/session/get",
     summary="登录智能体时获取会话信息"
 )
-async def handle_agent_get_session(session_id: str):
+async def handle_agent_get_session(session_id: str, auth: UserAuth):
     """
     登录智能体时获取会话信息
     
