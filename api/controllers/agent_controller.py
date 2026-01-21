@@ -420,6 +420,8 @@ class AgentController:
             else:
                 raise ResourceNotFoundException(message="未找到会话记录", resource_type="SESSION", resource_id=session_id)
         
+        except ResourceNotFoundException as e:
+            raise e
         except Exception as e:  
             raise InternalServerError(message=str(e))
         

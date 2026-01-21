@@ -47,24 +47,18 @@ async def handle_agent_chat(form: AgentChatForm, auth: UserAuth) -> SuccessQuery
     ```
 
     """
-    try:
-        r = await agent_controller.agent_search(form)
 
-        logger.debug(f"聊天结果: {r}")
+    r = await agent_controller.agent_search(form)
 
-        return SuccessQueryResponse(
-            code=status.HTTP_200_OK,
-            success=True,
-            message="",
-            data=r
-        )
-        
-    except Exception as e:
-        logger.error(f"聊天失败：{str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"聊天失败：{str(e)}"
-        )
+    logger.debug(f"聊天结果: {r}")
+
+    return SuccessQueryResponse(
+        code=status.HTTP_200_OK,
+        success=True,
+        message="",
+        data=r
+    )
+   
 
 @router.get(
     "/stream",
@@ -106,18 +100,13 @@ async def handle_agent_stream_chat(
         success: bool = Field(False, description="请求响应状态")
     ```
     """
-    try:
-        return await agent_controller.agent_chat_stream(
-            request=request,
-            background_tasks=background_tasks,
-            session_id=session_id
-        )
-    except Exception as e:
-        logger.error(f"流式聊天处理错误: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"流式聊天处理错误: {e}"
-        )
+
+    return await agent_controller.agent_chat_stream(
+        request=request,
+        background_tasks=background_tasks,
+        session_id=session_id
+    )
+
 
 @router.post(
     "/feedback",
@@ -167,7 +156,7 @@ async def handle_agent_feedback(form: AgentChatFeedbackForm, auth: UserAuth) -> 
     "/session/get",
     summary="登录智能体时获取会话信息"
 )
-async def handle_agent_get_session(session_id: str, auth: UserAuth):
+async def handle_agent_get_session(session_id: str):
     """
     登录智能体时获取会话信息
     
@@ -189,26 +178,16 @@ async def handle_agent_get_session(session_id: str, auth: UserAuth):
         success: bool = Field(False, description="请求响应状态")
     ```
     """
-    try:
-        r = await agent_controller.agent_get_session(session_id)
-        if r is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="会话不存在"
-            )
-        return SuccessQueryResponse(
-            code=status.HTTP_200_OK,
-            success=True,
-            message="会话信息获取成功",
-            data=r
-            )
-   
-    except Exception as e:
-        logger.error(f"会话信息获取失败: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"会话信息获取失败: {str(e)}"
+
+    r = await agent_controller.agent_get_session(session_id)
+    
+    return SuccessQueryResponse(
+        code=status.HTTP_200_OK,
+        success=True,
+        message="会话信息获取成功",
+        data=r or {}
         )
+    
     
 @router.delete(
     "/session/remove",
@@ -235,25 +214,19 @@ async def handle_agent_del_session(session_id: str, auth: UserAuth) -> SuccessRe
         success: bool = Field(False, description="请求响应状态")
     ```
     """
-    try:
-        if await agent_controller.agent_del_session(session_id):
-            return SuccessResponse(
-                code=status.HTTP_200_OK,
-                success=True,
-                message="会话信息删除成功"
-                )
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="会话信息删除失败"
+
+    if await agent_controller.agent_del_session(session_id):
+        return SuccessResponse(
+            code=status.HTTP_200_OK,
+            success=True,
+            message="会话信息删除成功"
             )
-            
-    except Exception as e:
-        logger.error(f"会话信息删除失败: {str(e)}")
+    else:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"会话信息删除失败: {str(e)}"
+            detail="会话信息删除失败"
         )
+
     
 
 @router.delete(
@@ -283,25 +256,19 @@ async def handle_del_agent(auth: UserAuth, agent_id: int, del_prompt: int = 0) -
     ```
     """
     delprompt = True if del_prompt == 1 else False
-    try:
-        if await agent_controller.del_agent(agent_id=agent_id, del_prompt=delprompt):
-            return SuccessResponse(
-                code=status.HTTP_200_OK,
-                success=True,
-                message="智能体删除成功"
-                )
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="智能体删除失败"
+
+    if await agent_controller.del_agent(agent_id=agent_id, del_prompt=delprompt):
+        return SuccessResponse(
+            code=status.HTTP_200_OK,
+            success=True,
+            message="智能体删除成功"
             )
-            
-    except Exception as e:
-        logger.error(f"智能体删除失败: {str(e)}")
+    else:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"智能体删除失败: {str(e)}"
+            detail="智能体删除失败"
         )
+        
     
 @router.post(
     "/dify/retrieval",
@@ -321,22 +288,16 @@ async def handle_agent_retrieval(auth: ServiceAuth, form: AgentChatDifyForm) -> 
     Returns:
     - **records**: 检索结果
     """
-    try:
-        agent_id = int(form.knowledge_id)
-        session_id = uuid.uuid4().hex
-        return await agent_controller.agent_search_dify(
-            agent_id=agent_id, 
-            question=form.query, 
-            session_id=session_id,
-            override_question=form.retrieval_setting.get("override_question", False)
-        )
-    
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"检索失败: {str(e)}"
-        )
-    
+
+    agent_id = int(form.knowledge_id)
+    session_id = uuid.uuid4().hex
+    return await agent_controller.agent_search_dify(
+        agent_id=agent_id, 
+        question=form.query, 
+        session_id=session_id,
+        override_question=form.retrieval_setting.get("override_question", False)
+    )
+
 
 @router.post(
     "/nonstream",
@@ -376,19 +337,13 @@ async def handle_non_stream_chat(auth: ServiceAuth, form: AgentChatForm) -> Succ
     ```
 
     """
-    try:
-        r = await agent_controller.agent_chat_nonstream(form)
 
-        return SuccessQueryResponse(
-            code=status.HTTP_200_OK,
-            success=True,
-            message="",
-            data=r
-        )
-        
-    except Exception as e:
-        logger.error(f"服务器内部错误: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"服务器内部错误: {str(e)}"
-        )
+    r = await agent_controller.agent_chat_nonstream(form)
+
+    return SuccessQueryResponse(
+        code=status.HTTP_200_OK,
+        success=True,
+        message="",
+        data=r
+    )
+    
