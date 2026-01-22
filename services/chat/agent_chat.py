@@ -115,7 +115,7 @@ class Agent:
                 processed_results.append([])
         return processed_results
 
-    async def _process_kb_tools(self, confs: list[Any], vector_search_question: str, full_text_question: str) -> tuple:
+    async def _process_kb_tools(self, conf_params: list[KBSearchToolParams], vector_search_question: str, full_text_question: str) -> tuple:
         """
         处理知识库工具
         
@@ -135,16 +135,16 @@ class Agent:
         kb_tasks = []
         kb_configs = []  # 保存配置信息
         
-        for conf in confs:
+        for conf in conf_params:
             if conf.tool_type == ToolType.KB_SEARCH.value:
                 logger.debug(f"知识库工具ID: {conf.tool_id}")
                 
-                # 直接从ORM对象创建KBSearchToolParams
-                tool_params = KBSearchToolParams.from_orm(conf)
+                # # 直接从ORM对象创建KBSearchToolParams
+                # tool_params = KBSearchToolParams.from_orm(conf)
                 
                 # 添加到并行任务列表
                 kb_tasks.append((
-                    tool_params,
+                    conf,
                     vector_search_question,
                     full_text_question,
                     self.security,
@@ -316,9 +316,20 @@ class Agent:
             return None
         
         logger.debug(f"找到 {len(confs)} 个工具")
+        conf_params = []
+        for conf in confs:
+            conf_params.append(KBSearchToolParams(
+                tool_id=conf.tool_id,
+                tool_type=conf.tool_type,
+                tool_weight=conf.tool_weight or 0.0,
+                reranker_flag=conf.reranker_flag or 0,
+                search_type=conf.search_type,
+                search_top_k=conf.search_topk or 10,
+                threshold=conf.search_score_threshold or 0.0
+            ))
         
         # 4. 并行处理知识库工具
-        kb_results_rerank, kb_results_non_rerank = await self._process_kb_tools(confs, question, full_text_question) # type: ignore
+        kb_results_rerank, kb_results_non_rerank = await self._process_kb_tools(conf_params, question, full_text_question) # type: ignore
         
         # 5. 处理非知识库工具
         # TODO: 目前非知识库工具未实现具体功能
