@@ -48,9 +48,8 @@ class AgentController:
 
                 reference = Reference(
                     chunk_type=kb_result.chunk_type,
-                    chunk_file_path=kb_result.chunk_file_path or "",
+                    chunk_file_path=original_file_name,
                     page_num=kb_result.page_num,
-                    original_file_name=original_file_name,
                     content=kb_result.content,
                     download_link=f"{url}/api/kb/download?file_id={kb_result.file_id}",
                     preview_link=f"{url}/api/kb/preview?file_id={kb_result.file_id}&page_num={kb_result.page_num}",
@@ -160,14 +159,14 @@ class AgentController:
         for ref in references:
             if isinstance(ref, dict):
                 content = ref.get('content', '')
-                original_file_name = ref.get('original_file_name', '')
+                original_file_name = ref.get('chunk_file_path', '')
 
                 logger.debug(f"从参考文献构建上下文，参考文献变量类型: {type(ref)}")
                 logger.debug(f"当前参考切片索引: {i}, 切片类型: {ref.get('chunk_type', "未知")}")
                 logger.debug(f"文件名: {original_file_name}")
             else:
                 content = ref.content
-                original_file_name = ref.original_file_name
+                original_file_name = ref.chunk_file_path
 
                 logger.debug(f"从参考文献构建上下文，参考文献变量类型: {type(ref)}")
                 logger.debug(f"从参考文献构建上下文，当前参考切片索引: {i}, 切片类型: {ref.chunk_type}")
