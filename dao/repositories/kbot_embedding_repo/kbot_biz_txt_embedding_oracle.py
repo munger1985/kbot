@@ -234,6 +234,7 @@ class OracleEmbeddingRepository(IEmbeddingRepository):
             WHERE KB_ID = :kb_id
             AND SECURITY_LEVEL <= :security
             AND CONTAINS(CHUNK_DOC, REGEXP_REPLACE(:keyword, '\\W+', ' ACCUM '), 1) > 0
+            AND SCORE(1) >= :similarity_threshold
         """
         
         # 参数
@@ -241,7 +242,8 @@ class OracleEmbeddingRepository(IEmbeddingRepository):
             'kb_id': kb_id,
             'security': security,
             'keyword': keyword,
-            'top_k': search_top_k
+            'top_k': search_top_k,
+            'similarity_threshold': similarity_threshold
         }
         
         # 如果有tag_list，构建多个OR条件

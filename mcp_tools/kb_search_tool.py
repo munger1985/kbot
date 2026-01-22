@@ -17,7 +17,7 @@ class KBSearchToolParams(BaseModel):
     tool_weight: float = 0.0
     reranker_flag: int = 0
     search_type: int = 0
-    search_top_k: int = 10
+    search_top_k: int = 20
     threshold: float = 0.7
     kb_catogory: int | None = None
     img2txt_model: int | None = None

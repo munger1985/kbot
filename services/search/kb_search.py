@@ -223,10 +223,18 @@ class KBSearch:
         try:
             logger.debug(f"全文搜索知识库ID: {self.tool_params.tool_id}")
             logger.debug(f"全文搜索关键词: {keywords}")
+            logger.debug(f"全文搜索安全级别: {security}")
+            logger.debug(f"全文搜索返回数量: {self.tool_params.search_top_k}")
+            logger.debug(f"全文搜索相似度阈值: {self.tool_params.threshold}")
+            logger.debug(f"全文搜索标签: {tags}")
+
+
 
             datasets = await repo.full_text_search(kb_id=self.tool_params.tool_id, 
                                                 keyword=keywords, 
                                                 security=security,
+                                                similarity_threshold=self.tool_params.threshold,
+                                                search_top_k=self.tool_params.search_top_k,
                                                 tags=tags)
             if not datasets:
                 logger.info(f"全文搜索未找到结果")

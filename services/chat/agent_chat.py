@@ -316,8 +316,6 @@ class Agent:
             return None
         
         logger.debug(f"找到 {len(confs)} 个工具")
-
-        logger.debug(f"知识库工具配置: {confs}")
         
         # 4. 并行处理知识库工具
         kb_results_rerank, kb_results_non_rerank = await self._process_kb_tools(confs, question, full_text_question) # type: ignore
