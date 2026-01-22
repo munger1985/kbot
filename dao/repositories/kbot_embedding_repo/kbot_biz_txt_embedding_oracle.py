@@ -170,9 +170,15 @@ class OracleEmbeddingRepository(IEmbeddingRepository):
         if is_summary_search:
             params["chunk_type"] = ChunkType.SUMMARY.value
             base_sql += " AND JSON_VALUE(emb.CHUNK_METADATA, '$.chunk_type' RETURNING NUMBER) = :chunk_type"
+
+            logger.debug(f"根据知识库ID {kb_id} 查询摘要向量相似度，阈值: {similarity_threshold}，返回Top {search_top_k} 条记录")
+            logger.debug(f"过滤条件: JSON_VALUE(emb.CHUNK_METADATA, '$.chunk_type' RETURNING NUMBER) = {ChunkType.SUMMARY.value}")
         else:
             params["chunk_type"] = ChunkType.SUMMARY.value
             base_sql += " AND JSON_VALUE(emb.CHUNK_METADATA, '$.chunk_type' RETURNING NUMBER) <> :chunk_type"
+
+            logger.debug(f"根据知识库ID {kb_id} 查询摘要向量相似度，阈值: {similarity_threshold}，返回Top {search_top_k} 条记录")
+            logger.debug(f"过滤条件: JSON_VALUE(emb.CHUNK_METADATA, '$.chunk_type' RETURNING NUMBER) <> {ChunkType.SUMMARY.value}")
             
 
         # 如果有tag_list，构建多个OR条件

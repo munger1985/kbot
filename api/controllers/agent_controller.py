@@ -161,9 +161,17 @@ class AgentController:
             if isinstance(ref, dict):
                 content = ref.get('content', '')
                 original_file_name = ref.get('original_file_name', '')
+
+                logger.debug(f"从参考文献构建上下文，参考文献变量类型: {type(ref)}")
+                logger.debug(f"当前参考切片索引: {i}, 切片类型: {ref.get('chunk_type', "未知")}")
+                logger.debug(f"文件名: {original_file_name}")
             else:
                 content = ref.content
                 original_file_name = ref.original_file_name
+
+                logger.debug(f"从参考文献构建上下文，参考文献变量类型: {type(ref)}")
+                logger.debug(f"从参考文献构建上下文，当前参考切片索引: {i}, 切片类型: {ref.chunk_type}")
+                logger.debug(f"文件名: {original_file_name}")
 
             if content:
                 content = content.strip()
