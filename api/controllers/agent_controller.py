@@ -28,8 +28,10 @@ from core.exceptions import ValidationException, InternalServerError, ResourceNo
 
 
 class AgentController:
+    def __init__(self):
+        self.kb_files_repo = KbotMdKbFilesRepository()
     
-    def _build_references(self, kb_results: list[KBSearchResult]) -> list[Reference]:
+    async def _build_references(self, kb_results: list[KBSearchResult]) -> list[Reference]:
         """构建参考文献列表"""
         references = []
         host = os.getenv("KBOT_IP", "localhost")
@@ -38,10 +40,12 @@ class AgentController:
         
         if kb_results:
             for kb_result in kb_results:
+                original_file_name = await self.kb_files_repo.get_name_by_id(kb_result.file_id) or ""
                 reference = Reference(
                     chunk_type=kb_result.chunk_type,
                     chunk_file_path=kb_result.chunk_file_path or "",
                     page_num=kb_result.page_num,
+                    original_file_name=original_file_name,
                     content=kb_result.content,
                     download_link=f"{url}/api/kb/download?file_id={kb_result.file_id}",
                     preview_link=f"{url}/api/kb/preview?file_id={kb_result.file_id}&page_num={kb_result.page_num}",
@@ -147,12 +151,20 @@ class AgentController:
     def _build_context_from_references(self, references: list[Reference]) -> str:
         """从参考文献构建上下文"""
         context_parts = []
+        i = 0
         for ref in references:
             if isinstance(ref, dict):
                 content = ref.get('content', '')
+                original_file_name = ref.get('original_file_name', '')
             else:
                 content = ref.content
-            context_parts.append(content)
+                original_file_name = ref.original_file_name
+
+            if content:
+                content = content.strip()
+                content = f"参考切片{i}，来自文档{original_file_name}，切片内容：{content} \n\n"
+                context_parts.append(content)
+                i += 1
         
         return "\n".join(context_parts).strip()
     
@@ -280,7 +292,7 @@ class AgentController:
             kb_results = await self._get_kb_results(agent, form.question, deep_mind)
             
             # 构建参考文献
-            references = self._build_references(kb_results)
+            references = await self._build_references(kb_results)
             
             # 构建 QAData
             qa_data = self._build_qa_data(
@@ -574,7 +586,7 @@ class AgentController:
             model_params["stream"] = False
 
             # 构建参考文献
-            references = self._build_references(kb_results)
+            references = await self._build_references(kb_results)
             
             # 构建上下文和问题
             context = self._build_context_from_references(references)

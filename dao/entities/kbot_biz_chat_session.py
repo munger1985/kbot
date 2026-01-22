@@ -8,6 +8,7 @@ class Reference:
                  chunk_type: int,
                  chunk_file_path: str | None = None,
                  page_num: int | None = None,
+                 original_file_name: str | None = None,
                  content: str | None = None,
                  download_link: str | None = None,
                  preview_link: str | None = None,
@@ -16,6 +17,7 @@ class Reference:
         self.chunk_type = chunk_type
         self.chunk_file_path = chunk_file_path
         self.page_num = page_num
+        self.original_file_name = original_file_name
         self.content = content
         self.download_link = download_link
         self.preview_link = preview_link
@@ -28,6 +30,7 @@ class Reference:
             "chunk_file_path": self.chunk_file_path,
             "page_num": self.page_num,
             "content": safe_read_content(self.content),
+            "original_file_name": self.original_file_name,
             "download_link": self.download_link,
             "preview_link": self.preview_link,
             "similarity_score": self.similarity_score,
