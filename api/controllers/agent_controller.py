@@ -40,7 +40,12 @@ class AgentController:
         
         if kb_results:
             for kb_result in kb_results:
-                original_file_name = await self.kb_files_repo.get_name_by_id(kb_result.file_id) or ""
+                original_file_name = await self.kb_files_repo.get_name_by_id(kb_result.file_id)
+
+                logger.debug("根据知识库返回的结果构建参考文献...")
+                logger.debug(f"file_id: {kb_result.file_id}")
+                logger.debug(f"original_file_name: {original_file_name}")
+
                 reference = Reference(
                     chunk_type=kb_result.chunk_type,
                     chunk_file_path=kb_result.chunk_file_path or "",
