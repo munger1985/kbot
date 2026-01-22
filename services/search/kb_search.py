@@ -170,7 +170,7 @@ class KBSearch:
                 result = KBSearchResult()
                 result.file_id = data[0]
 
-                # 处理 chunk_type: 如果是字符串则转换为整数，否则使用默认值
+                # 处理 chunk_type: 确保转换为整数
                 chunk_type_raw = chunk_meta.get("chunk_type", 1)
                 if isinstance(chunk_type_raw, str):
                     try:
@@ -238,7 +238,7 @@ class KBSearch:
                     result = KBSearchResult()
                     result.file_id = data[0]
 
-                    # 处理 chunk_type: 如果是字符串则转换为整数，否则使用默认值
+                    # 处理 chunk_type: 确保转换为整数
                     chunk_type_raw = chunk_meta.get("chunk_type", 1)
                     if isinstance(chunk_type_raw, str):
                         try:

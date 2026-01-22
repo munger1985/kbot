@@ -169,10 +169,10 @@ class OracleEmbeddingRepository(IEmbeddingRepository):
 
         if is_summary_search:
             params["chunk_type"] = ChunkType.SUMMARY.value
-            base_sql += " AND JSON_VALUE(emb.CHUNK_METADATA, '$.chunk_type') = :chunk_type"
+            base_sql += " AND JSON_VALUE(emb.CHUNK_METADATA, '$.chunk_type' RETURNING NUMBER) = :chunk_type"
         else:
             params["chunk_type"] = ChunkType.SUMMARY.value
-            base_sql += " AND JSON_VALUE(emb.CHUNK_METADATA, '$.chunk_type') <> :chunk_type"
+            base_sql += " AND JSON_VALUE(emb.CHUNK_METADATA, '$.chunk_type' RETURNING NUMBER) <> :chunk_type"
             
 
         # 如果有tag_list，构建多个OR条件
@@ -337,7 +337,7 @@ class OracleEmbeddingRepository(IEmbeddingRepository):
             SELECT EMBED_ID
             FROM KBOT_BIZ_TXT_EMBEDDING
             WHERE FILE_ID = :file_id
-            AND JSON_VALUE(CHUNK_METADATA, '$.chunk_type') = :chunk_type
+            AND JSON_VALUE(CHUNK_METADATA, '$.chunk_type' RETURNING NUMBER) = :chunk_type
             AND JSON_VALUE(CHUNK_METADATA, '$.source_embed_id') = :chunk_id
         """
         params = {
@@ -375,8 +375,8 @@ class OracleEmbeddingRepository(IEmbeddingRepository):
                 SELECT e1.FILE_ID, e2.EMBED_ID as summary_embed_id
                 FROM KBOT_BIZ_TXT_EMBEDDING e1
                 LEFT JOIN KBOT_BIZ_TXT_EMBEDDING e2 ON (
-                    e1.FILE_ID = e2.FILE_ID 
-                    AND JSON_VALUE(e2.CHUNK_METADATA, '$.chunk_type') = :chunk_type 
+                    e1.FILE_ID = e2.FILE_ID
+                    AND JSON_VALUE(e2.CHUNK_METADATA, '$.chunk_type' RETURNING NUMBER) = :chunk_type
                     AND JSON_VALUE(e2.CHUNK_METADATA, '$.source_embed_id') = e1.EMBED_ID
                 )
                 WHERE e1.EMBED_ID = :chunk_id
