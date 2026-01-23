@@ -91,7 +91,7 @@ class FileProcessor:
                 file_ext=file.file_ext,
                 enable_summary = True if file.enable_summary == 1 else False,
                 img2txt = file.is_img2txt,
-                tab_head = file.is_table_head_fill,
+                tab_head = file.is_table_head_fill or 0,
                 priority = file.process_priority or ProcessPriority.MEDIUM.value,
                 security_level = file.security_level,
                 parser=ParserParams(**parser_dict),

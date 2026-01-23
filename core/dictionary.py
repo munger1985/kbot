@@ -158,7 +158,7 @@ class RerankerProvider(str, Enum):
     """支持的 reranker 模型枚举"""
     LOCAL_BGE = "local_bge"
     LOCAL_QWEN = "local_qwen"
-    API_QWEN = "api_qwen"
+    # API_QWEN = "api_qwen"
     CHATGPT = "chatgpt"
     COHERE = "cohere"
 
