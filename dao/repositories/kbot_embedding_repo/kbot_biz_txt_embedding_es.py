@@ -151,7 +151,7 @@ class ElasticsearchEmbeddingRepository(IEmbeddingRepository):
 
     async def get_similar_embeddings(self,
                                kb_id: int,
-                               query_vec: str,
+                               query_vec: list[float],
                                security: int,
                                similarity_threshold: float = 0.8,
                                search_top_k: int = 10,
@@ -163,12 +163,6 @@ class ElasticsearchEmbeddingRepository(IEmbeddingRepository):
             return []
         
         try:
-            # 解析查询向量
-            if isinstance(query_vec, str):
-                query_vector = json.loads(query_vec)
-            else:
-                query_vector = query_vec
-            
             # 构建基础过滤条件
             filter_conditions = [
                 {"term": {"kb_id": kb_id}},
@@ -193,7 +187,7 @@ class ElasticsearchEmbeddingRepository(IEmbeddingRepository):
                     "script": {
                         "source": "cosineSimilarity(params.query_vector, 'embedding') + 1.0",
                         "params": {
-                            "query_vector": query_vector
+                            "query_vector": query_vec
                         }
                     }
                 }
