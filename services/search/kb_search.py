@@ -142,9 +142,7 @@ class KBSearch:
         if repo is None:
             logger.error(f"向量搜索知识库ID: {self.tool_params.tool_id} 的向量数据库未找到")
             return None
-        
-        convertor = OracleVecHandler()
-        vec = convertor.convert(query_vec, to_string=False)
+
         try:
             logger.debug(f"向量搜索知识库ID: {self.tool_params.tool_id}")
             logger.debug(f"向量搜索安全级别: {security}")
@@ -153,7 +151,7 @@ class KBSearch:
 
             dataset = await repo.get_similar_embeddings(
                 kb_id = self.tool_params.tool_id,
-                query_vec = vec,  # type: ignore
+                query_vec = query_vec,
                 security = security,
                 similarity_threshold = self.tool_params.threshold,
                 search_top_k = self.tool_params.search_top_k,

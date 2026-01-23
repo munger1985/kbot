@@ -66,6 +66,7 @@ class OracleEmbeddingRepository(IEmbeddingRepository):
                         f"chunk_metadata_len={len(chunk_metadata_json) if chunk_metadata_json else 0}, "
                         f"biz_metadata_len={len(biz_metadata_json) if biz_metadata_json else 0}, "
                         f"embedding_type={type(vec_array).__name__}")
+            logger.debug(f"vec_array 类型: {type(vec_array).__name__}, 维度: {len(vec_array)}")
 
             data.append((
                 embedding.embed_id,
@@ -114,7 +115,7 @@ class OracleEmbeddingRepository(IEmbeddingRepository):
         
     async def get_similar_embeddings(self,
                                      kb_id: int,
-                                     query_vec: array.array,
+                                     query_vec: list[float],
                                      security: int,
                                      similarity_threshold: float = 0.8,
                                      search_top_k: int = 10,
@@ -150,20 +151,23 @@ class OracleEmbeddingRepository(IEmbeddingRepository):
         base_sql = """
             SELECT 
                 FILE_ID, CHUNK_DOC, CHUNK_METADATA,
-                1 - VECTOR_DISTANCE(EMBEDDING, :query_vec1, COSINE) / 2 AS similarity
+                1 - VECTOR_DISTANCE(EMBEDDING, :query_vec, COSINE) / 2 AS similarity
             FROM KBOT_BIZ_TXT_EMBEDDING emb
-            WHERE VECTOR_DISTANCE(EMBEDDING, :query_vec2, COSINE) <= :distance
+            WHERE VECTOR_DISTANCE(EMBEDDING, :query_vec, COSINE) <= :distance
             AND KB_ID = :kb_id
             AND SECURITY_LEVEL <= :security
 
 
         """
 
+        logger.debug(f"向量匹配时 query_vec 类型: {type(query_vec).__name__}, 维度: {len(query_vec)}")
+        vec_handler = OracleVecHandler()
+        vec_array = vec_handler.convert(vec=query_vec, to_string=False)
+
         # 添加向量和阈值参数 - 使用两个不同的参数名称避免绑定问题
         params = {
             "kb_id": kb_id,
-            "query_vec1": query_vec,
-            "query_vec2": query_vec,
+            "query_vec": vec_array,
             "security": security,
             "distance": distance,
             "top_k": search_top_k
