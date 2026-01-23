@@ -144,7 +144,7 @@ class KBSearch:
             return None
         
         convertor = OracleVecHandler()
-        vec = convertor.convert(query_vec, to_string=True)
+        vec = convertor.convert(query_vec, to_string=False)
         try:
             logger.debug(f"向量搜索知识库ID: {self.tool_params.tool_id}")
             logger.debug(f"向量搜索安全级别: {security}")
