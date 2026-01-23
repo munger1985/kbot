@@ -4,72 +4,58 @@ import numpy as np
 from typing import Any
 
 class OracleVecHandler:
+    def __init__(self, float_type: str = 'f'):
+        """
+        :param float_type: 'f' 代表 float32 (推荐), 'd' 代表 float64
+        """
+        self.float_type = float_type
 
-    def convert(self, vec: Any, to_string: bool = True) -> array.array | str:
+    def convert(self, vec: Any, to_string: bool = False) -> array.array | str:
         """
-        主转换方法
-        
-        参数:
-            vec: 输入向量
-            to_string: 是否转换为字符串格式(否则返回array.array)
-            
-        返回:
-            转换后的向量表示
+        主转换方法。
+        注意：Oracle 23ai 推荐通过 python-oracledb 绑定 array.array 对象，
+        而不是使用字符串拼装，这样更安全且性能更好。
         """
-        
-        # 统一转换为列表
+        if vec is None:
+            raise ValueError("向量不能为空")
+
+        # 1. 统一转换为 list
         vector_list = self._to_list(vec)
         
-        # 验证向量
-        self._validate_vector(vector_list)
-        
-        # 转换为目标格式
-        if to_string:
-            result = self._to_oracle_string(vector_list)
-
-        else:
-            result = self._to_array(vector_list)
-            
-        return result
-    
-    def _to_list(self, vec: Any) -> list[float]:
-        """转换为Python列表"""
-        if isinstance(vec, str):
-            return self._parse_string(vec)
-        elif isinstance(vec, np.ndarray):
-            return vec.astype(np.float64).tolist()
-        elif isinstance(vec, (list, tuple)):
-            return list(vec)
-        elif isinstance(vec, array.array):
-            return vec.tolist()
-        else:
-            raise ValueError(f"不支持的向量类型: {type(vec).__name__}")
-    
-    def _parse_string(self, vec_str: str) -> list[float]:
-        """解析字符串格式的向量"""
-        try:
-            cleaned = vec_str.strip().strip('[]')
-            return [float(x.strip()) for x in cleaned.split(',') if x.strip()]
-        except Exception as e:
-            raise ValueError(f"无效的向量字符串: {str(e)}")
-    
-    def _validate_vector(self, vec: list[float]):
-        """验证向量有效性"""
-        if not vec:
+        # 2. 验证
+        if not vector_list:
             raise ValueError("向量不能为空")
-            
-        if not all(isinstance(x, (float, int)) for x in vec):
-            raise ValueError("向量必须只包含数值")
-    
-    def _to_oracle_string(self, vec: list[float]) -> str:
-        """转换为Oracle需要的字符串格式"""
-        return '[' + ','.join(map(str, vec)) + ']'
-    
-    def _to_array(self, vec: list[float]) -> array.array:
-        """转换为Python数组"""
-        return array.array('d', vec)
-    
+
+        # 3. 转换为目标格式
+        if to_string:
+            # 适用于手动拼接 SQL 或某些特定驱动模式
+            return '[' + ','.join(map(str, vector_list)) + ']'
+        
+        # 推荐做法：返回 array.array，oracledb 驱动会自动识别
+        return array.array(self.float_type, vector_list)
+
+    def _to_list(self, vec: Any) -> list[float]:
+        if isinstance(vec, (list, tuple)):
+            return list(vec)
+        if isinstance(vec, np.ndarray):
+            # 避免使用 astype(np.float64)，直接根据需求转换提高效率
+            return vec.flatten().tolist()
+        if isinstance(vec, array.array):
+            return vec.tolist()
+        if isinstance(vec, str):
+            cleaned = vec.strip().strip('[]')
+            return [float(x.strip()) for x in cleaned.split(',') if x.strip()]
+        
+        raise TypeError(f"不支持的向量输入类型: {type(vec).__name__}")
+
     @staticmethod
-    def vector_type_handler(cursor, name, default_type, size, precision, scale):
-        if default_type is oracledb.DB_TYPE_VECTOR:
-            return cursor.var(default_type, arraysize=size or cursor.arraysize, outconverter=list)
+    def get_type_handler():
+        """
+        静态工厂方法，用于在连接时注册
+        用法: conn.outputtypehandler = OracleVecHandler.get_type_handler()
+        """
+        def handler(cursor, name, default_type, size, precision, scale):
+            if default_type == oracledb.DB_TYPE_VECTOR:
+                # 默认返回 list，如果需要 numpy 也可以在这里改
+                return cursor.var(oracledb.DB_TYPE_VECTOR, arraysize=cursor.arraysize)
+        return handler
