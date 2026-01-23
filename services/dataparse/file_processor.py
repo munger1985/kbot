@@ -3,8 +3,6 @@ from loguru import logger
 from datetime import datetime
 
 from .file_params import FileParams
-from .txt_to_md import TxtToMarkdownParser
-from .summary_parser import SummaryParser
 from .parser_common import ParserCommonMethods
 from dao.repositories.kbot_md_kb_files_repo import KbotMdKbFilesRepository
 from dao.repositories.kbot_md_kb_repo import KbotMdKbRepository
@@ -164,11 +162,11 @@ class FileProcessor:
                 await self.common.update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, "文件解析结果不是期望的列表格式")
                 return
 
-            # 生成摘要
-            if file_params.enable_summary and embeddings:
-                logger.info(f"开始生成摘要...")
-                summary_parser = SummaryParser()
-                await summary_parser.process_summary(file_params=file_params, embed_entities=embeddings)
+            # # 生成摘要
+            # if file_params.enable_summary and embeddings:
+            #     logger.info(f"开始生成摘要...")
+            #     summary_parser = SummaryParser()
+            #     await summary_parser.process_summary(file_params=file_params, embed_entities=embeddings)
                 
         except Exception as e:
             msg = f"处理文件 {file_params.file_path} 时发生错误: {str(e)}"
