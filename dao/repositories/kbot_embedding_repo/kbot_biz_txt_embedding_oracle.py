@@ -9,6 +9,7 @@ from core.dictionary import ChunkType
 from dao.repositories.kbot_biz_txt_embedding_interface import IEmbeddingRepository
 from utils.common import safe_read_content
 
+import array
 
 class OracleEmbeddingRepository(IEmbeddingRepository):
     """Repository for KBOT_BIZ_TXT_EMBEDDING table operations."""
@@ -113,7 +114,7 @@ class OracleEmbeddingRepository(IEmbeddingRepository):
         
     async def get_similar_embeddings(self,
                                      kb_id: int,
-                                     query_vec: str,
+                                     query_vec: array.array,
                                      security: int,
                                      similarity_threshold: float = 0.8,
                                      search_top_k: int = 10,
@@ -149,19 +150,20 @@ class OracleEmbeddingRepository(IEmbeddingRepository):
         base_sql = """
             SELECT 
                 FILE_ID, CHUNK_DOC, CHUNK_METADATA,
-                1 - VECTOR_DISTANCE(EMBEDDING, :query_vec, COSINE) / 2 AS similarity
+                1 - VECTOR_DISTANCE(EMBEDDING, :query_vec1, COSINE) / 2 AS similarity
             FROM KBOT_BIZ_TXT_EMBEDDING emb
-            WHERE VECTOR_DISTANCE(EMBEDDING, :query_vec, COSINE) <= :distance
+            WHERE VECTOR_DISTANCE(EMBEDDING, :query_vec2, COSINE) <= :distance
             AND KB_ID = :kb_id
             AND SECURITY_LEVEL <= :security
-            
-            
+
+
         """
 
-        # 添加向量和阈值参数
+        # 添加向量和阈值参数 - 使用两个不同的参数名称避免绑定问题
         params = {
             "kb_id": kb_id,
-            "query_vec": query_vec,
+            "query_vec1": query_vec,
+            "query_vec2": query_vec,
             "security": security,
             "distance": distance,
             "top_k": search_top_k
