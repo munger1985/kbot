@@ -34,10 +34,6 @@ from services.dataparse.file_parser_manger import FileParserManager
 ENV_PATH = Path(__file__).parent / ".env"
 load_dotenv(ENV_PATH)
 
-SERVICE_NAME = os.getenv("KBOT_SERVICE_NAME", "main")
-SERVICE_HOST = os.getenv("KBOT_HOST", "0.0.0.0")
-SERVICE_PORT = int(os.getenv("KBOT_PORT", 18090))
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -50,7 +46,7 @@ async def lifespan(app: FastAPI):
         app: FastAPI 实例。
     """
     # 设置服务名称到 app.state（供中间件使用）
-    app.state.service_name = SERVICE_NAME
+    app.state.service_name = get_app_config().service_name
 
     # 启动阶段
     fp_manager = FileParserManager()
@@ -86,7 +82,7 @@ def create_app() -> FastAPI:
 
         # 1. 初始化日志中心
         log_conf = LogConfig(
-            service_name=SERVICE_NAME,
+            service_name=app_config.service_name,
             log_dir=app_config.log.dir,
             level=app_config.log.level,
             rotation=app_config.log.rotation,
@@ -100,7 +96,7 @@ def create_app() -> FastAPI:
         app = FastAPIOffline(
             title=app_config.title,
             description=app_config.description,
-            version=app_config.version,
+            version=app_config.service_version,
             debug=app_config.debug,
             lifespan=lifespan,  # 注入生命周期管理器
             docs_url="/docs" if app_config.debug else None,
@@ -145,6 +141,9 @@ def handle_exit_signal(sig, frame):
 async def start_server():
     """配置并运行 Uvicorn 异步服务器。"""
     app = create_app()
+
+    SERVICE_HOST = get_app_config().service_host
+    SERVICE_PORT = get_app_config().service_port
 
     logger.info(f"服务启动于: http://{SERVICE_HOST}:{SERVICE_PORT}")
 

@@ -1,8 +1,11 @@
 # core/config/base.toml
 [app]
+service_name = "main-service"
+service_version = "3.0.0"
+service_host = "0.0.0.0"
+service_port = 18099
 title = "KBOT"
 description = "KBot API Service"
-version = "3.0.0"
 debug = true
 file_storage = "/home/ubuntu/kbot3/knowledge_base"
 upload_workers = 10
@@ -32,18 +35,12 @@ pool_pre_ping = true
 pool_use_lifo = true
 pool_recycle = 1800
 
-[eslog]
-hosts = ["http://localhost:9201"]
-username = "elastic"
-password = "KsVEZ-KhNMVi9HHdjyTx"
-index = "filebeat-kblogs-*"
-
 [embed]
 service_name = "embedding-service"
 service_version = "1.0.0"
 service_host = "0.0.0.0"
-service_port = 9901
-max_tokens = 8192
+service_port = 18091
+max_tokens = 1024
 timeout = 300
 max_retries = 3
 cache_dir = "/home/ubuntu/cached_models/"
@@ -52,7 +49,7 @@ cache_dir = "/home/ubuntu/cached_models/"
 service_name = "llm-service"
 service_version = "1.0.0"
 service_host = "0.0.0.0"
-service_port = 9902
+service_port = 18092
 max_tokens = 8192
 temperature = 0.7
 top_p = 1.0
@@ -65,7 +62,7 @@ presence_penalty = 0.0
 service_name = "reranker-service"
 service_version = "1.0.0"
 service_host = "0.0.0.0"
-service_port = 9903
+service_port = 18093
 cache_dir = "/home/ubuntu/cached_models/"
 timeout = 300
 
@@ -73,15 +70,15 @@ timeout = 300
 service_name = "vlm-service"
 service_version = "1.0.0"
 service_host = "0.0.0.0"
-service_port = 9904
+service_port = 18094
 timeout = 300
 
 [parser]
 service_name = "parser-service"
 service_version = "1.0.0"
 service_host = "0.0.0.0"
-service_port = 9905
-timeout = 300
+service_port = 18095
+timeout = 600
 
 [parser.tokenizer]
 en = "/home/ubuntu/models/embedding/bge-small-en-v1.5"

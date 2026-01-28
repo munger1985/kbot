@@ -17,9 +17,12 @@ class LogConfig(BaseModel):
 
 class AppConfig(BaseModel):
     """主应用配置"""
+    service_name: str = Field(default="main_service")
+    service_version: str = Field(default="3.0.0")
+    service_host: str = Field(default="0.0.0.0")
+    service_port: int = Field(default=18099, ge=1, le=65535)
     title: str = Field(default="KBOT")
     description: str = Field(default="KBot API Service")
-    version: str = Field(default="1.0.0")
     debug: bool = Field(default=False)
     file_storage: str = Field(default="./knowledge_base")
     upload_workers: int = Field(default=5, ge=1, le=50)
@@ -62,8 +65,8 @@ class EmbedConfig(BaseModel):
     service_name: str = Field(default="embedding-service")
     service_version: str = Field(default="1.0.0")
     service_host: str = Field(default="0.0.0.0")
-    service_port: int = Field(default=9901, ge=1, le=65535)
-    max_tokens: int = Field(default=8192, ge=512, le=32768)
+    service_port: int = Field(default=18091, ge=1, le=65535)
+    max_tokens: int = Field(default=1024, ge=512, le=32768)
     timeout: int = Field(default=300, ge=10, le=1800)
     health_check_timeout: int = Field(default=10, ge=5, le=60)
     max_retries: int = Field(default=3, ge=0, le=10)
@@ -79,7 +82,7 @@ class LLMConfig(BaseModel):
     service_name: str = Field(default="llm-service")
     service_version: str = Field(default="1.0.0")
     service_host: str = Field(default="0.0.0.0")
-    service_port: int = Field(default=9902, ge=1, le=65535)
+    service_port: int = Field(default=18092, ge=1, le=65535)
     max_tokens: int = Field(default=8192, ge=512, le=32768)
     temperature: float = Field(default=0.7, ge=0.0, le=2.0)
     top_p: float = Field(default=1.0, ge=0.0, le=1.0)
@@ -99,7 +102,7 @@ class RerankerConfig(BaseModel):
     service_name: str = Field(default="reranker-service")
     service_version: str = Field(default="1.0.0")
     service_host: str = Field(default="0.0.0.0")
-    service_port: int = Field(default=9903, ge=1, le=65535)
+    service_port: int = Field(default=18093, ge=1, le=65535)
     cache_dir: str = Field(default="./cached_models")
     timeout: int = Field(default=300, ge=10, le=1800)
     health_check_timeout: int = Field(default=10, ge=5, le=60)
@@ -114,7 +117,7 @@ class VLMConfig(BaseModel):
     service_name: str = Field(default="vlm-service")
     service_version: str = Field(default="1.0.0")
     service_host: str = Field(default="0.0.0.0")
-    service_port: int = Field(default=9904, ge=1, le=65535)
+    service_port: int = Field(default=18094, ge=1, le=65535)
     timeout: int = Field(default=300, ge=10, le=1800)
     health_check_timeout: int = Field(default=10, ge=5, le=60)
     
@@ -161,7 +164,7 @@ class Settings(BaseSettings):
     
     # 环境配置 - 支持环境变量覆盖
     environment: str = "development"
-    config_dir: str = "./core/config"
+    config_dir: str = "../configuration"
     
     # 各模块配置
     app: AppConfig = AppConfig()

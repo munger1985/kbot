@@ -7,7 +7,6 @@ os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
 # 2. 指定模型名称和本地路径
 # BAAI/bge-small-en-v1.5 纯英文文档，性能最高，速度最快
 # BAAI/bge-base-zh-v1.5 纯中文文档，中文压缩率和语义表达最精准
-# BAAI/bge-m3 中英混排/复杂文档，兼容性最强，省去语种检测
 
 # 英文模型
 model_id = "BAAI/bge-small-en-v1.5"
