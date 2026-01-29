@@ -295,7 +295,6 @@ class CallModel():
             model_id: int,
             image: str | Image.Image,
             prompt: str,
-            model_name: str | None = None,
             **kwargs
         ) -> str:
             """调用视觉语言模型进行图片解析。
@@ -304,14 +303,12 @@ class CallModel():
                 model_id: 模型ID。
                 image: 输入图片（文件路径或 PIL.Image 对象）。
                 prompt: 完整的提示词文本（必填）。
-                model_name: 模型名称（可选）。
                 **kwargs: 推理的额外参数（如 temperature, max_tokens 等）。
 
             Returns:
                 str: 模型生成的输出文本。
             """
-            if not model_name:
-                model_name = await self._get_model_name(model_id)
+            model_name = await self._get_model_name(model_id)
             service_host = self.vlm_config.service_host
             service_port = self.vlm_config.service_port
             

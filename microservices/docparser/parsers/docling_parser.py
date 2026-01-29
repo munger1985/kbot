@@ -98,10 +98,10 @@ class DoclingDocProcessor:
                 if desc:
                     doc.pictures[idx].annotations.append(DescriptionAnnotation(text=desc, provenance=f"vlm_{params.vlm_model}"))
 
-    async def _vlm_task(self, client, model_name, prompt, index, image_obj) -> tuple:
+    async def _vlm_task(self, client, model_id, prompt, index, image_obj) -> tuple:
         async with self.vlm_semaphore:
             try:
-                res = await client.call_vlm_model(model_name=model_name, image=image_obj, prompt=prompt)
+                res = await client.call_vlm_model(model_id=model_id, image=image_obj, prompt=prompt)
                 return index, res
             except Exception as e:
                 logger.error(f"VLM 失败: {e}"); return index, None
