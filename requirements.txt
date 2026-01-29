@@ -1,7 +1,5 @@
 dynaconf==3.2.11
 loguru==0.7.3
-aiomysql==0.3.2
-asyncpg==0.31.0
 oracledb==3.4.2
 elasticsearch==9.2.1
 pydantic==2.12.5
@@ -18,4 +16,4 @@ python-jose==3.5.0
 passlib==1.7.4
 jieba==0.42.1
 oci==2.166.0
-cohere==5.16.1
+#cohere==5.16.1
