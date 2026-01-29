@@ -293,6 +293,7 @@ class CallModel():
     async def call_vlm_model(
             self,
             model_id: int,
+            model_name: str | None = None,
             image: str | Image.Image,
             prompt: str,
             **kwargs
@@ -308,7 +309,8 @@ class CallModel():
             Returns:
                 str: 模型生成的输出文本。
             """
-            model_name = await self._get_model_name(model_id)
+            if not model_name:
+                model_name = await self._get_model_name(model_id)
             service_host = self.vlm_config.service_host
             service_port = self.vlm_config.service_port
             

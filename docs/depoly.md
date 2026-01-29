@@ -233,16 +233,30 @@ python -c "import torch; print('PyTorch版本:', torch.__version__); print('CUDA
 | CPU 版本 | `pip install torch torchvision torchaudio` |
 
 #### 4.2.4 安装 Flash Attention（可选，提升性能）
+整个编译过程会持续30-60分钟
 
 ```bash
 # 安装构建依赖
 pip install psutil ninja packaging
 
 # 安装 Flash Attention（不隔离构建环境）
-pip install flash-attn --no-build-isolation
-
+MAX_JOBS=4 pip install flash-attn --no-cache-dir --no-build-isolation
 # 验证安装
 python -c "import flash_attn; print('Flash Attention 版本:', flash_attn.__version__)"
+```
+如果使用 ssh 连接服务器超时：
+```bash
+# Start a new session:
+tmux new -s build_flash
+
+# Run your build command (inside the new green bar window):
+export TORCH_CUDA_ARCH_LIST="8.6"
+MAX_JOBS=4 pip install flash-attn --no-cache-dir --no-build-isolation
+
+# Detach safely: Press Ctrl + B, then let go and press D. You are now back in your main shell, and the build is running in the background. 
+# You can even close your laptop or exit SSH.
+# Reattach later: To see how it's doing, log back in via SSH and type:
+tmux attach -t build_flash
 ```
 
 **说明**：
