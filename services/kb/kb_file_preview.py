@@ -3,9 +3,9 @@ import mimetypes
 import base64
 # import mammoth
 # from PyPDF2 import PdfReader, PdfWriter
-import docx
-import openpyxl
-from pptx import Presentation
+# import docx
+# import openpyxl
+# from pptx import Presentation
 from io import BytesIO
 from typing import Any
 from dao.repositories.kbot_md_kb_files_repo import KbotMdKbFilesRepository
