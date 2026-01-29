@@ -5,14 +5,14 @@ import shutil
 from pathlib import Path
 from fastapi import UploadFile
 from loguru import logger
-from core.config.settings import get_app_config
+from core.config.settings import get_app_config, get_prompt_config
 from dao.entities.kbot_md_kb_batch import KbotMdKbBatch
 from dao.entities.kbot_md_kb_files import KbotMdKbFiles
 from core.dictionary import FileStatus, YesNoEnum
 from dao.repositories.kbot_md_kb_repo import KbotMdKbRepository
 from dao.repositories.kbot_md_kb_files_repo import KbotMdKbFilesRepository
 from dao.repositories.kbot_biz_txt_embedding_factory import EmbeddingRepositoryFactory
-from dao.repositories.kbot_md_parser_conf_repo import KbotMdParserConfRepository
+from dao.repositories.kbot_md_prompt_repo import KbotMdPromptRepository
 from utils.common import run_in_thread_pool
 from utils.encoder import DecimalEncoder
 
@@ -204,12 +204,12 @@ class KBFileOperator:
         )
         
         # 构造 file 的实体列表用于批量保存到数据库
-        parser_repo = KbotMdParserConfRepository()
+        prompt_repo = KbotMdPromptRepository()
+        # 读取系统默认VLM提示词
+        vlm_prompt_unique_name = get_prompt_config().image2text
+        prompt = await prompt_repo.get_prompt_by_unique_name(vlm_prompt_unique_name)
         file_entitities = []
         for fileparam in fileparams:
-             # 根据 kb id 从 PARSER_CONF 表获取默认配置
-            parser_conf = await parser_repo.get_default_paser(file_ext=fileparam.get("file_ext", "").lower(), kb_id=kb_id)
-            
             # 构造文件实体
             file_entitity = KbotMdKbFiles(
                 file_id = str(uuid.uuid4()),
@@ -223,8 +223,7 @@ class KBFileOperator:
                 file_version = fileparam["file_version"],
                 is_overwrite = fileparam["is_overwrite"],
                 security_level = kb_entity.security_level or 1,
-                chunk_parser = json.dumps({"do_ocr": True, "overlap": 50, "use_vlm": True, "vlm_model": 68, "chunk_size": 512, "ocr_engine": "easyocr", "vlm_prompt": "SYSTEM/kmportal", "images_scale": 2.0, "min_chunk_len": 10, "generate_picture_images": True}, cls=DecimalEncoder),
-                # chunk_parser = json.dumps(parser_conf, cls=DecimalEncoder) if parser_conf is not None else None,
+                chunk_parser = json.dumps({"do_ocr": True, "overlap": 50, "use_vlm": True, "vlm_model": 68, "chunk_size": 512, "ocr_engine": "easyocr", "vlm_prompt": prompt, "images_scale": 2.0, "min_chunk_len": 10, "generate_picture_images": True}, cls=DecimalEncoder),
                 enable_summary = kb_entity.enable_summary,
                 is_img2txt = kb_entity.is_img2txt,
                 is_table_head_fill = kb_entity.is_table_head_fill,
@@ -372,10 +371,10 @@ class KBFileOperator:
             try:
                 rowcnt = await file_repo.delete(kb_id, None, None)
                 logger.info(f"成功删除知识库 {kb_id} 中的 {rowcnt} 个文件")
-                # 删除知识库对应的解析默认配置
-                parser_repo = KbotMdParserConfRepository()
-                await parser_repo.delete_by_kb_id(kb_id)
-                logger.info(f"成功删除知识库 {kb_id} 中的解析默认配置")
+                # # 删除知识库对应的解析默认配置
+                # parser_repo = KbotMdParserConfRepository()
+                # await parser_repo.delete_by_kb_id(kb_id)
+                # logger.info(f"成功删除知识库 {kb_id} 中的解析默认配置")
                 return True
             except Exception as e:
                 logger.error(f"删除知识库 {kb_id} 中的文件失败: {str(e)}")

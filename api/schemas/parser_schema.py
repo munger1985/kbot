@@ -12,7 +12,7 @@ class ParserParams(BaseModel):
     images_scale: float = Field(..., description="图片缩放比例")
     use_vlm: bool = Field(default=False, description="是否使用VLM生成图片描述")
     vlm_model: int | None = Field(None, description="VLMParser模型ID")
-    vlm_prompt: str | None = Field(None, description="VLMParser提示词名称")
+    vlm_prompt: str | None = Field(None, description="VLMParser提示词")
 
     def to_dict(self) -> dict:
         """转换为字典"""
