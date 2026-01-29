@@ -1,8 +1,8 @@
 import os
 import mimetypes
 import base64
-import mammoth
-from PyPDF2 import PdfReader, PdfWriter
+# import mammoth
+# from PyPDF2 import PdfReader, PdfWriter
 import docx
 import openpyxl
 from pptx import Presentation
