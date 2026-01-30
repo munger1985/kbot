@@ -250,6 +250,7 @@ python -c "import flash_attn; print('Flash Attention 版本:', flash_attn.__vers
 tmux new -s build_flash
 
 # Run your build command (inside the new green bar window):
+conda activate kbot3
 export TORCH_CUDA_ARCH_LIST="8.6"
 MAX_JOBS=4 pip install flash-attn --no-cache-dir --no-build-isolation
 
@@ -288,14 +289,17 @@ tesseract --version
 
 # 列出已安装的语言
 tesseract --list-langs
+# 期望输出：List of available languages in "/home/ubuntu/anaconda3/envs/km/share/tessdata/" (125):
+# ...
+# 
 ```
 
 #### 4.3.3 配置语言数据路径
 
 ```bash
 # 获取语言数据包路径（tessdata 目录）
-tessdata_path=$(tesseract --list-langs 2>&1 | grep -oP '(?<=Path: )[^\s]+')
-echo "语言数据路径: ${tessdata_path}"
+export tessdata_path=$(tesseract --list-langs | head -n1 | perl -ne 'if (/"([^"]+)"/) { print "$1\n"; }')
+echo "tessdata_path: ${tessdata_path}"
 
 # 示例输出: /home/ubuntu/miniconda3/envs/kbot3/share/tessdata/
 ```
@@ -304,6 +308,7 @@ echo "语言数据路径: ${tessdata_path}"
 
 ```bash
 # 在 ~/.bashrc 中添加环境变量
+
 echo "export TESSDATA_PREFIX=${tessdata_path}" >> ~/.bashrc
 
 # 使配置生效
@@ -314,7 +319,7 @@ source ~/.bashrc
 
 ```bash
 # 在 kbot3 项目根目录的 .env 文件中添加
-echo "TESSDATA_PREFIX=${tessdata_path}" >> .env
+echo "TESSDATA_PREFIX=\"${tessdata_path}\"" >> .env
 ```
 
 #### 4.3.4 验证 Python 绑定

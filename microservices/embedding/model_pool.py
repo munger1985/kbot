@@ -99,6 +99,9 @@ class EmbeddingModelPool(BaseModelPool[BaseEmbedding[Any]]):
             api_key = data.get("api_key")
             api_base = data.get("api_endpoint")
             if not api_key: raise ValueError(f"{name} 缺少 api_key")
+            # 移除 api_base 末尾的 /embeddings，避免路径重复
+            if api_base and api_base.endswith("/embeddings"):
+                api_base = api_base[:-11]
             return OpenAIEmbeddingConfig(
                 **common_kwargs,
                 api_key=api_key,
