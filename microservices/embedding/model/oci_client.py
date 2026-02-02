@@ -51,22 +51,16 @@ class OCIEmbedding(BaseEmbedding[OCIEmbeddingConfig]):
                     "truncate": "END"
                 }
 
-                # 2. 绕过初始化构造函数，使用 from_dict 注入
-                # 这样可以跳过 SDK 内部对 EmbeddingProvider.COHERE 的静态校验
-                inner_request = oci.generative_ai_inference.models.CohereEmbedTextRequest()
-                
-                # 强行创建一个空对象并手动填充，避开 __init__ 里的枚举报错
-                inner_request.inputs = texts
-                inner_request.input_type = input_type.upper()
-                inner_request.truncate = "END"
-
-                # 3. 构造外层 Details
+                # 2. 直接构建 EmbedTextDetails
+                # 根据 OCI SDK 的设计，EmbedTextDetails 应该直接包含所有参数
                 embed_details = oci.generative_ai_inference.models.EmbedTextDetails()
                 embed_details.serving_mode = oci.generative_ai_inference.models.OnDemandServingMode(
                     model_id=self.config.model_name
                 )
                 embed_details.compartment_id = self.config.compartment_id
-                embed_details.embed_text_request = inner_request
+                embed_details.inputs = texts
+                embed_details.input_type = input_type.upper()
+                embed_details.truncate = "END"
 
                 # 4. 执行异步调用
                 loop = asyncio.get_event_loop()
