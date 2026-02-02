@@ -63,7 +63,9 @@ class EmbeddingModelPool(BaseModelPool[BaseEmbedding[Any]]):
         将数据库数据映射为具体的 Pydantic Config 对象
         """
         params = data.get("model_params", {})
-        path = data.get("model_path")
+        path = data.get("model_path", None)
+        api_key = data.get("api_key", None)
+        api_endpoint = data.get("api_endpoint", None)
         
         # 基础参数提取（复用频率高）
         common_kwargs = {
@@ -96,28 +98,31 @@ class EmbeddingModelPool(BaseModelPool[BaseEmbedding[Any]]):
             )
 
         if provider in [EmbeddingProvider.API_QWEN.value, EmbeddingProvider.CHATGPT.value]:
-            api_key = data.get("api_key")
-            api_base = data.get("api_endpoint")
             if not api_key: raise ValueError(f"{name} 缺少 api_key")
-            # 移除 api_base 末尾的 /embeddings，避免路径重复
-            if api_base and api_base.endswith("/embeddings"):
-                api_base = api_base[:-11]
+            # 移除 api_endpoint 末尾的 /embeddings，避免路径重复
+            if api_endpoint and api_endpoint.endswith("/embeddings"):
+                api_endpoint = api_endpoint[:-11]
             return OpenAIEmbeddingConfig(
                 **common_kwargs,
                 api_key=api_key,
-                api_base=api_base,
+                api_base=api_endpoint,
                 dimensions=params.get("dimensions", 1536),
                 timeout=params.get("timeout", global_cfg.timeout),
                 max_retries=params.get("max_retries", 3)
             )
 
-        if provider == EmbeddingProvider.COHERE.value:
-            api_key = data.get("api_key")
-            if not api_key: raise ValueError(f"{name} 缺少 api_key")
-            return CohereEmbeddingConfig(
+        if provider == EmbeddingProvider.OCI.value:
+            compartment_id = params.get("compartment_id")
+            config_file = params.get("config_file")
+            
+            if not all([api_endpoint, compartment_id, config_file]):
+                raise ValueError(f"OCI 模型 {name} 缺少必要参数 (compartment_id/config_file/endpoint)")
+
+            return OCIEmbeddingConfig(
                 **common_kwargs,
-                api_key=api_key,
-                timeout=params.get("timeout", global_cfg.timeout),
+                compartment_id=compartment_id,
+                config_file=config_file,
+                api_endpoint=api_endpoint, # type: ignore
                 input_type_doc=params.get("input_type_doc", "search_document"),
                 input_type_query=params.get("input_type_query", "search_query")
             )

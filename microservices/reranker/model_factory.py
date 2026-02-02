@@ -31,19 +31,19 @@ def create_reranker_model(config: RerankerConfig) -> BaseReranker:
         else:
             raise ValueError(f"提供商 {provider} 需要 Qwen3RerankerConfig 配置对象")
             
-    # 3. OpenAI 兼容接口 (Qwen API, ChatGPT 等)
-    elif provider in [RerankerProvider.API_QWEN.value, RerankerProvider.CHATGPT.value]:
-        if isinstance(config, OpenAIRerankerConfig):
-            return OpenAIReranker(config)
-        else:
-            raise ValueError(f"提供商 {provider} 需要 OpenAIRerankerConfig 配置对象")
+    # # 3. OpenAI 兼容接口 (Qwen API, ChatGPT 等)
+    # elif provider in [RerankerProvider.API_QWEN.value, RerankerProvider.CHATGPT.value]:
+    #     if isinstance(config, OpenAIRerankerConfig):
+    #         return OpenAIReranker(config)
+    #     else:
+    #         raise ValueError(f"提供商 {provider} 需要 OpenAIRerankerConfig 配置对象")
             
-    # 4. Cohere 模型
-    elif provider == RerankerProvider.COHERE.value:
-        if isinstance(config, CohereRerankerConfig):
-            return CohereReranker(config)
-        else:
-            raise ValueError(f"提供商 {provider} 需要 CohereRerankerConfig 配置对象")
+    # # 4. Cohere 模型
+    # elif provider == RerankerProvider.COHERE.value:
+    #     if isinstance(config, CohereRerankerConfig):
+    #         return CohereReranker(config)
+    #     else:
+    #         raise ValueError(f"提供商 {provider} 需要 CohereRerankerConfig 配置对象")
             
     else:
         raise ValueError(f"不支持的 Reranker 提供商: {provider} (模型名称: {config.model_name})")
