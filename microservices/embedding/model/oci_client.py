@@ -40,51 +40,50 @@ class OCIEmbedding(BaseEmbedding[OCIEmbeddingConfig]):
             raise
 
     async def _embed_batch(self, texts: list[str], input_type: str) -> tuple[list[list[float]], int]:
-        """
-        核心修正：使用字典构造模型，彻底绕过 import 限制
-        """
         async with self._semaphore:
-            # 1. 构造 Cohere 特有的请求负载字典
-            # OCI SDK 的底层会根据此字典自动映射到对应的类
-            cohere_payload = {
-                "inputs": texts,
-                "input_type": input_type,
-                "truncate": "END"
-            }
-
-            # 2. 构造通用的 EmbedTextDetails
-            # 注意：embed_text_request 虽然在 IDE 里报错，但运行时接受对象或字典
-            embed_details = oci.generative_ai_inference.models.EmbedTextDetails(
-                serving_mode=oci.generative_ai_inference.models.OnDemandServingMode(
-                    model_id=self.config.model_name
-                ),
-                compartment_id=self.config.compartment_id,
-                # 关键点：直接传入字典或动态构造
-                embed_text_request=oci.generative_ai_inference.models.CohereEmbedTextRequest(**cohere_payload)  # type: ignore
-                if hasattr(oci.generative_ai_inference.models, "CohereEmbedTextRequest") 
-                else cohere_payload
-            )
-
-            loop = asyncio.get_event_loop()
             try:
-                # 执行同步调用
+                # 1. 彻底放弃使用具体的类，改用原始字典构造
+                # 这能避开 SDK 内部 EmbeddingProvider.COHERE 的枚举校验
+                cohere_request_dict = {
+                    "inputs": texts,
+                    "input_type": input_type,
+                    "truncate": "END"
+                }
+
+                # 2. 使用基类包装字典
+                # OCI SDK 的底层序列化器会根据字典内容自动识别 Provider
+                embed_details = oci.generative_ai_inference.models.EmbedTextDetails()
+                embed_details.serving_mode = oci.generative_ai_inference.models.OnDemandServingMode(
+                    model_id=self.config.model_name
+                )
+                embed_details.compartment_id = self.config.compartment_id
+                
+                # 直接赋值字典，SDK 在发送请求前会自动进行 JSON 序列化
+                embed_details.embed_text_request = cohere_request_dict 
+
+                # 3. 异步执行同步调用
+                loop = asyncio.get_event_loop()
                 response = await loop.run_in_executor(
                     None, 
                     lambda: self.client.embed_text(embed_details)
                 )
                 
-                # 结果提取
+                # 4. 结果提取 (V4 的返回结构通常与 V3 保持一致)
                 embeddings = response.data.embeddings
                 tokens = 0
-                # 尝试安全获取 billed_tokens
                 if hasattr(response.data, 'meta') and response.data.meta:
-                    meta = response.data.meta
-                    if hasattr(meta, 'billed_tokens') and meta.billed_tokens:
-                        tokens = int(meta.billed_tokens.tokens or 0)
+                    # 使用 getattr 安全获取，防止 meta 结构变化
+                    billed_tokens = getattr(response.data.meta, 'billed_tokens', None)
+                    if billed_tokens:
+                        tokens = int(getattr(billed_tokens, 'tokens', 0))
 
                 return embeddings, tokens
+
             except Exception as e:
-                logger.error(f"❌ OCI Inference Error: {e}")
+                logger.error(f"❌ OCI Embedding V4 错误: {str(e)}")
+                # 如果还是报错，打印出更详细的错误信息
+                if hasattr(e, 'message'):
+                    logger.error(f"详细错误信息: {e.message}") # type: ignore
                 raise
 
     async def embed(self, texts: list[str], is_query: bool = True, **kwargs) -> EmbeddingResponse:
