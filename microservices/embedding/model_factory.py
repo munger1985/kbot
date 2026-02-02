@@ -35,11 +35,11 @@ def create_embedding_model(config: EmbeddingConfig) -> BaseEmbedding:
         else:
             raise ValueError("OpenAI Embedding 参数配置无效")
         
-    elif provider == EmbeddingProvider.COHERE.value:
-        if isinstance(config, CohereEmbeddingConfig):
-            return CohereEmbedding(config)
+    elif provider == EmbeddingProvider.OCI.value:
+        if isinstance(config, OCIEmbeddingConfig):
+            return OCIEmbedding(config)
         else:
-            raise ValueError("Cohere Embedding 参数配置无效")
+            raise ValueError("OCI Embedding 参数配置无效")
         
     else:
         raise ValueError(f"不支持的Embedding服务提供商: {provider}")

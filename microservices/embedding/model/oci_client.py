@@ -111,3 +111,8 @@ class OCIEmbedding(BaseEmbedding[OCIEmbeddingConfig]):
             model_name=self.config.model_name,
             tokens=total_tokens
         )
+    
+    async def shutdown(self) -> None:
+        self.client = None
+        self._is_initialized = False
+        logger.info("♻️ OCI Embedding 客户端已关闭")
