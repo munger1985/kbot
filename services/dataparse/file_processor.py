@@ -174,8 +174,3 @@ class FileProcessor:
             # 更新文件状态为处理失败
             await self.common.update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, msg)
         
-    
-    
-
-    
-

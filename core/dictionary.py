@@ -145,7 +145,7 @@ class EmbeddingProvider(str, Enum):
     LOCAL_QWEN = "local_qwen"
     API_QWEN = "api_qwen"
     CHATGPT = "chatgpt"
-    COHERE = "cohere"
+    OCI = "oci"
 
 class LLMProvider(str, Enum):
     """支持的LLM提供商枚举"""
@@ -158,9 +158,6 @@ class RerankerProvider(str, Enum):
     """支持的 reranker 模型枚举"""
     LOCAL_BGE = "local_bge"
     LOCAL_QWEN = "local_qwen"
-    # API_QWEN = "api_qwen"
-    CHATGPT = "chatgpt"
-    COHERE = "cohere"
 
 class VLMProvider(str, Enum):
     """支持的 VLM 提供商枚举"""
