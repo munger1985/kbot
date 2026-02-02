@@ -53,10 +53,9 @@ class OCIEmbedding(BaseEmbedding[OCIEmbeddingConfig]):
 
                 # 2. 绕过初始化构造函数，使用 from_dict 注入
                 # 这样可以跳过 SDK 内部对 EmbeddingProvider.COHERE 的静态校验
-                from oci.generative_ai_inference.models.cohere_embed_text_request import CohereEmbedTextRequest
+                inner_request = oci.generative_ai_inference.models.CohereEmbedTextRequest()
                 
                 # 强行创建一个空对象并手动填充，避开 __init__ 里的枚举报错
-                inner_request = CohereEmbedTextRequest()
                 inner_request.inputs = texts
                 inner_request.input_type = input_type.upper()
                 inner_request.truncate = "END"
