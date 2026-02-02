@@ -42,48 +42,56 @@ class OCIEmbedding(BaseEmbedding[OCIEmbeddingConfig]):
     async def _embed_batch(self, texts: list[str], input_type: str) -> tuple[list[list[float]], int]:
         async with self._semaphore:
             try:
-                # 1. 彻底放弃使用具体的类，改用原始字典构造
-                # 这能避开 SDK 内部 EmbeddingProvider.COHERE 的枚举校验
-                cohere_request_dict = {
+                # 1. 严格按照后端要求的 JSON 结构构造字典
+                # 注意：input_type 在 OCI 上通常需要大写，如 'SEARCH_QUERY'
+                # 某些模型（如 V4）对这个字段极其挑剔
+                payload = {
                     "inputs": texts,
-                    "input_type": input_type,
+                    "inputType": input_type.upper(), # 尝试转大写以适配 OCI 枚举
                     "truncate": "END"
                 }
 
-                # 2. 使用基类包装字典
-                # OCI SDK 的底层序列化器会根据字典内容自动识别 Provider
+                # 2. 绕过初始化构造函数，使用 from_dict 注入
+                # 这样可以跳过 SDK 内部对 EmbeddingProvider.COHERE 的静态校验
+                from oci.generative_ai_inference.models.cohere_embed_text_request import CohereEmbedTextRequest
+                
+                # 强行创建一个空对象并手动填充，避开 __init__ 里的枚举报错
+                inner_request = CohereEmbedTextRequest()
+                inner_request.inputs = texts
+                inner_request.input_type = input_type.upper()
+                inner_request.truncate = "END"
+
+                # 3. 构造外层 Details
                 embed_details = oci.generative_ai_inference.models.EmbedTextDetails()
                 embed_details.serving_mode = oci.generative_ai_inference.models.OnDemandServingMode(
                     model_id=self.config.model_name
                 )
                 embed_details.compartment_id = self.config.compartment_id
-                
-                # 直接赋值字典，SDK 在发送请求前会自动进行 JSON 序列化
-                embed_details.embed_text_request = cohere_request_dict 
+                embed_details.embed_text_request = inner_request
 
-                # 3. 异步执行同步调用
+                # 4. 执行异步调用
                 loop = asyncio.get_event_loop()
                 response = await loop.run_in_executor(
                     None, 
                     lambda: self.client.embed_text(embed_details)
                 )
                 
-                # 4. 结果提取 (V4 的返回结构通常与 V3 保持一致)
+                # 5. 结果提取
                 embeddings = response.data.embeddings
                 tokens = 0
                 if hasattr(response.data, 'meta') and response.data.meta:
-                    # 使用 getattr 安全获取，防止 meta 结构变化
-                    billed_tokens = getattr(response.data.meta, 'billed_tokens', None)
-                    if billed_tokens:
-                        tokens = int(getattr(billed_tokens, 'tokens', 0))
+                    # 兼容性获取 token 数
+                    meta = response.data.meta
+                    billed = getattr(meta, 'billed_tokens', None)
+                    if billed:
+                        tokens = int(getattr(billed, 'tokens', 0))
 
                 return embeddings, tokens
 
             except Exception as e:
-                logger.error(f"❌ OCI Embedding V4 错误: {str(e)}")
-                # 如果还是报错，打印出更详细的错误信息
-                if hasattr(e, 'message'):
-                    logger.error(f"详细错误信息: {e.message}") # type: ignore
+                logger.error(f"❌ OCI Embedding 请求失败: {e}")
+                # 打印详细负载以便排查
+                logger.debug(f"Payload was: {texts[:1]}... count: {len(texts)}")
                 raise
 
     async def embed(self, texts: list[str], is_query: bool = True, **kwargs) -> EmbeddingResponse:
