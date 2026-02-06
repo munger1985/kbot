@@ -16,7 +16,7 @@ class BGERerankerConfig(RerankerConfig):
     device: str | None = Field(None, description="目标设备 (cuda/cpu)")
     use_fp16: bool = Field(True, description="是否使用半精度")
     batch_size: int = Field(16, description="建议批处理大小")
-    score_threshold: float = Field(0.001, description="分数过滤阈值")
+    # score_threshold: float = Field(0.001, description="分数过滤阈值")
 
 class BGEReranker(BaseReranker[BGERerankerConfig]):
     """
@@ -125,7 +125,7 @@ class BGEReranker(BaseReranker[BGERerankerConfig]):
         results = [
             {"index": idx, "score": score} 
             for idx, score in enumerate(all_scores) 
-            if score >= self.config.score_threshold
+            # if score >= self.config.score_threshold
         ]
         
         # 排序取前 K

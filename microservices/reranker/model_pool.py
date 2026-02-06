@@ -85,7 +85,7 @@ class RerankerModelPool(BaseModelPool[BaseReranker[Any]]):
                 model_path=path,
                 device=params.get("device"),
                 use_fp16=params.get("use_fp16", provider == RerankerProvider.LOCAL_QWEN.value),
-                score_threshold=params.get("score_threshold", 0.0),
+                # score_threshold=params.get("score_threshold", 0.0),
                 # Qwen 可能需要的特定指令
                 instruction=params.get("instruction") if provider == RerankerProvider.LOCAL_QWEN.value else None
             )

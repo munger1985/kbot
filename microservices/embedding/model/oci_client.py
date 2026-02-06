@@ -66,15 +66,15 @@ class OCIEmbedding(BaseEmbedding[OCIEmbeddingConfig]):
                 loop = asyncio.get_event_loop()
                 response = await loop.run_in_executor(
                     None, 
-                    lambda: self.client.embed_text(embed_details)
+                    lambda: self.client.embed_text(embed_details) # type: ignore
                 )
                 
                 # 5. 结果提取
-                embeddings = response.data.embeddings
+                embeddings = response.data.embeddings # type: ignore
                 tokens = 0
-                if hasattr(response.data, 'meta') and response.data.meta:
+                if hasattr(response.data, 'meta') and response.data.meta: # type: ignore
                     # 兼容性获取 token 数
-                    meta = response.data.meta
+                    meta = response.data.meta # type: ignore
                     billed = getattr(meta, 'billed_tokens', None)
                     if billed:
                         tokens = int(getattr(billed, 'tokens', 0))

@@ -14,7 +14,7 @@ class Qwen3RerankerConfig(RerankerConfig):
     device: str | None = Field(None, description="设备")
     use_fp16: bool = Field(True, description="RTX 5080/4090 建议设为 True 使用 BF16")
     batch_size: int = Field(8, description="批处理大小")
-    score_threshold: float = Field(-10.0, description="分数阈值")
+    # score_threshold: float = Field(-10.0, description="分数阈值")
     max_tokens: int = Field(1024, description="最大序列长度")
     instruction: str | None = Field(
         "Given a query and a relevant document, retrieve the relevance score of the document to the query.", 
@@ -155,9 +155,9 @@ class Qwen3Reranker(BaseReranker[Qwen3RerankerConfig]):
 
         # 5. 全局排序与过滤
         all_results.sort(key=lambda x: x["score"], reverse=True)
-        final_results = [r for r in all_results if r["score"] >= self.config.score_threshold]
+        # final_results = [r for r in all_results if r["score"] >= self.config.score_threshold]
         
-        return final_results[:top_k] if top_k else final_results
+        return all_results[:top_k] if top_k else all_results
 
     async def shutdown(self) -> None:
         if self.model:
