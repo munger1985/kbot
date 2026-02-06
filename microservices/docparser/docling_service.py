@@ -6,6 +6,7 @@
 import os
 from loguru import logger
 
+from core.config.settings import get_parser_config
 from docling.datamodel.base_models import InputFormat
 from .parsers.docling_parser import DoclingDocProcessor, OutputFormat
 from .parser_schema import ParserParams
@@ -44,7 +45,7 @@ class ParserService:
         "chunks": OutputFormat.CHUNKS,  # 内部 Processor 已支持 CHUNKS 枚举
     }
 
-    def __init__(self, en_model_path: str, zh_model_path: str):
+    def __init__(self):
         """初始化服务。
 
         Args:
@@ -52,9 +53,12 @@ class ParserService:
             zh_model_path: 中文 Tokenizer 路径。
         """
         # Processor 现在是无状态的 VLM 配置，只需初始化分词器
+        config = get_parser_config()
         self.processor = DoclingDocProcessor(
-            en_tokenizer_path=en_model_path,
-            zh_tokenizer_path=zh_model_path
+            en_tokenizer_path=config.tokenizer.en,
+            zh_tokenizer_path=config.tokenizer.zh,
+            local_artifacts_path=config.local_artifacts_path,
+            max_workers=config.max_workers,
         )
 
     async def parse_file(self, parser_params: ParserParams) -> str | dict | list[dict]:

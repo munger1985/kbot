@@ -73,11 +73,12 @@ class VLMEnabledMarkdownProvider(ChunkingSerializerProvider):
         )
 
 class DoclingDocProcessor:
-    def __init__(self, en_tokenizer_path: str, zh_tokenizer_path: str):
-        self.executor = ThreadPoolExecutor(max_workers=4)
+    def __init__(self, en_tokenizer_path: str, zh_tokenizer_path: str, local_artifacts_path: str, max_workers: int = 4):
+        self.executor = ThreadPoolExecutor(max_workers=max_workers)
         self.vlm_semaphore = asyncio.Semaphore(5)
-        self.en_tk = AutoTokenizer.from_pretrained(en_tokenizer_path)
-        self.zh_tk = AutoTokenizer.from_pretrained(zh_tokenizer_path)
+        self.en_tk = AutoTokenizer.from_pretrained(en_tokenizer_path, local_files_only=True)
+        self.zh_tk = AutoTokenizer.from_pretrained(zh_tokenizer_path, local_files_only=True)
+        self.local_artifacts_path = local_artifacts_path
 
     def _detect_is_zh(self, doc: DoclingDocument) -> bool:
         sample = "".join([t.text for t in doc.texts[:10]])
@@ -164,8 +165,9 @@ class DoclingDocProcessor:
         return chunk_results
 
     async def convert_document(self, params: ParserParams) -> str | dict | list[dict]:
+
         # 1. 初始化转换器配置项
-        pipeline_opts = PdfPipelineOptions()
+        pipeline_opts = PdfPipelineOptions(artifacts_path=self.local_artifacts_path)
         pipeline_opts.do_ocr = params.do_ocr
         pipeline_opts.generate_picture_images = params.generate_picture_images
         pipeline_opts.images_scale = params.images_scale

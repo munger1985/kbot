@@ -383,9 +383,9 @@ api.End()
 - 支持的语言列表超过100种，可根据实际需求选择
 
 
-## 5.本地模型准备（可选）
+## 5.本地模型准备
 
-### 5.1 下载 embedding/rerank 模型
+### 5.1 下载 embedding/rerank 模型 (可选)
 **说明**：
 - 如果采用本地部署 rerank 和 embedding 模型（本项目默认使用 Qwen3）需要事先下载好。
 - 也可以使用其他开源模型，例如 bge-reranker-v2-m3 和 bge-m3 模型。
@@ -399,12 +399,20 @@ python docs/install/models/download_qwen_model.py
 - 下载完成后会输出模型目录，默认在 ~/.modelscope/models/Qwen/目录下
 - 可以根据实际情况移动到其他目录，并在应用启动后将模型目录配置到系统中。
 
-### 5.2 下载 tokenizer 模型（用于文本解析时的语义分词）
+### 5.2 下载 tokenizer 模型（用于文本解析时的语义分词）(必须)
 ```bash
 pip install huggingface_hub
 python docs/install/models/download_tokenizer_model.py
 ```
-### 5.3 下载 EasyOCR 模型（用于图片文字识别）（可选）
+### 5.3 下载 docling 模型（用于文档解析）(必须)
+```bash
+# 使用 docling-tools 强制下载到物理路径，而不是缓存软链接
+mkdir -p ~/cached_models/docling_models
+docling-tools models download --all -o ~/cached_models/docling_models
+# 然后把 ~/cached_models/docling_models 目录添加到base.toml中的local_artifacts_path
+```
+
+### 5.4 下载 EasyOCR 模型（用于图片文字识别）（可选）
 ```bash
 pip install easyocr
 python docs/install/models/download_easyocr_model.py

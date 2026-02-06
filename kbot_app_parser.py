@@ -88,10 +88,7 @@ async def lifespan(app: FastAPI):
     
     try:
         # 2. 初始化解析服务 (保持原样，直接实例化)
-        doc_parser_service = ParserService(
-            en_model_path=config.tokenizer.en,
-            zh_model_path=config.tokenizer.zh
-        )
+        doc_parser_service = ParserService()
         logger.info(f"解析服务引擎加载成功 | 耗时: {time.time() - start_time:.2f}s")
 
     except Exception as e:

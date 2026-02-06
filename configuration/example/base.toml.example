@@ -79,6 +79,8 @@ service_version = "1.0.0"
 service_host = "0.0.0.0"
 service_port = 18095
 timeout = 600
+local_artifacts_path = "/home/chris/models/docling_models"
+max_workers = 4
 
 [parser.tokenizer]
 en = "/home/ubuntu/models/embedding/bge-small-en-v1.5"

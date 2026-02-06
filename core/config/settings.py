@@ -137,7 +137,9 @@ class ParserConfig(BaseModel):
     service_version: str = Field(default="1.0.0")
     service_host: str = Field(default="0.0.0.0")
     service_port: int = Field(default=18095, ge=1, le=65535)
-    timeout: int = Field(default=300, ge=10, le=1800)
+    timeout: int = Field(default=300, ge=10, le=65535)
+    local_artifacts_path: str = Field(default="./cached_models")
+    max_workers: int = Field(default=4, ge=1, le=100)
     tokenizer: TokenizerConfig = TokenizerConfig()
 
 class JiebaConfig(BaseModel):
