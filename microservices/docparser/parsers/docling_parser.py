@@ -181,10 +181,10 @@ class DoclingDocProcessor:
         pipeline_opts.ocr_options = TesseractOcrOptions() if engine == "tesseract" else EasyOcrOptions()
         if engine == "tesseract":
             pipeline_opts.ocr_options = TesseractOcrOptions()
-            pipeline_opts.ocr_options.lang = ["chi_sim", "eng"] # 必须是 chi_sim 和 eng
+            pipeline_opts.ocr_options.lang = ["chi_sim", "eng"] # tesseract 必须是 chi_sim 和 eng
         else:
             pipeline_opts.ocr_options = EasyOcrOptions()
-            pipeline_opts.ocr_options.lang = ["ch_sim", "en"]  # EasyOCR 保持原样
+            pipeline_opts.ocr_options.lang = ["ch_sim", "en"]  # EasyOCR 和 tesseract 不同，EasyOCR 必须是 ch_sim 和 en
 
         # converter = DocumentConverter(format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_opts)})
 

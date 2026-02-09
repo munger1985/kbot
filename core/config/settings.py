@@ -67,7 +67,7 @@ class EmbedConfig(BaseModel):
     service_host: str = Field(default="0.0.0.0")
     service_port: int = Field(default=18091, ge=1, le=65535)
     max_tokens: int = Field(default=1024, ge=512, le=32768)
-    timeout: int = Field(default=300, ge=10, le=1800)
+    timeout: int = Field(default=300, ge=10, le=65535)
     health_check_timeout: int = Field(default=10, ge=5, le=60)
     max_retries: int = Field(default=3, ge=0, le=10)
     cache_dir: str = Field(default="./cached_models")
@@ -87,7 +87,7 @@ class LLMConfig(BaseModel):
     temperature: float = Field(default=0.7, ge=0.0, le=2.0)
     top_p: float = Field(default=1.0, ge=0.0, le=1.0)
     top_k: int = Field(default=0, ge=0, le=100)
-    timeout: int = Field(default=300, ge=10, le=1800)
+    timeout: int = Field(default=300, ge=10, le=65535)
     health_check_timeout: int = Field(default=10, ge=5, le=60)
     frequency_penalty: float = Field(default=0.0, ge=0.0, le=2.0)
     presence_penalty: float = Field(default=0.0, ge=0.0, le=2.0)
@@ -104,7 +104,7 @@ class RerankerConfig(BaseModel):
     service_host: str = Field(default="0.0.0.0")
     service_port: int = Field(default=18093, ge=1, le=65535)
     cache_dir: str = Field(default="./cached_models")
-    timeout: int = Field(default=300, ge=10, le=1800)
+    timeout: int = Field(default=300, ge=10, le=65535)
     health_check_timeout: int = Field(default=10, ge=5, le=60)
     
     @property
@@ -118,7 +118,7 @@ class VLMConfig(BaseModel):
     service_version: str = Field(default="1.0.0")
     service_host: str = Field(default="0.0.0.0")
     service_port: int = Field(default=18094, ge=1, le=65535)
-    timeout: int = Field(default=300, ge=10, le=1800)
+    timeout: int = Field(default=300, ge=10, le=65535)
     health_check_timeout: int = Field(default=10, ge=5, le=60)
     
     @property

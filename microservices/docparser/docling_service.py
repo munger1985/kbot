@@ -46,12 +46,7 @@ class ParserService:
     }
 
     def __init__(self):
-        """初始化服务。
-
-        Args:
-            en_model_path: 英文 Tokenizer 路径。
-            zh_model_path: 中文 Tokenizer 路径。
-        """
+        """初始化服务。"""
         # Processor 现在是无状态的 VLM 配置，只需初始化分词器
         config = get_parser_config()
         self.processor = DoclingDocProcessor(
