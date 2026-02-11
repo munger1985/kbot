@@ -15,7 +15,7 @@ class BaseModelPool(ABC, Generic[T]):
     优化项：完善了泛型支持、异步生命周期管理及静态类型检查适配
     """
     
-    def __init__(self, health_check_interval: int = 600):
+    def __init__(self, health_check_interval: int = 3600):
         """
         初始化模型池
         
