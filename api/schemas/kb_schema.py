@@ -14,6 +14,15 @@ class KBUploadForm(BaseModel):
     biz_metadata: dict|None = Field(None, description="业务元数据")
     created_by: str|None = Field(None, description="创建人")
 
+class KBAttachForm(BaseModel):
+    """知识库附加文件夹表单模型"""
+    folder_path: str = Field(..., description="文件夹路径")
+    app_id: int = Field(..., description="应用ID")
+    domain_id: int = Field(..., description="领域ID")
+    kb_id: int = Field(..., description="知识库ID")
+    batch_name: str = Field(..., description="批次名称")
+    biz_metadata: dict|None = Field(None, description="业务元数据")
+    created_by: str|None = Field(None, description="创建人")
 
 class KBDeleteForm(BaseModel):
     """知识库删除表单模型"""

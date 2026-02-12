@@ -37,6 +37,27 @@ class KBController:
             msg = f"上传文件到知识库 {upload_form.kb_id} 失败: {str(e)}"
             logger.error(msg)
             raise InternalServerError(message=msg)
+        
+    async def attach_folder(
+            self,
+            attach_form: KBAttachForm
+        ) -> tuple[bool, str | None]:
+        """上传文件到知识库"""
+        try:
+            result, error_msg = await KBFileOperator().attach_folder(
+                folder_path=attach_form.folder_path,
+                app_id=attach_form.app_id,
+                domain_id=attach_form.domain_id,
+                kb_id=attach_form.kb_id,
+                batch_name=attach_form.batch_name,
+                biz_metadata=attach_form.biz_metadata,
+                created_by=attach_form.created_by
+            )
+            return result, error_msg
+        except Exception as e:
+            msg = f"上传文件到知识库 {attach_form.kb_id} 失败: {str(e)}"
+            logger.error(msg)
+            raise InternalServerError(message=msg)
 
     async def delete_kb_files(
             self,

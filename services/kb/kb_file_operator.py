@@ -145,9 +145,9 @@ class KBFileOperator:
 
         logger.debug(f"文件保存结果: {results}")
         return results
-
-    async def upload_file_service(self, 
-                                files: list[UploadFile], 
+    
+    async def _save_file_metadata(self, 
+                                fileparams: list[dict], 
                                 app_id: int,
                                 domain_id: int,
                                 kb_id: int,
@@ -157,24 +157,7 @@ class KBFileOperator:
                                 biz_metadata: dict | None = None,
                                 created_by: str | None = None,
                                 ) -> tuple[bool, str | None]:
-        '''
-        上传文件到知识库并保存记录到数据库
-            
-        参数:
-            files: 要上传的文件列表
-            app_id: 应用ID
-            domain_id: 业务域ID
-            kb_id: 目标知识库ID
-            batch_name: 本次上传的批次名称
-            overwrite: 是否覆盖已存在的文件
-            batch_id: 可选的批次ID
-            biz_metadata: 业务元数据(JSON格式)
-            created_by: 创建者标识
-        
-        返回:
-            tuple[bool, str | None]: (上传是否成功, 错误信息)
-        '''
-        
+        """保存文件元数据"""
         # 从KB表获取默认配置
         kb_repo = KbotMdKbRepository()
         kb_entity = await kb_repo.get_by_id(kb_id)
@@ -183,16 +166,6 @@ class KBFileOperator:
             logger.error(error_msg)
             return False, error_msg
         
-        # 保存文件
-        logger.info(f"开始上传 {len(files)} 个文件到知识库: {kb_id}")
-        try:
-            fileparams = await self._save_files_in_thread(files=files, domain_id=domain_id, kb_id=kb_id, batch_name=batch_name, overwrite=overwrite)
-            logger.debug(f"文件已保存到磁盘: {[fp['file_name'] for fp in fileparams]}")
-        except Exception as e:
-            error_msg = f"保存文件到磁盘失败: {str(e)}"
-            logger.error(error_msg)
-            return False, error_msg
-
         # 构造 batch 的实体用于保存到数据库
         batch_entity = KbotMdKbBatch(
             batch_id=batch_id,
@@ -247,6 +220,61 @@ class KBFileOperator:
             error_msg = f"保存文件到数据库失败: {str(e)}"
             logger.error(error_msg)
             return False, error_msg
+        
+
+    async def upload_file_service(self, 
+                                files: list[UploadFile], 
+                                app_id: int,
+                                domain_id: int,
+                                kb_id: int,
+                                batch_name:str,
+                                overwrite: bool,
+                                batch_id: int | None = None,
+                                biz_metadata: dict | None = None,
+                                created_by: str | None = None,
+                                ) -> tuple[bool, str | None]:
+        '''
+        上传文件到知识库并保存记录到数据库
+            
+        参数:
+            files: 要上传的文件列表
+            app_id: 应用ID
+            domain_id: 业务域ID
+            kb_id: 目标知识库ID
+            batch_name: 本次上传的批次名称
+            overwrite: 是否覆盖已存在的文件
+            batch_id: 可选的批次ID
+            biz_metadata: 业务元数据(JSON格式)
+            created_by: 创建者标识
+        
+        返回:
+            tuple[bool, str | None]: (上传是否成功, 错误信息)
+        '''
+        # 保存文件
+        logger.info(f"开始上传 {len(files)} 个文件到知识库: {kb_id}")
+        try:
+            fileparams = await self._save_files_in_thread(files=files, domain_id=domain_id, kb_id=kb_id, batch_name=batch_name, overwrite=overwrite)
+            logger.debug(f"文件已保存到磁盘: {[fp['file_name'] for fp in fileparams]}")
+        except Exception as e:
+            error_msg = f"保存文件到磁盘失败: {str(e)}"
+            logger.error(error_msg)
+            return False, error_msg
+        
+        # 保存文件元数据
+        logger.info(f"开始保存文件元数据到数据库: {kb_id}")
+        try:
+            r = await self._save_file_metadata(fileparams=fileparams, app_id=app_id, domain_id=domain_id, kb_id=kb_id, batch_name=batch_name, overwrite=overwrite, batch_id=batch_id, biz_metadata=biz_metadata, created_by=created_by)
+            if r[0]:
+                logger.info(f"文件元数据已保存到数据库: {kb_id}")
+                return True, None
+            else:
+                return False, r[1]
+        except Exception as e:
+            error_msg = f"保存文件元数据到数据库失败: {str(e)}"
+            logger.error(error_msg)
+            return False, error_msg
+
+        
         
     async def _delete_files(self, 
                         domain_id: int, 
@@ -565,3 +593,78 @@ class KBFileOperator:
         except Exception as e:
             logger.error(f"更新文件标签失败: {str(e)}")
             return False
+        
+    async def attach_folder(self, 
+                            folder_path: str,
+                            app_id: int,
+                            domain_id: int,
+                            kb_id: int,
+                            batch_name: str,
+                            biz_metadata: dict | None = None,
+                            created_by: str | None = None
+                        ) -> tuple[bool, str | None]:
+        """
+        直接将现有文件夹中的文件信息同步到知识库数据库中
+        """
+        try:
+            root_folder = Path(folder_path).resolve()
+            if not root_folder.exists() or not root_folder.is_dir():
+                msg = f"提供的路径不存在或不是目录: {folder_path}"
+                logger.error(msg)
+                return False, msg
+
+            fileparams = []
+            
+            # 1. 递归遍历文件夹下的所有文件
+            # 使用 rglob("*") 匹配所有子目录下的文件
+            for p in root_folder.rglob("*"):
+                if p.is_file():
+                    # 提取文件基础信息
+                    filename = p.name
+                    ext = p.suffix
+                    file_size = p.stat().st_size
+                    
+                    # 构造与 save_file 返回结构一致的字典
+                    param = {
+                        "file_path": str(p),         # 文件的绝对物理路径
+                        "file_name": filename,       # 文件名
+                        "file_ext": ext,             # 后缀名
+                        "is_overwrite": 0,           # 附加文件夹模式通常默认为不覆盖
+                        "file_version": 1,           # 初始版本
+                        "file_size": file_size       # 字节大小
+                    }
+                    fileparams.append(param)
+
+            if not fileparams:
+                msg = f"文件夹 {folder_path} 中未找到任何文件"
+                logger.warning(msg)
+                return False, msg
+
+            logger.info(f"扫描到 {len(fileparams)} 个文件，准备写入数据库。")
+
+            # 2. 直接调用元数据保存方法
+            # 注意：这里的 overwrite 参数在 _save_file_metadata 中主要用于逻辑判断，
+            # 既然文件已在磁盘，我们传 False 即可。
+            success, msg = await self._save_file_metadata(
+                fileparams=fileparams,
+                app_id=app_id,
+                domain_id=domain_id,
+                kb_id=kb_id,
+                batch_name=batch_name,
+                overwrite=False,
+                biz_metadata=biz_metadata,
+                created_by=created_by
+            )
+
+            if success:
+                logger.info(f"文件夹 {folder_path} 的元数据已成功关联至知识库 {kb_id}")
+                return True, None
+            else:
+                return False, msg
+
+        except Exception as e:
+            error_msg = f"附加文件夹失败: {str(e)}"
+            logger.error(error_msg)
+            return False, error_msg
+
+            

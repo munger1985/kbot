@@ -97,6 +97,50 @@ async def handle_upload_files(
         )
     
 @router.post(
+    "/attach",
+    summary="附加一个文件夹到指定知识库"
+)
+async def attach_folder_to_kb(
+    auth: UserAuth,
+    kb_attach_form: KBAttachForm = Body(...)
+) -> SuccessResponse:
+    """
+    附加一个文件夹到指定知识库
+    """
+    try:
+        result, error_msg = await controller.attach_folder(kb_attach_form)
+        
+        if result:
+            return SuccessResponse(
+                code=status.HTTP_200_OK,
+                success=True,
+                message="文件夹附加成功"
+            )
+        else:
+            # 如果有具体的错误信息，使用它；否则使用默认消息
+            message = error_msg if error_msg else "文件夹附加失败"
+            
+            # 根据错误类型设置适当的状态码
+            if error_msg and "知识库" in error_msg and "不存在" in error_msg:
+                code = status.HTTP_404_NOT_FOUND
+            else:
+                code = status.HTTP_400_BAD_REQUEST
+                
+            logger.error(f"文件夹附加失败: {message}")
+            raise HTTPException(
+                status_code=code,
+                detail=message
+            )
+        
+    except Exception as e:
+        msg = f"服务器内部错误: {str(e)}"
+        logger.error(msg)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=msg
+        )
+    
+@router.post(
     "/delete",
     summary="从指定的知识库中删除文件或所有文件以及其知识库或批次"
 )
