@@ -53,11 +53,12 @@ class KbotMdKbFilesRepository:
             )
             return result.scalars().all()
     
-    async def get_by_status(self, status: FileStatus) -> Sequence[KbotMdKbFiles]:
+    async def get_by_status(self, status: FileStatus, amount: int = 20) -> Sequence[KbotMdKbFiles]:
         """Get knowledge base files by status."""
         async with get_session() as session:
             result = await session.execute(
                 select(KbotMdKbFiles).where(KbotMdKbFiles.status == status.value)
+                .limit(amount)
             )
             return result.scalars().all()
     
