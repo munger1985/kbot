@@ -1,11 +1,11 @@
 #!/bin/bash
 
 # 初始化 conda 环境
-eval "$(conda shell.bash hook)"
-conda activate kbot3
+# eval "$(conda shell.bash hook)"
+# conda activate kbot3
 
 # 使用 /tmp 目录存储启动日志
-LOG_DIR="/tmp/kbot3_logs"
+LOG_DIR="/kbot3/logs"
 mkdir -p "$LOG_DIR"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
@@ -36,7 +36,7 @@ start_service() {
 }
 
 # 启动主程序（并等待其完全启动）
-start_service "KBOT3 主程序" "$(dirname "$0")" "kbot_main.py" "true" || exit 1
+start_service "KBOT3主程序" "$(dirname "$0")" "kbot_main.py" "true" || exit 1
 
 
 # 启动微服务数组
@@ -52,7 +52,12 @@ declare -A services=(
 for service_name in "${!services[@]}"; do
     start_service "${service_name}微服务" "$(dirname "${services[$service_name]}")" "$(basename "${services[$service_name]}")" "false" || exit 1
 done
-
+o
 echo
 echo "🎉 所有服务已成功启动！"
 echo "📋 本次启动日志位置: $LOG_DIR"
+echo "🔍 容器将持续运行，按 Ctrl+C 或执行 docker stop 可停止所有服务"
+
+# ========== 核心：让脚本前台挂起，不退出 ==========
+# 方式1：等待所有服务进程（推荐，服务退出时脚本也退出，便于容器重启）
+wait "${SERVICE_PIDS[@]}"
