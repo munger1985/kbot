@@ -8,16 +8,16 @@ from sqlalchemy.types import ARRAY, Float
 
 from core.exceptions import DatabaseException
 from .base_repo import BaseRepository
-from dao.entities import ChatRecordEntity
+from dao.entities import ChatMemoryEntity
 from utils.oracle_vec_handler import OracleVecHandler
 
 
-class ChatRecordRepository(BaseRepository[ChatRecordEntity]):
+class ChatMemoryRepository(BaseRepository[ChatMemoryEntity]):
     """
     User conversation record repository - responsible for physical maintenance and data access of chat record entries.
     """
 
-    async def add_record(self, chat_record: ChatRecordEntity):
+    async def create(self, chat_record: ChatMemoryEntity):
         """Inserts a single chat record.
 
         Args:
@@ -44,10 +44,10 @@ class ChatRecordRepository(BaseRepository[ChatRecordEntity]):
             list of chat records in ascending time order.
         """
         try:
-            stmt = select(ChatRecordEntity).where(
-                ChatRecordEntity.session_id == session_id
+            stmt = select(ChatMemoryEntity).where(
+                ChatMemoryEntity.session_id == session_id
             ).order_by(
-                ChatRecordEntity.created_at.desc()
+                ChatMemoryEntity.created_at.desc()
             ).limit(limit)
             
             result = await self.session.execute(stmt)
@@ -79,15 +79,15 @@ class ChatRecordRepository(BaseRepository[ChatRecordEntity]):
             # 2. Oracle 26ai vector similarity query (cosine distance).
             # VECTOR_DISTANCE syntax: VECTOR_DISTANCE(vector1, vector2, 'COSINE')
             stmt = select(
-                ChatRecordEntity,
+                ChatMemoryEntity,
                 # Calculate cosine distance (smaller value means more similar).
                 func.VECTOR_DISTANCE(
                     oracle_query_vector,                     # Query vector.
-                    ChatRecordEntity.question_vector,         # Stored vector (vector in JSON field).
+                    ChatMemoryEntity.question_vector,         # Stored vector (vector in JSON field).
                     text("'COSINE'")                         # Distance type.
                 ).label("distance")
             ).where(
-                ChatRecordEntity.session_id != exclude_session
+                ChatMemoryEntity.session_id != exclude_session
             ).order_by(
                 # Sort by cosine distance in ascending order (most similar first).
                 text("distance ASC")
@@ -100,7 +100,7 @@ class ChatRecordRepository(BaseRepository[ChatRecordEntity]):
             # Convert the result format.
             records = []
             for row in rows:
-                record = row[0]  # ChatRecordEntity object.
+                record = row[0]  # ChatMemoryEntity object.
                 distance = row[1] # Cosine distance value.
                 record_dict = self._entity_to_dict(record)
                 record_dict["similarity_score"] = 1 - float(distance)  # Convert to similarity (1 - distance).
@@ -122,10 +122,10 @@ class ChatRecordRepository(BaseRepository[ChatRecordEntity]):
             list of session history records in ascending time order.
         """
         try:
-            stmt = select(ChatRecordEntity).where(
-                ChatRecordEntity.session_id == session_id
+            stmt = select(ChatMemoryEntity).where(
+                ChatMemoryEntity.session_id == session_id
             ).order_by(
-                ChatRecordEntity.created_at.asc()  # Ascending order for rendering.
+                ChatMemoryEntity.created_at.asc()  # Ascending order for rendering.
             )
             
             result = await self.session.execute(stmt)
@@ -148,8 +148,8 @@ class ChatRecordRepository(BaseRepository[ChatRecordEntity]):
             session_id: Session ID to delete.
         """
         try:
-            stmt = delete(ChatRecordEntity).where(
-                ChatRecordEntity.session_id == session_id
+            stmt = delete(ChatMemoryEntity).where(
+                ChatMemoryEntity.session_id == session_id
             )
             await self.session.execute(stmt)
             logger.info(f"Deleted all chat records for session {session_id}.")
@@ -165,8 +165,8 @@ class ChatRecordRepository(BaseRepository[ChatRecordEntity]):
             session_ids: List of session IDs to delete.
         """
         try:
-            stmt = delete(ChatRecordEntity).where(
-                ChatRecordEntity.session_id.in_(session_ids)
+            stmt = delete(ChatMemoryEntity).where(
+                ChatMemoryEntity.session_id.in_(session_ids)
             )
             await self.session.execute(stmt)
             logger.info(f"Deleted chat records for sessions: {', '.join(session_ids)}.")
@@ -183,8 +183,8 @@ class ChatRecordRepository(BaseRepository[ChatRecordEntity]):
             feedback: Feedback result. 1: positive, 0: no feedback, -1: negative.
         """
         try:
-            stmt = update(ChatRecordEntity).where(
-                ChatRecordEntity.record_id == record_id
+            stmt = update(ChatMemoryEntity).where(
+                ChatMemoryEntity.record_id == record_id
             ).values(
                 feedback=feedback
             )
@@ -194,11 +194,11 @@ class ChatRecordRepository(BaseRepository[ChatRecordEntity]):
         except Exception as e:
             raise DatabaseException("Failed to submit feedback for chat record.", original_error=e)
         
-    def _entity_to_dict(self, entity: ChatRecordEntity) -> dict:
+    def _entity_to_dict(self, entity: ChatMemoryEntity) -> dict:
         """Converts ORM entity to a dictionary.
 
         Args:
-            entity: ChatRecordEntity instance.
+            entity: ChatMemoryEntity instance.
 
         Returns:
             dictionary representation of the entity.

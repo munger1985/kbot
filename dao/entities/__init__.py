@@ -2,7 +2,7 @@ from .agent import AgentEntity
 from .agent_conf import AgentConfEntity
 from .chat_history import ChatHistoryEntity
 from .chat_session import ChatSessionEntity
-from .chat_record import ChatRecordEntity
+from .chat_memory import ChatMemoryEntity
 from .domain import DomainEntity
 from .kb_batch import BatchEntity
 from .file import FileEntity
@@ -23,7 +23,7 @@ __all__ = [
     "AgentConfEntity",
     "ChatHistoryEntity",
     "ChatSessionEntity",
-    "ChatRecordEntity",
+    "ChatMemoryEntity",
     "DomainEntity",
     "BatchEntity",
     "FileEntity",

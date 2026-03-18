@@ -8,7 +8,6 @@ from fastapi import BackgroundTasks
 from .agent_service import AgentService
 from core.exceptions import InternalServerError
 from services.search.result import TxtBaseSearchResult
-from services.agent.memory import MemoryService
 
 class DifyService:
     """Retrieval service adapter for Dify interface."""
@@ -49,10 +48,10 @@ class DifyService:
             # Since Dify usually doesn't need the LLM answer back from us (it does its own generation),
             # we record the 'question' and 'retrieval results'. 
             # If Dify expects us to save the interaction:
-            memory_service = MemoryService(self.user_id)
+            
             persist_task = self.agent_service._persist_chat_data(
                 session_id=session_id,
-                memory_service=memory_service,
+                user_id=self.user_id,
                 question=question,
                 query_vec=model_params.get("query_vec"),
                 chunks=["[Dify Retrieval Only]"], # Placeholder for answer as Dify handles LLM

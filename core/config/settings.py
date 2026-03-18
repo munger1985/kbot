@@ -211,12 +211,6 @@ class Settings(BaseSettings):
         # 合并配置
         merged_config = cls._deep_merge(base_config, env_config)
         
-        # 调试输出：检查 tokenizer 配置是否正确加载
-        if "parser" in merged_config and "tokenizer" in merged_config["parser"]:
-            print(f"Tokenizer config loaded: {merged_config['parser']['tokenizer']}")
-        else:
-            print(f"Warning: Tokenizer config not found in merged config")
-            print(f"Base config parser keys: {list(base_config.get('parser', {}).keys())}")
         
         # 创建最终配置实例
         final_settings = cls(**merged_config)

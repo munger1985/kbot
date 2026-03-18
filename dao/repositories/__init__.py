@@ -2,7 +2,7 @@ from .agent_conf_repo import AgentConfRepository
 from .agent_repo import AgentRepository
 from .ai_model_repo import AIModelRepository
 from .chat_history_repo import ChatHistoryRepository
-from .chat_record_repo import ChatRecordRepository
+from .chat_memory_repo import ChatMemoryRepository
 from .chat_session_repo import ChatSessionRepository
 from .domain_repo import DomainRepository
 from .file_repo import FileRepository
@@ -22,7 +22,7 @@ __all__ = [
     "AgentRepository",
     "AIModelRepository",
     "ChatHistoryRepository",
-    "ChatRecordRepository",
+    "ChatMemoryRepository",
     "ChatSessionRepository",
     "DomainRepository",
     "FileRepository",

@@ -41,15 +41,12 @@ class AgentController:
         Agent interaction (Non-streaming).
         Returns the formatted dictionary with answer, embedding, and timestamps.
         """
-        user_id = form.by
-        memory_service = MemoryService(user_id)
-
         result = await self.agent_service.non_stream_chat(
             session_id=form.session_id,
+            user_id = form.by,
             agent_id=form.agent_id,
             question=form.question,
             security_level=form.security_level,
-            memory_service=memory_service, # inject memory service
             tags=form.tags or []
         )
         return SuccessResponse(data=result, message="Agent chat successful")
@@ -59,16 +56,13 @@ class AgentController:
         Agent interaction (Streaming).
         Uses BackgroundTasks to handle database persistence after the stream starts.
         """
-        user_id = form.by
-        memory_service = MemoryService(user_id)
-
         return await self.agent_service.stream_chat(
             background_tasks=background_tasks,
             session_id=form.session_id,
+            user_id = form.by,
             agent_id=form.agent_id,
             question=form.question,
             security_level=form.security_level,
-            memory_service=memory_service, # inject memory service
             tags=form.tags or []
         )
     

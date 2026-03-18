@@ -1,8 +1,6 @@
 import json
-import urllib.parse
 from loguru import logger
 from fastapi import APIRouter, UploadFile, File, Form, status, HTTPException, Body
-from fastapi.responses import HTMLResponse
 from fastapi.responses import FileResponse
 from api.controllers.kb_controller import kb_controller as controller
 from api.schemas.kb_schema import *

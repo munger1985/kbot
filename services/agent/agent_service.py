@@ -12,7 +12,7 @@ from core.database.oracle import get_session
 from core.config.settings import get_app_config
 from core.exceptions import *
 from dao.entities import AgentConfEntity, AgentEntity
-from dao.repositories import (AgentRepository, AgentConfRepository, ChatRecordRepository,
+from dao.repositories import (AgentRepository, AgentConfRepository, ChatMemoryRepository,
                              PromptRepository, ChatSessionRepository, FileRepository)
 from services.search.result import TxtBaseSearchResult
 from services.search.rerank import TxtBaseRerank
@@ -33,6 +33,7 @@ class AgentService:
         self.model_client = AIModelClient()
         self.model_service = AIModelService()
         self.context_builder = ContextBuilder()
+        self.memory_service = MemoryService()
 
 
     @property
@@ -156,7 +157,7 @@ class AgentService:
 
     async def stream_chat(
         self, background_tasks: BackgroundTasks, session_id: str, agent_id: int, question: str, 
-        security_level: int, memory_service: MemoryService, tags: list[str] = []
+        security_level: int, user_id: str, tags: list[str] = []
     ) -> StreamingResponse:
         """Public interface: Handles retrieval, context building, LLM generation, and memory persistence."""
         request_time = datetime.now(tz=timezone.utc)
@@ -173,7 +174,7 @@ class AgentService:
             system_prompt = await self._get_prompt_template(session, agent)
 
         # 3. Retrieve memory and build context
-        memories = await memory_service.get_context_parts(
+        memories = await self.memory_service.get_context_parts(
             session_id, question, query_vec=model_params["query_vec"]
         )
         
@@ -188,7 +189,7 @@ class AgentService:
         # 4. Return streaming response
         return StreamingResponse(
             self._generate_chat_stream(
-                background_tasks, session_id, memory_service, question, kb_results, model_params, final_prompt, request_time
+                background_tasks, session_id, user_id, question, kb_results, model_params, final_prompt, request_time
             ),
             media_type="text/event-stream",
             headers=self._get_stream_headers()
@@ -196,7 +197,7 @@ class AgentService:
 
     # ========================== Generators & Persistence Helpers ==========================
 
-    async def _generate_chat_stream(self, background_tasks, session_id, memory_service, question, kb_results, model_params, final_prompt, request_time):
+    async def _generate_chat_stream(self, background_tasks, session_id, user_id, question, kb_results, model_params, final_prompt, request_time):
         """Internal generator: yields LLM chunks and pushes post-processing tasks."""
         chunks = []
         llm_name = model_params.get("llm_model_name")
@@ -225,7 +226,7 @@ class AgentService:
             background_tasks.add_task(
                 self._persist_chat_data,
                 session_id=session_id,
-                memory_service=memory_service,
+                user_id=user_id,
                 question=question,
                 query_vec=model_params["query_vec"],
                 chunks=chunks,
@@ -332,16 +333,16 @@ class AgentService:
         str_chunks = [c.decode("utf-8") if isinstance(c, bytes) else str(c) for c in chunks]
         return "".join(str_chunks).strip()
 
-    async def _persist_chat_data(self, session_id, memory_service, question, query_vec, chunks, references, request_time):
-        """Asynchronously saves chat interaction to long-term memory (ES)."""
+    async def _persist_chat_data(self, session_id, user_id, question, query_vec, chunks, references, request_time):
+        """Asynchronously saves chat interaction to long-term memory."""
         try:
             if not chunks: 
                 logger.warning(f"No content chunks to persist for session {session_id}")
                 return
             answer = await self._process_answer(chunks)
             logger.info(f"Persisting chat memory, session {session_id}")
-            await memory_service.save_memory(
-                session_id=session_id, question=question, answer=answer,
+            await self.memory_service.save_memory(
+                session_id=session_id, user_id=user_id, question=question, answer=answer,
                 query_vec=query_vec, references=references, request_time=request_time
             )
             logger.info(f"Memory persistence successful for session {session_id}")
@@ -364,7 +365,7 @@ class AgentService:
                 
                 sess_repo = ChatSessionRepository(session)
                 sessions = await sess_repo.get_by_agent(agent_id)
-                await ChatRecordRepository(session).delete_by_ids([s.id for s in sessions])
+                await ChatMemoryRepository(session).delete_by_ids([s.id for s in sessions])
                 await sess_repo.delete_by_agent_id(agent_id)
                 logger.info(f"Successfully removed agent {agent_id} and related records.")
         except Exception as e:
@@ -375,18 +376,18 @@ class AgentService:
         """Updates user feedback for a specific chat record."""
         async with self.oracle_session as session:
             logger.info(f"Submitting feedback {feedback} for record {chat_record_id}")
-            await ChatRecordRepository(session).feedback(chat_record_id, feedback)
+            await ChatMemoryRepository(session).feedback(chat_record_id, feedback)
 
     async def get_session_history(self, session_id: str):
         """Retrieves history for a specific chat session."""
         async with self.oracle_session as session:
-            return await ChatRecordRepository(session).get_session_history(session_id)
+            return await ChatMemoryRepository(session).get_session_history(session_id)
 
     async def remove_session(self, session_id: str):
         """Deletes a chat session and all its associated records."""
         async with self.oracle_session as session:
             try:
-                await ChatRecordRepository(session).delete_session_records(session_id)
+                await ChatMemoryRepository(session).delete_session_records(session_id)
                 await ChatSessionRepository(session).delete(session_id)
                 logger.info(f"Successfully removed session {session_id}")
             except Exception as e:
@@ -397,7 +398,7 @@ class AgentService:
 
     async def non_stream_chat(
         self, session_id: str, agent_id: int, question: str, 
-        security_level: int, memory_service: MemoryService, tags: list[str] = []
+        security_level: int, user_id: str, tags: list[str] = []
     ) -> dict:
         """
         Public interface: Synchronous (non-streaming) chat.
@@ -421,7 +422,7 @@ class AgentService:
                 system_prompt = await self._get_prompt_template(session, agent)
 
             # 3. Build Context (Memory + KB)
-            memories = await memory_service.get_context_parts(
+            memories = await self.memory_service.get_context_parts(
                 session_id, question, query_vec=model_params["query_vec"]
             )
             
@@ -460,8 +461,9 @@ class AgentService:
 
             # 6. Persistence (Immediate)
             # We use the raw datetime objects for the database logic
-            await memory_service.save_memory(
+            await self.memory_service.save_memory(
                 session_id=session_id,
+                user_id=user_id,
                 question=question,
                 answer=full_answer,
                 query_vec=model_params["query_vec"],
