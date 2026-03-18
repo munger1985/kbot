@@ -17,17 +17,17 @@ class LogConfig(BaseModel):
 
 class AppConfig(BaseModel):
     """主应用配置"""
+    app_id: int = Field(default = 1)
     service_name: str = Field(default="main_service")
     service_version: str = Field(default="3.0.0")
     service_host: str = Field(default="0.0.0.0")
     service_port: int = Field(default=18099, ge=1, le=65535)
+    host_ip: str = Field(default="127.0.0.1")
     title: str = Field(default="KBOT")
     description: str = Field(default="KBot API Service")
     debug: bool = Field(default=False)
     file_storage: str = Field(default="./knowledge_base")
     upload_workers: int = Field(default=5, ge=1, le=50)
-    parser_workers: int = Field(default=2, ge=1, le=20)
-    parser_check_interval: int = Field(default=60, ge=10, le=3600)
     log: LogConfig = LogConfig()
 
 class OracleConfig(BaseModel):
@@ -52,13 +52,6 @@ class SQLAlchemyConfig(BaseModel):
     pool_pre_ping: bool = Field(default=True)
     pool_use_lifo: bool = Field(default=True)
     pool_recycle: int = Field(default=1800, ge=60, le=3600)
-
-class ESLogConfig(BaseModel):
-    """Elasticsearch 日志配置"""
-    hosts: list[str] = Field(default_factory=lambda: ["http://localhost:9200"])
-    username: str = Field(default="elastic")
-    password: str = Field(default="")
-    index: str = Field(default="logs-*")
 
 class EmbedConfig(BaseModel):
     """嵌入服务配置"""
@@ -126,11 +119,6 @@ class VLMConfig(BaseModel):
         """生成服务 URL"""
         return f"http://{self.service_host}:{self.service_port}"
 
-class TokenizerConfig(BaseModel):
-    """分词器配置"""
-    zh: str = Field(default="")
-    en: str = Field(default="")
-
 class ParserConfig(BaseModel):
     """文档解析器配置"""
     service_name: str = Field(default="parser-service")
@@ -139,8 +127,9 @@ class ParserConfig(BaseModel):
     service_port: int = Field(default=18095, ge=1, le=65535)
     timeout: int = Field(default=300, ge=10, le=65535)
     local_artifacts_path: str = Field(default="./cached_models")
-    max_workers: int = Field(default=4, ge=1, le=100)
-    tokenizer: TokenizerConfig = TokenizerConfig()
+    queue_workers: int = Field(default=2, ge=1, le=20)
+    parser_parallel: int = Field(default=4, ge=1, le=100)
+    db_check_interval: int = Field(default=60, ge=10, le=3600)
 
 class JiebaConfig(BaseModel):
     """Jieba分词器配置"""
@@ -158,8 +147,8 @@ class JiebaConfig(BaseModel):
     
 class PromptConfig(BaseModel):
     """提示词配置"""
-    image2text: str = Field(default="SYSTEM/image2text")
-    summary: str = Field(default="SYSTEM/summary")
+    image2text: str = Field(default="SYSTEM/image2text", description="图像转文本提示词")
+    fulltext_optimization: str = Field(default="SYSTEM/fulltext_optimization", description="全文优化提示词")
 
 class Settings(BaseSettings):
     """全局配置设置"""
@@ -172,7 +161,6 @@ class Settings(BaseSettings):
     app: AppConfig = AppConfig()
     oracle: OracleConfig = OracleConfig()
     sqlalchemy: SQLAlchemyConfig = SQLAlchemyConfig()
-    eslog: ESLogConfig = ESLogConfig()
     embed: EmbedConfig = EmbedConfig()
     llm: LLMConfig = LLMConfig()
     reranker: RerankerConfig = RerankerConfig()
@@ -295,6 +283,10 @@ def get_app_config() -> AppConfig:
     """获取主应用配置"""
     return get_settings().app
 
+def get_log_config() -> LogConfig:
+    """获取日志配置"""
+    return get_settings().app.log
+
 def get_embed_config() -> EmbedConfig:
     """获取嵌入服务配置"""
     return get_settings().embed
@@ -314,10 +306,6 @@ def get_sqlalchemy_config() -> SQLAlchemyConfig:
 def get_prompt_config() -> PromptConfig:
     """获取提示词配置"""
     return get_settings().prompt
-
-def get_eslog_config() -> ESLogConfig:
-    """获取 ES 日志配置"""
-    return get_settings().eslog
 
 def get_reranker_config() -> RerankerConfig:
     """获取重排服务配置"""

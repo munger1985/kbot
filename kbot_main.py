@@ -28,7 +28,6 @@ from api.routers import router
 from core.config.settings import get_app_config
 from core.logger import LogConfig, LogManager
 from core.middleware.log_middleware import log_requests
-from services.dataparse.file_parser_manger import FileParserManager
 
 # --- 环境初始化 ---
 ENV_PATH = Path(__file__).parent / ".env"
@@ -49,24 +48,13 @@ async def lifespan(app: FastAPI):
     app.state.service_name = get_app_config().service_name
 
     # 启动阶段
-    fp_manager = FileParserManager()
-    logger.info("正在启动文件解析服务管理器...")
-    try:
-        fp_manager.start_service()
-        logger.info("所有解析子服务已就绪")
-    except Exception as e:
-        logger.error(f"解析服务启动失败: {e}")
-        # 根据业务需求决定是否在启动失败时退出进程
+    logger.info("应用正在启动，执行初始化任务...")
 
     yield  # 应用运行中
 
     # 关闭阶段
     logger.info("应用正在关闭，执行清理任务...")
-    try:
-        fp_manager.shutdown_service("应用程序生命周期结束...")
-        logger.info("解析服务管理器已安全关闭")
-    except Exception as e:
-        logger.error(f"清理资源时发生异常: {e}")
+    
 
 
 def create_app() -> FastAPI:

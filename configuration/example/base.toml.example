@@ -1,20 +1,20 @@
 # core/config/base.toml
 [app]
+app_id = 1
 service_name = "main-service"
 service_version = "3.0.0"
 service_host = "0.0.0.0"
 service_port = 18099
+host_ip = "127.0.0.1"
 title = "KBOT"
 description = "KBot API Service"
 debug = true
-file_storage = "/home/ubuntu/kbot3/knowledge_base"
+file_storage = "/home/chris/kbot3/knowledge_base"
 upload_workers = 10
-parser_workers = 2
-parser_check_interval = 120
 
 [app.log]
 level = "DEBUG"
-dir = "/home/ubuntu/kbot3/logs/"
+dir = "/home/chris/kbot3/logs/"
 rotation = "100 MB"
 retention = "10 days"
 api_log_enabled = true
@@ -43,7 +43,7 @@ service_port = 18091
 max_tokens = 1024
 timeout = 300
 max_retries = 3
-cache_dir = "/home/ubuntu/cached_models/"
+cache_dir = "/home/chris/cached_models/"
 
 [llm]
 service_name = "llm-service"
@@ -63,7 +63,7 @@ service_name = "reranker-service"
 service_version = "1.0.0"
 service_host = "0.0.0.0"
 service_port = 18093
-cache_dir = "/home/ubuntu/cached_models/"
+cache_dir = "/home/chris/cached_models/"
 timeout = 300
 
 [vlm]
@@ -80,15 +80,13 @@ service_host = "0.0.0.0"
 service_port = 18095
 timeout = 600
 local_artifacts_path = "/home/chris/models/docling_models"
-max_workers = 4
-
-[parser.tokenizer]
-en = "/home/ubuntu/models/embedding/bge-small-en-v1.5"
-zh = "/home/ubuntu/models/embedding/bge-base-zh-v1.5"
+queue_workers = 2
+parser_parallel = 4
+db_check_interval = 120
 
 [jieba]
-custom_dict_path = "/home/ubuntu/kbot3/configuration/custom_dict.txt"
-stop_words_path = "/home/ubuntu/kbot3/configuration/stopwords.txt"
+custom_dict_path = "/home/chris/kbot3/configuration/custom_dict.txt"
+stop_words_path = "/home/chris/kbot3/configuration/stopwords.txt"
 
 [prompt]
 image2text = "SYSTEM/image2text"

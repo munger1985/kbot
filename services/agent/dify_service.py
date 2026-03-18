@@ -1,0 +1,100 @@
+import os
+import json
+import asyncio
+from datetime import datetime, timezone
+from loguru import logger
+from fastapi import BackgroundTasks
+
+from .agent_service import AgentService
+from core.exceptions import InternalServerError
+from services.search.result import TxtBaseSearchResult
+from services.agent.memory import MemoryService
+
+class DifyService:
+    """Retrieval service adapter for Dify interface."""
+    
+    def __init__(self):
+        # Initialize with a fixed user_id for Dify-sourced requests
+        self.agent_service = AgentService()
+        self.security_level = 9  # Level 9 bypasses security checks
+        self.user_id="dify_system"
+
+    async def search(self, 
+                    agent_id: int, 
+                    question: str, 
+                    session_id: str,
+                    background_tasks: BackgroundTasks | None = None
+                    ) -> dict:
+        """
+        Agent interaction for Dify (Search + Record Persistence).
+        """
+        request_time = datetime.now(tz=timezone.utc)
+        logger.info(f"Processing Dify request for session {session_id}, Agent {agent_id}")
+
+        try:
+            # 1. Execute the unified search pipeline
+            # This handles embedding, search, and reranking in one go
+            kb_results, model_params = await self.agent_service._execute_knowledge_search_pipeline(
+                agent_id=agent_id,
+                security_level=self.security_level,
+                question=question
+            )
+
+            # 2. Build Dify-specific records and standardized references
+            # We fetch file names and build the metadata required by Dify
+            references = await self.agent_service._enrich_results_with_metadata(kb_results)
+            records = self._build_dify_records(references)
+
+            # 3. Persistence (Sync with AgentService logic)
+            # Since Dify usually doesn't need the LLM answer back from us (it does its own generation),
+            # we record the 'question' and 'retrieval results'. 
+            # If Dify expects us to save the interaction:
+            memory_service = MemoryService(self.user_id)
+            persist_task = self.agent_service._persist_chat_data(
+                session_id=session_id,
+                memory_service=memory_service,
+                question=question,
+                query_vec=model_params.get("query_vec"),
+                chunks=["[Dify Retrieval Only]"], # Placeholder for answer as Dify handles LLM
+                references=references,
+                request_time=request_time
+            )
+
+            if background_tasks:
+                background_tasks.add_task(lambda: persist_task)
+            else:
+                # Fallback: execute as background task if no manager provided
+                asyncio.create_task(persist_task)
+
+            return {"records": records}
+
+        except Exception as e:
+            msg = f"Dify interaction failed for Agent {agent_id}: {str(e)}"
+            logger.error(msg)
+            raise InternalServerError(message=msg)
+
+    def _build_dify_records(self, enriched_references: list[dict]) -> list[dict]:
+        """
+        Formats enriched references into Dify-compatible record structure.
+        Uses the output from _enrich_results_with_metadata.
+        """
+        records = []
+        for ref in enriched_references:
+            record = {
+                "metadata": {
+                    "path": ref.get("download_link"),
+                    "preview": ref.get("preview_link"),
+                    "page": ref.get("page_num"),
+                    "chunk_type": ref.get("chunk_type")
+                },
+                "score": ref.get("reranker_score") or ref.get("similarity_score"),
+                "title": ref.get("file_name", "Unknown File"),
+                "content": ref.get("content")
+            }
+            records.append(record)
+        return records
+
+    async def _remove_session_dify(self, session_id: str):
+        """Cleanup session data using core AgentService logic."""
+        logger.info(f"Removing Dify session: {session_id}")
+        await self.agent_service.remove_session(session_id)

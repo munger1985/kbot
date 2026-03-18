@@ -4,17 +4,19 @@ import jieba
 import jieba.analyse
 from pathlib import Path
 from loguru import logger
-from core.config.settings import get_jieba_config
-from utils.model_client import CallModel
+from core.database.oracle import get_session
+from core.config.settings import get_jieba_config, get_prompt_config
+from utils.clients import AIModelClient
+from dao.repositories import PromptRepository
 
 
 class LLMFullTextPreprocessor:
     """
-    基于LLM的全文检索查询预处理类，带Jieba降级方案
+    基于LLM的全文检索查询预处理类，支持 JSON 结构化提取与 Jieba 降级方案
     """
-    
+
     def __init__(self):
-        self.llm_client = CallModel()
+        self.llm_client = AIModelClient()
         
         # 初始化Jieba配置（用于降级方案）
         jieba_config = get_jieba_config()
@@ -22,6 +24,10 @@ class LLMFullTextPreprocessor:
         self.custom_dict_file = jieba_config.custom_dict_path
         self.stopwords: set[str] = self._load_stopwords(self.stopwords_file)
         self._setup_jieba(self.custom_dict_file)
+
+    @property
+    def oracle_session(self):
+        return get_session()
         
     def _load_stopwords(self, file_path: str) -> set[str]:
         """加载停用词表"""
@@ -46,223 +52,148 @@ class LLMFullTextPreprocessor:
                 logger.info(f"成功加载自定义词典: {custom_dict_file}")
         except Exception as e:
             logger.warning(f"加载自定义词典失败: {e}")
-    
+
     async def _clean_text(self, text: str) -> str:
-        """简化文本清理"""
+        """基础文本清理"""
         if not text or not isinstance(text, str):
             return ""
-        
-        # 基础清理：去除非中英文字符，保留空格
-        cleaned = re.sub(r'[^\u4e00-\u9fffa-zA-Z0-9\s]', ' ', text)
-        # 合并多余空格
+        # 保留中英文字符、数字及部分对搜索有意义的符号（如点号、横杠）
+        cleaned = re.sub(r'[^\u4e00-\u9fffa-zA-Z0-9\s\.\-]', ' ', text)
         cleaned = re.sub(r'\s+', ' ', cleaned).strip()
-        
         return cleaned
-        
-    async def optimize_for_fulltext_search(self, query: str, model_id: int) -> str:
+
+    async def _build_fulltext_optimization_prompt(self, query: str) -> str:
         """
-        使用LLM优化全文检索查询
-        
-        Args:
-            query: 原始查询文本
-            model_id: LLM模型ID
-            
-        Returns:
-            优化后的查询字符串
+        构建针对混合检索优化的 JSON 格式提示词
         """
-        prompt = self._build_fulltext_optimization_prompt(query)
-        
-        try:
-            async for chunk in self.llm_client.call_llm_model(
-                model_id=model_id,
-                prompt=prompt,
-                tools=None,  # 不需要工具调用
-                tool_choice=None,
-                stream=False,
-                temperature=0.1  # 低温度保证稳定性
-            ):
-                logger.debug(f"LLM全文检索优化响应: {chunk}")
-                response = await self._extract_optimized_query_from_response(chunk, query)
-                
-                if not response:
-                    logger.warning(f"LLM全文检索优化失败: 优化后的查询为空")
-                    return await self._fallback_to_jieba(query)
-                
-                json_response = json.loads(response)
-                optimized_query = json_response.get("choices")[0].get("message").get("content", "").strip()
+        prompt_name = get_prompt_config().fulltext_optimization
+        system_prompt = await self._get_system_prompt(prompt_name)
 
-                logger.info(f"LLM全文检索优化完成: '{query}' -> '{optimized_query}'")
-            
-            return optimized_query
-                
-        except Exception as e:
-            logger.error(f"LLM全文检索优化失败: {e}")
-            return await self._fallback_to_jieba(query)
-    
-    def _build_fulltext_optimization_prompt(self, query: str) -> str:
-        """构建全文检索优化提示词"""
-        return f"""你是一个搜索优化专家，请将用户问题改写成最适合全文检索的查询格式。
+        if not system_prompt:
+            system_prompt = f"""你是一个搜索指令专家。请将用户问题改写为适用于“全文检索”的结构化 JSON。
 
-原始问题：{query}
+### 处理规则：
+1. **must**: 提取最核心、不可缺失的实体或术语（如产品名、错误码、版本号）。
+2. **expansion**: 对缩写、别名或中英文对照进行扩展（如 K8s -> Kubernetes, 响应时间 -> Response Time）。
+3. **synonyms**: 语义相近的同义词。
+4. **exclude**: 过滤掉所有语气词、疑问词和虚词。
 
-全文检索要求：
-1. 提取3-5个最核心的关键词或短语
-2. 保留重要的实体、术语、时间、地点等具体信息
-3. 去除疑问词、修饰词和泛化词汇
-4. 用空格分隔关键词，保持简洁
-5. 确保改写后的查询能准确匹配相关文档内容
+### 输出格式：
+仅输出一个合法的 JSON 对象，不要包含任何解释或 Markdown 标签：
+{{
+  "must": ["核心词1"],
+  "expansion": ["扩展词1"],
+  "synonyms": ["同义词1"]
+}}
 
-改写原则：
-- 优先保留专业术语和具体概念
-- 去除"如何"、"什么"、"为什么"等疑问词
-- 去除"的"、"了"、"在"等无意义虚词
-- 保持核心语义不变
+### 原始问题：
+{query}
+"""
+        return system_prompt
 
-改写示例：
-- "文艺复兴是什么时候发生的？" → "文艺复兴 发生时间 历史时期"
-- "如何配置Redis集群？" → "Redis 集群 配置 方法"
-- "Python中的装饰器有什么作用？" → "Python 装饰器 作用 功能"
-- "电脑经常卡顿怎么办？" → "电脑 卡顿 解决方案 性能优化"
-- "学习机器学习需要哪些数学基础？" → "机器学习 数学基础 线性代数 概率论"
-
-请直接输出优化后的查询，不要添加任何解释："""
-    
     async def _extract_optimized_query_from_response(self, llm_response: str, original_query: str) -> str:
-        """从LLM响应中提取优化后的查询"""
+        """
+        从 LLM 响应中解析 JSON 并生成关键词字符串
+        """
         try:
-            if isinstance(llm_response, str):
-                content = llm_response
-            else:
-                content = str(llm_response)
+            content = llm_response.strip()
             
-            # 清理响应内容
-            optimized_query = content.strip()
+            # 移除可能存在的 Markdown 代码块包裹
+            if content.startswith("```"):
+                start = content.find("{")
+                end = content.rfind("}")
+                if start != -1 and end != -1:
+                    content = content[start:end+1]
             
-            # 移除可能的引号和其他标记
-            optimized_query = re.sub(r'^["\']|["\']$', '', optimized_query)
-            
-            # 如果响应为空或不合理，使用降级方案
-            if not optimized_query or len(optimized_query) < 2:
-                logger.warning(f"LLM返回的查询为空或不合理: '{optimized_query}'")
+            # 解析 JSON
+            data = {}
+            try:
+                data = json.loads(content)
+            except json.JSONDecodeError:
+                match = re.search(r'\{[\s\S]*\}', content)
+                if match:
+                    data = json.loads(match.group(0))
+                else:
+                    raise ValueError("No valid JSON found in LLM response")
+
+            # 按权重顺序汇总关键词，并显式确保所有元素都是字符串
+            keywords: list[str] = []
+            for key in ["must", "expansion", "synonyms"]:
+                vals = data.get(key, [])
+                if isinstance(vals, list):
+                    for v in vals:
+                        # 核心修复：确保 v 是字符串且不为空
+                        if isinstance(v, str):
+                            cleaned_v = v.strip()
+                            if cleaned_v and cleaned_v not in keywords:
+                                keywords.append(cleaned_v)
+
+            if not keywords:
                 return await self._fallback_to_jieba(original_query)
-            
-            # 确保查询不会太长（防止LLM输出过多内容）
-            if len(optimized_query.split()) > 8:
-                words = optimized_query.split()[:6]  # 限制最多6个词
-                optimized_query = ' '.join(words)
-                logger.info(f"优化查询过长，截断为: {optimized_query}")
-            
-            return optimized_query
-            
+
+            # 最终合并为以空格分隔的字符串
+            final_query = " ".join(keywords[:12])
+            logger.info(f"LLM 预处理成功: {final_query}")
+            return final_query
+
         except Exception as e:
-            logger.error(f"解析LLM响应失败: {e}")
+            logger.error(f"解析响应失败: {e}")
             return await self._fallback_to_jieba(original_query)
-    
-    async def _fallback_to_jieba(self, query: str, topk: int = 5) -> str:
-        """降级方案：使用Jieba分词提取关键词（不需要同义词扩展）"""
+
+    async def optimize_for_fulltext_search(self, query: str, model_name: str) -> str:
+        """调用 LLM 并获取优化结果"""
+        prompt = await self._build_fulltext_optimization_prompt(query)
         try:
-            # 先清理文本
-            cleaned_text = await self._clean_text(query)
-            if not cleaned_text:
-                return query  # 降级返回原文本
-            
-            # 使用TF-IDF提取最重要的关键词
-            keywords = jieba.analyse.extract_tags(
-                cleaned_text, 
-                topK=topk,
-                withWeight=False,
-                allowPOS=('n', 'nr', 'ns', 'nt', 'nz', 'vn', 'eng')  # 名词、动词、英文
-            )
-            
-            # 过滤停用词
-            filtered_keywords = [word for word in keywords if word not in self.stopwords]
-            
-            # 如果过滤后为空，使用精确分词作为fallback
-            if not filtered_keywords:
-                words = jieba.lcut(cleaned_text)
-                filtered_keywords = [word for word in words if len(word) > 1 and word not in self.stopwords]
-                filtered_keywords = filtered_keywords[:topk]
-            
-            result = ' '.join(filtered_keywords) if filtered_keywords else cleaned_text
-            logger.info(f"使用Jieba降级方案处理: '{query}' -> '{result}'")
-            return result
-            
-        except Exception as e:
-            logger.error(f"Jieba降级方案也失败: {e}")
-            return query
-    
-    async def preprocess_with_synonym_expansion(self, query: str, model_id: int | None = None, 
-                                              enable_synonym: bool = False) -> str:
-        """
-        带同义词扩展的全文检索预处理
-        
-        Args:
-            query: 原始查询
-            model_id: LLM模型ID，如果为None，则使用jieba分词且不进行同义词扩展
-            enable_synonym: 是否启用同义词扩展
-            
-        Returns:
-            预处理后的查询字符串
-        """
-        # 如果没有指定模型ID，则使用jieba分词且不进行同义词扩展
-        if not model_id:
-            return await self._fallback_to_jieba(query)
-        
-        # 第一步：基础优化
-        optimized_query = await self.optimize_for_fulltext_search(query, model_id)
-        
-        # 第二步：同义词扩展（可选）
-        if enable_synonym:
-            expanded_query = await self._expand_synonyms_with_llm(optimized_query, model_id)
-            return expanded_query
-        
-        return optimized_query
-    
-    async def _expand_synonyms_with_llm(self, query: str, model_id: int) -> str:
-        """使用LLM进行同义词扩展"""
-        prompt = f"""请为以下搜索查询扩展同义词和相关术语，用于改善检索效果：
-
-原始查询：{query}
-
-要求：
-1. 为每个核心概念添加1-2个同义词或相关术语
-2. 保持查询简洁，总词数不超过8个
-3. 用空格分隔所有词汇
-4. 优先添加最相关和常用的同义词
-
-示例：
-- "电脑 卡顿" → "计算机 电脑 运行缓慢 卡顿 性能问题"
-- "Python 学习" → "Python 编程 学习 教程 入门"
-
-请直接输出扩展后的查询："""
-        
-        try:
+            full_text = ""
             async for chunk in self.llm_client.call_llm_model(
-                model_id=model_id,
+                model_name=model_name,
                 prompt=prompt,
-                tools=None,
-                tool_choice=None,
                 stream=False,
-                temperature=0.2
+                temperature=0.1
             ):
-                response = await self._extract_optimized_query_from_response(chunk, query)
-
-                if not response:
-                    logger.warning(f"LLM同义词扩展失败: 扩展后的查询为空")
-                    return query
-
-                json_response = json.loads(response)
-                expanded_query = json_response.get("choices")[0].get("message").get("content", "").strip()
-
-                logger.info(f"同义词扩展完成: '{query}' -> '{expanded_query}'")
+                full_text += chunk
             
-            return expanded_query
-                
+            return await self._extract_optimized_query_from_response(full_text, query)
         except Exception as e:
-            logger.warning(f"LLM同义词扩展失败: {e}")
-            return query  # 失败时返回原查询
+            logger.error(f"LLM 调用失败: {e}")
+            return await self._fallback_to_jieba(query)
 
-# 单例模式
+    async def _fallback_to_jieba(self, query: str, topk: int = 5) -> str:
+        """降级方案：Jieba 关键词提取"""
+        try:
+            cleaned = await self._clean_text(query)
+            if not cleaned: return query
+            
+            tags = jieba.analyse.extract_tags(cleaned, topK=topk, allowPOS=('n', 'nr', 'ns', 'nt', 'nz', 'vn', 'eng'))
+            result = [t for t in tags if t not in self.stopwords]
+            
+            if not result:
+                words = jieba.lcut(cleaned)
+                result = [w for w in words if len(w) > 1 and w not in self.stopwords][:topk]
+            
+            final_res = " ".join(result) if result else cleaned
+            logger.info(f"Jieba 降级结果: {final_res}")
+            return final_res
+        except Exception as e:
+            logger.error(f"Jieba 异常: {e}")
+            return query
+
+    async def preprocess(self, query: str, model_name: str | None = None) -> str:
+        """主入口"""
+        if not model_name:
+            return await self._fallback_to_jieba(query)
+        return await self.optimize_for_fulltext_search(query, model_name)
+
+    async def _get_system_prompt(self, prompt_name: str) -> str | None:
+        """从 DB 获取 Prompt"""
+        async with self.oracle_session as session:
+            repo = PromptRepository(session)
+            try:
+                return await repo.get_prompt_by_unique_name(prompt_name)
+            except Exception as e:
+                logger.error(f"DB Prompt 获取失败: {e}")
+                return None
+
 _llm_preprocessor_instance = None
 
 def get_llm_preprocessor() -> LLMFullTextPreprocessor:
@@ -271,26 +202,6 @@ def get_llm_preprocessor() -> LLMFullTextPreprocessor:
         _llm_preprocessor_instance = LLMFullTextPreprocessor()
     return _llm_preprocessor_instance
 
-async def preprocess_for_fulltext(
-        query: str,
-        model_id: int | None = None,
-        enable_synonym_expansion: bool = False
-    ) -> str:
-    """
-    基于LLM的全文检索预处理函数
-    
-    Args:
-        query: 查询文本
-        model_id: LLM模型ID，如果未提供则直接使用jieba分词且不进行同义词扩展
-        enable_synonym_expansion: 是否启用同义词扩展
-        
-    Returns:
-        预处理后的查询字符串
-    """
+async def preprocess_for_fulltext(query: str, model_name: str | None = None) -> str:
     preprocessor = get_llm_preprocessor()
-    
-    return await preprocessor.preprocess_with_synonym_expansion(
-        query, 
-        model_id, 
-        enable_synonym_expansion
-    )
+    return await preprocessor.preprocess(query, model_name)

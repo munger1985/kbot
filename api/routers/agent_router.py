@@ -1,8 +1,12 @@
 import uuid
+import json
 from loguru import logger
+from datetime import datetime, timezone
+from typing import Any
 from fastapi import APIRouter, status, Depends, HTTPException
 from fastapi import Request, BackgroundTasks
 from fastapi.responses import StreamingResponse
+
 from api.schemas.agent_schema import *
 from core.auth.shortcuts import *
 from api.controllers.agent_controller import agent_controller
@@ -12,338 +16,116 @@ router = APIRouter(prefix="/agent", tags=["Agent Chat"])
 
 @router.post(
     "/chat",
-    summary="智能体聊天"
-)
-async def handle_agent_chat(form: AgentChatForm, auth: UserAuth) -> SuccessQueryResponse:
-    """
-    智能体聊天接口
-    
-    Args:
-    - **form**: 智能体聊天表单
-    ```
-        session_id: str = Field(..., description="会话ID")
-        by: str = Field(..., description="请求用户ID")
-        agent_id: int = Field(..., description="智能体ID")
-        security_level: int = Field(0, description="安全级别")
-        request_time: str = Field(..., description="请求时间")
-        question: str = Field(..., description="问题")
-        tags: list[str] | None = Field(None, description="标签")
-        deep_mind: int = Field(0, description="是否使用深度思考, 0：不使用，1：使用")
-    ```
-    
-    Returns:
-    - **SuccessQueryResponse**: 成功查询响应
-    ```
-        code: int = Field(status.HTTP_200_OK, description="响应状态码")
-        message: str = Field("Success", description="返回的响应信息")
-        success: bool = Field(True, description="请求响应状态")
-        data: dict | list[dict] = Field(..., description="响应返回的数据")
-    ```
-    - **ErrorResponse**: 失败响应
-    ```
-        code: int = Field(status.HTTP_400_BAD_REQUEST, description="响应状态码")
-        message: str = Field("Error", description="返回的响应信息")
-        success: bool = Field(False, description="请求响应状态")
-    ```
-
-    """
-
-    r = await agent_controller.agent_search(form)
-
-    logger.debug(f"聊天结果: {r}")
-
-    return SuccessQueryResponse(
-        code=status.HTTP_200_OK,
-        success=True,
-        message="",
-        data=r
-    )
-   
-
-@router.get(
-    "/stream",
-    summary="智能体聊天流式响应",
+    summary="Agent Chat (Streaming)",
     response_class=StreamingResponse,
-    response_model=None
+    status_code=status.HTTP_200_OK
 )
-async def handle_agent_stream_chat(
-    request: Request,           # FastAPI 自动注入
-    background_tasks: BackgroundTasks,  # FastAPI 自动注入
-    session_id: str             # 前端传入的查询参数
-) -> StreamingResponse:
+async def handle_agent_chat(form: AgentChatForm, auth: UserAuth, background_tasks: BackgroundTasks):
     """
-    智能体聊天流式响应接口
+    Asynchronous streaming chat interface for the Agent.
     
     Args:
-    - **session_id**: 会话ID
+    - **form**: Agent chat request form
+        - session_id: Unique session identifier
+        - by: User ID making the request
+        - agent_id: ID of the targeted agent
+        - security_level: Access clearance level
+        - question: User input text
+        - tags: Optional list of categories for filtering
+    - **auth**: User authentication context
+    - **background_tasks**: FastAPI background task manager for persistence
     
     Returns:
-    - **StreamingResponse**: 流式响应
-    ```
-    data: {
-        "id": response_id,
-        "object": "chat.completion.chunk",
-        "created": created_time,
-        "model": model_name,
-        "choices": [{
-            "delta": {"content": content},
-            "index": 0,
-            "finish_reason": None
-        }]
-    }
-    data: [DONE]
-    ```
-    - **ErrorResponse**: 失败响应
-    ```
-        code: int = Field(status.HTTP_400_BAD_REQUEST, description="响应状态码")
-        message: str = Field("Error", description="返回的响应信息")
-        success: bool = Field(False, description="请求响应状态")
-    ```
+    - **StreamingResponse**: SSE stream containing LLM chunks and references.
     """
-
-    return await agent_controller.agent_chat_stream(
-        request=request,
-        background_tasks=background_tasks,
-        session_id=session_id
-    )
+    logger.info(f"Received streaming chat request for agent {form.agent_id} by user {form.by}")
+    return await agent_controller.agent_chat_stream(form, background_tasks)
 
 
 @router.post(
     "/feedback",
-    summary="智能体回答结果反馈接口"
+    summary="Submit Agent Response Feedback",
+    response_model=SuccessResponse,
+    status_code=status.HTTP_200_OK
 )
-async def handle_agent_feedback(form: AgentChatFeedbackForm, auth: UserAuth) -> SuccessResponse:
+async def handle_agent_feedback(form: AgentChatFeedbackForm, auth: UserAuth):
     """
-    智能体回答结果反馈接口
+    Submit user feedback (like/dislike) for a specific agent response.
     
     Args:
-    - **form**: 智能体聊天获取反馈表单模型
-    ```
-        session_id: str = Field(..., description="会话ID")
-        question_index: int = Field(..., description="问题索引")
-        feedback: int = Field(..., description="问题反馈，0：不反馈，1：赞同，-1：不赞同")
-    ```
-    
-    Returns:
-    - **SuccessResponse**: 成功响应
-    ```
-        code: int = Field(status.HTTP_200_OK, description="响应状态码")
-        message: str = Field("Success", description="返回的响应信息")
-        success: bool = Field(True, description="请求响应状态")
-    ```
-    - **ErrorResponse**: 失败响应
-    ```
-        code: int = Field(status.HTTP_400_BAD_REQUEST, description="响应状态码")
-        message: str = Field("Error", description="返回的响应信息")
-        success: bool = Field(False, description="请求响应状态")
-    ```
+    - **form**: Feedback data including record ID and feedback value (1, 0, -1).
     """
-    r = await agent_controller.agent_feedback(form)
-    if r:
-        return SuccessResponse(
-            code=status.HTTP_200_OK,
-            success=True,
-            message="反馈成功"
-        )
-    else:
-        logger.error("反馈失败")
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="反馈失败"
-        )
+    logger.info(f"Processing feedback for chat record ID: {form.chat_record_id}")
+    return await agent_controller.feedback(form)
+
 
 @router.get(
     "/session/get",
-    summary="登录智能体时获取会话信息"
+    summary="Retrieve Chat Session History",
+    response_model=SuccessResponse,
+    status_code=status.HTTP_200_OK
 )
 async def handle_agent_get_session(session_id: str, auth: UserAuth):
     """
-    登录智能体时获取会话信息
-    
-    Args:
-    - **session_id**: 会话ID
-    
-    Returns:
-    - **SuccessQueryResponse**: 成功查询响应
-    ```
-        code: int = Field(status.HTTP_200_OK, description="响应状态码")
-        message: str = Field("Success", description="返回的响应信息")
-        success: bool = Field(True, description="请求响应状态")
-        data: dict | list[dict] = Field(..., description="响应返回的数据")
-    ```
-    - **ErrorResponse**: 失败响应
-    ```
-        code: int = Field(status.HTTP_400_BAD_REQUEST, description="响应状态码")
-        message: str = Field("Error", description="返回的响应信息")
-        success: bool = Field(False, description="请求响应状态")
-    ```
+    Fetches historical chat records for a specific session.
     """
+    logger.info(f"Fetching chat history for session: {session_id}")
+    return await agent_controller.get_session_chat_records(session_id)
 
-    r = await agent_controller.agent_get_session(session_id)
-    
-    return SuccessQueryResponse(
-        code=status.HTTP_200_OK,
-        success=True,
-        message="会话信息获取成功",
-        data=r or {}
-        )
-    
-    
+
 @router.delete(
     "/session/remove",
-    summary="删除聊天会话信息"
+    summary="Delete Chat Session",
+    response_model=SuccessResponse
 )
-async def handle_agent_del_session(session_id: str, auth: UserAuth) -> SuccessResponse:
+async def handle_agent_del_session(session_id: str, auth: UserAuth):
     """
-    删除聊天会话信息
-    
-    Args:
-    - **session_id**: 会话ID
-    
-    Returns:
-    - **SuccessResponse**: 成功响应
-    ```
-        code: int = Field(status.HTTP_200_OK, description="响应状态码")
-        message: str = Field("Success", description="返回的响应信息")
-        success: bool = Field(True, description="请求响应状态")
-    ```
-    - **ErrorResponse**: 失败响应
-    ```
-        code: int = Field(status.HTTP_400_BAD_REQUEST, description="响应状态码")
-        message: str = Field("Error", description="返回的响应信息")
-        success: bool = Field(False, description="请求响应状态")
-    ```
+    Removes an entire chat session and its associated history.
     """
+    logger.warning(f"Request to delete session: {session_id}")
+    return await agent_controller.remove_session(session_id)
 
-    if await agent_controller.agent_del_session(session_id):
-        return SuccessResponse(
-            code=status.HTTP_200_OK,
-            success=True,
-            message="会话信息删除成功"
-            )
-    else:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="会话信息删除失败"
-        )
-
-    
 
 @router.delete(
     "/remove",
-    summary="删除智能体"
+    summary="Delete Agent",
+    response_model=SuccessResponse
 )
-async def handle_del_agent(auth: UserAuth, agent_id: int, del_prompt: int = 0) -> SuccessResponse:
+async def handle_del_agent(auth: UserAuth, agent_id: int, del_prompt: int = 0):
     """
-    删除智能体
-    
-    Args:
-    - **agent_id**: 智能体ID
-    - **del_prompt**: 是否删除提示词，0：不删除，1：删除
-    
-    Returns:
-    - **SuccessResponse**: 成功响应
-    ```
-        code: int = Field(status.HTTP_200_OK, description="响应状态码")
-        message: str = Field("Success", description="返回的响应信息")
-        success: bool = Field(True, description="请求响应状态")
-    ```
-    - **ErrorResponse**: 失败响应
-    ```
-        code: int = Field(status.HTTP_400_BAD_REQUEST, description="响应状态码")
-        message: str = Field("Error", description="返回的响应信息")
-        success: bool = Field(False, description="请求响应状态")
-    ```
+    Deletes an agent configuration and optionally its prompt templates.
     """
-    delprompt = True if del_prompt == 1 else False
+    logger.warning(f"Request to remove agent {agent_id}. Delete prompt: {del_prompt == 1}")
+    return await agent_controller.remove_agent(agent_id, del_prompt == 1)
 
-    if await agent_controller.del_agent(agent_id=agent_id, del_prompt=delprompt):
-        return SuccessResponse(
-            code=status.HTTP_200_OK,
-            success=True,
-            message="智能体删除成功"
-            )
-    else:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="智能体删除失败"
-        )
-        
-    
+
 @router.post(
     "/dify/retrieval",
-    summary="智能体Dify检索"
+    summary="Dify Retrieval Adapter",
+    response_model=dict
 )
-async def handle_agent_retrieval(auth: ServiceAuth, form: AgentChatDifyForm) -> dict:
+async def handle_agent_retrieval(auth: ServiceAuth, form: DifySearchForm, background_tasks: BackgroundTasks):
     """
-    智能体 Dify 检索接口
-    参考：https://docs.dify.ai/en/guides/knowledge-base/external-knowledge-api
-    
-    Args:
-    - **knowledge_id**: Kbot 智能体 ID
-    - **query**: 查询文本
-    - **retrieval_setting**: 检索设置
-    - **metadata_condition**: 元数据条件
-    
-    Returns:
-    - **records**: 检索结果
+    Adapter interface for Dify external knowledge retrieval.
+    Compatible with Dify's external knowledge base API.
     """
-
-    agent_id = int(form.knowledge_id)
-    session_id = uuid.uuid4().hex
-    return await agent_controller.agent_search_dify(
-        agent_id=agent_id, 
-        question=form.query, 
-        session_id=session_id,
-        override_question=form.retrieval_setting.get("override_question", False)
-    )
+    logger.info(f"Dify retrieval request received for knowledge_id: {form.knowledge_id}")
+    return await agent_controller.dify_search(form, background_tasks)
 
 
 @router.post(
     "/nonstream",
-    summary="智能体聊天非流式响应",
-    response_model=None
+    summary="Agent Chat (Non-Streaming)",
+    response_model=SuccessResponse,
+    status_code=status.HTTP_200_OK
 )
-async def handle_non_stream_chat(auth: ServiceAuth, form: AgentChatForm) -> SuccessQueryResponse:
+async def handle_non_stream_chat(auth: ServiceAuth, form: AgentChatForm):
     """
-    智能体聊天接口(非流式)
-    
-    Args:
-    - **form**: 智能体聊天表单
-    ```
-        session_id: str = Field(..., description="会话ID")
-        by: str = Field(..., description="请求用户ID")
-        agent_id: int = Field(..., description="智能体ID")
-        security_level: int = Field(0, description="安全级别")
-        request_time: str = Field(..., description="请求时间")
-        question: str = Field(..., description="问题")
-        tags: list[str] | None = Field(None, description="标签")
-        deep_mind: int = Field(0, description="是否使用深度思考, 0：不使用，1：使用")
-    ```
+    Synchronous chat interface that returns the full response once completed.
     
     Returns:
-    - **SuccessQueryResponse**: 成功查询响应
-    ```
-        code: int = Field(status.HTTP_200_OK, description="响应状态码")
-        message: str = Field("Success", description="返回的响应信息")
-        success: bool = Field(True, description="请求响应状态")
-        data: dict | list[dict] = Field(..., description="响应返回的数据")
-    ```
-    - **ErrorResponse**: 失败响应
-    ```
-        code: int = Field(status.HTTP_400_BAD_REQUEST, description="响应状态码")
-        message: str = Field("Error", description="返回的响应信息")
-        success: bool = Field(False, description="请求响应状态")
-    ```
-
+    - **SuccessResponse**: Data includes 'answer', 'qa_embedding', and 'references'.
     """
-
-    r = await agent_controller.agent_chat_nonstream(form)
-
-    return SuccessQueryResponse(
-        code=status.HTTP_200_OK,
-        success=True,
-        message="",
-        data=r
-    )
-    
+    logger.info(f"Processing non-stream chat for agent {form.agent_id}")
+    result = await agent_controller.agent_chat_nonstream(form)
+    return SuccessResponse(data=result, message="Chat completed successfully")

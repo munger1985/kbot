@@ -2,6 +2,7 @@ from fastapi import status, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from api.schemas.auth_schema import *
 from core.auth import *
+from dao.repositories import UserRepository, ServiceRepository
 
 class AuthController:
 

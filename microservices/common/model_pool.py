@@ -3,8 +3,9 @@ from abc import ABC, abstractmethod
 from loguru import logger
 from typing import Any, TypeVar, Generic
 from datetime import datetime, timedelta
-from .model_repo import KbotMdModelsRepository as ModelRepository
-from .model_entity import KbotMdModels as Model
+from dao.repositories import AIModelRepository as ModelRepository
+from dao.entities import AIModelEntity as Model
+from core.database.oracle import get_session
 
 # 定义泛型 T，代表具体的模型实例类型（如 BaseReranker, BaseEmbedding）
 T = TypeVar('T')
@@ -28,6 +29,11 @@ class BaseModelPool(ABC, Generic[T]):
         self._health_check_task: asyncio.Task | None = None
         # 保护锁，防止并发加载同一个模型
         self._load_lock = asyncio.Lock()
+
+    @property
+    def oracle_session(self):
+        """获取Oracle数据库会话"""
+        return get_session()
 
     async def initialize(self) -> None:
         """初始化模型池并启动健康检查任务"""
@@ -144,15 +150,17 @@ class BaseModelPool(ABC, Generic[T]):
 
     async def _fetch_model_data(self, model_name: str) -> dict[str, Any]:
         """从数据库读取配置信息"""
-        repo = ModelRepository()
-        model = await repo.get_by_name(model_name)
-        return self._map_entity_to_dict(model) if model else {}
+        async with self.oracle_session as session:
+            repo = ModelRepository(session)
+            model = await repo.get_by_name(model_name)
+            return self._map_entity_to_dict(model) if model else {}
 
     async def _fetch_available_models(self) -> list[dict[str, Any]]:
         """获取所属类别的所有可用模型配置"""
-        repo = ModelRepository()
-        entities = await repo.get_available_by_category(self._get_model_category())
-        return [self._map_entity_to_dict(m) for m in entities]
+        async with self.oracle_session as session:
+            repo = ModelRepository(session=session)
+            entities = await repo.get_available_by_category(self._get_model_category())
+            return [self._map_entity_to_dict(m) for m in entities]
 
     @staticmethod
     def _map_entity_to_dict(model: Model) -> dict[str, Any]:

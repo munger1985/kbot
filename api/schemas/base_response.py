@@ -1,16 +1,14 @@
 from pydantic import BaseModel, Field
-from fastapi import status
+from typing import Generic, TypeVar
 
-class SuccessResponse(BaseModel):
-    code: int = Field(status.HTTP_200_OK, description="响应状态码")
-    message: str = Field("Success", description="返回的响应信息")
-    success: bool = Field(True, description="请求响应状态")
+T = TypeVar('T')
 
-class SuccessQueryResponse(SuccessResponse):
-    """查询成功响应模型"""
-    data: dict|list[dict] = Field(..., description="响应返回的数据")
-
-class SuccessWithErrorResponse(SuccessResponse):
-    """部分失败的成功响应模型"""
-    code: int = Field(status.HTTP_207_MULTI_STATUS, description="多状态码")
-    details: dict|None = Field(None, description="详情")
+class SuccessResponse(BaseModel, Generic[T]):
+    """KBOT API 成功响应模型"""
+    message: str = Field("Success", description="返回的响应信息，用于前端显示给用户")
+    data: T | None = Field(default=None, description="响应返回的业务数据")
+    
+    # 显式设置模型配置
+    model_config = {
+        "arbitrary_types_allowed": True,
+    }

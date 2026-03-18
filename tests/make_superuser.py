@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import asyncio
 from sqlalchemy import update
-from core.database.meta_oracle import get_session
+from core.database.oracle import get_session
 from core.auth.entities.user import User
 
 async def make_user_superuser(username: str):

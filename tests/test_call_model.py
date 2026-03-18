@@ -11,7 +11,7 @@ load_dotenv(env_path)
 # Add both project root and backend directory to Python path
 project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(project_root))
-from utils.model_client import CallModel
+from utils.clients.model_client import CallModel
 
 def create_basic_shapes_image() -> Image.Image: # 类型注解可以更精确为 Image.Image
     """

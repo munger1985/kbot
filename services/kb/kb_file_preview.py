@@ -8,7 +8,7 @@ import base64
 # from pptx import Presentation
 from io import BytesIO
 from typing import Any
-from dao.repositories.kbot_md_kb_files_repo import KbotMdKbFilesRepository
+from dao.repositories import FileRepository
 
 
 
@@ -38,7 +38,7 @@ class FilePreview:
             包含预览数据的字典
         """
         # 从数据库获取文件路径
-        file_path = await KbotMdKbFilesRepository().get_path_by_id(file_id)
+        file_path = await FilesRepository().get_path_by_id(file_id)
 
         if not file_path:
             return {"error": "文件不存在", "file_id": file_id}

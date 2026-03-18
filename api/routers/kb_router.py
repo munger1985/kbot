@@ -1,4 +1,3 @@
-
 import json
 import urllib.parse
 from loguru import logger
@@ -14,7 +13,7 @@ router = APIRouter(prefix="/kb", tags=["Knowledge Base"])
 
 @router.post(
     "/upload",
-    summary="上传一个或多个文件到指定知识库"
+    summary="Upload one or multiple files to the specified knowledge base"
 )
 async def handle_upload_files(
     auth: UserAuth,
@@ -22,197 +21,85 @@ async def handle_upload_files(
     metadata: str = Form(...)
 ) -> SuccessResponse:
     """
-    上传一个或多个文件到指定知识库
-    
+    Uploads one or multiple files to the specified knowledge base.
+
     Args:
-    - **files**: 上传文件列表
-    - **metadata**: 上传文件元数据，json格式，包含以下字段
-    ```
-        app_id: int
-        domain_id: int
-        kb_id: int
-        overwrite: bool
-        batch_name: str
-        batch_id: int | None = None
-        biz_metadata: dict | None = None
-        created_by: str | None = None
-    ```
-    
+        files: List of uploaded files.
+        metadata: Metadata of the uploaded files in JSON format. Contains the following fields:
+            - app_id: int
+            - domain_id: int
+            - kb_id: int
+            - overwrite: bool
+            - batch_name: str
+            - batch_id: int | None = None
+            - biz_metadata: dict | None = None
+            - created_by: str | None = None
+
     Returns:
-    - **SuccessResponse**: 成功响应
-    ```
-        code: int = Field(status.HTTP_200_OK, description="响应状态码")
-        message: str = Field("Success", description="返回的响应信息")
-        success: bool = Field(True, description="请求响应状态")
-    ```
-    - **ErrorResponse**: 失败响应
-    ```
-        code: int = Field(status.HTTP_400_BAD_REQUEST, description="响应状态码")
-        message: str = Field("Error", description="返回的响应信息")
-        success: bool = Field(False, description="请求响应状态")
-    ```
+        SuccessResponse: Success response with the following structure:
+            - code: int = Field(status.HTTP_200_OK, description="Response status code")
+            - message: str = Field("Success", description="Response message")
+            - success: bool = Field(True, description="Request response status")
+        ErrorResponse: Error response with the following structure:
+            - code: int = Field(status.HTTP_400_BAD_REQUEST, description="Response status code")
+            - message: str = Field("Error", description="Response message")
+            - success: bool = Field(False, description="Request response status")
     """
-    try:
-        # 解析并验证为表单模型
-        metadata_dict = json.loads(metadata)
-        form = KBUploadForm(files=files, **metadata_dict)
+    # Parse and validate as form model.
+    metadata_dict = json.loads(metadata)
+    form = KBUploadForm(files=files, **metadata_dict)
+    return await controller.upload_kb_files(form)
         
-        result, error_msg = await controller.upload_kb_files(form)
-        
-        if result:
-            return SuccessResponse(
-                code=status.HTTP_200_OK,
-                success=True,
-                message="文件上传成功"
-            )
-        else:
-            # 如果有具体的错误信息，使用它；否则使用默认消息
-            message = error_msg if error_msg else "文件上传失败"
-            
-            # 根据错误类型设置适当的状态码
-            if error_msg and "知识库" in error_msg and "不存在" in error_msg:
-                code = status.HTTP_404_NOT_FOUND
-            else:
-                code = status.HTTP_400_BAD_REQUEST
-                
-            logger.error(f"文件上传失败: {message}")
-            raise HTTPException(
-                status_code=code,
-                detail=message
-            )
-        
-    except json.JSONDecodeError as e:
-        msg = f"请求参数格式错误: {str(e)}"
-        logger.error(msg)
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=msg
-        )
-    except Exception as e:
-        msg = f"服务器内部错误: {str(e)}"
-        logger.error(msg)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=msg
-        )
     
 @router.post(
     "/attach",
-    summary="附加一个文件夹到指定知识库"
+    summary="Attach a folder to the specified knowledge base"
 )
 async def attach_folder_to_kb(
     auth: UserAuth,
     kb_attach_form: KBAttachForm = Body(...)
 ) -> SuccessResponse:
     """
-    附加一个文件夹到指定知识库
+    Attaches a folder to the specified knowledge base.
     """
-    try:
-        result, error_msg = await controller.attach_folder(kb_attach_form)
-        
-        if result:
-            return SuccessResponse(
-                code=status.HTTP_200_OK,
-                success=True,
-                message="文件夹附加成功"
-            )
-        else:
-            # 如果有具体的错误信息，使用它；否则使用默认消息
-            message = error_msg if error_msg else "文件夹附加失败"
-            
-            # 根据错误类型设置适当的状态码
-            if error_msg and "知识库" in error_msg and "不存在" in error_msg:
-                code = status.HTTP_404_NOT_FOUND
-            else:
-                code = status.HTTP_400_BAD_REQUEST
-                
-            logger.error(f"文件夹附加失败: {message}")
-            raise HTTPException(
-                status_code=code,
-                detail=message
-            )
-        
-    except Exception as e:
-        msg = f"服务器内部错误: {str(e)}"
-        logger.error(msg)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=msg
-        )
+    return await controller.attach_folder(kb_attach_form)
     
 @router.post(
     "/delete",
-    summary="从指定的知识库中删除文件或所有文件以及其知识库或批次"
+    summary="Delete files, all files and the knowledge base, or a batch from the specified knowledge base"
 )
 async def handle_delete_files(
     auth: UserAuth,
     form: KBDeleteForm = Body(...)
 ) -> SuccessResponse:
     """
-    从指定的知识库中删除文件或所有文件以及其知识库或批次
-    
-    Args:
-    - **form**: 删除文件元数据，json格式，包含以下字段
-    ```
-        app_id: int
-        domain_id: int
-        kb_id: int
-        batch_id: int | None = None
-        file_id: str | None = None
-        delete_batch: bool = False
-        delete_kb: bool = False
-    ```
-    
-    Returns:
-    - **SuccessResponse**: 成功响应
-    ```
-        code: int = Field(status.HTTP_200_OK, description="响应状态码")
-        message: str = Field("Success", description="返回的响应信息")
-        success: bool = Field(True, description="请求响应状态")
-    ```
-    - **ErrorResponse**: 失败响应
-    ```
-        code: int = Field(status.HTTP_400_BAD_REQUEST, description="响应状态码")
-        message: str = Field("Error", description="返回的响应信息")
-        success: bool = Field(False, description="请求响应状态")
-    ```
-    """
-    try:
-        
-        result = await controller.delete_kb_files(form)
+    Deletes files, all files and the knowledge base, or a batch from the specified knowledge base.
 
-        if result["failed_file_cnt"] == 0 and result["meta_cnt"] > 0:
-            return SuccessResponse(
-                code=status.HTTP_200_OK,
-                success=True,
-                message="删除文件成功"
-            )
-        else:
-            msg = f"删除文件失败: {result['failed_file_cnt']}个文件删除失败，详情请查看日志"
-            logger.error(msg)
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=msg
-                )
-        
-    except json.JSONDecodeError as e:
-        msg = f"请求参数格式错误: {str(e)}"
-        logger.error(msg)
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=msg
-        )
-    except Exception as e:
-        msg = f"服务器内部错误: {str(e)}"
-        logger.error(msg)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=msg
-        )
+    Args:
+        form: Deletion file metadata in JSON format. Contains the following fields:
+            - app_id: int
+            - domain_id: int
+            - kb_id: int
+            - batch_id: int | None = None
+            - file_id: str | None = None
+            - delete_batch: bool = False
+            - delete_kb: bool = False
+
+    Returns:
+        SuccessResponse: Success response with the following structure:
+            - code: int = Field(status.HTTP_200_OK, description="Response status code")
+            - message: str = Field("Success", description="Response message")
+            - success: bool = Field(True, description="Request response status")
+        ErrorResponse: Error response with the following structure:
+            - code: int = Field(status.HTTP_400_BAD_REQUEST, description="Response status code")
+            - message: str = Field("Error", description="Response message")
+            - success: bool = Field(False, description="Request response status")
+    """
+    return await controller.delete_kb_files(form)
     
 @router.get(
     "/download",
-    summary="从知识库中下载文件",
+    summary="Download a file from the knowledge base",
     response_model=None,
     status_code=status.HTTP_200_OK
 )
@@ -221,122 +108,23 @@ async def handle_download_file(
     file_id: str
 ) -> FileResponse:
     """
-    从知识库中下载文件
-    
-    Args:
-    - **file_id**: 文件ID
-    
-    Returns:
-    - **FileResponse**: 文件响应
-    - **ErrorResponse**: 失败响应
-    ```
-        code: int = Field(status.HTTP_400_BAD_REQUEST, description="响应状态码")
-        message: str = Field("Error", description="返回的响应信息")
-        success: bool = Field(False, description="请求响应状态")
-    ```
-    """
-    try:
-        result = await controller.get_kb_files(file_id, download=True)
-        
-        if result:
-            return FileResponse(
-                path=result["file_path"],
-                filename=urllib.parse.quote(result["file_name"], encoding='utf-8'),
-                media_type="multipart/form-data",
-                headers={
-                    "Content-Disposition": "attachment; filename*=UTF-8''{}".format(urllib.parse.quote(result["file_name"], encoding='utf-8'))
-                },
-                content_disposition_type=None # type: ignore
-                )
-        else:
-            msg = f"文件不存在: {file_id}"
-            logger.error(msg)
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=msg
-            )
-        
-    except Exception as e:
-        msg = f"服务器内部错误: {str(e)}"
-        logger.error(msg)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=msg
-        )
+    Downloads a file from the knowledge base.
 
-@router.get(
-    "/preview",
-    summary="从知识库中预览文件",
-    response_model=None,
-    status_code=status.HTTP_200_OK
-)
-async def handle_preview_file(
-    auth: UserAuth,
-    file_id: str,
-    page_num: int = 0
-) -> HTMLResponse | FileResponse:
-    """
-    从知识库中预览文件
-    
     Args:
-    - **file_id**: 文件ID
-    - **page_num**: 页码
-    
+        file_id: File ID.
+
     Returns:
-    - **HTMLResponse**: HTML响应
-    - **FileResponse**: 图片响应
-    - **ErrorResponse**: 失败响应
-    ```
-        code: int = Field(status.HTTP_400_BAD_REQUEST, description="响应状态码")
-        message: str = Field("Error", description="返回的响应信息")
-        success: bool = Field(False, description="请求响应状态")
-    ```
+        FileResponse: File response.
+        ErrorResponse: Error response with the following structure:
+            - code: int = Field(status.HTTP_400_BAD_REQUEST, description="Response status code")
+            - message: str = Field("Error", description="Response message")
+            - success: bool = Field(False, description="Request response status")
     """
-    try:
-        result = await controller.get_kb_files(file_id, download=False, page_num=page_num)
-        
-        if result:
-            if result["file_ext"] in [".txt", ".html"]:
-                encoding = result.get("encoding", "utf-8")
-                with open(result["file_path"], 'r', encoding=encoding) as f:
-                    content = f.read()
-                
-                html_content = f"""
-                <!DOCTYPE html>
-                <html>
-                <body>
-                    <div class="content">{content}</div>
-                </body>
-                </html>
-                """
-                return HTMLResponse(content=html_content, media_type="text/html")
-            
-            else:
-                return FileResponse(
-                        path=result["file_path"],
-                        filename=urllib.parse.quote(result["file_name"], encoding='utf-8'),
-                        media_type="image/png",
-                        headers={"Content-Disposition": "inline"}
-                    )
-        else:
-            msg = f"文件不存在: {file_id}"
-            logger.error(msg)
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=msg
-            )
-        
-    except Exception as e:
-        msg = f"服务器内部错误: {str(e)}"
-        logger.error(msg)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=msg
-        )
-    
+    return await controller.get_kb_file(file_id)
+
 @router.post(
     "/file/reparse",
-    summary="重新解析文件",
+    summary="Reparse files",
     response_model=SuccessResponse,
     status_code=status.HTTP_200_OK
 )
@@ -345,234 +133,29 @@ async def handle_reparse_files(
     form: KBReparseForm = Body(...)
 ) -> SuccessResponse:
     """
-    重新解析文件
-    
+    Reparses files.
+
     Args:
-    - **form**: 重解析文件元数据
-    ```
-        kb_id: int
-        file_ids: list[str]
-    ```
-    
+        form: Reparse file metadata with the following fields:
+            - kb_id: int
+            - file_ids: list[str]
+
     Returns:
-    - **SuccessResponse**: 成功响应
-    ```
-        code: int = Field(status.HTTP_200_OK, description="响应状态码")
-        message: str = Field("Success", description="返回的响应信息")
-        success: bool = Field(True, description="请求响应状态")
-    ```
-    - **ErrorResponse**: 失败响应
-    ```
-        code: int = Field(status.HTTP_400_BAD_REQUEST, description="响应状态码")
-        message: str = Field("Error", description="返回的响应信息")
-        success: bool = Field(False, description="请求响应状态")
-    ```
+        SuccessResponse: Success response with the following structure:
+            - code: int = Field(status.HTTP_200_OK, description="Response status code")
+            - message: str = Field("Success", description="Response message")
+            - success: bool = Field(True, description="Request response status")
+        ErrorResponse: Error response with the following structure:
+            - code: int = Field(status.HTTP_400_BAD_REQUEST, description="Response status code")
+            - message: str = Field("Error", description="Response message")
+            - success: bool = Field(False, description="Request response status")
     """
-    try:
-        # metadata_dict = json.loads(metadata)
-        # form = KBReparseForm(**metadata_dict)
+    return await controller.reparse_kb_files(form)
 
-        result = await controller.reparse_kb_files(form)
-        if result:
-            return SuccessResponse(
-                code=status.HTTP_200_OK,
-                success=True,
-                message="重解析文件成功"
-                )
-        else:
-            msg = "重解析文件失败"
-            logger.error(msg)
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=msg
-            )
-            
-    except json.JSONDecodeError as e:
-        msg = f"请求参数格式错误: {str(e)}"
-        logger.error(msg)
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=msg
-        )
-    except Exception as e:
-        msg = f"服务器内部错误: {str(e)}"
-        logger.error(msg)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=msg
-        )
-    
-
-@router.post(
-    "/file/preview/v1",
-    summary="从知识库中预览文件 v1",
-    response_model=None,
-    status_code=status.HTTP_200_OK
-)
-async def handle_preview_kb_file_v1(
-    auth: UserAuth,
-    form: KBFilePreviewForm
-):
-    """
-    从知识库中预览文件
-    
-    Args:
-    - **form**: 文件预览元数据
-    ```
-        file_id: str = Field(..., description="文件ID")
-        max_length: int | None = Field(None, description="最大长度")
-        pages: int | list[int] | None = Field(None, description="页数")
-        sheet_index: int | None = Field(None, description="Sheet索引")
-        preview_rows: int | None = Field(None, description="预览行数")
-        slide: int | None = Field(None, description="幻灯片页码")
-    ```
-    
-    Returns:
-    - **dict**: dict响应，包含文件预览信息
-    ```
-        {
-            "file_id": "文件ID",
-            "file_name": "文件名称",
-            "mime_type": "mime类型",
-            "file_size": "文件大小",
-            "success": True,
-            "preview_type": "预览文件的类型",
-            "content": "base64编码的文件内容",
-            "total_pages": "总页数",
-            "extracted_pages": "提取的页数",
-            "page_count": "提取的页码",
-            "message": "预览信息"
-        }
-    ```
-
-    - **ErrorResponse**: 失败响应
-    ```
-        code: int = Field(status.HTTP_400_BAD_REQUEST, description="响应状态码")
-        message: str = Field("Error", description="返回的响应信息")
-        success: bool = Field(False, description="请求响应状态")
-    ```
-    """
-    try:
-        kwargs = {
-            "file_id": form.file_id,
-            "max_length": form.max_length,
-            "pages": form.pages,
-            "sheet_index": form.sheet_index,
-            "preview_rows": form.preview_rows,
-            "slide": form.slide
-        }
-        kwargs = {k: v for k, v in kwargs.items() if v is not None}
-        
-        return await controller.preview_kb_file(**kwargs)
-         
-    except Exception as e:
-        msg = f"服务器内部错误: {str(e)}"
-        logger.error(msg)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=msg
-        )
-    
-@router.get(
-    "/file/preview/v2",
-    summary="在浏览器中直接预览文件 v2",
-    response_model=None,
-    status_code=status.HTTP_200_OK
-)
-async def handle_preview_kb_file_v2(
-    auth: UserAuth,
-    file_id: str
-) -> FileResponse:
-    """
-    在浏览器中直接预览文件
-    
-    Args:
-    - **file_id**: str = Field(..., description="文件ID")
-    
-    Returns:
-    - **FileResponse**: 文件响应
-    - **ErrorResponse**: 失败响应
-    ```
-        code: int = Field(status.HTTP_400_BAD_REQUEST, description="响应状态码")
-        message: str = Field("Error", description="返回的响应信息")
-        success: bool = Field(False, description="请求响应状态")
-    ```
-    """
-    try:
-        result = await controller.get_kb_files(file_id, download=True)
-        
-        if result:
-            # 获取文件扩展名以确定内容类型
-            file_extension = result["file_ext"].lower()
-            
-            # 常见文件类型的媒体类型映射
-            content_types = {
-                '.pdf': 'application/pdf',
-                '.jpg': 'image/jpeg',
-                '.jpeg': 'image/jpeg',
-                '.png': 'image/png',
-                '.gif': 'image/gif',
-                '.bmp': 'image/bmp',
-                '.txt': 'text/plain',
-                '.html': 'text/html',
-                '.htm': 'text/html',
-                '.css': 'text/css',
-                '.js': 'application/javascript',
-                '.json': 'application/json',
-                '.xml': 'application/xml',
-                '.csv': 'text/csv',
-                '.mp4': 'video/mp4',
-                '.mp3': 'audio/mpeg',
-                '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-                '.doc': 'application/msword',
-                '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                '.xls': 'application/vnd.ms-excel',
-                '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-                '.ppt': 'application/vnd.ms-powerpoint'
-            }
-            
-            # 设置默认内容类型为二进制流
-            media_type = content_types.get(file_extension, 'application/octet-stream')
-            
-            file_path = result["file_path"]
-            filename = result["file_name"]
-            encoding = result.get("encoding", "utf-8")
-            
-            # 对于文本文件，检测实际编码
-            headers = {}
-            encoded_filename = urllib.parse.quote(filename, encoding=encoding)
-            
-            # 如果是文本文件，根据编码设置字符集
-            if file_extension in ['.txt', '.csv', '.html', '.htm', '.css', '.js', '.json', '.xml']:
-                media_type = f"{media_type}; charset={encoding}"
-                    
-            headers["Content-Disposition"] = f"inline; filename*=UTF-8''{encoded_filename}"
-
-            return FileResponse(
-                path=file_path,
-                filename=filename,
-                media_type=media_type,
-                headers=headers
-            )
-        else:
-            msg = "文件不存在"
-            logger.error(msg)
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=msg
-            )
-        
-    except Exception as e:
-        msg = f"服务器内部错误: {str(e)}"
-        logger.error(msg)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=msg
-        )
     
 @router.post(
     "/file/chunk",
-    summary="更改或删除知识库文件的分片内容",
+    summary="Modify or delete chunk content of a knowledge base file",
     response_model=SuccessResponse,
     status_code=status.HTTP_200_OK
 )
@@ -581,173 +164,107 @@ async def handle_edit_file_chunk(
     form: KBFileChunkEditForm
 ) -> SuccessResponse:
     """
-    更改或删除知识库文件的分片内容
-    
-    Args:
-    - **form**: 文件分片编辑元数据
-    ```
-        kb_id: int = Field(..., description="知识库ID")
-        file_id: str = Field(..., description="文件ID")
-        embed_id: str = Field(..., description="分片ID")
-        new_chunk: str | None = Field(None, description="新分片内容")
-        action: str = Field(..., description="操作类型")
-    ```
-    
-    Returns:
-    - **SuccessResponse**: 成功响应
-    ```
-        code: int = Field(status.HTTP_200_OK, description="响应状态码")
-        message: str = Field("Success", description="返回的响应信息")
-        success: bool = Field(True, description="请求响应状态")
-    ```
-    - **ErrorResponse**: 失败响应
-    ```
-        code: int = Field(status.HTTP_400_BAD_REQUEST, description="响应状态码")
-        message: str = Field("Error", description="返回的响应信息")
-        success: bool = Field(False, description="请求响应状态")
-    ```
-    """
-    try:
-        if form.action == "update":
-            if form.new_chunk is None or form.new_chunk.strip() == "":
-                msg = "更新操作需要提供新的分片内容"
-                logger.error(msg)
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=msg
-                )
-            result = await controller.edit_kb_file_chunk(
-                kb_id=form.kb_id,
-                file_id=form.file_id,
-                embed_id=form.embed_id,
-                new_chunk=form.new_chunk
-            )
-        elif form.action == "delete":
-            result = await controller.delete_kb_file_chunk(
-                kb_id=form.kb_id,
-                file_id=form.file_id,
-                embed_id=form.embed_id
-            )
-            
-        elif form.action == "enable":
-            result = await controller.toogle_kb_file_chunk_status(
-                kb_id=form.kb_id,
-                chunk_id=form.embed_id,
-                status=1
-            )
-        elif form.action == "disable":
-            result = await controller.toogle_kb_file_chunk_status(
-                kb_id=form.kb_id,
-                chunk_id=form.embed_id,
-                status=0
-            )
+    Modifies or deletes the chunk content of a knowledge base file.
 
-        else:
-            msg = "无效的操作类型，仅支持 'update', 'delete', 'enable' 和 'disable' 四种操作"
+    Args:
+        form: File chunk edit metadata with the following fields:
+            - kb_id: int = Field(..., description="Knowledge base ID")
+            - file_id: str = Field(..., description="File ID")
+            - embed_id: str = Field(..., description="Chunk ID")
+            - new_chunk: str | None = Field(None, description="New chunk content")
+            - action: str = Field(..., description="Operation type")
+
+    Returns:
+        SuccessResponse: Success response with the following structure:
+            - code: int = Field(status.HTTP_200_OK, description="Response status code")
+            - message: str = Field("Success", description="Response message")
+            - success: bool = Field(True, description="Request response status")
+        ErrorResponse: Error response with the following structure:
+            - code: int = Field(status.HTTP_400_BAD_REQUEST, description="Response status code")
+            - message: str = Field("Error", description="Response message")
+            - success: bool = Field(False, description="Request response status")
+    """
+    if form.action == "update":
+        if form.new_chunk is None or form.new_chunk.strip() == "":
+            msg = "New chunk content is required for the update operation."
             logger.error(msg)
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=msg
             )
-        if result:
-            return SuccessResponse(
-                code=status.HTTP_200_OK,
-                success=True,
-                message="切换文件分片状态成功"
-                )
-        else:
-            msg = "切换文件分片状态失败"
-            logger.error(msg)
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=msg
-            )
-            
-    except Exception as e:
-        msg = f"服务器内部错误: {str(e)}"
+        return await controller.edit_kb_file_chunk(
+            kb_id=form.kb_id,
+            file_id=form.file_id,
+            embed_id=form.embed_id,
+            new_chunk=form.new_chunk
+        )
+    elif form.action == "delete":
+        return await controller.delete_kb_file_chunk(
+            kb_id=form.kb_id,
+            file_id=form.file_id,
+            embed_id=form.embed_id
+        )
+        
+    elif form.action in ["enable", "disable"]:
+        return await controller.toggle_kb_file_chunk_status(
+            kb_id=form.kb_id,
+            chunk_id=form.embed_id,
+            is_active=True if form.action == "enable" else False
+        )
+    else:
+        msg = "Invalid action type. Only 'update', 'delete', 'enable', and 'disable' are supported."
         logger.error(msg)
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail=msg
         )
     
 @router.get(
     "/file/get_chunks",
-    summary="根据文件ID获取文件的分片内容",
-    response_model=SuccessQueryResponse,
+    summary="Retrieve chunk content of a file by file ID",
+    response_model=SuccessResponse,
     status_code=status.HTTP_200_OK
 )
 async def handle_get_file_chunks(
     auth: UserAuth,
     kb_id: int,
     file_id: str
-) -> SuccessQueryResponse:
+) -> SuccessResponse:
     """
-    根据文件ID获取文件的分片内容
-    
+    Retrieves chunk content of a file by file ID.
+
     Args:
-    - **kb_id**: int = Field(..., description="知识库ID")
-    - **file_id**: str = Field(..., description="文件ID")
-    
+        kb_id: int = Field(..., description="Knowledge base ID")
+        file_id: str = Field(..., description="File ID")
+
     Returns:
-    - **SuccessQueryResponse**: 成功查询模型参数
-    ```
-        code: int = Field(status.HTTP_200_OK, description="响应状态码")
-        message: str = Field("Success", description="返回的响应信息")
-        success: bool = Field(True, description="请求响应状态")
-        data: dict | list[dict] = Field(..., description="响应返回的数据")
-    ```
-    - **data**: 模型参数
-    ```
-        {
-            embed_id: str = Field(..., description="分片ID")
-            kb_id: int = Field(..., description="知识库ID")
-            file_id: str = Field(..., description="文件ID")
-            chunk_doc: str = Field(..., description="分片内容")
-            chunk_metadata: str = Field(..., description="分片元数据")
-            biz_metadata: str = Field(..., description="业务元数据")
-            embedding = [], # embedding 不返回，防止接口数据过大
-            security_level: int = Field(..., description="安全级别")
-            status: int = Field(..., description="状态")
-        }
-    ```
-    - **ErrorResponse**: 失败响应
-    ```
-        code: int = Field(status.HTTP_400_BAD_REQUEST, description="响应状态码")
-        message: str = Field("Error", description="返回的响应信息")
-        success: bool = Field(False, description="请求响应状态")
-    ```
+        SuccessQueryResponse: Success query response with the following structure:
+            - code: int = Field(status.HTTP_200_OK, description="Response status code")
+            - message: str = Field("Success", description="Response message")
+            - success: bool = Field(True, description="Request response status")
+            - data: dict | list[dict] = Field(..., description="Response data")
+        - data: Model parameters with the following structure:
+            {
+                embed_id: str = Field(..., description="Chunk ID")
+                kb_id: int = Field(..., description="Knowledge base ID")
+                file_id: str = Field(..., description="File ID")
+                chunk_doc: str = Field(..., description="Chunk content")
+                chunk_metadata: str = Field(..., description="Chunk metadata")
+                biz_metadata: str = Field(..., description="Business metadata")
+                embedding = [],  # Embedding is not returned to prevent excessive interface data.
+                security_level: int = Field(..., description="Security level")
+                status: int = Field(..., description="Status")
+            }
+        ErrorResponse: Error response with the following structure:
+            - code: int = Field(status.HTTP_400_BAD_REQUEST, description="Response status code")
+            - message: str = Field("Error", description="Response message")
+            - success: bool = Field(False, description="Request response status")
     """
-    try:
-        result = await controller.get_kb_file_chunk_by_id(
-            kb_id=kb_id,
-            file_id=file_id
-        )
-        if result:
-            return SuccessQueryResponse(
-                code=status.HTTP_200_OK,
-                success=True,
-                message="获取文件分片成功",
-                data=result
-            )
-        else:
-            msg = "未找到文件分片"
-            logger.error(msg)
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=msg
-            )
-    except Exception as e:
-        msg = f"服务器内部错误: {str(e)}"
-        logger.error(msg)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=msg
-        )
+    return await controller.get_kb_file_chunk_by_id(file_id=file_id)
     
 @router.post(
     "/file/chunk/update_description",
-    summary="更新知识库文件的分片描述",
+    summary="Update the description of a knowledge base file chunk",
     response_model=SuccessResponse,
     status_code=status.HTTP_200_OK
 )
@@ -756,57 +273,32 @@ async def handle_update_chunk_description(
     form: KBFileChunkUpdateDescriptionForm
 ) -> SuccessResponse:
     """
-    更新知识库文件的分片描述
-    
+    Updates the description of a knowledge base file chunk.
+
     Args:
-    - **kb_id**: int = Field(..., description="知识库ID")
-    - **embed_id**: str = Field(..., description="分片ID")
-    - **description**: str = Field(..., description="分片描述")
-    
+        kb_id: int = Field(..., description="Knowledge base ID")
+        embed_id: str = Field(..., description="Chunk ID")
+        description: str = Field(..., description="Chunk description")
+
     Returns:
-    - **SuccessResponse**: 成功响应
-    ```
-        code: int = Field(status.HTTP_200_OK, description="响应状态码")
-        message: str = Field("Success", description="返回的响应信息")
-        success: bool = Field(True, description="请求响应状态")
-    ```
-    - **ErrorResponse**: 失败响应
-    ```
-        code: int = Field(status.HTTP_400_BAD_REQUEST, description="响应状态码")
-        message: str = Field("Error", description="返回的响应信息")
-        success: bool = Field(False, description="请求响应状态")
-    ```
+        SuccessResponse: Success response with the following structure:
+            - code: int = Field(status.HTTP_200_OK, description="Response status code")
+            - message: str = Field("Success", description="Response message")
+            - success: bool = Field(True, description="Request response status")
+        ErrorResponse: Error response with the following structure:
+            - code: int = Field(status.HTTP_400_BAD_REQUEST, description="Response status code")
+            - message: str = Field("Error", description="Response message")
+            - success: bool = Field(False, description="Request response status")
     """
-    try:
-        result = await controller.update_kb_file_chunk_description(
+    return await controller.update_kb_file_chunk_description(
             kb_id=form.kb_id,
             embed_id=form.embed_id,
             description=form.description
         )
-        if result:
-            return SuccessResponse(
-                code=status.HTTP_200_OK,
-                success=True,
-                message="更新文件分片描述成功"
-            )
-        else:
-            msg = "未找到文件分片"
-            logger.error(msg)
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=msg
-            )
-    except Exception as e:
-        msg = f"服务器内部错误: {str(e)}"
-        logger.error(msg)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=msg
-        )
 
 @router.post(
     "/file/chunk/update_tags",
-    summary="更新知识库文件的分片标签",
+    summary="Update tags of a knowledge base file",
     response_model=SuccessResponse,
     status_code=status.HTTP_200_OK
 )
@@ -815,50 +307,52 @@ async def handle_update_chunk_tags(
     form: KBFileChunkUpdateTagsForm
 ) -> SuccessResponse:
     """
-    更新知识库文件的分片标签
-    
+    Updates the tags of a knowledge base file.
+
     Args:
-    - **kb_id**: int = Field(..., description="知识库ID")
-    - **file_id**: str = Field(..., description="文件ID")
-    - **tags**: list[str] = Field(..., description="文件分片标签")
-    
+        kb_id: int = Field(..., description="Knowledge base ID")
+        file_id: str = Field(..., description="File ID")
+        tags: list[str] = Field(..., description="File chunk tags")
+
     Returns:
-    - **SuccessResponse**: 成功响应
-    ```
-        code: int = Field(status.HTTP_200_OK, description="响应状态码")
-        message: str = Field("Success", description="返回的响应信息")
-        success: bool = Field(True, description="请求响应状态")
-    ```
-    - **ErrorResponse**: 失败响应
-    ```
-        code: int = Field(status.HTTP_400_BAD_REQUEST, description="响应状态码")
-        message: str = Field("Error", description="返回的响应信息")
-        success: bool = Field(False, description="请求响应状态")
-    ```
+        SuccessResponse: Success response with the following structure:
+            - code: int = Field(status.HTTP_200_OK, description="Response status code")
+            - message: str = Field("Success", description="Response message")
+            - success: bool = Field(True, description="Request response status")
+        ErrorResponse: Error response with the following structure:
+            - code: int = Field(status.HTTP_400_BAD_REQUEST, description="Response status code")
+            - message: str = Field("Error", description="Response message")
+            - success: bool = Field(False, description="Request response status")
     """
-    try:
-        result = await controller.update_kb_file_chunk_tags(
+    return await controller.update_file_tags(
             kb_id=form.kb_id,
             file_id=form.file_id,
             tags=form.tags
         )
-        if result:
-            return SuccessResponse(
-                code=status.HTTP_200_OK,
-                success=True,
-                message="更新文件分片标签成功"
-            )
-        else:
-            msg = "未找到文件分片"
-            logger.error(msg)
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=msg
-            )
-    except Exception as e:
-        msg = f"服务器内部错误: {str(e)}"
-        logger.error(msg)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=msg
-        )
+
+
+@router.post(
+    "/preview/extracted-img", 
+    response_class=FileResponse, 
+    status_code=status.HTTP_200_OK, 
+    summary="Preview extracted image from file"
+)
+async def handle_preview_extracted_image(auth: UserAuth, params: PreviewImageParams):
+    """
+    Preview a specific image extracted from a document within the knowledge base.
+    
+    Access: **User**
+
+    Args:
+        params (PreviewImageParams): Request parameters including:
+            - **kb_id** (int): Knowledge Base ID.
+            - **file_id** (str): The unique ID of the source file.
+            - **image_name** (str): The specific filename of the extracted image.
+
+    Returns:
+        FileResponse: The binary image file with cache headers.
+
+    Raises:
+        HTTPException (404): If the source file or the specific image cannot be found.
+    """
+    return await controller.preview_extracted_image(params)

@@ -5,7 +5,7 @@ from datetime import datetime, timezone, timedelta
 from jose import JWTError, jwt, ExpiredSignatureError
 from passlib.context import CryptContext
 from core.dictionary import APIKeyStatus, UserTokenStatus
-from core.auth.repositories import *
+from dao.repositories import UserRepository, UserTokenRepository, ServiceRepository, APIKeyRepository
 
 # 配置
 API_KEY_PREFIX = "sk_"

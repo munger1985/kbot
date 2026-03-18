@@ -68,3 +68,7 @@ class KBFileChunkUpdateTagsForm(BaseModel):
     file_id: str = Field(..., description="文件ID")
     tags: list[str] = Field(..., description="文件分片标签")
 
+class PreviewImageParams(BaseModel):
+    """预览抽取图片的参数模型"""
+    file_id: str = Field(..., description="文件ID")
+    image_name: str = Field(..., description="图片名")

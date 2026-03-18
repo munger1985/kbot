@@ -9,7 +9,7 @@ load_dotenv()
 project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(project_root))
 
-from dao.repositories.kbot_md_models_repo import *
+from dao.repositories.ai_model_repo import *
 from core.database.meta_redis import AsyncRedisPool
 
 async def test_sync_all_available_models():

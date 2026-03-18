@@ -15,7 +15,7 @@ sys.path.insert(0, str(project_root))
 env_path = project_root / ".env"
 load_dotenv(env_path)
 
-from dao.repositories.kbot_md_chat_qa_repo import KbotMdChatQaRepository
+from dao.repositories.chat_record_repo import KbotMdChatQaRepository
 from dao.entities.kbot_biz_chat_session import KbotBizChatSession, QAData, Reference
 from utils.serializer import safe_serialize
 

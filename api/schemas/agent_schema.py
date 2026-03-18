@@ -13,14 +13,12 @@ class AgentChatForm(BaseModel):
 
 class AgentChatFeedbackForm(BaseModel):
     """智能体聊天获取反馈表单模型"""
-    session_id: str = Field(..., description="会话ID")
-    question_index: int = Field(..., description="问题索引")
+    chat_record_id: int = Field(..., description="聊天记录ID")
     feedback: int = Field(..., description="问题反馈，0：不反馈，1：赞同，-1：不赞同")
 
-class AgentChatDifyForm(BaseModel):
-    """智能体聊天Dify表单模型"""
+class DifySearchForm(BaseModel):
+    """Dify检索表单模型"""
     knowledge_id: str = Field(..., description="知识库ID")
     query: str = Field(..., description="查询文本")
     retrieval_setting: dict = Field(..., description="检索设置")
     metadata_condition: dict | None = Field(None, description="元数据条件")
-

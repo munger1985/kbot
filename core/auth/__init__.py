@@ -2,8 +2,6 @@ from .auth_service import (
     PasswordService,
     UserAuthService,
     ServiceAuthService,
-    UserRepository,
-    ServiceRepository
 )
 from .dependency import (
     get_current_user,
@@ -17,8 +15,6 @@ __all__ = [
     "PasswordService",
     "UserAuthService",
     "ServiceAuthService",
-    "UserRepository",
-    "ServiceRepository",
     "get_current_user",
     "require_user_token",
     "require_api_key",

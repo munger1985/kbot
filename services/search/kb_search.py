@@ -1,282 +1,248 @@
-import json
+import asyncio
+import time
 from loguru import logger
-from mcp_tools import KBSearchResult, KBSearchToolParams
-from dao.repositories.kbot_md_kb_repo import KbotMdKbRepository
-from dao.repositories.kbot_biz_txt_embedding_factory import EmbeddingRepositoryFactory
+from core.exceptions import *
 from core.dictionary import KbCategory, KBSearchType
-from utils.oracle_vec_handler import OracleVecHandler
-from utils.encoder import DecimalEncoder
-from utils.model_client import CallModel
-from utils.common import safe_read_content
+from core.database.oracle import get_session
+from dao.repositories import TxtChunkRepository
+from .fulltext_preprocessor import preprocess_for_fulltext
+from .result import TxtBaseSearchResult
 
 
-class KBSearch:
-    """知识库搜索类"""
-    def __init__(self, tool_params: KBSearchToolParams):
-        self.tool_params = tool_params
+class TxtBaseSearch:
+    """文本知识库搜索类"""
+    @property
+    def oracle_session(self):
+        return get_session()
 
-    async def search(self, 
-                     vector_search_question: str, 
-                     full_text_question: str, 
+    async def search(self,
+                     kb_id: int,
+                     question: str,
+                     search_top_k: int,
+                     threshold: float,
+                     do_rerank: bool,
+                     weight: float,
                      security: int, 
+                     llm_model: str | None = None,
+                     query_vec: list[float] | None = None,
                      tags: list[str] = []
-                    ) -> list[KBSearchResult] | None:
+                    ) -> dict[str, list[TxtBaseSearchResult]]:
         """
-        执行知识库搜索
-        
-        Args:
-            vector_search_question (str): 语义搜索问题
-            full_text_question (list[str]): 全文搜索问题
-            security (int): 安全级别
-            tags (list[str], optional): 标签列表. 默认为空列表
-            
-        Returns:
-            list[KBSearchResult] | None: 搜索结果列表，搜索失败时返回None
+        混合分层搜索 (支持 Rerank 分组融合)
         """
-        
+        start_time = time.time()
+        logger.debug(f"开始混合分层搜索，问题: {question}")
 
-        # 1. 获取模型ID
-        repo = KbotMdKbRepository()
-        models = await repo.get_model_by_kbid(self.tool_params.tool_id)
-    
-        if models:
-            self.tool_params.kb_catogory = models[0]
-            logger.debug(f"知识库类别: {models[0]}")
-            self.tool_params.img2txt_model = models[1]
-            logger.debug(f"图像转文本模型: {models[1]}")
-            self.tool_params.img_embed_model = models[2]
-            logger.debug(f"图像嵌入模型: {models[2]}")
-            self.tool_params.txt_embed_model = models[3]
-            logger.debug(f"文本嵌入模型: {models[3]}")
+        # 1. 执行检索任务
+        if not query_vec:
+            logger.warning("向量为空，只进行全文检索")
+            fulltext_raw = await self.serch_by_full_text(kb_id, security, question, search_top_k, do_rerank, weight, llm_model, tags)
+            vector_raw = {"rerank_result": [], "norerank_result": []}
         else:
-            logger.warning(f"未找到知识库 {self.tool_params.tool_id} 的嵌入模型")
-            return None
-        
-        # 2. 根据搜索类型决定搜索方法
-        if self.tool_params.kb_catogory == KbCategory.KBOT.value:
-            if self.tool_params.search_type == KBSearchType.VECTOR.value:
-                logger.debug("搜索方法: 向量搜索")
-                return await self.search_by_vector(vector_search_question, security, is_summary=False, tags=tags)
-            elif self.tool_params.search_type == KBSearchType.FULLTEXT.value:
-                logger.debug("搜索方法: 全文搜索")
-                return await self.serch_by_full_text(full_text_question, security, tags=tags)
-            elif self.tool_params.search_type == KBSearchType.SUMMARY.value:
-                logger.debug("搜索方法: 摘要搜索")
-                return await self.search_by_vector(vector_search_question, security, is_summary=True, tags=tags)
-            elif self.tool_params.search_type == KBSearchType.GRAPH.value:
-                logger.debug("搜索方法: 图谱搜索")
-                return await self.search_by_graph("question", security)
-            else:
-                logger.warning(f"知识库 {self.tool_params.tool_id} 的搜索方法未实现")
-                return None
-        else:
-            logger.warning(f"知识库 {self.tool_params.tool_id} 的搜索方法未实现")
-            return None
-
-    
-    async def search_by_vector(self, 
-                               question: str, 
-                               security: int, 
-                               is_summary: bool = False, 
-                               tags: list[str] = []
-                            ) -> list[KBSearchResult] | None:
-        """
-        向量搜索方法
-        
-        Args:
-            question (str): 搜索问题
-            security (int): 安全级别
-            is_summary (bool, optional): 是否使用摘要搜索. 默认为False
-            tags (list[str], optional): 标签列表. 默认为空列表
-            
-        Returns:
-            list[KBSearchResult] | None: 搜索结果列表，搜索失败时返回None
-        """
-        # 调用嵌入服务
-        model_id = self.tool_params.txt_embed_model
-        logger.debug(f"启用语义检索，问题: {question}")
-
-        if not model_id:
-            logger.warning(f"未找到知识库 {self.tool_params.tool_id} 的嵌入模型")
-            return None
-
-        try:
-            results = await CallModel().call_embedding_model(model_id, [question])
-            if results is None:
-                logger.error("嵌入服务未返回结果")
-                return None
-            kb_results = []
-            for result in results:
-                embedding = result.embedding
-                kb_result = await self.get_similar_records(embedding, security, is_summary=is_summary, tags=tags)
-                if kb_result is None or kb_result == []:
-                    continue
-                else:
-                    kb_results.extend(kb_result)
-            return kb_results
-
-        except Exception as e:
-            logger.error(f"嵌入服务错误: {str(e)}")
-            return None
-
-    async def get_similar_records(self, 
-                                  query_vec: list[float], 
-                                  security: int, 
-                                  is_summary: bool = False, 
-                                  tags: list[str] = []
-                                ) -> list[KBSearchResult] | None:
-        """
-        从向量数据库中获取相似记录
-        
-        Args:
-            query_vec (list[float]): 查询向量
-            security (int): 安全级别
-            is_summary (bool, optional): 是否使用摘要搜索. 默认为False
-            tags (list[str], optional): 标签列表. 默认为空列表
-            
-        Returns:
-            list[KBSearchResult] | None: 相似记录列表，查询失败时返回None
-        """
-        # 执行相似度搜索
-        repo = await EmbeddingRepositoryFactory.create_repository(kb_id=self.tool_params.tool_id)
-        if repo is None:
-            logger.error(f"向量搜索知识库ID: {self.tool_params.tool_id} 的向量数据库未找到")
-            return None
-
-        try:
-            logger.debug(f"向量搜索知识库ID: {self.tool_params.tool_id}")
-            logger.debug(f"向量搜索安全级别: {security}")
-            logger.debug(f"向量搜索相似度阈值: {self.tool_params.threshold}")
-            logger.debug(f"向量搜索返回数量: {self.tool_params.search_top_k}")
-
-            dataset = await repo.get_similar_embeddings(
-                kb_id = self.tool_params.tool_id,
-                query_vec = query_vec,
-                security = security,
-                similarity_threshold = self.tool_params.threshold,
-                search_top_k = self.tool_params.search_top_k,
-                is_summary_search=is_summary,
-                tags=tags
+            vector_raw, fulltext_raw = await asyncio.gather(
+                self.search_by_vector(kb_id, security, query_vec, threshold, search_top_k, do_rerank, weight, tags),
+                self.serch_by_full_text(kb_id, security, question, search_top_k, do_rerank, weight, llm_model, tags)
             )
-            if not dataset:
-                logger.info(f"向量搜索未找到结果")
-                return None
-            results = []
 
-            for data in dataset:
-                chunk_meta = json.loads(json.dumps(data[2], cls=DecimalEncoder))
-                result = KBSearchResult()
-                result.file_id = data[0]
+        # 2. 定义内部融合逻辑 (Reciprocal Rank Fusion)
+        def rrf_merge(results_list: list[list[TxtBaseSearchResult]]) -> list[TxtBaseSearchResult]:
+            k = 60
+            score_map = {}
+            chunk_map = {}
+            
+            for results in results_list:
+                for rank, r in enumerate(results, 1):
+                    score_map[r.chunk_id] = score_map.get(r.chunk_id, 0) + (1.0 / (k + rank))
+                    chunk_map[r.chunk_id] = r
+            
+            merged = []
+            for cid, rrf_score in score_map.items():
+                res = chunk_map[cid]
+                # 层级增强：标题类权重加成
+                level_boost = 1.2 if (0 < res.structure_level < 3) else 1.0
+                res.score = rrf_score * level_boost * weight
+                merged.append(res)
+            
+            merged.sort(key=lambda x: x.score, reverse=True)
+            return merged[:search_top_k]
 
-                # 处理 chunk_type: 确保转换为整数
-                chunk_type_raw = chunk_meta.get("chunk_type", 1)
-                if isinstance(chunk_type_raw, str):
-                    try:
-                        result.chunk_type = int(chunk_type_raw)
-                    except (ValueError, TypeError):
-                        result.chunk_type = 1
-                else:
-                    result.chunk_type = int(chunk_type_raw) if chunk_type_raw is not None else 1
-
-                # 处理 page_num: 如果是 None 或无效值则使用默认值
-                page_num_raw = chunk_meta.get("page_num", 1)
-                if page_num_raw is None:
-                    result.page_num = 1
-                else:
-                    try:
-                        result.page_num = int(page_num_raw)
-                    except (ValueError, TypeError):
-                        result.page_num = 1
-
-                result.chunk_file_path = chunk_meta.get("chunk_file_path", "")
-                result.content = safe_read_content(data[1])
-                result.similarity = data[3]
-                result.weight = self.tool_params.tool_weight # type: ignore
-                results.append(result)
-
-            logger.debug(f"向量搜索找到 {len(results)} 条结果")
-            return results
-
-        except Exception as e:
-            logger.debug(f"向量搜索失败: {str(e)}")
-            raise ValueError(f"向量搜索失败: {str(e)}")
+        # 3. 分别对 rerank 和 norerank 组进行融合
+        # 注意：这里假设 search_by_vector 等方法返回的 key 是确定的
+        final_rerank = rrf_merge([
+            vector_raw.get("rerank_result", []),
+            fulltext_raw.get("rerank_result", [])
+        ])
         
-    async def serch_by_full_text(self, keywords: str, security: int, tags: list[str] = []) -> list[KBSearchResult] | None:
+        final_norerank = rrf_merge([
+            vector_raw.get("norerank_result", []),
+            fulltext_raw.get("norerank_result", [])
+        ])
+
+        end_time = time.time()
+        logger.debug(f"混合搜索完成，Rerank组: {len(final_rerank)}, Non-Rerank组: {len(final_norerank)}，耗时 {end_time - start_time:.2f}s")
+
+        return {
+            "rerank_result": final_rerank,
+            "norerank_result": final_norerank
+        }
+    
+    async def search_by_vector(self, kb_id: int,
+                               security: int, 
+                               query_vec: list[float],
+                               threshold: float,
+                               search_top_k: int,
+                               do_rerank: bool,
+                               weight: float,
+                               tags: list[str] = []) -> dict[str, list[TxtBaseSearchResult]]:
+        """增强版：支持层级感知搜索"""
+        logger.debug(f"启用向量检索")
+        async with self.oracle_session as session:
+            repo = TxtChunkRepository(session)
+            try:
+                dataset = await repo.vector_search(
+                    kb_id=kb_id,
+                    query_vec=query_vec,
+                    security=security,
+                    similarity_threshold=threshold,
+                    search_top_k=search_top_k,
+                    tags=tags
+                )
+                # 构造向量搜索结果
+                results = self._construct_search_result(dataset, weight=weight, search_type="semantic")
+                logger.debug(f"向量搜索完成，找到 {len(results)} 条结果")
+                search_result = await self._enhance_context_by_hierarchy(results)
+                if do_rerank:
+                    return {"rerank_result": search_result}
+                else:
+                    return {"norerank_result": search_result}
+            
+            except DataNotFoundException as e:
+                logger.warning(e.message)
+                return {"rerank_result": [], "norerank_result": []}
+            except Exception as e:
+                msg = f"知识库 {kb_id} 向量搜索失败: {e}"
+                handle_exception(e, msg)
+        
+    async def serch_by_full_text(self, kb_id: int,
+                                security: int, 
+                                question: str,
+                                search_top_k: int,
+                                do_rerank: bool,
+                                weight: float,
+                                llm_model: str | None = None,
+                                tags: list[str] = []) -> dict[str, list[TxtBaseSearchResult]]:
         """
         全文搜索方法
         
         Args:
-            keywords (str): 关键词
+            kb_id (int): 知识库ID
             security (int): 安全级别
-            tags (list[str], optional): 标签列表. 默认为空列表
+            question (str): 搜索问题
+            search_top_k (int): 搜索TopK
+            do_rerank (bool): 是否进行rerank
+            weight (float): 权重
+            llm_model (str, optional): LLM模型名称，默认为None
+            tags (list[str]): 标签列表. 默认为空列表
             
         Returns:
-            list[KBSearchResult] | None: 搜索结果列表，搜索失败时返回None
+            dict[str, list[TxtBaseSearchResult]]: 搜索结果
         """
-        repo = await EmbeddingRepositoryFactory.create_repository(kb_id=self.tool_params.tool_id)
-        if repo is None:
-            logger.error(f"全文搜索知识库ID: {self.tool_params.tool_id} 的向量数据库未找到")
-            return None
-
-        try:
-            logger.debug(f"全文搜索知识库ID: {self.tool_params.tool_id}")
-            logger.debug(f"全文搜索关键词: {keywords}")
-            logger.debug(f"全文搜索安全级别: {security}")
-            logger.debug(f"全文搜索返回数量: {self.tool_params.search_top_k}")
-            logger.debug(f"全文搜索相似度阈值: {self.tool_params.threshold}")
-            logger.debug(f"全文搜索标签: {tags}")
-
-
-
-            datasets = await repo.full_text_search(kb_id=self.tool_params.tool_id, 
-                                                keyword=keywords, 
-                                                security=security,
-                                                similarity_threshold=self.tool_params.threshold,
-                                                search_top_k=self.tool_params.search_top_k,
-                                                tags=tags)
-            if not datasets:
-                logger.info(f"全文搜索未找到结果")
-                return None
-            else:
-                results = []
-                for data in datasets:
-                    chunk_meta = json.loads(json.dumps(data[2], cls=DecimalEncoder))
-                    result = KBSearchResult()
-                    result.file_id = data[0]
-
-                    # 处理 chunk_type: 确保转换为整数
-                    chunk_type_raw = chunk_meta.get("chunk_type", 1)
-                    if isinstance(chunk_type_raw, str):
-                        try:
-                            result.chunk_type = int(chunk_type_raw)
-                        except (ValueError, TypeError):
-                            result.chunk_type = 1
-                    else:
-                        result.chunk_type = int(chunk_type_raw) if chunk_type_raw is not None else 1
-
-                    # 处理 page_num: 如果是 None 或无效值则使用默认值
-                    page_num_raw = chunk_meta.get("page_num", 1)
-                    if page_num_raw is None:
-                        result.page_num = 1
-                    else:
-                        try:
-                            result.page_num = int(page_num_raw)
-                        except (ValueError, TypeError):
-                            result.page_num = 1
-
-                    result.chunk_file_path = chunk_meta.get("chunk_file_path", "")
-                    result.content = safe_read_content(data[1])
-                    result.similarity = data[3]
-                    result.weight = self.tool_params.tool_weight # type: ignore
-                    results.append(result)
+        # 获取向量库和搜索参数
+        async with self.oracle_session as session:
+            repo = TxtChunkRepository(session)
+        
+            try:
+                # 1. 预处理问题，获取问题改写关键词和同义词
+                key = await preprocess_for_fulltext(query=question, model_name=llm_model)
+                
+                # 2. 执行全文搜索
+                logger.debug(f"启用全文检索，搜索关键字: {key}")
+                dataset = await repo.full_text_search(
+                                                    kb_id=kb_id,
+                                                    keyword=key, 
+                                                    security=security,
+                                                    search_top_k=search_top_k,
+                                                    tags=tags)
+                # 3. 处理搜索结果
+                results = self._construct_search_result(dataset, weight=weight, search_type="fulltext")
                 logger.debug(f"全文搜索找到 {len(results)} 条结果")
-                return results
-            
-        except Exception as e:
-            logger.exception(f"全文搜索失败: {str(e)}")
-            return None
 
+                # 4. 分层检索
+                search_result = await self._enhance_context_by_hierarchy(results)
+                if do_rerank:
+                    return {"rerank_result": search_result}
+                else:
+                    return {"norerank_result": search_result}
+            
+            except DataNotFoundException as e:
+                logger.warning(e.message)
+                return {"rerank_result": [], "norerank_result": []}
+            except Exception as e:
+                msg = f"知识库 {kb_id} 全文搜索失败: {e}"
+                handle_exception(e, msg)
     
-    async def search_by_graph(self, question: str, security: int) -> list[KBSearchResult] | None:
-        """图谱搜索方法（待实现）"""
-        pass
+    async def _enhance_context_by_hierarchy(self, results: list[TxtBaseSearchResult]) -> list[TxtBaseSearchResult]:
+        """
+        分层检索核心：根据路径基因(path_names)增强上下文内容
+        如果命中了 1.1.2 节的内容，自动将其父级标题关联进 content 字段，方便 LLM 理解背景
+        """
+        for r in results:
+            if r.path_names:
+                # 注入结构化路径基因
+                path_str = " > ".join(r.path_names)
+                prefix = f"[{path_str}]\n"
+                if prefix not in r.content:
+                    r.content = prefix + r.content
+        return results
+    
+    def _construct_search_result(self, dataset: list, weight: float, search_type: str) -> list[TxtBaseSearchResult]:
+        """
+        构造搜索结果列表
+        统一处理字典格式：{id, file_id, content, path_names/structure_level, metadata, score, ...}
+        """
+        results = []
+        for item in dataset:
+            try:
+                if not isinstance(item, dict):
+                    logger.warning(f"跳过非字典格式的搜索结果: {type(item)}")
+                    continue
+                    
+                # 统一处理字典格式（来自全文搜索和向量搜索）
+                chunk_meta = item.get("metadata", {}) if isinstance(item.get("metadata"), dict) else {}
+                
+                # 统一处理路径字段：支持 path_names（列表）或 path（字符串）
+                path_names = item.get("path_names", [])
+                if not path_names and "path" in item:
+                    # 如果只有 path 字段，将其分割为路径列表
+                    path_str = item.get("path", "")
+                    path_names = [p.strip() for p in path_str.split(">") if p.strip()]
+                
+                result = TxtBaseSearchResult(
+                    chunk_id=item.get("chunk_id", ""),
+                    file_id=item.get("file_id", ""),
+                    content=item.get("content", ""),
+                    structure_level=item.get("structure_level", 0),
+                    node_path=item.get("node_path", "") or "",
+                    path_names=path_names or [],
+                    
+                    # 从 metadata 字典中提取补充信息，处理 None 值
+                    page_num=chunk_meta.get("page_num") or 0,
+                    chunk_num=chunk_meta.get("chunk_num") or 0,
+                    sub_index=chunk_meta.get("sub_index") or 0,
+                    chunk_type=chunk_meta.get("chunk_type", "text"),
+                    
+                    score=float(item.get("score", 0.0)),
+                    embedding=item.get("embedding", []) or [],
+                    
+                    rerank_score=0.0, # 初始为0，后续根据rerank打分后重新注入
+                    weight=weight,
+                    search_type=search_type
+                )
+                
+                results.append(result)
+                
+            except Exception as e:
+                logger.warning(f"构造搜索结果失败: {e}")
+                continue
+                
+        return results
