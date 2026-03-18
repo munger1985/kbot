@@ -1,32 +1,3 @@
--- Set NLS date format for consistent date handling
-ALTER SESSION SET NLS_DATE_FORMAT = 'YYYY-MM-DD HH24:MI:SS';
-
--- ###########################################################################
--- DROP TABLE Statements
--- ###########################################################################
-DROP TABLE KBOT_SYS_API_KEYS;
-DROP TABLE KBOT_SYS_SERVICES;
-DROP TABLE KBOT_SYS_AUTH_TOKEN;
-DROP TABLE KBOT_SYS_AUTH;
-DROP TABLE KBOT_MD_PARSER_CONF;
-DROP TABLE KBOT_SYS_PARSER_CONF;
-DROP TABLE KBOT_BIZ_TXT_EMBEDDING;
-DROP TABLE KBOT_MD_ACTION_RECORD;
-DROP TABLE KBOT_MD_CHAT_SESSION;
-DROP TABLE KBOT_MD_CHAT_MEMORY;
-DROP TABLE KBOT_MD_CHAT_HISTORY;
-DROP TABLE KBOT_MD_RELEASE_NOTE;
-DROP TABLE KBOT_MD_DATA_DIC;
-DROP TABLE KBOT_MD_AGENT_CONF;
-DROP TABLE KBOT_MD_AGENT;
-DROP TABLE KBOT_MD_DB_CONF;
-DROP TABLE KBOT_MD_SYS_CONF;
-DROP TABLE KBOT_MD_MODELS;
-DROP TABLE KBOT_MD_PROMPT;
-DROP TABLE KBOT_MD_KB_FILES;
-DROP TABLE KBOT_MD_KB_BATCH;
-DROP TABLE KBOT_MD_KB;
-DROP TABLE KBOT_MD_DOMAIN;
 
 -- ###########################################################################
 -- 1 KBOT_MD_DOMAIN (Business Domain Information Table)
@@ -70,16 +41,11 @@ CREATE TABLE KBOT_MD_KB (
     KB_NAME             VARCHAR2(256),
     KB_CATEGORY         NUMBER(2),
     DESCS               VARCHAR2(512),
-    DB_CONN_ID          NUMBER,
     TXT_EMBED_MODEL_ID  NUMBER,
     IMG_EMBED_MODEL_ID  NUMBER,
-    SUMMARY_MODEL_ID    NUMBER,
     IMG2TXT_MODEL_ID    NUMBER,
     KB_STATUS           NUMBER(1),
     SECURITY_LEVEL      NUMBER(1),
-    ENABLE_SUMMARY      NUMBER(1),
-    IS_IMG2TXT          NUMBER(1),
-    IS_TABLE_HEAD_FILL  NUMBER(1),
     PROCESS_PRIORITY    NUMBER(1),
     CREATED_BY          VARCHAR2(512),
     CREATED_TIME        DATE DEFAULT CURRENT_DATE,
@@ -100,16 +66,11 @@ COMMENT ON COLUMN KBOT_MD_KB.DOMAIN_ID IS 'Associated business domain ID';
 COMMENT ON COLUMN KBOT_MD_KB.KB_NAME IS 'Knowledge base name (unique within the same business domain)';
 COMMENT ON COLUMN KBOT_MD_KB.KB_CATEGORY IS 'Knowledge base type enumeration';
 COMMENT ON COLUMN KBOT_MD_KB.DESCS IS 'Detailed knowledge base description';
-COMMENT ON COLUMN KBOT_MD_KB.DB_CONN_ID IS 'Associated vector database connection configuration ID';
 COMMENT ON COLUMN KBOT_MD_KB.TXT_EMBED_MODEL_ID IS 'Text embedding model ID';
 COMMENT ON COLUMN KBOT_MD_KB.IMG_EMBED_MODEL_ID IS 'Image embedding model ID';
-COMMENT ON COLUMN KBOT_MD_KB.SUMMARY_MODEL_ID IS 'Summary model ID';
 COMMENT ON COLUMN KBOT_MD_KB.IMG2TXT_MODEL_ID IS 'Image-to-text model ID';
 COMMENT ON COLUMN KBOT_MD_KB.KB_STATUS IS 'Knowledge base status enumeration';
 COMMENT ON COLUMN KBOT_MD_KB.SECURITY_LEVEL IS 'File security level enumeration';
-COMMENT ON COLUMN KBOT_MD_KB.ENABLE_SUMMARY IS 'Summary enablement: 1 - Enabled, 0 - Disabled';
-COMMENT ON COLUMN KBOT_MD_KB.IS_IMG2TXT IS 'Image to text conversion: 1 - Yes, 0 - No';
-COMMENT ON COLUMN KBOT_MD_KB.IS_TABLE_HEAD_FILL IS 'Table header assembly: 1 - Yes, 0 - No';
 COMMENT ON COLUMN KBOT_MD_KB.PROCESS_PRIORITY IS 'Processing priority enumeration';
 COMMENT ON COLUMN KBOT_MD_KB.CREATED_BY IS 'Record creator';
 COMMENT ON COLUMN KBOT_MD_KB.CREATED_TIME IS 'Record creation time (default: current system time)';
@@ -151,9 +112,9 @@ COMMENT ON COLUMN KBOT_MD_KB_BATCH.UPDATED_TIME IS 'Last update time (default: c
 -- ###########################################################################
 CREATE TABLE KBOT_MD_KB_FILES (
     FILE_ID            VARCHAR2(256) NOT NULL,
-    APP_ID             NUMBER NOT NULL ENABLE,
-    KB_ID              NUMBER NOT NULL ENABLE,
-    BATCH_ID           NUMBER, -- Changed from NOT NULL to NULLABLE (original comment marked as optional)
+    APP_ID             NUMBER NOT NULL,
+    KB_ID              NUMBER NOT NULL,
+    BATCH_ID           NUMBER NOT NULL,
     FILE_PATH          VARCHAR2(512),
     FILE_NAME          VARCHAR2(256),
     FILE_EXT           VARCHAR2(256),
@@ -162,15 +123,10 @@ CREATE TABLE KBOT_MD_KB_FILES (
     IS_OVERWRITE       NUMBER(1),
     SECURITY_LEVEL     NUMBER(1) DEFAULT 1,
     FILE_SIZE          NUMBER,
-    CHUNKS_CNT         NUMBER,
     CHUNK_PARSER       JSON,
-    ENABLE_SUMMARY     NUMBER(1),
-    IS_IMG2TXT         NUMBER(1),
-    IS_TABLE_HEAD_FILL NUMBER(1),
     BIZ_METADATA       JSON,
     PROCESS_PRIORITY   NUMBER,
     LOG_MSG            VARCHAR2(4000),
-    PARSED_METADATA    JSON,
     CREATED_BY         VARCHAR2(512),
     CREATED_TIME       DATE DEFAULT CURRENT_DATE,
     UPDATED_BY         VARCHAR2(512),
@@ -197,15 +153,9 @@ COMMENT ON COLUMN KBOT_MD_KB_FILES.FILE_VERSION IS 'File version number (increme
 COMMENT ON COLUMN KBOT_MD_KB_FILES.IS_OVERWRITE IS 'Overwrite flag: 1 - Yes, 0 - No';
 COMMENT ON COLUMN KBOT_MD_KB_FILES.SECURITY_LEVEL IS 'File security level enumeration';
 COMMENT ON COLUMN KBOT_MD_KB_FILES.FILE_SIZE IS 'File size (in bytes)';
-COMMENT ON COLUMN KBOT_MD_KB_FILES.CHUNKS_CNT IS 'Number of file chunks';
-COMMENT ON COLUMN KBOT_MD_KB_FILES.CHUNK_PARSER IS 'Data chunk parsing parameters (JSON)';
-COMMENT ON COLUMN KBOT_MD_KB_FILES.ENABLE_SUMMARY IS 'Summary enablement: 1 - Enabled, 0 - Disabled';
-COMMENT ON COLUMN KBOT_MD_KB_FILES.IS_IMG2TXT IS 'Image to text conversion: 1 - Yes, 0 - No';
-COMMENT ON COLUMN KBOT_MD_KB_FILES.IS_TABLE_HEAD_FILL IS 'Table header assembly: 1 - Yes, 0 - No';
-COMMENT ON COLUMN KBOT_MD_KB_FILES.BIZ_METADATA IS 'Business metadata (JSON format)';
+COMMENT ON COLUMN KBOT_MD_KB_FILES.CHUNK_PARSER IS 'Data chunk parsing parameters (JSON)';COMMENT ON COLUMN KBOT_MD_KB_FILES.BIZ_METADATA IS 'Business metadata (JSON format)';
 COMMENT ON COLUMN KBOT_MD_KB_FILES.PROCESS_PRIORITY IS 'Processing priority enumeration';
 COMMENT ON COLUMN KBOT_MD_KB_FILES.LOG_MSG IS 'Processing log information';
-COMMENT ON COLUMN KBOT_MD_KB_FILES.PARSED_METADATA IS 'Parsed metadata (stores mapping of extracted images/tables from files)';
 COMMENT ON COLUMN KBOT_MD_KB_FILES.CREATED_BY IS 'File uploader';
 COMMENT ON COLUMN KBOT_MD_KB_FILES.CREATED_TIME IS 'Upload time (default: current system time)';
 COMMENT ON COLUMN KBOT_MD_KB_FILES.UPDATED_BY IS 'Last updater';
@@ -298,6 +248,7 @@ COMMENT ON COLUMN KBOT_MD_MODELS.CREATED_TIME IS 'Creation time (default: curren
 COMMENT ON COLUMN KBOT_MD_MODELS.UPDATED_BY IS 'Last updater';
 COMMENT ON COLUMN KBOT_MD_MODELS.UPDATED_TIME IS 'Last update time (default: current system time)';
 
+
 -- ###########################################################################
 -- 7 KBOT_MD_SYS_CONF (System Configuration Table)
 -- ###########################################################################
@@ -332,41 +283,6 @@ COMMENT ON COLUMN KBOT_MD_SYS_CONF.CREATED_TIME IS 'Creation time (default: curr
 COMMENT ON COLUMN KBOT_MD_SYS_CONF.UPDATED_BY IS 'Last updater';
 COMMENT ON COLUMN KBOT_MD_SYS_CONF.UPDATED_TIME IS 'Last update time (default: current system time)';
 
--- ###########################################################################
--- 8 KBOT_MD_DB_CONF (Vector Database Configuration Table)
--- ###########################################################################
-CREATE TABLE KBOT_MD_DB_CONF (
-    DB_ID           NUMBER GENERATED BY DEFAULT ON NULL AS IDENTITY,
-    APP_ID          NUMBER NOT NULL ENABLE,
-    DB_DISPLAY_NAME VARCHAR2(256),
-    DB_TYPE         NUMBER(2),
-    DB_CONN_STR     JSON,
-    STATUS          NUMBER(1) DEFAULT 0,
-    DESCS           VARCHAR2(512),
-    CREATED_BY      VARCHAR2(512),
-    CREATED_TIME    DATE DEFAULT CURRENT_DATE,
-    UPDATED_BY      VARCHAR2(512),
-    UPDATED_TIME    DATE DEFAULT CURRENT_DATE,
-    -- Primary key constraint
-    PRIMARY KEY (DB_ID) USING INDEX ENABLE,
-    -- Unique constraint for (DB_DISPLAY_NAME, APP_ID)
-    CONSTRAINT KBOT_DB_INFO_CONN_CON UNIQUE (DB_DISPLAY_NAME, APP_ID) USING INDEX ENABLE
-);
-
--- Table comment
-COMMENT ON TABLE KBOT_MD_DB_CONF IS 'Vector Database Connection Configuration Table - Stores connection info for various vector databases';
--- Column comments
-COMMENT ON COLUMN KBOT_MD_DB_CONF.DB_ID IS 'Unique database configuration identifier, primary key';
-COMMENT ON COLUMN KBOT_MD_DB_CONF.APP_ID IS 'Associated application ID';
-COMMENT ON COLUMN KBOT_MD_DB_CONF.DB_DISPLAY_NAME IS 'Database display name (user-friendly)';
-COMMENT ON COLUMN KBOT_MD_DB_CONF.DB_TYPE IS 'Database type enumeration';
-COMMENT ON COLUMN KBOT_MD_DB_CONF.DB_CONN_STR IS 'Database connection string (JSON, includes host, port, authentication, etc.)';
-COMMENT ON COLUMN KBOT_MD_DB_CONF.STATUS IS 'Configuration status: 1 - Enabled, 0 - Disabled';
-COMMENT ON COLUMN KBOT_MD_DB_CONF.DESCS IS 'Detailed connection configuration description';
-COMMENT ON COLUMN KBOT_MD_DB_CONF.CREATED_BY IS 'Creator user';
-COMMENT ON COLUMN KBOT_MD_DB_CONF.CREATED_TIME IS 'Creation time (default: current system time)';
-COMMENT ON COLUMN KBOT_MD_DB_CONF.UPDATED_BY IS 'Last updater';
-COMMENT ON COLUMN KBOT_MD_DB_CONF.UPDATED_TIME IS 'Last update time (default: current system time)';
 
 -- ###########################################################################
 -- 9 KBOT_MD_AGENT (AI Agent Table)
@@ -686,83 +602,6 @@ COMMENT ON COLUMN KBOT_BIZ_TXT_EMBEDDING.STATUS IS 'Embedding status: 1 - Active
 COMMENT ON COLUMN KBOT_BIZ_TXT_EMBEDDING.BIZ_METADATA IS 'Business metadata (JSON)';
 
 -- ###########################################################################
--- KBOT v3.0.4 Scripts
--- ###########################################################################
-
--- ###########################################################################
--- 18 KBOT_SYS_PARSER_CONF (System-level Parser Configuration Table)
--- ###########################################################################
-CREATE TABLE KBOT_SYS_PARSER_CONF (
-    CONF_ID           NUMBER GENERATED BY DEFAULT ON NULL AS IDENTITY,
-    APP_ID            NUMBER,
-    FILE_CATEGORY     NUMBER(2),
-    FILE_EXT          VARCHAR2(100),
-    CHUNK_PARSER      NUMBER(2),
-    CHUNK_PARSER_PARAM JSON,
-    IS_DEFAULT        NUMBER(1),
-    STATUS            NUMBER(1),
-    CREATED_BY        VARCHAR2(256),
-    CREATED_TIME      DATE DEFAULT SYSDATE,
-    UPDATED_BY        VARCHAR2(256),
-    UPDATED_TIME      DATE DEFAULT SYSDATE,
-    -- Primary key constraint
-    CONSTRAINT PK_KBOT_SYS_PARSER_CONF PRIMARY KEY (CONF_ID)
-);
-
--- Unique index
-CREATE UNIQUE INDEX IDX_KBOT_SYS_PARSER_CONF ON KBOT_SYS_PARSER_CONF (APP_ID, FILE_EXT, CHUNK_PARSER);
-
--- Table comment
-COMMENT ON TABLE KBOT_SYS_PARSER_CONF IS 'System-level File Parser Configuration Table - Global parser settings for file processing';
--- Column comments
-COMMENT ON COLUMN KBOT_SYS_PARSER_CONF.CONF_ID IS 'Configuration ID, primary key';
-COMMENT ON COLUMN KBOT_SYS_PARSER_CONF.APP_ID IS 'Associated application ID';
-COMMENT ON COLUMN KBOT_SYS_PARSER_CONF.FILE_CATEGORY IS 'File category: 1 - text; 2 - image; 3 - audio; 4 - video';
-COMMENT ON COLUMN KBOT_SYS_PARSER_CONF.FILE_EXT IS 'File extension (lowercase). Documents: pdf, docx, doc, txt, md, pptx, ppt, xlsx, xls, html; Images: png, jpg, jpeg, bmp, gif; Audio: mp3, wav, amr, flac, opus; Video: mp4, avi, mkv, mov, webm, flv';
-COMMENT ON COLUMN KBOT_SYS_PARSER_CONF.CHUNK_PARSER IS 'Coded list of chunk splitting strategies (comma-separated)';
-COMMENT ON COLUMN KBOT_SYS_PARSER_CONF.CHUNK_PARSER_PARAM IS 'Chunk parsing parameters (JSON)';
-COMMENT ON COLUMN KBOT_SYS_PARSER_CONF.IS_DEFAULT IS 'Default configuration flag: 1 - Yes, 0 - No';
-COMMENT ON COLUMN KBOT_SYS_PARSER_CONF.STATUS IS 'Configuration status: 1 - Enabled, 0 - Disabled';
-COMMENT ON COLUMN KBOT_SYS_PARSER_CONF.CREATED_BY IS 'Creator user';
-COMMENT ON COLUMN KBOT_SYS_PARSER_CONF.CREATED_TIME IS 'Creation time';
-COMMENT ON COLUMN KBOT_SYS_PARSER_CONF.UPDATED_BY IS 'Last updater';
-COMMENT ON COLUMN KBOT_SYS_PARSER_CONF.UPDATED_TIME IS 'Last update time';
-
--- ###########################################################################
--- 19 KBOT_MD_PARSER_CONF (KB-level Parser Configuration Table)
--- ###########################################################################
-CREATE TABLE KBOT_MD_PARSER_CONF (
-    CONF_ID           NUMBER GENERATED BY DEFAULT ON NULL AS IDENTITY,
-    APP_ID            NUMBER,
-    KB_ID             NUMBER,
-    FILE_CATEGORY     NUMBER(2),
-    FILE_EXT          VARCHAR2(100),
-    CHUNK_PARSER      NUMBER(2),
-    CHUNK_PARSER_PARAM JSON,
-    CREATED_BY        VARCHAR2(256),
-    CREATED_TIME      DATE DEFAULT SYSDATE,
-    UPDATED_BY        VARCHAR2(256),
-    UPDATED_TIME      DATE DEFAULT SYSDATE,
-    -- Primary key constraint
-    CONSTRAINT PK_KBOT_MD_PARSER_CONF PRIMARY KEY (CONF_ID)
-);
-
--- Table comment
-COMMENT ON TABLE KBOT_MD_PARSER_CONF IS 'KB-level File Parser Configuration Table - KB-specific parser settings for file processing';
--- Column comments
-COMMENT ON COLUMN KBOT_MD_PARSER_CONF.CONF_ID IS 'Configuration ID, primary key';
-COMMENT ON COLUMN KBOT_MD_PARSER_CONF.APP_ID IS 'Associated application ID';
-COMMENT ON COLUMN KBOT_MD_PARSER_CONF.KB_ID IS 'Knowledge base ID (required if CONF_SCOPE = 2)';
-COMMENT ON COLUMN KBOT_MD_PARSER_CONF.FILE_CATEGORY IS 'File category: 1 - text; 2 - image; 3 - audio; 4 - video';
-COMMENT ON COLUMN KBOT_MD_PARSER_CONF.FILE_EXT IS 'File extension (lowercase). Documents: pdf, docx, doc, txt, md, pptx, ppt, xlsx, xls, html; Images: png, jpg, jpeg, bmp, gif; Audio: mp3, wav, amr, flac, opus; Video: mp4, avi, mkv, mov, webm, flv';
-COMMENT ON COLUMN KBOT_MD_PARSER_CONF.CHUNK_PARSER IS 'Coded list of chunk splitting strategies (comma-separated)';
-COMMENT ON COLUMN KBOT_MD_PARSER_CONF.CHUNK_PARSER_PARAM IS 'Chunk parsing parameters (JSON)';
-COMMENT ON COLUMN KBOT_MD_PARSER_CONF.CREATED_BY IS 'Creator user';
-COMMENT ON COLUMN KBOT_MD_PARSER_CONF.CREATED_TIME IS 'Creation time';
-COMMENT ON COLUMN KBOT_MD_PARSER_CONF.UPDATED_BY IS 'Last updater';
-COMMENT ON COLUMN KBOT_MD_PARSER_CONF.UPDATED_TIME IS 'Last update time';
-
--- ###########################################################################
 -- API Security Related Tables
 -- ###########################################################################
 
@@ -916,7 +755,7 @@ COMMENT ON COLUMN kbot_sys_api_keys.revoked_at IS 'API key revocation timestamp 
 
 
 # ===========================================
-# v3.2
+# v3.2 changing
 # updated at 2026-03-12
 # ===========================================
 # update for KBOT_MD_KB_FILES
@@ -932,3 +771,12 @@ ALTER TABLE KBOT_MD_KB DROP COLUMN is_img2txt;
 ALTER TABLE KBOT_MD_KB DROP COLUMN is_table_head_fill;
 ALTER TABLE KBOT_MD_KB DROP COLUMN db_conn_id;
 ALTER TABLE KBOT_MD_KB DROP COLUMN summary_model_id;
+
+DROP TABLE KBOT_MD_DB_CONF;
+DROP TABLE KBOT_SYS_PARSER_CONF;
+DROP TABLE KBOT_MD_PARSER_CONF;
+DROP TABLE kbot_md_chat_references;
+DROP TABLE kbot_md_chat_qa;
+DROP TABLE kbot_md_agent_feedback;
+DROP TABLE KBOT_BIZ_IMG_EMBEDDING;
+CREATE TABLE KBOT_MD_CHAT_MEMORY;
