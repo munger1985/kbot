@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from sqlalchemy import select, update
+from sqlalchemy import select, update, delete
 from core.database.oracle import get_session
 from ..entities import User
 
@@ -58,4 +58,25 @@ class UserRepository:
                 .values(last_login_at=datetime.now(timezone.utc))
             )
             await session.commit()
-            return result.rowcount > 0
+            return True
+        
+    @staticmethod
+    async def update_password_by_name(username: str, hashed_password: str) -> bool:
+        async with get_session() as session:
+            result = await session.execute(
+                update(User)
+                .where(User.username == username)
+                .values(hashed_password=hashed_password)
+            )
+            await session.commit()
+            return True
+        
+    @staticmethod
+    async def delete_user_by_name(username: str) -> bool:
+        async with get_session() as session:
+            result = await session.execute(
+                delete(User)
+                .where(User.username == username)
+            )
+            await session.commit()
+            return True

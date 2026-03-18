@@ -430,3 +430,14 @@ class ServiceAuthService:
             })
         
         return result
+    
+class UserService:
+    """用户服务"""
+
+    async def remove_user(self, username: str) -> bool:
+        """删除用户"""
+        return await UserRepository.delete_user_by_name(username)
+    
+    async def change_password(self, username: str, new_password: str) -> bool:
+        """Change user password, only super user can change password without old password"""
+        return await UserRepository.update_password_by_name(username, new_password)

@@ -14,6 +14,11 @@ class LoginResponse(BaseModel):
     username: str = Field(..., description="用户名")
     expires_in: int = Field(..., description="过期时间（秒）")
 
+class ChangePasswordRequest(BaseModel):
+    username: str = Field(..., description="用户名")
+    # old_password: str = Field(..., description="旧密码")
+    new_password: str = Field(..., description="新密码")
+
 
 class CreateAPIKeyRequest(BaseModel):
     service_id: int = Field(..., description="服务ID")

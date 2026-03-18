@@ -2,6 +2,7 @@ from .auth_service import (
     PasswordService,
     UserAuthService,
     ServiceAuthService,
+    UserService
 )
 from .dependency import (
     get_current_user,
@@ -14,6 +15,7 @@ from .dependency import (
 __all__ = [
     "PasswordService",
     "UserAuthService",
+    "UserService",
     "ServiceAuthService",
     "get_current_user",
     "require_user_token",
