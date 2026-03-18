@@ -19,29 +19,19 @@ async def handle_upload_files(
     metadata: str = Form(...)
 ) -> SuccessResponse:
     """
-    Uploads one or multiple files to the specified knowledge base.
+    ### Description
+    Uploads one or multiple files to a specific knowledge base and associates them with provided metadata.
 
-    Args:
-        files: List of uploaded files.
-        metadata: Metadata of the uploaded files in JSON format. Contains the following fields:
-            - app_id: int
-            - domain_id: int
-            - kb_id: int
-            - overwrite: bool
-            - batch_name: str
-            - batch_id: int | None = None
-            - biz_metadata: dict | None = None
-            - created_by: str | None = None
+    ---
+    ### Parameters (Metadata JSON fields)
+    - **app_id** (`int`): Unique identifier of the application.
+    - **domain_id** (`int`): Domain identifier.
+    - **kb_id** (`int`): Target Knowledge Base ID.
+    - **overwrite** (`bool`): Whether to overwrite existing files with the same name.
+    - **batch_name** (`str`): Name for this upload batch.
+    - **biz_metadata** (`dict`, optional): Custom business-level metadata.
 
-    Returns:
-        SuccessResponse: Success response with the following structure:
-            - code: int = Field(status.HTTP_200_OK, description="Response status code")
-            - message: str = Field("Success", description="Response message")
-            - success: bool = Field(True, description="Request response status")
-        ErrorResponse: Error response with the following structure:
-            - code: int = Field(status.HTTP_400_BAD_REQUEST, description="Response status code")
-            - message: str = Field("Error", description="Response message")
-            - success: bool = Field(False, description="Request response status")
+    > **Note:** The `metadata` field must be passed as a JSON string within the Form data.
     """
     # Parse and validate as form model.
     metadata_dict = json.loads(metadata)
@@ -58,7 +48,8 @@ async def attach_folder_to_kb(
     kb_attach_form: KBAttachForm = Body(...)
 ) -> SuccessResponse:
     """
-    Attaches a folder to the specified knowledge base.
+    ### Description
+    Attaches an existing local folder or directory path to the specified knowledge base.
     """
     return await controller.attach_folder(kb_attach_form)
     
@@ -71,27 +62,17 @@ async def handle_delete_files(
     form: KBDeleteForm = Body(...)
 ) -> SuccessResponse:
     """
-    Deletes files, all files and the knowledge base, or a batch from the specified knowledge base.
+    ### Description
+    Deletes specific files, an entire batch, or the whole knowledge base content.
 
-    Args:
-        form: Deletion file metadata in JSON format. Contains the following fields:
-            - app_id: int
-            - domain_id: int
-            - kb_id: int
-            - batch_id: int | None = None
-            - file_id: str | None = None
-            - delete_batch: bool = False
-            - delete_kb: bool = False
+    ---
+    ### Deletion Modes
+    - **Single File:** Provide the `file_id`.
+    - **Batch Delete:** Set `delete_batch=True` and provide the `batch_id`.
+    - **Clear Knowledge Base:** Set `delete_kb=True`.
 
-    Returns:
-        SuccessResponse: Success response with the following structure:
-            - code: int = Field(status.HTTP_200_OK, description="Response status code")
-            - message: str = Field("Success", description="Response message")
-            - success: bool = Field(True, description="Request response status")
-        ErrorResponse: Error response with the following structure:
-            - code: int = Field(status.HTTP_400_BAD_REQUEST, description="Response status code")
-            - message: str = Field("Error", description="Response message")
-            - success: bool = Field(False, description="Request response status")
+    ### Requirements
+    - `app_id`, `domain_id`, and `kb_id` are mandatory for locating the resources.
     """
     return await controller.delete_kb_files(form)
     
@@ -106,17 +87,10 @@ async def handle_download_file(
     file_id: str
 ) -> FileResponse:
     """
-    Downloads a file from the knowledge base.
+    ### Description
+    Retrieves the original binary file stream from the knowledge base.
 
-    Args:
-        file_id: File ID.
-
-    Returns:
-        FileResponse: File response.
-        ErrorResponse: Error response with the following structure:
-            - code: int = Field(status.HTTP_400_BAD_REQUEST, description="Response status code")
-            - message: str = Field("Error", description="Response message")
-            - success: bool = Field(False, description="Request response status")
+    - **file_id**: The unique identifier of the file to download.
     """
     return await controller.get_kb_file(file_id)
 
@@ -131,22 +105,11 @@ async def handle_reparse_files(
     form: KBReparseForm = Body(...)
 ) -> SuccessResponse:
     """
-    Reparses files.
+    ### Description
+    Triggers the parsing pipeline again for specific files. Useful if parsing configurations or models have been updated.
 
-    Args:
-        form: Reparse file metadata with the following fields:
-            - kb_id: int
-            - file_ids: list[str]
-
-    Returns:
-        SuccessResponse: Success response with the following structure:
-            - code: int = Field(status.HTTP_200_OK, description="Response status code")
-            - message: str = Field("Success", description="Response message")
-            - success: bool = Field(True, description="Request response status")
-        ErrorResponse: Error response with the following structure:
-            - code: int = Field(status.HTTP_400_BAD_REQUEST, description="Response status code")
-            - message: str = Field("Error", description="Response message")
-            - success: bool = Field(False, description="Request response status")
+    - **kb_id**: Knowledge Base ID.
+    - **file_ids**: A list of unique file identifiers.
     """
     return await controller.reparse_kb_files(form)
 
@@ -162,25 +125,17 @@ async def handle_edit_file_chunk(
     form: KBFileChunkEditForm
 ) -> SuccessResponse:
     """
-    Modifies or deletes the chunk content of a knowledge base file.
+    ### Description
+    Provides granular management of document segments (chunks).
 
-    Args:
-        form: File chunk edit metadata with the following fields:
-            - kb_id: int = Field(..., description="Knowledge base ID")
-            - file_id: str = Field(..., description="File ID")
-            - embed_id: str = Field(..., description="Chunk ID")
-            - new_chunk: str | None = Field(None, description="New chunk content")
-            - action: str = Field(..., description="Operation type")
+    ---
+    ### Supported Actions (`action`)
+    1. `update`: Updates the text content. Requires `new_chunk`.
+    2. `delete`: Permanently removes the vector chunk from the index.
+    3. `enable`: Activates the chunk for retrieval.
+    4. `disable`: Deactivates the chunk (hides it from search results).
 
-    Returns:
-        SuccessResponse: Success response with the following structure:
-            - code: int = Field(status.HTTP_200_OK, description="Response status code")
-            - message: str = Field("Success", description="Response message")
-            - success: bool = Field(True, description="Request response status")
-        ErrorResponse: Error response with the following structure:
-            - code: int = Field(status.HTTP_400_BAD_REQUEST, description="Response status code")
-            - message: str = Field("Error", description="Response message")
-            - success: bool = Field(False, description="Request response status")
+    > **Warning:** Ensure the `embed_id` belongs to the specified `kb_id`.
     """
     if form.action == "update":
         if form.new_chunk is None or form.new_chunk.strip() == "":
@@ -229,34 +184,15 @@ async def handle_get_file_chunks(
     file_id: str
 ) -> SuccessResponse:
     """
-    Retrieves chunk content of a file by file ID.
+    ### Description
+    Retrieves detailed information for all chunks associated with a specific file.
 
-    Args:
-        kb_id: int = Field(..., description="Knowledge base ID")
-        file_id: str = Field(..., description="File ID")
-
-    Returns:
-        SuccessQueryResponse: Success query response with the following structure:
-            - code: int = Field(status.HTTP_200_OK, description="Response status code")
-            - message: str = Field("Success", description="Response message")
-            - success: bool = Field(True, description="Request response status")
-            - data: dict | list[dict] = Field(..., description="Response data")
-        - data: Model parameters with the following structure:
-            {
-                embed_id: str = Field(..., description="Chunk ID")
-                kb_id: int = Field(..., description="Knowledge base ID")
-                file_id: str = Field(..., description="File ID")
-                chunk_doc: str = Field(..., description="Chunk content")
-                chunk_metadata: str = Field(..., description="Chunk metadata")
-                biz_metadata: str = Field(..., description="Business metadata")
-                embedding = [],  # Embedding is not returned to prevent excessive interface data.
-                security_level: int = Field(..., description="Security level")
-                status: int = Field(..., description="Status")
-            }
-        ErrorResponse: Error response with the following structure:
-            - code: int = Field(status.HTTP_400_BAD_REQUEST, description="Response status code")
-            - message: str = Field("Error", description="Response message")
-            - success: bool = Field(False, description="Request response status")
+    ### Response Data
+    Returns a list of objects containing:
+    - `chunk_doc`: The raw text content.
+    - `chunk_metadata`: Technical metadata generated during parsing.
+    - `status`: Current status of the chunk.
+    - `embedding`: **Note:** The vector array is omitted by default to optimize performance.
     """
     return await controller.get_kb_file_chunk_by_id(file_id=file_id)
     
@@ -271,22 +207,8 @@ async def handle_update_chunk_description(
     form: KBFileChunkUpdateDescriptionForm
 ) -> SuccessResponse:
     """
-    Updates the description of a knowledge base file chunk.
-
-    Args:
-        kb_id: int = Field(..., description="Knowledge base ID")
-        embed_id: str = Field(..., description="Chunk ID")
-        description: str = Field(..., description="Chunk description")
-
-    Returns:
-        SuccessResponse: Success response with the following structure:
-            - code: int = Field(status.HTTP_200_OK, description="Response status code")
-            - message: str = Field("Success", description="Response message")
-            - success: bool = Field(True, description="Request response status")
-        ErrorResponse: Error response with the following structure:
-            - code: int = Field(status.HTTP_400_BAD_REQUEST, description="Response status code")
-            - message: str = Field("Error", description="Response message")
-            - success: bool = Field(False, description="Request response status")
+    ### Description
+    Manually updates the description or summary of a specific chunk.
     """
     return await controller.update_kb_file_chunk_description(
             kb_id=form.kb_id,
@@ -305,22 +227,8 @@ async def handle_update_chunk_tags(
     form: KBFileChunkUpdateTagsForm
 ) -> SuccessResponse:
     """
-    Updates the tags of a knowledge base file.
-
-    Args:
-        kb_id: int = Field(..., description="Knowledge base ID")
-        file_id: str = Field(..., description="File ID")
-        tags: list[str] = Field(..., description="File chunk tags")
-
-    Returns:
-        SuccessResponse: Success response with the following structure:
-            - code: int = Field(status.HTTP_200_OK, description="Response status code")
-            - message: str = Field("Success", description="Response message")
-            - success: bool = Field(True, description="Request response status")
-        ErrorResponse: Error response with the following structure:
-            - code: int = Field(status.HTTP_400_BAD_REQUEST, description="Response status code")
-            - message: str = Field("Error", description="Response message")
-            - success: bool = Field(False, description="Request response status")
+    ### Description
+    Updates the list of tags associated with a knowledge base file.
     """
     return await controller.update_file_tags(
             kb_id=form.kb_id,
@@ -337,20 +245,13 @@ async def handle_update_chunk_tags(
 )
 async def handle_preview_extracted_image(auth: UserAuth, params: PreviewImageParams):
     """
-    Preview a specific image extracted from a document within the knowledge base.
-    
-    Access: **User**
+    ### Description
+    Displays a specific image that was extracted from a PDF/Word document during the parsing process.
 
-    Args:
-        params (PreviewImageParams): Request parameters including:
-            - **kb_id** (int): Knowledge Base ID.
-            - **file_id** (str): The unique ID of the source file.
-            - **image_name** (str): The specific filename of the extracted image.
+    ### Access Level
+    - **User** or higher.
 
-    Returns:
-        FileResponse: The binary image file with cache headers.
-
-    Raises:
-        HTTPException (404): If the source file or the specific image cannot be found.
+    ### Error Handling
+    Returns **404 Not Found** if the image path is invalid or the file has been purged.
     """
     return await controller.preview_extracted_image(params)

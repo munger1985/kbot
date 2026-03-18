@@ -9,10 +9,13 @@ router = APIRouter(tags=["Health Check"])
 
 @router.get("/health", summary="Health Check")
 async def health_check():
-    """Main service health check endpoint.
-    
-    Returns:
-    - **dict**: {"status": "ok"}
+    """
+    ### Description
+    The primary heartbeat endpoint for the service. Used by orchestrators (like Kubernetes or Docker) to verify if the container is running.
+
+    ---
+    ### Returns
+    - `status`: Returns `"ok"` if the service is reachable.
     """
     return {"status": "ok"}
 
@@ -22,16 +25,20 @@ async def health_check():
         summary="Test if the specified model is available"
 )
 async def handle_test_model(form: ModelForm, auth: AnyAuth) -> SuccessResponse:
-    """Tests if the specified model is available.
+    """
+    ### Description
+    Checks the connectivity and availability of a specific model within the system.
 
-    Args:
-        form: Test model request form with the following fields:
-            - model_id: int = Field(..., description="Model ID")
-            - model_category: int = Field(..., description="Model category")
+    ---
+    ### Parameters
+    - **model_id** (`int`): The unique identifier of the model to test.
+    - **model_category** (`int`): The category code (e.g., LLM, Embedding, Rerank).
 
-    Returns:
-        SuccessResponse: Success response with the following structure:
-            - message: str = Field("Success", description="Response message")
+    ### Returns
+    - **SuccessResponse**: If the model is online and responding.
+
+    ### Error Handling
+    - Returns **400 Bad Request** if the model is offline, misconfigured, or the ID is invalid.
     """
     
     if await controller.verify_model(form.model_id, form.model_category):

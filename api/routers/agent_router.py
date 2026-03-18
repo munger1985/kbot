@@ -22,21 +22,21 @@ router = APIRouter(prefix="/agent", tags=["Agent Chat"])
 )
 async def handle_agent_chat(form: AgentChatForm, auth: UserAuth, background_tasks: BackgroundTasks):
     """
-    Asynchronous streaming chat interface for the Agent.
-    
-    Args:
-    - **form**: Agent chat request form
-        - session_id: Unique session identifier
-        - by: User ID making the request
-        - agent_id: ID of the targeted agent
-        - security_level: Access clearance level
-        - question: User input text
-        - tags: Optional list of categories for filtering
-    - **auth**: User authentication context
-    - **background_tasks**: FastAPI background task manager for persistence
-    
-    Returns:
-    - **StreamingResponse**: SSE stream containing LLM chunks and references.
+    ### Description
+    Asynchronous streaming interface for AI Agent interactions using Server-Sent Events (SSE).
+
+    ---
+    ### Request Body (`AgentChatForm`)
+    - **session_id** (`str`): Unique identifier for the chat session.
+    - **agent_id** (`int`): The ID of the specific agent configuration to use.
+    - **question** (`str`): The user's input text.
+    - **security_level** (`int`): Data access clearance level for RAG.
+    - **tags** (`list[str]`, optional): Categories used to filter knowledge base retrieval.
+
+    ### Returns
+    - **StreamingResponse**: A continuous stream of data chunks. Each chunk is typically a JSON object containing `answer_piece` or `references`.
+
+    > **Note**: Chat history persistence is handled via `background_tasks` to ensure low latency.
     """
     logger.info(f"Received streaming chat request for agent {form.agent_id} by user {form.by}")
     return await agent_controller.agent_chat_stream(form, background_tasks)
@@ -50,10 +50,16 @@ async def handle_agent_chat(form: AgentChatForm, auth: UserAuth, background_task
 )
 async def handle_agent_feedback(form: AgentChatFeedbackForm, auth: UserAuth):
     """
-    Submit user feedback (like/dislike) for a specific agent response.
-    
-    Args:
-    - **form**: Feedback data including record ID and feedback value (1, 0, -1).
+    ### Description
+    Submit user sentiment (Like/Dislike) regarding a specific agent response to improve model performance.
+
+    ---
+    ### Parameters
+    - **chat_record_id** (`str`): The unique ID of the specific chat message.
+    - **feedback_value** (`int`): 
+        - `1`: Positive (Like)
+        - `0`: Neutral/Reset
+        - `-1`: Negative (Dislike)
     """
     logger.info(f"Processing feedback for chat record ID: {form.chat_record_id}")
     return await agent_controller.feedback(form)
@@ -67,7 +73,11 @@ async def handle_agent_feedback(form: AgentChatFeedbackForm, auth: UserAuth):
 )
 async def handle_agent_get_session(session_id: str, auth: UserAuth):
     """
-    Fetches historical chat records for a specific session.
+    ### Description
+    Retrieves a chronological list of all chat records associated with a specific `session_id`.
+
+    ### Use Case
+    Useful for restoring chat UI state when a user reloads the page or switches conversations.
     """
     logger.info(f"Fetching chat history for session: {session_id}")
     return await agent_controller.get_session_chat_records(session_id)
@@ -80,7 +90,10 @@ async def handle_agent_get_session(session_id: str, auth: UserAuth):
 )
 async def handle_agent_del_session(session_id: str, auth: UserAuth):
     """
-    Removes an entire chat session and its associated history.
+    ### Description
+    Permanently deletes a chat session and all its nested message history from the database.
+    
+    > **Warning**: This action is irreversible.
     """
     logger.warning(f"Request to delete session: {session_id}")
     return await agent_controller.remove_session(session_id)
@@ -93,7 +106,13 @@ async def handle_agent_del_session(session_id: str, auth: UserAuth):
 )
 async def handle_del_agent(auth: UserAuth, agent_id: int, del_prompt: int = 0):
     """
-    Deletes an agent configuration and optionally its prompt templates.
+    ### Description
+    Deletes an agent's settings and metadata.
+
+    ---
+    ### Parameters
+    - **agent_id** (`int`): ID of the agent to remove.
+    - **del_prompt** (`int`): Set to `1` to also delete the associated prompt templates, otherwise `0`.
     """
     logger.warning(f"Request to remove agent {agent_id}. Delete prompt: {del_prompt == 1}")
     return await agent_controller.remove_agent(agent_id, del_prompt == 1)
@@ -106,8 +125,13 @@ async def handle_del_agent(auth: UserAuth, agent_id: int, del_prompt: int = 0):
 )
 async def handle_agent_retrieval(auth: ServiceAuth, form: DifySearchForm, background_tasks: BackgroundTasks):
     """
-    Adapter interface for Dify external knowledge retrieval.
-    Compatible with Dify's external knowledge base API.
+    ### Description
+    A specialized adapter endpoint designed to bridge this system with **Dify's External Knowledge Base** API.
+
+    ---
+    ### Protocol
+    - **Auth**: Requires `ServiceAuth` (typically an API Key).
+    - **Compatibility**: Adheres to the standard Dify retrieval request/response schema.
     """
     logger.info(f"Dify retrieval request received for knowledge_id: {form.knowledge_id}")
     return await agent_controller.dify_search(form, background_tasks)
@@ -121,10 +145,18 @@ async def handle_agent_retrieval(auth: ServiceAuth, form: DifySearchForm, backgr
 )
 async def handle_non_stream_chat(auth: ServiceAuth, form: AgentChatForm):
     """
-    Synchronous chat interface that returns the full response once completed.
-    
-    Returns:
-    - **SuccessResponse**: Data includes 'answer', 'qa_embedding', and 'references'.
+    ### Description
+    A standard synchronous chat interface. The HTTP connection remains open until the full LLM response is generated.
+
+    ---
+    ### Returns
+    A `SuccessResponse` where `data` contains:
+    - `answer`: The full text response.
+    - `references`: Source documents used for the answer.
+    - `qa_embedding`: The vector representation of the interaction.
+
+    ### Recommendation
+    Use this for service-to-service calls or small responses where streaming UI is not required.
     """
     logger.info(f"Processing non-stream chat for agent {form.agent_id}")
     result = await agent_controller.agent_chat_nonstream(form)
