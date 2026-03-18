@@ -1,4 +1,4 @@
-"""文档解析微服务应用程序。"""
+"""Document Parsing Microservice Application."""
 
 import os
 import sys
@@ -19,17 +19,17 @@ from core.logger import LogConfig, LogManager
 from core.middleware.log_middleware import log_requests
 from microservices.file_processor.services import FileParseEngine
 
-# 加载环境变量
+# Load environment variables
 load_dotenv()
 
-# 从配置中心获取服务配置
+# Get service configuration from config center
 config = get_parser_config()
 SERVICE_NAME = config.service_name
 SERVICE_VERSION = config.service_version
 SERVICE_HOST = config.service_host
 SERVICE_PORT = config.service_port
 
-# 获取通用应用配置
+# Get general application configuration
 app_config = get_app_config()
 DEBUG: bool = app_config.debug
 LOG_DIR: str = app_config.log.dir
@@ -37,19 +37,19 @@ LOG_LEVEL: str = app_config.log.level
 LOG_ROTATION: str = app_config.log.rotation
 LOG_RETENTION: str = app_config.log.retention
 
-# 初始化全局单例
+# Initialize global singleton
 parallel_workers = config.parser_parallel
 db_check_interval = config.db_check_interval
 parse_engine = FileParseEngine(parallel_workers=parallel_workers, check_interval=db_check_interval)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """管理服务生命周期：初始化日志和解析单例。"""
+    """Manage service lifecycle: initialize logging and parsing singleton."""
 
-    # 设置服务名称到 app.state（供中间件使用）
+    # Set service name to app.state (used by middleware)
     app.state.service_name = SERVICE_NAME
 
-    # 1. 初始化日志系统 (对应 LLM 微服务做法)
+    # 1. Initialize logging system (following LLM microservice implementation)
     log_conf = LogConfig(
         service_name=SERVICE_NAME, 
         log_dir=LOG_DIR, 
@@ -60,35 +60,35 @@ async def lifespan(app: FastAPI):
     LogManager(log_conf).setup()
     
     start_time = time.time()
-    logger.info(f"正在启动 [{SERVICE_NAME}] | PID: {os.getpid()} | 时间: {datetime.now()}")
+    logger.info(f"Starting [{SERVICE_NAME}] | PID: {os.getpid()} | Time: {datetime.now()}")
 
     try:
-        # 2. 初始化解析服务
-        logger.info("正在启动文件解析引擎...")
+        # 2. Initialize parsing service
+        logger.info("Starting file parsing engine...")
         await parse_engine.start()
-        logger.success(f"文件解析引擎加载成功 | 耗时: {time.time() - start_time:.2f}s")
+        logger.success(f"File parsing engine loaded successfully | Elapsed time: {time.time() - start_time:.2f}s")
     except Exception as e:
-        logger.error(f"文件解析引擎启动失败: {e}")
+        logger.error(f"Failed to start file parsing engine: {e}")
         if not DEBUG:
             sys.exit(1)
     
-    yield  # --- 此时 Web 服务和后台轮询任务都在主进程中运行 ---
+    yield  # --- At this point, both Web service and background polling tasks are running in the main process ---
     
-    # 3. 清理阶段
-    logger.info("应用正在关闭，执行清理任务...")
+    # 3. Cleanup phase
+    logger.info("Application is shutting down, executing cleanup tasks...")
     try:
-        # 停止后台任务
+        # Stop background tasks
         await parse_engine.stop()
-        logger.info("文件解析引擎已停止")
+        logger.info("File parsing engine has been stopped")
 
     except Exception as e:
-        logger.error(f"清理资源时发生异常: {e}")
+        logger.error(f"Exception occurred while cleaning up resources: {e}")
     
 
-# 创建应用实例
+# Create application instance
 app = FastAPIOffline(
     title=f"{SERVICE_NAME} API",
-    description="基于 Docling 的多格式解析服务，支持 OCR 和动态 VLM 语义增强。",
+    description="Multi-format parsing service based on Docling, supporting OCR and dynamic VLM semantic enhancement.",
     version=SERVICE_VERSION,
     lifespan=lifespan,
     docs_url="/docs" if DEBUG else None,
@@ -103,12 +103,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 请求日志中间件
+# Request logging middleware
 app.middleware("http")(log_requests)
 
-# --- API 端点 ---
+# --- API Endpoints ---
 
-@app.get("/health", tags=["System"], summary="健康检查")
+@app.get("/health", tags=["System"], summary="Health Check")
 async def health() -> dict[str, Any]:
     return {
         "status": "ok",
@@ -116,15 +116,15 @@ async def health() -> dict[str, Any]:
         "timestamp": datetime.now().isoformat()
     }
 
-# --- 启动逻辑 ---
+# --- Startup Logic ---
 
 if __name__ == "__main__":
-    logger.info(f"服务启动中 -> {SERVICE_HOST}:{SERVICE_PORT}")
+    logger.info(f"Service starting up -> {SERVICE_HOST}:{SERVICE_PORT}")
     uvicorn.run(
         app, 
         host=SERVICE_HOST, 
         port=SERVICE_PORT,
         log_config=None,
-        # 确保在使用 Ctrl+C 时 uvicorn 能够控制退出流程
+        # Ensure uvicorn can control exit flow when using Ctrl+C
         loop="asyncio" 
     )

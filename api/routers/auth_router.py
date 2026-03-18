@@ -11,7 +11,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
 
 @router.post("/register", response_model=dict)
 async def handle_register(request: UserRegisterRequest):
-    """用户注册"""
+    """User Registration"""
     return await AuthController.register(request)
 
 
@@ -20,8 +20,7 @@ async def handle_login(
     request: Request,
     form_data: OAuth2PasswordRequestForm = Depends()
 ):
-    """用户登录"""
-    # 用户认证
+    """User Login"""
     login_result = await AuthController.login(request, form_data)
     
     if not login_result:
@@ -36,7 +35,7 @@ async def handle_login(
 
 @router.post("/refresh", response_model=dict)
 async def handle_refresh_token(refresh_token: str):
-    """刷新令牌"""
+    """Refresh Token"""
     return await AuthController.refresh_token(refresh_token)
 
 
@@ -53,7 +52,7 @@ async def handle_create_service_api_key(
     request_data: CreateAPIKeyRequest,
     auth_info: dict = Depends(require_user_token())
 ):
-    """创建服务API Key"""
+    """Create service API Key"""
     return await AuthController.create_service_api_key(request_data, auth_info)
 
 
@@ -63,7 +62,7 @@ async def handle_list_service_api_keys(
     active_only: bool = True,
     auth_info: dict = Depends(get_current_user())
 ):
-    """获取服务的API Keys列表"""
+    """Get service API Keys"""
     return await AuthController.list_service_api_keys(service_id, auth_info, active_only)
 
 
@@ -73,28 +72,28 @@ async def handle_revoke_service_api_key(
     reason: str | None = None,
     auth_info: dict = Depends(get_current_user())
 ):
-    """撤销服务API Key"""
+    """Revoke service API Key"""
     return await AuthController.revoke_service_api_key(key_id, auth_info, reason)
 
 
 @router.post("/validate-api-key", response_model=dict)
 async def handle_validate_api_key(api_key: str):
-    """验证API Key"""
+    """Validate API Key"""
     return await AuthController.validate_api_key(api_key)
 
 @router.get("/me", response_model=dict)
 async def get_current_user_info(auth_info: dict = Depends(get_current_user())):
-    """获取当前认证信息"""
+    """Get current user info"""
     return auth_info
 
 
-# 服务管理端点
+# Service Management Endpoints
 @router.post("/services", response_model=dict)
 async def handle_create_service(
     service: CreateServiceRequest,
     auth_info: dict = Depends(require_user_token())
 ):
-    """创建服务（需要管理员权限）"""
+    """Create a new service"""
     return await AuthController.create_service(
         service.service_code, 
         service.name, 
@@ -108,14 +107,14 @@ async def handle_create_service(
 
 @router.get("/services", response_model=list[dict])
 async def handle_list_services(auth_info: dict = Depends(get_current_user())):
-    """获取服务列表"""
+    """Get a list of services"""
     return await AuthController.list_services(auth_info)
 
 
 # 测试端点
 @router.get("/test/user-only")
 async def test_user_only(auth_info: dict = Depends(require_user_token())):
-    """仅用户可访问的测试端点"""
+    """Test user only endpoint"""
     return {
         "message": "User only endpoint",
         "user_id": auth_info["user_id"],
@@ -125,7 +124,7 @@ async def test_user_only(auth_info: dict = Depends(require_user_token())):
 
 @router.get("/test/api-key-only")
 async def test_api_key_only(auth_info: dict = Depends(require_api_key())):
-    """仅API Key可访问的测试端点"""
+    """Test API Key only endpoint"""
     return {
         "message": "API Key only endpoint",
         "service_id": auth_info["service_id"],
@@ -135,7 +134,7 @@ async def test_api_key_only(auth_info: dict = Depends(require_api_key())):
 
 @router.get("/test/mixed")
 async def test_mixed(auth_info: dict = Depends(get_current_user())):
-    """混合认证的测试端点"""
+    """Test mixed endpoint"""
     return {
         "message": "Mixed authentication endpoint",
         "auth_type": auth_info["type"],

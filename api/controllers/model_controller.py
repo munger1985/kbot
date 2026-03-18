@@ -10,27 +10,27 @@ from core.exceptions import ParamValueError, InternalServerError, NotFoundError
 
 
 class ModelController:
-    """模型控制器，负责模型的同步、启用、禁用等操作"""
+    """Model controller, responsible for model synchronization, activation, deactivation and other operations"""
     def __init__(self):
         self.model_client = AIModelClient()
         self.model_service = AIModelService()
     
     async def verify_model(self, model_id: int, model_type: int) -> bool:
         """
-        验证指定模型
+        Verify the specified model
         
         Args:
-            model_id: 模型唯一标识
-            model_type: 模型类型
+            model_id: Unique identifier of the model
+            model_type: Type of the model
             
         Returns:
-            bool: 模型验证是否成功
+            bool: Whether the model verification is successful
             
         Raises:
-            ValueError: 未知的模型类型时抛出
+            ValueError: Raised when the model type is unknown
         """
 
-        # 测试Embedding模型
+        # Test Embedding model
         model_name = await self.model_service.get_model_name_by_id(model_id)
         if model_type == ModelCategory.TXT_EMBEDDING.value:
             input_texts = ["test"]
@@ -39,7 +39,7 @@ class ModelController:
                 input_texts
             )
             
-        # 测试LLM模型
+        # Test LLM model
         elif model_type == ModelCategory.LLM.value:
             input_text = "test"
             async for chunk in self.model_client.call_llm_model(
@@ -50,7 +50,7 @@ class ModelController:
             ):
                 result = chunk
 
-        # 测试Reranker模型
+        # Test Reranker model
         elif model_type == ModelCategory.RERANKER.value:
             question = "test"
             inputs_list = [
@@ -64,23 +64,23 @@ class ModelController:
                 1
             )
 
-        # 测试VLM模型
+        # Test VLM model
         elif model_type == ModelCategory.VLM.value:
             prompt_unique_name = "KBOT1/pdf_parsing"
-            # 创建纯色图片的最简代码
+            # Simplest code to create a solid color image
             image = Image.new('RGB', (100, 100), 'lightblue')
             result = await self.model_client.call_vlm_model(
                 model_name, 
                 image,
-                prompt="描述该图片"
+                prompt="Describe this image"
             )
             
         else:
-            raise ParamValueError(f"未知的模型类型: {model_type}")
+            raise ParamValueError(f"Unknown model type: {model_type}")
         
         if result:
             return True
         else:
-            raise InternalServerError(message=f"模型 {model_id} 验证失败")
+            raise InternalServerError(message=f"Model {model_id} verification failed")
         
 model_controller = ModelController()      

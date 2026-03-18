@@ -1,7 +1,7 @@
-"""Reranker 微服务应用程序。
+"""Reranker Microservice Application.
 
-本模块提供基于 FastAPI 的 Reranker 服务，用于对候选文档列表进行语义重排序。
-支持多模型管理、动态加载/卸载以及标准化的重排序 API 接口。
+This module provides a FastAPI-based Reranker service for semantic reordering of candidate document lists.
+It supports multi-model management, dynamic loading/unloading, and standardized reordering API endpoints.
 """
 
 import os
@@ -31,17 +31,17 @@ from microservices.reranker.schema import (
     ToggleModelRequest
 )
 
-# 加载环境变量
+# Load environment variables
 load_dotenv()
 
-# 从配置中心获取服务配置
+# Get service configuration from config center
 config = get_reranker_config()
 SERVICE_NAME: str = config.service_name
 SERVICE_VERSION: str = config.service_version
 SERVICE_HOST: str = config.service_host
 SERVICE_PORT: int = config.service_port
 
-# 获取通用应用配置
+# Get general application configuration
 app_config = get_app_config()
 DEBUG: bool = app_config.debug
 LOG_DIR: str = app_config.log.dir
@@ -49,21 +49,21 @@ LOG_LEVEL: str = app_config.log.level
 LOG_ROTATION: str = app_config.log.rotation
 LOG_RETENTION: str = app_config.log.retention
 
-# 初始化 Reranker 逻辑服务实例
+# Initialize Reranker logic service instance
 reranker_service = RerankerService()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """管理 Reranker 应用程序的生命周期。
+    """Manage the lifecycle of the Reranker application.
 
     Args:
-        app: FastAPI 应用程序实例。
+        app: FastAPI application instance.
     """
-    # 设置服务名称到 app.state（供中间件使用）
+    # Set service name to app.state (used by middleware)
     app.state.service_name = SERVICE_NAME
 
-    # 1. 初始化日志配置
+    # 1. Initialize logging configuration
     log_conf = LogConfig(
         service_name=SERVICE_NAME, 
         log_dir=LOG_DIR, 
@@ -73,42 +73,42 @@ async def lifespan(app: FastAPI):
     )
     LogManager(log_conf).setup()
     
-    # 2. 启动初始化过程
+    # 2. Start initialization process
     start_time = time.time()
-    logger.info(f"正在初始化 Reranker 服务 | PID: {os.getpid()} | 时间: {datetime.now()}")
+    logger.info(f"Initializing Reranker service | PID: {os.getpid()} | Time: {datetime.now()}")
     
     try:
         await reranker_service.initialize()
         await reranker_service.warmup()
-        logger.info(f"Reranker 服务初始化成功 | 耗时: {time.time() - start_time:.2f}s")
+        logger.info(f"Reranker service initialized successfully | Elapsed time: {time.time() - start_time:.2f}s")
     except Exception as e:
-        logger.error(f"Reranker 服务启动失败: {e}")
+        logger.error(f"Failed to start Reranker service: {e}")
         if not DEBUG:
             sys.exit(1)
     
-    yield  # --- 服务运行中 ---
+    yield  # --- Service running ---
     
-    # 3. 执行关闭清理
-    logger.info("正在关闭 Reranker 服务...")
+    # 3. Perform shutdown cleanup
+    logger.info("Shutting down Reranker service...")
     shutdown_start = time.time()
     try:
         await reranker_service.shutdown()
-        logger.info(f"Reranker 服务已安全关闭 | 停机耗时: {time.time() - shutdown_start:.2f}s")
+        logger.info(f"Reranker service shut down safely | Shutdown elapsed time: {time.time() - shutdown_start:.2f}s")
     except Exception as e:
-        logger.error(f"关闭服务时出错: {e}")
+        logger.error(f"Error while shutting down service: {e}")
 
 
-# 创建 FastAPI 实例
+# Create FastAPI instance
 app = FastAPIOffline(
-    title="Reranker 微服务",
-    description="提供基于深度学习模型的文本语义重排序服务",
+    title="Reranker Microservice",
+    description="Provides text semantic reordering service based on deep learning models",
     version=SERVICE_VERSION,
     lifespan=lifespan,
     docs_url="/docs" if DEBUG else None,
     redoc_url="/redoc" if DEBUG else None
 )
 
-# 配置跨域中间件
+# Configure CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -117,21 +117,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 请求日志中间件
+# Request logging middleware
 app.middleware("http")(log_requests)
 
 
 def get_reranker_service() -> RerankerService:
-    """获取 Reranker 服务单例的依赖项。"""
+    """Dependency for getting Reranker service singleton."""
     return reranker_service
 
 
-@app.get("/health", response_model=dict, tags=["System"], summary="健康检查接口")
+@app.get("/health", response_model=dict, tags=["System"], summary="Health Check Endpoint")
 async def health_check() -> dict[str, Any]:
-    """检查微服务健康状态及模型加载情况。
+    """Check microservice health status and model loading status.
 
     Returns:
-        包含状态 (status)、已加载模型数 (loaded_models_count) 和时间戳的字典。
+        Dictionary containing status, number of loaded models, and timestamp.
     """
     loaded_models_count = 0
     if reranker_service._initialized and hasattr(reranker_service._model_pool, '_models'):
@@ -144,58 +144,58 @@ async def health_check() -> dict[str, Any]:
     }
 
 
-@app.post("/load", response_model=dict, tags=["Management"], summary="模型动态加载/卸载")
+@app.post("/load", response_model=dict, tags=["Management"], summary="Dynamic Model Load/Unload")
 async def toggle_model(request: ToggleModelRequest) -> dict[str, str]:
-    """根据请求动态加载或从内存中卸载指定模型。
+    """Dynamically load or unload the specified model from memory based on request.
 
     Args:
-        request: 包含模型名称和操作类型 (load/unload) 的对象。
+        request: Object containing model name and operation type (load/unload).
 
     Returns:
-        操作状态响应。
+        Operation status response.
 
     Raises:
-        HTTPException: 操作失败时抛出 500 错误。
+        HTTPException: 500 error when operation fails.
     """
     model_name = request.model_name
     try:
         if request.operation == "load":
-            logger.info(f"执行模型加载指令: {model_name}")
+            logger.info(f"Executing model load command: {model_name}")
             success = await reranker_service.load_model(model_name)
         else:
-            logger.info(f"执行模型卸载指令: {model_name}")
+            logger.info(f"Executing model unload command: {model_name}")
             success = await reranker_service.unload_model(model_name)
             
         if not success:
-            raise HTTPException(status_code=500, detail=f"模型 {model_name} {request.operation} 操作未成功")
+            raise HTTPException(status_code=500, detail=f"Failed to {request.operation} model {model_name}")
             
         return {"status": "success", "model_name": model_name}
     except Exception as e:
-        logger.exception(f"执行模型操作时发生异常: {e}")
+        logger.exception(f"Exception occurred during model operation: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/v1/rerank", response_model=RerankerResponse, tags=["Reranker"], summary="执行重排序")
+@app.post("/v1/rerank", response_model=RerankerResponse, tags=["Reranker"], summary="Perform Reordering")
 async def rerank_documents(
     request: RerankerRequest,
     service: RerankerService = Depends(get_reranker_service)
 ) -> RerankerResponse:
-    """根据查询语句对文档列表进行相关性重排序。
+    """Reorder document list by relevance to query statement.
 
     Args:
-        request: 包含 query, documents 以及 top_k 等参数。
-        service: Reranker 逻辑服务实例。
+        request: Contains parameters such as query, documents, and top_k.
+        service: Reranker logic service instance.
 
     Returns:
-        包含重排序结果列表（带得分）的响应对象。
+        Response object containing reordering result list (with scores).
 
     Raises:
-        HTTPException: 处理过程中发生错误时抛出 500 错误。
+        HTTPException: 500 error when errors occur during processing.
     """
     try:
         logger.info(
-            f"收到重排序请求 | 模型: {request.model_name} | "
-            f"文档数: {len(request.documents)} | top_k: {request.top_k}"
+            f"Received reordering request | Model: {request.model_name} | "
+            f"Document count: {len(request.documents)} | top_k: {request.top_k}"
         )
         
         results = await service.rerank(
@@ -205,48 +205,48 @@ async def rerank_documents(
             top_k=request.top_k
         )
         
-        logger.info(f"重排序计算完成 | 结果数: {len(results)}")
+        logger.info(f"Reordering calculation completed | Result count: {len(results)}")
         return RerankerResponse(rerankers=results)
     
     except Exception as e:
-        logger.error(f"重排序计算失败: {e}")
+        logger.error(f"Reordering calculation failed: {e}")
         raise HTTPException(status_code=500, detail=f"Internal Rerank Error: {e}")
 
 
-# --- 进程管理与信号处理 ---
+# --- Process Management and Signal Handling ---
 
 reranker_process: subprocess.Popen | None = None
 
 
 def stop_reranker_standalone():
-    """终止作为独立进程运行的微服务。"""
+    """Terminate microservice running as independent process."""
     global reranker_process
     if reranker_process:
-        logger.info("正在安全终止 Reranker 独立进程...")
+        logger.info("Safely terminating Reranker standalone process...")
         try:
             reranker_process.terminate()
             reranker_process.wait(timeout=5)
         except subprocess.TimeoutExpired:
-            logger.warning("进程终止超时，正在强制 Kill...")
+            logger.warning("Process termination timeout, force killing...")
             reranker_process.kill()
         reranker_process = None
 
 
 def handle_exit_signal(sig: int, frame: Any):
-    """捕获退出信号后的回调处理。"""
-    logger.info(f"收到系统信号: {sig}，准备退出...")
+    """Callback handler after catching exit signal."""
+    logger.info(f"Received system signal: {sig}, preparing to exit...")
     stop_reranker_standalone()
     sys.exit(0)
 
 
-# 注册全局退出处理逻辑
+# Register global exit handling logic
 atexit.register(stop_reranker_standalone)
 
 if __name__ == "__main__":
-    # 检查是否为独立运行模式，并设置信号监听
+    # Check if running in standalone mode and set up signal listeners
     if os.environ.get("RERANKER_SERVICE_STANDALONE") == "1":
         signal.signal(signal.SIGINT, handle_exit_signal)
         signal.signal(signal.SIGTERM, handle_exit_signal)
     
-    logger.info(f"Reranker 微服务已启动 | 监听地址: {SERVICE_HOST}:{SERVICE_PORT}")
+    logger.info(f"Reranker microservice started | Listening on: {SERVICE_HOST}:{SERVICE_PORT}")
     uvicorn.run(app, host=SERVICE_HOST, port=SERVICE_PORT)

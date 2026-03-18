@@ -1,7 +1,7 @@
-"""LLM 微服务应用程序。
+"""LLM Microservice Application.
 
-本模块提供基于 FastAPI 的 LLM 接入层，支持文本生成、对话补全、流式响应（SSE）
-以及基于 MCP 协议的工具调用（Tool Calling）功能。
+This module provides a FastAPI-based LLM access layer that supports text generation, chat completion, streaming responses (SSE),
+and Tool Calling functionality based on the MCP protocol.
 """
 
 import os
@@ -30,17 +30,17 @@ from core.dictionary import LLMProvider
 from microservices.llm.llm_service import LLMService
 from microservices.llm.schema import *
 
-# 加载环境变量
+# Load environment variables
 load_dotenv()
 
-# 服务基础信息
+# Service basic information
 config = get_llm_config()
 SERVICE_NAME = config.service_name
 SERVICE_VERSION = config.service_version
 SERVICE_HOST = config.service_host
 SERVICE_PORT = config.service_port
 
-# 日志与调试配置
+# Log and debug configuration
 app_config = get_app_config()
 DEBUG_MODE = app_config.debug
 LOG_DIR = app_config.log.dir
@@ -48,21 +48,21 @@ LOG_LEVEL = app_config.log.level
 LOG_ROTATION = app_config.log.rotation
 LOG_RETENTION = app_config.log.retention
 
-# 初始化 LLM 逻辑服务单例
+# Initialize LLM logic service singleton
 llm_service = LLMService()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """管理应用程序生命周期。
+    """Manage application lifecycle.
 
     Args:
-        app: FastAPI 实例。
+        app: FastAPI instance.
     """
-    # 设置服务名称到 app.state（供中间件使用）
+    # Set service name to app.state (used by middleware)
     app.state.service_name = SERVICE_NAME
 
-    # 初始化日志系统
+    # Initialize logging system
     log_conf = LogConfig(
         service_name=SERVICE_NAME,
         log_dir=LOG_DIR,
@@ -73,31 +73,31 @@ async def lifespan(app: FastAPI):
     LogManager(log_conf).setup()
 
     start_time = time.time()
-    logger.info(f"正在启动 LLM 服务 | PID: {os.getpid()} | 时间: {datetime.now()}")
+    logger.info(f"Starting LLM service | PID: {os.getpid()} | Time: {datetime.now()}")
 
     try:
         await llm_service.initialize()
         await llm_service.warmup()
-        logger.info(f"LLM 服务初始化完成 | 耗时: {time.time() - start_time:.2f}s")
+        logger.info(f"LLM service initialization completed | Elapsed time: {time.time() - start_time:.2f}s")
     except Exception as e:
-        logger.exception(f"LLM 服务启动失败: {e}")
+        logger.exception(f"Failed to start LLM service: {e}")
         if not DEBUG_MODE:
             sys.exit(1)
 
-    yield  # --- 运行阶段 ---
+    yield  # --- Runtime phase ---
 
-    logger.info("正在执行关机清理...")
+    logger.info("Performing shutdown cleanup...")
     try:
         await llm_service.shutdown()
-        logger.info("LLM 服务已安全关闭")
+        logger.info("LLM service has been shut down safely")
     except Exception as e:
-        logger.error(f"关闭服务时发生异常: {e}")
+        logger.error(f"Exception occurred while shutting down service: {e}")
 
 
-# 初始化 FastAPI 应用
+# Initialize FastAPI application
 app = FastAPIOffline(
-    title="LLM 微服务",
-    description="提供多供应商 LLM 适配、流式聊天及工具调用支持。",
+    title="LLM Microservice",
+    description="Provides multi-provider LLM adaptation, streaming chat, and tool calling support.",
     version=SERVICE_VERSION,
     lifespan=lifespan,
     docs_url="/docs" if DEBUG_MODE else None,
@@ -112,21 +112,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 4. 请求日志中间件
+# 4. Request logging middleware
 app.middleware("http")(log_requests)
 
 
 def get_llm_service() -> LLMService:
-    """依赖注入获取 LLM 服务实例。"""
+    """Get LLM service instance via dependency injection."""
     return llm_service
 
 
-@app.get("/health", response_model=dict, tags=["System"], summary="健康检查")
+@app.get("/health", response_model=dict, tags=["System"], summary="Health Check")
 async def health_check() -> dict[str, Any]:
-    """检查服务健康状态。
+    """Check service health status.
 
     Returns:
-        包含状态、加载模型数和时间戳的字典。
+        Dictionary containing status, number of loaded models, and timestamp.
     """
     loaded_models_count = 0
     if llm_service._initialized and hasattr(llm_service._model_pool, '_models'):
@@ -139,61 +139,61 @@ async def health_check() -> dict[str, Any]:
     }
 
 
-@app.post("/load", response_model=dict, tags=["Management"], summary="加载/卸载模型")
+@app.post("/load", response_model=dict, tags=["Management"], summary="Load/Unload Model")
 async def handle_toggle_model(request: ToggleModelRequest) -> dict[str, Any]:
-    """动态管理内存中的模型。
+    """Dynamically manage models in memory.
 
     Args:
-        request: 模型操作请求。
+        request: Model operation request.
 
     Returns:
-        操作结果。
+        Operation result.
     """
     try:
         method = llm_service.load_model if request.operation == "load" else llm_service.unload_model
-        logger.info(f"执行模型操作: {request.operation} -> {request.model_name}")
+        logger.info(f"Executing model operation: {request.operation} -> {request.model_name}")
         
         success = await method(request.model_name)
         if not success:
-            raise HTTPException(status_code=500, detail=f"模型 {request.model_name} {request.operation} 失败")
+            raise HTTPException(status_code=500, detail=f"Failed to {request.operation} model {request.model_name}")
             
         return {"status": "success", "model_name": request.model_name}
     except Exception as e:
-        logger.exception(f"模型管理异常: {e}")
+        logger.exception(f"Model management exception: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/v1/chat/completions", response_model=None, tags=["LLM"], summary="对话补全接口")
+@app.post("/v1/chat/completions", response_model=None, tags=["LLM"], summary="Chat Completion Endpoint")
 async def handle_chat_completions(
     request: ChatRequest,
     service: LLMService = Depends(get_llm_service)
 ) -> ChatResponse | StreamingResponse:
-    """处理聊天补全请求，支持流式与非流式。
+    """Handle chat completion requests, supporting streaming and non-streaming modes.
 
     Args:
-        request: 对话请求参数。
-        service: 注入的 LLM 服务。
+        request: Chat request parameters.
+        service: Injected LLM service.
 
     Returns:
-        ChatResponse 对象或用于 SSE 的 StreamingResponse。
+        ChatResponse object or StreamingResponse for SSE.
 
     Raises:
-        HTTPException: 404 模型不存在, 400 校验错误, 408 超时, 500 服务器内部错误。
+        HTTPException: 404 Model not found, 400 Validation error, 408 Timeout, 500 Internal server error.
     """
     start_time = time.time()
     resp_id = f"chatcmpl-{uuid.uuid4()}"
     created_ts = int(time.time())
 
-    # 先加载模型（如果模型未加载，此步会触发异步加载）
+    # Load model first (triggers async loading if model is not loaded)
     model = await service.get_model_instance(request.model_name)
     provider = model.config.provider
 
-    # 获取最大 Token 限制（如果用户没传，则使用模型配置的默认值）
+    # Get max token limit (use model config default if not provided by user)
     max_tokens_limit = getattr(model.config, "max_tokens", 4096)
     current_max_tokens = request.max_tokens or max_tokens_limit
 
     try:
-        # --- 流式响应逻辑 ---
+        # --- Streaming response logic ---
         if request.stream:
             async def sse_generator():
                 try:
@@ -212,30 +212,30 @@ async def handle_chat_completions(
                         if chunk == "[DONE]":
                             break
 
-                        # 统一序列化不同 Provider 的 Chunk
+                        # Unified serialization for different Provider Chunks
                         if hasattr(chunk, 'model_dump_json'):
-                            # OpenAI 兼容格式的 Chunk
+                            # OpenAI-compatible format Chunk
                             data = chunk.model_dump_json()
                         elif isinstance(chunk, dict):
-                            # 检查是否为 OCI 原生格式，需要转换为 OpenAI 格式
+                            # Check if it's OCI native format and convert to OpenAI format
                             text = None
 
-                            # 1. OCI Cohere 格式: {"apiFormat": "COHERE", "text": "你好", "pad": "..."}
+                            # 1. OCI Cohere format: {"apiFormat": "COHERE", "text": "Hello", "pad": "..."}
                             if 'apiFormat' in chunk and chunk.get('apiFormat') == 'COHERE':
                                 text = chunk.get('text', '')
 
-                            # 2. OCI Generic/Grok 格式: {"index": 0, "message": {"role": "ASSISTANT", "content": [{"type": "TEXT", "text": "你好"}]}, "pad": "..."}
+                            # 2. OCI Generic/Grok format: {"index": 0, "message": {"role": "ASSISTANT", "content": [{"type": "TEXT", "text": "Hello"}]}, "pad": "..."}
                             elif 'message' in chunk and isinstance(chunk.get('message'), dict):
                                 message = chunk['message']
                                 content = message.get('content', [])
                                 if content and isinstance(content, list) and len(content) > 0:
-                                    # 提取 content[0].text
+                                    # Extract content[0].text
                                     first_content = content[0]
                                     if isinstance(first_content, dict) and first_content.get('type') == 'TEXT':
                                         text = first_content.get('text', '')
 
                             if text is not None:
-                                # 转换为 OpenAI 标准格式
+                                # Convert to OpenAI standard format
                                 openai_chunk = {
                                     "id": resp_id,
                                     "object": "chat.completion.chunk",
@@ -259,7 +259,7 @@ async def handle_chat_completions(
 
                     yield "data: [DONE]\n\n"
                 except Exception as stream_err:
-                    logger.exception(f"流式响应中断: {stream_err}")
+                    logger.exception(f"Streaming response interrupted: {stream_err}")
                     yield f"data: {json.dumps({'error': str(stream_err)})}\n\n"
                     yield "data: [DONE]\n\n"
 
@@ -269,7 +269,7 @@ async def handle_chat_completions(
                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
             )
 
-        # --- 非流式响应逻辑 ---
+        # --- Non-streaming response logic ---
         raw_resp = await service.chat(
             model_name=request.model_name,
             messages=request.messages,
@@ -282,27 +282,27 @@ async def handle_chat_completions(
         )
 
         proc_time = time.time() - start_time
-        logger.info(f"请求处理完成 | 模型: {request.model_name} | 耗时: {proc_time:.2f}s")
+        logger.info(f"Request processing completed | Model: {request.model_name} | Elapsed time: {proc_time:.2f}s")
 
-        # 解析不同 Provider 的结果
+        # Parse results from different Providers
         content: str | None = None
         usage: dict[str, int] = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         tool_calls: list[ToolCall] = []
 
-        # 归一化 OpenAI 家族的 Provider 判断
+        # Normalize OpenAI family Provider judgment
         openai_family = [
             LLMProvider.CHATGPT.value,
             LLMProvider.API_DEEPSEEK.value,
             LLMProvider.API_QWEN.value
         ]
 
-        logger.debug(f"开始解析响应 | Provider: {provider} | Raw Response Type: {type(raw_resp)}")
+        logger.debug(f"Starting response parsing | Provider: {provider} | Raw Response Type: {type(raw_resp)}")
 
         if provider in openai_family:
             try:
                 msg = raw_resp.choices[0].message # type: ignore
                 content = msg.content
-                logger.debug(f"OpenAI 响应 content 长度: {len(content) if content else 0}")
+                logger.debug(f"OpenAI response content length: {len(content) if content else 0}")
                 usage = raw_resp.usage if isinstance(raw_resp.usage, dict) else raw_resp.usage.model_dump() # type: ignore
 
                 if hasattr(msg, 'tool_calls') and msg.tool_calls:
@@ -312,33 +312,33 @@ async def handle_chat_completions(
                             function={"name": tc.function.name, "arguments": tc.function.arguments} # type: ignore
                         ))
             except Exception as e:
-                logger.error(f"解析 OpenAI 响应失败: {e}")
+                logger.error(f"Failed to parse OpenAI response: {e}")
                 logger.error(f"Raw Response: {raw_resp}")
                 content = ""
 
         elif provider == LLMProvider.OCI.value:
-            # 1. 获取内部响应对象
+            # 1. Get internal response object
             oci_resp = raw_resp.data.chat_response # type: ignore
-            logger.debug(f"OCI 响应对象: {type(oci_resp)}")
+            logger.debug(f"OCI response object: {type(oci_resp)}")
 
-            # 2. 提取 Content (区分 Generic 格式和 Cohere 格式)
-            if hasattr(oci_resp, 'choices'): # Generic 格式 (Llama, Grok 等)
+            # 2. Extract Content (distinguish between Generic format and Cohere format)
+            if hasattr(oci_resp, 'choices'): # Generic format (Llama, Grok, etc.)
                 content = oci_resp.choices[0].message.content[0].text
-            elif hasattr(oci_resp, 'text'): # Cohere 格式
+            elif hasattr(oci_resp, 'text'): # Cohere format
                 content = getattr(oci_resp, 'text', "")
             else:
-                logger.warning(f"未知的 OCI 响应格式: {dir(oci_resp)}")
+                logger.warning(f"Unknown OCI response format: {dir(oci_resp)}")
                 content = ""
 
-            logger.debug(f"OCI 响应 content 长度: {len(content) if content else 0}")
+            logger.debug(f"OCI response content length: {len(content) if content else 0}")
 
-            # 3. 提取 Usage (核心修复点)
-            # 使用 oci.util.to_dict 将 SDK 对象转为字典，安全获取 usage 字段
+            # 3. Extract Usage (core fix point)
+            # Convert SDK object to dictionary using oci.util.to_dict to safely get usage field
             resp_dict = oci.util.to_dict(oci_resp)
             raw_usage = resp_dict.get("usage")
 
             if raw_usage:
-                # 转换 OCI 字段名到 OpenAI 标准字段名
+                # Convert OCI field names to OpenAI standard field names
                 usage = {
                     "prompt_tokens": raw_usage.get("input_tokens", 0),
                     "completion_tokens": raw_usage.get("output_tokens", 0),
@@ -348,7 +348,7 @@ async def handle_chat_completions(
                 usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 
         else:
-            logger.warning(f"未知的 Provider: {provider}")
+            logger.warning(f"Unknown Provider: {provider}")
             content = ""
 
         return ChatResponse(
@@ -363,26 +363,26 @@ async def handle_chat_completions(
         )
 
     except Exception as e:
-        logger.exception("生成对话响应时发生错误")
+        logger.exception("Error occurred while generating chat response")
         raise HTTPException(status_code=500, detail=str(e))
 
 
 def signal_handler(sig: int, frame: Any):
-    """捕捉系统信号实现优雅停机。"""
-    logger.warning(f"接收到信号 {sig}，正在退出...")
+    """Catch system signals to implement graceful shutdown."""
+    logger.warning(f"Received signal {sig}, exiting...")
     sys.exit(0)
 
 
 if __name__ == "__main__":
-    # 仅在独立模式下注册信号处理
+    # Register signal handlers only in standalone mode
     if os.environ.get("LLM_SERVICE_STANDALONE") == "1":
         signal.signal(signal.SIGINT, signal_handler)
         signal.signal(signal.SIGTERM, signal_handler)
 
-    logger.info(f"LLM 适配层已就绪 -> {SERVICE_HOST}:{SERVICE_PORT}")
+    logger.info(f"LLM adaptation layer is ready -> {SERVICE_HOST}:{SERVICE_PORT}")
     uvicorn.run(
         app,
         host=SERVICE_HOST,
         port=SERVICE_PORT,
-        log_config=None  # 完全由 Loguru 接管
+        log_config=None  # Fully managed by Loguru
     )

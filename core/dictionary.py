@@ -22,14 +22,14 @@ class DbType(IntEnum):
     WEAVIATE = 8
 
 class ChunkType(IntEnum):
-    """知识块类型枚举"""
+    """Knowledge chunk type enumeration."""
     TEXT = 1
     IMAGE = 2
     TABLE = 3
     SUMMARY = 4
 
 class FeedbackType(IntEnum):
-    """反馈类型枚举"""
+    """Feedback type enumeration."""
     NEUTRAL = 0
     POSITIVE = 1
     NEGATIVE = -1
@@ -52,7 +52,7 @@ class ProcessPriority(IntEnum):
     LOW = 1
 
 class SecurityLevel(IntEnum):
-    """Process priority enumeration."""
+    """Security level enumeration."""  # Fixed incorrect comment from original
     LOW = 1
     MEDIUM = 2
     HIGH = 3
@@ -110,7 +110,7 @@ class ToolType(IntEnum):
     CODE_EXECUTION = 7
 
 class MCPToolType(Enum):
-    """MCP工具类型枚举"""
+    """MCP tool type enumeration."""
     KB_SEARCH = "kb_search"
     FUNCTION_CALL = "function_call"
     INTERNET_SEARCH = "internet_search"
@@ -140,7 +140,7 @@ class FileCategory(IntEnum):
     OTHER = 5
 
 class EmbeddingProvider(str, Enum):
-    """支持的嵌入服务提供商枚举"""
+    """Supported embedding service provider enumeration."""
     LOCAL_BGE = "local_bge"
     LOCAL_QWEN = "local_qwen"
     API_QWEN = "api_qwen"
@@ -148,36 +148,36 @@ class EmbeddingProvider(str, Enum):
     OCI = "oci"
 
 class LLMProvider(str, Enum):
-    """支持的LLM提供商枚举"""
+    """Supported LLM provider enumeration."""
     API_DEEPSEEK = "api_deepseek"
     API_QWEN = "api_qwen"
     CHATGPT = "chatgpt"
     OCI = "oci"
 
 class RerankerProvider(str, Enum):
-    """支持的 reranker 模型枚举"""
+    """Supported reranker model enumeration."""
     LOCAL_BGE = "local_bge"
     LOCAL_QWEN = "local_qwen"
 
 class VLMProvider(str, Enum):
-    """支持的 VLM 提供商枚举"""
+    """Supported VLM provider enumeration."""
     API_QWEN = "api_qwen"
     CHATGPT = "chatgpt"
 
-# 服务类型枚举
+# Service type enumeration
 class ServiceType(str, Enum):
-    INTERNAL = "internal"    # 内部服务
-    EXTERNAL = "external"    # 外部服务
-    THIRD_PARTY = "third_party"  # 第三方服务
+    INTERNAL = "internal"    # Internal service
+    EXTERNAL = "external"    # External service
+    THIRD_PARTY = "third_party"  # Third-party service
 
-# API Key状态枚举
+# API Key status enumeration
 class APIKeyStatus(str, Enum):
     ACTIVE = "active"
     REVOKED = "revoked"
     EXPIRED = "expired"
     SUSPENDED = "suspended"
 
-# 用户Token状态枚举
+# User Token status enumeration
 class UserTokenStatus(str, Enum):
     ACTIVE = "active"
     REVOKED = "revoked"

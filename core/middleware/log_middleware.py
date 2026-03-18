@@ -4,30 +4,30 @@ from core.config.settings import get_app_config
 from pathlib import Path
 import time
 
-# 记录已初始化的服务 API 日志
+# Record initialized service API logs
 _initialized_services = set()
 
 def setup_api_access_logger(service_name: str, log_dir: str, rotation: str = "100 MB", retention: str = "10 days"):
-    """为指定服务初始化 API 访问日志的独立文件处理器。
+    """Initialize independent file handler for API access logs of the specified service.
 
     Args:
-        service_name: 服务名称（如 main, llm, vlm, embedding, reranker, parser）
-        log_dir: 日志目录
-        rotation: 日志轮转策略
-        retention: 日志保留时间
+        service_name: Service name (e.g., main, llm, vlm, embedding, reranker, parser)
+        log_dir: Log directory
+        rotation: Log rotation strategy
+        retention: Log retention period
     """
     global _initialized_services
 
-    # 为每个服务创建独立的日志文件
+    # Create independent log file for each service
     log_filename = f"api_access_{service_name}.log"
     log_path = Path(log_dir) / log_filename
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # 检查是否已初始化
+    # Check if already initialized
     if service_name in _initialized_services:
         return
 
-    # 手动添加文件处理器（不调用 setup()，避免影响主 logger）
+    # Manually add file handler (do not call setup() to avoid affecting main logger)
     logger.add(
         str(log_path),
         rotation=rotation,
@@ -45,57 +45,57 @@ def setup_api_access_logger(service_name: str, log_dir: str, rotation: str = "10
 
 
 def get_status_color(status_code: int) -> str:
-    """根据 HTTP 状态码返回对应的颜色标记。
+    """Return corresponding color marker based on HTTP status code.
 
     Args:
-        status_code: HTTP 状态码
+        status_code: HTTP status code
 
     Returns:
-        Loguru 颜色标记字符串
+        Loguru color marker string
     """
     if 200 <= status_code < 300:
-        # 2xx 成功 - 绿色
+        # 2xx Success - Green
         return "<green>"
     elif 300 <= status_code < 400:
-        # 3xx 重定向 - 蓝色
+        # 3xx Redirection - Blue
         return "<blue>"
     elif 400 <= status_code < 500:
-        # 4xx 客户端错误 - 黄色
+        # 4xx Client Error - Yellow
         return "<yellow>"
     elif 500 <= status_code < 600:
-        # 5xx 服务器错误 - 红色
+        # 5xx Server Error - Red
         return "<red>"
     else:
-        # 其他状态码 - 默认白色
+        # Other status codes - Default white
         return ""
 
 
 async def log_requests(request: Request, call_next):
     """
-    记录所有 HTTP 请求和响应的中间件。
-    根据配置文件中的 log.api_log_enabled 来决定是否启用 API 日志记录。
-    响应日志会根据 HTTP 状态码显示不同颜色。
+    Middleware to record all HTTP requests and responses.
+    Determines whether to enable API logging based on log.api_log_enabled in the configuration file.
+    Response logs display different colors according to HTTP status codes.
 
-    日志输出位置：
-    1. 控制台：所有 API 请求和响应（带颜色）
-    2. 文件：logs/api_access_{service_name}.log（不带颜色，纯净格式）
+    Log output locations:
+    1. Console: All API requests and responses (with colors)
+    2. File: logs/api_access_{service_name}.log (without colors, clean format)
 
     Args:
-        request: FastAPI 请求对象
-        call_next: 下一个中间件或路由处理函数
+        request: FastAPI request object
+        call_next: Next middleware or route handler function
 
     Returns:
-        Response: 处理后的响应对象
+        Response: Processed response object
     """
-    # 获取配置
+    # Get configuration
     settings = get_app_config()
     api_log_enabled = settings.log.api_log_enabled
 
-    # 从 app 中获取当前服务名称（需要在应用启动时设置）
+    # Get current service name from app (needs to be set during app startup)
     app = request.app
     current_service_name = getattr(app.state, 'service_name', 'main')
 
-    # 初始化当前服务的 API 访问日志文件
+    # Initialize API access log file for current service
     setup_api_access_logger(
         current_service_name,
         settings.log.dir,
@@ -105,46 +105,46 @@ async def log_requests(request: Request, call_next):
 
     start_time = time.time()
 
-    # 记录请求信息
+    # Record request information
     method = request.method
     url = str(request.url)
     client_host = request.client.host if request.client else "unknown"
     path = request.url.path
 
-    # 只在启用API日志且非文档页面时记录请求
+    # Only record requests when API logging is enabled and not a documentation page
     if api_log_enabled and path not in ["/docs", "/redoc", "/openapi.json"]:
-        # 控制台输出（带颜色）
-        logger.info(f"API请求 | {method} {url} | 客户端: {client_host}")
-        # 文件输出（纯净格式，独立文件）
+        # Console output (with colors)
+        logger.info(f"API Request | {method} {url} | Client: {client_host}")
+        # File output (clean format, independent file)
         logger.bind(service_name=f"api_access_{current_service_name}").info(
-            f"API请求 | {method} {url} | 客户端: {client_host}"
+            f"API Request | {method} {url} | Client: {client_host}"
         )
 
     try:
         response = await call_next(request)
 
-        # 计算处理时间
-        process_time = (time.time() - start_time) * 1000  # 转换为毫秒
+        # Calculate processing time
+        process_time = (time.time() - start_time) * 1000  # Convert to milliseconds
 
-        # 只在启用API日志且非文档页面时记录响应
+        # Only record responses when API logging is enabled and not a documentation page
         if api_log_enabled and path not in ["/docs", "/redoc", "/openapi.json"]:
             status_code = response.status_code
             color = get_status_color(status_code)
-            log_message = f"API响应 | {method} {url} | 状态码: {status_code} | 耗时: {process_time:.2f}ms"
+            log_message = f"API Response | {method} {url} | Status Code: {status_code} | Processing Time: {process_time:.2f}ms"
 
-            # 控制台输出（带颜色）
-            logger.opt(ansi=True).info(f"API响应 | {method} {url} | 状态码: {color}{status_code}</> | 耗时: {process_time:.2f}ms")
-            # 文件输出（纯净格式，独立文件）
+            # Console output (with colors)
+            logger.opt(ansi=True).info(f"API Response | {method} {url} | Status Code: {color}{status_code}</> | Processing Time: {process_time:.2f}ms")
+            # File output (clean format, independent file)
             logger.bind(service_name=f"api_access_{current_service_name}").info(log_message)
 
-        # 添加处理时间到响应头（始终添加）
+        # Add processing time to response header (always add)
         response.headers["X-Process-Time"] = str(process_time)
 
         return response
 
     except Exception as e:
-        # 记录异常（始终记录异常，不受配置影响）
+        # Record exception (always record exceptions, regardless of configuration)
         process_time = (time.time() - start_time) * 1000
         if path not in ["/docs", "/redoc", "/openapi.json"]:
-            logger.error(f"API异常 | {method} {url} | 错误: {str(e)} | 耗时: {process_time:.2f}ms")
+            logger.error(f"API Exception | {method} {url} | Error: {str(e)} | Processing Time: {process_time:.2f}ms")
         raise
