@@ -63,14 +63,13 @@ class LLMFullTextPreprocessor:
         return cleaned
 
     async def _build_fulltext_optimization_prompt(self, query: str) -> str:
-        """
-        构建针对混合检索优化的 JSON 格式提示词
-        """
+        """构建针对混合检索优化的 JSON 格式提示词"""
         prompt_name = get_prompt_config().fulltext_optimization
         system_prompt = await self._get_system_prompt(prompt_name)
 
+        # 只要没有获取到系统提示词，就使用硬编码的默认值，不在此处触发降级
         if not system_prompt:
-            system_prompt = f"""你是一个搜索指令专家。请将用户问题改写为适用于“全文检索”的结构化 JSON。
+            return f"""你是一个搜索指令专家。请将用户问题改写为适用于“全文检索”的结构化 JSON。
 
 ### 处理规则：
 1. **must**: 提取最核心、不可缺失的实体或术语（如产品名、错误码、版本号）。
@@ -89,7 +88,8 @@ class LLMFullTextPreprocessor:
 ### 原始问题：
 {query}
 """
-        return system_prompt
+        # 如果从 DB 获取到了提示词，进行变量替换
+        return system_prompt.replace("{query}", query) if "{query}" in system_prompt else f"{system_prompt}\n\n问题：{query}"
 
     async def _extract_optimized_query_from_response(self, llm_response: str, original_query: str) -> str:
         """
@@ -148,10 +148,13 @@ class LLMFullTextPreprocessor:
             async for chunk in self.llm_client.call_llm_model(
                 model_name=model_name,
                 prompt=prompt,
-                stream=False,
+                stream=True,
                 temperature=0.1
             ):
                 full_text += chunk
+            
+            if not full_text:
+                raise ValueError("LLM returned empty response")
             
             return await self._extract_optimized_query_from_response(full_text, query)
         except Exception as e:
@@ -171,7 +174,7 @@ class LLMFullTextPreprocessor:
                 words = jieba.lcut(cleaned)
                 result = [w for w in words if len(w) > 1 and w not in self.stopwords][:topk]
             
-            final_res = " ".join(result) if result else cleaned
+            final_res = " ".join(result) if result else cleaned # type: ignore
             logger.info(f"Jieba 降级结果: {final_res}")
             return final_res
         except Exception as e:
@@ -189,9 +192,13 @@ class LLMFullTextPreprocessor:
         async with self.oracle_session as session:
             repo = PromptRepository(session)
             try:
-                return await repo.get_prompt_by_unique_name(prompt_name)
+                # 这里改为 warning，因为有内置默认 Prompt 作为兜底
+                prompt = await repo.get_prompt_by_unique_name(prompt_name)
+                if not prompt:
+                    logger.warning(f"未在数据库中找到名为 {prompt_name} 的提示词，将使用默认配置")
+                return prompt
             except Exception as e:
-                logger.error(f"DB Prompt 获取失败: {e}")
+                logger.warning(f"DB Prompt 获取异常 (将使用默认配置): {e}")
                 return None
 
 _llm_preprocessor_instance = None
