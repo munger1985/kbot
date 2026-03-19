@@ -72,10 +72,24 @@ class AgentService:
         if not embedding_model:
             logger.warning(f"Embedding model not configured for agent {agent_id}.")
             raise NotFoundError(f"Agent {agent_id} lacks embedding model configuration.")
-        
+
         logger.debug(f"Calling embedding model: {embedding_model} for question: {question}")
         embed_resp = await self.model_client.call_embedding_model(embedding_model, [question])
+
+        # Validate embed_resp is a list and has at least one item
+        if not isinstance(embed_resp, list):
+            logger.error(f"Embedding response is not a list: {type(embed_resp)}, content: {embed_resp}")
+            raise InternalServerError(f"Embedding service returned unexpected type: {type(embed_resp).__name__}")
+
+        if not embed_resp:
+            logger.error(f"Embedding service returned empty list for question: {question}")
+            raise InternalServerError("Embedding service returned empty result")
+
         query_vec = embed_resp[0].embedding
+        if not query_vec:
+            logger.error(f"Embedding vector is empty for question: {question}")
+            raise InternalServerError("Embedding vector is empty")
+
         model_params["query_vec"] = query_vec 
 
         llm_model = model_params.get("llm_model_name")

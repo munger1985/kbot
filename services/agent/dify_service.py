@@ -18,15 +18,20 @@ class DifyService:
         self.security_level = 9  # Level 9 bypasses security checks
         self.user_id="dify_system"
 
-    async def search(self, 
-                    agent_id: int, 
-                    question: str, 
+    async def search(self,
+                    agent_id: int,
+                    question: str,
                     session_id: str,
                     background_tasks: BackgroundTasks | None = None
                     ) -> dict:
         """
         Agent interaction for Dify (Search + Record Persistence).
         """
+        # Validate and normalize question parameter
+        if not isinstance(question, str):
+            logger.warning(f"Question is not a string, got type: {type(question).__name__}, converting to string")
+            question = str(question)
+
         request_time = datetime.now(tz=timezone.utc)
         logger.info(f"Processing Dify request for session {session_id}, Agent {agent_id}")
 
