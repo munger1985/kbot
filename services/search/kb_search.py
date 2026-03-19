@@ -55,7 +55,7 @@ class TxtBaseSearch:
         start_time = time.time()
         logger.debug(f"开始混合分层搜索，问题: {question}")
 
-        # 1. 执行检索任务
+        # 执行检索任务
         if not query_vec:
             logger.warning("向量为空，只进行全文检索")
             fulltext_raw = await self.serch_by_full_text(kb_id, security, question, search_top_k, do_rerank, weight, llm_model, tags)
@@ -67,8 +67,10 @@ class TxtBaseSearch:
             )
         
 
-        # 3. 分别对 rerank 和 norerank 组进行融合
-        # 注意：这里假设 search_by_vector 等方法返回的 key 是确定的
+        # 分别对 rerank 和 norerank 组进行融合
+        logger.debug(f"Vector IDs: {[r.chunk_id for r in vector_raw.get('rerank_result', [])]}")
+        logger.debug(f"Fulltext IDs: {[r.chunk_id for r in fulltext_raw.get('rerank_result', [])]}")
+
         final_rerank = self.rrf_merge(search_top_k=search_top_k, weight=weight, results_list=[
             vector_raw.get("rerank_result", []),
             fulltext_raw.get("rerank_result", [])
