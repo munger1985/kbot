@@ -1,7 +1,7 @@
 import math
 from loguru import logger
-from typing import List, Dict, Any, Optional, Sequence
-from sqlalchemy import select, update, delete, and_, or_, func, text, literal_column, Boolean
+from typing import Any, Optional, Sequence
+from sqlalchemy import text, select, update, delete, func, and_, or_, literal_column, Float
 from dao.entities import TxtChunkEntity
 from core.exceptions import DatabaseException, DataNotFoundException
 from .base_repo import BaseRepository
@@ -15,12 +15,12 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
     """
     
 
-    async def create(self, chunks: List[TxtChunkEntity]):
+    async def create(self, chunks: list[TxtChunkEntity]):
         """
         Batch create text chunk records
         Adapt to structured fields: path_names, structure_level, chunk_type
 
-        :param chunks: List of TxtChunkEntity instances to create
+        :param chunks: list of TxtChunkEntity instances to create
         """
         if not chunks:
             logger.warning("Empty chunk list provided for creation, skipping execution")
@@ -61,13 +61,13 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
     async def vector_search(
         self,
         kb_id: int,
-        query_vec: List[float],
+        query_vec: list[float],
         security: int,
         similarity_threshold: float = 0.5,
         search_top_k: int = 10,
-        tags: List[str] = [],
+        tags: list[str] = [],
         path_filter: Optional[str] = None
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Vector similarity search (Oracle version)
         Note: Oracle 21c+ or vector extensions required for vector operations
@@ -76,9 +76,9 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
         :param security: Security level filter (records with level <= security will be returned)
         :param similarity_threshold: Minimum similarity score threshold (0.0-1.0)
         :param search_top_k: Maximum number of results to return
-        :param tags: List of tags to filter results
+        :param tags: list of tags to filter results
         :param path_filter: Path name filter (match any in path_names array)
-        :return: List of search results with similarity scores
+        :return: list of search results with similarity scores
         """
         try:
             # 1. Safety check: Ensure threshold is a float
@@ -94,7 +94,7 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
             # 3. Add path filter
             if path_filter:
                 filter_conditions.append(
-                    text("JSON_EXISTS(path_names, '$[*]?(@ == :p_filter)')").bindparams(p_filter=path_filter)
+                    text("JSON_EXISTS(path_names, '$[*]?(@ == :p_filter)')").bindparams(p_filter=path_filter) # type: ignore
                 )
 
             # 4. Add tag filter
@@ -162,9 +162,9 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
         keyword: str,
         security: int,
         search_top_k: int = 10,
-        tags: List[str] = [],
+        tags: list[str] = [],
         path_filter: Optional[str] = None
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Full text search (Oracle version)
         Uses Oracle TEXT full-text index or LIKE pattern matching
@@ -172,9 +172,9 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
         :param keyword: Search keyword/phrase
         :param security: Security level filter (records with level <= security will be returned)
         :param search_top_k: Maximum number of results to return
-        :param tags: List of tags to filter results
+        :param tags: list of tags to filter results
         :param path_filter: Path name filter (match any in path_names array)
-        :return: List of search results with simulated scores
+        :return: list of search results with simulated scores
         """
         try:
             # 1. Build base filter conditions
@@ -244,12 +244,12 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
             logger.error(f"Oracle full text search failed: {str(e)}")
             raise DatabaseException("Oracle full text search execution failed", original_error=e)
 
-    async def delete_by_file_ids(self, file_ids: List[str]):
+    async def delete_by_file_ids(self, file_ids: list[str]):
         """
         Delete text chunk records by file IDs
         
         :param kb_id: Knowledge base unique identifier
-        :param file_ids: List of file IDs to delete chunks for
+        :param file_ids: list of file IDs to delete chunks for
         :return: Number of deleted records
         :raises DataNotFoundException: If no records found for the given file IDs
         """
@@ -295,7 +295,7 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
         Get all text chunks for a file (exclude embedding to save memory)
         
         :param file_id: File unique identifier
-        :return: List of TxtChunkEntity instances (without embedding data)
+        :return: list of TxtChunkEntity instances (without embedding data)
         """
         try:
             # Build query
@@ -395,7 +395,7 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
         Update tags for text chunks by file ID
         
         :param file_id: File unique identifier
-        :param tags: List of tags to update
+        :param tags: list of tags to update
         :raises DataNotFoundException: If no records found for the given file ID
         """
         try:
