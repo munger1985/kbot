@@ -3,7 +3,7 @@ from loguru import logger
 from typing import Any, Optional, Sequence
 from sqlalchemy import text, select, update, delete, func, and_, or_, literal_column, Float
 from dao.entities import TxtChunkEntity
-from core.exceptions import DatabaseException, DataNotFoundException
+from core.exceptions import DatabaseException, DataNotFoundException, safe_log_error
 from .base_repo import BaseRepository
 from utils.oracle_vec_handler import OracleVecHandler
 from utils.common import safe_read_content
@@ -153,7 +153,7 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
             return results
 
         except Exception as e:
-            logger.error(f"Vector search failed: {str(e)}")
+            safe_log_error("Vector search failed", e)
             raise DatabaseException("Exception occurred during vector search execution", original_error=e)
 
     async def full_text_search(
