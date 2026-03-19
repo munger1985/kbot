@@ -39,7 +39,7 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
 
                 # Convert embeddings to Oracle array format
                 for chunk in batch_chunks:
-                    chunk.embedding = vec_handler.convert(chunk.embedding)
+                    chunk.embedding = vec_handler.convert(chunk.embedding) # type: ignore
                     logger.debug(f"Converted embedding for chunk {chunk.chunk_id}, type: {type(chunk.embedding)}")
 
                 # Add batch entities to session
@@ -91,13 +91,13 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
             # 2. Add path filter
             if path_filter:
                 # Use text() to directly specify the SQL expression with bind parameters
-                filter_conditions.append(text("JSON_EXISTS(path_names, '$[*]?(@ == :path)').bindparams(path=path_filter)"))
+                filter_conditions.append(text("JSON_EXISTS(path_names, '$[*]?(@ == :path)').bindparams(path=path_filter)")) # type: ignore
 
             # 3. Add tag filter
             if tags:
                 tag_conditions = []
                 for tag in tags:
-                    tag_conditions.append(text(f"JSON_EXISTS(biz_metadata, '$.tags[*]?(@ == :tag_{i}]')").bindparams(**{f"tag_{i}": tag}))
+                    tag_conditions.append(text(f"JSON_EXISTS(biz_metadata, '$.tags[*]?(@ == :tag_{i}]')").bindparams(**{f"tag_{i}": tag})) # type: ignore
                 if tag_conditions:
                     filter_conditions.append(or_(*tag_conditions))
 
@@ -185,7 +185,7 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
             # 2. Add path filter
             if path_filter:
                 # Use text() with bind parameter
-                filter_conditions.append(text("JSON_EXISTS(path_names, '$[*]?(@ == :path_filter)').bindparams(path_filter=path_filter)"))
+                filter_conditions.append(text("JSON_EXISTS(path_names, '$[*]?(@ == :path_filter)').bindparams(path_filter=path_filter)")) # type: ignore
 
             # 3. Add tag filter
             if tags:
@@ -200,7 +200,7 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
             if keyword and keyword.strip():
                 # Bind the python 'keyword' variable to the SQL ':keyword' parameter
                 filter_conditions.append(
-                    text("CONTAINS(content, :keyword) > 0").bindparams(keyword=keyword.strip())
+                    text("CONTAINS(content, :keyword) > 0").bindparams(keyword=keyword.strip()) # type: ignore
                 )
 
             # 5. Execute query

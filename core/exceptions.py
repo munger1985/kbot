@@ -142,7 +142,10 @@ def handle_exception(e: Exception, msg: str) -> NoReturn:
     if isinstance(e, DataConflictException):
         raise ParamValueError(e.message)
     if isinstance(e, (DatabaseException)):
-        logger.error(f"{msg}: {e.original_error}")
+        # 输出详细错误日志，包括原始异常的堆栈信息
+        logger.error(f"{msg}: {e.message}")
+        if e.original_error:
+            logger.exception(f"原始异常详情: {type(e.original_error).__name__}", exc_info=e.original_error)
         raise InternalServerError(f"{msg}: {e.message}")
     if isinstance(e, (NotFoundError, ParamValueError, AuthorizationError, PrivilegeError, InternalServerError)):
         raise e
