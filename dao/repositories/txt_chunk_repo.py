@@ -39,7 +39,7 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
 
                 # Convert embeddings to Oracle array format
                 for chunk in batch_chunks:
-                    chunk.embedding = vec_handler.convert(chunk.embedding) # type: ignore
+                    chunk.embedding = vec_handler.convert(chunk.embedding)
                     logger.debug(f"Converted embedding for chunk {chunk.chunk_id}, type: {type(chunk.embedding)}")
 
                 # Add batch entities to session
@@ -90,16 +90,14 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
 
             # 2. Add path filter
             if path_filter:
-                # Use literal_column to allow the SQL engine to treat the expression as a boolean
-                condition = literal_column("JSON_EXISTS(path_names, '$[*]?(@ == :path)')").bindparams(path=path_filter)
-                filter_conditions.append(condition)
+                # Use text() to directly specify the SQL expression with bind parameters
+                filter_conditions.append(text("JSON_EXISTS(path_names, '$[*]?(@ == :path)').bindparams(path=path_filter)"))
 
             # 3. Add tag filter
             if tags:
                 tag_conditions = []
                 for tag in tags:
-                    condition = literal_column("JSON_EXISTS(biz_metadata, '$.tags[*]?(@ == :tag)')").bindparams(tag=tag)
-                    tag_conditions.append(condition)
+                    tag_conditions.append(text(f"JSON_EXISTS(biz_metadata, '$.tags[*]?(@ == :tag_{i}]')").bindparams(**{f"tag_{i}": tag}))
                 if tag_conditions:
                     filter_conditions.append(or_(*tag_conditions))
 
@@ -128,12 +126,13 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
                     similarity_expr.label("similarity_score")
                 )
                 .where(and_(*filter_conditions))
-                .having(text("similarity_score >= :threshold").bindparams(threshold=similarity_threshold))
+                .where(text("similarity_score >= :threshold"))
                 .order_by(text("similarity_score DESC"))
                 .limit(search_top_k)
             )
-
-            result = await self.session.execute(stmt)
+            
+            # Bind parameters separately
+            result = await self.session.execute(stmt, {"threshold": similarity_threshold})
             chunks = result.fetchall()
 
             # 6. Format results
@@ -185,32 +184,22 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
 
             # 2. Add path filter
             if path_filter:
-                # Use literal_column with type_=Boolean to satisfy the type checker
-                path_cond = literal_column(
-                    "JSON_EXISTS(path_names, '$[*]?(@ == :path)')", 
-                    type_=Boolean
-                ).bindparams(path=path_filter)
-                filter_conditions.append(path_cond)
+                # Use text() with bind parameter
+                filter_conditions.append(text("JSON_EXISTS(path_names, '$[*]?(@ == :path_filter)').bindparams(path_filter=path_filter)"))
 
             # 3. Add tag filter
             if tags:
                 tag_conditions = []
-                for tag in tags:
-                    tag_cond = literal_column(
-                        "JSON_EXISTS(biz_metadata, '$.tags[*]?(@ == :tag)')", 
-                        type_=Boolean
-                    ).bindparams(tag=tag)
-                    tag_conditions.append(tag_cond)
+                for i, tag in enumerate(tags):
+                    tag_conditions.append(text(f"JSON_EXISTS(biz_metadata, '$.tags[*]?(@ == :tag_{i}]').bindparams(**{{f'tag_{i}': tag}})"))
                 
                 if tag_conditions:
                     filter_conditions.append(or_(*tag_conditions))
 
             # 4. Add keyword search
             if keyword.strip():
-                # CONTAINS returns a number in Oracle, so we compare > 0 to get a boolean
-                filter_conditions.append(
-                    literal_column("CONTAINS(content, :keyword) > 0", type_=Boolean).bindparams(keyword=keyword)
-                )
+                # Use text() to specify the SQL expression
+                filter_conditions.append(text("CONTAINS(content, :keyword) > 0"))
 
             # 5. Execute query
             stmt = (

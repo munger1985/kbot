@@ -324,12 +324,26 @@ class AgentService:
             if data == '[DONE]': return
             try:
                 js = json.loads(data)
+                # Handle error responses
+                if 'error' in js:
+                    logger.error(f"LLM error response: {js.get('error')}")
+                    return
                 content = js.get("choices", [{}])[0].get("delta", {}).get("content")
                 if content: chunks.append(content)
-            except: pass
+            except (json.JSONDecodeError, KeyError, IndexError, AttributeError) as e:
+                logger.debug(f"Failed to parse chunk: {e}, chunk: {chunk[:100] if chunk else ''}")
         elif isinstance(chunk, dict):
-            content = chunk.get("choices", [{}])[0].get("delta", {}).get("content")
-            if content: chunks.append(content)
+            try:
+                # Handle error responses
+                if 'error' in chunk:
+                    logger.error(f"LLM error response: {chunk.get('error')}")
+                    return
+                content = chunk.get("choices", [{}])[0].get("delta", {}).get("content")
+                if content: chunks.append(content)
+            except (KeyError, IndexError, AttributeError) as e:
+                logger.debug(f"Failed to parse dict chunk: {e}, chunk keys: {chunk.keys() if chunk else ''}")
+        else:
+            logger.debug(f"Unknown chunk type: {type(chunk)}, content: {str(chunk)[:100] if chunk else ''}")
 
     async def _process_answer(self, chunks) -> str:
         """Joins accumulated chunks into a single string."""

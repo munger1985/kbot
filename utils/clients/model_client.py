@@ -211,8 +211,13 @@ class AIModelClient():
                         logger.error(msg)
                         raise InternalServerError(msg)
 
-                    async for raw_chunk in response.content:
-                        yield raw_chunk.decode('utf-8')
+                    # Read SSE response line by line and yield raw lines
+                    async for line in response.content:
+                        try:
+                            yield line.decode('utf-8')
+                        except UnicodeDecodeError as e:
+                            logger.warning(f"Failed to decode chunk: {e}")
+                            continue
         except aiohttp.ClientConnectorError as e:
             msg = f"Failed to connect to LLM service {service_host}:{service_port}, please check if service is running"
             logger.error(msg)
@@ -222,9 +227,8 @@ class AIModelClient():
             logger.error(msg)
             raise InternalServerError(msg)
         except Exception as e:
-            msg = f"LLM service error occurred: {e}"
-            logger.error(msg)
-            raise InternalServerError(msg)
+            logger.error(f"LLM service error occurred: {e}", exc_info=True)
+            raise InternalServerError(f"LLM service error occurred: {e}")
         
 
     async def call_vlm_model(
