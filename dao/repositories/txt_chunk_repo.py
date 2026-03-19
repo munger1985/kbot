@@ -197,9 +197,11 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
                     filter_conditions.append(or_(*tag_conditions))
 
             # 4. Add keyword search
-            if keyword.strip():
-                # Use text() to specify the SQL expression
-                filter_conditions.append(text("CONTAINS(content, :keyword) > 0"))
+            if keyword and keyword.strip():
+                # Bind the python 'keyword' variable to the SQL ':keyword' parameter
+                filter_conditions.append(
+                    text("CONTAINS(content, :keyword) > 0").bindparams(keyword=keyword.strip())
+                )
 
             # 5. Execute query
             stmt = (

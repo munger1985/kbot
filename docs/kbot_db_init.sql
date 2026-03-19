@@ -592,6 +592,7 @@ CREATE TABLE KBOT_BIZ_TXT_EMBEDDING (
     -- Primary key constraint
     PRIMARY KEY (CHUNK_ID) USING INDEX ENABLE
 );
+CREATE INDEX IDX_FULLSEARCH_TXT_EMBEDDING ON  KBOT_BIZ_TXT_EMBEDDING("CONTENT") INDEXTYPE IS "CTXSYS"."CONTEXT" PARAMETERS ('lexer chinese_lexer');
 
 -- Table comment
 COMMENT ON TABLE KBOT_BIZ_TXT_EMBEDDING IS 'Text Embedding Table - Stores vectorized representations of text chunks';
