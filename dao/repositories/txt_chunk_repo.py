@@ -81,40 +81,42 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
         :return: List of search results with similarity scores
         """
         try:
-            # 1. Build base filter conditions
+            # 1. Safety check: Ensure threshold is a float
+            threshold = similarity_threshold if similarity_threshold is not None else 0.5
+
+            # 2. Build base filter conditions
             filter_conditions = [
                 TxtChunkEntity.kb_id == kb_id,
                 TxtChunkEntity.is_active == 1,
                 TxtChunkEntity.security_level <= security
             ]
 
-            # 2. Add path filter
+            # 3. Add path filter
             if path_filter:
-                # Use text() to directly specify the SQL expression with bind parameters
-                filter_conditions.append(text("JSON_EXISTS(path_names, '$[*]?(@ == :path)').bindparams(path=path_filter)")) # type: ignore
+                filter_conditions.append(
+                    text("JSON_EXISTS(path_names, '$[*]?(@ == :p_filter)')").bindparams(p_filter=path_filter)
+                )
 
-            # 3. Add tag filter
+            # 4. Add tag filter
             if tags:
                 tag_conditions = []
-                for tag in tags:
-                    tag_conditions.append(text(f"JSON_EXISTS(biz_metadata, '$.tags[*]?(@ == :tag_{i}]')").bindparams(**{f"tag_{i}": tag})) # type: ignore
+                for i, tag in enumerate(tags):
+                    t_key = f"t_{i}"
+                    tag_conditions.append(
+                        text(f"JSON_EXISTS(biz_metadata, '$.tags[*]?(@ == :{t_key})')").bindparams(**{t_key: tag})
+                    )
                 if tag_conditions:
                     filter_conditions.append(or_(*tag_conditions))
 
-            # 4. Build vector similarity query
-            oracle_embedding = OracleVecHandler().convert(vec=query_vec, to_string=True)
-            # Wrap the raw SQL in literal_column so it supports .label()
+            # 5. Build vector similarity query
+            # Use VECTOR_CONSTRUCT and cast to Float so SQLAlchemy allows math operators
+            vec_str = ",".join(map(str, query_vec))
             similarity_expr = literal_column(f"""
-                UTL_VECTOR.DOT_PRODUCT(
-                    VECTOR_CONSTRUCT({','.join(map(str, oracle_embedding))}), 
-                    embedding
-                ) / (
-                    UTL_VECTOR.NORM(VECTOR_CONSTRUCT({','.join(map(str, oracle_embedding))})) *
-                    UTL_VECTOR.NORM(embedding)
-                )
-            """).label("similarity_score")
+                UTL_VECTOR.DOT_PRODUCT(VECTOR_CONSTRUCT({vec_str}), embedding) / 
+                (UTL_VECTOR.NORM(VECTOR_CONSTRUCT({vec_str})) * UTL_VECTOR.NORM(embedding))
+            """, type_=Float).label("similarity_score")
 
-            # 5. Execute query
+            # 6. Execute query
             stmt = (
                 select(
                     TxtChunkEntity.chunk_id,
@@ -126,20 +128,15 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
                     similarity_expr
                 )
                 .where(and_(*filter_conditions))
-                # NOTE: You cannot use the label "similarity_score" in the WHERE clause.
-                # You must repeat the expression or use a subquery. 
-                # For simplicity, we repeat the logic or filter in Python if the dataset is small, 
-                # but here is the SQL-correct way using the expression directly:
-                .where(similarity_expr >= similarity_threshold)
+                .where(similarity_expr >= threshold)  # Now works because type_=Float
                 .order_by(similarity_expr.desc())
                 .limit(search_top_k)
             )
-            
-            # Bind parameters separately
-            result = await self.session.execute(stmt, {"threshold": similarity_threshold})
+
+            result = await self.session.execute(stmt)
             chunks = result.fetchall()
 
-            # 6. Format results
+            # 7. Format results
             results = []
             for chunk in chunks:
                 path_names = chunk.path_names or []
@@ -156,6 +153,7 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
             return results
 
         except Exception as e:
+            logger.error(f"Vector search failed: {str(e)}")
             raise DatabaseException("Exception occurred during vector search execution", original_error=e)
 
     async def full_text_search(
