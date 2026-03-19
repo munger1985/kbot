@@ -109,12 +109,14 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
                     filter_conditions.append(or_(*tag_conditions))
 
             # 5. Build vector similarity query
-            # We use .bindparams here so the value follows the expression 
-            # into the SELECT, WHERE, and ORDER BY clauses automatically.
-            similarity_expr = literal_column("""
+            # We create a text() object (which supports bindparams) 
+            # and wrap it in literal_column (which supports .label() and .desc())
+            similarity_sql = text("""
                 UTL_VECTOR.DOT_PRODUCT(embedding, :qv) / 
                 (UTL_VECTOR.NORM(embedding) * UTL_VECTOR.NORM(:qv))
-            """, type_=Float).bindparams(qv=query_vec).label("similarity_score")
+            """).bindparams(qv=query_vec)
+
+            similarity_expr = literal_column(str(similarity_sql), type_=Float).label("similarity_score")
 
             # 6. Build the statement
             stmt = (
@@ -133,12 +135,11 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
                 .limit(search_top_k)
             )
 
-            # 7. Execute - You no longer need to pass query_vec here!
-            # SQLAlchemy will extract it from the similarity_expr.
-            result = await self.session.execute(stmt)
+            # 7. Execute - Explicitly pass the parameter dictionary here to be safe
+            result = await self.session.execute(stmt, {"qv": query_vec, "threshold": threshold})
             chunks = result.fetchall()
 
-            # 7. Format results
+            # 8. Format results
             results = []
             for chunk in chunks:
                 path_names = chunk.path_names or []
