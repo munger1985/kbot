@@ -233,31 +233,60 @@ class FileRepository(BaseRepository[FileEntity]):
             if log_msg is not None:
                 timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 new_log_entry = f"{timestamp}: {log_msg}"
-                
-                # Update status with log message
+
+                # Get current log_msg length
+                stmt = select(FileEntity.log_msg).where(FileEntity.file_id == file_id)
+                current_log_result = await self.session.execute(stmt)
+                current_log = current_log_result.scalar_one_or_none()
+
+                MAX_LOG_LENGTH = 4000
+
+                if current_log:
+                    # Calculate available space
+                    current_length = len(current_log)
+                    new_entry_length = len(new_log_entry)
+                    total_length = current_length + 1 + new_entry_length  # +1 for newline
+
+                    if total_length > MAX_LOG_LENGTH:
+                        # Truncate old log to make room for new entry
+                        keep_length = MAX_LOG_LENGTH - new_entry_length - 10  # Reserve 10 chars buffer
+                        if keep_length > 0:
+                            truncated_log = current_log[-keep_length:]  # Keep most recent entries
+                            truncated_log = "..." + truncated_log if truncated_log.startswith("...") else truncated_log
+                            final_log = f"{truncated_log}\n{new_log_entry}"
+                        else:
+                            # Not enough space, only keep new entry
+                            final_log = f"...{new_log_entry[-(MAX_LOG_LENGTH - 50):]}"  # Keep last part of new entry
+                    else:
+                        # Enough space, append normally
+                        final_log = f"{current_log}\n{new_log_entry}"
+                else:
+                    # No existing log
+                    if len(new_log_entry) > MAX_LOG_LENGTH:
+                        final_log = new_log_entry[:MAX_LOG_LENGTH]
+                    else:
+                        final_log = new_log_entry
+
+                # Update status with processed log message
                 update_stmt = update(FileEntity).where(
                     FileEntity.file_id == file_id
                 ).values(
                     status=status.value,
-                    log_msg=case(
-                        (FileEntity.log_msg.isnot(None), 
-                         func.concat(FileEntity.log_msg, "\n", new_log_entry)),
-                        else_=new_log_entry
-                    )
+                    log_msg=final_log
                 )
             else:
                 # Only update status
                 update_stmt = update(FileEntity).where(
                     FileEntity.file_id == file_id
                 ).values(status=status.value).returning(FileEntity.file_id)
-            
+
             result = await self.session.execute(update_stmt)
-            
+
             if not result.scalar():
                 raise DataNotFoundException(f"File {file_id} not found for status update")
-            
+
             logger.debug(f"Updated status for file {file_id} to {status.name}")
-            
+
         except DataNotFoundException as e:
             raise e
         except Exception as e:
