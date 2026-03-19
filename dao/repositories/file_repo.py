@@ -288,8 +288,11 @@ class FileRepository(BaseRepository[FileEntity]):
             logger.debug(f"Updated status for file {file_id} to {status.name}")
 
         except DataNotFoundException as e:
+            logger.error(f"File not found error: {str(e)}")
             raise e
         except Exception as e:
+            logger.error(f"Database error updating file status - file_id: {file_id}, status: {status}, "
+                        f"error type: {type(e).__name__}, error: {str(e)}", exc_info=True)
             raise DatabaseException("Failed to update file status", original_error=e)
     
     async def update_file_parsed_metadata(self, file_id: str, parsed_metadata: str):
