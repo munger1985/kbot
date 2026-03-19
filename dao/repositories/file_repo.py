@@ -278,18 +278,12 @@ class FileRepository(BaseRepository[FileEntity]):
                 # Only update status
                 update_stmt = update(FileEntity).where(
                     FileEntity.file_id == file_id
-                ).values(status=status.value).returning(FileEntity.file_id)
+                ).values(status=status.value)
 
-            result = await self.session.execute(update_stmt)
-
-            if not result.scalar():
-                raise DataNotFoundException(f"File {file_id} not found for status update")
+            await self.session.execute(update_stmt)
 
             logger.debug(f"Updated status for file {file_id} to {status.name}")
 
-        except DataNotFoundException as e:
-            logger.error(f"File not found error: {str(e)}")
-            raise e
         except Exception as e:
             logger.error(f"Database error updating file status - file_id: {file_id}, status: {status}, "
                         f"error type: {type(e).__name__}, error: {str(e)}", exc_info=True)
