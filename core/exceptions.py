@@ -11,6 +11,9 @@ class DatabaseException(Exception):
     def __init__(self, message: str, original_error: Exception | None = None):
         self.message = message
         self.original_error = original_error
+        if original_error:
+            logger.debug(f"[DatabaseException] Created: {message}, original error type: {type(original_error).__name__}, "
+                        f"original error: {str(original_error)}")
 
 class DataNotFoundException(DatabaseException):
     """Data not found exception"""

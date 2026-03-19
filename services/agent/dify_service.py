@@ -69,7 +69,8 @@ class DifyService:
 
         except Exception as e:
             msg = f"Dify interaction failed for Agent {agent_id}: {str(e)}"
-            logger.error(msg)
+            logger.error(f"[DifyService] {msg}, error type: {type(e).__name__}, "
+                        f"session_id: {session_id}, question: {question[:100] if len(question) > 100 else question}", exc_info=True)
             raise InternalServerError(message=msg)
 
     def _build_dify_records(self, enriched_references: list[dict]) -> list[dict]:

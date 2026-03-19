@@ -22,6 +22,7 @@ class AgentEntity(BaseEntity):
     prompt_id: Mapped[int | None] = mapped_column(Numeric(38, 0), comment="Prompt ID")
     llm_id: Mapped[int | None] = mapped_column(Numeric(38, 0), comment="Large language model ID")
     llm_params: Mapped[dict | None] = mapped_column(OracleJSON, comment="LLM parameter configuration (JSON format)")
+    embedding_model_id: Mapped[int] = mapped_column(Numeric(38, 0), comment="Embedding model ID")
     feedback_similarity_flag: Mapped[int | None] = mapped_column(Numeric(1, 0), default=0, comment="Feedback similarity switch")
     synonym_similarity_flag: Mapped[int | None] = mapped_column(Numeric(1, 0), default=0, comment="Synonym similarity switch")
     reranker_model_id: Mapped[int | None] = mapped_column(Numeric(38, 0), comment="Reranker model ID")

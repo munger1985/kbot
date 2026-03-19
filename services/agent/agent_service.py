@@ -45,13 +45,16 @@ class AgentService:
 
     async def _get_agent_and_params(self, session, agent_id: int) -> tuple[AgentEntity, dict[str, Any]]:
         """Fetches Agent entity and parses its model configurations."""
+        logger.debug(f"[AgentService] Starting _get_agent_and_params for agent_id={agent_id}")
         agent_repo = AgentRepository(session)
         agent = await agent_repo.get_by_id(agent_id)
         if not agent:
-            logger.error(f"Agent {agent_id} not found in database.")
+            logger.error(f"[AgentService] Agent {agent_id} not found in database.")
             raise NotFoundError(f"Agent {agent_id} does not exist.")
         
+        logger.debug(f"[AgentService] Successfully retrieved agent {agent_id}, parsing model params...")
         model_params = await self._get_model_params(agent)
+        logger.debug(f"[AgentService] Model params retrieved for agent {agent_id}: embedding={model_params.get('embedding_model_name')}, llm={model_params.get('llm_model_name')}")
         return agent, model_params
 
     async def _execute_knowledge_search_pipeline(

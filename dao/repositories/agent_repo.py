@@ -1,5 +1,6 @@
 from typing import Sequence
 from sqlalchemy import select, update, delete
+from loguru import logger
 from core.exceptions import DatabaseException, DataNotFoundException
 from dao.entities import AgentEntity
 from .base_repo import BaseRepository
@@ -20,15 +21,19 @@ class AgentRepository(BaseRepository[AgentEntity]):
     async def get_by_id(self, agent_id: int) -> AgentEntity:
         """Get agent metadata by id"""
         try:
+            logger.debug(f"[AgentRepo] Attempting to get agent by id: {agent_id}")
             stmt = select(AgentEntity).where(AgentEntity.agent_id == agent_id)
             result = await self.session.execute(stmt)
             agent = result.scalar_one_or_none()
             if not agent:
+                logger.warning(f"[AgentRepo] Agent metadata {agent_id} does not exist in database")
                 raise DataNotFoundException(f"Agent metadata {agent_id} does not exist")
+            logger.debug(f"[AgentRepo] Successfully retrieved agent {agent_id}: {agent.agent_name}")
             return agent
         except DataNotFoundException as e:
             raise e
         except Exception as e:
+            logger.error(f"[AgentRepo] Failed to get agent metadata by id={agent_id}, error type: {type(e).__name__}, error: {str(e)}", exc_info=True)
             raise DatabaseException("Failed to get agent metadata by id", original_error=e)
 
     async def get_all(self) -> Sequence[AgentEntity]:
