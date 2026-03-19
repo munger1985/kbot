@@ -109,11 +109,11 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
                     filter_conditions.append(or_(*tag_conditions))
 
             # 5. Build vector similarity query
-            # Use VECTOR_CONSTRUCT and cast to Float so SQLAlchemy allows math operators
-            vec_str = ",".join(map(str, query_vec))
-            similarity_expr = literal_column(f"""
-                UTL_VECTOR.DOT_PRODUCT(VECTOR_CONSTRUCT({vec_str}), embedding) / 
-                (UTL_VECTOR.NORM(VECTOR_CONSTRUCT({vec_str})) * UTL_VECTOR.NORM(embedding))
+            # Note: We use a single bind parameter ':query_vector' 
+            # instead of VECTOR_CONSTRUCT(1, 2, 3...)
+            similarity_expr = literal_column("""
+                UTL_VECTOR.DOT_PRODUCT(embedding, :query_vector) / 
+                (UTL_VECTOR.NORM(embedding) * UTL_VECTOR.NORM(:query_vector))
             """, type_=Float).label("similarity_score")
 
             # 6. Execute query
@@ -128,12 +128,16 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
                     similarity_expr
                 )
                 .where(and_(*filter_conditions))
-                .where(similarity_expr >= threshold)  # Now works because type_=Float
+                .where(similarity_expr >= threshold)
                 .order_by(similarity_expr.desc())
                 .limit(search_top_k)
             )
 
-            result = await self.session.execute(stmt)
+            # CRITICAL: Pass the query_vec list in the execution dictionary
+            result = await self.session.execute(stmt, {
+                "query_vector": query_vec, 
+                "threshold": threshold
+            })
             chunks = result.fetchall()
 
             # 7. Format results
