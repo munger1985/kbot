@@ -82,73 +82,56 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
         :return: list of search results with similarity scores
         """
         try:
-            # 1. Initialize the parameter dictionary (The "Source of Truth" for Oracle)
+            # 1. 显式构建所有参数字典（这是解决 DPY-4010 的核心）
             all_params: dict[str, Any] = {
-                "kb_id_val": kb_id,
-                "sec_val": security,
+                "kb_id": kb_id,
+                "security": security,
                 "qv": query_vec,
-                "threshold": similarity_threshold if similarity_threshold is not None else 0.5
+                "threshold": similarity_threshold if similarity_threshold is not None else 0.5,
+                "top_k": search_top_k
             }
 
-            # 2. Build filters using raw text to ensure they use our dictionary keys
-            filter_conditions: list[Any] = [
-                text("kb_id = :kb_id_val"),
-                text("is_active = 1"),
-                text("security_level <= :sec_val")
-            ]
+            # 2. 构建基础 SQL 模版
+            # 注意：在 SELECT, WHERE, ORDER BY 中多次使用 :qv 是安全的，只要 execute 传入了字典
+            sql_query = """
+                SELECT 
+                    chunk_id, file_id, content, path_names, structure_level, chunk_metadata,
+                    (UTL_VECTOR.DOT_PRODUCT(embedding, :qv) / (UTL_VECTOR.NORM(embedding) * UTL_VECTOR.NORM(:qv))) as similarity_score
+                FROM KBOT_BIZ_TXT_EMBEDDING
+                WHERE kb_id = :kb_id 
+                AND is_active = 1 
+                AND security_level <= :security
+            """
 
-            # 3. Add path filter
+            # 3. 动态拼接路径过滤
             if path_filter:
-                filter_conditions.append(text("JSON_EXISTS(path_names, '$[*]?(@ == :p_filter)')"))
+                sql_query += " AND JSON_EXISTS(path_names, '$[*]?(@ == :p_filter)')"
                 all_params["p_filter"] = path_filter
 
-            # 4. Add tag filter
+            # 4. 动态拼接标签过滤
             if tags:
-                tag_conds = []
+                tag_clauses = []
                 for i, tag in enumerate(tags):
-                    t_key = f"t_val_{i}"
-                    tag_conds.append(text(f"JSON_EXISTS(biz_metadata, '$.tags[*]?(@ == :{t_key})')"))
+                    t_key = f"t_{i}"
+                    tag_clauses.append(f"JSON_EXISTS(biz_metadata, '$.tags[*]?(@ == :{t_key})')")
                     all_params[t_key] = tag
-                
-                if tag_conds:
-                    # or_ works fine with text() objects
-                    filter_conditions.append(or_(*tag_conds))
+                if tag_clauses:
+                    sql_query += f" AND ({' OR '.join(tag_clauses)})"
 
-            # 5. Build vector similarity expression
-            # We use :qv which matches the key in our all_params dict
-            similarity_sql = """
-                UTL_VECTOR.DOT_PRODUCT(embedding, :qv) / 
-                (UTL_VECTOR.NORM(embedding) * UTL_VECTOR.NORM(:qv))
+            # 5. 拼接排序和阈值（Oracle 不支持在 WHERE 中直接用别名，所以重复表达式）
+            sql_query += """
+                AND (UTL_VECTOR.DOT_PRODUCT(embedding, :qv) / (UTL_VECTOR.NORM(embedding) * UTL_VECTOR.NORM(:qv))) >= :threshold
+                ORDER BY similarity_score DESC
+                FETCH FIRST :top_k ROWS ONLY
             """
-            similarity_expr = literal_column(similarity_sql, type_=Float).label("similarity_score")
 
-            # 6. Construct the statement
-            stmt = select(
-                TxtChunkEntity.chunk_id,
-                TxtChunkEntity.file_id,
-                TxtChunkEntity.content,
-                TxtChunkEntity.path_names,
-                TxtChunkEntity.structure_level,
-                TxtChunkEntity.chunk_metadata,
-                similarity_expr
-            )
-
-            # Chaining .where() is the safest way to avoid type-checking errors
-            for condition in filter_conditions:
-                stmt = stmt.where(condition)
-
-            # Apply threshold (using the :threshold placeholder from our dict)
-            stmt = stmt.where(similarity_expr >= text(":threshold"))
-            
-            # Apply ordering and limit
-            stmt = stmt.order_by(similarity_expr.desc()).limit(search_top_k)
-
-            # 7. EXECUTE with the consolidated dictionary
-            # This is what finally clears the DPY-4010 error
+            # 6. 直接执行 text() 语句
+            # 使用 text().bindparams() 强制锁定参数，并再次在 execute 中传入确保万无一失
+            stmt = text(sql_query).bindparams(**all_params)
             result = await self.session.execute(stmt, all_params)
             chunks = result.fetchall()
 
-            # 8. Format results
+            # 7. 格式化结果
             results = []
             for chunk in chunks:
                 path_names = chunk.path_names or []
@@ -156,7 +139,7 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
                     "id": chunk.chunk_id,
                     "file_id": chunk.file_id,
                     "content": chunk.content,
-                    "path": " > ".join(path_names),
+                    "path": " > ".join(path_names) if isinstance(path_names, list) else "",
                     "structure_level": chunk.structure_level,
                     "metadata": chunk.chunk_metadata,
                     "score": float(chunk.similarity_score) if chunk.similarity_score else 0.0
@@ -165,7 +148,7 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
             return results
 
         except Exception as e:
-            # Re-raise with your custom handler
+            logger.error(f"Oracle vector search failed: {str(e)}")
             raise DatabaseException("Exception occurred during vector search execution", original_error=e)
 
     async def full_text_search(
