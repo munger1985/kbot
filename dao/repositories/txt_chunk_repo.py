@@ -1,8 +1,8 @@
 import math
 from loguru import logger
 from typing import Any, Sequence
-from sqlalchemy import text, select, update, delete, func, and_, or_, literal_column, Float
-from sqlalchemy.sql import Executable, ClauseElement
+from sqlalchemy import text, select, update, delete, func, and_, or_, Float, literal_column, bindparam
+from sqlalchemy.sql import ClauseElement
 from dao.entities import TxtChunkEntity
 from core.exceptions import DatabaseException, DataNotFoundException, safe_log_error
 from .base_repo import BaseRepository
@@ -82,66 +82,68 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
         :return: list of search results with similarity scores
         """
         try:
-            # 1. Initialize the bind dictionary with base parameters
-            # Use simple keys to avoid collision with SQLAlchemy internal param names
-            bind_params = {
-                "kb_id_val": kb_id,
-                "sec_val": security,
-                "qv": query_vec,
-                "threshold": similarity_threshold if similarity_threshold is not None else 0.5
-            }
+            # 1. Prepare base threshold
+            threshold = similarity_threshold if similarity_threshold is not None else 0.5
 
-            # 2. Build base filter conditions using raw text + manual binding
-            filter_conditions: list[ClauseElement] = [
-                text("kb_id = :kb_id_val"),
-                text("is_active = 1"),
-                text("security_level <= :sec_val")
+            # 2. Build filter conditions (Use Any to avoid strict ClauseElement type errors)
+            filter_conditions: list[Any] = [
+                TxtChunkEntity.kb_id == kb_id,
+                TxtChunkEntity.is_active == 1,
+                TxtChunkEntity.security_level <= security
             ]
 
             # 3. Add path filter
             if path_filter:
-                filter_conditions.append(text("JSON_EXISTS(path_names, '$[*]?(@ == :p_filter)')"))
-                bind_params["p_filter"] = path_filter
+                filter_conditions.append(
+                    text("JSON_EXISTS(path_names, '$[*]?(@ == :p_filter)')").bindparams(p_filter=path_filter)
+                )
 
             # 4. Add tag filter
             if tags:
                 tag_conds = []
                 for i, tag in enumerate(tags):
                     t_key = f"t_val_{i}"
-                    tag_conds.append(text(f"JSON_EXISTS(biz_metadata, '$.tags[*]?(@ == :{t_key})')"))
-                    bind_params[t_key] = tag
+                    tag_conds.append(
+                        text(f"JSON_EXISTS(biz_metadata, '$.tags[*]?(@ == :{t_key})')").bindparams(**{t_key: tag})
+                    )
                 if tag_conds:
                     filter_conditions.append(or_(*tag_conds))
 
             # 5. Build vector similarity expression
-            similarity_sql_str = """
+            # IMPORTANT: We use bindparam() as an object to ensure the data stays attached to the SQL
+            qv_bind = bindparam("qv", value=query_vec)
+            
+            # Note: We repeat the qv_bind logic in the string
+            similarity_sql = """
                 UTL_VECTOR.DOT_PRODUCT(embedding, :qv) / 
                 (UTL_VECTOR.NORM(embedding) * UTL_VECTOR.NORM(:qv))
             """
-            similarity_expr = literal_column(similarity_sql_str, type_=Float).label("similarity_score")
+            
+            # Wrapping in literal_column + type_=Float allows for similarity_expr >= threshold
+            similarity_expr = literal_column(similarity_sql, type_=Float).label("similarity_score")
 
-            # 6. Construct the statement
+            # 6. Build the statement using chained .where() for better type safety
             stmt = select(
-                    TxtChunkEntity.chunk_id,
-                    TxtChunkEntity.file_id,
-                    TxtChunkEntity.content,
-                    TxtChunkEntity.path_names,
-                    TxtChunkEntity.structure_level,
-                    TxtChunkEntity.chunk_metadata,
-                    similarity_expr
-                )
-           # Apply each condition one by one (SQLAlchemy treats these as AND)
-            for condition in filter_conditions:
-                stmt = stmt.where(condition)
+                TxtChunkEntity.chunk_id,
+                TxtChunkEntity.file_id,
+                TxtChunkEntity.content,
+                TxtChunkEntity.path_names,
+                TxtChunkEntity.structure_level,
+                TxtChunkEntity.chunk_metadata,
+                similarity_expr
+            )
 
-            # Apply the similarity threshold (using text() to match our manual bind)
-            stmt = stmt.where(similarity_expr >= text(":threshold"))
+            # Apply basic filters
+            for cond in filter_conditions:
+                stmt = stmt.where(cond)
 
-            # Apply ordering and limit
-            stmt = stmt.order_by(similarity_expr.desc()).limit(search_top_k)
+            # Apply threshold and order
+            stmt = stmt.where(similarity_expr >= threshold)
+            stmt = stmt.order_by(similarity_expr.desc())
+            stmt = stmt.limit(search_top_k)
 
-            # 7. Execute with the full bind dictionary
-            result = await self.session.execute(stmt, bind_params)
+            # 7. Execute - pass the vector and threshold explicitly to satisfy the literal_column
+            result = await self.session.execute(stmt, {"qv": query_vec})
             chunks = result.fetchall()
 
             # 8. Format results
@@ -161,7 +163,7 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
             return results
 
         except Exception as e:
-            # Use your custom exception handling
+            logger.error(f"Oracle vector search failed: {str(e)}")
             raise DatabaseException("Exception occurred during vector search execution", original_error=e)
 
     async def full_text_search(
