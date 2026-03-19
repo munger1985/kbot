@@ -35,7 +35,8 @@ class TxtBaseSearch:
             merged.append(res)
         
         merged.sort(key=lambda x: x.score, reverse=True)
-        return merged[:search_top_k]
+        safe_top_k = int(search_top_k) if search_top_k is not None else 10
+        return merged[:safe_top_k]
     
     async def search(self,
                      kb_id: int,
