@@ -15,6 +15,28 @@ class TxtBaseSearch:
     def oracle_session(self):
         return get_session()
 
+    def rrf_merge(self, search_top_k: int, weight: float, results_list: list[list[TxtBaseSearchResult]]) -> list[TxtBaseSearchResult]:
+        """定义内部融合逻辑 (Reciprocal Rank Fusion)"""
+        k = 60
+        score_map = {}
+        chunk_map = {}
+        
+        for results in results_list:
+            for rank, r in enumerate(results, 1):
+                score_map[r.chunk_id] = score_map.get(r.chunk_id, 0) + (1.0 / (k + rank))
+                chunk_map[r.chunk_id] = r
+        
+        merged = []
+        for cid, rrf_score in score_map.items():
+            res = chunk_map[cid]
+            # 层级增强：标题类权重加成
+            level_boost = 1.2 if (0 < res.structure_level < 3) else 1.0
+            res.score = rrf_score * level_boost * weight
+            merged.append(res)
+        
+        merged.sort(key=lambda x: x.score, reverse=True)
+        return merged[:search_top_k]
+    
     async def search(self,
                      kb_id: int,
                      question: str,
@@ -43,37 +65,16 @@ class TxtBaseSearch:
                 self.search_by_vector(kb_id, security, query_vec, threshold, search_top_k, do_rerank, weight, tags),
                 self.serch_by_full_text(kb_id, security, question, search_top_k, do_rerank, weight, llm_model, tags)
             )
-
-        # 2. 定义内部融合逻辑 (Reciprocal Rank Fusion)
-        def rrf_merge(results_list: list[list[TxtBaseSearchResult]]) -> list[TxtBaseSearchResult]:
-            k = 60
-            score_map = {}
-            chunk_map = {}
-            
-            for results in results_list:
-                for rank, r in enumerate(results, 1):
-                    score_map[r.chunk_id] = score_map.get(r.chunk_id, 0) + (1.0 / (k + rank))
-                    chunk_map[r.chunk_id] = r
-            
-            merged = []
-            for cid, rrf_score in score_map.items():
-                res = chunk_map[cid]
-                # 层级增强：标题类权重加成
-                level_boost = 1.2 if (0 < res.structure_level < 3) else 1.0
-                res.score = rrf_score * level_boost * weight
-                merged.append(res)
-            
-            merged.sort(key=lambda x: x.score, reverse=True)
-            return merged[:search_top_k]
+        
 
         # 3. 分别对 rerank 和 norerank 组进行融合
         # 注意：这里假设 search_by_vector 等方法返回的 key 是确定的
-        final_rerank = rrf_merge([
+        final_rerank = self.rrf_merge(search_top_k=search_top_k, weight=weight, results_list=[
             vector_raw.get("rerank_result", []),
             fulltext_raw.get("rerank_result", [])
         ])
         
-        final_norerank = rrf_merge([
+        final_norerank = self.rrf_merge(search_top_k=search_top_k, weight=weight, results_list=[
             vector_raw.get("norerank_result", []),
             fulltext_raw.get("norerank_result", [])
         ])

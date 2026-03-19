@@ -263,11 +263,15 @@ class AgentService:
     async def _run_tb_search_parallel(self, tb_tasks: list[tuple]) -> list[dict]:
         """Executes KB search tasks in parallel using asyncio.gather."""
         async_tasks = [self.tb_search.search(*task) for task in tb_tasks]
-        try:
-            return await asyncio.gather(*async_tasks)
-        except Exception as e:
-            logger.error(f"Parallel KB search failed: {e}")
-            return [{"rerank_result": [], "norerank_result": []} for _ in tb_tasks]
+        raw_results = await asyncio.gather(*async_tasks, return_exceptions=True)
+        processed_results = []
+        for i, res in enumerate(raw_results):
+            if isinstance(res, Exception):
+                logger.error(f"KB Task {i} failed with error: {res}")
+                processed_results.append({"rerank_result": [], "norerank_result": []})
+            else:
+                processed_results.append(res)
+        return processed_results
 
     async def _search_text_base(self, confs: Sequence[AgentConfEntity], security: int, question: str, 
                                 llm_model: str, query_vec: list[float], tags: list) -> tuple[list, list]:
@@ -275,9 +279,16 @@ class AgentService:
         tb_tasks = []
         for conf in confs:
             tb_tasks.append((
-                conf.tool_id, question, conf.search_topk, conf.search_score_threshold,
-                conf.reranker_flag == 1, float(conf.tool_weight or 1.0),
-                security, llm_model, query_vec, tags
+                int(conf.tool_id), 
+                str(question), 
+                int(conf.search_topk or 10), 
+                float(conf.search_score_threshold or 0.0),
+                bool(conf.reranker_flag == 1), 
+                float(conf.tool_weight or 1.0),
+                int(security), 
+                str(llm_model), 
+                query_vec, 
+                tags
             ))
 
         rerank_all, norerank_all = [], []

@@ -132,7 +132,14 @@ class LLMFullTextPreprocessor:
                 return await self._fallback_to_jieba(original_query)
 
             # 最终合并为以空格分隔的字符串
-            final_query = " ".join(keywords[:12])
+            # 确保 keywords 一定是列表
+            if not isinstance(keywords, list):
+                logger.warning(f"解析出的 keywords 类型异常: {type(keywords)}")
+                return await self._fallback_to_jieba(original_query)
+            
+            # 显式限制切片索引为整数
+            max_keys = int(12) 
+            final_query = " ".join(keywords[:max_keys])
             logger.info(f"LLM 预处理成功: {final_query}")
             return final_query
 
