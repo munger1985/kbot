@@ -27,6 +27,9 @@ class OracleJSON(TypeDecorator):
     def process_result_value(self, value, dialect):
         if value is None:
             return None
+        # 如果已经是字典/列表，直接返回，避免重复反序列化
+        if isinstance(value, (dict, list)):
+            return value
         return json.loads(value)
 
 class UniversalArray(TypeDecorator):

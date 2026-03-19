@@ -292,7 +292,7 @@ CREATE TABLE KBOT_MD_AGENT (
     DOMAIN_ID               NUMBER,
     APP_ID                  NUMBER,
     AGENT_NAME              VARCHAR2(256),
-    AGNET_DESC              VARCHAR2(512), -- Typo: Should be AGENT_DESC (retained for compatibility)
+    AGENT_DESC              VARCHAR2(512),
     WELCOME                 VARCHAR2(512),
     PROMPT_ID               NUMBER,
     LLM_ID                  NUMBER NOT NULL,
@@ -322,7 +322,7 @@ COMMENT ON COLUMN KBOT_MD_AGENT.AGENT_ID IS 'Primary key ID';
 COMMENT ON COLUMN KBOT_MD_AGENT.DOMAIN_ID IS 'Associated business domain ID';
 COMMENT ON COLUMN KBOT_MD_AGENT.APP_ID IS 'Associated application ID';
 COMMENT ON COLUMN KBOT_MD_AGENT.AGENT_NAME IS 'Agent name';
-COMMENT ON COLUMN KBOT_MD_AGENT.AGNET_DESC IS 'Agent description (typo: AGENT_DESC)';
+COMMENT ON COLUMN KBOT_MD_AGENT.AGENT_DESC IS 'Agent description';
 COMMENT ON COLUMN KBOT_MD_AGENT.WELCOME IS 'Welcome message';
 COMMENT ON COLUMN KBOT_MD_AGENT.PROMPT_ID IS 'Prompt ID';
 COMMENT ON COLUMN KBOT_MD_AGENT.LLM_ID IS 'Large Language Model ID';
