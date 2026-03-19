@@ -2,18 +2,31 @@ from pydantic import BaseModel, Field
 from typing import Any
 
 
-# 定义请求模型
+# Define request models
 class RerankerRequest(BaseModel):
-    model_name: str = Field(..., description="Reranker 模型唯一名称")
-    query: str = Field(..., description="查询文本")
-    documents: list[str] = Field(..., description="需要重排序的文档列表")
-    top_k: int | None = Field(10, description="返回的顶部文档数量（None 表示返回所有）")
+    """Request model for document reranking operations.
+    
+    Specifies the reranker model to use, query text, documents to rerank,
+    and the number of top relevant documents to return.
+    """
+    model_name: str = Field(..., description="Unique technical name of the reranker model")
+    query: str = Field(..., description="Query text to measure document relevance against")
+    documents: list[str] = Field(..., description="List of document texts to be reranked")
+    top_k: int | None = Field(10, description="Number of top relevant documents to return (None returns all documents)")
 
 class ToggleModelRequest(BaseModel):
-    """启用或禁用模型请求表单。"""
-    model_name: str = Field(..., description="模型唯一名称")
-    operation: str = Field(..., description="操作类型，'load' 或 'unload'")
+    """Request model for loading/unloading reranker models from memory.
+    
+    Used to dynamically manage model lifecycle in the model pool without
+    restarting the application.
+    """
+    model_name: str = Field(..., description="Unique technical name of the model")
+    operation: str = Field(..., description="Operation type: 'load' to load model into memory, 'unload' to remove model from memory")
 
-# 定义响应模型
+# Define response models
 class RerankerResponse(BaseModel):
-    rerankers: list[dict[str, Any]] = Field(..., description="重排序后的文档列表")
+    """Response model for document reranking operations.
+    
+    Contains the list of reranked documents with relevance scores and original indices.
+    """
+    rerankers: list[dict[str, Any]] = Field(..., description="List of reranked documents with relevance scores, each containing 'index' (original position) and 'score' (relevance score)")

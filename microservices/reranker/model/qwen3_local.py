@@ -9,92 +9,125 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from .base import BaseReranker, RerankerConfig
 
 class Qwen3RerankerConfig(RerankerConfig):
-    """Qwen3 Reranker 官方适配配置"""
-    model_path: str = Field(..., description="本地路径")
-    device: str | None = Field(None, description="设备")
-    use_fp16: bool = Field(True, description="RTX 5080/4090 建议设为 True 使用 BF16")
-    batch_size: int = Field(8, description="批处理大小")
-    # score_threshold: float = Field(-10.0, description="分数阈值")
-    max_tokens: int = Field(1024, description="最大序列长度")
+    """Qwen3 Reranker official configuration class.
+    
+    Extends base reranker configuration with Qwen3-specific parameters for
+    generative reranker architecture, hardware optimization, and batch processing.
+    """
+    model_path: str = Field(..., description="Local filesystem path to Qwen3 reranker model")
+    device: str | None = Field(None, description="Target device (cuda/cpu, auto-detected if None)")
+    use_fp16: bool = Field(True, description="Use BF16 precision (recommended for RTX 5080/4090 GPUs)")
+    batch_size: int = Field(8, description="Batch size for inference (optimized for Qwen3 architecture)")
+    max_tokens: int = Field(1024, description="Maximum input sequence length")
     instruction: str | None = Field(
         "Given a query and a relevant document, retrieve the relevance score of the document to the query.", 
-        description="官方默认指令"
+        description="Official default instruction for Qwen3 reranking task"
     )
 
 class Qwen3Reranker(BaseReranker[Qwen3RerankerConfig]):
     """
-    针对生成式 Qwen 架构优化的 Reranker 实现
-    优化点：Inference Mode、BF16 精度适配、更健壮的 Token 定位
+    Optimized reranker implementation for Qwen3 generative architecture.
+    
+    Key optimizations:
+    - PyTorch inference mode for accelerated evaluation
+    - BF16 precision optimization for RTX 50/40 series GPUs
+    - Robust token position handling for generative reranking
+    - Left-padding requirement enforcement for causal language models
+    - Precomputed token IDs to avoid redundant encoding
     """
 
     def __init__(self, config: Qwen3RerankerConfig):
+        """Initialize Qwen3 reranker with configuration.
+        
+        Args:
+            config: Qwen3-specific reranker configuration object
+        """
         super().__init__(config)
         self.model = None
         self.tokenizer = None
         self._is_initialized = False
-        # 统一处理设备对象
+        # Unified device handling with auto-detection
         self.device = torch.device(config.device or ("cuda" if torch.cuda.is_available() else "cpu"))
+        # Precomputed token IDs for "yes"/"no" tokens (relevance scoring)
         self.yes_id = None
         self.no_id = None
         
+        # Disable tokenizers parallelism to prevent deadlocks
         os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
     async def startup(self) -> None:
-        """初始化：加载模型并启用针对 RTX 50 系列的硬件优化"""
+        """Initialize Qwen3 reranker with RTX 50 series hardware optimizations.
+        
+        Loads model with optimal attention implementation, configures precision
+        settings (BF16 for modern GPUs), and precomputes critical token IDs.
+        Includes path normalization for reliable local model loading.
+        
+        Raises:
+            Exception: If model loading or initialization fails
+        """
         if self._is_initialized:
             return
 
+        # Get optimal attention implementation (Flash Attention 2 if available)
         from ...common.utils import get_optimal_attn_implementation
         attn_impl = get_optimal_attn_implementation()
 
-        # 修正本地路径格式：如果路径以 / 开头，需要确保是绝对路径
-        # Hugging Face 的 from_pretrained() 需要绝对路径格式
+        # Normalize model path for reliable local loading
+        # Hugging Face from_pretrained requires proper absolute/relative path formatting
         model_path = self.config.model_path
         if model_path and not model_path.startswith('/') and not model_path.startswith('./'):
-            # 如果是相对路径但不是 ./ 开头，添加 ./
             if '/' in model_path:
-                # 可能是相对路径，转换为绝对路径
+                # Convert relative path to absolute path
                 model_path = str(Path(model_path).resolve())
             else:
+                # Add ./ prefix to simple relative paths
                 model_path = f"./{model_path}"
-            logger.info(f"修正模型路径: {self.config.model_path} -> {model_path}")
+            logger.info(f"Normalized model path: {self.config.model_path} -> {model_path}")
 
         try:
-            # 1. 初始化 Tokenizer
-            self.tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True, local_files_only=True)
-            self.tokenizer.padding_side = "left" # 生成式 Reranker 必须左填充
+            # Step 1: Initialize tokenizer with Qwen3-specific settings
+            self.tokenizer = AutoTokenizer.from_pretrained(
+                model_path, 
+                trust_remote_code=True, 
+                local_files_only=True
+            )
+            # Critical for generative rerankers: left padding ensures last token is prediction position
+            self.tokenizer.padding_side = "left"
+            # Set pad token to EOS if not defined (Qwen3 specific)
             if self.tokenizer.pad_token is None:
                 self.tokenizer.pad_token = self.tokenizer.eos_token
 
-            # 2. 预存 Token ID (避免在推理循环中重复调用 encode)
+            # Step 2: Precompute "yes"/"no" token IDs (avoid redundant encoding in inference loop)
             self.yes_id = self.tokenizer.encode("yes", add_special_tokens=False)[-1]
             self.no_id = self.tokenizer.encode("no", add_special_tokens=False)[-1]
 
-            # 3. 加载模型：优先使用 bfloat16 (RTX 5080/4090/A100 等显卡)
+            # Step 3: Configure precision (BF16 for modern GPUs, FP32 for CPU)
             compute_dtype = torch.bfloat16 if (self.config.use_fp16 and "cuda" in self.device.type) else torch.float32
             
-            logger.info(f"🚀 加载 Qwen Reranker: {model_path} (Dtype: {compute_dtype}, Impl: {attn_impl})")
+            logger.info(f"🚀 Loading Qwen3 Reranker: {model_path} (Dtype: {compute_dtype}, Attention: {attn_impl})")
 
+            # Load Qwen3 causal language model with hardware optimizations
             self.model = AutoModelForCausalLM.from_pretrained(
                 model_path,
                 trust_remote_code=True,
-                local_files_only=True,  # 强制从本地加载
+                local_files_only=True,  # Force local loading only
                 attn_implementation=attn_impl,
                 torch_dtype=compute_dtype,
-                device_map={"": self.device} # 明确映射到单个设备
+                device_map={"": self.device}  # Explicit single device mapping
             )
+            # Set model to evaluation mode
             self.model.eval()
             
-            # CUDA 预热
+            # CUDA warmup to eliminate first-request latency
             if self.device.type == "cuda":
                 with torch.inference_mode():
                     warmup_text = "warmup"
                     self.model(**self.tokenizer([warmup_text], return_tensors="pt").to(self.device))
 
             self._is_initialized = True
-            logger.info(f"✅ Qwen3 Reranker 就绪 (Yes ID: {self.yes_id})")
+            logger.info(f"✅ Qwen3 Reranker ready (Yes token ID: {self.yes_id})")
         except Exception as e:
-            logger.error(f"❌ 加载失败: {e}")
+            logger.error(f"❌ Qwen3 Reranker initialization failed: {e}")
             raise
 
     async def rerank(
@@ -103,26 +136,46 @@ class Qwen3Reranker(BaseReranker[Qwen3RerankerConfig]):
         documents: list[str], 
         top_k: int | None = None
     ) -> list[dict[str, Any]]:
+        """
+        Perform reranking with Qwen3 generative architecture.
+        
+        Uses official Qwen3 prompt template and computes relevance scores as
+        the difference between "yes" and "no" token logits. Processes documents
+        in optimized batches with robust error handling and global reordering.
+        
+        Args:
+            query: Input query text for relevance scoring
+            documents: List of document texts to rerank
+            top_k: Number of top relevant documents to return (None returns all)
+            
+        Returns:
+            list[dict[str, Any]]: Reranked results sorted by relevance score (descending),
+                each containing "index" (original position), "score" (yes-no logit difference),
+                and "document" (original document text)
+        """
+        # Ensure model is initialized before processing
         if not self._is_initialized:
             await self.startup()
+        # Return empty list for empty document input
         if not documents:
             return []
 
         all_results = []
         
-        # 1. 批量推理
-        for i in range(0, len(documents), self.config.batch_size):
-            batch_docs = documents[i : i + self.config.batch_size]
+        # Step 1: Process documents in configured batches
+        for batch_start in range(0, len(documents), self.config.batch_size):
+            # Get current batch documents
+            batch_docs = documents[batch_start : batch_start + self.config.batch_size]
             
-            # 采用官方建议的 Prompt 结构
+            # Format inputs with official Qwen3 reranking prompt template
             formatted_texts = [
                 f"<Instruct>: {self.config.instruction}\n<Query>: {query}\n<Document>: {d}\nRelevant (yes/no):"
                 for d in batch_docs
             ]
 
             try:
-                # 2. 编码 (左填充确保最后一个 token 是预测位)
-                inputs = self.tokenizer( # type: ignore
+                # Step 2: Tokenization with left padding (critical for generative models)
+                inputs = self.tokenizer(  # type: ignore
                     formatted_texts,
                     padding=True,
                     truncation=True,
@@ -130,44 +183,59 @@ class Qwen3Reranker(BaseReranker[Qwen3RerankerConfig]):
                     return_tensors="pt"
                 ).to(self.device)
 
-                # 3. 高性能推理模式
+                # Step 3: Optimized inference with torch.inference_mode()
                 with torch.inference_mode():
-                    outputs = self.model(**inputs) # type: ignore
-                    # 获取 batch 中每个序列最后一个 token 的 logits
+                    outputs = self.model(** inputs)  # type: ignore
+                    # Get logits for last token position (prediction position)
                     last_token_logits = outputs.logits[:, -1, :] 
                     
-                    # 4. 计算得分：logit(yes) - logit(no)
-                    # 使用 float() 确保在 BF16 模式下减法精度正确
+                    # Step 4: Calculate relevance score (yes logit - no logit)
+                    # Convert to float for stable subtraction with BF16 precision
                     yes_logits = last_token_logits[:, self.yes_id].float()
                     no_logits = last_token_logits[:, self.no_id].float()
                     scores = (yes_logits - no_logits).cpu().numpy().tolist()
 
-                for j, score in enumerate(scores):
+                # Step 5: Assemble batch results with global indices
+                for batch_idx, score in enumerate(scores):
                     all_results.append({
-                        "index": i + j,
+                        "index": batch_start + batch_idx,  # Global document index
                         "score": score,
-                        "document": batch_docs[j]
+                        "document": batch_docs[batch_idx]
                     })
                     
             except Exception as e:
-                logger.error(f"❌ Batch 推理失败 [{i}]: {e}")
+                # Log error and continue processing remaining batches
+                logger.error(f"❌ Batch inference failed [{batch_start}]: {e}")
                 continue
 
-        # 5. 全局排序与过滤
+        # Step 6: Global reordering by relevance score (descending)
         all_results.sort(key=lambda x: x["score"], reverse=True)
-        # final_results = [r for r in all_results if r["score"] >= self.config.score_threshold]
         
+        # Apply top-k filtering if specified
         return all_results[:top_k] if top_k else all_results
 
     async def shutdown(self) -> None:
+        """Clean up Qwen3 reranker resources completely.
+        
+        Releases model memory, clears CUDA cache, and resets initialization state
+        to prevent memory leaks and ensure proper cleanup.
+        """
         if self.model:
+            # Delete model reference to free memory
             del self.model
+            # Clean up CUDA resources if available
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
                 torch.cuda.synchronize()
+        # Reset initialization state
         self._is_initialized = False
-        logger.info("♻️ Qwen3 Reranker 资源已完全回收")
+        logger.info("♻️ Qwen3 Reranker resources fully released")
 
     @property
     def is_initialized(self) -> bool:
+        """Check if reranker is properly initialized and ready for requests.
+        
+        Returns:
+            bool: True if initialized, False otherwise
+        """
         return self._is_initialized

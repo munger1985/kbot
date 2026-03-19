@@ -8,19 +8,30 @@ from .base import BaseVLM, VLMConfig
 
 
 class OpenAIVLMConfig(VLMConfig):
-    """OpenAI VLM 客户端配置"""
-    api_key: str = Field(..., description="API 密钥")
-    api_endpoint: str | None = Field(None, description="API 基础地址")
+    """OpenAI VLM client configuration
+    
+    Attributes:
+        api_key: API key for authentication
+        api_endpoint: Base URL for the API (optional, uses OpenAI default if None)
+        api_version: API version to use
+        max_retries: Maximum number of retries for failed requests
+        temperature: Sampling temperature (0.0-2.0)
+        timeout: Request timeout in seconds
+    """
+    api_key: str = Field(..., description="API key")
+    api_endpoint: str | None = Field(None, description="API base URL")
     api_version: str = "2023-08-01"
     max_retries: int = 3
-    temperature: float = Field(0.7, ge=0.0, le=2.0, description="采样温度")
-    timeout: int = Field(30, ge=1, description="请求超时时间")
+    temperature: float = Field(0.7, ge=0.0, le=2.0, description="Sampling temperature")
+    timeout: int = Field(30, ge=1, description="Request timeout in seconds")
 
 
 class OpenAIVLM(BaseVLM[OpenAIVLMConfig]):
     """
-    使用 OpenAI SDK 实现的多模态视觉模型客户端
-    兼容 OpenAI GPT-4o, 阿里 DashScope Qwen-VL 等兼容接口
+    Multimodal vision-language model client implemented with OpenAI SDK
+    
+    Compatible with OpenAI GPT-4o, Alibaba DashScope Qwen-VL, and other
+    OpenAI-compatible VLM APIs.
     """
 
     def __init__(self, config: OpenAIVLMConfig):
@@ -29,7 +40,11 @@ class OpenAIVLM(BaseVLM[OpenAIVLMConfig]):
         self._is_initialized: bool = False
 
     async def startup(self) -> None:
-        """初始化 OpenAI 异步客户端"""
+        """Initialize OpenAI async client
+        
+        Establishes the connection to the OpenAI-compatible API and sets up
+        the client with configured authentication and timeout settings.
+        """
         if self._is_initialized:
             return
 
@@ -41,9 +56,9 @@ class OpenAIVLM(BaseVLM[OpenAIVLMConfig]):
                 max_retries=self.config.max_retries
             )
             self._is_initialized = True
-            logger.info(f"✅ OpenAIVLM 客户端就绪: {self.model_name}")
+            logger.info(f"✅ OpenAIVLM client ready: {self.model_name}")
         except Exception as e:
-            logger.error(f"❌ 初始化 OpenAI 客户端失败: {str(e)}")
+            logger.error(f"❌ Failed to initialize OpenAI client: {str(e)}")
             raise
 
     async def inference(
@@ -53,15 +68,32 @@ class OpenAIVLM(BaseVLM[OpenAIVLMConfig]):
         **kwargs
     ) -> ChatCompletion | AsyncGenerator[ChatCompletionChunk, None]:
         """
-        执行多模态推理
+        Execute multimodal inference
+        
+        Performs vision-language inference using the configured OpenAI-compatible
+        model, supporting both text and image inputs.
+        
+        Args:
+            messages: List of message dictionaries following OpenAI VLM format
+            stream: If True, returns streaming response chunks
+            **kwargs: Additional inference parameters (overrides config values)
+        
+        Returns:
+            ChatCompletion object for non-streaming requests, or async generator
+            of ChatCompletionChunk for streaming requests
+        
+        Raises:
+            ValueError: If message format is invalid
+            APIError: If OpenAI API returns an error
+            Exception: For other unexpected errors during inference
         """
         if not self._is_initialized:
             await self.startup()
 
         if not self._validate_messages(messages):
-            raise ValueError("无效的 OpenAI VLM 消息格式，请确保 content 为包含 type: text/image_url 的列表")
+            raise ValueError("Invalid OpenAI VLM message format - ensure content is a list containing type: text/image_url items")
 
-        # 1. 动态参数聚合
+        # 1. Dynamic parameter aggregation
         payload = {
             "model": self.model_name,
             "messages": messages,
@@ -71,34 +103,44 @@ class OpenAIVLM(BaseVLM[OpenAIVLMConfig]):
             "top_p": kwargs.get("top_p"),
             "presence_penalty": kwargs.get("presence_penalty"),
             "frequency_penalty": kwargs.get("frequency_penalty"),
-            "response_format": kwargs.get("response_format"), # 支持 JSON Mode
+            "response_format": kwargs.get("response_format"),  # Supports JSON Mode
         }
 
-        # 2. 清理 None 值以防 SDK 报错
+        # 2. Clean up None values to prevent SDK errors
         api_params = {k: v for k, v in payload.items() if v is not None}
 
         try:
-            logger.debug(f"🚀 VLM 推理开始: {self.model_name} (Stream={stream})")
-            response = await self._openai_client.chat.completions.create(**api_params) # type: ignore
+            logger.debug(f"🚀 VLM inference started: {self.model_name} (Stream={stream})")
+            response = await self._openai_client.chat.completions.create(**api_params)  # type: ignore
             return response
         except APIError as e:
-            logger.error(f"❌ OpenAI API 错误: {e.code} - {e.message}")
+            logger.error(f"❌ OpenAI API error: {e.code} - {e.message}")
             raise
         except Exception as e:
-            logger.error(f"💥 VLM 推理过程中发生意外错误: {str(e)}")
+            logger.error(f"💥 Unexpected error during VLM inference: {str(e)}")
             raise
 
     def _validate_messages(self, messages: list[dict[str, Any]]) -> bool:
-        """验证消息是否符合 VLM 视觉模型规范"""
+        """Validate message format compliance with VLM vision model specifications
+        
+        Checks that messages follow the OpenAI multimodal format with proper
+        structure for text and image inputs.
+        
+        Args:
+            messages: List of message dictionaries to validate
+        
+        Returns:
+            True if messages are valid, False otherwise
+        """
         try:
             for msg in messages:
-                # 基础结构校验
+                # Basic structure validation
                 if not isinstance(msg, dict) or not {"role", "content"}.issubset(msg.keys()):
                     return False
                 if msg["role"] not in {"user", "system", "assistant"}:
                     return False
                 
-                # VLM content 必须是列表格式
+                # VLM content must be in list format
                 content = msg["content"]
                 if not isinstance(content, list):
                     return False
@@ -109,27 +151,37 @@ class OpenAIVLM(BaseVLM[OpenAIVLMConfig]):
                     
                     item_type = item["type"]
                     if item_type == "text":
-                        if "text" not in item: return False
+                        if "text" not in item:
+                            return False
                     elif item_type == "image_url":
                         if "image_url" not in item or "url" not in item["image_url"]:
                             return False
                     else:
-                        # 不支持的 content type
+                        # Unsupported content type
                         return False
             return True
         except Exception:
             return False
 
     async def shutdown(self) -> None:
-        """资源释放"""
+        """Release client resources
+        
+        Closes the OpenAI client connection and resets initialization state.
+        """
         if self._openai_client:
             await self._openai_client.close()
             self._openai_client = None
         self._is_initialized = False
-        logger.info("♻️ OpenAIVLM 客户端资源已回收")
+        logger.info("♻️ OpenAI VLM client resources recycled")
 
     async def health_check(self) -> dict[str, Any]:
-        """增强的健康检查"""
+        """Enhanced health check
+        
+        Returns current status of the VLM client including initialization state.
+        
+        Returns:
+            Dictionary containing health status information
+        """
         return {
             "status": "healthy" if self._is_initialized else "uninitialized",
             "model": self.model_name,

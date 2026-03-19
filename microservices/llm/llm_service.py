@@ -7,29 +7,63 @@ from core.dictionary import LLMProvider
 
 
 class LLMService:
-    """LLM服务类"""
+    """Central service for managing LLM model interactions.
+    
+    Provides a unified interface for:
+    - Model pool initialization and lifecycle management
+    - Model instance retrieval and warmup
+    - Standardized chat completion with cross-provider support
+    - Tool call integration (MCP compatible)
+    - Stream and non-stream response handling
+    - Provider-specific response normalization
+    
+    This service abstracts provider-specific implementations (OpenAI, OCI, etc.)
+    behind a consistent API while maintaining provider-specific optimizations.
+    """
 
     def __init__(self) -> None:
-        """初始化LLM服务。"""
+        """Initialize LLM service with empty model pool."""
         self._model_pool = LLMModelPool()
         self._initialized = False
 
     async def initialize(self):
-        """初始化LLM服务和所有模型池。 """
+        """Initialize LLM service and all model pools asynchronously.
+        
+        Idempotent method that safely initializes the model pool only once.
+        Called automatically by other methods if not explicitly initialized.
+        
+        Logs successful initialization and ensures all model metadata is loaded.
+        """
         if not self._initialized:
             await self._model_pool.initialize()
             self._initialized = True
-            logger.info("LLM服务初始化完成")
+            logger.info("LLM service initialized successfully.")
         
     async def shutdown(self):
-        """关闭LLM服务和所有模型池。"""
+        """Shut down LLM service and clean up all model resources.
+        
+        Gracefully closes all model client connections and releases resources.
+        Resets initialization state to allow re-initialization if needed.
+        """
         if self._initialized:
             await self._model_pool.shutdown()
             self._initialized = False
-            logger.info("LLM服务已关闭")
+            logger.info("LLM service shut down successfully.")
             
     async def get_llm_model(self, model_name: str) -> BaseLLM:
-        """获取指定唯一名称的嵌入模型实例。"""
+        """Retrieve an LLM model instance by its unique technical name.
+        
+        Ensures the service is initialized and loads the model if not already in the pool.
+        
+        Args:
+            model_name: Unique technical name of the model (e.g., "gpt-4", "llama3-70b")
+            
+        Returns:
+            BaseLLM: Initialized model instance ready for chat completions
+            
+        Raises:
+            RuntimeError: If model cannot be loaded from the pool
+        """
         if not self._initialized:
             await self.initialize()
 
@@ -50,33 +84,44 @@ class LLMService:
         tools: list[dict[str, Any]] | None = None,
         tool_choice: str | None = None,
     ):
-        """生成聊天响应，支持MCP工具调用
-
+        """Generate chat completion responses with MCP tool call support.
+        
+        Unified interface for chat completions across all supported LLM providers.
+        Handles message normalization, parameter aggregation, provider-specific
+        streaming logic, and error handling.
+        
         Args:
-            model_name: 模型技术名称
-            messages: 消息列表或单个提示字符串
-            stream: 是否流式传输响应
-            timeout: 超时时间（秒）
-            max_tokens: 要生成的最大令牌数
-            temperature: 采样温度
-            top_p: Top-p采样参数
-            frequency_penalty: 频率惩罚
-            presence_penalty: 存在惩罚
-            tools: MCP工具列表，支持工具调用功能
-            tool_choice: 工具选择策略，可选值为"auto"或"none"
+            model_name: Technical name of the model to use
+            messages: Input messages - either a list of role/content dictionaries
+                or a single string (interpreted as user message)
+            stream: If True, returns async generator of response chunks;
+                if False, returns complete response object
+            timeout: Request timeout in seconds (provider-specific handling)
+            max_tokens: Maximum number of tokens to generate (overrides model config)
+            temperature: Sampling temperature (0-2, higher = more random)
+            top_p: Nucleus sampling parameter (0-1)
+            frequency_penalty: Penalty for repetitive text (-2 to 2)
+            presence_penalty: Penalty for new topics (-2 to 2)
+            tools: List of MCP-compatible tool definitions for function calling
+            tool_choice: Tool selection strategy ("auto", "none", or specific tool name)
 
         Returns:
-            如果stream为True: 异步生成器，产生文本块
-            如果stream为False: 包含内容和使用统计信息的字典
+            Union[Any, AsyncGenerator[Any, None]]:
+                - If stream=True: Async generator yielding response chunks (provider-specific format)
+                - If stream=False: Complete response object with content and usage stats
+                
+        Raises:
+            RuntimeError: If model retrieval or response generation fails
+            Exception: Provider-specific errors propagated with context
         """
         try:
-            # 1. 获取模型实例（这会自动确保模型已加载）
+            # Step 1: Get model instance (ensures model is loaded and initialized)
             model = await self.get_llm_model(model_name)
-            current_provider = model.config.provider  # 统一获取方式
+            current_provider = model.config.provider  # Unified provider access
         except Exception as e:
             raise RuntimeError(f"从模型池中获取模型 {model_name} 失败: {e}")
         
-        # 准备参数
+        # Step 2: Prepare and filter generation parameters (remove None values)
         kwargs = {
             "timeout": timeout,
             "max_tokens": max_tokens,
@@ -86,17 +131,17 @@ class LLMService:
             "presence_penalty": presence_penalty
         }
 
-        # 添加工具调用参数（如果提供）
+        # Add tool call parameters if provided
         if tools is not None:
             kwargs["tools"] = tools
         if tool_choice is not None:
             kwargs["tool_choice"] = tool_choice
 
+        # Filter out None values to use model config defaults
         kwargs = {k: v for k, v in kwargs.items() if v is not None}
         
-        # 从模型获取响应
+        # Step 3: Standardize message format
         try:
-            # 确保消息格式正确
             processed_messages = []
             if isinstance(messages, str):
                 processed_messages = [{"role": "user", "content": messages}]
@@ -105,18 +150,20 @@ class LLMService:
                     if isinstance(msg, dict):
                         processed_messages.append(msg)
                     else:
-                        # 如果需要，将消息对象转换为字典
+                        # Convert object-style messages to standard dict format
                         processed_messages.append({
                             "role": getattr(msg, "role", "user"),
                             "content": getattr(msg, "content", "")
                         })
             
-            logger.debug(f"发送消息到模型: {processed_messages}")
+            # Log request details for debugging
+            logger.debug(f"Sending messages to model {model_name}: {processed_messages}")
             if tools:
-                logger.debug(f"工具调用配置 - 工具数量: {len(tools)}, 工具选择: {tool_choice}")
+                logger.debug(f"Tool call config - Tool count: {len(tools)}, Tool choice: {tool_choice}")
 
+            # Step 4: Handle streaming responses (provider-specific implementation)
             if stream:
-                # 检查是否属于 OpenAI 协议家族
+                # OpenAI-compatible providers (ChatGPT, Qwen, DeepSeek)
                 openai_compatible_providers = [
                     LLMProvider.CHATGPT.value,
                     LLMProvider.API_QWEN.value,
@@ -124,48 +171,58 @@ class LLMService:
                 ]
 
                 if current_provider in openai_compatible_providers:
-                    response = await model.chat(processed_messages, stream=True, **kwargs)
-                    logger.debug(f"收到 OpenAI 兼容流式响应 ({current_provider})")
+                    response = await model.chat(processed_messages, stream=True,** kwargs)
+                    logger.debug(f"Received OpenAI-compatible stream response ({current_provider})")
                     
                     async def generate_openai_stream():
+                        """Wrapper for OpenAI-compatible streaming responses with error handling."""
                         try:
-                            async for chunk in response: # type: ignore
+                            async for chunk in response:  # type: ignore
                                 yield chunk
                         except Exception as e:
-                            logger.exception(f"OpenAI流式响应错误: {e}")
+                            logger.exception(f"OpenAI stream response error: {e}")
                             raise
                     return generate_openai_stream()
 
+                # OCI provider (native streaming implementation)
                 elif current_provider == LLMProvider.OCI.value:
-                    response = await model.chat(processed_messages, stream=True, **kwargs)
-                    logger.debug("收到 OCI 原生流式响应")
+                    response = await model.chat(processed_messages, stream=True,** kwargs)
+                    logger.debug("Received OCI native stream response")
                     
                     async def generate_oci_stream():
+                        """Wrapper for OCI streaming responses with JSON parsing."""
                         try:
-                            # OCI SDK 特有的事件流处理
+                            # OCI SDK uses event stream with JSON payloads
                             for event in response.data.events():  # type: ignore
                                 output = json.loads(event.data)
                                 yield output
                         except Exception as e:
-                            logger.exception(f"OCI流式响应错误: {e}")
+                            logger.exception(f"OCI stream response error: {e}")
                             raise   
                     return generate_oci_stream()
 
-            # 2. 非流模式 (Non-Stream)
+            # Step 5: Handle non-streaming responses
             else:
                 response = await model.chat(processed_messages, stream=False, **kwargs)
-                logger.debug(f"收到非流式响应 ({current_provider})")
+                logger.debug(f"Received non-stream response ({current_provider})")
                 return response
-            
+                
+        # General error handling with context
         except Exception as e:
-            logger.exception(f"生成聊天响应时出错: {e}")
-            logger.error(f"详细错误上下文 - 模型: {model_name}, 消息: {messages}, 流式: {stream}, 工具: {len(tools) if tools else 0}")
-            raise RuntimeError(f"生成聊天响应失败: {e}. 上下文: 模型 {model_name}, 消息：{messages}, 流式：{stream}")
+            error_context = (
+                f"Model: {model_name}, Messages: {messages}, "
+                f"Stream: {stream}, Tools: {len(tools) if tools else 0}"
+            )
+            logger.exception(f"Error generating chat response - {error_context}: {e}")
+            raise RuntimeError(f"Failed to generate chat response: {e}. Context: {error_context}")
 
 
     async def warmup(self):
         """
-        预热池中的所有模型
+        Preload all models in the pool to memory for faster first requests.
+        
+        Initializes all configured models upfront to eliminate cold start latency
+        for production workloads. Safe to call multiple times (idempotent).
         """
         if not self._initialized:
             await self.initialize()
@@ -173,13 +230,15 @@ class LLMService:
         await self._model_pool.warmup()
 
     async def load_model(self, model_name: str) -> bool:
-        """通过模型技术名称加载模型到内存中
+        """Load a specific model into memory by its technical name.
+        
+        Explicitly loads a model into the pool if not already present.
         
         Args:
-            model_name: 模型技术名称
+            model_name: Technical name of the model to load
             
         Returns:
-            bool: 加载是否成功
+            bool: True if model loaded successfully, False otherwise
         """
         if not self._initialized:
             await self.initialize()
@@ -188,13 +247,15 @@ class LLMService:
 
         
     async def unload_model(self, model_name: str) -> bool:
-        """通过模型技术名称卸载模型到内存中。
+        """Unload a specific model from memory to free resources.
+        
+        Gracefully shuts down the model client and removes it from the pool.
         
         Args:
-            model_name: 模型技术名称
+            model_name: Technical name of the model to unload
             
         Returns:
-            bool: 卸载是否成功
+            bool: True if model unloaded successfully, False otherwise
         """
         if not self._initialized:
             await self.initialize()
@@ -203,30 +264,48 @@ class LLMService:
     
     async def get_model_instance(self, model_name: str) -> BaseLLM:
         """
-        获取模型实例。
-        如果模型未加载，load_model 会负责从数据库读取配置并初始化。
+        Get a model instance with guaranteed initialization.
+        
+        Ensures the model is loaded (from config and initialized) if not already
+        present in the pool.
+        
+        Args:
+            model_name: Technical name of the model to retrieve
+            
+        Returns:
+            BaseLLM: Fully initialized model instance
+            
+        Raises:
+            RuntimeError: If model fails to load or does not exist
         """
         if not self._initialized:
             await self.initialize()
         
-        # load_model 在基类中已经实现了：存在则返回，不存在则加载
+        # load_model handles both retrieval (if exists) and loading (if not)
         instance = await self._model_pool.load_model(model_name)
         if not instance:
-            raise RuntimeError(f"模型 {model_name} 加载失败或不存在")
+            raise RuntimeError(f"Model {model_name} failed to load or does not exist")
         return instance
 
     def get_provider(self, model_name: str) -> str | None:
         """
-        获取模型的提供商。
-        优化点：如果池中没有，尝试去缓存的元数据中查找。
+        Get the provider of a model (optimized for performance).
+        
+        First checks loaded models for immediate lookup, then falls back to
+        cached model metadata to avoid unnecessary loading.
+        
+        Args:
+            model_name: Technical name of the model
+            
+        Returns:
+            str | None: Provider name (e.g., "openai", "oci") or None if unknown
         """
-        # 1. 尝试从已加载的模型实例中获取
+        # 1. Fast path: Check already loaded models
         model = self._model_pool._models.get(model_name)
         if model:
             return model.config.provider
             
-        # 2. 如果模型还没加载，从 model_pool 缓存的元数据中获取
-        # 假设 BaseModelPool 在 initialize 时已经 fetch 了所有元数据到 self._model_metadata
+        # 2. Fallback: Check cached model metadata (loaded during initialization)
         metadata = getattr(self._model_pool, '_model_metadata', {}).get(model_name)
         if metadata:
             return metadata.get("provider")
@@ -235,16 +314,36 @@ class LLMService:
 
     async def get_max_tokens_limit(self, model_name: str) -> int:
         """
-        获取模型的最大 Token 限制。
-        由于需要确保模型配置已加载，这里建议改为异步。
+        Get the maximum token limit for a model (async to ensure config is loaded).
+        
+        Retrieves the configured max_tokens value with safe fallback to 4096
+        if model configuration cannot be loaded.
+        
+        Args:
+            model_name: Technical name of the model
+            
+        Returns:
+            int: Maximum token limit for the model (default: 4096)
         """
         try:
             model = await self.get_model_instance(model_name)
             return getattr(model.config, "max_tokens", 4096)
-        except:
+        except Exception:
+            # Safe fallback for unknown models or configuration errors
+            logger.warning(f"Could not retrieve max tokens for {model_name}, using default 4096")
             return 4096
 
     async def get_model_config(self, model_name: str) -> Any:
-        """获取已加载模型的配置对象（异步确保加载）"""
+        """Get the complete configuration object for a loaded model.
+        
+        Ensures the model is loaded before returning its configuration,
+        providing access to all provider-specific settings.
+        
+        Args:
+            model_name: Technical name of the model
+            
+        Returns:
+            Any: Model configuration object (subclass of LLMConfig)
+        """
         model = await self.get_model_instance(model_name)
         return model.config

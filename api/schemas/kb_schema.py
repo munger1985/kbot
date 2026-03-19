@@ -3,73 +3,102 @@ from fastapi import UploadFile
 
 
 class KBUploadForm(BaseModel):
-    """知识库文件上传表单模型"""
-    files: list[UploadFile] = Field(..., description="文件列表")
-    app_id: int = Field(..., description="应用ID")
-    domain_id: int = Field(..., description="领域ID")
-    kb_id: int = Field(..., description="知识库ID")
-    overwrite: bool = Field(..., description="是否覆盖")
-    skip_approval: bool = Field(..., description="是否跳过审批")
-    batch_name: str = Field(..., description="批次名称")
-    batch_id: int|None = Field(None, description="批次ID")
-    biz_metadata: dict|None = Field(None, description="业务元数据")
-    created_by: str|None = Field(None, description="创建人")
+    """Knowledge base file upload form model.
+    
+    This model defines the data structure for uploading files to a knowledge base,
+    including file list and associated business metadata.
+    """
+    files: list[UploadFile] = Field(..., description="List of files to upload (FastAPI UploadFile objects)")
+    app_id: int = Field(..., description="Application ID (unique identifier of the associated application)")
+    domain_id: int = Field(..., description="Domain ID (unique identifier of the business domain)")
+    kb_id: int = Field(..., description="Knowledge base ID (unique identifier of the target knowledge base)")
+    overwrite: bool = Field(..., description="Whether to overwrite existing files with the same name")
+    skip_approval: bool = Field(..., description="Whether to skip the approval process for upload")
+    batch_name: str = Field(..., description="Batch name (human-readable label for the upload batch)")
+    batch_id: int|None = Field(None, description="Batch ID (unique identifier of the upload batch, optional)")
+    biz_metadata: dict|None = Field(None, description="Business metadata (custom key-value pairs for business logic)")
+    created_by: str|None = Field(None, description="Creator (username of the user who initiated the upload)")
 
 class KBAttachForm(BaseModel):
-    """知识库附加文件夹表单模型"""
-    folder_path: str = Field(..., description="文件夹路径")
-    app_id: int = Field(..., description="应用ID")
-    domain_id: int = Field(..., description="领域ID")
-    kb_id: int = Field(..., description="知识库ID")
-    batch_name: str = Field(..., description="批次名称")
-    biz_metadata: dict|None = Field(None, description="业务元数据")
-    created_by: str|None = Field(None, description="创建人")
+    """Knowledge base folder attachment form model.
+    
+    This model defines the data structure for attaching a local folder to a knowledge base.
+    """
+    folder_path: str = Field(..., description="Folder path (absolute/relative path to the target folder)")
+    app_id: int = Field(..., description="Application ID (unique identifier of the associated application)")
+    domain_id: int = Field(..., description="Domain ID (unique identifier of the business domain)")
+    kb_id: int = Field(..., description="Knowledge base ID (unique identifier of the target knowledge base)")
+    batch_name: str = Field(..., description="Batch name (human-readable label for the attachment batch)")
+    biz_metadata: dict|None = Field(None, description="Business metadata (custom key-value pairs for business logic)")
+    created_by: str|None = Field(None, description="Creator (username of the user who initiated the attachment)")
 
 class KBDeleteForm(BaseModel):
-    """知识库删除表单模型"""
-    app_id: int = Field(..., description="应用ID")
-    domain_id: int = Field(..., description="领域ID")
-    kb_id: int = Field(..., description="知识库ID")
-    batch_id: int|None = Field(None, description="批次ID")
-    batch_name: str|None = Field(None, description="批次名称")
-    file_ids: list[str]|None = Field(None, description="文件ID列表")
-    file_paths: list[str]|None = Field(None, description="文件路径列表")
+    """Knowledge base deletion form model.
+    
+    This model defines the data structure for deleting files/batches from a knowledge base.
+    """
+    app_id: int = Field(..., description="Application ID (unique identifier of the associated application)")
+    domain_id: int = Field(..., description="Domain ID (unique identifier of the business domain)")
+    kb_id: int = Field(..., description="Knowledge base ID (unique identifier of the target knowledge base)")
+    batch_id: int|None = Field(None, description="Batch ID (delete entire batch if specified, optional)")
+    batch_name: str|None = Field(None, description="Batch name (alternative to batch ID for batch deletion, optional)")
+    file_ids: list[str]|None = Field(None, description="List of file IDs (specific files to delete, optional)")
+    file_paths: list[str]|None = Field(None, description="List of file paths (specific files to delete by path, optional)")
 
 class KBReparseForm(BaseModel):
-    """知识库重新解析表单模型"""
-    kb_id: int = Field(..., description="知识库ID")
-    file_ids: list[str] = Field(..., description="文件ID列表")
+    """Knowledge base reparse form model.
+    
+    This model defines the data structure for re-parsing specific files in a knowledge base.
+    """
+    kb_id: int = Field(..., description="Knowledge base ID (unique identifier of the target knowledge base)")
+    file_ids: list[str] = Field(..., description="List of file IDs (files to re-parse)")
 
 class KBFilePreviewForm(BaseModel):
-    """知识库文件预览表单模型"""
-    file_id: str = Field(..., description="文件ID")
-    max_length: int|None = Field(None, description="最大长度")
-    pages: int|list[int] | None = Field(None, description="页数")
-    sheet_index: int|None = Field(None, description="Sheet索引")
-    preview_rows: int|None = Field(None, description="预览行数")
-    slide: int|None = Field(None, description="幻灯片页码")
+    """Knowledge base file preview form model.
+    
+    This model defines the data structure for previewing content of files in a knowledge base,
+    supporting different file types (PDF, Excel, PowerPoint, etc.).
+    """
+    file_id: str = Field(..., description="File ID (unique identifier of the target file)")
+    max_length: int|None = Field(None, description="Maximum content length to preview (optional)")
+    pages: int|list[int] | None = Field(None, description="Pages to preview (single page number or list of pages, optional)")
+    sheet_index: int|None = Field(None, description="Sheet index (for Excel files, optional)")
+    preview_rows: int|None = Field(None, description="Number of rows to preview (for Excel/CSV files, optional)")
+    slide: int|None = Field(None, description="Slide number (for PowerPoint files, optional)")
 
 class KBFileChunkEditForm(BaseModel):
-    """知识库文件分片编辑表单模型"""
-    kb_id: int = Field(..., description="知识库ID")
-    file_id: str = Field(..., description="文件ID")
-    embed_id: str = Field(..., description="分片ID")
-    new_chunk: str|None = Field(None, description="新分片内容")
-    action: str = Field(..., description="操作类型")
+    """Knowledge base file chunk edit form model.
+    
+    This model defines the data structure for editing individual chunks (embeddings) of a file in a knowledge base.
+    """
+    kb_id: int = Field(..., description="Knowledge base ID (unique identifier of the target knowledge base)")
+    file_id: str = Field(..., description="File ID (unique identifier of the target file)")
+    embed_id: str = Field(..., description="Chunk ID (unique identifier of the target embedding chunk)")
+    new_chunk: str|None = Field(None, description="New chunk content (for update operations, optional)")
+    action: str = Field(..., description="Action type (e.g., 'update', 'delete', 'archive')")
     
 class KBFileChunkUpdateDescriptionForm(BaseModel):
-    """知识库文件分片更新描述表单模型"""
-    kb_id: int = Field(..., description="知识库ID")
-    embed_id: str = Field(..., description="分片ID")
-    description: str = Field(..., description="新描述")
+    """Knowledge base file chunk update description form model.
+    
+    This model defines the data structure for updating the description of a file chunk in a knowledge base.
+    """
+    kb_id: int = Field(..., description="Knowledge base ID (unique identifier of the target knowledge base)")
+    embed_id: str = Field(..., description="Chunk ID (unique identifier of the target embedding chunk)")
+    description: str = Field(..., description="New description for the chunk")
 
 class KBFileChunkUpdateTagsForm(BaseModel):
-    """知识库文件分片更新标签表单模型"""
-    kb_id: int = Field(..., description="知识库ID")
-    file_id: str = Field(..., description="文件ID")
-    tags: list[str] = Field(..., description="文件分片标签")
+    """Knowledge base file chunk update tags form model.
+    
+    This model defines the data structure for updating tags of file chunks in a knowledge base.
+    """
+    kb_id: int = Field(..., description="Knowledge base ID (unique identifier of the target knowledge base)")
+    file_id: str = Field(..., description="File ID (unique identifier of the target file)")
+    tags: list[str] = Field(..., description="Tags for the file chunks (list of string labels)")
 
 class PreviewImageParams(BaseModel):
-    """预览抽取图片的参数模型"""
-    file_id: str = Field(..., description="文件ID")
-    image_name: str = Field(..., description="图片名")
+    """Preview extracted image parameters model.
+    
+    This model defines the data structure for previewing images extracted from knowledge base files.
+    """
+    file_id: str = Field(..., description="File ID (unique identifier of the source file)")
+    image_name: str = Field(..., description="Image name (name of the extracted image to preview)")

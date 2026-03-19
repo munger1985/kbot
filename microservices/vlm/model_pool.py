@@ -10,31 +10,59 @@ from .model_factory import create_vlm_model
 
 class VLMModelPool(BaseModelPool[BaseVLM[Any]]):
     """
-    VLM 模型池
-    管理视觉语言模型（如 Qwen-VL API 等）的生命周期
+    VLM Model Pool
+    
+    Manages the lifecycle of Vision-Language Models (e.g., Qwen-VL API, GPT-4V, etc.)
+    including initialization, health checking, resource management, and shutdown.
+    Inherits from BaseModelPool to leverage common model pooling functionality while
+    implementing VLM-specific lifecycle management logic.
     """
 
     def _get_model_category(self) -> int:
-        """返回 VLM 类别枚举"""
+        """Return VLM category enumeration value
+        
+        Overrides the base class method to identify this pool as managing VLM models.
+        
+        Returns:
+            int: Integer value of the VLM model category from ModelCategory enum
+        """
         return ModelCategory.VLM.value
 
     async def _shutdown_model_instance(self, model: BaseVLM[Any]):
-        """执行 VLM 资源释放"""
+        """Execute VLM resource cleanup
+        
+        Overrides base class method to handle VLM-specific resource release by
+        calling the model's shutdown method.
+        
+        Args:
+            model: VLM model instance to shut down
+        """
         await model.shutdown()
 
     async def _perform_model_health_check(self, model_name: str, model: BaseVLM[Any]):
         """
-        执行模型健康检查
-        优化点：简化状态判断逻辑，假设 BaseVLM 已统一 health_check 接口
+        Perform model health check
+        
+        Optimization: Simplified status judgment logic, assuming BaseVLM has a unified
+        health_check interface implementation across all subclasses.
+        
+        Args:
+            model_name: Name of the model to check
+            model: VLM model instance to perform health check on
+            
+        Raises:
+            RuntimeError: If model is not initialized/ready
+            Exception: Propagates any errors encountered during health check (triggering
+                model reload by the base class)
         """
         try:
-            # 兼容异步/同步健康检查（如果 BaseVLM 定义得当，通常直接 await 即可）
+            # Compatibility for async/sync health check methods (await directly if properly defined in BaseVLM)
             if asyncio.iscoroutinefunction(model.health_check):
                 status = await model.health_check()
             else:
                 status = await asyncio.to_thread(model.health_check)
 
-            # 统一判断逻辑：支持字典返回或对象属性返回
+            # Unified judgment logic: Support dict return or object attribute return
             is_ready = False
             if isinstance(status, dict):
                 is_ready = status.get('initialized', False)
@@ -42,48 +70,78 @@ class VLMModelPool(BaseModelPool[BaseVLM[Any]]):
                 is_ready = getattr(status, 'initialized', False)
 
             if not is_ready:
-                raise RuntimeError(f"模型 {model_name} 未就绪 (initialized=False)")
+                raise RuntimeError(f"Model {model_name} not ready (initialized=False)")
                 
-            logger.debug(f"🔍 VLM 模型 {model_name} 健康检查通过")
+            logger.debug(f"🔍 VLM model {model_name} health check passed")
             
         except Exception as e:
-            logger.warning(f"❌ 模型 {model_name} 健康检查异常: {e}")
-            raise  # 抛出异常由基类触发 reload_model
+            logger.warning(f"❌ Model {model_name} health check failed: {e}")
+            raise  # Raise exception to trigger reload_model in base class
 
     async def _start_model(self, model_name: str, model_data: dict[str, Any]) -> BaseVLM[Any]:
         """
-        创建并启动 VLM 实例
+        Create and start VLM instance
+        
+        Initializes a new VLM model instance using the factory pattern, configures it
+        with provider-specific settings, and starts it up.
+        
+        Args:
+            model_name: Name of the model to create
+            model_data: Dictionary containing model configuration parameters
+            
+        Returns:
+            BaseVLM[Any]: Initialized and started VLM model instance
+            
+        Raises:
+            ValueError: If required provider parameter is missing
+            Exception: If model startup fails
         """
         provider = model_data.get("provider")
         if not provider:
-            raise ValueError(f"模型 {model_name} 缺少必要参数: provider")
+            raise ValueError(f"Model {model_name} missing required parameter: provider")
 
-        # 1. 获取全局 VLM 默认配置
+        # 1. Get global VLM default configuration
         global_vlm_config = get_vlm_config()
 
-        # 2. 构建特定 Provider 的配置对象
+        # 2. Build provider-specific configuration object
         model_config = self._build_config(model_name, provider, model_data, global_vlm_config)
 
-        # 3. 创建并启动模型
+        # 3. Create and start model
         model = create_vlm_model(model_config)
         try:
             await model.startup()
-            # 状态管理交由基类 BaseModelPool 处理
-            logger.success(f"🚀 VLM 模型 {model_name} ({provider}) 启动成功")
+            # State management handled by base class BaseModelPool
+            logger.success(f"🚀 VLM model {model_name} ({provider}) started successfully")
             return model
         except Exception as e:
-            logger.error(f"❌ VLM 模型 {model_name} 启动失败: {e}")
+            logger.error(f"❌ VLM model {model_name} startup failed: {e}")
             raise
 
     def _build_config(self, name: str, provider: str, data: dict[str, Any], global_cfg: Any) -> VLMConfig:
         """
-        配置转换映射器
+        Configuration transformation mapper
+        
+        Converts raw model configuration data into a typed VLMConfig subclass instance
+        appropriate for the specified provider.
+        
+        Args:
+            name: Model name
+            provider: Model provider identifier
+            data: Raw model configuration dictionary
+            global_cfg: Global VLM configuration defaults
+            
+        Returns:
+            VLMConfig: Typed configuration object for the specified provider
+            
+        Raises:
+            ValueError: If required API parameters are missing
+            NotImplementedError: If the provider is not supported
         """
         params = data.get("model_params", {})
         api_endpoint = data.get("api_endpoint")
         api_key = data.get("api_key")
 
-        # 提取公共参数
+        # Extract common parameters
         common_kwargs = {
             "model_name": name,
             "provider": provider,
@@ -91,10 +149,10 @@ class VLMModelPool(BaseModelPool[BaseVLM[Any]]):
             "temperature": params.get("temperature", 0.1),
         }
 
-        # 1. OpenAI 协议兼容的 VLM API (如 Qwen-VL-Plus/Max)
+        # 1. OpenAI-compatible VLM APIs (e.g., Qwen-VL-Plus/Max)
         if provider == VLMProvider.API_QWEN.value:
             if not api_endpoint or not api_key:
-                raise ValueError(f"模型 {name} 缺少 API 参数 (endpoint/key)")
+                raise ValueError(f"Model {name} missing API parameters (endpoint/key)")
 
             return OpenAIVLMConfig(
                 **common_kwargs,
@@ -105,6 +163,6 @@ class VLMModelPool(BaseModelPool[BaseVLM[Any]]):
                 max_retries=params.get("max_retries", 3)
             )
 
-        # 此处可扩展其他 Provider，如 LocalVLMConfig (Llava/Qwen-VL 本地部署)
+        # Extend here for other providers (e.g., LocalVLMConfig for Llava/Qwen-VL local deployments)
         
-        raise NotImplementedError(f"不支持的 VLM 提供者: {provider}")
+        raise NotImplementedError(f"Unsupported VLM provider: {provider}")

@@ -3,21 +3,29 @@ from core.dictionary import LLMProvider
 
 
 def create_llm_model(config: LLMConfig) -> BaseLLM:
-    """
-    工厂函数：根据提供商创建大语言模型 (LLM) 实例
+    """Factory function to create LLM instances based on provider type.
+    
+    This factory pattern implementation abstracts the instantiation of different
+    LLM provider implementations (OpenAI-compatible, OCI, etc.), ensuring proper
+    configuration validation and type matching for each provider.
     
     Args:
-        config: LLM 配置对象，包含 provider 字段
+        config: LLM configuration object containing provider identifier and
+            provider-specific settings. Must be a subclass of LLMConfig matching
+            the specified provider.
         
     Returns:
-        BaseLLM: 对应提供商的 LLM 实例
-        
+        BaseLLM: Properly initialized LLM instance for the specified provider,
+            implementing the BaseLLM interface.
+            
     Raises:
-        ValueError: 当提供不支持的提供商或配置类型不匹配时抛出
+        ValueError: If:
+            - The provider is not supported
+            - The configuration object type does not match the provider requirements
     """
     provider = config.provider.lower()
     
-    # 1. OpenAI 兼容接口 (DeepSeek, Qwen API, ChatGPT 等)
+    # 1. OpenAI-compatible providers (DeepSeek, Qwen API, ChatGPT, etc.)
     openai_providers = [
         LLMProvider.API_DEEPSEEK.value, 
         LLMProvider.API_QWEN.value, 
@@ -26,32 +34,34 @@ def create_llm_model(config: LLMConfig) -> BaseLLM:
     
     if provider in openai_providers:
         if isinstance(config, OpenaiLLMConfig):
-            # 确保这里返回的是实现类，例如 OpenaiLLM 或 OpenaiClient
+            # Return concrete OpenAI client implementation
             return OpenaiClient(config) 
         else:
-            raise ValueError(f"提供商 {provider} 需要 OpenaiLLMConfig 配置对象")
+            raise ValueError(f"Provider {provider} requires OpenaiLLMConfig configuration object")
             
-    # 2. Oracle Cloud Infrastructure (OCI)
+    # 2. Oracle Cloud Infrastructure (OCI) provider
     elif provider == LLMProvider.OCI.value:
         if isinstance(config, OCILLMConfig):
             return OCIClient(config)
         else:
-            raise ValueError(f"提供商 {provider} 需要 OCILLMConfig 配置对象")
+            raise ValueError(f"Provider {provider} requires OCILLMConfig configuration object")
             
-    # 3. 待扩展的提供商
+    # 3. Future provider extensions (example template)
     # elif provider == LLMProvider.AZURE.value:
     #     if isinstance(config, AzureLLMConfig):
     #         return AzureLLM(config)
             
     else:
-        raise ValueError(f"不支持的LLM提供商: {provider}")
+        raise ValueError(f"Unsupported LLM provider: {provider}")
 
 
 def get_supported_providers() -> list[str]:
-    """
-    获取支持的 LLM 提供商列表
+    """Get list of supported LLM provider identifiers.
+    
+    Returns a list of all provider values defined in the LLMProvider enum
+    that have corresponding implementations in the factory function.
     
     Returns:
-        list[str]: 支持的提供商名称列表
+        list[str]: List of supported provider name strings (e.g., "openai", "oci")
     """
     return [provider.value for provider in LLMProvider]

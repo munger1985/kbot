@@ -9,65 +9,65 @@ from .model_factory import create_embedding_model
 
 class EmbeddingModelPool(BaseModelPool[BaseEmbedding[Any]]):
     """
-    Embedding 模型池实现
-    负责具体 Embedding 模型的生命周期管理与配置映射
+    Embedding model pool implementation.
+    Responsible for lifecycle management and configuration mapping of specific Embedding models.
     """
 
     def _get_model_category(self) -> int:
-        """定义此池管理的数据库模型类别"""
+        """Define the database model category managed by this pool"""
         return ModelCategory.TXT_EMBEDDING.value
 
     async def _shutdown_model_instance(self, model: BaseEmbedding[Any]) -> None:
-        """调用具体模型的卸载逻辑"""
+        """Invoke specific model's shutdown logic"""
         await model.shutdown()
 
     async def _perform_model_health_check(self, model_name: str, model: BaseEmbedding[Any]) -> None:
         """
-        执行轻量级推理检查
-        注意：使用 try-except 包裹已在父类处理，这里只需关注检查动作
+        Perform lightweight inference health check.
+        Note: Wrapped with try-except in parent class, only focus on check action here.
         """
-        # 使用一个极短的文本进行探测
+        # Use an extremely short text for health check
         await model.embed(["ping"], batch_size=1)
-        logger.debug(f"🔍 模型 {model_name} 心跳检查正常")
+        logger.debug(f"🔍 Model {model_name} health check passed")
 
     async def _start_model(self, model_name: str, model_data: dict[str, Any]) -> BaseEmbedding[Any]:
         """
-        构造配置并启动模型实例
-        优化点：提取配置构造逻辑，确保职责单一
+        Construct configuration and start model instance.
+        Improvement: Extract configuration construction logic to ensure single responsibility principle.
         """
         provider = model_data.get("provider")
         if not provider:
-            raise ValueError(f"模型 {model_name} 缺少必要参数: provider")
+            raise ValueError(f"Model {model_name} missing required parameter: provider")
 
-        # 1. 获取基础全局配置（作为兜底）
+        # 1. Get base global configuration (as fallback)
         global_config = get_embed_config()
         
-        # 2. 构造特定 Provider 的 Config 对象
+        # 2. Construct Provider-specific Config object
         model_config = self._build_config(model_name, provider, model_data, global_config)
 
-        # 3. 通过工厂创建模型
+        # 3. Create model via factory function
         model = create_embedding_model(model_config)
         
-        # 4. 初始化模型资源
+        # 4. Initialize model resources
         try:
             await model.startup()
-            # 注意：不需要手动 self._models[model_name] = model，父类 load_model 会统一处理
-            logger.success(f"🚀 Embedding 模型 {model_name} ({provider}) 启动成功")
+            # Note: No need to manually set self._models[model_name] = model - parent class load_model handles this uniformly
+            logger.success(f"🚀 Embedding model {model_name} ({provider}) started successfully")
             return model
         except Exception as e:
-            logger.error(f"❌ 模型 {model_name} 启动失败: {str(e)}")
+            logger.error(f"❌ Failed to start model {model_name}: {str(e)}")
             raise
 
     def _build_config(self, name: str, provider: str, data: dict[str, Any], global_cfg: Any) -> EmbeddingConfig:
         """
-        将数据库数据映射为具体的 Pydantic Config 对象
+        Map database data to specific Pydantic Config objects.
         """
         params = data.get("model_params", {})
         path = data.get("model_path", None)
         api_key = data.get("api_key", None)
         api_endpoint = data.get("api_endpoint", None)
         
-        # 基础参数提取（复用频率高）
+        # Extract common parameters (high reuse frequency)
         common_kwargs = {
             "model_name": name,
             "provider": provider,
@@ -75,9 +75,9 @@ class EmbeddingModelPool(BaseModelPool[BaseEmbedding[Any]]):
             "batch_size": params.get("batch_size", 2),
         }
 
-        # 根据 Provider 映射
+        # Map based on Provider type
         if provider == EmbeddingProvider.LOCAL_QWEN.value:
-            if not path: raise ValueError(f"{name} 缺少 model_path")
+            if not path: raise ValueError(f"{name} missing model_path")
             return Qwen3EmbeddingConfig(
                 **common_kwargs,
                 model_path=path,
@@ -87,7 +87,7 @@ class EmbeddingModelPool(BaseModelPool[BaseEmbedding[Any]]):
             )
 
         if provider == EmbeddingProvider.LOCAL_BGE.value:
-            if not path: raise ValueError(f"{name} 缺少 model_path")
+            if not path: raise ValueError(f"{name} missing model_path")
             return BGEEmbeddingConfig(
                 **common_kwargs,
                 model_path=path,
@@ -98,8 +98,8 @@ class EmbeddingModelPool(BaseModelPool[BaseEmbedding[Any]]):
             )
 
         if provider in [EmbeddingProvider.API_QWEN.value, EmbeddingProvider.CHATGPT.value]:
-            if not api_key: raise ValueError(f"{name} 缺少 api_key")
-            # 移除 api_endpoint 末尾的 /embeddings，避免路径重复
+            if not api_key: raise ValueError(f"{name} missing api_key")
+            # Remove trailing "/embeddings" from api_endpoint to avoid path duplication
             if api_endpoint and api_endpoint.endswith("/embeddings"):
                 api_endpoint = api_endpoint[:-11]
             return OpenAIEmbeddingConfig(
@@ -116,7 +116,7 @@ class EmbeddingModelPool(BaseModelPool[BaseEmbedding[Any]]):
             config_file = params.get("config_file")
             
             if not all([api_endpoint, compartment_id, config_file]):
-                raise ValueError(f"OCI 模型 {name} 缺少必要参数 (compartment_id/config_file/endpoint)")
+                raise ValueError(f"OCI model {name} missing required parameters (compartment_id/config_file/endpoint)")
 
             return OCIEmbeddingConfig(
                 **common_kwargs,
@@ -127,4 +127,4 @@ class EmbeddingModelPool(BaseModelPool[BaseEmbedding[Any]]):
                 input_type_query=params.get("input_type_query", "search_query")
             )
 
-        raise ValueError(f"尚未实现或不支持的 Provider: {provider}")
+        raise ValueError(f"Unimplemented or unsupported Provider: {provider}")

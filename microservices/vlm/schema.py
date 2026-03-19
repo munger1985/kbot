@@ -4,33 +4,41 @@ import uuid
 import time
 
 
-# 定义请求模型
+# Define request models
 class VLMRequest(BaseModel):
-    """VLM推理请求模型"""
+    """VLM inference request model
+    
+    Request schema for Vision-Language Model inference requests, supporting both
+    streaming and non-streaming responses with configurable sampling parameters.
+    """
 
-    model_name: str = Field(..., description="模型名称")
-    messages: list[dict[str, Any]] = Field(..., description="消息列表")
-    max_tokens: int | None = Field(None, description="要生成的最大令牌数")
-    temperature: float | None = Field(None, description="采样温度 (0.0-1.0，越低越确定)")
-    stream: bool = Field(False, description="是否流式返回响应")
-    timeout: int | None = Field(None, description="超时时间（秒）")
-    top_p: float | None = Field(None, description="Top-p采样参数")
-    frequency_penalty: float | None = Field(None, description="频率惩罚")
-    presence_penalty: float | None = Field(None, description="存在惩罚")
+    model_name: str = Field(..., description="Name of the model to use for inference")
+    messages: list[dict[str, Any]] = Field(..., description="List of messages containing text/image content")
+    max_tokens: int | None = Field(None, description="Maximum number of tokens to generate")
+    temperature: float | None = Field(None, description="Sampling temperature (0.0-1.0, lower = more deterministic)")
+    stream: bool = Field(False, description="Whether to return response as a stream")
+    timeout: int | None = Field(None, description="Request timeout in seconds")
+    top_p: float | None = Field(None, description="Top-p sampling parameter")
+    frequency_penalty: float | None = Field(None, description="Frequency penalty (reduces repetition)")
+    presence_penalty: float | None = Field(None, description="Presence penalty (reduces topic repetition)")
 
 class ToggleModelRequest(BaseModel):
-    """启用或禁用模型请求表单。"""
-    model_name: str = Field(..., description="模型名称")
-    operation: str = Field(..., description="操作类型，'load' 或 'unload'")
+    """Request schema for model load/unload operations."""
+    model_name: str = Field(..., description="Name of the model to operate on")
+    operation: str = Field(..., description="Operation type: 'load' or 'unload'")
     
-# 定义响应模型
+# Define response models
 class VLMResponse(BaseModel):
-    """VLM推理响应模型(兼容OpenAI)"""
+    """VLM inference response model (OpenAI-compatible)
+    
+    Response schema matching OpenAI's chat completion format with additional
+    custom fields for processing metrics.
+    """
 
-    id: str = Field(default_factory=lambda: f"sse-{uuid.uuid4()}", description="响应流的唯一标识符")
-    object: str = Field("chat.completion", description="对象类型，始终为 'chat.completion'")
-    created: int = Field(default_factory=lambda: int(time.time()), description="响应创建时的Unix时间戳")
-    model: str = Field(..., description="响应模型名称")
-    choices: list[dict[str, Any]] = Field(..., description="包含响应消息的列表")
-    usage: dict[str, int] = Field(..., description="令牌使用统计，包括 prompt_tokens、completion_tokens 和 total_tokens")
-    processing_time: float = Field(..., description="处理时间（秒）（自定义字段）")
+    id: str = Field(default_factory=lambda: f"sse-{uuid.uuid4()}", description="Unique identifier for the response stream")
+    object: str = Field("chat.completion", description="Object type, always 'chat.completion'")
+    created: int = Field(default_factory=lambda: int(time.time()), description="Unix timestamp when the response was created")
+    model: str = Field(..., description="Name of the model that generated the response")
+    choices: list[dict[str, Any]] = Field(..., description="List containing the response message(s)")
+    usage: dict[str, int] = Field(..., description="Token usage statistics including prompt_tokens, completion_tokens, and total_tokens")
+    processing_time: float = Field(..., description="Processing time in seconds (custom field)")

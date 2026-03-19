@@ -10,13 +10,17 @@ from core.exceptions import *
 
 
 class AIModelClient():
-    """模型微服务客户端"""
+    """Client for AI model microservices.
+    
+    Provides asynchronous methods to interact with embedding, LLM, reranker, and VLM
+    microservices, handling request construction, error handling, and response parsing.
+    """
     def __init__(self):
-        self.embedding_config = get_embed_config()  # 获取 Embedding 模型配置
-        self.llm_config = get_llm_config()  # 获取 LLM 模型配置
-        self.reranker_config = get_reranker_config()  # 获取 Reranker 模型配置
-        self.vlm_config = get_vlm_config()  # 获取 VLMPrompt 模型配置
-        self.prompt_config = get_prompt_config()  # 获取 Prompt 配置
+        self.embedding_config = get_embed_config()  # Get Embedding model configuration
+        self.llm_config = get_llm_config()          # Get LLM model configuration
+        self.reranker_config = get_reranker_config()# Get Reranker model configuration
+        self.vlm_config = get_vlm_config()          # Get VLM model configuration
+        self.prompt_config = get_prompt_config()    # Get Prompt template configuration
 
 
     async def call_embedding_model(self,
@@ -26,18 +30,17 @@ class AIModelClient():
                                 is_query: bool = True,
                                 use_health_check_timeout: bool = False
                                 ) -> list[EmbeddingDataItem]:
-        """
-        调用嵌入模型获取文本向量
+        """Call embedding model service to get text vector embeddings.
 
         Args:
-            model_name: 模型名称
-            texts: 文本列表
-            batch_size: 批处理大小
-            is_query: 是否为查询模式
-            use_health_check_timeout: 是否使用健康检查超时（较短）
+            model_name: Name of the embedding model to use
+            texts: List of text strings to generate embeddings for
+            batch_size: Batch size for processing texts (None uses service default)
+            is_query: Whether the texts are query inputs (True) or corpus documents (False)
+            use_health_check_timeout: Whether to use shorter health check timeout instead of regular timeout
 
         Returns:
-            嵌入数据项列表
+            list[EmbeddingDataItem]: List of embedding data items containing vectors and metadata
         """
         service_host = self.embedding_config.service_host
         service_port = self.embedding_config.service_port
@@ -57,13 +60,13 @@ class AIModelClient():
                 async with session.post(url, headers=headers, json=payload) as response:
                     if response.status != 200:
                         text = await response.text()
-                        msg = f"嵌入服务错误: HTTP {response.status}, {text}"
+                        msg = f"Embedding service error: HTTP {response.status}, {text}"
                         logger.error(msg)
                         raise InternalServerError(msg)
 
                     response_data = await response.json()
-                    # 支持OpenAI格式和当前格式
-                    if "data" in response_data and isinstance(response_data["data"], list):  # OpenAI格式
+                    # Support both OpenAI-compatible format and legacy format
+                    if "data" in response_data and isinstance(response_data["data"], list):  # OpenAI format
                         embeddings = [
                             EmbeddingDataItem(
                                 embedding=item["embedding"],
@@ -72,7 +75,7 @@ class AIModelClient():
                             )
                             for i, item in enumerate(response_data["data"])
                         ]
-                    elif isinstance(response_data, list):  # 当前格式
+                    elif isinstance(response_data, list):  # Legacy format
                         embeddings = [
                             EmbeddingDataItem(
                                 embedding=item["embedding"],
@@ -81,24 +84,24 @@ class AIModelClient():
                             )
                             for i, item in enumerate(response_data)
                         ]
-                    else:  # 意外格式
-                        msg = f"嵌入服务返回了意外的响应格式: {response_data}"
+                    else:  # Unexpected format
+                        msg = f"Embedding service returned unexpected response format: {response_data}"
                         logger.error(msg)
                         raise InternalServerError(msg)
 
-                    logger.info("成功获取嵌入向量")
+                    logger.info("Successfully retrieved embedding vectors")
                     return embeddings
 
         except aiohttp.ClientConnectorError as e:
-            msg = f"无法连接到嵌入服务 {service_host}:{service_port}，请检查服务是否启动"
+            msg = f"Failed to connect to embedding service {service_host}:{service_port}, please check if service is running"
             logger.error(msg)
             raise InternalServerError(msg)
         except aiohttp.ServerTimeoutError:
-            msg = f"嵌入服务响应超时（{total}秒），请检查服务状态"
+            msg = f"Embedding service response timed out ({total} seconds), please check service status"
             logger.error(msg)
             raise InternalServerError(msg)
         except Exception as e:
-            msg = f"嵌入服务发生错误: {e}"
+            msg = f"Embedding service error occurred: {e}"
             logger.error(msg)
             raise InternalServerError(msg)
 
@@ -109,18 +112,17 @@ class AIModelClient():
                                   top_k: int | None,
                                   use_health_check_timeout: bool = False
                                 ) -> list[dict[str, Any]]:
-        """
-        调用重排序模型对文档进行重新排序
+        """Call reranker model service to reorder documents based on relevance to query.
 
         Args:
-            model_name: 模型名称
-            query: 查询文本
-            documents: 待重排序的文档列表
-            top_k: 返回的顶部文档数量（None表示返回所有）
-            use_health_check_timeout: 是否使用健康检查超时（较短）
+            model_name: Name of the reranker model to use
+            query: Query text to evaluate document relevance against
+            documents: List of documents to reorder
+            top_k: Number of top relevant documents to return (None returns all documents)
+            use_health_check_timeout: Whether to use shorter health check timeout instead of regular timeout
 
         Returns:
-            重排序结果列表
+            list[dict[str, Any]]: List of reranked documents with relevance scores
         """
         service_host = self.reranker_config.service_host
         service_port = self.reranker_config.service_port
@@ -132,7 +134,7 @@ class AIModelClient():
             "model_name": model_name,
             "query": query,
             "documents": documents,
-            "top_k": int(top_k) if top_k else 99999  # 设置一个很大的值，防止rerank返回的文档数小于top_k
+            "top_k": int(top_k) if top_k else 99999  # Set large value to prevent fewer results than requested
         }
 
         try:
@@ -140,38 +142,37 @@ class AIModelClient():
                 async with session.post(url, headers=headers, json=payload) as response:
                     if response.status != 200:
                         text = await response.text()
-                        msg = f"重排序服务错误: HTTP {response.status}, {text}"
+                        msg = f"Reranker service error: HTTP {response.status}, {text}"
                         logger.error(msg)
                         raise InternalServerError(msg)
 
                     response_data = await response.json()
                     rerank = response_data["rerankers"]
-                    logger.info("成功获取重排序结果")
+                    logger.info("Successfully retrieved reranked results")
                     return rerank
         except aiohttp.ClientConnectorError as e:
-            msg = f"无法连接到重排序服务 {service_host}:{service_port}，请检查服务是否启动"
+            msg = f"Failed to connect to reranker service {service_host}:{service_port}, please check if service is running"
             logger.error(msg)
             raise InternalServerError(msg)
         except aiohttp.ServerTimeoutError:
-            msg = f"重排序服务响应超时（{total}秒），请检查服务状态"
+            msg = f"Reranker service response timed out ({total} seconds), please check service status"
             logger.error(msg)
             raise InternalServerError(msg)
         except Exception as e:
-            msg = f"重排序服务发生错误: {e}"
+            msg = f"Reranker service error occurred: {e}"
             logger.error(msg)
             raise InternalServerError(msg)
         
     async def call_llm_model(self, model_name: str, prompt: str, **kwargs):
-        """
-        调用LLM微服务并处理SSE格式的响应
+        """Call LLM microservice and handle Server-Sent Events (SSE) responses.
 
         Args:
-            model_name: 模型名称
-            prompt: 输入的提示信息
-            **kwargs: 其他可选参数，如stream、temperature等
+            model_name: Name of the LLM model to use
+            prompt: Input prompt text for the model
+            **kwargs: Additional optional parameters (e.g., stream, temperature, max_tokens)
 
-        Returns:
-            异步生成器，逐块产生LLM的响应
+        Yields:
+            str: Chunked response text from LLM (decoded from raw bytes)
         """
         service_host = self.llm_config.service_host
         service_port = self.llm_config.service_port
@@ -181,14 +182,14 @@ class AIModelClient():
         url = f"http://{service_host}:{service_port}/v1/chat/completions"
         headers = {"Content-Type": "application/json"}
 
-        # 构建请求体
+        # Build request payload
         payload = {
             "model_name": model_name,
             "messages": prompt,
-            "stream": kwargs.get("stream", True)  # 默认为流式
+            "stream": kwargs.get("stream", True)  # Stream responses by default
         }
 
-        # 处理额外参数（Decimal转float/int）
+        # Process additional parameters (convert Decimal to float/int)
         if kwargs:
             processed_kwargs = {}
             for k, v in kwargs.items():
@@ -199,29 +200,29 @@ class AIModelClient():
                         processed_kwargs[k] = v
             payload.update(processed_kwargs)
 
-        logger.debug(f"调用LLM服务，请求负载: {payload}")
+        logger.debug(f"Calling LLM service with payload: {payload}")
 
         try:
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.post(url, headers=headers, json=payload) as response:
                     if response.status != 200:
                         text = await response.text()
-                        msg = f"LLM服务错误: HTTP {response.status}, {text}"
+                        msg = f"LLM service error: HTTP {response.status}, {text}"
                         logger.error(msg)
                         raise InternalServerError(msg)
 
                     async for raw_chunk in response.content:
                         yield raw_chunk.decode('utf-8')
         except aiohttp.ClientConnectorError as e:
-            msg = f"无法连接到LLM服务 {service_host}:{service_port}，请检查服务是否启动"
+            msg = f"Failed to connect to LLM service {service_host}:{service_port}, please check if service is running"
             logger.error(msg)
             raise InternalServerError(msg)
         except aiohttp.ServerTimeoutError:
-            msg = f"LLM服务响应超时（{total}秒），请检查服务状态"
+            msg = f"LLM service response timed out ({total} seconds), please check service status"
             logger.error(msg)
             raise InternalServerError(msg)
         except Exception as e:
-            msg = f"LLM服务发生错误: {e}"
+            msg = f"LLM service error occurred: {e}"
             logger.error(msg)
             raise InternalServerError(msg)
         
@@ -233,36 +234,36 @@ class AIModelClient():
             prompt: str,
             **kwargs
         ) -> str:
-            """调用视觉语言模型进行图片解析。
+            """Call Vision-Language Model (VLM) for image analysis and interpretation.
 
             Args:
-                model_name: 模型名称。
-                image: 输入图片（文件路径或 PIL.Image 对象）。
-                prompt: 完整的提示词文本（必填）。
-                **kwargs: 推理的额外参数（如 temperature, max_tokens 等）。
+                model_name: Name of the VLM model to use
+                image: Input image (file path string or PIL.Image object)
+                prompt: Complete prompt text for the model (required)
+                **kwargs: Additional inference parameters (e.g., temperature, max_tokens)
 
             Returns:
-                str: 模型生成的输出文本。
+                str: Generated text output from the VLM model describing/analyzing the image
             """
             service_host = self.vlm_config.service_host
             service_port = self.vlm_config.service_port
             
-            # 1. 超时配置
+            # 1. Timeout configuration
             total_timeout = self.vlm_config.timeout
             timeout = aiohttp.ClientTimeout(total=total_timeout)
             
             url = f"http://{service_host}:{service_port}/v1/inference"
             headers = {"Content-Type": "application/json"}
 
-            # 2. 图片编码（Base64）
+            # 2. Encode image to Base64 format
             try:
                 image_base64 = await ImageEncoder.encode(image)
             except Exception as e:
-                msg = f"VLM 图片编码失败: {e}"
+                msg = f"VLM image encoding failed: {e}"
                 logger.error(msg)
                 raise InternalServerError(msg)
 
-            # 3. 构建 OpenAI 兼容格式的消息体
+            # 3. Build OpenAI-compatible message payload
             messages = [
                 {
                     "role": "user",
@@ -281,7 +282,7 @@ class AIModelClient():
                 }
             ]
 
-            # 4. 构建请求体
+            # 4. Build complete request payload
             payload = {
                 "model_name": model_name,
                 "messages": messages,
@@ -289,42 +290,41 @@ class AIModelClient():
                 **kwargs
             }
 
-            # 5. 执行请求
+            # 5. Execute request
             try:
                 async with aiohttp.ClientSession(timeout=timeout) as session:
                     async with session.post(url, headers=headers, json=payload) as response:
-                        # 处理 HTTP 错误
+                        # Handle HTTP errors
                         if response.status != 200:
                             error_text = await response.text()
-                            msg = f"VLM 服务 HTTP {response.status} 错误: {error_text}"
+                            msg = f"VLM service HTTP {response.status} error: {error_text}"
                             logger.error(msg)
                             raise InternalServerError(msg)
 
                         response_data = await response.json()
                         
-                        # 提取内容
+                        # Extract response content
                         try:
                             content = response_data["choices"][0]["message"]["content"]
-                            logger.info(f"VLM 解析成功 | 模型: {model_name} | Prompt长度: {len(prompt)}")
+                            logger.info(f"VLM analysis successful | Model: {model_name} | Prompt length: {len(prompt)}")
                             return content
                         except (KeyError, IndexError) as e:
-                            msg = f"VLM 响应格式非法: {str(e)}"
+                            msg = f"VLM response format invalid: {str(e)}"
                             logger.error(msg)
                             raise InternalServerError(msg)
 
-            # 6. 异常分类捕获
+            # 6. Categorized exception handling
             except aiohttp.ClientConnectorError:
-                msg = f"无法连接到 VLM 服务 {service_host}:{service_port}"
+                msg = f"Failed to connect to VLM service {service_host}:{service_port}"
                 logger.error(msg)
                 raise InternalServerError(msg)
                 
             except aiohttp.ServerTimeoutError:
-                msg = f"VLM 服务响应超时 ({total_timeout}s)"
+                msg = f"VLM service response timed out ({total_timeout}s)"
                 logger.error(msg)
                 raise InternalServerError(msg)
                 
             except Exception as e:
-                msg = f"VLM 调用过程中发生异常: {str(e)}"
+                msg = f"VLM invocation exception occurred: {str(e)}"
                 logger.exception(msg)
                 raise InternalServerError(msg)
-            

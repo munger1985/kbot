@@ -11,17 +11,26 @@ from ...common.utils import get_optimal_attn_implementation
 
 
 class BGERerankerConfig(RerankerConfig):
-    """BGE Reranker 专用配置"""
-    model_path: str = Field(..., description="模型本地路径")
-    device: str | None = Field(None, description="目标设备 (cuda/cpu)")
-    use_fp16: bool = Field(True, description="是否使用半精度")
-    batch_size: int = Field(16, description="建议批处理大小")
-    # score_threshold: float = Field(0.001, description="分数过滤阈值")
+    """BGE Reranker specific configuration class.
+    
+    Extends the base reranker configuration with BGE Cross-Encoder specific
+    parameters for model loading, inference optimization, and batch processing.
+    """
+    model_path: str = Field(..., description="Local filesystem path to the BGE reranker model")
+    device: str | None = Field(None, description="Target device (cuda/cpu, auto-detected if None)")
+    use_fp16: bool = Field(True, description="Whether to use FP16 precision (only for CUDA devices)")
+    batch_size: int = Field(16, description="Recommended batch size for inference")
 
 class BGEReranker(BaseReranker[BGERerankerConfig]):
     """
-    针对 BGE Cross-Encoder 优化的重排序实现
-    优化点：Inference Mode、精细化线程管理、自动显存回收、Sorted Batching
+    Optimized reranker implementation for BGE Cross-Encoder models.
+    
+    Key optimizations:
+    - PyTorch inference mode for faster evaluation
+    - Fine-grained thread management for tokenization
+    - Automatic GPU memory management and cleanup
+    - Sorted batching for consistent performance
+    - Flash Attention 2 integration when available
     """
     config: BGERerankerConfig
 
@@ -30,43 +39,59 @@ class BGEReranker(BaseReranker[BGERerankerConfig]):
         self.model = None
         self.tokenizer = None
         self._is_initialized = False
+        # Auto-detect device if not specified (CUDA preferred over CPU)
         self.device = torch.device(config.device or ("cuda" if torch.cuda.is_available() else "cpu"))
         
-        # 使用单个执行器处理 CPU 密集型任务（分词）
+        # Single-thread executor for CPU-bound tokenization to prevent event loop blocking
         self._executor = ThreadPoolExecutor(max_workers=1)
+        # Disable tokenizers parallelism to prevent deadlocks with custom executor
         os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
     async def startup(self) -> None:
-        """初始化：适配 Flash Attention 2 与推理模式"""
+        """Initialize BGE reranker with Flash Attention 2 and inference optimizations.
+        
+        Loads model weights and tokenizer with optimal attention implementation,
+        configures precision settings, and performs CUDA warmup for consistent
+        first-request performance. Idempotent - safe to call multiple times.
+        
+        Raises:
+            Exception: If model loading or initialization fails
+        """
         if self._is_initialized:
             return
 
+        # Get optimal attention implementation (Flash Attention 2 if available)
         attn_impl = get_optimal_attn_implementation()
         
-        logger.info(f"🚀 正在加载 BGE Reranker: {self.config.model_path} (Device: {self.device})")
+        logger.info(f"🚀 Loading BGE Reranker: {self.config.model_path} (Device: {self.device})")
 
+        # Model loading parameters with precision optimization
         load_kwargs = {
             "pretrained_model_name_or_path": self.config.model_path,
             "trust_remote_code": True,
             "attn_implementation": attn_impl,
+            # Use FP16 for CUDA, FP32 for CPU to prevent precision issues
             "torch_dtype": torch.float16 if self.config.use_fp16 and "cuda" in self.device.type else torch.float32,
         }
 
         try:
+            # Load tokenizer and model
             self.tokenizer = AutoTokenizer.from_pretrained(self.config.model_path, trust_remote_code=True)
             self.model = AutoModelForSequenceClassification.from_pretrained(**load_kwargs)
+            
+            # Move model to target device and set to evaluation mode
             self.model.to(self.device).eval()
             
-            # CUDA 预热
+            # CUDA warmup to eliminate first-request latency
             if self.device.type == "cuda":
                 with torch.inference_mode():
-                    dummy = self.tokenizer([["warmup", "test"]], return_tensors="pt").to(self.device)
-                    self.model(**dummy)
+                    dummy_inputs = self.tokenizer([["warmup", "test"]], return_tensors="pt").to(self.device)
+                    self.model(**dummy_inputs)
 
             self._is_initialized = True
-            logger.info("✅ BGE Reranker 初始化完成")
+            logger.info("✅ BGE Reranker initialized successfully")
         except Exception as e:
-            logger.error(f"❌ Reranker 初始化失败: {e}")
+            logger.error(f"❌ Reranker initialization failed: {e}")
             raise
 
     async def rerank(
@@ -76,26 +101,43 @@ class BGEReranker(BaseReranker[BGERerankerConfig]):
         top_k: int | None = None
     ) -> list[dict[str, Any]]:
         """
-        高性能重排序：结合 ThreadPool 分词与 GPU 推理模式
+        High-performance reranking with thread-pool tokenization and GPU inference.
+        
+        Processes documents in batches with asynchronous tokenization (to prevent
+        event loop blocking) and optimized inference mode. Includes automatic
+        GPU memory cleanup and error handling for robust batch processing.
+        
+        Args:
+            query: Input query text for relevance scoring
+            documents: List of document texts to rerank
+            top_k: Number of top relevant documents to return (None returns all)
+            
+        Returns:
+            list[dict[str, Any]]: Reranked results sorted by relevance score (descending),
+                each containing "index" (original position) and "score" (0-1 relevance)
         """
+        # Ensure model is initialized before processing
         if not self._is_initialized:
             await self.startup()
+        # Return empty list for empty document input
         if not documents:
             return []
 
         all_scores = []
         total_docs = len(documents)
         
-        # 1. 任务分批
-        for i in range(0, total_docs, self.config.batch_size):
-            batch_docs = documents[i : i + self.config.batch_size]
+        # Process documents in configured batches
+        for batch_start in range(0, total_docs, self.config.batch_size):
+            # Get current batch documents
+            batch_docs = documents[batch_start : batch_start + self.config.batch_size]
+            # Create query-document pairs for cross-encoder input
             text_pairs = [[query, doc] for doc in batch_docs]
 
             try:
-                # 2. 异步分词优化：防止阻塞事件循环
+                # Step 1: Asynchronous tokenization to avoid blocking event loop
                 inputs = await asyncio.get_event_loop().run_in_executor(
                     self._executor,
-                    lambda: self.tokenizer( # type: ignore
+                    lambda: self.tokenizer(  # type: ignore
                         text_pairs,
                         padding=True,
                         truncation=True,
@@ -104,47 +146,64 @@ class BGEReranker(BaseReranker[BGERerankerConfig]):
                     ).to(self.device)
                 )
 
-                # 3. 推理优化：使用更快的 inference_mode
+                # Step 2: Optimized inference with torch.inference_mode()
                 with torch.inference_mode():
-                    outputs = self.model(**inputs) # type: ignore
-                    # BGE Reranker 通常输出单个 logit 
+                    outputs = self.model(** inputs)  # type: ignore
+                    # BGE Reranker outputs single logit per pair
                     logits = outputs.logits.view(-1).float()
-                    # 归一化分数
+                    # Normalize scores to 0-1 range with sigmoid
                     scores = torch.sigmoid(logits).cpu().numpy().tolist()
                     all_scores.extend(scores)
 
             except Exception as e:
-                logger.error(f"❌ Batch {i} 推理异常: {e}")
+                # Log error and assign 0.0 score to failed batch items
+                logger.error(f"❌ Batch {batch_start} inference error: {e}")
                 all_scores.extend([0.0] * len(batch_docs))
 
-            # 4. 显存动态回收
-            if self.device.type == "cuda" and i % (self.config.batch_size * 5) == 0:
+            # Step 3: Periodic GPU memory cleanup to prevent OOM errors
+            if self.device.type == "cuda" and batch_start % (self.config.batch_size * 5) == 0:
                 torch.cuda.empty_cache()
 
-        # 5. 结果组装与过滤
+        # Step 4: Assemble results with original indices and relevance scores
         results = [
             {"index": idx, "score": score} 
-            for idx, score in enumerate(all_scores) 
-            # if score >= self.config.score_threshold
+            for idx, score in enumerate(all_scores)
         ]
         
-        # 排序取前 K
+        # Step 5: Sort by relevance score (descending) and apply top-k filtering
         results.sort(key=lambda x: x["score"], reverse=True)
         return results[:top_k] if top_k else results
 
     async def shutdown(self) -> None:
-        """彻底释放显存与线程池"""
+        """Clean up resources including GPU memory and thread pool.
+        
+        Moves model to CPU, deletes model reference, clears CUDA cache,
+        and shuts down the tokenization executor to prevent resource leaks.
+        """
+        # Clean up model resources
         if self.model:
+            # Move model to CPU first to properly release GPU memory
             self.model.cpu()
             del self.model
             self.model = None
+        
+        # Clear CUDA memory if available
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
             torch.cuda.synchronize()
+        
+        # Shutdown tokenization executor
         self._executor.shutdown(wait=True)
+        
+        # Reset initialization state
         self._is_initialized = False
-        logger.info("♻️ BGE Reranker 显存已安全释放")
+        logger.info("♻️ BGE Reranker memory released safely")
 
     @property
     def is_initialized(self) -> bool:
+        """Check if reranker is properly initialized and ready for requests.
+        
+        Returns:
+            bool: True if initialized, False otherwise
+        """
         return self._is_initialized

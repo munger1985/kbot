@@ -7,32 +7,52 @@ from .model import BaseVLM
 
 class VLMService:
     """
-    统一的VLM服务，用于管理和使用不同的VLM模型
+    Unified VLM (Vision-Language Model) Service
+    
+    Manages the lifecycle and inference operations for different VLM models through
+    a centralized model pool, providing a consistent interface for model interaction.
     """
     
     def __init__(self):
         """
-        初始化VLM服务
+        Initialize VLM Service
+        
+        Sets up the model pool instance and initialization state tracking.
         """
         self._model_pool = VLMModelPool()
         self._initialized = False
         
     async def initialize(self):
-        """初始化VLM服务和模型池。"""
+        """Initialize VLM service and model pool
+        
+        Performs one-time setup for the VLM service, including initializing the
+        underlying model pool with all configured models.
+        """
         if not self._initialized:
             await self._model_pool.initialize()
             self._initialized = True
-            logger.info("VLM 服务已初始化")
+            logger.info("VLM service initialized successfully")
         
     async def shutdown(self):
-        """关闭VLM服务和所有模型。"""
+        """Shut down VLM service and all managed models
+        
+        Gracefully terminates all model instances in the pool and cleans up
+        associated resources.
+        """
         if self._initialized:
             await self._model_pool.shutdown()
             self._initialized = False
-            logger.info("VLM 服务已关闭")
+            logger.info("VLM service shut down successfully")
     
     async def get_vlm_model(self, model_name: str) -> BaseVLM:
-        """获取指定唯一名的VLM模型。"""
+        """Retrieve VLM model instance by unique model name
+        
+        Args:
+            model_name: Unique technical name of the VLM model
+            
+        Returns:
+            BaseVLM: Initialized VLM model instance from the pool
+        """
         if not self._initialized:
             await self.initialize()
 
@@ -50,29 +70,37 @@ class VLMService:
                         presence_penalty: float | None = None
                     ) -> dict[str, Any] | AsyncGenerator[str, None]:
         """
-        调用VLM模型进行推理
+        Execute inference with a VLM model
+        
+        Performs vision-language inference using the specified model with the given
+        parameters, supporting both streaming and non-streaming response modes.
 
-        参数:
-            model_name: 模型技术名称
-            messages: 消息列表
-            stream: 是否开启流式输出，如果是，则输出 AsyncGenerator
-            timeout: 超时时间，单位：秒
-            max_tokens: 生成的最大 token 数量
-            temperature: 模型生成的温度，0~2.0
-            top_p: 生成概率 top p 的值，0~1.0
-            frequency_penalty: 生成惩罚参数
-            presence_penalty: 存在惩罚参数
+        Args:
+            model_name: Technical name of the target VLM model
+            messages: List of message dictionaries (supports text + image content)
+            stream: If True, returns an async generator of response chunks
+            timeout: Request timeout in seconds
+            max_tokens: Maximum number of tokens to generate (0-4096 typically)
+            temperature: Sampling temperature (0.0-2.0, lower = more deterministic)
+            top_p: Nucleus sampling parameter (0.0-1.0)
+            frequency_penalty: Penalty for repeated token generation (-2.0-2.0)
+            presence_penalty: Penalty for new topic introduction (-2.0-2.0)
 
-        返回:
-            如果 stream 为 True: 生成文本块的异步生成器
-            如果 stream 为 False: 包含内容和使用统计信息的字典
+        Returns:
+            Union[dict[str, Any], AsyncGenerator[str, None]]:
+                - If stream=False: Complete response dict with content and token usage
+                - If stream=True: Async generator yielding response chunks as strings
+
+        Raises:
+            RuntimeError: If inference fails at any stage
+            ValueError: If response format is invalid or incomplete
         """
 
         try:
-            # 从池中获取模型
+            # Retrieve model instance from pool
             model = await self.get_vlm_model(model_name)
             
-            # 准备参数
+            # Prepare inference parameters (filter out None values)
             kwargs = {
                 "timeout": timeout,
                 "max_tokens": max_tokens,
@@ -83,36 +111,36 @@ class VLMService:
             }
             kwargs = {k: v for k, v in kwargs.items() if v is not None}
             
-            # 从模型获取响应
+            # Execute inference with the model
             try:
-                logger.debug(f"向模型发送消息: {model_name}")
+                logger.debug(f"Sending messages to model: {model_name}")
                 response = await model.inference(messages, stream=stream, **kwargs)
-                logger.debug(f"收到响应类型: {type(response)}")
+                logger.debug(f"Received response type: {type(response)}")
             except Exception as e:
-                logger.error(f"生成响应时出错: {e}")
-                raise RuntimeError(f"生成聊天响应失败: {e}")
+                logger.error(f"Error generating response: {e}")
+                raise RuntimeError(f"Failed to generate chat response: {e}")
 
             if stream:
-                # 流式响应处理
+                # Handle streaming response
                 async def generate_stream():
                     try:
                         content_parts = []
                         last_chunk = None
                         
                         async for chunk in response: # type: ignore
-                            logger.debug(f"收到块类型: {type(chunk)}")
+                            logger.debug(f"Received chunk type: {type(chunk)}")
                             last_chunk = chunk
                             
                             if not hasattr(chunk, 'choices'):
-                                logger.warning("收到无效的块格式")
+                                logger.warning("Received invalid chunk format - missing 'choices' attribute")
                                 continue
                             
                             if not chunk.choices:
-                                logger.warning("收到没有选择的块")
+                                logger.warning("Received chunk with empty choices list")
                                 continue
                             
                             if not hasattr(chunk.choices[0], 'delta'):
-                                logger.warning("收到无效的选择格式")
+                                logger.warning("Received invalid choice format - missing 'delta' attribute")
                                 continue
                             
                             delta = chunk.choices[0].delta
@@ -122,11 +150,11 @@ class VLMService:
                                     content_parts.append(str(content))
                                     yield str(content)
                                 else:
-                                    logger.debug("收到内容为空的 delta")
+                                    logger.debug("Received delta with empty content")
                             else:
-                                logger.debug("收到没有内容的 delta")
+                                logger.debug("Received delta without content field")
                         
-                        # 流结束后，检查使用数据
+                        # Append token usage statistics after stream completion
                         if hasattr(last_chunk, 'usage'):
                             yield "\n\n=== USAGE ===\n" + json.dumps({
                                 "total_tokens": int(last_chunk.usage.total_tokens), # type: ignore
@@ -140,7 +168,7 @@ class VLMService:
                                 "completion_tokens": int(response.usage.completion_tokens) # type: ignore
                             })
                         
-                        # 返回最后一个块的完整响应结构
+                        # Append full response metadata after usage stats
                         if last_chunk:
                             yield "\n\n=== FULL RESPONSE ===\n" + json.dumps({
                                 "id": last_chunk.id,
@@ -162,40 +190,41 @@ class VLMService:
                             })
                             
                     except Exception as e:
-                        logger.error(f"流式响应处理错误: {e}")
+                        logger.error(f"Error processing streaming response: {e}")
                         raise
                         
                 return generate_stream()
             else:
-                # 非流式响应处理
-                logger.debug(f"收到响应类型: {type(response)}")
+                # Handle non-streaming response
+                logger.debug(f"Received response type: {type(response)}")
                 
                 if not hasattr(response, 'choices'):
-                    raise ValueError("无效的响应格式: 没有 choices 属性")
+                    raise ValueError("Invalid response format - missing 'choices' attribute")
                 
                 if not response.choices: # type: ignore
-                    raise ValueError("无效的完成格式: 没有可用的选择")
+                    raise ValueError("Invalid completion format - no choices available")
                 
                 if not hasattr(response.choices[0], 'message'): # type: ignore
-                    raise ValueError("无效的选择格式: 没有 message 属性")
+                    raise ValueError("Invalid choice format - missing 'message' attribute")
                 
                 message = response.choices[0].message # type: ignore
                 if not message or not hasattr(message, 'content'):
-                    raise ValueError("无效的消息格式: 没有 content 属性")
+                    raise ValueError("Invalid message format - missing 'content' attribute")
                 
                 if not message.content:
-                    raise ValueError("无效的消息格式: 内容为空")
+                    raise ValueError("Invalid message format - empty content")
                 
                 if not hasattr(response, 'usage'):
-                    raise ValueError("无效的完成格式: 没有 usage 属性")
+                    raise ValueError("Invalid completion format - missing 'usage' attribute")
                 
                 if not response.usage: # type: ignore
-                    raise ValueError("无效的完成格式: 没有使用数据")
+                    raise ValueError("Invalid completion format - no usage data available")
                 
                 if not all(hasattr(response.usage, attr)  # type: ignore
                           for attr in ['total_tokens', 'prompt_tokens', 'completion_tokens']):
-                    raise ValueError("无效的使用格式: 缺少必需的属性")
+                    raise ValueError("Invalid usage format - missing required attributes")
                 
+                # Construct standardized response format
                 return {
                     "id": response.id, # type: ignore
                     "object": "chat.completion",
@@ -221,12 +250,15 @@ class VLMService:
                 }
                 
         except Exception as e:
-            logger.error(f"生成聊天响应时出错: {e}")
-            raise RuntimeError(f"生成聊天响应失败: {e}")
+            logger.error(f"Error generating chat response: {e}")
+            raise RuntimeError(f"Failed to generate chat response: {e}")
         
     async def warmup(self):
         """
-        预热模型池中的所有模型
+        Warm up all models in the model pool
+        
+        Pre-initializes all configured VLM models to reduce first-request latency.
+        This method should be called during service startup for optimal performance.
         """
         if not self._initialized:
             await self.initialize()
@@ -234,13 +266,16 @@ class VLMService:
         await self._model_pool.warmup()
 
     async def load_model(self, model_name: str) -> bool:
-        """通过模型技术名称加载模型到内存中
+        """Load model into memory by technical name
+        
+        Explicitly loads (or reloads) a specific model into the pool, initializing
+        all required resources for inference.
         
         Args:
-            model_name: 模型技术名称
+            model_name: Technical name of the model to load
             
         Returns:
-            bool: 加载是否成功
+            bool: True if model loaded successfully, False otherwise
         """
         if not self._initialized:
             await self.initialize()
@@ -249,13 +284,16 @@ class VLMService:
 
         
     async def unload_model(self, model_name: str) -> bool:
-        """通过模型技术名称卸载模型到内存中。
+        """Unload model from memory by technical name
+        
+        Gracefully shuts down and removes a specific model from the pool,
+        freeing up system resources.
         
         Args:
-            model_name: 模型技术名称
+            model_name: Technical name of the model to unload
             
         Returns:
-            bool: 卸载是否成功
+            bool: True if model unloaded successfully, False otherwise
         """
         if not self._initialized:
             await self.initialize()

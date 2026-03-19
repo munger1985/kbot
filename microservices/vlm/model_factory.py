@@ -4,20 +4,25 @@ from core.dictionary import VLMProvider
 
 def create_vlm_model(config: VLMConfig) -> BaseVLM:
     """
-    工厂函数：根据配置创建 VLM (视觉语言模型) 实例
+    Factory function: Create VLM (Vision-Language Model) instance based on configuration
+    
+    This factory method instantiates the appropriate VLM implementation based on the
+    provider specified in the configuration object, ensuring type compatibility between
+    the config and provider implementation.
     
     Args:
-        config: VLM 配置对象，包含 provider 字段
+        config: VLM configuration object containing the provider field
         
     Returns:
-        BaseVLM: 对应提供商的 VLM 模型实例
+        BaseVLM: VLM model instance for the specified provider
         
     Raises:
-        ValueError: 当提供不支持的提供商或配置类型不匹配时抛出
+        ValueError: Raised when an unsupported provider is specified or the config type
+            does not match the provider requirements
     """
     provider = config.provider.lower()
     
-    # 1. OpenAI 兼容协议接口 (Qwen-VL API, GPT-4V 等)
+    # 1. OpenAI-compatible API interfaces (Qwen-VL API, GPT-4V, etc.)
     openai_vlm_providers = [
         VLMProvider.API_QWEN.value, 
         VLMProvider.CHATGPT.value
@@ -27,22 +32,25 @@ def create_vlm_model(config: VLMConfig) -> BaseVLM:
         if isinstance(config, OpenAIVLMConfig):
             return OpenAIVLM(config)
         else:
-            raise ValueError(f"提供商 {provider} 需要 OpenAIVLMConfig 配置对象")
+            raise ValueError(f"Provider {provider} requires an OpenAIVLMConfig configuration object")
             
-    # 2. 待扩展的本地 VLM 或其他厂商
+    # 2. Extensible section for local VLMs or other providers
     # elif provider == VLMProvider.LOCAL_QWEN.value:
     #     if isinstance(config, LocalVLMConfig):
     #         return LocalVLM(config)
             
     else:
-        raise ValueError(f"不支持的 VLM 提供商: {provider} (模型名称: {config.model_name})")
+        raise ValueError(f"Unsupported VLM provider: {provider} (Model name: {config.model_name})")
 
 
 def get_supported_providers() -> list[str]:
     """
-    获取支持的 VLM 提供商列表
+    Get list of supported VLM providers
+    
+    Retrieves all valid VLM provider values from the VLMProvider enumeration,
+    providing a single source of truth for supported providers.
     
     Returns:
-        list[str]: 支持的提供商名称列表
+        list[str]: List of supported provider names (string values)
     """
     return [provider.value for provider in VLMProvider]

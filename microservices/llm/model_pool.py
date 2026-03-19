@@ -9,66 +9,137 @@ from .model_factory import create_llm_model
 
 class LLMModelPool(BaseModelPool[BaseLLM[Any]]):
     """
-    LLM 模型池
-    负责大语言模型（OpenAI 兼容接口、OCI 等）的实例管理
+    Model pool for managing Large Language Model (LLM) instances.
+    
+    This specialized model pool handles lifecycle management for LLM implementations
+    including OpenAI-compatible APIs, OCI Generative AI, and other providers. It
+    extends the base model pool with LLM-specific initialization, health checking,
+    and resource cleanup logic.
+    
+    Type Parameters:
+        BaseLLM[Any]: Generic LLM base class with provider-specific configuration
     """
 
     def _get_model_category(self) -> int:
-        """返回 LLM 类别枚举"""
+        """Return the enum value for LLM model category.
+        
+        Required implementation from BaseModelPool to identify this pool's
+        model type for metadata management and configuration.
+        
+        Returns:
+            int: Numeric value of ModelCategory.LLM enum
+        """
         return ModelCategory.LLM.value
 
     async def _shutdown_model_instance(self, model: BaseLLM[Any]):
-        """执行 LLM 资源释放（如关闭 HTTP 客户端 Session）"""
+        """Shut down LLM instance and release associated resources.
+        
+        Implements provider-specific cleanup logic including closing HTTP client
+        sessions, releasing connections, and cleaning up any open resources.
+        
+        Args:
+            model: LLM instance to shut down
+        """
         await model.shutdown()
 
     async def _perform_model_health_check(self, model_name: str, model: BaseLLM[Any]):
         """
-        通过一次极简对话检查 API 连通性
-        使用 stream=False 和极小的 max_tokens 以节省 Token 并降低延迟
+        Perform health check on LLM instance using minimal chat completion.
+        
+        Validates API connectivity and basic functionality with a minimal request
+        (short prompt, minimal tokens, non-streaming) to minimize token usage and
+        latency while ensuring the model is operational.
+        
+        Args:
+            model_name: Name of the model to check
+            model: LLM instance to perform health check on
+            
+        Raises:
+            Exception: If health check request fails (API error, timeout, etc.)
         """
-        # 探测调用
+        # Execute minimal health check request
         await model.chat(
             messages=[{"role": "user", "content": "hi"}],
             stream=False,
             max_tokens=2
         )
-        logger.debug(f"🔍 LLM 模型 {model_name} 响应正常")
+        logger.debug(f"🔍 LLM model {model_name} health check passed")
 
     async def _start_model(self, model_name: str, model_data: dict[str, Any]) -> BaseLLM[Any]:
         """
-        创建并启动 LLM 实例
+        Create and initialize an LLM instance from configuration data.
+        
+        Orchestrates the complete LLM instantiation process:
+        1. Retrieves global LLM configuration defaults
+        2. Builds provider-specific configuration object
+        3. Creates model instance via factory pattern
+        4. Initializes the model (connects to API)
+        5. Returns ready-to-use model instance
+        
+        Args:
+            model_name: Unique technical name of the model
+            model_data: Dictionary containing model configuration from database/storage
+            
+        Returns:
+            BaseLLM[Any]: Fully initialized LLM instance ready for chat completions
+            
+        Raises:
+            ValueError: If required configuration parameters are missing
+            Exception: If model creation or initialization fails
         """
+        # Extract required provider identifier
         provider = model_data.get("provider")
         if not provider:
-            raise ValueError(f"模型 {model_name} 缺少必要参数: provider")
+            raise ValueError(f"Missing required parameter 'provider' for model {model_name}")
 
-        # 1. 获取全局默认配置
+        # Step 1: Get global default LLM configuration
         global_config = get_llm_config()
         
-        # 2. 构造特定 Provider 的 Config 对象
+        # Step 2: Build provider-specific configuration object
         model_config = self._build_config(model_name, provider, model_data, global_config)
 
-        # 3. 通过工厂创建实例
+        # Step 3: Create model instance via factory pattern
         model = create_llm_model(model_config)
         
         try:
+            # Initialize model (connect to API, create clients, etc.)
             await model.startup()
-            # 状态记录由父类 load_model 统一处理，此处不再手动操作 self._models
-            logger.success(f"🚀 LLM 模型 {model_name} ({provider}) 已接入模型池")
+            
+            # Instance state managed by parent class load_model method
+            logger.success(f"🚀 LLM model {model_name} ({provider}) loaded into pool successfully")
             return model
         except Exception as e:
-            logger.error(f"❌ LLM 模型 {model_name} 启动失败: {e}")
+            logger.error(f"❌ Failed to start LLM model {model_name}: {e}")
             raise
 
     def _build_config(self, name: str, provider: str, data: dict[str, Any], global_cfg: Any) -> LLMConfig:
         """
-        将数据库配置映射为强类型 Config 对象
+        Map raw configuration data to strongly-typed provider-specific config objects.
+        
+        Combines global defaults with model-specific parameters and validates
+        provider-specific requirements (API keys, endpoints, etc.).
+        
+        Args:
+            name: Model technical name
+            provider: LLM provider identifier (e.g., "openai", "oci")
+            data: Raw model configuration data (from database/storage)
+            global_cfg: Global LLM configuration defaults
+            
+        Returns:
+            LLMConfig: Provider-specific configuration object (OpenaiLLMConfig/OCILLMConfig)
+            
+        Raises:
+            ValueError: If required provider-specific parameters are missing
+            ValueError: If provider is not supported
         """
+        # Extract model parameters with fallback to empty dict
         params = data.get("model_params", {})
+        
+        # Extract common connection parameters
         api_key = data.get("api_key")
         api_endpoint = data.get("api_endpoint")
 
-        # 公共参数快捷提取
+        # Common LLM parameters with global defaults fallback
         common_kwargs = {
             "model_name": name,
             "provider": provider,
@@ -79,16 +150,18 @@ class LLMModelPool(BaseModelPool[BaseLLM[Any]]):
             "presence_penalty": params.get("presence_penalty", global_cfg.presence_penalty),
         }
 
-        # 1. OpenAI 兼容接口 (DeepSeek, Qwen API, GPT)
+        # 1. OpenAI-compatible providers (DeepSeek, Qwen API, ChatGPT)
         openai_providers = [
             LLMProvider.API_DEEPSEEK.value, 
             LLMProvider.API_QWEN.value, 
             LLMProvider.CHATGPT.value
         ]
         if provider in openai_providers:
+            # Validate required OpenAI-compatible parameters
             if not api_key or not api_endpoint:
-                raise ValueError(f"API 模型 {name} 缺失 api_key 或 api_endpoint")
+                raise ValueError(f"OpenAI-compatible model {name} missing required parameters: api_key or api_endpoint")
             
+            # Create OpenAI-specific configuration
             return OpenaiLLMConfig(
                 **common_kwargs,
                 api_key=api_key,
@@ -96,28 +169,40 @@ class LLMModelPool(BaseModelPool[BaseLLM[Any]]):
                 timeout=params.get("timeout", global_cfg.timeout)
             )
 
-        # 2. Oracle Cloud Infrastructure (OCI) 接口
+        # 2. Oracle Cloud Infrastructure (OCI) provider
         if provider == LLMProvider.OCI.value:
+            # Extract OCI-specific parameters
             compartment_id = params.get("compartment_id")
             config_file = params.get("config_file")
             
+            # Validate OCI-specific requirements
             if not all([api_endpoint, compartment_id, config_file]):
-                raise ValueError(f"OCI 模型 {name} 缺少必要参数 (compartment_id/config_file/endpoint)")
+                raise ValueError(f"OCI model {name} missing required parameters (compartment_id/config_file/endpoint)")
 
+            # Create OCI-specific configuration
             return OCILLMConfig(
                 **common_kwargs,
-                api_endpoint=api_endpoint, # type: ignore
+                api_endpoint=api_endpoint,  # type: ignore
                 compartment_id=compartment_id,
                 config_file=config_file,
                 top_k=params.get("top_k", global_cfg.top_k)
             )
 
-        raise ValueError(f"不支持的 LLM Provider: {provider}")
+        # Unsupported provider fallback
+        raise ValueError(f"Unsupported LLM provider: {provider}")
 
     def get_provider_in_pool(self, model_name: str) -> str | None:
         """
-        获取已加载模型的 Provider
-        直接从模型实例的 config 中读取，确保数据源唯一
+        Get provider identifier for a loaded model from the pool.
+        
+        Retrieves provider information directly from the model's configuration
+        to ensure single source of truth and avoid configuration drift.
+        
+        Args:
+            model_name: Name of the model to check
+            
+        Returns:
+            str | None: Provider identifier if model is loaded, None otherwise
         """
         model = self._models.get(model_name)
         return model.config.provider if model else None

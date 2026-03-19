@@ -6,30 +6,58 @@ from loguru import logger
 from .base import BaseReranker, RerankerConfig
 
 class OpenAIRerankerConfig(RerankerConfig):
-    """OpenAI 兼容接口 Reranker 配置"""
-    api_key: str = Field(..., description="API 密钥")
-    api_endpoint: str = Field(..., description="API 端点 (例如 http://localhost:8000/v1/rerank)")
-    timeout: int = Field(30, description="请求超时时间")
-    # 某些后端（如 vLLM）可能需要特定的模型名称
-    model_name: str = Field("bge-reranker-v2-m3", description="模型名称")
+    """OpenAI-compatible Reranker configuration class.
+    
+    Extends the base reranker configuration with parameters for OpenAI-style
+    API integration, including authentication, endpoint configuration, and
+    timeout settings for private deployments (vLLM, TEI, SGLang, etc.).
+    """
+    api_key: str = Field(..., description="API key for authentication (Bearer token)")
+    api_endpoint: str = Field(..., description="API endpoint URL (e.g., http://localhost:8000/v1/rerank)")
+    timeout: int = Field(30, description="Request timeout in seconds")
+    # Some backends (e.g., vLLM) require specific model names for routing
+    model_name: str = Field("bge-reranker-v2-m3", description="Model name for API routing")
 
 class OpenAIReranker(BaseReranker[OpenAIRerankerConfig]):
     """
-    OpenAI 兼容协议的 Reranker 客户端
-    适用于 vLLM, TEI, SGLang 等私有化部署后端
+    Reranker client for OpenAI-compatible API endpoints.
+    
+    Designed for private reranker deployments including:
+    - vLLM (High-performance LLM serving)
+    - TEI (Text Embeddings Inference)
+    - SGLang (Efficient LLM serving)
+    
+    Key features:
+    - Asynchronous HTTP client with proper connection management
+    - Standardized request/response handling across compatible backends
+    - Robust error handling with status code logging
+    - Bandwidth optimization (no document return by default)
     """
 
     def __init__(self, config: OpenAIRerankerConfig):
+        """Initialize OpenAI-compatible reranker with configuration.
+        
+        Args:
+            config: OpenAI-compatible reranker configuration object
+        """
         super().__init__(config)
         self._client: httpx.AsyncClient | None = None
         self._is_initialized = False
 
     async def startup(self) -> None:
-        """初始化 HTTP 异步客户端"""
+        """Initialize asynchronous HTTP client with connectivity test.
+        
+        Creates an httpx AsyncClient with proper authentication headers and
+        performs a minimal API call to verify endpoint connectivity and
+        authentication. Idempotent - safe to call multiple times.
+        
+        Raises:
+            Exception: If client initialization or connectivity test fails
+        """
         if self._is_initialized:
             return
 
-        # 使用 httpx 构建标准异步请求客户端
+        # Create async HTTP client with authentication headers
         self._client = httpx.AsyncClient(
             headers={
                 "Authorization": f"Bearer {self.config.api_key}",
@@ -38,20 +66,20 @@ class OpenAIReranker(BaseReranker[OpenAIRerankerConfig]):
             timeout=self.config.timeout
         )
         
-        # 简单联通性测试
+        # Perform minimal connectivity test to validate endpoint
         try:
-            test_data = {
+            test_payload = {
                 "model": self.model_name,
                 "query": "hi",
                 "documents": ["hi"],
                 "top_n": 1
             }
-            response = await self._client.post(self.config.api_endpoint, json=test_data)
-            response.raise_for_status()
+            response = await self._client.post(self.config.api_endpoint, json=test_payload)
+            response.raise_for_status()  # Raise exception for HTTP errors
             self._is_initialized = True
-            logger.info(f"✅ OpenAI-Compatible Reranker ({self.model_name}) 初始化成功")
+            logger.info(f"✅ OpenAI-Compatible Reranker ({self.model_name}) initialized successfully")
         except Exception as e:
-            logger.error(f"❌ Reranker 连通性测试失败: {e}")
+            logger.error(f"❌ Reranker connectivity test failed: {e}")
             raise
 
     async def rerank(
@@ -61,56 +89,93 @@ class OpenAIReranker(BaseReranker[OpenAIRerankerConfig]):
         top_k: int | None = None
     ) -> list[dict[str, Any]]:
         """
-        执行重排序请求
+        Perform reranking via OpenAI-compatible API endpoint.
+        
+        Sends standardized rerank request to configured endpoint with
+        bandwidth optimization (no document return) and flexible response
+        parsing compatible with major private deployment backends.
+        
+        Args:
+            query: Input query text for relevance scoring
+            documents: List of document texts to rerank
+            top_k: Number of top relevant documents to return (None returns all)
+            
+        Returns:
+            list[dict[str, Any]]: Reranked results with "index" (original position)
+                and "score" (relevance score, 0-1 range)
+                
+        Raises:
+            RuntimeError: If client is not initialized
+            httpx.HTTPStatusError: For HTTP error status codes
+            Exception: For other request/parsing errors
         """
+        # Ensure client is initialized before processing
         if not self._is_initialized:
             await self.startup()
 
+        # Validate client initialization state
         if not self._client:
-            raise RuntimeError("OpenAI Reranker 客户端未初始化")
+            raise RuntimeError("OpenAI Reranker client not initialized")
         
+        # Return empty list for empty document input
         if not documents:
             return []
 
+        # Prepare request payload with bandwidth optimization
         payload = {
             "model": self.model_name,
             "query": query,
             "documents": documents,
             "top_n": top_k or len(documents),
-            "return_documents": False # 通常不需要返回原文，节省带宽
+            "return_documents": False  # Avoid returning full documents to save bandwidth
         }
 
         try:
+            # Send async POST request to rerank endpoint
             response = await self._client.post(self.config.api_endpoint, json=payload)
-            response.raise_for_status()
-            data = response.json()
+            response.raise_for_status()  # Raise exception for HTTP errors (4xx/5xx)
+            response_data = response.json()
 
-            # 解析结果：适配主流后端返回的格式
-            # 主流格式：{"results": [{"index": 0, "relevance_score": 0.9}, ...]}
+            # Parse results with compatibility for different backend formats
+            # Standard format: {"results": [{"index": 0, "relevance_score": 0.9}, ...]}
+            # Fallback format: {"results": [{"index": 0, "score": 0.9}, ...]}
             results = []
-            for item in data.get("results", []):
+            for item in response_data.get("results", []):
+                # Use relevance_score with score as fallback for compatibility
+                relevance_score = item.get("relevance_score") or item.get("score", 0.0)
                 results.append({
                     "index": item.get("index"),
-                    "score": float(item.get("relevance_score") or item.get("score", 0.0))
+                    "score": float(relevance_score)
                 })
             
             return results
 
         except httpx.HTTPStatusError as e:
-            logger.error(f"❌ Rerank API 状态错误: {e.response.status_code} - {e.response.text}")
+            # Detailed logging for HTTP errors with status code and response text
+            logger.error(f"❌ Rerank API status error: {e.response.status_code} - {e.response.text}")
             raise
         except Exception as e:
-            logger.error(f"💥 Rerank 请求异常: {str(e)}")
+            # General error logging with full context
+            logger.error(f"💥 Rerank request exception: {str(e)}")
             raise
 
     async def shutdown(self) -> None:
-        """关闭客户端"""
+        """Clean up HTTP client resources gracefully.
+        
+        Closes the async HTTP client connection and resets initialization state
+        to prevent resource leaks during application shutdown.
+        """
         if self._client:
-            await self._client.aclose()
+            await self._client.aclose()  # Properly close async client
             self._client = None
         self._is_initialized = False
-        logger.info("♻️ OpenAI Reranker 客户端已正常关闭")
+        logger.info("♻️ OpenAI Reranker client closed successfully")
 
     @property
     def is_initialized(self) -> bool:
+        """Check if reranker is properly initialized and ready for requests.
+        
+        Returns:
+            bool: True if initialized, False otherwise
+        """
         return self._is_initialized

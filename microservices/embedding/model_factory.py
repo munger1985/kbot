@@ -4,16 +4,16 @@ from core.dictionary import EmbeddingProvider
 
 def create_embedding_model(config: EmbeddingConfig) -> BaseEmbedding:
     """
-    工厂函数：根据提供商创建嵌入模型
+    Factory function: Create embedding model instance based on provider type.
     
     Args:
-        config: 嵌入模型配置对象，包含 provider 字段
+        config: Embedding model configuration object containing provider field
         
     Returns:
-        BaseEmbedding: 对应提供商的嵌入模型实例
+        BaseEmbedding: Embedding model instance corresponding to the specified provider
         
     Raises:
-        ValueError: 当提供不支持的提供商时抛出
+        ValueError: Raised when unsupported provider is specified or configuration type mismatch
     """
     provider = config.provider.lower()
     
@@ -21,35 +21,35 @@ def create_embedding_model(config: EmbeddingConfig) -> BaseEmbedding:
         if isinstance(config, BGEEmbeddingConfig):
             return BGEEmbedding(config)
         else:
-            raise ValueError("本地 BGE 模型配置无效")
+            raise ValueError("Invalid configuration for local BGE model")
         
     elif provider == EmbeddingProvider.LOCAL_QWEN.value:
         if isinstance(config, Qwen3EmbeddingConfig):
             return Qwen3Embedding(config)
         else:
-            raise ValueError("本地 Qwen3 模型配置无效")
+            raise ValueError("Invalid configuration for local Qwen3 model")
         
     elif provider in [EmbeddingProvider.API_QWEN.value, EmbeddingProvider.CHATGPT.value]:
         if isinstance(config, OpenAIEmbeddingConfig):
             return OpenAIEmbedding(config)
         else:
-            raise ValueError("OpenAI Embedding 参数配置无效")
+            raise ValueError("Invalid OpenAI Embedding parameter configuration")
         
     elif provider == EmbeddingProvider.OCI.value:
         if isinstance(config, OCIEmbeddingConfig):
             return OCIEmbedding(config)
         else:
-            raise ValueError("OCI Embedding 参数配置无效")
+            raise ValueError("Invalid OCI Embedding parameter configuration")
         
     else:
-        raise ValueError(f"不支持的Embedding服务提供商: {provider}")
+        raise ValueError(f"Unsupported Embedding service provider: {provider}")
 
 
 def get_supported_providers() -> list[str]:
     """
-    获取支持的嵌入服务提供商列表
+    Get list of supported embedding service providers.
     
     Returns:
-        list[str]: 支持的提供商名称列表
+        list[str]: List of supported provider names (string values)
     """
     return [provider.value for provider in EmbeddingProvider]

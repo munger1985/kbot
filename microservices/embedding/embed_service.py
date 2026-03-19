@@ -5,29 +5,29 @@ from .model import BaseEmbedding, EmbeddingResponse
 
 
 class EmbeddingService:
-    """统一的嵌入服务，用于管理和使用不同的嵌入模型。"""
+    """Unified embedding service for managing and utilizing different embedding models."""
     
     def __init__(self):
-        """初始化嵌入服务实例。"""
+        """Initialize EmbeddingService instance."""
         self._model_pool = EmbeddingModelPool()
         self._initialized = False
         
     async def initialize(self):
-        """初始化嵌入服务和模型池。"""
+        """Initialize embedding service and model pool."""
         if not self._initialized:
             await self._model_pool.initialize()
             self._initialized = True
-            logger.info("嵌入服务初始化完成")
+            logger.info("Embedding service initialized successfully")
         
     async def shutdown(self):
-        """关闭嵌入服务和所有模型资源。"""
+        """Shutdown embedding service and release all model resources."""
         if self._initialized:
             await self._model_pool.shutdown()
             self._initialized = False
-            logger.info("嵌入服务已关闭")
+            logger.info("Embedding service has been shut down")
     
     async def get_embedding_model(self, model_name: str) -> BaseEmbedding:
-        """获取指定唯一名称的嵌入模型实例。"""
+        """Get embedding model instance by its unique name."""
         if not self._initialized:
             await self.initialize()
 
@@ -41,19 +41,20 @@ class EmbeddingService:
         batch_size: int | None = None,
         is_query: bool = True
     ) -> EmbeddingResponse:
-        """使用指定模型对文本列表进行嵌入处理。
+        """Generate embeddings for a list of texts using the specified model.
         
         Args:
-            model_name: 嵌入模型唯一名称
-            texts: 待嵌入的文本列表
-            batch_size: 批处理大小，为 None 时由模型自动决定
-            is_query: 是否为查询文本，默认为True
+            model_name: Unique name of the embedding model
+            texts: List of texts to generate embeddings for
+            batch_size: Batch size for processing (model-determined if None)
+            is_query: Whether the texts are query inputs (default: True)
             
         Returns:
-            EmbeddingResponse: 标准OpenAI格式的嵌入响应，包含向量数据和使用情况
+            EmbeddingResponse: Standard OpenAI-formatted embedding response containing
+                               vector data and token usage statistics
             
         Raises:
-            RuntimeError: 当嵌入处理过程中发生错误时抛出
+            RuntimeError: Raised when errors occur during embedding processing
         """
         if not texts:
             return EmbeddingResponse(
@@ -67,7 +68,7 @@ class EmbeddingService:
             model = await self.get_embedding_model(model_name)
             response = await model.embed(texts=texts, batch_size=batch_size, is_query=is_query)
             
-            # 验证返回的响应数据有效性
+            # Validate response data validity
             if not response.data or len(response.data) == 0:
                 return EmbeddingResponse(
                     data=[],
@@ -78,8 +79,8 @@ class EmbeddingService:
             return response
                 
         except Exception as e:
-            logger.exception(f"文本嵌入处理失败，模型: {model_name}, 错误: {e}")
-            # 处理底层模型返回的0维张量错误
+            logger.exception(f"Text embedding processing failed, model: {model_name}, error: {e}")
+            # Handle 0-dimensional tensor errors returned by underlying models
             if "0-d tensor" in str(e):
                 return EmbeddingResponse(
                     data=[],
@@ -87,7 +88,7 @@ class EmbeddingService:
                     object="list",
                     usage={"prompt_tokens": 0, "total_tokens": 0}
                 )
-            raise RuntimeError(f"文本嵌入处理失败: {e}")
+            raise RuntimeError(f"Text embedding processing failed: {e}")
     
     async def compute_similarity(
         self,
@@ -96,59 +97,61 @@ class EmbeddingService:
         text2: str, 
         method: str = "cosine"
     ) -> float:
-        """计算两个嵌入向量之间的相似度分数。
+        """Compute similarity score between two embedding vectors.
         
         Args:
-            model_name: 嵌入模型唯一名称
-            text1: 第一个文本
-            text2: 第二个文本
-            method: 相似度计算方法，支持"cosine"(余弦相似度)和"dot"(点积)
+            model_name: Unique name of the embedding model
+            text1: First text string
+            text2: Second text string
+            method: Similarity calculation method - supports "cosine" (cosine similarity)
+                    and "dot" (dot product)
             
         Returns:
-            float: 相似度分数，范围通常在[-1, 1]之间，值越大表示越相似
+            float: Similarity score (typically in range [-1, 1]), higher values indicate
+                   greater similarity
             
         Raises:
-            ValueError: 当向量维度不匹配或方法不支持时抛出
+            ValueError: Raised when vector dimensions mismatch or unsupported method is used
         """
-        # 获取两个文本的嵌入向量
+        # Get embeddings for both texts
         embed_texts = [text1, text2]
         response = await self.embed_texts(model_name, embed_texts, batch_size=2)
         
-        # 检查响应数据是否为空
+        # Check if response data is empty
         if not response.data or len(response.data) < 2:
-            logger.error(f"嵌入响应数据无效，期望2个向量，实际得到{len(response.data) if response.data else 0}个")
-            raise ValueError(f"无法获取文本嵌入向量，可能由于模型错误或CUDA问题")
+            logger.error(f"Invalid embedding response data - expected 2 vectors, got {len(response.data) if response.data else 0}")
+            raise ValueError(f"Failed to get text embedding vectors, possibly due to model error or CUDA issues")
         
-        # 提取嵌入向量
+        # Extract embedding vectors
         embedding1 = np.array(response.data[0].embedding)
         embedding2 = np.array(response.data[1].embedding)
         
-        # 验证向量维度是否匹配
+        # Validate vector dimension matching
         if embedding1.shape != embedding2.shape:
-            raise ValueError(f"嵌入向量维度不匹配: {embedding1.shape} 与 {embedding2.shape}")
+            raise ValueError(f"Embedding vector dimensions mismatch: {embedding1.shape} vs {embedding2.shape}")
         
-        # 确保向量是一维的
+        # Ensure vectors are 1-dimensional
         vec1 = embedding1.flatten()
         vec2 = embedding2.flatten()
         
         if method.lower() == "cosine":
-            # 计算余弦相似度
+            # Calculate cosine similarity
             norm1 = np.linalg.norm(vec1)
             norm2 = np.linalg.norm(vec2)
             if norm1 == 0 or norm2 == 0:
                 return 0.0
             return float(np.dot(vec1, vec2) / (norm1 * norm2))
         elif method.lower() == "dot":
-            # 计算点积
+            # Calculate dot product
             return float(np.dot(vec1, vec2))
         else:
-            raise ValueError(f"不支持的相似度计算方法: {method}")
+            raise ValueError(f"Unsupported similarity calculation method: {method}")
     
     async def warmup(self):
-        """预加载所有模型到内存中进行预热。
+        """Preload all models into memory for warmup.
         
         Raises:
-            Exception: 预热过程中发生错误时抛出
+            Exception: Raised when errors occur during warmup process
         """
         if not self._initialized:
             await self.initialize()
@@ -156,13 +159,13 @@ class EmbeddingService:
         await self._model_pool.warmup()
 
     async def load_model(self, model_name: str) -> bool:
-        """通过模型唯一标识符加载模型到内存中
+        """Load model into memory by its unique identifier
         
         Args:
-            model_name: 模型唯一标识符
+            model_name: Unique identifier of the model
             
         Returns:
-            bool: 加载是否成功
+            bool: Whether the model was loaded successfully
         """
         if not self._initialized:
             await self.initialize()
@@ -171,13 +174,13 @@ class EmbeddingService:
 
         
     async def unload_model(self, model_name: str) -> bool:
-        """通过模型唯一标识符卸载模型到内存中。
+        """Unload model from memory by its unique identifier.
         
         Args:
-            model_name: 模型唯一标识符
+            model_name: Unique identifier of the model
             
         Returns:
-            bool: 卸载是否成功
+            bool: Whether the model was unloaded successfully
         """
         if not self._initialized:
             await self.initialize()

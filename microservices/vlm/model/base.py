@@ -1,8 +1,8 @@
 """
-VLM (视觉语言模型) 基础配置和接口定义。
-包含：
-1. 基础配置类 VLMConfig
-2. 基础接口类 BaseVLM
+Basic configuration and interface definitions for VLM (Vision-Language Model).
+Contains:
+1. Base configuration class VLMConfig
+2. Base interface class BaseVLM
 """
 from abc import ABC, abstractmethod
 from pydantic import BaseModel, Field
@@ -11,15 +11,25 @@ from openai.types.chat import ChatCompletion, ChatCompletionChunk
 
 
 class VLMConfig(BaseModel):
-    """VLM 模型的基础配置"""   
-    model_name: str = Field(..., description="模型名称")
-    provider: str = Field(..., description="模型提供商")
-    max_tokens: int = Field(8192, description="最大令牌数")
+    """Base configuration for VLM models
+    
+    Attributes:
+        model_name: Name of the model
+        provider: Provider of the model
+        max_tokens: Maximum number of tokens
+    """   
+    model_name: str = Field(..., description="Model name")
+    provider: str = Field(..., description="Model provider")
+    max_tokens: int = Field(8192, description="Maximum number of tokens")
 
 T = TypeVar("T", bound=VLMConfig)
 
 class BaseVLM(ABC, Generic[T]):
-    """VLM 实现的基类"""
+    """Base class for VLM implementations
+    
+    This abstract base class defines the core interface that all VLM implementations
+    must follow, including resource management, inference, and health check capabilities.
+    """
     def __init__(self, config: T) -> None:
         self.config: T = config
         self.provider = config.provider
@@ -29,25 +39,39 @@ class BaseVLM(ABC, Generic[T]):
     
     @abstractmethod
     async def startup(self) -> None:
-        """异步初始化资源"""
+        """Asynchronously initialize resources
+        
+        This method should handle all necessary setup operations such as:
+        - Establishing connections to model services
+        - Loading model weights (for local models)
+        - Initializing authentication
+        """
         pass
     
     @abstractmethod
     async def shutdown(self) -> None:
-        """异步释放资源"""
+        """Asynchronously release resources
+        
+        This method should clean up all resources such as:
+        - Closing connections to model services
+        - Releasing GPU/CPU memory
+        - Terminating background processes
+        """
         pass
 
     @abstractmethod
     async def inference(self, messages: list[dict[str, Any]], 
                         stream: bool = False, 
                         **kwargs) -> ChatCompletion | AsyncGenerator[ChatCompletionChunk, None] | None:
-        """
-        执行推理任务
-
-        参数:
-            messages: 消息字典列表，每个字典包含：
+        """Execute inference task
+        
+        Performs vision-language inference based on the provided messages containing
+        both text and image inputs.
+        
+        Args:
+            messages: List of message dictionaries, each containing:
                 {
-                    "role": str,   # "user"、"system" 或 "assistant" 之一
+                    "role": str,   # One of "user", "system", or "assistant"
                     "content": [
                         {
                             "type": "text",
@@ -61,19 +85,26 @@ class BaseVLM(ABC, Generic[T]):
                         }
                     ]
                 }
-            stream: 如果为 True，结果将以流式方式返回
-            **kwargs: 推理模型的额外参数
+            stream: If True, results will be returned as a streaming response
+            **kwargs: Additional parameters for the inference model (e.g., temperature, top_p)
         
-        返回:
-            生成的文本块或流式输出
+        Returns:
+            Generated text completion or streaming output chunks
+            Returns None if inference fails or no valid response is generated
         """
         pass
 
     @abstractmethod
     async def health_check(self) -> dict[str, Any]:
-        """对远程或本地模型进行健康检查
+        """Perform health check on remote or local models
         
-        返回:
-            包含健康状态信息的字典
+        Verifies the operational status of the model service/instance.
+        
+        Returns:
+            Dictionary containing health status information, typically including:
+            - status: "healthy" or "unhealthy"
+            - latency: Response time in milliseconds (if applicable)
+            - error: Error message (if any)
+            - model_version: Version of the model (if available)
         """
         pass

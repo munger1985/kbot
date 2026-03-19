@@ -6,34 +6,34 @@ from openai import AsyncOpenAI, APIError, RateLimitError
 from .base import BaseEmbedding, EmbeddingConfig, EmbeddingResponse
 
 class OpenAIEmbeddingConfig(EmbeddingConfig):
-    """OpenAI 嵌入服务配置"""
+    """OpenAI Embedding service configuration"""
     api_key: str = Field(..., description="OpenAI API Key")
-    api_base: str | None = Field(None, description="API 代理地址")
-    dimensions: int | None = Field(None, description="输出维度(仅支持v3系列模型)")
-    timeout: int = Field(30, description="超时时间")
-    max_retries: int = Field(2, description="SDK 内部重试次数")
-    max_concurrent_requests: int = Field(5, description="最大并发请求数")
+    api_base: str | None = Field(None, description="API proxy endpoint")
+    dimensions: int | None = Field(None, description="Output dimensions (only supported by v3 series models)")
+    timeout: int = Field(30, description="Request timeout in seconds")
+    max_retries: int = Field(2, description="SDK internal retry count")
+    max_concurrent_requests: int = Field(5, description="Maximum concurrent requests")
 
 class OpenAIEmbedding(BaseEmbedding[OpenAIEmbeddingConfig]):
     """
-    重构后的 OpenAI Embedding 实现
-    优化点：并发批处理、异常细分处理、初始化逻辑解耦
+    Refactored OpenAI Embedding implementation.
+    Optimizations: Concurrent batch processing, granular exception handling, decoupled initialization logic.
     """
 
     def __init__(self, config: OpenAIEmbeddingConfig):
         super().__init__(config)
         self._client: AsyncOpenAI | None = None
         self._is_initialized = False
-        # 使用信号量控制并发，防止触发 API 速率限制 (Rate Limit)
+        # Use semaphore to control concurrency and prevent API rate limit violations
         self._semaphore = asyncio.Semaphore(config.max_concurrent_requests)
 
     async def startup(self) -> None:
-        """初始化：建立异步客户端"""
+        """Initialize: Create asynchronous client connection"""
         if self._is_initialized:
             return
 
         if not self.config.api_key:
-            raise ValueError("未配置 OpenAI API Key")
+            raise ValueError("OpenAI API Key not configured")
 
         try:
             self._client = AsyncOpenAI(
@@ -42,17 +42,17 @@ class OpenAIEmbedding(BaseEmbedding[OpenAIEmbeddingConfig]):
                 timeout=self.config.timeout,
                 max_retries=self.config.max_retries
             )
-            # 简化连通性测试，仅在 log 层面确认
-            logger.info(f"🚀 OpenAI 客户端就绪: {self.model_name}")
+            # Simplified connectivity test (log-level confirmation only)
+            logger.info(f"🚀 OpenAI client ready: {self.model_name}")
             self._is_initialized = True
         except Exception as e:
-            logger.error(f"❌ OpenAI 客户端初始化失败: {e}")
+            logger.error(f"❌ OpenAI client initialization failed: {e}")
             raise
 
     async def _embed_batch(self, batch: list[str], **kwargs) -> tuple[list[list[float]], int]:
-        """原子级批处理逻辑，增加并发控制和错误截获"""
+        """Atomic batch processing with concurrency control and error handling"""
         if self._client is None:
-            raise ValueError("OpenAI 客户端未初始化")
+            raise ValueError("OpenAI client not initialized")
         
         async with self._semaphore:
             try:
@@ -64,10 +64,10 @@ class OpenAIEmbedding(BaseEmbedding[OpenAIEmbeddingConfig]):
                 tokens = response.usage.total_tokens if hasattr(response, 'usage') else 0
                 return embeddings, tokens
             except RateLimitError:
-                logger.warning("⚠️ OpenAI 触发速率限制，请考虑调低并发数或批大小")
+                logger.warning("⚠️ OpenAI rate limit triggered - consider reducing concurrency or batch size")
                 raise
             except APIError as e:
-                logger.error(f"❌ OpenAI API 异常: {e}")
+                logger.error(f"❌ OpenAI API exception: {e}")
                 raise
 
     async def embed(
@@ -77,10 +77,10 @@ class OpenAIEmbedding(BaseEmbedding[OpenAIEmbeddingConfig]):
         is_query: bool = True
     ) -> EmbeddingResponse:
         """
-        高性能向量化实现：
-        1. 自动初始化
-        2. 切分 Batch 并通过协程并发执行
-        3. 聚合结果
+        High-performance embedding implementation:
+        1. Auto-initialization
+        2. Batch splitting with concurrent coroutine execution
+        3. Result aggregation
         """
         if not self._is_initialized:
             await self.startup()
@@ -88,32 +88,32 @@ class OpenAIEmbedding(BaseEmbedding[OpenAIEmbeddingConfig]):
         if not texts:
             return self._build_empty_response(self.model_name)
 
-        # 1. 准备请求参数
+        # 1. Prepare request parameters
         eff_batch_size = batch_size if batch_size is not None and 0 < batch_size <= 96 else self.batch_size
         embed_kwargs = {
             "model": self.model_name,
             "encoding_format": "float"
         }
         
-        # 处理 v3 模型的 Matryoshka 维度裁剪
+        # Handle Matryoshka dimension truncation for v3 models
         if self.config.dimensions and "text-embedding-3" in self.model_name:
             embed_kwargs["dimensions"] = self.config.dimensions # type: ignore
 
-        # 2. 构造并发任务队列
+        # 2. Create concurrent task queue
         tasks = []
         for i in range(0, len(texts), eff_batch_size):
             batch = texts[i : i + eff_batch_size]
             tasks.append(self._embed_batch(batch, **embed_kwargs))
 
-        # 3. 并发执行并收集结果
-        # 使用 gather 并发请求，大幅提升处理长列表的速度
+        # 3. Execute concurrently and collect results
+        # Use gather for concurrent requests to significantly speed up long list processing
         try:
             results = await asyncio.gather(*tasks)
         except Exception as e:
-            logger.error(f"💥 Embedding 任务组执行失败: {e}")
+            logger.error(f"💥 Embedding task group execution failed: {e}")
             raise
 
-        # 4. 合并数据
+        # 4. Merge results
         all_embeddings = []
         total_tokens = 0
         for embeddings, tokens in results:
@@ -131,10 +131,11 @@ class OpenAIEmbedding(BaseEmbedding[OpenAIEmbeddingConfig]):
             await self._client.close()
             self._client = None
         self._is_initialized = False
-        logger.info("♻️ OpenAI 客户端已关闭")
+        logger.info("♻️ OpenAI client closed")
 
     @property
     def embedding_dim(self) -> int:
+        """Get embedding dimension (with model-specific defaults)"""
         if self.config.dimensions:
             return self.config.dimensions
             
@@ -147,4 +148,5 @@ class OpenAIEmbedding(BaseEmbedding[OpenAIEmbeddingConfig]):
 
     @property
     def is_initialized(self) -> bool:
+        """Check if client is initialized"""
         return self._is_initialized

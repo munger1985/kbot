@@ -15,9 +15,8 @@ from utils.clients import AIModelClient
 from services.ai_model import AIModelService
 
 
-
 class FileProcessor:
-    """文件处理类，负责文件解析和处理的业务逻辑"""
+    """File processing class responsible for document parsing and embedding business logic"""
     def __init__(self):
         self.parser = ParserService()
         self.model_client = AIModelClient()
@@ -26,65 +25,72 @@ class FileProcessor:
     
     @property
     def oracle_session(self):
-        # 只有当第一次调用 service.add() 或 service.get() 时才会触发
+        """Lazy initialization of Oracle database session"""
+        # Session is only created when first accessed (service.add()/service.get())
         return get_session()
     
     async def get_pending_files(self) -> list[tuple[int, float, FileParams]]:
         """
-        从数据库获取待处理的文件。
-        仅负责拉取数据，不在此处更新状态为 PARSING。
+        Retrieve pending files from database for processing.
+        Only fetches data, does NOT update status to PARSING here.
         
-        返回:
-            包含(优先级, 时间戳, 文件参数)元组的列表
+        Returns:
+            List of tuples containing (priority, timestamp, file_params)
         """
         result = []
         async with self.oracle_session as session:
             file_repo = FileRepository(session)
             kb_repo = KBRepository(session)
+            
             try:
+                # Get files with APPROVED status (ready for parsing)
                 files = await file_repo.get_by_status(FileStatus.APPROVED)
             except DataNotFoundException as e:
                 logger.warning(e.message)
                 return result
             except DatabaseException as e:
-                logger.error(f"数据库查询错误: {str(e)}")
+                logger.error(f"Database query error: {str(e)}")
                 return result
             except Exception as e:
-                logger.exception(f"获取待处理文件失败: {str(e)}")
+                logger.exception(f"Failed to get pending files: {str(e)}")
                 return result
 
             for file in files:
+                # Skip files with empty parser parameters
                 if not file.parser_params:
-                    msg = f"文件 {file.id} 的解析器参数为空，跳过处理"
+                    msg = f"File {file.id} has empty parser parameters, skipping processing"
                     logger.warning(msg)
                     await self._update_file_status(file.id, FileStatus.PARSE_FAILED, msg)
                     continue
                 
+                # Get model configurations from knowledge base
                 models = await kb_repo.get_model_by_id(file.kb_id)
                 if not models:
-                    msg = f"知识库 {file.kb_id} 未配置模型，跳过处理"
+                    msg = f"Knowledge base {file.kb_id} has no configured models, skipping processing"
                     logger.warning(msg)
                     await self._update_file_status(file.id, FileStatus.PARSE_FAILED, msg)
                     continue
 
+                # Resolve model names from IDs
                 txt_embed_model_id = models.get("txt_embed_model_id", None)
                 img2txt_model_id = models.get("img2txt_model_id", None)
                 embed_model = None
                 vlm_model = None
+                
                 if txt_embed_model_id:
                     embed_model = await self.model_service.get_model_name_by_id(txt_embed_model_id)
                 if img2txt_model_id:
                     vlm_model = await self.model_service.get_model_name_by_id(img2txt_model_id)
 
-                # 抽取图片保存在文件所在目录下，以文件ID命名的文件夹中
+                # Create image storage directory (file ID named folder in file's directory)
                 dir_name = os.path.dirname(file.file_path)
                 image_dir = os.path.join(dir_name, file.file_id)
 
-                # 获取vlm的prompt
+                # VLM configuration
                 use_vlm = file.parser_params.get("use_vlm", False)
                 vlm_prompt = file.parser_params.get("vlm_prompt", None)
                 
-                # parser_params 从数据库取出后是 dict，需要转换为 DocParserParams 对象
+                # Convert dict parser params to DocParserParams object
                 doc_params = DocParserParams(
                     chunk_size=file.parser_params.get("chunk_size", 512),
                     overlap=file.parser_params.get("overlap", 20),
@@ -99,95 +105,103 @@ class FileProcessor:
                     vlm_prompt=vlm_prompt
                 )
 
+                # Create FileParams object for queue
                 file_params = FileParams(
                     file_id=file.id,
                     kb_id=file.kb_id,
                     file_path=file.file_path if file.file_path is not None else "",
                     file_ext=file.file_ext,
-                    priority = file.process_priority or ProcessPriority.MEDIUM.value,
-                    security_level = file.security_level or 1,
+                    priority=file.process_priority or ProcessPriority.MEDIUM.value,
+                    security_level=file.security_level or 1,
                     parser_params=doc_params,
                     biz_metadata=file.biz_metadata if file.biz_metadata is not None else {},
                     txt_embed_model=embed_model
                 )
 
-                timestamp = datetime.now().timestamp()  # 获取当前时间戳
-                # 添加到结果列表
+                # Add to result list with priority and timestamp
+                timestamp = datetime.now().timestamp()
                 result.append((file_params.priority, timestamp, file_params))
-                logger.info(f"已添加文件到处理队列: {file_params.file_path} (优先级: {ProcessPriority(file_params.priority)})")
+                logger.info(f"Added file to processing queue: {file_params.file_path} (Priority: {ProcessPriority(file_params.priority)})")
                 
             return result
 
 
     async def process_file(self, file_params: FileParams):
         """
-        处理文件的入口方法
+        Main file processing entry point
         
-        参数:
-            file_params: 文件参数对象
+        Args:
+            file_params: File parameters object containing all processing config
         """
-        # 1. 进入此方法说明 Worker 已经拿到任务了，此时更新状态
-        await self._update_file_status(file_params.file_id, FileStatus.PARSING, "Worker 接收任务，准备解析")
+        # Update status to PARSING since worker has picked up the task
+        await self._update_file_status(file_params.file_id, FileStatus.PARSING, "Worker received task, preparing to parse")
         
-        # 检查文件是否存在
+        # Pre-processing validation
         if not await self._check_file(file_params):
             return
         
         try:
-            logger.info(f"开始处理文件: {file_params.file_path}...")
+            logger.info(f"Starting file processing: {file_params.file_path}...")
             chunks = []
 
-            # 处理文件内容
+            # Special handling for TXT files (convert to MD first since Docling doesn't support TXT directly)
             if file_params.file_path.endswith(".txt"):
-                # 因为docling不支持直接解析txt文件，所以先转换为md
+                # Convert TXT to Markdown
                 file_content = TxtToMarkdownParser().process(file_params.file_path)
                 new_file_path = file_params.file_path.replace(".txt", ".md")
                 
-                # 将转换后的md内容写入新文件
+                # Write converted content to new MD file
                 with open(new_file_path, 'w', encoding='utf-8') as f:
                     f.write(file_content)
-                logger.info(f"已将txt文件转换为md文件: {new_file_path}")
+                logger.info(f"Converted TXT to MD file: {new_file_path}")
                 
-                # 更新文件路径为新的md文件路径
+                # Update file path to new MD file
                 file_params.file_path = new_file_path
             
-            # 调用 Docling 处理文件
+            # Process file with Docling (output as chunks for embedding)
             result = await self.parser.parse_file(
                 file_path=file_params.file_path,
                 parser_params=file_params.parser_params,
-                output_format="chunks" # 指定输出格式为 chunks
+                output_format="chunks"  # Specify chunk output format
             )
 
-            # 构造落库结果集
+            # Process parsing results
             if isinstance(result, list):
+                # Generate embeddings for parsed chunks
                 embeddings = await self._get_embeddings(result, file_params)
+                
                 if not embeddings:
-                    logger.error(f"文件 {file_params.file_path} 解析结果为空或维度为0")
-                    # 更新文件状态为处理失败
-                    await self._update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, "文件解析结果为空或维度为0")
+                    logger.error(f"File {file_params.file_path} parsing result is empty or zero-dimensional")
+                    await self._update_file_status(
+                        file_params.file_id, 
+                        FileStatus.PARSE_FAILED, 
+                        "File parsing result is empty or zero-dimensional"
+                    )
                     return
                 else:
-                    # 保存chunks
+                    # Save chunks with embeddings to database
                     await self._save_chunks(file_params.kb_id, file_params.file_id, embeddings)
             else:
-                logger.error(f"文件 {file_params.file_path} 解析结果不是期望的列表格式")
-                # 更新文件状态为处理失败
-                await self._update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, "文件解析结果不是期望的列表格式")
+                logger.error(f"File {file_params.file_path} parsing result is not expected list format")
+                await self._update_file_status(
+                    file_params.file_id, 
+                    FileStatus.PARSE_FAILED, 
+                    "File parsing result is not expected list format"
+                )
         
         except Exception as e:
-            msg = f"处理文件 {file_params.file_id} 时发生错误: {str(e)}"
-            logger.error(msg)
-            # 更新文件状态为处理失败
+            msg = f"Error processing file {file_params.file_id}: {str(e)}"
+            logger.error(msg, exc_info=True)
             await self._update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, msg)
         
     async def _update_file_status(self, file_id: str, status: FileStatus, message: str) -> None:
         """
-        更新文件状态辅助方法
+        Helper method to update file status in database
 
         Args:
-            file_id: 文件ID
-            status: 文件状态
-            message: 状态信息
+            file_id: File ID
+            status: New file status
+            message: Status log message
         """
         async with self.oracle_session as session:
             file_repo = FileRepository(session)
@@ -199,40 +213,43 @@ class FileProcessor:
 
     async def _get_embeddings(self, parser_results: list[dict], file_params: FileParams) -> list[TxtChunkEntity]:
         """
-        获取文本的嵌入向量并封装为 TxtChunk 实体
+        Generate embeddings for parsed text chunks and package as TxtChunk entities
         
         Args:
-            parser_results: Docling 解析后的原始 chunk 列表 (包含 path_names, structure_level 等)
-            file_params: 包含 kb_id, file_id, biz_metadata, security_level 等业务信息
+            parser_results: Raw chunk list from Docling parser (contains path_names, structure_level, etc.)
+            file_params: Business parameters (kb_id, file_id, biz_metadata, security_level, etc.)
             
         Returns:
-            list[TxtChunk]: 带有向量和完整路径基因的 chunk 列表
+            list[TxtChunkEntity]: Chunk list with embeddings and complete path hierarchy
         """
+        # Validate embedding model configuration
         model = file_params.txt_embed_model
         if not model:
-            logger.error(f"知识库 {file_params.kb_id} 未配置文本嵌入模型")
+            logger.error(f"Knowledge base {file_params.kb_id} has no configured text embedding model")
             return []
         
         if not parser_results:
+            logger.warning("Empty parser results, skipping embedding generation")
             return []
 
-        # 1. 预先准备所有元数据
+        # 1. Extract all text content for embedding
         all_texts = [item["content"] for item in parser_results]
         
-        # 2. 定义微批次大小 (Micro-batch size)
-        # 根据经验，32-64 是兼顾并发与稳定性的平衡点
+        # 2. Configure micro-batch size (32-64 is optimal balance of concurrency and stability)
         micro_batch_size = 32 
         all_embeddings = []
 
         try:
-            # 3. 分片循环处理
+            # 3. Process in micro-batches to avoid API limits/timeouts
             for i in range(0, len(all_texts), micro_batch_size):
                 batch_texts = all_texts[i : i + micro_batch_size]
                 
-                logger.info(f"正在处理第 {i//micro_batch_size + 1} 组 Embedding, 进度: {i}/{len(all_texts)}")
+                logger.info(
+                    f"Processing embedding batch {i//micro_batch_size + 1}, "
+                    f"progress: {i}/{len(all_texts)}"
+                )
                 
-                # 调用 Embedding 微服务
-                # 这里如果单个 batch 失败，可以考虑加一个简单的 retry 机制
+                # Call embedding service (add retry logic if needed for production)
                 response = await self.model_client.call_embedding_model(
                     model_name=model, 
                     texts=batch_texts, 
@@ -242,13 +259,16 @@ class FileProcessor:
                 if response:
                     all_embeddings.extend([res.embedding for res in response])
                 else:
-                    raise Exception(f"微批次 {i} 返回结果为空，可能 Embedding 微服务内部异常")
+                    raise Exception(f"Empty response for batch {i}, embedding service may have internal error")
 
-            # 4. 验证数量是否对齐
+            # 4. Validate embedding-text count match
             if len(all_embeddings) != len(all_texts):
-                raise Exception(f"向量数量对齐失败: 文本 {len(all_texts)} vs 向量 {len(all_embeddings)}")
+                raise Exception(
+                    f"Embedding-text count mismatch: "
+                    f"texts ({len(all_texts)}) vs embeddings ({len(all_embeddings)})"
+                )
 
-            # 5. 组装最终实体列表
+            # 5. Create TxtChunkEntity objects with complete metadata
             chunks = []
             for i, (text, emb) in enumerate(zip(all_texts, all_embeddings)):
                 item = parser_results[i]
@@ -269,60 +289,71 @@ class FileProcessor:
                 )
                 chunks.append(chunk)
 
+            logger.info(f"Successfully generated {len(chunks)} embeddings")
             return chunks
 
         except Exception as e:
-            logger.error(f"分片获取 Embedding 失败: {str(e)}")
+            logger.error(f"Failed to generate embeddings: {str(e)}", exc_info=True)
             return []
         
     async def _save_chunks(self, kb_id: int, file_id: str, chunks: list[TxtChunkEntity]):
         """
-        保存chunks到数据库（包含错误处理）
+        Save parsed chunks with embeddings to database (with error handling)
 
         Args:
-            kb_id: 知识库ID
-            file_id: 文件ID
-            chunks: 文本片段列表
+            kb_id: Knowledge base ID
+            file_id: File ID
+            chunks: List of text chunk entities with embeddings
         """
         async with self.oracle_session as session:
             chunk_repo = TxtChunkRepository(session)
             try:
-                # 1. 保存文本块
+                # Save chunks to database
                 await chunk_repo.create(chunks=chunks)
-                # 2. 更新文件状态为已解析
-                await self._update_file_status(file_id, FileStatus.PARSED, f"成功保存 {len(chunks)} 个 chunks")
-                logger.info(f"成功保存 {len(chunks)} 个 chunks")
+                
+                # Update file status to PARSED
+                await self._update_file_status(
+                    file_id, 
+                    FileStatus.PARSED, 
+                    f"Successfully saved {len(chunks)} chunks with embeddings"
+                )
+                
+                logger.info(f"Successfully saved {len(chunks)} chunks for file {file_id}")
+                
             except Exception as e:
-                msg = f"保存 chunks 时发生异常: {str(e)}"
-                logger.error(msg)
+                msg = f"Error saving chunks to database: {str(e)}"
+                logger.error(msg, exc_info=True)
                 await self._update_file_status(file_id, FileStatus.PARSE_FAILED, msg)
 
     async def _check_file(self, file_params: FileParams) -> bool:
         """
-        检查文件嵌入模型和文件存在性
+        Validate file existence and embedding model configuration
         
         Args:
-            file_params: 文件参数对象
+            file_params: File parameters object
+            
+        Returns:
+            bool: True if validation passes, False otherwise
         """
         try:
-            # 检查文本嵌入模型是否指定
+            # Check embedding model configuration
             if file_params.txt_embed_model is None:
-                msg = f"知识库 {file_params.kb_id} 未指定文本嵌入模型"
+                msg = f"Knowledge base {file_params.kb_id} has no text embedding model configured"
                 logger.error(msg)
-                # 更新文件状态为处理失败
                 await self._update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, msg)
                 return False
 
-            # 检查文件是否存在
+            # Check file existence
             if not os.path.exists(file_params.file_path):
-                logger.error(f"文件路径不存在: {file_params.file_path}")
-                await self._update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, "文件路径不存在")
+                msg = f"File path does not exist: {file_params.file_path}"
+                logger.error(msg)
+                await self._update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, msg)
                 return False
             
             return True
                 
         except Exception as e:
-            msg = f"处理文本文件 {file_params.file_id} 时发生错误: {str(e)}"
-            logger.error(msg)
+            msg = f"Error validating file {file_params.file_id}: {str(e)}"
+            logger.error(msg, exc_info=True)
             await self._update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, msg)
             return False

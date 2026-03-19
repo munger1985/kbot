@@ -4,41 +4,71 @@ import numpy as np
 from typing import Any
 
 class OracleVecHandler:
+    """Handler for Oracle 23ai vector type conversions.
+    
+    Provides methods to convert various vector representations (list, numpy array, string)
+    to Oracle-compatible formats (array.array or string), and includes type handler
+    registration for proper vector data retrieval from Oracle databases.
+    """
     def __init__(self, float_type: str = 'f'):
-        """
-        :param float_type: 'f' 代表 float32 (推荐), 'd' 代表 float64
+        """Initialize OracleVecHandler with target float precision.
+
+        Args:
+            float_type: 'f' for float32 (recommended by Oracle 23ai), 'd' for float64
         """
         self.float_type = float_type
 
     def convert(self, vec: Any, to_string: bool = False) -> array.array | str:
-        """
-        主转换方法。
-        注意：Oracle 23ai 推荐通过 python-oracledb 绑定 array.array 对象，
-        而不是使用字符串拼装，这样更安全且性能更好。
+        """Primary vector conversion method for Oracle compatibility.
+
+        Note: Oracle 23ai recommends binding array.array objects via python-oracledb
+        instead of string concatenation for SQL statements, as it's more secure and performant.
+
+        Args:
+            vec: Input vector (supports list, tuple, numpy array, array.array, or string format)
+            to_string: If True, returns vector as string (e.g., "[1.0,2.0,3.0]") for manual SQL concatenation;
+                       If False (default), returns array.array (recommended for parameter binding)
+
+        Returns:
+            array.array | str: Oracle-compatible vector representation
+
+        Raises:
+            ValueError: If input vector is empty or None
         """
         if vec is None:
-            raise ValueError("向量不能为空")
+            raise ValueError("Vector cannot be empty")
 
-        # 1. 统一转换为 list
+        # 1. Normalize input to list format
         vector_list = self._to_list(vec)
         
-        # 2. 验证
+        # 2. Validation
         if not vector_list:
-            raise ValueError("向量不能为空")
+            raise ValueError("Vector cannot be empty")
 
-        # 3. 转换为目标格式
+        # 3. Convert to target format
         if to_string:
-            # 适用于手动拼接 SQL 或某些特定驱动模式
+            # For manual SQL concatenation or specific driver modes
             return '[' + ','.join(map(str, vector_list)) + ']'
         
-        # 推荐做法：返回 array.array，oracledb 驱动会自动识别
+        # Recommended approach: return array.array (automatically recognized by oracledb driver)
         return array.array(self.float_type, vector_list)
 
     def _to_list(self, vec: Any) -> list[float]:
+        """Internal method to normalize various vector types to list of floats.
+
+        Args:
+            vec: Input vector in supported format (list, tuple, numpy array, array.array, string)
+
+        Returns:
+            list[float]: Flattened list of float values
+
+        Raises:
+            TypeError: If input type is not supported
+        """
         if isinstance(vec, (list, tuple)):
             return list(vec)
         if isinstance(vec, np.ndarray):
-            # 避免使用 astype(np.float64)，直接根据需求转换提高效率
+            # Avoid astype(np.float64) for better performance - direct conversion
             return vec.flatten().tolist()
         if isinstance(vec, array.array):
             return vec.tolist()
@@ -46,16 +76,23 @@ class OracleVecHandler:
             cleaned = vec.strip().strip('[]')
             return [float(x.strip()) for x in cleaned.split(',') if x.strip()]
         
-        raise TypeError(f"不支持的向量输入类型: {type(vec).__name__}")
+        raise TypeError(f"Unsupported vector input type: {type(vec).__name__}")
 
     @staticmethod
     def get_type_handler():
-        """
-        静态工厂方法，用于在连接时注册
-        用法: conn.outputtypehandler = OracleVecHandler.get_type_handler()
+        """Static factory method to create Oracle type handler for vector retrieval.
+
+        Registers a custom output type handler to properly process Oracle DB_TYPE_VECTOR
+        columns when fetching data from the database.
+
+        Usage: 
+            conn.outputtypehandler = OracleVecHandler.get_type_handler()
+
+        Returns:
+            Callable: Oracle output type handler function
         """
         def handler(cursor, name, default_type, size, precision, scale):
             if default_type == oracledb.DB_TYPE_VECTOR:
-                # 默认返回 list，如果需要 numpy 也可以在这里改
+                # Returns list by default (modify here to return numpy array if needed)
                 return cursor.var(oracledb.DB_TYPE_VECTOR, arraysize=cursor.arraysize)
         return handler

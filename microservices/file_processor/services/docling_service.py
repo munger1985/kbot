@@ -1,6 +1,7 @@
-"""文档解析服务层。
+"""Document parsing service layer.
 
-本模块负责业务逻辑组装，包括文件校验、参数预处理以及调用底层的 DoclingDocProcessor。
+This module is responsible for business logic assembly, including file validation, 
+parameter preprocessing, and invoking the underlying DoclingDocProcessor.
 """
 
 import os
@@ -13,12 +14,12 @@ from ..parser_schema import DocParserParams
 
 
 class ParserService:
-    """文档解析服务类。
+    """Document parsing service class.
     
-    协调文件格式检查与解析引擎调用。
+    Coordinates file format checking and parsing engine invocation.
     """
 
-    # 1. 输入格式校验字典
+    # 1. Input format validation dictionary
     SUPPORTED_EXTENSIONS_MAP = {
         ".pdf": InputFormat.PDF,
         ".docx": InputFormat.DOCX,
@@ -36,71 +37,80 @@ class ParserService:
         ".vtt": InputFormat.VTT,
     }
 
-    # 2. 输出配置映射字典 (Key: 用户传入字符串, Value: 对应枚举)
+    # 2. Output configuration mapping dictionary (Key: user input string, Value: corresponding enum)
     OUTPUT_CONFIG_MAP = {
         "markdown": OutputFormat.MARKDOWN,
         "html": OutputFormat.HTML,
         "json": OutputFormat.JSON,
         "doctags": OutputFormat.DOCTAGS,
-        "chunks": OutputFormat.CHUNKS,  # 内部 Processor 已支持 CHUNKS 枚举
+        "chunks": OutputFormat.CHUNKS,  # CHUNKS enum supported by internal Processor
     }
 
     def __init__(self):
-        """初始化服务。"""
-        # Processor 现在是无状态的 VLM 配置，只需初始化分词器
+        """Initialize parsing service."""
+        # Processor is now stateless with VLM configuration, only tokenizer initialization needed
         config = get_parser_config()
         self.processor = DoclingDocProcessor(
             local_artifacts_path=config.local_artifacts_path,
             max_workers=config.queue_workers,
         )
 
-    async def parse_file(self, file_path: str, parser_params: DocParserParams,  output_format: str = "markdown") -> str | dict | list[dict]:
-        """执行文件解析任务。
+    async def parse_file(
+        self, 
+        file_path: str, 
+        parser_params: DocParserParams,  
+        output_format: str = "markdown"
+    ) -> str | dict | list[dict]:
+        """Execute file parsing task.
 
         Args:
-            file_path: 待解析的文件路径。
-            parser_params: 包含文件路径、VLM 配置及输出格式的参数对象。
-            output_format: 期望的输出格式，默认为 "markdown"。
+            file_path: Path to the file to be parsed.
+            parser_params: Parameter object containing file path, VLM configuration, and output format.
+            output_format: Desired output format, default is "markdown".
 
         Returns:
-            解析后的文本内容或切片列表。
+            Parsed text content or chunk list.
 
         Raises:
-            FileNotFoundError: 文件不存在。
-            ValueError: 不支持的输入或输出格式。
+            FileNotFoundError: If file does not exist.
+            ValueError: If unsupported input/output format is provided.
         """
         req_format = output_format.lower()
 
-        # 1. 物理存在校验
+        # 1. Physical existence validation
         if not os.path.exists(file_path):
-            error_msg = f"未找到文件: {file_path}"
+            error_msg = f"File not found: {file_path}"
             logger.error(error_msg)
             raise FileNotFoundError(error_msg)
 
-        # 2. 输入后缀校验
+        # 2. Input file extension validation
         ext = os.path.splitext(file_path)[1].lower()
         if ext not in self.SUPPORTED_EXTENSIONS_MAP:
-            error_msg = f"Docling 不支持输入格式: {ext}"
+            error_msg = f"Docling does not support input format: {ext}"
             logger.error(error_msg)
             raise ValueError(error_msg)
 
-        # 3. 输出格式配置检索
+        # 3. Output format configuration lookup
         if req_format not in self.OUTPUT_CONFIG_MAP:
             valid_fmts = list(self.OUTPUT_CONFIG_MAP.keys())
-            raise ValueError(f"不支持的输出格式 '{req_format}'。可选范围: {valid_fmts}")
+            raise ValueError(f"Unsupported output format '{req_format}'. Valid options: {valid_fmts}")
 
         target_fmt = self.OUTPUT_CONFIG_MAP[req_format]
 
-        # 4. 调用 Processor 接口，透传 VLM 相关参数
+        # 4. Call Processor interface, pass through VLM-related parameters
         try:
             logger.info(
-                f"开始解析任务 | 文件: {os.path.basename(file_path)} | "
-                f"模式: {req_format} | VLM: {parser_params.vlm_model or '禁用'}"
+                f"Starting parsing task | File: {os.path.basename(file_path)} | "
+                f"Mode: {req_format} | VLM: {parser_params.vlm_model or 'Disabled'}"
             )
             
-            # 直接调用更新后的接口，传入模型名称和提示词
-            return await self.processor.convert_document(file_path, parser_params, output_format=target_fmt)
+            # Directly call updated interface with model name and prompt
+            return await self.processor.convert_document(
+                file_path, 
+                parser_params, 
+                output_format=target_fmt
+            )
             
         except Exception as e:
-            logger.exception(f"文件 [{os.path.basename(file_path)}] 解析过程中发生异常")
+            logger.exception(f"Exception occurred during parsing of file [{os.path.basename(file_path)}]")
             raise e

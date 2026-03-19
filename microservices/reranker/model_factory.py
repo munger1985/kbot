@@ -3,57 +3,67 @@ from core.dictionary import RerankerProvider
 
 
 def create_reranker_model(config: RerankerConfig) -> BaseReranker:
-    """
-    工厂函数：根据配置创建 Reranker 模型实例
+    """Factory function to create Reranker model instances based on provider configuration.
+    
+    This factory pattern implementation abstracts the instantiation of different
+    reranker provider implementations (local BGE, local Qwen3, etc.), ensuring proper
+    configuration validation and type matching for each provider.
     
     Args:
-        config: Reranker 配置对象，包含 provider 字段
+        config: Reranker configuration object containing provider identifier and
+            provider-specific settings. Must be a subclass of RerankerConfig matching
+            the specified provider.
         
     Returns:
-        BaseReranker: 对应提供商的 Reranker 模型实例
-        
+        BaseReranker: Properly initialized reranker instance for the specified provider,
+            implementing the BaseReranker interface.
+            
     Raises:
-        ValueError: 当提供不支持的提供商或配置类型与提供商不匹配时抛出
+        ValueError: If:
+            - The provider is not supported
+            - The configuration object type does not match the provider requirements
     """
     provider = config.provider.lower()
     
-    # 1. 本地 BGE 模型
+    # 1. Local BGE reranker model
     if provider == RerankerProvider.LOCAL_BGE.value:
         if isinstance(config, BGERerankerConfig):
             return BGEReranker(config)
         else:
-            raise ValueError(f"提供商 {provider} 需要 BGERerankerConfig 配置对象")
+            raise ValueError(f"Provider {provider} requires BGERerankerConfig configuration object")
             
-    # 2. 本地 Qwen3 模型
+    # 2. Local Qwen3 reranker model
     elif provider == RerankerProvider.LOCAL_QWEN.value:
         if isinstance(config, Qwen3RerankerConfig):
             return Qwen3Reranker(config)
         else:
-            raise ValueError(f"提供商 {provider} 需要 Qwen3RerankerConfig 配置对象")
+            raise ValueError(f"Provider {provider} requires Qwen3RerankerConfig configuration object")
             
-    # # 3. OpenAI 兼容接口 (Qwen API, ChatGPT 等)
+    # 3. OpenAI-compatible APIs (Qwen API, ChatGPT, etc.) - commented out for future implementation
     # elif provider in [RerankerProvider.API_QWEN.value, RerankerProvider.CHATGPT.value]:
     #     if isinstance(config, OpenAIRerankerConfig):
     #         return OpenAIReranker(config)
     #     else:
-    #         raise ValueError(f"提供商 {provider} 需要 OpenAIRerankerConfig 配置对象")
+    #         raise ValueError(f"Provider {provider} requires OpenAIRerankerConfig configuration object")
             
-    # # 4. Cohere 模型
+    # 4. Cohere reranker API - commented out for future implementation
     # elif provider == RerankerProvider.COHERE.value:
     #     if isinstance(config, CohereRerankerConfig):
     #         return CohereReranker(config)
     #     else:
-    #         raise ValueError(f"提供商 {provider} 需要 CohereRerankerConfig 配置对象")
+    #         raise ValueError(f"Provider {provider} requires CohereRerankerConfig configuration object")
             
     else:
-        raise ValueError(f"不支持的 Reranker 提供商: {provider} (模型名称: {config.model_name})")
+        raise ValueError(f"Unsupported Reranker provider: {provider} (model name: {config.model_name})")
 
 
 def get_supported_providers() -> list[str]:
-    """
-    获取支持的 Reranker 提供商列表
+    """Get list of supported Reranker provider identifiers.
+    
+    Returns a list of all provider values defined in the RerankerProvider enum
+    that have corresponding implementations in the factory function.
     
     Returns:
-        list[str]: 支持的提供商名称列表
+        list[str]: List of supported provider name strings (e.g., "local_bge", "local_qwen")
     """
     return [provider.value for provider in RerankerProvider]

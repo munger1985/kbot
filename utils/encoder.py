@@ -7,9 +7,14 @@ from json import JSONEncoder
     
 
 class DecimalEncoder(JSONEncoder):
+    """JSON encoder for handling Decimal type values.
+    
+    Converts Decimal values to appropriate Python numeric types (int/float)
+    for JSON serialization, preserving integer values as integers instead of floats.
+    """
     def default(self, obj):
         if isinstance(obj, Decimal):
-            # 对于整数部分保持整数类型
+            # Preserve integer values as int type instead of float
             if obj == obj.to_integral_value():
                 return int(obj)
             return float(obj)
@@ -17,42 +22,48 @@ class DecimalEncoder(JSONEncoder):
     
 
 class ImageEncoder:
+    """Asynchronous image encoder for converting images to Base64 format.
+    
+    Provides static methods to encode images from file paths or PIL Image objects
+    to Base64 strings, with size validation and format handling.
+    """
 
     @staticmethod
     async def encode(image: str | Image.Image) -> str:
-        """将图像转换为 Base64 编码。
+        """Convert image to Base64 encoded string asynchronously.
 
-        针对内存中的 PIL 对象或本地路径进行统一编码，并校验文件大小。
+        Unified encoding for in-memory PIL Image objects or local file paths,
+        with file size validation to ensure compliance with size limits.
 
         Args:
-            image: 图像文件路径或 PIL 图像对象。
+            image: Path to image file (string) or PIL Image object in memory.
 
         Returns:
-            str: UTF-8 编码的 Base64 字符串。
+            str: UTF-8 encoded Base64 string representation of the image.
 
         Raises:
-            ValueError: 图像大小超过 20MB 时抛出。
+            ValueError: Raised when image size exceeds 20MB limit.
         """
         loop = asyncio.get_running_loop()
 
         def _process():
-            # 分支 1：如果是文件路径 (str)
+            # Branch 1: If input is file path (string)
             if isinstance(image, str):
                 with open(image, "rb") as f:
                     data = f.read()
-            # 分支 2：如果是 PIL 图像对象
+            # Branch 2: If input is PIL Image object
             else:
                 buf = io.BytesIO()
-                # 先转 RGB 避免 RGBA 转 JPEG 报错，再进行保存
+                # Convert to RGB first to avoid RGBA -> JPEG conversion errors, then save
                 rgb_image = image.convert("RGB")
                 rgb_image.save(buf, format="JPEG", quality=85)
                 data = buf.getvalue()
             return data
 
-        # 在执行器中运行同步阻塞操作
+        # Run synchronous blocking operations in executor to avoid event loop blocking
         img_data = await loop.run_in_executor(None, _process)
 
         if len(img_data) > 20 * 1024 * 1024:
-            raise ValueError("图像大小超过 20MB 限制")
+            raise ValueError("Image size exceeds 20MB limit")
 
         return base64.b64encode(img_data).decode('utf-8')

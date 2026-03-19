@@ -3,38 +3,57 @@ from docling_core.types.doc.document import SectionHeaderItem
 
 
 class SemanticLevelCorrector:
+    """
+    Semantic-based header level corrector for document structure analysis.
+    Identifies true header elements by semantic patterns and filters out false positives.
+    """
     def __init__(self):
-        # 更加严谨的正则：增加对末尾特征的限制
+        # More rigorous regex patterns with end-feature constraints
         self.patterns = [
-            (re.compile(r'^第[一二三四五六七八九十\d]+[章节]\s*.*$'), 1), # 章/节 通常是独立标题
-            (re.compile(r'^第[一二三四五六七八九十\d]+[条款项]'), 2), # 条/款/项 可能嵌套
+            # Chapter/Section headers (typically top-level)
+            (re.compile(r'^第[一二三四五六七八九十\d]+[章节]\s*.*$'), 1),
+            # Article/Clause/Item (may be nested)
+            (re.compile(r'^第[一二三四五六七八九十\d]+[条款项]'), 2),
+            # Numeric hierarchical headers (e.g., 1, 1.1, 1.1.1)
             (re.compile(r'^\d+(\.\d+){0,2}\s+'), 1), 
         ]
-        # 长度阈值：超过此长度的“标题”大概率是正文内容
+        # Length threshold: "headers" exceeding this length are likely body content
         self.MAX_TITLE_LENGTH = 40 
 
     def get_level(self, item, text: str) -> int | None:
+        """
+        Determine semantic level of text element (header detection).
+        
+        Args:
+            item: Document element object (from docling)
+            text: Text content to analyze
+            
+        Returns:
+            int | None: Semantic level (1/2) if header, None if body content
+        """
         text = text.strip()
-        if not text: return None
+        if not text: 
+            return None
         
-        # --- 强力阻断逻辑 ---
-        # 1. 长度过滤：法律或业务文档标题很少超过 30 字
-        if len(text) > 30: return None
+        # --- Strong blocking logic ---
+        # 1. Length filter: Legal/business document headers rarely exceed 30 characters
+        if len(text) > 30: 
+            return None
         
-        # 2. 标点过滤：标题末尾如果出现“。”、“；”或多个“，”，大概率是正文
+        # 2. Punctuation filter: Headers rarely end with full stop/semicolon or have multiple commas
         if text.endswith(("。", "；", "：")) or text.count("，") >= 2:
             return None
 
-        # 3. 排除纯日期或纯数据开头的句子
-        if re.match(r'^\d+[月日年]', text): # 排除 "7 月前..." "2023年..."
+        # 3. Exclude sentences starting with pure date/data patterns
+        if re.match(r'^\d+[月日年]', text): # Exclude "7月前...", "2023年..."
             return None
 
-        # --- 原有正则逻辑 ---
+        # --- Original regex matching logic ---
         for pattern, level in self.patterns:
             if pattern.match(text):
                 return level
                 
-        # 兜底：只有 Docling 认为是 SectionHeaderItem 且极其短才放行
+        # Fallback: Only allow if Docling identifies as SectionHeaderItem and extremely short
         if isinstance(item, SectionHeaderItem) and len(text) < 15:
             return 1
         return None

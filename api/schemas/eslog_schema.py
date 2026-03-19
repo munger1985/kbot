@@ -3,6 +3,10 @@ from datetime import datetime
 from enum import Enum
 
 class LogLevel(str, Enum):
+    """Log level enumeration.
+    
+    Standard log severity levels with an additional "ANY" option for unfiltered queries.
+    """
     DEBUG = "DEBUG"
     INFO = "INFO"
     WARN = "WARN"
@@ -10,16 +14,21 @@ class LogLevel(str, Enum):
     ERROR = "ERROR"
     FATAL = "FATAL"
     CRITICAL = "CRITICAL"
-    # 添加空值选项，用于不筛选级别
+    # Add empty value option for no level filtering
     ANY = ""
 
 class LogQueryRequest(BaseModel):
-    start_time: datetime = Field(..., description="开始时间")
-    end_time: datetime = Field(..., description="结束时间")
-    host: str|None = Field(None, description="主机名")
-    log_level: LogLevel | None = Field(None, description="日志级别")
-    message: str|None = Field(None, description="日志消息关键字")
-    size: int = Field(100, ge=1, le=1000, description="返回数量")
+    """Log query request model.
+    
+    This model defines the parameters for querying log entries, including time range,
+    host filter, log level filter, keyword search, and result size limit.
+    """
+    start_time: datetime = Field(..., description="Start time (beginning of the query time range)")
+    end_time: datetime = Field(..., description="End time (end of the query time range)")
+    host: str|None = Field(None, description="Hostname (filter logs by specific host, optional)")
+    log_level: LogLevel | None = Field(None, description="Log level (filter logs by severity level, optional)")
+    message: str|None = Field(None, description="Log message keyword (search logs by message content, optional)")
+    size: int = Field(100, ge=1, le=1000, description="Return count (number of log entries to return, 1-1000)")
     
     class Config:
         json_schema_extra = {
@@ -34,10 +43,15 @@ class LogQueryRequest(BaseModel):
         }
 
 class LogEntry(BaseModel):
-    timestamp: datetime = Field(..., description="日志时间")
-    host: str = Field(..., description="主机名")
-    level: str = Field(..., description="日志级别")
-    message: str = Field(..., description="日志消息")
+    """Log entry model.
+    
+    This model defines the structure of a single log entry, containing core log metadata
+    and content.
+    """
+    timestamp: datetime = Field(..., description="Log timestamp (exact time the log was generated)")
+    host: str = Field(..., description="Hostname (server/host where the log was generated)")
+    level: str = Field(..., description="Log level (severity level of the log entry)")
+    message: str = Field(..., description="Log message (detailed log content)")
     
     class Config:
         json_schema_extra = {
@@ -50,7 +64,12 @@ class LogEntry(BaseModel):
         }
 
 class LogResponse(BaseModel):
-    code: int = Field(200, description="状态码")
-    success: bool = Field(True, description="是否成功")
-    total: int = Field(0, description="总数")
-    logs: list[LogEntry]
+    """Log query response model.
+    
+    This model defines the structure of the log query response, including status information,
+    total count of matching logs, and the log entries themselves.
+    """
+    code: int = Field(200, description="Status code (HTTP-like status code for the response)")
+    success: bool = Field(True, description="Success flag (whether the query executed successfully)")
+    total: int = Field(0, description="Total count (total number of log entries matching the query)")
+    logs: list[LogEntry] = Field(description="Log entries (list of matching log entry objects)")

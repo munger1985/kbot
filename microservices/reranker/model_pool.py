@@ -9,64 +9,130 @@ from .model_factory import create_reranker_model
 
 class RerankerModelPool(BaseModelPool[BaseReranker[Any]]):
     """
-    Reranker 模型池
-    优化点：
-    1. 统一配置映射逻辑
-    2. 移除子类中的重复 self._models 赋值（由父类 load_model 统一管理）
-    3. 增强类型提示，适配泛型基类
+    Specialized model pool for managing Reranker model instances.
+    
+    Key optimizations:
+    1. Unified configuration mapping logic across all reranker providers
+    2. Removed duplicate self._models assignments in subclasses (managed by parent load_model)
+    3. Enhanced type hints for better compatibility with generic base class
+    4. Centralized health check and lifecycle management
+    
+    Type Parameters:
+        BaseReranker[Any]: Generic reranker base class with provider-specific configuration
     """
     
     def _get_model_category(self) -> int:
-        """返回 Reranker 类别枚举"""
+        """Return the enum value for Reranker model category.
+        
+        Required implementation from BaseModelPool to identify this pool's
+        model type for metadata management and configuration.
+        
+        Returns:
+            int: Numeric value of ModelCategory.RERANKER enum
+        """
         return ModelCategory.RERANKER.value
 
     async def _shutdown_model_instance(self, model: BaseReranker[Any]):
-        """关闭重排序模型实例"""
+        """Shut down reranker model instance and release resources.
+        
+        Implements provider-specific cleanup logic by delegating to the
+        model's own shutdown method.
+        
+        Args:
+            model: Reranker instance to shut down
+        """
         await model.shutdown()
 
     async def _perform_model_health_check(self, model_name: str, model: BaseReranker[Any]):
         """
-        执行模型健康检查
-        通过一次极简的重排序任务验证模型存活性
+        Perform health check on reranker model instance.
+        
+        Validates model functionality with a minimal reranking task (ping/pong)
+        to ensure the model is operational and responsive.
+        
+        Args:
+            model_name: Name of the model to check
+            model: Reranker instance to perform health check on
+            
+        Raises:
+            Exception: If health check request fails (model unresponsive)
         """
         await model.rerank(query="ping", documents=["pong"], top_k=1)
-        logger.debug(f"🔍 Reranker 模型 {model_name} 健康检查通过")
+        logger.debug(f"🔍 Reranker model {model_name} health check passed")
 
     async def _start_model(self, model_name: str, model_data: dict[str, Any]) -> BaseReranker[Any]:
         """
-        构造配置并启动 Reranker
+        Construct configuration and initialize a reranker model instance.
+        
+        Orchestrates the complete reranker instantiation process:
+        1. Retrieves global reranker configuration defaults
+        2. Builds provider-specific configuration object
+        3. Creates model instance via factory pattern
+        4. Initializes the model (loads weights/connects to API)
+        
+        Args:
+            model_name: Unique technical name of the model
+            model_data: Dictionary containing model configuration from database/storage
+            
+        Returns:
+            BaseReranker[Any]: Fully initialized reranker instance ready for reranking
+            
+        Raises:
+            ValueError: If required configuration parameters are missing
+            Exception: If model creation or initialization fails
         """
+        # Extract required provider identifier
         provider = model_data.get("provider")
         if not provider:
-            raise ValueError(f"模型 {model_name} 缺少必要参数: provider")
+            raise ValueError(f"Missing required parameter 'provider' for model {model_name}")
 
-        # 1. 获取基础全局配置
+        # Step 1: Get global default reranker configuration
         global_config = get_reranker_config()
         
-        # 2. 映射具体的 Config 对象
+        # Step 2: Build provider-specific configuration object
         model_config = self._build_config(model_name, provider, model_data, global_config)
 
-        # 3. 通过工厂创建并启动
+        # Step 3: Create model instance via factory pattern and initialize
         model = create_reranker_model(model_config)
         try:
             await model.startup()
-            # 注意：此处不再手动赋值 self._models[model_name]，交由基类处理以保证状态一致性
-            logger.success(f"🚀 Reranker 模型 {model_name} ({provider}) 已就绪")
+            # Important: Do not manually assign to self._models - parent class load_model
+            # manages instance state to ensure consistency
+            logger.success(f"🚀 Reranker model {model_name} ({provider}) initialized successfully")
             return model
         except Exception as e:
-            logger.error(f"❌ Reranker 模型 {model_name} 启动异常: {e}")
+            logger.error(f"❌ Failed to initialize Reranker model {model_name}: {e}")
             raise
 
     def _build_config(self, name: str, provider: str, data: dict[str, Any], global_cfg: Any) -> RerankerConfig:
         """
-        将数据库原始数据转换为强类型配置类
+        Map raw database configuration to strongly-typed reranker config objects.
+        
+        Converts generic configuration data into provider-specific configuration
+        objects with proper validation of required parameters (paths, API keys, etc.).
+        
+        Args:
+            name: Model technical name
+            provider: Reranker provider identifier (e.g., "local_qwen", "cohere")
+            data: Raw model configuration data (from database/storage)
+            global_cfg: Global reranker configuration defaults
+            
+        Returns:
+            RerankerConfig: Provider-specific configuration object (BGERerankerConfig/Qwen3RerankerConfig/etc.)
+            
+        Raises:
+            ValueError: If required provider-specific parameters are missing
+            ValueError: If provider is not recognized/supported
         """
+        # Extract model parameters with fallback to empty dict
         params = data.get("model_params", {})
-        path = data.get("model_path")
+        
+        # Extract common connection/configuration parameters
+        model_path = data.get("model_path")
         api_key = data.get("api_key")
         api_endpoint = data.get("api_endpoint")
 
-        # 公共参数快捷映射
+        # Common reranker parameters with sensible defaults
         common_kwargs = {
             "provider": provider,
             "model_name": name,
@@ -74,42 +140,52 @@ class RerankerModelPool(BaseModelPool[BaseReranker[Any]]):
             "batch_size": params.get("batch_size", 16),
         }
 
-        # 1. 本地模型处理 (Qwen/BGE)
+        # 1. Local model handling (Qwen3/BGE)
         if provider in [RerankerProvider.LOCAL_QWEN.value, RerankerProvider.LOCAL_BGE.value]:
-            if not path:
-                raise ValueError(f"本地模型 {name} 缺失 model_path")
+            # Validate required local model parameter
+            if not model_path:
+                raise ValueError(f"Local reranker model {name} missing required parameter: model_path")
             
-            config_cls: Any = Qwen3RerankerConfig if provider == RerankerProvider.LOCAL_QWEN.value else BGERerankerConfig
-            return config_cls(
+            # Select appropriate config class based on provider
+            config_class: Any = Qwen3RerankerConfig if provider == RerankerProvider.LOCAL_QWEN.value else BGERerankerConfig
+            
+            # Create provider-specific configuration
+            return config_class(
                 **common_kwargs,
-                model_path=path,
+                model_path=model_path,
                 device=params.get("device"),
                 use_fp16=params.get("use_fp16", provider == RerankerProvider.LOCAL_QWEN.value),
-                # score_threshold=params.get("score_threshold", 0.0),
-                # Qwen 可能需要的特定指令
+                # Qwen3-specific instruction parameter (None for BGE)
                 instruction=params.get("instruction") if provider == RerankerProvider.LOCAL_QWEN.value else None
             )
 
-        # 2. Cohere API 处理
-        if provider == RerankerProvider.COHERE.value:
-            if not api_key:
-                raise ValueError(f"Cohere 模型 {name} 缺失 api_key")
-            return CohereRerankerConfig(
-                **common_kwargs,
-                api_key=api_key,
-                batch_size=params.get("batch_size", 1000), # Cohere 支持极大 batch
-                timeout=params.get("timeout", global_cfg.timeout)
-            )
+        # # 2. Cohere API handling
+        # if provider == RerankerProvider.COHERE.value:
+        #     # Validate required Cohere parameter
+        #     if not api_key:
+        #         raise ValueError(f"Cohere reranker model {name} missing required parameter: api_key")
+            
+        #     # Create Cohere-specific configuration
+        #     return CohereRerankerConfig(
+        #         **common_kwargs,
+        #         api_key=api_key,
+        #         batch_size=params.get("batch_size", 1000),  # Cohere supports large batch sizes
+        #         timeout=params.get("timeout", global_cfg.timeout)
+        #     )
 
-        # 3. 通用 OpenAI 兼容接口处理
-        if provider in [RerankerProvider.API_QWEN.value, RerankerProvider.CHATGPT.value]:
-            if not api_key or not api_endpoint:
-                raise ValueError(f"API 模型 {name} 缺失 api_key 或 api_endpoint")
-            return OpenAIRerankerConfig(
-                **common_kwargs,
-                api_key=api_key,
-                api_endpoint=api_endpoint,
-                timeout=params.get("timeout", global_cfg.timeout)
-            )
+        # # 3. Generic OpenAI-compatible API handling
+        # if provider in [RerankerProvider.API_QWEN.value, RerankerProvider.CHATGPT.value]:
+        #     # Validate required API parameters
+        #     if not api_key or not api_endpoint:
+        #         raise ValueError(f"OpenAI-compatible reranker model {name} missing required parameters: api_key or api_endpoint")
+            
+        #     # Create OpenAI-compatible configuration
+        #     return OpenAIRerankerConfig(
+        #         **common_kwargs,
+        #         api_key=api_key,
+        #         api_endpoint=api_endpoint,
+        #         timeout=params.get("timeout", global_cfg.timeout)
+        #     )
 
-        raise ValueError(f"未知的 Reranker Provider: {provider}")
+        # Unsupported provider fallback
+        raise ValueError(f"Unknown/unsupported Reranker provider: {provider}")
