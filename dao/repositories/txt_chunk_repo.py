@@ -2,6 +2,7 @@ import math
 from loguru import logger
 from typing import Any, Sequence
 from sqlalchemy import text, select, update, delete, func, and_, or_, literal_column, Float
+from sqlalchemy.sql import Executable, ClauseElement
 from dao.entities import TxtChunkEntity
 from core.exceptions import DatabaseException, DataNotFoundException, safe_log_error
 from .base_repo import BaseRepository
@@ -91,7 +92,7 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
             }
 
             # 2. Build base filter conditions using raw text + manual binding
-            filter_conditions = [
+            filter_conditions: list[ClauseElement] = [
                 text("kb_id = :kb_id_val"),
                 text("is_active = 1"),
                 text("security_level <= :sec_val")
@@ -113,7 +114,6 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
                     filter_conditions.append(or_(*tag_conds))
 
             # 5. Build vector similarity expression
-            # We use literal_column with type_=Float to enable the >= operator
             similarity_sql_str = """
                 UTL_VECTOR.DOT_PRODUCT(embedding, :qv) / 
                 (UTL_VECTOR.NORM(embedding) * UTL_VECTOR.NORM(:qv))
@@ -121,8 +121,7 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
             similarity_expr = literal_column(similarity_sql_str, type_=Float).label("similarity_score")
 
             # 6. Construct the statement
-            stmt = (
-                select(
+            stmt = select(
                     TxtChunkEntity.chunk_id,
                     TxtChunkEntity.file_id,
                     TxtChunkEntity.content,
@@ -131,13 +130,17 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
                     TxtChunkEntity.chunk_metadata,
                     similarity_expr
                 )
-                .where(and_(*filter_conditions))
-                .where(similarity_expr >= text(":threshold")) # Use text() to match our manual bind
-                .order_by(similarity_expr.desc())
-                .limit(search_top_k)
-            )
+           # Apply each condition one by one (SQLAlchemy treats these as AND)
+            for condition in filter_conditions:
+                stmt = stmt.where(condition)
 
-            # 7. EXECUTE with the full bind dictionary
+            # Apply the similarity threshold (using text() to match our manual bind)
+            stmt = stmt.where(similarity_expr >= text(":threshold"))
+
+            # Apply ordering and limit
+            stmt = stmt.order_by(similarity_expr.desc()).limit(search_top_k)
+
+            # 7. Execute with the full bind dictionary
             result = await self.session.execute(stmt, bind_params)
             chunks = result.fetchall()
 
