@@ -13,26 +13,26 @@ async def run_in_thread_pool(
         workers: int = 5,
         pool: ThreadPoolExecutor | None = None
 ) -> AsyncGenerator:
-    """
-    在线程池中批量运行任务，并将运行结果以生成器的形式返回
-    
-    注意：请确保任务中的所有操作是线程安全的，任务函数请全部使用关键字参数
-    
+    """Run batch tasks in a thread pool and return results as an async generator.
+
+    Note: Ensure all operations in tasks are thread-safe, and task functions must 
+    use keyword arguments only.
+
     Args:
-        func: 在线程池中执行的任务函数
-        params: 任务参数字典列表
-        workers: 线程池大小
-        pool: 可选的外部线程池执行器
-        
+        func: The task function to execute in the thread pool.
+        params: List of dictionaries containing keyword arguments for the task function.
+        workers: Size of the thread pool (number of worker threads).
+        pool: Optional external ThreadPoolExecutor instance.
+
     Returns:
-        AsyncGenerator: 任务结果生成器
+        AsyncGenerator: Generator yielding task execution results.
     """
     thread_pool = ThreadPoolExecutor(max_workers=workers)
     pool = pool or thread_pool
     tasks = []
 
     for kwargs in params:
-        thread = pool.submit(func, **kwargs)
+        thread = pool.submit(func,** kwargs)
         tasks.append(thread)
 
     for obj in as_completed(tasks):
@@ -41,22 +41,36 @@ async def run_in_thread_pool(
 
 @staticmethod
 def safe_read_content(content_obj):
-    """安全读取内容，兼容CLOB和普通字符串"""
+    """Safely read content, compatible with CLOB and regular string types.
+
+    Args:
+        content_obj: Content object to read (can be Oracle CLOB or string).
+
+    Returns:
+        str: Read content as string (empty string if content is None).
+    """
     if hasattr(content_obj, 'read'):
-        # Oracle CLOB类型
+        # Oracle CLOB type
         content = content_obj.read()
-        # 确保返回的是字符串，而不是LOB对象
+        # Ensure return value is string, not LOB object
         return str(content) if content is not None else ""
     else:
-        # ES字符串类型或其他
+        # ES string type or other types
         return str(content_obj) if content_obj is not None else ""
     
 @staticmethod
 def model_to_dict(obj):
-    """递归将SQLAlchemy对象转换为字典"""
+    """Recursively convert SQLAlchemy model object to dictionary.
 
+    Args:
+        obj: SQLAlchemy model instance or any Python object.
+
+    Returns:
+        dict | Any: Dictionary representation of the object, or original object
+                    if it doesn't have __dict__ attribute.
+    """
     if hasattr(obj, '__dict__'):
-        # 过滤掉私有属性和SQLAlchemy内部属性
+        # Filter out private attributes and SQLAlchemy internal attributes
         result = {}
         for key, value in obj.__dict__.items():
             if not key.startswith('_') and key != 'metadata' and key != 'registry':
@@ -74,21 +88,25 @@ def model_to_dict(obj):
     
 @staticmethod
 def detect_language(text: str, threshold: float = 0.1) -> str:
-    """
-    探测文本语言
-    :param text: 待检测的文本
-    :param threshold: 中文字符占比阈值，超过此比例视为中文
-    :return: 'zh' 或 'en'
+    """Detect the language of input text (Chinese/English only).
+
+    Args:
+        text: Text to detect language for.
+        threshold: Threshold ratio of Chinese characters. Text with Chinese 
+                   character ratio exceeding this value is considered Chinese.
+
+    Returns:
+        str: 'zh' for Chinese, 'en' for English.
     """
     if not text:
         return "en"
     
-    # 过滤掉非字母和非中文字符（如标点、数字、空格）
+    # Filter out non-alphabetic and non-Chinese characters (e.g., punctuation, numbers, spaces)
     clean_text = re.sub(r'[^\u4e00-\u9fa5a-zA-Z]', '', text)
     if not clean_text:
         return "en"
         
-    # 统计中文字符数量 (\u4e00-\u9fff 是基本汉字范围)
+    # Count Chinese characters (\u4e00-\u9fff is the basic Chinese character range)
     chinese_chars = re.findall(r'[\u4e00-\u9fff]', clean_text)
     chinese_ratio = len(chinese_chars) / len(clean_text)
     
@@ -96,7 +114,14 @@ def detect_language(text: str, threshold: float = 0.1) -> str:
 
 @staticmethod
 def get_embedding_dimension(embedding: list[float]) -> int:
-    """从 embedding 结果中获取维度"""
+    """Get dimension from embedding result list.
+
+    Args:
+        embedding: List of float values representing embedding vector.
+
+    Returns:
+        int: Dimension of embedding vector (0 if input is not a list).
+    """
     if isinstance(embedding, list):
         return len(embedding)
     else:
@@ -105,19 +130,30 @@ def get_embedding_dimension(embedding: list[float]) -> int:
 
 @staticmethod
 def detect_file_encoding(file_path):
-    # 依然保留二进制扩展名过滤（提高速度）
+    """Detect file encoding using charset_normalizer.
+
+    Binary files (PDF/DOCX/XLSX/PNG) will return None directly to improve speed.
+
+    Args:
+        file_path: Absolute or relative path to the target file.
+
+    Returns:
+        str | None: Detected encoding in lowercase (e.g., 'utf-8'), None for binary files,
+                    'utf-8' as fallback if detection fails.
+    """
+    # Still keep binary extension filtering (improve speed)
     file_ext = os.path.splitext(file_path)[1].lower()
-    if file_ext in ['.pdf', '.docx', '.xlsx', '.png']: # 简写示意
+    if file_ext in ['.pdf', '.docx', '.xlsx', '.png']: # Abbreviated example
         return None
 
     try:
-        # 一行代码：检测内容、尝试多种编码、验证解码可行性
+        # One line: detect content, try multiple encodings, verify decoding feasibility
         results = from_path(file_path).best()
         
         if results:
-            logger.debug(f"检测到编码: {results.encoding} 可信度: {results.coherence}")
+            logger.debug(f"Detected encoding: {results.encoding} Confidence: {results.coherence}")
             return results.encoding.lower()
     except Exception as e:
-        logger.error(f"编码检测异常: {e}")
+        logger.error(f"Encoding detection exception: {e}")
         
-    return 'utf-8' # 兜底
+    return 'utf-8' # Fallback encoding

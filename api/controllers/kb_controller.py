@@ -33,6 +33,7 @@ class KBController:
             domain_id=upload_form.domain_id,
             kb_id=upload_form.kb_id,
             overwrite=upload_form.overwrite,
+            skip_approval=upload_form.skip_approval,
             batch_name=upload_form.batch_name,
             batch_id=upload_form.batch_id,
             biz_metadata=upload_form.biz_metadata,

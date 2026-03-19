@@ -28,6 +28,7 @@ async def handle_upload_files(
     - **domain_id** (`int`): Domain identifier.
     - **kb_id** (`int`): Target Knowledge Base ID.
     - **overwrite** (`bool`): Whether to overwrite existing files with the same name.
+    - **skip_approval** (`bool`): Whether to skip approval for uploaded files.
     - **batch_name** (`str`): Name for this upload batch.
     - **biz_metadata** (`dict`, optional): Custom business-level metadata.
 

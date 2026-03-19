@@ -174,7 +174,7 @@ class FileService:
                                  domain_id: int,
                                  kb_id: int,
                                  batch_name: str,
-                                 overwrite: bool,
+                                 skip_approval: bool,
                                  batch_id: int | None = None,
                                  biz_metadata: dict[str, Any] | None = None,
                                  created_by: str | None = None):
@@ -186,7 +186,7 @@ class FileService:
             domain_id: Business domain ID
             kb_id: Target knowledge base ID
             batch_name: Batch name for this upload
-            overwrite: Whether to overwrite existing files (True/False)
+            skip_approval: Whether to skip approval procedure(True/False)
             batch_id: Optional existing batch ID
             biz_metadata: Optional business metadata (JSON-serializable)
             created_by: Optional creator identifier
@@ -246,7 +246,7 @@ class FileService:
                     file_path=fileparam["file_path"],
                     file_name=fileparam["file_name"],
                     file_ext=fileparam["file_ext"],
-                    status=FileStatus.UPLOADED.value,
+                    status=FileStatus.UPLOADED.value if not skip_approval else FileStatus.APPROVED.value,
                     file_version=fileparam["file_version"],
                     is_overwrite=fileparam["is_overwrite"],
                     security_level=kb_entity.security_level or 1,
@@ -275,6 +275,7 @@ class FileService:
                                  kb_id: int,
                                  batch_name: str,
                                  overwrite: bool,
+                                 skip_approval: bool,
                                  batch_id: int | None = None,
                                  biz_metadata: dict[str, Any] | None = None,
                                  created_by: str | None = None):
@@ -287,6 +288,7 @@ class FileService:
             kb_id: Target knowledge base ID
             batch_name: Batch name for this upload
             overwrite: Whether to overwrite existing files (True/False)
+            skip_approval: Whether to skip approval procedure(True/False)
             batch_id: Optional existing batch ID
             biz_metadata: Optional business metadata (JSON-serializable)
             created_by: Optional creator identifier
@@ -310,7 +312,7 @@ class FileService:
             domain_id=domain_id,
             kb_id=kb_id,
             batch_name=batch_name,
-            overwrite=overwrite,
+            skip_approval=skip_approval,
             batch_id=batch_id,
             biz_metadata=biz_metadata,
             created_by=created_by
@@ -607,7 +609,7 @@ class FileService:
                 domain_id=domain_id,
                 kb_id=kb_id,
                 batch_name=batch_name,
-                overwrite=False,
+                skip_approval=True,
                 biz_metadata=biz_metadata,
                 created_by=created_by
             )

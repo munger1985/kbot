@@ -9,6 +9,7 @@ class KBUploadForm(BaseModel):
     domain_id: int = Field(..., description="领域ID")
     kb_id: int = Field(..., description="知识库ID")
     overwrite: bool = Field(..., description="是否覆盖")
+    skip_approval: bool = Field(..., description="是否跳过审批")
     batch_name: str = Field(..., description="批次名称")
     batch_id: int|None = Field(None, description="批次ID")
     biz_metadata: dict|None = Field(None, description="业务元数据")
