@@ -108,12 +108,22 @@ class AgentService:
         if not kb_results:
             return []
 
-        file_ids = list(set([res.file_id for res in kb_results]))
+        # Safely collect file_ids (ensure they are strings)
+        file_ids = []
+        for res in kb_results:
+            file_id = res.file_id
+            if not isinstance(file_id, str):
+                file_id = str(file_id)
+            file_ids.append(file_id)
+
+        unique_file_ids = list(set(file_ids))
+        logger.debug(f"Collected {len(unique_file_ids)} unique file IDs from {len(kb_results)} results")
+
         file_name_map = {}
         try:
             async with self.oracle_session as session:
                 file_repo = FileRepository(session)
-                file_name_map = await file_repo.get_names_by_ids(file_ids)
+                file_name_map = await file_repo.get_names_by_ids(unique_file_ids)
                 logger.debug(f"Mapped {len(file_name_map)} file IDs to names.")
         except Exception as e:
             logger.error(f"Failed to fetch file names for references: {e}")
@@ -122,21 +132,21 @@ class AgentService:
         base_url = f"http://{config.host_ip}:{config.service_port}"
 
         references = []
-        for res in kb_results:
+        for idx, res in enumerate(kb_results):
             try:
                 ref = res.to_dict()
-                
+
                 # Ensure file_id is a string for URL construction
                 file_id = res.file_id
                 if not isinstance(file_id, str):
                     file_id = str(file_id)
-                
+
                 ref["file_name"] = file_name_map.get(file_id, "Unknown File")
                 ref["download_link"] = f"{base_url}/api/kb/download?file_id={file_id}"
                 ref["preview_link"] = f"{base_url}/api/kb/preview?file_id={file_id}"
                 references.append(ref)
             except Exception as e:
-                logger.error(f"Error processing search result: {e}, type: {type(e).__name__}, res: {res}")
+                logger.error(f"Error processing search result at index {idx}: {e}, type: {type(e).__name__}, res: {res}")
                 raise
         return references
 

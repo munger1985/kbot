@@ -41,16 +41,19 @@ class DifyService:
 
             # 2. Build Dify-specific records and standardized references
             # We fetch file names and build the metadata required by Dify
+            logger.debug(f"Starting to enrich {len(kb_results)} search results")
             try:
                 references = await self.agent_service._enrich_results_with_metadata(kb_results)
+                logger.debug(f"Successfully enriched {len(references)} references")
             except Exception as e:
-                logger.error(f"Error in _enrich_results_with_metadata: {e}, type: {type(e).__name__}")
+                logger.error(f"Error in _enrich_results_with_metadata: {e}, type: {type(e).__name__}", exc_info=True)
                 raise
 
             try:
                 records = self._build_dify_records(references)
+                logger.debug(f"Successfully built {len(records)} Dify records")
             except Exception as e:
-                logger.error(f"Error in _build_dify_records: {e}, type: {type(e).__name__}, references: {references}")
+                logger.error(f"Error in _build_dify_records: {e}, type: {type(e).__name__}", exc_info=True)
                 raise
 
             # 3. Persistence (Sync with AgentService logic)
@@ -78,8 +81,10 @@ class DifyService:
 
         except Exception as e:
             msg = f"Dify interaction failed for Agent {agent_id}: {str(e)}"
+            # Safely format question for logging (handle non-string types)
+            safe_question = str(question)[:100] if question else ""
             logger.error(f"[DifyService] {msg}, error type: {type(e).__name__}, "
-                        f"session_id: {session_id}, question: {question[:100] if len(question) > 100 else question}", exc_info=True)
+                        f"session_id: {session_id}, question: {safe_question}", exc_info=True)
             raise InternalServerError(message=msg)
 
     def _build_dify_records(self, enriched_references: list[dict]) -> list[dict]:
@@ -108,7 +113,7 @@ class DifyService:
                 }
                 records.append(record)
             except Exception as e:
-                logger.error(f"Error building Dify record at index {idx}: {e}, type: {type(e).__name__}, ref keys: {list(ref.keys())}")
+                logger.error(f"Error building Dify record at index {idx}: {e}, type: {type(e).__name__}, ref type: {type(ref).__name__}")
                 raise
         return records
 
