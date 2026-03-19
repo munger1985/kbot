@@ -7,7 +7,15 @@ from .base_repo import BaseRepository
 
 class BatchRepository(BaseRepository[BatchEntity]):
     """Repository for KBOT_MD_KB_BATCH table operations."""
-    
+    async def create(self, batch: BatchEntity) -> int:
+        """Create a new knowledge base batch."""
+        try:
+            self.session.add(batch)
+            await self.session.flush()
+            return batch.batch_id
+        except Exception as e:
+            raise DatabaseException("Failed to create knowledge base batch", original_error=e)
+
     async def get_by_kb_id(self, kb_id: int) -> Sequence[BatchEntity]:
         """Get knowledge base batches by knowledge base ID."""
         try:

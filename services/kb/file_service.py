@@ -9,7 +9,8 @@ from loguru import logger
 from core.config.settings import get_app_config, get_prompt_config
 from dao.entities import BatchEntity, FileEntity
 from core.dictionary import FileStatus, YesNoEnum
-from dao.repositories import KBRepository, FileRepository, TxtChunkRepository, PromptRepository
+from dao.repositories import (KBRepository, FileRepository, BatchRepository, 
+                              TxtChunkRepository, PromptRepository)
 from utils.common import run_in_thread_pool
 from utils.encoder import DecimalEncoder
 from core.database.oracle import get_session
@@ -202,15 +203,19 @@ class FileService:
                 logger.error(error_msg)
                 raise NotFoundError(message=error_msg)
 
-            # Create batch entity
-            batch_entity = BatchEntity(
-                batch_id=batch_id,
-                app_id=app_id,
-                batch_name=batch_name,
-                kb_id=kb_id,
-                created_by=created_by,
-                updated_by=created_by
-            )
+            # Create batch if not provided
+            if not batch_id:
+                # Create batch entity
+                batch_entity = BatchEntity(
+                    app_id=app_id,
+                    batch_name=batch_name,
+                    kb_id=kb_id,
+                    created_by=created_by,
+                    updated_by=created_by
+                )
+                batch_repo = BatchRepository(session)
+                batch_id = await batch_repo.create(batch_entity)
+            
 
             # Get default VLM prompt configuration
             prompt_repo = PromptRepository(session)
