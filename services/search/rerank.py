@@ -79,5 +79,8 @@ class TxtBaseRerank:
             logger.debug(f"重排 Top 命中 | 分数: {r.rerank_score:.4f} | 内容: {r.content[:40]}...")
 
         logger.info(f"使用模型 {model_name} 完成重排，从 {len(kb_results)} 条中筛选出 {len(reranked_results)} 条，取 Top {top_k}")
-
-        return reranked_results[:top_k]
+        try:
+            safe_top_k = int(top_k)
+        except Exception as e:
+            safe_top_k = 1
+        return reranked_results[:safe_top_k]

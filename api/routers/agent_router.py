@@ -55,13 +55,13 @@ async def handle_agent_feedback(form: AgentChatFeedbackForm, auth: UserAuth):
 
     ---
     ### Parameters
-    - **chat_record_id** (`str`): The unique ID of the specific chat message.
-    - **feedback_value** (`int`): 
+    - **memory_id** (`str`): The unique ID of the specific chat message.
+    - **feedback_value** (`int`):
         - `1`: Positive (Like)
         - `0`: Neutral/Reset
         - `-1`: Negative (Dislike)
     """
-    logger.info(f"Processing feedback for chat record ID: {form.chat_record_id}")
+    logger.info(f"Processing feedback for memory ID: {form.memory_id}")
     return await agent_controller.feedback(form)
 
 

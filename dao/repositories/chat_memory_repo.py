@@ -29,8 +29,9 @@ class ChatMemoryRepository(BaseRepository[ChatMemoryEntity]):
         try:
             # Insert the record into the database.
             self.session.add(chat_record)
-            
+            # No explicit commit needed - session context manager handles it
         except Exception as e:
+            logger.error(f"Error in ChatMemoryRepository.create(): {e}", exc_info=True)
             raise DatabaseException("Failed to add chat record.", original_error=e)
 
     async def search_short_term(self, session_id: str, limit: int = 5) -> list[dict]:
@@ -174,22 +175,22 @@ class ChatMemoryRepository(BaseRepository[ChatMemoryEntity]):
         except Exception as e:
             raise DatabaseException("Failed to delete chat records by session IDs.", original_error=e)
     
-    async def feedback(self, record_id: int, feedback: int):
+    async def feedback(self, memory_id: int, feedback: int):
         """
         Submits feedback for a chat record.
 
         Args:
-            record_id: Record ID.
+            memory_id: Memory ID.
             feedback: Feedback result. 1: positive, 0: no feedback, -1: negative.
         """
         try:
             stmt = update(ChatMemoryEntity).where(
-                ChatMemoryEntity.record_id == record_id
+                ChatMemoryEntity.memory_id == memory_id
             ).values(
                 feedback=feedback
             )
             await self.session.execute(stmt)
-            logger.info(f"Submitted feedback for record {record_id} with result {feedback}.")
+            logger.info(f"Submitted feedback for memory {memory_id} with result {feedback}.")
             
         except Exception as e:
             raise DatabaseException("Failed to submit feedback for chat record.", original_error=e)
@@ -204,7 +205,7 @@ class ChatMemoryRepository(BaseRepository[ChatMemoryEntity]):
             dictionary representation of the entity.
         """
         return {
-            "record_id": entity.record_id,
+            "memory_id": entity.memory_id,
             "session_id": entity.session_id,
             "question": entity.question,
             "answer": entity.answer,

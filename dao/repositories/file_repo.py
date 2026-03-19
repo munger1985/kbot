@@ -178,10 +178,20 @@ class FileRepository(BaseRepository[FileEntity]):
 
         try:
             batch_repo = BatchRepository(self.session)
-            batch_entity = await batch_repo.get_id_by_name(
-                batch.batch_name, batch.kb_id, app_id=batch.app_id
-            )
-            
+            # Try to find existing batch by name, kb_id and app_id
+            try:
+                stmt = select(BatchEntity).where(
+                    and_(
+                        BatchEntity.batch_name == batch.batch_name,
+                        BatchEntity.kb_id == batch.kb_id,
+                        BatchEntity.app_id == batch.app_id
+                    )
+                )
+                result = await self.session.execute(stmt)
+                batch_entity = result.scalars().first()
+            except Exception:
+                batch_entity = None
+
             if not batch_entity:
                 # Create new batch if it doesn't exist
                 self.session.add(batch)

@@ -85,8 +85,7 @@ async def get_session() -> AsyncIterator[AsyncSession]:
             await session.rollback()
             logger.error(f"Database operation failed, rollback executed - "
                         f"error type: {type(e).__name__}, "
-                        f"error message: {str(e)}, "
-                        # f"error args: {e.args if hasattr(e, 'args') else 'N/A'}, "
+                        f"error message: {repr(str(e))}, "
                         f"error module: {type(e).__module__}", exc_info=True)
             raise RuntimeError(f"Database operation failed: {str(e)}") from e
         finally:

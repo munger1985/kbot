@@ -63,24 +63,25 @@ class DifyService:
 
             # 3. Persistence (Sync with AgentService logic)
             # Since Dify usually doesn't need the LLM answer back from us (it does its own generation),
-            # we record the 'question' and 'retrieval results'. 
-            # If Dify expects us to save the interaction:
-            
-            persist_task = self.agent_service._persist_chat_data(
-                session_id=session_id,
-                user_id=self.user_id,
-                question=question,
-                query_vec=model_params.get("query_vec"),
-                chunks=["[Dify Retrieval Only]"], # Placeholder for answer as Dify handles LLM
-                references=references,
-                request_time=request_time
-            )
+            # we record the 'question' and 'retrieval results'.
+
+            # Create a wrapper function that properly awaits the async persistence
+            async def persist_wrapper():
+                await self.agent_service._persist_chat_data(
+                    session_id=session_id,
+                    user_id=self.user_id,
+                    question=question,
+                    query_vec=model_params.get("query_vec"),
+                    chunks=["[Dify Retrieval Only]"], # Placeholder for answer as Dify handles LLM
+                    references=references,
+                    request_time=request_time
+                )
 
             if background_tasks:
-                background_tasks.add_task(lambda: persist_task)
+                background_tasks.add_task(persist_wrapper)
             else:
                 # Fallback: execute as background task if no manager provided
-                asyncio.create_task(persist_task)
+                asyncio.create_task(persist_wrapper())
 
             return {"records": records}
 

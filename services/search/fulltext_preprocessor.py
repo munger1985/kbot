@@ -158,7 +158,23 @@ class LLMFullTextPreprocessor:
                 stream=True,
                 temperature=0.1
             ):
-                full_text += chunk
+                # 解析 SSE 格式的数据行
+                line = chunk.strip()
+                if line.startswith("data: "):
+                    data_content = line[6:]  # 移除 "data: " 前缀
+                    if data_content == "[DONE]":
+                        break
+                    try:
+                        # 解析 JSON 格式的 chunk
+                        chunk_data = json.loads(data_content)
+                        # 提取 choices[0].delta.content
+                        if "choices" in chunk_data and len(chunk_data["choices"]) > 0:
+                            delta = chunk_data["choices"][0].get("delta", {})
+                            if "content" in delta:
+                                full_text += delta["content"]
+                    except json.JSONDecodeError:
+                        logger.warning(f"Failed to parse SSE chunk: {data_content}")
+                        continue
             
             if not full_text:
                 raise ValueError("LLM returned empty response")

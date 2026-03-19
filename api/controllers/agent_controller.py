@@ -18,7 +18,7 @@ class AgentController:
 
     async def feedback(self, form: AgentChatFeedbackForm) -> SuccessResponse:
         """Submits user feedback for a chat record."""
-        await self.agent_service.feedback(form.chat_record_id, form.feedback)
+        await self.agent_service.feedback(form.memory_id, form.feedback)
         return SuccessResponse(message="Feedback submitted successfully")
         
     async def get_session_chat_records(self, session_id: str) -> SuccessResponse:

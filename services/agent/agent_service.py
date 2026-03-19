@@ -398,7 +398,7 @@ class AgentService:
     async def _persist_chat_data(self, session_id, user_id, question, query_vec, chunks, references, request_time):
         """Asynchronously saves chat interaction to long-term memory."""
         try:
-            if not chunks: 
+            if not chunks:
                 logger.warning(f"No content chunks to persist for session {session_id}")
                 return
             answer = await self._process_answer(chunks)
@@ -409,7 +409,9 @@ class AgentService:
             )
             logger.info(f"Memory persistence successful for session {session_id}")
         except Exception as e:
+            import traceback
             logger.error(f"Failed to persist chat memory: {e}")
+            logger.error(f"Full traceback:\n{traceback.format_exc()}")
 
     async def remove_agent(self, agent_id: int, del_prompt: bool = False):
         """Removes agent, its configurations, and optionally its associated prompts."""
@@ -434,11 +436,11 @@ class AgentService:
             logger.error(f"Error removing agent {agent_id}: {e}")
             handle_exception(e, "Failed to remove agent.")
 
-    async def feedback(self, chat_record_id: int, feedback: int):
+    async def feedback(self, memory_id: int, feedback: int):
         """Updates user feedback for a specific chat record."""
         async with self.oracle_session as session:
-            logger.info(f"Submitting feedback {feedback} for record {chat_record_id}")
-            await ChatMemoryRepository(session).feedback(chat_record_id, feedback)
+            logger.info(f"Submitting feedback {feedback} for memory {memory_id}")
+            await ChatMemoryRepository(session).feedback(memory_id, feedback)
 
     async def get_session_history(self, session_id: str):
         """Retrieves history for a specific chat session."""

@@ -17,10 +17,10 @@ class AgentChatForm(BaseModel):
 
 class AgentChatFeedbackForm(BaseModel):
     """Agent chat feedback form model.
-    
+
     This model defines the data structure for submitting feedback on AI agent chat responses.
     """
-    chat_record_id: int = Field(..., description="Chat record ID (unique identifier for the chat history entry)")
+    memory_id: int = Field(..., description="Memory ID (unique identifier for the chat history entry)")
     feedback: int = Field(..., description="Feedback value (0: no feedback, 1: approve, -1: disapprove)")
 
 class DifySearchForm(BaseModel):

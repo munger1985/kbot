@@ -2,6 +2,7 @@ import os
 import uuid
 import json
 import shutil
+import re
 from pathlib import Path
 from typing import Any
 from fastapi import UploadFile
@@ -9,7 +10,7 @@ from loguru import logger
 from core.config.settings import get_app_config, get_prompt_config
 from dao.entities import BatchEntity, FileEntity
 from core.dictionary import FileStatus, YesNoEnum
-from dao.repositories import (KBRepository, FileRepository, BatchRepository, 
+from dao.repositories import (KBRepository, FileRepository, BatchRepository,
                               TxtChunkRepository, PromptRepository)
 from utils.common import run_in_thread_pool
 from utils.encoder import DecimalEncoder
@@ -203,9 +204,9 @@ class FileService:
                 logger.error(error_msg)
                 raise NotFoundError(message=error_msg)
 
-            # Create batch if not provided
+            # Don't create batch here - let file_repo.create handle it
+            # Just create a BatchEntity instance without persisting it
             if not batch_id:
-                # Create batch entity
                 batch_entity = BatchEntity(
                     app_id=app_id,
                     batch_name=batch_name,
@@ -213,32 +214,42 @@ class FileService:
                     created_by=created_by,
                     updated_by=created_by
                 )
-                batch_repo = BatchRepository(session)
-                batch_id = await batch_repo.create(batch_entity)
-            
 
             # Get default VLM prompt configuration
             prompt_repo = PromptRepository(session)
             vlm_prompt_unique_name = get_prompt_config().image2text
-            prompt = await prompt_repo.get_prompt_by_unique_name(vlm_prompt_unique_name)
-            vlm_model = kb_entity.img2txt_model_id
+            try:
+                prompt = await prompt_repo.get_prompt_by_unique_name(vlm_prompt_unique_name)
+            except DataNotFoundException as e:
+                logger.warning(f"Prompt not found: {e}, will use default prompt")
+                prompt = None
+            except Exception as e:
+                logger.warning(f"Failed to get prompt: {e}, will use default prompt")
 
+            # Clean up prompt text: remove leading/trailing whitespace and normalize newlines
+            if prompt:
+                prompt = prompt.strip().replace('\n', ' ')
+                # Remove multiple consecutive spaces
+                prompt = re.sub(r'\s+', ' ', prompt)
+
+            if not prompt:
+                prompt = "Please describe the image in detail."
+                
+            vlm_model = kb_entity.img2txt_model_id
             # Build chunk parser configuration (JSON-serialized)
-            chunk_parser = json.dumps(
-                {
-                    "do_ocr": True,
-                    "overlap": 50,
-                    "use_vlm": bool(vlm_model),
-                    "vlm_model": vlm_model,
-                    "chunk_size": 512,
-                    "ocr_engine": "tesseract",
-                    "vlm_prompt": prompt,
-                    "images_scale": 2.0,
-                    "min_chunk_len": 10,
-                    "generate_picture_images": True
-                },
-                cls=DecimalEncoder
-            )
+            # Create chunk parser configuration as dict
+            chunk_parser_config = {
+                "do_ocr": True,
+                "overlap": 50,
+                "use_vlm": bool(vlm_model),
+                "vlm_model": vlm_model,
+                "chunk_size": 512,
+                "ocr_engine": "tesseract",
+                "vlm_prompt": prompt,
+                "images_scale": 2.0,
+                "min_chunk_len": 10,
+                "generate_picture_images": True
+            }
 
             # Create file entities for batch persistence
             file_entities = []
@@ -255,10 +266,10 @@ class FileService:
                     file_version=fileparam["file_version"],
                     is_overwrite=fileparam["is_overwrite"],
                     security_level=kb_entity.security_level or 1,
-                    chunk_parser=chunk_parser,
+                    chunk_parser=chunk_parser_config,
                     process_priority=kb_entity.process_priority,
                     file_size=fileparam["file_size"],
-                    biz_metadata=json.dumps(biz_metadata, cls=DecimalEncoder) if biz_metadata else None,
+                    biz_metadata=biz_metadata,
                     created_by=created_by,
                     updated_by=created_by
                 )

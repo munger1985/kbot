@@ -22,7 +22,7 @@ class OracleJSON(TypeDecorator):
     def process_bind_param(self, value, dialect):
         if value is None:
             return None
-        return json.dumps(value)
+        return json.dumps(value, default=str)
 
     def process_result_value(self, value, dialect):
         if value is None:
@@ -46,8 +46,8 @@ class UniversalArray(TypeDecorator):
             # PG 18 依然推荐 JSONB 进行高效索引
             return dialect.type_descriptor(JSONB())
         elif dialect.name == 'oracle':
-            # Oracle 23ai/26ai 原生 JSON 类型
-            return dialect.type_descriptor(JSON())
+            # Oracle 23ai/26ai 使用自定义 OracleJSON 类型避免 _json_serializer 错误
+            return dialect.type_descriptor(OracleJSON())
         else:
             # 兜底使用标准 JSON
             return dialect.type_descriptor(JSON())
