@@ -12,8 +12,12 @@ class DatabaseException(Exception):
         self.message = message
         self.original_error = original_error
         if original_error:
+            # 限制原始异常的字符串长度，避免打印大量向量数据
+            error_str = str(original_error)
+            if len(error_str) > 500:
+                error_str = error_str[:500] + "... (truncated)"
             logger.debug(f"[DatabaseException] Created: {message}, original error type: {type(original_error).__name__}, "
-                        f"original error: {str(original_error)}")
+                        f"original error: {error_str}")
 
 class DataNotFoundException(DatabaseException):
     """Data not found exception"""
