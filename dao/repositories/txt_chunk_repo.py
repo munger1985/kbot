@@ -102,17 +102,17 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
                     filter_conditions.append(or_(*tag_conditions))
 
             # 4. Build vector similarity query
-            # Oracle vector cosine similarity calculation: DOT_PRODUCT / (NORM(vec1) * NORM(vec2))
-            oracle_embedding = OracleVecHandler().convert(vec=query_vec)
-            similarity_expr = text(f"""
+            oracle_embedding = OracleVecHandler().convert(vec=query_vec, to_string=True)
+            # Wrap the raw SQL in literal_column so it supports .label()
+            similarity_expr = literal_column(f"""
                 UTL_VECTOR.DOT_PRODUCT(
-                    {oracle_embedding},
+                    VECTOR_CONSTRUCT({','.join(map(str, oracle_embedding))}), 
                     embedding
                 ) / (
-                    UTL_VECTOR.NORM({oracle_embedding}) *
+                    UTL_VECTOR.NORM(VECTOR_CONSTRUCT({','.join(map(str, oracle_embedding))})) *
                     UTL_VECTOR.NORM(embedding)
                 )
-            """)
+            """).label("similarity_score")
 
             # 5. Execute query
             stmt = (
@@ -123,11 +123,15 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
                     TxtChunkEntity.path_names,
                     TxtChunkEntity.structure_level,
                     TxtChunkEntity.chunk_metadata,
-                    similarity_expr.label("similarity_score")
+                    similarity_expr
                 )
                 .where(and_(*filter_conditions))
-                .where(text("similarity_score >= :threshold"))
-                .order_by(text("similarity_score DESC"))
+                # NOTE: You cannot use the label "similarity_score" in the WHERE clause.
+                # You must repeat the expression or use a subquery. 
+                # For simplicity, we repeat the logic or filter in Python if the dataset is small, 
+                # but here is the SQL-correct way using the expression directly:
+                .where(similarity_expr >= similarity_threshold)
+                .order_by(similarity_expr.desc())
                 .limit(search_top_k)
             )
             
