@@ -205,6 +205,10 @@ class TxtBaseSearch:
         """
         results = []
         for item in dataset:
+            # 将 item 统一转换为 Key 全小写的包装器
+            # 这样无论数据库返回 CHUNK_ID 还是 chunk_id，都能通过 .get("chunk_id") 拿到
+            data = {k.lower(): v for k, v in item.items()} if isinstance(item, dict) else item
+
             try:
                 if not isinstance(item, dict):
                     logger.warning(f"跳过非字典格式的搜索结果: {type(item)}")
