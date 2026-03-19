@@ -140,7 +140,7 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
             for chunk in chunks:
                 path_list = chunk.path_names or []
                 results.append({
-                    "id": chunk.chunk_id,
+                    "chunk_id": chunk.chunk_id,
                     "file_id": chunk.file_id,
                     "content": chunk.content,
                     "path": " > ".join(path_list) if isinstance(path_list, list) else "",
@@ -225,7 +225,7 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
             for chunk in chunks:
                 path_list = chunk.path_names or []
                 results.append({
-                    "id": chunk.chunk_id,
+                    "chunk_id": chunk.chunk_id,
                     "file_id": chunk.file_id,
                     "content": chunk.content,
                     "path_names": path_list,

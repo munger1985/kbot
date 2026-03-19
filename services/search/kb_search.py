@@ -201,47 +201,53 @@ class TxtBaseSearch:
     def _construct_search_result(self, dataset: list, weight: float, search_type: str) -> list[TxtBaseSearchResult]:
         """
         构造搜索结果列表
-        统一处理字典格式：{id, file_id, content, path_names/structure_level, metadata, score, ...}
+        根据 Repository 返回格式精准对齐：
+        { "chunk_id", "file_id", "content", "path", "structure_level", "metadata", "score" }
         """
         results = []
         for item in dataset:
-            # 将 item 统一转换为 Key 全小写的包装器
-            # 这样无论数据库返回 CHUNK_ID 还是 chunk_id，都能通过 .get("chunk_id") 拿到
-            data = {k.lower(): v for k, v in item.items()} if isinstance(item, dict) else item
-
             try:
                 if not isinstance(item, dict):
                     logger.warning(f"跳过非字典格式的搜索结果: {type(item)}")
                     continue
                     
-                # 统一处理字典格式（来自全文搜索和向量搜索）
-                chunk_meta = item.get("metadata", {}) if isinstance(item.get("metadata"), dict) else {}
-                
-                # 统一处理路径字段：支持 path_names（列表）或 path（字符串）
+                # 1. 提取元数据字典 (对应 chunk.chunk_metadata)
+                # 注意：Oracle 的数值在 metadata 里可能是 Decimal 类型
+                chunk_meta = item.get("metadata") or {}
+                if not isinstance(chunk_meta, dict):
+                    chunk_meta = {}
+
+                # 2. 处理路径逻辑 (对应 "path": " > ".join(path_list))
+                # 优先从 path 字段解析，如果 path_names 已存在则保留
                 path_names = item.get("path_names", [])
                 if not path_names and "path" in item:
-                    # 如果只有 path 字段，将其分割为路径列表
                     path_str = item.get("path", "")
                     path_names = [p.strip() for p in path_str.split(">") if p.strip()]
-                
+
+                # 3. 构造结果对象，增加对 Oracle Decimal 类型的强制转换 (int/float)
                 result = TxtBaseSearchResult(
-                    chunk_id=item.get("chunk_id", ""),
+                    # 基本标识
+                    chunk_id=str(item.get("chunk_id", "")),
                     file_id=item.get("file_id", ""),
                     content=item.get("content", ""),
-                    structure_level=item.get("structure_level", 0),
-                    node_path=item.get("node_path", "") or "",
+                    
+                    # 层级与路径
+                    structure_level=int(item.get("structure_level", 0)),
+                    node_path=chunk_meta.get("node_path", "") or "", # node_path 通常藏在 metadata 里
                     path_names=path_names or [],
                     
-                    # 从 metadata 字典中提取补充信息，处理 None 值
-                    page_num=chunk_meta.get("page_num") or 0,
-                    chunk_num=chunk_meta.get("chunk_num") or 0,
-                    sub_index=chunk_meta.get("sub_index") or 0,
+                    # 从 metadata 中提取业务字段 (处理 Decimal)
+                    page_num=int(chunk_meta.get("page_num", 0)) if chunk_meta.get("page_num") else 0,
+                    chunk_num=int(chunk_meta.get("chunk_num", 0)) if chunk_meta.get("chunk_num") else 0,
+                    sub_index=int(chunk_meta.get("sub_index", 0)) if chunk_meta.get("sub_index") else 0,
                     chunk_type=chunk_meta.get("chunk_type", "text"),
                     
-                    score=float(item.get("score", 0.0)),
+                    # 评分与向量 (处理 similarity_score 可能为 None 的情况)
+                    score=float(item.get("score") or 0.0),
                     embedding=item.get("embedding", []) or [],
                     
-                    rerank_score=0.0, # 初始为0，后续根据rerank打分后重新注入
+                    # 初始扩展字段
+                    rerank_score=0.0,
                     weight=weight,
                     search_type=search_type
                 )
@@ -249,7 +255,8 @@ class TxtBaseSearch:
                 results.append(result)
                 
             except Exception as e:
-                logger.warning(f"构造搜索结果失败: {e}")
+                # 增加 item 的 ID 打印，方便定位具体哪条数据解析崩溃
+                logger.warning(f"构造搜索结果失败 (ID: {item.get('chunk_id')}): {e}")
                 continue
                 
         return results
