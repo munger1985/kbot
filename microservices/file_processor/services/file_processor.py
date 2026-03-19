@@ -57,7 +57,7 @@ class FileProcessor:
 
             for file in files:
                 # Skip files with empty parser parameters
-                if not file.parser_params:
+                if not file.chunk_parser:
                     msg = f"File {file.id} has empty parser parameters, skipping processing"
                     logger.warning(msg)
                     await self._update_file_status(file.id, FileStatus.PARSE_FAILED, msg)
@@ -87,19 +87,19 @@ class FileProcessor:
                 image_dir = os.path.join(dir_name, file.file_id)
 
                 # VLM configuration
-                use_vlm = file.parser_params.get("use_vlm", False)
-                vlm_prompt = file.parser_params.get("vlm_prompt", None)
+                use_vlm = file.chunk_parser.get("use_vlm", False)
+                vlm_prompt = file.chunk_parser.get("vlm_prompt", None)
                 
                 # Convert dict parser params to DocParserParams object
                 doc_params = DocParserParams(
-                    chunk_size=file.parser_params.get("chunk_size", 512),
-                    overlap=file.parser_params.get("overlap", 20),
-                    min_chunk_len=file.parser_params.get("min_chunk_len", 10),
-                    generate_picture_images=file.parser_params.get("generate_picture_images", False),
-                    image_scale=file.parser_params.get("image_scale", 1.0),
+                    chunk_size=file.chunk_parser.get("chunk_size", 512),
+                    overlap=file.chunk_parser.get("overlap", 20),
+                    min_chunk_len=file.chunk_parser.get("min_chunk_len", 10),
+                    generate_picture_images=file.chunk_parser.get("generate_picture_images", False),
+                    image_scale=file.chunk_parser.get("image_scale", 1.0),
                     image_dir=image_dir,
-                    do_ocr=file.parser_params.get("do_ocr", False),
-                    ocr_engine=file.parser_params.get("ocr_engine", None),
+                    do_ocr=file.chunk_parser.get("do_ocr", False),
+                    ocr_engine=file.chunk_parser.get("ocr_engine", None),
                     use_vlm=use_vlm,
                     vlm_model=vlm_model,
                     vlm_prompt=vlm_prompt
