@@ -275,7 +275,7 @@ class AgentService:
         tb_tasks = []
         for conf in confs:
             tb_tasks.append((
-                conf.tool_id, question, conf.search_top_k, conf.search_score_threshold,
+                conf.tool_id, question, conf.search_topk, conf.search_score_threshold,
                 conf.reranker_flag == 1, float(conf.tool_weight or 1.0),
                 security, llm_model, query_vec, tags
             ))
