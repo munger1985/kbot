@@ -1,4 +1,5 @@
 import json
+import array as array_module
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy import TypeDecorator, JSON, Text, Dialect
 from sqlalchemy import UnicodeText
@@ -87,6 +88,9 @@ class UniversalVector(TypeDecorator):
 
     def process_bind_param(self, value, dialect: Dialect):
         if value is None: return None
+        # 对于 Oracle VECTOR 类型，需要转换为数组格式
+        if dialect.name == 'oracle' and isinstance(value, list):
+            return array_module.array('f', value)
         # 如果是 list，自动探测维度（可选逻辑）
         return value
 

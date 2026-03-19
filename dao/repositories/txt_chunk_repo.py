@@ -19,7 +19,7 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
         """
         Batch create text chunk records
         Adapt to structured fields: path_names, structure_level, chunk_type
-        
+
         :param chunks: List of TxtChunkEntity instances to create
         """
         if not chunks:
@@ -27,27 +27,35 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
             return
 
         try:
+            # Convert embeddings to Oracle-compatible format
+            vec_handler = OracleVecHandler()
+
             # Batch processing (Oracle bulk insert best practice: 100 records per batch)
             batch_size = 100
             total_success = 0
-            
+
             for i in range(0, len(chunks), batch_size):
                 batch_chunks = chunks[i:i + batch_size]
-                
+
+                # Convert embeddings to Oracle array format
+                for chunk in batch_chunks:
+                    chunk.embedding = vec_handler.convert(chunk.embedding) # type: ignore
+                    logger.debug(f"Converted embedding for chunk {chunk.chunk_id}, type: {type(chunk.embedding)}")
+
                 # Add batch entities to session
                 self.session.add_all(batch_chunks)
                 await self.session.flush()  # Execute insert without commit for better performance
-                
+
                 total_success += len(batch_chunks)
                 logger.info(
                     f"Successfully batch inserted {len(batch_chunks)} text chunk records to Oracle, "
                     f"progress: {total_success}/{len(chunks)}"
                 )
-            
+
             logger.info(f"Completed all batch insertions, total successful records: {total_success}")
 
         except Exception as e:
-            logger.error(f"Oracle batch insert text chunks failed: {str(e)}")
+            logger.error(f"Oracle batch insert text chunks failed: {str(e)}", exc_info=True)
             raise DatabaseException("Oracle batch insert text chunks failed", original_error=e)
         
     async def vector_search(
