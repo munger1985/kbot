@@ -123,11 +123,21 @@ class AgentService:
 
         references = []
         for res in kb_results:
-            ref = res.to_dict()
-            ref["file_name"] = file_name_map.get(res.file_id, "Unknown File")
-            ref["download_link"] = f"{base_url}/api/kb/download?file_id={res.file_id}"
-            ref["preview_link"] = f"{base_url}/api/kb/preview?file_id={res.file_id}"
-            references.append(ref)
+            try:
+                ref = res.to_dict()
+                
+                # Ensure file_id is a string for URL construction
+                file_id = res.file_id
+                if not isinstance(file_id, str):
+                    file_id = str(file_id)
+                
+                ref["file_name"] = file_name_map.get(file_id, "Unknown File")
+                ref["download_link"] = f"{base_url}/api/kb/download?file_id={file_id}"
+                ref["preview_link"] = f"{base_url}/api/kb/preview?file_id={file_id}"
+                references.append(ref)
+            except Exception as e:
+                logger.error(f"Error processing search result: {e}, type: {type(e).__name__}, res: {res}")
+                raise
         return references
 
     async def _get_prompt_template(self, session, agent: AgentEntity) -> str:

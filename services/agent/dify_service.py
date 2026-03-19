@@ -41,8 +41,17 @@ class DifyService:
 
             # 2. Build Dify-specific records and standardized references
             # We fetch file names and build the metadata required by Dify
-            references = await self.agent_service._enrich_results_with_metadata(kb_results)
-            records = self._build_dify_records(references)
+            try:
+                references = await self.agent_service._enrich_results_with_metadata(kb_results)
+            except Exception as e:
+                logger.error(f"Error in _enrich_results_with_metadata: {e}, type: {type(e).__name__}")
+                raise
+
+            try:
+                records = self._build_dify_records(references)
+            except Exception as e:
+                logger.error(f"Error in _build_dify_records: {e}, type: {type(e).__name__}, references: {references}")
+                raise
 
             # 3. Persistence (Sync with AgentService logic)
             # Since Dify usually doesn't need the LLM answer back from us (it does its own generation),
@@ -79,19 +88,28 @@ class DifyService:
         Uses the output from _enrich_results_with_metadata.
         """
         records = []
-        for ref in enriched_references:
-            record = {
-                "metadata": {
-                    "path": ref.get("download_link"),
-                    "preview": ref.get("preview_link"),
-                    "page": ref.get("page_num"),
-                    "chunk_type": ref.get("chunk_type")
-                },
-                "score": ref.get("reranker_score") or ref.get("similarity_score"),
-                "title": ref.get("file_name", "Unknown File"),
-                "content": ref.get("content")
-            }
-            records.append(record)
+        for idx, ref in enumerate(enriched_references):
+            try:
+                # Handle content that might be a list or other type
+                content = ref.get("content")
+                if not isinstance(content, str):
+                    content = str(content) if content else ""
+
+                record = {
+                    "metadata": {
+                        "path": ref.get("download_link"),
+                        "preview": ref.get("preview_link"),
+                        "page": ref.get("page_num"),
+                        "chunk_type": ref.get("chunk_type")
+                    },
+                    "score": ref.get("reranker_score") or ref.get("similarity_score"),
+                    "title": ref.get("file_name", "Unknown File"),
+                    "content": content
+                }
+                records.append(record)
+            except Exception as e:
+                logger.error(f"Error building Dify record at index {idx}: {e}, type: {type(e).__name__}, ref keys: {list(ref.keys())}")
+                raise
         return records
 
     async def _remove_session_dify(self, session_id: str):
