@@ -55,6 +55,8 @@ class TxtBaseSearch:
         start_time = time.time()
         logger.debug(f"开始混合分层搜索，问题: {question}")
 
+        logger.debug(f"search_top_k: {search_top_k}, threshold: {threshold}, do_rerank: {do_rerank}, weight: {weight}, security: {security}, llm_model: {llm_model}, tags: {tags}")
+
         # 执行检索任务
         if not query_vec:
             logger.warning("向量为空，只进行全文检索")
