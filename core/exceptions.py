@@ -165,12 +165,19 @@ def handle_exception(e: Exception, msg: str) -> NoReturn:
     if isinstance(e, DataConflictException):
         raise ParamValueError(e.message)
     if isinstance(e, (DatabaseException)):
-        # 输出详细错误日志，包括原始异常的堆栈信息
+        # 输出详细错误日志，不包含堆栈信息以避免打印大量向量数据
         logger.error(f"{msg}: {e.message}")
         if e.original_error:
-            logger.exception(f"原始异常详情: {type(e.original_error).__name__}", exc_info=e.original_error)
+            error_str = str(e.original_error)
+            if len(error_str) > 500:
+                error_str = error_str[:500] + f"... (truncated, original length: {len(error_str)})"
+            logger.error(f"原始异常: {type(e.original_error).__name__}: {error_str}")
         raise InternalServerError(f"{msg}: {e.message}")
     if isinstance(e, (NotFoundError, ParamValueError, AuthorizationError, PrivilegeError, InternalServerError)):
         raise e
-    logger.exception(f"{msg}: {e}")
+    # 对于其他异常，也限制错误信息长度
+    error_str = str(e)
+    if len(error_str) > 500:
+        error_str = error_str[:500] + f"... (truncated, original length: {len(error_str)})"
+    logger.error(f"{msg}: {error_str}")
     raise e

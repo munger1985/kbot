@@ -55,7 +55,7 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
             logger.info(f"Completed all batch insertions, total successful records: {total_success}")
 
         except Exception as e:
-            logger.error(f"Oracle batch insert text chunks failed: {str(e)}", exc_info=True)
+            safe_log_error("Oracle batch insert text chunks failed", e, max_length=500)
             raise DatabaseException("Oracle batch insert text chunks failed", original_error=e)
         
     async def vector_search(
@@ -241,7 +241,7 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
             return results
 
         except Exception as e:
-            logger.error(f"Oracle full text search failed: {str(e)}")
+            safe_log_error("Oracle full text search failed", e, max_length=500)
             raise DatabaseException("Oracle full text search execution failed", original_error=e)
 
     async def delete_by_file_ids(self, file_ids: list[str]):
@@ -267,7 +267,7 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
         except DataNotFoundException as e:
             raise e
         except Exception as e:
-            logger.error(f"Oracle delete text chunks by file IDs failed: {str(e)}")
+            safe_log_error("Oracle delete text chunks by file IDs failed", e, max_length=500)
             raise DatabaseException("Oracle delete text chunks by file IDs failed", original_error=e)
 
     async def delete_by_kb_id(self, kb_id: int):
@@ -287,7 +287,7 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
             logger.info(f"Successfully deleted text chunk records for KB ID: {kb_id}")
 
         except Exception as e:
-            logger.error(f"Oracle delete text chunks by KB ID failed: {str(e)}")
+            safe_log_error("Oracle delete text chunks by KB ID failed", e, max_length=500)
             raise DatabaseException("Oracle delete text chunks by KB ID failed", original_error=e)
 
     async def get_by_file_id(self, file_id: str) -> Sequence[TxtChunkEntity]:
@@ -314,7 +314,7 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
             return result.scalars().all()
 
         except Exception as e:
-            logger.error(f"Oracle get file chunks failed for file ID {file_id}: {str(e)}")
+            safe_log_error(f"Oracle get file chunks failed for file ID {file_id}", e, max_length=500)
             raise DatabaseException(f"Oracle get text chunks for file {file_id} failed", original_error=e)
 
     async def update_chunk(self, chunk_id: str, new_content: str, new_embedding: list[float]) -> bool:
@@ -347,7 +347,7 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
         except DataNotFoundException as e:
             raise e
         except Exception as e:
-            logger.error(f"Oracle update chunk failed: {str(e)}")
+            safe_log_error("Oracle update chunk failed", e, max_length=500)
             raise DatabaseException("Oracle update text chunk content failed", original_error=e)
 
     async def delete(self, chunk_id: str):
@@ -366,7 +366,7 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
         except DataNotFoundException as e:
             raise e
         except Exception as e:
-            logger.error(f"Oracle delete chunk failed: {str(e)}")
+            safe_log_error("Oracle delete chunk failed", e, max_length=500)
             raise DatabaseException("Oracle delete text chunk failed", original_error=e)
         
     async def get_content(self, chunk_id: str) -> str:
@@ -387,7 +387,7 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
         except DataNotFoundException as e:
             raise e
         except Exception as e:
-            logger.error(f"Oracle get chunk content failed: {str(e)}")
+            safe_log_error("Oracle get chunk content failed", e, max_length=500)
             raise DatabaseException("Oracle get text chunk content failed", original_error=e)
 
     async def update_tag(self, file_id: str, tags: list[str]):
@@ -419,7 +419,7 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
             logger.info(f"Successfully updated tags for file {file_id}: {tags}")
 
         except Exception as e:
-            logger.error(f"Oracle update tags failed: {str(e)}")
+            safe_log_error("Oracle update tags failed", e, max_length=500)
             raise DatabaseException("Oracle update text chunk tags failed", original_error=e)
           
     async def update_description(self, chunk_id: str, description: str, new_embedding: list[float]):
@@ -459,7 +459,7 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
         except DataNotFoundException as e:
             raise e
         except Exception as e:
-            logger.error(f"Oracle update description failed: {str(e)}")
+            safe_log_error("Oracle update description failed", e, max_length=500)
             raise DatabaseException("Oracle update text chunk description failed", original_error=e)
         
     async def toggle_active_status(self, chunk_id: str, is_active: bool):
@@ -484,5 +484,5 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
             logger.info(f"Successfully updated active status for chunk {chunk_id}, is_active: {is_active}")
         
         except Exception as e:
-            logger.error(f"Oracle update active status failed: {str(e)}")
+            safe_log_error("Oracle update active status failed", e, max_length=500)
             raise DatabaseException("Oracle update text chunk active status failed", original_error=e)
