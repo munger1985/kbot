@@ -82,69 +82,72 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
         :return: list of search results with similarity scores
         """
         try:
-            # 1. 显式构建所有参数字典（这是解决 DPY-4010 的核心）
+            # 1. 转换阈值：相似度 0.8 -> 距离 (1-0.8)*2 = 0.4
+            dist_limit = (1 - (similarity_threshold or 0.5)) * 2
+
+            # 将 list[float] 类型的向量转换为 Oracle 数组类型 array.array
+            vec_handler = OracleVecHandler()
+            vec_array = vec_handler.convert(vec=query_vec, to_string=False)
+
+            # 2. 核心参数字典
             all_params: dict[str, Any] = {
                 "kb_id": kb_id,
                 "security": security,
-                "qv": query_vec,
-                "threshold": similarity_threshold if similarity_threshold is not None else 0.5,
+                "qv": vec_array,
+                "dist_limit": dist_limit,
                 "top_k": search_top_k
             }
 
-            # 2. 构建基础 SQL 模版
-            # 注意：在 SELECT, WHERE, ORDER BY 中多次使用 :qv 是安全的，只要 execute 传入了字典
+            # 3. 构建 SQL (使用 VECTOR_DISTANCE 替代不稳定的 UTL_VECTOR.NORM)
             sql_query = """
                 SELECT 
                     chunk_id, file_id, content, path_names, structure_level, chunk_metadata,
-                    (UTL_VECTOR.DOT_PRODUCT(embedding, :qv) / (UTL_VECTOR.NORM(embedding) * UTL_VECTOR.NORM(:qv))) as similarity_score
+                    (1 - VECTOR_DISTANCE(embedding, :qv, COSINE) / 2) as similarity_score
                 FROM KBOT_BIZ_TXT_EMBEDDING
                 WHERE kb_id = :kb_id 
                 AND is_active = 1 
                 AND security_level <= :security
+                AND VECTOR_DISTANCE(embedding, :qv, COSINE) <= :dist_limit
             """
 
-            # 3. 动态拼接路径过滤
+            # 4. 动态拼接路径过滤
             if path_filter:
-                sql_query += " AND JSON_EXISTS(path_names, '$[*]?(@ == :p_filter)')"
+                sql_query += " AND JSON_EXISTS(path_names, '$[*]?(@ == $p)' PASSING :p_filter AS \"p\")"
                 all_params["p_filter"] = path_filter
 
-            # 4. 动态拼接标签过滤
+            # 5. 动态拼接标签过滤
             if tags:
                 tag_clauses = []
                 for i, tag in enumerate(tags):
                     t_key = f"t_{i}"
-                    tag_clauses.append(f"JSON_EXISTS(biz_metadata, '$.tags[*]?(@ == :{t_key})')")
+                    tag_clauses.append(f"JSON_EXISTS(biz_metadata, '$.tags[*]?(@ == $t)' PASSING :{t_key} AS \"t\")")
                     all_params[t_key] = tag
                 if tag_clauses:
                     sql_query += f" AND ({' OR '.join(tag_clauses)})"
 
-            # 5. 拼接排序和阈值（Oracle 不支持在 WHERE 中直接用别名，所以重复表达式）
             sql_query += """
-                AND (UTL_VECTOR.DOT_PRODUCT(embedding, :qv) / (UTL_VECTOR.NORM(embedding) * UTL_VECTOR.NORM(:qv))) >= :threshold
                 ORDER BY similarity_score DESC
                 FETCH FIRST :top_k ROWS ONLY
             """
 
-            # 6. 直接执行 text() 语句
-            # 使用 text().bindparams() 强制锁定参数，并再次在 execute 中传入确保万无一失
-            stmt = text(sql_query).bindparams(**all_params)
+            # 6. 执行查询
+            stmt = text(sql_query)
             result = await self.session.execute(stmt, all_params)
             chunks = result.fetchall()
 
             # 7. 格式化结果
             results = []
             for chunk in chunks:
-                path_names = chunk.path_names or []
+                path_list = chunk.path_names or []
                 results.append({
                     "id": chunk.chunk_id,
                     "file_id": chunk.file_id,
                     "content": chunk.content,
-                    "path": " > ".join(path_names) if isinstance(path_names, list) else "",
+                    "path": " > ".join(path_list) if isinstance(path_list, list) else "",
                     "structure_level": chunk.structure_level,
                     "metadata": chunk.chunk_metadata,
-                    "score": float(chunk.similarity_score) if chunk.similarity_score else 0.0
+                    "score": float(chunk.similarity_score or 0.0)
                 })
-
             return results
 
         except Exception as e:
@@ -172,67 +175,65 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
         :return: list of search results with simulated scores
         """
         try:
-            # 1. Build base filter conditions
-            filter_conditions = [
-                TxtChunkEntity.kb_id == kb_id,
-                TxtChunkEntity.is_active == 1,
-                TxtChunkEntity.security_level <= security
-            ]
+            # 1. 基础参数
+            all_params: dict[str, Any] = {
+                "kb_id": kb_id,
+                "security": security,
+                "keyword": keyword.strip(),
+                "top_k": search_top_k
+            }
 
-            # 2. Add path filter
+            # 2. 基础 SQL (使用 Oracle Text 的 SCORE(1))
+            sql_query = """
+                SELECT 
+                    chunk_id, file_id, content, path_names, structure_level, chunk_metadata,
+                    SCORE(1) / 100 as similarity_score
+                FROM KBOT_BIZ_TXT_EMBEDDING
+                WHERE kb_id = :kb_id 
+                AND is_active = 1 
+                AND security_level <= :security
+                AND CONTAINS(content, REGEXP_REPLACE(:keyword, '\\W+', ' ACCUM '), 1) > 0
+            """
+
+            # 3. 动态拼接路径过滤
             if path_filter:
-                # Use text() with bind parameter
-                filter_conditions.append(text("JSON_EXISTS(path_names, '$[*]?(@ == :path_filter)').bindparams(path_filter=path_filter)")) # type: ignore
+                sql_query += " AND JSON_EXISTS(path_names, '$[*]?(@ == $p)' PASSING :p_filter AS \"p\")"
+                all_params["p_filter"] = path_filter
 
-            # 3. Add tag filter
+            # 4. 动态拼接标签过滤
             if tags:
-                tag_conditions = []
+                tag_clauses = []
                 for i, tag in enumerate(tags):
-                    tag_conditions.append(text(f"JSON_EXISTS(biz_metadata, '$.tags[*]?(@ == :tag_{i}]').bindparams(**{{f'tag_{i}': tag}})"))
-                
-                if tag_conditions:
-                    filter_conditions.append(or_(*tag_conditions))
+                    t_key = f"tag_{i}"
+                    tag_clauses.append(f"JSON_EXISTS(biz_metadata, '$.tags[*]?(@ == $t)' PASSING :{t_key} AS \"t\")")
+                    all_params[t_key] = tag
+                if tag_clauses:
+                    sql_query += f" AND ({' OR '.join(tag_clauses)})"
 
-            # 4. Add keyword search
-            if keyword and keyword.strip():
-                # Bind the python 'keyword' variable to the SQL ':keyword' parameter
-                filter_conditions.append(
-                    text("CONTAINS(content, :keyword) > 0").bindparams(keyword=keyword.strip()) # type: ignore
-                )
+            sql_query += """
+                ORDER BY similarity_score DESC
+                FETCH FIRST :top_k ROWS ONLY
+            """
 
-            # 5. Execute query
-            stmt = (
-                select(
-                    TxtChunkEntity.chunk_id,
-                    TxtChunkEntity.file_id,
-                    TxtChunkEntity.content,
-                    TxtChunkEntity.path_names,
-                    TxtChunkEntity.structure_level,
-                    TxtChunkEntity.chunk_metadata
-                )
-                .where(and_(*filter_conditions))
-                .order_by(TxtChunkEntity.structure_level)
-                .limit(search_top_k)
-            )
-
-            result = await self.session.execute(stmt)
+            # 5. 执行查询
+            stmt = text(sql_query)
+            result = await self.session.execute(stmt, all_params)
             chunks = result.fetchall()
 
-            # 6. Format results
+            # 6. 格式化结果
             results = []
-            for idx, chunk in enumerate(chunks):
-                path_names = chunk.path_names or []
+            for chunk in chunks:
+                path_list = chunk.path_names or []
                 results.append({
                     "id": chunk.chunk_id,
                     "file_id": chunk.file_id,
                     "content": chunk.content,
-                    "path_names": path_names,
-                    "full_path": " / ".join(path_names),
+                    "path_names": path_list,
+                    "full_path": " / ".join(path_list) if isinstance(path_list, list) else "",
                     "structure_level": chunk.structure_level,
                     "metadata": chunk.chunk_metadata,
-                    "score": (search_top_k - idx) / search_top_k  # Simulated relevance score
+                    "score": float(chunk.similarity_score or 0.0)
                 })
-
             return results
 
         except Exception as e:
