@@ -58,9 +58,9 @@ class FileProcessor:
             for file in files:
                 # Skip files with empty parser parameters
                 if not file.chunk_parser:
-                    msg = f"File {file.id} has empty parser parameters, skipping processing"
+                    msg = f"File {file.file_id} has empty parser parameters, skipping processing"
                     logger.warning(msg)
-                    await self._update_file_status(file.id, FileStatus.PARSE_FAILED, msg)
+                    await self._update_file_status(file.file_id, FileStatus.PARSE_FAILED, msg)
                     continue
                 
                 # Get model configurations from knowledge base
@@ -68,7 +68,7 @@ class FileProcessor:
                 if not models:
                     msg = f"Knowledge base {file.kb_id} has no configured models, skipping processing"
                     logger.warning(msg)
-                    await self._update_file_status(file.id, FileStatus.PARSE_FAILED, msg)
+                    await self._update_file_status(file.file_id, FileStatus.PARSE_FAILED, msg)
                     continue
 
                 # Resolve model names from IDs
@@ -107,7 +107,7 @@ class FileProcessor:
 
                 # Create FileParams object for queue
                 file_params = FileParams(
-                    file_id=file.id,
+                    file_id=file.file_id,
                     kb_id=file.kb_id,
                     file_path=file.file_path if file.file_path is not None else "",
                     file_ext=file.file_ext,
