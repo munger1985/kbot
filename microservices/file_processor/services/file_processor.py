@@ -9,7 +9,7 @@ from dao.repositories import FileRepository, KBRepository, TxtChunkRepository
 from dao.entities import TxtChunkEntity
 from core.database.oracle import get_session
 from core.config.settings import get_app_config
-from core.dictionary import FileStatus, ProcessPriority
+from core.dictionary import FileStatus, ProcessPriority, ChunkType
 from core.exceptions import DataNotFoundException, DatabaseException
 from utils.clients import AIModelClient
 from services.ai_model import AIModelService
@@ -214,11 +214,11 @@ class FileProcessor:
     async def _get_embeddings(self, parser_results: list[dict], file_params: FileParams) -> list[TxtChunkEntity]:
         """
         Generate embeddings for parsed text chunks and package as TxtChunk entities
-        
+
         Args:
             parser_results: Raw chunk list from Docling parser (contains path_names, structure_level, etc.)
             file_params: Business parameters (kb_id, file_id, biz_metadata, security_level, etc.)
-            
+
         Returns:
             list[TxtChunkEntity]: Chunk list with embeddings and complete path hierarchy
         """
@@ -227,35 +227,35 @@ class FileProcessor:
         if not model:
             logger.error(f"Knowledge base {file_params.kb_id} has no configured text embedding model")
             return []
-        
+
         if not parser_results:
             logger.warning("Empty parser results, skipping embedding generation")
             return []
 
         # 1. Extract all text content for embedding
         all_texts = [item["content"] for item in parser_results]
-        
+
         # 2. Configure micro-batch size (32-64 is optimal balance of concurrency and stability)
-        micro_batch_size = 32 
+        micro_batch_size = 32
         all_embeddings = []
 
         try:
             # 3. Process in micro-batches to avoid API limits/timeouts
             for i in range(0, len(all_texts), micro_batch_size):
                 batch_texts = all_texts[i : i + micro_batch_size]
-                
+
                 logger.info(
                     f"Processing embedding batch {i//micro_batch_size + 1}, "
                     f"progress: {i}/{len(all_texts)}"
                 )
-                
+
                 # Call embedding service (add retry logic if needed for production)
                 response = await self.model_client.call_embedding_model(
-                    model_name=model, 
-                    texts=batch_texts, 
-                    batch_size=len(batch_texts) 
+                    model_name=model,
+                    texts=batch_texts,
+                    batch_size=len(batch_texts)
                 )
-                
+
                 if response:
                     all_embeddings.extend([res.embedding for res in response])
                 else:
@@ -273,7 +273,10 @@ class FileProcessor:
             for i, (text, emb) in enumerate(zip(all_texts, all_embeddings)):
                 item = parser_results[i]
                 unique_id = str(uuid.uuid4())
-                
+
+                # Use chunk type string directly from parser result
+                chunk_type = item.get("chunk_type", ChunkType.TEXT.value)
+
                 chunk = TxtChunkEntity(
                     chunk_id=unique_id,
                     kb_id=file_params.kb_id,
@@ -282,7 +285,7 @@ class FileProcessor:
                     embedding=emb,
                     path_names=item.get("path_names", []),
                     structure_level=item.get("structure_level", 0),
-                    chunk_type=item.get("chunk_type", "text"),
+                    chunk_type=chunk_type,
                     chunk_metadata=item.get("metadata", {}),
                     biz_metadata=file_params.biz_metadata,
                     security_level=file_params.security_level,

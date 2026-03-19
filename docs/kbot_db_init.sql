@@ -575,30 +575,36 @@ COMMENT ON COLUMN KBOT_MD_ACTION_RECORD.UPDATED_TIME IS 'Last update time (defau
 -- 3.1.2.1 KBOT_BIZ_TXT_EMBEDDING (Text Embedding Table)
 -- ###########################################################################
 CREATE TABLE KBOT_BIZ_TXT_EMBEDDING (
-    EMBED_ID        VARCHAR2(256) NOT NULL,
-    KB_ID           NUMBER,
-    FILE_ID         VARCHAR2(256),
-    CHUNK_DOC       CLOB NOT NULL,
-    EMBEDDING       VECTOR(*, FLOAT32) NOT NULL,
+    CHUNK_ID        VARCHAR2(256) NOT NULL,
+    KB_ID           NUMBER NOT NULL,
+    FILE_ID         VARCHAR2(256) NOT NULL,
+    CONTENT         CLOB NOT NULL,
+    STRUCTURE_LEVEL NUMBER(38,0),
+    PATH_NAMES      JSON,
+    CHUNK_TYPE      VARCHAR2(20),
+    EMBEDDING       VECTOR NOT NULL,
     CHUNK_METADATA  JSON NOT NULL,
     SECURITY_LEVEL  NUMBER(1,0),
-    STATUS          NUMBER(1) DEFAULT 1,
-    BIZ_METADATA    JSON
+    IS_ACTIVE       NUMBER(1) DEFAULT 1,
+    BIZ_METADATA    JSON,
     -- Primary key constraint
-    PRIMARY KEY (EMBED_ID) USING INDEX ENABLE
+    PRIMARY KEY (CHUNK_ID) USING INDEX ENABLE
 );
 
 -- Table comment
 COMMENT ON TABLE KBOT_BIZ_TXT_EMBEDDING IS 'Text Embedding Table - Stores vectorized representations of text chunks';
 -- Column comments
-COMMENT ON COLUMN KBOT_BIZ_TXT_EMBEDDING.EMBED_ID IS 'Unique vector record identifier, primary key';
+COMMENT ON COLUMN KBOT_BIZ_TXT_EMBEDDING.CHUNK_ID IS 'Unique vector record identifier, primary key';
 COMMENT ON COLUMN KBOT_BIZ_TXT_EMBEDDING.KB_ID IS 'Associated KB ID';
 COMMENT ON COLUMN KBOT_BIZ_TXT_EMBEDDING.FILE_ID IS 'Associated file ID';
-COMMENT ON COLUMN KBOT_BIZ_TXT_EMBEDDING.CHUNK_DOC IS 'Original text chunk content';
-COMMENT ON COLUMN KBOT_BIZ_TXT_EMBEDDING.EMBEDDING IS 'Text embedding vector (FLOAT32 format)';
+COMMENT ON COLUMN KBOT_BIZ_TXT_EMBEDDING.CONTENT IS 'Original text chunk content';
+COMMENT ON COLUMN KBOT_BIZ_TXT_EMBEDDING.STRUCTURE_LEVEL IS 'Structure level (document depth)';
+COMMENT ON COLUMN KBOT_BIZ_TXT_EMBEDDING.PATH_NAMES IS 'Path names (e.g., chapter/section hierarchy)';
+COMMENT ON COLUMN KBOT_BIZ_TXT_EMBEDDING.CHUNK_TYPE IS 'Chunk type (text, table, picture, heading)';
+COMMENT ON COLUMN KBOT_BIZ_TXT_EMBEDDING.EMBEDDING IS 'Vector embedding of text chunk';
 COMMENT ON COLUMN KBOT_BIZ_TXT_EMBEDDING.CHUNK_METADATA IS 'Text chunk metadata (JSON, includes source path, file type etc.)';
 COMMENT ON COLUMN KBOT_BIZ_TXT_EMBEDDING.SECURITY_LEVEL IS 'File security level enumeration';
-COMMENT ON COLUMN KBOT_BIZ_TXT_EMBEDDING.STATUS IS 'Embedding status: 1 - Active, 0 - Inactive';
+COMMENT ON COLUMN KBOT_BIZ_TXT_EMBEDDING.IS_ACTIVE IS 'Embedding status: 1 - Active, 0 - Inactive';
 COMMENT ON COLUMN KBOT_BIZ_TXT_EMBEDDING.BIZ_METADATA IS 'Business metadata (JSON)';
 
 -- ###########################################################################
@@ -780,3 +786,4 @@ DROP TABLE kbot_md_chat_qa;
 DROP TABLE kbot_md_agent_feedback;
 DROP TABLE KBOT_BIZ_IMG_EMBEDDING;
 CREATE TABLE KBOT_MD_CHAT_MEMORY;
+RECREATE TABLE KBOT_BIZ_TXT_EMBEDDING;

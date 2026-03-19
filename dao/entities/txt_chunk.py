@@ -16,26 +16,23 @@ class TxtChunkEntity(BaseEntity):
     
     # Core identification fields
     chunk_id: Mapped[str] = mapped_column(String(256), primary_key=True, comment="Unique embedding ID (primary key, 256 chars max)")
-    kb_id: Mapped[int | None] = mapped_column(Numeric, nullable=True, comment="Associated knowledge base ID (nullable numeric)")
-    file_id: Mapped[str | None] = mapped_column(String(256), nullable=True, comment="Source file ID (256 chars max, nullable)")
-    
+    kb_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False, comment="Associated knowledge base ID")
+    file_id: Mapped[str] = mapped_column(String(256), nullable=False, comment="Source file ID (256 chars max)")
+
     # Core business fields (vector/text/metadata)
     content: Mapped[str] = mapped_column(CLOB, nullable=False, comment="Original text chunk content (CLOB, mandatory)")
-    structure_level: Mapped[int] = mapped_column(Numeric, nullable=False, comment="Structure level (document depth)")
-    path_names: Mapped[list[str]] = mapped_column(OracleJSON, nullable=False, comment="Path names (e.g., chapter/section hierarchy)")
-    chunk_type: Mapped[str] = mapped_column(String(64), default="text", nullable=False, comment="Chunk type (text, table, picture, heading, default=text)")
+    structure_level: Mapped[int] = mapped_column(Numeric(38, 0), nullable=True, comment="Structure level (document depth)")
+    path_names: Mapped[list[str]] = mapped_column(OracleJSON, nullable=True, comment="Path names (e.g., chapter/section hierarchy)")
+    chunk_type: Mapped[str] = mapped_column(String(20), nullable=True, comment="Chunk type (text, table, picture, heading)")
     embedding: Mapped[list[float]] = mapped_column(VectorField(), nullable=False, comment="Vector embedding of text chunk")
-    chunk_metadata: Mapped[dict] = mapped_column(OracleJSON, nullable=False, comment="Chunk metadata (JSON, e.g., position/length/source)")
-    
+    chunk_metadata: Mapped[dict] = mapped_column(OracleJSON, nullable=False, comment="Chunk metadata (JSON, e.g. position/length/source)")
+
     # Permission/status fields
     security_level: Mapped[int | None] = mapped_column(Numeric(1, 0), nullable=True, comment="Data security level (1=public, 0=private, nullable)")
     is_active: Mapped[int] = mapped_column(Numeric(1), default=1, nullable=False, comment="Embedding status (1=active, 0=inactive, default=1)")
-    
+
     # Extended fields
     biz_metadata: Mapped[dict | None] = mapped_column(OracleJSON, nullable=True, comment="Business custom metadata (JSON, nullable)")
-    description: Mapped[str | None] = mapped_column(String(256), nullable=True, comment="Description of the chunk (256 chars max, nullable)")
-    tags: Mapped[list[str]] = mapped_column(OracleJSON, nullable=True, comment="Tags for the chunk (JSON, nullable)")
-
 # Performance optimization indexes for vector search
 Index("idx_embedding_kb_status", TxtChunkEntity.kb_id, TxtChunkEntity.is_active, TxtChunkEntity.security_level)
 Index("idx_embedding_file_id", TxtChunkEntity.file_id)

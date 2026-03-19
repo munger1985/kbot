@@ -1,6 +1,7 @@
 from loguru import logger
 from typing import Any
 from core.config.settings import get_prompt_config
+from core.dictionary import ChunkType
 from dao.repositories import KBRepository, PromptRepository, TxtChunkRepository
 from utils.clients.model_client import AIModelClient
 from core.database.oracle import get_session

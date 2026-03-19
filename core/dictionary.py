@@ -21,12 +21,12 @@ class DbType(IntEnum):
     PINECONE = 7
     WEAVIATE = 8
 
-class ChunkType(IntEnum):
+class ChunkType(str, Enum):
     """Knowledge chunk type enumeration."""
-    TEXT = 1
-    IMAGE = 2
-    TABLE = 3
-    SUMMARY = 4
+    TEXT = "text"
+    TABLE = "table"
+    PICTURE = "picture"
+    HEADING = "heading"
 
 class FeedbackType(IntEnum):
     """Feedback type enumeration."""
