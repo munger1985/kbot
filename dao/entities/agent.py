@@ -1,6 +1,6 @@
-from sqlalchemy import String, Date, Numeric, CLOB, func
+from sqlalchemy import String, Date, Numeric, func
 from sqlalchemy.orm import Mapped, mapped_column
-from .base import BaseEntity
+from .base import BaseEntity, OracleJSON
 
 
 class AgentEntity(BaseEntity):
@@ -21,7 +21,7 @@ class AgentEntity(BaseEntity):
     welcome: Mapped[str | None] = mapped_column(String(512), comment="Welcome message")
     prompt_id: Mapped[int | None] = mapped_column(Numeric(38, 0), comment="Prompt ID")
     llm_id: Mapped[int | None] = mapped_column(Numeric(38, 0), comment="Large language model ID")
-    llm_params: Mapped[dict | None] = mapped_column(CLOB, comment="LLM parameter configuration (JSON format)")
+    llm_params: Mapped[dict | None] = mapped_column(OracleJSON, comment="LLM parameter configuration (JSON format)")
     feedback_similarity_flag: Mapped[int | None] = mapped_column(Numeric(1, 0), default=0, comment="Feedback similarity switch")
     synonym_similarity_flag: Mapped[int | None] = mapped_column(Numeric(1, 0), default=0, comment="Synonym similarity switch")
     reranker_model_id: Mapped[int | None] = mapped_column(Numeric(38, 0), comment="Reranker model ID")
