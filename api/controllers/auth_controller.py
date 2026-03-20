@@ -101,11 +101,8 @@ class AuthController:
         return {"success": True, "message": "Successfully logged out", "code": status.HTTP_200_OK}
     
     @staticmethod
-    async def remove_user(username: str, auth_info: dict) -> dict[str, str|int|bool]:
+    async def remove_user(username: str) -> dict[str, str|int|bool]:
         """删除用户"""
-        if auth_info["type"] != "user":
-            return {"success": False, "message": "Only users can remove other users", "code": status.HTTP_403_FORBIDDEN}
-        
         success = await UserService().remove_user(username)
         
         if not success:
@@ -114,11 +111,8 @@ class AuthController:
         return {"success": True, "message": "User removed successfully", "code": status.HTTP_200_OK}
     
     @staticmethod
-    async def change_password(request: ChangePasswordRequest, auth_info: dict) -> dict[str, str|int|bool]:
+    async def change_password(request: ChangePasswordRequest) -> dict[str, str|int|bool]:
         """修改密码"""
-        if auth_info["type"] != "user":
-            return {"success": False, "message": "Only users can change their password", "code": status.HTTP_403_FORBIDDEN}
-        
         success = await UserService().change_password(
             username=request.username,
             new_password=request.new_password

@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from api.schemas.auth_schema import *
 from api.controllers.auth_controller import AuthController
+from core.auth.shortcuts import *
 from core.auth import require_user_token, get_current_user, require_api_key
 
 
@@ -78,24 +79,24 @@ async def handle_logout(
 @router.delete("/remove")
 async def handle_remove_user(
     username: str,
-    auth_info: dict = Depends(require_user_token())
+    auth: UserAuth
 ):
     """
     ### Description
     Removes the current user account.
     """
-    return await AuthController.remove_user(username, auth_info)
+    return await AuthController.remove_user(username)
 
 @router.post("/change-password")
 async def handle_change_password(
     request_data: ChangePasswordRequest,
-    auth_info: dict = Depends(require_user_token())
+    auth: UserAuth
 ):
     """
     ### Description
     Changes the password for the current user.
     """
-    return await AuthController.change_password(request_data, auth_info)
+    return await AuthController.change_password(request_data)
 
 @router.post("/service-api-keys", response_model=dict)
 async def handle_create_service_api_key(

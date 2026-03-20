@@ -2,9 +2,8 @@ import uuid
 import json
 from loguru import logger
 from datetime import datetime, timezone
-from typing import Any
 from fastapi import APIRouter, status, Depends, HTTPException
-from fastapi import Request, BackgroundTasks
+from fastapi import BackgroundTasks
 from fastapi.responses import StreamingResponse
 
 from api.schemas.agent_schema import *
@@ -143,7 +142,7 @@ async def handle_agent_retrieval(auth: ServiceAuth, form: DifySearchForm, backgr
     response_model=SuccessResponse,
     status_code=status.HTTP_200_OK
 )
-async def handle_non_stream_chat(auth: ServiceAuth, form: AgentChatForm):
+async def handle_non_stream_chat(auth: AnyAuth, form: AgentChatForm):
     """
     ### Description
     A standard synchronous chat interface. The HTTP connection remains open until the full LLM response is generated.
