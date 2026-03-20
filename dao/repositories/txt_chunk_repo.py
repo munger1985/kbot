@@ -1,4 +1,5 @@
 import math
+import re
 from loguru import logger
 from typing import Any, Sequence
 from sqlalchemy import text, select, update, delete, func, and_, or_, Float, literal_column, bindparam
@@ -41,7 +42,7 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
                 # Convert embeddings to Oracle array format
                 for chunk in batch_chunks:
                     chunk.embedding = vec_handler.convert(chunk.embedding) # type: ignore
-                    logger.debug(f"Converted embedding for chunk {chunk.chunk_id}, type: {type(chunk.embedding)}")
+                    # logger.debug(f"Converted embedding for chunk {chunk.chunk_id}, type: {type(chunk.embedding)}")
 
                 # Add batch entities to session
                 self.session.add_all(batch_chunks)
@@ -62,6 +63,7 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
     async def vector_search(
         self,
         kb_id: int,
+        keywords: str,
         query_vec: list[float],
         security: int,
         similarity_threshold: float = 0.5,
@@ -98,22 +100,41 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
                 "top_k": search_top_k
             }
 
-            # 3. 构建 SQL (使用 VECTOR_DISTANCE 替代不稳定的 UTL_VECTOR.NORM)
-            sql_query = """
+            # 2. 路径加权逻辑优化
+            path_weight_sql = "0"
+            contains_clause = ""
+            
+
+            # 使用传入的、经过 LLM 优化的关键词
+            all_params["q_keywords"] = keywords
+            # 赋予路径命中 0.7 的权重系数
+            path_weight_sql = "SCORE(99) * 0.7"
+            # 在 WHERE 中增加一个不带过滤效果的 CONTAINS 用于触发 SCORE 计算
+            contains_clause = " AND (CONTAINS(path_names, :q_keywords, 99) >= 0) "
+
+            # 3. 核心 SQL：(向量分 30%) + (路径分 70%), 归一化：向量分转为 0-100 再计算
+            sql_query = f"""
                 SELECT 
                     chunk_id, file_id, content, path_names, structure_level, chunk_metadata,
-                    (1 - VECTOR_DISTANCE(embedding, :qv, COSINE) / 2) as similarity_score
+                    (
+                        ((1 - VECTOR_DISTANCE(embedding, :qv, COSINE)) * 100 * 0.3) 
+                        + 
+                        ({path_weight_sql})
+                    ) / 100 as similarity_score
                 FROM KBOT_BIZ_TXT_EMBEDDING
                 WHERE kb_id = :kb_id 
                 AND is_active = 1 
                 AND security_level <= :security
                 AND VECTOR_DISTANCE(embedding, :qv, COSINE) <= :dist_limit
+                {contains_clause}
             """
 
-            # 4. 动态拼接路径过滤
+            # 4. 路径硬过滤 (path_filter)
             if path_filter:
-                sql_query += " AND JSON_EXISTS(path_names, '$[*]?(@ == $p)' PASSING :p_filter AS \"p\")"
-                all_params["p_filter"] = path_filter
+                # 注意：这里继续沿用全文检索的清理逻辑以保持一致
+                clean_path = re.sub(r'[^\w\s]', '', path_filter.strip())
+                all_params["p_filter"] = clean_path
+                sql_query += " AND CONTAINS(path_names, :p_filter, 98) > 0 "
 
             # 5. 动态拼接标签过滤
             if tags:
@@ -138,12 +159,11 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
             # 7. 格式化结果
             results = []
             for chunk in chunks:
-                path_list = chunk.path_names or []
                 results.append({
                     "chunk_id": chunk.chunk_id,
                     "file_id": chunk.file_id,
                     "content": chunk.content,
-                    "path": " > ".join(path_list) if isinstance(path_list, list) else "",
+                    "path_names": chunk.path_names,
                     "structure_level": chunk.structure_level,
                     "metadata": chunk.chunk_metadata,
                     "score": float(chunk.similarity_score or 0.0)
@@ -157,88 +177,118 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
     async def full_text_search(
         self,
         kb_id: int,
-        keyword: str,
+        keywords: str,
         security: int,
         search_top_k: int = 10,
         tags: list[str] = [],
         path_filter: str | None = None
     ) -> list[dict[str, Any]]:
-        """
-        Full text search (Oracle version)
-        Uses Oracle TEXT full-text index or LIKE pattern matching
-        
-        :param keyword: Search keyword/phrase
-        :param security: Security level filter (records with level <= security will be returned)
-        :param search_top_k: Maximum number of results to return
-        :param tags: list of tags to filter results
-        :param path_filter: Path name filter (match any in path_names array)
-        :return: list of search results with simulated scores
-        """
         try:
-            # 1. 基础参数
+            # 1. 关键词预处理：处理空格和特殊字符
+            clean_keyword = re.sub(r'[^\w\s]', '', keywords.strip())
+            formatted_key = re.sub(r'\s+', ' ACCUM ', clean_keyword)
+
             all_params: dict[str, Any] = {
                 "kb_id": kb_id,
                 "security": security,
-                "keyword": keyword.strip(),
+                "keyword": formatted_key,
                 "top_k": search_top_k
             }
+            
+            # 2. 动态路径过滤逻辑
+            path_clause = ""
+            if path_filter:
+                # 如果提供了 path_filter，则要求路径中必须包含此关键词
+                clean_path = re.sub(r'[^\w\s]', '', path_filter.strip())
+                all_params["p_filter"] = clean_path
+                path_clause = " AND CONTAINS(path_names, :p_filter, 3) > 0 "
 
-            # 2. 基础 SQL (使用 Oracle Text 的 SCORE(1))
-            sql_query = """
+            # 3. 核心 SQL：双重加权评分, 路径命中占 70% 权重，正文命中占 30%
+            sql_query = f"""
                 SELECT 
                     chunk_id, file_id, content, path_names, structure_level, chunk_metadata,
-                    SCORE(1) / 100 as similarity_score
+                    ((SCORE(1) * 0.3) + (SCORE(2) * 0.7)) / 100 as similarity_score
                 FROM KBOT_BIZ_TXT_EMBEDDING
                 WHERE kb_id = :kb_id 
-                AND is_active = 1 
-                AND security_level <= :security
-                AND CONTAINS(content, REGEXP_REPLACE(:keyword, '\\W+', ' ACCUM '), 1) > 0
+                    AND is_active = 1 
+                    AND security_level <= :security
+                    AND (
+                        CONTAINS(content, :keyword, 1) > 0 
+                        OR
+                        CONTAINS(path_names, :keyword, 2) > 0
+                    )
+                    {path_clause}
+                ORDER BY similarity_score DESC
+                FETCH FIRST :top_k ROWS ONLY
             """
 
-            # 3. 动态拼接路径过滤
-            if path_filter:
-                sql_query += " AND JSON_EXISTS(path_names, '$[*]?(@ == $p)' PASSING :p_filter AS \"p\")"
-                all_params["p_filter"] = path_filter
-
-            # 4. 动态拼接标签过滤
+            # 4. 标签过滤
             if tags:
                 tag_clauses = []
                 for i, tag in enumerate(tags):
                     t_key = f"tag_{i}"
                     tag_clauses.append(f"JSON_EXISTS(biz_metadata, '$.tags[*]?(@ == $t)' PASSING :{t_key} AS \"t\")")
                     all_params[t_key] = tag
-                if tag_clauses:
-                    sql_query += f" AND ({' OR '.join(tag_clauses)})"
-
-            sql_query += """
-                ORDER BY similarity_score DESC
-                FETCH FIRST :top_k ROWS ONLY
-            """
+                sql_query = sql_query.replace("WHERE", f"WHERE ({' OR '.join(tag_clauses)}) AND")
 
             # 5. 执行查询
             stmt = text(sql_query)
             result = await self.session.execute(stmt, all_params)
             chunks = result.fetchall()
 
-            # 6. 格式化结果
+            # 6. 格式化结果以适配 TxtBaseSearchResult
             results = []
             for chunk in chunks:
-                path_list = chunk.path_names or []
+                # 从 chunk_metadata (JSON) 中安全提取 docling 的具体字段
+                meta = chunk.chunk_metadata or {}
+                
                 results.append({
-                    "chunk_id": chunk.chunk_id,
+                    "chunk_id": str(chunk.chunk_id),
                     "file_id": chunk.file_id,
                     "content": chunk.content,
-                    "path_names": path_list,
-                    "full_path": " / ".join(path_list) if isinstance(path_list, list) else "",
-                    "structure_level": chunk.structure_level,
-                    "metadata": chunk.chunk_metadata,
-                    "score": float(chunk.similarity_score or 0.0)
+                    "path_names": chunk.path_names or "",
+                    "structure_level": int(chunk.structure_level or 0),
+                    "node_path": meta.get("node_path", ""),
+                    "page_num": meta.get("page_num", 0),
+                    "chunk_num": meta.get("chunk_num", 0),
+                    "sub_index": meta.get("sub_index", 0),
+                    "chunk_type": meta.get("chunk_type", "text"),
+                    "score": float(chunk.similarity_score or 0.0),
+                    "search_type": "fulltext"
                 })
             return results
 
         except Exception as e:
-            safe_log_error("Oracle full text search failed", e, max_length=500)
-            raise DatabaseException("Oracle full text search execution failed", original_error=e)
+            safe_log_error("Oracle full text search failed", e)
+            raise DatabaseException("Search execution failed", original_error=e)
+
+    async def get_chunks_by_range(
+        self, 
+        file_id: str, 
+        center_chunk_num: int, 
+        window_size: int = 1
+    ) -> list[dict]:
+        """
+        获取指定分片及其前后范围内的分片
+        :param window_size: 向上/向下扩展的数量。1表示取 [n-1, n, n+1]
+        """
+        sql = """
+            SELECT chunk_id, file_id, content, path_names, structure_level, chunk_metadata
+            FROM KBOT_BIZ_TXT_EMBEDDING
+            WHERE file_id = :file_id 
+            AND is_active = 1
+            AND JSON_VALUE(chunk_metadata, '$.chunk_num' RETURNING NUMBER) 
+                BETWEEN :min_n AND :max_n
+            ORDER BY JSON_VALUE(chunk_metadata, '$.chunk_num' RETURNING NUMBER) ASC
+        """
+        params = {
+            "file_id": file_id,
+            "min_n": center_chunk_num - window_size,
+            "max_n": center_chunk_num + window_size
+        }
+        
+        result = await self.session.execute(text(sql), params)
+        return [dict(row._mapping) for row in result.fetchall()]
 
     async def delete_by_file_ids(self, file_ids: list[str]):
         """

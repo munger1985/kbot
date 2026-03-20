@@ -207,93 +207,94 @@ class DoclingDocProcessor:
                 return index, None
     
     def _generate_chunks(self, doc: DoclingDocument, params: DocParserParams) -> list[dict]:
-        """
-        Optimized chunking logic:
-        1. Use SemanticLevelCorrector to fix manual hierarchy
-        2. Maintain Active Path Stack for complete title context
-        3. Output format compatible with ES hierarchical search
-        """
         chunk_results = []
         current_chunk_num = 1
-        corrector = SemanticLevelCorrector()
-        
-        # Active path stack: Stores current hierarchical title text
-        # Used in ES for "path filtering" and "context completion"
-        active_path = [] 
+        active_path = []  # 严格的路径栈
+        pending_header_context = ""
 
         for item, depth in doc.iterate_items():
-            text_content = getattr(item, "text", "").strip()
             image_name = None
             
-            # --- 1. Dynamic hierarchy maintenance ---
-            detected_level = corrector.get_level(item, text_content)
+            raw_text = getattr(item, "text", "").strip()
+            if not raw_text and not isinstance(item, (TableItem, PictureItem)):
+                continue
+
+            is_header = isinstance(item, SectionHeaderItem)
+            detected_level = self.corrector.get_level(item, raw_text) if is_header else None
             
-            if detected_level is not None:
-                # New header detected: Pop same/deeper levels, push new path
+            # --- 拦截逻辑：二次判定，将“伪标题”降级 ---
+            if is_header and detected_level is not None:
+                if raw_text.endswith(('；', '。', '：', ':')) and len(raw_text) < 5:
+                    is_header = False 
+                    detected_level = None
+            # --- 逻辑分支 A: 真正的有效标题 ---
+            if is_header and detected_level is not None:
+                if detected_level == 1:
+                    active_path = []
+                
+                logger.debug(f"[PathTrace] New Header: '{raw_text}' | Detected Level: {detected_level}")
+
+                # 弹出旧路径
                 while len(active_path) >= detected_level:
                     active_path.pop()
-                active_path.append(text_content)
+                
+                # 压入新路径
+                if not active_path or active_path[-1] != raw_text:
+                    active_path.append(raw_text)
+                
+                # 标题特有状态
+                pending_header_context = raw_text
                 current_type = "heading"
                 structure_level = detected_level
+
+            # --- 逻辑分支 B: 普通文本、表格、图片，或被降级的伪标题 ---
             else:
                 current_type = "text"
                 structure_level = len(active_path) + 1
+                # 注意：这里不需要清空 pending_header_context，它会被下方的 metadata 使用
 
-            # --- 2. Content extraction ---
+            # --- 内容封装 ---
             content_list = []
-            
             if isinstance(item, TableItem):
                 current_type = "table"
                 content_list.append(item.export_to_markdown(doc=doc))
-
             elif isinstance(item, PictureItem):
                 current_type = "picture"
-                logger.debug(f"image_dir: {params.image_dir}")
-                # Use custom serializer for proper Markdown content and physical saving
-                # Note: doc object required for serialize signature
-                ser_result, image_name = self.serializer.serialize(
-                    item=item, 
-                    doc=doc, 
-                    image_dir=params.image_dir
-                )
-                content_list.append(ser_result.text)  # Contains ![pic_...](path) and AI description
+                ser_result, image_name = self.serializer.serialize(item=item, doc=doc, image_dir=params.image_dir)
+                content_list.append(ser_result.text)
+            else:
+                content_list.append(raw_text)
 
-            elif isinstance(item, (TextItem, SectionHeaderItem)):
-                # Text chunking
-                if len(text_content) > params.chunk_size:
-                    sentences = re.split(r'(?<=[。！？；!?;])\s*', text_content)
-                    curr = ""
-                    for s in sentences:
-                        if len(curr) + len(s) <= params.chunk_size:
-                            curr += s
-                        else:
-                            if curr: 
-                                content_list.append(curr.strip())
-                            curr = s
-                    if curr: 
-                        content_list.append(curr.strip())
-                else:
-                    content_list.append(text_content)
-
-            # --- 3. Package ES Chunk (enhanced storage) ---
-            page_num = self._get_page_num(item)
-            
+            # --- 封装输出 ---
             for sub_idx, sub_content in enumerate(content_list, start=1):
-                if not sub_content or len(sub_content) < params.min_chunk_len:
-                    continue
+                # 记录当前路径状态的快照
+                final_path_list = list(active_path)
+                
+                # 2. 弱语义标题增强逻辑
+                # 如果当前路径不为空，且最后一个标题太短（如 "注："），
+                # 且它前面还有父级标题，我们就不做特殊处理（因为 final_path_list 已经包含全路径）。
+                # 但在检索展示时，为了防止 UI 只显示末尾，我们可以在这里通过逻辑确保 context 的丰富度。
+                
+                current_header_ctx = pending_header_context
+
+                # 如果当前标题是“弱语义”标题，我们需要在 metadata 中保留更完整的上下文
+                if is_header and len(raw_text) <= 3:
+                    if len(active_path) > 1:
+                        # 将父级标题与当前弱标题合并作为 context，例如 "理赔须知 (注：)"
+                        current_header_ctx = f"{active_path[-2]} ({raw_text})"
 
                 chunk_results.append({
                     "content": sub_content,
-                    # Full path array for ES hybrid search
-                    "path_names": list(active_path), 
+                    "path_names": final_path_list,  # 传入 List，供后续 flatten_path_names 处理
                     "structure_level": structure_level,
                     "chunk_type": current_type,
                     "metadata": {
                         "chunk_num": current_chunk_num,
                         "sub_index": sub_idx,
-                        "page_num": page_num,
-                        "node_path": item.self_ref,  # Preserve original Docling reference
-                        "image_name": image_name
+                        "page_num": self._get_page_num(item),
+                        "node_path": item.self_ref,
+                        "image_name": image_name,
+                        "header_context": current_header_ctx 
                     }
                 })
                 current_chunk_num += 1

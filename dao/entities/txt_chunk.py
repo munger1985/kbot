@@ -22,7 +22,7 @@ class TxtChunkEntity(BaseEntity):
     # Core business fields (vector/text/metadata)
     content: Mapped[str] = mapped_column(CLOB, nullable=False, comment="Original text chunk content (CLOB, mandatory)")
     structure_level: Mapped[int] = mapped_column(Numeric(38, 0), nullable=True, comment="Structure level (document depth)")
-    path_names: Mapped[list[str]] = mapped_column(OracleJSON, nullable=True, comment="Path names (e.g., chapter/section hierarchy)")
+    path_names: Mapped[str] = mapped_column(String(4000), nullable=True, comment="Path names (e.g., chapter/section hierarchy)")
     chunk_type: Mapped[str] = mapped_column(String(20), nullable=True, comment="Chunk type (text, table, picture, heading)")
     embedding: Mapped[list[float]] = mapped_column(VectorField(), nullable=False, comment="Vector embedding of text chunk")
     chunk_metadata: Mapped[dict] = mapped_column(OracleJSON, nullable=False, comment="Chunk metadata (JSON, e.g. position/length/source)")

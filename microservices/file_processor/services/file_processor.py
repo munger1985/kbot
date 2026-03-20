@@ -276,6 +276,8 @@ class FileProcessor:
 
                 # Use chunk type string directly from parser result
                 chunk_type = item.get("chunk_type", ChunkType.TEXT.value)
+                # converts a hierarchical path list into a flattened string
+                path_names = self._flatten_path_names(item.get("path_names", []))
 
                 chunk = TxtChunkEntity(
                     chunk_id=unique_id,
@@ -283,7 +285,7 @@ class FileProcessor:
                     file_id=file_params.file_id,
                     content=text,
                     embedding=emb,
-                    path_names=item.get("path_names", []),
+                    path_names=path_names, 
                     structure_level=item.get("structure_level", 0),
                     chunk_type=chunk_type,
                     chunk_metadata=item.get("metadata", {}),
@@ -298,7 +300,20 @@ class FileProcessor:
         except Exception as e:
             logger.error(f"Failed to generate embeddings: {str(e)}", exc_info=True)
             return []
+
+    def _flatten_path_names(self, path_list: list) -> str:
+        """
+        将路径列表转换为 Oracle VARCHAR2 兼容的字符串。
+        仅负责物理展平，不进行任何权重增强。
+        """
+        if not path_list:
+            return ""
         
+        logger.debug(f"[FinalJoin] Joining list: {path_list}")
+        
+        # 仅使用分隔符连接，输出如: "第一部分 / 保险内容和保险利益"
+        return " / ".join(path_list)
+    
     async def _save_chunks(self, kb_id: int, file_id: str, chunks: list[TxtChunkEntity]):
         """
         Save parsed chunks with embeddings to database (with error handling)

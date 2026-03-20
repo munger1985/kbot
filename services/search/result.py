@@ -8,7 +8,7 @@ class TxtBaseSearchResult(BaseModel):
     
     # 核心字段对齐
     structure_level: int = Field(..., description="层级深度 (L1, L2...)")
-    path_names: list[str] = Field(..., description="章节路径基因")
+    path_names: str = Field(..., description="章节路径基因")
     node_path: str = Field("", description="解析节点路径")
     
     # 元数据字段 (来自 chunk_metadata)

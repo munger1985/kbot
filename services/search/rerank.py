@@ -1,10 +1,17 @@
+import asyncio
 from loguru import logger
 from utils.clients import AIModelClient
 from .result import TxtBaseSearchResult
 
 
 class TxtBaseRerank:
-    """知识库重排类 - 支持层级感知重排"""
+    """Reranking service for knowledge base search results.
+    
+    This class leverages Cross-Encoder models to re-evaluate the relevance
+    of retrieved chunks against the original user query, utilizing
+    hierarchical path information for better context calibration.
+    """
+
     def __init__(self):
         self.model_client = AIModelClient()
 
@@ -13,74 +20,90 @@ class TxtBaseRerank:
                      top_k: int, 
                      question: str, 
                      kb_results: list[TxtBaseSearchResult],
-                     min_rerank_score: float = 0.01  # 新增：最小分数过滤
+                     min_rerank_score: float = 0.01
                     ) -> list[TxtBaseSearchResult]:
-        """
-        对知识库结果进行重排
+        """Reranks search results using a cross-encoder model.
         
         Args:
-            model_name: 重排模型名称 (如 bge-reranker-v2-m3)
-            top_k: 最终保留并返回的候选集数量
-            question: 用户原始查询
-            kb_results: 经过 search_by_hybrid 召回的 100 条结果
-            min_rerank_score: 过滤掉低于此分数的噪音
-        """ 
+            model_name: Name of the reranker model (e.g., 'bge-reranker-v2-m3').
+            top_k: Maximum number of final results to return.
+            question: Original user query string.
+            kb_results: Initial recall set (usually around 50-100 items).
+            min_rerank_score: Minimum threshold to filter out irrelevant noise.
+            
+        Returns:
+            A list of reranked TxtBaseSearchResult objects, sorted by score.
+        """
         if not kb_results:
+            logger.warning("Rerank received an empty result set.")
             return []
 
-        # 1. 提取内容。此时 contents 已包含 search.py 注入的 [层级路径] 前缀
-        # Cross-Encoder 会利用这些标题信息来校准正文的相关度
-        contents = [result.content for result in kb_results]
+        # 1. Deduplication (Critical for Hybrid Search efficiency)
+        seen_ids = set()
+        unique_results = []
+        for res in kb_results:
+            if res.chunk_id not in seen_ids:
+                unique_results.append(res)
+                seen_ids.add(res.chunk_id)
+
+        # 2. Extract contents (already contain [Location: ...] prefixes)
+        contents = [res.content for res in unique_results]
         
-        # 2. 调用重排模型
+        # 3. Call Reranker Model
         try:
+            # We score the entire unique pool to ensure the best global candidates
             response = await self.model_client.call_reranker_model(
                 model_name=model_name,
                 query=question,
                 documents=contents,
-                top_k=len(kb_results) # 建议对全量召回集进行评分，后续再截断
+                top_k=len(unique_results) 
             )
         except Exception as e:
-            logger.error(f"重排模型调用异常: {e}")
-            return kb_results[:top_k] # 异常回退：直接返回召回层的前 top_k
+            logger.error(f"Reranker model invocation failed: {e}")
+            # Fallback: Return top_k from original recall set based on RRF scores
+            return unique_results[:top_k]
 
         if not response:
-            logger.warning("重排模型未返回有效结果")
-            return kb_results[:top_k]
+            logger.warning("Reranker returned an empty response.")
+            return unique_results[:top_k]
 
+        # 4. Map results back to objects and apply score filtering
         reranked_results: list[TxtBaseSearchResult] = []
-
-        # 3. 映射结果并应用过滤
         for item in response:
-            index = item.get("index")
-            score = item.get("score")
-            
-            if index is not None and 0 <= index < len(kb_results):
-                # 过滤极低相关性的碎片
-                if score < min_rerank_score: # type: ignore
-                    continue
-                    
-                target_result = kb_results[index]
-                target_result.rerank_score = float(score) # type: ignore
+            try:
+                index = item.get("index")
+                score = float(item.get("score", 0.0))
                 
-                # 这种模式下，我们甚至可以微调 weight 对 rerank_score 的影响
-                # 最终排序分 = 重排原生分 * 知识库业务权重
-                # target_result.rerank_score *= target_result.weight 
+                # Validation: Ensure index is within bounds of unique_results
+                if index is not None and 0 <= index < len(unique_results):
+                    # Noise Filtering
+                    if score < min_rerank_score:
+                        continue
+                        
+                    target_result = unique_results[index]
+                    target_result.rerank_score = score
+                    
+                    # Optional: Apply business weight multiplier if needed
+                    # target_result.rerank_score *= target_result.weight 
 
-                reranked_results.append(target_result)
-            else:
-                logger.warning(f"无效的重排索引: {index}")
+                    reranked_results.append(target_result)
+                else:
+                    logger.warning(f"Reranker returned an out-of-bounds index: {index}")
+            except (TypeError, ValueError) as e:
+                logger.error(f"Error parsing reranker output item: {item} | {e}")
+                continue
 
-        # 4. 根据重排分数进行最终排序
+        # 5. Final Sort and Truncation
         reranked_results.sort(key=lambda x: x.rerank_score, reverse=True)
 
-        # 打印 Top 3 结果便于观测分层效果
-        for r in reranked_results[:3]:
-            logger.debug(f"重排 Top 命中 | 分数: {r.rerank_score:.4f} | 内容: {r.content[:40]}...")
+        # Logging for observability
+        if reranked_results:
+            top_hit = reranked_results[0]
+            logger.debug(f"Top Rerank Match | Score: {top_hit.rerank_score:.4f} | "
+                         f"ID: {top_hit.chunk_id} | Content: {top_hit.content[:50]}...")
 
-        logger.info(f"使用模型 {model_name} 完成重排，从 {len(kb_results)} 条中筛选出 {len(reranked_results)} 条，取 Top {top_k}")
-        try:
-            safe_top_k = int(top_k)
-        except Exception as e:
-            safe_top_k = 1
-        return reranked_results[:safe_top_k]
+        duration_msg = (f"Rerank complete ({model_name}): {len(unique_results)} input -> "
+                        f"{len(reranked_results)} filtered -> Top {top_k} selected.")
+        logger.info(duration_msg)
+
+        return reranked_results[:int(top_k)]
