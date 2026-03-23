@@ -74,6 +74,13 @@ class AgentService:
             raise NotFoundError(f"Agent {agent_id} lacks embedding model configuration.")
 
         logger.debug(f"Calling embedding model: {embedding_model} for question: {question}")
+
+        # Validate question is not empty
+        question = question.strip() if question else ""
+        if not question:
+            logger.error(f"Question cannot be empty for agent {agent_id}")
+            raise ParamValueError(f"Question cannot be empty")
+
         embed_resp = await self.model_client.call_embedding_model(embedding_model, [question])
 
         # Validate embed_resp is a list and has at least one item

@@ -63,6 +63,13 @@ class ChunkService:
                 
             embed_model = await self.model_service.get_model_name_by_id(model_id)
 
+            # Validate new_chunk is not empty
+            new_chunk = new_chunk.strip() if new_chunk else ""
+            if not new_chunk:
+                error_msg = f"Chunk content cannot be empty for chunk {chunk_id}"
+                logger.error(error_msg)
+                raise ParamValueError(error_msg)
+
             # Generate new embedding vector for updated chunk content
             try:
                 response_data = await self.model_client.call_embedding_model(embed_model, [new_chunk])
@@ -188,6 +195,13 @@ class ChunkService:
 
                 # Step 2: Combine description with original content
                 content_with_desc = f"Text description: {description}\nOriginal content: {content}"
+
+                # Validate combined content is not empty
+                content_with_desc = content_with_desc.strip()
+                if not content_with_desc:
+                    error_msg = f"Combined content+description cannot be empty for chunk {chunk_id}"
+                    logger.error(error_msg)
+                    raise ParamValueError(error_msg)
 
                 # Step 3: Generate new embedding for combined content
                 response_data = await self.model_client.call_embedding_model(embed_model, [content_with_desc])

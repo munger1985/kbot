@@ -234,8 +234,15 @@ class FileProcessor:
             logger.warning("Empty parser results, skipping embedding generation")
             return []
 
-        # 1. Extract all text content for embedding
-        all_texts = [item["content"] for item in parser_results]
+        # 1. Extract all text content for embedding and filter empty strings
+        all_texts = [item["content"].strip() for item in parser_results if item["content"] and item["content"].strip()]
+
+        if not all_texts:
+            logger.warning("All text chunks are empty after filtering, skipping embedding generation")
+            return []
+
+        # Keep track of valid indices to match embeddings with parser results
+        valid_indices = [i for i, item in enumerate(parser_results) if item["content"] and item["content"].strip()]
 
         # 2. Configure micro-batch size (32-64 is optimal balance of concurrency and stability)
         micro_batch_size = 32
@@ -273,7 +280,9 @@ class FileProcessor:
             # 5. Create TxtChunkEntity objects with complete metadata
             chunks = []
             for i, (text, emb) in enumerate(zip(all_texts, all_embeddings)):
-                item = parser_results[i]
+                # Use valid_indices to map back to original parser results
+                original_idx = valid_indices[i]
+                item = parser_results[original_idx]
                 unique_id = str(uuid.uuid4())
 
                 # Use chunk type string directly from parser result
