@@ -180,19 +180,33 @@ class DoclingDocProcessor:
         """
         if not params.use_vlm or not params.vlm_model or not doc.pictures:
             return
-        
+
+        # Filter valid images: check both image existence and size constraints
+        # Model requires both height and width > 10 pixels
+        valid_pictures = []
+        for pic in doc.pictures:
+            if pic.image and pic.image.pil_image:
+                width, height = pic.image.pil_image.size
+                if width > 10 and height > 10:
+                    valid_pictures.append(pic)
+                else:
+                    logger.warning(f"Skipping image with invalid size {width}x{height} (must be >10x10)")
+
+        if not valid_pictures:
+            logger.info("No valid images (size >10x10) found for VLM processing")
+            return
+
         target_prompt = params.vlm_prompt or "Please describe this image in detail. Extract key data if it's a chart/table."
         tasks = [
             self._vlm_task(self.vlm_client, params.vlm_model, target_prompt, i, pic.image.pil_image)
-            for i, pic in enumerate(doc.pictures) 
-            if pic.image and pic.image.pil_image
+            for i, pic in enumerate(valid_pictures)
         ]
-        
+
         if tasks:
             results = await asyncio.gather(*tasks)
             for idx, desc in results:
                 if desc:
-                    doc.pictures[idx].annotations.append(
+                    valid_pictures[idx].annotations.append(
                         DescriptionAnnotation(text=desc, provenance=f"vlm_{params.vlm_model}")
                     )
 

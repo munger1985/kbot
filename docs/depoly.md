@@ -113,7 +113,7 @@ git clone https://github.com/munger1985/kbot.git -b kbot3
 ```
 
 **说明**：
-- `v3.1` 是稳定版本标签，适合生产环境部署
+- `v3.2` 是稳定版本标签，适合生产环境部署
 - `kbot3` 是开发分支，包含最新功能和修复，适合测试环境
 - 执行 `git branch -a` 可查看所有可用分支和标签
 - 执行 `git tag` 可查看所有版本标签
