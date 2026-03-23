@@ -71,7 +71,7 @@ class VLMAnnotationPictureSerializer(MarkdownPictureSerializer):
             image_name = f"pic_{item.self_ref.replace('/', '_')}.png"
             image_path = image_root / image_name
             item.image.pil_image.save(image_path)
-            logger.debug(f"Extracted image saved successfully: {image_path}")
+            # logger.debug(f"Extracted image saved successfully: {image_path}")
 
         # 2. Inject VLM description as reference block
         for annotation in item.annotations:
@@ -232,7 +232,7 @@ class DoclingDocProcessor:
                 if detected_level == 1:
                     active_path = []
                 
-                logger.debug(f"[PathTrace] New Header: '{raw_text}' | Detected Level: {detected_level}")
+                # logger.debug(f"[PathTrace] New Header: '{raw_text}' | Detected Level: {detected_level}")
 
                 # 弹出旧路径
                 while len(active_path) >= detected_level:
@@ -283,6 +283,11 @@ class DoclingDocProcessor:
                         # 将父级标题与当前弱标题合并作为 context，例如 "理赔须知 (注：)"
                         current_header_ctx = f"{active_path[-2]} ({raw_text})"
 
+                # 清理 metadata 中的特殊字符,确保 JSON 兼容性
+                node_path = str(item.self_ref) if hasattr(item, 'self_ref') else ""
+                node_path = node_path.replace('\x00', '')  # 移除空字节
+                node_path = node_path.strip()
+
                 chunk_results.append({
                     "content": sub_content,
                     "path_names": final_path_list,  # 传入 List，供后续 flatten_path_names 处理
@@ -292,7 +297,7 @@ class DoclingDocProcessor:
                         "chunk_num": current_chunk_num,
                         "sub_index": sub_idx,
                         "page_num": self._get_page_num(item),
-                        "node_path": item.self_ref,
+                        "node_path": node_path,
                         "image_name": image_name,
                         "header_context": current_header_ctx 
                     }

@@ -1,4 +1,5 @@
 import os
+import json
 import uuid
 from loguru import logger
 from datetime import datetime
@@ -12,6 +13,7 @@ from core.config.settings import get_app_config
 from core.dictionary import FileStatus, ProcessPriority, ChunkType
 from core.exceptions import DataNotFoundException, DatabaseException
 from utils.clients import AIModelClient
+from utils.sanitize import sanitize_text_for_oracle_json
 from services.ai_model import AIModelService
 
 
@@ -279,17 +281,21 @@ class FileProcessor:
                 # converts a hierarchical path list into a flattened string
                 path_names = self._flatten_path_names(item.get("path_names", []))
 
+                # # 清理和验证 JSON 字段
+                # chunk_metadata = sanitize_text_for_oracle_json(item.get("metadata", {}))
+                # biz_metadata = sanitize_text_for_oracle_json(file_params.biz_metadata or {})
+
                 chunk = TxtChunkEntity(
                     chunk_id=unique_id,
                     kb_id=file_params.kb_id,
                     file_id=file_params.file_id,
                     content=text,
                     embedding=emb,
-                    path_names=path_names, 
+                    path_names=path_names,
                     structure_level=item.get("structure_level", 0),
                     chunk_type=chunk_type,
                     chunk_metadata=item.get("metadata", {}),
-                    biz_metadata=file_params.biz_metadata,
+                    biz_metadata=file_params.biz_metadata or {},
                     security_level=file_params.security_level,
                 )
                 chunks.append(chunk)
@@ -308,9 +314,9 @@ class FileProcessor:
         """
         if not path_list:
             return ""
-        
+
         logger.debug(f"[FinalJoin] Joining list: {path_list}")
-        
+
         # 仅使用分隔符连接，输出如: "第一部分 / 保险内容和保险利益"
         return " / ".join(path_list)
     

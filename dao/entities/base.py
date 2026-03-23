@@ -1,5 +1,7 @@
 import json
 import array as array_module
+from datetime import datetime, date
+from decimal import Decimal
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy import TypeDecorator, JSON, Text, Dialect
 from sqlalchemy import UnicodeText
@@ -8,6 +10,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.oracle import VECTOR as ORA_VECTOR  # Oracle 23ai+
 # from pgvector.sqlalchemy import Vector as PG_VECTOR
 from sqlalchemy.ext.mutable import MutableList
+from loguru import logger
 
 BaseEntity = declarative_base()
 
@@ -22,7 +25,52 @@ class OracleJSON(TypeDecorator):
     def process_bind_param(self, value, dialect):
         if value is None:
             return None
-        return json.dumps(value, default=str)
+
+        # 确保只接受有效的 JSON 可序列化类型
+        if not isinstance(value, (dict, list, str, int, float, bool)) or value is None:
+            logger.warning(f"Invalid JSON type detected: {type(value)}, value: {value}")
+            # 尝试转换为字典或空字典
+            if isinstance(value, str):
+                try:
+                    return json.dumps(json.loads(value), ensure_ascii=False)
+                except json.JSONDecodeError:
+                    return json.dumps({"raw_string": value}, ensure_ascii=False)
+            else:
+                return json.dumps({}, ensure_ascii=False)
+
+        # 确保 JSON 输出不包含非法字符
+        try:
+            # 使用 ensure_ascii=False 保持中文等非 ASCII 字符
+            # 使用自定义 default 处理无法序列化的对象
+            def json_serializer(obj):
+                """自定义 JSON 序列化器,处理常见数据类型"""
+                if obj is None:
+                    return None
+                if isinstance(obj, (str, int, float, bool)):
+                    return obj
+                if isinstance(obj, (datetime, date)):
+                    return obj.isoformat()
+                if isinstance(obj, Decimal):
+                    return float(obj)
+                if hasattr(obj, '__dict__'):
+                    # 尝试序列化对象的字典属性
+                    try:
+                        return obj.__dict__
+                    except Exception:
+                        return str(obj)
+                # 兜底:转换为字符串
+                return str(obj)
+
+            json_str = json.dumps(value, ensure_ascii=False, default=json_serializer)
+
+            # 验证生成的 JSON 字符串是有效的
+            json.loads(json_str)  # 验证 JSON 格式
+
+            return json_str
+        except (TypeError, ValueError, json.JSONDecodeError) as e:
+            logger.error(f"JSON serialization failed: {e}, value type: {type(value)}")
+            # 返回空对象作为后备
+            return json.dumps({}, ensure_ascii=False)
 
     def process_result_value(self, value, dialect):
         if value is None:
