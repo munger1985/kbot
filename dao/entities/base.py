@@ -35,6 +35,18 @@ class OracleJSON(TypeDecorator):
             logger.debug(f"OracleJSON process_bind_param: value is None, returning None")
             return None
 
+        # 检查 value 是否已经是字符串（可能是之前序列化过的）
+        if isinstance(value, str):
+            logger.debug(f"OracleJSON: Received string value, will verify if it's valid JSON: {repr(value[:100])}")
+            try:
+                # 验证是否为有效的 JSON 字符串
+                json.loads(value)
+                return value
+            except json.JSONDecodeError:
+                # 如果不是有效的 JSON，尝试将其包装为 JSON 字符串
+                logger.warning(f"OracleJSON: String value is not valid JSON, wrapping: {repr(value[:100])}")
+                return json.dumps(value, ensure_ascii=False)
+
         # 对于 Oracle 数据库，确保 JSON 字段被正确处理
         # Oracle 23ai 可能需要将 JSON 字符串转换为 JSON 类型
         # 但我们在这里只返回字符串，让 Oracle 驱动来处理

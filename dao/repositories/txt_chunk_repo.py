@@ -39,13 +39,20 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
             # 由于 Oracle JSON 类型在批量插入时可能出现参数绑定问题，
             # 改用逐条插入的方式确保 JSON 字段正确处理
             total_success = 0
-            for chunk in chunks:
+            for idx, chunk in enumerate(chunks):
                 try:
+                    logger.debug(f"About to insert chunk #{idx+1}: chunk_id={chunk.chunk_id}")
+                    logger.debug(f"  chunk_metadata type={type(chunk.chunk_metadata)}, value={str(chunk.chunk_metadata)[:200]}")
+                    logger.debug(f"  biz_metadata type={type(chunk.biz_metadata)}, value={str(chunk.biz_metadata)[:200]}")
+
                     self.session.add(chunk)
                     await self.session.flush()  # 立即执行插入
                     total_success += 1
+                    logger.debug(f"Successfully inserted chunk #{idx+1}: chunk_id={chunk.chunk_id}")
                 except Exception as e:
-                    logger.error(f"Failed to insert chunk {chunk.chunk_id}: {str(e)}")
+                    logger.error(f"Failed to insert chunk #{idx+1} {chunk.chunk_id}: {str(e)}")
+                    logger.error(f"  chunk_metadata={str(chunk.chunk_metadata)[:300]}")
+                    logger.error(f"  biz_metadata={str(chunk.biz_metadata)[:300]}")
                     raise
 
             logger.info(f"Completed all insertions, total successful records: {total_success}")
