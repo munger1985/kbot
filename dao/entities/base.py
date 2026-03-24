@@ -11,49 +11,34 @@ BaseEntity = declarative_base()
 
 
 class OracleJSON(TypeDecorator):
-    """
-    专为 Oracle 异步驱动定制的 JSON 类型
-    绕过驱动缺失的 _json_deserializer，并解决 ORA-40441 语法错误
-    """
-    # 如果 JSON 数据量大，建议用 CLOB；如果较小，用 Text
-    impl = Text 
+    impl = Text
     cache_ok = True
 
     def process_bind_param(self, value, dialect):
-        """发送数据到数据库：对象 -> 字符串"""
-        if value is None:
+        # 1. 处理 None 或空字典：直接存为 NULL
+        # 很多时候 Oracle 报 JZN-00085 就是因为无法正确处理传入的 "{}" 字符串
+        if value is None or (isinstance(value, dict) and not value):
             return None
-        
-        # 核心修复：确保不进行双重序列化
-        if isinstance(value, str):
-            try:
-                # 校验是否为合法JSON
-                json.loads(value)
+
+        try:
+            # 2. 如果已经是字符串，校验并去除首尾空格
+            if isinstance(value, str):
+                json.loads(value) # 验证合法性
                 return value.strip()
-            except json.JSONDecodeError:
-                # 如果是纯字符串而非JSON，包装成字符串对象
-                return json.dumps(value, ensure_ascii=False).strip()
-        
-        # 序列化字典或列表
-        # 使用 ensure_ascii=False 减少转义开销，但需确保数据库字符集支持 UTF8
-        return json.dumps(value, ensure_ascii=False).strip()
+            
+            # 3. 序列化对象，确保不带任何多余的空白
+            # 尝试使用 ensure_ascii=False，让 Oracle 处理原生的 UTF-8 字符
+            return json.dumps(value, ensure_ascii=False).strip()
+        except Exception:
+            # 兜底：如果报错，返回 None 而不是空的 {}
+            return None
 
     def process_result_value(self, value, dialect):
-        """从数据库读取数据：字符串 -> 对象"""
         if value is None:
-            return None
-        
-        # 核心修复：手动处理反序列化，不依赖 dialect._json_deserializer
-        if isinstance(value, (dict, list)):
-            return value
-            
+            return {} # 读取时回填为空字典
         try:
-            # Oracle 21c/23ai 有时会返回 LOB 对象或特殊的包装类型
-            # 将其转换为字符串后解析
-            str_value = str(value)
-            return json.loads(str_value)
-        except (ValueError, TypeError, json.JSONDecodeError):
-            # 兜底：如果解析失败，返回原始字符串
+            return json.loads(value)
+        except:
             return value
         
 class UniversalVector(TypeDecorator):
