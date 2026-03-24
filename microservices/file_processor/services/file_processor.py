@@ -324,7 +324,7 @@ class FileProcessor:
         if not path_list:
             return ""
 
-        logger.debug(f"[FinalJoin] Joining list: {path_list}")
+        # logger.debug(f"[FinalJoin] Joining list: {path_list}")
 
         # 仅使用分隔符连接，输出如: "第一部分 / 保险内容和保险利益"
         return " / ".join(path_list)
