@@ -13,7 +13,7 @@ from core.config.settings import get_app_config
 from core.dictionary import FileStatus, ProcessPriority, ChunkType
 from core.exceptions import DataNotFoundException, DatabaseException
 from utils.clients import AIModelClient
-from utils.sanitize import sanitize_text_for_oracle_json
+from utils.sanitize import sanitize_dict_for_oracle_json
 from services.ai_model import AIModelService
 
 
@@ -290,9 +290,9 @@ class FileProcessor:
                 # converts a hierarchical path list into a flattened string
                 path_names = self._flatten_path_names(item.get("path_names", []))
 
-                # # 清理和验证 JSON 字段
-                # chunk_metadata = sanitize_text_for_oracle_json(item.get("metadata", {}))
-                # biz_metadata = sanitize_text_for_oracle_json(file_params.biz_metadata or {})
+                # Sanitize JSON metadata fields to prevent Oracle JSON syntax errors
+                chunk_metadata = sanitize_dict_for_oracle_json(item.get("metadata", {}))
+                biz_metadata = sanitize_dict_for_oracle_json(file_params.biz_metadata or {})
 
                 chunk = TxtChunkEntity(
                     chunk_id=unique_id,
@@ -303,8 +303,8 @@ class FileProcessor:
                     path_names=path_names,
                     structure_level=item.get("structure_level", 0),
                     chunk_type=chunk_type,
-                    chunk_metadata=item.get("metadata", {}),
-                    biz_metadata=file_params.biz_metadata or {},
+                    chunk_metadata=chunk_metadata,
+                    biz_metadata=biz_metadata,
                     security_level=file_params.security_level,
                 )
                 chunks.append(chunk)

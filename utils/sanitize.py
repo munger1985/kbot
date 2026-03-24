@@ -76,6 +76,77 @@ def sanitize_text_for_oracle_json(text: str, max_length: int | None = None) -> s
     return cleaned
 
 
+def sanitize_dict_for_oracle_json(data: dict | None, max_length: int | None = None) -> dict:
+    """
+    Sanitize a dictionary for Oracle JSON field storage.
+    
+    Recursively cleans all string values in the dictionary to ensure they're safe
+    for Oracle JSON storage. Handles nested dictionaries and lists.
+
+    Args:
+        data: Dictionary to sanitize (can be None)
+        max_length: Optional maximum length limit for string values
+    
+    Returns:
+        Sanitized dictionary with all string values cleaned
+    """
+    if not data or not isinstance(data, dict):
+        return data or {}
+    
+    result = {}
+    for key, value in data.items():
+        # Sanitize key as well
+        clean_key = sanitize_text_for_json(key, keep_newline=False)
+        
+        if value is None:
+            result[clean_key] = None
+        elif isinstance(value, str):
+            result[clean_key] = sanitize_text_for_oracle_json(value, max_length)
+        elif isinstance(value, dict):
+            result[clean_key] = sanitize_dict_for_oracle_json(value, max_length)
+        elif isinstance(value, list):
+            result[clean_key] = sanitize_list_for_oracle_json(value, max_length)
+        else:
+            # Numbers, booleans, etc. - keep as is
+            result[clean_key] = value
+    
+    return result
+
+
+def sanitize_list_for_oracle_json(data: list | None, max_length: int | None = None) -> list:
+    """
+    Sanitize a list for Oracle JSON field storage.
+    
+    Recursively cleans all string values in the list to ensure they're safe
+    for Oracle JSON storage. Handles nested dictionaries and lists.
+
+    Args:
+        data: List to sanitize (can be None)
+        max_length: Optional maximum length limit for string values
+    
+    Returns:
+        Sanitized list with all string values cleaned
+    """
+    if not data or not isinstance(data, list):
+        return data or []
+    
+    result = []
+    for item in data:
+        if item is None:
+            result.append(None)
+        elif isinstance(item, str):
+            result.append(sanitize_text_for_oracle_json(item, max_length))
+        elif isinstance(item, dict):
+            result.append(sanitize_dict_for_oracle_json(item, max_length))
+        elif isinstance(item, list):
+            result.append(sanitize_list_for_oracle_json(item, max_length))
+        else:
+            # Numbers, booleans, etc. - keep as is
+            result.append(item)
+    
+    return result
+
+
 # Usage examples
 if __name__ == "__main__":
     # Test cases
