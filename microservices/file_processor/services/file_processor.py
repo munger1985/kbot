@@ -294,6 +294,17 @@ class FileProcessor:
                 chunk_metadata = sanitize_dict_for_oracle_json(item.get("metadata", {}))
                 biz_metadata = sanitize_dict_for_oracle_json(file_params.biz_metadata or {})
 
+                # Ensure chunk_metadata is never None (entity field is non-nullable)
+                if chunk_metadata is None:
+                    chunk_metadata = {}
+                if biz_metadata is None:
+                    biz_metadata = {}
+
+                # Debug: Log the sanitized metadata (first chunk only to avoid spam)
+                if i == 0:
+                    logger.debug(f"chunk_metadata type: {type(chunk_metadata)}, value: {str(chunk_metadata)[:200]}")
+                    logger.debug(f"biz_metadata type: {type(biz_metadata)}, value: {str(biz_metadata)[:200]}")
+
                 chunk = TxtChunkEntity(
                     chunk_id=unique_id,
                     kb_id=file_params.kb_id,

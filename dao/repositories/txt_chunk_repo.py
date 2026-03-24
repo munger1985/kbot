@@ -42,7 +42,12 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
                 # Convert embeddings to Oracle array format
                 for chunk in batch_chunks:
                     chunk.embedding = vec_handler.convert(chunk.embedding) # type: ignore
-                    # logger.debug(f"Converted embedding for chunk {chunk.chunk_id}, type: {type(chunk.embedding)}")
+                    # Log first chunk details for debugging
+                    if i == 0 and chunk == batch_chunks[0]:
+                        logger.debug(f"First chunk before insert: chunk_id={chunk.chunk_id}")
+                        logger.debug(f"  chunk_metadata type={type(chunk.chunk_metadata)}, value={str(chunk.chunk_metadata)[:200]}")
+                        logger.debug(f"  biz_metadata type={type(chunk.biz_metadata)}, value={str(chunk.biz_metadata)[:200]}")
+                        logger.debug(f"  embedding type={type(chunk.embedding)}, len={len(chunk.embedding) if hasattr(chunk.embedding, '__len__') else 'N/A'}")
 
                 # Add batch entities to session
                 self.session.add_all(batch_chunks)

@@ -23,18 +23,20 @@ class OracleJSON(TypeDecorator):
     cache_ok = True
 
     def process_bind_param(self, value, dialect):
+        # Handle None - return None for nullable fields
         if value is None:
             return None
 
         # 确保只接受有效的 JSON 可序列化类型
-        if not isinstance(value, (dict, list, str, int, float, bool)) or value is None:
+        if not isinstance(value, (dict, list, str, int, float, bool)):
             logger.warning(f"Invalid JSON type detected: {type(value)}, value: {value}")
             # 尝试转换为字典或空字典
             if isinstance(value, str):
                 try:
-                    return json.dumps(json.loads(value), ensure_ascii=False)
+                    json_str = json.dumps(json.loads(value), ensure_ascii=False)
                 except json.JSONDecodeError:
-                    return json.dumps({"raw_string": value}, ensure_ascii=False)
+                    json_str = json.dumps({"raw_string": value}, ensure_ascii=False)
+                return json_str
             else:
                 return json.dumps({}, ensure_ascii=False)
 
@@ -66,9 +68,20 @@ class OracleJSON(TypeDecorator):
             # 验证生成的 JSON 字符串是有效的
             json.loads(json_str)  # 验证 JSON 格式
 
+            # Ensure we never return an empty string
+            if not json_str or json_str == '':
+                json_str = '{}'
+
+            # Log first few JSON strings for debugging (limit to avoid spam)
+            if not hasattr(self, '_log_count'):
+                self._log_count = 0
+            if self._log_count < 3:
+                self._log_count += 1
+                logger.debug(f"OracleJSON process_bind_param: type={type(value)}, json_str[:100]={repr(json_str[:100])}")
+
             return json_str
         except (TypeError, ValueError, json.JSONDecodeError) as e:
-            logger.error(f"JSON serialization failed: {e}, value type: {type(value)}")
+            logger.error(f"JSON serialization failed: {e}, value type: {type(value)}, value: {str(value)[:500]}")
             # 返回空对象作为后备
             return json.dumps({}, ensure_ascii=False)
 
