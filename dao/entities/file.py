@@ -1,6 +1,6 @@
-from sqlalchemy import String, Date, Numeric, func, JSON
+from sqlalchemy import String, Date, Numeric, func
 from sqlalchemy.orm import Mapped, mapped_column
-from .base import BaseEntity
+from .base import BaseEntity, OracleJSON
 
 class FileEntity(BaseEntity):
     """Table for Knowledge Base File management (Model-driven).
@@ -24,8 +24,8 @@ class FileEntity(BaseEntity):
     is_overwrite: Mapped[int] = mapped_column(Numeric(1, 0), comment="Whether to overwrite: 1 - Yes, 0 - No")
     security_level: Mapped[int] = mapped_column(Numeric(1, 0), comment="File security level enumeration type")
     file_size: Mapped[int | None] = mapped_column(Numeric(38, 0), comment="File size (in bytes)")
-    chunk_parser: Mapped[dict | None] = mapped_column(JSON, comment="Data chunk parsing parameters")
-    biz_metadata: Mapped[dict | None] = mapped_column(JSON, comment="Business metadata in JSON format (stored as string)")
+    chunk_parser: Mapped[dict | None] = mapped_column(OracleJSON, comment="Data chunk parsing parameters")
+    biz_metadata: Mapped[dict | None] = mapped_column(OracleJSON, comment="Business metadata in JSON format (stored as string)")
     process_priority: Mapped[int | None] = mapped_column(Numeric(1, 0), comment="Processing priority enumeration type")
     log_msg: Mapped[str | None] = mapped_column(String(4000), comment="Processing log information")
     created_by: Mapped[str | None] = mapped_column(String(256), comment="Creator user")
