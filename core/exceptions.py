@@ -4,24 +4,6 @@ from loguru import logger
 from typing import NoReturn
 
 
-def safe_log_error(msg: str, error: Exception, max_length: int = 1000) -> str:
-    """
-    安全地记录错误信息，限制错误字符串长度以避免打印大量数据（如向量）
-    
-    Args:
-        msg: 错误消息前缀
-        error: 异常对象
-        max_length: 错误字符串最大长度，默认1000
-        
-    Returns:
-        截断后的错误字符串
-    """
-    error_str = str(error)
-    if len(error_str) > max_length:
-        error_str = error_str[:max_length] + f"... (truncated, original length: {len(error_str)})"
-    logger.error(f"{msg}: {error_str}")
-    return error_str
-
 # --------------------------------------------------
 # 1. Infrastructure layer exceptions (used in DAO layer)
 # --------------------------------------------------
@@ -169,15 +151,12 @@ def handle_exception(e: Exception, msg: str) -> NoReturn:
         logger.error(f"{msg}: {e.message}")
         if e.original_error:
             error_str = str(e.original_error)
-            if len(error_str) > 500:
-                error_str = error_str[:500] + f"... (truncated, original length: {len(error_str)})"
-            logger.error(f"原始异常: {type(e.original_error).__name__}: {error_str}")
+            logger.error(f"Original error type: {type(e.original_error).__name__}: {error_str}")
+            logger.error(f"Original error: {error_str}")
         raise InternalServerError(f"{msg}: {e.message}")
     if isinstance(e, (NotFoundError, ParamValueError, AuthorizationError, PrivilegeError, InternalServerError)):
         raise e
     # 对于其他异常，也限制错误信息长度
     error_str = str(e)
-    if len(error_str) > 500:
-        error_str = error_str[:500] + f"... (truncated, original length: {len(error_str)})"
     logger.error(f"{msg}: {error_str}")
     raise e
