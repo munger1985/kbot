@@ -45,6 +45,7 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
                     # Log first chunk details for debugging
                     if i == 0 and chunk == batch_chunks[0]:
                         logger.debug(f"First chunk before insert: chunk_id={chunk.chunk_id}")
+                        logger.debug(f"  content type={type(chunk.content)}, content[:200]={repr(chunk.content[:200])}")
                         logger.debug(f"  chunk_metadata type={type(chunk.chunk_metadata)}, value={str(chunk.chunk_metadata)[:200]}")
                         logger.debug(f"  biz_metadata type={type(chunk.biz_metadata)}, value={str(chunk.biz_metadata)[:200]}")
                         logger.debug(f"  embedding type={type(chunk.embedding)}, len={len(chunk.embedding) if hasattr(chunk.embedding, '__len__') else 'N/A'}")

@@ -25,11 +25,12 @@ class OracleJSON(TypeDecorator):
     def process_bind_param(self, value, dialect):
         # Handle None - return None for nullable fields
         if value is None:
+            logger.debug(f"OracleJSON process_bind_param: value is None, returning None")
             return None
 
         # 确保只接受有效的 JSON 可序列化类型
         if not isinstance(value, (dict, list, str, int, float, bool)):
-            logger.warning(f"Invalid JSON type detected: {type(value)}, value: {value}")
+            logger.warning(f"OracleJSON Invalid JSON type detected: {type(value)}, value: {value}")
             # 尝试转换为字典或空字典
             if isinstance(value, str):
                 try:
@@ -75,9 +76,9 @@ class OracleJSON(TypeDecorator):
             # Log first few JSON strings for debugging (limit to avoid spam)
             if not hasattr(self, '_log_count'):
                 self._log_count = 0
-            if self._log_count < 3:
+            if self._log_count < 5:
                 self._log_count += 1
-                logger.debug(f"OracleJSON process_bind_param: type={type(value)}, json_str[:100]={repr(json_str[:100])}")
+                logger.debug(f"OracleJSON process_bind_param #{self._log_count}: type={type(value)}, json_str[:200]={repr(json_str[:200])}, json_str length={len(json_str)}")
 
             return json_str
         except (TypeError, ValueError, json.JSONDecodeError) as e:
