@@ -1,9 +1,9 @@
 import json
 import uuid
 from typing import Any
-from sqlalchemy import String, Numeric, CLOB, Index
+from sqlalchemy import String, Numeric, CLOB, JSON, Index
 from sqlalchemy.orm import Mapped, mapped_column
-from .base import BaseEntity, VectorField, OracleJSON
+from .base import BaseEntity, VectorField
 
 
 class TxtChunkEntity(BaseEntity):
@@ -25,15 +25,12 @@ class TxtChunkEntity(BaseEntity):
     path_names: Mapped[str] = mapped_column(String(4000), nullable=True, comment="Path names (e.g., chapter/section hierarchy)")
     chunk_type: Mapped[str] = mapped_column(String(20), nullable=True, comment="Chunk type (text, table, picture, heading)")
     embedding: Mapped[list[float]] = mapped_column(VectorField(), nullable=False, comment="Vector embedding of text chunk")
-    chunk_metadata: Mapped[dict] = mapped_column(OracleJSON, nullable=False, comment="Chunk metadata (JSON, e.g. position/length/source)")
-
-    # Oracle JSON fields - use VARCHAR2 to ensure proper JSON string handling
-    # Note: OracleJSON is a TypeDecorator that ensures proper JSON serialization
+    chunk_metadata: Mapped[dict] = mapped_column(JSON, nullable=False, comment="Chunk metadata (JSON, e.g. position/length/source)")
     security_level: Mapped[int | None] = mapped_column(Numeric(1, 0), nullable=True, comment="Data security level (1=public, 0=private, nullable)")
     is_active: Mapped[int] = mapped_column(Numeric(1), default=1, nullable=False, comment="Embedding status (1=active, 0=inactive, default=1)")
 
     # Extended fields
-    biz_metadata: Mapped[dict | None] = mapped_column(OracleJSON, nullable=True, comment="Business custom metadata (JSON, nullable)")
+    biz_metadata: Mapped[dict | None] = mapped_column(JSON, nullable=True, comment="Business custom metadata (JSON, nullable)")
 # Performance optimization indexes for vector search
 Index("idx_embedding_kb_status", TxtChunkEntity.kb_id, TxtChunkEntity.is_active, TxtChunkEntity.security_level)
 Index("idx_embedding_file_id", TxtChunkEntity.file_id)

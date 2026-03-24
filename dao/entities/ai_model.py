@@ -1,6 +1,6 @@
-from sqlalchemy import String, Date, Numeric, func
+from sqlalchemy import String, Date, Numeric, func, JSON
 from sqlalchemy.orm import Mapped, mapped_column
-from .base import BaseEntity, OracleJSON
+from .base import BaseEntity
 
 class AIModelEntity(BaseEntity):
     """Table for Model configuration (Model-driven).
@@ -21,7 +21,7 @@ class AIModelEntity(BaseEntity):
     api_endpoint: Mapped[str | None] = mapped_column(String(256), comment="API endpoint URL (e.g., https://api.openai.com/v1)")
     api_key: Mapped[str | None] = mapped_column(String(256), comment="API key (recommended to store encrypted)")
     status: Mapped[int | None] = mapped_column(Numeric(1, 0), comment="Model status: 1 - Enabled, 0 - Disabled")
-    model_params: Mapped[dict | None] = mapped_column(OracleJSON, comment="Default model parameters configuration in JSON format")
+    model_params: Mapped[dict | None] = mapped_column(JSON, comment="Default model parameters configuration in JSON format")
     descs: Mapped[str | None] = mapped_column(String(512), comment="Detailed model description")
     created_by: Mapped[str | None] = mapped_column(String(256), comment="Creator user")
     created_time: Mapped[Date] = mapped_column(Date, server_default=func.now(), comment="Creation time")
