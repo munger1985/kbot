@@ -35,6 +35,10 @@ class OracleJSON(TypeDecorator):
             logger.debug(f"OracleJSON process_bind_param: value is None, returning None")
             return None
 
+        # 对于 Oracle 数据库，确保 JSON 字段被正确处理
+        # Oracle 23ai 可能需要将 JSON 字符串转换为 JSON 类型
+        # 但我们在这里只返回字符串，让 Oracle 驱动来处理
+
         # 确保只接受有效的 JSON 可序列化类型
         if not isinstance(value, (dict, list, str, int, float, bool)):
             logger.warning(f"OracleJSON Invalid JSON type detected: {type(value)}, value: {value}")

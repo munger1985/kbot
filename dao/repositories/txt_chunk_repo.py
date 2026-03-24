@@ -32,23 +32,33 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
             # Convert embeddings to Oracle-compatible format
             vec_handler = OracleVecHandler()
 
+            # DEBUG: Try single insert first to isolate the issue
+            if len(chunks) > 0:
+                logger.info(f"DEBUG: Attempting single insert for first chunk to isolate issue")
+                chunk = chunks[0]
+                chunk.embedding = vec_handler.convert(chunk.embedding)  # type: ignore
+                logger.debug(f"Single insert: chunk_id={chunk.chunk_id}")
+                logger.debug(f"  chunk_metadata type={type(chunk.chunk_metadata)}, value={str(chunk.chunk_metadata)[:200]}")
+                logger.debug(f"  biz_metadata type={type(chunk.biz_metadata)}, value={str(chunk.biz_metadata)[:200]}")
+                logger.debug(f"  embedding type={type(chunk.embedding)}, len={len(chunk.embedding) if hasattr(chunk.embedding, '__len__') else 'N/A'}")
+                self.session.add(chunk)
+                await self.session.flush()
+                logger.info(f"DEBUG: Single insert succeeded!")
+                # Continue with remaining chunks
+                remaining_chunks = chunks[1:]
+            else:
+                remaining_chunks = []
+
             # Batch processing (Oracle bulk insert best practice: 100 records per batch)
             batch_size = 100
-            total_success = 0
+            total_success = 1 if len(chunks) > 0 else 0
 
-            for i in range(0, len(chunks), batch_size):
-                batch_chunks = chunks[i:i + batch_size]
+            for i in range(0, len(remaining_chunks), batch_size):
+                batch_chunks = remaining_chunks[i:i + batch_size]
 
                 # Convert embeddings to Oracle array format
                 for chunk in batch_chunks:
-                    chunk.embedding = vec_handler.convert(chunk.embedding) # type: ignore
-                    # Log first chunk details for debugging
-                    if i == 0 and chunk == batch_chunks[0]:
-                        logger.debug(f"First chunk before insert: chunk_id={chunk.chunk_id}")
-                        logger.debug(f"  content type={type(chunk.content)}, content[:200]={repr(chunk.content[:200])}")
-                        logger.debug(f"  chunk_metadata type={type(chunk.chunk_metadata)}, value={str(chunk.chunk_metadata)[:200]}")
-                        logger.debug(f"  biz_metadata type={type(chunk.biz_metadata)}, value={str(chunk.biz_metadata)[:200]}")
-                        logger.debug(f"  embedding type={type(chunk.embedding)}, len={len(chunk.embedding) if hasattr(chunk.embedding, '__len__') else 'N/A'}")
+                    chunk.embedding = vec_handler.convert(chunk.embedding)  # type: ignore
 
                 # Add batch entities to session
                 self.session.add_all(batch_chunks)
