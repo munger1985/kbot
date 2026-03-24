@@ -15,29 +15,36 @@ class OracleJSON(TypeDecorator):
     cache_ok = True
 
     def process_bind_param(self, value, dialect):
-        # 1. 处理 None 或空字典：直接存为 NULL
-        # 很多时候 Oracle 报 JZN-00085 就是因为无法正确处理传入的 "{}" 字符串
-        if value is None or (isinstance(value, dict) and not value):
+        if value is None:
+            return None
+        
+        # 处理空字典
+        if isinstance(value, dict) and not value:
             return None
 
         try:
-            # 2. 如果已经是字符串，校验并去除首尾空格
-            if isinstance(value, str):
-                json.loads(value) # 验证合法性
-                return value.strip()
+            # 如果输入已经是 dict/list，序列化它
+            if not isinstance(value, str):
+                # ensure_ascii=False 保持中文原样，减少转义字符干扰
+                json_str = json.dumps(value, ensure_ascii=False)
+            else:
+                # 如果已经是字符串，校验一下
+                json.loads(value)
+                json_str = value
+
+            # 关键：彻底去除所有可能导致 Oracle 误判的空白/特殊前缀
+            # 使用 strip('\ufeff') 去除可能存在的 UTF-8 BOM 头
+            return json_str.strip().strip('\ufeff')
             
-            # 3. 序列化对象，确保不带任何多余的空白
-            # 尝试使用 ensure_ascii=False，让 Oracle 处理原生的 UTF-8 字符
-            return json.dumps(value, ensure_ascii=False).strip()
-        except Exception:
-            # 兜底：如果报错，返回 None 而不是空的 {}
+        except (ValueError, TypeError):
             return None
 
     def process_result_value(self, value, dialect):
         if value is None:
-            return {} # 读取时回填为空字典
+            return {}
         try:
-            return json.loads(value)
+            # 兼容有些 Oracle 版本返回的字符串或对象
+            return json.loads(str(value))
         except:
             return value
         
