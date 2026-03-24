@@ -88,12 +88,11 @@ class OracleJSON(TypeDecorator):
             # 有时 Python 的字符串可能包含 BOM 或其他不可见字符
             json_str = json_str.strip()
 
-            # Log first few JSON strings for debugging (limit to avoid spam)
+            # Log all JSON strings for debugging to identify the problematic one
             if not hasattr(self, '_log_count'):
                 self._log_count = 0
-            if self._log_count < 5:
-                self._log_count += 1
-                logger.debug(f"OracleJSON process_bind_param #{self._log_count}: type={type(value)}, json_str[:200]={repr(json_str[:200])}, json_str length={len(json_str)}")
+            self._log_count += 1
+            logger.debug(f"OracleJSON process_bind_param #{self._log_count}: type={type(value)}, json_str[:200]={repr(json_str[:200])}, json_str length={len(json_str)}")
 
             return json_str
         except (TypeError, ValueError, json.JSONDecodeError) as e:
