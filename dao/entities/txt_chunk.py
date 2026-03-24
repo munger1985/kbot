@@ -27,7 +27,8 @@ class TxtChunkEntity(BaseEntity):
     embedding: Mapped[list[float]] = mapped_column(VectorField(), nullable=False, comment="Vector embedding of text chunk")
     chunk_metadata: Mapped[dict] = mapped_column(OracleJSON, nullable=False, comment="Chunk metadata (JSON, e.g. position/length/source)")
 
-    # Permission/status fields
+    # Oracle JSON fields - use VARCHAR2 to ensure proper JSON string handling
+    # Note: OracleJSON is a TypeDecorator that ensures proper JSON serialization
     security_level: Mapped[int | None] = mapped_column(Numeric(1, 0), nullable=True, comment="Data security level (1=public, 0=private, nullable)")
     is_active: Mapped[int] = mapped_column(Numeric(1), default=1, nullable=False, comment="Embedding status (1=active, 0=inactive, default=1)")
 

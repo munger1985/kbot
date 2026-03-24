@@ -19,8 +19,15 @@ class OracleJSON(TypeDecorator):
     针对 Oracle 异步驱动定制的 JSON 类型
     解决 AttributeError: 'OracleDialectAsync_oracledb' object has no attribute '_json_deserializer'
     """
-    impl = UnicodeText
+    impl = Text  # 使用 Text 而不是 UnicodeText 以确保与 Oracle JSON 兼容
     cache_ok = True
+
+    # 支持编译时的特殊处理
+    def bind_processor(self, dialect):
+        def process(value):
+            # 调用 process_bind_param 进行实际处理
+            return self.process_bind_param(value, dialect)
+        return process
 
     def process_bind_param(self, value, dialect):
         # Handle None - return None for nullable fields
@@ -72,6 +79,10 @@ class OracleJSON(TypeDecorator):
             # Ensure we never return an empty string
             if not json_str or json_str == '':
                 json_str = '{}'
+
+            # 对于 Oracle JSON 类型，确保返回的是有效的 JSON 字符串
+            # 有时 Python 的字符串可能包含 BOM 或其他不可见字符
+            json_str = json_str.strip()
 
             # Log first few JSON strings for debugging (limit to avoid spam)
             if not hasattr(self, '_log_count'):
