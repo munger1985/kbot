@@ -14,7 +14,7 @@ class AIModelEntity(BaseEntity):
     
     model_id: Mapped[int] = mapped_column(Numeric(38, 0), primary_key=True, comment="Unique model identifier, primary key")
     app_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False, comment="Associated application ID")
-    display_name: Mapped[str | None] = mapped_column(String(256), comment="Model display name (user-friendly name)")
+    display_name: Mapped[str] = mapped_column(String(256), comment="Model display name (user-friendly name)")
     model_name: Mapped[str] = mapped_column(String(256), comment="Model technical name (e.g., gpt-4, text-embedding-ada-002)")
     category: Mapped[int | None] = mapped_column(Numeric(2, 0), comment="Model category enumeration")
     provider: Mapped[str] = mapped_column(String(256), comment="Model provider (e.g., local, OpenAI, Azure, Anthropic)")

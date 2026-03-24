@@ -31,7 +31,7 @@ class ModelController:
         """
 
         # Test Embedding model
-        model_name = await self.model_service.get_model_name_by_id(model_id)
+        model_name = await self.model_service.get_display_name_by_id(model_id)
         if model_type == ModelCategory.TXT_EMBEDDING.value:
             input_texts = ["test"]
             result = await self.model_client.call_embedding_model(

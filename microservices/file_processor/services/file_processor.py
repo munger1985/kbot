@@ -80,9 +80,9 @@ class FileProcessor:
                 vlm_model = None
                 
                 if txt_embed_model_id:
-                    embed_model = await self.model_service.get_model_name_by_id(txt_embed_model_id)
+                    embed_model = await self.model_service.get_display_name_by_id(txt_embed_model_id)
                 if img2txt_model_id:
-                    vlm_model = await self.model_service.get_model_name_by_id(img2txt_model_id)
+                    vlm_model = await self.model_service.get_display_name_by_id(img2txt_model_id)
 
                 # Create image storage directory (file ID named folder in file's directory)
                 dir_name = os.path.dirname(file.file_path)

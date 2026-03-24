@@ -1,7 +1,5 @@
 from loguru import logger
 from typing import Any
-from core.config.settings import get_prompt_config
-from core.dictionary import ChunkType
 from dao.repositories import KBRepository, PromptRepository, TxtChunkRepository
 from utils.clients.model_client import AIModelClient
 from core.database.oracle import get_session
@@ -61,7 +59,7 @@ class ChunkService:
                 logger.error(error_msg)
                 raise NotFoundError(error_msg)
                 
-            embed_model = await self.model_service.get_model_name_by_id(model_id)
+            embed_model = await self.model_service.get_display_name_by_id(model_id)
 
             # Validate new_chunk is not empty
             new_chunk = new_chunk.strip() if new_chunk else ""
@@ -184,7 +182,7 @@ class ChunkService:
                     logger.error(error_msg)
                     raise ParamValueError(error_msg)
                 
-                embed_model = await self.model_service.get_model_name_by_id(embed_model_id)
+                embed_model = await self.model_service.get_display_name_by_id(embed_model_id)
 
                 # Step 1: Get original chunk content
                 content = await chunk_repo.get_content(chunk_id)

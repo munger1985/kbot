@@ -280,13 +280,13 @@ class AgentService:
 
     async def _get_model_params(self, agent: AgentEntity) -> dict[str, Any]:
         """Resolves model names from IDs and organizes parameters."""
-        llm_model = await self.model_service.get_model_name_by_id(agent.llm_id) if agent.llm_id else None
+        llm_model = await self.model_service.get_display_name_by_id(agent.llm_id) if agent.llm_id else None
         if not llm_model:
             logger.error(f"No valid LLM model configured for agent {agent.id}")
             raise NotFoundError("Agent has no valid LLM model configured.")
         
-        emb_model = await self.model_service.get_model_name_by_id(agent.embedding_model_id) if agent.embedding_model_id else None
-        rerank_model = await self.model_service.get_model_name_by_id(agent.reranker_model_id) if agent.reranker_model_id else None
+        emb_model = await self.model_service.get_display_name_by_id(agent.embedding_model_id) if agent.embedding_model_id else None
+        rerank_model = await self.model_service.get_display_name_by_id(agent.reranker_model_id) if agent.reranker_model_id else None
 
         params = {
             "llm_model_name": llm_model,

@@ -5,10 +5,13 @@ from core.exceptions import DatabaseException, DataNotFoundException
 from core.dictionary import Status
 from dao.entities import AIModelEntity
 from .base_repo import BaseRepository
+from core.config.settings import get_app_config
 
 
 class AIModelRepository(BaseRepository[AIModelEntity]):
     """Repository for KBOT_MD_KB_MODELS table operations."""
+    def __init__(self, session):
+        self.app_id = get_app_config().app_id
     
     async def toggle_model(self, model_id: int, status: Status):
         """
@@ -138,7 +141,12 @@ class AIModelRepository(BaseRepository[AIModelEntity]):
         :return: AIModelEntity
         """
         try:
-            stmt = select(AIModelEntity).where(AIModelEntity.model_name == model_name)
+            stmt = select(AIModelEntity).where(
+                and_(
+                    AIModelEntity.display_name == model_name,
+                    AIModelEntity.app_id == self.app_id
+                )
+            )
             result = await self.session.execute(stmt)
             model = result.scalar_one_or_none()
             

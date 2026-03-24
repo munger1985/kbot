@@ -11,7 +11,9 @@ load_dotenv(env_path)
 # Add both project root and backend directory to Python path
 project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(project_root))
-from utils.clients.model_client import CallModel
+from utils.clients.model_client import AIModelClient
+
+model_client = AIModelClient()
 
 def create_basic_shapes_image() -> Image.Image: # 类型注解可以更精确为 Image.Image
     """
@@ -70,7 +72,7 @@ async def test_call_embedding_model():
     kwargs['model_id'] = embed_model_id
     kwargs['texts'] = embed_input_texts
     kwargs['is_query'] = False
-    emb = await CallModel().call_embedding_model(**kwargs)
+    emb = await model_client.call_embedding_model(**kwargs)
 
     print(f"测试开始，使用模型: {embed_model_id}")
     print(f"输入文本: {embed_input_texts}")
@@ -95,12 +97,12 @@ async def test_call_llm_model():
     try:
         # 调用方法1：基本调用（流式）
         print("\n测试1：基本流式调用")
-        async for chunk in CallModel().call_llm_model(model_id, test_prompt):
+        async for chunk in model_client.call_llm_model(model_id, test_prompt):
             print(chunk, end="", flush=True)  # 实时打印响应
 
         # 调用方法2：带额外参数
         # print("\n\n测试2：带额外参数调用")
-        # async for chunk in CallModel().call_llm_model(
+        # async for chunk in model_client.call_llm_model(
         #     model_id,
         #     test_prompt,
         #     temperature=0.7,
@@ -111,7 +113,7 @@ async def test_call_llm_model():
 
         # 调用方法3：非流式模式（需要修改call_llm_model方法支持）
         # print("\n\n测试3：非流式调用")
-        # async for chunk in CallModel().call_llm_model(
+        # async for chunk in model_client.call_llm_model(
         #     model_id,
         #     test_prompt,
         #     stream=False,
@@ -145,7 +147,7 @@ async def test_call_reranker_model():
 
 
     # 调用接口 (完全不变)
-    response = await CallModel().call_reranker_model(
+    response = await model_client.call_reranker_model(
         rerank_model_id,
         question,
         inputs_list,
@@ -165,7 +167,7 @@ async def test_call_vlm_model():
 
     print(f"测试开始，使用模型: {model_id}")
     print("=" * 50)
-    response = await CallModel().call_vlm_model(model_id, image, prompt="描述该图片")
+    response = await model_client.call_vlm_model(model_id, image, prompt="描述该图片")
     print(f"模型响应: {response}")
 
 
@@ -190,7 +192,7 @@ async def test_call_similarity_model():
     print("=" * 50)
 
     try:
-        similarity = await CallModel().compute_similarity(embed_model_id, text1, text2, method)
+        similarity = await model_client.compute_similarity(embed_model_id, text1, text2, method)
         print(f"相似度: {similarity}")
     except Exception as e:
         print(f"测试失败: {str(e)}")
