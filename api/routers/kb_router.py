@@ -136,7 +136,7 @@ async def handle_edit_file_chunk(
     3. `enable`: Activates the chunk for retrieval.
     4. `disable`: Deactivates the chunk (hides it from search results).
 
-    > **Warning:** Ensure the `embed_id` belongs to the specified `kb_id`.
+    > **Warning:** Ensure the `chunk_id` belongs to the specified `kb_id`.
     """
     if form.action == "update":
         if form.new_chunk is None or form.new_chunk.strip() == "":
@@ -149,20 +149,20 @@ async def handle_edit_file_chunk(
         return await controller.edit_kb_file_chunk(
             kb_id=form.kb_id,
             file_id=form.file_id,
-            embed_id=form.embed_id,
+            chunk_id=form.chunk_id,
             new_chunk=form.new_chunk
         )
     elif form.action == "delete":
         return await controller.delete_kb_file_chunk(
             kb_id=form.kb_id,
             file_id=form.file_id,
-            embed_id=form.embed_id
+            chunk_id=form.chunk_id
         )
         
     elif form.action in ["enable", "disable"]:
         return await controller.toggle_kb_file_chunk_status(
             kb_id=form.kb_id,
-            chunk_id=form.embed_id,
+            chunk_id=form.chunk_id,
             is_active=True if form.action == "enable" else False
         )
     else:
@@ -213,7 +213,7 @@ async def handle_update_chunk_description(
     """
     return await controller.update_kb_file_chunk_description(
             kb_id=form.kb_id,
-            embed_id=form.embed_id,
+            chunk_id=form.chunk_id,
             description=form.description
         )
 

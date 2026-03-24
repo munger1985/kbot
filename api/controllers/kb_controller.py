@@ -114,31 +114,31 @@ class KBController:
             self,
             kb_id: int,
             file_id: str,
-            embed_id: str,
+            chunk_id: str,
             new_chunk: str,
         ) -> SuccessResponse:
         """Edit chunk content of knowledge base file and update chunk embedding vector"""
         await self.chunk_service.edit_file_chunk(
             kb_id=kb_id,
             file_id=file_id,
-            chunk_id=embed_id,
+            chunk_id=chunk_id,
             new_chunk=new_chunk
         )
-        return SuccessResponse(message=f"Successfully edited chunk {embed_id} of file {file_id}")
+        return SuccessResponse(message=f"Successfully edited chunk {chunk_id} of file {file_id}")
         
     async def delete_kb_file_chunk(
             self,
             kb_id: int,
             file_id: str,
-            embed_id: str,
+            chunk_id: str,
         ) -> SuccessResponse:
         """Delete chunk content of knowledge base file and update chunk embedding vector"""
         await self.chunk_service.delete_file_chunk(
                 kb_id=kb_id,
                 file_id=file_id,
-                chunk_id=embed_id
+                chunk_id=chunk_id
             )
-        return SuccessResponse(message=f"Successfully deleted chunk {embed_id} of file {file_id}")
+        return SuccessResponse(message=f"Successfully deleted chunk {chunk_id} of file {file_id}")
         
     async def toggle_kb_file_chunk_status(
             self,
@@ -164,7 +164,7 @@ class KBController:
     async def update_kb_file_chunk_description(
             self,
             kb_id: int,
-            embed_id: str,
+            chunk_id: str,
             description: str
         ) -> SuccessResponse:
         """Update chunk description of knowledge base file"""
@@ -172,10 +172,10 @@ class KBController:
         description = sanitize_text_for_oracle_json(description, max_length=4000)
         await self.chunk_service.update_chunk_description(
                 kb_id=kb_id,
-                chunk_id=embed_id,
+                chunk_id=chunk_id,
                 description=description
             )
-        return SuccessResponse(message=f"Successfully updated description of chunk {embed_id}")
+        return SuccessResponse(message=f"Successfully updated description of chunk {chunk_id}")
         
     async def update_file_tags(
             self,

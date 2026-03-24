@@ -73,7 +73,7 @@ class KBFileChunkEditForm(BaseModel):
     """
     kb_id: int = Field(..., description="Knowledge base ID (unique identifier of the target knowledge base)")
     file_id: str = Field(..., description="File ID (unique identifier of the target file)")
-    embed_id: str = Field(..., description="Chunk ID (unique identifier of the target embedding chunk)")
+    chunk_id: str = Field(..., description="Chunk ID (unique identifier of the target embedding chunk)")
     new_chunk: str|None = Field(None, description="New chunk content (for update operations, optional)")
     action: str = Field(..., description="Action type (e.g., 'update', 'delete', 'archive')")
     
@@ -83,7 +83,7 @@ class KBFileChunkUpdateDescriptionForm(BaseModel):
     This model defines the data structure for updating the description of a file chunk in a knowledge base.
     """
     kb_id: int = Field(..., description="Knowledge base ID (unique identifier of the target knowledge base)")
-    embed_id: str = Field(..., description="Chunk ID (unique identifier of the target embedding chunk)")
+    chunk_id: str = Field(..., description="Chunk ID (unique identifier of the target embedding chunk)")
     description: str = Field(..., description="New description for the chunk")
 
 class KBFileChunkUpdateTagsForm(BaseModel):

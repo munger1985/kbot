@@ -1,7 +1,7 @@
-from sqlalchemy import SmallInteger, DateTime, func, CLOB, text, Numeric, CHAR, String
+from sqlalchemy import SmallInteger, DateTime, func, CLOB, text, Numeric, CHAR, String, JSON
 from sqlalchemy.orm import Mapped, mapped_column
 from datetime import datetime
-from .base import BaseEntity, VectorField, OracleJSON
+from .base import BaseEntity, VectorField
 
 class ChatMemoryEntity(BaseEntity):
     """Stores Chat Q&A interaction data between users and AI agents.
@@ -16,7 +16,7 @@ class ChatMemoryEntity(BaseEntity):
     question: Mapped[str] = mapped_column(CLOB, comment="User question content (CLOB)")
     answer: Mapped[str | None] = mapped_column(CLOB, comment="AI answer content (CLOB)")
     question_vector: Mapped[list[float]]= mapped_column(VectorField(), comment="Question embedding vector")
-    references: Mapped[list[dict]] = mapped_column(OracleJSON, comment="List of retrieved knowledge chunks")
+    references: Mapped[list[dict]] = mapped_column(JSON, comment="List of retrieved knowledge chunks")
     feedback: Mapped[int] = mapped_column(SmallInteger, default=0, comment="User feedback: 0 - Unrated, 1 - Positive, -1 - Negative")
     request_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), comment="Request initiation timestamp (UTC)")
     response_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), comment="Response completion timestamp (UTC)")

@@ -6,7 +6,9 @@ from loguru import logger
 from contextlib import asynccontextmanager
 from core.config.settings import get_settings
 from core.exceptions import DataNotFoundException
-
+import json
+from sqlalchemy import event
+from decimal import Decimal
 
 # Load database configuration from settings
 db_config = get_settings()
@@ -38,6 +40,40 @@ try:
         future=True
     )
     logger.info("Async database engine created successfully")
+    # 【核心补丁】手动为异步 Dialect 注入缺失的序列化器
+    def extended_json_dumps(obj, **kwargs):
+        def default_encoder(item):
+            if isinstance(item, Decimal):
+                return float(item)  # 或者 str(item)，看你对精度的要求
+            raise TypeError(f"Object of type {item.__class__.__name__} is not JSON serializable")
+        
+        # 确保 ensure_ascii=False 以支持中文
+        kwargs.setdefault('ensure_ascii', False)
+        return json.dumps(obj, default=default_encoder, **kwargs)
+
+    def flexible_json_loads(value):
+        if value is None:
+            return None
+        # 如果已经是字典或列表（驱动已经帮我们转好了），直接返回
+        if isinstance(value, (dict, list)):
+            return value
+        # 如果是字符串或字节流，执行标准的 json.loads
+        try:
+            return json.loads(value)
+        except (TypeError, json.JSONDecodeError):
+            return value
+    
+    # 应用补丁
+    @event.listens_for(async_engine.sync_engine, "connect")
+    def register_json_processors(dbapi_connection, connection_record):
+        dialect = async_engine.dialect
+        # 强制覆盖序列化器，使其支持 Decimal
+        dialect._json_serializer = extended_json_dumps  # type: ignore
+        dialect._json_deserializer = flexible_json_loads  # type: ignore
+        
+        # 针对 oracledb 驱动的特殊设置：确保它能处理 python dict
+        # 这样可以避免驱动尝试将 dict 识别为其他类型
+
 except Exception as e:
     logger.error(f"Failed to create async database engine: {str(e)}")
     raise RuntimeError(f"Failed to create async database engine: {str(e)}") from e

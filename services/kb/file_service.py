@@ -173,7 +173,6 @@ class FileService:
     async def _save_file_metadata(self, 
                                  fileparams: list[dict[str, Any]], 
                                  app_id: int,
-                                 domain_id: int,
                                  kb_id: int,
                                  batch_name: str,
                                  skip_approval: bool,
@@ -185,7 +184,6 @@ class FileService:
         Args:
             fileparams: list of file metadata dicts from save_file
             app_id: Application ID
-            domain_id: Business domain ID
             kb_id: Target knowledge base ID
             batch_name: Batch name for this upload
             skip_approval: Whether to skip approval procedure(True/False)
@@ -203,17 +201,6 @@ class FileService:
                 error_msg = f"Knowledge base {kb_id} does not exist"
                 logger.error(error_msg)
                 raise NotFoundError(message=error_msg)
-
-            # Don't create batch here - let file_repo.create handle it
-            # Just create a BatchEntity instance without persisting it
-            if not batch_id:
-                batch_entity = BatchEntity(
-                    app_id=app_id,
-                    batch_name=batch_name,
-                    kb_id=kb_id,
-                    created_by=created_by,
-                    updated_by=created_by
-                )
 
             # Get default VLM prompt configuration
             prompt_repo = PromptRepository(session)
@@ -251,6 +238,22 @@ class FileService:
                 "generate_picture_images": True
             }
 
+            # create batch entity if not exist
+            if not batch_id:
+                batch_entity = BatchEntity(
+                    app_id=app_id,
+                    batch_name=batch_name,
+                    kb_id=kb_id,
+                    created_by=created_by,
+                    updated_by=created_by
+                )
+                batch_repo = BatchRepository(session)
+                try:
+                    batch_id = await batch_repo.create(batch_entity)
+                except Exception as e:
+                    error_msg = f"Failed to create batch: {str(e)}"
+                    handle_exception(e, error_msg)
+
             # Create file entities for batch persistence
             file_entities = []
             for fileparam in fileparams:
@@ -259,26 +262,26 @@ class FileService:
                     app_id=app_id,
                     kb_id=kb_id,
                     batch_id=batch_id,
-                    file_path=fileparam["file_path"],
-                    file_name=fileparam["file_name"],
-                    file_ext=fileparam["file_ext"],
+                    file_path=fileparam.get("file_path"),
+                    file_name=fileparam.get("file_name"),
+                    file_ext=fileparam.get("file_ext"),
                     status=FileStatus.UPLOADED.value if not skip_approval else FileStatus.APPROVED.value,
-                    file_version=fileparam["file_version"],
-                    is_overwrite=fileparam["is_overwrite"],
+                    file_version=fileparam.get("file_version"),
+                    is_overwrite=fileparam.get("is_overwrite"),
                     security_level=kb_entity.security_level or 1,
                     chunk_parser=chunk_parser_config,
                     process_priority=kb_entity.process_priority,
-                    file_size=fileparam["file_size"],
+                    file_size=fileparam.get("file_size"),
                     biz_metadata=biz_metadata,
                     created_by=created_by,
                     updated_by=created_by
                 )
                 file_entities.append(file_entity)
-
             # Persist to database
             file_repo = FileRepository(session)
+            
             try:
-                await file_repo.create(batch_entity, file_entities)
+                await file_repo.create(file_entities)
                 logger.info(f"Successfully persisted {len(file_entities)} files to database (KB: {kb_id})")
             except Exception as e:
                 error_msg = f"Failed to persist file metadata: {str(e)}"
@@ -325,7 +328,6 @@ class FileService:
         await self._save_file_metadata(
             fileparams=fileparams,
             app_id=app_id,
-            domain_id=domain_id,
             kb_id=kb_id,
             batch_name=batch_name,
             skip_approval=skip_approval,
@@ -622,7 +624,6 @@ class FileService:
             await self._save_file_metadata(
                 fileparams=fileparams,
                 app_id=app_id,
-                domain_id=domain_id,
                 kb_id=kb_id,
                 batch_name=batch_name,
                 skip_approval=True,

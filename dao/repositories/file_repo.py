@@ -165,7 +165,7 @@ class FileRepository(BaseRepository[FileEntity]):
         except Exception as e:
             raise DatabaseException("Failed to delete files", original_error=e)
 
-    async def create(self, batch: BatchEntity, files: List[FileEntity]):
+    async def create(self, files: List[FileEntity]):
         """
         Create new knowledge base file records.
         :param batch: Batch entity
@@ -177,56 +177,8 @@ class FileRepository(BaseRepository[FileEntity]):
             return
 
         try:
-            batch_repo = BatchRepository(self.session)
-            # Try to find existing batch by name, kb_id and app_id
-            try:
-                stmt = select(BatchEntity).where(
-                    and_(
-                        BatchEntity.batch_name == batch.batch_name,
-                        BatchEntity.kb_id == batch.kb_id,
-                        BatchEntity.app_id == batch.app_id
-                    )
-                )
-                result = await self.session.execute(stmt)
-                batch_entity = result.scalars().first()
-            except Exception:
-                batch_entity = None
-
-            if not batch_entity:
-                # Create new batch if it doesn't exist
-                self.session.add(batch)
-                await self.session.flush()  # Get generated batch_id
-                
-                for file in files:
-                    file.batch_id = batch.batch_id
-                
-                self.session.add_all(files)
-                logger.info(f"Created new batch {batch.batch_name} with {len(files)} files")
-            else:
-                # Use existing batch
-                for file in files:
-                    file.batch_id = batch_entity.batch_id
-
-                    # Check if file already exists
-                    existing_stmt = select(FileEntity).where(
-                        and_(
-                            FileEntity.app_id == file.app_id,
-                            FileEntity.kb_id == file.kb_id,
-                            FileEntity.batch_id == file.batch_id,
-                            FileEntity.file_path == file.file_path
-                        )
-                    )
-                    existing_result = await self.session.execute(existing_stmt)
-                    existing_file = existing_result.scalars().first()
-                    
-                    if existing_file and file.is_overwrite == YesNoEnum.YES.value:
-                        # Overwrite existing file
-                        await self.delete(None, None, [existing_file.file_id])
-                        logger.info(f"Overwriting existing file {existing_file.file_id}")
-
-                    self.session.add(file)
-                
-                logger.info(f"Added {len(files)} files to existing batch {batch_entity.batch_id}")
+            self.session.add_all(files)
+            logger.info(f"Created {len(files)} file records in the database.")
             
         except Exception as e:
             raise DatabaseException("Failed to create file records", original_error=e)
