@@ -32,45 +32,23 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
             # Convert embeddings to Oracle-compatible format
             vec_handler = OracleVecHandler()
 
-            # DEBUG: Try single insert first to isolate the issue
-            if len(chunks) > 0:
-                logger.info(f"DEBUG: Attempting single insert for first chunk to isolate issue")
-                chunk = chunks[0]
+            # Convert all embeddings first
+            for chunk in chunks:
                 chunk.embedding = vec_handler.convert(chunk.embedding)  # type: ignore
-                logger.debug(f"Single insert: chunk_id={chunk.chunk_id}")
-                logger.debug(f"  chunk_metadata type={type(chunk.chunk_metadata)}, value={str(chunk.chunk_metadata)[:200]}")
-                logger.debug(f"  biz_metadata type={type(chunk.biz_metadata)}, value={str(chunk.biz_metadata)[:200]}")
-                logger.debug(f"  embedding type={type(chunk.embedding)}, len={len(chunk.embedding) if hasattr(chunk.embedding, '__len__') else 'N/A'}")
-                self.session.add(chunk)
-                await self.session.flush()
-                logger.info(f"DEBUG: Single insert succeeded!")
-                # Continue with remaining chunks
-                remaining_chunks = chunks[1:]
-            else:
-                remaining_chunks = []
 
-            # Batch processing (Oracle bulk insert best practice: 100 records per batch)
-            batch_size = 100
-            total_success = 1 if len(chunks) > 0 else 0
+            # 由于 Oracle JSON 类型在批量插入时可能出现参数绑定问题，
+            # 改用逐条插入的方式确保 JSON 字段正确处理
+            total_success = 0
+            for chunk in chunks:
+                try:
+                    self.session.add(chunk)
+                    await self.session.flush()  # 立即执行插入
+                    total_success += 1
+                except Exception as e:
+                    logger.error(f"Failed to insert chunk {chunk.chunk_id}: {str(e)}")
+                    raise
 
-            for i in range(0, len(remaining_chunks), batch_size):
-                batch_chunks = remaining_chunks[i:i + batch_size]
-
-                # Convert embeddings to Oracle array format
-                for chunk in batch_chunks:
-                    chunk.embedding = vec_handler.convert(chunk.embedding)  # type: ignore
-
-                # Add batch entities to session
-                self.session.add_all(batch_chunks)
-                await self.session.flush()  # Execute insert without commit for better performance
-
-                total_success += len(batch_chunks)
-                logger.info(
-                    f"Successfully batch inserted {len(batch_chunks)} text chunk records to Oracle, "
-                    f"progress: {total_success}/{len(chunks)}"
-                )
-
-            logger.info(f"Completed all batch insertions, total successful records: {total_success}")
+            logger.info(f"Completed all insertions, total successful records: {total_success}")
 
         except Exception as e:
             safe_log_error("Oracle batch insert text chunks failed", e, max_length=500)
