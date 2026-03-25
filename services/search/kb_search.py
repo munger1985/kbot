@@ -4,7 +4,6 @@ from loguru import logger
 from core.exceptions import *
 from core.database.oracle import get_session
 from dao.repositories import TxtChunkRepository
-from .fulltext_preprocessor import preprocess_for_fulltext
 from .result import TxtBaseSearchResult
 
 
@@ -61,29 +60,30 @@ class TxtBaseSearch:
         merged.sort(key=lambda x: x.score, reverse=True)
         return merged[:search_top_k]
     
-    async def search(self,
-                     kb_id: int,
-                     question: str,
-                     search_top_k: int,
-                     threshold: float,
-                     do_rerank: bool,
-                     weight: float,
-                     security: int, 
-                     llm_model: str | None = None,
-                     query_vec: list[float] | None = None,
-                     tags: list[str] = []
-                    ) -> dict[str, list[TxtBaseSearchResult]]:
+    async def search(
+        self,
+        kb_id: int,
+        question: str,
+        keywords: str,
+        search_top_k: int,
+        threshold: float,
+        do_rerank: bool,
+        weight: float,
+        security: int, 
+        query_vec: list[float] | None = None,
+        tags: list[str] = []
+    ) -> dict[str, list[TxtBaseSearchResult]]:
         """Executes hybrid tiered search.
         
         Args:
             kb_id: Knowledge base identifier.
             question: Natural language query.
+            keywords: Keywords for searching.
             search_top_k: Target number of results per group.
             threshold: Similarity threshold for vector search.
             do_rerank: Whether to categorize results for subsequent reranking.
             weight: Weighting factor for score calculation.
             security: Security level filter.
-            llm_model: Optional LLM for query preprocessing.
             query_vec: Pre-computed query embedding.
             tags: Metadata tags for filtering.
 
@@ -92,21 +92,16 @@ class TxtBaseSearch:
         """
         start_time = time.time()
         logger.debug(f"Starting hybrid search for query: {question}")
-
-        # Preprocess query for better keyword matching (synonyms/lemmatization)
-        keywords = await preprocess_for_fulltext(query=question, model_name=llm_model)
-        logger.debug(f"Executing full-text search with keywords: {keywords}")
-
         # Execute concurrent retrieval tasks
         if not query_vec:
             logger.warning("Query vector is missing; falling back to full-text search only.")
-            fulltext_raw = await self.serch_by_full_text(kb_id, security, keywords, search_top_k * 3, do_rerank, weight, llm_model, tags)
+            fulltext_raw = await self.serch_by_full_text(kb_id, security, keywords, search_top_k * 3, do_rerank, weight, tags)
             vector_raw = {"rerank_result": [], "norerank_result": []}
         else:
             # Over-fetch by factor of 3 to ensure high-quality fusion pool
             vector_raw, fulltext_raw = await asyncio.gather(
                 self.search_by_vector(kb_id, security, keywords, query_vec, threshold, search_top_k * 3, do_rerank, weight, tags),
-                self.serch_by_full_text(kb_id, security, question, search_top_k * 3, do_rerank, weight, llm_model, tags)
+                self.serch_by_full_text(kb_id, security, question, search_top_k * 3, do_rerank, weight, tags)
             )
 
         # Merge results into designated rerank/non-rerank buckets
@@ -154,7 +149,7 @@ class TxtBaseSearch:
         
     async def serch_by_full_text(self, kb_id: int, security: int, keywords: str,
                                 search_top_k: int, do_rerank: bool, weight: float,
-                                llm_model: str | None = None, tags: list[str] = []) -> dict[str, list[TxtBaseSearchResult]]:
+                                tags: list[str] = []) -> dict[str, list[TxtBaseSearchResult]]:
         """Performs keyword-based full-text search."""
         async with self.oracle_session as session:
             repo = TxtChunkRepository(session)

@@ -1,9 +1,7 @@
 from .agent_conf_repo import AgentConfRepository
 from .agent_repo import AgentRepository
 from .ai_model_repo import AIModelRepository
-from .chat_history_repo import ChatHistoryRepository
-from .chat_memory_repo import ChatMemoryRepository
-from .chat_session_repo import ChatSessionRepository
+from .memory_repo import MemoryEntryRepository
 from .domain_repo import DomainRepository
 from .file_repo import FileRepository
 from .kb_batch_repo import BatchRepository
@@ -21,9 +19,7 @@ __all__ = [
     "AgentConfRepository",
     "AgentRepository",
     "AIModelRepository",
-    "ChatHistoryRepository",
-    "ChatMemoryRepository",
-    "ChatSessionRepository",
+    "MemoryEntryRepository",
     "DomainRepository",
     "FileRepository",
     "BatchRepository",

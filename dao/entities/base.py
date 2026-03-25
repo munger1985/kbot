@@ -4,6 +4,8 @@ import array as array_module
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy import TypeDecorator, Text, Dialect
 from sqlalchemy.dialects.oracle import VECTOR as ORA_VECTOR  # Oracle 23ai+
+from core.config.settings import get_embed_config
+
 
 BaseEntity = declarative_base()
 
@@ -15,9 +17,9 @@ class UniversalVector(TypeDecorator):
     impl = Text # 默认降级实现
     cache_ok = True
 
-    def __init__(self, dim: int | None = None):
+    def __init__(self):
         super().__init__()
-        self.dim = dim # dim 可以为 None，表示不限制维度的向量
+        self.dims = get_embed_config().dimensions
 
     def load_dialect_impl(self, dialect: Dialect):
         # if dialect.name == 'postgresql':
@@ -28,7 +30,7 @@ class UniversalVector(TypeDecorator):
         if dialect.name == 'oracle':
             if ORA_VECTOR is not None:
                 # Oracle 23ai+ 也支持不指定维度的向量定义
-                return dialect.type_descriptor(ORA_VECTOR(self.dim) if self.dim else ORA_VECTOR())
+                return dialect.type_descriptor(ORA_VECTOR(self.dims) if self.dims else ORA_VECTOR())
             return dialect.type_descriptor(Text())
         return dialect.type_descriptor(Text())
 
@@ -44,8 +46,8 @@ class UniversalVector(TypeDecorator):
         if value is None: return None
         return list(value) if not isinstance(value, list) else value
 
-def VectorField(dim: int | None = None):
+def VectorField():
     """
     便捷工厂函数，定义指定维度的向量字段
     """
-    return UniversalVector(dim=dim)
+    return UniversalVector()

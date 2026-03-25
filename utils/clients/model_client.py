@@ -1,4 +1,6 @@
 import aiohttp
+import json
+import re
 from PIL import Image
 from decimal import Decimal
 from loguru import logger
@@ -332,3 +334,70 @@ class AIModelClient():
                 msg = f"VLM invocation exception occurred: {str(e)}"
                 logger.exception(msg)
                 raise InternalServerError(msg)
+            
+    async def call_llm_json(self, model_name: str, prompt: str, **kwargs) -> dict:
+        """
+        调用 LLM 并强制获取结构化 JSON 结果。
+        内部自动处理非流式请求与 JSON 提取。
+        """
+        # 强制设为非流式，以便一次性获取完整响应（如果后端支持）
+        # 或者为了兼容性，我们在此聚合 call_llm_model 的输出
+        kwargs["stream"] = False 
+        
+        full_text = ""
+        try:
+            # 聚合 generator 产出的内容
+            async for chunk in self.call_llm_model(model_name=model_name, prompt=prompt, **kwargs):
+                line = chunk.strip()
+                if not line or line == "data: [DONE]":
+                    continue
+                
+                # 处理可能存在的 data: 前缀（标准 SSE）
+                if line.startswith("data: "):
+                    line = line[6:]
+                
+                try:
+                    data = json.loads(line)
+                    # 适配 OpenAI 格式的响应体
+                    if "choices" in data and len(data["choices"]) > 0:
+                        # 非流式用 message.content, 流式用 delta.content
+                        choice = data["choices"][0]
+                        if "message" in choice:
+                            full_text += choice["message"].get("content", "")
+                        elif "delta" in choice:
+                            full_text += choice["delta"].get("content", "")
+                except json.JSONDecodeError:
+                    # 如果不是标准的 JSON chunk，则将其视为纯文本内容
+                    full_text += line
+
+            if not full_text:
+                raise ValueError("LLM returned an empty response")
+
+            # 鲁棒性 JSON 提取逻辑
+            return self._extract_json_from_text(full_text)
+
+        except Exception as e:
+            logger.error(f"Failed to get JSON response from LLM: {e}")
+            raise
+
+    def _extract_json_from_text(self, text: str) -> dict:
+        """
+        从 LLM 的回复中提取 JSON。处理可能存在的 Markdown 标签。
+        """
+        text = text.strip()
+        # 1. 尝试直接解析
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            pass
+
+        # 2. 正则匹配 ```json { ... } ``` 或直接匹配 { ... }
+        # 匹配最外层的花括号内容
+        match = re.search(r'\{.*\}', text, re.DOTALL)
+        if match:
+            try:
+                return json.loads(match.group(0))
+            except json.JSONDecodeError as e:
+                logger.error(f"Regex found potential JSON but failed to parse: {e}")
+        
+        raise ValueError(f"Could not parse valid JSON from LLM response: {text[:100]}...")

@@ -1,8 +1,6 @@
 from .agent import AgentEntity
 from .agent_conf import AgentConfEntity
-from .chat_history import ChatHistoryEntity
-from .chat_session import ChatSessionEntity
-from .chat_memory import ChatMemoryEntity
+from .memory import ConversationContextEntity, UserProfileEntity, MemoryEntryEntity
 from .domain import DomainEntity
 from .kb_batch import BatchEntity
 from .file import FileEntity
@@ -21,9 +19,9 @@ from .txt_chunk import TxtChunkEntity
 __all__ = [
     "AgentEntity",
     "AgentConfEntity",
-    "ChatHistoryEntity",
-    "ChatSessionEntity",
-    "ChatMemoryEntity",
+    "UserProfileEntity",
+    "ConversationContextEntity",
+    "MemoryEntryEntity",
     "DomainEntity",
     "BatchEntity",
     "FileEntity",

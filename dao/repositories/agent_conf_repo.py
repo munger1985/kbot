@@ -1,4 +1,3 @@
-from typing import Sequence
 from sqlalchemy import select, update, delete, and_
 from core.exceptions import DatabaseException, DataNotFoundException
 from dao.entities import AgentConfEntity
@@ -23,7 +22,7 @@ class AgentConfRepository(BaseRepository[AgentConfEntity]):
         except Exception as e:
             raise DatabaseException("Failed to get agent configuration", original_error=e)
 
-    async def get_by_agent_id(self, agent_id: int) -> Sequence[AgentConfEntity]:
+    async def get_by_agent_id(self, agent_id: int) -> list[AgentConfEntity]:
         """Get all agent configurations by agent ID"""
         try:
             result = await self.session.execute(
@@ -32,7 +31,7 @@ class AgentConfRepository(BaseRepository[AgentConfEntity]):
             agent_confs = result.scalars().all()
             if not agent_confs or len(agent_confs) == 0:
                 raise DataNotFoundException(f"No agent configurations found for agent {agent_id}")
-            return agent_confs
+            return list(agent_confs)
         except DataNotFoundException as e:
             raise e
         except Exception as e:
@@ -77,7 +76,7 @@ class AgentConfRepository(BaseRepository[AgentConfEntity]):
         except Exception as e:
             raise DatabaseException("Failed to delete agent configurations", original_error=e)
 
-    async def get_all(self) -> Sequence[AgentConfEntity]:
+    async def get_all(self) -> list[AgentConfEntity]:
         """Get all agent configurations"""
         try:
             result = await self.session.execute(
@@ -86,7 +85,7 @@ class AgentConfRepository(BaseRepository[AgentConfEntity]):
             agent_confs = result.scalars().all()
             if not agent_confs or len(agent_confs) == 0:
                 raise DataNotFoundException("No agent configurations found")
-            return agent_confs
+            return list(agent_confs)
         except DataNotFoundException as e:
             raise e
         except Exception as e:

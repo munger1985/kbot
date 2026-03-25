@@ -40,6 +40,7 @@ service_name = "embedding-service"
 service_version = "1.0.0"
 service_host = "0.0.0.0"
 service_port = 18091
+dimensions = 1536
 max_tokens = 1024
 timeout = 300
 max_retries = 3

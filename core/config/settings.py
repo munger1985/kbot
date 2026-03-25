@@ -81,6 +81,7 @@ class EmbedConfig(BaseModel):
     service_version: str = Field(default="1.0.0", description="Embedding service version")
     service_host: str = Field(default="0.0.0.0", description="Embedding service host address")
     service_port: int = Field(default=18091, ge=1, le=65535, description="Embedding service port (1-65535)")
+    dimensions: int | None = Field(default=None, ge=512, le=32768, description="Embedding dimensions (512-32768)")
     max_tokens: int = Field(default=1024, ge=512, le=32768, description="Maximum tokens per embedding request (512-32768)")
     timeout: int = Field(default=300, ge=10, le=65535, description="Request timeout in seconds (10-65535)")
     health_check_timeout: int = Field(default=10, ge=5, le=60, description="Health check timeout in seconds (5-60)")
