@@ -155,35 +155,35 @@ async def health_check() -> dict[str, Any]:
     }
 
 
-@app.post("/load", response_model=dict[str, Any], tags=["Management"], summary="Dynamically manage model status")
-async def handle_toggle_model(request: ToggleModelRequest) -> dict[str, Any]:
-    """Load or unload a specific embedding model according to the instruction.
+# @app.post("/load", response_model=dict[str, Any], tags=["Management"], summary="Dynamically manage model status")
+# async def handle_toggle_model(request: ToggleModelRequest) -> dict[str, Any]:
+#     """Load or unload a specific embedding model according to the instruction.
 
-    Args:
-        request: Request object containing model name and operation type (load/unload).
+#     Args:
+#         request: Request object containing model name and operation type (load/unload).
 
-    Returns:
-        Operation result status.
+#     Returns:
+#         Operation result status.
 
-    Raises:
-        HTTPException: 500 error when operation fails or model does not exist.
-    """
-    try:
-        if request.operation == "load":
-            logger.info(f"Executing model load task: {request.model_name}")
-            success = await embedding_service.load_model(request.model_name)
-        else:
-            logger.info(f"Executing model unload task: {request.model_name}")
-            success = await embedding_service.unload_model(request.model_name)
+#     Raises:
+#         HTTPException: 500 error when operation fails or model does not exist.
+#     """
+#     try:
+#         if request.operation == "load":
+#             logger.info(f"Executing model load task: {request.model_name}")
+#             success = await embedding_service.load_model(request.model_name)
+#         else:
+#             logger.info(f"Executing model unload task: {request.model_name}")
+#             success = await embedding_service.unload_model(request.model_name)
 
-        if not success:
-            raise ValueError(f"Failed to {request.operation} model {request.model_name}")
+#         if not success:
+#             raise ValueError(f"Failed to {request.operation} model {request.model_name}")
 
-        return {"status": "success", "model_name": request.model_name, "operation": request.operation}
+#         return {"status": "success", "model_name": request.model_name, "operation": request.operation}
 
-    except Exception as e:
-        logger.error(f"Model management operation exception: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+#     except Exception as e:
+#         logger.error(f"Model management operation exception: {e}")
+#         raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/v1/embeddings", response_model=EmbeddingResponse, tags=["AI Service"], summary="Text vectorization endpoint")
@@ -235,6 +235,7 @@ async def handle_compute_similarity(
     """
     try:
         logger.info(f"Processing similarity request | Model: {request.model_name} | Method: {request.method}")
+        model = await embed_service.get_embedding_model(request.model_name)
         score = await embed_service.compute_similarity(
             model_name=request.model_name,
             text1=request.text1,

@@ -12,7 +12,6 @@ from services.search.result import TxtBaseSearchResult
 from services.search.rerank import TxtBaseRerank
 from utils.clients import AIModelClient
 from services.memory import MemoryService, ContextManager
-from .chat_service import ChatService
 from services.ai_model import AIModelService
 from services.search.kb_search import TxtBaseSearch
 from services.search.result import TxtBaseSearchResult
@@ -22,7 +21,6 @@ class ChatOrchestrator:
     def __init__(self):
         self.tb_search = TxtBaseSearch()
         self.rerank_client = TxtBaseRerank()
-        self.chat_service = ChatService()
         self.memory_service = MemoryService()
         self.context_manager = ContextManager()
         self.model_client = AIModelClient()

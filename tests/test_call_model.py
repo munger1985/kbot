@@ -61,20 +61,17 @@ async def test_call_embedding_model():
     测试调用embedding模型的方法
     """
     # 测试参数
-    # embed_model_id = 21 #"KBOT1/BGE-M3"
-    # embed_model_id = 23 #"KBOT1/E5-LARGE-V2"
-    # embed_model_id = 33 #"KBOT1/OCI-Embedding"
-    embed_model_id = 41	# Qwen3-Embedding
+    embed_model_name = "KBOT_Qwen3-Embedding-4B"
     embed_input_texts = ["苹果", "香蕉"]
     topk = 4
     kwargs = {}
     kwargs['batch_size'] = 1
-    kwargs['model_id'] = embed_model_id
+    kwargs['model_name'] = embed_model_name
     kwargs['texts'] = embed_input_texts
     kwargs['is_query'] = False
     emb = await model_client.call_embedding_model(**kwargs)
 
-    print(f"测试开始，使用模型: {embed_model_id}")
+    print(f"测试开始，使用模型: {embed_model_name}")
     print(f"输入文本: {embed_input_texts}")
     print("=" * 50)
     print("\n向量列表: ", emb)
@@ -85,25 +82,23 @@ async def test_call_llm_model():
     测试调用LLM模型的方法
     """
     # 测试参数
-    # model_id = 39 #'KBOT1/OCI-cohere'
-    # model_id = 40 #"KBOT1/OCI-GROK4-II"
-    model_id = 66 #"KBOT1/DeepSeek V3"
+    model_name = "KBOT_DeepSeek-Chat"
     test_prompt = "hello"
 
-    print(f"测试开始，使用模型: {model_id}")
+    print(f"测试开始，使用模型: {model_name}")
     print(f"输入提示: {test_prompt}")
     print("=" * 50)
 
     try:
         # 调用方法1：基本调用（流式）
         print("\n测试1：基本流式调用")
-        async for chunk in model_client.call_llm_model(model_id, test_prompt):
+        async for chunk in model_client.call_llm_model(model_name, test_prompt):
             print(chunk, end="", flush=True)  # 实时打印响应
 
         # 调用方法2：带额外参数
         # print("\n\n测试2：带额外参数调用")
         # async for chunk in model_client.call_llm_model(
-        #     model_id,
+        #     model_name,
         #     test_prompt,
         #     temperature=0.7,
         #     max_tokens=100,
@@ -114,7 +109,7 @@ async def test_call_llm_model():
         # 调用方法3：非流式模式（需要修改call_llm_model方法支持）
         # print("\n\n测试3：非流式调用")
         # async for chunk in model_client.call_llm_model(
-        #     model_id,
+        #     model_name,
         #     test_prompt,
         #     stream=False,
         #     max_tokens=10
@@ -131,8 +126,7 @@ async def test_call_reranker_model():
     """
     测试调用reranker模型的方法（已集成Qwen3格式优化）
     """
-    # rerank_model_id = 61  # Qwen3-RANKER
-    rerank_model_id = 24  # BGE-RANKER
+    rerank_model_name = "KBOT_Qwen3-Reranker-4B"
 
 
     question = "猫粮怎么选？要适合幼猫的。"
@@ -148,7 +142,7 @@ async def test_call_reranker_model():
 
     # 调用接口 (完全不变)
     response = await model_client.call_reranker_model(
-        rerank_model_id,
+        rerank_model_name,
         question,
         inputs_list,
         top_k=5
@@ -161,46 +155,14 @@ async def test_call_vlm_model():
     测试调用VLM模型的方法
     """
     # 测试参数
-    model_id = 68 #"KBOT1/Qwen-VL-MAX"
+    model_name = "KBOT_QwenVL"
     image = create_basic_shapes_image()
 
 
-    print(f"测试开始，使用模型: {model_id}")
+    print(f"测试开始，使用模型: {model_name}")
     print("=" * 50)
-    response = await model_client.call_vlm_model(model_id, image, prompt="描述该图片")
+    response = await model_client.call_vlm_model(model_name, image, prompt="描述该图片")
     print(f"模型响应: {response}")
-
-
-async def test_call_similarity_model():
-    """
-    测试调用相似度模型的方法
-    """
-    # 测试参数
-    # 测试参数
-    # embed_model_id = 21 #"KBOT1/BGE-M3"
-    # embed_model_id = 23 #"KBOT1/E5-LARGE-V2"
-    # embed_model_id = 33 #"KBOT1/OCI-Embedding"
-    embed_model_id = 41	# Qwen3-Embedding
-    text1 = "你好"
-    text2 = "你好吗"
-    method = "cosine"
-
-    print(f"测试开始，使用模型: {embed_model_id}")
-    print(f"输入文本1: {text1}")
-    print(f"输入文本2: {text2}")
-    print(f"相似度计算方法: {method}")
-    print("=" * 50)
-
-    try:
-        similarity = await model_client.compute_similarity(embed_model_id, text1, text2, method)
-        print(f"相似度: {similarity}")
-    except Exception as e:
-        print(f"测试失败: {str(e)}")
-        print("可能的原因：")
-        print("1. CUDA设备不可用或不兼容")
-        print("2. 模型加载失败")
-        print("3. 内存不足")
-        print("4. 模型服务未启动")
 
 
 # 运行测试

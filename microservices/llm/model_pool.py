@@ -21,14 +21,7 @@ class LLMModelPool(BaseModelPool[BaseLLM[Any]]):
     """
 
     def _get_model_category(self) -> int:
-        """Return the enum value for LLM model category.
-        
-        Required implementation from BaseModelPool to identify this pool's
-        model type for metadata management and configuration.
-        
-        Returns:
-            int: Numeric value of ModelCategory.LLM enum
-        """
+        """Return the enum value for LLM model category."""
         return ModelCategory.LLM.value
 
     async def _shutdown_model_instance(self, model: BaseLLM[Any]):
@@ -134,14 +127,14 @@ class LLMModelPool(BaseModelPool[BaseLLM[Any]]):
         """
         # Extract model parameters with fallback to empty dict
         params = data.get("model_params", {})
-        
+        model_tech_name = data.get("model_tech_name", name)
         # Extract common connection parameters
         api_key = data.get("api_key")
         api_endpoint = data.get("api_endpoint")
 
         # Common LLM parameters with global defaults fallback
         common_kwargs = {
-            "model_name": name,
+            "model_name": model_tech_name,
             "provider": provider,
             "temperature": params.get("temperature", global_cfg.temperature),
             "max_tokens": params.get("max_tokens", global_cfg.max_tokens),
@@ -190,19 +183,3 @@ class LLMModelPool(BaseModelPool[BaseLLM[Any]]):
 
         # Unsupported provider fallback
         raise ValueError(f"Unsupported LLM provider: {provider}")
-
-    def get_provider_in_pool(self, model_name: str) -> str | None:
-        """
-        Get provider identifier for a loaded model from the pool.
-        
-        Retrieves provider information directly from the model's configuration
-        to ensure single source of truth and avoid configuration drift.
-        
-        Args:
-            model_name: Name of the model to check
-            
-        Returns:
-            str | None: Provider identifier if model is loaded, None otherwise
-        """
-        model = self._models.get(model_name)
-        return model.config.provider if model else None

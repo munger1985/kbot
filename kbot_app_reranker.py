@@ -197,7 +197,6 @@ async def rerank_documents(
             f"Received reordering request | Model: {request.model_name} | "
             f"Document count: {len(request.documents)} | top_k: {request.top_k}"
         )
-        
         results = await service.rerank(
             model_name=request.model_name,
             query=request.query,

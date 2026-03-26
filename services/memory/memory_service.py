@@ -54,7 +54,7 @@ class MemoryService:
             old_state = context.session_state if context else {}
             history_summary = context.context_summary if context else ""
 
-            # 3. 关键改动：将画像与会话状态合并作为重写的依据
+            # 3. 将画像与会话状态合并作为重写的依据
             # 优先级：Session State (当前报错/临时路径) 覆盖 User Profile (职业/偏好)
             # 这样 LLM 就能感知到用户是 "DBA" 且正在处理 "RHEL 8" 环境
             rewrite_context_state = {**(user_profile or {}), **old_state}

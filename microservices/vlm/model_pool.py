@@ -137,13 +137,15 @@ class VLMModelPool(BaseModelPool[BaseVLM[Any]]):
             ValueError: If required API parameters are missing
             NotImplementedError: If the provider is not supported
         """
+        # Extract model parameters with fallback to empty dict
         params = data.get("model_params", {})
+        model_tech_name = data.get("model_tech_name", name)
         api_endpoint = data.get("api_endpoint")
         api_key = data.get("api_key")
 
         # Extract common parameters
         common_kwargs = {
-            "model_name": name,
+            "model_name": model_tech_name,
             "provider": provider,
             "max_tokens": params.get("max_tokens", 512),
             "temperature": params.get("temperature", 0.1),

@@ -10,9 +10,7 @@ from core.config.settings import get_app_config
 
 class AIModelRepository(BaseRepository[AIModelEntity]):
     """Repository for KBOT_MD_KB_MODELS table operations."""
-    def __init__(self, session):
-        self.app_id = get_app_config().app_id
-    
+
     async def toggle_model(self, model_id: int, status: Status):
         """
         Toggle model status by ID.
@@ -144,7 +142,7 @@ class AIModelRepository(BaseRepository[AIModelEntity]):
             stmt = select(AIModelEntity).where(
                 and_(
                     AIModelEntity.display_name == model_name,
-                    AIModelEntity.app_id == self.app_id
+                    AIModelEntity.app_id == get_app_config().app_id
                 )
             )
             result = await self.session.execute(stmt)

@@ -208,7 +208,7 @@ async def run_vlm_inference(
     start_time = time.time()
     resp_id = f"vlm-chat-{uuid.uuid4()}"
     created_ts = int(time.time())
-
+    model = await service.get_vlm_model(request.model_name)
     logger.info(f"Received inference request | Model: {request.model_name} | Stream mode: {request.stream}")
 
     try:
@@ -218,7 +218,7 @@ async def run_vlm_inference(
                 
                 try:
                     stream_raw = await service.inference(
-                        **request.model_dump(exclude={"stream"}), stream=True
+                        **request.model_dump(exclude={"stream", "model_name"}), stream=True, model_name=request.model_name
                     )
                     
                     async for content in stream_raw:  # type: ignore
@@ -236,7 +236,7 @@ async def run_vlm_inference(
                             "id": resp_id,
                             "object": "chat.completion.chunk",
                             "created": created_ts,
-                            "model": request.model_name,
+                            "model": model.model_name,
                             "choices": [{"delta": {"content": content}, "index": 0, "finish_reason": None}]
                         }
                         yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
@@ -246,7 +246,7 @@ async def run_vlm_inference(
                         "id": resp_id,
                         "object": "chat.completion.chunk",
                         "created": created_ts,
-                        "model": request.model_name,
+                        "model": model.model_name,
                         "choices": [{"delta": {}, "index": 0, "finish_reason": "stop"}],
                         "usage": usage_stats
                     }
@@ -271,7 +271,7 @@ async def run_vlm_inference(
             id=resp_id,
             object="chat.completion",
             created=created_ts,
-            model=request.model_name,
+            model=model.model_name,
             choices=[{
                 "message": {"role": "assistant", "content": content},
                 "finish_reason": "stop",

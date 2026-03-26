@@ -126,7 +126,7 @@ class RerankerModelPool(BaseModelPool[BaseReranker[Any]]):
         """
         # Extract model parameters with fallback to empty dict
         params = data.get("model_params", {})
-        
+        model_tech_name = data.get("model_tech_name", name)
         # Extract common connection/configuration parameters
         model_path = data.get("model_path")
         api_key = data.get("api_key")
@@ -135,7 +135,7 @@ class RerankerModelPool(BaseModelPool[BaseReranker[Any]]):
         # Common reranker parameters with sensible defaults
         common_kwargs = {
             "provider": provider,
-            "model_name": name,
+            "model_name": model_tech_name,
             "max_tokens": params.get("max_tokens", 8192),
             "batch_size": params.get("batch_size", 16),
         }

@@ -33,7 +33,6 @@ class EmbeddingService:
 
         return await self._model_pool.load_model(model_name)
 
-    
     async def embed_texts(
         self, 
         model_name: str, 

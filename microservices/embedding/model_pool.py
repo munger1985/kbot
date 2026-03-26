@@ -63,13 +63,14 @@ class EmbeddingModelPool(BaseModelPool[BaseEmbedding[Any]]):
         Map database data to specific Pydantic Config objects.
         """
         params = data.get("model_params", {})
+        model_tech_name = data.get("model_tech_name", name)
         path = data.get("model_path", None)
         api_key = data.get("api_key", None)
         api_endpoint = data.get("api_endpoint", None)
         
         # Extract common parameters (high reuse frequency)
         common_kwargs = {
-            "model_name": name,
+            "model_name": model_tech_name,
             "provider": provider,
             "max_tokens": params.get("max_tokens", global_cfg.max_tokens),
             "batch_size": params.get("batch_size", 2),

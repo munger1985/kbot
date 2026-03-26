@@ -710,7 +710,7 @@ CREATE TABLE kbot_md_memory_entry (
 CREATE VECTOR INDEX idx_mem_vector_hnsw ON kbot_md_memory_entry(memory_vector) 
 ORGANIZATION INMEMORY NEIGHBOR GRAPH DISTANCE COSINE;
 
-COMMENT ON TABLE kbot_md_memory_entry IS 'Records atomic Q&A interactions with semantic vectors and state snapshots';
+COMMENT ON TABLE kbot_md_memory_entry IS 'Records atomic QA interactions with semantic vectors and state snapshots';
 COMMENT ON COLUMN kbot_md_memory_entry.standalone_query IS 'Context-enriched rewritten question';
 COMMENT ON COLUMN kbot_md_memory_entry.search_keywords IS 'Extracted keywords and synonyms for hybrid search';
 COMMENT ON COLUMN kbot_md_memory_entry.memory_vector IS 'Semantic vector of the query for long-term recall';

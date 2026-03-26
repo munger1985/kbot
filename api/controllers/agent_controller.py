@@ -6,7 +6,7 @@ from fastapi.responses import StreamingResponse
 from services.agent.agent_service import AgentService
 from api.schemas.agent_schema import AgentChatForm, AgentChatFeedbackForm, DifySearchForm
 from api.schemas.base_response import SuccessResponse
-from services.agent.memory import MemoryService
+from services.agent.chat_service import ChatService
 from services.agent.dify_service import DifyService
 from core.exceptions import *
 
@@ -15,6 +15,7 @@ class AgentController:
     def __init__(self):
         self.agent_service = AgentService()
         self.dify_service = DifyService()
+        self.chat_service = ChatService()
 
     async def feedback(self, form: AgentChatFeedbackForm) -> SuccessResponse:
         """Submits user feedback for a chat record."""
@@ -41,7 +42,7 @@ class AgentController:
         Agent interaction (Non-streaming).
         Returns the formatted dictionary with answer, embedding, and timestamps.
         """
-        result = await self.agent_service.non_stream_chat(
+        result = await self.chat_service.non_stream_chat(
             session_id=form.session_id,
             user_id = form.by,
             agent_id=form.agent_id,
@@ -56,7 +57,7 @@ class AgentController:
         Agent interaction (Streaming).
         Uses BackgroundTasks to handle database persistence after the stream starts.
         """
-        return await self.agent_service.stream_chat(
+        return await self.chat_service.stream_chat(
             background_tasks=background_tasks,
             session_id=form.session_id,
             user_id = form.by,

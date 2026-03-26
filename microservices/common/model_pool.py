@@ -166,7 +166,8 @@ class BaseModelPool(ABC, Generic[T]):
     def _map_entity_to_dict(model: Model) -> dict[str, Any]:
         """Convert model entity to configuration dictionary"""
         return {
-            "model_name": model.model_name,
+            "model_name": model.display_name,
+            "model_tech_name": model.model_name,
             "category": model.category,
             "provider": model.provider,
             "api_endpoint": model.api_endpoint,

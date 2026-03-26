@@ -139,28 +139,28 @@ async def health_check() -> dict[str, Any]:
     }
 
 
-@app.post("/load", response_model=dict, tags=["Management"], summary="Load/Unload Model")
-async def handle_toggle_model(request: ToggleModelRequest) -> dict[str, Any]:
-    """Dynamically manage models in memory.
+# @app.post("/load", response_model=dict, tags=["Management"], summary="Load/Unload Model")
+# async def handle_toggle_model(request: ToggleModelRequest) -> dict[str, Any]:
+#     """Dynamically manage models in memory.
 
-    Args:
-        request: Model operation request.
+#     Args:
+#         request: Model operation request.
 
-    Returns:
-        Operation result.
-    """
-    try:
-        method = llm_service.load_model if request.operation == "load" else llm_service.unload_model
-        logger.info(f"Executing model operation: {request.operation} -> {request.model_name}")
+#     Returns:
+#         Operation result.
+#     """
+#     try:
+#         method = llm_service.load_model if request.operation == "load" else llm_service.unload_model
+#         logger.info(f"Executing model operation: {request.operation} -> {request.model_name}")
         
-        success = await method(request.model_name)
-        if not success:
-            raise HTTPException(status_code=500, detail=f"Failed to {request.operation} model {request.model_name}")
+#         success = await method(request.model_name)
+#         if not success:
+#             raise HTTPException(status_code=500, detail=f"Failed to {request.operation} model {request.model_name}")
             
-        return {"status": "success", "model_name": request.model_name}
-    except Exception as e:
-        logger.exception(f"Model management exception: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+#         return {"status": "success", "model_name": request.model_name}
+#     except Exception as e:
+#         logger.exception(f"Model management exception: {e}")
+#         raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/v1/chat/completions", response_model=None, tags=["LLM"], summary="Chat Completion Endpoint")
@@ -185,7 +185,7 @@ async def handle_chat_completions(
     created_ts = int(time.time())
 
     # Load model first (triggers async loading if model is not loaded)
-    model = await service.get_model_instance(request.model_name)
+    model = await service.get_llm_model(request.model_name)
     provider = model.config.provider
 
     # Get max token limit (use model config default if not provided by user)
@@ -240,7 +240,7 @@ async def handle_chat_completions(
                                     "id": resp_id,
                                     "object": "chat.completion.chunk",
                                     "created": created_ts,
-                                    "model": request.model_name,
+                                    "model": model.model_name,
                                     "choices": [
                                         {
                                             "index": 0,
@@ -355,7 +355,7 @@ async def handle_chat_completions(
             id=resp_id,
             object="chat.completion",
             created=created_ts,
-            model=request.model_name,
+            model=model.model_name,
             choices=[{"message": {"role": "assistant", "content": content or ""}, "finish_reason": "stop", "index": 0}],
             usage=UsageInfo(**usage),
             processing_time=proc_time,

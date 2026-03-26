@@ -49,27 +49,14 @@ class LLMService:
             await self._model_pool.shutdown()
             self._initialized = False
             logger.info("LLM service shut down successfully.")
-            
+
     async def get_llm_model(self, model_name: str) -> BaseLLM:
-        """Retrieve an LLM model instance by its unique technical name.
-        
-        Ensures the service is initialized and loads the model if not already in the pool.
-        
-        Args:
-            model_name: Unique technical name of the model (e.g., "gpt-4", "llama3-70b")
-            
-        Returns:
-            BaseLLM: Initialized model instance ready for chat completions
-            
-        Raises:
-            RuntimeError: If model cannot be loaded from the pool
-        """
+        """Get llm model instance by its unique name."""
         if not self._initialized:
             await self.initialize()
 
         return await self._model_pool.load_model(model_name)
-
-
+    
     async def chat(
         self,
         model_name: str,
@@ -262,88 +249,4 @@ class LLMService:
         
         return await self._model_pool.unload_model(model_name)
     
-    async def get_model_instance(self, model_name: str) -> BaseLLM:
-        """
-        Get a model instance with guaranteed initialization.
-        
-        Ensures the model is loaded (from config and initialized) if not already
-        present in the pool.
-        
-        Args:
-            model_name: Technical name of the model to retrieve
-            
-        Returns:
-            BaseLLM: Fully initialized model instance
-            
-        Raises:
-            RuntimeError: If model fails to load or does not exist
-        """
-        if not self._initialized:
-            await self.initialize()
-        
-        # load_model handles both retrieval (if exists) and loading (if not)
-        instance = await self._model_pool.load_model(model_name)
-        if not instance:
-            raise RuntimeError(f"Model {model_name} failed to load or does not exist")
-        return instance
-
-    def get_provider(self, model_name: str) -> str | None:
-        """
-        Get the provider of a model (optimized for performance).
-        
-        First checks loaded models for immediate lookup, then falls back to
-        cached model metadata to avoid unnecessary loading.
-        
-        Args:
-            model_name: Technical name of the model
-            
-        Returns:
-            str | None: Provider name (e.g., "openai", "oci") or None if unknown
-        """
-        # 1. Fast path: Check already loaded models
-        model = self._model_pool._models.get(model_name)
-        if model:
-            return model.config.provider
-            
-        # 2. Fallback: Check cached model metadata (loaded during initialization)
-        metadata = getattr(self._model_pool, '_model_metadata', {}).get(model_name)
-        if metadata:
-            return metadata.get("provider")
-            
-        return None
-
-    async def get_max_tokens_limit(self, model_name: str) -> int:
-        """
-        Get the maximum token limit for a model (async to ensure config is loaded).
-        
-        Retrieves the configured max_tokens value with safe fallback to 4096
-        if model configuration cannot be loaded.
-        
-        Args:
-            model_name: Technical name of the model
-            
-        Returns:
-            int: Maximum token limit for the model (default: 4096)
-        """
-        try:
-            model = await self.get_model_instance(model_name)
-            return getattr(model.config, "max_tokens", 4096)
-        except Exception:
-            # Safe fallback for unknown models or configuration errors
-            logger.warning(f"Could not retrieve max tokens for {model_name}, using default 4096")
-            return 4096
-
-    async def get_model_config(self, model_name: str) -> Any:
-        """Get the complete configuration object for a loaded model.
-        
-        Ensures the model is loaded before returning its configuration,
-        providing access to all provider-specific settings.
-        
-        Args:
-            model_name: Technical name of the model
-            
-        Returns:
-            Any: Model configuration object (subclass of LLMConfig)
-        """
-        model = await self.get_model_instance(model_name)
-        return model.config
+    
