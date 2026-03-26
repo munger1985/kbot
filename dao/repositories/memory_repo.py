@@ -2,10 +2,10 @@ import json
 from loguru import logger
 from sqlalchemy import select, update, delete, func, text, desc
 from sqlalchemy.ext.asyncio import AsyncSession
-from core.exceptions import DatabaseException
+from core.exceptions import DatabaseException, DataNotFoundException
 from .base_repo import BaseRepository
 from utils.oracle_vec_handler import OracleVecHandler
-from dao.entities import MemoryEntryEntity, ConversationContextEntity
+from dao.entities import MemoryEntryEntity, ConversationContextEntity, UserProfileEntity
 
 
 class MemoryEntryRepository(BaseRepository[MemoryEntryEntity]):
@@ -23,6 +23,18 @@ class MemoryEntryRepository(BaseRepository[MemoryEntryEntity]):
         except Exception as e:
             logger.error(f"Failed to get context by id: {session_id}", exc_info=e)
             raise DatabaseException("Failed to get conversation context", original_error=e)
+        
+    async def get_user_profile(self, user_id: str) -> UserProfileEntity | None:
+        """Get user profile"""
+        try:
+            stmt = select(UserProfileEntity).where(
+                UserProfileEntity.user_id == user_id
+            )
+            result = await self.session.execute(stmt)
+            return result.scalar_one_or_none()
+        except Exception as e:
+            logger.error(f"Failed to get user profile for user {user_id}", exc_info=e)
+            raise DatabaseException("Failed to get user profile", original_error=e)
 
     async def update_context_state(self, session_id: str, new_state: dict, increment_count: bool = True):
         """Update conversation context state"""
@@ -91,45 +103,51 @@ class MemoryEntryRepository(BaseRepository[MemoryEntryEntity]):
             ON (p.user_id = s.user_id)
             WHEN MATCHED THEN
                 UPDATE SET 
-                    profile_data = JSON_MERGEPATCH(profile_data, :updates),
-                    update_time = CURRENT_TIMESTAMP
+                    global_preferences = JSON_MERGEPATCH(NVL(global_preferences, '{}'), :updates),
+                    last_update_time = CURRENT_TIMESTAMP
             WHEN NOT MATCHED THEN
-                INSERT (user_id, profile_data, update_time, create_time)
-                VALUES (:uid, :updates, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                INSERT (user_id, global_preferences, last_update_time)
+                VALUES (:uid, :updates, CURRENT_TIMESTAMP)
         """)
         
         # 3. 传入参数字典
-        await self.session.execute(sql, {
-            "uid": user_id, 
-            "updates": updates_json
-        })
+        await self.session.execute(sql, {"uid": user_id, "updates": updates_json})
 
     async def search_vector_memory(self, user_id: str, query_vector: list[float], limit: int = 3):
         """
         在 Oracle 23ai 中执行原生向量搜索
+        重构点：
+        1. 显式过滤掉 feedback = -1 (点踩) 的记录
+        2. 返回 feedback 字段用于业务层打标签
+        3. 确保跨 session 搜索该用户的所有历史
         """
-        # 使用 Oracle 23ai 的原生向量距离函数
-        # 假设使用的是 Cosine 距离
+        # 注意：这里增加了 m.feedback >= 0 的过滤条件
         sql = text("""
-            SELECT entry_id, raw_question, answer, 
-                   VECTOR_DISTANCE(memory_vector, :vec, COSINE) as distance
+            SELECT m.entry_id, m.raw_question, m.answer, m.feedback,
+                   VECTOR_DISTANCE(m.memory_vector, :vec, COSINE) as distance
             FROM kbot_md_memory_entry m
             JOIN kbot_md_conv_context c ON m.session_id = c.session_id
-            WHERE c.user_id = :user_id
+            WHERE c.user_id = :user_id 
+              AND m.feedback >= 0
             ORDER BY distance
             FETCH FIRST :limit ROWS ONLY
         """)
         
-        # 将 list[float] 转换为 Oracle 向量格式（通常是 array.array）
         vec_handler = OracleVecHandler()
         oracle_vec = vec_handler.convert(query_vector)
+        
         try:
             result = await self.session.execute(
-                sql, {"vec": oracle_vec, "user_id": user_id, "limit": limit}
+                sql, {
+                    "vec": oracle_vec, 
+                    "user_id": user_id, 
+                    "limit": limit
+                }
             )
+            # 使用 fetchall() 后，返回的是 Row 对象列表
             return result.fetchall()
         except Exception as e:
-            logger.error(f"Failed to search vector memory", exc_info=e)
+            logger.error(f"Failed to search vector memory for user {user_id}", exc_info=e)
             raise DatabaseException("Failed to search vector memory", original_error=e)
         
     async def update_feedback(self, entry_id: int, score: int):

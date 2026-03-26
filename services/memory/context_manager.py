@@ -107,14 +107,16 @@ User Input: {query}
         async with self.oracle_session as session:
             repo = MemoryEntryRepository(session)
             entries = await repo.get_recent_entries(session_id, limit=10)
-            if not entries:
-                return
+            if not entries: return
 
-            # 2. 格式化对话历史给 LLM
-            history_text = "\n".join([
-                f"User: {e.raw_question}\nAssistant: {e.answer}" 
-                for e in entries if e.answer
-            ])
+            # 在格式化历史时，给 feedback=1 的记录加权重标识
+            history_list = []
+            for e in entries:
+                # 显式告诉 LLM 哪些是“点赞”的答案，让其在总结摘要时重点保留
+                tag = "[用户认可的正确方案] " if e.feedback == 1 else ""
+                history_list.append(f"User: {e.raw_question}\nAssistant: {tag}{e.answer}")
+
+            history_text = "\n".join(history_list)
 
             # 3. 构建摘要 Prompt
             prompt = f"""
@@ -123,7 +125,7 @@ User Input: {query}
 1. 保留关键的技术决策、正在讨论的问题、已解决的错误以及用户提到的特定环境。
 2. 长度控制在 300 字以内。
 3. 采用客观陈述句。
-
+注意：带有“[用户认可的正确方案]”标记的内容是用户反馈有效的关键信息，请务必准确保留其技术细节。
 历史对话：
 {history_text}
 """
@@ -152,52 +154,37 @@ User Input: {query}
         context_summary: str | None = "",
         long_term_memory: str | None = ""
     ) -> str:
-        """
-        组装最终的 Prompt。
-        
-        Args:
-            system_prompt: 系统全局角色定义
-            user_question: 改写后的 standalone_query
-            kb_results: HybridRetriever 返回的文档对象列表
-            session_state: 当前会话的结构化实体状态 (如 OS, Version)
-            context_summary: ContextManager 生成的滚动摘要 (代替原始对话流)
-            long_term_memory: VectorSearchService 召回的历史 Q&A 经验
-        """
-
-        # 1. 格式化环境约束 (Session State) - 优先级最高，作为回答的底色
+        # 1. 格式化环境约束
         env_str = " | ".join([f"{k}: {v}" for k, v in session_state.items() if v]) if session_state else "通用环境"
         
-        # 2. 格式化知识库检索结果 (带有路径基因)
+        # 2. 格式化知识库
         kb_segments = []
         for i, res in enumerate(kb_results):
-            # res.path_names 是你在 Docling/OpenViking 解析时保存的路径信息
             path_str = " > ".join(res.path_names) if hasattr(res, 'path_names') and res.path_names else "知识库资料"
-            segment = f"[参考资料 {i+1} | 来源: {path_str}]\n{res.content}"
-            kb_segments.append(segment)
-        
-        kb_context = "\n\n".join(kb_segments) if kb_segments else "未找到直接相关的核心知识，请基于通用知识并告知用户。"
+            kb_segments.append(f"[参考资料 {i+1} | 来源: {path_str}]\n{res.content}")
+        kb_context = "\n\n".join(kb_segments) if kb_segments else "未找到直接相关的核心知识。"
 
-        # 3. 构造分层上下文模板 (按照优先级排列)
+        # 3. 构造分层模板
         final_prompt = f"""{system_prompt}
 
 ### 当前环境约束 (Session State)
-**[必须遵守]** 以下是当前用户的运行环境，请确保回答与其兼容：
-- {env_str if env_str else "标准环境"}
+**[必须遵守]** 以下是当前用户的运行环境：
+- {env_str}
 
 ### 对话背景摘要 (Context Summary)
-**[辅助理解]** 本次会话之前的进展概述：
+**[重要上下文]** 本次会话之前的进展：
 {context_summary if context_summary else "对话开始阶段。"}
 
 ### 历史相关经验 (Long-term Memory)
-**[仅供参考]** 以下是用户在过去其他会话中讨论过的类似情况（注意甄别时效性）：
+**[仅供参考]** 以下是过往类似场景的经验（带 ⭐ 为用户认可的方案）：
 {long_term_memory if long_term_memory else "暂无相关跨会话历史。"}
 
 ### 核心知识库依据 (Knowledge Base)
-**[主要依据]** 请根据以下权威文档回答问题，并引用对应的 [参考资料 X]：
+**[主要依据]** 请根据以下权威文档回答问题：
 {kb_context}
 
 ---
-请综合上述背景，优先依据【核心知识库】和【环境约束】给出准确、专业的回答。
+请综合上述背景，优先依据【核心知识库】和【环境约束】。
 
 用户当前的问题：{user_question}
 助手回答："""

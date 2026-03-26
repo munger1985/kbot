@@ -7,6 +7,8 @@ from dao.repositories import MemoryEntryRepository
 from .state_manager import SessionStateManager
 from .context_manager import ContextManager
 from utils.clients.model_client import AIModelClient
+from utils.common import safe_read_content
+
 
 class MemoryService:
     def __init__(self):
@@ -16,44 +18,76 @@ class MemoryService:
     @property
     def oracle_session(self):
         return get_session()
+    
+    async def get_user_profile(self, user_id: str) -> dict:
+        """获取用户画像并转换为用于 Context 的字典格式"""
+        async with self.oracle_session as session:
+            repo = MemoryEntryRepository(session)
+            profile = await repo.get_user_profile(user_id)
+            
+            if not profile:
+                return {}
+
+            # 将实体中的多个字段合并为一个扁平化的画像字典
+            combined_profile = {
+                "profile_summary": safe_read_content(profile.profile_summary) or "",
+                **(profile.global_preferences or {}),
+                **(profile.frequent_entities or {})
+            }
+            return combined_profile
 
     async def prepare_context_and_rewrite(
         self, 
         session_id: str, 
         raw_question: str,
-        llm_model: str
+        llm_model: str,
+        user_profile: dict | None = None  # 1. 接收从 Orchestrator 传来的画像
     ) -> dict:
         """
-        功能 1：加载 -> 改写 -> 合并状态（用于 RAG 检索前）
+        功能 1：加载画像与上下文 -> 注入重写 -> 状态合并
         """
-        # 1. 从 Repo 获取原始数据
         async with self.oracle_session as session:
             context_repo = MemoryEntryRepository(session)
             context = await context_repo.get_context_by_id(session_id)
+            
+            # 2. 状态提取
             old_state = context.session_state if context else {}
             history_summary = context.context_summary if context else ""
 
-            # 2. 调用 LLM 改写模块
+            # 3. 关键改动：将画像与会话状态合并作为重写的依据
+            # 优先级：Session State (当前报错/临时路径) 覆盖 User Profile (职业/偏好)
+            # 这样 LLM 就能感知到用户是 "DBA" 且正在处理 "RHEL 8" 环境
+            rewrite_context_state = {**(user_profile or {}), **old_state}
+
+            # 4. 调用 LLM 改写模块 (传入合并后的认知信息)
             rewrite_data = await self.manager.process_query_with_memory(
                 query=raw_question,
                 context_summary=history_summary,
-                session_state=old_state,
+                session_state=rewrite_context_state, 
                 model_name=llm_model
             )
 
-            # 3. 内存合并新状态（不立即写入 DB，供本轮 RAG 使用）
+            # 5. 内存合并新状态
+            # 注意：这里我们保留 combined 结果，并混入本轮新提取的 turn_entities
             new_state = SessionStateManager.merge_state(
-                old_state, 
+                rewrite_context_state, 
                 rewrite_data.get('turn_entities')
             )
+
+            # 6. 如果重写器提取了新的画像更新（例如用户说：我换成 Ubuntu 22 了）
+            # 我们将这些更新也合并到 new_state 中，以便在持久化阶段写入 Profile 表
+            profile_updates = rewrite_data.get('user_profile_updates', {})
+            if profile_updates:
+                new_state = {**new_state, **profile_updates}
 
             return {
                 "standalone_query": rewrite_data['standalone_query'],
                 "search_keywords": rewrite_data['search_keywords'],
                 "intent_category": rewrite_data['intent_category'],
                 "turn_entities": rewrite_data['turn_entities'],
+                "user_profile_updates": profile_updates, # 显式返回，方便后续写入
                 "new_state": new_state,
-                "old_context": context # 保留引用
+                "old_context": context 
             }
 
     async def finalize_and_persist(
@@ -115,24 +149,37 @@ class MemoryService:
                 logger.error(f"Persistence cycle failed, rolled back: {e}")
                 raise InternalServerError(f"Failed to persist memory: {e}")
 
-    async def get_relevant_memories(self, user_id: str, query_vector: list[float]) -> str:
+    async def get_relevant_memories(self, user_id: str, query_vector: list) -> str:
         """
-        获取相关的历史记忆片段，转为提示词背景
+        召回长期记忆并格式化为带权重的字符串
         """
-        # 检索最近似的历史 Q&A
         async with self.oracle_session as session:
-            context_repo = MemoryEntryRepository(session)
-            hits = await context_repo.search_vector_memory(user_id, query_vector)
-        
-        if not hits:
-            return ""
+            repo = MemoryEntryRepository(session)
+            # 1. 向量检索 (假设你的 repo 已经支持向量搜索并过滤了 feedback >= 0)
+            entries = await repo.search_vector_memory(
+                user_id=user_id, 
+                query_vector=query_vector, 
+                limit=5
+            )
+            
+            if not entries:
+                return ""
 
-        # 格式化为 Context 字符串
-        memory_context = "\n".join([
-            f"历史相关问题: {h.raw_question}\n历史解答: {h.answer}" 
-            for h in hits if h.distance < 0.5 # 仅保留相似度高的
-        ])
-        return f"--- 相关的历史记忆 ---\n{memory_context}\n"
+            # 2. 格式化逻辑：将对象转为带权重的字符串
+            memory_blocks = []
+            for e in entries:
+                # 这里的 e 是 MemoryEntryEntity 对象
+                # 再次确保过滤掉用户点踩的内容（如果 repo 层没过滤干净）
+                if e.feedback == -1:
+                    continue
+                    
+                # 根据反馈强度添加视觉引导标签
+                prefix = "⭐ [高价值历史方案]" if e.feedback == 1 else "[历史参考]"
+                
+                block = f"{prefix}\n问题: {e.raw_question}\n方案: {e.answer}"
+                memory_blocks.append(block)
+
+            return "\n\n".join(memory_blocks)
     
     async def record_user_feedback(self, entry_id: int, score: int):
         """

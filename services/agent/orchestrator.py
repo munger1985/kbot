@@ -44,6 +44,10 @@ class ChatOrchestrator:
         """
         聊天流程编排
         """
+        # 1. 加载画像 (Long-term Profile) 和 会话上下文 (Short-term Context)
+        # 这一步是"认识用户"的开始
+        user_profile = await self.memory_service.get_user_profile(user_id) # 获取用户画像
+
         # 获取 Agent 和 Model 参数
         async with self.oracle_session as session:
             agent, model_params = await self._get_agent_and_params(session, agent_id)
@@ -52,7 +56,8 @@ class ChatOrchestrator:
         prepared = await self.memory_service.prepare_context_and_rewrite(
             session_id=session_id,
             raw_question=question,
-            llm_model=model_params.llm_model
+            llm_model=model_params.llm_model,
+            user_profile=user_profile # 传入画像
         )
         
         # 2. 知识库检索：使用改写后的 standalone_query 和 search_keywords
