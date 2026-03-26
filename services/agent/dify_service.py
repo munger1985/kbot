@@ -53,6 +53,7 @@ class DifyService:
         background_tasks.add_task(
                 self.memory_service.finalize_and_persist,
                 session_id=session_id,
+                user_id=self.user_id,
                 raw_question=question,
                 answer="",
                 prepared_data=pipe_out['prepared_data'],

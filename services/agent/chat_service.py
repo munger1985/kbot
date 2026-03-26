@@ -95,6 +95,7 @@ class ChatService:
         # 持久化：使用 MemoryService 的新闭环方法
         await self.memory_service.finalize_and_persist(
             session_id=session_id,
+            user_id=user_id,
             raw_question=question,
             answer=full_answer,
             prepared_data=pipe_out['prepared_data'],
@@ -156,6 +157,7 @@ class ChatService:
             background_tasks.add_task(
                 self._persist_memory_cycle,
                 session_id=session_id,
+                user_id=user_id,
                 raw_question=question,
                 chunks=answer_chunks,
                 prepared_data=prepared_data,
@@ -205,6 +207,7 @@ class ChatService:
     async def _persist_memory_cycle(
         self, 
         session_id: str, 
+        user_id: str,
         raw_question: str, 
         chunks: list, 
         references: list, 
@@ -231,6 +234,7 @@ class ChatService:
             # prepared_data 包含了：new_state, standalone_query, search_keywords 等
             await self.memory_service.finalize_and_persist(
                 session_id=session_id,
+                user_id=user_id,
                 raw_question=raw_question,
                 answer=full_answer,
                 prepared_data=prepared_data,

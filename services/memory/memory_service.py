@@ -1,6 +1,7 @@
 from datetime import datetime
 from loguru import logger
 from core.database.oracle import get_session
+from core.exceptions import InternalServerError
 from dao.entities import MemoryEntryEntity
 from dao.repositories import MemoryEntryRepository
 from .state_manager import SessionStateManager
@@ -58,6 +59,7 @@ class MemoryService:
     async def finalize_and_persist(
         self,
         session_id: str,
+        user_id: str,
         raw_question: str,
         answer: str,
         prepared_data: dict,
@@ -65,32 +67,53 @@ class MemoryService:
         retrieved_chunks: list | None = None
     ):
         """
-        功能 2：持久化（用于 AI 回答后）
+        持久化逻辑：
+        1. 同步 Session 状态 (短期)
+        2. 保存对话记录 (带向量与改写信息)
+        3. 更新用户画像 (长期)
         """
-        # 1. 更新 Context 状态
+        # 从 prepared_data 中提取由 ContextManager 识别的画像更新
+        profile_updates = prepared_data.get("user_profile_updates", {})
+
         async with self.oracle_session as session:
             context_repo = MemoryEntryRepository(session)
-            await context_repo.update_context_state(
-                session_id=session_id,
-                new_state=prepared_data['new_state']
-            )
 
-            # 2. 创建并保存 Memory Entry
-            new_entry = MemoryEntryEntity(
-                session_id=session_id,
-                raw_question=raw_question,
-                answer=answer,
-                standalone_query=prepared_data['standalone_query'],
-                search_keywords=prepared_data['search_keywords'],
-                turn_entities=prepared_data['turn_entities'], # 仅记录本轮增量
-                intent_category=prepared_data['intent_category'],
-                retrieved_chunks=retrieved_chunks,
-                request_time=request_time,
-                response_time=datetime.now()
-            )
-            
-            await context_repo.add_memory_entry(new_entry)
-            logger.info(f"Interaction persisted for session: {session_id}")
+            try:
+                # 1. 更新 Context 状态 (Session 级别的结构化上下文)
+                await context_repo.update_context_state(
+                    session_id=session_id,
+                    new_state=prepared_data.get('new_state', {})
+                )
+
+                # 2. 创建并保存 Memory Entry (对话流水账)
+                new_entry = MemoryEntryEntity(
+                    session_id=session_id,
+                    raw_question=raw_question,
+                    answer=answer,
+                    standalone_query=prepared_data.get('standalone_query', raw_question),
+                    search_keywords=prepared_data.get('search_keywords', ""),
+                    turn_entities=prepared_data.get('turn_entities', {}), 
+                    intent_category=prepared_data.get('intent_category', "general"),
+                    retrieved_chunks=retrieved_chunks,
+                    request_time=request_time,
+                    response_time=datetime.now()
+                )
+                await context_repo.add_memory_entry(new_entry)
+                logger.info(f"Interaction persisted for session: {session_id}")
+
+                # 3. 核心新增：用户画像持久化 (跨会话的长期特征)
+                if profile_updates and len(profile_updates) > 0:
+                    logger.info(f"Updating long-term profile for user {user_id}: {profile_updates}")
+                    # 调用 repository 进行 JSON 增量合并
+                    await context_repo.upsert_user_profile(
+                        user_id=user_id,
+                        profile_updates=profile_updates
+                    )
+                    logger.info(f"Full persistence cycle completed for session: {session_id}")
+
+            except Exception as e:
+                logger.error(f"Persistence cycle failed, rolled back: {e}")
+                raise InternalServerError(f"Failed to persist memory: {e}")
 
     async def get_relevant_memories(self, user_id: str, query_vector: list[float]) -> str:
         """

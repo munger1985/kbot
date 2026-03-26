@@ -60,30 +60,43 @@ class ContextManager:
             }
 
     def _build_rewrite_prompt(self, query: str, summary: str | None, state: dict | None) -> str:
-        # 这里建议将 Prompt 存储在 DB 或配置中，下面是逻辑展示
         return f"""
-You are a context-aware query rewriter for the NexusCube RAG system.
+You are the Context & Identity Engine for the NexusCube RAG system.
+Your goal is to transform the user's raw input into a structured execution plan while maintaining a persistent User Profile.
 
-### Context
-- Summary of History: {summary or 'None'}
-- Active Session State: {json.dumps(state or {}, ensure_ascii=False)}
+### Context Knowledge
+- **Historical Summary**: {summary or 'None'} (General progress of the conversation)
+- **Active Session State**: {json.dumps(state or {}, ensure_ascii=False)} (Volatile data: current errors, temporary IPs, active file paths)
 
-### Task
-Analyze the User's current question and the context.
-1. Resolve pronouns (e.g., 'it', 'there', 'that error').
-2. Inject technical context from 'Active Session State' if relevant.
-3. Extract core keywords for full-text search.
-4. Identify any new parameters (IPs, Paths, Codes) as 'turn_entities'.
+### Task 1: Query Rewriting
+1. **Pronoun Resolution**: Replace 'it', 'the error', 'there' with specific entities from History/State.
+2. **Context Injection**: If the user asks "How to install?", rewrite it as "How to install [Software] on [OS from Session State]?"
+3. **Keyword Extraction**: Provide 3-5 high-quality technical keywords for Full-Text Search.
+
+### Task 2: Information Categorization (Crucial)
+Distinguish between "Turn Entities" and "User Profile Updates":
+- **Turn Entities**: Transient data for the CURRENT turn only (e.g., a specific process ID, a one-time error log snippet).
+- **User Profile Updates**: Long-term traits that define WHO the user is or their PERMANENT environment. 
+* Examples: Professional role (DBA, Developer), preferred OS (RHEL 8), Hardware specs (Xeon Gold 5520+), habitual coding language (Python), or level of expertise.
 
 ### Output Format (Strict JSON)
 {{
-  "standalone_query": "Rewritten independent question",
-  "search_keywords": ["keyword1", "keyword2"],
-  "turn_entities": {{"key": "value"}},
-  "intent": "e.g., install, troubleshooting"
+"standalone_query": "The fully independent and contextualized question",
+"search_keywords": ["keyword1", "keyword2", "keyword3"],
+"turn_entities": {{
+    "temp_file": "/tmp/test.log",
+    "current_error_code": "ORA-00600"
+}},
+"user_profile_updates": {{
+    "job_role": "System Architect",
+    "primary_os": "Oracle Linux 8.8",
+    "cpu_arch": "x86_64",
+    "expertise_level": "Senior"
+}},
+"intent": "troubleshooting | installation | optimization | general_inquiry"
 }}
 
-User Question: {query}
+User Input: {query}
 """
     
     async def refresh_summary(self, session_id: str, model_name: str):
