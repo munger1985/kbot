@@ -40,10 +40,18 @@ class DifyService:
         request_time = datetime.now(tz=timezone.utc)
         logger.info(f"Processing Dify request for session {session_id}, Agent {agent_id}")
 
-        request_time = datetime.now(tz=timezone.utc)
+        # 确保会话存在
+        await self.memory_service.ensure_session_exists(
+            session_id=session_id,
+            user_id=self.user_id,
+            agent_id=agent_id,
+            question=question
+        )
         
         pipe_out = await self.orchestrator.run_pipeline(
-            self.user_id, session_id, agent_id, question, self.security_level, tags
+            background_tasks=background_tasks, user_id=self.user_id, 
+            session_id=session_id, agent_id=agent_id, question=question, 
+            security_level=self.security_level, tags=tags
         )
         
         enriched_refs = await self.chat_service._enrich_results_with_metadata(pipe_out['kb_results'])
@@ -60,6 +68,16 @@ class DifyService:
                 retrieved_chunks=enriched_refs,
                 request_time=request_time
             )
+        
+        # 2. 触发画像反思逻辑
+        background_tasks.add_task(
+            self.memory_service.refresh_memory_capsule,
+            session_id=session_id,
+            user_id=self.user_id,
+            new_question=question,
+            new_answer="", # 同上
+            llm_model=pipe_out['prepared_data'].get('llm_model') # 必须传入模型名
+        )
 
         return {"records": records}
         

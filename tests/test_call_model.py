@@ -90,10 +90,10 @@ async def test_call_llm_model():
     print("=" * 50)
 
     try:
-        # 调用方法1：基本调用（流式）
-        print("\n测试1：基本流式调用")
-        async for chunk in model_client.call_llm_model(model_name, test_prompt):
-            print(chunk, end="", flush=True)  # 实时打印响应
+        # # 调用方法1：基本调用（流式）
+        # print("\n测试1：基本流式调用")
+        # async for chunk in model_client.call_llm_model(model_name, test_prompt):
+        #     print(chunk, end="", flush=True)  # 实时打印响应
 
         # 调用方法2：带额外参数
         # print("\n\n测试2：带额外参数调用")
@@ -107,15 +107,15 @@ async def test_call_llm_model():
         #     print(chunk, end="", flush=True)
 
         # 调用方法3：非流式模式（需要修改call_llm_model方法支持）
-        # print("\n\n测试3：非流式调用")
-        # async for chunk in model_client.call_llm_model(
-        #     model_name,
-        #     test_prompt,
-        #     stream=False,
-        #     max_tokens=10
-        # ):
-        #     result = chunk
-        # print(result)
+        print("\n\n测试3：非流式调用")
+        async for chunk in model_client.call_llm_model(
+            model_name,
+            test_prompt,
+            stream=False,
+            max_tokens=10
+        ):
+            result = chunk
+        print(result)
 
     except Exception as e:
         print(f"\n测试失败: {str(e)}")
@@ -168,4 +168,4 @@ async def test_call_vlm_model():
 # 运行测试
 if __name__ == "__main__":
 
-    asyncio.run(test_call_vlm_model())
+    asyncio.run(test_call_llm_model())

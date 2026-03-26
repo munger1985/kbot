@@ -123,7 +123,7 @@ async def get_session() -> AsyncIterator[AsyncSession]:
                         f"error type: {type(e).__name__}, "
                         f"error message: {repr(str(e))}, "
                         f"error module: {type(e).__module__}", exc_info=True)
-            raise RuntimeError(f"Database operation failed: {str(e)}") from e
+            raise RuntimeError(f"Database operation failed: {str(e)}")
         finally:
             await session.close()
 

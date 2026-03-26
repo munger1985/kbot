@@ -19,8 +19,7 @@ class TxtBaseRerank:
                      model_name: str, 
                      top_k: int, 
                      question: str, 
-                     kb_results: list[TxtBaseSearchResult],
-                     min_rerank_score: float = 0.01
+                     kb_results: list[TxtBaseSearchResult]
                     ) -> list[TxtBaseSearchResult]:
         """Reranks search results using a cross-encoder model.
         
@@ -76,16 +75,8 @@ class TxtBaseRerank:
                 
                 # Validation: Ensure index is within bounds of unique_results
                 if index is not None and 0 <= index < len(unique_results):
-                    # Noise Filtering
-                    if score < min_rerank_score:
-                        continue
-                        
                     target_result = unique_results[index]
                     target_result.rerank_score = score
-                    
-                    # Optional: Apply business weight multiplier if needed
-                    # target_result.rerank_score *= target_result.weight 
-
                     reranked_results.append(target_result)
                 else:
                     logger.warning(f"Reranker returned an out-of-bounds index: {index}")
@@ -102,8 +93,7 @@ class TxtBaseRerank:
             logger.debug(f"Top Rerank Match | Score: {top_hit.rerank_score:.4f} | "
                          f"ID: {top_hit.chunk_id} | Content: {top_hit.content[:50]}...")
 
-        duration_msg = (f"Rerank complete ({model_name}): {len(unique_results)} input -> "
-                        f"{len(reranked_results)} filtered -> Top {top_k} selected.")
+        duration_msg = (f"Rerank complete ({model_name}): {len(unique_results)} input -> Top {top_k} selected.")
         logger.info(duration_msg)
 
         return reranked_results[:int(top_k)]

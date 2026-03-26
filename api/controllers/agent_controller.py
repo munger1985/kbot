@@ -37,12 +37,13 @@ class AgentController:
         await self.agent_service.remove_agent(agent_id, del_prompt)
         return SuccessResponse(message=f"Agent {agent_id} deleted")
 
-    async def agent_chat_nonstream(self, form: AgentChatForm) -> SuccessResponse:
+    async def agent_chat_nonstream(self, form: AgentChatForm, background_tasks: BackgroundTasks) -> SuccessResponse:
         """
         Agent interaction (Non-streaming).
         Returns the formatted dictionary with answer, embedding, and timestamps.
         """
         result = await self.chat_service.non_stream_chat(
+            background_tasks=background_tasks,
             session_id=form.session_id,
             user_id = form.by,
             agent_id=form.agent_id,
@@ -73,7 +74,7 @@ class AgentController:
         Uses BackgroundTasks to handle database persistence after the stream starts.
         """
         agent_id = int(form.knowledge_id)
-        session_id = uuid.uuid4().hex
+        session_id = "32e20015e8b843eab2450f6a0103e4c1" # uuid.uuid4().hex
         
         return await self.dify_service.search(
                     agent_id=agent_id, 

@@ -183,9 +183,21 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
         path_filter: str | None = None
     ) -> list[dict[str, Any]]:
         try:
-            # 1. 关键词预处理：处理空格和特殊字符
-            clean_keyword = re.sub(r'[^\w\s]', '', keywords.strip())
-            formatted_key = re.sub(r'\s+', ' ACCUM ', clean_keyword)
+            # 1. 清理：保留中英文数字和空格
+            clean_keyword = re.sub(r'[^\w\s\u4e00-\u9fa5]', '', keywords.strip())
+            
+            # 2. 拆分并过滤空字符串
+            words = [w for w in clean_keyword.split() if w]
+            
+            if not words:
+                return []
+
+            # 3. 组装为 ACCUM 语法
+            # 加上 {} 是为了处理可能包含的特殊技术字符，防止 Oracle 报错
+            formatted_key = " ACCUM ".join([f"{{{w}}}" for w in words])
+            
+            # 4. 执行 SQL 时，确保 trace 日志打印出最终的 formatted_key 方便调试
+            logger.debug(f"Executing Oracle Full-Text Search with: {formatted_key}")
 
             all_params: dict[str, Any] = {
                 "kb_id": kb_id,

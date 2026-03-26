@@ -675,14 +675,13 @@ CREATE TABLE kbot_md_conv_context (
     session_id VARCHAR2(256) PRIMARY KEY,
     user_id VARCHAR2(256) NOT NULL,
     session_title VARCHAR2(256),
-    app_id NUMBER(38, 0),
-    agent_id VARCHAR2(256),
+    app_id NUMBER(38, 0) NOT NULL,
+    agent_id NUMBER NOT NULL,
     session_state JSON CHECK (session_state IS JSON),
     context_summary CLOB,
     interaction_count NUMBER DEFAULT 0,
     created_at TIMESTAMP(6) WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    last_active_at TIMESTAMP(6) WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_conv_user FOREIGN KEY (user_id) REFERENCES kbot_md_user_profile(user_id)
+    last_active_at TIMESTAMP(6) WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 COMMENT ON TABLE kbot_md_conv_context IS 'Manages active session states and rolling conversation summaries';
@@ -701,9 +700,9 @@ CREATE TABLE kbot_md_memory_entry (
     answer CLOB,
     retrieved_chunks JSON CHECK (retrieved_chunks IS JSON),
     intent_category VARCHAR2(64),
+    feedback NUMBER(1, 0) DEFAULT 0,
     request_time TIMESTAMP(6) WITH TIME ZONE,
-    response_time TIMESTAMP(6) WITH TIME ZONE,
-    CONSTRAINT fk_mem_session FOREIGN KEY (session_id) REFERENCES kbot_md_conv_context(session_id)
+    response_time TIMESTAMP(6) WITH TIME ZONE
 );
 
 -- Optional: Create an HNSW vector index for high-performance memory recall
@@ -716,6 +715,8 @@ COMMENT ON COLUMN kbot_md_memory_entry.search_keywords IS 'Extracted keywords an
 COMMENT ON COLUMN kbot_md_memory_entry.memory_vector IS 'Semantic vector of the query for long-term recall';
 COMMENT ON COLUMN kbot_md_memory_entry.turn_entities IS 'Entity snapshot for this specific turn';
 COMMENT ON COLUMN kbot_md_memory_entry.retrieved_chunks IS 'References used for this answer';
+COMMENT ON COLUMN kbot_md_memory_entry.intent_category IS 'Intent category for this turn';
+COMMENT ON COLUMN kbot_md_memory_entry.feedback IS 'User feedback for this turn, -1: bad, 0: neutral, 1: good';
 
 
 

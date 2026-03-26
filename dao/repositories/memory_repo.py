@@ -1,4 +1,5 @@
 import json
+from datetime import datetime
 from loguru import logger
 from sqlalchemy import select, update, delete, func, text, desc
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -6,6 +7,7 @@ from core.exceptions import DatabaseException, DataNotFoundException
 from .base_repo import BaseRepository
 from utils.oracle_vec_handler import OracleVecHandler
 from dao.entities import MemoryEntryEntity, ConversationContextEntity, UserProfileEntity
+from core.config.settings import get_app_config
 
 
 class MemoryEntryRepository(BaseRepository[MemoryEntryEntity]):
@@ -67,20 +69,18 @@ class MemoryEntryRepository(BaseRepository[MemoryEntryEntity]):
         3. feedback = 0: 正常包含（默认状态）
         """
         stmt = (
-        select(MemoryEntryEntity)
-        .where(
-            MemoryEntryEntity.session_id == session_id,
-            MemoryEntryEntity.feedback >= 0  # 核心过滤：排除 -1
+            select(MemoryEntryEntity)
+            .where(
+                MemoryEntryEntity.session_id == session_id,
+                MemoryEntryEntity.feedback >= 0  # 核心过滤：排除 -1
             )
-            .order_by(
-                desc(MemoryEntryEntity.feedback),     # 1 优先于 0
-                desc(MemoryEntryEntity.request_time)  # 同等反馈下，按时间倒序
-            )
+            .order_by(desc(MemoryEntryEntity.request_time))
             .limit(limit)
         )
         result = await self.session.execute(stmt)
         # 返回按时间正序排列的记录
-        return list(result.scalars().all())
+        entries = list(result.scalars().all())
+        return entries[::-1]
 
     async def update_context_summary(self, session_id: str, new_summary: str):
         """更新会话的滚动摘要"""
@@ -161,3 +161,67 @@ class MemoryEntryRepository(BaseRepository[MemoryEntryEntity]):
             .values(feedback=score)
         )
         await self.session.execute(stmt)
+
+    async def ensure_session(self, session_id: str, user_id: str, agent_id: int, question: str | None = None):
+        """
+        通用会话环境确保逻辑：
+        只要 session_id 或 user_id 在 DB 中不存在，就自动初始化。
+        """
+        # 1. 处理用户 (UserProfile) - 保证 L1 级联可用
+        user = await self.session.get(UserProfileEntity, user_id)
+        if not user:
+            logger.info(f"Initializing new user profile: {user_id}")
+            user = UserProfileEntity(
+                user_id=user_id,
+                global_preferences={},
+                profile_summary="Automatically initialized user profile"
+            )
+            self.session.add(user)
+            await self.session.flush()
+
+        # 2. 处理会话 (ConversationContext) - 保证 L2 级联可用
+        ctx = await self.session.get(ConversationContextEntity, session_id)
+        if not ctx:
+            logger.info(f"Initializing new conversation context: {session_id}")
+            session_title = question[:10] if question else f"Chat Session {datetime.now().strftime('%Y%m%d')}"
+            ctx = ConversationContextEntity(
+                session_id=session_id,
+                user_id=user_id,
+                app_id=get_app_config().app_id,
+                agent_id=agent_id,
+                session_title=session_title,
+                interaction_count=0
+            )
+            self.session.add(ctx)
+        
+    async def update_user_profile_summary(self, user_id: str, profile_summary: str):
+        """
+        更新用户的长期画像描述 (定性总结)
+        """
+        try:
+            # 使用 update 语句而非 ORM 属性赋值，可以避免不必要的 JSON 字段干扰
+            stmt = (
+                update(UserProfileEntity)
+                .where(UserProfileEntity.user_id == user_id)
+                .values(
+                    profile_summary=profile_summary,
+                    last_update_time=func.now()
+                )
+                .returning(UserProfileEntity.user_id)
+            )
+            result = await self.session.execute(stmt)
+            
+            # 如果影响行数为 0，说明用户还没初始化，执行插入
+            if result.scalar_one_or_none() is None:
+                new_user = UserProfileEntity(
+                    user_id=user_id,
+                    profile_summary=profile_summary,
+                    global_preferences={},
+                    last_update_time=func.now()
+                )
+                self.session.add(new_user)
+                
+            await self.session.flush() 
+        except Exception as e:
+            logger.error(f"Failed to update profile summary for user {user_id}", exc_info=e)
+            raise DatabaseException("Failed to update user profile summary", original_error=e)

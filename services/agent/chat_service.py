@@ -47,8 +47,16 @@ class ChatService:
         request_time = datetime.now(tz=timezone.utc)
         logger.info(f"Stream chat started: session={session_id}, agent={agent_id}")
 
+        # 确保会话存在
+        await self.memory_service.ensure_session_exists(
+            session_id=session_id,
+            user_id=user_id,
+            agent_id=agent_id,
+            question=question
+        )
+
         # 1. 运行核心流水线获取最终提示词和知识库检索结果
-        pipe_out = await self.orchestrator.run_pipeline(
+        pipe_out = await self.orchestrator.run_pipeline(background_tasks,
             user_id, session_id, agent_id, question, security_level, tags
         )
 
@@ -70,13 +78,26 @@ class ChatService:
         )
 
     async def non_stream_chat(
-        self, session_id: str, agent_id: int, question: str, 
-        security_level: int, user_id: str, tags: list[str] = []
+        self, 
+        background_tasks: BackgroundTasks, 
+        session_id: str, 
+        agent_id: int, 
+        question: str, 
+        security_level: int, 
+        user_id: str, 
+        tags: list[str] = []
     ) -> dict:
         """非流式对话入口"""
         request_time = datetime.now(tz=timezone.utc)
+        # 确保会话存在
+        await self.memory_service.ensure_session_exists(
+            session_id=session_id,
+            user_id=user_id,
+            agent_id=agent_id,
+            question=question
+        )
         
-        pipe_out = await self.orchestrator.run_pipeline(
+        pipe_out = await self.orchestrator.run_pipeline(background_tasks,
             user_id, session_id, agent_id, question, security_level, tags
         )
         
@@ -240,6 +261,17 @@ class ChatService:
                 prepared_data=prepared_data,
                 retrieved_chunks=references,  # 传入已经 enrich 过的 metadata
                 request_time=request_time
+            )
+
+            # 2. 异步刷新用户画像 (Long-term Profile)
+            # 只有拿到了完整的 question + answer，模型才能提炼出用户的真实画像
+
+            await self.memory_service.refresh_memory_capsule(
+                session_id=session_id,
+                user_id=user_id,
+                new_question=raw_question,
+                new_answer=full_answer,
+                llm_model=prepared_data.get('llm_model') # type:ignore 确保传入了模型名
             )
 
             logger.info(f"[Memory-Cycle] State, Summary, and Chat record synchronized for {session_id}")

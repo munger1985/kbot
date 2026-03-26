@@ -2,12 +2,11 @@ import time
 import asyncio
 from loguru import logger
 from typing import Any
+from fastapi import BackgroundTasks
 from core.database.oracle import get_session
-from core.config.settings import get_app_config
 from core.exceptions import *
 from dao.entities import AgentConfEntity, AgentEntity
-from dao.repositories import (AgentRepository, AgentConfRepository, MemoryEntryRepository,
-                             PromptRepository, FileRepository)
+from dao.repositories import (AgentRepository, AgentConfRepository, MemoryEntryRepository)
 from services.search.result import TxtBaseSearchResult
 from services.search.rerank import TxtBaseRerank
 from utils.clients import AIModelClient
@@ -32,6 +31,7 @@ class ChatOrchestrator:
 
     async def run_pipeline(
         self,
+        background_tasks: BackgroundTasks,
         user_id: str, 
         session_id: str, 
         agent_id: int, 
@@ -83,6 +83,26 @@ class ChatOrchestrator:
             context_summary=prepared['old_context'].context_summary if prepared['old_context'] else "",
             long_term_memory=long_term_memory
         )
+
+        # 5. 持久化会话状态
+        # 将本轮 Rewrite 提取的 turn_entities 真正存入数据库的 session_state 字段
+        # 这样下一轮请求调用 prepare_context_and_rewrite 时，old_state 才能拿到这些值
+        async with self.oracle_session as session:
+            repo = MemoryEntryRepository(session)
+            # 更新 context 表的 session_state
+            await repo.update_context_state(
+                session_id=session_id, 
+                new_state=prepared['new_state'],
+                increment_count=True
+            )
+            
+            # 如果有画像更新（长期偏好），同步更新用户表
+            if prepared.get('user_profile_updates'):
+                background_tasks.add_task(
+                    self.memory_service.sync_user_profile, # 包装一个同步/异步的写入方法
+                    user_id=user_id, 
+                    profile_updates=prepared['user_profile_updates']
+                )
 
         return {
             "final_prompt": final_prompt,
@@ -183,8 +203,8 @@ class ChatOrchestrator:
         agent_id: int, 
         security_level: int, 
         question: str, 
-        query_vec: list[float],
         keywords: str, 
+        query_vec: list[float],
         rerank_top_k: int, 
         rerank_model: str | None = None, 
         tags: list | None = None

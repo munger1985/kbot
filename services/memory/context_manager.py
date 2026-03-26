@@ -17,7 +17,8 @@ class ContextManager:
 
     async def process_query_with_memory(
         self, 
-        query: str, 
+        query: str,
+        chat_history: str,
         context_summary: str | None, 
         session_state: dict | None,
         model_name: str
@@ -27,7 +28,7 @@ class ContextManager:
         输入原始问题 + 记忆，输出改写后的全套参数。
         """
         # 1. 组装 Prompt (包含记忆与状态)
-        prompt = self._build_rewrite_prompt(query, context_summary, session_state)
+        prompt = self._build_rewrite_prompt(query, chat_history, context_summary, session_state)
         
         try:
             # 2. 获取结构化结果
@@ -35,7 +36,7 @@ class ContextManager:
             result = await self.llm_client.call_llm_json(
                 model_name=model_name, 
                 prompt=prompt, 
-                temperature=0.1 
+                temperature=0.0
             )
             
             # 3. 结果处理与字段校验 (确保字段存在)
@@ -59,10 +60,13 @@ class ContextManager:
                 "intent_category": "fallback"
             }
 
-    def _build_rewrite_prompt(self, query: str, summary: str | None, state: dict | None) -> str:
+    def _build_rewrite_prompt(self, query: str, chat_history: str, summary: str | None, state: dict | None) -> str:
         return f"""
 You are the Context & Identity Engine for the NexusCube RAG system.
 Your goal is to transform the user's raw input into a structured execution plan while maintaining a persistent User Profile.
+
+### Recent Dialogue (Short-term Memory)
+{chat_history if chat_history else 'No previous turns in this session.'}
 
 ### Context Knowledge
 - **Historical Summary**: {summary or 'None'} (General progress of the conversation)
@@ -99,51 +103,60 @@ Distinguish between "Turn Entities" and "User Profile Updates":
 User Input: {query}
 """
     
-    async def refresh_summary(self, session_id: str, model_name: str):
+    async def refresh_summary(self, session_id: str, user_id: str, model_name: str):
         """
-        核心逻辑：读取最近对话 -> LLM 压缩 -> 写入 context_summary
+        双重更新：1. 会话摘要 (Context Summary) 2. 用户画像描述 (Profile Summary)
         """
-        # 1. 获取最近 10 轮交互
         async with self.oracle_session as session:
             repo = MemoryEntryRepository(session)
             entries = await repo.get_recent_entries(session_id, limit=10)
             if not entries: return
 
-            # 在格式化历史时，给 feedback=1 的记录加权重标识
+            # 1. 组装对话事实
             history_list = []
             for e in entries:
                 # 显式告诉 LLM 哪些是“点赞”的答案，让其在总结摘要时重点保留
                 tag = "[用户认可的正确方案] " if e.feedback == 1 else ""
                 history_list.append(f"User: {e.raw_question}\nAssistant: {tag}{e.answer}")
-
             history_text = "\n".join(history_list)
 
-            # 3. 构建摘要 Prompt
+            # 2. 构造“双任务”Prompt
+            # 强制 LLM 分开输出：一个是当前聊的事，一个是关于这个人的描述
             prompt = f"""
-请根据以下对话历史，更新并生成一个精炼的“上下文摘要”。
-要求：
-1. 保留关键的技术决策、正在讨论的问题、已解决的错误以及用户提到的特定环境。
-2. 长度控制在 300 字以内。
-3. 采用客观陈述句。
-注意：带有“[用户认可的正确方案]”标记的内容是用户反馈有效的关键信息，请务必准确保留其技术细节。
-历史对话：
+请分析以下对话，产出两段总结。用 '---' 分隔。
+
+任务 1：会话摘要 (Context Summary)
+要求：记录当前正在处理的技术问题、环境（如 Ubuntu 24.04）及已验证的方案。
+
+任务 2：用户画像描述 (User Profile Summary)
+要求：基于对话定性描述用户。例如：职业身份、技术水平、沟通风格。
+
+对话历史：
 {history_text}
 """
             try:
-                # 4. 调用 LLM 生成摘要（此处建议用 call_llm_model 聚合结果）
-                summary_content = ""
+                # 3. 调用 LLM 生成摘要
+                full_content = ""
                 async for chunk in self.llm_client.call_llm_model(model_name=model_name, prompt=prompt, stream=False):
                     # 假设返回的是 SSE 格式，解析逻辑同之前
-                    summary_content += chunk # 简化示意，实际需按之前解析逻辑处理
+                    full_content += chunk # 简化示意，实际需按之前解析逻辑处理
                 
-                # 5. 持久化到 Oracle
-                if summary_content:
-                    await repo.update_context_summary(session_id, summary_content.strip())
-                    await repo.session.commit()
-                    logger.info(f"Summary updated for session {session_id}")
+                if "---" in full_content:
+                    parts = full_content.split("---")
+                    context_summary = parts[0].strip()
+                    profile_summary = parts[1].strip()
+
+                    # 4. 同时持久化会话上下文总结和用户画像
+                    # 更新当前会话的上下文摘要
+                    await repo.update_context_summary(session_id, context_summary)
+                    
+                    # 更新用户的长期画像总结（回答你之前的问题：在这里触发更新！）
+                    await repo.update_user_profile_summary(user_id, profile_summary)
+
+                    logger.info(f"Memory Capsule synced for user {user_id} in session {session_id}")
 
             except Exception as e:
-                logger.error(f"Failed to refresh summary: {e}")
+                logger.error(f"Failed to sync memory capsule: {e}")
 
     def build_final_prompt(
         self,

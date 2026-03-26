@@ -20,44 +20,47 @@ class TxtBaseSearch:
         return get_session()
 
     def rrf_merge(self, search_top_k: int, weight: float, 
-                  results_list: list[list[TxtBaseSearchResult]]) -> list[TxtBaseSearchResult]:
-        """Merges multiple search results using Reciprocal Rank Fusion (RRF).
-        
-        Args:
-            search_top_k: Number of top results to return.
-            weight: Global weight multiplier for the scores.
-            results_list: A list of result sets from different search engines.
-            
-        Returns:
-            A list of merged and re-ranked TxtBaseSearchResult objects.
-        """
+              results_list: list[list[TxtBaseSearchResult]]) -> list[TxtBaseSearchResult]:
         k = 60
-        rrf_score_map = {}  # key: chunk_id, value: aggregated rrf score
+        rrf_score_map = {} 
         chunk_map = {}
         
-        # 1. Calculate base RRF scores to normalize different rank scales
+        # 统计一下收到的原始数据总量
+        total_raw_count = sum(len(rs) for rs in results_list)
+        if total_raw_count == 0:
+            return []
+
         for results in results_list:
+            logger.debug(f"Processing result set with {len(results)} items")
+            # rank 从 1 开始
             for rank, r in enumerate(results, 1):
+                # 这里的 cid 必须是全局唯一的，否则会发生覆盖
+                cid = r.chunk_id
                 current_rrf = 1.0 / (k + rank)
-                rrf_score_map[r.chunk_id] = rrf_score_map.get(r.chunk_id, 0.0) + current_rrf
-                chunk_map[r.chunk_id] = r
-        
-        # 2. Apply business logic boosts (Hierarchy and Type)
+                
+                rrf_score_map[cid] = rrf_score_map.get(cid, 0.0) + current_rrf
+                # 只有第一次遇到这个 chunk 时才存入 map，或者保留分值更高的那个属性
+                if cid not in chunk_map:
+                    chunk_map[cid] = r
+
         merged = []
         for cid, base_rrf_score in rrf_score_map.items():
             res = chunk_map[cid]
             
-            # Boost L1/L2 titles as they provide high-level context
-            level_boost = 1.5 if (0 < res.structure_level < 3) else 1.0
+            # 权重计算
+            level_boost = 1.5 if (0 < getattr(res, 'structure_level', 0) < 3) else 1.0
+            type_boost = 1.1 if getattr(res, 'chunk_type', '') in ["table", "picture"] else 1.0
             
-            # Subtle boost for non-prose elements like tables or images
-            type_boost = 1.1 if res.chunk_type in ["table", "picture"] else 1.0
-            
+            # 赋值最终分数
             res.score = base_rrf_score * level_boost * type_boost * weight
             merged.append(res)
         
-        # 3. Sort by final score and truncate
+        # 排序
         merged.sort(key=lambda x: x.score, reverse=True)
+        
+        # 日志监控：看看合并后的去重数量
+        logger.debug(f"RRF Merged {total_raw_count} inputs into {len(merged)} unique chunks, returning top {search_top_k}")
+        
         return merged[:search_top_k]
     
     async def search(
@@ -101,7 +104,7 @@ class TxtBaseSearch:
             # Over-fetch by factor of 3 to ensure high-quality fusion pool
             vector_raw, fulltext_raw = await asyncio.gather(
                 self.search_by_vector(kb_id, security, keywords, query_vec, threshold, search_top_k * 3, do_rerank, weight, tags),
-                self.serch_by_full_text(kb_id, security, question, search_top_k * 3, do_rerank, weight, tags)
+                self.serch_by_full_text(kb_id, security, keywords, search_top_k * 3, do_rerank, weight, tags)
             )
 
         # Merge results into designated rerank/non-rerank buckets
@@ -138,6 +141,7 @@ class TxtBaseSearch:
                     kb_id=kb_id, query_vec=query_vec, security=security, keywords=keywords,
                     similarity_threshold=threshold, search_top_k=search_top_k, tags=tags
                 )
+                logger.debug(f"Vector search completed. Found {len(dataset)} results")
                 results = self._construct_search_result(dataset, weight=weight, search_type="semantic")
                 search_result = await self._enhance_context_with_window(results)
                 
@@ -158,6 +162,7 @@ class TxtBaseSearch:
                     kb_id=kb_id, keywords=keywords, security=security,
                     search_top_k=search_top_k, tags=tags
                 )
+                logger.debug(f"Full-text search completed. Found {len(dataset)} results")
                 results = self._construct_search_result(dataset, weight=weight, search_type="fulltext")
                 search_result = await self._enhance_context_with_window(results)
                 
@@ -241,33 +246,37 @@ class TxtBaseSearch:
         return results
 
     def _merge_adjacent_chunks(self, results: list[TxtBaseSearchResult]) -> list[TxtBaseSearchResult]:
-        """合并物理位置连续的 Chunk，避免上下文重复。"""
+        """去重逻辑：如果两个 Chunk 物理位置太近导致内容高度重叠，只保留分数高的那个。"""
         if not results: return []
         
-        # 1. 按文件和序号排序，以便识别连续性
-        # 注意：这里要保持原始评分的参考，通常只合并来自同一文件且序号相邻的
-        sorted_results = sorted(results, key=lambda x: (x.file_id, x.chunk_num))
+        # 1. 保持 RRF 算出的原始分数优先级
+        # 按分数从高到低处理，确保“最准”的那个被保留
+        results.sort(key=lambda x: x.score, reverse=True)
         
-        merged_results = []
-        if not sorted_results: return []
+        final_results = []
+        seen_chunks = {} # key: file_id, value: list of chunk_nums
         
-        current = sorted_results[0]
-        
-        for next_chunk in sorted_results[1:]:
-            # 如果是同一文件，且序号连续（差值在 window 范围内）
-            if (next_chunk.file_id == current.file_id and 
-                next_chunk.chunk_num <= current.chunk_num + 2): # 阈值可调
-                
-                # 合并内容（需去重或按顺序拼接）
-                # 如果已经做过 window 扩展，这里需要更精细的处理，
-                # 简单做法是保留 score 更高的那个，并把内容标记为已处理
-                current.content += f"\n[Next Section]\n{next_chunk.content}"
-                # 取两者中较高的分数
-                current.score = max(current.score, next_chunk.score)
+        for res in results:
+            fid = res.file_id
+            cnum = res.chunk_num
+            
+            if fid not in seen_chunks:
+                seen_chunks[fid] = []
+            
+            # 2. 检查是否与已保留的 Chunk 距离太近
+            # 如果当前 Chunk 的序号在已保留 Chunk 的前后 1 个位置内，说明内容基本重合（因为有 window_size=1）
+            is_redundant = False
+            for existing_num in seen_chunks[fid]:
+                if abs(existing_num - cnum) <= 1: # 窗口重叠判定
+                    is_redundant = True
+                    break
+            
+            if not is_redundant:
+                final_results.append(res)
+                seen_chunks[fid].append(cnum)
             else:
-                merged_results.append(current)
-                current = next_chunk
-        
-        merged_results.append(current)
-        # 2. 最后按分数重新排回降序
-        return sorted(merged_results, key=lambda x: x.score, reverse=True)
+                # 日志记录被过滤掉的重复内容（可选）
+                pass
+
+        logger.debug(f"Redundancy filter: {len(results)} -> {len(final_results)}")
+        return final_results
