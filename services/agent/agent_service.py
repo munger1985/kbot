@@ -1,10 +1,9 @@
 from loguru import logger
 from typing import Any
 from core.database.oracle import get_session
-from core.config.settings import get_app_config
 from core.exceptions import *
 from dao.repositories import (AgentRepository, AgentConfRepository,
-                             PromptRepository, FileRepository, MemoryEntryRepository)
+                             PromptRepository, MemoryEntryRepository)
 
 
 
