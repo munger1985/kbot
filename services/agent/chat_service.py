@@ -129,7 +129,6 @@ class ChatService:
         return {
             "question": question,
             "answer": full_answer,
-            "qa_embedding": pipe_out['model_params'].get("query_vec"),
             "references": enriched_refs,
             "request_time": request_time.strftime("%Y-%m-%d %H:%M:%S.%f"),
             "response_time": datetime.now(tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S.%f")

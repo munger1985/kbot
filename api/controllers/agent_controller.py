@@ -22,10 +22,10 @@ class AgentController:
         await self.agent_service.feedback(form.memory_id, form.feedback)
         return SuccessResponse(message="Feedback submitted successfully")
         
-    async def get_session_chat_records(self, session_id: str) -> SuccessResponse:
+    async def get_conversation_context(self, session_id: str) -> SuccessResponse:
         """Retrieves history for a specific session."""
-        records = await self.agent_service.get_session_history(session_id)
-        return SuccessResponse(data=records, message="Session history retrieved")
+        records = await self.agent_service.get_context_by_session(session_id)
+        return SuccessResponse(data=records, message="Conversation context retrieved")
 
     async def remove_session(self, session_id: str) -> SuccessResponse:
         """Deletes a chat session."""
@@ -74,7 +74,7 @@ class AgentController:
         Uses BackgroundTasks to handle database persistence after the stream starts.
         """
         agent_id = int(form.knowledge_id)
-        session_id = "32e20015e8b843eab2450f6a0103e4c1" # uuid.uuid4().hex
+        session_id = form.retrieval_setting.get("session_id") or uuid.uuid4().hex
         
         return await self.dify_service.search(
                     agent_id=agent_id, 

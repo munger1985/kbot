@@ -116,3 +116,4 @@ class AgentRepository(BaseRepository[AgentEntity]):
             raise e
         except Exception as e:
             raise DatabaseException("Failed to get prompt id by agent id", original_error=e)
+        

@@ -680,6 +680,7 @@ CREATE TABLE kbot_md_conv_context (
     session_state JSON CHECK (session_state IS JSON),
     context_summary CLOB,
     interaction_count NUMBER DEFAULT 0,
+    is_deleted BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP(6) WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     last_active_at TIMESTAMP(6) WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );

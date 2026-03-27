@@ -1,7 +1,7 @@
 
 from datetime import datetime
 from typing import Any
-from sqlalchemy import String, Integer, CLOB, JSON, DateTime, ForeignKey, Numeric, func
+from sqlalchemy import String, Integer, CLOB, JSON, DateTime, ForeignKey, Numeric, func, Boolean
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from .base import BaseEntity, VectorField
 
@@ -35,6 +35,7 @@ class ConversationContextEntity(BaseEntity):
     session_state: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=True, comment="Current active state machine parameters")
     context_summary: Mapped[str | None] = mapped_column(CLOB, comment="Short-to-medium term rolling summary")
     interaction_count: Mapped[int] = mapped_column(Integer, default=0, comment="Total turns in this session")
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, comment="Whether the session is deleted")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     last_active_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 

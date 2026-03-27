@@ -8,6 +8,7 @@ from .base_repo import BaseRepository
 from utils.oracle_vec_handler import OracleVecHandler
 from dao.entities import MemoryEntryEntity, ConversationContextEntity, UserProfileEntity
 from core.config.settings import get_app_config
+from utils.common import safe_read_content
 
 
 class MemoryEntryRepository(BaseRepository[MemoryEntryEntity]):
@@ -60,6 +61,34 @@ class MemoryEntryRepository(BaseRepository[MemoryEntryEntity]):
         except Exception as e:
             logger.error(f"Failed to add memory entry", exc_info=e)
             raise DatabaseException("Failed to add memory entry", original_error=e)
+        
+    async def get_sessions(self, session_id: str) -> list[dict[str, Any]]:
+        """Get all entries for a session"""
+        try:
+            stmt = select(MemoryEntryEntity.entry_id, 
+                          MemoryEntryEntity.raw_question,
+                          MemoryEntryEntity.answer,
+                          MemoryEntryEntity.retrieved_chunks,
+                          MemoryEntryEntity.feedback,
+                          MemoryEntryEntity.request_time,
+                          MemoryEntryEntity.response_time) \
+                .where(MemoryEntryEntity.session_id == session_id) \
+                .order_by(MemoryEntryEntity.request_time)
+            result = await self.session.execute(stmt)
+            rows = result.fetchall()
+            return [{
+                "entry_id": row[0],
+                "raw_question": safe_read_content(row[1]),
+                "answer": safe_read_content(row[2]),
+                "retrieved_chunks": row[3],
+                "feedback": row[4],
+                "request_time": row[5],
+                "response_time": row[6]
+            } for row in rows]
+            
+        except Exception as e:
+            logger.error(f"Failed to get entries for session {session_id}", exc_info=e)
+            raise DatabaseException("Failed to get entries", original_error=e)
         
     async def get_recent_entries(self, session_id: str, limit: int = 10) -> list[MemoryEntryEntity]:
         """
@@ -248,3 +277,25 @@ class MemoryEntryRepository(BaseRepository[MemoryEntryEntity]):
         except Exception as e:
             logger.error(f"Failed to update vector for entry {entry_id}", exc_info=e)
             raise DatabaseException("Failed to persist vector to Oracle", original_error=e)
+        
+    async def remove_context_by_agent(self, agent_id: int) -> None:
+        """Remove context by agent id"""
+        try:
+            await self.session.execute(
+                update(ConversationContextEntity)
+                .where(ConversationContextEntity.agent_id == agent_id)
+                .values(is_deleted=True)
+            )
+        except Exception as e:
+            raise DatabaseException("Failed to remove session", original_error=e)
+        
+    async def remove_context_by_id(self, session_id: str) -> None:
+        """Remove session by context id"""
+        try:
+            await self.session.execute(
+                update(ConversationContextEntity)
+                .where(ConversationContextEntity.session_id == session_id)
+                .values(is_deleted=True)
+            )
+        except Exception as e:
+            raise DatabaseException("Failed to remove session", original_error=e)
