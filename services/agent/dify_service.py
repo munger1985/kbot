@@ -5,6 +5,7 @@ from fastapi import BackgroundTasks
 from .orchestrator import ChatOrchestrator
 from .chat_service import ChatService
 from services.memory import MemoryService
+from services.agent.agent_params import ModelParams
 from core.exceptions import InternalServerError
 from services.search.result import TxtBaseSearchResult
 
@@ -57,27 +58,24 @@ class DifyService:
         enriched_refs = await self.chat_service._enrich_results_with_metadata(pipe_out['kb_results'])
         records = self._build_dify_records(enriched_refs)
 
-        # 持久化：使用 MemoryService 的新闭环方法
-        background_tasks.add_task(
-                self.memory_service.finalize_and_persist,
+        # 获取模型名
+        params = pipe_out.get('model_params')
+        if params:
+            model_params: ModelParams = params
+            # 持久化：使用 MemoryService 的新闭环方法
+            background_tasks.add_task(
+                self.memory_service.persist_and_reflect_memory,
                 session_id=session_id,
                 user_id=self.user_id,
                 raw_question=question,
                 answer="",
+                model_params=model_params,
                 prepared_data=pipe_out['prepared_data'],
                 retrieved_chunks=enriched_refs,
                 request_time=request_time
             )
-        
-        # 2. 触发画像反思逻辑
-        background_tasks.add_task(
-            self.memory_service.refresh_memory_capsule,
-            session_id=session_id,
-            user_id=self.user_id,
-            new_question=question,
-            new_answer="", # 同上
-            llm_model=pipe_out['prepared_data'].get('llm_model') # 必须传入模型名
-        )
+        else:
+            logger.warning(f"Model params are missing for session {session_id}, Agent {agent_id}, skip memory persist.")
 
         return {"records": records}
         

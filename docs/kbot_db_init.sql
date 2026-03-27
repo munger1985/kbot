@@ -694,7 +694,8 @@ CREATE TABLE kbot_md_memory_entry (
     session_id VARCHAR2(256) NOT NULL,
     standalone_query CLOB,
     search_keywords VARCHAR2(1000),
-    memory_vector VECTOR(1536, FLOAT32), -- Oracle 23ai native vector, adjust dimension as needed (e.g., 768, 1024, 1536)
+    memory_vector VECTOR(2560, FLOAT32), -- Oracle 23ai native vector, adjust dimension as needed (e.g., 768, 1024, 1536)
+    memory_summary CLOB,
     turn_entities JSON CHECK (turn_entities IS JSON),
     raw_question CLOB NOT NULL,
     answer CLOB,

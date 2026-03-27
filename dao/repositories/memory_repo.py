@@ -1,9 +1,9 @@
 import json
 from datetime import datetime
+from typing import Any
 from loguru import logger
 from sqlalchemy import select, update, delete, func, text, desc
-from sqlalchemy.ext.asyncio import AsyncSession
-from core.exceptions import DatabaseException, DataNotFoundException
+from core.exceptions import DatabaseException
 from .base_repo import BaseRepository
 from utils.oracle_vec_handler import OracleVecHandler
 from dao.entities import MemoryEntryEntity, ConversationContextEntity, UserProfileEntity
@@ -51,10 +51,12 @@ class MemoryEntryRepository(BaseRepository[MemoryEntryEntity]):
             logger.error(f"Failed to update context state for session {session_id}", exc_info=e)
             raise DatabaseException("Failed to update context state", original_error=e)
 
-    async def add_memory_entry(self, entry: MemoryEntryEntity):
+    async def add_memory_entry(self, entry: MemoryEntryEntity) -> int:
         """Persist memory entry to storage"""
         try:
             self.session.add(entry)
+            await self.session.flush()
+            return entry.entry_id
         except Exception as e:
             logger.error(f"Failed to add memory entry", exc_info=e)
             raise DatabaseException("Failed to add memory entry", original_error=e)
@@ -115,7 +117,7 @@ class MemoryEntryRepository(BaseRepository[MemoryEntryEntity]):
 
     async def search_vector_memory(self, user_id: str, query_vector: list[float], limit: int = 3):
         """
-        在 Oracle 23ai 中执行原生向量搜索
+        在 Oracle 26ai 中执行原生向量搜索
         重构点：
         1. 显式过滤掉 feedback = -1 (点踩) 的记录
         2. 返回 feedback 字段用于业务层打标签
@@ -225,3 +227,24 @@ class MemoryEntryRepository(BaseRepository[MemoryEntryEntity]):
         except Exception as e:
             logger.error(f"Failed to update profile summary for user {user_id}", exc_info=e)
             raise DatabaseException("Failed to update user profile summary", original_error=e)
+        
+    async def update_entry_vector(self, entry_id: int, summary: str, vector: list[float] | None = None):
+        """
+        物理写入向量到 Oracle 26ai 向量字段
+        """
+        try:
+            update_data: dict[str, Any] = {"memory_summary": summary}
+            if vector:
+                vec_handler = OracleVecHandler()
+                update_data["memory_vector"] = vec_handler.convert(vector)
+            
+            stmt = (
+                update(MemoryEntryEntity)
+                .where(MemoryEntryEntity.entry_id == entry_id)
+                .values(**update_data)
+            )
+            await self.session.execute(stmt)
+            logger.debug(f"Vector updated for memory entry: {entry_id}")
+        except Exception as e:
+            logger.error(f"Failed to update vector for entry {entry_id}", exc_info=e)
+            raise DatabaseException("Failed to persist vector to Oracle", original_error=e)

@@ -113,16 +113,18 @@ class ChatService:
 
         enriched_refs = await self._enrich_results_with_metadata(pipe_out['kb_results'])
 
-        # 持久化：使用 MemoryService 的新闭环方法
-        await self.memory_service.finalize_and_persist(
-            session_id=session_id,
-            user_id=user_id,
-            raw_question=question,
-            answer=full_answer,
-            prepared_data=pipe_out['prepared_data'],
-            retrieved_chunks=enriched_refs,
-            request_time=request_time
-        )
+        # 调用 MemoryService 持久化记忆
+        background_tasks.add_task(
+                self.memory_service.persist_and_reflect_memory,
+                session_id=session_id,
+                user_id=user_id,
+                raw_question=question,
+                answer=full_answer,
+                model_params=pipe_out['model_params'],
+                prepared_data=pipe_out['prepared_data'],
+                retrieved_chunks=enriched_refs,
+                request_time=request_time
+            )
 
         return {
             "question": question,
@@ -133,8 +135,6 @@ class ChatService:
             "response_time": datetime.now(tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S.%f")
         }
 
-    
-    
     # ========================== Generators & Persistence Helpers ==========================
 
     async def _generate_chat_stream(
@@ -169,21 +169,28 @@ class ChatService:
             logger.error(f"Exception during LLM stream generation: {e}")
             yield json.dumps({'type': 'error', 'message': str(e)}) + '\n'
         finally:
-            # Send reference metadata to frontend
+            # 1. Send reference metadata to frontend
             logger.debug(f"Stream generation finished. Sending references for session {session_id}")
             references = await self._enrich_results_with_metadata(kb_results)
             yield json.dumps({'type': 'reference', 'references': references, 'is_complete': True}) + '\n'
 
-            # Add background task for ES persistence
+            # 2. 拼接完整回答
+            str_chunks = [c.decode("utf-8") if isinstance(c, bytes) else str(c) for c in answer_chunks]
+            full_answer = "".join(str_chunks).strip()
+            
+            logger.info(f"[Memory-Cycle] Starting persistence for session {session_id}")
+
+            # 3. 调用 MemoryService 持久化记忆
             background_tasks.add_task(
-                self._persist_memory_cycle,
+                self.memory_service.persist_and_reflect_memory,
                 session_id=session_id,
                 user_id=user_id,
                 raw_question=question,
-                chunks=answer_chunks,
+                answer=full_answer,
+                model_params=model_params,
                 prepared_data=prepared_data,
-                references=references,
-                request_time=request_time
+                request_time=request_time,
+                retrieved_chunks=references
             )
 
     # ========================== Utils & Helpers ==========================
@@ -219,67 +226,6 @@ class ChatService:
                 logger.debug(f"Failed to parse dict chunk: {e}, chunk keys: {chunk.keys() if chunk else ''}")
         else:
             logger.debug(f"Unknown chunk type: {type(chunk)}, content: {str(chunk)[:100] if chunk else ''}")
-
-    async def _process_answer(self, chunks) -> str:
-        """Joins accumulated chunks into a single string."""
-        str_chunks = [c.decode("utf-8") if isinstance(c, bytes) else str(c) for c in chunks]
-        return "".join(str_chunks).strip()
-
-    async def _persist_memory_cycle(
-        self, 
-        session_id: str, 
-        user_id: str,
-        raw_question: str, 
-        chunks: list, 
-        references: list, 
-        prepared_data: dict,
-        request_time: datetime
-    ):
-        """
-        闭环持久化：
-        1. 组合 LLM 碎片为完整回答
-        2. 调用 MemoryService.finalize_and_persist 
-        3. 同步更新 Oracle 中的 State 和 Summary
-        """
-        try:
-            if not chunks:
-                logger.warning(f"No content chunks to persist for session {session_id}")
-                return
-
-            # 1. 还原回答内容
-            full_answer = await self._process_answer(chunks)
-            
-            logger.info(f"[Memory-Cycle] Starting persistence for session {session_id}")
-
-            # 2. 调用 MemoryService 的高级持久化接口
-            # prepared_data 包含了：new_state, standalone_query, search_keywords 等
-            await self.memory_service.finalize_and_persist(
-                session_id=session_id,
-                user_id=user_id,
-                raw_question=raw_question,
-                answer=full_answer,
-                prepared_data=prepared_data,
-                retrieved_chunks=references,  # 传入已经 enrich 过的 metadata
-                request_time=request_time
-            )
-
-            # 2. 异步刷新用户画像 (Long-term Profile)
-            # 只有拿到了完整的 question + answer，模型才能提炼出用户的真实画像
-
-            await self.memory_service.refresh_memory_capsule(
-                session_id=session_id,
-                user_id=user_id,
-                new_question=raw_question,
-                new_answer=full_answer,
-                llm_model=prepared_data.get('llm_model') # type:ignore 确保传入了模型名
-            )
-
-            logger.info(f"[Memory-Cycle] State, Summary, and Chat record synchronized for {session_id}")
-
-        except Exception as e:
-            import traceback
-            logger.error(f"Failed to finalize memory cycle: {e}")
-            logger.error(f"Full traceback:\n{traceback.format_exc()}")
 
     async def _enrich_results_with_metadata(self, kb_results: list[TxtBaseSearchResult]) -> list[dict]:
         """Converts raw search results into dictionaries with file metadata for frontend display."""

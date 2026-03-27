@@ -1,12 +1,14 @@
 from datetime import datetime
 from loguru import logger
 import json
+import re
 from core.database.oracle import get_session
 from core.exceptions import InternalServerError
 from dao.entities import MemoryEntryEntity
 from dao.repositories import MemoryEntryRepository
 from .state_manager import SessionStateManager
 from .context_manager import ContextManager
+from services.agent.agent_params import ModelParams
 from utils.clients.model_client import AIModelClient
 from utils.common import safe_read_content
 
@@ -96,127 +98,150 @@ class MemoryService:
                 "turn_entities": rewrite_data['turn_entities'],
                 "user_profile_updates": profile_updates, # 显式返回，方便后续写入
                 "new_state": new_state,
-                "old_context": context,
-                "llm_model": llm_model # 透传模型名给后续持久化任务
+                "old_context": context
             }
 
-    # ========================== 核心补全：长期画像刷新 (Reflection) ==========================
+    # ========================== 长期画像刷新 (Reflection) ==========================
 
-    async def refresh_memory_capsule(
+    async def _do_llm_reflection(
         self, 
-        session_id: str, 
         user_id: str, 
-        new_question: str, 
-        new_answer: str,
+        old_summary: str,
+        question: str, 
+        answer: str,
         llm_model: str
-    ):
+    ) -> tuple[str, str]:
         """
-        异步刷新用户长期画像摘要 (Profile Summary)
-        这个方法解决了 profile_summary 始终是初始化状态的问题。
+        调用 LLM 深度加工记忆。
+        1. 更新全局画像 (Profile Summary)
+        2. 提炼本轮记忆快照 (Memory Snapshot)
         """
+        reflection_prompt = f"""
+你是一位资深的系统架构师与用户画像专家。请分析对话并输出 JSON 格式的更新记录。
+
+### 原有画像摘要:
+{old_summary}
+
+### 最新对话片段:
+Q: {question}
+A: {answer}
+
+### 任务指令:
+1. 分析最新对话，提取用户的专业身份(如DevOps)、使用的技术栈(如Oracle Linux 8)、当前关注的具体项目或痛点。
+2. 将新提取的信息与原有摘要进行逻辑合并。
+3. 如果信息重复，则保留；如果信息冲突（如用户从 Ubuntu 换到了 RHEL），以最新对话为准。
+4. 保持摘要简洁、专业，总字数不超过 300 字。
+5. 直接输出更新后的摘要文本，不要包含“根据对话...”等废话。
+### 额外任务：
+6. 请为本次对话生成一个【记忆快照】（Memory Snapshot），用于语义搜索。
+### 任务要求:
+1. 更新【profile_summary】：合并新老信息，字数<300，专业简洁。如果原有摘要为默认初始化信息，请直接以本次对话内容开启新摘要。
+2. 生成【memory_snapshot】：本次对话的核心事实快照，需消解指代（如“它”->“Oracle 26ai”），去除废话。
+
+### 输出格式 (必须为纯 JSON):
+{{
+    "profile_summary": "更新后的完整画像摘要...",
+    "memory_snapshot": "本次对话的高纯度事实快照..."
+}}
+"""
+
+        logger.debug(f"Triggering profile reflection for user: {user_id}")
+        
+        # 调用 LLM 提炼记忆
+        new_summary = ""
+        async for chunk in self.model_client.call_llm_model(llm_model, reflection_prompt, stream=False):
+            # 处理非流式返回的完整字典 (参考测试3的日志结构)
+            if isinstance(chunk, dict):
+                # 尝试从非流式结构提取: choices[0].message.content
+                choices = chunk.get("choices", [{}])
+                message = choices[0].get("message", {})
+                content = message.get("content")
+                
+                # 如果是流式结构，content 会在 delta 里
+                if content is None:
+                    content = choices[0].get("delta", {}).get("content", "")
+                
+                new_summary += (content or "")
+            
+            # 处理可能的字符串返回
+            elif isinstance(chunk, str):
+                # 如果 model_client 内部没做 json.loads，这里需要解析
+                if chunk.startswith("{"):
+                    try:
+                        data = json.loads(chunk)
+                        new_summary += data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                    except:
+                        pass
+                else:
+                    new_summary += chunk
+
+        if not new_summary:
+            logger.warning("Reflection failed: LLM returned empty summary.")
+            return old_summary, f"Q: {question}\nA: {answer}"
+
+        # 解析 LLM 返回的 JSON 内容
         try:
-            # 1. 获取当前最新画像
-            user_profile = await self.get_user_profile(user_id)
-            old_summary = user_profile.get("profile_summary", "Automatically initialized user profile")
-
-            # 2. 构建反思 Prompt，要求模型提炼并合并新信息
-            reflection_prompt = f"""
-            你是一位资深的系统架构师与用户画像专家。请根据【最新对话】更新【用户画像摘要】。
+            json_str = new_summary.strip()
+            # 在解析前增加更强的正则提取
+            json_match = re.search(r'\{.*\}', json_str, re.DOTALL)
+            if json_match:
+                json_str = json_match.group()
             
-            ### 原有画像摘要:
-            {old_summary}
+            # 针对 LLM 可能返回 Markdown JSON 块的情况进行清洗
+            if json_str.startswith("```json"):
+                json_str = json_str.split("```json")[1].split("```")[0].strip()
+            elif json_str.startswith("```"):
+                json_str = json_str.split("```")[1].split("```")[0].strip()
             
-            ### 最新对话片段:
-            用户提问: {new_question}
-            助手回答: {new_answer}
+            res_data = json.loads(json_str)
+            profile_summary = res_data.get("profile_summary", old_summary)
+            memory_snapshot = res_data.get("memory_snapshot", f"Q: {question}\nA: {answer}")
             
-            ### 任务指令:
-            1. 分析最新对话，提取用户的专业身份(如DevOps)、使用的技术栈(如Oracle Linux 8)、当前关注的具体项目或痛点。
-            2. 将新提取的信息与原有摘要进行逻辑合并。
-            3. 如果信息重复，则保留；如果信息冲突（如用户从 Ubuntu 换到了 RHEL），以最新对话为准。
-            4. 保持摘要简洁、专业，总字数不超过 300 字。
-            5. 直接输出更新后的摘要文本，不要包含“根据对话...”等废话。
-            """
-
-            logger.debug(f"Triggering profile reflection for user: {user_id}")
-            
-            # 3. 调用 LLM 生成新摘要
-            new_summary = ""
-            async for chunk in self.model_client.call_llm_model(llm_model, reflection_prompt, stream=False):
-                # 处理非流式返回的完整字典 (参考测试3的日志结构)
-                if isinstance(chunk, dict):
-                    # 尝试从非流式结构提取: choices[0].message.content
-                    choices = chunk.get("choices", [{}])
-                    message = choices[0].get("message", {})
-                    content = message.get("content")
-                    
-                    # 如果是流式结构，content 会在 delta 里
-                    if content is None:
-                        content = choices[0].get("delta", {}).get("content", "")
-                    
-                    new_summary += (content or "")
-                
-                # 处理可能的字符串返回
-                elif isinstance(chunk, str):
-                    # 如果 model_client 内部没做 json.loads，这里需要解析
-                    if chunk.startswith("{"):
-                        try:
-                            data = json.loads(chunk)
-                            new_summary += data.get("choices", [{}])[0].get("message", {}).get("content", "")
-                        except:
-                            pass
-                    else:
-                        new_summary += chunk
-
-            new_summary = new_summary.strip()
-            if not new_summary:
-                logger.warning("Reflection failed: LLM returned empty summary.")
-                return
-
-            # 4. 写入 Oracle 数据库
-            async with self.oracle_session as session:
-                repo = MemoryEntryRepository(session)
-                # 使用专门的更新 summary 方法
-                await repo.update_user_profile_summary(user_id=user_id, profile_summary=new_summary)
-                await session.commit()
-                
-            logger.info(f"Profile Summary successfully updated for user: {user_id}")
-            logger.debug(f"LLM Reflection Result: {new_summary}")
-
         except Exception as e:
-            logger.error(f"Error during memory capsule refresh: {e}")
+            logger.error(f"Failed to parse Reflection JSON: {e}. Raw: {new_summary}")
+            # 兜底逻辑：解析失败则只更新画像，或按原始文本处理
+            profile_summary = new_summary[:300]
+            memory_snapshot = question
+
+        return profile_summary, memory_snapshot
+            
 
     # ========================== 持久化与同步 ==========================
 
-    async def finalize_and_persist(
+    async def persist_and_reflect_memory(
         self,
         session_id: str,
         user_id: str,
         raw_question: str,
         answer: str,
+        model_params: ModelParams,
         prepared_data: dict,
         request_time: datetime,
         retrieved_chunks: list | None = None
     ):
-        """持久化基础对话记录与短期状态"""
-        # 从 prepared_data 中提取由 ContextManager 识别的画像更新
-        profile_updates = prepared_data.get("user_profile_updates", {})
+        """统一的记忆持久化与反思任务, 仅用于后台异步调用"""
+        # 获取 LLM 和 Embedding 模型
+        llm_model = model_params.llm_model
+        embedding_model = model_params.embedding_model
 
         async with self.oracle_session as session:
-            context_repo = MemoryEntryRepository(session)
+            repo = MemoryEntryRepository(session)
             try:
+                # --------- STAGE 1: 基础持久化 ---------
+
                 # 1. 更新 Context 状态 (Session 级别的结构化上下文)
-                await context_repo.update_context_state(
+                await repo.update_context_state(
                     session_id=session_id,
                     new_state=prepared_data.get('new_state', {})
                 )
 
                 # 2. 创建并保存 Memory Entry (对话流水账)
+                standalone_query=prepared_data.get('standalone_query', raw_question)
                 new_entry = MemoryEntryEntity(
                     session_id=session_id,
                     raw_question=raw_question,
                     answer=answer,
-                    standalone_query=prepared_data.get('standalone_query', raw_question),
+                    standalone_query=standalone_query,
                     search_keywords=prepared_data.get('search_keywords', ""),
                     turn_entities=prepared_data.get('turn_entities', {}), 
                     intent_category=prepared_data.get('intent_category', "general"),
@@ -224,19 +249,60 @@ class MemoryService:
                     request_time=request_time,
                     response_time=datetime.now()
                 )
-                await context_repo.add_memory_entry(new_entry)
+                entry_id = await repo.add_memory_entry(new_entry)
                 logger.info(f"Interaction persisted for session: {session_id}")
 
                 # 3. 增量更新 Profile 表中的结构化 JSON 字段 (global_preferences 等)
+                # 从 prepared_data 中提取由 ContextManager 识别的画像更新
+                profile_updates = prepared_data.get("user_profile_updates", {})
                 if profile_updates:
-                    await context_repo.upsert_user_profile(
+                    await repo.upsert_user_profile(
                         user_id=user_id,
                         profile_updates=profile_updates
                     )
                 logger.info(f"Full persistence cycle completed for session: {session_id}")
+                # 手动触发提交，对话记录比画像更新更重要，防止 LLM 反思（Stage 2）因为网络或 API 限制超时，导致 Stage 1 已经写入的基础对话数据被一起回滚
+                await session.commit()
+
+                # --------- STAGE 2: 语义反思与向量化 ---------
+
+                # 1. 获取当前最新画像
+                user_profile = await self.get_user_profile(user_id)
+                old_summary = user_profile.get("profile_summary", "Automatically initialized user profile")
+
+                # 2. 构建反思 Prompt，要求模型提炼并合并新信息
+                new_summary, memory_snapshot = await self._do_llm_reflection(user_id, old_summary, standalone_query, answer, llm_model)
+
+                # 5. 获取语义向量 (异步，不阻塞画像更新)
+                logger.debug(f"Vectorizing snapshot for entry {entry_id}...")
+                try:
+                    memory_vector = await self.model_client.call_embedding_model(embedding_model, [memory_snapshot])
+                    if memory_vector:
+                        vector = memory_vector[0].embedding
+                    else:
+                        vector = None
+                except Exception as e:
+                    logger.error(f"Failed to vectorize snapshot: {e}")
+                    vector = None
+
+                # 一次性回写用户画像和记忆向量
+                # 1. 更新长期画像
+                await repo.update_user_profile_summary(user_id=user_id, profile_summary=new_summary)
+                # 2. 回填本轮 Entry 的向量与增强文本
+                # 这样这条记录从此刻起，就能在未来的 search_vector_memory 中被检索到了
+                await repo.update_entry_vector(
+                    entry_id=entry_id,
+                    vector=vector,
+                    summary=memory_snapshot
+                )
+                logger.debug(f"LLM Reflection Result: {new_summary}")
+                logger.info(f"Successfully updated profile summary for user: {user_id}")
+                logger.info(f"Successfully refined memory for entry_id: {entry_id}")
+
             except Exception as e:
-                logger.error(f"Persistence cycle failed, rolled back: {e}")
+                logger.error(f"Error during memory capsule refresh: {e}")
                 raise InternalServerError(f"Failed to persist memory: {e}")
+                
 
     async def get_relevant_memories(self, user_id: str, query_vector: list) -> str:
         """
@@ -304,7 +370,7 @@ class MemoryService:
                 logger.error(f"Check session {session_id} failed")
                 raise InternalServerError(f"Check session {session_id} failed: {e}")
             
-    async def sync_user_profile(self, user_id: str, profile_updates: dict):
+    async def sync_user_profile(self, user_id: str, profile_updates: dict) -> None:
         """
         后台任务专用：仅同步更新用户长期画像
         """

@@ -49,12 +49,11 @@ class MemoryEntryEntity(BaseEntity):
 
     entry_id: Mapped[int] = mapped_column(Numeric(38, 0), primary_key=True, autoincrement=True)
     session_id: Mapped[str] = mapped_column(ForeignKey("kbot_md_conv_context.session_id"), nullable=False)
-    
     # Core RAG Fields
     standalone_query: Mapped[str | None] = mapped_column(CLOB, comment="Context-enriched rewritten question")
     search_keywords: Mapped[str | None] = mapped_column(String(1000), comment="Includes extracted keywords and expanded synonyms in hybrid search")
     memory_vector: Mapped[list[float]] = mapped_column(VectorField(), comment="Oracle 23ai native vector for semantic search")
-    
+    memory_summary: Mapped[str | None] = mapped_column(CLOB, comment="LLM reflected knowledge snapshot for long-term memory")
     # Metadata & Content
     turn_entities: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=True, comment="Entity snapshot for this specific turn")
     raw_question: Mapped[str] = mapped_column(CLOB, comment="Original user input")
