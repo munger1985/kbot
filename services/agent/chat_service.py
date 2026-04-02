@@ -1,4 +1,4 @@
-import time, json
+import uuid, json
 from datetime import datetime, timezone
 from loguru import logger
 from fastapi.responses import StreamingResponse
@@ -112,18 +112,23 @@ class ChatService:
             if temp_chunks: full_answer += "".join(temp_chunks)
 
         enriched_refs = await self._enrich_results_with_metadata(pipe_out['kb_results'])
-
+        
         # 调用 MemoryService 持久化记忆
+        entry_id = uuid.uuid4().hex
+        response_time = datetime.now(tz=timezone.utc)
+
         background_tasks.add_task(
                 self.memory_service.persist_and_reflect_memory,
                 session_id=session_id,
                 user_id=user_id,
+                entry_id=entry_id,
                 raw_question=question,
                 answer=full_answer,
                 model_params=pipe_out['model_params'],
                 prepared_data=pipe_out['prepared_data'],
                 retrieved_chunks=enriched_refs,
-                request_time=request_time
+                request_time=request_time,
+                response_time=response_time
             )
 
         return {
@@ -131,7 +136,8 @@ class ChatService:
             "answer": full_answer,
             "references": enriched_refs,
             "request_time": request_time.strftime("%Y-%m-%d %H:%M:%S.%f"),
-            "response_time": datetime.now(tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S.%f")
+            "response_time": response_time.strftime("%Y-%m-%d %H:%M:%S.%f"),
+            "entry_id": entry_id
         }
 
     # ========================== Generators & Persistence Helpers ==========================
@@ -173,6 +179,10 @@ class ChatService:
             references = await self._enrich_results_with_metadata(kb_results)
             yield json.dumps({'type': 'reference', 'references': references, 'is_complete': True}) + '\n'
 
+            entry_id = uuid.uuid4().hex
+            response_time = datetime.now(tz=timezone.utc)
+            yield json.dumps({'type': 'memory', 'entry_id': entry_id, 'response_time': response_time.strftime("%Y-%m-%d %H:%M:%S.%f")}) + '\n'
+
             # 2. 拼接完整回答
             str_chunks = [c.decode("utf-8") if isinstance(c, bytes) else str(c) for c in answer_chunks]
             full_answer = "".join(str_chunks).strip()
@@ -180,15 +190,18 @@ class ChatService:
             logger.info(f"[Memory-Cycle] Starting persistence for session {session_id}")
 
             # 3. 调用 MemoryService 持久化记忆
+            
             background_tasks.add_task(
                 self.memory_service.persist_and_reflect_memory,
                 session_id=session_id,
                 user_id=user_id,
+                entry_id=entry_id,
                 raw_question=question,
                 answer=full_answer,
                 model_params=model_params,
                 prepared_data=prepared_data,
                 request_time=request_time,
+                response_time=response_time,
                 retrieved_chunks=references
             )
 

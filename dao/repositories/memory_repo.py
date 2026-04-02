@@ -52,12 +52,10 @@ class MemoryEntryRepository(BaseRepository[MemoryEntryEntity]):
             logger.error(f"Failed to update context state for session {session_id}", exc_info=e)
             raise DatabaseException("Failed to update context state", original_error=e)
 
-    async def add_memory_entry(self, entry: MemoryEntryEntity) -> int:
+    async def add_memory_entry(self, entry: MemoryEntryEntity):
         """Persist memory entry to storage"""
         try:
             self.session.add(entry)
-            await self.session.flush()
-            return entry.entry_id
         except Exception as e:
             logger.error(f"Failed to add memory entry", exc_info=e)
             raise DatabaseException("Failed to add memory entry", original_error=e)
@@ -257,7 +255,7 @@ class MemoryEntryRepository(BaseRepository[MemoryEntryEntity]):
             logger.error(f"Failed to update profile summary for user {user_id}", exc_info=e)
             raise DatabaseException("Failed to update user profile summary", original_error=e)
         
-    async def update_entry_vector(self, entry_id: int, summary: str, vector: list[float] | None = None):
+    async def update_entry_vector(self, entry_id: str, summary: str, vector: list[float] | None = None):
         """
         物理写入向量到 Oracle 26ai 向量字段
         """

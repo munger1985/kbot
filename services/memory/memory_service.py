@@ -212,11 +212,13 @@ A: {answer}
         self,
         session_id: str,
         user_id: str,
+        entry_id: str,
         raw_question: str,
         answer: str,
         model_params: ModelParams,
         prepared_data: dict,
         request_time: datetime,
+        response_time: datetime,
         retrieved_chunks: list | None = None
     ):
         """统一的记忆持久化与反思任务, 仅用于后台异步调用"""
@@ -238,6 +240,8 @@ A: {answer}
                 # 2. 创建并保存 Memory Entry (对话流水账)
                 standalone_query=prepared_data.get('standalone_query', raw_question)
                 new_entry = MemoryEntryEntity(
+                    entry_id=entry_id,
+                    user_id=user_id,
                     session_id=session_id,
                     raw_question=raw_question,
                     answer=answer,
@@ -247,9 +251,9 @@ A: {answer}
                     intent_category=prepared_data.get('intent_category', "general"),
                     retrieved_chunks=retrieved_chunks,
                     request_time=request_time,
-                    response_time=datetime.now()
+                    response_time=response_time
                 )
-                entry_id = await repo.add_memory_entry(new_entry)
+                # entry_id = await repo.add_memory_entry(new_entry)
                 logger.info(f"Interaction persisted for session: {session_id}")
 
                 # 3. 增量更新 Profile 表中的结构化 JSON 字段 (global_preferences 等)

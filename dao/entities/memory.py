@@ -48,7 +48,7 @@ class MemoryEntryEntity(BaseEntity):
     """
     __tablename__ = "kbot_md_memory_entry"
 
-    entry_id: Mapped[int] = mapped_column(Numeric(38, 0), primary_key=True, autoincrement=True)
+    entry_id: Mapped[str] = mapped_column(String(256), primary_key=True, autoincrement=True)
     session_id: Mapped[str] = mapped_column(ForeignKey("kbot_md_conv_context.session_id"), nullable=False)
     # Core RAG Fields
     standalone_query: Mapped[str | None] = mapped_column(CLOB, comment="Context-enriched rewritten question")
