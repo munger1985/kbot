@@ -241,7 +241,6 @@ A: {answer}
                 standalone_query=prepared_data.get('standalone_query', raw_question)
                 new_entry = MemoryEntryEntity(
                     entry_id=entry_id,
-                    user_id=user_id,
                     session_id=session_id,
                     raw_question=raw_question,
                     answer=answer,
