@@ -15,7 +15,7 @@ router = APIRouter(prefix="/agent", tags=["Agent Chat"])
     response_class=StreamingResponse,
     status_code=status.HTTP_200_OK
 )
-async def handle_agent_chat(form: AgentChatForm, auth: AnyAuth, background_tasks: BackgroundTasks):
+async def handle_agent_chat(form: AgentChatForm, background_tasks: BackgroundTasks): #auth: AnyAuth, 
     """
     ### Description
     Asynchronous streaming interface for AI Agent interactions using Server-Sent Events (SSE).
