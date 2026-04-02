@@ -85,10 +85,6 @@ queue_workers = 2
 parser_parallel = 4
 db_check_interval = 120
 
-[jieba]
-custom_dict_path = "/home/chris/kbot3/configuration/custom_dict.txt"
-stop_words_path = "/home/chris/kbot3/configuration/stopwords.txt"
-
 [prompt]
 image2text = "SYSTEM/image2text"
 summary = "SYSTEM/summary"

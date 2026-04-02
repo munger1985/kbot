@@ -1,4 +1,3 @@
-import asyncio
 from loguru import logger
 from utils.clients import AIModelClient
 from .result import TxtBaseSearchResult
@@ -15,12 +14,13 @@ class TxtBaseRerank:
     def __init__(self):
         self.model_client = AIModelClient()
 
-    async def rerank(self, 
-                     model_name: str, 
-                     top_k: int, 
-                     question: str, 
-                     kb_results: list[TxtBaseSearchResult]
-                    ) -> list[TxtBaseSearchResult]:
+    async def rerank(
+        self, 
+        model_name: str, 
+        top_k: int, 
+        question: str, 
+        kb_results: list[TxtBaseSearchResult]
+    ) -> list[TxtBaseSearchResult]:
         """Reranks search results using a cross-encoder model.
         
         Args:
@@ -28,7 +28,6 @@ class TxtBaseRerank:
             top_k: Maximum number of final results to return.
             question: Original user query string.
             kb_results: Initial recall set (usually around 50-100 items).
-            min_rerank_score: Minimum threshold to filter out irrelevant noise.
             
         Returns:
             A list of reranked TxtBaseSearchResult objects, sorted by score.

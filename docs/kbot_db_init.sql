@@ -347,7 +347,6 @@ CREATE TABLE KBOT_MD_AGENT_CONF (
     APP_ID                 NUMBER,
     AGENT_ID               NUMBER,
     TOOL_ID                NUMBER,
-    TOOL_TYPE              NUMBER(2),
     TOOL_WEIGHT            NUMBER(2,2),
     RERANKER_FLAG          NUMBER(1),
     SEARCH_TYPE            NUMBER(2),
@@ -370,7 +369,6 @@ COMMENT ON COLUMN KBOT_MD_AGENT_CONF.CONF_ID IS 'Primary key ID';
 COMMENT ON COLUMN KBOT_MD_AGENT_CONF.APP_ID IS 'Associated application ID';
 COMMENT ON COLUMN KBOT_MD_AGENT_CONF.AGENT_ID IS 'AI agent ID';
 COMMENT ON COLUMN KBOT_MD_AGENT_CONF.TOOL_ID IS 'KB ID / FUNC_ID etc.';
-COMMENT ON COLUMN KBOT_MD_AGENT_CONF.TOOL_TYPE IS 'Tool type enumeration';
 COMMENT ON COLUMN KBOT_MD_AGENT_CONF.TOOL_WEIGHT IS 'KB retrieval weight (0.00-1.00)';
 COMMENT ON COLUMN KBOT_MD_AGENT_CONF.RERANKER_FLAG IS 'Reranking required: 1 - Yes, 0 - No';
 COMMENT ON COLUMN KBOT_MD_AGENT_CONF.SEARCH_TYPE IS 'Search type enumeration';
@@ -695,7 +693,7 @@ CREATE TABLE kbot_md_memory_entry (
     session_id VARCHAR2(256) NOT NULL,
     standalone_query CLOB,
     search_keywords VARCHAR2(1000),
-    memory_vector VECTOR(2560, FLOAT32), -- Oracle 23ai native vector, adjust dimension as needed (e.g., 768, 1024, 1536)
+    memory_vector VECTOR,
     memory_summary CLOB,
     turn_entities JSON CHECK (turn_entities IS JSON),
     raw_question CLOB NOT NULL,
@@ -708,8 +706,8 @@ CREATE TABLE kbot_md_memory_entry (
 );
 
 -- Optional: Create an HNSW vector index for high-performance memory recall
-CREATE VECTOR INDEX idx_mem_vector_hnsw ON kbot_md_memory_entry(memory_vector) 
-ORGANIZATION INMEMORY NEIGHBOR GRAPH DISTANCE COSINE;
+-- CREATE VECTOR INDEX idx_mem_vector_hnsw ON kbot_md_memory_entry(memory_vector) 
+-- ORGANIZATION INMEMORY NEIGHBOR GRAPH DISTANCE COSINE;
 
 COMMENT ON TABLE kbot_md_memory_entry IS 'Records atomic QA interactions with semantic vectors and state snapshots';
 COMMENT ON COLUMN kbot_md_memory_entry.standalone_query IS 'Context-enriched rewritten question';
