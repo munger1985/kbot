@@ -252,7 +252,7 @@ A: {answer}
                     request_time=request_time,
                     response_time=response_time
                 )
-                # entry_id = await repo.add_memory_entry(new_entry)
+                await repo.add_memory_entry(new_entry)
                 logger.info(f"Interaction persisted for session: {session_id}")
 
                 # 3. 增量更新 Profile 表中的结构化 JSON 字段 (global_preferences 等)
