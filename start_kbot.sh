@@ -29,7 +29,7 @@ start_service() {
 }
 
 # Start main program (and wait for full initialization)
-# start_service "KBOT3 Main Program" "$(dirname "$0")" "kbot_main.py" "true" || exit 1
+start_service "KBOT3 Main Program" "$(dirname "$0")" "kbot_main.py" "true" || exit 1
 
 
 # Microservices array
@@ -37,8 +37,8 @@ declare -A services=(
     ["Embedding"]="kbot_app_embedding.py"
     ["LLM"]="kbot_app_llm.py" 
     ["Reranker"]="kbot_app_reranker.py"
-    # ["VLM"]="kbot_app_vlm.py"
-    # ["Parser"]="kbot_app_parser.py"
+    ["VLM"]="kbot_app_vlm.py"
+    ["Parser"]="kbot_app_parser.py"
 )
 
 # Iterate and start all microservices
