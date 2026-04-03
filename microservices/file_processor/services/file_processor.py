@@ -42,7 +42,6 @@ class FileProcessor:
         result = []
         async with self.oracle_session as session:
             file_repo = FileRepository(session)
-            kb_repo = KBRepository(session)
             
             try:
                 # Get files with APPROVED status (ready for parsing)
@@ -64,25 +63,22 @@ class FileProcessor:
                     logger.warning(msg)
                     await self._update_file_status(file.file_id, FileStatus.PARSE_FAILED, msg)
                     continue
+
+                txt_embed_model = file.chunk_parser.get("txt_embedding_model", None) # 文本嵌入模型
+                llm_model = file.chunk_parser.get("llm_model", None) # LLM模型
+                vlm_model = file.chunk_parser.get("vlm_model", None) # 视觉语言模型
                 
-                # Get model configurations from knowledge base
-                models = await kb_repo.get_model_by_id(file.kb_id)
-                if not models:
-                    msg = f"Knowledge base {file.kb_id} has no configured models, skipping processing"
+                if not txt_embed_model:
+                    msg = f"File {file.file_id} missing txt_embedding_model, skip processing"
                     logger.warning(msg)
                     await self._update_file_status(file.file_id, FileStatus.PARSE_FAILED, msg)
                     continue
 
-                # Resolve model names from IDs
-                txt_embed_model_id = models.get("txt_embed_model_id", None)
-                img2txt_model_id = models.get("img2txt_model_id", None)
-                embed_model = None
-                vlm_model = None
-                
-                if txt_embed_model_id:
-                    embed_model = await self.model_service.get_display_name_by_id(txt_embed_model_id)
-                if img2txt_model_id:
-                    vlm_model = await self.model_service.get_display_name_by_id(img2txt_model_id)
+                if not llm_model:
+                    msg = f"File {file.file_id} missing LLM model, skip processing"
+                    logger.warning(msg)
+                    await self._update_file_status(file.file_id, FileStatus.PARSE_FAILED, msg)
+                    continue
 
                 # Create image storage directory (file ID named folder in file's directory)
                 dir_name = os.path.dirname(file.file_path)
@@ -104,6 +100,7 @@ class FileProcessor:
                     ocr_engine=file.chunk_parser.get("ocr_engine", None),
                     use_vlm=use_vlm,
                     vlm_model=vlm_model,
+                    llm_model=llm_model,
                     vlm_prompt=vlm_prompt
                 )
 
@@ -117,7 +114,7 @@ class FileProcessor:
                     security_level=file.security_level or 1,
                     parser_params=doc_params,
                     biz_metadata=file.biz_metadata if file.biz_metadata is not None else {},
-                    txt_embed_model=embed_model
+                    txt_embed_model=txt_embed_model
                 )
 
                 # Add to result list with priority and timestamp

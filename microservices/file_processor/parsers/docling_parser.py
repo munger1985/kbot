@@ -1,4 +1,4 @@
-import os
+import json
 import re
 import asyncio
 from pathlib import Path
@@ -9,21 +9,29 @@ from concurrent.futures import ThreadPoolExecutor
 from loguru import logger
 from typing_extensions import override
 
-# Docling 核心模块
+# Docling 核心模块导入
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import (
     PdfPipelineOptions, 
+    PipelineOptions,
     EasyOcrOptions, 
     TesseractOcrOptions,
     TableStructureOptions
 )
-from docling.document_converter import (
+# Docling 文档转换格式选项
+from docling.document_converter import(
     DocumentConverter, 
     PdfFormatOption, 
-    WordFormatOption, 
-    ExcelFormatOption
-)
-# Docling Core 
+    WordFormatOption,
+    ExcelFormatOption,
+    PowerpointFormatOption,
+    HTMLFormatOption,
+    MarkdownFormatOption
+) 
+
+# Docling Core 分块与序列化模块
+from docling_core.transforms.chunker.hybrid_chunker import HybridChunker
+from docling_core.transforms.chunker.tokenizer.huggingface import HuggingFaceTokenizer
 from docling_core.transforms.chunker.hierarchical_chunker import ChunkingSerializerProvider
 from docling_core.types.doc.labels import DocItemLabel
 from docling_core.transforms.serializer.markdown import (
@@ -39,7 +47,7 @@ from docling_core.types.doc.document import (
     PictureItem,
     TableItem,
     TextItem, 
-    SectionHeaderItem
+    SectionHeaderItem  # 用于标题处理的专用类
 )
 
 # 项目依赖
@@ -48,6 +56,10 @@ from ..parser_schema import DocParserParams
 
 
 class OutputFormat(str, Enum):
+    """输出格式枚举类
+    
+    定义文档转换支持的输出格式类型
+    """
     MARKDOWN = "markdown"
     HTML = "html"
     JSON = "json"
@@ -56,25 +68,42 @@ class OutputFormat(str, Enum):
 
 
 class VLMAnnotationPictureSerializer(MarkdownPictureSerializer):
-    """自定义图片序列化器：整合 VLM 描述"""
+    """自定义图片序列化器：输出注入VLM描述的图片内容
+    
+    继承自MarkdownPictureSerializer，重写序列化逻辑，增加VLM生成的图片描述信息，
+    并处理图片的物理存储。
+    """
     @override
     def serialize(self, *, item: PictureItem, doc: DoclingDocument, **kwargs: Any) -> tuple[SerializationResult, str]:
+        """序列化图片项，包含VLM描述和图片存储
+        
+        Args:
+            item: 图片项对象
+            doc: 文档根对象
+            **kwargs: 额外参数，需包含image_dir指定图片存储目录
+            
+        Returns:
+            元组，包含序列化结果和图片文件名
+        """
         text_parts = []
+        
+        # 获取外部传入的图片保存目录
         image_root = Path(kwargs.get("image_dir", "data/images"))
         image_root.mkdir(parents=True, exist_ok=True)
 
-        image_name = ""
+        # 1. 物理保存图片文件
         if item.image and item.image.pil_image:
+            # 使用唯一ID命名，避免同名PDF的图片被覆盖
             image_name = f"pic_{item.self_ref.replace('/', '_')}.png"
             image_path = image_root / image_name
             item.image.pil_image.save(image_path)
+            # logger.debug(f"图片提取并保存成功：{image_path}")
 
-        # 提取预处理阶段注入的 VLM 描述
+        # 2. 注入VLM生成的描述信息作为引用块
         for annotation in item.annotations:
             if isinstance(annotation, DescriptionAnnotation):
-                vlm_text = getattr(annotation, "text", "")
-                if vlm_text:
-                    text_parts.append(f"\n> [AI视觉描述]: {vlm_text}\n")
+                # 放入引用块，方便RAG识别为补充上下文
+                text_parts.append(f"\n> [AI视觉描述]: {annotation.text}\n")
         
         text_res = "\n".join(text_parts) if text_parts else ""
         return create_ser_result(text=text_res, span_source=item), image_name
@@ -99,264 +128,325 @@ class VLMEnabledMarkdownProvider(ChunkingSerializerProvider):
             table_serializer=MarkdownTableSerializer(),
             picture_serializer=VLMAnnotationPictureSerializer(),
         )
-    
+
 class DoclingDocProcessor:
-    """
-    深度优化版：集成 VLM 视觉引导、表格重构及语义聚合缓冲
+    """基于Docling框架的文档处理类，增强功能包括：
+    - VLM驱动的图片描述生成
+    - 语义感知的标题检测
+    - 适用于RAG/ES的层级分块
+    - 多格式输出支持（Markdown/HTML/JSON/Chunks）
+    
+    Attributes:
+        executor: 线程池执行器，用于同步任务的异步执行
+        vlm_semaphore: VLM API调用的限流信号量
+        local_artifacts_path: 本地工件存储路径
+        vlm_client: AI模型客户端，用于调用VLM服务
+        title_hierarchy: 标题层级栈，维护当前文档位置的标题路径
+        title_re: 标题匹配正则表达式，支持常见标题格式
+        max_hierarchy_depth: 标题层级最大深度限制
+        corrector: 语义层级校正器，用于标题层级的智能判断
+        serializer: VLM图片序列化器实例
     """
     def __init__(self, local_artifacts_path: str, max_workers: int = 4):
+        """初始化文档处理器
+        
+        Args:
+            local_artifacts_path: 本地工件存储路径，用于保存处理过程中的临时文件
+            max_workers: 线程池最大工作线程数，默认4
+        """
         self.executor = ThreadPoolExecutor(max_workers=max_workers)
-        self.vlm_semaphore = asyncio.Semaphore(5)
+        self.vlm_semaphore = asyncio.Semaphore(5)  # VLM API调用限流（最多5个并发）
+        self.llm_semaphore = asyncio.Semaphore(5)  # LLM API调用限流（最多5个并发）
         self.local_artifacts_path = local_artifacts_path
-        self.vlm_client = AIModelClient()
+        self.model_client = AIModelClient()
+        # 通用标题栈：仅保留最近的层级
         self.serializer = VLMAnnotationPictureSerializer()
-        self.title_re = re.compile(r'^(\d+(\.\d+)*|第[一二三四五六七八九十\d]+[章节条款项]|[一二三四五六七八九十]+)\s*[.、：]?\s*\S')
-
-    # --- 1. 核心 VLM 驱动层 ---
 
     async def _vlm_task(self, client, model_name, prompt, index, image_obj) -> tuple:
-        """带限流的 VLM 请求"""
         async with self.vlm_semaphore:
             try:
                 res = await client.call_vlm_model(model_name=model_name, image=image_obj, prompt=prompt)
                 return index, res
             except Exception as e:
-                logger.error(f"VLM 推理异常 (Index {index}): {e}")
+                logger.error(f"VLM处理失败 (Index {index}): {e}")
                 return index, None
+            
+    async def _llm_task(self, client: AIModelClient, model_name: str, prompt: str, index: str) -> tuple:
+        """抽象出的 LLM 任务，用于处理纯文本逻辑（如标题层级、表格修复）"""
+        try:
+            async with self.llm_semaphore:
+                raw_res = await client.get_llm_answer(
+                    model_name=model_name, 
+                    prompt=prompt,
+                    stream=True  # 即使是内部聚合，开启 stream 也能更早释放资源
+                )
+                
+                if "level" in str(index).lower():
+                    # 仅匹配字符串中出现的第一个数字字符
+                    # 防止 LLM 返回 "1." 或 "层级为 1" 导致的解析失败
+                    match = re.search(r'\d', str(raw_res or "0"))
+                    if match:
+                        val = int(match.group())
+                        # 约束：层级只允许在 0-7 之间，超过则视为无效
+                        return index, (val if 0 <= val <= 7 else 0)
+                    return index, 0
 
-    async def _pre_enhance_with_vlm(self, doc: DoclingDocument, params: DocParserParams):
-        """预处理：并行调用 VLM 重构表格和描述图片"""
-        if not params.use_vlm:
+                # 第三步：非层级任务（如表格修复）保持原样返回字符串
+                return index, (raw_res if raw_res else None)
+
+        except Exception as e:
+            logger.error(f"LLM 任务执行失败 (Index {index}): {str(e)}")
+            return index, (0 if "level" in str(index).lower() else None)
+            
+    async def _enhance_document_content(self, doc: DoclingDocument, params: DocParserParams) -> None:
+        """
+        NexusCube 增强引擎：
+        1. 视觉增强：复杂 Excel/PDF 表格截图调用 VLM 重构。
+        2. 结构增强：利用 LLM 判定 TextItem 的真实标题层级（替换不稳定的正则）。
+        """
+        if not params.use_vlm or not params.vlm_model:
             return
-
+        
         tasks = []
-        # 处理表格：解决复杂 Excel 识别断裂
-        for i, table in enumerate(doc.tables):
-            if table.image and table.image.pil_image:
-                prompt = "请将此图片中的表格还原为标准的 Markdown 格式。确保列不丢失，合并单元格请填充内容，直接输出表格，不含解释。"
-                tasks.append(self._vlm_task(self.vlm_client, params.vlm_model, prompt, f"table_{i}", table.image.pil_image))
 
-        # 处理图片描述
+        # --- A. 结构增强：文档标题层级判定 (LLM) ---
+        # 遍历所有文本项，寻找可能是标题的项进行语义判定
+        for i, item in enumerate(doc.texts):
+            # 过滤逻辑：长度适中（避免正文误判），或者 Docling 初步认为它是标题的
+            text_content = item.text.strip()
+            if 0 < len(text_content) < 200: 
+                # 针对 Word/PPT/PDF，判定其在文档大纲中的逻辑层级
+                prompt = f"""分析以下文本在文档中的大纲层级：
+文本内容："{text_content}"
+要求：若是顶级标题返1，二级标题返2，三级标题返3，若只是普通正文或无关信息返0。只返回数字，不要任何解释。"""
+                tasks.append(self._llm_task(
+                    self.model_client, params.llm_model, prompt, f"heading_llm_{i}"
+                ))
+
+        # --- B. 视觉增强：处理图片与复杂表格 (VLM) ---
         for i, pic in enumerate(doc.pictures):
             if pic.image and pic.image.pil_image:
-                prompt = params.vlm_prompt or "请详细描述此图片，提取图表关键数据或文字信息。"
-                tasks.append(self._vlm_task(self.vlm_client, params.vlm_model, prompt, f"pic_{i}", pic.image.pil_image))
+                tasks.append(self._vlm_task(
+                    self.model_client, params.vlm_model, 
+                    params.vlm_prompt or "描述图片内容", f"pic_vlm_{i}", pic.image.pil_image
+                ))
+
+        for i, table in enumerate(doc.tables):
+            # 路径：有图（复杂 Excel 渲染或 PDF 表格）-> VLM 视觉重构
+            if table.image and table.image.pil_image:
+                prompt = "你是一个表格分析专家。请将图片中的复杂表格完整还原为 Markdown 格式，注意处理合并单元格，不要输出任何解释。"
+                tasks.append(self._vlm_task(
+                    self.model_client, params.vlm_model, prompt, f"table_vlm_{i}", table.image.pil_image
+                ))
 
         if not tasks:
             return
-
-        results = await asyncio.gather(*tasks)
         
-        # 结果回填
-        for key, content in results:
+        # --- C. 并发执行与结果分发 ---
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        for res in results:
+            if isinstance(res, (BaseException, type(None))) or not isinstance(res, tuple):
+                continue
+                
+            key, content = res 
             if not content: continue
-            
-            idx = int(key.split('_')[1])
-            if key.startswith("table"):
+                
+            parts = key.split('_')
+            category, engine, idx = parts[0], parts[1], int(parts[2])
+
+            # 1. 回填层级信息
+            if category == "heading":
+                target_item = doc.texts[idx]
+                # 使用 getattr 获取列表，如果不存在则返回 None
+                annos = getattr(target_item, "annotations", None)
+                
+                if isinstance(annos, list):
+                    try:
+                        level_val = int(re.sub(r'\D', '', str(content)))
+                        annos.append(
+                            DescriptionAnnotation(
+                                text=str(level_val), 
+                                provenance="llm_structure_level"
+                            )
+                        )
+                    except: pass
+
+            # 2. 回填表格描述/重构
+            elif category == "table":
                 doc.tables[idx].annotations.append(
                     DescriptionAnnotation(text=content, provenance="vlm_table_rebuild")
                 )
-            elif key.startswith("pic"):
+
+            # 3. 回填图片描述
+            elif category == "pic":
                 doc.pictures[idx].annotations.append(
                     DescriptionAnnotation(text=content, provenance=f"vlm_{params.vlm_model}")
                 )
-
-    # --- 2. 增强型分块层 (Chunking) ---
-
+    
     def _get_page_num(self, item: Any) -> int:
         """获取页码，默认为1"""
         if hasattr(item, "page_reference"):
             return item.page_reference.get("page_no", 1)
         return 1
-
+    
     async def _generate_chunks(self, doc: DoclingDocument, result, params: DocParserParams) -> list[dict]:
         """
-        视觉驱动的分块逻辑：包含标题研判、表格重构、以及图片语义提取
+        NexusCube 分块逻辑改进版：
+        1. 适配 _llm_task 的强类型返回（int），彻底规避 ES 字段溢出。
+        2. 针对 Word/PPT 自动使用纯文本 LLM 判定。
         """
         chunk_results = []
+        current_chunk_num = 1
         active_path = []
-        buffer_content = []
-        buffer_meta = None
+        pending_header_context = ""
 
-        def flush_buffer():
-            nonlocal buffer_content, buffer_meta
-            if not buffer_content: 
-                return
-            
-            # 合并内容并深度清洗：去除多余空格和换行
-            combined_text = "\n".join(buffer_content).strip()
-            
-            # 关键过滤：如果内容为空，或者只是“暂无内容”，或者字数太少，直接丢弃
-            if not combined_text or combined_text == "暂无内容" or len(combined_text) < 1:
-                buffer_content = []
-                buffer_meta = None
-                return
-
-            chunk_results.append({
-                "content": combined_text,
-                "path_names": list(active_path),
-                "structure_level": len(active_path) + 1,
-                "chunk_type": "text",
-                "metadata": buffer_meta or {}
-            })
-            buffer_content = []
-            buffer_meta = None
+        # 预检：是否为 PDF（用于截图标题）
+        has_render = hasattr(result, "render") and result.render is not None
 
         for item, _ in doc.iterate_items():
             raw_text = getattr(item, "text", "").strip()
-            # 过滤 1：跳过完全无内容的元素
             if not raw_text and not isinstance(item, (TableItem, PictureItem)):
                 continue
-            # 过滤 2：跳过纯标点符号或特殊不可见字符（常出现在 OCR 结果中）
-            if re.match(r'^[ \t\n\r\f\v\s.，。、；;：:]+$', raw_text):
-                continue
 
-            page_no = self._get_page_num(item) or 1
+            # --- 结构层级判定 ---
+            detected_level = 0
+            # 这里的 len 限制可以稍微放宽，以便捕捉更长的 Word 标题
+            is_potential_header = isinstance(item, (SectionHeaderItem, TextItem)) and 2 <= len(raw_text) <= 100
             
-            # --- 1. 安全提取坐标 ---
-            bbox = None
-            if isinstance(item, (TextItem, SectionHeaderItem, TableItem, PictureItem)):
-                item_prov = getattr(item, "prov", [])
-                if item_prov:
-                    bbox = item_prov[0].bbox
+            if is_potential_header and params.use_vlm:
+                prompt = f"""分析此文本在文档中的结构层级。
+内容: "{raw_text}"
+要求: 
+- 1: 顶级章节 (如: 一、保险期间, 第一章)
+- 2: 二级章节 (如: 1.1, (一)定义)
+- 3: 三级章节 (如: 1.1.1, 1.)
+- 0: 普通正文内容
+请直接输出数字，不要输出文字。"""
+                
+                if has_render:
+                    # PDF 场景：视觉 VLM
+                    item_prov = getattr(item, "prov", [])
+                    crop_img = result.render.crop_bbox(bbox=item_prov[0].bbox, page_no=item_prov[0].page_no) if item_prov else None
+                    # 注意：如果 vlm_task 还没改，这里可能还需要手动处理 raw_res
+                    _, raw_res = await self._vlm_task(self.model_client, params.vlm_model, prompt, "level", crop_img)
+                    
+                    # VLM 兜底过滤（防止 VLM 没改逻辑导致返回非数字）
+                    try:
+                        nums = re.findall(r'\d', str(raw_res or "0"))
+                        detected_level = int(nums[0]) if nums else 0
+                    except:
+                        detected_level = 0
+                else:
+                    # Word/PPT 场景：调用优化后的 _llm_task
+                    # 关键修改：直接接收 _llm_task 返回的 int 类型的 level
+                    _, llm_level = await self._llm_task(self.model_client, params.llm_model, prompt, f"level_{current_chunk_num}")
+                    detected_level = llm_level if isinstance(llm_level, int) else 0
 
-            # --- 2. VLM 视觉研判层级 (针对文本) ---
-            vlm_level = 0
-            is_potential_header = isinstance(item, (SectionHeaderItem, TextItem)) and 2 <= len(raw_text) <= 80
-            
-            if is_potential_header and bbox and params.use_vlm:
-                try:
-                    crop_img = result.render.crop_bbox(bbox=bbox, page_no=page_no, padding=20)
-                    prompt = (
-                        f"文本: '{raw_text}'\n"
-                        "请根据视觉特征（字号、加粗、位置）判断其结构层级：\n"
-                        "1: 顶级标题; 2: 二级标题; 3: 三级标题; 0: 普通正文或列表项。\n"
-                        "仅输出数字。"
-                    )
-                    _, vlm_res = await self._vlm_task(self.vlm_client, params.vlm_model, prompt, "level_check", crop_img)
-                    vlm_level = int(re.sub(r'\D', '', vlm_res or "0"))
-                except Exception as e:
-                    logger.warning(f"标题视觉研判跳过: {e}")
-                    vlm_level = 0
-
-            # --- 3. 路径栈维护 ---
-            if vlm_level > 0:
-                flush_buffer()
-                while len(active_path) >= vlm_level:
+            # --- 路径树逻辑 (保持原逻辑) ---
+            is_header = detected_level > 0
+            if is_header:
+                # 只有 1-7 级有效，防止非法输入搞乱路径树
+                if detected_level == 1: active_path = []
+                while len(active_path) >= detected_level:
+                    if not active_path: break
                     active_path.pop()
-                active_path.append(raw_text)
                 
-                chunk_results.append({
-                    "content": raw_text,
-                    "path_names": list(active_path),
-                    "structure_level": vlm_level,
-                    "chunk_type": "heading",
-                    "metadata": {"page_num": page_no, "is_vlm_verified": True}
-                })
-                continue
+                if not active_path or active_path[-1] != raw_text:
+                    active_path.append(raw_text)
+                
+                pending_header_context = raw_text
+                current_type = "heading"
+                structure_level = detected_level
+            else:
+                current_type = "text"
+                structure_level = len(active_path) + 1
 
-            # --- 4. 表格处理 ---
+            # --- 元素内容处理 ---
+            content_list = []
+            image_name_val = None
+
             if isinstance(item, TableItem):
-                flush_buffer()
-                vlm_table = None
-                for ann in getattr(item, "annotations", []):
-                    if isinstance(ann, DescriptionAnnotation) and getattr(ann, "provenance", "") == "vlm_table_rebuild":
-                        vlm_table = getattr(ann, "text", None)
-                        break
-                
-                # 如果是原生 Excel，直接用 export_to_markdown()，不要强求 VLM
-                content = vlm_table if vlm_table else item.export_to_markdown()
-                
-                if content and content.strip():
-                    chunk_results.append({
-                        "content": content,
-                        "path_names": list(active_path),
-                        "structure_level": len(active_path) + 1,
-                        "chunk_type": "table",
-                        "metadata": {"page_num": self._get_page_num(item)}
-                    })
-                continue
+                current_type = "table"
+                item_annos = getattr(item, "annotations", [])
+                vlm_table = next((ann.text for ann in item_annos 
+                                if getattr(ann, "provenance", "") == "vlm_table_rebuild"), None)
+                content_list.append(vlm_table if vlm_table else item.export_to_markdown(doc=doc))
+            elif isinstance(item, PictureItem):
+                current_type = "picture"
+                ser_result, image_name = self.serializer.serialize(item=item, doc=doc, image_dir=params.image_dir)
+                content_list.append(ser_result.text)
+                image_name_val = image_name
+            else:
+                content_list.append(raw_text)
 
-            # --- 5. 新增：图片处理 (补全原有业务逻辑) ---
-            if isinstance(item, PictureItem):
-                flush_buffer()
-                # 寻找预处理阶段生成的 VLM 图片描述
-                img_description = None
-                for ann in item.annotations:
-                    if isinstance(ann, DescriptionAnnotation):
-                        img_description = getattr(ann, "text", None)
-                        break
-                
-                if img_description:
-                    chunk_results.append({
-                        "content": f"[图片描述]: {img_description}",
-                        "path_names": list(active_path),
-                        "structure_level": len(active_path) + 1,
-                        "chunk_type": "image",
-                        "metadata": {
-                            "page_num": page_no, 
-                            "node_path": getattr(item, "self_ref", ""),
-                            "is_visual_desc": True
-                        }
-                    })
-                continue
+            # --- 封装输出 ---
+            for sub_content in content_list:
+                chunk_results.append({
+                    "content": sub_content,
+                    "path_names": list(active_path),
+                    "structure_level": int(structure_level), # 强制转换确保入库安全
+                    "chunk_type": current_type,
+                    "metadata": {
+                        "chunk_num": current_chunk_num,
+                        "page_num": self._get_page_num(item),
+                        "header_context": pending_header_context if len(raw_text) > 3 else f"{active_path[-2] if len(active_path)>1 else ''} ({raw_text})",
+                        "image_name": image_name_val if current_type == "picture" else None
+                    }
+                })
+                current_chunk_num += 1
 
-            # --- 6. 普通正文聚合 ---
-            if raw_text:
-                if not buffer_meta: buffer_meta = {"page_num": page_no}
-                buffer_content.append(raw_text)
-                if len("\n".join(buffer_content)) >= params.min_chunk_len:
-                    flush_buffer()
-
-        flush_buffer()
         return chunk_results
+    
+    async def convert_document(self, file_path: str, params: DocParserParams, output_format: OutputFormat = OutputFormat.MARKDOWN):
+        # 1. 显式实例化 TableStructureOptions (Docling 2.7.x 必须整体赋值)
+        # do_cell_matching=True 用于精确对齐表格单元格，对后续 VLM 处理至关重要
+        table_opts = TableStructureOptions(do_cell_matching=True)
 
-    # --- 3. 转换主流程 ---
+        # 2. 统一使用 PdfPipelineOptions
+        # 理由：规避 DOCX/XLSX 在 SimplePipeline 初始化时对 do_chart_extraction 的硬编码访问
+        shared_opts = PdfPipelineOptions(
+            artifacts_path=self.local_artifacts_path,
+            do_ocr=params.do_ocr,
+            do_chart_extraction=False,     # 显式关闭以防干扰
+            generate_table_images=True,    # 开启表格截图，供 VLM 模块使用
+            generate_page_images=False,
+            table_structure_options=table_opts # 整体赋值，符合 Pydantic 验证要求
+        )
 
-    async def convert_document(
-        self, 
-        file_path: str, 
-        params: DocParserParams, 
-        output_format: OutputFormat = OutputFormat.MARKDOWN
-    ) -> str | dict | list[dict]:
-        
-        # 配置 Pipeline
-        pipeline_opts = PdfPipelineOptions(artifacts_path=self.local_artifacts_path)
-        pipeline_opts.do_ocr = params.do_ocr
-        pipeline_opts.do_table_structure = True
-        pipeline_opts.generate_table_images = True # 必须开启以支持 VLM
-        pipeline_opts.generate_picture_images = params.generate_picture_images
-        
-        pipeline_opts.table_structure_options = TableStructureOptions(do_cell_matching=True)
-        
+        # 3. 配置 OCR 引擎
         engine = (params.ocr_engine or "easyocr").lower()
-        if engine == "tesseract":
-            pipeline_opts.ocr_options = TesseractOcrOptions(lang=["chi_sim", "eng"])
-        else:
-            pipeline_opts.ocr_options = EasyOcrOptions(lang=["ch_sim", "en"])
+        shared_opts.ocr_options = TesseractOcrOptions(lang=["chi_sim", "eng"]) if engine == "tesseract" else EasyOcrOptions(lang=["ch_sim", "en"])
 
-        # 执行转换
+        # 4. 转换器初始化
         converter = DocumentConverter(
             format_options={
-                InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_opts),
-                InputFormat.DOCX: WordFormatOption(pipeline_options=pipeline_opts),
-                InputFormat.XLSX: ExcelFormatOption(pipeline_options=pipeline_opts),
+                InputFormat.PDF: PdfFormatOption(pipeline_options=shared_opts),
+                InputFormat.DOCX: WordFormatOption(pipeline_options=shared_opts),
+                InputFormat.XLSX: ExcelFormatOption(pipeline_options=shared_opts),
+                InputFormat.PPTX: PowerpointFormatOption(pipeline_options=shared_opts),
             }
         )
         
         loop = asyncio.get_running_loop()
-        result = await loop.run_in_executor(self.executor, converter.convert, file_path)
+        try:
+            # 使用 self.executor 确保在 RHEL 8 的多核环境下不阻塞主事件循环
+            result = await loop.run_in_executor(self.executor, converter.convert, file_path)
+        except Exception as e:
+            # 记录详细的异常追踪，方便在 NexusCube 日志中排查具体文件问题
+            logger.error(f"Docling 转换失败: {file_path}, Error: {str(e)}")
+            raise
         doc = result.document
 
-        # VLM 视觉增强（表格重构 + 图片描述）
-        await self._pre_enhance_with_vlm(doc, params)
+        # 提前送去 VLM/LLM 重构复杂内容
+        await self._enhance_document_content(doc, params)
 
-        # 输出
+        # 在分块阶段使用 VLM 进行标题定级
         if output_format == OutputFormat.CHUNKS:
-            return await self._generate_chunks(doc, result, params)
+            return await self._generate_chunks(doc, result, params) # 注意传了 result 进去拿渲染器
 
         return self._serialize(doc, output_format)
-    
+
     def _serialize(self, doc: DoclingDocument, fmt: OutputFormat) -> str | dict:
         """将DoclingDocument序列化为指定格式
         

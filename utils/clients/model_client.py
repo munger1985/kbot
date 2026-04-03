@@ -202,7 +202,7 @@ class AIModelClient():
                         processed_kwargs[k] = v
             payload.update(processed_kwargs)
 
-        logger.debug(f"Calling LLM service with payload: {payload}")
+        # logger.debug(f"Calling LLM service with payload: {payload}")
 
         try:
             async with aiohttp.ClientSession(timeout=timeout) as session:
@@ -312,7 +312,7 @@ class AIModelClient():
                         # Extract response content
                         try:
                             content = response_data["choices"][0]["message"]["content"]
-                            logger.info(f"VLM analysis successful | Model: {model_name} | Prompt length: {len(prompt)}")
+                            # logger.info(f"VLM analysis successful | Model: {model_name} | Prompt length: {len(prompt)}")
                             return content
                         except (KeyError, IndexError) as e:
                             msg = f"VLM response format invalid: {str(e)}"
@@ -401,3 +401,42 @@ class AIModelClient():
                 logger.error(f"Regex found potential JSON but failed to parse: {e}")
         
         raise ValueError(f"Could not parse valid JSON from LLM response: {text[:100]}...")
+    
+    async def get_llm_answer(self, model_name: str, prompt: str, **kwargs) -> str:
+        """
+        高层封装：直接获取 LLM 聚合后的纯文本字符串。
+        自动处理 SSE 解析、过滤 metadata、拼接 Content。
+        """
+        full_content = []
+        try:
+            # 强制开启流式以复用 call_llm_model 的 SSE 解析逻辑
+            kwargs["stream"] = True 
+            
+            async for raw_line in self.call_llm_model(model_name, prompt, **kwargs):
+                line = raw_line.strip()
+                
+                # 1. 过滤空行、DONE 标志和非 data 行
+                if not line or line == "data: [DONE]" or not line.startswith("data: "):
+                    continue
+                
+                try:
+                    # 2. 解析 JSON 并提取内容
+                    json_str = line[6:]
+                    resp = json.loads(json_str)
+                    choices = resp.get("choices", [])
+                    if not choices:
+                        continue
+                    
+                    # 3. 提取 delta.content (OpenAI/DeepSeek 标准)
+                    content = choices[0].get("delta", {}).get("content", "")
+                    if content:
+                        full_content.append(content)
+                        
+                except (json.JSONDecodeError, KeyError, IndexError):
+                    continue
+
+            return "".join(full_content).strip()
+            
+        except Exception as e:
+            logger.error(f"get_llm_answer 失败: {e}")
+            return ""

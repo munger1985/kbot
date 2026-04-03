@@ -21,6 +21,7 @@ class KbEntity(BaseEntity):
     txt_embed_model_id: Mapped[int | None] = mapped_column(Numeric(38, 0), comment="Text embedding model ID")
     img_embed_model_id: Mapped[int | None] = mapped_column(Numeric(38, 0), comment="Image embedding model ID")
     img2txt_model_id: Mapped[int | None] = mapped_column(Numeric(38, 0), comment="Image-to-text model ID")
+    llm_model_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False, comment="LLM model ID")
     kb_status: Mapped[int | None] = mapped_column(Numeric(1, 0), comment="Knowledge base status enumeration")
     security_level: Mapped[int | None] = mapped_column(Numeric(1, 0), comment="File security level enumeration")
     process_priority: Mapped[int | None] = mapped_column(Numeric(1, 0), comment="Processing priority enumeration")

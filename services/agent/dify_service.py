@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 from loguru import logger
+import uuid
 from fastapi import BackgroundTasks
 
 from .orchestrator import ChatOrchestrator
@@ -63,16 +64,20 @@ class DifyService:
         if params:
             model_params: ModelParams = params
             # 持久化：使用 MemoryService 的新闭环方法
+            entry_id = uuid.uuid4().hex
+            response_time = datetime.now(tz=timezone.utc)
             background_tasks.add_task(
                 self.memory_service.persist_and_reflect_memory,
                 session_id=session_id,
+                entry_id=entry_id,
                 user_id=self.user_id,
                 raw_question=question,
                 answer="",
                 model_params=model_params,
                 prepared_data=pipe_out['prepared_data'],
                 retrieved_chunks=enriched_refs,
-                request_time=request_time
+                request_time=request_time,
+                response_time=response_time
             )
         else:
             logger.warning(f"Model params are missing for session {session_id}, Agent {agent_id}, skip memory persist.")

@@ -13,7 +13,7 @@ from core.dictionary import FileStatus, YesNoEnum
 from dao.repositories import (KBRepository, FileRepository, BatchRepository,
                               TxtChunkRepository, PromptRepository)
 from utils.common import run_in_thread_pool
-from utils.encoder import DecimalEncoder
+from services.ai_model import AIModelService
 from core.database.oracle import get_session
 from core.exceptions import *
 
@@ -30,6 +30,7 @@ class FileService:
         config = get_app_config()
         self.file_storage = config.file_storage
         self.upload_workers = config.upload_workers
+        self.model_service = AIModelService()
 
     @property
     def oracle_session(self):
@@ -222,7 +223,22 @@ class FileService:
             if not prompt:
                 prompt = "Please describe the image in detail."
                 
-            vlm_model = kb_entity.img2txt_model_id
+            vlm_model_id = kb_entity.img2txt_model_id
+            llm_model_id = kb_entity.llm_model_id
+            txt_embed_model_id = kb_entity.txt_embed_model_id
+            # get model display name
+            if vlm_model_id:
+                vlm_model = await self.model_service.get_display_name_by_id(vlm_model_id)
+            else:
+                vlm_model = None
+            
+            if txt_embed_model_id:
+                txt_embed_model = await self.model_service.get_display_name_by_id(txt_embed_model_id)
+            else:
+                txt_embed_model = None
+            
+            llm_model = await self.model_service.get_display_name_by_id(llm_model_id)
+
             # Build chunk parser configuration (JSON-serialized)
             # Create chunk parser configuration as dict
             chunk_parser_config = {
@@ -230,6 +246,8 @@ class FileService:
                 "overlap": 50,
                 "use_vlm": bool(vlm_model),
                 "vlm_model": vlm_model,
+                "txt_embedding_model": txt_embed_model,
+                "llm_model": llm_model,
                 "chunk_size": 512,
                 "ocr_engine": "tesseract",
                 "vlm_prompt": prompt,
