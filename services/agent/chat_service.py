@@ -175,13 +175,15 @@ class ChatService:
             yield json.dumps({'type': 'error', 'message': str(e)}) + '\n'
         finally:
             # 1. Send reference metadata to frontend
-            logger.debug(f"Stream generation finished. Sending references for session {session_id}")
-            references = await self._enrich_results_with_metadata(kb_results)
-            yield json.dumps({'type': 'reference', 'references': references, 'is_complete': True}) + '\n'
-
+            logger.debug(f"Stream generation finished. ")
+            logger.debug(f"Sending entry_id and response_time for session {session_id}")
             entry_id = uuid.uuid4().hex
             response_time = datetime.now(tz=timezone.utc)
             yield json.dumps({'type': 'memory', 'entry_id': entry_id, 'response_time': response_time.strftime("%Y-%m-%d %H:%M:%S.%f")}) + '\n'
+
+            logger.debug(f"Sending references for session {session_id}")
+            references = await self._enrich_results_with_metadata(kb_results)
+            yield json.dumps({'type': 'reference', 'references': references, 'is_complete': True}) + '\n'
 
             # 2. 拼接完整回答
             str_chunks = [c.decode("utf-8") if isinstance(c, bytes) else str(c) for c in answer_chunks]
