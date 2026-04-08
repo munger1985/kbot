@@ -1,4 +1,4 @@
-import math
+import json
 import re
 from loguru import logger
 from typing import Any, Sequence
@@ -468,7 +468,7 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
             # Execute update
             result = await self.session.execute(sql, {"file_id": file_id, "tags": tags_json})
             
-            if result.rowcount == 0:
+            if result.rowcount == 0: # type: ignore
                 raise DataNotFoundException(f"No records found for file ID: {file_id}")
                 
             logger.info(f"Successfully updated tags for file {file_id}: {tags}")
@@ -509,7 +509,7 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
                 "embedding": oracle_embedding
             })
             
-            if result.rowcount == 0:
+            if result.rowcount == 0: # type: ignore
                 raise DataNotFoundException(f"No records found for chunk ID: {chunk_id}")
 
             logger.info(f"Successfully updated description for chunk {chunk_id}")
