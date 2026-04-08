@@ -3,12 +3,14 @@ from loguru import logger
 import json
 import re
 from core.database.oracle import get_session
+from core.config.settings import get_prompt_config
 from core.exceptions import InternalServerError
 from dao.entities import MemoryEntryEntity
 from dao.repositories import MemoryEntryRepository
 from .state_manager import SessionStateManager
 from .context_manager import ContextManager
 from services.agent.agent_params import ModelParams
+from .default_prompt import DefaultPrompt, DEFAULT_USER_PROFILE_PROMPT
 from utils.clients.model_client import AIModelClient
 from utils.common import safe_read_content
 
@@ -17,6 +19,8 @@ class MemoryService:
     def __init__(self):
         self.manager = ContextManager()
         self.model_client = AIModelClient()
+        self.default_prompt = DefaultPrompt()
+        self.user_profile_prompt = get_prompt_config().user_profile
     
     @property
     def oracle_session(self):
@@ -116,35 +120,15 @@ class MemoryService:
         1. 更新全局画像 (Profile Summary)
         2. 提炼本轮记忆快照 (Memory Snapshot)
         """
-        reflection_prompt = f"""
-你是一位资深的系统架构师与用户画像专家。请分析对话并输出 JSON 格式的更新记录。
+        # 1. 组装 Prompt (包含记忆与状态)
+        template = await self.default_prompt.get_prompt_content(self.user_profile_prompt, DEFAULT_USER_PROFILE_PROMPT)
 
-### 原有画像摘要:
-{old_summary}
-
-### 最新对话片段:
-Q: {question}
-A: {answer}
-
-### 任务指令:
-1. 分析最新对话，提取用户的专业身份(如DevOps)、使用的技术栈(如Oracle Linux 8)、当前关注的具体项目或痛点。
-2. 将新提取的信息与原有摘要进行逻辑合并。
-3. 如果信息重复，则保留；如果信息冲突（如用户从 Ubuntu 换到了 RHEL），以最新对话为准。
-4. 保持摘要简洁、专业，总字数不超过 300 字。
-5. 直接输出更新后的摘要文本，不要包含“根据对话...”等废话。
-### 额外任务：
-6. 请为本次对话生成一个【记忆快照】（Memory Snapshot），用于语义搜索。
-### 任务要求:
-1. 更新【profile_summary】：合并新老信息，字数<300，专业简洁。如果原有摘要为默认初始化信息，请直接以本次对话内容开启新摘要。
-2. 生成【memory_snapshot】：本次对话的核心事实快照，需消解指代（如“它”->“Oracle 26ai”），去除废话。
-
-### 输出格式 (必须为纯 JSON):
-{{
-    "profile_summary": "更新后的完整画像摘要...",
-    "memory_snapshot": "本次对话的高纯度事实快照..."
-}}
-"""
-
+        # 填充模板
+        reflection_prompt = template.format(
+            old_summary=old_summary,
+            question=question,
+            answer=answer
+        )
         logger.debug(f"Triggering profile reflection for user: {user_id}")
         
         # 调用 LLM 提炼记忆

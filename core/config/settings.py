@@ -217,7 +217,10 @@ class PromptConfig(BaseModel):
     Configuration for system prompt templates used in various NLP tasks.
     """
     image2text: str = Field(default="SYSTEM/image2text", description="Prompt template for image-to-text conversion")
-    fulltext_optimization: str = Field(default="SYSTEM/fulltext_optimization", description="Prompt template for full-text optimization")
+    rewrite_question: str = Field(default="SYSTEM/rewrite_question", description="Prompt template for rewriting questions")
+    refresh_summary: str = Field(default="SYSTEM/refresh_summary", description="Prompt template for refreshing summaries")
+    rag_final_render: str = Field(default="SYSTEM/rag_final_render", description="Prompt template for RAG final render")
+    user_profile: str = Field(default="SYSTEM/user_profile", description="Prompt template for user profile")
 
 class Settings(BaseSettings):
     """Global application settings.

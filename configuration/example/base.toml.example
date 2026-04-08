@@ -87,4 +87,7 @@ db_check_interval = 120
 
 [prompt]
 image2text = "SYSTEM/image2text"
-summary = "SYSTEM/summary"
+rewrite_question = "SYSTEM/rewrite_question"
+refresh_summary = "SYSTEM/refresh_summary"
+rag_final_render = "SYSTEM/rag_final_render"
+user_profile = "SYSTEM/user_profile"

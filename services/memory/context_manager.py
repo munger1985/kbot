@@ -5,11 +5,19 @@ from services.search.result import TxtBaseSearchResult
 from services.prompt_service import PromptService
 from utils.clients import AIModelClient
 from core.database.oracle import get_session
+from core.config.settings import get_prompt_config
 from dao.repositories import MemoryEntryRepository
+from .default_prompt import *
 
 class ContextManager:
     def __init__(self):
         self.llm_client = AIModelClient()
+        self.default_prompt = DefaultPrompt()
+
+        conf = get_prompt_config()
+        self.rewrite_prompt = conf.rewrite_question
+        self.summary_prompt = conf.refresh_summary
+        self.rag_final_render = conf.rag_final_render
 
     @property
     def oracle_session(self):
@@ -28,7 +36,15 @@ class ContextManager:
         输入原始问题 + 记忆，输出改写后的全套参数。
         """
         # 1. 组装 Prompt (包含记忆与状态)
-        prompt = self._build_rewrite_prompt(query, chat_history, context_summary, session_state)
+        template = await self.default_prompt.get_prompt_content(self.rewrite_prompt, DEFAULT_REWRITE_PROMPT)
+
+        # 填充模板
+        prompt = template.format(
+            chat_history=chat_history if chat_history else 'No previous turns.',
+            summary=context_summary or 'None',
+            session_state=json.dumps(session_state or {}, ensure_ascii=False),
+            query=query
+        )
         
         try:
             # 2. 获取结构化结果
@@ -59,49 +75,6 @@ class ContextManager:
                 "turn_entities": {},
                 "intent_category": "fallback"
             }
-
-    def _build_rewrite_prompt(self, query: str, chat_history: str, summary: str | None, state: dict | None) -> str:
-        return f"""
-You are the Context & Identity Engine for the RAG system.
-Your goal is to transform the user's raw input into a structured execution plan while maintaining a persistent User Profile.
-
-### Recent Dialogue (Short-term Memory)
-{chat_history if chat_history else 'No previous turns in this session.'}
-
-### Context Knowledge
-- **Historical Summary**: {summary or 'None'} (General progress of the conversation)
-- **Active Session State**: {json.dumps(state or {}, ensure_ascii=False)} (Volatile data: current errors, temporary IPs, active file paths)
-
-### Task 1: Query Rewriting
-1. **Pronoun Resolution**: Replace 'it', 'the error', 'there' with specific entities from History/State.
-2. **Context Injection**: If the user asks "How to install?", rewrite it as "How to install [Software] on [OS from Session State]?"
-3. **Keyword Extraction**: Provide 3-5 high-quality technical keywords for Full-Text Search.
-
-### Task 2: Information Categorization (Crucial)
-Distinguish between "Turn Entities" and "User Profile Updates":
-- **Turn Entities**: Transient data for the CURRENT turn only (e.g., a specific process ID, a one-time error log snippet).
-- **User Profile Updates**: Long-term traits that define WHO the user is or their PERMANENT environment. 
-* Examples: Professional role (DBA, Developer), preferred OS (RHEL 8), Hardware specs (Xeon Gold 5520+), habitual coding language (Python), or level of expertise.
-
-### Output Format (Strict JSON)
-{{
-"standalone_query": "The fully independent and contextualized question",
-"search_keywords": ["keyword1", "keyword2", "keyword3"],
-"turn_entities": {{
-    "temp_file": "/tmp/test.log",
-    "current_error_code": "ORA-00600"
-}},
-"user_profile_updates": {{
-    "job_role": "System Architect",
-    "primary_os": "Oracle Linux 8.8",
-    "cpu_arch": "x86_64",
-    "expertise_level": "Senior"
-}},
-"intent": "troubleshooting | installation | optimization | general_inquiry"
-}}
-
-User Input: {query}
-"""
     
     async def refresh_summary(self, session_id: str, user_id: str, model_name: str):
         """
@@ -122,43 +95,38 @@ User Input: {query}
 
             # 2. 构造“双任务”Prompt
             # 强制 LLM 分开输出：一个是当前聊的事，一个是关于这个人的描述
-            prompt = f"""
-请分析以下对话，产出两段总结。用 '---' 分隔。
+            template = await self.default_prompt.get_prompt_content(self.summary_prompt, DEFAULT_SUMMARY_PROMPT)
+            prompt = template.format(history_text=history_text)
 
-任务 1：会话摘要 (Context Summary)
-要求：记录当前正在处理的技术问题、环境（如 Ubuntu 24.04）及已验证的方案。
-
-任务 2：用户画像描述 (User Profile Summary)
-要求：基于对话定性描述用户。例如：职业身份、技术水平、沟通风格。
-
-对话历史：
-{history_text}
-"""
             try:
-                # 3. 调用 LLM 生成摘要
-                full_content = ""
-                async for chunk in self.llm_client.call_llm_model(model_name=model_name, prompt=prompt, stream=False):
-                    # 假设返回的是 SSE 格式，解析逻辑同之前
-                    full_content += chunk # 简化示意，实际需按之前解析逻辑处理
+                # 3. 调用结构化 JSON 接口
+                # 使用 low temperature (0.0) 确保 JSON 结构的稳定性
+                result = await self.llm_client.call_llm_json(
+                    model_name=model_name,
+                    prompt=prompt,
+                    temperature=0.0
+                )
                 
-                if "---" in full_content:
-                    parts = full_content.split("---")
-                    context_summary = parts[0].strip()
-                    profile_summary = parts[1].strip()
+                # 4. 字段校验与提取
+                context_summary = result.get("context_summary", "").strip()
+                profile_summary = result.get("profile_summary", "").strip()
+                if not context_summary or not profile_summary:
+                    logger.warning(f"LLM returned incomplete JSON for session {session_id}")
+                    return
 
-                    # 4. 同时持久化会话上下文总结和用户画像
-                    # 更新当前会话的上下文摘要
-                    await repo.update_context_summary(session_id, context_summary)
-                    
-                    # 更新用户的长期画像总结（回答你之前的问题：在这里触发更新！）
-                    await repo.update_user_profile_summary(user_id, profile_summary)
+                # 5. 持久化到数据库
+                # 更新当前会话的上下文摘要 (短期记忆)
+                await repo.update_context_summary(session_id, context_summary)
+                
+                # 更新用户的长期画像总结 (长期记忆)
+                await repo.update_user_profile_summary(user_id, profile_summary)
 
-                    logger.info(f"Memory Capsule synced for user {user_id} in session {session_id}")
+                logger.info(f"Memory Capsule synced for user {user_id} in session {session_id}")
 
             except Exception as e:
                 logger.error(f"Failed to sync memory capsule: {e}")
 
-    def build_final_prompt(
+    async def build_final_prompt(
         self,
         system_prompt: str,
         user_question: str,
@@ -167,39 +135,25 @@ User Input: {query}
         context_summary: str | None = "",
         long_term_memory: str | None = ""
     ) -> str:
-        # 1. 格式化环境约束
+        # 1. 获取 RAG 最终渲染模板
+        template = await self.default_prompt.get_prompt_content(self.rag_final_render, DEFAULT_FINAL_RAG_PROMPT)
+
+        # 2. 格式化环境约束
         env_str = " | ".join([f"{k}: {v}" for k, v in session_state.items() if v]) if session_state else "通用环境"
         
-        # 2. 格式化知识库
+        # 3. 格式化知识库
         kb_segments = []
         for i, res in enumerate(kb_results):
             path_str = " > ".join(res.path_names) if hasattr(res, 'path_names') and res.path_names else "知识库资料"
             kb_segments.append(f"[参考资料 {i+1} | 来源: {path_str}]\n{res.content}")
         kb_context = "\n\n".join(kb_segments) if kb_segments else "未找到直接相关的核心知识。"
 
-        # 3. 构造分层模板
-        final_prompt = f"""{system_prompt}
-
-### 当前环境约束 (Session State)
-**[必须遵守]** 以下是当前用户的运行环境：
-- {env_str}
-
-### 对话背景摘要 (Context Summary)
-**[重要上下文]** 本次会话之前的进展：
-{context_summary if context_summary else "对话开始阶段。"}
-
-### 历史相关经验 (Long-term Memory)
-**[仅供参考]** 以下是过往类似场景的经验（带 ⭐ 为用户认可的方案）：
-{long_term_memory if long_term_memory else "暂无相关跨会话历史。"}
-
-### 核心知识库依据 (Knowledge Base)
-**[主要依据]** 请根据以下权威文档回答问题：
-{kb_context}
-
----
-请综合上述背景，优先依据【核心知识库】和【环境约束】。
-
-用户当前的问题：{user_question}
-助手回答："""
-
-        return final_prompt
+        # 4. 构造分层模板
+        return template.format(
+            system_prompt=system_prompt,
+            env_str=env_str,
+            context_summary=context_summary or "对话开始阶段。",
+            long_term_memory=long_term_memory or "暂无相关跨会话历史。",
+            kb_context=kb_context,
+            user_question=user_question
+        )
