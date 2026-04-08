@@ -2,7 +2,6 @@ import json
 from loguru import logger
 from typing import Any
 from services.search.result import TxtBaseSearchResult
-from services.prompt_service import PromptService
 from utils.clients import AIModelClient
 from core.database.oracle import get_session
 from core.config.settings import get_prompt_config
@@ -35,6 +34,7 @@ class ContextManager:
         """
         重构后的核心入口：
         输入原始问题 + 记忆，输出改写后的全套参数。
+        引入 context_relevance 机制，解决话题切换时的记忆污染问题。
         """
         # 1. 组装 Prompt (包含记忆与状态)
         template = await self.default_prompt.get_prompt_content(self.rewrite_prompt, DEFAULT_REWRITE_PROMPT)
@@ -56,26 +56,40 @@ class ContextManager:
                 prompt=prompt, 
                 temperature=0.0
             )
+
+            # 3. 话题相关性判定 (核心逻辑)
+            relevance = result.get("context_relevance", 1.0)
+            standalone_query = result.get("standalone_query", query)
+
+            # 如果相关性极低 (e.g., < 0.3)，说明用户开启了新话题
+            # 此时我们要防止 Standalone Query 里强行夹带旧环境/旧实体的私货
+            if relevance < 0.3:
+                logger.info(f"Topic shift detected (relevance: {relevance}). Isolating current query.")
+                # 这里经过LLM改写的standalone_query已经考虑了话题相关性
             
-            # 3. 结果处理与字段校验 (确保字段存在)
+            # 4. 结果处理与字段校验
             processed = {
-                "standalone_query": result.get("standalone_query", query),
+                "standalone_query": standalone_query,
                 "search_keywords": " ".join(result.get("search_keywords", [])),
                 "turn_entities": result.get("turn_entities", {}),
-                "intent_category": result.get("intent", "technical_inquiry")
+                "user_profile_updates": result.get("user_profile_updates", {}), # 透传给后续持久化
+                "intent_category": result.get("intent", "technical_inquiry"),
+                "context_relevance": relevance, # 传递给 Orchestrator 用于下游决策
+                "new_state": result.get("new_state", {}) # 更新 Session State 的逻辑
             }
             
-            logger.info(f"Rewrite: {query} -> {processed['standalone_query']}")
+            logger.info(f"Rewrite [{relevance}]: {query} -> {processed['standalone_query']}")
             return processed
 
         except Exception as e:
             logger.warning(f"Query rewrite failed, using raw query. Error: {e}")
-            # 彻底故障时的兜底方案：返回原样，不阻塞后续 RAG
             return {
                 "standalone_query": query,
                 "search_keywords": query,
                 "turn_entities": {},
-                "intent_category": "fallback"
+                "user_profile_updates": {},
+                "intent_category": "fallback",
+                "context_relevance": 1.0
             }
     
     async def refresh_summary(self, session_id: str, user_id: str, model_name: str):

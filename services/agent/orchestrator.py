@@ -50,15 +50,19 @@ class ChatOrchestrator:
         async with self.oracle_session as session:
             agent, model_params = await self._get_agent_and_params(session, agent_id)
 
-        # 1. 记忆预处理：获取 State, Summary 并生成 standalone_query
+        # 2. 记忆预处理：获取 State, Summary 并生成 standalone_query
         prepared = await self.memory_service.prepare_context_and_rewrite(
             session_id=session_id,
             raw_question=question,
             llm_model=model_params.llm_model,
             user_profile=user_profile # 传入画像
         )
+
+        # 获取相关性分数（默认 1.0 保持兼容）
+        relevance = prepared.get("context_relevance", 1.0)
+        is_topic_shift = relevance < 0.3 # 判定话题是否切换
         
-        # 2. 知识库检索：使用改写后的 standalone_query 和 search_keywords
+        # 3. 知识库检索：使用改写后的 standalone_query 和 search_keywords
         kb_results, model_params, query_vec = await self._execute_knowledge_search_pipeline(
             agent_id=agent_id,
             security_level=security_level,
@@ -68,23 +72,32 @@ class ChatOrchestrator:
             tags=tags
         )
 
-        # 3. 跨会话长期记忆召回
+        # 4. 跨会话长期记忆召回
         long_term_memory = await self.memory_service.get_relevant_memories(
             user_id=user_id,
             query_vector=query_vec
         )
 
-        # 4. 组装最终 Prompt
+        # 5. 组装最终 Prompt
+        # 如果判定为话题切换 (is_topic_shift)，清空传给下游生成的上下文
+        current_summary = prepared['old_context'].context_summary if prepared['old_context'] else ""
+        current_state = prepared['new_state']
+
+        if is_topic_shift:
+            logger.warning(f"Topic shift detected [{relevance}]. Isolating context for LLM generation.")
+            current_summary = ""   # 物理隔离：LLM 看不到之前的对话摘要
+            current_state = {}     # 物理隔离：LLM 看不到之前的临时变量 (IP, Path 等)
+
         final_prompt = await self.context_manager.build_final_prompt(
             system_prompt=prepared.get('system_prompt', "You are a helpful assistant."),
             user_question=prepared['standalone_query'],
             kb_results=kb_results,
-            session_state=prepared['new_state'],
-            context_summary=prepared['old_context'].context_summary if prepared['old_context'] else "",
+            session_state=current_state,
+            context_summary=current_summary,
             long_term_memory=long_term_memory
         )
 
-        # 5. 持久化会话状态
+        # 6. 持久化会话状态
         # 将本轮 Rewrite 提取的 turn_entities 真正存入数据库的 session_state 字段
         # 这样下一轮请求调用 prepare_context_and_rewrite 时，old_state 才能拿到这些值
         async with self.oracle_session as session:
@@ -108,7 +121,8 @@ class ChatOrchestrator:
             "final_prompt": final_prompt,
             "kb_results": kb_results,
             "model_params": model_params,
-            "prepared_data": prepared  # 包含 new_state 和改写后的信息，用于后续持久化
+            "prepared_data": prepared,  # 包含 new_state 和改写后的信息，用于后续持久化
+            "is_topic_shift": is_topic_shift # 传给前端或日志参考
         }
     
     async def _execute_knowledge_search_pipeline(
