@@ -75,7 +75,7 @@ class ChatOrchestrator:
         )
 
         # 4. 组装最终 Prompt
-        final_prompt = self.context_manager.build_final_prompt(
+        final_prompt = await self.context_manager.build_final_prompt(
             system_prompt=prepared.get('system_prompt', "You are a helpful assistant."),
             user_question=prepared['standalone_query'],
             kb_results=kb_results,
