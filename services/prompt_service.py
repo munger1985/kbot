@@ -48,3 +48,20 @@ class PromptService:
             except Exception as e:
                 logger.error(f"Failed to get prompt by unique name '{unique_name}', original_error={e}")
                 return None
+            
+    async def get_prompt_by_id(self, prompt_id: int) -> str | None:
+        """Gets the prompt content by id.
+
+        Args:
+            prompt_id: The id of the prompt.
+
+        Returns:
+            The prompt content as a string.
+        """
+        async with self.oracle_session as session:
+            repo = PromptRepository(session)
+            try:
+                return await repo.get_prompt_by_id(prompt_id)
+            except Exception as e:
+                logger.error(f"Failed to get prompt by id '{prompt_id}', original_error={e}")
+                return None

@@ -14,6 +14,7 @@ from services.memory import MemoryService, ContextManager
 from services.ai_model import AIModelService
 from services.search.kb_search import TxtBaseSearch
 from services.search.result import TxtBaseSearchResult
+from services.prompt_service import PromptService
 from .agent_params import ModelParams
 
 class ChatOrchestrator:
@@ -24,6 +25,7 @@ class ChatOrchestrator:
         self.context_manager = ContextManager()
         self.model_client = AIModelClient()
         self.model_service = AIModelService()
+        self.prompt_service = PromptService()
 
     @property
     def oracle_session(self):
@@ -79,6 +81,19 @@ class ChatOrchestrator:
         )
 
         # 5. 组装最终 Prompt
+        # 提取 Agent 自定义提示词
+        agent_custom_instructions = None
+        if agent.prompt_id:
+            agent_custom_instructions = await self.prompt_service.get_prompt_by_id(agent.prompt_id)
+
+        if not agent_custom_instructions:
+            agent_custom_instructions = "Please answer the question based on the knowledge base. If you do not know the answer, be honest and do not fabricate answers."
+
+        base_system_prompt = prepared.get('system_prompt', "You are a helpful assistant.")
+        
+        # 融合逻辑：Agent 自定义提示词优先级通常更高
+        combined_system_prompt = f"{base_system_prompt}\n\n[Agent Constraints]:\n{agent_custom_instructions}"
+
         # 如果判定为话题切换 (is_topic_shift)，清空传给下游生成的上下文
         current_summary = prepared['old_context'].context_summary if prepared['old_context'] else ""
         current_state = prepared['new_state']
@@ -89,7 +104,7 @@ class ChatOrchestrator:
             current_state = {}     # 物理隔离：LLM 看不到之前的临时变量 (IP, Path 等)
 
         final_prompt = await self.context_manager.build_final_prompt(
-            system_prompt=prepared.get('system_prompt', "You are a helpful assistant."),
+            system_prompt=combined_system_prompt,
             user_question=prepared['standalone_query'],
             kb_results=kb_results,
             session_state=current_state,
