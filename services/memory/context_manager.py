@@ -18,6 +18,7 @@ class ContextManager:
         self.rewrite_prompt = conf.rewrite_question
         self.summary_prompt = conf.refresh_summary
         self.rag_final_render = conf.rag_final_render
+        self.formatter = LazyFormatter()
 
     @property
     def oracle_session(self):
@@ -39,7 +40,8 @@ class ContextManager:
         template = await self.default_prompt.get_prompt_content(self.rewrite_prompt, DEFAULT_REWRITE_PROMPT)
 
         # 填充模板
-        prompt = template.format(
+        prompt = self.formatter.format(
+            template,
             chat_history=chat_history if chat_history else 'No previous turns.',
             summary=context_summary or 'None',
             session_state=json.dumps(session_state or {}, ensure_ascii=False),
@@ -96,7 +98,7 @@ class ContextManager:
             # 2. 构造“双任务”Prompt
             # 强制 LLM 分开输出：一个是当前聊的事，一个是关于这个人的描述
             template = await self.default_prompt.get_prompt_content(self.summary_prompt, DEFAULT_SUMMARY_PROMPT)
-            prompt = template.format(history_text=history_text)
+            prompt = self.formatter.format(template, history_text=history_text)
 
             try:
                 # 3. 调用结构化 JSON 接口
@@ -149,7 +151,8 @@ class ContextManager:
         kb_context = "\n\n".join(kb_segments) if kb_segments else "未找到直接相关的核心知识。"
 
         # 4. 构造分层模板
-        return template.format(
+        return self.formatter.format(
+            template,
             system_prompt=system_prompt,
             env_str=env_str,
             context_summary=context_summary or "对话开始阶段。",

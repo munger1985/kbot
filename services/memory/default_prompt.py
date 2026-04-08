@@ -1,6 +1,14 @@
+import string
 from loguru import logger
 from services.prompt_service import PromptService
 
+class LazyFormatter(string.Formatter):
+    def get_value(self, key, args, kwargs):
+        # 如果大括号里的 key 在 kwargs 中找不到，直接原样返回
+        if isinstance(key, str):
+            return kwargs.get(key, "{" + key + "}")
+        return super().get_value(key, args, kwargs)
+    
 class DefaultPrompt:
     def __init__(self):
         self.prompt_service = PromptService()
@@ -116,7 +124,7 @@ Q: {question}
 A: {answer}
 
 ### 任务指令:
-1. 分析最新对话，提取用户的专业身份(如DevOps)、使用的技术栈(如Oracle Linux 8)、当前关注的具体项目或痛点。
+1. 分析最新对话，提取用户的专业身份(如DevOps)、使用的技术栈(如Oracle Linux 8)、当前关注的具体项目或痛点。仅从用户提问和对应回答中提取信息，不得引用本提示词中的示例内容（如 DevOps、Oracle Linux 8 等）。
 2. 将新提取的信息与原有摘要进行逻辑合并。
 3. 如果信息重复，则保留；如果信息冲突（如用户从 Ubuntu 换到了 RHEL），以最新对话为准。
 4. 保持摘要简洁、专业，总字数不超过 300 字。

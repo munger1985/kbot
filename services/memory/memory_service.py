@@ -10,7 +10,7 @@ from dao.repositories import MemoryEntryRepository
 from .state_manager import SessionStateManager
 from .context_manager import ContextManager
 from services.agent.agent_params import ModelParams
-from .default_prompt import DefaultPrompt, DEFAULT_USER_PROFILE_PROMPT
+from .default_prompt import DefaultPrompt, DEFAULT_USER_PROFILE_PROMPT, LazyFormatter
 from utils.clients.model_client import AIModelClient
 from utils.common import safe_read_content
 
@@ -20,6 +20,7 @@ class MemoryService:
         self.manager = ContextManager()
         self.model_client = AIModelClient()
         self.default_prompt = DefaultPrompt()
+        self.formatter = LazyFormatter()
         self.user_profile_prompt = get_prompt_config().user_profile
     
     @property
@@ -124,7 +125,8 @@ class MemoryService:
         template = await self.default_prompt.get_prompt_content(self.user_profile_prompt, DEFAULT_USER_PROFILE_PROMPT)
 
         # 填充模板
-        reflection_prompt = template.format(
+        reflection_prompt = self.formatter.format(
+            template,
             old_summary=old_summary,
             question=question,
             answer=answer
