@@ -256,8 +256,13 @@ class FileService:
                 "generate_picture_images": True
             }
 
-            # create batch entity if not exist
-            if not batch_id:
+            # Handle batch: use existing if batch_id provided, otherwise create new with batch_name
+            # Note: Unique constraint is (app_id, kb_id, batch_name)
+            if batch_id:
+                logger.info(f"Using existing batch {batch_id} for KB {kb_id}")
+            elif batch_name:
+                # Create new batch with the given name
+                batch_repo = BatchRepository(session)
                 batch_entity = BatchEntity(
                     app_id=app_id,
                     batch_name=batch_name,
@@ -265,12 +270,13 @@ class FileService:
                     created_by=created_by,
                     updated_by=created_by
                 )
-                batch_repo = BatchRepository(session)
                 try:
                     batch_id = await batch_repo.create(batch_entity)
+                    logger.info(f"Created new batch {batch_id} for KB {kb_id}")
                 except Exception as e:
                     error_msg = f"Failed to create batch: {str(e)}"
                     handle_exception(e, error_msg)
+                    raise
 
             # Create file entities for batch persistence
             file_entities = []
