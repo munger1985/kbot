@@ -453,25 +453,28 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
         :raises DataNotFoundException: If no records found for the given file ID
         """
         try:
-            # Build update statement using pure SQLAlchemy 2.0 ORM syntax
-            # Oracle JSON_MERGEPATCH equivalent in SQLAlchemy
-            update_stmt = (
-                update(TxtChunkEntity)
-                .where(TxtChunkEntity.file_id == file_id)
-                .values(
-                    biz_metadata=func.json_mergepatch(
-                        func.nvl(TxtChunkEntity.biz_metadata, func.json_object()),  # Handle null biz_metadata
-                        func.json_object('tags', tags)  # Create JSON object with tags array
-                    )
+            # Use raw SQL with correct Oracle JSON syntax
+            # Oracle json_object requires KEY/VALUE keywords
+            tags_json = json.dumps(tags, ensure_ascii=False)
+            sql = text("""
+                UPDATE KBOT_BIZ_TXT_EMBEDDING 
+                SET biz_metadata = JSON_MERGEPATCH(
+                    NVL(biz_metadata, JSON_OBJECT()),
+                    JSON_OBJECT('tags' VALUE :tags)
                 )
-                .execution_options(synchronize_session="fetch")
-                .returning(func.count(TxtChunkEntity.chunk_id))
-            )
-
-            # Execute update using SQLAlchemy ORM
-            await self.session.execute(update_stmt)
+                WHERE file_id = :file_id
+            """)
+            
+            # Execute update
+            result = await self.session.execute(sql, {"file_id": file_id, "tags": tags_json})
+            
+            if result.rowcount == 0:
+                raise DataNotFoundException(f"No records found for file ID: {file_id}")
+                
             logger.info(f"Successfully updated tags for file {file_id}: {tags}")
 
+        except DataNotFoundException as e:
+            raise e
         except Exception as e:
             logger.error("Oracle update tags failed", e, max_length=500)
             raise DatabaseException("Oracle update text chunk tags failed", original_error=e)
@@ -482,33 +485,34 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
         
         :param chunk_id: Chunk unique identifier
         :param description: Chunk description to update
-        :raises DataNotFoundException: If no records found for the given file ID
+        :param new_embedding: New embedding vector for the chunk
+        :raises DataNotFoundException: If no records found for the given chunk ID
         """
         try:
-            # Build update statement using pure SQLAlchemy 2.0 ORM syntax
-            # Oracle JSON_MERGEPATCH equivalent in SQLAlchemy
+            # Use raw SQL with correct Oracle JSON syntax
+            # Oracle json_object requires KEY/VALUE keywords
             oracle_embedding = OracleVecHandler().convert(new_embedding)
-            update_stmt = (
-                update(TxtChunkEntity)
-                .where(TxtChunkEntity.chunk_id == chunk_id)
-                .values(
-                    biz_metadata=func.json_mergepatch(
-                        func.nvl(TxtChunkEntity.biz_metadata, func.json_object()),  # Handle null biz_metadata
-                        func.json_object('description', description)  # Create JSON object with description
-                    )
-                )
-                .values(embedding=oracle_embedding)
-                .execution_options(synchronize_session="fetch")
-                .returning(func.count(TxtChunkEntity.chunk_id))
-            )
-
-            # Execute update using SQLAlchemy ORM
-            updated_count = await self.session.execute(update_stmt)
+            sql = text("""
+                UPDATE KBOT_BIZ_TXT_EMBEDDING 
+                SET biz_metadata = JSON_MERGEPATCH(
+                    NVL(biz_metadata, JSON_OBJECT()),
+                    JSON_OBJECT('description' VALUE :description)
+                ),
+                embedding = :embedding
+                WHERE chunk_id = :chunk_id
+            """)
             
-            if updated_count == 0:
+            # Execute update
+            result = await self.session.execute(sql, {
+                "chunk_id": chunk_id,
+                "description": description,
+                "embedding": oracle_embedding
+            })
+            
+            if result.rowcount == 0:
                 raise DataNotFoundException(f"No records found for chunk ID: {chunk_id}")
 
-            logger.info(f"Successfully updated description for chunk {chunk_id}, affected {updated_count} records")
+            logger.info(f"Successfully updated description for chunk {chunk_id}")
 
         except DataNotFoundException as e:
             raise e
