@@ -258,6 +258,8 @@ class FileService:
 
             # Handle batch: use existing if batch_id provided, otherwise create new with batch_name
             # Note: Unique constraint is (app_id, kb_id, batch_name)
+            logger.debug(f"Batch handling - batch_id: {batch_id}, batch_name: {batch_name}, app_id: {app_id}, kb_id: {kb_id}")
+            
             if batch_id:
                 logger.info(f"Using existing batch {batch_id} for KB {kb_id}")
             elif batch_name:
