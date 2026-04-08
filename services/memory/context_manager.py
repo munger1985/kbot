@@ -62,7 +62,7 @@ class ContextManager:
 
     def _build_rewrite_prompt(self, query: str, chat_history: str, summary: str | None, state: dict | None) -> str:
         return f"""
-You are the Context & Identity Engine for the NexusCube RAG system.
+You are the Context & Identity Engine for the RAG system.
 Your goal is to transform the user's raw input into a structured execution plan while maintaining a persistent User Profile.
 
 ### Recent Dialogue (Short-term Memory)
