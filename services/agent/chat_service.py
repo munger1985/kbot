@@ -266,9 +266,6 @@ class ChatService:
         except Exception as e:
             logger.error(f"Failed to fetch file names for references: {e}")
 
-        config = get_app_config()
-        base_url = f"http://{config.host_ip}:{config.service_port}"
-
         references = []
         for idx, res in enumerate(kb_results):
             try:
@@ -280,8 +277,6 @@ class ChatService:
                     file_id = str(file_id)
 
                 ref["file_name"] = file_name_map.get(file_id, "Unknown File")
-                ref["download_link"] = f"{base_url}/api/kb/download?file_id={file_id}"
-                ref["preview_link"] = f"{base_url}/api/kb/preview?file_id={file_id}"
                 references.append(ref)
             except Exception as e:
                 logger.error(f"Error processing search result at index {idx}: {e}, type: {type(e).__name__}, res: {res}")

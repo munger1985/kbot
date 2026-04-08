@@ -200,18 +200,17 @@ class TxtBaseSearch:
                     except Exception as e:
                         logger.error(f"Failed to fetch neighbors for chunk {res.chunk_id}: {e}")
 
-                # Path Gene Injection
-                path_prefix = f"[Location: {res.path_names}]\n"
-                if path_prefix not in res.content:
-                    res.content = path_prefix + res.content
+                # # Path Gene Injection
+                # path_prefix = f"[Location: {res.path_names}]\n"
+                # if path_prefix not in res.content:
+                #     res.content = path_prefix + res.content
                 return res
 
         # Parallelize the tasks - each now has its own session
         tasks = [expand_single_chunk(res) for res in initial_results]
         return list(await asyncio.gather(*tasks))
 
-    def _construct_search_result(self, dataset: list, weight: float, 
-                                 search_type: str) -> list[TxtBaseSearchResult]:
+    def _construct_search_result(self, dataset: list, weight: float, search_type: str) -> list[TxtBaseSearchResult]:
         """Maps raw database records to TxtBaseSearchResult objects."""
         results = []
         for item in dataset:
@@ -219,24 +218,22 @@ class TxtBaseSearch:
                 if not isinstance(item, dict): continue
                     
                 meta = item.get("metadata") or {}
-                path_names = item.get("path_names") or ""
 
                 result = TxtBaseSearchResult(
                     chunk_id=str(item.get("chunk_id", "")),
+                    chunk_type=item.get("chunk_type", "text"),
                     file_id=item.get("file_id", ""),
                     content=item.get("content", ""),
-                    path_names=str(path_names),
                     structure_level=int(item.get("structure_level", 0)),
-                    node_path=meta.get("node_path", "") or "", 
+                    path_names=item.get("path_names") or "",
                     page_num=int(meta.get("page_num") or 0),
                     chunk_num=int(meta.get("chunk_num") or 0),
-                    sub_index=int(meta.get("sub_index") or 0),
-                    chunk_type=meta.get("chunk_type", "text"),
                     score=float(item.get("score") or 0.0),
-                    embedding=item.get("embedding", []) or [],
                     weight=weight,
-                    search_type=search_type,
-                    rerank_score=0.0
+                    rerank_score=0.0,
+                    image_name=meta.get("image_name") or "",
+                    header_context=meta.get("header_context", ""),
+                    search_type=search_type
                 )
                 results.append(result)
             except Exception as e:

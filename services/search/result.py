@@ -9,22 +9,21 @@ class TxtBaseSearchResult(BaseModel):
     # 核心字段对齐
     structure_level: int = Field(..., description="层级深度 (L1, L2...)")
     path_names: str = Field(..., description="章节路径基因")
-    node_path: str = Field("", description="解析节点路径")
+    header_context: str = Field(..., description="标题上下文")
     
     # 元数据字段 (来自 chunk_metadata)
     page_num: int = Field(0, description="页码")
     chunk_num: int = Field(0, description="分片号")
-    sub_index: int = Field(0, description="子序号")
     chunk_type: str = Field("text", description="分片类别: text, table, picture，heading")
     
     # 评分与权重
-    search_type: str = Field("vector", description="搜索类型: vector, fulltext")
     score: float = Field(0.0, description="原始搜索评分")
     weight: float = Field(0.0, description="搜索权重")
     rerank_score: float = Field(0.0, description="重排后的评分")
     
     # 其他
-    embedding: list[float] = Field(default_factory=list, description="分片向量")
+    image_name: str = Field("", description="图片名称")
+    search_type: str = Field("", description="搜索类型")
 
     def to_dict(self, **kwargs) -> dict:
         return self.model_dump(**kwargs)

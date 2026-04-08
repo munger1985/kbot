@@ -114,7 +114,7 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
             # 3. 核心 SQL：(向量分 30%) + (路径分 70%), 归一化：向量分转为 0-100 再计算
             sql_query = f"""
                 SELECT 
-                    chunk_id, file_id, content, path_names, structure_level, chunk_metadata,
+                    chunk_id, chunk_type, file_id, content, path_names, structure_level, chunk_metadata,
                     (
                         ((1 - VECTOR_DISTANCE(embedding, :qv, COSINE)) * 100 * 0.3) 
                         + 
@@ -160,6 +160,7 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
             for chunk in chunks:
                 results.append({
                     "chunk_id": chunk.chunk_id,
+                    "chunk_type": chunk.chunk_type,
                     "file_id": chunk.file_id,
                     "content": chunk.content,
                     "path_names": chunk.path_names,
@@ -217,7 +218,7 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
             # 3. 核心 SQL：双重加权评分, 路径命中占 70% 权重，正文命中占 30%
             sql_query = f"""
                 SELECT 
-                    chunk_id, file_id, content, path_names, structure_level, chunk_metadata,
+                    chunk_id, chunk_type, file_id, content, path_names, structure_level, chunk_metadata,
                     ((SCORE(1) * 0.3) + (SCORE(2) * 0.7)) / 100 as similarity_score
                 FROM KBOT_BIZ_TXT_EMBEDDING
                 WHERE kb_id = :kb_id 
@@ -254,18 +255,14 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
                 meta = chunk.chunk_metadata or {}
                 
                 results.append({
-                    "chunk_id": str(chunk.chunk_id),
+                    "chunk_id": chunk.chunk_id,
+                    "chunk_type": chunk.chunk_type,
                     "file_id": chunk.file_id,
                     "content": chunk.content,
-                    "path_names": chunk.path_names or "",
-                    "structure_level": int(chunk.structure_level or 0),
-                    "node_path": meta.get("node_path", ""),
-                    "page_num": meta.get("page_num", 0),
-                    "chunk_num": meta.get("chunk_num", 0),
-                    "sub_index": meta.get("sub_index", 0),
-                    "chunk_type": meta.get("chunk_type", "text"),
-                    "score": float(chunk.similarity_score or 0.0),
-                    "search_type": "fulltext"
+                    "path_names": chunk.path_names,
+                    "structure_level": chunk.structure_level,
+                    "metadata": chunk.chunk_metadata,
+                    "score": float(chunk.similarity_score or 0.0)
                 })
             return results
 
@@ -284,7 +281,7 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
         :param window_size: 向上/向下扩展的数量。1表示取 [n-1, n, n+1]
         """
         sql = """
-            SELECT chunk_id, file_id, content, path_names, structure_level, chunk_metadata
+            SELECT chunk_id, chunk_type, file_id, content, path_names, structure_level, chunk_metadata
             FROM KBOT_BIZ_TXT_EMBEDDING
             WHERE file_id = :file_id 
             AND is_active = 1
