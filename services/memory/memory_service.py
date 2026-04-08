@@ -131,63 +131,24 @@ class MemoryService:
         )
         logger.debug(f"Triggering profile reflection for user: {user_id}")
         
-        # 调用 LLM 提炼记忆
-        new_summary = ""
-        async for chunk in self.model_client.call_llm_model(llm_model, reflection_prompt, stream=False):
-            # 处理非流式返回的完整字典 (参考测试3的日志结构)
-            if isinstance(chunk, dict):
-                # 尝试从非流式结构提取: choices[0].message.content
-                choices = chunk.get("choices", [{}])
-                message = choices[0].get("message", {})
-                content = message.get("content")
-                
-                # 如果是流式结构，content 会在 delta 里
-                if content is None:
-                    content = choices[0].get("delta", {}).get("content", "")
-                
-                new_summary += (content or "")
-            
-            # 处理可能的字符串返回
-            elif isinstance(chunk, str):
-                # 如果 model_client 内部没做 json.loads，这里需要解析
-                if chunk.startswith("{"):
-                    try:
-                        data = json.loads(chunk)
-                        new_summary += data.get("choices", [{}])[0].get("message", {}).get("content", "")
-                    except:
-                        pass
-                else:
-                    new_summary += chunk
-
-        if not new_summary:
-            logger.warning("Reflection failed: LLM returned empty summary.")
-            return old_summary, f"Q: {question}\nA: {answer}"
-
-        # 解析 LLM 返回的 JSON 内容
         try:
-            json_str = new_summary.strip()
-            # 在解析前增加更强的正则提取
-            json_match = re.search(r'\{.*\}', json_str, re.DOTALL)
-            if json_match:
-                json_str = json_match.group()
-            
-            # 针对 LLM 可能返回 Markdown JSON 块的情况进行清洗
-            if json_str.startswith("```json"):
-                json_str = json_str.split("```json")[1].split("```")[0].strip()
-            elif json_str.startswith("```"):
-                json_str = json_str.split("```")[1].split("```")[0].strip()
-            
-            res_data = json.loads(json_str)
+            # 2. 获取结构化结果
+            res_data = await self.model_client.call_llm_json(
+                model_name=llm_model,
+                prompt=reflection_prompt,
+                temperature=0.0  # 记忆提炼需要高度稳定性
+            )
+
+            # 3. 提取字段并应用兜底逻辑
             profile_summary = res_data.get("profile_summary", old_summary)
             memory_snapshot = res_data.get("memory_snapshot", f"Q: {question}\nA: {answer}")
-            
-        except Exception as e:
-            logger.error(f"Failed to parse Reflection JSON: {e}. Raw: {new_summary}")
-            # 兜底逻辑：解析失败则只更新画像，或按原始文本处理
-            profile_summary = new_summary[:300]
-            memory_snapshot = question
 
-        return profile_summary, memory_snapshot
+            return profile_summary, memory_snapshot
+
+        except Exception as e:
+            logger.error(f"Reflection failed for user {user_id}: {e}")
+            # 彻底失败时的安全降级：保持旧画像，记录原始问答作为快照
+            return old_summary, f"Q: {question}\nA: {answer}"
             
 
     # ========================== 持久化与同步 ==========================

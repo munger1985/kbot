@@ -188,8 +188,8 @@ CREATE TABLE KBOT_MD_PROMPT (
     -- Unique constraint for prompt unique name
     CONSTRAINT PROMPT_UNIQUE_NAME_UK UNIQUE (PROMPT_UNIQUE_NAME)
 );
-INSERT INTO KBOT_MD_PROMPT (APP_ID, PROMPT_UNIQUE_NAME, PROMPT_CATEGORY, TEMPLATE, STATUS) 
-VALUES (1, 'SYSTEM/image2text', 1, q'[You are a professional PDF document visual understanding assistant, responsible for identifying all visual content in PDFs, including images, icons, flowcharts, architecture diagrams, schematic diagrams, etc.
+INSERT INTO KBOT_MD_PROMPT (APP_ID, NAME, PROMPT_UNIQUE_NAME, PROMPT_CATEGORY, TEMPLATE, STATUS) 
+VALUES (1, 'image2text', 'SYSTEM/image2text', 1, q'[You are a professional PDF document visual understanding assistant, responsible for identifying all visual content in PDFs, including images, icons, flowcharts, architecture diagrams, schematic diagrams, etc.
 
 Please output descriptions in accordance with the following rules:
 
@@ -200,8 +200,8 @@ Please output descriptions in accordance with the following rules:
 
 Requirements: Accurate and concise descriptions, clear structure, output only visible content; list multiple items separately if there are multiple figures.]', 1);
 
-INSERT INTO KBOT_MD_PROMPT (APP_ID, PROMPT_UNIQUE_NAME, PROMPT_CATEGORY, TEMPLATE, STATUS) 
-VALUES (1, 'SYSTEM/rewrite_question', 1, q'[You are the Context and Identity Engine for the RAG system.
+INSERT INTO KBOT_MD_PROMPT (APP_ID, NAME, PROMPT_UNIQUE_NAME, PROMPT_CATEGORY, TEMPLATE, STATUS) 
+VALUES (1, 'rewrite_question', 'SYSTEM/rewrite_question', 1, q'[You are the Context and Identity Engine for the RAG system.
 Your goal is to transform the user's raw input into a structured execution plan while maintaining a persistent User Profile.
 
 ### Recent Dialogue (Short-term Memory)
@@ -241,20 +241,24 @@ Distinguish between "Turn Entities" and "User Profile Updates":
 
 User Input: {query}]', 1);
 
-INSERT INTO KBOT_MD_PROMPT (APP_ID, PROMPT_UNIQUE_NAME, PROMPT_CATEGORY, TEMPLATE, STATUS) 
-VALUES (1, 'SYSTEM/refresh_summary', 1, q'[请分析以下对话，产出两段总结。用 '---' 分隔。
+INSERT INTO KBOT_MD_PROMPT (APP_ID, NAME, PROMPT_UNIQUE_NAME, PROMPT_CATEGORY, TEMPLATE, STATUS) 
+VALUES (1, 'refresh_summary', 'SYSTEM/refresh_summary', 1, q'[Analyze the following conversation and provide two types of summaries in a structured JSON format.
 
-任务 1：会话摘要 (Context Summary)
-要求：记录当前正在处理的技术问题、环境（如 Ubuntu 24.04）及已验证的方案。
+### Tasks:
+1. **context_summary**: A technical summary of the current session. Focus on the core problem, environment (e.g., OS, versions), and verified solutions/steps.
+2. **profile_summary**: A qualitative description of the user. Identify their professional role, expertise level, and communication style based on their questions and technical depth.
 
-任务 2：用户画像描述 (User Profile Summary)
-要求：基于对话定性描述用户。例如：职业身份、技术水平、沟通风格。
+### Dialogue History:
+{history_text}
 
-对话历史：
-{history_text}]', 1);
+### Output Format (Strict JSON):
+{{
+  "context_summary": "string",
+  "profile_summary": "string"
+}}]', 1);
 
-INSERT INTO KBOT_MD_PROMPT (APP_ID, PROMPT_UNIQUE_NAME, PROMPT_CATEGORY, TEMPLATE, STATUS) 
-VALUES (1, 'SYSTEM/rag_final_render', 1, q'[{system_prompt}
+INSERT INTO KBOT_MD_PROMPT (APP_ID, NAME, PROMPT_UNIQUE_NAME, PROMPT_CATEGORY, TEMPLATE, STATUS) 
+VALUES (1, 'rag_final_render', 'SYSTEM/rag_final_render', 1, q'[{system_prompt}
 
 ### 当前环境约束 (Session State)
 **[必须遵守]** 以下是当前用户的运行环境：
@@ -278,8 +282,8 @@ VALUES (1, 'SYSTEM/rag_final_render', 1, q'[{system_prompt}
 用户当前的问题：{user_question}
 助手回答：]', 1);
 
-INSERT INTO KBOT_MD_PROMPT (APP_ID, PROMPT_UNIQUE_NAME, PROMPT_CATEGORY, TEMPLATE, STATUS) 
-VALUES (1, 'SYSTEM/user_profile', 1, q'[你是一位资深的系统架构师与用户画像专家。请分析对话并输出 JSON 格式的更新记录。
+INSERT INTO KBOT_MD_PROMPT (APP_ID, NAME, PROMPT_UNIQUE_NAME, PROMPT_CATEGORY, TEMPLATE, STATUS) 
+VALUES (1, 'user_profile', 'SYSTEM/user_profile', 1, q'[你是一位资深的系统架构师与用户画像专家。请分析对话并输出 JSON 格式的更新记录。
 
 ### 原有画像摘要:
 {old_summary}
