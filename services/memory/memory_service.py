@@ -339,7 +339,7 @@ A: {answer}
 
             return "\n\n".join(memory_blocks)
     
-    async def record_user_feedback(self, entry_id: int, score: int):
+    async def record_user_feedback(self, entry_id: str, score: int):
         """
         记录用户对某一轮回答的满意度
         """

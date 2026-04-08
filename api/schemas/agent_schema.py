@@ -18,7 +18,7 @@ class AgentChatFeedbackForm(BaseModel):
 
     This model defines the data structure for submitting feedback on AI agent chat responses.
     """
-    memory_id: int = Field(..., description="Memory ID (unique identifier for the chat history entry)")
+    memory_id: str = Field(..., description="Memory ID (unique identifier for the chat history entry)")
     feedback: int = Field(..., description="Feedback value (0: no feedback, 1: approve, -1: disapprove)")
 
 class DifySearchForm(BaseModel):

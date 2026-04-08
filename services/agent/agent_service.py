@@ -15,7 +15,7 @@ class AgentService:
         """Provides a database session instance."""
         return get_session()
     
-    async def feedback(self, entry_id: int, feedback: int):
+    async def feedback(self, entry_id: str, feedback: int):
         """Updates user feedback for a specific chat record."""
         async with self.oracle_session as session:
             repo = MemoryEntryRepository(session)

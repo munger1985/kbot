@@ -179,7 +179,7 @@ class MemoryEntryRepository(BaseRepository[MemoryEntryEntity]):
             logger.error(f"Failed to search vector memory for user {user_id}", exc_info=e)
             raise DatabaseException("Failed to search vector memory", original_error=e)
         
-    async def update_feedback(self, entry_id: int, score: int):
+    async def update_feedback(self, entry_id: str, score: int):
         """
         更新特定交互的反馈分数
         score: -1 (差), 0 (无), 1 (好)
