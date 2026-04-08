@@ -215,31 +215,49 @@ class ChatService:
 
     async def _collect_chunks(self, chunk, chunks: list):
         """Extracts content from LLM stream chunks and accumulates them."""
-        if isinstance(chunk, str) and chunk.startswith('data: '):
-            data = chunk[6:].strip()
-            if data == '[DONE]': return
-            try:
-                js = json.loads(data)
-                # Handle error responses
-                if 'error' in js:
-                    logger.error(f"LLM error response: {js.get('error')}")
+        # 1. 预处理：过滤空值或纯空白字符串（这些通常是流结束后的空包或心跳）
+        if not chunk or (isinstance(chunk, str) and not chunk.strip()):
+            return
+
+        # 2. 处理 SSE 字符串格式
+        if isinstance(chunk, str):
+            if chunk.startswith('data: '):
+                data = chunk[6:].strip()
+                if data == '[DONE]': 
                     return
-                content = js.get("choices", [{}])[0].get("delta", {}).get("content")
-                if content: chunks.append(content)
-            except (json.JSONDecodeError, KeyError, IndexError, AttributeError) as e:
-                logger.debug(f"Failed to parse chunk: {e}, chunk: {chunk[:100] if chunk else ''}")
+                try:
+                    js = json.loads(data)
+                    if 'error' in js:
+                        logger.error(f"LLM error response: {js.get('error')}")
+                        return
+                    content = js.get("choices", [{}])[0].get("delta", {}).get("content")
+                    if content: 
+                        chunks.append(content)
+                except (json.JSONDecodeError, KeyError, IndexError, AttributeError) as e:
+                    logger.warning(f"Failed to parse chunk: {e}, chunk: {chunk[:100]}")
+            else:
+                # 如果是字符串但不是以 data: 开头，且不是空白字符，
+                # 这种情况通常是 API 直接返回了错误文本或者非标准格式，再记录 debug
+                logger.debug(f"Non-SSE string chunk received: {chunk[:50]}")
+
+        # 3. 处理字典格式 (部分 SDK 会自动解析好 dict)
         elif isinstance(chunk, dict):
             try:
-                # Handle error responses
                 if 'error' in chunk:
                     logger.error(f"LLM error response: {chunk.get('error')}")
                     return
-                content = chunk.get("choices", [{}])[0].get("delta", {}).get("content")
-                if content: chunks.append(content)
+                # 注意：部分 SDK 在 dict 模式下内容可能在 message 而不是 delta
+                choices = chunk.get("choices", [{}])
+                delta = choices[0].get("delta", {})
+                content = delta.get("content") or choices[0].get("message", {}).get("content")
+                
+                if content: 
+                    chunks.append(content)
             except (KeyError, IndexError, AttributeError) as e:
-                logger.debug(f"Failed to parse dict chunk: {e}, chunk keys: {chunk.keys() if chunk else ''}")
+                logger.warning(f"Failed to parse dict chunk: {e}")
+        
         else:
-            logger.debug(f"Unknown chunk type: {type(chunk)}, content: {str(chunk)[:100] if chunk else ''}")
+            logger.debug(f"Unknown chunk type: {type(chunk)}")
 
     async def _enrich_results_with_metadata(self, kb_results: list[TxtBaseSearchResult]) -> list[dict]:
         """Converts raw search results into dictionaries with file metadata for frontend display."""
