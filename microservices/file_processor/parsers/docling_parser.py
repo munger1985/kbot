@@ -86,6 +86,7 @@ class VLMAnnotationPictureSerializer(MarkdownPictureSerializer):
             元组，包含序列化结果和图片文件名
         """
         text_parts = []
+        image_name = ""  # 初始化，避免UnboundLocalError
         
         # 获取外部传入的图片保存目录
         image_root = Path(kwargs.get("image_dir", "data/images"))
