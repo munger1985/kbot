@@ -6,7 +6,6 @@ from datetime import datetime
 from ..parser_schema import DocParserParams, FileParams
 from .docling_service import ParserService
 from .txt_to_md import TxtToMarkdownParser
-from .utils import truncate_by_token
 from dao.repositories import FileRepository, KBRepository, TxtChunkRepository
 from dao.entities import TxtChunkEntity
 from core.database.oracle import get_session
@@ -233,25 +232,7 @@ class FileProcessor:
             return []
 
         # 1. Extract all text content for embedding and filter empty strings
-        # all_texts = [item["content"].strip() for item in parser_results if item["content"] and item["content"].strip()]
-        all_texts = []
-        for item in parser_results:
-            content = item.get("content", "").strip()
-            if not content:
-                continue
-                
-            # 核心逻辑：如果这个 chunk 是表格，且长度过长，在这里进行物理截断
-            # 仅针对表格类型进行 Token 级截断
-            # 通过 display name 获取模型的真实model_name和max_tokens设置参数
-            model_name, max_tokens = await self.model_service.get_name_and_max_token_by_display_name(model)
-            if item.get("chunk_type") == "table":
-                content = truncate_by_token(
-                    text=content, 
-                    model_name=model_name, 
-                    max_tokens=max_tokens
-                )
-            
-            all_texts.append(content)
+        all_texts = [item["content"].strip() for item in parser_results if item["content"] and item["content"].strip()]
 
         if not all_texts:
             logger.warning("All text chunks are empty after filtering, skipping embedding generation")

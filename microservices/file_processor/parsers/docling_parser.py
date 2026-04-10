@@ -254,7 +254,8 @@ class DoclingDocProcessor:
         for i, table in enumerate(doc.tables):
             # 路径：有图（复杂 Excel 渲染或 PDF 表格）-> VLM 视觉重构
             if table.image and table.image.pil_image:
-                prompt = "你是一个表格分析专家。请将图片中的复杂表格完整还原为 Markdown 格式，注意处理合并单元格，不要输出任何解释。"
+                prompt = """你是一个表格分析专家。请将图片中的复杂表格完整还原为 Markdown 格式，注意处理合并单元格。如果表格非常长，请将其拆分为多个独立的子表。
+每个子表必须包含完整的表头。每个子表之间使用 ====CHUNK_SPLIT==== 进行分隔。确保每个子表的逻辑完整，不要在单元格中间截断。只输出 Markdown 和分隔符，不要输出任何解释。"""
                 tasks.append(self._vlm_task(
                     self.model_client, params.vlm_model, prompt, f"table_vlm_{i}", table.image.pil_image
                 ))
@@ -391,7 +392,18 @@ class DoclingDocProcessor:
                 item_annos = getattr(item, "annotations", [])
                 vlm_table = next((ann.text for ann in item_annos 
                                 if getattr(ann, "provenance", "") == "vlm_table_rebuild"), None)
-                content_list.append(vlm_table if vlm_table else item.export_to_markdown(doc=doc))
+                raw_table_content = vlm_table if vlm_table else item.export_to_markdown(doc=doc)
+                if "====CHUNK_SPLIT====" in raw_table_content:
+                    # 将一个超长表格内容拆分为多个子内容
+                    # 这样外层的 for sub_content in content_list 会生成多个独立的 chunk
+                    split_parts = raw_table_content.split("====CHUNK_SPLIT====")
+                    for part in split_parts:
+                        clean_part = part.strip()
+                        if clean_part:
+                            content_list.append(clean_part)
+                    logger.info(f"VLM table split into {len(content_list)} sub-chunks for item {current_chunk_num}")
+                else:
+                    content_list.append(raw_table_content)
             elif isinstance(item, PictureItem):
                 current_type = "picture"
                 ser_result, image_name = self.serializer.serialize(item=item, doc=doc, image_dir=params.image_dir)
