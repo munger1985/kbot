@@ -373,7 +373,11 @@ rows 数组中的每一项必须是单行 Markdown。
             # --- 结构层级判定 ---
             detected_level = 0
             # 这里的 len 限制可以稍微放宽，以便捕捉更长的 Word 标题
-            is_potential_header = isinstance(item, (SectionHeaderItem, TextItem)) and 2 <= len(raw_text) <= 100
+            is_potential_header = (
+                isinstance(item, (SectionHeaderItem, TextItem)) 
+                and 3 <= len(raw_text) <= 100 
+                and not raw_text.replace('.', '').isdigit() 
+            )
             
             if is_potential_header and params.use_vlm:
                 prompt = f"""分析此文本在文档中的结构层级。
@@ -408,8 +412,11 @@ rows 数组中的每一项必须是单行 Markdown。
 
             # --- 核心分块分发逻辑 ---
             if is_header:
-                # 遇到新标题，先把 buffer 里的内容清掉（存为上一个 chunk）
-                flush_buffer("text", len(active_path) + 1, item)
+                # 只有当 buffer 里的内容足够长时，遇到标题才切分
+                # 或者当前 buffer 为空时，才接受新标题。
+                # 这样可以防止连续的短标题把切片切得太碎
+                if buffer_char_count > MIN_CHUNK_CHARS:
+                    flush_buffer("text", len(active_path) + 1, item)
 
                 # 更新路径树
                 if detected_level == 1: active_path = []
