@@ -231,13 +231,39 @@ class FileProcessor:
             logger.warning("Empty parser results, skipping embedding generation")
             return []
 
+        # 调试日志：检查输入总量
+        logger.info(f"[DEBUG_EMB] Total parser_results received: {len(parser_results)}")
+        
         # 1. Extract all text content for embedding and filter empty strings
-        all_texts = [item["content"].strip() for item in parser_results if item["content"] and item["content"].strip()]
+        # all_texts = [item["content"].strip() for item in parser_results if item["content"] and item["content"].strip()]
+        all_texts = []
+        for i, item in enumerate(parser_results):
+            content = item.get("content", "").strip()
+            if not content:
+                continue
+                
+            char_count = len(content)
+            # 粗略估算 Token (中英混合按 1 token ≈ 1.5-2 chars 算，保守点除以 1.2)
+            est_tokens = int(char_count / 1.2) 
+
+            # 打印每一个超大 Chunk 的详细信息
+            if est_tokens > 6000 or char_count > 15000:
+                logger.warning(
+                    f"[DEBUG_EMB] Potential Overflow Chunk Index: {i} | "
+                    f"Type: {item.get('chunk_type')} | "
+                    f"Chars: {char_count} | "
+                    f"Est Tokens: ~{est_tokens} | "
+                    f"Content Start: {content[:100]}..."
+                )
+            
+            all_texts.append(content)
 
         if not all_texts:
             logger.warning("All text chunks are empty after filtering, skipping embedding generation")
             return []
-
+        # 在真正请求前，再次确认批次大小
+        logger.debug(f"[DEBUG_EMB] Sending {len(all_texts)} texts to model {model}")
+        
         # Keep track of valid indices to match embeddings with parser results
         valid_indices = [i for i, item in enumerate(parser_results) if item["content"] and item["content"].strip()]
 
