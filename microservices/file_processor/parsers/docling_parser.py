@@ -321,19 +321,50 @@ rows 数组中的每一项必须是单行 Markdown。
     
     async def _generate_chunks(self, doc: DoclingDocument, result, params: DocParserParams) -> list[dict]:
         """
-        NexusCube 分块逻辑改进版：
-        1. 适配 _llm_task 的强类型返回（int），彻底规避 ES 字段溢出。
+        分块逻辑：
+        1. 使用vlm识别复杂Excel表格，并且如果表格超长，按照参数设定的行数进行切分，子表格保留相同表头。
         2. 针对 Word/PPT 自动使用纯文本 LLM 判定。
         """
         chunk_results = []
         current_chunk_num = 1
         active_path = []
         pending_header_context = ""
+        text_buffer = [] 
+        buffer_char_count = 0
+        MIN_CHUNK_CHARS = params.min_chunk_len or 20 # 最小合并字符数，低于此值会尝试与下一段合并
 
         # 预检：是否为 PDF（用于截图标题）
         has_render = hasattr(result, "render") and result.render is not None
 
+        # 定义一个辅助函数：用于真正封装并提交 chunk
+        def flush_buffer(c_type, s_level, item_ref, img_name=None):
+            nonlocal current_chunk_num, text_buffer, buffer_char_count
+            if not text_buffer: return
+            
+            combined_text = "\n".join(text_buffer).strip()
+            if not combined_text: return
+
+            chunk_results.append({
+                "content": combined_text,
+                "path_names": list(active_path),
+                "structure_level": int(s_level),
+                "chunk_type": c_type,
+                "metadata": {
+                    "chunk_num": current_chunk_num,
+                    "page_num": self._get_page_num(item_ref),
+                    "header_context": pending_header_context,
+                    "image_name": img_name
+                }
+            })
+            current_chunk_num += 1
+            text_buffer = []
+            buffer_char_count = 0
+
+        # 用于收尾的最后一个 item 引用
+        last_item = None
+
         for item, _ in doc.iterate_items():
+            last_item = item
             raw_text = getattr(item, "text", "").strip()
             if not raw_text and not isinstance(item, (TableItem, PictureItem)):
                 continue
@@ -372,37 +403,41 @@ rows 数组中的每一项必须是单行 Markdown。
                     _, llm_level = await self._llm_task(self.model_client, params.llm_model, prompt, f"level_{current_chunk_num}")
                     detected_level = llm_level if isinstance(llm_level, int) else 0
 
-            # --- 路径树逻辑 (保持原逻辑) ---
             is_header = detected_level > 0
+
+            # --- 核心分块分发逻辑 ---
             if is_header:
-                # 只有 1-7 级有效，防止非法输入搞乱路径树
+                # 遇到新标题，先把 buffer 里的内容清掉（存为上一个 chunk）
+                flush_buffer("text", len(active_path) + 1, item)
+
+                # 更新路径树
                 if detected_level == 1: active_path = []
                 while len(active_path) >= detected_level:
                     if not active_path: break
                     active_path.pop()
-                
                 if not active_path or active_path[-1] != raw_text:
                     active_path.append(raw_text)
                 
                 pending_header_context = raw_text
-                current_type = "heading"
-                structure_level = detected_level
-            else:
-                current_type = "text"
-                structure_level = len(active_path) + 1
+                # 标题不 flush，先存入 buffer，等待和下面的正文合并
+                text_buffer.append(f"## {raw_text}") 
+                buffer_char_count += len(raw_text)
 
-            # --- 元素内容处理 ---
-            content_list = []
-            image_name_val = None
+            elif isinstance(item, TableItem):
+                # 遇到表格，先把之前的 Buffer 清掉
+                flush_buffer("text", len(active_path) + 1, item)
 
-            if isinstance(item, TableItem):
+                # 表格处理逻辑
                 current_type = "table"
                 item_annos = getattr(item, "annotations", [])
                 vlm_res = next((ann.text for ann in item_annos 
                                if getattr(ann, "provenance", "") == "vlm_table_rebuild"), None)
                 
+                # 定义统一的切片步长
+                TABLE_CHUNK_SIZE = 40 
+                MAX_CHAR_LIMIT = 15000
                 table_final_parts = [] # 存储最终切好的段
-                
+
                 if vlm_res:
                     try:
                         # 1. 尝试 JSON 解析分片
@@ -413,8 +448,8 @@ rows 数组中的每一项必须是单行 Markdown。
                         
                         if rows:
                             # 按照每 40 行分一组（术语表定义长，40行更稳）
-                            for i in range(0, len(rows), 40):
-                                table_final_parts.append(f"{header}\n" + "\n".join(rows[i:i+40]))
+                            for i in range(0, len(rows), TABLE_CHUNK_SIZE):
+                                table_final_parts.append(f"{header}\n" + "\n".join(rows[i:i+TABLE_CHUNK_SIZE]))
                         else:
                             table_final_parts.append(vlm_res)
                     except:
@@ -424,41 +459,43 @@ rows 数组中的每一项必须是单行 Markdown。
                     # 3. 无 VLM 场景，使用 Docling 默认导出
                     table_final_parts.append(item.export_to_markdown(doc=doc))
 
-                # --- 终极物理切片防线 ---
-                # 检查 table_final_parts 里的每一段，如果字符数 > 15000，强制再切
                 for part in table_final_parts:
-                    if len(part) > 15000:
-                        logger.warning(f"[FIX] Part too large ({len(part)}), forcing physical split")
-                        lines = part.split('\n')
-                        header_shield = "\n".join(lines[:2]) # 暂时保护前两行
-                        for i in range(2, len(lines), 50):
-                            sub_block = "\n".join(lines[i:i+50])
-                            content_list.append(f"{header_shield}\n{sub_block}")
-                    else:
-                        content_list.append(part)
-            elif isinstance(item, PictureItem):
-                current_type = "picture"
-                ser_result, image_name = self.serializer.serialize(item=item, doc=doc, image_dir=params.image_dir)
-                content_list.append(ser_result.text)
-                image_name_val = image_name
-            else:
-                content_list.append(raw_text)
+                    chunk_results.append({
+                        "content": part,
+                        "path_names": list(active_path),
+                        "structure_level": len(active_path) + 1,
+                        "chunk_type": "table",
+                        "metadata": {
+                            "chunk_num": current_chunk_num,
+                            "page_num": self._get_page_num(item),
+                            "header_context": pending_header_context,
+                            "image_name": None
+                        }
+                    })
+                    current_chunk_num += 1
 
-            # --- 封装输出 ---
-            for sub_content in content_list:
-                chunk_results.append({
-                    "content": sub_content,
-                    "path_names": list(active_path),
-                    "structure_level": int(structure_level), # 强制转换确保入库安全
-                    "chunk_type": current_type,
-                    "metadata": {
-                        "chunk_num": current_chunk_num,
-                        "page_num": self._get_page_num(item),
-                        "header_context": pending_header_context if len(raw_text) > 3 else f"{active_path[-2] if len(active_path)>1 else ''} ({raw_text})",
-                        "image_name": image_name_val if current_type == "picture" else None
-                    }
-                })
-                current_chunk_num += 1
+            elif isinstance(item, PictureItem):
+                # 遇到图片，冲刷之前的文字 Buffer
+                flush_buffer("text", len(active_path) + 1, item)
+
+                # 图片处理逻辑
+                ser_result, image_name = self.serializer.serialize(item=item, doc=doc, image_dir=params.image_dir)
+                # 图片描述进 Buffer
+                text_buffer.append(ser_result.text)
+                flush_buffer("picture", len(active_path) + 1, item, img_name=image_name)
+            
+            else:
+                # 普通正文
+                text_buffer.append(raw_text)
+                buffer_char_count += len(raw_text)
+                
+                # 只有当正文积累到一定长度（如 600 字）才自动冲刷，防止太碎
+                if buffer_char_count > 600:
+                    flush_buffer("text", len(active_path) + 1, item)
+
+            # --- 循环结束后的收尾 ---
+            if text_buffer:
+                flush_buffer("text", len(active_path) + 1, last_item)
 
         return chunk_results
     
