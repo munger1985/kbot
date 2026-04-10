@@ -1,6 +1,7 @@
 import json
 import re
 import asyncio
+import imagehash
 from pathlib import Path
 from PIL import Image
 from enum import Enum
@@ -163,6 +164,8 @@ class DoclingDocProcessor:
         self.model_client = AIModelClient()
         # 通用标题栈：仅保留最近的层级
         self.serializer = VLMAnnotationPictureSerializer()
+        # [新增] VLM 描述缓存，Key 为图片指纹(hash)，Value 为描述文本
+        self._vlm_cache = {}
 
     async def _vlm_task(self, client, model_name, prompt, index, image_obj) -> tuple:
         async with self.vlm_semaphore:
@@ -228,6 +231,8 @@ class DoclingDocProcessor:
             return
         
         tasks = []
+        # [新增] 哈希映射表，用于存储 hash -> [item_indices] 的关系
+        hash_to_pic_indices = {}
 
         # --- A. 结构增强：文档标题层级判定 (LLM) ---
         # 遍历所有文本项，寻找可能是标题的项进行语义判定
@@ -246,11 +251,31 @@ class DoclingDocProcessor:
         # --- B. 视觉增强：处理图片与复杂表格 (VLM) ---
         for i, pic in enumerate(doc.pictures):
             if pic.image and pic.image.pil_image:
+                img = pic.image.pil_image
+            
+            # 1. 物理过滤：太小的图（如 60x60 以下）通常是装饰性图标，直接标记并跳过 VLM
+            if img.width < 60 or img.height < 60:
+                pic.annotations.append(DescriptionAnnotation(text="装饰性图标/Logo", provenance="size_filter"))
+                continue
+
+            # 2. 计算指纹
+            img_hash = str(imagehash.dhash(img))
+            
+            # 3. 检查全局或内存缓存
+            if img_hash in self._vlm_cache:
+                pic.annotations.append(DescriptionAnnotation(text=self._vlm_cache[img_hash], provenance="vlm_cache_hit"))
+                continue
+            
+            # 4. 任务合并：同一个文档内相同的图只跑一次
+            if img_hash not in hash_to_pic_indices:
+                hash_to_pic_indices[img_hash] = []
                 tasks.append(self._vlm_task(
                     self.model_client, params.vlm_model, 
-                    params.vlm_prompt or "描述图片内容", f"pic_vlm_{i}", pic.image.pil_image
+                    params.vlm_prompt or "描述图片内容", f"pic_hash_{img_hash}", img
                 ))
+            hash_to_pic_indices[img_hash].append(i)
 
+        # --- C. 处理表格 (VLM) ---
         for i, table in enumerate(doc.tables):
             # 路径：有图（复杂 Excel 渲染或 PDF 表格）-> VLM 视觉重构
             if table.image and table.image.pil_image:
@@ -271,7 +296,7 @@ rows 数组中的每一项必须是单行 Markdown。
         if not tasks:
             return
         
-        # --- C. 并发执行与结果分发 ---
+        # --- D. 并发执行与智能回填 ---
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         for res in results:
@@ -309,14 +334,36 @@ rows 数组中的每一项必须是单行 Markdown。
 
             # 3. 回填图片描述
             elif category == "pic":
-                doc.pictures[idx].annotations.append(
-                    DescriptionAnnotation(text=content, provenance=f"vlm_{params.vlm_model}")
-                )
+                if engine == "hash":
+                    img_hash = idx
+                    self._vlm_cache[img_hash] = content # 存入缓存
+                    # 将结果回填给所有拥有此 hash 的图片
+                    for p_idx in hash_to_pic_indices.get(img_hash, []):
+                        doc.pictures[p_idx].annotations.append(
+                            DescriptionAnnotation(text=content, provenance=f"vlm_deduplicated_{params.vlm_model}")
+                        )
     
     def _get_page_num(self, item: Any) -> int:
-        """获取页码，默认为1"""
-        if hasattr(item, "page_reference"):
-            return item.page_reference.get("page_no", 1)
+        """获取项所在的页码，增强对 PDF 结构的兼容性"""
+        try:
+            # 1. 尝试标准 Docling 路径：item -> prov (Provenance) -> page_no
+            # 很多时候 page_no 存在于 item.prov[0].page_no 中
+            if hasattr(item, "prov") and item.prov:
+                # 取第一个来源证明中的页码
+                return getattr(item.prov[0], "page_no", 1)
+            
+            # 2. 尝试旧版或特定格式的 page_reference 对象
+            page_ref = getattr(item, "page_reference", None)
+            if page_ref:
+                # 如果是字典
+                if isinstance(page_ref, dict):
+                    return page_ref.get("page_no", 1)
+                # 如果是 Pydantic 对象
+                return getattr(page_ref, "page_no", 1)
+                
+        except Exception as e:
+            logger.debug(f"页码获取失败，回退至默认值 1: {e}")
+            
         return 1
     
     async def _process_table_vlm(self, item: TableItem, doc: DoclingDocument, params: DocParserParams, active_path: list, header_context: str) -> list[dict]:
@@ -399,6 +446,7 @@ rows 数组中的每一项必须是单行 Markdown。
         chunk_results = []
         current_chunk_num = 1
         active_path = []
+        seen_visual_contents = set()
         # 分块参数
         MIN_CHUNK_LEN = params.min_chunk_len or 200 # 最小合并字符数，低于此值会尝试与下一段合并
         MAX_CHUNK_LEN = params.chunk_size or 600 # 达到此长度强制刷出
@@ -511,8 +559,20 @@ rows 数组中的每一项必须是单行 Markdown。
                         current_chunk_num += 1
                 
                 elif isinstance(item, PictureItem):
+                    vlm_text = next((ann.text for ann in getattr(item, "annotations", []) 
+                                if "vlm" in getattr(ann, "provenance", "")), None)
+                    # 如果该图片有 VLM 描述，且该描述已经输出过，则直接跳过，不生成 Chunk
+                    if vlm_text:
+                        if vlm_text in seen_visual_contents:
+                            logger.debug(f"跳过重复图片 Chunk: {vlm_text[:20]}...")
+                            continue
+                        seen_visual_contents.add(vlm_text)
+                    # 序列化并输出
                     ser_result, img_name = self.serializer.serialize(item=item, doc=doc, image_dir=params.image_dir)
-                    flush(item, c_type="picture", custom_content=ser_result.text, img_name=img_name)
+                    # flush(item, c_type="picture", custom_content=ser_result.text, img_name=img_name)
+                    # 如果序列化结果为空（例如被标记为装饰性图标且没描述），则不生成 Chunk
+                    if ser_result.text.strip():
+                        flush(item, c_type="picture", custom_content=ser_result.text, img_name=img_name)
 
         # 循环结束收尾
         if text_buffer:
