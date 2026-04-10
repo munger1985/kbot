@@ -156,3 +156,27 @@ class AIModelRepository(BaseRepository[AIModelEntity]):
             raise e
         except Exception as e:
             raise DatabaseException(f"Failed to get model by name '{model_name}'", original_error=e)
+        
+    async def get_by_display_name(self, display_name: str) -> AIModelEntity:
+        """
+        Get knowledge base model by display name.
+        :param display_name: Model display name to query
+        :return: AIModelEntity
+        """
+        try:
+            stmt = select(AIModelEntity).where(
+                and_(
+                    AIModelEntity.display_name == display_name),
+                    AIModelEntity.app_id == get_app_config().app_id
+                )
+            result = await self.session.execute(stmt)
+            model = result.scalar_one_or_none()
+            
+            if not model:
+                raise DataNotFoundException(f"Model with display name '{display_name}' not found")
+            
+            return model
+        except DataNotFoundException as e:
+            raise e
+        except Exception as e:
+            raise DatabaseException(f"Failed to get model by display name '{display_name}'", original_error=e)
