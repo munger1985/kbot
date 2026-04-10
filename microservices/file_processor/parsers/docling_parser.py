@@ -437,14 +437,15 @@ rows 数组中的每一项必须是单行 Markdown。
 
                 # 表格处理逻辑
                 current_type = "table"
-                item_annos = getattr(item, "annotations", [])
-                vlm_res = next((ann.text for ann in item_annos 
-                               if getattr(ann, "provenance", "") == "vlm_table_rebuild"), None)
-                
+                current_header = ""
+                table_final_chunks = []
                 # 定义统一的切片步长
                 TABLE_ROW_STEP = 40 
                 MAX_CHAR_LIMIT = 15000
-                table_final_chunks = []
+                
+                item_annos = getattr(item, "annotations", [])
+                vlm_res = next((ann.text for ann in item_annos 
+                               if getattr(ann, "provenance", "") == "vlm_table_rebuild"), None)
 
                 if vlm_res:
                     try:
