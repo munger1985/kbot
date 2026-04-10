@@ -156,7 +156,7 @@ class DoclingDocProcessor:
             max_workers: 线程池最大工作线程数，默认4
         """
         self.executor = ThreadPoolExecutor(max_workers=max_workers)
-        self.vlm_semaphore = asyncio.Semaphore(5)  # VLM API调用限流（最多5个并发）
+        self.vlm_semaphore = asyncio.Semaphore(2)  # VLM API调用限流（最多2个并发）
         self.llm_semaphore = asyncio.Semaphore(5)  # LLM API调用限流（最多5个并发）
         self.local_artifacts_path = local_artifacts_path
         self.model_client = AIModelClient()
