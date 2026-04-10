@@ -159,7 +159,6 @@ class DoclingDocProcessor:
         """
         self.executor = ThreadPoolExecutor(max_workers=max_workers)
         self.vlm_semaphore = asyncio.Semaphore(2)  # VLM API调用限流（最多2个并发）
-        self.llm_semaphore = asyncio.Semaphore(5)  # LLM API调用限流（最多5个并发）
         self.local_artifacts_path = local_artifacts_path
         self.model_client = AIModelClient()
         # 通用标题栈：仅保留最近的层级
@@ -194,38 +193,9 @@ class DoclingDocProcessor:
                 logger.error(f"VLM处理失败 (Index {index}): {e}")
                 return index, None
             
-    async def _llm_task(self, client: AIModelClient, model_name: str, prompt: str, index: str) -> tuple:
-        """抽象出的 LLM 任务，用于处理纯文本逻辑（如标题层级、表格修复）"""
-        try:
-            async with self.llm_semaphore:
-                raw_res = await client.get_llm_answer(
-                    model_name=model_name, 
-                    prompt=prompt,
-                    stream=True  # 即使是内部聚合，开启 stream 也能更早释放资源
-                )
-                
-                if "level" in str(index).lower():
-                    # 仅匹配字符串中出现的第一个数字字符
-                    # 防止 LLM 返回 "1." 或 "层级为 1" 导致的解析失败
-                    match = re.search(r'\d', str(raw_res or "0"))
-                    if match:
-                        val = int(match.group())
-                        # 约束：层级只允许在 0-7 之间，超过则视为无效
-                        return index, (val if 0 <= val <= 7 else 0)
-                    return index, 0
-
-                # 第三步：非层级任务（如表格修复）保持原样返回字符串
-                return index, (raw_res if raw_res else None)
-
-        except Exception as e:
-            logger.error(f"LLM 任务执行失败 (Index {index}): {str(e)}")
-            return index, (0 if "level" in str(index).lower() else None)
-            
     async def _enhance_document_content(self, doc: DoclingDocument, params: DocParserParams) -> None:
         """
-        增强引擎：
-        1. 视觉增强：复杂 Excel/PDF 表格截图调用 VLM 重构。
-        2. 结构增强：利用 LLM 判定 TextItem 的真实标题层级（替换不稳定的正则）。
+        视觉增强：复杂 Excel/PDF 表格截图调用 VLM 重构。
         """
         if not params.use_vlm or not params.vlm_model:
             return
@@ -234,21 +204,7 @@ class DoclingDocProcessor:
         # [新增] 哈希映射表，用于存储 hash -> [item_indices] 的关系
         hash_to_pic_indices = {}
 
-        # --- A. 结构增强：文档标题层级判定 (LLM) ---
-        # 遍历所有文本项，寻找可能是标题的项进行语义判定
-        for i, item in enumerate(doc.texts):
-            # 过滤逻辑：长度适中（避免正文误判），或者 Docling 初步认为它是标题的
-            text_content = item.text.strip()
-            if 0 < len(text_content) < 200: 
-                # 针对 Word/PPT/PDF，判定其在文档大纲中的逻辑层级
-                prompt = f"""分析以下文本在文档中的大纲层级：
-文本内容："{text_content}"
-要求：若是顶级标题返1，二级标题返2，三级标题返3，若只是普通正文或无关信息返0。只返回数字，不要任何解释。"""
-                tasks.append(self._llm_task(
-                    self.model_client, params.llm_model, prompt, f"heading_llm_{i}"
-                ))
-
-        # --- B. 视觉增强：处理图片与复杂表格 (VLM) ---
+        # --- 视觉增强：处理图片与复杂表格 (VLM) ---
         for i, pic in enumerate(doc.pictures):
             raw_img = getattr(pic.image, "pil_image", None)
             # 如果图片不存在，直接跳过
@@ -303,7 +259,7 @@ class DoclingDocProcessor:
                 ))
             hash_to_pic_indices[img_hash].append(i)
 
-        # --- C. 处理表格 (VLM) ---
+        # --- 处理表格 (VLM) ---
         for i, table in enumerate(doc.tables):
             # 路径：有图（复杂 Excel 渲染或 PDF 表格）-> VLM 视觉重构
             if table.image and table.image.pil_image:
@@ -348,7 +304,7 @@ rows 数组中的每一项必须是单行 Markdown。
                     try:
                         # 提取数字回填
                         level_val = int(re.sub(r'\D', '', str(content)))
-                        annos.append(DescriptionAnnotation(text=str(level_val), provenance="llm_structure_level"))
+                        annos.append(DescriptionAnnotation(text=str(level_val), provenance="structure_level"))
                     except: pass
 
             # 2. 回填表格描述/重构
@@ -472,8 +428,7 @@ rows 数组中的每一项必须是单行 Markdown。
     async def _generate_chunks(self, doc: DoclingDocument, result, params: DocParserParams) -> list[dict]:
         """
         分块逻辑：
-        1. 使用vlm识别复杂Excel表格，并且如果表格超长，按照参数设定的行数进行切分，子表格保留相同表头。
-        2. 针对 Word/PPT 自动使用纯文本 LLM 判定。
+        使用vlm识别复杂Excel表格，并且如果表格超长，按照参数设定的行数进行切分，子表格保留相同表头。
         """
         chunk_results = []
         current_chunk_num = 1
@@ -652,7 +607,7 @@ rows 数组中的每一项必须是单行 Markdown。
             raise
         doc = result.document
 
-        # 提前送去 VLM/LLM 重构复杂内容
+        # 提前送去 VLM 重构复杂内容
         await self._enhance_document_content(doc, params)
 
         # 在分块阶段使用 VLM 进行标题定级

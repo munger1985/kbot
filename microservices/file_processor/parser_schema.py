@@ -15,7 +15,6 @@ class DocParserParams(BaseModel):
     ocr_engine: str | None = Field("easyocr", description="Specify OCR engine (easyocr, tesseract)")
     use_vlm: bool = Field(True, description="Whether to enable VLM semantic enhancement")
     vlm_model: str | None = Field(None, description="Specify VLM model name")
-    llm_model: str = Field(..., description="指定 LLM 模型名称")
     vlm_prompt: str | None = Field(None, description="Custom VLM prompt text")
 
 

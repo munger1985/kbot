@@ -100,7 +100,6 @@ class FileProcessor:
                     ocr_engine=file.chunk_parser.get("ocr_engine", None),
                     use_vlm=use_vlm,
                     vlm_model=vlm_model,
-                    llm_model=llm_model,
                     vlm_prompt=vlm_prompt
                 )
 
