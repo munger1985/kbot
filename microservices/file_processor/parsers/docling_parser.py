@@ -319,6 +319,77 @@ rows 数组中的每一项必须是单行 Markdown。
             return item.page_reference.get("page_no", 1)
         return 1
     
+    async def _process_table_vlm(self, item: TableItem, doc: DoclingDocument, params: DocParserParams, active_path: list, header_context: str) -> list[dict]:
+        """专门处理表格的分块逻辑：VLM解析 + JSON切片 + 物理硬切防溢出"""
+        table_chunks = []
+        TABLE_ROW_STEP = 40 
+        MAX_CHAR_LIMIT = 15000
+        current_header = ""
+        
+        # 提取 VLM 标注
+        vlm_res = next((ann.text for ann in getattr(item, "annotations", []) 
+                    if getattr(ann, "provenance", "") == "vlm_table_rebuild"), None)
+
+        # 准备待处理文本列表
+        parts_to_verify = []
+
+        if vlm_res:
+            try:
+                # 尝试 JSON 解析并按行切分
+                clean_json = re.sub(r'```json\s*|\s*```', '', vlm_res).strip()
+                table_data = json.loads(clean_json)
+                header = table_data.get("header", "").strip()
+                current_header = header 
+                rows = table_data.get("rows", [])
+                
+                if rows:
+                    current_rows, current_chars = [], len(header)
+                    for row in rows:
+                        row_str = str(row)
+                        if (len(current_rows) >= TABLE_ROW_STEP) or (current_chars + len(row_str) > MAX_CHAR_LIMIT):
+                            if current_rows:
+                                parts_to_verify.append(f"{header}\n" + "\n".join(current_rows))
+                            current_rows, current_chars = [row_str], len(header) + len(row_str)
+                        else:
+                            current_rows.append(row_str)
+                            current_chars += len(row_str)
+                    if current_rows:
+                        parts_to_verify.append(f"{header}\n" + "\n".join(current_rows))
+                else:
+                    parts_to_verify.append(vlm_res)
+            except:
+                parts_to_verify.append(vlm_res)
+        else:
+            # 无 VLM 场景使用默认导出
+            parts_to_verify.append(item.export_to_markdown(doc=doc))
+
+        # 二次物理防线：处理单块依然超长的情况
+        for part in parts_to_verify:
+            if len(part) > MAX_CHAR_LIMIT:
+                lines = part.split('\n')
+                final_h = current_header if current_header else "\n".join(lines[:2])
+                start_l = 0 if current_header else 2
+                for i in range(start_l, len(lines), TABLE_ROW_STEP):
+                    sub = "\n".join(lines[i : i + TABLE_ROW_STEP])
+                    if sub.strip():
+                        table_chunks.append({"content": f"{final_h}\n{sub}", "type": "table"})
+            else:
+                table_chunks.append({"content": part, "type": "table"})
+
+        # 映射为标准业务输出格式
+        return [{
+            "content": tc["content"],
+            "path_names": list(active_path),
+            "structure_level": len(active_path) + 1,
+            "chunk_type": "table",
+            "metadata": {
+                "chunk_num": 0, # 在主循环中统一编号
+                "page_num": self._get_page_num(item),
+                "header_context": header_context,
+                "image_name": None
+            }
+        } for tc in table_chunks]
+
     async def _generate_chunks(self, doc: DoclingDocument, result, params: DocParserParams) -> list[dict]:
         """
         分块逻辑：
@@ -328,212 +399,125 @@ rows 数组中的每一项必须是单行 Markdown。
         chunk_results = []
         current_chunk_num = 1
         active_path = []
-        pending_header_context = ""
-        text_buffer = [] 
-        buffer_char_count = 0
-        MIN_CHUNK_CHARS = params.min_chunk_len or 200 # 最小合并字符数，低于此值会尝试与下一段合并
-        MAX_BUFFER_CHARS = params.chunk_size or 600 # 达到此长度强制刷出
+        # 分块参数
+        MIN_CHUNK_LEN = params.min_chunk_len or 200 # 最小合并字符数，低于此值会尝试与下一段合并
+        MAX_CHUNK_LEN = params.chunk_size or 600 # 达到此长度强制刷出
 
-        # 预检：是否为 PDF（用于截图标题）
-        has_render = hasattr(result, "render") and result.render is not None
-
-        # 定义一个辅助函数：用于真正封装并提交 chunk
-        def flush_buffer(c_type, s_level, item_ref, img_name=None):
-            nonlocal current_chunk_num, text_buffer, buffer_char_count
-            if not text_buffer: return
-            
-            combined_text = "\n".join(text_buffer).strip()
-            if not combined_text: return
-
-            chunk_results.append({
-                "content": combined_text,
-                "path_names": list(active_path),
-                "structure_level": int(s_level),
-                "chunk_type": c_type,
-                "metadata": {
-                    "chunk_num": current_chunk_num,
-                    "page_num": self._get_page_num(item_ref),
-                    "header_context": pending_header_context,
-                    "image_name": img_name
-                }
-            })
-            current_chunk_num += 1
-            text_buffer = []
-            buffer_char_count = 0
-
-        # 用于收尾的最后一个 item 引用
-        last_item = None
+        # --- Stage 1: 语义聚合 (Pass 1) ---
+        # 目标：将 Docling 的碎 Item 聚合成语义块，消除目录、页码、断开的标题
+        semantic_units = []
+        staging_text = "" # 用于暂存可能是标题一部分的碎文本
 
         for item, _ in doc.iterate_items():
-            last_item = item
             raw_text = getattr(item, "text", "").strip()
-            if not raw_text and not isinstance(item, (TableItem, PictureItem)):
+            # 1. 物理过滤：跳过纯目录虚线项 (例如: 内容 .......... 29)
+            if re.search(r'[\.\s…]{5,}\s*\d+$', raw_text):
+                continue
+            
+            # 2. 媒体项处理
+            if isinstance(item, (TableItem, PictureItem)):
+                if staging_prefix: # 如果有残留前缀，并入上一个 text 或丢弃
+                    staging_prefix = ""
+                semantic_units.append({"type": "media", "item": item})
                 continue
 
-            # --- 结构层级判定 ---
-            detected_level = 0
-            # 这里的 len 限制可以稍微放宽，以便捕捉更长的 Word 标题
-            is_potential_header = (
-                isinstance(item, (SectionHeaderItem, TextItem)) 
-                and 3 <= len(raw_text) <= 100 
-                and not raw_text.replace('.', '').isdigit() 
-            )
+            if not raw_text: continue
+
+            # 3. 碎片前缀识别：识别可能是标题编号的短文本 (如 "5", "3.1.2", "第一章")
+            # 如果长度很短且符合编号特征，先攒着
+            is_short_num = len(raw_text) < 10 and (raw_text.isdigit() or re.match(r'^[\d\.、]+$', raw_text) or raw_text.startswith("第"))
             
-            if is_potential_header and params.use_vlm:
-                prompt = f"""分析此文本在文档中的结构层级。
-内容: "{raw_text}"
-要求: 
-- 1: 顶级章节 (如: 一、保险期间, 第一章)
-- 2: 二级章节 (如: 1.1, (一)定义)
-- 3: 三级章节 (如: 1.1.1, 1.)
-- 0: 普通正文内容
-请直接输出数字，不要输出文字。"""
-                
-                if has_render:
-                    # PDF 场景：视觉 VLM
-                    item_prov = getattr(item, "prov", [])
-                    crop_img = result.render.crop_bbox(bbox=item_prov[0].bbox, page_no=item_prov[0].page_no) if item_prov else None
-                    # 注意：如果 vlm_task 还没改，这里可能还需要手动处理 raw_res
-                    _, raw_res = await self._vlm_task(self.model_client, params.vlm_model, prompt, "level", crop_img)
-                    
-                    # VLM 兜底过滤（防止 VLM 没改逻辑导致返回非数字）
-                    try:
-                        nums = re.findall(r'\d', str(raw_res or "0"))
-                        detected_level = int(nums[0]) if nums else 0
-                    except:
-                        detected_level = 0
-                else:
-                    # Word/PPT 场景：调用优化后的 _llm_task
-                    # 关键修改：直接接收 _llm_task 返回的 int 类型的 level
-                    _, llm_level = await self._llm_task(self.model_client, params.llm_model, prompt, f"level_{current_chunk_num}")
-                    detected_level = llm_level if isinstance(llm_level, int) else 0
+            if is_short_num:
+                staging_prefix = raw_text
+                continue
 
-            is_header = detected_level > 0
-
-            # --- 核心分块分发逻辑 ---
-            if is_header:
-                # 只有当 buffer 里的内容足够长时，遇到标题才切分
-                # 或者当前 buffer 为空时，才接受新标题。
-                # 这样可以防止连续的短标题把切片切得太碎
-                if buffer_char_count > MIN_CHUNK_CHARS:
-                    flush_buffer("text", len(active_path) + 1, item)
-
-                # 更新路径树
-                if detected_level == 1: active_path = []
-                while len(active_path) >= detected_level:
-                    if not active_path: break
-                    active_path.pop()
-                if not active_path or active_path[-1] != raw_text:
-                    active_path.append(raw_text)
-                
-                pending_header_context = raw_text
-                # 标题不 flush，先存入 buffer，等待和下面的正文合并
-                text_buffer.append(f"## {raw_text}") 
-                buffer_char_count += len(raw_text)
-
-            elif isinstance(item, TableItem):
-                # 遇到表格，先把之前的 Buffer 清掉
-                flush_buffer("text", len(active_path) + 1, item)
-
-                # 表格处理逻辑
-                current_type = "table"
-                current_header = ""
-                table_final_chunks = []
-                # 定义统一的切片步长
-                TABLE_ROW_STEP = 40 
-                MAX_CHAR_LIMIT = 15000
-                
-                item_annos = getattr(item, "annotations", [])
-                vlm_res = next((ann.text for ann in item_annos 
-                               if getattr(ann, "provenance", "") == "vlm_table_rebuild"), None)
-
-                if vlm_res:
-                    try:
-                        # 1. 尝试 JSON 解析分片
-                        clean_json = re.sub(r'```json\s*|\s*```', '', vlm_res).strip()
-                        table_data = json.loads(clean_json)
-                        header = table_data.get("header", "").strip()
-                        current_header = header # 锁定 VLM 识别的表头
-                        rows = table_data.get("rows", [])
-                        
-                        if rows:
-                            current_rows = []
-                            current_chars = len(header)
-                            for row in rows:
-                                row_str = str(row)
-                                # 判定：如果加了这一行后，行数超 40 或者 字符超限，就先存一个 chunk
-                                if (len(current_rows) >= TABLE_ROW_STEP) or \
-                                    (current_chars + len(row_str) > MAX_CHAR_LIMIT):
-                                    
-                                    if current_rows:
-                                        table_final_chunks.append(f"{header}\n" + "\n".join(current_rows))
-                                    
-                                    # 重置计数器
-                                    current_rows = [row_str]
-                                    current_chars = len(header) + len(row_str)
-                                else:
-                                    current_rows.append(row_str)
-                                    current_chars += len(row_str)
-                            # 收尾最后一部分 rows
-                            if current_rows:
-                                table_final_chunks.append(f"{header}\n" + "\n".join(current_rows))
-                        else:
-                            table_final_chunks.append(vlm_res)
-                    except:
-                        # 2. JSON 解析失败，将原始输出放入待切列表
-                        table_final_chunks.append(vlm_res)
-                else:
-                    # 3. 无 VLM 场景，使用 Docling 默认导出
-                    table_final_chunks.append(item.export_to_markdown(doc=doc))
-
-                for part in table_final_chunks:
-                    # 如果这一段依然超长（单行极长或解析失败产生的超长块）
-                    if len(part) > MAX_CHAR_LIMIT:
-                        lines = part.split('\n')
-                        # 如果没有 header (解析失败)，退化使用前两行
-                        final_header = current_header if current_header else "\n".join(lines[:2])
-                        start_line = 0 if current_header else 2
-                        
-                        for i in range(start_line, len(lines), TABLE_ROW_STEP):
-                            sub_block = "\n".join(lines[i : i + TABLE_ROW_STEP])
-                            if not sub_block.strip(): continue
-
-                    chunk_results.append({
-                        "content": part,
-                        "path_names": list(active_path),
-                        "structure_level": len(active_path) + 1,
-                        "chunk_type": "table",
-                        "metadata": {
-                            "chunk_num": current_chunk_num,
-                            "page_num": self._get_page_num(item),
-                            "header_context": pending_header_context,
-                            "image_name": None
-                        }
-                    })
-                    current_chunk_num += 1
-
-            elif isinstance(item, PictureItem):
-                # 遇到图片，冲刷之前的文字 Buffer
-                flush_buffer("text", len(active_path) + 1, item)
-
-                # 图片处理逻辑
-                ser_result, image_name = self.serializer.serialize(item=item, doc=doc, image_dir=params.image_dir)
-                # 图片描述进 Buffer
-                text_buffer.append(ser_result.text)
-                flush_buffer("picture", len(active_path) + 1, item, img_name=image_name)
-            
+            # 4. 语义缝合
+            if staging_prefix:
+                # 将前缀与当前内容合并，例如 "5" + "可靠性分析" -> "5 可靠性分析"
+                combined_text = f"{staging_prefix} {raw_text}"
+                staging_prefix = ""
             else:
-                # 普通正文
-                text_buffer.append(raw_text)
-                buffer_char_count += len(raw_text)
-                
-                # 只有当正文积累到一定长度才自动冲刷，防止太碎
-                if buffer_char_count > MAX_BUFFER_CHARS:
-                    flush_buffer("text", len(active_path) + 1, item)
+                combined_text = raw_text
+            
+            # 5. 判定聚合后的文本身份
+            is_header = isinstance(item, SectionHeaderItem) or (len(combined_text) < 60 and re.match(r'^[一二三四\d].*?[\s\.]', combined_text))
 
-            # --- 循环结束后的收尾 ---
+            if is_header:
+                semantic_units.append({"type": "header", "text": combined_text, "item": item})
+            else:
+                # 正文合并：如果上一个也是 text，就粘在一起，减少 chunk 数量
+                if semantic_units and semantic_units[-1]["type"] == "text":
+                    semantic_units[-1]["text"] += f"\n{combined_text}"
+                else:
+                    semantic_units.append({"type": "text", "text": combined_text, "item": item})
+
+            # --- Stage 2: 逻辑分块输出 ---
+            text_buffer = []
+            buffer_len = 0
+            pending_header_context = ""
+
+            def flush(item_ref, c_type="text", custom_content=None, img_name=None):
+                nonlocal current_chunk_num, text_buffer, buffer_len
+                content = custom_content if custom_content else "\n".join(text_buffer).strip()
+                if not content: return
+                
+                chunk_results.append({
+                    "content": content,
+                    "path_names": list(active_path),
+                    "structure_level": len(active_path),
+                    "chunk_type": c_type,
+                    "metadata": {
+                        "chunk_num": current_chunk_num,
+                        "page_num": self._get_page_num(item_ref),
+                        "header_context": pending_header_context,
+                        "image_name": img_name
+                    }
+                })
+                current_chunk_num += 1
+                if not custom_content:
+                    text_buffer, buffer_len = [], 0
+
+            for unit in semantic_units:
+                if unit["type"] == "header":
+                    # 只有内容够多才切片，否则只更新路径并合并
+                    if buffer_len > MIN_CHUNK_LEN:
+                        flush(unit["item"])
+                    
+                    # 更新 path_names (简化逻辑：只保留最近的 3 级标题)
+                    header_text = unit["text"]
+                    if len(active_path) >= 3: active_path.pop(0)
+                    active_path.append(header_text)
+                    pending_header_context = header_text
+                    
+                    text_buffer.append(f"## {header_text}")
+                    buffer_len += len(header_text)
+
+                elif unit["type"] == "text":
+                    text_buffer.append(unit["text"])
+                    buffer_len += len(unit["text"])
+                    if buffer_len > MAX_CHUNK_LEN:
+                        flush(unit["item"])
+
+                elif unit["type"] == "media":
+                    # 媒体必须先清空前面的文字 buffer
+                    flush(unit["item"])
+                    item = unit["item"]
+                    
+                    if isinstance(item, TableItem):
+                        # 引用之前讨论的严谨 Excel VLM 处理逻辑
+                        table_chunks = await self._process_table_vlm(item, doc, params, active_path, pending_header_context)
+                        for t_chunk in table_chunks:
+                            t_chunk["metadata"]["chunk_num"] = current_chunk_num
+                            chunk_results.append(t_chunk)
+                            current_chunk_num += 1
+                    
+                    elif isinstance(item, PictureItem):
+                        ser_result, img_name = self.serializer.serialize(item=item, doc=doc, image_dir=params.image_dir)
+                        flush(item, c_type="picture", custom_content=ser_result.text, img_name=img_name)
+
+            # 循环结束收尾
             if text_buffer:
-                flush_buffer("text", len(active_path) + 1, last_item)
+                flush(semantic_units[-1]["item"] if semantic_units else None)
 
         return chunk_results
     
