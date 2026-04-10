@@ -435,9 +435,9 @@ rows 数组中的每一项必须是单行 Markdown。
                                if getattr(ann, "provenance", "") == "vlm_table_rebuild"), None)
                 
                 # 定义统一的切片步长
-                TABLE_CHUNK_SIZE = 40 
+                TABLE_ROW_STEP = 40 
                 MAX_CHAR_LIMIT = 15000
-                table_final_parts = [] # 存储最终切好的段
+                table_final_chunks = []
 
                 if vlm_res:
                     try:
@@ -445,22 +445,51 @@ rows 数组中的每一项必须是单行 Markdown。
                         clean_json = re.sub(r'```json\s*|\s*```', '', vlm_res).strip()
                         table_data = json.loads(clean_json)
                         header = table_data.get("header", "").strip()
+                        current_header = header # 锁定 VLM 识别的表头
                         rows = table_data.get("rows", [])
                         
                         if rows:
-                            # 按照每 40 行分一组（术语表定义长，40行更稳）
-                            for i in range(0, len(rows), TABLE_CHUNK_SIZE):
-                                table_final_parts.append(f"{header}\n" + "\n".join(rows[i:i+TABLE_CHUNK_SIZE]))
+                            current_rows = []
+                            current_chars = len(header)
+                            for row in rows:
+                                row_str = str(row)
+                                # 判定：如果加了这一行后，行数超 40 或者 字符超限，就先存一个 chunk
+                                if (len(current_rows) >= TABLE_ROW_STEP) or \
+                                    (current_chars + len(row_str) > MAX_CHAR_LIMIT):
+                                    
+                                    if current_rows:
+                                        table_final_chunks.append(f"{header}\n" + "\n".join(current_rows))
+                                    
+                                    # 重置计数器
+                                    current_rows = [row_str]
+                                    current_chars = len(header) + len(row_str)
+                                else:
+                                    current_rows.append(row_str)
+                                    current_chars += len(row_str)
+                            # 收尾最后一部分 rows
+                            if current_rows:
+                                table_final_chunks.append(f"{header}\n" + "\n".join(current_rows))
                         else:
-                            table_final_parts.append(vlm_res)
+                            table_final_chunks.append(vlm_res)
                     except:
                         # 2. JSON 解析失败，将原始输出放入待切列表
-                        table_final_parts.append(vlm_res)
+                        table_final_chunks.append(vlm_res)
                 else:
                     # 3. 无 VLM 场景，使用 Docling 默认导出
-                    table_final_parts.append(item.export_to_markdown(doc=doc))
+                    table_final_chunks.append(item.export_to_markdown(doc=doc))
 
-                for part in table_final_parts:
+                for part in table_final_chunks:
+                    # 如果这一段依然超长（单行极长或解析失败产生的超长块）
+                    if len(part) > MAX_CHAR_LIMIT:
+                        lines = part.split('\n')
+                        # 如果没有 header (解析失败)，退化使用前两行
+                        final_header = current_header if current_header else "\n".join(lines[:2])
+                        start_line = 0 if current_header else 2
+                        
+                        for i in range(start_line, len(lines), TABLE_ROW_STEP):
+                            sub_block = "\n".join(lines[i : i + TABLE_ROW_STEP])
+                            if not sub_block.strip(): continue
+
                     chunk_results.append({
                         "content": part,
                         "path_names": list(active_path),
