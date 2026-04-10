@@ -331,7 +331,8 @@ rows 数组中的每一项必须是单行 Markdown。
         pending_header_context = ""
         text_buffer = [] 
         buffer_char_count = 0
-        MIN_CHUNK_CHARS = params.min_chunk_len or 20 # 最小合并字符数，低于此值会尝试与下一段合并
+        MIN_CHUNK_CHARS = params.min_chunk_len or 200 # 最小合并字符数，低于此值会尝试与下一段合并
+        MAX_BUFFER_CHARS = params.chunk_size or 600 # 达到此长度强制刷出
 
         # 预检：是否为 PDF（用于截图标题）
         has_render = hasattr(result, "render") and result.render is not None
@@ -489,8 +490,8 @@ rows 数组中的每一项必须是单行 Markdown。
                 text_buffer.append(raw_text)
                 buffer_char_count += len(raw_text)
                 
-                # 只有当正文积累到一定长度（如 600 字）才自动冲刷，防止太碎
-                if buffer_char_count > 600:
+                # 只有当正文积累到一定长度才自动冲刷，防止太碎
+                if buffer_char_count > MAX_BUFFER_CHARS:
                     flush_buffer("text", len(active_path) + 1, item)
 
             # --- 循环结束后的收尾 ---

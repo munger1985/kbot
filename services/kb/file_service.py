@@ -248,11 +248,11 @@ class FileService:
                 "vlm_model": vlm_model,
                 "txt_embedding_model": txt_embed_model,
                 "llm_model": llm_model,
-                "chunk_size": 512,
+                "chunk_size": 1000,
                 "ocr_engine": "tesseract",
                 "vlm_prompt": prompt,
                 "images_scale": 2.0,
-                "min_chunk_len": 10,
+                "min_chunk_len": 200,
                 "generate_picture_images": True
             }
 
