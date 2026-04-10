@@ -307,41 +307,45 @@ rows 数组中的每一项必须是单行 Markdown。
             if not content: continue
                 
             parts = key.split('_')
-            category, engine, idx = parts[0], parts[1], int(parts[2])
+            category, engine_type = parts[0], parts[1]
 
             # 1. 回填层级信息
             if category == "heading":
+                idx = int(parts[2])
                 target_item = doc.texts[idx]
                 # 使用 getattr 获取列表，如果不存在则返回 None
                 annos = getattr(target_item, "annotations", None)
                 
                 if isinstance(annos, list):
                     try:
+                        # 提取数字回填
                         level_val = int(re.sub(r'\D', '', str(content)))
-                        annos.append(
-                            DescriptionAnnotation(
-                                text=str(level_val), 
-                                provenance="llm_structure_level"
-                            )
-                        )
+                        annos.append(DescriptionAnnotation(text=str(level_val), provenance="llm_structure_level"))
                     except: pass
 
             # 2. 回填表格描述/重构
             elif category == "table":
+                idx = int(parts[2])
                 doc.tables[idx].annotations.append(
                     DescriptionAnnotation(text=content, provenance="vlm_table_rebuild")
                 )
 
             # 3. 回填图片描述
             elif category == "pic":
-                if engine == "hash":
-                    img_hash = idx
+                if engine_type == "hash":
+                    img_hash = parts[2]
                     self._vlm_cache[img_hash] = content # 存入缓存
                     # 将结果回填给所有拥有此 hash 的图片
                     for p_idx in hash_to_pic_indices.get(img_hash, []):
                         doc.pictures[p_idx].annotations.append(
                             DescriptionAnnotation(text=content, provenance=f"vlm_deduplicated_{params.vlm_model}")
                         )
+            else:
+                # --- 兼容旧逻辑：如果是传统的索引模式 ---
+                idx = int(parts[2])
+                doc.pictures[idx].annotations.append(
+                    DescriptionAnnotation(text=content, provenance=f"vlm_{params.vlm_model}")
+                )
     
     def _get_page_num(self, item: Any) -> int:
         """获取项所在的页码，增强对 PDF 结构的兼容性"""
