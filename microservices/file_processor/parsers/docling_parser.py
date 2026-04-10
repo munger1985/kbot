@@ -223,7 +223,7 @@ class DoclingDocProcessor:
             
     async def _enhance_document_content(self, doc: DoclingDocument, params: DocParserParams) -> None:
         """
-        NexusCube 增强引擎：
+        增强引擎：
         1. 视觉增强：复杂 Excel/PDF 表格截图调用 VLM 重构。
         2. 结构增强：利用 LLM 判定 TextItem 的真实标题层级（替换不稳定的正则）。
         """
@@ -250,12 +250,14 @@ class DoclingDocProcessor:
 
         # --- B. 视觉增强：处理图片与复杂表格 (VLM) ---
         for i, pic in enumerate(doc.pictures):
-            if pic.image and pic.image.pil_image:
-                img = pic.image.pil_image
+            img = getattr(pic.image, "pil_image", None)
+            # 如果图片不存在，直接跳过
+            if img is None:
+                continue
             
             # 1. 物理过滤：太小的图（如 60x60 以下）通常是装饰性图标，直接标记并跳过 VLM
             if img.width < 60 or img.height < 60:
-                pic.annotations.append(DescriptionAnnotation(text="装饰性图标/Logo", provenance="size_filter"))
+                # pic.annotations.append(DescriptionAnnotation(text="装饰性图标/Logo", provenance="size_filter"))
                 continue
 
             # 2. 计算指纹
@@ -619,7 +621,7 @@ rows 数组中的每一项必须是单行 Markdown。
             # 使用 self.executor 确保在 RHEL 8 的多核环境下不阻塞主事件循环
             result = await loop.run_in_executor(self.executor, converter.convert, file_path)
         except Exception as e:
-            # 记录详细的异常追踪，方便在 NexusCube 日志中排查具体文件问题
+            # 记录详细的异常追踪，方便在 日志中排查具体文件问题
             logger.error(f"Docling 转换失败: {file_path}, Error: {str(e)}")
             raise
         doc = result.document
