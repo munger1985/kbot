@@ -254,13 +254,16 @@ class DoclingDocProcessor:
         for i, table in enumerate(doc.tables):
             # 路径：有图（复杂 Excel 渲染或 PDF 表格）-> VLM 视觉重构
             if table.image and table.image.pil_image:
-                prompt = """你是一个表格分析专家。请将图片中的表格解析为 JSON 格式。
-输出格式要求：
-{
-"header": "Markdown 格式的表头字符串（包含分隔行）",
-"rows": ["Markdown 格式的行1", "Markdown 格式的行2", ...]
-}
-注意：不要输出任何解释，只输出 JSON。"""
+                prompt = """你是一个专业的文档解析专家。请将图片中的表格解析为 JSON 格式。
+必须严格遵守以下约束：
+
+返回格式必须为：{"header": "Markdown格式表头", "rows": ["数据行1", "数据行2", ...]}
+
+rows 数组中的每一项必须是单行 Markdown。
+
+严禁输出任何 JSON 以外的文字。
+
+如果表格跨行，请完整保留每一行。"""
                 tasks.append(self._vlm_task(
                     self.model_client, params.vlm_model, prompt, f"table_vlm_{i}", table.image.pil_image
                 ))
@@ -399,20 +402,28 @@ class DoclingDocProcessor:
                                 if getattr(ann, "provenance", "") == "vlm_table_rebuild"), None)
                 if vlm_res:
                     try:
-                        # 尝试解析 VLM 返回的 JSON
-                        table_data = json.loads(vlm_res)
-                        header = table_data.get("header", "").strip()
+                        clean_json = vlm_res.strip()
+                        if clean_json.startswith("```json"):
+                            clean_json = clean_json.split("```json")[1].split("```")[0].strip()
+                        table_data = json.loads(clean_json)
+                        header = table_data.get("header", "||").strip()
                         rows = table_data.get("rows", [])
 
                         if not rows:
-                            content_list.append(header) # 只有表头的情况
+                            content_list.append(vlm_res[:15000])
                         else:
-                            # 核心分片：每 80 行数据作为一个 Chunk，并带上表头
-                            max_rows_per_chunk = 80
-                            for i in range(0, len(rows), max_rows_per_chunk):
-                                chunk_rows = rows[i : i + max_rows_per_chunk]
-                                combined_content = f"{header}\n" + "\n".join(chunk_rows)
-                                content_list.append(combined_content)
+                            batch_size = 50
+                            for i in range(0, len(rows), batch_size):
+                                batch = rows[i : i + batch_size]
+                                # 拼接：表头 + 选定的行
+                                combined = f"{header}\n" + "\n".join(batch)
+                                
+                                # 3. 终极 Token 预检（字符数作为粗略参考，18k 字符约等于 5-6k token）
+                                if len(combined) > 18000:
+                                    # 如果 50 行依然超长，说明单行内容爆炸，执行硬截断
+                                    combined = combined[:18000] + "\n\n[...Row truncated...]"
+                                
+                                content_list.append(combined)
                                 
                         logger.info(f"VLM JSON table split into {len(content_list)} chunks.")
 
