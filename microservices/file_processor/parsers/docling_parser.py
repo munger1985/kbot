@@ -254,8 +254,13 @@ class DoclingDocProcessor:
         for i, table in enumerate(doc.tables):
             # 路径：有图（复杂 Excel 渲染或 PDF 表格）-> VLM 视觉重构
             if table.image and table.image.pil_image:
-                prompt = """你是一个表格分析专家。请将图片中的复杂表格完整还原为 Markdown 格式，注意处理合并单元格。如果表格非常长，请将其拆分为多个独立的子表。
-每个子表必须包含完整的表头。每个子表之间使用 ====CHUNK_SPLIT==== 进行分隔。确保每个子表的逻辑完整，不要在单元格中间截断。只输出 Markdown 和分隔符，不要输出任何解释。"""
+                prompt = """你是一个表格分析专家。请将图片中的表格解析为 JSON 格式。
+输出格式要求：
+{
+"header": "Markdown 格式的表头字符串（包含分隔行）",
+"rows": ["Markdown 格式的行1", "Markdown 格式的行2", ...]
+}
+注意：不要输出任何解释，只输出 JSON。"""
                 tasks.append(self._vlm_task(
                     self.model_client, params.vlm_model, prompt, f"table_vlm_{i}", table.image.pil_image
                 ))
@@ -390,20 +395,33 @@ class DoclingDocProcessor:
             if isinstance(item, TableItem):
                 current_type = "table"
                 item_annos = getattr(item, "annotations", [])
-                vlm_table = next((ann.text for ann in item_annos 
+                vlm_res = next((ann.text for ann in item_annos 
                                 if getattr(ann, "provenance", "") == "vlm_table_rebuild"), None)
-                raw_table_content = vlm_table if vlm_table else item.export_to_markdown(doc=doc)
-                if "====CHUNK_SPLIT====" in raw_table_content:
-                    # 将一个超长表格内容拆分为多个子内容
-                    # 这样外层的 for sub_content in content_list 会生成多个独立的 chunk
-                    split_parts = raw_table_content.split("====CHUNK_SPLIT====")
-                    for part in split_parts:
-                        clean_part = part.strip()
-                        if clean_part:
-                            content_list.append(clean_part)
-                    logger.info(f"VLM table split into {len(content_list)} sub-chunks for item {current_chunk_num}")
+                if vlm_res:
+                    try:
+                        # 尝试解析 VLM 返回的 JSON
+                        table_data = json.loads(vlm_res)
+                        header = table_data.get("header", "").strip()
+                        rows = table_data.get("rows", [])
+
+                        if not rows:
+                            content_list.append(header) # 只有表头的情况
+                        else:
+                            # 核心分片：每 80 行数据作为一个 Chunk，并带上表头
+                            max_rows_per_chunk = 80
+                            for i in range(0, len(rows), max_rows_per_chunk):
+                                chunk_rows = rows[i : i + max_rows_per_chunk]
+                                combined_content = f"{header}\n" + "\n".join(chunk_rows)
+                                content_list.append(combined_content)
+                                
+                        logger.info(f"VLM JSON table split into {len(content_list)} chunks.")
+
+                    except json.JSONDecodeError:
+                        logger.error("VLM output is not valid JSON, falling back to raw content.")
+                        content_list.append(vlm_res) # 降级处理
                 else:
-                    content_list.append(raw_table_content)
+                    # 如果没有 VLM 重构，使用 Docling 默认导出（此时依然建议做一次 Token 兜底）
+                    content_list.append(item.export_to_markdown(doc=doc))
             elif isinstance(item, PictureItem):
                 current_type = "picture"
                 ser_result, image_name = self.serializer.serialize(item=item, doc=doc, image_dir=params.image_dir)

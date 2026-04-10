@@ -408,8 +408,8 @@ python docs/install/models/download_tokenizer_model.py
 ```bash
 # 使用 docling-tools 强制下载到物理路径，而不是缓存软链接
 mkdir -p ~/cached_models/docling_models
-docling-tools models download --all -o ~/docling_models
-# 然后把 ~/docling_models 目录添加到base.toml中的local_artifacts_path
+docling-tools models download --all -o ~/cached_models/docling_models
+# 然后把 ~/cached_models/docling_models 目录添加到base.toml中的local_artifacts_path
 ```
 
 ### 5.4 下载 EasyOCR 模型（用于图片文字识别）（可选）
