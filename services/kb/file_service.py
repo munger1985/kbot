@@ -251,7 +251,7 @@ class FileService:
                 "chunk_size": 1000,
                 "ocr_engine": "tesseract",
                 "vlm_prompt": prompt,
-                "images_scale": 2.0,
+                "images_scale": 1.0,
                 "min_chunk_len": 200,
                 "generate_picture_images": True
             }
