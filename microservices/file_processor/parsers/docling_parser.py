@@ -2,6 +2,7 @@ import json
 import re
 import asyncio
 from pathlib import Path
+from PIL import Image
 from enum import Enum
 from typing import Any
 from concurrent.futures import ThreadPoolExecutor
@@ -166,6 +167,24 @@ class DoclingDocProcessor:
     async def _vlm_task(self, client, model_name, prompt, index, image_obj) -> tuple:
         async with self.vlm_semaphore:
             try:
+                if image_obj:
+                    # --- 智能压缩逻辑开始 ---
+                    # 1. 设定最大长边限制（QwenVL 建议在 1000 左右平衡度最好）
+                    max_size = 1024 
+                    w, h = image_obj.size
+                    
+                    if max(w, h) > max_size:
+                        scale = max_size / max(w, h)
+                        new_size = (int(w * scale), int(h * scale))
+                        # 使用 LANCZOS 算法保证缩放后的边缘平滑，利于文字识别
+                        image_obj = image_obj.resize(new_size, Image.Resampling.LANCZOS)
+                        logger.debug(f"VLM 图片缩放: {w}x{h} -> {new_size}")
+
+                    # 2. 如果是识别标题层级，可以转为 RGB 减少调色板干扰（Docling 有时返回 P 模式）
+                    if image_obj.mode != "RGB":
+                        image_obj = image_obj.convert("RGB")
+                    # --- 智能压缩逻辑结束 ---
+
                 res = await client.call_vlm_model(model_name=model_name, image=image_obj, prompt=prompt)
                 return index, res
             except Exception as e:
