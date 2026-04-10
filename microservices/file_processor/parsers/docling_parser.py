@@ -250,20 +250,46 @@ class DoclingDocProcessor:
 
         # --- B. 视觉增强：处理图片与复杂表格 (VLM) ---
         for i, pic in enumerate(doc.pictures):
-            img = getattr(pic.image, "pil_image", None)
+            raw_img = getattr(pic.image, "pil_image", None)
             # 如果图片不存在，直接跳过
-            if img is None:
+            if raw_img is None:
                 continue
             
             # 1. 物理过滤：太小的图（如 60x60 以下）通常是装饰性图标，直接标记并跳过 VLM
-            if img.width < 60 or img.height < 60:
+            if raw_img.width < 60 or raw_img.height < 60:
                 # pic.annotations.append(DescriptionAnnotation(text="装饰性图标/Logo", provenance="size_filter"))
                 continue
 
-            # 2. 计算指纹
+            # 2. 智能缩放 (核心解决VLM超时问题)
+            current_w, current_h = raw_img.size
+
+            # 计算基于用户比例的预期尺寸
+            target_w = current_w * params.image_scale
+            target_h = current_h * params.image_scale
+
+            limit_scale = 1.0
+            if max(target_w, target_h) > 1024:
+                limit_scale = 1024 / max(target_w, target_h)
+
+            # 最终缩放因子 = 用户比例 * 限制比例
+            final_scale = params.image_scale * limit_scale
+
+            # 计算最终像素尺寸
+            new_size = (
+                int(current_w * final_scale),
+                int(current_h * final_scale)
+            )
+
+            # 只要 final_scale 不等于 1.0 (或者小于 0.99 避免浮点误差)，就执行缩放
+            if abs(final_scale - 1.0) > 0.001:
+                img = raw_img.resize(new_size, Image.Resampling.LANCZOS)
+                logger.debug(f"VLM图片缩放生效: {current_w}x{current_h} -> {new_size} (scale:{final_scale:.2f})")
+            else:
+                img = raw_img
+
+            # 3. 计算指纹与缓存检查
             img_hash = str(imagehash.dhash(img))
-            
-            # 3. 检查全局或内存缓存
+
             if img_hash in self._vlm_cache:
                 pic.annotations.append(DescriptionAnnotation(text=self._vlm_cache[img_hash], provenance="vlm_cache_hit"))
                 continue
