@@ -416,8 +416,7 @@ rows 数组中的每一项必须是单行 Markdown。
             
             # 2. 媒体项处理
             if isinstance(item, (TableItem, PictureItem)):
-                if staging_prefix: # 如果有残留前缀，并入上一个 text 或丢弃
-                    staging_prefix = ""
+                staging_prefix = ""
                 semantic_units.append({"type": "media", "item": item})
                 continue
 
@@ -451,73 +450,73 @@ rows 数组中的每一项必须是单行 Markdown。
                 else:
                     semantic_units.append({"type": "text", "text": combined_text, "item": item})
 
-            # --- Stage 2: 逻辑分块输出 ---
-            text_buffer = []
-            buffer_len = 0
-            pending_header_context = ""
+        # --- Stage 2: 逻辑分块输出 ---
+        text_buffer = []
+        buffer_len = 0
+        pending_header_context = ""
 
-            def flush(item_ref, c_type="text", custom_content=None, img_name=None):
-                nonlocal current_chunk_num, text_buffer, buffer_len
-                content = custom_content if custom_content else "\n".join(text_buffer).strip()
-                if not content: return
-                
-                chunk_results.append({
-                    "content": content,
-                    "path_names": list(active_path),
-                    "structure_level": len(active_path),
-                    "chunk_type": c_type,
-                    "metadata": {
-                        "chunk_num": current_chunk_num,
-                        "page_num": self._get_page_num(item_ref),
-                        "header_context": pending_header_context,
-                        "image_name": img_name
-                    }
-                })
-                current_chunk_num += 1
-                if not custom_content:
-                    text_buffer, buffer_len = [], 0
+        def flush(item_ref, c_type="text", custom_content=None, img_name=None):
+            nonlocal current_chunk_num, text_buffer, buffer_len
+            content = custom_content if custom_content else "\n".join(text_buffer).strip()
+            if not content: return
+            
+            chunk_results.append({
+                "content": content,
+                "path_names": list(active_path),
+                "structure_level": len(active_path),
+                "chunk_type": c_type,
+                "metadata": {
+                    "chunk_num": current_chunk_num,
+                    "page_num": self._get_page_num(item_ref),
+                    "header_context": pending_header_context,
+                    "image_name": img_name
+                }
+            })
+            current_chunk_num += 1
+            if not custom_content:
+                text_buffer, buffer_len = [], 0
 
-            for unit in semantic_units:
-                if unit["type"] == "header":
-                    # 只有内容够多才切片，否则只更新路径并合并
-                    if buffer_len > MIN_CHUNK_LEN:
-                        flush(unit["item"])
-                    
-                    # 更新 path_names (简化逻辑：只保留最近的 3 级标题)
-                    header_text = unit["text"]
-                    if len(active_path) >= 3: active_path.pop(0)
-                    active_path.append(header_text)
-                    pending_header_context = header_text
-                    
-                    text_buffer.append(f"## {header_text}")
-                    buffer_len += len(header_text)
-
-                elif unit["type"] == "text":
-                    text_buffer.append(unit["text"])
-                    buffer_len += len(unit["text"])
-                    if buffer_len > MAX_CHUNK_LEN:
-                        flush(unit["item"])
-
-                elif unit["type"] == "media":
-                    # 媒体必须先清空前面的文字 buffer
+        for unit in semantic_units:
+            if unit["type"] == "header":
+                # 只有内容够多才切片，否则只更新路径并合并
+                if buffer_len > MIN_CHUNK_LEN:
                     flush(unit["item"])
-                    item = unit["item"]
-                    
-                    if isinstance(item, TableItem):
-                        # 引用之前讨论的严谨 Excel VLM 处理逻辑
-                        table_chunks = await self._process_table_vlm(item, doc, params, active_path, pending_header_context)
-                        for t_chunk in table_chunks:
-                            t_chunk["metadata"]["chunk_num"] = current_chunk_num
-                            chunk_results.append(t_chunk)
-                            current_chunk_num += 1
-                    
-                    elif isinstance(item, PictureItem):
-                        ser_result, img_name = self.serializer.serialize(item=item, doc=doc, image_dir=params.image_dir)
-                        flush(item, c_type="picture", custom_content=ser_result.text, img_name=img_name)
+                
+                # 更新 path_names (简化逻辑：只保留最近的 3 级标题)
+                header_text = unit["text"]
+                if len(active_path) >= 3: active_path.pop(0)
+                active_path.append(header_text)
+                pending_header_context = header_text
+                
+                text_buffer.append(f"## {header_text}")
+                buffer_len += len(header_text)
 
-            # 循环结束收尾
-            if text_buffer:
-                flush(semantic_units[-1]["item"] if semantic_units else None)
+            elif unit["type"] == "text":
+                text_buffer.append(unit["text"])
+                buffer_len += len(unit["text"])
+                if buffer_len > MAX_CHUNK_LEN:
+                    flush(unit["item"])
+
+            elif unit["type"] == "media":
+                # 媒体必须先清空前面的文字 buffer
+                flush(unit["item"])
+                item = unit["item"]
+                
+                if isinstance(item, TableItem):
+                    # 引用之前讨论的严谨 Excel VLM 处理逻辑
+                    table_chunks = await self._process_table_vlm(item, doc, params, active_path, pending_header_context)
+                    for t_chunk in table_chunks:
+                        t_chunk["metadata"]["chunk_num"] = current_chunk_num
+                        chunk_results.append(t_chunk)
+                        current_chunk_num += 1
+                
+                elif isinstance(item, PictureItem):
+                    ser_result, img_name = self.serializer.serialize(item=item, doc=doc, image_dir=params.image_dir)
+                    flush(item, c_type="picture", custom_content=ser_result.text, img_name=img_name)
+
+        # 循环结束收尾
+        if text_buffer:
+            flush(semantic_units[-1]["item"] if semantic_units else None)
 
         return chunk_results
     
