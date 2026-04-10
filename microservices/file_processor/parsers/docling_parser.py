@@ -488,7 +488,7 @@ rows 数组中的每一项必须是单行 Markdown。
                 active_path.append(header_text)
                 pending_header_context = header_text
                 
-                text_buffer.append(f"## {header_text}")
+                text_buffer.append(f"{header_text}")
                 buffer_len += len(header_text)
 
             elif unit["type"] == "text":
