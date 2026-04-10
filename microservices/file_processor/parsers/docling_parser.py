@@ -406,7 +406,7 @@ rows 数组中的每一项必须是单行 Markdown。
         # --- Stage 1: 语义聚合 (Pass 1) ---
         # 目标：将 Docling 的碎 Item 聚合成语义块，消除目录、页码、断开的标题
         semantic_units = []
-        staging_text = "" # 用于暂存可能是标题一部分的碎文本
+        staging_prefix = ""
 
         for item, _ in doc.iterate_items():
             raw_text = getattr(item, "text", "").strip()
