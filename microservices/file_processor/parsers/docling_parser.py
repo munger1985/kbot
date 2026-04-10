@@ -399,40 +399,43 @@ rows 数组中的每一项必须是单行 Markdown。
                 current_type = "table"
                 item_annos = getattr(item, "annotations", [])
                 vlm_res = next((ann.text for ann in item_annos 
-                                if getattr(ann, "provenance", "") == "vlm_table_rebuild"), None)
+                               if getattr(ann, "provenance", "") == "vlm_table_rebuild"), None)
+                
+                table_final_parts = [] # 存储最终切好的段
+                
                 if vlm_res:
                     try:
-                        clean_json = vlm_res.strip()
-                        if clean_json.startswith("```json"):
-                            clean_json = clean_json.split("```json")[1].split("```")[0].strip()
+                        # 1. 尝试 JSON 解析分片
+                        clean_json = re.sub(r'```json\s*|\s*```', '', vlm_res).strip()
                         table_data = json.loads(clean_json)
-                        header = table_data.get("header", "||").strip()
+                        header = table_data.get("header", "").strip()
                         rows = table_data.get("rows", [])
-
-                        if not rows:
-                            content_list.append(vlm_res[:15000])
+                        
+                        if rows:
+                            # 按照每 40 行分一组（术语表定义长，40行更稳）
+                            for i in range(0, len(rows), 40):
+                                table_final_parts.append(f"{header}\n" + "\n".join(rows[i:i+40]))
                         else:
-                            batch_size = 50
-                            for i in range(0, len(rows), batch_size):
-                                batch = rows[i : i + batch_size]
-                                # 拼接：表头 + 选定的行
-                                combined = f"{header}\n" + "\n".join(batch)
-                                
-                                # 3. 终极 Token 预检（字符数作为粗略参考，18k 字符约等于 5-6k token）
-                                if len(combined) > 18000:
-                                    # 如果 50 行依然超长，说明单行内容爆炸，执行硬截断
-                                    combined = combined[:18000] + "\n\n[...Row truncated...]"
-                                
-                                content_list.append(combined)
-                                
-                        logger.info(f"VLM JSON table split into {len(content_list)} chunks.")
-
-                    except json.JSONDecodeError:
-                        logger.error("VLM output is not valid JSON, falling back to raw content.")
-                        content_list.append(vlm_res) # 降级处理
+                            table_final_parts.append(vlm_res)
+                    except:
+                        # 2. JSON 解析失败，将原始输出放入待切列表
+                        table_final_parts.append(vlm_res)
                 else:
-                    # 如果没有 VLM 重构，使用 Docling 默认导出（此时依然建议做一次 Token 兜底）
-                    content_list.append(item.export_to_markdown(doc=doc))
+                    # 3. 无 VLM 场景，使用 Docling 默认导出
+                    table_final_parts.append(item.export_to_markdown(doc=doc))
+
+                # --- 终极物理切片防线 ---
+                # 检查 table_final_parts 里的每一段，如果字符数 > 15000，强制再切
+                for part in table_final_parts:
+                    if len(part) > 15000:
+                        logger.warning(f"[FIX] Part too large ({len(part)}), forcing physical split")
+                        lines = part.split('\n')
+                        header_shield = "\n".join(lines[:2]) # 暂时保护前两行
+                        for i in range(2, len(lines), 50):
+                            sub_block = "\n".join(lines[i:i+50])
+                            content_list.append(f"{header_shield}\n{sub_block}")
+                    else:
+                        content_list.append(part)
             elif isinstance(item, PictureItem):
                 current_type = "picture"
                 ser_result, image_name = self.serializer.serialize(item=item, doc=doc, image_dir=params.image_dir)
