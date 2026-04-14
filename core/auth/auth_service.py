@@ -5,31 +5,11 @@ import hashlib
 import bcrypt
 from datetime import datetime, timezone, timedelta
 from jose import JWTError, jwt, ExpiredSignatureError
-from passlib.context import CryptContext
-from core.dictionary import APIKeyStatus, UserTokenStatus
+from core.dictionary import APIKeyStatus
 from dao.repositories import UserRepository, UserTokenRepository, ServiceRepository, APIKeyRepository
 
 # 配置
 API_KEY_PREFIX = "sk_"
-
-# pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-api_key_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-# class PasswordService:
-#     """密码服务"""
-#     @staticmethod
-#     def _pre_hash(password: str) -> str:
-#         """
-#         使用 SHA-256 对原始密码进行预处理，确保输入 Bcrypt 的长度固定且不超过 72 字节
-#         """
-#         # 将字符串编码为字节流 -> 计算 SHA256 -> 转换回十六进制字符串
-#         return hashlib.sha256(password.encode("utf-8")).hexdigest()
-    
-#     @staticmethod
-#     def verify_password(plain_password: str, hashed_password: str) -> bool:
-#         pre_hashed = PasswordService._pre_hash(plain_password)
-#         return pwd_context.verify(pre_hashed, hashed_password)
-
 
 class PasswordService:
     @staticmethod
@@ -97,6 +77,10 @@ class JWTService:
 
 class APIKeyService:
     """API Key服务"""
+    @staticmethod
+    def _pre_hash(key: str) -> bytes:
+        # 同样进行 SHA256 预处理，确保长度固定且绕过 bcrypt 限制
+        return hashlib.sha256(key.encode("utf-8")).hexdigest().encode("utf-8")
     
     @staticmethod
     def generate_api_key() -> tuple[str, str]:
@@ -108,11 +92,20 @@ class APIKeyService:
     
     @staticmethod
     def hash_api_key(api_key: str) -> str:
-        return api_key_context.hash(api_key)
+        # 使用原生 bcrypt
+        salt = bcrypt.gensalt()
+        hashed = bcrypt.hashpw(APIKeyService._pre_hash(api_key), salt)
+        return hashed.decode("utf-8")
     
     @staticmethod
     def verify_api_key(plain_key: str, hashed_key: str) -> bool:
-        return api_key_context.verify(plain_key, hashed_key)
+        try:
+            return bcrypt.checkpw(
+                APIKeyService._pre_hash(plain_key),
+                hashed_key.encode("utf-8")
+            )
+        except Exception:
+            return False
     
     @staticmethod
     def extract_key_id(api_key: str) -> str | None:
