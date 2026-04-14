@@ -11,7 +11,12 @@ from dao.repositories import UserRepository, UserTokenRepository, ServiceReposit
 # 配置
 API_KEY_PREFIX = "sk_"
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+pwd_context = CryptContext(
+    schemes=["bcrypt"], 
+    deprecated="auto",
+    bcrypt__truncate_error=False  # 关键：强制 passlib 截断而不是报错
+)
 api_key_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
