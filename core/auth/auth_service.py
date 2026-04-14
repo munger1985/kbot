@@ -1,6 +1,7 @@
 import secrets
 import json
 import uuid
+import hashlib
 from datetime import datetime, timezone, timedelta
 from jose import JWTError, jwt, ExpiredSignatureError
 from passlib.context import CryptContext
@@ -16,14 +17,23 @@ api_key_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 class PasswordService:
     """密码服务"""
+    @staticmethod
+    def _pre_hash(password: str) -> str:
+        """
+        使用 SHA-256 对原始密码进行预处理，确保输入 Bcrypt 的长度固定且不超过 72 字节
+        """
+        # 将字符串编码为字节流 -> 计算 SHA256 -> 转换回十六进制字符串
+        return hashlib.sha256(password.encode("utf-8")).hexdigest()
     
     @staticmethod
     def verify_password(plain_password: str, hashed_password: str) -> bool:
-        return pwd_context.verify(plain_password, hashed_password)
+        pre_hashed = PasswordService._pre_hash(plain_password)
+        return pwd_context.verify(pre_hashed, hashed_password)
     
     @staticmethod
     def get_password_hash(password: str) -> str:
-        return pwd_context.hash(password)
+        pre_hashed = PasswordService._pre_hash(password)
+        return pwd_context.hash(pre_hashed)
 
 
 class JWTService:
