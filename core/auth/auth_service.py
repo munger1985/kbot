@@ -2,6 +2,7 @@ import secrets
 import json
 import uuid
 import hashlib
+import bcrypt
 from datetime import datetime, timezone, timedelta
 from jose import JWTError, jwt, ExpiredSignatureError
 from passlib.context import CryptContext
@@ -11,29 +12,47 @@ from dao.repositories import UserRepository, UserTokenRepository, ServiceReposit
 # 配置
 API_KEY_PREFIX = "sk_"
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 api_key_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+# class PasswordService:
+#     """密码服务"""
+#     @staticmethod
+#     def _pre_hash(password: str) -> str:
+#         """
+#         使用 SHA-256 对原始密码进行预处理，确保输入 Bcrypt 的长度固定且不超过 72 字节
+#         """
+#         # 将字符串编码为字节流 -> 计算 SHA256 -> 转换回十六进制字符串
+#         return hashlib.sha256(password.encode("utf-8")).hexdigest()
+    
+#     @staticmethod
+#     def verify_password(plain_password: str, hashed_password: str) -> bool:
+#         pre_hashed = PasswordService._pre_hash(plain_password)
+#         return pwd_context.verify(pre_hashed, hashed_password)
 
 
 class PasswordService:
-    """密码服务"""
     @staticmethod
-    def _pre_hash(password: str) -> str:
-        """
-        使用 SHA-256 对原始密码进行预处理，确保输入 Bcrypt 的长度固定且不超过 72 字节
-        """
-        # 将字符串编码为字节流 -> 计算 SHA256 -> 转换回十六进制字符串
-        return hashlib.sha256(password.encode("utf-8")).hexdigest()
-    
+    def _pre_hash(password: str) -> bytes:
+        # SHA256 结果固定为 64 字符，永远不会超标
+        return hashlib.sha256(password.encode("utf-8")).hexdigest().encode("utf-8")
+
     @staticmethod
     def verify_password(plain_password: str, hashed_password: str) -> bool:
-        pre_hashed = PasswordService._pre_hash(plain_password)
-        return pwd_context.verify(pre_hashed, hashed_password)
+        try:
+            return bcrypt.checkpw(
+                PasswordService._pre_hash(plain_password),
+                hashed_password.encode("utf-8")
+            )
+        except Exception:
+            return False
     
     @staticmethod
     def get_password_hash(password: str) -> str:
-        pre_hashed = PasswordService._pre_hash(password)
-        return pwd_context.hash(pre_hashed)
+        # 直接调用 bcrypt，没有任何自检，绝对不会报错
+        salt = bcrypt.gensalt()
+        hashed = bcrypt.hashpw(PasswordService._pre_hash(password), salt)
+        return hashed.decode("utf-8")
 
 
 class JWTService:
