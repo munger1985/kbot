@@ -15,10 +15,16 @@ API_KEY_PREFIX = "sk_"
 pwd_context = CryptContext(
     schemes=["bcrypt"], 
     deprecated="auto",
-    bcrypt__truncate_error=False  # 关键：强制 passlib 截断而不是报错
+    bcrypt__backends=["cryptography", "os_crypt"], 
+    bcrypt__truncate_error=False
 )
-api_key_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
+# api_key_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+api_key_context = CryptContext(
+    schemes=["bcrypt"], 
+    deprecated="auto",
+    bcrypt__backends=["cryptography", "os_crypt"],
+    bcrypt__truncate_error=False
+)
 
 class PasswordService:
     """密码服务"""
