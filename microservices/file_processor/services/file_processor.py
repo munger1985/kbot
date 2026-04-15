@@ -247,7 +247,7 @@ class FileProcessor:
         valid_indices = [i for i, item in enumerate(parser_results) if item["content"] and item["content"].strip()]
 
         # 2. Configure micro-batch size (32-64 is optimal balance of concurrency and stability)
-        micro_batch_size = 32
+        micro_batch_size = 10
         all_embeddings = []
 
         try:
@@ -264,7 +264,7 @@ class FileProcessor:
                 response = await self.model_client.call_embedding_model(
                     model_name=model,
                     texts=batch_texts,
-                    batch_size=len(batch_texts)
+                    batch_size=micro_batch_size
                 )
 
                 if response:
