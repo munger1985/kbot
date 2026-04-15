@@ -247,7 +247,8 @@ class FileProcessor:
         valid_indices = [i for i, item in enumerate(parser_results) if item["content"] and item["content"].strip()]
 
         # 2. Configure micro-batch size (32-64 is optimal balance of concurrency and stability)
-        micro_batch_size = 10
+        batch_size = await self.model_service.get_embedding_batch_size(embedding_model_name=model)
+        micro_batch_size = batch_size or 10
         all_embeddings = []
 
         try:
