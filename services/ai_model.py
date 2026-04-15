@@ -48,6 +48,9 @@ class AIModelService:
                 if not params:
                     raise NotFoundError(f"Model {embedding_model_name} params not found.")
                 batch_size = params.get("batch_size", None)
+                # Ensure batch_size is an integer if it exists
+                if batch_size is not None:
+                    batch_size = int(batch_size)
                 return batch_size
             except Exception as e:
                 handle_exception(e, f"Retrieve failed when getting batch size for embedding model {embedding_model_name}：{e}")
