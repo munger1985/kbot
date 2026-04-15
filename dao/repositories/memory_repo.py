@@ -212,7 +212,7 @@ class MemoryEntryRepository(BaseRepository[MemoryEntryEntity]):
         ctx = await self.session.get(ConversationContextEntity, session_id)
         if not ctx:
             logger.info(f"Initializing new conversation context: {session_id}")
-            session_title = question[:10] if question else f"Chat Session {datetime.now().strftime('%Y%m%d')}"
+            session_title = question[:100] if question else f"Chat Session {datetime.now().strftime('%Y%m%d')}"
             ctx = ConversationContextEntity(
                 session_id=session_id,
                 user_id=user_id,
