@@ -1,20 +1,20 @@
 import os
-import json
 import uuid
 from loguru import logger
 from datetime import datetime
-from ..parser_schema import DocParserParams, FileParams
+from ..parser_schema import DocParserParams, FileParams, ChunkResult
 from .docling_service import ParserService
 from .txt_to_md import TxtToMarkdownParser
-from dao.repositories import FileRepository, KBRepository, TxtChunkRepository
+from dao.repositories import FileRepository, TxtChunkRepository
 from dao.entities import TxtChunkEntity
 from core.database.oracle import get_session
-from core.config.settings import get_app_config
+from core.config.settings import get_app_config, get_prompt_config
 from core.dictionary import FileStatus, ProcessPriority, ChunkType
 from core.exceptions import DataNotFoundException, DatabaseException
 from utils.clients import AIModelClient
 from utils.sanitize import sanitize_dict_for_oracle_json
 from services.ai_model import AIModelService
+from services.default_prompt import PromptManager
 
 
 class FileProcessor:
@@ -86,7 +86,10 @@ class FileProcessor:
 
                 # VLM configuration
                 use_vlm = file.chunk_parser.get("use_vlm", False)
-                vlm_prompt = file.chunk_parser.get("vlm_prompt", None)
+                img2txt_prompt = file.parser_params.get("img2txt_prompt", None)
+                if not img2txt_prompt:
+                    prompt_mgr = PromptManager()
+                    img2txt_prompt = await prompt_mgr.generate(get_prompt_config().image2text)
                 
                 # Convert dict parser params to DocParserParams object
                 doc_params = DocParserParams(
@@ -100,7 +103,8 @@ class FileProcessor:
                     ocr_engine=file.chunk_parser.get("ocr_engine", None),
                     use_vlm=use_vlm,
                     vlm_model=vlm_model,
-                    vlm_prompt=vlm_prompt
+                    llm_model=llm_model,
+                    img2txt_prompt=img2txt_prompt
                 )
 
                 # Create FileParams object for queue
@@ -209,7 +213,7 @@ class FileProcessor:
                 log_msg=message
             )
 
-    async def _get_embeddings(self, parser_results: list[dict], file_params: FileParams) -> list[TxtChunkEntity]:
+    async def _get_embeddings(self, parser_results: list[ChunkResult], file_params: FileParams) -> list[TxtChunkEntity]:
         """
         Generate embeddings for parsed text chunks and package as TxtChunk entities
 
@@ -233,7 +237,7 @@ class FileProcessor:
         # 1. Extract all text content for embedding and filter empty strings
         all_texts = []
         for i, item in enumerate(parser_results):
-            content = item.get("content", "").strip()
+            content = item.content
             if not content:
                 continue
                 
@@ -244,7 +248,7 @@ class FileProcessor:
             return []
 
         # Keep track of valid indices to match embeddings with parser results
-        valid_indices = [i for i, item in enumerate(parser_results) if item["content"] and item["content"].strip()]
+        valid_indices = [i for i, item in enumerate(parser_results) if item.content]
 
         # 2. Configure micro-batch size (32-64 is optimal balance of concurrency and stability)
         batch_size = await self.model_service.get_embedding_batch_size(embedding_model_name=model)
@@ -287,26 +291,21 @@ class FileProcessor:
                 original_idx = valid_indices[i]
                 item = parser_results[original_idx]
                 unique_id = str(uuid.uuid4())
-
-                # Use chunk type string directly from parser result
-                chunk_type = item.get("chunk_type", ChunkType.TEXT.value)
-                # converts a hierarchical path list into a flattened string
-                path_names = self._flatten_path_names(item.get("path_names", []))
-
                 # Sanitize JSON metadata fields to prevent Oracle JSON syntax errors
-                chunk_metadata = item.get("metadata", {})
                 biz_metadata = file_params.biz_metadata or {}
 
                 chunk = TxtChunkEntity(
                     chunk_id=unique_id,
+                    chunk_num=item.chunk_num,
+                    chunk_type=item.chunk_type,
                     kb_id=file_params.kb_id,
                     file_id=file_params.file_id,
                     content=text,
+                    header=item.header,
+                    doc_summary=item.doc_summary,
+                    search_helper=item.search_helper,
                     embedding=emb,
-                    path_names=path_names,
-                    structure_level=item.get("structure_level", 0),
-                    chunk_type=chunk_type,
-                    chunk_metadata=chunk_metadata,
+                    chunk_metadata=item.metadata.model_dump(),
                     biz_metadata=biz_metadata,
                     security_level=file_params.security_level,
                 )
@@ -318,19 +317,6 @@ class FileProcessor:
         except Exception as e:
             logger.error(f"Failed to generate embeddings: {str(e)}", exc_info=True)
             return []
-
-    def _flatten_path_names(self, path_list: list) -> str:
-        """
-        将路径列表转换为 Oracle VARCHAR2 兼容的字符串。
-        仅负责物理展平，不进行任何权重增强。
-        """
-        if not path_list:
-            return ""
-
-        # logger.debug(f"[FinalJoin] Joining list: {path_list}")
-
-        # 仅使用分隔符连接，输出如: "第一部分 / 保险内容和保险利益"
-        return " / ".join(path_list)
     
     async def _save_chunks(self, kb_id: int, file_id: str, chunks: list[TxtChunkEntity]):
         """

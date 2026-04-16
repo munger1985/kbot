@@ -220,20 +220,20 @@ class TxtBaseSearch:
                 meta = item.get("metadata") or {}
 
                 result = TxtBaseSearchResult(
-                    chunk_id=str(item.get("chunk_id", "")),
+                    chunk_id=item.get("chunk_id", ""),
+                    chunk_num=item.get("chunk_num", 0),
                     chunk_type=item.get("chunk_type", "text"),
                     file_id=item.get("file_id", ""),
+                    kb_id=item.get("kb_id", ""),
                     content=item.get("content", ""),
-                    structure_level=int(item.get("structure_level", 0)),
-                    path_names=item.get("path_names") or "",
+                    header=item.get("header", ""),
+                    doc_summary=item.get("doc_summary", ""),
+                    search_helper=item.get("search_helper", ""),
                     page_num=int(meta.get("page_num") or 0),
-                    chunk_num=int(meta.get("chunk_num") or 0),
+                    image_name=meta.get("image_name") or "",
                     score=float(item.get("score") or 0.0),
                     weight=weight,
-                    rerank_score=0.0,
-                    image_name=meta.get("image_name") or "",
-                    header_context=meta.get("header_context", ""),
-                    search_type=search_type
+                    rerank_score=0.0
                 )
                 results.append(result)
             except Exception as e:
@@ -242,38 +242,51 @@ class TxtBaseSearch:
                 
         return results
 
-    def _merge_adjacent_chunks(self, results: list[TxtBaseSearchResult]) -> list[TxtBaseSearchResult]:
-        """去重逻辑：如果两个 Chunk 物理位置太近导致内容高度重叠，只保留分数高的那个。"""
-        if not results: return []
+    def _merge_adjacent_chunks(self, results: list[TxtBaseSearchResult], window_size: int = 1) -> list[TxtBaseSearchResult]:
+        """
+        改进的去重策略：
+        不再预先填充 range，而是只记录已录入的中心点。
+        """
+        if not results:
+            return []
         
-        # 1. 保持 RRF 算出的原始分数优先级
-        # 按分数从高到低处理，确保“最准”的那个被保留
+        # 保持分数降序
         results.sort(key=lambda x: x.score, reverse=True)
         
         final_results = []
-        seen_chunks = {} # key: file_id, value: list of chunk_nums
+        # file_coverage 仅记录真正存入 final_results 的 chunk_num
+        file_coverage = {}  # dict[file_id, set[chunk_num]]
         
+        MIN_KEEP_COUNT = 10 
+
         for res in results:
             fid = res.file_id
             cnum = res.chunk_num
             
-            if fid not in seen_chunks:
-                seen_chunks[fid] = []
-            
-            # 2. 检查是否与已保留的 Chunk 距离太近
-            # 如果当前 Chunk 的序号在已保留 Chunk 的前后 1 个位置内，说明内容基本重合（因为有 window_size=1）
+            # 初始化该文件的覆盖集
+            if fid not in file_coverage:
+                file_coverage[fid] = set()
+
+            # 1. 强制保留 Top N 结果
+            if len(final_results) < MIN_KEEP_COUNT:
+                final_results.append(res)
+                file_coverage[fid].add(cnum)
+                continue
+
+            # 2. 冗余检查逻辑
+            # 检查当前 cnum 是否落在已保存块的 window 范围内
             is_redundant = False
-            for existing_num in seen_chunks[fid]:
-                if abs(existing_num - cnum) <= 1: # 窗口重叠判定
+            for existing_num in file_coverage[fid]:
+                # 如果当前块编号与已存在的块编号距离在 window_size 之内，视为冗余
+                if abs(existing_num - cnum) <= window_size:
                     is_redundant = True
                     break
             
             if not is_redundant:
                 final_results.append(res)
-                seen_chunks[fid].append(cnum)
+                file_coverage[fid].add(cnum)
             else:
-                # 日志记录被过滤掉的重复内容（可选）
-                pass
+                logger.debug(f"跳过冗余邻近块: {fid} - Chunk {cnum} (距离现有块过近)")
 
-        logger.debug(f"Redundancy filter: {len(results)} -> {len(final_results)}")
+        logger.info(f"冗余过滤完成: {len(results)} -> {len(final_results)} (window_size={window_size})")
         return final_results

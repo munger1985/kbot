@@ -1,6 +1,6 @@
 from loguru import logger
 from typing import Any
-from dao.repositories import KBRepository, PromptRepository, TxtChunkRepository
+from dao.repositories import KBRepository, TxtChunkRepository
 from utils.clients.model_client import AIModelClient
 from core.database.oracle import get_session
 from services.ai_model import AIModelService
@@ -133,12 +133,12 @@ class ChunkService:
             chunk_list = [
                 {
                     "chunk_id": chunk.chunk_id,
+                    "chunk_type": chunk.chunk_type,
+                    "chunk_num": chunk.chunk_num,
                     "kb_id": chunk.kb_id,
                     "file_id": chunk.file_id,
                     "content": chunk.content,
-                    "structure_level": chunk.structure_level,
-                    "path_names": chunk.path_names,
-                    "chunk_type": chunk.chunk_type,
+                    "header": chunk.header,
                     "chunk_metadata": chunk.chunk_metadata,
                     "security_level": chunk.security_level,
                     "is_active": chunk.is_active,

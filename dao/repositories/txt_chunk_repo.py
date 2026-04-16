@@ -67,88 +67,154 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
         security: int,
         similarity_threshold: float = 0.5,
         search_top_k: int = 10,
-        tags: list[str] = [],
-        path_filter: str | None = None
+        tags: list[str] = []
     ) -> list[dict[str, Any]]:
         """
-        Vector similarity search (Oracle version)
-        Note: Oracle 21c+ or vector extensions required for vector operations
-        
-        :param query_vec: Query embedding vector
-        :param security: Security level filter (records with level <= security will be returned)
-        :param similarity_threshold: Minimum similarity score threshold (0.0-1.0)
-        :param search_top_k: Maximum number of results to return
-        :param tags: list of tags to filter results
-        :param path_filter: Path name filter (match any in path_names array)
-        :return: list of search results with similarity scores
+        Oracle 向量检索增强版（针对虚拟标题和 search_helper 优化）
         """
         try:
-            # 1. 转换阈值：相似度 0.8 -> 距离 (1-0.8)*2 = 0.4
+            # 1. 转换阈值
             dist_limit = (1 - (similarity_threshold or 0.5)) * 2
-
-            # 将 list[float] 类型的向量转换为 Oracle 数组类型 array.array
             vec_handler = OracleVecHandler()
             vec_array = vec_handler.convert(vec=query_vec, to_string=False)
 
-            # 2. 核心参数字典
+            # 2. 基础参数
             all_params: dict[str, Any] = {
                 "kb_id": kb_id,
                 "security": security,
                 "qv": vec_array,
                 "dist_limit": dist_limit,
-                "top_k": search_top_k
+                "top_k": search_top_k,
+                "q_keywords": keywords  # LLM 提取的关键词
             }
 
-            # 2. 路径加权逻辑优化
-            path_weight_sql = "0"
-            contains_clause = ""
+            # --- 核心改动：文本加权逻辑 ---
+            # 权重分配：向量相似度 0.4 + search_helper 命中分 0.4 + header 命中分 0.2
+            # 这里的 SCORE(1) 对应 search_helper，SCORE(2) 对应 header
+            text_score_sql = "(SCORE(1) * 0.4 + SCORE(2) * 0.2)"
             
+            # 使用 CONTAINS 触发 Oracle Text 的全文评分，不设置过滤阈值以免剔除潜在结果
+            contains_clauses = """
+                AND (CONTAINS(search_helper, :q_keywords, 1) >= 0)
+                AND (CONTAINS(header, :q_keywords, 2) >= 0)
+            """
 
-            # 使用传入的、经过 LLM 优化的关键词
-            all_params["q_keywords"] = keywords
-            # 赋予路径命中 0.7 的权重系数
-            path_weight_sql = "SCORE(99) * 0.7"
-            # 在 WHERE 中增加一个不带过滤效果的 CONTAINS 用于触发 SCORE 计算
-            contains_clause = " AND (CONTAINS(path_names, :q_keywords, 99) >= 0) "
-
-            # 3. 核心 SQL：(向量分 30%) + (路径分 70%), 归一化：向量分转为 0-100 再计算
+            # 3. 核心 SQL 构造
             sql_query = f"""
                 SELECT 
-                    chunk_id, chunk_type, file_id, content, path_names, structure_level, chunk_metadata,
+                    chunk_id, chunk_type, file_id, kb_id, content, header, chunk_num, chunk_metadata,
                     (
-                        ((1 - VECTOR_DISTANCE(embedding, :qv, COSINE)) * 100 * 0.3) 
+                        ((1 - VECTOR_DISTANCE(embedding, :qv, COSINE)) * 100 * 0.4) 
                         + 
-                        ({path_weight_sql})
-                    ) / 100 as similarity_score
+                        {text_score_sql}
+                    ) / 100 as hybrid_score
                 FROM KBOT_BIZ_TXT_EMBEDDING
                 WHERE kb_id = :kb_id 
                 AND is_active = 1 
                 AND security_level <= :security
                 AND VECTOR_DISTANCE(embedding, :qv, COSINE) <= :dist_limit
-                {contains_clause}
+                {contains_clauses}
             """
 
-            # 4. 路径硬过滤 (path_filter)
-            if path_filter:
-                # 注意：这里继续沿用全文检索的清理逻辑以保持一致
-                clean_path = re.sub(r'[^\w\s]', '', path_filter.strip())
-                all_params["p_filter"] = clean_path
-                sql_query += " AND CONTAINS(path_names, :p_filter, 98) > 0 "
-
-            # 5. 动态拼接标签过滤
+            # 4. 标签过滤 (JSON)
             if tags:
                 tag_clauses = []
                 for i, tag in enumerate(tags):
                     t_key = f"t_{i}"
                     tag_clauses.append(f"JSON_EXISTS(biz_metadata, '$.tags[*]?(@ == $t)' PASSING :{t_key} AS \"t\")")
                     all_params[t_key] = tag
-                if tag_clauses:
-                    sql_query += f" AND ({' OR '.join(tag_clauses)})"
+                sql_query += f" AND ({' OR '.join(tag_clauses)})"
 
             sql_query += """
+                ORDER BY hybrid_score DESC
+                FETCH FIRST :top_k ROWS ONLY
+            """
+
+            # 5. 执行与结果映射
+            stmt = text(sql_query)
+            result = await self.session.execute(stmt, all_params)
+            chunks = result.fetchall()
+
+            results = []
+            for chunk in chunks:
+                results.append({
+                    "chunk_id": chunk.chunk_id,
+                    "chunk_type": chunk.chunk_type,
+                    "file_id": chunk.file_id,
+                    "kb_id": chunk.kb_id,
+                    "chunk_num": getattr(chunk, 'chunk_num', 0), # 确保获取 chunk_num
+                    "content": chunk.content,
+                    "header": chunk.header, # 现在的虚拟标题
+                    "metadata": chunk.chunk_metadata,
+                    "score": float(chunk.hybrid_score or 0.0)
+                })
+            return results
+
+        except Exception as e:
+            logger.error(f"Oracle hybrid vector search failed: {str(e)}")
+            raise DatabaseException("Exception occurred during vector search execution", original_error=e)
+
+    async def full_text_search(
+        self,
+        kb_id: int,
+        keywords: str,
+        security: int,
+        search_top_k: int = 10,
+        tags: list[str] = []
+    ) -> list[dict[str, Any]]:
+        try:
+            # 1. 清理：保留中英文数字和空格
+            clean_keyword = re.sub(r'[^\w\s\u4e00-\u9fa5]', '', keywords.strip())
+            words = [w for w in clean_keyword.split() if w]
+            if not words:
+                return []
+
+            # 2. 组装为 ACCUM 语法，并增加词组精准匹配的权重建议
+            # ACCUM 会匹配多个词，命中越多分数越高
+            formatted_key = " ACCUM ".join([f"{{{w}}}" for w in words])
+            logger.debug(f"Executing Oracle Full-Text Search with: {formatted_key}")
+
+            all_params: dict[str, Any] = {
+                "kb_id": kb_id,
+                "security": security,
+                "keyword": formatted_key,
+                "top_k": search_top_k
+            }
+
+            # 3. 核心 SQL 逻辑：
+            # SCORE(1): search_helper (权重 50%) - 包含全局摘要+虚拟标题+正文前缀
+            # SCORE(2): header (权重 30%) - 纯语义虚拟标题
+            # SCORE(4): content (权重 20%) - 原始正文
+            # 归一化处理：/ 100 得到 0-1 之间的分数
+            sql_query = f"""
+                SELECT 
+                    chunk_id, chunk_type, file_id, kb_id, content, header, chunk_num, chunk_metadata,
+                    ((SCORE(1) * 0.5) + (SCORE(2) * 0.3) + (SCORE(4) * 0.2)) / 100 as similarity_score
+                FROM KBOT_BIZ_TXT_EMBEDDING
+                WHERE kb_id = :kb_id 
+                    AND is_active = 1 
+                    AND security_level <= :security
+                    AND (
+                        CONTAINS(search_helper, :keyword, 1) > 0 
+                        OR
+                        CONTAINS(header, :keyword, 2) > 0
+                        OR
+                        CONTAINS(content, :keyword, 4) > 0
+                    )
                 ORDER BY similarity_score DESC
                 FETCH FIRST :top_k ROWS ONLY
             """
+
+            # 4. 标签过滤 (JSON)
+            if tags:
+                tag_clauses = []
+                for i, tag in enumerate(tags):
+                    t_key = f"tag_{i}"
+                    tag_clauses.append(f"JSON_EXISTS(biz_metadata, '$.tags[*]?(@ == $t)' PASSING :{t_key} AS \"t\")")
+                    all_params[t_key] = tag
+                # 修正 WHERE 注入逻辑，确保在符合 SQL 语法的地方插入
+                tag_filter = f" AND ({' OR '.join(tag_clauses)})"
+                sql_query = sql_query.replace("WHERE", f"WHERE {tag_filter} AND")
 
             # 6. 执行查询
             stmt = text(sql_query)
@@ -160,107 +226,12 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
             for chunk in chunks:
                 results.append({
                     "chunk_id": chunk.chunk_id,
+                    "chunk_num": getattr(chunk, 'chunk_num', 0),
                     "chunk_type": chunk.chunk_type,
                     "file_id": chunk.file_id,
+                    "kb_id": chunk.kb_id,
                     "content": chunk.content,
-                    "path_names": chunk.path_names,
-                    "structure_level": chunk.structure_level,
-                    "metadata": chunk.chunk_metadata,
-                    "score": float(chunk.similarity_score or 0.0)
-                })
-            return results
-
-        except Exception as e:
-            logger.error(f"Oracle vector search failed: {str(e)}")
-            raise DatabaseException("Exception occurred during vector search execution", original_error=e)
-
-    async def full_text_search(
-        self,
-        kb_id: int,
-        keywords: str,
-        security: int,
-        search_top_k: int = 10,
-        tags: list[str] = [],
-        path_filter: str | None = None
-    ) -> list[dict[str, Any]]:
-        try:
-            # 1. 清理：保留中英文数字和空格
-            clean_keyword = re.sub(r'[^\w\s\u4e00-\u9fa5]', '', keywords.strip())
-            
-            # 2. 拆分并过滤空字符串
-            words = [w for w in clean_keyword.split() if w]
-            
-            if not words:
-                return []
-
-            # 3. 组装为 ACCUM 语法
-            # 加上 {} 是为了处理可能包含的特殊技术字符，防止 Oracle 报错
-            formatted_key = " ACCUM ".join([f"{{{w}}}" for w in words])
-            
-            # 4. 执行 SQL 时，确保 trace 日志打印出最终的 formatted_key 方便调试
-            logger.debug(f"Executing Oracle Full-Text Search with: {formatted_key}")
-
-            all_params: dict[str, Any] = {
-                "kb_id": kb_id,
-                "security": security,
-                "keyword": formatted_key,
-                "top_k": search_top_k
-            }
-            
-            # 2. 动态路径过滤逻辑
-            path_clause = ""
-            if path_filter:
-                # 如果提供了 path_filter，则要求路径中必须包含此关键词
-                clean_path = re.sub(r'[^\w\s]', '', path_filter.strip())
-                all_params["p_filter"] = clean_path
-                path_clause = " AND CONTAINS(path_names, :p_filter, 3) > 0 "
-
-            # 3. 核心 SQL：双重加权评分, 路径命中占 70% 权重，正文命中占 30%
-            sql_query = f"""
-                SELECT 
-                    chunk_id, chunk_type, file_id, content, path_names, structure_level, chunk_metadata,
-                    ((SCORE(1) * 0.3) + (SCORE(2) * 0.7)) / 100 as similarity_score
-                FROM KBOT_BIZ_TXT_EMBEDDING
-                WHERE kb_id = :kb_id 
-                    AND is_active = 1 
-                    AND security_level <= :security
-                    AND (
-                        CONTAINS(content, :keyword, 1) > 0 
-                        OR
-                        CONTAINS(path_names, :keyword, 2) > 0
-                    )
-                    {path_clause}
-                ORDER BY similarity_score DESC
-                FETCH FIRST :top_k ROWS ONLY
-            """
-
-            # 4. 标签过滤
-            if tags:
-                tag_clauses = []
-                for i, tag in enumerate(tags):
-                    t_key = f"tag_{i}"
-                    tag_clauses.append(f"JSON_EXISTS(biz_metadata, '$.tags[*]?(@ == $t)' PASSING :{t_key} AS \"t\")")
-                    all_params[t_key] = tag
-                sql_query = sql_query.replace("WHERE", f"WHERE ({' OR '.join(tag_clauses)}) AND")
-
-            # 5. 执行查询
-            stmt = text(sql_query)
-            result = await self.session.execute(stmt, all_params)
-            chunks = result.fetchall()
-
-            # 6. 格式化结果以适配 TxtBaseSearchResult
-            results = []
-            for chunk in chunks:
-                # 从 chunk_metadata (JSON) 中安全提取 docling 的具体字段
-                meta = chunk.chunk_metadata or {}
-                
-                results.append({
-                    "chunk_id": chunk.chunk_id,
-                    "chunk_type": chunk.chunk_type,
-                    "file_id": chunk.file_id,
-                    "content": chunk.content,
-                    "path_names": chunk.path_names,
-                    "structure_level": chunk.structure_level,
+                    "header": chunk.header,
                     "metadata": chunk.chunk_metadata,
                     "score": float(chunk.similarity_score or 0.0)
                 })
@@ -281,7 +252,7 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
         :param window_size: 向上/向下扩展的数量。1表示取 [n-1, n, n+1]
         """
         sql = """
-            SELECT chunk_id, chunk_type, file_id, content, path_names, structure_level, chunk_metadata
+            SELECT chunk_id, chunk_type, file_id, kb_id, content, header, chunk_num, chunk_metadata,
             FROM KBOT_BIZ_TXT_EMBEDDING
             WHERE file_id = :file_id 
             AND is_active = 1
@@ -359,8 +330,7 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
                 )
                 .where(TxtChunkEntity.file_id == file_id)
                 .order_by(
-                    text("JSON_VALUE(chunk_metadata, '$.chunk_num') ASC"),
-                    text("JSON_VALUE(chunk_metadata, '$.sub_index') ASC")
+                    TxtChunkEntity.chunk_num.asc()
                 )
             )
 

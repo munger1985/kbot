@@ -16,6 +16,7 @@ from utils.common import run_in_thread_pool
 from services.ai_model import AIModelService
 from core.database.oracle import get_session
 from core.exceptions import *
+from services.default_prompt import PromptManager
 
 class FileService:
     """Knowledge Base File Operation Service.
@@ -204,24 +205,8 @@ class FileService:
                 raise NotFoundError(message=error_msg)
 
             # Get default VLM prompt configuration
-            prompt_repo = PromptRepository(session)
-            vlm_prompt_unique_name = get_prompt_config().image2text
-            try:
-                prompt = await prompt_repo.get_prompt_by_unique_name(vlm_prompt_unique_name)
-            except DataNotFoundException as e:
-                logger.warning(f"Prompt not found: {e}, will use default prompt")
-                prompt = None
-            except Exception as e:
-                logger.warning(f"Failed to get prompt: {e}, will use default prompt")
-
-            # Clean up prompt text: remove leading/trailing whitespace and normalize newlines
-            if prompt:
-                prompt = prompt.strip().replace('\n', ' ')
-                # Remove multiple consecutive spaces
-                prompt = re.sub(r'\s+', ' ', prompt)
-
-            if not prompt:
-                prompt = "Please describe the image in detail."
+            prompt_mgr = PromptManager()
+            prompt = await prompt_mgr.generate(get_prompt_config().image2text)
                 
             vlm_model_id = kb_entity.img2txt_model_id
             llm_model_id = kb_entity.llm_model_id
@@ -250,8 +235,8 @@ class FileService:
                 "llm_model": llm_model,
                 "chunk_size": 1000,
                 "ocr_engine": "tesseract",
-                "vlm_prompt": prompt,
-                "images_scale": 1.0,
+                "img2txt_prompt": prompt,
+                "images_scale": 2.0,
                 "min_chunk_len": 200,
                 "generate_picture_images": True
             }
