@@ -107,7 +107,7 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
                         ((1 - VECTOR_DISTANCE(embedding, :qv, COSINE)) * 100 * 0.4) 
                         + 
                         {text_score_sql}
-                    ) / 100 as hybrid_score
+                    ) / 100 as similarity_score
                 FROM KBOT_BIZ_TXT_EMBEDDING
                 WHERE kb_id = :kb_id 
                 AND is_active = 1 
@@ -126,7 +126,7 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
                 sql_query += f" AND ({' OR '.join(tag_clauses)})"
 
             sql_query += """
-                ORDER BY hybrid_score DESC
+                ORDER BY similarity_score DESC
                 FETCH FIRST :top_k ROWS ONLY
             """
 
@@ -139,14 +139,14 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
             for chunk in chunks:
                 results.append({
                     "chunk_id": chunk.chunk_id,
+                    "chunk_num": chunk.chunk_num,
                     "chunk_type": chunk.chunk_type,
                     "file_id": chunk.file_id,
                     "kb_id": chunk.kb_id,
-                    "chunk_num": getattr(chunk, 'chunk_num', 0), # 确保获取 chunk_num
                     "content": chunk.content,
-                    "header": chunk.header, # 现在的虚拟标题
+                    "header": chunk.header,
                     "metadata": chunk.chunk_metadata,
-                    "score": float(chunk.hybrid_score or 0.0)
+                    "score": float(chunk.similarity_score or 0.0)
                 })
             return results
 
@@ -226,7 +226,7 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
             for chunk in chunks:
                 results.append({
                     "chunk_id": chunk.chunk_id,
-                    "chunk_num": getattr(chunk, 'chunk_num', 0),
+                    "chunk_num": chunk.chunk_num,
                     "chunk_type": chunk.chunk_type,
                     "file_id": chunk.file_id,
                     "kb_id": chunk.kb_id,
