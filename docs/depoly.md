@@ -418,6 +418,7 @@ pip install easyocr
 python docs/install/models/download_easyocr_model.py
 ```
 
+
 ## 6 修改 kbot 后台服务配置（可选）
 **说明**：
 - 如果需要修改 kbot 后台服务的配置（例如端口号，数据库连接等），可以在 configuration/base.toml 文件中进行修改。

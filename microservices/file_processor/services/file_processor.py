@@ -86,7 +86,7 @@ class FileProcessor:
 
                 # VLM configuration
                 use_vlm = file.chunk_parser.get("use_vlm", False)
-                img2txt_prompt = file.parser_params.get("img2txt_prompt", None)
+                img2txt_prompt = file.chunk_parser.get("img2txt_prompt", None)
                 if not img2txt_prompt:
                     prompt_mgr = PromptManager()
                     img2txt_prompt = await prompt_mgr.generate(get_prompt_config().image2text)

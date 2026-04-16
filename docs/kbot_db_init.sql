@@ -310,6 +310,27 @@ A: {answer}
     "memory_snapshot": "本次对话的高纯度事实快照..."
 }}]', 1);
 
+INSERT INTO KBOT_MD_PROMPT (APP_ID, NAME, PROMPT_UNIQUE_NAME, PROMPT_CATEGORY, TEMPLATE, STATUS) 
+VALUES (1, 'image2text', 'SYSTEM/image2text', 1, q'[你是一个专业的 RAG 系统图像解析助手。请根据提供的图片和文档上下文进行分析。
+
+任务目标：
+将图片内容转化为有助于搜索和问答的纯文本描述。
+
+遵循准则：
+
+静默原则：如果图片是背景图、logo、点缀性边框、或者是没有任何实际业务含义的装饰性图片，请直接返回“[NONE]”。
+
+信息优先级：优先提取图中的文字（OCR）、图表标题、坐标轴标签、流程图节点名称。
+
+极简描述：禁止使用“精美的”、“科幻的”、“令人惊叹的”等修辞词。直接描述核心主体，例如：“[流程图] 展示了晶圆清洗的三个步骤：酸洗、水洗、干燥”。
+
+禁止幻觉：只描述你确信看到的。如果图片模糊无法辨认，请直接说明“图片内容无法辨识”，不要推测。
+
+上下文对齐：参考提供的上下文（{current_header}），如果图片内容与标题无关，请缩减描述。
+
+输出格式：
+[图片类型]：[核心信息总结]]', 1);
+
 COMMIT;
 
 -- Table comment
@@ -609,10 +630,12 @@ CREATE TABLE KBOT_BIZ_TXT_EMBEDDING (
     CHUNK_ID        VARCHAR2(256) NOT NULL,
     KB_ID           NUMBER NOT NULL,
     FILE_ID         VARCHAR2(256) NOT NULL,
-    CONTENT         CLOB NOT NULL,
-    STRUCTURE_LEVEL NUMBER(38,0),
-    PATH_NAMES      VARCHAR2(4000),
+    CHUNK_NUM       NUMBER NOT NULL,
     CHUNK_TYPE      VARCHAR2(20),
+    CONTENT         CLOB NOT NULL,
+    HEADER          VARCHAR2(256),
+    DOC_SUMMARY     VARCHAR2(4000),
+    SEARCH_HELPER   VARCHAR2(4000),
     EMBEDDING       VECTOR NOT NULL,
     CHUNK_METADATA  JSON NOT NULL,
     SECURITY_LEVEL  NUMBER(1,0),
@@ -622,17 +645,20 @@ CREATE TABLE KBOT_BIZ_TXT_EMBEDDING (
     PRIMARY KEY (CHUNK_ID) USING INDEX ENABLE
 );
 CREATE INDEX IDX_FULLSEARCH_TXT_EMBEDDING ON  KBOT_BIZ_TXT_EMBEDDING("CONTENT") INDEXTYPE IS "CTXSYS"."CONTEXT" PARAMETERS ('lexer chinese_lexer');
-CREATE INDEX IDX_FULLSEARCH_TXT_PATH_NAMES ON  KBOT_BIZ_TXT_EMBEDDING("PATH_NAMES") INDEXTYPE IS "CTXSYS"."CONTEXT" PARAMETERS ('lexer chinese_lexer');
+CREATE INDEX IDX_FULLSEARCH_TXT_HEADER ON  KBOT_BIZ_TXT_EMBEDDING("HEADER") INDEXTYPE IS "CTXSYS"."CONTEXT" PARAMETERS ('lexer chinese_lexer');
+CREATE INDEX IDX_FULLSEARCH_TXT_DOC_SUMMARY ON  KBOT_BIZ_TXT_EMBEDDING("DOC_SUMMARY") INDEXTYPE IS "CTXSYS"."CONTEXT" PARAMETERS ('lexer chinese_lexer');
 -- Table comment
 COMMENT ON TABLE KBOT_BIZ_TXT_EMBEDDING IS 'Text Embedding Table - Stores vectorized representations of text chunks';
 -- Column comments
 COMMENT ON COLUMN KBOT_BIZ_TXT_EMBEDDING.CHUNK_ID IS 'Unique vector record identifier, primary key';
 COMMENT ON COLUMN KBOT_BIZ_TXT_EMBEDDING.KB_ID IS 'Associated KB ID';
 COMMENT ON COLUMN KBOT_BIZ_TXT_EMBEDDING.FILE_ID IS 'Associated file ID';
+COMMENT ON COLUMN KBOT_BIZ_TXT_EMBEDDING.CHUNK_NUM IS 'Chunk number';
+COMMENT ON COLUMN KBOT_BIZ_TXT_EMBEDDING.CHUNK_TYPE IS 'Chunk type (text, table, picture, slide)';
 COMMENT ON COLUMN KBOT_BIZ_TXT_EMBEDDING.CONTENT IS 'Original text chunk content';
-COMMENT ON COLUMN KBOT_BIZ_TXT_EMBEDDING.STRUCTURE_LEVEL IS 'Structure level (document depth)';
-COMMENT ON COLUMN KBOT_BIZ_TXT_EMBEDDING.PATH_NAMES IS 'Path names (e.g., chapter/section hierarchy)';
-COMMENT ON COLUMN KBOT_BIZ_TXT_EMBEDDING.CHUNK_TYPE IS 'Chunk type (text, table, picture, heading)';
+COMMENT ON COLUMN KBOT_BIZ_TXT_EMBEDDING.HEADER IS 'Title of the text chunk';
+COMMENT ON COLUMN KBOT_BIZ_TXT_EMBEDDING.DOC_SUMMARY IS 'Summary of the document';
+COMMENT ON COLUMN KBOT_BIZ_TXT_EMBEDDING.SEARCH_HELPER IS 'Helper for search optimization';
 COMMENT ON COLUMN KBOT_BIZ_TXT_EMBEDDING.EMBEDDING IS 'Vector embedding of text chunk';
 COMMENT ON COLUMN KBOT_BIZ_TXT_EMBEDDING.CHUNK_METADATA IS 'Text chunk metadata (JSON, includes source path, file type etc.)';
 COMMENT ON COLUMN KBOT_BIZ_TXT_EMBEDDING.SECURITY_LEVEL IS 'File security level enumeration';
