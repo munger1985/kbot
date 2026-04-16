@@ -142,13 +142,14 @@ class DoclingEngine:
         # 判断后续流程
         if output_format == OutputFormat.CHUNKS:
             # --- Stage 1: 调用VLM处理复杂表格和图片 ---
+            file_ext = Path(file_path).suffix.lower()
             # 只有在参数开启了 VLM 且不是纯文本时才触发
             if params.use_vlm:
-                await self._enhance_document_content(doc, params)
+                await self._enhance_document_content(doc, params, file_ext)
             # 局部导入避免循环依赖
             from .chunk_generator import ChunkerGenerator
             chunker = ChunkerGenerator(params)
-            file_ext = Path(file_path).suffix.lower()
+            
             return await chunker.generate_chunks(doc, file_ext)
 
         # 其他格式序列化
@@ -174,98 +175,120 @@ class DoclingEngine:
             return doc.export_to_doctags()
         return ""
     
-    async def _enhance_document_content(self, doc: DoclingDocument, params: DocParserParams) -> None:
+    async def _enhance_document_content(self, doc: DoclingDocument, params: DocParserParams, file_ext: str) -> None:
         """
         视觉增强：复杂 Excel/PDF 表格截图调用 VLM 重构。
         """
         if not params.use_vlm or not params.vlm_model:
             return
-        
+        is_ppt = file_ext.lower() in [".pptx", ".ppt"]
+
         tasks = []
-        # 哈希映射表，用于存储 hash -> [item_indices] 的关系
-        hash_to_pic_indices = {}
 
-        # --- 1. 预读文档流，建立上下文映射表 ---
-        # 建立 item 内存地址到最近标题文本的映射
-        item_id_to_header = {}
-        current_header = "前言/背景"
-
-        for item, level in doc.iterate_items():
-            # 精确匹配标题类型
-            if isinstance(item, (SectionHeaderItem, TitleItem)):
-                current_header = item.text.strip().replace("\n", " ")
-            
-            # 记录图片和表格的上下文映射
-            if isinstance(item, (PictureItem, TableItem)):
-                item_id_to_header[id(item)] = current_header
-
-        # --- 2. 视觉增强：处理图片 (VLM) ---
-        for i, pic in enumerate(doc.pictures):
-            # 1. 获取唯一 MD5
-            img_hash = ParserToolLib.get_image_hash(pic)
-            if not img_hash:
-                logger.warning(f"无法计算索引为 {i} 的图片 Hash")
-                continue
-            
-            # 注入 Hash 标记，供 generate_chunks 物理去重使用
-            pic.annotations.append(DescriptionAnnotation(text=img_hash, provenance="hash_marker"))
-
-            # 2. 物理过滤
-            raw_img = getattr(pic.image, "pil_image", None)
-            # 如果图片不存在，直接跳过
-            if raw_img is None:
-                continue
-
-            # 3：小图直接打标 [NONE]，不进 VLM 队列，节省成本
-            if raw_img.width < 60 or raw_img.height < 60:
-                pic.annotations.append(DescriptionAnnotation(text="[NONE]", provenance="vlm_inference"))
-                continue
-
-            # 4：检查全局缓存
-            if img_hash in self._vlm_cache:
-                pic.annotations.append(DescriptionAnnotation(text=self._vlm_cache[img_hash], provenance="vlm_inference"))
-                continue
-
-            # 4. 任务合并：同一个文档内相同的图只跑一次
-            if img_hash not in hash_to_pic_indices:
-                hash_to_pic_indices[img_hash] = [i]
-                pic_context = item_id_to_header.get(id(pic), "未知章节")
-                # 动态组装 Prompt
-                vlm_final_prompt = self.prompt_mgr.format(
-                    params.img2txt_prompt, 
-                    current_header=pic_context
-                )
-
+        # --- 情况 A：如果是 PPT，执行整页视觉增强 ---
+        if is_ppt:
+            logger.info("PPT 模式：忽略单图，启动整页 VLM 增强")
+            for page_no, page_obj in doc.pages.items():
+                # 现在可以安全访问 .image 了
+                if not page_obj.image or not page_obj.image.pil_image:
+                    logger.warning(f"第 {page_no} 页未能成功渲染图片")
+                    continue
+                
+                # 建立页面 Key：page:index:1
+                page_context = f"第 {page_no} 页内容"
+                vlm_prompt = f"请详细描述这张幻灯片的内容。重点识别其中的逻辑关系、架构图、流程图和核心结论。上下文：{page_context}"
+                
                 tasks.append(self.model_task.vlm_task(
                     self.model_client, params.vlm_model, 
-                    vlm_final_prompt, f"pic:hash:{img_hash}", raw_img
+                    vlm_prompt, f"slide:index:{page_no}", page_obj.image.pil_image
                 ))
-            else:
-                hash_to_pic_indices[img_hash].append(i)
-        
-        logger.debug(f"构建完成 Hash 映射表，共 {len(hash_to_pic_indices)} 组唯一图片")
+                
+        # --- 情况 B：普通文档，执行单图/表格增强 ---
+        else:
+            # 哈希映射表，用于存储 hash -> [item_indices] 的关系
+            hash_to_pic_indices = {}
 
-        # --- 3. 处理表格 (VLM) ---
-        for i, table in enumerate(doc.tables):
-            # 路径：有图（复杂 Excel 渲染或 PDF 表格）-> VLM 视觉重构
-            if table.image and table.image.pil_image:
-                table_context = item_id_to_header.get(id(table), "未知章节")
+            # --- 1. 预读文档流，建立上下文映射表 ---
+            # 建立 item 内存地址到最近标题文本的映射
+            item_id_to_header = {}
+            current_header = "前言/背景"
 
-                table_prompt = f"""你是一个专业的文档解析专家。当前表格处于文本上下文：【{table_context}】中。
+            for item, level in doc.iterate_items():
+                # 精确匹配标题类型
+                if isinstance(item, (SectionHeaderItem, TitleItem)):
+                    current_header = item.text.strip().replace("\n", " ")
+                
+                # 记录图片和表格的上下文映射
+                if isinstance(item, (PictureItem, TableItem)):
+                    item_id_to_header[id(item)] = current_header
+
+            # --- 2. 视觉增强：处理图片 (VLM) ---
+            for i, pic in enumerate(doc.pictures):
+                # 1. 获取唯一 MD5
+                img_hash = ParserToolLib.get_image_hash(pic)
+                if not img_hash:
+                    logger.warning(f"无法计算索引为 {i} 的图片 Hash")
+                    continue
+                
+                # 注入 Hash 标记，供 generate_chunks 物理去重使用
+                pic.annotations.append(DescriptionAnnotation(text=img_hash, provenance="hash_marker"))
+
+                # 2. 物理过滤
+                raw_img = getattr(pic.image, "pil_image", None)
+                # 如果图片不存在，直接跳过
+                if raw_img is None:
+                    continue
+
+                # 3：小图直接打标 [NONE]，不进 VLM 队列，节省成本
+                if raw_img.width < 60 or raw_img.height < 60:
+                    pic.annotations.append(DescriptionAnnotation(text="[NONE]", provenance="vlm_inference"))
+                    continue
+
+                # 4：检查全局缓存
+                if img_hash in self._vlm_cache:
+                    pic.annotations.append(DescriptionAnnotation(text=self._vlm_cache[img_hash], provenance="vlm_inference"))
+                    continue
+
+                # 4. 任务合并：同一个文档内相同的图只跑一次
+                if img_hash not in hash_to_pic_indices:
+                    hash_to_pic_indices[img_hash] = [i]
+                    pic_context = item_id_to_header.get(id(pic), "未知章节")
+                    # 动态组装 Prompt
+                    vlm_final_prompt = self.prompt_mgr.format(
+                        params.img2txt_prompt, 
+                        current_header=pic_context
+                    )
+
+                    tasks.append(self.model_task.vlm_task(
+                        self.model_client, params.vlm_model, 
+                        vlm_final_prompt, f"pic:hash:{img_hash}", raw_img
+                    ))
+                else:
+                    hash_to_pic_indices[img_hash].append(i)
+            
+            logger.debug(f"构建完成 Hash 映射表，共 {len(hash_to_pic_indices)} 组唯一图片")
+
+            # --- 3. 处理表格 (VLM) ---
+            for i, table in enumerate(doc.tables):
+                # 路径：有图（复杂 Excel 渲染或 PDF 表格）-> VLM 视觉重构
+                if table.image and table.image.pil_image:
+                    table_context = item_id_to_header.get(id(table), "未知章节")
+
+                    table_prompt = f"""你是一个专业的文档解析专家。当前表格处于文本上下文：【{table_context}】中。
 请将图片中的表格解析为 JSON 格式。
 必须严格遵守以下约束：
 1. 返回格式必须为：{{"header": "Markdown格式表头", "rows": ["数据行1", "数据行2", ...]}}
 2. rows 数组中的每一项必须是单行 Markdown。
 3. 严禁输出任何 JSON 以外的文字。"""
                 
-                tasks.append(self.model_task.vlm_task(
-                    self.model_client, params.vlm_model, 
-                    table_prompt, f"table:index:{i}", table.image.pil_image
-                ))
+                    tasks.append(self.model_task.vlm_task(
+                        self.model_client, params.vlm_model, 
+                        table_prompt, f"table:index:{i}", table.image.pil_image
+                    ))
 
-        if not tasks:
-            return
-        
+            if not tasks:
+                return
+            
         # --- D. 并发执行与智能回填 ---
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -338,6 +361,31 @@ class DoclingEngine:
                     except (IndexError, ValueError) as e:
                         logger.error(f"处理标题/层级时获取annotations失败： {e}")
                         pass
+
+            # 4. 处理PPT slide
+            elif category == "slide":
+                if identifier.isnumeric():
+                    page_no = int(identifier)
+                    try:
+                        if page_no in doc.pages:
+                            target_page = doc.pages[page_no]
+                            
+                            # 如果不存在 annotations 属性，则初始化为一个列表
+                            annos = getattr(target_page, "annotations", None)
+                            if annos is None:
+                                annos = []
+                                setattr(target_page, "annotations", annos)
+                            
+                            # 压入描述
+                            annos.append(
+                                DescriptionAnnotation(
+                                    text=content, 
+                                    provenance="vlm_slide_summary"
+                                )
+                            )
+                            logger.success(f"成功回填第 {page_no} 页 PPT 视觉总结")
+                    except Exception as e:
+                        logger.error(f"处理 PPT 回填异常: {e}")
             else:
                 logger.warning(f"解析文档时通过VLM增强图片和表格时获取的category是未知类型，跳过处理")
     

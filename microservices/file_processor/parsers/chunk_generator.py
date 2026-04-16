@@ -1,7 +1,6 @@
 import re
 import json
-import imagehash
-from PIL import Image
+from pathlib import Path
 from typing import Any
 from loguru import logger
 from docling_core.types.doc.document import (
@@ -128,61 +127,70 @@ class ChunkerGenerator:
             page_buckets = {}
             page_titles = {}
 
+            # 1. 建立基础内容 Bucket
             for item, _ in doc.iterate_items():
                 p_no = self._get_page_num(item)
                 if p_no not in page_buckets: 
                     page_buckets[p_no] = []
                     page_titles[p_no] = ""
                 
-                # 1. 提取标题 (Heading 或 Title 类型的 Item)
+                # 提取标题：用于生成 Chunk 的元数据
                 if isinstance(item, (SectionHeaderItem, TitleItem)):
                     txt = item.text.strip()
                     if txt and not page_titles[p_no]:
                         page_titles[p_no] = txt
                 
-                # 2. 收集正文
+                # 收集文本：保留原始文本用于关键词检索 (Keyword Hit)
                 if isinstance(item, TextItem):
                     page_buckets[p_no].append(item.text)
                 
-                # 3. 处理表格 (PPT 中的表格必须聚合进 Slide 内容)
-                elif isinstance(item, TableItem):
-                    # 调用 VLM 处理表格并进行 Markdown 格式修复
-                    table_mds = await self._process_table_vlm(item, doc, self.params, page_titles[p_no] or "PPT表格")
-                    for t_chunk in table_mds:
-                        fixed_table = ParserToolLib.ensure_markdown_table_integrity(t_chunk.get("content", ""))
-                        page_buckets[p_no].append(fixed_table)
-                
-                # 4. 处理图片 (集成 VLM 描述)
-                elif isinstance(item, PictureItem):
-                    skip, vlm_desc = await self._should_skip_image(item, seen_image_hashes)
-                    if not skip:
-                        # 必须执行序列化以保存图片并获取名称
-                        _, img_name = self.serializer.serialize(item=item, doc=doc, image_dir=self.params.image_dir)
-                        # 将图片信息带标记存入 bucket，方便后续识别
-                        page_buckets[p_no].append(f"\n[幻灯片图片说明]: {vlm_desc}")
+                # 注意：PPT 模式下，不再单独处理 TableItem 和 PictureItem
+                # 因为它们的内容已经包含在“整页视觉总结”中了
 
-            # 物理页排序输出
+            # 2. 物理页排序并注入 VLM 视觉总结
             for p_no in sorted(page_buckets.keys()):
-                bucket_content = page_buckets[p_no]
-                if not bucket_content: continue
+                # 获取该页的 Page 对象
+                page_obj = doc.pages.get(p_no)
+                if not page_obj:
+                    logger.warning(f"PPT 页面 {p_no} 不存在")
+                    continue
                 
-                # 自动提取该页第一行作为备选标题
-                detected_title = page_titles[p_no]
-                if not detected_title:
-                    first_line = bucket_content[0].split('\n')[0][:50] if bucket_content else "数据详情页"
-                    detected_title = f"Slide {p_no}: {first_line}"
-                
-                # 更新当前状态
-                current_header = detected_title
-                combined_text = "\n".join(bucket_content).strip()
-                
-                img_names = re.findall(r"", combined_text)
-                main_img = img_names[0] if img_names else None
-                # 移除临时标记
-                combined_text = re.sub(r"", "", combined_text)
+                # --- 核心：提取预处理回填的视觉总结 ---
+                slide_vlm_desc = ""
+                if page_obj:
+                    # 使用 getattr 绕过 PageItem 无 annotations 属性的静态检查
+                    all_annos = getattr(page_obj, "annotations", [])
+                    for anno in all_annos:
+                        if isinstance(anno, DescriptionAnnotation) and anno.provenance == "vlm_slide_summary":
+                            slide_vlm_desc = anno.text
+                            break
 
-                current_header = detected_title
-                await add_to_results(combined_text, None, c_type="slide", img_name=main_img)
+                # 3. 构造最终的 Chunk 内容
+                bucket_content = page_buckets[p_no]
+                raw_text = "\n".join(bucket_content).strip()
+                
+                # 组合内容：视觉总结置顶（语义核心）+ 原始文本（检索辅助）
+                final_parts = []
+                if slide_vlm_desc:
+                    final_parts.append(f"【页面视觉总结】\n{slide_vlm_desc}")
+                
+                if raw_text:
+                    final_parts.append(f"【原始文本内容】\n{raw_text}")
+                
+                combined_text = "\n\n".join(final_parts)
+                if not combined_text: continue
+
+                # 5. 保存整页截图并在前端展示
+                slide_img_name = None
+                if page_obj.image and page_obj.image.pil_image:
+                    # 使用唯一ID命名，避免同名PDF的图片被覆盖
+                    slide_img_name = f"slide_page_{p_no}_{id(doc)}.png"
+                    image_root = Path(self.params.image_dir or "data/images")
+                    image_root.mkdir(parents=True, exist_ok=True)
+                    image_path = image_root / slide_img_name
+                    page_obj.image.pil_image.save(image_path)
+                    logger.debug(f"PPT图片提取并保存成功：{image_path}")
+                await add_to_results(combined_text, None, c_type="slide", img_name=slide_img_name)
         else:
             logger.debug("使用常规模式：线性追踪解析文档")
             # 常规模式：线性追踪
