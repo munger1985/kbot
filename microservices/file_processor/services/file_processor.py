@@ -162,6 +162,7 @@ class FileProcessor:
             
             # Process file with Docling (output as chunks for embedding)
             result = await self.parser.parse_file(
+                file_id=file_params.file_id,
                 file_path=file_params.file_path,
                 parser_params=file_params.parser_params,
                 output_format="chunks"  # Specify chunk output format

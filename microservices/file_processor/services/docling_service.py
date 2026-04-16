@@ -63,6 +63,7 @@ class ParserService:
 
     async def parse_file(
         self, 
+        file_id: str,
         file_path: str, 
         parser_params: DocParserParams,  
         output_format: str = "markdown"
@@ -72,6 +73,7 @@ class ParserService:
         对外提供的核心解析接口，包含文件校验、格式转换、解析调用全流程。
 
         Args:
+            file_id: 文件ID，用于标识文件的唯一性
             file_path: 待解析文件的完整路径
             parser_params: 解析参数对象，包含文件路径、VLM配置、输出格式等信息
             output_format: 期望的输出格式，默认为 "markdown"
@@ -115,6 +117,7 @@ class ParserService:
             
             # 直接调用更新后的接口，传入模型名称和提示词
             return await self.processor.convert_document(
+                file_id,
                 file_path, 
                 parser_params, 
                 output_format=target_fmt
