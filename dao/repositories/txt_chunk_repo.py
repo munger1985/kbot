@@ -252,13 +252,12 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
         :param window_size: 向上/向下扩展的数量。1表示取 [n-1, n, n+1]
         """
         sql = """
-            SELECT chunk_id, chunk_type, file_id, kb_id, content, header, chunk_num, chunk_metadata,
+            SELECT chunk_id, chunk_type, file_id, kb_id, content, header, chunk_num, chunk_metadata
             FROM KBOT_BIZ_TXT_EMBEDDING
             WHERE file_id = :file_id 
             AND is_active = 1
-            AND JSON_VALUE(chunk_metadata, '$.chunk_num' RETURNING NUMBER) 
-                BETWEEN :min_n AND :max_n
-            ORDER BY JSON_VALUE(chunk_metadata, '$.chunk_num' RETURNING NUMBER) ASC
+            AND chunk_num BETWEEN :min_n AND :max_n
+            ORDER BY chunk_num ASC
         """
         params = {
             "file_id": file_id,
