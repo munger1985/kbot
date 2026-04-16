@@ -425,7 +425,17 @@ python docs/install/models/download_easyocr_model.py
 - 如果没有 configuration/base.toml 文件，则需要先复制 configuration/example/base.toml.example 文件并重命名为 base.toml。
 - 修改后需要重启 kbot 后台服务才能生效。
 
-## 6.启动/停止 kbot 后台服务
+## 7. 安装 LibreOffice 用于对 Office 文档进行截图,提升 VLM 语义解析
+```bash
+sudo apt update
+sudo apt install -y libreoffice-writer libreoffice-impress libreoffice-calc libreoffice-java-common
+# 安装中文字体，否则中文转换乱码
+sudo apt install -y fonts-wqy-microhei fonts-wqy-zenhei xfonts-intl-chinese
+# 刷新字体
+sudo fc-cache -fv
+```
+
+## 8.启动/停止 kbot 后台服务
 ```bash
 cd /home/ubuntu/kbot3
 # 启动 kbot 后台服务
@@ -437,7 +447,7 @@ curl http://localhost:18099/health
 # 输出: {"status":"healthy"}
 ```
 
-## 7. KBot3 后台接口文档
+## 9. KBot3 后台接口文档
 http://localhost:18099/docs
 
 http://localhost:18099/redoc

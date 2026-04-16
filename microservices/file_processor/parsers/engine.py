@@ -375,25 +375,26 @@ class DoclingEngine:
                 if identifier.isnumeric():
                     page_no = int(identifier)
                     try:
-                        if page_no in doc.pages:
+                        current_page = doc.pages.get(page_no)
+                        if current_page:
                             # 写入 PPT 整页截图的 image_name
                             slide_img_name = None
-                            if page_obj.image and page_obj.image.pil_image:
+                            if current_page.image and current_page.image.pil_image:
                                 # 使用唯一ID命名，避免同名PDF的图片被覆盖
-                                slide_img_name = f"slide_page_{page_no}_{id(doc)}.png"
+                                slide_img_name = f"slide_page_{page_no}_{file_id}.png"
                                 image_root = Path(params.image_dir or "data/images")
                                 image_root.mkdir(parents=True, exist_ok=True)
                                 image_path = image_root / slide_img_name
-                                page_obj.image.pil_image.save(image_path)
+                                current_page.image.pil_image.save(image_path)
                                 if file_id not in self._vlm_enhancement_cache:
                                     self._vlm_enhancement_cache[file_id] = {}
                                 self._vlm_enhancement_cache[file_id][page_no] = {
                                     "description": content,
                                     "image_name": slide_img_name
                                 }
-                                
-                                logger.debug(f"PPT图片提取并保存成功：{image_path}")
-                                logger.success(f"第 {page_no} 页 VLM 描述已动态挂载")
+                                logger.debug(f"第 {page_no} 页 VLM 描述已动态挂载")
+                        else:
+                            logger.warning(f"Doc对象中未找到页码为 {page_no} 的页面，跳过处理")
                         
                         # logger.debug(f"生成的PPT描述：{self._vlm_enhancement_cache}")
 
