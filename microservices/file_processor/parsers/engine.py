@@ -1,4 +1,4 @@
-import re
+import re, os
 import asyncio
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
@@ -121,10 +121,18 @@ class DoclingEngine:
         self.prompt_mgr = PromptManager()
         # [新增] VLM 描述缓存，Key 为图片指纹(hash)，Value 为描述文本
         self._vlm_cache = {}
+        self._vlm_enhancement_cache = {}
 
-    async def convert_document(self, file_path: str, params: DocParserParams, output_format: OutputFormat = OutputFormat.MARKDOWN) -> str | dict | list[ChunkResult]:
+    async def convert_document(
+        self, 
+        file_id: str, 
+        file_path: str, 
+        params: DocParserParams, 
+        output_format: OutputFormat = OutputFormat.MARKDOWN
+    ) -> str | dict | list[ChunkResult]:
+        """文档解析方法的入口"""
+        # 开启并行
         loop = asyncio.get_running_loop()
-
         try:
             # 修正并行调用：只传递基础数据类型
             doc = await loop.run_in_executor(
@@ -133,7 +141,8 @@ class DoclingEngine:
                 str(file_path),
                 self.artifacts_path,
                 params.do_ocr,
-                params.ocr_engine or "tesseract"
+                params.ocr_engine or "tesseract",
+                params.image_scale
             )
         except Exception as e:
             logger.error(f"子进程转换异常: {file_path}, 详情: {e}")
@@ -145,12 +154,13 @@ class DoclingEngine:
             file_ext = Path(file_path).suffix.lower()
             # 只有在参数开启了 VLM 且不是纯文本时才触发
             if params.use_vlm:
-                await self._enhance_document_content(doc, params, file_ext)
+                await self._enhance_document_content(doc, params, file_ext, file_id)
             # 局部导入避免循环依赖
             from .chunk_generator import ChunkerGenerator
             chunker = ChunkerGenerator(params)
-            
-            return await chunker.generate_chunks(doc, file_ext)
+            vlm_data: dict = self._vlm_enhancement_cache.get(file_id, {})
+            # logger.debug(f"向generate chunk方法传递的vlm描述：{vlm_data}")
+            return await chunker.generate_chunks(doc, file_ext, vlm_data)
 
         # 其他格式序列化
         return self._serialize(doc, output_format)
@@ -175,7 +185,7 @@ class DoclingEngine:
             return doc.export_to_doctags()
         return ""
     
-    async def _enhance_document_content(self, doc: DoclingDocument, params: DocParserParams, file_ext: str) -> None:
+    async def _enhance_document_content(self, doc: DoclingDocument, params: DocParserParams, file_ext: str, file_id: str) -> None:
         """
         视觉增强：复杂 Excel/PDF 表格截图调用 VLM 重构。
         """
@@ -194,9 +204,7 @@ class DoclingEngine:
                     logger.warning(f"第 {page_no} 页未能成功渲染图片")
                     continue
                 
-                # 建立页面 Key：page:index:1
-                page_context = f"第 {page_no} 页内容"
-                vlm_prompt = f"请详细描述这张幻灯片的内容。重点识别其中的逻辑关系、架构图、流程图和核心结论。上下文：{page_context}"
+                vlm_prompt = f"请简要描述这张幻灯片的内容，不要长篇大论，不要编造不存在的内容。重点识别其中的逻辑关系、架构图、流程图和核心结论。"
                 
                 tasks.append(self.model_task.vlm_task(
                     self.model_client, params.vlm_model, 
@@ -368,32 +376,39 @@ class DoclingEngine:
                     page_no = int(identifier)
                     try:
                         if page_no in doc.pages:
-                            target_page = doc.pages[page_no]
-                            
-                            # 如果不存在 annotations 属性，则初始化为一个列表
-                            annos = getattr(target_page, "annotations", None)
-                            if annos is None:
-                                annos = []
-                                setattr(target_page, "annotations", annos)
-                            
-                            # 压入描述
-                            annos.append(
-                                DescriptionAnnotation(
-                                    text=content, 
-                                    provenance="vlm_slide_summary"
-                                )
-                            )
-                            logger.success(f"成功回填第 {page_no} 页 PPT 视觉总结")
+                            # 写入 PPT 整页截图的 image_name
+                            slide_img_name = None
+                            if page_obj.image and page_obj.image.pil_image:
+                                # 使用唯一ID命名，避免同名PDF的图片被覆盖
+                                slide_img_name = f"slide_page_{page_no}_{id(doc)}.png"
+                                image_root = Path(params.image_dir or "data/images")
+                                image_root.mkdir(parents=True, exist_ok=True)
+                                image_path = image_root / slide_img_name
+                                page_obj.image.pil_image.save(image_path)
+                                if file_id not in self._vlm_enhancement_cache:
+                                    self._vlm_enhancement_cache[file_id] = {}
+                                self._vlm_enhancement_cache[file_id][page_no] = {
+                                    "description": content,
+                                    "image_name": slide_img_name
+                                }
+                                
+                                logger.debug(f"PPT图片提取并保存成功：{image_path}")
+                                logger.success(f"第 {page_no} 页 VLM 描述已动态挂载")
+                        
+                        # logger.debug(f"生成的PPT描述：{self._vlm_enhancement_cache}")
+
                     except Exception as e:
                         logger.error(f"处理 PPT 回填异常: {e}")
             else:
                 logger.warning(f"解析文档时通过VLM增强图片和表格时获取的category是未知类型，跳过处理")
     
-def _do_convert(file_path: str, artifacts_path: str, do_ocr: bool, ocr_engine: str) -> DoclingDocument:
+def _do_convert(file_path: str, artifacts_path: str, do_ocr: bool, ocr_engine: str, image_scale: float) -> DoclingDocument:
     """子进程执行函数：在子进程内部初始化转换器"""
     # 延迟导入，减少主进程启动负担
+    import subprocess
+    from pathlib import Path
     from docling.datamodel.base_models import InputFormat
-    from docling.document_converter import DocumentConverter, PdfFormatOption, WordFormatOption
+    from docling.document_converter import DocumentConverter, PdfFormatOption, WordFormatOption, PowerpointFormatOption, ExcelFormatOption
     from docling.datamodel.pipeline_options import PdfPipelineOptions, TesseractOcrOptions, EasyOcrOptions, TableStructureOptions
 
     table_opts = TableStructureOptions(do_cell_matching=True)
@@ -405,7 +420,7 @@ def _do_convert(file_path: str, artifacts_path: str, do_ocr: bool, ocr_engine: s
         generate_picture_images=True,
         generate_page_images=True, # 始终开启，方便后续视觉增强或调试
         table_structure_options=table_opts,
-        images_scale=2.0
+        images_scale=image_scale
     )
 
     # OCR 配置
@@ -418,9 +433,26 @@ def _do_convert(file_path: str, artifacts_path: str, do_ocr: bool, ocr_engine: s
         format_options={
             InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_opts),
             InputFormat.DOCX: WordFormatOption(pipeline_options=pipeline_opts),
+            InputFormat.PPTX: PowerpointFormatOption(pipeline_options=pipeline_opts), # 显式添加 PPTX
+            InputFormat.XLSX: ExcelFormatOption(pipeline_options=pipeline_opts), # 显式添加 EXCEL
         }
     )
-    
-    result = converter.convert(file_path)
+    file_ext = Path(file_path).suffix.lower()
+    # PPT 转换为 PDF 处理，避免渲染失败
+    if file_ext in [".pptx", ".ppt"]:
+        # 1. 强制转为 PDF（这是为了获得高保真的全页渲染能力）
+        temp_dir = os.path.dirname(file_path)
+        subprocess.run([
+            'soffice', '--headless', '--convert-to', 'pdf', 
+            '--outdir', temp_dir, file_path
+        ], check=True)
+        
+        pdf_path = os.path.join(temp_dir, Path(file_path).stem + ".pdf")
+        
+        # 2. 让 Docling 解析这个生成的 PDF
+        # 这样 Docling 就会把这个 PDF 当作源文件，自动生成 page_obj.image
+        result = converter.convert(pdf_path)
+    else:
+        result = converter.convert(file_path)
     # 返回 DoclingDocument 对象，该对象在 Docling 2.x 中是支持 pickle 的
     return result.document

@@ -32,7 +32,7 @@ class ChunkerGenerator:
         self.prompt_mgr = PromptManager()
         self.serializer = VLMAnnotationPictureSerializer()
 
-    async def generate_chunks(self, doc: DoclingDocument, file_ext: str) -> list[ChunkResult]:
+    async def generate_chunks(self, doc: DoclingDocument, file_ext: str, vlm_enhancement: dict) -> list[ChunkResult]:
         """
         分块生成逻辑：
         1. Stage 1: 调用VLM处理复杂表格和图片
@@ -156,14 +156,11 @@ class ChunkerGenerator:
                     continue
                 
                 # --- 核心：提取预处理回填的视觉总结 ---
-                slide_vlm_desc = ""
-                if page_obj:
-                    # 使用 getattr 绕过 PageItem 无 annotations 属性的静态检查
-                    all_annos = getattr(page_obj, "annotations", [])
-                    for anno in all_annos:
-                        if isinstance(anno, DescriptionAnnotation) and anno.provenance == "vlm_slide_summary":
-                            slide_vlm_desc = anno.text
-                            break
+                page_info = vlm_enhancement.get(p_no, {})
+                slide_vlm_desc = page_info.get("description", None)
+                slide_img_name = page_info.get("image_name", None)
+                
+                logger.debug(f"slide_img_name: {slide_img_name}, slide No.{p_no}")
 
                 # 3. 构造最终的 Chunk 内容
                 bucket_content = page_buckets[p_no]
@@ -181,15 +178,6 @@ class ChunkerGenerator:
                 if not combined_text: continue
 
                 # 5. 保存整页截图并在前端展示
-                slide_img_name = None
-                if page_obj.image and page_obj.image.pil_image:
-                    # 使用唯一ID命名，避免同名PDF的图片被覆盖
-                    slide_img_name = f"slide_page_{p_no}_{id(doc)}.png"
-                    image_root = Path(self.params.image_dir or "data/images")
-                    image_root.mkdir(parents=True, exist_ok=True)
-                    image_path = image_root / slide_img_name
-                    page_obj.image.pil_image.save(image_path)
-                    logger.debug(f"PPT图片提取并保存成功：{image_path}")
                 await add_to_results(combined_text, None, c_type="slide", img_name=slide_img_name)
         else:
             logger.debug("使用常规模式：线性追踪解析文档")
