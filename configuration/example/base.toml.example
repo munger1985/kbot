@@ -1,7 +1,7 @@
 # core/config/base.toml
 [app]
 app_id = 1
-service_name = "main-service"
+service_name = "kbot-main-service"
 service_version = "3.0.0"
 service_host = "0.0.0.0"
 service_port = 18099
@@ -36,7 +36,7 @@ pool_use_lifo = true
 pool_recycle = 1800
 
 [embed]
-service_name = "embedding-service"
+service_name = "kbot-embedding-service"
 service_version = "1.0.0"
 service_host = "0.0.0.0"
 service_port = 18091
@@ -47,7 +47,7 @@ max_retries = 3
 cache_dir = "/home/chris/cached_models/"
 
 [llm]
-service_name = "llm-service"
+service_name = "kbot-llm-service"
 service_version = "1.0.0"
 service_host = "0.0.0.0"
 service_port = 18092
@@ -60,7 +60,7 @@ frequency_penalty = 0.0
 presence_penalty = 0.0
 
 [reranker]
-service_name = "reranker-service"
+service_name = "kbot-reranker-service"
 service_version = "1.0.0"
 service_host = "0.0.0.0"
 service_port = 18093
@@ -68,14 +68,14 @@ cache_dir = "/home/chris/cached_models/"
 timeout = 300
 
 [vlm]
-service_name = "vlm-service"
+service_name = "kbot-vlm-service"
 service_version = "1.0.0"
 service_host = "0.0.0.0"
 service_port = 18094
 timeout = 600
 
 [parser]
-service_name = "parser-service"
+service_name = "kbot-parser-service"
 service_version = "1.0.0"
 service_host = "0.0.0.0"
 service_port = 18095

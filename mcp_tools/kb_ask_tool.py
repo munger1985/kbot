@@ -18,7 +18,7 @@ class KBAskTool(MCPTool):
         super().__init__(
             tool_type=MCPToolType.KB_SEARCH,
             tool_name="kbot_ask",
-            description="搜索知识库获取相关信息并回答问题的工具"
+            description="知识库深度问答工具（RAG）。 专门用于回答涉及特定知识库的问题。它会自动检索相关文档，并结合检索到的背景信息生成准确、完整的答案。当你需要直接回答用户的咨询（如询问政策、操作流程或技术细节）而不仅仅是列出资料时，请优先使用此工具。该工具能有效减少模型幻觉，确保回答基于事实。"
         )
         self.orchestrator = ChatOrchestrator()
         self.security_level = 9  # Level 9 bypasses security checks
@@ -74,11 +74,11 @@ class KBAskTool(MCPTool):
             "properties": {
                 "query": {
                     "type": "string",
-                    "description": "问题"
+                    "description": "针对知识库的搜索查询语句，建议使用完整的疑问句或核心术语以获得更好的检索效果。"
                 },
                 "agent_id": {
                     "type": "integer",
-                    "description": "执行搜索知识库的Agent ID"
+                    "description": "知识库关联的 Agent ID。请根据当前的对话场景或默认配置提供。"
                 }
             },
             "required": ["query", "agent_id"]

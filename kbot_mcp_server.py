@@ -82,7 +82,7 @@ async def handle_sse(request):
             request.scope, 
             request.receive, 
             request._send
-        ) as (read_stream, write_stream):
+        ) as (read_stream, write_stream): # type: ignore
             await server.run(
                 read_stream,
                 write_stream,

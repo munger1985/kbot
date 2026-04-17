@@ -18,7 +18,7 @@ class KBSearchTool(MCPTool):
         super().__init__(
             tool_type=MCPToolType.KB_SEARCH,
             tool_name="kbot_search",
-            description="搜索知识库获取相关信息"
+            description="知识库原始资料检索工具。 仅用于从私有知识库中搜索并提取相关的文档片段、条目或原始文本。该工具不会对搜索结果进行总结或回答问题，而是返回最相关的原文。当你需要获取多个维度的参考资料，或者用户要求查看‘原文内容/出处’时，请使用此工具。"
         )
         self.orchestrator = ChatOrchestrator()
         self.security_level = 9  # Level 9 bypasses security checks
@@ -124,11 +124,11 @@ class KBSearchTool(MCPTool):
             "properties": {
                 "query": {
                     "type": "string",
-                    "description": "搜索查询语句"
+                    "description": "针对知识库的搜索查询语句，建议使用完整的疑问句或核心术语以获得更好的检索效果。"
                 },
                 "agent_id": {
                     "type": "integer",
-                    "description": "执行搜索知识库任务的Agent ID"
+                    "description": "知识库关联的 Agent ID。请根据当前的对话场景或默认配置提供。"
                 }
             },
             "required": ["query", "agent_id"]

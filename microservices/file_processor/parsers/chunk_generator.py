@@ -339,6 +339,8 @@ class ChunkerGenerator:
         if item.image: # 如果表格有关联图片（PDF中的表格通常有截图）
             _, img_name = self.serializer.serialize(item=item, doc=doc, image_dir=self.params.image_dir) # type: ignore
 
+        logger.debug("Calling VLM for table rebuild...")
+
         # 提取 VLM 标注
         vlm_res = next((ann.text for ann in getattr(item, "annotations", []) 
                     if getattr(ann, "provenance", "") == "vlm_table_rebuild"), None)
@@ -372,6 +374,8 @@ class ChunkerGenerator:
             # Docling 的 prov (Provenance) 记录了来源
             # 对于 Excel，prov.page_no 通常映射为 Sheet Index (1-based)
             sheet_index = item.prov[0].page_no 
+            logger.debug(f"Got sheet index: {sheet_index}")
+
         elif hasattr(item, "label"): 
             # 有些解析器会将 Sheet1, Sheet2 作为 label 传入
             sheet_index = int(item.label.replace("Sheet", "")) if item.label.startswith("Sheet") and item.label[5:].isdigit() else sheet_index
@@ -399,6 +403,8 @@ class ChunkerGenerator:
             return ""
 
         try:
+            logger.debug("Preparing to convert vlm response to markdown table...")
+
             # 1. 清理 Markdown 代码块标签
             clean_json = re.sub(r'```json\s*|\s*```', '', vlm_res).strip()
             data = json.loads(clean_json)
@@ -414,6 +420,7 @@ class ChunkerGenerator:
             else:
                 # 已经是字符串形式 "col1 | col2"
                 header_line = "| " + str(header_data).strip().strip("|") + " |"
+            logger.debug(f"Header line: {header_line[:20]}...")
 
             # 3. 生成分割线 (Separator)
             # 根据表头列数生成相应的 --- | ---
