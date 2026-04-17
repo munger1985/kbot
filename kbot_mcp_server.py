@@ -10,6 +10,7 @@ from mcp.server.stdio import stdio_server
 from mcp.server.sse import SseServerTransport
 from mcp_tools import KBSearchTool, KBAskTool
 from core.config.settings import get_app_config
+from starlette.middleware.cors import CORSMiddleware
 
 
 # 1. 初始化 Server 实例
@@ -110,6 +111,8 @@ app = Starlette(
         Mount("/messages", app=sse.handle_post_message),
     ]
 )
+
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 # 7. 启动并设置端口
 if __name__ == "__main__":
