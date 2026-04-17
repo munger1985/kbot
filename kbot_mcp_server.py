@@ -41,6 +41,7 @@ async def handle_list_tools() -> list[types.Tool]:
 async def handle_call_tool(
     name: str, arguments: dict | None
 ) -> list[types.TextContent]:
+    print(f"DEBUG: MCP Tool Called -> Name: {name}")
     if name == "kbot_search":
         if not arguments:
             raise ValueError("Missing arguments")
@@ -79,7 +80,7 @@ async def handle_call_tool(
     raise ValueError(f"Unknown tool: {name}")
 
 # 4. 创建 SSE 传输实例
-sse = SseServerTransport("/messages")
+sse = SseServerTransport("/messages/")
 
 # 5. 设置路由映射
 async def handle_sse(request):
@@ -108,7 +109,7 @@ async def handle_sse(request):
 app = Starlette(
     routes=[
         Route("/sse", endpoint=handle_sse),
-        Mount("/messages", app=sse.handle_post_message),
+        Mount("/messages/", app=sse.handle_post_message),
     ]
 )
 
