@@ -77,7 +77,7 @@ class KBAskTool(MCPTool):
                     "description": "问题"
                 },
                 "agent_id": {
-                    "type": "int",
+                    "type": "integer",
                     "description": "执行搜索知识库的Agent ID"
                 }
             },

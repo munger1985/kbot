@@ -127,7 +127,7 @@ class KBSearchTool(MCPTool):
                     "description": "搜索查询语句"
                 },
                 "agent_id": {
-                    "type": "int",
+                    "type": "integer",
                     "description": "执行搜索知识库任务的Agent ID"
                 }
             },

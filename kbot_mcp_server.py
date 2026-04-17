@@ -42,42 +42,30 @@ async def handle_call_tool(
     name: str, arguments: dict | None
 ) -> list[types.TextContent]:
     print(f"DEBUG: MCP Tool Called -> Name: {name}")
-    if name == "kbot_search":
-        if not arguments:
-            raise ValueError("Missing arguments")
 
-        # 如果 schema 里是 'query'，对应的就是 execute 里的 'question'
+    if not arguments:
+            raise ValueError("Missing arguments")
+    
+    if name == kb_search_tool.tool_name:
         results = await kb_search_tool.execute(
-            agent_id=arguments.get("agent_id"), # type: ignore
+            agent_id=int(arguments.get("agent_id")), # type: ignore
             question=arguments.get("query", "")
         )
-        
-        # 将结果转为 MCP 要求的格式
-        import json
-        return [
-            types.TextContent(
-                type="text",
-                text=json.dumps(results, ensure_ascii=False, indent=2)
-            )
-        ]
-    if name == "kbot_ask":
-        if not arguments:
-            raise ValueError("Missing arguments")
-
+    elif name == kb_ask_tool.tool_name:
         results = await kb_ask_tool.execute(
-            agent_id=arguments.get("agent_id"), # type: ignore
+            agent_id=int(arguments.get("agent_id")),  # type: ignore
             question=arguments.get("query", "")
         )
-        
-        # 将结果转为 MCP 要求的格式
-        import json
-        return [
-            types.TextContent(
-                type="text",
-                text=json.dumps(results, ensure_ascii=False, indent=2)
-            )
-        ]
-    raise ValueError(f"Unknown tool: {name}")
+    else:
+        raise ValueError(f"Unknown tool: {name}")
+    
+    import json
+    return [
+        types.TextContent(
+            type="text",
+            text=json.dumps(results, ensure_ascii=False, indent=2)
+        )
+    ]
 
 # 4. 创建 SSE 传输实例
 sse = SseServerTransport("/messages/")
