@@ -1,5 +1,6 @@
 import asyncio
 import uvicorn
+from loguru import logger
 from starlette.applications import Starlette
 from starlette.routing import Route, Mount
 from mcp.server.models import InitializationOptions
@@ -11,7 +12,10 @@ from mcp.server.sse import SseServerTransport
 from mcp_tools import KBSearchTool, KBAskTool
 from core.config.settings import get_app_config
 from starlette.middleware.cors import CORSMiddleware
+from anyio import BrokenResourceError, EndOfStream
 
+from core.config.settings import get_app_config
+from core.logger import LogConfig, LogManager
 
 # 1. 初始化 Server 实例
 server = Server("kbot-mcp-server")
@@ -73,25 +77,31 @@ sse = SseServerTransport("/messages/")
 # 5. 设置路由映射
 async def handle_sse(request):
     """处理 SSE 连接"""
-    async with sse.connect_sse(
-        request.scope, 
-        request.receive, 
-        request._send
-    ) as (read_stream, write_stream):
-        await server.run(
-            read_stream,
-            write_stream,
-            InitializationOptions(
-                server_name="kbot-mcp-service",
-                server_version="1.0.0",
-                capabilities=server.get_capabilities(
-                    notification_options=NotificationOptions(),
-                    experimental_capabilities={},
+    try:
+        async with sse.connect_sse(
+            request.scope, 
+            request.receive, 
+            request._send
+        ) as (read_stream, write_stream):
+            await server.run(
+                read_stream,
+                write_stream,
+                InitializationOptions(
+                    server_name="kbot-mcp-service",
+                    server_version="1.0.0",
+                    capabilities=server.get_capabilities(
+                        notification_options=NotificationOptions(),
+                        experimental_capabilities={},
+                    ),
                 ),
-            ),
-        )
-    # 结束后返回一个空的响应，防止 Starlette 报 NoneType 错误
-    return Response()
+            )
+    except (asyncio.CancelledError, BrokenResourceError, EndOfStream):
+        # 捕获客户端断开或服务器停止导致的流中断
+        pass
+    except Exception as e:
+        logger.error(f"SSE Error: {e}")
+    
+    return Response(content="")
 
 # 6. 组装 Starlette 应用
 app = Starlette(
@@ -103,9 +113,30 @@ app = Starlette(
 
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
+app_config = get_app_config()
+
+def setup_mcp_logging():
+    """初始化 MCP 专属日志配置"""
+    try:
+        # 1. 构造日志配置 (可以共用主服务的日志目录，或者在 settings 增加 mcp 专属配置)
+        log_conf = LogConfig(
+            service_name="kbot-mcp-service", # 也可以从 app_config 动态获取
+            log_dir=app_config.log.dir,
+            level=app_config.log.level,
+            rotation=app_config.log.rotation,
+            retention=app_config.log.retention,
+        )
+        
+        # 2. 启动 LogManager
+        LogManager(log_conf).setup()
+        logger.info("MCP Logging system initialized successfully.")
+    except Exception as e:
+        print(f"Failed to initialize logging: {e}") # 如果日志初始化失败，退回到 print
+
 # 7. 启动并设置端口
 if __name__ == "__main__":
+    setup_mcp_logging()
     # 在这里设置 host 和 port
-    host = get_app_config().service_host
-    port = get_app_config().mcp_port
+    host = app_config.service_host
+    port = app_config.mcp_port
     uvicorn.run(app, host=host, port=port)
