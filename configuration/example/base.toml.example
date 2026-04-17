@@ -5,6 +5,7 @@ service_name = "main-service"
 service_version = "3.0.0"
 service_host = "0.0.0.0"
 service_port = 18099
+mcp_port = 18098
 title = "KBOT"
 description = "KBot API Service"
 debug = true

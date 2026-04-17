@@ -17,7 +17,7 @@ class KBAskTool(MCPTool):
     def __init__(self):
         super().__init__(
             tool_type=MCPToolType.KB_SEARCH,
-            tool_name="knowledge_base_ask",
+            tool_name="kbot_ask",
             description="搜索知识库获取相关信息并回答问题的工具"
         )
         self.orchestrator = ChatOrchestrator()

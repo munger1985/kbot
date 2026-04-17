@@ -30,6 +30,7 @@ class AppConfig(BaseModel):
     service_version: str = Field(default="3.0.0", description="Service version number")
     service_host: str = Field(default="0.0.0.0", description="Service binding host address")
     service_port: int = Field(default=18099, ge=1, le=65535, description="Service listening port (1-65535)")
+    mcp_port: int = Field(default=18098, ge=1, le=65535, description="MCP Service listening port (1-65535)")
     title: str = Field(default="KBOT", description="Application display title")
     description: str = Field(default="KBot API Service", description="Application description")
     debug: bool = Field(default=False, description="Debug mode flag (True/False)")
