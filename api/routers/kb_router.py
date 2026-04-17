@@ -256,3 +256,24 @@ async def handle_preview_extracted_image(auth: UserAuth, params: PreviewImagePar
     Returns **404 Not Found** if the image path is invalid or the file has been purged.
     """
     return await controller.preview_extracted_image(params)
+
+@router.post(
+    "/preview/pdf", 
+    response_class=FileResponse, 
+    status_code=status.HTTP_200_OK, 
+    summary="预览指定的PDF文件"
+)
+async def handle_preview_pdf(auth: UserAuth, file_id: str):
+    """预览指定的PDF文件。
+    Access: User
+
+    Args:
+        - file_id (str): 要预览的文件ID。
+
+    Returns:
+        FileResponse: 包含文件预览内容的成功响应。
+
+    Raises:
+        NotFoundError: 当指定的文件不存在时抛出。
+    """
+    return await controller.get_pdf_by_id(file_id)

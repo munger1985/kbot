@@ -28,20 +28,13 @@ class FileParams(BaseModel):
     biz_metadata: dict = Field({}, description="业务元数据")
     txt_embed_model: str | None = Field(None, description="文本嵌入模型ID")
 
-class GroundingLocation(BaseModel):
-    """用于前端点击跳转的坐标对齐数据"""
-    page: int
-    bbox: list[float]  # [x1, y1, x2, y2] 归一化坐标
-
 class ChunkMetadata(BaseModel):
     """增强型元数据"""
     page_num: int
-    page_end: int | None = None
     image_name: str | None = None
-    grounding_locations: list[GroundingLocation] = []
+    bbox: list[float] | None = None # [x1, y1, x2, y2] 归一化坐标
     is_sub_table: bool = False
     
-
 class ChunkResult(BaseModel):
     """全系统统一的 Chunk 结构"""
     content: str

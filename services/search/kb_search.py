@@ -229,8 +229,9 @@ class TxtBaseSearch:
                     header=item.get("header", ""),
                     doc_summary=item.get("doc_summary", ""),
                     search_helper=item.get("search_helper", ""),
-                    page_num=int(meta.get("page_num") or 0),
-                    image_name=meta.get("image_name") or "",
+                    page_num=int(meta.get("page_num", 0)),
+                    image_name=meta.get("image_name", ""),
+                    bbox=meta.get("bbox", []),
                     score=float(item.get("score") or 0.0),
                     weight=weight,
                     rerank_score=0.0

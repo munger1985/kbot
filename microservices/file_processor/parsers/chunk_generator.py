@@ -79,8 +79,33 @@ class ChunkerGenerator:
         async def add_to_results(content, item_ref, c_type="text", img_name=None) -> None:
             nonlocal current_chunk_num
             if not content.strip(): return
+
+            # 1. 提取坐标
+            bbox = None
+            page_num = 1
+            try: 
+                if item_ref and hasattr(item_ref, "prov") and item_ref.prov:
+                    prov = item_ref.prov[0]
+                    page_num = prov.page_no
+                    if hasattr(prov, "bbox") and prov.bbox:
+                        # 获取页面尺寸计算归一化坐标
+                        p_obj = doc.pages.get(page_num)
+                        if p_obj:
+                            w, h = p_obj.size.width, p_obj.size.height
+                            raw_y_max = max(prov.bbox.t, prov.bbox.b) # PDF 中更高的位置
+                            raw_y_min = min(prov.bbox.t, prov.bbox.b) # PDF 中更低的位置
+
+                            bbox = [
+                                round(min(prov.bbox.l, prov.bbox.r) / w, 4), # Left
+                                round(1 - (raw_y_max / h), 4),               # Web Top (镜像反转)
+                                round(max(prov.bbox.l, prov.bbox.r) / w, 4), # Right
+                                round(1 - (raw_y_min / h), 4)                # Web Bottom (镜像反转)
+                            ]
+            except Exception as e:
+                logger.error(f"坐标转换失败: {e}")
+                bbox = None # 降级处理：不带坐标，但不能让解析中断
             
-            # 使用LLM生成动态提取虚拟标题，如果失败则使用从内容提取的默认值
+            # 2. 使用LLM生成动态提取虚拟标题，如果失败则使用从内容提取的默认值
             lines = [l for l in content.split('\n') if l.strip()]
             virtual_header = lines[0].replace('#', '').strip()[:50] if lines else "正文详情"
             # 使用LLM生成virtual_header
@@ -98,12 +123,14 @@ class ChunkerGenerator:
             else:
                 logger.warning("文档片段标题生成失败，使用默认值")
             
-            # 构造 search_helper：[全局背景] > [虚拟标题] > [内容前缀]
+            # 3. 构造 search_helper：[全局背景] > [虚拟标题] > [内容前缀]
             search_helper = f"{global_summary} > {virtual_header} > {content[:120].replace('\n', ' ')}"
 
+            # 4. 封装结果
             metadata = ChunkMetadata(
-                page_num=self._get_page_num(item_ref) if item_ref else 1,
-                image_name=img_name
+                page_num=page_num,
+                image_name=img_name,
+                bbox=bbox
             )
             
             chunk = ChunkResult.create(

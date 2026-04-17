@@ -215,4 +215,9 @@ class KBController:
             headers={"Cache-Control": "max-age=3600"}
         )
     
+    async def get_pdf_by_id(self, file_id: str) -> FileResponse:
+        """Get PDF file by file_id"""
+        file_path = await self.file_service.get_file_path_by_id(file_id)
+        return FileResponse(file_path, media_type="application/pdf")
+    
 kb_controller = KBController()

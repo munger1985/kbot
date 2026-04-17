@@ -17,6 +17,7 @@ class TxtBaseSearchResult(BaseModel):
     # 元数据字段 (来自 chunk_metadata)
     page_num: int = Field(0, description="页码")
     image_name: str = Field("", description="图片名称")
+    bbox: list[float] = Field([], description="Chunk所在PDF坐标")
     
     
     # 评分与权重
