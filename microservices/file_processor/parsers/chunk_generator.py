@@ -343,51 +343,38 @@ class ChunkerGenerator:
         vlm_res = next((ann.text for ann in getattr(item, "annotations", []) 
                     if getattr(ann, "provenance", "") == "vlm_table_rebuild"), None)
 
-        # 准备待处理文本列表
-        parts_to_verify = []
+        # 处理VLM返回的结果
+        final_content_str = ""
 
         if vlm_res:
-            try:
-                # 尝试 JSON 解析并按行切分
-                clean_json = re.sub(r'```json\s*|\s*```', '', vlm_res).strip()
-                table_data = json.loads(clean_json)
-                header = table_data.get("header", "").strip()
-                current_header = header 
-                rows = table_data.get("rows", [])
-                
-                if rows:
-                    current_rows, current_chars = [], len(header)
-                    for row in rows:
-                        row_str = str(row)
-                        if (len(current_rows) >= TABLE_ROW_STEP) or (current_chars + len(row_str) > MAX_CHAR_LIMIT):
-                            if current_rows:
-                                parts_to_verify.append(f"{header}\n" + "\n".join(current_rows))
-                            current_rows, current_chars = [row_str], len(header) + len(row_str)
-                        else:
-                            current_rows.append(row_str)
-                            current_chars += len(row_str)
-                    if current_rows:
-                        parts_to_verify.append(f"{header}\n" + "\n".join(current_rows))
-                else:
-                    parts_to_verify.append(vlm_res)
-            except:
-                parts_to_verify.append(vlm_res)
+        # 尽量从 VLM 结果还原成完整的 Markdown 或文本
+            final_content_str = self._convert_vlm_json_to_markdown(vlm_res)
         else:
-            # 无 VLM 场景使用默认导出
-            parts_to_verify.append(item.export_to_markdown(doc=doc))
+            final_content_str = item.export_to_markdown(doc=doc)
 
-        # 二次物理防线：处理单块依然超长的情况
-        for part in parts_to_verify:
-            if len(part) > MAX_CHAR_LIMIT:
-                lines = part.split('\n')
-                final_h = current_header if current_header else "\n".join(lines[:2])
-                start_l = 0 if current_header else 2
-                for i in range(start_l, len(lines), TABLE_ROW_STEP):
-                    sub = "\n".join(lines[i : i + TABLE_ROW_STEP])
-                    if sub.strip():
-                        table_chunks.append({"content": f"{final_h}\n{sub}", "type": "table"})
-            else:
-                table_chunks.append({"content": part, "type": "table"})
+        # 统一按行切分逻辑
+        lines = final_content_str.split('\n')
+        # 找到表头（假设前2行是表头和分隔线）
+        table_header = "\n".join(lines[:2]) 
+        data_lines = lines[2:]
+
+        table_chunks = []
+        for i in range(0, len(data_lines), 40):
+            chunk_data = data_lines[i : i + 40]
+            # 重新拼接：表头 + 40行数据
+            combined_content = table_header + "\n" + "\n".join(chunk_data)
+            table_chunks.append({"content": combined_content, "type": "table"})
+
+        # 获取总块数用于判断是否是子表格
+        total_chunks = len(table_chunks)
+        sheet_index = 1
+        if hasattr(item, "prov") and item.prov:
+            # Docling 的 prov (Provenance) 记录了来源
+            # 对于 Excel，prov.page_no 通常映射为 Sheet Index (1-based)
+            sheet_index = item.prov[0].page_no 
+        elif hasattr(item, "label"): 
+            # 有些解析器会将 Sheet1, Sheet2 作为 label 传入
+            sheet_index = int(item.label.replace("Sheet", "")) if item.label.startswith("Sheet") and item.label[5:].isdigit() else sheet_index
 
         # 映射为标准业务输出格式
         return [{
@@ -395,11 +382,65 @@ class ChunkerGenerator:
             "current_header": current_header,
             "chunk_type": "table",
             "metadata": {
-                "page_num": self._get_page_num(item),
-                "is_sub_table": len(parts_to_verify) > 1,
+                "page_num": sheet_index,
+                "is_sub_table": total_chunks > 1,
                 "image_name": img_name
             }
         } for tc in table_chunks]
+    
+    def _convert_vlm_json_to_markdown(self, vlm_res: str) -> str:
+        """
+        将 VLM 返回的 JSON 表格结构转换为标准的 Markdown 格式。
+        支持格式：
+        1. {"header": ["col1", "col2"], "rows": [["val1", "val2"], [...]]}
+        2. {"header": "col1 | col2", "rows": ["val1 | val2", "..."]}
+        """
+        if not vlm_res:
+            return ""
+
+        try:
+            # 1. 清理 Markdown 代码块标签
+            clean_json = re.sub(r'```json\s*|\s*```', '', vlm_res).strip()
+            data = json.loads(clean_json)
+
+            header_data = data.get("header", [])
+            rows_data = data.get("rows", [])
+
+            # 2. 处理表头 (Normalize Header)
+            if isinstance(header_data, list):
+                # 处理 list[str] 或 list[list] (防止嵌套)
+                header_cells = [str(h).replace("\n", " ").strip() for h in header_data]
+                header_line = "| " + " | ".join(header_cells) + " |"
+            else:
+                # 已经是字符串形式 "col1 | col2"
+                header_line = "| " + str(header_data).strip().strip("|") + " |"
+
+            # 3. 生成分割线 (Separator)
+            # 根据表头列数生成相应的 --- | ---
+            col_count = header_line.count("|") - 1
+            separator = "| " + " | ".join(["---"] * col_count) + " |"
+
+            # 4. 处理行数据 (Normalize Rows)
+            md_rows = []
+            for row in rows_data:
+                if isinstance(row, list):
+                    row_cells = [str(r).replace("\n", " ").strip() for r in row]
+                    md_rows.append("| " + " | ".join(row_cells) + " |")
+                elif isinstance(row, dict):
+                    # 如果 VLM 返回的是对象数组 [{"col1": "val1"}, ...]
+                    row_cells = [str(v).replace("\n", " ").strip() for v in row.values()]
+                    md_rows.append("| " + " | ".join(row_cells) + " |")
+                else:
+                    # 已经是字符串形式
+                    md_rows.append("| " + str(row).strip().strip("|") + " |")
+
+            # 5. 组合最终 Markdown
+            return f"{header_line}\n{separator}\n" + "\n".join(md_rows)
+
+        except Exception as e:
+            logger.error(f"VLM JSON 转 Markdown 失败: {e}")
+            # 降级处理：如果解析失败，尝试直接返回原始文本（去掉代码块标记）
+            return re.sub(r'```json\s*|\s*```', '', vlm_res).strip()
     
     async def _should_skip_image(self, item: PictureItem, seen_hashes: set) -> tuple[bool, str]:
         """
