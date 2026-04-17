@@ -4,6 +4,7 @@ from starlette.applications import Starlette
 from starlette.routing import Route, Mount
 from mcp.server.models import InitializationOptions
 import mcp.types as types
+from starlette.responses import Response
 from mcp.server import NotificationOptions, Server
 from mcp.server.stdio import stdio_server
 from mcp.server.sse import SseServerTransport
@@ -82,12 +83,16 @@ sse = SseServerTransport("/messages")
 # 5. 设置路由映射
 async def handle_sse(request):
     """处理 SSE 连接"""
-    async with sse.connect_sse(request.scope, request.receive, request._send) as (read_stream, write_stream):
+    async with sse.connect_sse(
+        request.scope, 
+        request.receive, 
+        request._send
+    ) as (read_stream, write_stream):
         await server.run(
             read_stream,
             write_stream,
             InitializationOptions(
-                server_name="kb-search-service",
+                server_name="kbot-mcp-service",
                 server_version="1.0.0",
                 capabilities=server.get_capabilities(
                     notification_options=NotificationOptions(),
@@ -95,6 +100,8 @@ async def handle_sse(request):
                 ),
             ),
         )
+    # 结束后返回一个空的响应，防止 Starlette 报 NoneType 错误
+    return Response()
 
 # 6. 组装 Starlette 应用
 app = Starlette(
