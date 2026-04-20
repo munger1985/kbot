@@ -116,13 +116,19 @@ async def get_session() -> AsyncIterator[AsyncSession]:
             yield session
             await session.commit()
         except DataNotFoundException as e:
-            logger.warning(f"Data not found: {str(e)}")
+            logger.warning("Data not found: {}", str(e))
         except Exception as e:
             await session.rollback()
-            logger.error(f"Database operation failed, rollback executed - "
-                        f"error type: {type(e).__name__}, "
-                        f"error message: {repr(str(e))}, "
-                        f"error module: {type(e).__module__}", exc_info=True)
+            logger.error(
+                "Database operation failed, rollback executed - "
+                "error type: {}, "
+                "error message: {}, "
+                "error module: {}",
+                type(e).__name__,
+                repr(str(e)),
+                type(e).__module__,
+                exc_info=True
+            )
             raise RuntimeError(f"Database operation failed: {str(e)}")
         finally:
             await session.close()
