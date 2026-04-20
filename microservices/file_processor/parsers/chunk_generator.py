@@ -368,12 +368,7 @@ class ChunkerGenerator:
         table_header = "\n".join(lines[:header_idx + 1])
         data_lines = lines[header_idx + 1:]
 
-        # 统一按行切分逻辑
-        lines = final_content_str.split('\n')
-        # 找到表头（假设前2行是表头和分隔线）
-        table_header = "\n".join(lines[:2]) 
-        data_lines = lines[2:]
-
+        # 3. 按行切分数据，每个块40行
         table_chunks = []
         for i in range(0, len(data_lines), 40):
             chunk_data = data_lines[i : i + 40]
