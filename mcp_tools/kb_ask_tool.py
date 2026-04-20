@@ -74,7 +74,7 @@ class KBAskTool(MCPTool):
             "properties": {
                 "query": {
                     "type": "string",
-                    "description": "针对知识库的搜索查询语句，建议使用完整的疑问句或核心术语以获得更好的检索效果。"
+                    "description": "完整的用户问题。该工具将基于此问题进行语义检索并直接生成最终回答。"
                 },
                 "agent_id": {
                     "type": "integer",

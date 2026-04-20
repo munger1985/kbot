@@ -124,7 +124,7 @@ class KBSearchTool(MCPTool):
             "properties": {
                 "query": {
                     "type": "string",
-                    "description": "针对知识库的搜索查询语句，建议使用完整的疑问句或核心术语以获得更好的检索效果。"
+                    "description": "搜索关键词或短语，建议提取用户问题中的核心实体词，以获得更广的搜索覆盖面。"
                 },
                 "agent_id": {
                     "type": "integer",

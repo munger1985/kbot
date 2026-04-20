@@ -69,7 +69,7 @@ class ModelController:
             prompt_unique_name = "KBOT1/pdf_parsing"
             # Simplest code to create a solid color image
             image = Image.new('RGB', (100, 100), 'lightblue')
-            result = await self.model_client.call_vlm_model(
+            result = await self.model_client.get_vlm_answer(
                 model_name, 
                 image,
                 prompt="Describe this image"
