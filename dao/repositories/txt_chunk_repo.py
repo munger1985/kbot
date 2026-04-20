@@ -438,12 +438,10 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
             result = await self.session.execute(sql, {"file_id": file_id, "tags": tags_json})
             
             if result.rowcount == 0: # type: ignore
-                raise DataNotFoundException(f"No records found for file ID: {file_id}")
-                
-            logger.info(f"Successfully updated tags for file {file_id}: {tags}")
+                logger.warning(f"No records found for file ID: {file_id}")
+            else:  
+                logger.info(f"Successfully updated tags for file {file_id}: {tags}")
 
-        except DataNotFoundException as e:
-            raise e
         except Exception as e:
             logger.error(f"Failed to update file tags for file ID {file_id}: {e}", exc_info=True)
             raise DatabaseException("Failed to update file tags", original_error=e)

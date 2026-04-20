@@ -118,6 +118,7 @@ async def get_session() -> AsyncIterator[AsyncSession]:
         except DataNotFoundException as e:
             logger.warning("Data not found: {}", str(e))
         except Exception as e:
+            # These are actual database/infrastructure errors
             await session.rollback()
             logger.error(
                 "Database operation failed, rollback executed - "
