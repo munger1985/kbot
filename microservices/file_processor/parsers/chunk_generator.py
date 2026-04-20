@@ -344,22 +344,31 @@ class ChunkerGenerator:
         # 提取 VLM 标注
         vlm_res = next((ann.text for ann in getattr(item, "annotations", []) 
                     if getattr(ann, "provenance", "") == "vlm_table_rebuild"), None)
-
-        # 处理VLM返回的结果
-        final_content_str = ""
-
+        
+        # 1. 优先获取完整内容
         if vlm_res:
-        # 尽量从 VLM 结果还原成完整的 Markdown 或文本
             final_content_str = self._convert_vlm_json_to_markdown(vlm_res)
         else:
+            # 增加 export_to_dict 或更稳健的导出方式
             final_content_str = item.export_to_markdown(doc=doc)
 
-        # 统一按行切分逻辑
         lines = final_content_str.split('\n')
-        # 找到表头（假设前2行是表头和分隔线）
-        table_header = "\n".join(lines[:2]) 
-        data_lines = lines[2:]
+        if len(lines) <= 40:
+            # 如果行数不多，直接返回，不进行切片，避免表头识别错误
+            return [{"content": final_content_str, "type": "table"}]
+        
+        # 2. 只有当行数真的很多时，才考虑切片
+        # 改进：检查是否有标准的 | --- | 分隔符来确定表头
+        header_idx = 0
+        for idx, line in enumerate(lines[:5]): # 只看前5行
+            if '---|---' in line.replace(' ', ''):
+                header_idx = idx
+                break
 
+        table_header = "\n".join(lines[:header_idx + 1])
+        data_lines = lines[header_idx + 1:]
+
+        # 3. 按行切分数据，每个块40行
         table_chunks = []
         for i in range(0, len(data_lines), 40):
             chunk_data = data_lines[i : i + 40]
