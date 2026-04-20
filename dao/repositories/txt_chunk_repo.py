@@ -445,8 +445,8 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
         except DataNotFoundException as e:
             raise e
         except Exception as e:
-            logger.error("Oracle update tags failed", e, max_length=500)
-            raise DatabaseException("Oracle update text chunk tags failed", original_error=e)
+            logger.error(f"Failed to update file tags for file ID {file_id}: {e}", exc_info=True)
+            raise DatabaseException("Failed to update file tags", original_error=e)
           
     async def update_description(self, chunk_id: str, description: str, new_embedding: list[float]):
         """

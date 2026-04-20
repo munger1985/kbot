@@ -347,6 +347,7 @@ class FileRepository(BaseRepository[FileEntity]):
         except DataNotFoundException as e:
             raise e
         except Exception as e:
+            logger.error(f"Failed to update file tags for file ID {file_id}: {e}", exc_info=True)
             raise DatabaseException("Failed to update file tags", original_error=e)
     
     async def get_name_by_id(self, file_id: str) -> str:
