@@ -334,12 +334,11 @@ class FileRepository(BaseRepository[FileEntity]):
             
             # Update tags field
             existing_metadata["tags"] = tags
-            updated_metadata_json = json.dumps(existing_metadata, ensure_ascii=False)
             
             # Update database
             update_stmt = update(FileEntity).where(
                 FileEntity.file_id == file_id
-            ).values(biz_metadata=updated_metadata_json)
+            ).values(biz_metadata=existing_metadata)
             
             await self.session.execute(update_stmt)
             
