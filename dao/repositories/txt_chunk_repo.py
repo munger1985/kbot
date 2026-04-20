@@ -181,40 +181,42 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
                 "top_k": search_top_k
             }
 
-            # 3. 核心 SQL 逻辑：
-            # SCORE(1): search_helper (权重 50%) - 包含全局摘要+虚拟标题+正文前缀
-            # SCORE(2): header (权重 30%) - 纯语义虚拟标题
-            # SCORE(4): content (权重 20%) - 原始正文
-            # 归一化处理：/ 100 得到 0-1 之间的分数
-            sql_query = f"""
-                SELECT 
-                    chunk_id, chunk_type, file_id, kb_id, content, header, chunk_num, chunk_metadata,
-                    ((SCORE(1) * 0.5) + (SCORE(2) * 0.3) + (SCORE(4) * 0.2)) / 100 as similarity_score
-                FROM KBOT_BIZ_TXT_EMBEDDING
-                WHERE kb_id = :kb_id 
-                    AND is_active = 1 
-                    AND security_level <= :security
-                    AND (
-                        CONTAINS(search_helper, :keyword, 1) > 0 
-                        OR
-                        CONTAINS(header, :keyword, 2) > 0
-                        OR
-                        CONTAINS(content, :keyword, 4) > 0
-                    )
-                ORDER BY similarity_score DESC
-                FETCH FIRST :top_k ROWS ONLY
-            """
+            # 3. 构造基础条件 (WHERE 子句中的部分)
+            # 使用列表管理条件，避免手动处理 AND 的位置
+            conditions = [
+                "kb_id = :kb_id",
+                "is_active = 1",
+                "security_level <= :security",
+                "(CONTAINS(search_helper, :keyword, 1) > 0 OR CONTAINS(header, :keyword, 2) > 0 OR CONTAINS(content, :keyword, 4) > 0)"
+            ]
 
-            # 4. 标签过滤 (JSON)
+            # 4. 处理标签过滤
             if tags:
                 tag_clauses = []
                 for i, tag in enumerate(tags):
                     t_key = f"tag_{i}"
                     tag_clauses.append(f"JSON_EXISTS(biz_metadata, '$.tags[*]?(@ == $t)' PASSING :{t_key} AS \"t\")")
                     all_params[t_key] = tag
-                # 修正 WHERE 注入逻辑，确保在符合 SQL 语法的地方插入
-                tag_filter = f" AND ({' OR '.join(tag_clauses)})"
-                sql_query = sql_query.replace("WHERE", f"WHERE {tag_filter} AND")
+                conditions.append(f"({' OR '.join(tag_clauses)})")
+
+            # 5. 核心 SQL 逻辑：
+            # SCORE(1): search_helper (权重 50%) - 包含全局摘要+虚拟标题+正文前缀
+            # SCORE(2): header (权重 30%) - 纯语义虚拟标题
+            # SCORE(4): content (权重 20%) - 原始正文
+            # 归一化处理：/ 100 得到 0-1 之间的分数
+
+            # 使用 " AND ".join(conditions) 自动处理连接符
+            where_clause = " AND ".join(conditions)
+            
+            sql_query = f"""
+                SELECT 
+                    chunk_id, chunk_type, file_id, kb_id, content, header, chunk_num, chunk_metadata,
+                    ((SCORE(1) * 0.5) + (SCORE(2) * 0.3) + (SCORE(4) * 0.2)) / 100 as similarity_score
+                FROM KBOT_BIZ_TXT_EMBEDDING
+                WHERE {where_clause}
+                ORDER BY similarity_score DESC
+                FETCH FIRST :top_k ROWS ONLY
+            """
 
             # 6. 执行查询
             stmt = text(sql_query)
