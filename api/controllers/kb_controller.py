@@ -92,25 +92,6 @@ class KBController:
         """Reparse files in knowledge base"""
         await self.file_service.reparse_files(file_ids=form.file_ids)
         return SuccessResponse(message=f"Successfully triggered reparse for files {form.file_ids}")
-    
-    # async def preview_kb_file(self,
-    #                         file_id: str, 
-    #                         max_length: int = 10000, 
-    #                         pages: int | list[int] | None = None, 
-    #                         sheet_index: int = 0, 
-    #                         preview_rows: int = 20,
-    #                         slide: int | None = None) -> SuccessResponse:
-    #     """Preview knowledge base file"""
-
-    #     preview_service = FilePreview()
-    #     result = await preview_service.get_preview(
-    #         file_id = file_id,
-    #         max_length = max_length,
-    #         pages = pages,
-    #         sheet_index = sheet_index,
-    #         preview_rows = preview_rows,
-    #         slide = slide
-    #     )
 
     async def edit_kb_file_chunk(
             self,

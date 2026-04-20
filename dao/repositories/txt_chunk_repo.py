@@ -428,8 +428,8 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
             sql = text("""
                 UPDATE KBOT_BIZ_TXT_EMBEDDING 
                 SET biz_metadata = JSON_MERGEPATCH(
-                    NVL(biz_metadata, JSON_OBJECT()),
-                    JSON_OBJECT('tags' VALUE :tags)
+                    NVL(biz_metadata, '{}'),
+                    JSON_OBJECT('tags' VALUE JSON_QUERY(:tags, '$'))
                 )
                 WHERE file_id = :file_id
             """)
