@@ -143,17 +143,20 @@ class InternalServerError(APIException):
 def handle_exception(e: Exception, msg: str) -> NoReturn:
     """Exception management standardization"""
     if isinstance(e, DataNotFoundException):
-        raise NotFoundError(e.message)
+        message = getattr(e, 'message', str(e))
+        raise NotFoundError(message)
     if isinstance(e, DataConflictException):
-        raise ParamValueError(e.message)
+        message = getattr(e, 'message', str(e))
+        raise ParamValueError(message)
     if isinstance(e, (DatabaseException)):
         # 输出详细错误日志，不包含堆栈信息以避免打印大量向量数据
-        logger.error(f"{msg}: {e.message}")
+        message = getattr(e, 'message', str(e))
+        logger.error(f"{msg}: {message}")
         if e.original_error:
             error_str = str(e.original_error)
             logger.error(f"Original error type: {type(e.original_error).__name__}: {error_str}")
             logger.error(f"Original error: {error_str}")
-        raise InternalServerError(f"{msg}: {e.message}")
+        raise InternalServerError(f"{msg}: {message}")
     if isinstance(e, (NotFoundError, ParamValueError, AuthorizationError, PrivilegeError, InternalServerError)):
         raise e
     # 对于其他异常，也限制错误信息长度
