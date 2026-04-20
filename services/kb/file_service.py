@@ -571,8 +571,7 @@ class FileService:
                 logger.info(f"Updated tags for file {file_id}: {tags}")
 
             except Exception as e:
-                error_msg = f"Failed to update tags for file {file_id}: {str(e)}"
-                handle_exception(e, error_msg)
+                handle_exception(e, f"Failed to update tags for file {file_id}")
 
     async def attach_folder(self, 
                            folder_path: str,

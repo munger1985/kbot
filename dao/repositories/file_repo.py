@@ -319,7 +319,8 @@ class FileRepository(BaseRepository[FileEntity]):
             record = result.scalar_one_or_none()
             
             if not record:
-                raise DataNotFoundException(f"File {file_id} not found for tag update")
+                logger.warning(f"File {file_id} not found for tag update")
+                return
             
             # Process business metadata
             existing_metadata = {}
@@ -344,8 +345,6 @@ class FileRepository(BaseRepository[FileEntity]):
             
             logger.info(f"Updated tags for file {file_id}: {tags}")
             
-        except DataNotFoundException as e:
-            raise e
         except Exception as e:
             logger.error(f"Failed to update file tags for file ID {file_id}: {e}", exc_info=True)
             raise DatabaseException("Failed to update file tags", original_error=e)
