@@ -14,7 +14,7 @@ router = APIRouter(prefix="/kb", tags=["Knowledge Base"])
     summary="Upload one or multiple files to the specified knowledge base"
 )
 async def handle_upload_files(
-    auth: UserAuth,
+    auth: AnyAuth,
     files: list[UploadFile] = File(...),
     metadata: str = Form(...)
 ) -> SuccessResponse:
@@ -45,7 +45,7 @@ async def handle_upload_files(
     summary="Attach a folder to the specified knowledge base"
 )
 async def attach_folder_to_kb(
-    auth: UserAuth,
+    auth: AnyAuth,
     kb_attach_form: KBAttachForm = Body(...)
 ) -> SuccessResponse:
     """
