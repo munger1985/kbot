@@ -23,6 +23,7 @@ async def handle_agent_chat(auth: AnyAuth, form: AgentChatForm, background_tasks
     ---
     ### Request Body (`AgentChatForm`)
     - **session_id** (`str`): Unique identifier for the chat session.
+    - **by** (`str`): The unique identifier of the user.
     - **agent_id** (`int`): The ID of the specific agent configuration to use.
     - **question** (`str`): The user's input text.
     - **security_level** (`int`): Data access clearance level for RAG.

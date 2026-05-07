@@ -311,8 +311,15 @@ class MemoryEntryRepository(BaseRepository[MemoryEntryEntity]):
                     .order_by(ConversationContextEntity.last_active_at.desc())
                 )
                 result = await session.execute(stmt)
-                rows = result.scalars().all()
-                return [row.to_dict() for row in rows]
+                rows = result.all()
+                return [
+                    {
+                        "session_id": row[0],
+                        "session_title": row[1],
+                        "last_active_at": row[2].isoformat() if row[2] else None
+                    }
+                    for row in rows
+                ]
         except Exception as e:
             raise DatabaseException("Failed to get conversation list", original_error=e)
         
