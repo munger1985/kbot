@@ -31,3 +31,12 @@ class DifySearchForm(BaseModel):
     query: str = Field(..., description="Query text (the content to search for in the knowledge base)")
     retrieval_setting: dict = Field(..., description="Retrieval settings (e.g. top_k, score_threshold, etc.)")
     metadata_condition: dict | None = Field(None, description="Metadata filter conditions (optional)")
+
+class AgentRenameConversationForm(BaseModel):
+    """Agent rename conversation form model.
+    
+    This model defines the data structure for renaming a chat session title.
+    """
+    session_id: str = Field(..., description="Session ID (unique identifier for the chat session)")
+    new_title: str = Field(..., description="New title for the chat session")
+    

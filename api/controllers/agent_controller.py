@@ -4,7 +4,7 @@ from typing import Any
 from fastapi import Request, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from services.agent.agent_service import AgentService
-from api.schemas.agent_schema import AgentChatForm, AgentChatFeedbackForm, DifySearchForm
+from api.schemas.agent_schema import *
 from api.schemas.base_response import SuccessResponse
 from services.agent.chat_service import ChatService
 from services.agent.dify_service import DifyService
@@ -87,6 +87,12 @@ class AgentController:
         """Retrieves a list of all chat records associated with a specific `user_id`."""
         convs = await self.agent_service.get_conversation_list(user_id)
         return SuccessResponse(data=convs, message="Conversation list retrieved")
+    
+    async def rename_conversation(self, form: AgentRenameConversationForm) -> SuccessResponse:
+        """Renamesames a chat session title in the database."""
+        await self.agent_service.rename_conversation(form.session_id, form.new_title)
+        return SuccessResponse(message="Session renamed")
+
     
 # initialize the controller
 agent_controller = AgentController()

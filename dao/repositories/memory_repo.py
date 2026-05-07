@@ -300,15 +300,29 @@ class MemoryEntryRepository(BaseRepository[MemoryEntryEntity]):
         
     async def get_conversation_list_by_user_id(self, user_id: str) -> list[dict[str, Any]]:
         """Retrieves a list of all chat records associated with a specific `user_id`."""
-        async with self.session as session:
-            stmt = (
-                select(ConversationContextEntity.session_id, 
-                       ConversationContextEntity.session_title, 
-                       ConversationContextEntity.last_active_at)
-                .where(and_(ConversationContextEntity.user_id == user_id, 
-                            ConversationContextEntity.is_deleted == False))
-                .order_by(ConversationContextEntity.last_active_at.desc())
+        try:
+            async with self.session as session:
+                stmt = (
+                    select(ConversationContextEntity.session_id, 
+                        ConversationContextEntity.session_title, 
+                        ConversationContextEntity.last_active_at)
+                    .where(and_(ConversationContextEntity.user_id == user_id, 
+                                ConversationContextEntity.is_deleted == False))
+                    .order_by(ConversationContextEntity.last_active_at.desc())
+                )
+                result = await session.execute(stmt)
+                rows = result.scalars().all()
+                return [row.to_dict() for row in rows]
+        except Exception as e:
+            raise DatabaseException("Failed to get conversation list", original_error=e)
+        
+    async def rename_conversation(self, session_id: str, new_title: str) -> None:
+        """Renamesames a chat session title in the database."""
+        try:
+            await self.session.execute(
+                update(ConversationContextEntity)
+                .where(ConversationContextEntity.session_id == session_id)
+                .values(session_title=new_title)
             )
-            result = await session.execute(stmt)
-            rows = result.scalars().all()
-            return [row.to_dict() for row in rows]
+        except Exception as e:
+            raise DatabaseException("Failed to rename session", original_error=e)

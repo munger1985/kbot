@@ -103,7 +103,7 @@ async def handle_get_conversation(session_id: str, auth: AnyAuth):
     summary="Delete Chat Session",
     response_model=SuccessResponse
 )
-async def handle_agent_del_session(session_id: str, auth: UserAuth):
+async def handle_agent_del_session(session_id: str, auth: AnyAuth):
     """
     ### Description
     Permanently deletes a chat session and all its nested message history from the database.
@@ -169,3 +169,24 @@ async def handle_get_conversation_list(auth: AnyAuth, user_id: str):
 
     """
     return await agent_controller.get_conversation_list(user_id)
+
+@router.post(
+    "/rename-conversation",
+    summary="Rename Chat Session",
+    response_model=SuccessResponse,
+    status_code=status.HTTP_200_OK
+)
+async def handle_rename_conversation(form: AgentRenameConversationForm, auth: AnyAuth):
+    """
+    ### Description
+    Renames a chat session title in the database.
+
+    ---
+    ### Parameters
+    - **session_id** (`str`): The unique ID of the chat session to rename.
+    - **new_title** (`str`): The new title for the chat session.
+
+    ### Returns
+    - **SuccessResponse**: Confirms the renaming operation.
+    """
+    return await agent_controller.rename_conversation(form)

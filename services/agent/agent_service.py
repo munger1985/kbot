@@ -67,6 +67,13 @@ class AgentService:
         async with self.oracle_session as session:
             repo = MemoryEntryRepository(session)
             return await repo.get_conversation_list_by_user_id(user_id)
+        
+    async def rename_conversation(self, session_id: str, new_title: str) -> None:
+        """Renamesames a chat session title in the database."""
+        async with self.oracle_session as session:
+            repo = MemoryEntryRepository(session)
+            await repo.rename_conversation(session_id, new_title)
+            logger.info(f"Successfully renamed session {session_id} to {new_title}")
 
         
       
