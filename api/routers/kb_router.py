@@ -244,13 +244,13 @@ async def handle_update_chunk_tags(
     status_code=status.HTTP_200_OK, 
     summary="Preview extracted image from file"
 )
-async def handle_preview_extracted_image(auth: UserAuth, params: PreviewImageParams):
+async def handle_preview_extracted_image(auth: AnyAuth, params: PreviewImageParams):
     """
     ### Description
     Displays a specific image that was extracted from a PDF/Word document during the parsing process.
 
     ### Access Level
-    - **User** or higher.
+    - **User** or **Api Key**.
 
     ### Error Handling
     Returns **404 Not Found** if the image path is invalid or the file has been purged.
