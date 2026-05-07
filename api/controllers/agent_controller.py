@@ -83,5 +83,10 @@ class AgentController:
                     background_tasks=background_tasks
                 )
 
+    async def get_conversation_list(self, user_id: str) -> SuccessResponse:
+        """Retrieves a list of all chat records associated with a specific `user_id`."""
+        convs = await self.agent_service.get_conversation_list(user_id)
+        return SuccessResponse(data=convs, message="Conversation list retrieved")
+    
 # initialize the controller
 agent_controller = AgentController()

@@ -61,4 +61,12 @@ class AgentService:
             except Exception as e:
                 logger.error(f"Error removing session {session_id}: {e}")
                 raise InternalServerError(f"Failed to delete session: {e}")
+            
+    async def get_conversation_list(self, user_id: str) -> list[dict[str, Any]]:
+        """Retrieves a list of all chat records associated with a specific `user_id`."""
+        async with self.oracle_session as session:
+            repo = MemoryEntryRepository(session)
+            return await repo.get_conversation_list_by_user_id(user_id)
+
+        
       

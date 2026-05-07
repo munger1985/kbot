@@ -2,7 +2,7 @@ import json
 from datetime import datetime
 from typing import Any
 from loguru import logger
-from sqlalchemy import select, update, delete, func, text, desc
+from sqlalchemy import select, update, delete, func, text, desc, and_
 from core.exceptions import DatabaseException
 from .base_repo import BaseRepository
 from utils.oracle_vec_handler import OracleVecHandler
@@ -297,3 +297,18 @@ class MemoryEntryRepository(BaseRepository[MemoryEntryEntity]):
             )
         except Exception as e:
             raise DatabaseException("Failed to remove session", original_error=e)
+        
+    async def get_conversation_list_by_user_id(self, user_id: str) -> list[dict[str, Any]]:
+        """Retrieves a list of all chat records associated with a specific `user_id`."""
+        async with self.session as session:
+            stmt = (
+                select(ConversationContextEntity.session_id, 
+                       ConversationContextEntity.session_title, 
+                       ConversationContextEntity.last_active_at)
+                .where(and_(ConversationContextEntity.user_id == user_id, 
+                            ConversationContextEntity.is_deleted == False))
+                .order_by(ConversationContextEntity.last_active_at.desc())
+            )
+            result = await session.execute(stmt)
+            rows = result.scalars().all()
+            return [row.to_dict() for row in rows]

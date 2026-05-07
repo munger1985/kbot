@@ -87,7 +87,7 @@ async def handle_agent_feedback(form: AgentChatFeedbackForm, auth: AnyAuth):
     response_model=SuccessResponse,
     status_code=status.HTTP_200_OK
 )
-async def handle_get_conversation(session_id: str, auth: UserAuth):
+async def handle_get_conversation(session_id: str, auth: AnyAuth):
     """
     ### Description
     Retrieves a chronological list of all chat records associated with a specific `session_id`.
@@ -148,4 +148,24 @@ async def handle_agent_retrieval(auth: ServiceAuth, form: DifySearchForm, backgr
     """
     return await agent_controller.dify_search(form, background_tasks)
 
+@router.get(
+    "/get-conversation-list",
+    summary="Retrieve Chat Session List",
+    response_model=SuccessResponse,
+    status_code=status.HTTP_200_OK
+)
+async def handle_get_conversation_list(auth: AnyAuth, user_id: str):
+    """
+    ### Description
+    Retrieves a list of all chat sessions associated with a specific `user_id`.
 
+    ---
+    ### Parameters
+    - **user_id** (`str`): The unique ID of the user to fetch the conversation list for.
+
+    ### Returns
+    - **SuccessResponse**: A list of conversation contexts, each containing `session_id`, `session_title`, and `last_active_at`.
+
+
+    """
+    return await agent_controller.get_conversation_list(user_id)
