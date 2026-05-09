@@ -200,10 +200,6 @@ class TxtBaseSearch:
                     except Exception as e:
                         logger.error(f"Failed to fetch neighbors for chunk {res.chunk_id}: {e}")
 
-                # # Path Gene Injection
-                # path_prefix = f"[Location: {res.path_names}]\n"
-                # if path_prefix not in res.content:
-                #     res.content = path_prefix + res.content
                 return res
 
         # Parallelize the tasks - each now has its own session
@@ -233,6 +229,7 @@ class TxtBaseSearch:
                     image_name=meta.get("image_name") or "",
                     bbox=meta.get("bbox") or [],
                     score=float(item.get("score") or 0.0),
+                    biz_metadata=item.get("biz_metadata") or {},
                     weight=weight,
                     rerank_score=0.0
                 )

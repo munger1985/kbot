@@ -102,7 +102,7 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
             # 3. 核心 SQL 构造
             sql_query = f"""
                 SELECT 
-                    chunk_id, chunk_type, file_id, kb_id, content, header, chunk_num, chunk_metadata,
+                    chunk_id, chunk_type, file_id, kb_id, content, header, chunk_num, chunk_metadata, biz_metadata,
                     (
                         ((1 - VECTOR_DISTANCE(embedding, :qv, COSINE)) * 100 * 0.4) 
                         + 
@@ -146,6 +146,7 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
                     "content": chunk.content,
                     "header": chunk.header,
                     "metadata": chunk.chunk_metadata,
+                    "biz_metadata": chunk.biz_metadata,
                     "score": float(chunk.similarity_score or 0.0)
                 })
             return results
@@ -210,7 +211,7 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
             
             sql_query = f"""
                 SELECT 
-                    chunk_id, chunk_type, file_id, kb_id, content, header, chunk_num, chunk_metadata,
+                    chunk_id, chunk_type, file_id, kb_id, content, header, chunk_num, chunk_metadata, biz_metadata,
                     ((SCORE(1) * 0.5) + (SCORE(2) * 0.3) + (SCORE(4) * 0.2)) / 100 as similarity_score
                 FROM KBOT_BIZ_TXT_EMBEDDING
                 WHERE {where_clause}
@@ -235,6 +236,7 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
                     "content": chunk.content,
                     "header": chunk.header,
                     "metadata": chunk.chunk_metadata,
+                    "biz_metadata": chunk.biz_metadata,
                     "score": float(chunk.similarity_score or 0.0)
                 })
             return results
@@ -254,7 +256,7 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
         :param window_size: 向上/向下扩展的数量。1表示取 [n-1, n, n+1]
         """
         sql = """
-            SELECT chunk_id, chunk_type, file_id, kb_id, content, header, chunk_num, chunk_metadata
+            SELECT chunk_id, chunk_type, content
             FROM KBOT_BIZ_TXT_EMBEDDING
             WHERE file_id = :file_id 
             AND is_active = 1

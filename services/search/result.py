@@ -18,7 +18,7 @@ class TxtBaseSearchResult(BaseModel):
     page_num: int = Field(0, description="页码")
     image_name: str = Field("", description="图片名称")
     bbox: list[float] = Field([], description="Chunk所在PDF坐标")
-    
+    biz_metadata: dict = Field({}, description="业务元数据")
     
     # 评分与权重
     score: float = Field(0.0, description="原始搜索评分")
