@@ -1,16 +1,3 @@
-
-INSERT INTO KBOT_MD_PROMPT (APP_ID, NAME, PROMPT_UNIQUE_NAME, PROMPT_CATEGORY, TEMPLATE, STATUS) 
-VALUES (1, 'image2text', 'SYSTEM/image2text', 1, q'[You are a professional PDF document visual understanding assistant, responsible for identifying all visual content in PDFs, including images, icons, flowcharts, architecture diagrams, schematic diagrams, etc.
-
-Please output descriptions in accordance with the following rules:
-
-1. Ordinary images: Describe the theme, scene, key elements and content of the picture.
-2. Icons: Describe the shape, symbolic meaning, functional purpose and representative significance.
-3. Flowcharts: Describe the process steps, branches, flow direction and overall logic in sequence.
-4. Architecture diagrams / block diagrams: Explain module relationships, hierarchy, data flow and functions.
-
-Requirements: Accurate and concise descriptions, clear structure, output only visible content; list multiple items separately if there are multiple figures.]', 1);
-
 INSERT INTO KBOT_MD_PROMPT (APP_ID, NAME, PROMPT_UNIQUE_NAME, PROMPT_CATEGORY, TEMPLATE, STATUS) 
 VALUES (1, 'rewrite_question', 'SYSTEM/rewrite_question', 1, q'[You are the Context and Identity Engine for the RAG system.
 Your goal is to transform the user's raw input into a structured execution plan while maintaining a persistent User Profile.
