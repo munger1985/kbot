@@ -21,7 +21,7 @@ CONDA_ROOT=$(dirname "$(dirname "$CONDA_BIN_PATH")")
 
 source "$CONDA_ROOT/etc/profile.d/conda.sh"
 
-conda activate cube
+conda activate kbot3
 
 # ------------------------------
 
