@@ -446,6 +446,34 @@ cd /home/ubuntu/kbot3
 curl http://localhost:18099/health
 # 输出: {"status":"healthy"}
 ```
+系统服务配置：systemd 服务（推荐）
+1. 创建 systemd 服务文件
+```bash
+sudo nano /etc/systemd/system/kbot.service
+```
+2. 写入以下内容
+```ini
+[Unit]
+Description=KBot Service
+After=network.target
+
+[Service]
+Type=forking
+User=ubuntu
+WorkingDirectory=/home/ubuntu/kbot
+ExecStart=/bin/bash /home/ubuntu/kbot/start_kbot.sh
+ExecStop=/bin/bash /home/ubuntu/kbot/stop_kbot.sh
+
+RemainAfterExit=yes
+
+KillMode=mixed
+
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+```
 
 ## 9. KBot3 后台接口文档
 http://localhost:18099/docs
