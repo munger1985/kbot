@@ -1,7 +1,8 @@
 #!/bin/bash
 
 # Define service root directory (adjust according to your startup script)
-SERVICE_ROOT="$(dirname "$0")"
+SERVICE_ROOT="$(cd "$(dirname "$0")" && pwd)"
+CURRENT_PID=$$
 
 # Function: Safely get PID of specific Python script running in specified directory
 get_service_pid() {
@@ -10,11 +11,13 @@ get_service_pid() {
     
     # Use pgrep to find processes and pwdx to check if working directory matches
     # This ensures only the specific script running in the specified directory is targeted
-    local pids=""
-    pgrep -f "python.*${script_name}" | while read pid; do
-        # Check if process working directory is under service root directory
-        if pwdx "$pid" 2>/dev/null | grep -q "${script_dir}"; then
-            echo "$pid"
+    pgrep -f "python.*${script_name}" | grep -v "$CURRENT_PID" | while read pid; do
+        # 再次确认该 PID 依然存在（防止由于并发产生的瞬时 PID 失效）
+        if [ -d "/proc/$pid" ]; then
+            # 检查工作目录
+            if pwdx "$pid" 2>/dev/null | grep -q "${script_dir}"; then
+                echo "$pid"
+            fi
         fi
     done
 }

@@ -93,4 +93,4 @@ for service_name in "${!services[@]}"; do
 done
 
 echo
-echo "🎉 All services started successfully!"
+echo "🎉 All KM services started successfully!"
