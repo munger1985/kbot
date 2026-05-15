@@ -186,31 +186,14 @@ class ParserConfig(BaseModel):
     parser_parallel: int = Field(default=4, ge=1, le=100, description="Number of parallel parser processes (1-100)")
     db_check_interval: int = Field(default=60, ge=10, le=3600, description="Database check interval in seconds (10-3600)")
 
-class JiebaConfig(BaseModel):
-    """Jieba tokenizer configuration.
-    
-    Configuration parameters for the Jieba Chinese text tokenizer, including
-    custom dictionary and stop words file paths.
-    """
-    custom_dict_path: str = Field(default="./configuration/custom_dict.txt", description="Path to custom Jieba dictionary file")
-    stop_words_path: str = Field(default="./configuration/stopwords.txt", description="Path to stop words file")
-    
-    @field_validator('custom_dict_path', 'stop_words_path')
-    def validate_path_exists(cls, v):
-        """Validate if the configured path exists, use default behavior if not.
-        
-        Args:
-            v: Path string to validate
-            
-        Returns:
-            str: Original path string (validation is non-blocking, only logs warning)
-        """
-        path = Path(v)
-        if not path.exists():
-            # Can log warning here without raising exception
-            print(f"Warning: Config path {v} does not exist, using default behavior")
-        return v
-    
+class ExecutorConfig(BaseModel):
+    """SQL 执行器配置"""
+    service_name: str = Field(default="sql-executor-service")
+    service_version: str = Field(default="1.0.0")
+    service_host: str = Field(default="0.0.0.0")
+    service_port: int = Field(default=18096, ge=1, le=65535)
+    timeout: int = Field(default=300, ge=10, le=3600)
+
 class PromptConfig(BaseModel):
     """Prompt template configuration.
     
@@ -221,6 +204,14 @@ class PromptConfig(BaseModel):
     refresh_summary: str = Field(default="SYSTEM/refresh_summary", description="Prompt template for refreshing summaries")
     rag_final_render: str = Field(default="SYSTEM/rag_final_render", description="Prompt template for RAG final render")
     user_profile: str = Field(default="SYSTEM/user_profile", description="Prompt template for user profile")
+    sql_gen: str = Field(default="SYSTEM/sql_gen", description="SQL generation prompt template")
+    sql_repair: str = Field(default="SYSTEM/sql_repair", description="SQL repair prompt template")
+    task_planner: str = Field(default="SYSTEM/task_planner", description="Task planner prompt template")
+    intent_router: str = Field(default="SYSTEM/intent_router", description="Intent router prompt template")
+    data_reasoning: str = Field(default="SYSTEM/data_reasoning", description="Data reasoning prompt template")
+    generate_chart: str = Field(default="SYSTEM/generate_chart", description="Generate chart prompt template")
+    db_router: str = Field(default="SYSTEM/db_router", description="Database router prompt template")
+
 
 class Settings(BaseSettings):
     """Global application settings.
@@ -242,7 +233,7 @@ class Settings(BaseSettings):
     reranker: RerankerConfig = RerankerConfig()
     vlm: VLMConfig = VLMConfig()
     parser: ParserConfig = ParserConfig()
-    jieba: JiebaConfig = JiebaConfig()
+    executor: ExecutorConfig = ExecutorConfig()
     prompt: PromptConfig = PromptConfig()
     
     model_config = {
@@ -474,10 +465,6 @@ def get_parser_config() -> ParserConfig:
     """
     return get_settings().parser
 
-def get_jieba_config() -> JiebaConfig:
-    """Get Jieba tokenizer configuration.
-    
-    Returns:
-        JiebaConfig: Jieba tokenizer configuration object
-    """
-    return get_settings().jieba
+def get_executor_config() -> ExecutorConfig:
+    """Get executor configuration."""
+    return get_settings().executor

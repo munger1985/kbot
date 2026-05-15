@@ -1,19 +1,19 @@
 import json
 from loguru import logger
-from typing import Sequence, List, Optional
-from sqlalchemy import select, delete, and_, update, func, case
+from typing import Sequence, Any
+from sqlalchemy import select, delete, and_, update, func, case, Row
+from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime
 from core.exceptions import DatabaseException, DataNotFoundException
-from core.dictionary import FileStatus, ProcessPriority, YesNoEnum
-from dao.entities import KbEntity, FileEntity, BatchEntity
-from .kb_batch_repo import BatchRepository
+from core.dictionary import FileStatus, ProcessPriority
+from dao.entities import KBEntity, FileEntity
 from .base_repo import BaseRepository
 
 
 class FileRepository(BaseRepository[FileEntity]):
     """Repository for KBOT_MD_KB_FILES table operations."""
     
-    async def get_by_id(self, file_id: str) -> FileEntity:
+    async def get(self, file_id: str) -> FileEntity:
         """Get knowledge base file by ID."""
         try:
             stmt = select(FileEntity).where(FileEntity.file_id == file_id)
@@ -63,14 +63,44 @@ class FileRepository(BaseRepository[FileEntity]):
         except Exception as e:
             raise DatabaseException("Failed to get files by KB ID", original_error=e)
     
-    async def get_by_batch_id(self, batch_id: int) -> Sequence[FileEntity]:
-        """Get knowledge base files by batch ID."""
+    async def get_file_id_path(self, kb_id: int, 
+                               file_ids: list[str] | None = None, 
+                               batchs: list[str] | None = None
+                            ):
+        """获取知识库文件信息"""
         try:
-            stmt = select(FileEntity).where(FileEntity.batch_id == batch_id)
-            result = await self.session.execute(stmt)
-            return result.scalars().all()
+            conditions = [FileEntity.kb_id == kb_id]
+            if file_ids:
+                conditions.append(FileEntity.file_id == file_ids[0] if len(file_ids) == 1 else FileEntity.file_id.in_(file_ids))
+            elif batchs:
+                conditions.append(FileEntity.batch == batchs[0] if len(batchs) == 1 else FileEntity.batch.in_(batchs))
+                
+            query = select(FileEntity.file_id, FileEntity.file_path, FileEntity.status).where(and_(*conditions))
+            result = await self.session.execute(query)
+            rows = result.fetchall()
+
+            if not rows:
+                raise DataNotFoundException(f"知识库文件不存在: {file_ids}")
+            return rows
+        except DataNotFoundException as e:
+            raise e
         except Exception as e:
-            raise DatabaseException("Failed to get files by batch ID", original_error=e)
+            raise DatabaseException(f"获取知识库文件信息失败", original_error=e)
+        
+    async def get_parser_params(self, file_id: str) -> dict[str, Any]:
+        """获取文件解析器参数"""
+        try:
+            result = await self.session.execute(
+                select(FileEntity.parser_params).where(FileEntity.file_id == file_id)
+            )
+            parser_params = result.scalar_one_or_none()
+            if not parser_params:
+                raise DataNotFoundException(f"文件 {file_id} 解析器参数不存在")
+            return parser_params
+        except DataNotFoundException as e:
+            raise e
+        except Exception as e:
+            raise DatabaseException(f"获取文件解析器参数失败", original_error=e)
     
     async def get_by_status(self, status: FileStatus, amount: int = 20) -> Sequence[FileEntity]:
         """Get knowledge base files by status."""
@@ -125,65 +155,73 @@ class FileRepository(BaseRepository[FileEntity]):
             raise e
         except Exception as e:
             raise DatabaseException("Failed to get file by name and KB ID", original_error=e)
-    
-    async def delete(self, kb_id: int | None, batch_id: int | None, file_ids: List[str] | None):
-        """
-        Delete knowledge base files.
-        :param kb_id: The knowledge base ID to delete all related files for
-        :param batch_id: The batch ID to delete all related files for
-        :param file_ids: List of file IDs to delete
-        :return: The number of deleted records
-        """
-        try:
-            
-            if file_ids is not None and len(file_ids) > 0:
-                # Delete specific file IDs
-                stmt = delete(FileEntity).where(FileEntity.file_id.in_(file_ids)).returning(FileEntity.file_id)
-                await self.session.execute(stmt)
-                
-            elif batch_id is not None:
-                # Delete by batch ID
-                stmt = delete(FileEntity).where(FileEntity.batch_id == batch_id).returning(FileEntity.file_id)
-                await self.session.execute(stmt)
-                
-                # Delete batch record
-                batch_stmt = delete(BatchEntity).where(BatchEntity.batch_id == batch_id)
-                await self.session.execute(batch_stmt)
-                
-            elif kb_id is not None:
-                # Delete by KB ID
-                stmt = delete(FileEntity).where(FileEntity.kb_id == kb_id).returning(FileEntity.file_id)
-                await self.session.execute(stmt)
-                
-                # Delete related batches and KB
-                batch_stmt = delete(BatchEntity).where(BatchEntity.kb_id == kb_id)
-                await self.session.execute(batch_stmt)
-                
-                kb_stmt = delete(KbEntity).where(KbEntity.kb_id == kb_id)
-                await self.session.execute(kb_stmt)
-            
-        except Exception as e:
-            raise DatabaseException("Failed to delete files", original_error=e)
 
-    async def create(self, files: List[FileEntity]):
-        """
-        Create new knowledge base file records.
-        :param batch: Batch entity
-        :param files: List of FileEntity objects
-        :return: True if successful
-        """
-        if not files:
-            logger.warning("No files provided for creation")
-            return
-
+    async def create(self, files: list[FileEntity]) -> None:
+        """创建知识库文件记录"""
         try:
-            self.session.add_all(files)
-            logger.info(f"Created {len(files)} file records in the database.")
+            # 1. 批量收集需要检查的文件路径
+            kb_ids = []
+            file_paths = []
+            file_map = {}  # 用于快速查找
             
+            for file in files:
+                kb_ids.append(file.kb_id)
+                file_paths.append(file.file_path)
+                file_map[(file.kb_id, file.file_path)] = file
+            
+            # 2. 批量查询已存在的文件 (使用注入的 session)
+            existing_query = select(FileEntity).where(
+                and_(
+                    FileEntity.kb_id.in_(kb_ids),
+                    FileEntity.file_path.in_(file_paths)
+                )
+            )
+            existing_result = await self.session.execute(existing_query)
+            existing_files = existing_result.scalars().all()
+            
+            # 3. 分类处理
+            files_to_add = []
+            ids_to_delete = []
+            
+            for existing_file in existing_files:
+                key = (existing_file.kb_id, existing_file.file_path)
+                if key in file_map:
+                    new_file = file_map[key]
+                    if new_file.is_overwrite:
+                        ids_to_delete.append(existing_file.id)
+                    # 如果不需要覆盖，就不添加新文件
+                    del file_map[key]
+            
+            # 剩下的都是不存在的文件，直接添加
+            files_to_add.extend(file_map.values())
+            
+            # 4. 批量删除（如果需要）
+            if ids_to_delete:
+                await self._batch_delete(self.session, ids_to_delete)
+            
+            # 5. 批量添加
+            if files_to_add:
+                self.session.add_all(files_to_add)
+                # 事务提交移交给 Service 层
+                    
         except Exception as e:
-            raise DatabaseException("Failed to create file records", original_error=e)
+            raise DatabaseException(f"创建知识库文件记录失败", original_error=e)
     
-    async def update_file_status(self, file_id: str, status: FileStatus, log_msg: Optional[str] = None):
+    async def _batch_delete(self, session: AsyncSession, file_ids: list[str]) -> None:
+        """批量删除文件记录（内部辅助方法，保持传入 session 的设计）"""
+        try:
+            if not file_ids:
+                return
+            if len(file_ids) == 1:
+                stmt = delete(FileEntity).where(FileEntity.file_id == file_ids[0])
+            else:
+                stmt = delete(FileEntity).where(FileEntity.file_id.in_(file_ids))
+            
+            await session.execute(stmt)
+        except Exception as e:
+            raise DatabaseException(f"删除知识库文件记录失败", original_error=e)
+        
+    async def update_file_status(self, file_ids: list[str], status: FileStatus, log_msg: str | None = None):
         """
         Update the status of a knowledge base file record with log message appending.
         :param file_id: File ID to update
@@ -192,12 +230,14 @@ class FileRepository(BaseRepository[FileEntity]):
         :return: True if successful
         """
         try:
+            condition = FileEntity.file_id == file_ids[0] if len(file_ids) == 1 else FileEntity.file_id.in_(file_ids)
+            
             if log_msg is not None:
                 timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 new_log_entry = f"{timestamp}: {log_msg}"
 
                 # Get current log_msg length
-                stmt = select(FileEntity.log_msg).where(FileEntity.file_id == file_id)
+                stmt = select(FileEntity.log_msg).where(condition)
                 current_log_result = await self.session.execute(stmt)
                 current_log = current_log_result.scalar_one_or_none()
 
@@ -231,7 +271,7 @@ class FileRepository(BaseRepository[FileEntity]):
 
                 # Update status with processed log message
                 update_stmt = update(FileEntity).where(
-                    FileEntity.file_id == file_id
+                    condition
                 ).values(
                     status=status.value,
                     log_msg=final_log
@@ -239,18 +279,29 @@ class FileRepository(BaseRepository[FileEntity]):
             else:
                 # Only update status
                 update_stmt = update(FileEntity).where(
-                    FileEntity.file_id == file_id
+                    condition
                 ).values(status=status.value)
 
             await self.session.execute(update_stmt)
 
-            logger.debug(f"Updated status for file {file_id} to {status.name}")
+            logger.debug(f"[File Repo] Successfully updated status.")
 
         except Exception as e:
-            logger.error(f"Database error updating file status - file_id: {file_id}, status: {status}, "
+            logger.error(f"Database error while updating file status - file_ids: {file_ids}, status: {status}, "
                         f"error type: {type(e).__name__}, error: {str(e)}", exc_info=True)
             raise DatabaseException("Failed to update file status", original_error=e)
     
+    async def delete(self, kb_id: int, file_ids: list[str] | None = None) -> None:
+        """根据知识库ID和文件ID列表删除知识库文件记录"""
+        try:
+            if file_ids:
+                await self._batch_delete(self.session, file_ids)
+            else:
+                stmt = delete(FileEntity).where(FileEntity.kb_id == kb_id)
+                await self.session.execute(stmt)
+        except Exception as e:
+            raise DatabaseException(f"删除知识库文件记录失败", original_error=e)
+        
     async def update_file_parsed_metadata(self, file_id: str, parsed_metadata: str):
         """
         Update the parse metadata of a knowledge base file record.
@@ -276,7 +327,7 @@ class FileRepository(BaseRepository[FileEntity]):
         except Exception as e:
             raise DatabaseException("Failed to update file parsed metadata", original_error=e)
     
-    async def batch_update_file_status(self, file_ids: List[str], status: FileStatus, log_msg: Optional[str] = None) -> bool:
+    async def batch_update_file_status(self, file_ids: list[str], status: FileStatus, log_msg: str | None = None) -> bool:
         """
         Batch update status of knowledge base file records.
         :param file_ids: List of file IDs to update
@@ -305,7 +356,7 @@ class FileRepository(BaseRepository[FileEntity]):
         except Exception as e:
             raise DatabaseException("Failed to batch update file status", original_error=e)
     
-    async def update_tags(self, file_id: str, tags: List[str]):
+    async def update_tags(self, file_id: str, tags: list[str]):
         """
         Update tags for a knowledge base file.
         :param file_id: File ID to update
@@ -371,7 +422,7 @@ class FileRepository(BaseRepository[FileEntity]):
         except Exception as e:
             raise DatabaseException("Failed to get file name by ID", original_error=e)
         
-    async def get_names_by_ids(self, file_ids: List[str]) -> dict[str, str]:
+    async def get_names_by_ids(self, file_ids: list[str]) -> dict[str, str]:
         try:
             stmt = select(FileEntity.file_id, FileEntity.file_name).where(FileEntity.file_id.in_(file_ids))
             result = await self.session.execute(stmt)
@@ -380,3 +431,39 @@ class FileRepository(BaseRepository[FileEntity]):
             return {file.file_id: file.file_name for file in file_names}
         except Exception as e:
             raise DatabaseException("Failed to get file names by IDs", original_error=e)
+        
+    async def update_parser_params(self, file_id: str, parser_params: dict[str, Any]) -> None:
+        """更新文件解析器参数"""
+        try:
+            result = await self.session.execute(
+                update(FileEntity)
+                .where(FileEntity.file_id == file_id)
+                .values(chunk_parser=parser_params)
+                .returning(FileEntity.file_id)
+            )
+            if result.scalar() is None:
+                raise DataNotFoundException(f"更新文件 {file_id} 解析器参数返回结果为0行")
+        except DataNotFoundException as e:
+            raise e
+        except Exception as e:
+            raise DatabaseException(f"更新文件解析器参数失败", original_error=e)
+        
+    async def get_file_ids(self, file_ids: list[str]) -> list[tuple[str, str]]:
+        """根据ID获取一个或多个文件名"""
+        try:
+            if len(file_ids) == 1:
+                stmt = select(FileEntity.file_id, FileEntity.file_path).where(FileEntity.file_id == file_ids[0])
+                result = await self.session.execute(stmt)
+            else:
+                result = await self.session.execute(
+                    select(FileEntity.file_id, FileEntity.file_path).where(FileEntity.file_id.in_(file_ids))
+                )
+            files = result.all()
+            if not files:
+                raise DataNotFoundException(f"未找到知识库文件")
+            # 将 Row 对象转换为普通元组
+            return [tuple(row) for row in files]
+        except DataNotFoundException as e:
+            raise e
+        except Exception as e:
+            raise DatabaseException(f"获取知识库文件记录失败", original_error=e)

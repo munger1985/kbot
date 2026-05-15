@@ -18,3 +18,4 @@ DROP TABLE IF EXISTS kbot_sys_api_keys;
 DROP TABLE IF EXISTS kbot_md_user_profile;
 DROP TABLE IF EXISTS kbot_md_conv_context;
 DROP TABLE IF EXISTS kbot_md_memory_entry;
+DROP TABLE IF EXISTS kbot_md_parser_conf;

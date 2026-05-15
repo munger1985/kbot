@@ -1,12 +1,10 @@
-import aiohttp
 from loguru import logger
 from PIL import Image
-from dao.repositories.ai_model_repo import *
 from core.dictionary import ModelCategory
 from core.config.settings import get_settings
 from utils.clients import AIModelClient
-from services.ai_model import AIModelService
-from core.exceptions import ParamValueError, InternalServerError, NotFoundError
+from services.basic import AIModelService
+from core.exceptions import ParamValueError, InternalServerError
 
 
 class ModelController:

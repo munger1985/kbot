@@ -1,25 +1,49 @@
 from enum import IntEnum, Enum
 
 class Status(IntEnum):
-    """Status enumeration."""
+    """状态枚举"""
     ENABLED = 1
     DISABLED = 0
 
-class YesNoEnum(IntEnum):
-    """Yes or No enumeration."""
-    YES = 1
-    NO = 0
+class ParserEngine(str, Enum):
+    """解析器引擎枚举"""
+    TEXT = "text"
+    SQL = "sql"
+    IMAGE = "image"
+    AUDIO = "audio"
+    VIDEO = "video"
 
-class DbType(IntEnum):
+class DbType(str, Enum):
     """Database type enumeration."""
-    ORACLE = 1
-    ADB = 2
-    HEATWAVE = 3
-    ELASTICSEARCH = 4
-    MILVUS = 5
-    FAISS = 6
-    PINECONE = 7
-    WEAVIATE = 8
+    ORACLE = "oracle"
+    MYSQL = "mysql"
+    POSTGRESQL = "postgresql"
+
+class IntentType(str, Enum):
+    # --- 1. 快捷响应轨 (Direct Response) ---
+    CHITCHAT = "chitchat"           # 问候、情感交流
+    OFF_TOPIC = "off_topic"         # 拒答、敏感词拦截
+    SYSTEM_CMD = "system_command"   # 系统元指令 (清空记忆、设置参数)
+
+    # --- 2. 复杂任务轨 (Planning Required) ---
+    # 将原本的 BUSINESS 拆分为：
+    KNOWLEDGE_QUERY = "knowledge_query" # 问文：基于知识库的检索 (RAG)
+    DATA_ANALYSIS = "data_analysis"     # 问数：涉及 SQL、图表、计算 (Text2SQL)
+    TASK_EXECUTION = "task_execution"   # 执行：如“生成报告”、“导出文件”、“发送邮件”
+    
+    # --- 3. 混合/模糊轨 ---
+    COMPLEX_HYBRID = "complex_hybrid"   # 综合：既要问数又要问文，或需要多步推理
+    AMBIGUOUS = "ambiguous"             # 模糊：信息不足，需要 Agent 反问（Clarification）
+
+class PacketType(str, Enum):
+    THOUGHT = "thought"       # 思考流
+    ANSWER = "answer"         # 最终回复（给用户看）
+    SQL_RESULTS = "sql_results" # 结构化 SQL 结果
+    DOC_RESULTS = "doc_results" # 文档检索结果
+    CALL = "call"             # 工具调用状态
+    ECHARTS = "echarts"       # 图表数据展示
+    ERROR = "error"           # 错误信息
+    DONE = "done"             # 结束信号
 
 class ChunkType(str, Enum):
     """Knowledge chunk type enumeration."""

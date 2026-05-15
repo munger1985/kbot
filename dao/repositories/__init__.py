@@ -1,10 +1,9 @@
 from .agent_conf_repo import AgentConfRepository
 from .agent_repo import AgentRepository
 from .ai_model_repo import AIModelRepository
-from .memory_repo import MemoryEntryRepository
+from .memory_repo import MemoryRepository
 from .domain_repo import DomainRepository
 from .file_repo import FileRepository
-from .kb_batch_repo import BatchRepository
 from .kb_repo import KBRepository
 from .parser_conf_repo import ParserConfRepository
 from .prompt_repo import PromptRepository
@@ -15,14 +14,14 @@ from .service_repo import ServiceRepository
 from .txt_chunk_repo import TxtChunkRepository
 
 
+
 __all__ = [
     "AgentConfRepository",
     "AgentRepository",
     "AIModelRepository",
-    "MemoryEntryRepository",
+    "MemoryRepository",
     "DomainRepository",
     "FileRepository",
-    "BatchRepository",
     "KBRepository",
     "ParserConfRepository",
     "PromptRepository",
@@ -30,5 +29,5 @@ __all__ = [
     "UserTokenRepository",
     "UserRepository",
     "ServiceRepository",
-    "TxtChunkRepository"
+    "TxtChunkRepository",
 ]

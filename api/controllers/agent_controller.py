@@ -1,13 +1,10 @@
-from datetime import datetime
 import uuid
-from typing import Any
-from fastapi import Request, BackgroundTasks
+from fastapi import BackgroundTasks
 from fastapi.responses import StreamingResponse
-from services.agent.agent_service import AgentService
+from services.basic import AgentService
 from api.schemas.agent_schema import *
 from api.schemas.base_response import SuccessResponse
-from services.agent.chat_service import ChatService
-from services.agent.dify_service import DifyService
+from agent.agent import RootAgent, DifyService
 from core.exceptions import *
 
 
@@ -15,7 +12,7 @@ class AgentController:
     def __init__(self):
         self.agent_service = AgentService()
         self.dify_service = DifyService()
-        self.chat_service = ChatService()
+        self.root_agent = RootAgent()
 
     async def feedback(self, form: AgentChatFeedbackForm) -> SuccessResponse:
         """Submits user feedback for a chat record."""
@@ -42,28 +39,38 @@ class AgentController:
         Agent interaction (Non-streaming).
         Returns the formatted dictionary with answer, embedding, and timestamps.
         """
-        result = await self.chat_service.non_stream_chat(
+        stream_response = await self.root_agent.chat(
             background_tasks=background_tasks,
             session_id=form.session_id,
-            user_id = form.by,
+            user_id=form.by,
             agent_id=form.agent_id,
-            question=form.question,
+            query=form.question,
             security_level=form.security_level,
             tags=form.tags or []
         )
-        return SuccessResponse(data=result, message="Agent chat successful")
+        
+        full_answer = ""
+        
+        # 遍历异步生成器，拼接完整的大模型回复
+        async for chunk in stream_response.body_iterator:
+            if isinstance(chunk, bytes):
+                full_answer += chunk.decode("utf-8")
+            else:
+                full_answer += str(chunk)
+
+        return SuccessResponse(data=full_answer, message="Agent chat successful")
     
     async def agent_chat_stream(self, form: AgentChatForm, background_tasks: BackgroundTasks) -> StreamingResponse:
         """
         Agent interaction (Streaming).
         Uses BackgroundTasks to handle database persistence after the stream starts.
         """
-        return await self.chat_service.stream_chat(
+        return await self.root_agent.chat(
             background_tasks=background_tasks,
             session_id=form.session_id,
             user_id = form.by,
             agent_id=form.agent_id,
-            question=form.question,
+            query=form.question,
             security_level=form.security_level,
             tags=form.tags or []
         )
@@ -80,7 +87,6 @@ class AgentController:
                     agent_id=agent_id, 
                     question=form.query, 
                     session_id=session_id,
-                    background_tasks=background_tasks
                 )
 
     async def get_conversation_list(self, user_id: str) -> SuccessResponse:

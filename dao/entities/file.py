@@ -15,7 +15,7 @@ class FileEntity(BaseEntity):
     file_id: Mapped[str] = mapped_column(String(256), primary_key=True, comment="Unique file identifier (UUID), primary key")
     app_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False, comment="Associated application ID")
     kb_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False, comment="Associated knowledge base ID")
-    batch_id: Mapped[int] = mapped_column(Numeric(38, 0), comment="Associated batch ID (optional)")
+    batch: Mapped[str] = mapped_column(String(100), nullable=False, comment="Upload batch")
     file_path: Mapped[str] = mapped_column(String(512), comment="Full file storage path (including file name)")
     file_name: Mapped[str] = mapped_column(String(256), comment="Original file name (without extension)")
     file_ext: Mapped[str] = mapped_column(String(256), comment="File extension")

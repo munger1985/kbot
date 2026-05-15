@@ -417,7 +417,7 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
             logger.error("Oracle get chunk content failed", e, max_length=500)
             raise DatabaseException("Oracle get text chunk content failed", original_error=e)
 
-    async def update_tag(self, file_id: str, tags: list[str]):
+    async def update_tags(self, file_id: str, tags: list[str]):
         """
         Update tags for text chunks by file ID
         

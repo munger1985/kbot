@@ -66,7 +66,6 @@ class TxtBaseSearch:
     async def search(
         self,
         kb_id: int,
-        question: str,
         keywords: str,
         search_top_k: int,
         threshold: float,
@@ -80,7 +79,6 @@ class TxtBaseSearch:
         
         Args:
             kb_id: Knowledge base identifier.
-            question: Natural language query.
             keywords: Keywords for searching.
             search_top_k: Target number of results per group.
             threshold: Similarity threshold for vector search.
@@ -94,7 +92,7 @@ class TxtBaseSearch:
             Dictionary containing 'rerank_result' and 'norerank_result'.
         """
         start_time = time.time()
-        logger.debug(f"Starting hybrid search for query: {question}")
+        logger.debug(f"Starting hybrid search ...")
         # Execute concurrent retrieval tasks
         if not query_vec:
             logger.warning("Query vector is missing; falling back to full-text search only.")

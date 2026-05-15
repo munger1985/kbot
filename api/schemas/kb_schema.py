@@ -14,7 +14,7 @@ class KBUploadForm(BaseModel):
     kb_id: int = Field(..., description="Knowledge base ID (unique identifier of the target knowledge base)")
     overwrite: bool = Field(..., description="Whether to overwrite existing files with the same name")
     skip_approval: bool = Field(..., description="Whether to skip the approval process for upload")
-    batch_name: str = Field(..., description="Batch name (human-readable label for the upload batch)")
+    batch: str = Field(..., description="Batch name (human-readable label for the upload batch)")
     batch_id: int|None = Field(None, description="Batch ID (unique identifier of the upload batch, optional)")
     biz_metadata: dict|None = Field(None, description="Business metadata (custom key-value pairs for business logic)")
     created_by: str|None = Field(None, description="Creator (username of the user who initiated the upload)")
@@ -28,7 +28,8 @@ class KBAttachForm(BaseModel):
     app_id: int = Field(..., description="Application ID (unique identifier of the associated application)")
     domain_id: int = Field(..., description="Domain ID (unique identifier of the business domain)")
     kb_id: int = Field(..., description="Knowledge base ID (unique identifier of the target knowledge base)")
-    batch_name: str = Field(..., description="Batch name (human-readable label for the attachment batch)")
+    batch: str = Field(..., description="Batch name (human-readable label for the attachment batch)")
+    skip_approval: bool = Field(..., description="Whether to skip the approval process for attachment")
     biz_metadata: dict|None = Field(None, description="Business metadata (custom key-value pairs for business logic)")
     created_by: str|None = Field(None, description="Creator (username of the user who initiated the attachment)")
 
@@ -40,10 +41,8 @@ class KBDeleteForm(BaseModel):
     app_id: int = Field(..., description="Application ID (unique identifier of the associated application)")
     domain_id: int = Field(..., description="Domain ID (unique identifier of the business domain)")
     kb_id: int = Field(..., description="Knowledge base ID (unique identifier of the target knowledge base)")
-    batch_id: int|None = Field(None, description="Batch ID (delete entire batch if specified, optional)")
-    batch_name: str|None = Field(None, description="Batch name (alternative to batch ID for batch deletion, optional)")
+    batch: str|None = Field(None, description="Batch name (alternative to batch ID for batch deletion, optional)")
     file_ids: list[str]|None = Field(None, description="List of file IDs (specific files to delete, optional)")
-    file_paths: list[str]|None = Field(None, description="List of file paths (specific files to delete by path, optional)")
 
 class KBReparseForm(BaseModel):
     """Knowledge base reparse form model.

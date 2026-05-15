@@ -3,6 +3,7 @@ import re
 import json
 from PIL import Image
 from typing import AsyncGenerator
+from dataclasses import dataclass
 from decimal import Decimal
 from loguru import logger
 from typing import Any
@@ -10,6 +11,13 @@ from microservices.embedding.model.base import EmbeddingDataItem
 from ..encoder import ImageEncoder
 from core.config.settings import get_embed_config, get_llm_config, get_reranker_config, get_vlm_config, get_prompt_config
 from core.exceptions import *
+
+
+@dataclass
+class LLMChunk:
+    """标准化的 Chunk 对象，兼容原生推理字段"""
+    content: str = ""
+    reasoning_content: str | None = None
 
 
 class AIModelClient():
@@ -104,6 +112,25 @@ class AIModelClient():
             msg = f"嵌入服务发生错误: {e}"
             logger.error(msg)
             raise InternalServerError(msg)
+        
+    async def get_embedding(self, model_name: str, text: str) -> list[float]:
+        """
+        获取文本的嵌入向量
+
+        Args:
+            model_name: 模型技术名称
+            text: 输入文本
+            
+        Returns:
+            嵌入向量列表
+        """
+        embeddings = await self.call_embedding_model(
+            model_name=model_name,
+            texts=[text],
+            is_query=True,
+            batch_size=1
+        )
+        return embeddings[0].embedding
     
     async def compute_similarity(self, 
                                 model_name: str, 
@@ -215,7 +242,7 @@ class AIModelClient():
             logger.error(msg)
             raise InternalServerError(msg)
         
-    async def call_llm_model(self, model_name: str, prompt: str, **kwargs):
+    async def call_llm_model(self, model_name: str, prompt:  list[dict[str, str]] | str, **kwargs):
         """
         调用LLM微服务并处理SSE格式的响应
 
@@ -369,19 +396,18 @@ class AIModelClient():
                 logger.exception(msg)
                 raise InternalServerError(msg)
     
-    async def call_llm_json(self, model_name: str, prompt: str, **kwargs) -> dict:
+    async def get_llm_json(self, model_name: str, prompt:  list[dict[str, str]] | str, **kwargs) -> dict:
         """
         调用 LLM 并强制获取结构化 JSON 结果。
         内部自动处理非流式请求与 JSON 提取。
         """
-        # 强制设为非流式，以便一次性获取完整响应（如果后端支持）
-        # 或者为了兼容性，我们在此聚合 call_llm_model 的输出
-        kwargs["stream"] = False 
-        
         full_text = ""
+        kwargs.pop('temperature', None)
+        
         try:
             # 聚合 generator 产出的内容
-            async for chunk in self.call_llm_model(model_name=model_name, prompt=prompt, **kwargs):
+            async for chunk in self.call_llm_model(model_name=model_name, prompt=prompt, 
+                                                   response_format="json_object", temperature=0, **kwargs):
                 line = chunk.strip()
                 if not line or line == "data: [DONE]":
                     continue
@@ -436,7 +462,7 @@ class AIModelClient():
         
         raise ValueError(f"Could not parse valid JSON from LLM response: {text[:100]}...")
     
-    async def get_llm_answer(self, model_name: str, prompt: str, **kwargs) -> str:
+    async def get_llm_answer(self, model_name: str, prompt:  list[dict[str, str]] | str, **kwargs) -> str:
         """
         高层封装：直接获取 LLM 聚合后的纯文本字符串。
         自动处理 SSE 解析、过滤 metadata、拼接 Content。
@@ -517,3 +543,45 @@ class AIModelClient():
         except Exception as e:
             logger.error(f"get_vlm_answer 失败: {e}")
             return ""
+        
+
+    async def get_llm_stream_parsed(
+        self, 
+        model_name: str, 
+        prompt: list[dict[str, str]] | str, 
+        **kwargs
+    ) -> AsyncGenerator[LLMChunk, None]:
+        """
+        基于 call_llm_model 的流式解析版本
+        """
+        # 强制开启流式开关
+        kwargs["stream"] = True
+        
+        # 直接复用原有的 call_llm_model 逻辑
+        # 注意：原方法返回的是 async for raw_chunk in response.content 的字符串流
+        async for line in self.call_llm_model(model_name, prompt, **kwargs):
+            # 这里的 line 已经是 decode('utf-8') 后的字符串
+            # 但由于 response.content 的迭代可能包含多行或不完整行，需要处理前缀
+            
+            clean_line = line.strip()
+            if not clean_line or not clean_line.startswith("data: "):
+                continue
+            
+            data_str = clean_line[6:] # 截取 "data: " 之后的内容
+            if data_str == "[DONE]":
+                break
+
+            try:
+                data = json.loads(data_str)
+                delta = data['choices'][0].get('delta', {})
+                
+                # 同时兼容普通内容和推理内容
+                content = delta.get('content', '')
+                # 适配 DeepSeek R1 常见的推理字段
+                reasoning = delta.get('reasoning_content') or delta.get('thought_content')
+
+                if content or reasoning:
+                    yield LLMChunk(content=content, reasoning_content=reasoning)
+                    
+            except json.JSONDecodeError:
+                continue

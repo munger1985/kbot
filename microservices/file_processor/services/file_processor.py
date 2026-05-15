@@ -13,8 +13,8 @@ from core.dictionary import FileStatus, ProcessPriority, ChunkType
 from core.exceptions import DataNotFoundException, DatabaseException
 from utils.clients import AIModelClient
 from utils.sanitize import sanitize_dict_for_oracle_json
-from services.ai_model import AIModelService
-from services.default_prompt import PromptManager
+from services.basic.ai_model import AIModelService
+from agent.prompt import default_prompt
 
 
 class FileProcessor:
@@ -88,8 +88,7 @@ class FileProcessor:
                 use_vlm = file.chunk_parser.get("use_vlm", False)
                 img2txt_prompt = file.chunk_parser.get("img2txt_prompt", None)
                 if not img2txt_prompt:
-                    prompt_mgr = PromptManager()
-                    img2txt_prompt = await prompt_mgr.generate(get_prompt_config().image2text)
+                    img2txt_prompt = await default_prompt.generate(get_prompt_config().image2text)
                 
                 # Convert dict parser params to DocParserParams object
                 doc_params = DocParserParams(
@@ -209,7 +208,7 @@ class FileProcessor:
         async with self.oracle_session as session:
             file_repo = FileRepository(session)
             await file_repo.update_file_status(
-                file_id=file_id,
+                file_ids=[file_id],
                 status=status,
                 log_msg=message
             )

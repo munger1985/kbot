@@ -7,7 +7,7 @@ from pathlib import Path
 from fastapi.responses import FileResponse
 from services.kb.chunk_service import ChunkService
 from services.kb.file_service import FileService
-from services.kb.kb_file_preview import FilePreview
+# from services.kb.kb_file_preview import FilePreview
 from api.schemas.kb_schema import *
 from api.schemas.base_response import SuccessResponse
 from core.config.settings import get_app_config
@@ -20,7 +20,7 @@ class KBController:
     def __init__(self):
         self.file_service = FileService()
         self.chunk_service = ChunkService()
-        self.file_preview = FilePreview()
+        # self.file_preview = FilePreview()
     
     async def upload_kb_files(
             self,
@@ -36,8 +36,7 @@ class KBController:
             kb_id=upload_form.kb_id,
             overwrite=upload_form.overwrite,
             skip_approval=upload_form.skip_approval,
-            batch_name=upload_form.batch_name,
-            batch_id=upload_form.batch_id,
+            batch=upload_form.batch,
             biz_metadata=upload_form.biz_metadata,
             created_by=upload_form.created_by
         )
@@ -53,7 +52,8 @@ class KBController:
             app_id=attach_form.app_id,
             domain_id=attach_form.domain_id,
             kb_id=attach_form.kb_id,
-            batch_name=attach_form.batch_name,
+            batch=attach_form.batch,
+            skip_approval=attach_form.skip_approval,
             biz_metadata=attach_form.biz_metadata,
             created_by=attach_form.created_by
         )
@@ -61,7 +61,7 @@ class KBController:
 
     async def get_kb_file(self, file_id: str) -> FileResponse:
         """Get knowledge base file"""
-        file_path = await self.file_service.get_file_path_by_id(file_id=file_id)
+        file_path = await self.file_service.get_path_by_id(file_id=file_id)
         return FileResponse(
                 path=file_path,
                 filename=urllib.parse.quote(Path(file_path).name, encoding='utf-8'),
@@ -78,19 +78,15 @@ class KBController:
         ) -> SuccessResponse:
         """Delete files from knowledge base"""
         await self.file_service.delete_file_service(
-                app_id=form.app_id,
-                domain_id=form.domain_id,
                 kb_id=form.kb_id,
-                batch_id=form.batch_id,
-                batch_name=form.batch_name,
+                batch=form.batch,
                 file_ids=form.file_ids,
-                file_paths=form.file_paths,
             )
         return SuccessResponse(message=f"Successfully deleted files {form.file_ids}")
         
     async def reparse_kb_files(self, form: KBReparseForm) -> SuccessResponse:
         """Reparse files in knowledge base"""
-        await self.file_service.reparse_files(file_ids=form.file_ids)
+        await self.file_service.reparse_file(kb_id=form.kb_id, file_ids=form.file_ids)
         return SuccessResponse(message=f"Successfully triggered reparse for files {form.file_ids}")
 
     async def edit_kb_file_chunk(
@@ -167,8 +163,9 @@ class KBController:
             tags: list[str]
         ) -> SuccessResponse:
         """Update tags of knowledge base file, auto-sync tags to associated file chunks"""
-        await self.file_service.update_file_tags(
+        await self.file_service.update_file_tag(
             file_id=file_id,
+            kb_id=kb_id,
             tags=tags
         )
         return SuccessResponse(message=f"Successfully updated tags of file {file_id}")
@@ -177,7 +174,7 @@ class KBController:
     async def preview_extracted_image(self, params: PreviewImageParams) -> FileResponse:
         """Preview images extracted from a knowledge base file"""
         # 1. Get the base file path to locate the associated image directory
-        file_path = await self.file_service.get_file_path_by_id(file_id=params.file_id)
+        file_path = await self.file_service.get_path_by_id(file_id=params.file_id)
         
         # 2. Construct the path to the extracted images folder
         # Images are typically stored in a subfolder named after the file_id
@@ -198,7 +195,7 @@ class KBController:
     
     async def get_pdf_by_id(self, file_id: str) -> FileResponse:
         """Get PDF file by file_id"""
-        file_path = await self.file_service.get_file_path_by_id(file_id)
+        file_path = await self.file_service.get_path_by_id(file_id)
         return FileResponse(file_path, media_type="application/pdf")
     
 kb_controller = KBController()
