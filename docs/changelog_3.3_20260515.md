@@ -65,8 +65,8 @@
 | 🗑️ 删除字段 | `llm_id` | `NUMBER(38,0)` | 旧字段，已迁移至 `models` |
 | 🗑️ 删除字段 | `llm_params` | `JSON` | 旧字段，已迁移至 `models` |
 | 🗑️ 删除字段 | `embedding_model_id` | `NUMBER(38,0)` | 旧字段，已迁移至 `models` |
-| 🗑️ 删除字段 | `feedback_similarity_flag` | `NUMBER(1,0)` | 旧字段，建议迁移至 `models` 或移除 |
-| 🗑️ 删除字段 | `synonym_similarity_flag` | `NUMBER(1,0)` | 旧字段，建议迁移至 `models` 或移除 |
+| 🗑️ 删除字段 | `feedback_similarity_flag` | `NUMBER(1,0)` | 旧字段，已删除 |
+| 🗑️ 删除字段 | `synonym_similarity_flag` | `NUMBER(1,0)` | 旧字段，已删除 |
 | 🗑️ 删除字段 | `reranker_model_id` | `NUMBER(38,0)` | 旧字段，已迁移至 `models` |
 | 🗑️ 删除字段 | `reranker_topk` | `NUMBER(38,0)` | 旧字段，已迁移至 `models` |
 | 🗑️ 删除字段 | `reranker_score_threshold` | `NUMBER(38,0)` | 旧字段，已迁移至 `models` |
