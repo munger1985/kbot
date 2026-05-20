@@ -145,3 +145,41 @@ class GraphRepository(BaseRepository[GraphVertexEntity]):
         except Exception as e:
             logger.error(f"[GraphRepo] Failed to upsert edge {edge_id} with map: {str(e)}", exc_info=True)
             raise DatabaseException(f"Failed to upsert graph edge or map", original_error=e)
+        
+    async def get_vertex_by_id(self, vertex_id: str) -> GraphVertexEntity | None:
+        """
+        根据实体 ID (vertex_id) 获取图节点，用于实体融合提取原有描述。
+        兼容异步 Repository 架构。
+        """
+        sql = """
+        SELECT 
+            vertex_id, 
+            vertex_name, 
+            vertex_type, 
+            description, 
+            attributes, 
+            name_vector
+        FROM kbot_graph_knowledge_vertices
+        WHERE vertex_id = :vertex_id
+        """
+        try:
+            result = await self.session.execute(text(sql), {"vertex_id": vertex_id})
+            # 兼容 SQLAlchemy 2.0 异步映射实体返回
+            # 如果底层映射完好，可以用 scalars().first()，或者 fetchone() 组装
+            row = result.fetchone()
+            if not row:
+                return None
+
+            # 转换为你上游 merge_and_ingest_graph 服务所期望的实体对象或具备对应属性的对象
+            # 确保上游通过 `vertex.description` 能拿到原有百科描述
+            return GraphVertexEntity(
+                vertex_id=row.vertex_id,
+                vertex_name=row.vertex_name,
+                vertex_type=row.vertex_type,
+                description=row.description,
+                attributes=json.loads(row.attributes) if row.attributes else None,
+                name_vector=row.name_vector
+            )
+        except Exception as e:
+            logger.error(f"[GraphRepo] Failed to fetch vertex by id {vertex_id}: {str(e)}", exc_info=True)
+            raise DatabaseException(f"Failed to fetch graph vertex by id", original_error=e)
