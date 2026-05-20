@@ -46,15 +46,15 @@ class KBService:
             cascade: 是否删除知识库中的所有元数据，默认True
         """
         try:
-            if cascade:
-                # 延迟导入, 避免循环依赖
-                from services.search import SQLDDLService, SQLExampleService
-                # 1. 删除知识库中的所有示例SQL
-                deleted_sql_count = await SQLExampleService().delete_by_kb(kb_id)
-                logger.info(f"知识库 {kb_id} 中的所有示例SQL删除成功, 共 {deleted_sql_count} 条数据")
-                # 2. 删除知识库中的所有元数据
-                deleted_ddl_count = await SQLDDLService().delete_by_kb(kb_id)
-                logger.info(f"知识库 {kb_id} 中的所有元数据删除成功, 共 {deleted_ddl_count} 条数据")
+            # if cascade:
+            #     # 延迟导入, 避免循环依赖
+            #     # from services.search import SQLDDLService, SQLExampleService
+            #     # 1. 删除知识库中的所有示例SQL
+            #     deleted_sql_count = await SQLExampleService().delete_by_kb(kb_id)
+            #     logger.info(f"知识库 {kb_id} 中的所有示例SQL删除成功, 共 {deleted_sql_count} 条数据")
+            #     # 2. 删除知识库中的所有元数据
+            #     deleted_ddl_count = await SQLDDLService().delete_by_kb(kb_id)
+            #     logger.info(f"知识库 {kb_id} 中的所有元数据删除成功, 共 {deleted_ddl_count} 条数据")
 
             # 删除知识库
             async with self.db_session as session:

@@ -212,32 +212,25 @@ class KBRepository(BaseRepository[KBEntity]):
         except Exception as e:
             raise DatabaseException("Failed to get knowledge base by app/domain/name", original_error=e)
     
-    async def get_model_by_id(self, kbid: int) -> dict[str, int | None]:
+    async def get_model_by_id(self, kbid: int) -> dict:
         """
         Get model configuration by knowledge base ID.
         :param kbid: Knowledge base ID
-        :return: Dict containing model configuration from the models JSON field
+        :return: Dict containing model_config key with the models JSON field
         """
         try:
             stmt = select(
-                KBEntity.kb_category,
                 KBEntity.models
             ).where(KBEntity.kb_id == kbid)
             
             result = await self.session.execute(stmt)
-            model_config = result.fetchone()
+            models = result.scalar_one_or_none()
             
-            if not model_config:
+            if models is None:
                 raise DataNotFoundException(f"Model configuration not found for KB ID {kbid}")
             
-            kb_category, models = model_config
-            models_dict = models if models else {}
-            
             return {
-                "kb_category": kb_category,
-                "img2txt_model_id": models_dict.get("img2txt_model_id"),
-                "img_embed_model_id": models_dict.get("img_embed_model_id"),
-                "txt_embed_model_id": models_dict.get("txt_embed_model_id")
+                "model_config": models if isinstance(models, dict) else {}
             }
         except DataNotFoundException as e:
             raise e

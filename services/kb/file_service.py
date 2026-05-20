@@ -168,11 +168,11 @@ class FileService:
             kb_repo = KBRepository(session)
             # 从知识库获取模型配置
             models = await kb_repo.get_model_by_id(kb_id)
-            if not models:
+            model_config = models.get("model_config", {})
+            if not model_config:
                 msg = f"知识库 {kb_id} 未配置模型，跳过处理"
                 logger.warning(msg)
-
-            model_config = models["model_config"]
+                return
             if model_config and isinstance(model_config, dict):
                 txt_embedding_model = model_config.get("txt_embedding_model", None) # 文本嵌入模型
                 llm_model = model_config.get("llm_model", None) # LLM模型
