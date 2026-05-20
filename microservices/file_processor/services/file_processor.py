@@ -5,7 +5,7 @@ from datetime import datetime
 from ..parser_schema import DocParserParams, FileParams, ChunkResult
 from .docling_service import ParserService
 from .txt_to_md import TxtToMarkdownParser
-from dao.repositories import FileRepository, TxtChunkRepository
+from dao.repositories import FileRepository, TxtChunkRepository, GraphRepository
 from dao.entities import TxtChunkEntity
 from core.database.oracle import get_session
 from core.config.settings import get_app_config, get_prompt_config
@@ -14,6 +14,7 @@ from core.exceptions import DataNotFoundException, DatabaseException
 from utils.clients import AIModelClient
 from utils.sanitize import sanitize_dict_for_oracle_json
 from services.basic.ai_model import AIModelService
+from services.graph import GraphIngestionService
 from agent.prompt import default_prompt
 
 
@@ -103,7 +104,8 @@ class FileProcessor:
                     use_vlm=use_vlm,
                     vlm_model=vlm_model,
                     llm_model=llm_model,
-                    img2txt_prompt=img2txt_prompt
+                    img2txt_prompt=img2txt_prompt,
+                    extract_graph=file.chunk_parser.get("extract_graph", False)
                 )
 
                 # Create FileParams object for queue
@@ -183,6 +185,13 @@ class FileProcessor:
                 else:
                     # Save chunks with embeddings to database
                     await self._save_chunks(file_params.kb_id, file_params.file_id, embeddings)
+                
+                # Extract graph entities and relations
+                if file_params.parser_params.extract_graph:
+                    try:
+                        await self._extract_and_save_graph(result, file_params)
+                    except Exception as graph_err:
+                        logger.error(f"Graph extraction failed for file {file_params.file_id}: {str(graph_err)}")
             else:
                 logger.error(f"File {file_params.file_path} parsing result is not expected list format")
                 await self._update_file_status(
@@ -380,41 +389,85 @@ class FileProcessor:
             await self._update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, msg)
             return False
         
-    async def _extract_and_save_graph(self, parser_results: list[ChunkResult], file_params: FileParams):
+    async def _extract_and_save_graph(
+        self, 
+        parser_results: list[ChunkResult], 
+        file_params: FileParams
+    ):
         """
-        从解析出的文本块中提取实体与关系，并持久化至 Oracle Graph
+        从解析出的文本块中提取实体与关系，并利用 GraphIngestionService 
+        进行增量实体融合与持久化至 Oracle Graph。
         """
         llm_model = file_params.parser_params.llm_model
         if not llm_model:
             logger.warning("No LLM model configured for graph extraction, skipping.")
             return
-
-        # 1. 调用图谱提取服务（这部分通常内部会做并发控制或 Batch 处理）
-        # vertices, edges = await self.graph_service.extract_triplets(
-        #     chunks=parser_results, 
-        #     model_name=llm_model,
-        #     biz_metadata=file_params.biz_metadata
-        # )
         
-        # 模拟提取到的实体和关系数据，这里需要映射到你refactor后的 SQLAlchemy 2.0 实体
-        vertices_to_save = []
-        edges_to_save = []
-        
-        # TODO: 遍历提取结果，组装成 GraphVertex 和 GraphEdge 实例
-        # 别忘了清洗和 sanitize 其中的 JSON 字段 (可以用你导入的 sanitize_dict_for_oracle_json)
-        
-        if not vertices_to_save and not edges_to_save:
-            logger.info("No graph elements extracted from this file.")
+        embedding_model = file_params.txt_embed_model
+        if not embedding_model:
+            logger.warning("No text embedding model configured for graph extraction, skipping.")
             return
 
-        # 2. 写入 Oracle 26ai 数据库
-        async with self.oracle_session as session:
-            # graph_repo = GraphRepository(session)
+        if not parser_results:
+            logger.info(f"No chunks provided for file {file_params.file_id}. Skipping graph ingestion.")
+            return
+
+        # 1. 初始化演进后的图谱入库服务
+        graph_service = GraphIngestionService(embedding_model=embedding_model, llm_model=llm_model)
+
+        # 封装全局业务元数据（用于图谱多租户隔离与权限管控）
+        base_properties = {
+            "kb_id": file_params.kb_id,
+            "security_level": file_params.security_level
+        }
+
+        total_relations_count = 0
+
+        # 2. 迭代处理每一个文本块，保持单文档流水线在文本块层面的事务及锁隔离
+        for chunk in parser_results:
             try:
-                # await graph_repo.save_graph_data(vertices=vertices_to_save, edges=edges_to_save)
-                # 或者直接使用 session.add_all(...)
-                # await session.commit()
-                logger.info(f"Successfully saved {len(vertices_to_save)} vertices and {len(edges_to_save)} edges to graph.")
-            except Exception as e:
-                await session.rollback()
-                raise DatabaseException(f"Failed to commit graph data to Oracle: {str(e)}")
+                # 确定当前块的唯一标识
+                chunk_id = getattr(chunk, "id", None) or getattr(chunk, "chunk_id", str(uuid.uuid4()))
+                
+                # 获取当前块的纯文本内容
+                chunk_text = getattr(chunk, "text", "") or getattr(chunk, "content", "")
+                if not chunk_text.strip():
+                    continue
+
+                # 3. 驱动大模型抽取当前块的关系三元组（传入模型名称与清洗后的文本）
+                # 返回的是一个强类型的 GraphAnalysis Pydantic 实例
+                graph_analysis = await graph_service.extract_triplets(
+                    user_input_text=chunk_text,
+                    llm_model_name=llm_model
+                )
+
+                # 如果没有抽取到任何关联关系，直接跳过当前块
+                if not graph_analysis.edges:
+                    continue
+
+                # 4. 适配下游接口：将 Pydantic 中的边（关系）转化为底层持久化需要的扁平字典列表
+                # 并在转换过程中混入多租户与安全隔离元数据（base_properties）
+                extracted_relations = []
+                for edge in graph_analysis.edges:
+                    rel_dict = {
+                        "source_name": edge.source_name,
+                        "target_name": edge.target_name,
+                        "relation_type": edge.relation_type,
+                        "relation_attributes": {**base_properties}  # 动态混入安全与权限元数据
+                    }
+                    extracted_relations.append(rel_dict)
+
+                # 5. 调用核心入库入口：内部自动处理行锁优化、实体百科融合、向量重算及边映射
+                await graph_service.merge_and_ingest_graph(
+                    chunk_id=chunk_id,
+                    file_id=file_params.file_id,
+                    extracted_relations=extracted_relations
+                )
+                
+                total_relations_count += len(extracted_relations)
+
+            except Exception as chunk_err:
+                # 记录单块失败，允许其他块继续
+                logger.error(f"Failed to process graph for chunk {getattr(chunk, 'id', 'unknown')} in file {file_params.file_id}: {str(chunk_err)}", exc_info=True)
+
+        logger.info(f"Successfully finished graph ingestion pipeline for file {file_params.file_id}. Total extracted relations processed: {total_relations_count}")

@@ -12,6 +12,7 @@ from .user_token_repo import UserTokenRepository
 from .user_repo import UserRepository
 from .service_repo import ServiceRepository
 from .txt_chunk_repo import TxtChunkRepository
+from .graph_repo import GraphRepository
 
 
 
@@ -30,4 +31,5 @@ __all__ = [
     "UserRepository",
     "ServiceRepository",
     "TxtChunkRepository",
+    "GraphRepository"
 ]

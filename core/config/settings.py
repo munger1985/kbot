@@ -211,6 +211,8 @@ class PromptConfig(BaseModel):
     reasoning: str = Field(default="SYSTEM/reasoning", description="Model reasoning prompt template")
     generate_chart: str = Field(default="SYSTEM/generate_chart", description="Generate chart prompt template")
     db_router: str = Field(default="SYSTEM/db_router", description="Database router prompt template")
+    graph_vertex_fusion: str = Field(default="SYSTEM/graph_vertex_fusion", description="Graph vertex fusion prompt template")
+    graph_extractor: str = Field(default="SYSTEM/graph_extractor", description="Graph extractor prompt template")
 
 
 class Settings(BaseSettings):

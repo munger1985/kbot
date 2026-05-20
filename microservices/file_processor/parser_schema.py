@@ -16,6 +16,7 @@ class DocParserParams(BaseModel):
     vlm_model: str | None = Field(None, description="指定 VLM 模型名称")
     llm_model: str = Field(..., description="指定 LLM 模型名称")
     img2txt_prompt: str = Field(..., description="自定义 VLM 提取图片提示词")
+    extract_graph: bool = Field(False, description="是否提取图实体")
 
 class FileParams(BaseModel):
     file_id: str = Field(..., description="文件ID")

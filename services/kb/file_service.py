@@ -208,7 +208,8 @@ class FileService:
                     "img2txt_prompt": prompt, 
                     "image_scale": 2.0,
                     "min_chunk_len": 200, 
-                    "generate_picture_images": True
+                    "generate_picture_images": True,
+                    "extract_graph": False
                 }
             
             # 构造 file 的实体列表用于批量保存到数据库

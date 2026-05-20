@@ -29,7 +29,7 @@ from docling_core.types.doc.document import (
 from .utils import ModelTask, ParserToolLib
 from ..parser_schema import DocParserParams, ChunkResult
 from utils.clients import AIModelClient
-from services.default_prompt import PromptManager
+from agent.prompt import default_prompt
 
 class OutputFormat(str, Enum):
     """输出格式枚举类
@@ -118,7 +118,6 @@ class DoclingEngine:
         self.executor = pool_executor
         self.model_task = ModelTask()
         self.model_client = AIModelClient()
-        self.prompt_mgr = PromptManager()
         # [新增] VLM 描述缓存，Key 为图片指纹(hash)，Value 为描述文本
         self._vlm_cache = {}
         self._vlm_enhancement_cache = {}
@@ -262,7 +261,7 @@ class DoclingEngine:
                     hash_to_pic_indices[img_hash] = [i]
                     pic_context = item_id_to_header.get(id(pic), "未知章节")
                     # 动态组装 Prompt
-                    vlm_final_prompt = self.prompt_mgr.format(
+                    vlm_final_prompt = default_prompt.format(
                         params.img2txt_prompt, 
                         current_header=pic_context
                     )

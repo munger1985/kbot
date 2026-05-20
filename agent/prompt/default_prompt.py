@@ -23,6 +23,8 @@ class DefaultPrompt(string.Formatter):
             "SYSTEM/data_reasoning": REASONING_PROMPT,
             "SYSTEM/generate_chart": GENERATE_CHART_PROMPT,
             "SYSTEM/db_router": DB_ROUTER_PROMPT,
+            "SYSTEM/graph_extractor": GRAPH_EXTRACTOR_PROMPT,
+            "SYSTEM/graph_vertex_fusion": GRAPH_VERTEX_FUSION_PROMPT,
         }
 
     def get_value(self, key: Any, args: Any, kwargs: Any) -> Any:
@@ -472,5 +474,64 @@ DB_ROUTER_PROMPT = """
 
 当前用户问题: {standalone_query}
 """
+
+# ================================================================================================
+# --------------------------------  知识图谱融合系统提示词  ----------------------------------------
+# ================================================================================================
+GRAPH_VERTEX_FUSION_PROMPT = """你是一个知识图谱专家，正在维护一个全面、无冗余的实体百科全书。
+请将关于实体【{name}】（类型：{v_type}）的新增上下文信息，自然地融合进原有的百科描述中。
+
+【原有百科描述】:
+{old_desc}
+
+【新增上下文信息】:
+{new_desc}
+
+【融合要求】:
+1. 保持百科体风格，陈述事实，语言精炼，去除重复、冲突或无价值的口语化信息。
+2. 严禁凭空胡编或补充任何既不属于原有描述、也不属于新增上下文的信息。
+3. 直接输出融合后的完整最终描述，不要包含任何前导语、后缀或解释性文字。"""
+
+
+# ================================================================================================
+# --------------------------------  知识图谱结构化抽取提示词  --------------------------------------
+# ================================================================================================
+GRAPH_EXTRACTOR_PROMPT = """你是一个顶级的企业级知识图谱抽取专家。
+请从用户提供的文本中，精准抽取出核心的实体（Vertices）以及它们之间的关联关系（Edges）。
+
+【抽取要求】:
+1. 实体识别（Vertices）:
+   - vertex_name: 应为具体、有明确含义的词（如 "Oracle 26ai"、"PostgreSQL"）。避免过于宽泛的抽象概念。
+   - vertex_type: 必须使用大写英文标识，清晰分类（如 "DATABASE"、"PROJECT"、"TECH"、"FRAMEWORK"、"PERSON"）。
+   - vertex_desc: 简要描述该实体在文本中的核心职责、版本或属性补充。若无相关上下文，可设为空。
+
+2. 关系识别（Edges）:
+   - source_name 与 target_name: 必须精准对应 vertices 列表中出现的 vertex_name，严禁拼写不一致。
+   - relation_type: 必须使用大写英文下划线格式（如 "SUPPORT_INDEX"、"INTEGRATED_IN"、"VERSION_MIGRATION"）。关系需具备方向性（源实体 -> 目标实体）。
+
+3. 格式约束:
+   - 必须以纯净的 JSON 格式返回，严禁包含任何 Markdown 标签（如 ```json 标记）、任何前导引言、后缀或解释性文字。
+   - 如果文本中不包含任何图谱信息，请返回 vertices 和 edges 为空列表的 JSON 对象。
+
+【待抽取文本】:
+{text}
+
+【期待返回的 JSON 结构规范】:
+{{
+  "vertices": [
+    {{
+      "vertex_name": "实体名称",
+      "vertex_type": "实体类型",
+      "vertex_desc": "实体描述"
+    }}
+  ],
+  "edges": [
+    {{
+      "source_name": "源实体名称",
+      "target_name": "目标实体名称",
+      "relation_type": "关系类型"
+    }}
+  ]
+}}"""
 
 default_prompt = DefaultPrompt()
