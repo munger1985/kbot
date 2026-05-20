@@ -191,7 +191,7 @@ class FileProcessor:
                 if True: # For test purpose
                     logger.info(f"Extracting graph for file {file_params.file_path}...")
                     try:
-                        await self._extract_and_save_graph(result, file_params)
+                        await self._extract_and_save_graph(embeddings, file_params)
                         logger.success(f"Graph extraction completed for file {file_params.file_id}")
                     except Exception as graph_err:
                         logger.error(f"Graph extraction failed for file {file_params.file_id}: {str(graph_err)}")
@@ -394,10 +394,16 @@ class FileProcessor:
         
     async def _extract_and_save_graph(
         self, 
-        parser_results: list[ChunkResult], 
+        entities: list[TxtChunkEntity], 
         file_params: FileParams
-    ):
-        """从解析出的文本块中提取实体与关系，并持久化至 Oracle Graph"""
+    ) -> None:
+        """
+        从已生成向量并分配ID的 TxtChunk 实体中提取图谱关系，并持久化至 Oracle Graph
+        
+        Args:
+            entities: 包含了唯一 chunk_id、向量和文本的完整实体列表
+            file_params: 业务全局参数（包含 llm_model、file_id、kb_id 等）
+        """
         llm_model = file_params.parser_params.llm_model
         if not llm_model:
             logger.warning("No LLM model configured for graph extraction, skipping.")
@@ -408,12 +414,14 @@ class FileProcessor:
             logger.warning("No text embedding model configured for graph extraction, skipping.")
             return
 
-        if not parser_results:
-            logger.info(f"No chunks provided for file {file_params.file_id}. Skipping graph ingestion.")
+        if not entities:
+            logger.info(f"No text entities provided for file {file_params.file_id}. Skipping graph ingestion.")
             return
 
+        # 初始化图谱上游服务
         graph_service = GraphIngestionService(embedding_model=embedding_model, llm_model=llm_model)
 
+        # 抽取公共的图属性
         base_properties = {
             "kb_id": file_params.kb_id,
             "security_level": file_params.security_level
@@ -421,13 +429,17 @@ class FileProcessor:
 
         total_relations_count = 0
 
-        for chunk in parser_results:
+        # 遍历带有生命周期 ID 的实体
+        for entity in entities:
             try:
-                chunk_id = getattr(chunk, "id", None) or getattr(chunk, "chunk_id", str(uuid.uuid4()))
-                chunk_text = getattr(chunk, "text", "") or getattr(chunk, "content", "")
-                if not chunk_text.strip():
-                    return
+                # 【完美对齐】直接获取该切片入库前的唯一 ID 和文本内容
+                chunk_id = entity.chunk_id
+                chunk_text = entity.content
+                
+                if not chunk_text or not chunk_text.strip():
+                    continue
 
+                # 1. 调用 LLM 提取当前切片的图谱结构
                 graph_analysis = await graph_service.extract_triplets(
                     user_input_text=chunk_text,
                     llm_model_name=llm_model
@@ -436,21 +448,17 @@ class FileProcessor:
                 if not graph_analysis.edges:
                     continue
 
+                # 2. 构建当前切片局部的实体字典，方便补全边的类型和描述
                 vertex_type_map = {}
                 vertex_desc_map = {}
                 if getattr(graph_analysis, "vertices", None):
                     for v in graph_analysis.vertices:
-                        v_identity = (
-                            getattr(v, "entity_name", None) or 
-                            getattr(v, "id", None) or 
-                            getattr(v, "vertex_name", None) or 
-                            getattr(v, "name", None)
-                        )
+                        v_identity = getattr(v, "entity_name", None) or getattr(v, "name", None)
                         if v_identity:
-                            v_desc = getattr(v, "description", None) or getattr(v, "desc", "") or ""
                             vertex_type_map[v_identity] = getattr(v, "type", "Entity") or "Entity"
-                            vertex_desc_map[v_identity] = v_desc
+                            vertex_desc_map[v_identity] = getattr(v, "description", "") or ""
 
+                # 3. 组装符合 IngestionService 规范的关系字典列表
                 extracted_relations = []
                 for edge in graph_analysis.edges:
                     s_type = vertex_type_map.get(edge.source_name, "Entity")
@@ -473,6 +481,7 @@ class FileProcessor:
                     }
                     extracted_relations.append(rel_dict)
 
+                # 4. 录入图谱，此时的 chunk_id 是绝对准确、一一对应的
                 await graph_service.merge_and_ingest_graph(
                     chunk_id=chunk_id,
                     file_id=file_params.file_id,
@@ -481,6 +490,13 @@ class FileProcessor:
                 total_relations_count += len(extracted_relations)
 
             except Exception as chunk_err:
-                logger.error(f"Failed to process graph for chunk {getattr(chunk, 'id', 'unknown')} in file {file_params.file_id}: {str(chunk_err)}", exc_info=True)
+                logger.error(
+                    f"Failed to process graph for chunk {getattr(entity, 'chunk_id', 'unknown')} "
+                    f"in file {file_params.file_id}: {str(chunk_err)}", 
+                    exc_info=True
+                )
 
-        logger.info(f"Successfully finished graph ingestion pipeline for file {file_params.file_id}. Total relations processed: {total_relations_count}")
+        logger.info(
+            f"Successfully finished graph ingestion pipeline for file {file_params.file_id}. "
+            f"Total relations processed: {total_relations_count}"
+        )
