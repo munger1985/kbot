@@ -209,7 +209,7 @@ class FileService:
                     "image_scale": 2.0,
                     "min_chunk_len": 200, 
                     "generate_picture_images": True,
-                    "extract_graph": True
+                    "extract_graph": False
                 }
             
             # 构造 file 的实体列表用于批量保存到数据库

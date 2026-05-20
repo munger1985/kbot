@@ -187,7 +187,8 @@ class FileProcessor:
                     await self._save_chunks(file_params.kb_id, file_params.file_id, embeddings)
                 
                 # Extract graph entities and relations
-                if file_params.parser_params.extract_graph:
+                # if file_params.parser_params.extract_graph:
+                if True: # For test purpose
                     logger.info(f"Extracting graph for file {file_params.file_path}...")
                     try:
                         await self._extract_and_save_graph(result, file_params)
