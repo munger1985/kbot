@@ -105,6 +105,25 @@ class GraphRepository:
                 "attributes": attributes_json  # 传入序列化后的纯字符串
             }
         )
+        try:
+            logger.info("[诊断拦截] 已经完成所有节点和边的处理，准备执行最后一步：session.commit()...")
+            await self.session.commit()
+            logger.info(f"Successfully processed and committed graph network for chunk {chunk_id}")
+        except Exception as commit_exc:
+            # 🚨 核心武器：利用 traceback 还原真正的犯罪现场，不经任何二次过滤
+            import traceback
+            error_stack = traceback.format_exc()
+            
+            logger.error("=" * 80)
+            logger.error("🚨🚨🚨 [终极拦截] 抓到了！commit 阶段爆发了致命异常 🚨🚨🚨")
+            logger.error(f"异常原始类型: {type(commit_exc)}")
+            logger.error(f"异常原始信息: {str(commit_exc)}")
+            logger.error("⬇️⬇️⬇️ 以下为未受污染的完整调用栈（请仔细观察最后一行的报错文件名和行号） ⬇️⬇️⬇️")
+            logger.error(f"\n{error_stack}")
+            logger.error("=" * 80)
+            
+            # 重新抛出，保证原有的回滚逻辑不受影响
+            raise commit_exc
 
     async def get_vertex_by_id(self, vertex_id: str) -> GraphVertexEntity | None:
         """使用 ORM 查找顶点，直接返回模型实体，自带属性解析与小写列对齐防御"""
