@@ -831,3 +831,4 @@ CREATE PROPERTY GRAPH kbot_knowledge_rag_graph
             LABEL connects_to
             PROPERTIES (edge_id, relation_type, weight, attributes)
     );
+
