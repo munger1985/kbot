@@ -80,20 +80,20 @@ class KBService:
                 kb = await kb_repo.get_by_id(kb_id)
             
             return {
-                "kb_id": kb.id,
+                "kb_id": kb.kb_id,
                 "domain_id": kb.domain_id,
-                "kb_name": kb.name,
-                "category": kb.category,
+                "kb_name": kb.kb_name,
+                "category": kb.kb_category,
                 "engine": kb.engine,
                 "descs": kb.descs,
                 "models": kb.models,
-                "is_active": kb.is_active,
+                "is_active": kb.kb_status == 1,
                 "security_level": kb.security_level,
                 "process_priority": kb.process_priority,
                 "created_by": kb.created_by,
-                "created_at": kb.created_at,
+                "created_at": kb.created_time,
                 "updated_by": kb.updated_by,
-                "updated_at": kb.updated_at
+                "updated_at": kb.updated_time
             }
         
         except Exception as e:
@@ -122,31 +122,31 @@ class KBService:
             if is_active is not None:
 
                 return [{
-                    "kb_id": kb.id,
+                    "kb_id": kb.kb_id,
                     "domain_id": kb.domain_id,
-                    "kb_name": kb.name,
-                    "category": kb.category,
+                    "kb_name": kb.kb_name,
+                    "category": kb.kb_category,
                     "descs": kb.descs,
                     "security_level": kb.security_level
                 } for kb in kbs]
             
             else:
                 return [{
-                    "kb_id": kb.id,
+                    "kb_id": kb.kb_id,
                     "domain_id": kb.domain_id,
-                    "kb_name": kb.name,
-                    "category": kb.category,
+                    "kb_name": kb.kb_name,
+                    "category": kb.kb_category,
                     "engine": kb.engine,
                     "descs": kb.descs,
                     "models": kb.models,
                     "dbconf": kb.dbconf,
-                    "is_active": kb.is_active,
+                    "is_active": kb.kb_status == 1,
                     "security_level": kb.security_level,
                     "process_priority": kb.process_priority,
                     "created_by": kb.created_by,
-                    "created_at": kb.created_at,
+                    "created_at": kb.created_time,
                     "updated_by": kb.updated_by,
-                    "updated_at": kb.updated_at
+                    "updated_at": kb.updated_time
             } for kb in kbs]
         
         except Exception as e:

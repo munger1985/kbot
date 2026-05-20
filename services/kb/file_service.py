@@ -280,7 +280,7 @@ class FileService:
                 handle_exception(e, "获取知识库默认配置失败")
             
             # 保存文件
-            logger.info(f"开始上传 {len(files)} 个文件到知识库: {kb.name}")
+            logger.info(f"开始上传 {len(files)} 个文件到知识库: {kb.kb_name}")
             try:
                 # 保存文件到磁盘
                 fileparams = await self._save_file_in_thread(files=files, kb_id=kb_id, batch=batch, overwrite=overwrite)

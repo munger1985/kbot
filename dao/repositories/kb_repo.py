@@ -52,9 +52,9 @@ class KBRepository(BaseRepository[KBEntity]):
             if domain_id:
                 query = query.where(KBEntity.domain_id == domain_id)
             if is_active is not None:
-                query = query.where(KBEntity.is_active == is_active)
+                query = query.where(KBEntity.kb_status == 1 if is_active else KBEntity.kb_status != 1)
             if category is not None:
-                query = query.where(KBEntity.category == category)
+                query = query.where(KBEntity.kb_category == category)
                 
             result = await self.session.execute(query)
             kbs = result.scalars().all()
@@ -87,7 +87,7 @@ class KBRepository(BaseRepository[KBEntity]):
         """根据ID获取知识库名称"""
         try:
             result = await self.session.execute(
-                select(KBEntity.name)
+                select(KBEntity.kb_name)
                 .where(KBEntity.kb_id == kb_id)
             )
             kb_name = result.scalar_one_or_none()
@@ -104,13 +104,13 @@ class KBRepository(BaseRepository[KBEntity]):
         """根据 Agent ID 和知识库类型获取所有配置"""
         try:
             stmt = (
-                select(KBEntity.kb_id, KBEntity.name, KBEntity.descs)
+                select(KBEntity.kb_id, KBEntity.kb_name, KBEntity.descs)
                 .select_from(AgentConfEntity)  # 明确以关联表为起点
                 .join(KBEntity, AgentConfEntity.kb_id == KBEntity.kb_id)
                 .where(
                     and_(
                         AgentConfEntity.agent_id == agent_id, 
-                        KBEntity.category == category
+                        KBEntity.kb_category == category
                     )
                 )
             )
@@ -123,8 +123,8 @@ class KBRepository(BaseRepository[KBEntity]):
                 
             return [
                 {
-                    "id": str(row.id),
-                    "name": row.name,
+                    "id": str(row.kb_id),
+                    "name": row.kb_name,
                     "descs": row.descs or ""
                 } for row in rows
             ]
@@ -216,13 +216,12 @@ class KBRepository(BaseRepository[KBEntity]):
         """
         Get model configuration by knowledge base ID.
         :param kbid: Knowledge base ID
-        :return: Tuple containing (kb_category, img2txt_model_id, img_embed_model_id, txt_embed_model_id, summary_model_id)
+        :return: Dict containing model configuration from the models JSON field
         """
         try:
             stmt = select(
-                KBEntity.img2txt_model_id,
-                KBEntity.img_embed_model_id,
-                KBEntity.txt_embed_model_id
+                KBEntity.kb_category,
+                KBEntity.models
             ).where(KBEntity.kb_id == kbid)
             
             result = await self.session.execute(stmt)
@@ -231,10 +230,14 @@ class KBRepository(BaseRepository[KBEntity]):
             if not model_config:
                 raise DataNotFoundException(f"Model configuration not found for KB ID {kbid}")
             
+            kb_category, models = model_config
+            models_dict = models if models else {}
+            
             return {
-                "img2txt_model_id": model_config[0],
-                "img_embed_model_id": model_config[1],
-                "txt_embed_model_id": model_config[2]
+                "kb_category": kb_category,
+                "img2txt_model_id": models_dict.get("img2txt_model_id"),
+                "img_embed_model_id": models_dict.get("img_embed_model_id"),
+                "txt_embed_model_id": models_dict.get("txt_embed_model_id")
             }
         except DataNotFoundException as e:
             raise e
