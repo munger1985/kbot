@@ -18,9 +18,7 @@ class GraphRepository(BaseRepository[GraphVertexEntity]):
         attributes: dict[str, Any] | None = None, 
         name_vector: list[float] | None = None
     ) -> None:
-        """
-        利用 Oracle 26ai MERGE 语法单条高性能 Upsert 顶点
-        """
+        """利用 Oracle 26ai MERGE 语法单条高性能 Upsert 顶点"""
         sql = """
         MERGE INTO kbot_graph_knowledge_vertices t
         USING (
@@ -45,10 +43,7 @@ class GraphRepository(BaseRepository[GraphVertexEntity]):
             VALUES (s.vertex_id, s.vertex_name, s.vertex_type, s.description, s.attributes, s.name_vector, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         """
         try:
-            # 序列化 JSON 结构适应 Oracle JSON 字段要求
             attr_json = json.dumps(attributes) if attributes else None
-            
-            # Oracle 26ai 原生驱动支持传入 list/array 绑定给 VECTOR 字段类型
             await self.session.execute(
                 text(sql),
                 {
@@ -77,9 +72,9 @@ class GraphRepository(BaseRepository[GraphVertexEntity]):
         attributes: dict[str, Any] | None = None
     ) -> None:
         """
-        高性能双向合并：
+        高性能双向合并（已将外部调用路由统一对齐至此）：
         1. 增量 Upsert 边表（若存在则 weight + 1）
-        2. 幂等插入边-切片关联表（避免单 Chunk 内或跨重复文档重复绑定）
+        2. 幂等插入边-切片关联表
         """
         edge_sql = """
         MERGE INTO kbot_graph_knowledge_edges t
@@ -131,7 +126,7 @@ class GraphRepository(BaseRepository[GraphVertexEntity]):
                 }
             )
             
-            # 2. 绑定当前 Chunk ID 用于图搜索 Skill 到原文的精准溯源
+            # 2. 绑定当前 Chunk ID
             await self.session.execute(
                 text(map_sql),
                 {
@@ -144,39 +139,24 @@ class GraphRepository(BaseRepository[GraphVertexEntity]):
             logger.debug(f"[GraphRepo] Successfully upserted edge: {edge_id} and mapped to chunk: {chunk_id}")
         except Exception as e:
             logger.error(f"[GraphRepo] Failed to upsert edge {edge_id} with map: {str(e)}", exc_info=True)
-            raise DatabaseException(f"Failed to upsert graph edge or map", original_error=e)
+            raise Exception(f"Failed to upsert graph edge or map: {str(e)}")
         
     async def get_vertex_by_id(self, vertex_id: str) -> Any | None:
-        """
-        根据实体 ID (vertex_id) 获取图节点，用于实体融合。
-        针对 Oracle 原生大写返回做绝对对齐防御。
-        """
+        """根据实体 ID 获取图节点，并针对 Oracle 原生大写返回做绝对对齐防御"""
         sql = """
-        SELECT 
-            vertex_id, 
-            vertex_name, 
-            vertex_type, 
-            description, 
-            attributes, 
-            name_vector
+        SELECT vertex_id, vertex_name, vertex_type, description, attributes, name_vector
         FROM kbot_graph_knowledge_vertices
         WHERE vertex_id = :vertex_id
         """
         try:
             result = await self.session.execute(text(sql), {"vertex_id": vertex_id})
-            
-            # 1. 转化为标准映射
             row_map = result.mappings().first()
             if not row_map:
                 return None
 
-            # 2. 核心适配：规避 Oracle 驱动有时候返回大写（VERTEX_ID）或小写（vertex_id）的差异
-            # 创建一个归一化的字典
-            normalized = {}
-            for k, v in row_map.items():
-                normalized[k.lower()] = v
+            # 归一化字典，屏蔽大小写差异
+            normalized = {k.lower(): v for k, v in row_map.items()}
 
-            # 3. 解析属性 JSON
             raw_attrs = normalized.get("attributes")
             sanitized_attrs = None
             if raw_attrs:
@@ -185,18 +165,50 @@ class GraphRepository(BaseRepository[GraphVertexEntity]):
                 except Exception:
                     sanitized_attrs = raw_attrs
 
-            # 4. 动态组装成支持 .点语法 访问的防摔包装器
             class ValidatedVertex:
                 def __init__(self, data, attrs):
                     self.vertex_id = data.get("vertex_id")
                     self.vertex_name = data.get("vertex_name")
                     self.vertex_type = data.get("vertex_type")
-                    self.description = data.get("description") or ""  # 确保不是 None，规避判断崩塌
+                    self.description = data.get("description") or ""  # 防御 NoneType
                     self.attributes = attrs
                     self.name_vector = data.get("name_vector")
 
             return ValidatedVertex(normalized, sanitized_attrs)
-            
         except Exception as e:
             logger.error(f"[GraphRepo] Failed to fetch vertex by id {vertex_id}: {str(e)}", exc_info=True)
-            raise DatabaseException(f"Failed to fetch graph vertex by id", original_error=e)
+            raise Exception(f"Failed to fetch graph vertex by id: {str(e)}")
+
+    async def get_edge_by_id(self, edge_id: str) -> Any | None:
+        """根据关系边 ID 查库获取现有边的元数据状态"""
+        sql = """
+        SELECT edge_id, source_id, target_id, relation_type, weight, attributes
+        FROM kbot_graph_knowledge_edges
+        WHERE edge_id = :edge_id
+        """
+        try:
+            result = await self.session.execute(text(sql), {"edge_id": edge_id})
+            row_map = result.mappings().first()
+            if not row_map:
+                return None
+                
+            normalized = {k.lower(): v for k, v in row_map.items()}
+            
+            raw_attrs = normalized.get("attributes")
+            sanitized_attrs = {}
+            if raw_attrs:
+                try:
+                    sanitized_attrs = json.loads(raw_attrs) if isinstance(raw_attrs, str) else raw_attrs
+                except Exception:
+                    sanitized_attrs = raw_attrs
+                    
+            class ValidatedEdge:
+                def __init__(self, data, attrs):
+                    self.edge_id = data.get("edge_id")
+                    self.weight = data.get("weight") or 1
+                    self.attributes = attrs
+                    
+            return ValidatedEdge(normalized, sanitized_attrs)
+        except Exception as e:
+            logger.error(f"[GraphRepo] Failed to fetch edge by id {edge_id}: {str(e)}")
+            return None

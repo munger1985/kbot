@@ -397,10 +397,7 @@ class FileProcessor:
         parser_results: list[ChunkResult], 
         file_params: FileParams
     ):
-        """
-        从解析出的文本块中提取实体与关系，并利用 GraphIngestionService 
-        进行增量实体融合与持久化至 Oracle Graph。
-        """
+        """从解析出的文本块中提取实体与关系，并持久化至 Oracle Graph"""
         llm_model = file_params.parser_params.llm_model
         if not llm_model:
             logger.warning("No LLM model configured for graph extraction, skipping.")
@@ -415,10 +412,8 @@ class FileProcessor:
             logger.info(f"No chunks provided for file {file_params.file_id}. Skipping graph ingestion.")
             return
 
-        # 1. 初始化演进后的图谱入库服务
         graph_service = GraphIngestionService(embedding_model=embedding_model, llm_model=llm_model)
 
-        # 封装全局业务元数据（用于图谱多租户隔离与权限管控）
         base_properties = {
             "kb_id": file_params.kb_id,
             "security_level": file_params.security_level
@@ -426,56 +421,38 @@ class FileProcessor:
 
         total_relations_count = 0
 
-        # 2. 迭代处理每一个文本块，保持单文档流水线在文本块层面的事务及锁隔离
         for chunk in parser_results:
             try:
-                # 确定当前块的唯一标识
                 chunk_id = getattr(chunk, "id", None) or getattr(chunk, "chunk_id", str(uuid.uuid4()))
-                
-                # 获取当前块的纯文本内容
                 chunk_text = getattr(chunk, "text", "") or getattr(chunk, "content", "")
                 if not chunk_text.strip():
-                    continue
+                    return
 
-                # 3. 驱动大模型抽取当前块的关系三元组（返回强类型的 GraphAnalysis Pydantic 实例）
                 graph_analysis = await graph_service.extract_triplets(
                     user_input_text=chunk_text,
                     llm_model_name=llm_model
                 )
 
-                # 如果没有抽取到任何关联关系，直接跳过当前块
                 if not graph_analysis.edges:
                     continue
 
-                # --- 【修复核心】4. 建立当前 Chunk 内实体的属性索引映射 ---
-                # 预防大模型返回的 vertices 缺失，或边里出现了未定义在 vertices 里的孤立节点，使用 "Entity" 兜底
                 vertex_type_map = {}
                 vertex_desc_map = {}
                 if getattr(graph_analysis, "vertices", None):
                     for v in graph_analysis.vertices:
-                        # 动态探测实体的标识属性：优先尝试 entity_name, 其次 id/vertex_name, 最后尝试 name
                         v_identity = (
                             getattr(v, "entity_name", None) or 
                             getattr(v, "id", None) or 
                             getattr(v, "vertex_name", None) or 
                             getattr(v, "name", None)
                         )
-                        
-                        # 只有当成功拿到实体的标识时，才写入映射表
                         if v_identity:
-                            # 同样的，对描述字段做 fallback 探测
                             v_desc = getattr(v, "description", None) or getattr(v, "desc", "") or ""
-                            
                             vertex_type_map[v_identity] = getattr(v, "type", "Entity") or "Entity"
                             vertex_desc_map[v_identity] = v_desc
-                        else:
-                            logger.warning(f"[GraphIngestion] 发现无法识别标识的 VertexSchema 对象: {v.__dict__}")
 
-                # 5. 适配下游接口：将 Pydantic 中的边转化为底层持久化需要的扁平字典列表
-                # 显式补全下游 merge_and_ingest_graph 强依赖的 source_type / target_type 等字段
                 extracted_relations = []
                 for edge in graph_analysis.edges:
-                    # 动态检索或兜底节点的元数据
                     s_type = vertex_type_map.get(edge.source_name, "Entity")
                     s_desc = vertex_desc_map.get(edge.source_name, "")
                     t_type = vertex_type_map.get(edge.target_name, "Entity")
@@ -489,7 +466,6 @@ class FileProcessor:
                         "target_type": t_type,
                         "target_desc": t_desc,
                         "relation_type": edge.relation_type,
-                        # 混入多租户与安全隔离元数据，同时保留可能存在的边属性
                         "relation_attributes": {
                             **base_properties,
                             **getattr(edge, "attributes", {}) 
@@ -497,17 +473,14 @@ class FileProcessor:
                     }
                     extracted_relations.append(rel_dict)
 
-                # 6. 调用核心入库入口：内部自动处理行锁优化、实体百科融合、向量重算及边映射
                 await graph_service.merge_and_ingest_graph(
                     chunk_id=chunk_id,
                     file_id=file_params.file_id,
                     extracted_relations=extracted_relations
                 )
-                
                 total_relations_count += len(extracted_relations)
 
             except Exception as chunk_err:
-                # 记录单块失败，允许其他块继续
                 logger.error(f"Failed to process graph for chunk {getattr(chunk, 'id', 'unknown')} in file {file_params.file_id}: {str(chunk_err)}", exc_info=True)
 
-        logger.info(f"Successfully finished graph ingestion pipeline for file {file_params.file_id}. Total extracted relations processed: {total_relations_count}")
+        logger.info(f"Successfully finished graph ingestion pipeline for file {file_params.file_id}. Total relations processed: {total_relations_count}")
