@@ -27,7 +27,7 @@ class KBController:
             upload_form: KBUploadForm
         ) -> SuccessResponse:
         """Upload files to knowledge base"""
-        logger.debug(f"batch_id: {upload_form.batch_id}")
+        logger.debug(f"batch: {upload_form.batch}")
 
         await self.file_service.upload_file_service(
             files=upload_form.files,
