@@ -1,7 +1,7 @@
 from datetime import datetime
 from sqlalchemy import String, CLOB, Integer, ForeignKey, JSON, func
 from sqlalchemy.orm import Mapped, mapped_column
-from .base import BaseEntity
+from .base import BaseEntity, VectorField
 
 
 class GraphVertexEntity(BaseEntity):
@@ -13,7 +13,7 @@ class GraphVertexEntity(BaseEntity):
     vertex_type: Mapped[str] = mapped_column(String(64), comment="实体的业务大类分类（如：技术、设备、指标）")
     description: Mapped[str | None] = mapped_column(CLOB, comment="LLM对该实体在上下文中提炼的简要文本定义")
     attributes: Mapped[dict | None] = mapped_column(JSON, comment="JSON格式动态扩展属性，存储非固定字段")
-    name_vector: Mapped[list | None] = mapped_column(comment="基于实体名称/描述生成的原生向量嵌入，用于消歧")
+    name_vector: Mapped[list | None] = mapped_column(VectorField(), comment="基于实体名称/描述生成的原生向量嵌入，用于消歧")
     created_at: Mapped[datetime] = mapped_column(server_default=func.now(), comment="实体的首次创建或抽取时间")
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now(), comment="最后一次更新时间")
 
