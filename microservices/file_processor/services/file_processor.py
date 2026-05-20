@@ -188,8 +188,10 @@ class FileProcessor:
                 
                 # Extract graph entities and relations
                 if file_params.parser_params.extract_graph:
+                    logger.info(f"Extracting graph for file {file_params.file_path}...")
                     try:
                         await self._extract_and_save_graph(result, file_params)
+                        logger.success(f"Graph extraction completed for file {file_params.file_id}")
                     except Exception as graph_err:
                         logger.error(f"Graph extraction failed for file {file_params.file_id}: {str(graph_err)}")
             else:
