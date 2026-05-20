@@ -453,8 +453,23 @@ class FileProcessor:
                 vertex_desc_map = {}
                 if getattr(graph_analysis, "vertices", None):
                     for v in graph_analysis.vertices:
-                        vertex_type_map[v.name] = getattr(v, "type", "Entity") or "Entity"
-                        vertex_desc_map[v.name] = getattr(v, "description", "") or ""
+                        # 动态探测实体的标识属性：优先尝试 entity_name, 其次 id/vertex_name, 最后尝试 name
+                        v_identity = (
+                            getattr(v, "entity_name", None) or 
+                            getattr(v, "id", None) or 
+                            getattr(v, "vertex_name", None) or 
+                            getattr(v, "name", None)
+                        )
+                        
+                        # 只有当成功拿到实体的标识时，才写入映射表
+                        if v_identity:
+                            # 同样的，对描述字段做 fallback 探测
+                            v_desc = getattr(v, "description", None) or getattr(v, "desc", "") or ""
+                            
+                            vertex_type_map[v_identity] = getattr(v, "type", "Entity") or "Entity"
+                            vertex_desc_map[v_identity] = v_desc
+                        else:
+                            logger.warning(f"[GraphIngestion] 发现无法识别标识的 VertexSchema 对象: {v.__dict__}")
 
                 # 5. 适配下游接口：将 Pydantic 中的边转化为底层持久化需要的扁平字典列表
                 # 显式补全下游 merge_and_ingest_graph 强依赖的 source_type / target_type 等字段
