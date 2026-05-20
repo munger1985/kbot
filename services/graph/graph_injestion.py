@@ -102,41 +102,41 @@ class GraphIngestionService:
             # --- 3: 串行处理边和映射（精准适配 Oracle 大小写感知） ---
             async def _process_single_edge(rel: dict[str, Any]) -> None:
                 try:
-                    src_raw_id = self._generate_md5_id(rel["source_name"], rel["source_type"])
-                    box_raw_id = self._generate_md5_id(rel["target_name"], rel["target_type"])
-                    
-                    # 防御：有些老数据或 SQLAlchemy 返回的可能是大写或 RowMapping
-                    # 我们通过安全获取器拿到真实的 vertex_id
-                    def _get_clean_id(raw_id: str) -> str | None:
-                        # 尝试从小写取
-                        if raw_id in vertex_id_map:
-                            return vertex_id_map[raw_id]
-                        # 尝试从大写取
-                        if raw_id.upper() in vertex_id_map:
-                            return vertex_id_map[raw_id.upper()]
-                        return None
+                    # 核心修复：兼容可能由数据库或上游大写化返回的字典 Key
+                    source_name = rel.get("source_name") or rel.get("SOURCE_NAME")
+                    source_type = rel.get("source_type") or rel.get("SOURCE_TYPE")
+                    target_name = rel.get("target_name") or rel.get("TARGET_NAME")
+                    target_type = rel.get("target_type") or rel.get("TARGET_TYPE")
+                    relation_type = rel.get("relation_type") or rel.get("RELATION_TYPE")
+                    relation_attributes = rel.get("relation_attributes") or rel.get("RELATION_ATTRIBUTES") or {}
 
-                    src_id = _get_clean_id(src_raw_id)
-                    tgt_id = _get_clean_id(box_raw_id)
-                    
-                    if not src_id or not tgt_id:
-                        logger.warning(f"[GraphIngestion] 找不到对应的顶点 ID 映射，跳过边处理. SrcRaw: {src_raw_id}, TgtRaw: {box_raw_id}")
+                    if not source_name or not target_name or not relation_type:
+                        logger.warning(f"[GraphIngestion] 关系数据缺失关键核心字段，跳过: {rel}")
                         return
 
-                    # 严格按照 repo 的方法签名传递参数
-                    generated_edge_id = self._generate_md5_id(src_id, tgt_id, rel["relation_type"])
+                    # 1. 计算原始 MD5 ID
+                    src_raw_id = self._generate_md5_id(source_name, source_type)
+                    box_raw_id = self._generate_md5_id(target_name, target_type)
                     
-                    # 确保传给 Oracle JSON 的属性字典是干净的
-                    relation_attrs = rel.get("relation_attributes") or {}
+                    # 2. 从映射表安全获取顶点融合后的真实 ID
+                    src_id = vertex_id_map.get(src_raw_id)
+                    tgt_id = vertex_id_map.get(box_raw_id)
+                    
+                    if not src_id or not tgt_id:
+                        logger.warning(f"[GraphIngestion] 找不到顶点映射 ID，跳过边处理. SrcRaw: {src_raw_id}, TgtRaw: {box_raw_id}")
+                        return
 
+                    # 3. 严格匹配 repo.upsert_edge_with_map 签名
+                    generated_edge_id = self._generate_md5_id(src_id, tgt_id, relation_type)
+                    
                     await repo.upsert_edge_with_map(
                         edge_id=generated_edge_id,
                         source_id=src_id,
                         target_id=tgt_id,
-                        relation_type=rel["relation_type"],
+                        relation_type=relation_type,
                         chunk_id=chunk_id,
                         file_id=file_id,
-                        attributes=relation_attrs
+                        attributes=relation_attributes
                     )
                 except Exception as e:
                     logger.error(f"[GraphIngestion] 处理图关系单条边录入失败: {rel}, 错误详情: {str(e)}", exc_info=True)
