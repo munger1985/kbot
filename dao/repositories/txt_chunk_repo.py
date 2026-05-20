@@ -515,3 +515,29 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
         except Exception as e:
             logger.error("Oracle update active status failed", e, max_length=500)
             raise DatabaseException("Oracle update text chunk active status failed", original_error=e)
+        
+    async def get_chunks_by_ids(self, chunk_ids: list[str]) -> dict[str, dict]:
+        """
+        Get text chunks by chunk IDs
+        
+        :param chunk_ids: List of chunk unique identifiers
+        :return: List of text chunk entities
+        """
+        try:
+            # Use raw SQL with correct Oracle JSON syntax
+            # Oracle json_object requires KEY/VALUE keywords
+            sql = text("""
+                SELECT * FROM KBOT_BIZ_TXT_EMBEDDING
+                WHERE chunk_id IN (:chunk_ids)
+            """)
+            
+            # Execute query
+            result = await self.session.execute(sql, {"chunk_ids": chunk_ids})
+            
+            # Map result to dict of chunk_id -> entity
+            chunk_dict = {row.chunk_id: row._asdict() for row in result.fetchall()}
+            
+            return chunk_dict
+        except Exception as e:
+            logger.error("Oracle get chunks by IDs failed", e, max_length=500)
+            raise DatabaseException("Oracle get text chunks by IDs failed", original_error=e)

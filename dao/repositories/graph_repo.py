@@ -148,3 +148,122 @@ class GraphRepository:
         except Exception as e:
             logger.error(f"[GraphRepo] Failed to fetch edge by id {edge_id}: {str(e)}", exc_info=True)
             raise DatabaseException(f"Failed to fetch graph edge by id", original_error=e)
+        
+
+    async def search_graph_context(
+        self,
+        vertex_names: list[str],
+        max_depth: int = 2,
+        limit: int = 30
+    ) -> dict[str, Any]:
+        """
+        通过原生 SQL 检索知识图谱，查找与目标实体关联的 1~2 度子图，并召回关联的 Chunk ID。
+        
+        :param vertex_names: 检索词列表（比如从用户问题中提取出的实体）
+        :param max_depth: 图游走深度，默认 2 度关联
+        :param limit: 限制返回的边数量，防止子图爆炸
+        :return: 包含实体、关系、以及溯源 Chunk ID 的结构化字典
+        """
+        if not vertex_names:
+            return {"vertices": [], "edges": [], "chunk_ids": []}
+
+        # Oracle SQL IN 绑定的安全处理
+        # 构造形如 :name_0, :name_1 的动态占位符
+        bind_params: dict[str, Any] = {f"name_{i}": name for i, name in enumerate(vertex_names)}
+        in_clause = ", ".join(f":name_{i}" for i in range(len(vertex_names)))
+
+        # 1. 深度整合图检索 SQL
+        # 利用经典的 CONNECT BY 树状图游走或标准关联，顺便把关联的 chunk_id 聚合上来
+        search_sql = text(f"""
+            WITH sub_edges AS (
+                -- 第一步：基于初始节点，在边表里向下游走检索关联的边
+                SELECT DISTINCT
+                    e.EDGE_ID,
+                    e.SOURCE_ID,
+                    e.TARGET_ID,
+                    e.RELATION_TYPE,
+                    e.WEIGHT,
+                    e.ATTRIBUTES
+                FROM KBOT_GRAPH_KNOWLEDGE_EDGES e
+                START WITH e.SOURCE_ID IN (
+                    SELECT v.VERTEX_ID 
+                    FROM KBOT_GRAPH_KNOWLEDGE_VERTICES v 
+                    WHERE v.VERTEX_NAME IN ({in_clause})
+                )
+                CONNECT BY PRIOR e.TARGET_ID = e.SOURCE_ID 
+                AND LEVEL <= :max_depth
+            )
+            -- 第二步：拉出这些边对应的所有 Chunk 映射，并按边做合并
+            SELECT 
+                se.EDGE_ID,
+                se.SOURCE_ID,
+                se.TARGET_ID,
+                se.RELATION_TYPE,
+                se.WEIGHT,
+                se.ATTRIBUTES,
+                -- 将关联的 chunk_id 聚合为逗号分隔的字符串，方便应用层解析
+                (
+                    SELECT LISTAGG(m.CHUNK_ID, ',') WITHIN GROUP (ORDER BY m.CREATED_AT DESC)
+                    FROM KBOT_GRAPH_EDGE_CHUNK_MAP m
+                    WHERE m.EDGE_ID = se.EDGE_ID
+                ) as AS_CHUNK_IDS,
+                v_src.VERTEX_NAME as SOURCE_NAME,
+                v_src.VERTEX_TYPE as SOURCE_TYPE,
+                v_dst.VERTEX_NAME as TARGET_NAME,
+                v_dst.VERTEX_TYPE as TARGET_TYPE
+            FROM sub_edges se
+            JOIN KBOT_GRAPH_KNOWLEDGE_VERTICES v_src ON se.SOURCE_ID = v_src.VERTEX_ID
+            JOIN KBOT_GRAPH_KNOWLEDGE_VERTICES v_dst ON se.TARGET_ID = v_dst.VERTEX_ID
+            WHERE ROWNUM <= :limit
+        """)
+
+        # 注入额外的控制参数
+        bind_params["max_depth"] = max_depth
+        bind_params["limit"] = limit
+
+        try:
+            result = await self.session.execute(search_sql, bind_params)
+            rows = result.fetchall()
+
+            # 2. 结构化组装返回对象
+            vertices_set = set()
+            edges_list = []
+            chunk_ids_set = set()
+
+            for row in rows:
+                # 收集涉及到的实体（消歧后的双向节点）
+                vertices_set.add((row.SOURCE_ID, row.SOURCE_NAME, row.SOURCE_TYPE))
+                vertices_set.add((row.TARGET_ID, row.TARGET_NAME, row.TARGET_TYPE))
+
+                # 收集边
+                edges_list.append({
+                    "edge_id": row.EDGE_ID,
+                    "source": row.SOURCE_NAME,
+                    "target": row.TARGET_NAME,
+                    "relation": row.RELATION_TYPE,
+                    "weight": row.WEIGHT,
+                    "attributes": row.ATTRIBUTES  # 如果是字符串，可以在上层进行 json.loads
+                })
+
+                # 收集用来做 RAG 溯源召回的 Chunk ID
+                if row.AS_CHUNK_IDS:
+                    for cid in row.AS_CHUNK_IDS.split(','):
+                        if cid.strip():
+                            chunk_ids_set.add(cid.strip())
+
+            # 格式化输出
+            formatted_vertices = [
+                {"id": v[0], "name": v[1], "type": v[2]} for v in vertices_set
+            ]
+
+            logger.info(f"🔮 [GraphSearch] 召回图谱实体 {len(formatted_vertices)} 个, 关系边 {len(edges_list)} 条, 溯源 Chunk {len(chunk_ids_set)} 个。")
+
+            return {
+                "vertices": formatted_vertices,
+                "edges": edges_list,
+                "chunk_ids": list(chunk_ids_set)
+            }
+
+        except Exception as e:
+            logger.error(f"🚨 [GraphSearch 失败] 图检索 SQL 执行崩溃: {str(e)}")
+            return {"vertices": [], "edges": [], "chunk_ids": []}

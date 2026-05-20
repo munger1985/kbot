@@ -191,9 +191,8 @@ class GraphIngestionService:
         # 1. 探测 repo.get_vertex_by_id 阶段
         try:
             existing_vertex = await repo.get_vertex_by_id(vertex_id)
-            logger.info(f"[诊断-1] get_vertex_by_id 返回对象类型: {type(existing_vertex)}")
         except Exception as repo_err:
-            logger.error(f"[诊断-爆雷] repo.get_vertex_by_id 自身就失败了: {repo_err}", exc_info=True)
+            logger.error(f"[GraphIngestion] generate vertex failed: {repo_err}", exc_info=True)
             raise repo_err
                 
         final_desc = new_desc
@@ -220,7 +219,7 @@ class GraphIngestionService:
                     val = getattr(obj, key, default)
                     return val
                 except Exception as attr_err:
-                    logger.error(f"[GraphIngestion] get_attr 内部在提取键【{key}】时崩溃! 错误类型: {type(attr_err)}, 详情: {attr_err}", exc_info=True)
+                    logger.error(f"[GraphIngestion] get_attr failed: {key}, error: {type(attr_err)}, detail: {attr_err}", exc_info=True)
                     raise attr_err
 
             old_description = get_attr(existing_vertex, "description")
@@ -243,7 +242,7 @@ class GraphIngestionService:
                     if llm_response and llm_response.strip():
                         final_desc = llm_response.strip()
                 except Exception as llm_err:
-                    logger.warning(f"[GraphIngestion] 调用 LLM 融合描述失败. 错误: {llm_err}")
+                    logger.warning(f"[GraphIngestion] call LLM for vertex fusion failed, error: {llm_err}")
                     final_desc = old_description
                 
             if old_description and final_desc == old_description:
@@ -256,7 +255,7 @@ class GraphIngestionService:
                             cleaned_old_attrs.pop(key, None)
                         attributes.update(cleaned_old_attrs)
                     except Exception as attr_clean_err:
-                        logger.error(f"[GraphIngestion] 历史属性清洗/合并时崩溃! 错误: {attr_clean_err}", exc_info=True)
+                        logger.error(f"[GraphIngestion] clean old attributes failed: {attr_clean_err}", exc_info=True)
                         raise attr_clean_err
             else:
                 final_vector = await self.model_client.get_embedding(self.embedding_model, f"{name}: {final_desc}")
@@ -268,11 +267,10 @@ class GraphIngestionService:
             sanitized_attrs = sanitize_dict_for_oracle_json(attributes)
             logger.debug("[GraphIngestion] sanitize 清洗成功")
         except Exception as sanitize_err:
-            logger.error(f"[GraphIngestion] sanitize_dict_for_oracle_json 内部发生崩溃! 错误: {sanitize_err}", exc_info=True)
+            logger.error(f"[GraphIngestion] sanitize_dict_for_oracle_json failed: {sanitize_err}", exc_info=True)
             raise sanitize_err
 
         # 5. 探测 最终 Repo 写入阶段
-        logger.debug(f"[GraphIngestion] 准备调用 repo.upsert_vertex...")
         try:
             await repo.upsert_vertex(
                 vertex_id=vertex_id,
@@ -282,9 +280,9 @@ class GraphIngestionService:
                 attributes=sanitized_attrs,
                 name_vector=final_vector
             )
-            logger.success(f"[GraphIngestion] 成功执行 upsert_vertex: {name}")
+            logger.success(f"[GraphIngestion] upsert_vertex success: {name}")
         except Exception as repo_upsert_err:
-            logger.error(f"[GraphIngestion] repo.upsert_vertex 内部引发了异常! 错误: {repo_upsert_err}", exc_info=True)
+            logger.error(f"[GraphIngestion] upsert_vertex failed: {repo_upsert_err}", exc_info=True)
             raise repo_upsert_err
 
         return vertex_id
