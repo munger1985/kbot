@@ -146,10 +146,10 @@ class GraphRepository(BaseRepository[GraphVertexEntity]):
             logger.error(f"[GraphRepo] Failed to upsert edge {edge_id} with map: {str(e)}", exc_info=True)
             raise DatabaseException(f"Failed to upsert graph edge or map", original_error=e)
         
-    async def get_vertex_by_id(self, vertex_id: str) -> GraphVertexEntity | None:
+    async def get_vertex_by_id(self, vertex_id: str) -> Any | None:
         """
-        根据实体 ID (vertex_id) 获取图节点，用于实体融合提取原有描述。
-        兼容异步 Repository 架构。
+        根据实体 ID (vertex_id) 获取图节点，用于实体融合。
+        针对 Oracle 原生大写返回做绝对对齐防御。
         """
         sql = """
         SELECT 
@@ -164,22 +164,39 @@ class GraphRepository(BaseRepository[GraphVertexEntity]):
         """
         try:
             result = await self.session.execute(text(sql), {"vertex_id": vertex_id})
-            # 兼容 SQLAlchemy 2.0 异步映射实体返回
-            # 如果底层映射完好，可以用 scalars().first()，或者 fetchone() 组装
-            row = result.fetchone()
-            if not row:
+            
+            # 1. 转化为标准映射
+            row_map = result.mappings().first()
+            if not row_map:
                 return None
 
-            # 转换为你上游 merge_and_ingest_graph 服务所期望的实体对象或具备对应属性的对象
-            # 确保上游通过 `vertex.description` 能拿到原有百科描述
-            return GraphVertexEntity(
-                vertex_id=row.vertex_id,
-                vertex_name=row.vertex_name,
-                vertex_type=row.vertex_type,
-                description=row.description,
-                attributes=json.loads(row.attributes) if row.attributes else None,
-                name_vector=row.name_vector
-            )
+            # 2. 核心适配：规避 Oracle 驱动有时候返回大写（VERTEX_ID）或小写（vertex_id）的差异
+            # 创建一个归一化的字典
+            normalized = {}
+            for k, v in row_map.items():
+                normalized[k.lower()] = v
+
+            # 3. 解析属性 JSON
+            raw_attrs = normalized.get("attributes")
+            sanitized_attrs = None
+            if raw_attrs:
+                try:
+                    sanitized_attrs = json.loads(raw_attrs) if isinstance(raw_attrs, str) else raw_attrs
+                except Exception:
+                    sanitized_attrs = raw_attrs
+
+            # 4. 动态组装成支持 .点语法 访问的防摔包装器
+            class ValidatedVertex:
+                def __init__(self, data, attrs):
+                    self.vertex_id = data.get("vertex_id")
+                    self.vertex_name = data.get("vertex_name")
+                    self.vertex_type = data.get("vertex_type")
+                    self.description = data.get("description") or ""  # 确保不是 None，规避判断崩塌
+                    self.attributes = attrs
+                    self.name_vector = data.get("name_vector")
+
+            return ValidatedVertex(normalized, sanitized_attrs)
+            
         except Exception as e:
             logger.error(f"[GraphRepo] Failed to fetch vertex by id {vertex_id}: {str(e)}", exc_info=True)
             raise DatabaseException(f"Failed to fetch graph vertex by id", original_error=e)
