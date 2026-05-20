@@ -5,7 +5,7 @@ from typing import AsyncIterator
 from loguru import logger
 from contextlib import asynccontextmanager
 from core.config.settings import get_settings
-from core.exceptions import DataNotFoundException
+from core.exceptions import DataNotFoundException, NotFoundError
 import json
 from sqlalchemy import event
 from decimal import Decimal
@@ -117,6 +117,9 @@ async def get_session() -> AsyncIterator[AsyncSession]:
             await session.commit()
         except DataNotFoundException as e:
             logger.warning("Data not found: {}", str(e))
+        except NotFoundError as e:
+            # This is a normal business case (e.g., parser config not found), not an error
+            logger.warning("Resource not found: {}", str(e))
         except Exception as e:
             # These are actual database/infrastructure errors
             await session.rollback()
