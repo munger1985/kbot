@@ -167,10 +167,12 @@ class FileService:
             file_repo = FileRepository(session)
             kb_repo = KBRepository(session)
             # 从知识库获取模型配置
-            models = await kb_repo.get_model_by_id(kb_id)
-            if not models:
+            try:
+                models = await kb_repo.get_model_by_id(kb_id)
+            except Exception as e:
                 msg = f"知识库 {kb_id} 未配置模型，跳过处理"
                 logger.warning(msg)
+                return
 
             model_config = models["model_config"]
             if model_config and isinstance(model_config, dict):
@@ -228,7 +230,7 @@ class FileService:
                     file_version = fileparam["file_version"],
                     is_overwrite = fileparam["is_overwrite"],
                     security_level = security_level,
-                    parser_params = default_parser_conf,
+                    chunk_parser = default_parser_conf,
                     process_priority = process_priority,
                     file_size = fileparam["file_size"],
                     biz_metadata = biz_metadata,
