@@ -64,7 +64,7 @@ class GraphIngestionService:
         async with self.oracle_session as session:
             repo = GraphRepository(session)
             
-            # --- 优化点 1: 提取出当前 Chunk 中所有独特的实体，避免同批内并发冲突 ---
+            # --- 1: 提取出当前 Chunk 中所有独特的实体，避免同批内并发冲突 ---
             unique_vertices = {}
             for rel in extracted_relations:
                 src_id = self._generate_md5_id(rel["source_name"], rel["source_type"])
@@ -83,7 +83,7 @@ class GraphIngestionService:
                         "desc": rel.get("target_desc") or ""
                     }
 
-            # --- 优化点 2: 串行处理节点融合，彻底消除行锁冲突与重复向量计算 ---
+            # --- 2: 串行处理节点融合，彻底消除行锁冲突与重复向量计算 ---
             vertex_id_map = {}
             for v_id, v_info in unique_vertices.items():
                 try:
@@ -99,7 +99,7 @@ class GraphIngestionService:
                 except Exception as e:
                     logger.error(f"[GraphIngestion] 实体融合失败: {v_info['name']}, 错误: {str(e)}")
 
-            # --- 优化点 3: 并发处理边和映射（核心修复：内部重构路由直接绑定至单一底层存储方案） ---
+            # --- 3: 并发处理边和映射（核心修复：内部重构路由直接绑定至单一底层存储方案） ---
             async def _process_single_edge(rel: dict[str, Any]) -> None:
                 try:
                     src_raw_id = self._generate_md5_id(rel["source_name"], rel["source_type"])
@@ -110,7 +110,7 @@ class GraphIngestionService:
                     if not src_id or not tgt_id:
                         return
 
-                    # 【核心修复】：直接调用对齐后的仓储方法，拒绝调用不存在的方法
+                    # 直接调用仓储方法
                     await repo.upsert_edge_with_map(
                         edge_id=self._generate_md5_id(src_id, tgt_id, rel["relation_type"]),
                         source_id=src_id,
@@ -123,7 +123,10 @@ class GraphIngestionService:
                 except Exception as e:
                     logger.error(f"[GraphIngestion] 处理图关系单条边录入失败: {rel}, 错误: {str(e)}")
 
-            await asyncio.gather(*[_process_single_edge(r) for r in extracted_relations])
+            # 【修复核心】：摒弃无限制的 asyncio.gather，改用标准的 for 循环顺序安全处理
+            for r in extracted_relations:
+                await _process_single_edge(r)
+
             await session.commit()
             logger.info(f"Successfully processed and committed graph network for chunk {chunk_id}")
 
