@@ -437,8 +437,7 @@ class FileProcessor:
                 if not chunk_text.strip():
                     continue
 
-                # 3. 驱动大模型抽取当前块的关系三元组（传入模型名称与清洗后的文本）
-                # 返回的是一个强类型的 GraphAnalysis Pydantic 实例
+                # 3. 驱动大模型抽取当前块的关系三元组（返回强类型的 GraphAnalysis Pydantic 实例）
                 graph_analysis = await graph_service.extract_triplets(
                     user_input_text=chunk_text,
                     llm_model_name=llm_model
@@ -448,19 +447,42 @@ class FileProcessor:
                 if not graph_analysis.edges:
                     continue
 
-                # 4. 适配下游接口：将 Pydantic 中的边（关系）转化为底层持久化需要的扁平字典列表
-                # 并在转换过程中混入多租户与安全隔离元数据（base_properties）
+                # --- 【修复核心】4. 建立当前 Chunk 内实体的属性索引映射 ---
+                # 预防大模型返回的 vertices 缺失，或边里出现了未定义在 vertices 里的孤立节点，使用 "Entity" 兜底
+                vertex_type_map = {}
+                vertex_desc_map = {}
+                if getattr(graph_analysis, "vertices", None):
+                    for v in graph_analysis.vertices:
+                        vertex_type_map[v.name] = getattr(v, "type", "Entity") or "Entity"
+                        vertex_desc_map[v.name] = getattr(v, "description", "") or ""
+
+                # 5. 适配下游接口：将 Pydantic 中的边转化为底层持久化需要的扁平字典列表
+                # 显式补全下游 merge_and_ingest_graph 强依赖的 source_type / target_type 等字段
                 extracted_relations = []
                 for edge in graph_analysis.edges:
+                    # 动态检索或兜底节点的元数据
+                    s_type = vertex_type_map.get(edge.source_name, "Entity")
+                    s_desc = vertex_desc_map.get(edge.source_name, "")
+                    t_type = vertex_type_map.get(edge.target_name, "Entity")
+                    t_desc = vertex_desc_map.get(edge.target_name, "")
+
                     rel_dict = {
                         "source_name": edge.source_name,
+                        "source_type": s_type,
+                        "source_desc": s_desc,
                         "target_name": edge.target_name,
+                        "target_type": t_type,
+                        "target_desc": t_desc,
                         "relation_type": edge.relation_type,
-                        "relation_attributes": {**base_properties}  # 动态混入安全与权限元数据
+                        # 混入多租户与安全隔离元数据，同时保留可能存在的边属性
+                        "relation_attributes": {
+                            **base_properties,
+                            **getattr(edge, "attributes", {}) 
+                        }  
                     }
                     extracted_relations.append(rel_dict)
 
-                # 5. 调用核心入库入口：内部自动处理行锁优化、实体百科融合、向量重算及边映射
+                # 6. 调用核心入库入口：内部自动处理行锁优化、实体百科融合、向量重算及边映射
                 await graph_service.merge_and_ingest_graph(
                     chunk_id=chunk_id,
                     file_id=file_params.file_id,

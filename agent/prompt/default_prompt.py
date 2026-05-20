@@ -20,7 +20,7 @@ class DefaultPrompt(string.Formatter):
             "SYSTEM/sql_repair": SQL_REPAIR_PROMPT,
             "SYSTEM/task_planner": TASK_PLANNER_PROMPT,
             "SYSTEM/intent_router": INTENT_ROUTING_PROMPT,
-            "SYSTEM/data_reasoning": REASONING_PROMPT,
+            "SYSTEM/reasoning": REASONING_PROMPT,
             "SYSTEM/generate_chart": GENERATE_CHART_PROMPT,
             "SYSTEM/db_router": DB_ROUTER_PROMPT,
             "SYSTEM/graph_extractor": GRAPH_EXTRACTOR_PROMPT,
@@ -348,7 +348,7 @@ TASK_PLANNER_PROMPT = """
 # --------------------------------  意图路由系统提示词  ----------------------------------------
 # ================================================================================================
 INTENT_ROUTING_PROMPT = """
-你是 NexusCube AI 系统的核心路由引擎（Intent Router）。
+你是 AI 系统的核心路由引擎（Intent Router）。
 你的任务是根据 [意图定义库] 精确分类用户输入，并评估其执行路径。
 
 ### 意图定义库 (Intent Registry):
