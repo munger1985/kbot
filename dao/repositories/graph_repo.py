@@ -2,7 +2,7 @@ import json
 import asyncio
 import random
 from typing import Any
-from sqlalchemy import select, func, text
+from sqlalchemy import select, func, text, insert, update, and_
 from loguru import logger
 from core.exceptions import DatabaseException
 from dao.entities import GraphVertexEntity, GraphEdgeEntity, GraphEdgeChunkMapEntity # 确认你的实体类名
@@ -61,70 +61,73 @@ class GraphRepository:
         file_id: str,
         attributes: dict
     ) -> None:
-        """采用 Oracle 原生 MERGE 语句直接落库。"""
-        # 1. 严格确保属性字典转为了纯净的 JSON 字符串，不给 ORM 留任何转译空间
-        # 即使 Oracle 26ai 支持原生的 JSON 类型，在绑定变量时传标准字符串也是最安全的
-        attributes_json = json.dumps(attributes, ensure_ascii=False)
-
-        # 2. 编写 Oracle 标准的 MERGE INTO 语句
-        # 请根据你具体的表名（如 graph_edges）以及字段名进行微调
-        statement = text("""
-            MERGE INTO graph_edges t
-            USING (
-                SELECT 
-                    :edge_id AS edge_id, 
-                    :source_id AS source_id, 
-                    :target_id AS target_id, 
-                    :relation_type AS relation_type,
-                    :chunk_id AS chunk_id,
-                    :file_id AS file_id,
-                    :attributes AS attributes
-                FROM DUAL
-            ) s
-            ON (t.edge_id = s.edge_id)
-            WHEN MATCHED THEN
-                UPDATE SET 
-                    t.chunk_id = s.chunk_id,
-                    t.attributes = s.attributes
-            WHEN NOT MATCHED THEN
-                INSERT (edge_id, source_id, target_id, relation_type, chunk_id, file_id, attributes)
-                VALUES (s.edge_id, s.source_id, s.target_id, s.relation_type, s.chunk_id, s.file_id, s.attributes)
-        """)
-
-        # 3. 使用异步 session 直接 execute 执行
-        # 这会绕过所有的 ORM 属性生命周期，直接把纯净的数据砸进驱动里
-        
+        """
+        通过纯原生 Oracle MERGE SQL 彻底终结 ORA-00942 与回滚 KeyError。
+        直接对齐大写表名与列名，清晰透明。
+        """
         try:
+            # 1. 严格控制 JSON 序列化格式
+            attributes_json = json.dumps(attributes, ensure_ascii=False) if isinstance(attributes, dict) else "{}"
+
+            # ========================================================
+            # 第一步：原生 MERGE 写入边表 (KBOT_GRAPH_KNOWLEDGE_EDGES)
+            # ========================================================
+            # 注意：Oracle 26ai 原生支持 JSON 类型，直接传入序列化后的 JSON 字符串即可
+            edge_sql = text("""
+                MERGE INTO KBOT_GRAPH_KNOWLEDGE_EDGES t
+                USING DUAL
+                ON (t.EDGE_ID = :edge_id)
+                WHEN MATCHED THEN
+                    UPDATE SET 
+                        t.WEIGHT = t.WEIGHT + 1,
+                        t.ATTRIBUTES = :attributes,
+                        t.UPDATED_AT = CURRENT_TIMESTAMP
+                WHEN NOT MATCHED THEN
+                    INSERT (EDGE_ID, SOURCE_ID, TARGET_ID, RELATION_TYPE, WEIGHT, ATTRIBUTES, CREATED_AT, UPDATED_AT)
+                    VALUES (:edge_id, :source_id, :target_id, :relation_type, 1, :attributes, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """)
+
             await self.session.execute(
-                statement,
+                edge_sql,
                 {
                     "edge_id": str(edge_id),
                     "source_id": str(source_id),
                     "target_id": str(target_id),
                     "relation_type": str(relation_type),
-                    "chunk_id": str(chunk_id),
-                    "file_id": str(file_id),
-                    "attributes": attributes_json  # 传入序列化后的纯字符串
+                    "attributes": attributes_json
                 }
             )
-            logger.info("[诊断拦截] 已经完成所有节点和边的处理，准备执行最后一步：session.commit()...")
-            await self.session.commit()
-            logger.info(f"Successfully processed and committed graph network for chunk {chunk_id}")
-        except Exception as commit_exc:
-            # 🚨 核心武器：利用 traceback 还原真正的犯罪现场，不经任何二次过滤
-            import traceback
-            error_stack = traceback.format_exc()
-            
-            logger.error("=" * 80)
-            logger.error("🚨🚨🚨 [终极拦截] 抓到了！commit 阶段爆发了致命异常 🚨🚨🚨")
-            logger.error(f"异常原始类型: {type(commit_exc)}")
-            logger.error(f"异常原始信息: {str(commit_exc)}")
-            logger.error("⬇️⬇️⬇️ 以下为未受污染的完整调用栈（请仔细观察最后一行的报错文件名和行号） ⬇️⬇️⬇️")
-            logger.error(f"\n{error_stack}")
-            logger.error("=" * 80)
-            
-            # 重新抛出，保证原有的回滚逻辑不受影响
-            raise commit_exc
+            logger.debug(f"[GraphRepo] Edge {edge_id} processed via native SQL.")
+
+            # ========================================================
+            # 第二步：原生 MERGE 写入映射表 (KBOT_GRAPH_EDGE_CHUNK_MAP)
+            # ========================================================
+            map_sql = text("""
+                MERGE INTO KBOT_GRAPH_EDGE_CHUNK_MAP m
+                USING DUAL
+                ON (m.EDGE_ID = :edge_id AND m.CHUNK_ID = :chunk_id)
+                WHEN MATCHED THEN
+                    UPDATE SET 
+                        m.FILE_ID = :file_id,
+                        m.UPDATED_AT = CURRENT_TIMESTAMP
+                WHEN NOT MATCHED THEN
+                    INSERT (EDGE_ID, CHUNK_ID, FILE_ID, CREATED_AT, UPDATED_AT)
+                    VALUES (:edge_id, :chunk_id, :file_id, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """)
+
+            await self.session.execute(
+                map_sql,
+                {
+                    "edge_id": str(edge_id),
+                    "chunk_id": str(chunk_id),
+                    "file_id": str(file_id) if file_id else None
+                }
+            )
+            logger.debug(f"[GraphRepo] Edge-Chunk map linked for chunk: {chunk_id}")
+
+        except Exception as e:
+            logger.error(f"🚨 [GraphRepo Native 崩溃] 核心原生 SQL 执行失败。错误详情: {str(e)}")
+            raise DatabaseException(f"Failed to upsert graph edge with map", original_error=e)
 
     async def get_vertex_by_id(self, vertex_id: str) -> GraphVertexEntity | None:
         """使用 ORM 查找顶点，直接返回模型实体，自带属性解析与小写列对齐防御"""

@@ -184,12 +184,8 @@ class GraphIngestionService:
     async def _process_vertex_fusion(
         self, repo: Any, vertex_id: str, name: str, v_type: str, new_desc: str, chunk_id: str
     ) -> str:
-        """【排错日志专用版】百科体融合逻辑"""
-        from core.config.settings import get_prompt_config
-        from agent.prompt import default_prompt
-        from utils.sanitize import sanitize_dict_for_oracle_json
+        """百科体融合逻辑"""
 
-        logger.info(f"[诊断开始] ===== 正在处理顶点融合: {name} ({vertex_id}) =====")
         new_desc = new_desc.strip()
         
         # 1. 探测 repo.get_vertex_by_id 阶段
@@ -199,17 +195,6 @@ class GraphIngestionService:
         except Exception as repo_err:
             logger.error(f"[诊断-爆雷] repo.get_vertex_by_id 自身就失败了: {repo_err}", exc_info=True)
             raise repo_err
-        
-        if existing_vertex is not None:
-            try:
-                if hasattr(existing_vertex, "keys"):
-                    logger.info(f"[诊断-1.1] existing_vertex keys: {list(existing_vertex.keys())}")
-                if hasattr(existing_vertex, "__dict__"):
-                    logger.info(f"[诊断-1.2] existing_vertex __dict__.keys: {list(existing_vertex.__dict__.keys())}")
-                if hasattr(existing_vertex, "_mapping") and existing_vertex._mapping:
-                    logger.info(f"[诊断-1.3] existing_vertex _mapping keys: {list(existing_vertex._mapping.keys())}")
-            except Exception as probe_err:
-                logger.warning(f"[诊断] 探测 existing_vertex 基础属性时失败: {probe_err}")
                 
         final_desc = new_desc
         final_vector = None
@@ -231,20 +216,16 @@ class GraphIngestionService:
                 try:
                     if isinstance(obj, dict):
                         val = obj.get(key, default)
-                        logger.info(f"[诊断-2.1] 从 dict 提取 {key} = {type(val)}")
                         return val
                     val = getattr(obj, key, default)
-                    logger.info(f"[诊断-2.2] 从 ORM 提取 {key} = {type(val)}")
                     return val
                 except Exception as attr_err:
-                    logger.error(f"[诊断-爆雷] get_attr 内部在提取键【{key}】时崩溃! 错误类型: {type(attr_err)}, 详情: {attr_err}", exc_info=True)
+                    logger.error(f"[GraphIngestion] get_attr 内部在提取键【{key}】时崩溃! 错误类型: {type(attr_err)}, 详情: {attr_err}", exc_info=True)
                     raise attr_err
 
-            logger.info("[诊断-2] 开始提取老数据属性...")
             old_description = get_attr(existing_vertex, "description")
             old_vector = get_attr(existing_vertex, "name_vector")
             old_attributes = get_attr(existing_vertex, "attributes")
-            logger.info(f"[诊断-2-完成] 提取成功. old_attributes 类型: {type(old_attributes)}")
 
             if old_description and final_desc and old_description != final_desc:
                 try:
@@ -268,16 +249,14 @@ class GraphIngestionService:
             if old_description and final_desc == old_description:
                 final_vector = old_vector
                 if old_attributes and isinstance(old_attributes, dict):
-                    logger.info(f"[诊断-3] 开始复制并清洗老属性, 原始键为: {list(old_attributes.keys())}")
                     try:
                         cleaned_old_attrs = old_attributes.copy()
                         banned_keys = {"id", "vertex_id", "name", "vertex_name", "type", "vertex_type"}
                         for key in banned_keys:
                             cleaned_old_attrs.pop(key, None)
                         attributes.update(cleaned_old_attrs)
-                        logger.info(f"[诊断-3-完成] 属性合并完成, 当前 attributes 键为: {list(attributes.keys())}")
                     except Exception as attr_clean_err:
-                        logger.error(f"[诊断-爆雷] 历史属性清洗/合并时崩溃! 错误: {attr_clean_err}", exc_info=True)
+                        logger.error(f"[GraphIngestion] 历史属性清洗/合并时崩溃! 错误: {attr_clean_err}", exc_info=True)
                         raise attr_clean_err
             else:
                 final_vector = await self.model_client.get_embedding(self.embedding_model, f"{name}: {final_desc}")
@@ -285,16 +264,15 @@ class GraphIngestionService:
             final_vector = await self.model_client.get_embedding(self.embedding_model, f"{name}: {final_desc}")
 
         # 4. 探测 序列化 清洗阶段
-        logger.info(f"[诊断-4] 准备送入 sanitize_dict_for_oracle_json. 当前内容: {attributes}")
         try:
             sanitized_attrs = sanitize_dict_for_oracle_json(attributes)
-            logger.info("[诊断-4-完成] sanitize 清洗成功")
+            logger.debug("[GraphIngestion] sanitize 清洗成功")
         except Exception as sanitize_err:
-            logger.error(f"[诊断-爆雷] sanitize_dict_for_oracle_json 内部发生崩溃! 错误: {sanitize_err}", exc_info=True)
+            logger.error(f"[GraphIngestion] sanitize_dict_for_oracle_json 内部发生崩溃! 错误: {sanitize_err}", exc_info=True)
             raise sanitize_err
 
         # 5. 探测 最终 Repo 写入阶段
-        logger.info(f"[诊断-5] 准备调用 repo.upsert_vertex...")
+        logger.debug(f"[GraphIngestion] 准备调用 repo.upsert_vertex...")
         try:
             await repo.upsert_vertex(
                 vertex_id=vertex_id,
@@ -304,9 +282,9 @@ class GraphIngestionService:
                 attributes=sanitized_attrs,
                 name_vector=final_vector
             )
-            logger.info(f"[诊断结束] ===== 成功打通 upsert_vertex: {name} =====")
+            logger.success(f"[GraphIngestion] 成功执行 upsert_vertex: {name}")
         except Exception as repo_upsert_err:
-            logger.error(f"[诊断-爆雷] repo.upsert_vertex 内部引发了异常! 错误: {repo_upsert_err}", exc_info=True)
+            logger.error(f"[GraphIngestion] repo.upsert_vertex 内部引发了异常! 错误: {repo_upsert_err}", exc_info=True)
             raise repo_upsert_err
 
         return vertex_id
