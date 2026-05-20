@@ -16,7 +16,6 @@ from .utils import ParserToolLib, ModelTask
 from .engine import VLMAnnotationPictureSerializer
 from ..parser_schema import DocParserParams, ChunkMetadata, ChunkResult
 from utils.clients import AIModelClient
-from services.default_prompt import PromptManager
 
 
 class ChunkerGenerator:
@@ -29,7 +28,6 @@ class ChunkerGenerator:
         self.chunk_count = 1
         self.model_task = ModelTask()
         self.model_client = AIModelClient()
-        self.prompt_mgr = PromptManager()
         self.serializer = VLMAnnotationPictureSerializer()
 
     async def generate_chunks(self, doc: DoclingDocument, file_ext: str, vlm_enhancement: dict) -> list[ChunkResult]:
