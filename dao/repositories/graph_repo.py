@@ -2,7 +2,7 @@ import json
 import asyncio
 import random
 from typing import Any
-from sqlalchemy import select, func
+from sqlalchemy import select, func, text
 from loguru import logger
 from core.exceptions import DatabaseException
 from dao.entities import GraphVertexEntity, GraphEdgeEntity, GraphEdgeChunkMapEntity # 确认你的实体类名
@@ -52,64 +52,59 @@ class GraphRepository:
             raise DatabaseException(f"Failed to upsert graph vertex", original_error=e)
 
     async def upsert_edge_with_map(
-        self, 
-        edge_id: str, 
-        source_id: str, 
-        target_id: str, 
-        relation_type: str, 
+        self,
+        edge_id: str,
+        source_id: str,
+        target_id: str,
+        relation_type: str,
         chunk_id: str,
-        file_id: str | None = None,
-        attributes: dict[str, Any] | None = None
+        file_id: str,
+        attributes: dict
     ) -> None:
-        """
-        利用纯 ORM 语法进行双向合并：
-        1. 增量 Upsert 边表（若存在则 weight + 1）
-        2. 幂等插入边-切片关联表
-        完全规避了原生 SQL 参数绑定中对 dict 转换导致的异常。
-        """
-        try:
-            # -------- 1. 处理 GraphEdgeEntity (Upsert) --------
-            edge_stmt = select(GraphEdgeEntity).where(GraphEdgeEntity.edge_id == edge_id)
-            edge_result = await self.session.execute(edge_stmt)
-            db_edge = edge_result.scalar_one_or_none()
+        """采用 Oracle 原生 MERGE 语句直接落库。"""
+        # 1. 严格确保属性字典转为了纯净的 JSON 字符串，不给 ORM 留任何转译空间
+        # 即使 Oracle 26ai 支持原生的 JSON 类型，在绑定变量时传标准字符串也是最安全的
+        attributes_json = json.dumps(attributes, ensure_ascii=False)
 
-            if db_edge:
-                db_edge.weight = (db_edge.weight or 1) + 1
-                db_edge.attributes = attributes
-                db_edge.updated_at = func.current_timestamp()
-            else:
-                new_edge = GraphEdgeEntity(
-                    edge_id=edge_id,
-                    source_id=source_id,
-                    target_id=target_id,
-                    relation_type=relation_type,
-                    weight=1,
-                    attributes=attributes
-                )
-                self.session.add(new_edge)
+        # 2. 编写 Oracle 标准的 MERGE INTO 语句
+        # 请根据你具体的表名（如 graph_edges）以及字段名进行微调
+        statement = text("""
+            MERGE INTO graph_edges t
+            USING (
+                SELECT 
+                    :edge_id AS edge_id, 
+                    :source_id AS source_id, 
+                    :target_id AS target_id, 
+                    :relation_type AS relation_type,
+                    :chunk_id AS chunk_id,
+                    :file_id AS file_id,
+                    :attributes AS attributes
+                FROM DUAL
+            ) s
+            ON (t.edge_id = s.edge_id)
+            WHEN MATCHED THEN
+                UPDATE SET 
+                    t.chunk_id = s.chunk_id,
+                    t.attributes = s.attributes
+            WHEN NOT MATCHED THEN
+                INSERT (edge_id, source_id, target_id, relation_type, chunk_id, file_id, attributes)
+                VALUES (s.edge_id, s.source_id, s.target_id, s.relation_type, s.chunk_id, s.file_id, s.attributes)
+        """)
 
-            # -------- 2. 处理 GraphEdgeChunkMapEntity (Merge 语义) --------
-            map_stmt = select(GraphEdgeChunkMapEntity).where(
-                GraphEdgeChunkMapEntity.edge_id == edge_id,
-                GraphEdgeChunkMapEntity.chunk_id == chunk_id
-            )
-            map_result = await self.session.execute(map_stmt)
-            db_map = map_result.scalar_one_or_none()
-
-            if not db_map:
-                new_map = GraphEdgeChunkMapEntity(
-                    edge_id=edge_id,
-                    chunk_id=chunk_id,
-                    file_id=file_id
-                )
-                self.session.add(new_map)
-
-            await self.session.flush()
-            logger.debug(f"[GraphRepo] Successfully upserted edge: {edge_id} and mapped to chunk: {chunk_id}")
-
-        except Exception as e:
-            logger.error(f"[GraphRepo] Failed to upsert edge {edge_id} with map: {str(e)}", exc_info=True)
-            raise DatabaseException(f"Failed to upsert graph edge or map", original_error=e)
+        # 3. 使用异步 session 直接 execute 执行
+        # 这会绕过所有的 ORM 属性生命周期，直接把纯净的数据砸进驱动里
+        await self.session.execute(
+            statement,
+            {
+                "edge_id": str(edge_id),
+                "source_id": str(source_id),
+                "target_id": str(target_id),
+                "relation_type": str(relation_type),
+                "chunk_id": str(chunk_id),
+                "file_id": str(file_id),
+                "attributes": attributes_json  # 传入序列化后的纯字符串
+            }
+        )
 
     async def get_vertex_by_id(self, vertex_id: str) -> GraphVertexEntity | None:
         """使用 ORM 查找顶点，直接返回模型实体，自带属性解析与小写列对齐防御"""
