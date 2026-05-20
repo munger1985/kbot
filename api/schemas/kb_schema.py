@@ -15,7 +15,6 @@ class KBUploadForm(BaseModel):
     overwrite: bool = Field(..., description="Whether to overwrite existing files with the same name")
     skip_approval: bool = Field(..., description="Whether to skip the approval process for upload")
     batch: str = Field(..., description="Batch name (human-readable label for the upload batch)")
-    batch_id: int|None = Field(None, description="Batch ID (unique identifier of the upload batch, optional)")
     biz_metadata: dict|None = Field(None, description="Business metadata (custom key-value pairs for business logic)")
     created_by: str|None = Field(None, description="Creator (username of the user who initiated the upload)")
 
