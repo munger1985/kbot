@@ -158,25 +158,32 @@ class GraphIngestionService:
     async def _process_vertex_fusion(
         self, repo: Any, vertex_id: str, name: str, v_type: str, new_desc: str, chunk_id: str
     ) -> str:
-        """百科体融合逻辑：智能检测老状态 -> LLM生成式覆盖融合 -> 矢量更新过滤机制"""
+        """【排错日志专用版】百科体融合逻辑"""
         from core.config.settings import get_prompt_config
         from agent.prompt import default_prompt
         from utils.sanitize import sanitize_dict_for_oracle_json
 
+        logger.info(f"[诊断开始] ===== 正在处理顶点融合: {name} ({vertex_id}) =====")
         new_desc = new_desc.strip()
-        existing_vertex = await repo.get_vertex_by_id(vertex_id)
+        
+        # 1. 探测 repo.get_vertex_by_id 阶段
+        try:
+            existing_vertex = await repo.get_vertex_by_id(vertex_id)
+            logger.info(f"[诊断-1] get_vertex_by_id 返回对象类型: {type(existing_vertex)}")
+        except Exception as repo_err:
+            logger.error(f"[诊断-爆雷] repo.get_vertex_by_id 自身就失败了: {repo_err}", exc_info=True)
+            raise repo_err
         
         if existing_vertex is not None:
             try:
-                logger.info(f"[GraphProbe] 实体名称: {name}, 原始对象类型: {type(existing_vertex)}")
                 if hasattr(existing_vertex, "keys"):
-                    logger.info(f"[GraphProbe] 检测到类似字典结构，keys: {list(existing_vertex.keys())}")
+                    logger.info(f"[诊断-1.1] existing_vertex keys: {list(existing_vertex.keys())}")
                 if hasattr(existing_vertex, "__dict__"):
-                    logger.info(f"[GraphProbe] 检测到类/ORM结构，__dict__.keys: {list(existing_vertex.__dict__.keys())}")
-                if hasattr(existing_vertex, "_mapping"):
-                    logger.info(f"[GraphProbe] 检测到 SQLAlchemy RowMapping，映射 keys: {list(existing_vertex._mapping.keys())}")
+                    logger.info(f"[诊断-1.2] existing_vertex __dict__.keys: {list(existing_vertex.__dict__.keys())}")
+                if hasattr(existing_vertex, "_mapping") and existing_vertex._mapping:
+                    logger.info(f"[诊断-1.3] existing_vertex _mapping keys: {list(existing_vertex._mapping.keys())}")
             except Exception as probe_err:
-                logger.warning(f"[GraphProbe] 探测日志输出本身报错: {probe_err}", exc_info=True)
+                logger.warning(f"[诊断] 探测 existing_vertex 基础属性时失败: {probe_err}")
                 
         final_desc = new_desc
         final_vector = None
@@ -189,25 +196,29 @@ class GraphIngestionService:
         if existing_vertex:
             if isinstance(existing_vertex, dict) and existing_vertex:
                 has_valid_vertex = True
-            elif hasattr(existing_vertex, "vertex_id") or hasattr(existing_vertex, "description") or hasattr(existing_vertex, "_mapping"):
+            elif hasattr(existing_vertex, "vertex_id") or hasattr(existing_vertex, "description"):
                 has_valid_vertex = True
 
         if has_valid_vertex:
-            # 强化版 get_attr：同时兼容小写、全大写，以及 SQLAlchemy 的 RowMapping 防御
+            # 2. 探测 get_attr 提取阶段
             def get_attr(obj: Any, key: str, default: Any = None) -> Any:
-                key_upper = key.upper()
-                # 1. 如果是标准的 dict
-                if isinstance(obj, dict):
-                    return obj.get(key) if key in obj else obj.get(key_upper, default)
-                # 2. 如果是 SQLAlchemy 的 RowMapping 或者是带 _mapping 的代理对象
-                if hasattr(obj, "_mapping") and obj._mapping is not None:
-                    return obj._mapping.get(key) if key in obj._mapping else obj._mapping.get(key_upper, default)
-                # 3. 如果是标准 ORM 实体对象
-                return getattr(obj, key, getattr(obj, key_upper, default))
+                try:
+                    if isinstance(obj, dict):
+                        val = obj.get(key, default)
+                        logger.info(f"[诊断-2.1] 从 dict 提取 {key} = {type(val)}")
+                        return val
+                    val = getattr(obj, key, default)
+                    logger.info(f"[诊断-2.2] 从 ORM 提取 {key} = {type(val)}")
+                    return val
+                except Exception as attr_err:
+                    logger.error(f"[诊断-爆雷] get_attr 内部在提取键【{key}】时崩溃! 错误类型: {type(attr_err)}, 详情: {attr_err}", exc_info=True)
+                    raise attr_err
 
+            logger.info("[诊断-2] 开始提取老数据属性...")
             old_description = get_attr(existing_vertex, "description")
             old_vector = get_attr(existing_vertex, "name_vector")
             old_attributes = get_attr(existing_vertex, "attributes")
+            logger.info(f"[诊断-2-完成] 提取成功. old_attributes 类型: {type(old_attributes)}")
 
             if old_description and final_desc and old_description != final_desc:
                 try:
@@ -225,39 +236,51 @@ class GraphIngestionService:
                     if llm_response and llm_response.strip():
                         final_desc = llm_response.strip()
                 except Exception as llm_err:
-                    logger.warning(f"[GraphIngestion] 调用 LLM 融合描述失败，降级沿用老描述. 错误: {llm_err}")
+                    logger.warning(f"[GraphIngestion] 调用 LLM 融合描述失败. 错误: {llm_err}")
                     final_desc = old_description
                 
             if old_description and final_desc == old_description:
                 final_vector = old_vector
                 if old_attributes and isinstance(old_attributes, dict):
-                    cleaned_old_attrs = old_attributes.copy()
-                    banned_keys = {"id", "vertex_id", "name", "vertex_name", "type", "vertex_type"}
-                    for k in banned_keys:
-                        cleaned_old_attrs.pop(k, None)
-                        cleaned_old_attrs.pop(k.upper(), None) # 同步移除可能的大写遗留
-                    
-                    attributes.update(cleaned_old_attrs)
+                    logger.info(f"[诊断-3] 开始复制并清洗老属性, 原始键为: {list(old_attributes.keys())}")
+                    try:
+                        cleaned_old_attrs = old_attributes.copy()
+                        banned_keys = {"id", "vertex_id", "name", "vertex_name", "type", "vertex_type"}
+                        for key in banned_keys:
+                            cleaned_old_attrs.pop(key, None)
+                        attributes.update(cleaned_old_attrs)
+                        logger.info(f"[诊断-3-完成] 属性合并完成, 当前 attributes 键为: {list(attributes.keys())}")
+                    except Exception as attr_clean_err:
+                        logger.error(f"[诊断-爆雷] 历史属性清洗/合并时崩溃! 错误: {attr_clean_err}", exc_info=True)
+                        raise attr_clean_err
             else:
                 final_vector = await self.model_client.get_embedding(self.embedding_model, f"{name}: {final_desc}")
         else:
             final_vector = await self.model_client.get_embedding(self.embedding_model, f"{name}: {final_desc}")
 
-        # 在送入清理函数前，对 attributes 做一层极端 KeyError 异常拦截防御
+        # 4. 探测 序列化 清洗阶段
+        logger.info(f"[诊断-4] 准备送入 sanitize_dict_for_oracle_json. 当前内容: {attributes}")
         try:
             sanitized_attrs = sanitize_dict_for_oracle_json(attributes)
-        except KeyError as json_ke:
-            logger.warning(f"[GraphIngestion] sanitize_dict_for_oracle_json 触发了内部 Key 异常 (错误键: {json_ke})，启动降级清洗方案。")
-            # 降级：只保留完全安全的本地确定的基础 kv，剔除引发报错的历史脏字典
-            safe_attrs = {"last_updated_by_chunk": chunk_id}
-            sanitized_attrs = sanitize_dict_for_oracle_json(safe_attrs)
+            logger.info("[诊断-4-完成] sanitize 清洗成功")
+        except Exception as sanitize_err:
+            logger.error(f"[诊断-爆雷] sanitize_dict_for_oracle_json 内部发生崩溃! 错误: {sanitize_err}", exc_info=True)
+            raise sanitize_err
 
-        await repo.upsert_vertex(
-            vertex_id=vertex_id,
-            vertex_name=name,
-            vertex_type=v_type,
-            description=final_desc,
-            attributes=sanitized_attrs,
-            name_vector=final_vector
-        )
+        # 5. 探测 最终 Repo 写入阶段
+        logger.info(f"[诊断-5] 准备调用 repo.upsert_vertex...")
+        try:
+            await repo.upsert_vertex(
+                vertex_id=vertex_id,
+                vertex_name=name,
+                vertex_type=v_type,
+                description=final_desc,
+                attributes=sanitized_attrs,
+                name_vector=final_vector
+            )
+            logger.info(f"[诊断结束] ===== 成功打通 upsert_vertex: {name} =====")
+        except Exception as repo_upsert_err:
+            logger.error(f"[诊断-爆雷] repo.upsert_vertex 内部引发了异常! 错误: {repo_upsert_err}", exc_info=True)
+            raise repo_upsert_err
+
         return vertex_id
