@@ -93,19 +93,20 @@ class GraphRepository:
 
         # 3. 使用异步 session 直接 execute 执行
         # 这会绕过所有的 ORM 属性生命周期，直接把纯净的数据砸进驱动里
-        await self.session.execute(
-            statement,
-            {
-                "edge_id": str(edge_id),
-                "source_id": str(source_id),
-                "target_id": str(target_id),
-                "relation_type": str(relation_type),
-                "chunk_id": str(chunk_id),
-                "file_id": str(file_id),
-                "attributes": attributes_json  # 传入序列化后的纯字符串
-            }
-        )
+        
         try:
+            await self.session.execute(
+                statement,
+                {
+                    "edge_id": str(edge_id),
+                    "source_id": str(source_id),
+                    "target_id": str(target_id),
+                    "relation_type": str(relation_type),
+                    "chunk_id": str(chunk_id),
+                    "file_id": str(file_id),
+                    "attributes": attributes_json  # 传入序列化后的纯字符串
+                }
+            )
             logger.info("[诊断拦截] 已经完成所有节点和边的处理，准备执行最后一步：session.commit()...")
             await self.session.commit()
             logger.info(f"Successfully processed and committed graph network for chunk {chunk_id}")
