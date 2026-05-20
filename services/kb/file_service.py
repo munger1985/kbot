@@ -1,5 +1,6 @@
 import os
 import shutil
+import uuid
 from pathlib import Path
 from typing import Any
 from fastapi import UploadFile
@@ -220,6 +221,7 @@ class FileService:
                 
                 # 构造文件实体
                 file_entitity = FileEntity(
+                    file_id = str(uuid.uuid4()),
                     app_id = app_id,
                     kb_id = kb_id,
                     batch = batch,
