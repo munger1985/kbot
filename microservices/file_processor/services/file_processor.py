@@ -448,38 +448,70 @@ class FileProcessor:
                 if not graph_analysis.edges:
                     continue
 
-                # 2. 构建当前切片局部的实体字典，方便补全边的类型和描述
+                # 2. 构建当前切片局部的实体字典，方便补全边的类型和描述（兼容大小写与两端空格）
                 vertex_type_map = {}
                 vertex_desc_map = {}
                 if getattr(graph_analysis, "vertices", None):
                     for v in graph_analysis.vertices:
-                        v_identity = getattr(v, "entity_name", None) or getattr(v, "name", None)
+                        # 兼容各种奇葩命名
+                        v_identity = (
+                            getattr(v, "entity_name", None) 
+                            or getattr(v, "name", None) 
+                            or getattr(v, "VERTEX_NAME", None)
+                        )
                         if v_identity:
-                            vertex_type_map[v_identity] = getattr(v, "type", "Entity") or "Entity"
-                            vertex_desc_map[v_identity] = getattr(v, "description", "") or ""
+                            # 统一去掉首尾可能多余的引号和空格，转成字符串处理
+                            clean_v_identity = str(v_identity).strip("'").strip('"').strip()
+                            vertex_type_map[clean_v_identity] = getattr(v, "type", "Entity") or "Entity"
+                            vertex_desc_map[clean_v_identity] = getattr(v, "description", "") or ""
 
-                # 3. 组装符合 IngestionService 规范的关系字典列表
+                # 3. 组装符合 IngestionService 规范的关系字典列表（全托底防御）
                 extracted_relations = []
-                for edge in graph_analysis.edges:
-                    s_type = vertex_type_map.get(edge.source_name, "Entity")
-                    s_desc = vertex_desc_map.get(edge.source_name, "")
-                    t_type = vertex_type_map.get(edge.target_name, "Entity")
-                    t_desc = vertex_desc_map.get(edge.target_name, "")
+                if getattr(graph_analysis, "edges", None):
+                    for edge in graph_analysis.edges:
+                        try:
+                            # 使用安全 getattr 托底，绝对不允许属性缺失导致崩溃
+                            raw_s_name = getattr(edge, "source_name", None) or getattr(edge, "SOURCE_NAME", None) or ""
+                            raw_t_name = getattr(edge, "target_name", None) or getattr(edge, "TARGET_NAME", None) or ""
+                            raw_rel_type = getattr(edge, "relation_type", None) or getattr(edge, "RELATION_TYPE", None) or "ASSOCIATE"
+                            
+                            # 洗净可能带有内外单双引号的脏键
+                            s_name = str(raw_s_name).strip("'").strip('"').strip()
+                            t_name = str(raw_t_name).strip("'").strip('"').strip()
+                            relation_type = str(raw_rel_type).strip("'").strip('"').strip()
 
-                    rel_dict = {
-                        "source_name": edge.source_name,
-                        "source_type": s_type,
-                        "source_desc": s_desc,
-                        "target_name": edge.target_name,
-                        "target_type": t_type,
-                        "target_desc": t_desc,
-                        "relation_type": edge.relation_type,
-                        "relation_attributes": {
-                            **base_properties,
-                            **getattr(edge, "attributes", {}) 
-                        }  
-                    }
-                    extracted_relations.append(rel_dict)
+                            # 核心字段为空则直接跳过
+                            if not s_name or not t_name:
+                                continue
+
+                            # 从局部字典中安全索取节点类型/描述
+                            s_type = vertex_type_map.get(s_name, "Entity")
+                            s_desc = vertex_desc_map.get(s_name, "")
+                            t_type = vertex_type_map.get(t_name, "Entity")
+                            t_desc = vertex_desc_map.get(t_name, "")
+
+                            # 获取并安全转化属性
+                            edge_attrs = getattr(edge, "attributes", {}) or getattr(edge, "RELATION_ATTRIBUTES", {})
+                            if not isinstance(edge_attrs, dict):
+                                edge_attrs = {"raw_info": str(edge_attrs)}
+
+                            rel_dict = {
+                                "source_name": s_name,
+                                "source_type": s_type,
+                                "source_desc": s_desc,
+                                "target_name": t_name,
+                                "target_type": t_type,
+                                "target_desc": t_desc,
+                                "relation_type": relation_type,
+                                "relation_attributes": {
+                                    **base_properties,
+                                    **edge_attrs
+                                }  
+                            }
+                            extracted_relations.append(rel_dict)
+                        except Exception as inner_edge_err:
+                            logger.warning(f"[图谱组装异常] 解析单个 edge 对象属性时跳过，错误: {inner_edge_err}")
+                            continue
 
                 # 4. 录入图谱，此时的 chunk_id 是绝对准确、一一对应的
                 await graph_service.merge_and_ingest_graph(
