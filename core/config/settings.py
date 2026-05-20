@@ -208,7 +208,7 @@ class PromptConfig(BaseModel):
     sql_repair: str = Field(default="SYSTEM/sql_repair", description="SQL repair prompt template")
     task_planner: str = Field(default="SYSTEM/task_planner", description="Task planner prompt template")
     intent_router: str = Field(default="SYSTEM/intent_router", description="Intent router prompt template")
-    data_reasoning: str = Field(default="SYSTEM/data_reasoning", description="Data reasoning prompt template")
+    reasoning: str = Field(default="SYSTEM/reasoning", description="Model reasoning prompt template")
     generate_chart: str = Field(default="SYSTEM/generate_chart", description="Generate chart prompt template")
     db_router: str = Field(default="SYSTEM/db_router", description="Database router prompt template")
 

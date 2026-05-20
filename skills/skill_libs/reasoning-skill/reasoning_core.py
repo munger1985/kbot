@@ -2,10 +2,11 @@ from loguru import logger
 from typing import Any, AsyncGenerator
 from utils.clients import AIModelClient
 from agent.prompt import default_prompt
-from core.config import get_prompt_config
+from core.config.settings import get_prompt_config
 from core.dictionary import PacketType
 from skills import BaseSkill
 from agent.common import ContextMemory
+from services.basic import PromptService
 
 
 class ReasoningSkill(BaseSkill):
@@ -16,6 +17,7 @@ class ReasoningSkill(BaseSkill):
     def __init__(self):
         super().__init__()
         self.model_client = AIModelClient()
+        self.prompt_service = PromptService()
 
     async def run_stream(
         self, 
@@ -66,13 +68,17 @@ class ReasoningSkill(BaseSkill):
         
         summary = context["session_state"].get("context_summary", "新会话")
 
-        final_prompt = await default_prompt.generate(
-            get_prompt_config().data_reasoning,
+        reasoning_prompt = await default_prompt.generate(
+            get_prompt_config().reasoning,
             data_context=data_text,
             kb_context=kb_text,
             context_summary=summary,
             final_goal=target_goal
         )
+
+        # 3. 获取用户提示
+        user_prompt = await self.prompt_service.get_prompt_by_agent_id(context["agent_id"])
+        final_prompt = f"{reasoning_prompt}\n{user_prompt}"
 
         # 4. 状态机解析 LLM 输出
         is_thinking = False

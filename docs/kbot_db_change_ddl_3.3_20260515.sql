@@ -53,6 +53,7 @@ COMMENT ON COLUMN kbot_md_kb.dbconf IS '知识库关联的数据库配置参数'
 -- ==========================================
 -- 4. 表变更：kbot_md_user_profile
 -- ==========================================
+TRUNCATE TABLE kbot_md_user_profile;
 ALTER TABLE kbot_md_user_profile ADD (
     entity_relations CLOB CONSTRAINT chk_up_entity_rel_json CHECK (entity_relations IS JSON),
     correction_history CLOB CONSTRAINT chk_up_corr_hist_json CHECK (correction_history IS JSON)
@@ -64,6 +65,7 @@ COMMENT ON COLUMN kbot_md_user_profile.correction_history IS '用户订正过的
 -- ==========================================
 -- 5. 表变更：kbot_md_conv_context
 -- ==========================================
+TRUNCATE TABLE kbot_md_conv_context;
 ALTER TABLE kbot_md_conv_context ADD (
     current_plan CLOB CONSTRAINT chk_ctx_plan_json CHECK (current_plan IS JSON),
     step_outputs CLOB CONSTRAINT chk_ctx_outputs_json CHECK (step_outputs IS JSON),
@@ -79,6 +81,7 @@ COMMENT ON COLUMN kbot_md_conv_context.active_topic IS '当前活跃话题标签
 -- ==========================================
 -- 6. 表变更：kbot_md_memory_entry
 -- ==========================================
+TRUNCATE TABLE kbot_md_memory_entry;
 -- 新增字段
 ALTER TABLE kbot_md_memory_entry ADD (
     user_id VARCHAR2(256) NOT NULL,

@@ -15,6 +15,36 @@
 | ➕ | `updated_by` | `String(256)` | Updater user |
 | ➕ | `updated_time` | `Date` | Update time (默认及更新时自动更新) |
 
+### 📄 表名：kbot_graph_knowledge_vertices
+| 操作类型 | 字段名称 | 数据类型 | 备注 |
+| :--- | :--- | :--- | :--- |
+| ➕ | `vertex_id` | `VARCHAR2(64)` | 顶点（实体）唯一标识，主键 |
+| ➕ | `vertex_name` | `VARCHAR2(255)` | 实体或概念的实际名称 |
+| ➕ | `vertex_type` | `VARCHAR2(64)` | 实体的业务大类分类 |
+| ➕ | `description` | `CLOB` | LLM提炼的简要文本定义或描述 |
+| ➕ | `attributes` | `JSON` | 动态扩展属性（如设备型号、指标单位等） |
+| ➕ | `name_vector` | `VECTOR` | 实体名称/描述生成的向量嵌入，用于消歧 |
+| ➕ | `created_at` | `TIMESTAMP` | 实体的首次创建或抽取时间 |
+
+### 📄 表名：kbot_graph_knowledge_edges
+| 操作类型 | 字段名称 | 数据类型 | 备注 |
+| :--- | :--- | :--- | :--- |
+| ➕ | `edge_id` | `VARCHAR2(64)` | 边的唯一标识，主键 |
+| ➕ | `source_id` | `VARCHAR2(64)` | 关系的源顶点ID（外键关联 vertices） |
+| ➕ | `target_id` | `VARCHAR2(64)` | 关系的目标顶点ID（外键关联 vertices） |
+| ➕ | `relation_type` | `VARCHAR2(128)` | 关系的语义类型（如属于、导致等） |
+| ➕ | `weight` | `NUMBER(10)` | 关系权重值（提及频次），默认值为1 |
+| ➕ | `attributes` | `JSON` | 该条边特有的附加信息 |
+| ➕ | `updated_at` | `TIMESTAMP` | 关系的最后抽取或权重更新时间 |
+
+### 📄 表名：kbot_graph_edge_chunk_map
+| 操作类型 | 字段名称 | 数据类型 | 备注 |
+| :--- | :--- | :--- | :--- |
+| ➕ | `edge_id` | `VARCHAR2(64)` | 边的唯一标识（联合主键，外键关联 edges） |
+| ➕ | `chunk_id` | `VARCHAR2(64)` | 提取出该关系的原始文档切片ID（联合主键） |
+| ➕ | `file_id` | `VARCHAR2(64)` | 冗余存储的文档唯一标识，便于级联清理 |
+| ➕ | `created_at` | `TIMESTAMP` | 该条关系在当前切片下的提取时间 |
+
 ## 表字段变更
 ### 📄 表名：kbot_md_kb_files
 | 操作类型 | 字段名称 | 数据类型 | 备注 |

@@ -19,3 +19,7 @@ DROP TABLE IF EXISTS kbot_md_user_profile;
 DROP TABLE IF EXISTS kbot_md_conv_context;
 DROP TABLE IF EXISTS kbot_md_memory_entry;
 DROP TABLE IF EXISTS kbot_md_parser_conf;
+drop PROPERTY GRAPH kbot_knowledge_rag_graph;
+drop table if exists KBOT_GRAPH_EDGE_CHUNK_MAP;
+drop table if exists KBOT_GRAPH_KNOWLEDGE_EDGES;
+drop table if exists KBOT_GRAPH_KNOWLEDGE_VERTICES;

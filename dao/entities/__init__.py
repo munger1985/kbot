@@ -12,6 +12,8 @@ from .user_token import UserToken
 from .user import User
 from .service import Service
 from .txt_chunk import TxtChunkEntity
+from .graph import GraphVertexEntity, GraphEdgeEntity, GraphEdgeChunkMapEntity
+
 
 
 __all__ = [
@@ -30,5 +32,8 @@ __all__ = [
     "ParserConfEntity",
     "PromptEntity",
     "TxtChunkEntity",
-    "APIKey", "UserToken", "User", "Service"
+    "APIKey", "UserToken", "User", "Service",
+    "GraphVertexEntity", 
+    "GraphEdgeEntity", 
+    "GraphEdgeChunkMapEntity"
 ]

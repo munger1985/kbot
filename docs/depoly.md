@@ -101,8 +101,8 @@ git config --global user.email "your.email@example.com"
 #### 选项 1：下载指定版本（推荐用于生产环境）
 
 ```bash
-# 克隆指定版本的 Kbot 代码（例如 v3.1 标签）
-git clone https://github.com/munger1985/kbot.git -b v3.1
+# 克隆指定版本的 Kbot 代码（例如 kbot3.3 标签）
+git clone https://github.com/munger1985/kbot.git -b kbot3.3
 ```
 
 #### 选项 2：下载最新开发版本（推荐用于测试和开发）

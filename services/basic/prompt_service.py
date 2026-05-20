@@ -65,3 +65,25 @@ class PromptService:
             except Exception as e:
                 logger.error(f"Failed to get prompt by id '{prompt_id}', original_error={e}")
                 return None
+
+    async def get_prompt_by_agent_id(self, agent_id: int) -> str | None:
+        """Gets the prompt content by agent id.
+
+        Args:
+            agent_id: The id of the agent.
+
+        Returns:
+            The prompt content as a string.
+        """
+        async with self.oracle_session as session:
+            repo = AgentRepository(session)
+            try:
+                agent = await repo.get_by_id(agent_id)
+                if agent.prompt_id:
+                    return await self.get_prompt_by_id(agent.prompt_id)
+                else:
+                    logger.error(f"Agent {agent_id} has no prompt.")
+                    return None
+            except Exception as e:
+                logger.error(f"Failed to get prompt by agent id '{agent_id}', original_error={e}")
+                return None

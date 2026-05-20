@@ -154,7 +154,7 @@ class RootOrchestrator:
         for idx, step in enumerate(plan_steps):
             ctx["current_step_index"] = idx
             
-            # 🟢 架构对齐：每个独立步骤，精准拉起一个专属的 SkillRuntime 隔离沙箱
+            # 每个独立步骤，精准拉起一个专属的 SkillRuntime 隔离沙箱
             runtime = SkillRuntime(context=ctx)
             
             # 建立执行快照（Runtime 内部自动完成输入变量占位符替换）

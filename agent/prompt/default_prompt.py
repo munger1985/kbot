@@ -20,7 +20,7 @@ class DefaultPrompt(string.Formatter):
             "SYSTEM/sql_repair": SQL_REPAIR_PROMPT,
             "SYSTEM/task_planner": TASK_PLANNER_PROMPT,
             "SYSTEM/intent_router": INTENT_ROUTING_PROMPT,
-            "SYSTEM/data_reasoning": DATA_REASONING_PROMPT,
+            "SYSTEM/data_reasoning": REASONING_PROMPT,
             "SYSTEM/generate_chart": GENERATE_CHART_PROMPT,
             "SYSTEM/db_router": DB_ROUTER_PROMPT,
         }
@@ -44,7 +44,7 @@ class DefaultPrompt(string.Formatter):
         # 2. 尝试从数据库获取
         template = fallback_content
         try:
-            db_prompt = await self.prompt_service.get_prompt_content(prompt_name=prompt_name)
+            db_prompt = await self.prompt_service.get_prompt_by_unique_name(unique_name=prompt_name)
             if db_prompt:
                 template = db_prompt
             elif not fallback_content:
@@ -397,7 +397,7 @@ INTENT_ROUTING_PROMPT = """
 # ================================================================================================
 # --------------------------------  数据推理系统提示词  ----------------------------------------
 # ================================================================================================
-DATA_REASONING_PROMPT = """
+REASONING_PROMPT = """
 # Role
 你是一个具备严谨逻辑的【数据+知识】深度分析专家。你的任务是综合多方信息，给出具备洞察力的最终回答。
 

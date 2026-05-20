@@ -379,3 +379,42 @@ class FileProcessor:
             logger.error(msg, exc_info=True)
             await self._update_file_status(file_params.file_id, FileStatus.PARSE_FAILED, msg)
             return False
+        
+    async def _extract_and_save_graph(self, parser_results: list[ChunkResult], file_params: FileParams):
+        """
+        从解析出的文本块中提取实体与关系，并持久化至 Oracle Graph
+        """
+        llm_model = file_params.parser_params.llm_model
+        if not llm_model:
+            logger.warning("No LLM model configured for graph extraction, skipping.")
+            return
+
+        # 1. 调用图谱提取服务（这部分通常内部会做并发控制或 Batch 处理）
+        # vertices, edges = await self.graph_service.extract_triplets(
+        #     chunks=parser_results, 
+        #     model_name=llm_model,
+        #     biz_metadata=file_params.biz_metadata
+        # )
+        
+        # 模拟提取到的实体和关系数据，这里需要映射到你refactor后的 SQLAlchemy 2.0 实体
+        vertices_to_save = []
+        edges_to_save = []
+        
+        # TODO: 遍历提取结果，组装成 GraphVertex 和 GraphEdge 实例
+        # 别忘了清洗和 sanitize 其中的 JSON 字段 (可以用你导入的 sanitize_dict_for_oracle_json)
+        
+        if not vertices_to_save and not edges_to_save:
+            logger.info("No graph elements extracted from this file.")
+            return
+
+        # 2. 写入 Oracle 26ai 数据库
+        async with self.oracle_session as session:
+            # graph_repo = GraphRepository(session)
+            try:
+                # await graph_repo.save_graph_data(vertices=vertices_to_save, edges=edges_to_save)
+                # 或者直接使用 session.add_all(...)
+                # await session.commit()
+                logger.info(f"Successfully saved {len(vertices_to_save)} vertices and {len(edges_to_save)} edges to graph.")
+            except Exception as e:
+                await session.rollback()
+                raise DatabaseException(f"Failed to commit graph data to Oracle: {str(e)}")
