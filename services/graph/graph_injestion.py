@@ -61,20 +61,50 @@ class GraphIngestionService:
         if not extracted_relations:
             return
 
+        # =================================================================
+        # 【核心修复】第一步：前置深度清洗，彻底拔除带引号的脏 Key 和脏 Value
+        # =================================================================
+        cleaned_relations: list[dict[str, Any]] = []
+        for raw_rel in extracted_relations:
+            if not isinstance(raw_rel, dict):
+                continue
+            
+            clean_rel = {}
+            for k, v in raw_rel.items():
+                # 1. 拔除 Key 里的各种奇葩单双引号并转为小写
+                clean_key = str(k).strip().strip("'").strip('"').strip().lower()
+                
+                # 2. 拔除字符串 Value 里的可能由大模型生成的内嵌引号
+                if isinstance(v, str):
+                    clean_val = v.strip().strip("'").strip('"').strip()
+                elif isinstance(v, dict):
+                    # 递归清理 attributes 内部的脏数据
+                    clean_val = {
+                        str(sub_k).strip().strip("'").strip('"').strip(): 
+                        (sub_v.strip().strip("'").strip('"').strip() if isinstance(sub_v, str) else sub_v)
+                        for sub_k, sub_v in v.items()
+                    }
+                else:
+                    clean_val = v
+                
+                clean_rel[clean_key] = clean_val
+            cleaned_relations.append(clean_rel)
+
+        # 后续业务逻辑完全基于已清洗干净的 cleaned_relations 执行
         async with self.oracle_session as session:
             repo = GraphRepository(session)
             
             # --- 1: 提取出当前 Chunk 中所有独特的实体，避免同批内并发冲突 ---
-            # 统一提取逻辑，同时包容大写和小写 Key，消灭第一关的 KeyError
             unique_vertices: dict[str, dict[str, str]] = {}
-            for rel in extracted_relations:
-                s_name = str(rel.get("source_name") or rel.get("SOURCE_NAME") or "")
-                s_type = str(rel.get("source_type") or rel.get("SOURCE_TYPE") or "")
-                s_desc = str(rel.get("source_desc") or rel.get("SOURCE_DESC") or "")
+            for rel in cleaned_relations:
+                # 此时所有的 Key 已经被清洗为标准小写，直接安心获取
+                s_name = str(rel.get("source_name") or "")
+                s_type = str(rel.get("source_type") or "Entity")
+                s_desc = str(rel.get("source_desc") or "")
 
-                t_name = str(rel.get("target_name") or rel.get("TARGET_NAME") or "")
-                t_type = str(rel.get("target_type") or rel.get("TARGET_TYPE") or "")
-                t_desc = str(rel.get("target_desc") or rel.get("TARGET_DESC") or "")
+                t_name = str(rel.get("target_name") or "")
+                t_type = str(rel.get("target_type") or "Entity")
+                t_desc = str(rel.get("target_desc") or "")
 
                 if s_name:
                     src_id = self._generate_md5_id(s_name, s_type)
@@ -102,30 +132,27 @@ class GraphIngestionService:
                 except Exception as e:
                     logger.error(f"[GraphIngestion] 实体融合失败: {v_info['name']}, 错误: {str(e)}")
 
-            # --- 3: 串行处理边和映射（精准适配 Oracle 大小写感知） ---
+            # --- 3: 串行处理边和映射 ---
             async def _process_single_edge(edge_dict: dict[str, Any]) -> None:
                 try:
-                    # 一步到位：提取并强转为明确类型，不留任何 Any | None 隐患
-                    source_name = str(edge_dict.get("source_name") or edge_dict.get("SOURCE_NAME") or "")
-                    source_type = str(edge_dict.get("source_type") or edge_dict.get("SOURCE_TYPE") or "")
-                    target_name = str(edge_dict.get("target_name") or edge_dict.get("TARGET_NAME") or "")
-                    target_type = str(edge_dict.get("target_type") or edge_dict.get("TARGET_TYPE") or "")
-                    relation_type = str(edge_dict.get("relation_type") or edge_dict.get("RELATION_TYPE") or "")
+                    source_name = str(edge_dict.get("source_name") or "")
+                    source_type = str(edge_dict.get("source_type") or "Entity")
+                    target_name = str(edge_dict.get("target_name") or "")
+                    target_type = str(edge_dict.get("target_type") or "Entity")
+                    relation_type = str(edge_dict.get("relation_type") or "ASSOCIATE")
                     
-                    # 属性特殊处理，确保是 dict
-                    raw_attrs = edge_dict.get("relation_attributes") or edge_dict.get("RELATION_ATTRIBUTES")
-                    relation_attributes = raw_attrs if isinstance(raw_attrs, dict) else {}
+                    relation_attributes = edge_dict.get("relation_attributes")
+                    if not isinstance(relation_attributes, dict):
+                        relation_attributes = {}
 
                     # 严格拦截空核心字段
-                    if not source_name or not target_name or not relation_type:
-                        logger.warning(f"[GraphIngestion] 关系数据缺失关键核心字段，跳过: {edge_dict}")
+                    if not source_name or not target_name:
                         return
 
-                    # 1. 计算原始 MD5 ID (此时静态检查器 100% 确认入参为非空 str)
+                    # 从映射表安全获取顶点融合后的真实 ID
                     src_raw_id = self._generate_md5_id(source_name, source_type)
                     box_raw_id = self._generate_md5_id(target_name, target_type)
                     
-                    # 2. 从映射表安全获取顶点融合后的真实 ID
                     src_id = vertex_id_map.get(src_raw_id)
                     tgt_id = vertex_id_map.get(box_raw_id)
                     
@@ -133,7 +160,6 @@ class GraphIngestionService:
                         logger.warning(f"[GraphIngestion] 找不到顶点映射 ID，跳过边处理. SrcRaw: {src_raw_id}, TgtRaw: {box_raw_id}")
                         return
 
-                    # 3. 严格匹配 repo.upsert_edge_with_map 签名
                     generated_edge_id = self._generate_md5_id(src_id, tgt_id, relation_type)
                     
                     await repo.upsert_edge_with_map(
@@ -148,10 +174,10 @@ class GraphIngestionService:
                 except Exception as e:
                     logger.error(f"[GraphIngestion] 处理图关系单条边录入失败: {edge_dict}, 错误详情: {str(e)}", exc_info=True)
 
-            # 保持标准的 for 循环顺序安全处理
-            for r in extracted_relations:
+            for r in cleaned_relations:
                 await _process_single_edge(r)
 
+            # 在这里，所有被推入 session 的解包属性均无外部单引号和大小写干扰
             await session.commit()
             logger.info(f"Successfully processed and committed graph network for chunk {chunk_id}")
 
