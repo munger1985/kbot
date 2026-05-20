@@ -160,12 +160,10 @@ class GraphIngestionService:
                 
         final_desc = new_desc
         final_vector = None
+        
+        # 初始化 attributes 时，拒绝塞入主列重复字段，只留链路追踪字段
         attributes = {
-            "last_updated_by_chunk": chunk_id,
-            "vertex_id": vertex_id,
-            "id": vertex_id,
-            "vertex_name": name,
-            "name": name
+            "last_updated_by_chunk": chunk_id
         }
 
         has_valid_vertex = False
@@ -207,9 +205,13 @@ class GraphIngestionService:
             if old_description and final_desc == old_description:
                 final_vector = old_vector
                 if old_attributes and isinstance(old_attributes, dict):
-                    attributes.update(old_attributes)
-                    attributes["vertex_id"] = vertex_id
-                    attributes["id"] = vertex_id
+                    # 🧹 【Service层净化点 2】：融合历史属性时，顺手剔除可能残留在老数据里的主列字段
+                    cleaned_old_attrs = old_attributes.copy()
+                    banned_keys = {"id", "vertex_id", "name", "vertex_name", "type", "vertex_type"}
+                    for key in banned_keys:
+                        cleaned_old_attrs.pop(key, None)
+                    
+                    attributes.update(cleaned_old_attrs)
             else:
                 final_vector = await self.model_client.get_embedding(self.embedding_model, f"{name}: {final_desc}")
         else:
