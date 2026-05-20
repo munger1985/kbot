@@ -194,11 +194,14 @@ class FileService:
             from services.basic import ParserConfService
             
             parser_conf_service = ParserConfService()
+            default_parser_conf = None
             try:
                 default_parser_conf = await parser_conf_service.get_parser_params_by_engine(domain_id=domain_id, engine=ParserEngine.TEXT.value)
             except Exception as e:
                 logger.warning(f"获取默认解析引擎配置失败: {e}")
                 # 定义默认的解析引擎配置
+            
+            if not default_parser_conf:
                 default_parser_conf = {
                     "do_ocr": False, 
                     "overlap": 50, 
