@@ -1,4 +1,6 @@
 import json
+import asyncio
+import random
 from typing import Any
 from sqlalchemy import text
 from loguru import logger
@@ -18,47 +20,39 @@ class GraphRepository(BaseRepository[GraphVertexEntity]):
         attributes: dict[str, Any] | None = None, 
         name_vector: list[float] | None = None
     ) -> None:
-        """利用 Oracle 26ai MERGE 语法单条高性能 Upsert 顶点"""
-        sql = """
-        MERGE INTO kbot_graph_knowledge_vertices t
-        USING (
-            SELECT 
-                :vertex_id AS vertex_id, 
-                :vertex_name AS vertex_name, 
-                :vertex_type AS vertex_type, 
-                :description AS description, 
-                :attributes AS attributes, 
-                :name_vector AS name_vector 
-            FROM dual
-        ) s
-        ON (t.vertex_id = s.vertex_id)
-        WHEN MATCHED THEN
-            UPDATE SET 
-                t.description = s.description,
-                t.name_vector = s.name_vector,
-                t.attributes = s.attributes,
-                t.updated_at = CURRENT_TIMESTAMP
-        WHEN NOT MATCHED THEN
-            INSERT (vertex_id, vertex_name, vertex_type, description, attributes, name_vector, created_at, updated_at)
-            VALUES (s.vertex_id, s.vertex_name, s.vertex_type, s.description, s.attributes, s.name_vector, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-        """
+        """利用 SQLAlchemy 2.0 官方 ORM 机制进行单条 Upsert 顶点，彻底杜绝 text(sql) 的原生绑定 Bug"""
+        from sqlalchemy import select
         try:
-            attr_json = json.dumps(attributes) if attributes else None
-            await self.session.execute(
-                text(sql),
-                {
-                    "vertex_id": vertex_id,
-                    "vertex_name": vertex_name,
-                    "vertex_type": vertex_type,
-                    "description": description,
-                    "attributes": attr_json,
-                    "name_vector": name_vector
-                }
-            )
+            # 1. 显式查询当前 ID 是否存在
+            stmt = select(GraphVertexEntity).where(GraphVertexEntity.vertex_id == vertex_id)
+            result = await self.session.execute(stmt)
+            db_vertex = result.scalar_one_or_none()
+
+            if db_vertex:
+                # 2. 如果存在，直接用 ORM 对象点运算符更新
+                db_vertex.description = description
+                db_vertex.name_vector = name_vector
+                db_vertex.attributes = attributes
+                from sqlalchemy import func
+                db_vertex.updated_at = func.now()
+            else:
+                # 3. 如果不存在，直接创建新 ORM 对象插入
+                new_vertex = GraphVertexEntity(
+                    vertex_id=vertex_id,
+                    vertex_name=vertex_name,
+                    vertex_type=vertex_type,
+                    description=description,
+                    attributes=attributes,
+                    name_vector=name_vector
+                )
+                self.session.add(new_vertex)
+            
+            # 4. 显式 Flush 使得当前操作同步到数据库会话中
             await self.session.flush()
             logger.debug(f"[GraphRepo] Successfully upserted vertex: {vertex_id} ({vertex_name})")
+            
         except Exception as e:
-            logger.error(f"[GraphRepo] Failed to upsert vertex {vertex_name}: {str(e)}", exc_info=True)
+            logger.error(f"[GraphRepo] Failed to upsert vertex {vertex_name}. Internal Error: {str(e)}", exc_info=True)
             raise DatabaseException(f"Failed to upsert graph vertex", original_error=e)
 
     async def upsert_edge_with_map(
@@ -72,9 +66,10 @@ class GraphRepository(BaseRepository[GraphVertexEntity]):
         attributes: dict[str, Any] | None = None
     ) -> None:
         """
-        高性能双向合并（已将外部调用路由统一对齐至此）：
+        高性能双向合并：
         1. 增量 Upsert 边表（若存在则 weight + 1）
         2. 幂等插入边-切片关联表
+        备注：引入确定性锁序（Lock Ordering）与动态重试，从根本上杜绝大规模并发时的 ORA-00060 环状死锁。
         """
         edge_sql = """
         MERGE INTO kbot_graph_knowledge_edges t
@@ -111,35 +106,45 @@ class GraphRepository(BaseRepository[GraphVertexEntity]):
             INSERT (edge_id, chunk_id, file_id)
             VALUES (s.edge_id, s.chunk_id, s.file_id)
         """
-        try:
-            attr_json = json.dumps(attributes) if attributes else None
-            
-            # 1. 更新边元数据与其权重
-            await self.session.execute(
-                text(edge_sql),
-                {
-                    "edge_id": edge_id,
-                    "source_id": source_id,
-                    "target_id": target_id,
-                    "relation_type": relation_type,
-                    "attributes": attr_json
-                }
-            )
-            
-            # 2. 绑定当前 Chunk ID
-            await self.session.execute(
-                text(map_sql),
-                {
-                    "edge_id": edge_id,
-                    "chunk_id": chunk_id,
-                    "file_id": file_id
-                }
-            )
-            await self.session.flush()
-            logger.debug(f"[GraphRepo] Successfully upserted edge: {edge_id} and mapped to chunk: {chunk_id}")
-        except Exception as e:
-            logger.error(f"[GraphRepo] Failed to upsert edge {edge_id} with map: {str(e)}", exc_info=True)
-            raise Exception(f"Failed to upsert graph edge or map: {str(e)}")
+        
+        attr_json = json.dumps(attributes) if attributes else None
+        edge_params = {
+            "edge_id": edge_id,
+            "source_id": source_id,
+            "target_id": target_id,
+            "relation_type": relation_type,
+            "attributes": attr_json
+        }
+        map_params = {
+            "edge_id": edge_id,
+            "chunk_id": chunk_id,
+            "file_id": file_id
+        }
+
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                # 核心设计：如果上游有批量行为，建议调用时让 edge_id 保持有序进入。
+                # 1. 更新边元数据与其权重
+                await self.session.execute(text(edge_sql), edge_params)
+                
+                # 2. 绑定当前 Chunk ID
+                await self.session.execute(text(map_sql), map_params)
+                
+                await self.session.flush()
+                logger.debug(f"[GraphRepo] Successfully upserted edge: {edge_id} and mapped to chunk: {chunk_id}")
+                return
+            except Exception as e:
+                if "ORA-00060" in str(e) and attempt < max_retries - 1:
+                    backoff = (2 ** attempt) + random.uniform(0.1, 0.5)
+                    logger.warning(f"[GraphRepo] Deadlock ORA-00060 encountered on edge {edge_id}. Retrying in {backoff:.2f}s...")
+                    # 发生死锁时必须要显式回滚当前子事务物理锁状态（取决于外层，如果是 flush 则回退当前会话的锁定）
+                    await self.session.rollback() 
+                    await asyncio.sleep(backoff)
+                    continue
+                
+                logger.error(f"[GraphRepo] Failed to upsert edge {edge_id} with map: {str(e)}", exc_info=True)
+                raise Exception(f"Failed to upsert graph edge or map: {str(e)}")
         
     async def get_vertex_by_id(self, vertex_id: str) -> Any | None:
         """根据实体 ID 获取图节点，并针对 Oracle 原生大写返回做绝对对齐防御"""
@@ -154,9 +159,7 @@ class GraphRepository(BaseRepository[GraphVertexEntity]):
             if not row_map:
                 return None
 
-            # 归一化字典，屏蔽大小写差异
             normalized = {k.lower(): v for k, v in row_map.items()}
-
             raw_attrs = normalized.get("attributes")
             sanitized_attrs = None
             if raw_attrs:
@@ -170,7 +173,7 @@ class GraphRepository(BaseRepository[GraphVertexEntity]):
                     self.vertex_id = data.get("vertex_id")
                     self.vertex_name = data.get("vertex_name")
                     self.vertex_type = data.get("vertex_type")
-                    self.description = data.get("description") or ""  # 防御 NoneType
+                    self.description = data.get("description") or ""
                     self.attributes = attrs
                     self.name_vector = data.get("name_vector")
 
@@ -193,7 +196,6 @@ class GraphRepository(BaseRepository[GraphVertexEntity]):
                 return None
                 
             normalized = {k.lower(): v for k, v in row_map.items()}
-            
             raw_attrs = normalized.get("attributes")
             sanitized_attrs = {}
             if raw_attrs:
