@@ -138,6 +138,26 @@ class GraphIngestionService:
         new_desc = new_desc.strip()
         existing_vertex = await repo.get_vertex_by_id(vertex_id)
         
+        if existing_vertex is not None:
+            try:
+                # 1. 打印基础类型
+                logger.info(f"[GraphProbe] 实体名称: {name}, 原始对象类型: {type(existing_vertex)}")
+                
+                # 2. 尝试打印如果是字典时的 key
+                if hasattr(existing_vertex, "keys"):
+                    logger.info(f"[GraphProbe] 检测到类似字典结构，keys: {list(existing_vertex.keys())}")
+                
+                # 3. 尝试打印如果是 ORM 对象时的属性
+                if hasattr(existing_vertex, "__dict__"):
+                    logger.info(f"[GraphProbe] 检测到类/ORM结构，__dict__.keys: {list(existing_vertex.__dict__.keys())}")
+                
+                # 4. 显式检测 SQLAlchemy 的行映射代理属性
+                if hasattr(existing_vertex, "_mapping"):
+                    logger.info(f"[GraphProbe] 检测到 SQLAlchemy RowMapping，映射 keys: {list(existing_vertex._mapping.keys())}")
+                    
+            except Exception as probe_err:
+                logger.warning(f"[GraphProbe] 探测日志输出本身报错: {probe_err}", exc_info=True)
+                
         final_desc = new_desc
         final_vector = None
         attributes = {
