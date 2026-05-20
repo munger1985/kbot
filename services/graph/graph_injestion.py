@@ -99,31 +99,49 @@ class GraphIngestionService:
                 except Exception as e:
                     logger.error(f"[GraphIngestion] 实体融合失败: {v_info['name']}, 错误: {str(e)}")
 
-            # --- 3: 并发处理边和映射（核心修复：内部重构路由直接绑定至单一底层存储方案） ---
+            # --- 3: 串行处理边和映射（精准适配 Oracle 大小写感知） ---
             async def _process_single_edge(rel: dict[str, Any]) -> None:
                 try:
                     src_raw_id = self._generate_md5_id(rel["source_name"], rel["source_type"])
                     box_raw_id = self._generate_md5_id(rel["target_name"], rel["target_type"])
                     
-                    src_id = vertex_id_map.get(src_raw_id)
-                    tgt_id = vertex_id_map.get(box_raw_id)
+                    # 防御：有些老数据或 SQLAlchemy 返回的可能是大写或 RowMapping
+                    # 我们通过安全获取器拿到真实的 vertex_id
+                    def _get_clean_id(raw_id: str) -> str | None:
+                        # 尝试从小写取
+                        if raw_id in vertex_id_map:
+                            return vertex_id_map[raw_id]
+                        # 尝试从大写取
+                        if raw_id.upper() in vertex_id_map:
+                            return vertex_id_map[raw_id.upper()]
+                        return None
+
+                    src_id = _get_clean_id(src_raw_id)
+                    tgt_id = _get_clean_id(box_raw_id)
+                    
                     if not src_id or not tgt_id:
+                        logger.warning(f"[GraphIngestion] 找不到对应的顶点 ID 映射，跳过边处理. SrcRaw: {src_raw_id}, TgtRaw: {box_raw_id}")
                         return
 
-                    # 直接调用仓储方法
+                    # 严格按照 repo 的方法签名传递参数
+                    generated_edge_id = self._generate_md5_id(src_id, tgt_id, rel["relation_type"])
+                    
+                    # 确保传给 Oracle JSON 的属性字典是干净的
+                    relation_attrs = rel.get("relation_attributes") or {}
+
                     await repo.upsert_edge_with_map(
-                        edge_id=self._generate_md5_id(src_id, tgt_id, rel["relation_type"]),
+                        edge_id=generated_edge_id,
                         source_id=src_id,
                         target_id=tgt_id,
                         relation_type=rel["relation_type"],
                         chunk_id=chunk_id,
                         file_id=file_id,
-                        attributes=rel.get("relation_attributes") or {}
+                        attributes=relation_attrs
                     )
                 except Exception as e:
-                    logger.error(f"[GraphIngestion] 处理图关系单条边录入失败: {rel}, 错误: {str(e)}")
+                    logger.error(f"[GraphIngestion] 处理图关系单条边录入失败: {rel}, 错误详情: {str(e)}", exc_info=True)
 
-            # 【修复核心】：摒弃无限制的 asyncio.gather，改用标准的 for 循环顺序安全处理
+            # 保持标准的 for 循环顺序安全处理
             for r in extracted_relations:
                 await _process_single_edge(r)
 
