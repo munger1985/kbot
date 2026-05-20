@@ -158,16 +158,34 @@ class GraphIngestionService:
         final_vector = None
         attributes = {"last_updated_by_chunk": chunk_id}
 
+        # 严格判定 existing_vertex 存在，且必须拥有有效的主键或核心字段，排除空字典或空残躯对象
+        has_valid_vertex = False
         if existing_vertex:
+            if isinstance(existing_vertex, dict) and existing_vertex:
+                has_valid_vertex = True
+            elif hasattr(existing_vertex, "vertex_id") or hasattr(existing_vertex, "description"):
+                has_valid_vertex = True
+
+        if has_valid_vertex:
+            # 提取安全属性方法，适配 ORM 对象点语法与 Dict 语法
+            def get_attr(obj: Any, key: str, default: Any = None) -> Any:
+                if isinstance(obj, dict):
+                    return obj.get(key, default)
+                return getattr(obj, key, default)
+
+            old_description = get_attr(existing_vertex, "description")
+            old_vector = get_attr(existing_vertex, "name_vector")
+            old_attributes = get_attr(existing_vertex, "attributes")
+
             # 如果已有描述，且新提取出的描述不为空、且不与老描述完全一致，触发在线百科融合
-            if existing_vertex.description and final_desc and existing_vertex.description != final_desc:
+            if old_description and final_desc and old_description != final_desc:
                 try:
                     # 3. 使用异步提示词管理器生成 Prompt（支持 DB 动态覆盖）
                     fusion_prompt = await default_prompt.generate(
                         get_prompt_config().graph_vertex_fusion,
                         name=name,
                         v_type=v_type,
-                        old_desc=existing_vertex.description,
+                        old_desc=old_description,
                         new_desc=final_desc
                     )
                     
@@ -181,18 +199,18 @@ class GraphIngestionService:
                         
                 except Exception as llm_err:
                     logger.warning(f"[GraphIngestion] 调用 LLM 融合描述失败，降级沿用老描述. 错误: {llm_err}")
-                    final_desc = existing_vertex.description
+                    final_desc = old_description
                 
             # 增量判别：如果融合结果和库里一致，免去昂贵的 Embedding 开销
-            if existing_vertex.description and final_desc == existing_vertex.description:
-                final_vector = existing_vertex.name_vector
-                if existing_vertex.attributes:
-                    attributes.update(existing_vertex.attributes)
+            if old_description and final_desc == old_description:
+                final_vector = old_vector
+                if old_attributes and isinstance(old_attributes, dict):
+                    attributes.update(old_attributes)
             else:
                 # 产生新信息，重算向量
                 final_vector = await self.model_client.get_embedding(self.embedding_model, f"{name}: {final_desc}")
         else:
-            # 全新节点，直接计算标准向量
+            # 全新节点（包括空表冷启动），直接计算标准向量
             final_vector = await self.model_client.get_embedding(self.embedding_model, f"{name}: {final_desc}")
 
         sanitized_attrs = sanitize_dict_for_oracle_json(attributes)
