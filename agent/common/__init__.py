@@ -66,6 +66,7 @@ class ContextMemory(TypedDict):
     # 为了方便 AI 总结，依然保留 RAG 和 SQL 的结果快捷入口
     doc_results: list[dict[str, Any]]
     sql_results: list[dict[str, Any]]
+    graph_results: list[dict[str, Any]]
     
     # --- 6. 持久化与 UI 展现 (Persistence & Streaming) ---
     session_state: dict[str, Any] # 跨会话的长期记忆（如用户偏好）

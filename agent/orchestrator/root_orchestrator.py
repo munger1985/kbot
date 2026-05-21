@@ -85,6 +85,7 @@ class RootOrchestrator:
             },
             "doc_results": [],
             "sql_results": [],
+            "graph_results": [],
             "session_state": prepared.get('new_state', {}),
             "blocks": [],
             "temp": {}
