@@ -28,7 +28,6 @@ class ReasoningSkill(BaseSkill):
         target_goal = getattr(context, 'current_task', None) or context.get("standalone_query") or context.get("question")
         current_model = context["llm_model"]
         
-        # --- 重点修改开始：增强数据提取逻辑 ---
         # A. 尝试从 Planner 定义的变量池中提取 (对应 AskDataSkill 写入的 output_var)
         vars_pool = context.get("variables", {})
         # 优先取 Planner 动态分配的键，或常见的默认键
@@ -45,10 +44,11 @@ class ReasoningSkill(BaseSkill):
                 sql_data = last_item.get("data") if isinstance(last_item, dict) else last_item
 
         doc_results = context.get("doc_results") or []
-        # --- 重点修改结束 ---
+        graph_results = context.get("graph_results") or []
+        combined_kb_results = doc_results + graph_results
 
         # 2. 构建 LLM 上下文文本 (优化点：将 List 转为 Markdown 表格，LLM 更易理解)
-        kb_text = "\n".join([f"[{i+1}] {d.get('content')}" for i, d in enumerate(doc_results)]) if doc_results else "无参考文档"
+        kb_text = "\n".join([f"[{i+1}] {d.get('content')}" for i, d in enumerate(combined_kb_results)]) if combined_kb_results else "无参考文档"
         
         # 优化数据上下文展示
         if sql_data and isinstance(sql_data, list):
@@ -60,11 +60,6 @@ class ReasoningSkill(BaseSkill):
                 data_text = str(sql_data[:10])
         else:
             data_text = "无业务数据"
-
-        # 2. 构建 LLM 上下文文本 (优化点：避免直接 str(list))
-        kb_text = "\n".join([f"[{i+1}] {d.get('content')}" for i, d in enumerate(doc_results)]) if doc_results else "无参考文档"
-        # 数据表格建议转为 Markdown 表格或简易文本
-        data_text = str(sql_data) if sql_data else "无业务数据"
         
         summary = context["session_state"].get("context_summary", "新会话")
 
