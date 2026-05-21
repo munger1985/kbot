@@ -16,7 +16,7 @@ class QwenRerankerConfig(RerankerConfig):
     api_key: str = Field(..., description="阿里云 DashScope API Key")
     # 默认使用百炼平台的通用 Rerank 统一入口
     api_endpoint: str = Field(
-        "https://dashscope.aliyuncs.com/compatible-mode/v1/rerank", 
+        "https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank", 
         description="DashScope Rerank API 端点"
     )
     timeout: int = Field(30, description="请求超时时间（秒）")
@@ -46,7 +46,7 @@ class QwenReranker(BaseReranker[QwenRerankerConfig]):
         # DashScope 鉴权规定使用 X-DashScope-ApiKey 头部
         self._client = httpx.AsyncClient(
             headers={
-                "Authorization": f"Bearer {self.config.api_key}",
+                "X-DashScope-ApiKey": self.config.api_key,
                 "Content-Type": "application/json"
             },
             timeout=self.config.timeout
@@ -56,9 +56,10 @@ class QwenReranker(BaseReranker[QwenRerankerConfig]):
         try:
             test_payload = {
                 "model": self.model_name,
-                "query": "hi",
-                "documents": ["hi"],
-                "top_n": 1
+                "input": {
+                    "query": "hi",
+                    "documents": ["hi"]
+                }
             }
             response = await self._client.post(self.config.api_endpoint, json=test_payload)
             response.raise_for_status()
@@ -91,10 +92,13 @@ class QwenReranker(BaseReranker[QwenRerankerConfig]):
         # 构造百炼标准的入参结构 (把 query 和 docs 压入 input 字段中)
         payload = {
             "model": self.model_name,
-            "query": query,
-            "documents": documents,
-            "top_n": top_k or len(documents),
-            "return_documents": False
+            "input": {
+                "query": query,
+                "documents": documents
+            },
+            "parameters": {
+                "top_n": top_k or len(documents)
+            }
         }
 
         try:
@@ -106,10 +110,9 @@ class QwenReranker(BaseReranker[QwenRerankerConfig]):
             raw_results = response_data.get("results", [])
             results = []
             for item in raw_results:
-                score = item.get("relevance_score") if item.get("relevance_score") is not None else item.get("score", 0.0)
                 results.append({
                     "index": int(item.get("index")),
-                    "score": float(score)
+                    "score": float(item.get("relevance_score", 0.0))
                 })
             
             results.sort(key=lambda x: x["score"], reverse=True)
