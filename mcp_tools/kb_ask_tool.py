@@ -17,7 +17,7 @@ class KBAskTool(MCPTool):
     
     def __init__(self):
         super().__init__(
-            tool_type=MCPToolType.KB_SEARCH,
+            tool_type=MCPToolType.AGENT_CALL,
             tool_name="kbot_ask",
             description="知识库深度问答工具（RAG）。 专门用于回答涉及特定知识库的问题。它会自动检索相关文档，并结合检索到的背景信息生成准确、完整的答案。当你需要直接回答用户的咨询（如询问政策、操作流程或技术细节）而不仅仅是列出资料时，请优先使用此工具。该工具能有效减少模型幻觉，确保回答基于事实。"
         )

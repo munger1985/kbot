@@ -26,7 +26,7 @@ class GraphBaseSearch:
         vertex_names: list[str],
         search_top_k: int,
         weight: float,
-        security: int,
+        security_level: int,
         max_depth: int = 2
     ) -> dict[str, list[TxtBaseSearchResult]]:
         """Executes knowledge graph traversal and maps results to standard text chunks.
@@ -36,7 +36,7 @@ class GraphBaseSearch:
             vertex_names: 从用户Query中提取出的实体名称列表 (e.g., ['RTX 5080', 'Oracle 26ai'])
             search_top_k: 目标返回数量
             weight: 图检索的分数权重系数
-            security: 安全级别过滤
+            security_level: 安全级别过滤
             max_depth: 拓扑图下游走的最大深度 (默认2度)
             do_rerank: 是否将其分类进后续的重排池中
 
@@ -81,7 +81,7 @@ class GraphBaseSearch:
                     return {"graph_result": []}
 
                 # 2. 批量回表反查非结构化文本块
-                raw_chunks_dict = await chunk_repo.get_chunks_by_ids(chunk_ids=target_chunk_ids)
+                raw_chunks_dict = await chunk_repo.get_chunks_by_ids(chunk_ids=target_chunk_ids, security_level=security_level)
                 if not raw_chunks_dict:
                     return {"graph_result": []}
 

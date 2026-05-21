@@ -516,33 +516,44 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
             logger.error("Oracle update active status failed", e, max_length=500)
             raise DatabaseException("Oracle update text chunk active status failed", original_error=e)
         
-    async def get_chunks_by_ids(self, chunk_ids: list[str]) -> dict[str, dict]:
+    async def get_chunks_by_ids(self, chunk_ids: list[str], security_level: int) -> dict[str, dict]:
         """
-        Get text chunks by chunk IDs
+        Get text chunks by chunk IDs with security level screening.
         
         :param chunk_ids: List of chunk unique identifiers
+        :param security_level: 安全级别过滤阈值 (只召回 <= 该级别的文本块)
         :return: Dict of chunk_id -> entity dict
         """
         if not chunk_ids:
             return {}
 
         try:
-            # 1. 🛡️ 动态展开 IN 占位符，完美规避 Oracle ORA-01484 限制
-            # 构造形如 :cid_0, :cid_1 的动态参数绑定
-            bind_params = {f"cid_{i}": cid for i, cid in enumerate(chunk_ids)}
-            in_clause = ", ".join(f":cid_{i}" for i in range(len(chunk_ids)))
+            # 1. 规避 Oracle IN 1000 限制的防御性切片（防患于未然）
+            safe_chunk_ids = chunk_ids[:1000]
+            if len(chunk_ids) > 1000:
+                logger.warning(f"[TxtChunkRepo] 输入的 chunk_ids 数量 ({len(chunk_ids)}) 超过 Oracle IN 限制，已截断前 1000 条")
 
-            # 2. 动态组装干净的原生 SQL
+            # 2. 构建动态绑定字典，并注入安全级别变量
+            # 基础展开：{"cid_0": "id1", "cid_1": "id2", ...}
+            bind_params: dict[str, Any] = {f"cid_{i}": cid for i, cid in enumerate(safe_chunk_ids)}
+            
+            bind_params["security_level"] = security_level
+            
+            # 构造 SQL 的 IN 字符串片段
+            in_clause = ", ".join(f":cid_{i}" for i in range(len(safe_chunk_ids)))
+
+            # 3. 动态组装干净的原生 SQL (注意大小写对齐 Oracle 标准)
             sql = text(f"""
                 SELECT * FROM KBOT_BIZ_TXT_EMBEDDING
-                WHERE chunk_id IN ({in_clause})
+                WHERE CHUNK_ID IN ({in_clause})
+                AND SECURITY_LEVEL <= :security_level
             """)
             
-            # Execute query
+            # Execute query (此时 bind_params 既包含了所有的 cid_x，也包含了 security_level)
             result = await self.session.execute(sql, bind_params)
             rows = result.fetchall()
             
-            # 3. 🛡️ 大小写免疫转换与结果字典组装
+            # 4. 大小写免疫转换与结果字典组装
             chunk_dict = {}
             for row in rows:
                 # 强行将 row 的映射 Key 归一化为小写，确保小写 'chunk_id' 100% 能提到值
@@ -550,15 +561,12 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
                 
                 # 提取归一化后的核心主键
                 real_chunk_id = row_lowercase_dict.get("chunk_id")
-                
                 if real_chunk_id:
-                    # 返回原本要求的全量行实体字典
                     chunk_dict[real_chunk_id] = row_lowercase_dict
             
-            logger.debug(f"[TxtChunkRepo] Successfully fetched {len(chunk_dict)} chunks from Oracle.")
+            logger.debug(f"[TxtChunkRepo] Successfully fetched {len(chunk_dict)} chunks from Oracle (Security Filter <= {security_level}).")
             return chunk_dict
             
         except Exception as e:
-            # 修复原本 logger.error 传参格式（避免潜在的格式化报错）
             logger.error(f"Oracle get chunks by IDs failed. Error: {str(e)}", exc_info=True)
             raise DatabaseException("Oracle get text chunks by IDs failed", original_error=e)

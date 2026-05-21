@@ -718,7 +718,8 @@ CREATE TABLE kbot_md_parser_conf (
     created_by VARCHAR2(256),
     created_time DATE DEFAULT CURRENT_DATE,
     updated_by VARCHAR2(256),
-    updated_time DATE DEFAULT CURRENT_DATE
+    updated_time DATE DEFAULT CURRENT_DATE,
+    CONSTRAINT uk_kbot_md_parser_conf_domain_id UNIQUE (domain_id, engine)
 );
 
 -- 添加字段注释
