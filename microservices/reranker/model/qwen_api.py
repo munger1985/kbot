@@ -43,6 +43,9 @@ class QwenReranker(BaseReranker[QwenRerankerConfig]):
         if self._is_initialized:
             return
 
+        mask_key = f"{self.config.api_key[:6]}... (len: {len(self.config.api_key)})" if self.config.api_key else "EMPTY"
+        logger.debug(f"🔑 Using DashScope API Key: {mask_key}")
+
         # DashScope 鉴权规定使用 X-DashScope-ApiKey 头部
         self._client = httpx.AsyncClient(
             headers={
