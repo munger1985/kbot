@@ -80,7 +80,7 @@ class GraphRepository:
                 WHEN MATCHED THEN
                     UPDATE SET 
                         t.WEIGHT = t.WEIGHT + 1,
-                        t.ATTRIBUTES = :attributes,
+                        t.ATTRIBUTES = SON_MERGEPATCH(t.ATTRIBUTES, :attributes),
                         t.UPDATED_AT = CURRENT_TIMESTAMP
                 WHEN NOT MATCHED THEN
                     INSERT (EDGE_ID, SOURCE_ID, TARGET_ID, RELATION_TYPE, WEIGHT, ATTRIBUTES, CREATED_AT, UPDATED_AT)
@@ -154,7 +154,8 @@ class GraphRepository:
         self,
         vertex_names: list[str],
         max_depth: int = 2,
-        limit: int = 30
+        limit: int = 30,
+        min_weight: int = 2
     ) -> dict[str, Any]:
         """
         通过原生 SQL 检索知识图谱，查找与目标实体关联的 1~2 度子图，并召回关联的 Chunk ID。
@@ -176,7 +177,6 @@ class GraphRepository:
         # 利用经典的 CONNECT BY 树状图游走或标准关联，顺便把关联的 chunk_id 聚合上来
         search_sql = text(f"""
             WITH sub_edges AS (
-                -- 第一步：基于初始节点，在边表里向下游走检索关联的边
                 SELECT DISTINCT
                     e.EDGE_ID,
                     e.SOURCE_ID,
@@ -185,41 +185,46 @@ class GraphRepository:
                     e.WEIGHT,
                     e.ATTRIBUTES
                 FROM KBOT_GRAPH_KNOWLEDGE_EDGES e
+                WHERE e.WEIGHT >= :min_weight
                 START WITH e.SOURCE_ID IN (
                     SELECT v.VERTEX_ID 
                     FROM KBOT_GRAPH_KNOWLEDGE_VERTICES v 
                     WHERE v.VERTEX_NAME IN ({in_clause})
                 )
                 CONNECT BY PRIOR e.TARGET_ID = e.SOURCE_ID 
+                AND e.WEIGHT >= :min_weight    
                 AND LEVEL <= :max_depth
+            ),
+            ranked_edges AS (
+                SELECT 
+                    se.EDGE_ID,
+                    se.SOURCE_ID,
+                    se.TARGET_ID,
+                    se.RELATION_TYPE,
+                    se.WEIGHT,
+                    se.ATTRIBUTES,
+                    (
+                        SELECT LISTAGG(m.CHUNK_ID, ',') WITHIN GROUP (ORDER BY m.CREATED_AT DESC)
+                        FROM KBOT_GRAPH_EDGE_CHUNK_MAP m
+                        WHERE m.EDGE_ID = se.EDGE_ID
+                    ) as AS_CHUNK_IDS,
+                    v_src.VERTEX_NAME as SOURCE_NAME,
+                    v_src.VERTEX_TYPE as SOURCE_TYPE,
+                    v_dst.VERTEX_NAME as TARGET_NAME,
+                    v_dst.VERTEX_TYPE as TARGET_TYPE
+                FROM sub_edges se
+                JOIN KBOT_GRAPH_KNOWLEDGE_VERTICES v_src ON se.SOURCE_ID = v_src.VERTEX_ID
+                JOIN KBOT_GRAPH_KNOWLEDGE_VERTICES v_dst ON se.TARGET_ID = v_dst.VERTEX_ID
+                ORDER BY se.WEIGHT DESC
             )
-            -- 第二步：拉出这些边对应的所有 Chunk 映射，并按边做合并
-            SELECT 
-                se.EDGE_ID,
-                se.SOURCE_ID,
-                se.TARGET_ID,
-                se.RELATION_TYPE,
-                se.WEIGHT,
-                se.ATTRIBUTES,
-                -- 将关联的 chunk_id 聚合为逗号分隔的字符串，方便应用层解析
-                (
-                    SELECT LISTAGG(m.CHUNK_ID, ',') WITHIN GROUP (ORDER BY m.CREATED_AT DESC)
-                    FROM KBOT_GRAPH_EDGE_CHUNK_MAP m
-                    WHERE m.EDGE_ID = se.EDGE_ID
-                ) as AS_CHUNK_IDS,
-                v_src.VERTEX_NAME as SOURCE_NAME,
-                v_src.VERTEX_TYPE as SOURCE_TYPE,
-                v_dst.VERTEX_NAME as TARGET_NAME,
-                v_dst.VERTEX_TYPE as TARGET_TYPE
-            FROM sub_edges se
-            JOIN KBOT_GRAPH_KNOWLEDGE_VERTICES v_src ON se.SOURCE_ID = v_src.VERTEX_ID
-            JOIN KBOT_GRAPH_KNOWLEDGE_VERTICES v_dst ON se.TARGET_ID = v_dst.VERTEX_ID
+            SELECT * FROM ranked_edges 
             WHERE ROWNUM <= :limit
         """)
 
         # 注入额外的控制参数
         bind_params["max_depth"] = max_depth
         bind_params["limit"] = limit
+        bind_params["min_weight"] = min_weight
 
         # 2. 结构化组装返回对象
         try:
