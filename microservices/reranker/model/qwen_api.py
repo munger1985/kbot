@@ -16,7 +16,7 @@ class QwenRerankerConfig(RerankerConfig):
     api_key: str = Field(..., description="阿里云 DashScope API Key")
     # 默认使用百炼平台的通用 Rerank 统一入口
     api_endpoint: str = Field(
-        "https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank", 
+        "https://dashscope.aliyuncs.com/compatible-mode/v1/rerank", 
         description="DashScope Rerank API 端点"
     )
     timeout: int = Field(30, description="请求超时时间（秒）")
@@ -43,26 +43,22 @@ class QwenReranker(BaseReranker[QwenRerankerConfig]):
         if self._is_initialized:
             return
 
-        mask_key = f"{self.config.api_key[:6]}... (len: {len(self.config.api_key)})" if self.config.api_key else "EMPTY"
-        logger.debug(f"🔑 Using DashScope API Key: {mask_key}")
-
         # DashScope 鉴权规定使用 X-DashScope-ApiKey 头部
         self._client = httpx.AsyncClient(
             headers={
-                "X-DashScope-ApiKey": self.config.api_key,
+                "Authorization": f"Bearer {self.config.api_key}",
                 "Content-Type": "application/json"
             },
             timeout=self.config.timeout
         )
-        
+
         # 极简冒烟测试，验证 API Key 与网络连通性
         try:
             test_payload = {
                 "model": self.model_name,
-                "input": {
-                    "query": "hi",
-                    "documents": ["hi"]
-                }
+                "query": "hi",
+                "documents": ["hi"],
+                "top_n": 1
             }
             response = await self._client.post(self.config.api_endpoint, json=test_payload)
             response.raise_for_status()
@@ -95,13 +91,10 @@ class QwenReranker(BaseReranker[QwenRerankerConfig]):
         # 构造百炼标准的入参结构 (把 query 和 docs 压入 input 字段中)
         payload = {
             "model": self.model_name,
-            "input": {
-                "query": query,
-                "documents": documents
-            },
-            "parameters": {
-                "top_n": top_k or len(documents)
-            }
+            "query": query,
+            "documents": documents,
+            "top_n": top_k or len(documents),
+            "return_documents": False
         }
 
         try:
@@ -110,20 +103,15 @@ class QwenReranker(BaseReranker[QwenRerankerConfig]):
             response_data = response.json()
 
             # --- 核心适配：解析 DashScope 的返回结构 ---
-            # 官方标准结构大致为：{"output": {"results": [{"index": 0, "relevance_score": 0.95}, ...]}}
-            output_node = response_data.get("output", {})
-            raw_results = output_node.get("results", [])
-
+            raw_results = response_data.get("results", [])
             results = []
             for item in raw_results:
-                # 兼容处理得分字段名，并统一转为 float
                 score = item.get("relevance_score") if item.get("relevance_score") is not None else item.get("score", 0.0)
                 results.append({
                     "index": int(item.get("index")),
                     "score": float(score)
                 })
             
-            # 百炼 API 默认已经按分数降序排列，为保险起见，这里严格按照基类契约再排一次
             results.sort(key=lambda x: x["score"], reverse=True)
             return results
 
