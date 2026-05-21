@@ -80,7 +80,7 @@ class GraphRepository:
                 WHEN MATCHED THEN
                     UPDATE SET 
                         t.WEIGHT = t.WEIGHT + 1,
-                        t.ATTRIBUTES = SON_MERGEPATCH(t.ATTRIBUTES, :attributes),
+                        t.ATTRIBUTES = JSON_MERGEPATCH(t.ATTRIBUTES, :attributes),
                         t.UPDATED_AT = CURRENT_TIMESTAMP
                 WHEN NOT MATCHED THEN
                     INSERT (EDGE_ID, SOURCE_ID, TARGET_ID, RELATION_TYPE, WEIGHT, ATTRIBUTES, CREATED_AT, UPDATED_AT)
