@@ -27,8 +27,7 @@ class GraphBaseSearch:
         search_top_k: int,
         weight: float,
         security: int,
-        max_depth: int = 2,
-        do_rerank: bool = True
+        max_depth: int = 2
     ) -> dict[str, list[TxtBaseSearchResult]]:
         """Executes knowledge graph traversal and maps results to standard text chunks.
         

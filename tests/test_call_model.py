@@ -161,7 +161,7 @@ async def test_call_vlm_model():
 
     print(f"测试开始，使用模型: {model_name}")
     print("=" * 50)
-    response = await model_client.call_vlm_model(model_name, image, prompt="描述该图片")
+    response = await model_client.get_vlm_answer(model_name, image, prompt="描述该图片")
     print(f"模型响应: {response}")
 
 

@@ -93,8 +93,7 @@ class AskGraphSkill(BaseSkill):
                 search_top_k=search_top_k,
                 weight=graph_weight,
                 security=security_level,
-                max_depth=max_depth,
-                do_rerank=True
+                max_depth=max_depth
             )
             
             # 提取归一化后的 TxtBaseSearchResult 对象
