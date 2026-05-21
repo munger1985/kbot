@@ -224,19 +224,26 @@ class FileRepository(BaseRepository[FileEntity]):
     async def update_file_status(self, file_ids: list[str], status: FileStatus, log_msg: str | None = None):
         """
         Update the status of a knowledge base file record with log message appending.
-        :param file_id: File ID to update
+        :param file_ids: List of File IDs to update
         :param status: New file status
         :param log_msg: Optional log message to append
         :return: True if successful
         """
         try:
+            # If multiple file_ids and log_msg is provided, process individually
+            # to properly append to each file's existing log
+            if len(file_ids) > 1 and log_msg is not None:
+                for file_id in file_ids:
+                    await self.update_file_status([file_id], status, log_msg)
+                return
+            
             condition = FileEntity.file_id == file_ids[0] if len(file_ids) == 1 else FileEntity.file_id.in_(file_ids)
             
             if log_msg is not None:
                 timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 new_log_entry = f"{timestamp}: {log_msg}"
 
-                # Get current log_msg length
+                # Get current log_msg (only for single file_id case)
                 stmt = select(FileEntity.log_msg).where(condition)
                 current_log_result = await self.session.execute(stmt)
                 current_log = current_log_result.scalar_one_or_none()
@@ -277,14 +284,14 @@ class FileRepository(BaseRepository[FileEntity]):
                     log_msg=final_log
                 )
             else:
-                # Only update status
+                # Only update status (works for single or multiple file_ids)
                 update_stmt = update(FileEntity).where(
                     condition
                 ).values(status=status.value)
 
             await self.session.execute(update_stmt)
 
-            logger.debug(f"[File Repo] Successfully updated status.")
+            logger.debug(f"[File Repo] Successfully updated status for {len(file_ids)} files.")
 
         except Exception as e:
             logger.error(f"Database error while updating file status - file_ids: {file_ids}, status: {status}, "
