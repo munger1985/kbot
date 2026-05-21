@@ -39,14 +39,21 @@ def create_reranker_model(config: RerankerConfig) -> BaseReranker:
         else:
             raise ValueError(f"Provider {provider} requires Qwen3RerankerConfig configuration object")
             
-    # 3. OpenAI-compatible APIs (Qwen API, ChatGPT, etc.) - commented out for future implementation
-    # elif provider in [RerankerProvider.API_QWEN.value, RerankerProvider.CHATGPT.value]:
+    # 3. Qwen Reranker API (DashScope / 百炼)
+    elif provider == RerankerProvider.API_QWEN.value:
+        if isinstance(config, QwenRerankerConfig):
+            return QwenReranker(config)
+        else:
+            raise ValueError(f"Provider {provider} requires QwenRerankerConfig configuration object")
+            
+    # 4. OpenAI-compatible APIs (Future implementation fallback)
+    # elif provider == RerankerProvider.CHATGPT.value:
     #     if isinstance(config, OpenAIRerankerConfig):
     #         return OpenAIReranker(config)
     #     else:
     #         raise ValueError(f"Provider {provider} requires OpenAIRerankerConfig configuration object")
             
-    # 4. Cohere reranker API - commented out for future implementation
+    # 5. Cohere reranker API - commented out for future implementation
     # elif provider == RerankerProvider.COHERE.value:
     #     if isinstance(config, CohereRerankerConfig):
     #         return CohereReranker(config)
@@ -64,6 +71,6 @@ def get_supported_providers() -> list[str]:
     that have corresponding implementations in the factory function.
     
     Returns:
-        list[str]: List of supported provider name strings (e.g., "local_bge", "local_qwen")
+        list[str]: List of supported provider name strings (e.g., "local_bge", "local_qwen", "api_qwen")
     """
     return [provider.value for provider in RerankerProvider]

@@ -171,6 +171,7 @@ class RerankerProvider(str, Enum):
     """Supported reranker model enumeration."""
     LOCAL_BGE = "local_bge"
     LOCAL_QWEN = "local_qwen"
+    API_QWEN = "api_qwen"
 
 class VLMProvider(str, Enum):
     """Supported VLM provider enumeration."""

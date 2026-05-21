@@ -159,7 +159,24 @@ class RerankerModelPool(BaseModelPool[BaseReranker[Any]]):
                 instruction=params.get("instruction") if provider == RerankerProvider.LOCAL_QWEN.value else None
             )
 
-        # # 2. Cohere API handling
+        # 2. Qwen Reranker API handling (DashScope / 阿里云百炼)
+        elif provider == RerankerProvider.API_QWEN.value:
+            # Validate required API key
+            if not api_key:
+                raise ValueError(f"Qwen API reranker model {name} missing required parameter: api_key")
+            
+            # 允许数据库覆盖默认的百炼 Endpoint，如果没有则使用我们类里定义的 default
+            config_kwargs = {
+                **common_kwargs,
+                "api_key": api_key,
+                "timeout": params.get("timeout", getattr(global_cfg, "timeout", 30))
+            }
+            if api_endpoint:
+                config_kwargs["api_endpoint"] = api_endpoint
+
+            return QwenRerankerConfig(**config_kwargs)
+        
+        # # 3. Cohere API handling
         # if provider == RerankerProvider.COHERE.value:
         #     # Validate required Cohere parameter
         #     if not api_key:
@@ -173,7 +190,7 @@ class RerankerModelPool(BaseModelPool[BaseReranker[Any]]):
         #         timeout=params.get("timeout", global_cfg.timeout)
         #     )
 
-        # # 3. Generic OpenAI-compatible API handling
+        # # 4. Generic OpenAI-compatible API handling
         # if provider in [RerankerProvider.API_QWEN.value, RerankerProvider.CHATGPT.value]:
         #     # Validate required API parameters
         #     if not api_key or not api_endpoint:
