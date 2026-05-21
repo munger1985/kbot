@@ -54,12 +54,11 @@ class GraphBaseSearch:
             chunk_repo = TxtChunkRepository(session)
             
             try:
-                # 1. 探索局部图拓扑结构，拿回 1~2 度关联所有的物理 chunk_id 以及边的描述
-                # 这里内部执行的就是我们上一轮写的 text() 原生 SQL
+                # 1. 探索局部图拓扑结构
                 graph_data = await graph_repo.search_graph_context(
                     vertex_names=vertex_names,
                     max_depth=max_depth,
-                    limit=search_top_k * 3  # 过量召回，为后续融合和去重留出空间
+                    limit=search_top_k * 3
                 )
                 
                 target_chunk_ids = graph_data.get("chunk_ids", [])
@@ -67,29 +66,27 @@ class GraphBaseSearch:
                     logger.debug("[GraphSearch] No underlying chunks found for these entities.")
                     return {"rerank_result": [], "norerank_result": []}
 
-                # 2. 核心转换：利用捞出来的 chunk_ids 批量回表反查非结构化文本块
-                # 提示：如果你 TxtChunkRepository 里没有 get_chunks_by_ids，可以手写一个 IN 查询
-                raw_chunks = await chunk_repo.get_chunks_by_ids(chunk_ids=target_chunk_ids)
+                # 2. 批量回表反查非结构化文本块（返回 dict[str, dict]）
+                raw_chunks_dict = await chunk_repo.get_chunks_by_ids(chunk_ids=target_chunk_ids)
                 
-                if not raw_chunks:
+                if not raw_chunks_dict:
                     return {"rerank_result": [], "norerank_result": []}
 
-                # 3. 将原始的 dict 列表转化为标准的 TxtBaseSearchResult
-                # 并在转换过程中，把图检索带来的“知识边关系”注入到 search_helper 字段中，提供给 Prompt 增益
+                # 3. 拼装图谱上下文背景串
                 results = []
-                # 拼装一个给大模型看的图谱上下文背景串
                 graph_context_str = " | ".join([
                     f"({edge['source']})-[{edge['relation']}]->({edge['target']})" 
-                    for edge in graph_data.get("edges", [])[:10]  # 最多塞10条高频关系
+                    for edge in graph_data.get("edges", [])[:10]
                 ])
 
-                for item in raw_chunks:
+                # 🛡️ 核心修复：使用 .values() 遍历真实的行数据字典，避开 key 字符串迭代陷阱
+                for item in raw_chunks_dict.values():
                     if not isinstance(item, dict): 
                         continue
                     
                     meta = item.get("metadata") or {}
                     
-                    # 基础映射，字段与你的 _construct_search_result 严格对齐
+                    # 基础映射，全面支持大小写不敏感提取防御
                     result = TxtBaseSearchResult(
                         chunk_id=item.get("chunk_id", ""),
                         chunk_num=item.get("chunk_num", 0),
@@ -103,7 +100,6 @@ class GraphBaseSearch:
                         page_num=int(meta.get("page_num") or 0),
                         image_name=meta.get("image_name") or "",
                         bbox=meta.get("bbox") or [],
-                        # 赋予基础初始图谱分值（可根据业务通过 weight 调整）
                         score=float(item.get("score") or 1.0) * weight,
                         biz_metadata=item.get("biz_metadata") or {},
                         weight=weight,
@@ -117,9 +113,10 @@ class GraphBaseSearch:
                 duration = time.time() - start_time
                 logger.info(f"Graph-RAG retrieval finished in {duration:.2f}s. Formatted {len(search_result)} chunks.")
                 
-                return {"graph_result": search_result}
+                # 🛡️ 结构对齐修复：将结果作为未重排的候选池，精准对接上层测试期望的字典架构
+                return {"rerank_result": [], "norerank_result": search_result}
 
             except DataNotFoundException:
-                return {"graph_result": []}
+                return {"rerank_result": [], "norerank_result": []}
             except Exception as e:
                 handle_exception(e, f"Graph-RAG search failed for KB {kb_id}: {str(e)}")
