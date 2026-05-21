@@ -521,23 +521,44 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
         Get text chunks by chunk IDs
         
         :param chunk_ids: List of chunk unique identifiers
-        :return: List of text chunk entities
+        :return: Dict of chunk_id -> entity dict
         """
+        if not chunk_ids:
+            return {}
+
         try:
-            # Use raw SQL with correct Oracle JSON syntax
-            # Oracle json_object requires KEY/VALUE keywords
-            sql = text("""
+            # 1. 🛡️ 动态展开 IN 占位符，完美规避 Oracle ORA-01484 限制
+            # 构造形如 :cid_0, :cid_1 的动态参数绑定
+            bind_params = {f"cid_{i}": cid for i, cid in enumerate(chunk_ids)}
+            in_clause = ", ".join(f":cid_{i}" for i in range(len(chunk_ids)))
+
+            # 2. 动态组装干净的原生 SQL
+            sql = text(f"""
                 SELECT * FROM KBOT_BIZ_TXT_EMBEDDING
-                WHERE chunk_id IN (:chunk_ids)
+                WHERE chunk_id IN ({in_clause})
             """)
             
             # Execute query
-            result = await self.session.execute(sql, {"chunk_ids": chunk_ids})
+            result = await self.session.execute(sql, bind_params)
+            rows = result.fetchall()
             
-            # Map result to dict of chunk_id -> entity
-            chunk_dict = {row.chunk_id: row._asdict() for row in result.fetchall()}
+            # 3. 🛡️ 大小写免疫转换与结果字典组装
+            chunk_dict = {}
+            for row in rows:
+                # 强行将 row 的映射 Key 归一化为小写，确保小写 'chunk_id' 100% 能提到值
+                row_lowercase_dict = {str(k).lower(): v for k, v in row._mapping.items()}
+                
+                # 提取归一化后的核心主键
+                real_chunk_id = row_lowercase_dict.get("chunk_id")
+                
+                if real_chunk_id:
+                    # 返回原本要求的全量行实体字典
+                    chunk_dict[real_chunk_id] = row_lowercase_dict
             
+            logger.debug(f"[TxtChunkRepo] Successfully fetched {len(chunk_dict)} chunks from Oracle.")
             return chunk_dict
+            
         except Exception as e:
-            logger.error("Oracle get chunks by IDs failed", e, max_length=500)
+            # 修复原本 logger.error 传参格式（避免潜在的格式化报错）
+            logger.error(f"Oracle get chunks by IDs failed. Error: {str(e)}", exc_info=True)
             raise DatabaseException("Oracle get text chunks by IDs failed", original_error=e)
