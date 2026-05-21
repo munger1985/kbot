@@ -221,33 +221,55 @@ class GraphRepository:
         bind_params["max_depth"] = max_depth
         bind_params["limit"] = limit
 
+        # 2. 结构化组装返回对象
         try:
             result = await self.session.execute(search_sql, bind_params)
             rows = result.fetchall()
 
-            # 2. 结构化组装返回对象
             vertices_set = set()
             edges_list = []
             chunk_ids_set = set()
 
             for row in rows:
+                # 不管驱动吐出大写还是小写，强行转换为标准纯文本全小写字典
+                # 这能完美免疫所有 Oracle 驱动层的大小写扯皮问题
+                r = {str(k).lower(): v for k, v in row._mapping.items()}
+
+                # 提取核心字段（全部使用小写安全的 key 提取）
+                source_id = r.get("source_id")
+                source_name = r.get("source_name")
+                source_type = r.get("source_type")
+                
+                target_id = r.get("target_id")
+                target_name = r.get("target_name")
+                target_type = r.get("target_type")
+                
+                edge_id = r.get("edge_id")
+                relation_type = r.get("relation_type")
+                weight = r.get("weight")
+                attributes = r.get("attributes")
+                as_chunk_ids = r.get("as_chunk_ids")
+
                 # 收集涉及到的实体（消歧后的双向节点）
-                vertices_set.add((row.SOURCE_ID, row.SOURCE_NAME, row.SOURCE_TYPE))
-                vertices_set.add((row.TARGET_ID, row.TARGET_NAME, row.TARGET_TYPE))
+                if source_id and source_name:
+                    vertices_set.add((source_id, source_name, source_type))
+                if target_id and target_name:
+                    vertices_set.add((target_id, target_name, target_type))
 
                 # 收集边
-                edges_list.append({
-                    "edge_id": row.EDGE_ID,
-                    "source": row.SOURCE_NAME,
-                    "target": row.TARGET_NAME,
-                    "relation": row.RELATION_TYPE,
-                    "weight": row.WEIGHT,
-                    "attributes": row.ATTRIBUTES  # 如果是字符串，可以在上层进行 json.loads
-                })
+                if edge_id:
+                    edges_list.append({
+                        "edge_id": edge_id,
+                        "source": source_name,
+                        "target": target_name,
+                        "relation": relation_type,
+                        "weight": weight,
+                        "attributes": attributes  # 如果是字符串，可以在上层进行 json.loads
+                    })
 
                 # 收集用来做 RAG 溯源召回的 Chunk ID
-                if row.AS_CHUNK_IDS:
-                    for cid in row.AS_CHUNK_IDS.split(','):
+                if as_chunk_ids:
+                    for cid in str(as_chunk_ids).split(','):
                         if cid.strip():
                             chunk_ids_set.add(cid.strip())
 
@@ -256,7 +278,7 @@ class GraphRepository:
                 {"id": v[0], "name": v[1], "type": v[2]} for v in vertices_set
             ]
 
-            logger.info(f"🔮 [GraphSearch] 召回图谱实体 {len(formatted_vertices)} 个, 关系边 {len(edges_list)} 条, 溯源 Chunk {len(chunk_ids_set)} 个。")
+            logger.info(f"🔮 [GraphSearch] 成功破冰！召回图谱实体 {len(formatted_vertices)} 个, 关系边 {len(edges_list)} 条, 溯源 Chunk {len(chunk_ids_set)} 个。")
 
             return {
                 "vertices": formatted_vertices,
@@ -265,5 +287,6 @@ class GraphRepository:
             }
 
         except Exception as e:
-            logger.error(f"🚨 [GraphSearch 失败] 图检索 SQL 执行崩溃: {str(e)}")
+            # 打印完整的错误堆栈，拒绝静默失败
+            logger.error(f"🚨 [GraphSearch 失败] 图检索运行时崩溃，错误详情: {str(e)}", exc_info=True)
             return {"vertices": [], "edges": [], "chunk_ids": []}
