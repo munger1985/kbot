@@ -168,6 +168,7 @@ class RerankerModelPool(BaseModelPool[BaseReranker[Any]]):
             # 允许数据库覆盖默认的百炼 Endpoint，如果没有则使用我们类里定义的 default
             config_kwargs = {
                 **common_kwargs,
+                "api_endpoint": api_endpoint,
                 "api_key": api_key,
                 "timeout": params.get("timeout", getattr(global_cfg, "timeout", 30))
             }
