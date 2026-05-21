@@ -114,9 +114,9 @@ class GraphBaseSearch:
                 logger.info(f"Graph-RAG retrieval finished in {duration:.2f}s. Formatted {len(search_result)} chunks.")
                 
                 # 🛡️ 结构对齐修复：将结果作为未重排的候选池，精准对接上层测试期望的字典架构
-                return {"rerank_result": [], "norerank_result": search_result}
+                return {"graph_result": search_result}
 
             except DataNotFoundException:
-                return {"rerank_result": [], "norerank_result": []}
+                return {"graph_result": []}
             except Exception as e:
                 handle_exception(e, f"Graph-RAG search failed for KB {kb_id}: {str(e)}")

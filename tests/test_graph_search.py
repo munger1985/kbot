@@ -55,7 +55,7 @@ async def final_debug_tool():
             security=9,
             max_depth=2
         )
-        logger.success(f"📊 实验 B 拓扑放大测试完成，召回结果数: {len(res_b.get('rerank_result', []))}")
+        logger.success(f"📊 实验 B 拓扑放大测试完成，召回结果数: {len(res_b.get('graph_result', []))}")
     except Exception as e:
         logger.error(f"❌ 实验 B 游走异常: {e}")
 
