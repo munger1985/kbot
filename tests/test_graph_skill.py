@@ -28,7 +28,7 @@ async def main():
 
     # 2. 严格遵循你给出的 ContextMemory 和 SkillExecutionContext 定义构建上下文容器
     # 模拟图片中真实的物理实验/半导体参数图谱实体
-    mock_vertex_names = ["样品温度", "霍尔测量", "磁场强度"]
+    mock_vertex_names = ["样品温度", "霍尔测量", "磁场强度", "霍尔因子"]
     
     # 假设你在系统中已经创建好的一个有效知识库 ID，请根据真实情况修改这个整数 ID
     target_kb_id = 101  

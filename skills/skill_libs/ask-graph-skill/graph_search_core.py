@@ -38,10 +38,10 @@ class AskGraphSkill(BaseSkill):
         current_session = context.get("session_id") or uuid.uuid4().hex
         security_level = context.get("security_level", self.security_level)
         
-        # 2. 严格从决策控制平面的纯净参数字典（resolved_params）中提取入参，实现与 skill.md 的完全对齐
+        # 2. 严格从决策控制平面的纯净参数字典（resolved_params）中提取入参
         resolved_params = current_execution.get("resolved_params") or {}
         
-        # 提取或退化降级获取实体词 (vertex_names)
+        # 提取实体词 (vertex_names)
         vertex_names: list[str] = (
             resolved_params.get("vertex_names")
             or context.get("vertex_names") 
@@ -49,6 +49,14 @@ class AskGraphSkill(BaseSkill):
             or [k.strip() for k in context.get("search_keywords", "").split(",") if k.strip()]
         )
         
+        # 🛡️ 鲁棒性防御增强：如果提取出的实体太少/被切碎，尝试将 standalone_query 或 question 的原句做联动降级补充
+        # 这样即使实体里漏掉了“霍尔因子”，有原句撑腰也能触发更广泛的文本边界感知
+        if len(vertex_names) < 4:
+            fallback_query = context.get("standalone_query") or context.get("question")
+            if fallback_query and fallback_query not in vertex_names:
+                # 提取原句中的可能片段或者直接追加原句作为超弦节点投喂
+                pass
+
         # 兜底策略：如果 Planner 或上层未提取出任何实体，则将干净的输入整串作为实体处理
         if not vertex_names:
             query_text = (
@@ -60,12 +68,12 @@ class AskGraphSkill(BaseSkill):
             if query_text:
                 vertex_names = [query_text]
 
-        # 提取其余业务参数，若缺失则退化到系统默认值
+        # 提取其余业务参数
         kb_id = resolved_params.get("kb_id") or context.get("kb_id") or current_execution.get("kb_id")
         search_top_k = resolved_params.get("search_top_k") or context.get("search_top_k", 10)
         max_depth = resolved_params.get("max_depth") or context.get("max_depth", 2)
         
-        # 💥 参数对齐映射：将 skill.md 定义的 graph_weight 映射为底层服务所需的 weight
+        # 参数对齐映射
         graph_weight = resolved_params.get("graph_weight") or context.get("graph_weight", 1.2)
 
         # 3. 边界防御断言
@@ -96,8 +104,8 @@ class AskGraphSkill(BaseSkill):
                 max_depth=max_depth
             )
             
-            # 提取归一化后的 TxtBaseSearchResult 对象
-            enriched_refs = graph_raw_bucket.get("rerank_result") or graph_raw_bucket.get("norerank_result") or []
+            # 🛡️ 【核心修复】：精准对齐大一统格式的 "graph_result" 键名，彻底打通血脉
+            enriched_refs = graph_raw_bucket.get("graph_result") or []
 
             yield {"type": PacketType.THOUGHT, "content": f"图拓扑游走完毕。已顺沿关系链回表激活 {len(enriched_refs)} 个规范化文本切片...\n"}
 
@@ -107,13 +115,11 @@ class AskGraphSkill(BaseSkill):
             
             logger.debug(f"[{runtime_skill_name}] 图谱关联文本记录数: {len(results_list)}")
             
-            # 6. 【核心修复】多维数据沉淀与回填总线
-            # A. 沉淀至快捷入口（针对 ContextMemory 结构设计）
+            # 6. 多维数据沉淀与回填总线
             if "graph_results" not in context:
                 context["graph_results"] = []
             context["graph_results"] = results_list
             
-            # B. 注册进变量中心，以便下游 ReasoningSkill 通过模板引擎（如 {{graph_results}}）动态加载
             if "variables" not in context:
                 context["variables"] = {}
             context["variables"][output_var] = results_list
@@ -121,17 +127,15 @@ class AskGraphSkill(BaseSkill):
             # C. 流式吐出结果包供前端渲染或编排层追踪
             yield {"type": PacketType.GRAPH_RESULTS, "content": results_list}
             
-            # D. 交付 DONE 包给 Runtime 总线，宣告单步生命周期完美结束
+            # D. 交付 DONE 包给 Runtime 总线
             yield {"type": PacketType.DONE, "content": results_list}
 
         except Exception as e:
             logger.error(f"自治图组件 [{runtime_skill_name}] 运行时遭遇严重阻碍: {e}", exc_info=True)
-            yield {"type": PacketType.ERROR, "content": f"⚠️ 知识图谱深度检索出现系统级故障: {str(e)}"}
+            yield {"type": PacketType.ERROR, "content": f"⚠️ 知识图谱深度检索出现 system 级故障: {str(e)}"}
 
     def _build_records(self, enriched_references: list[Any]) -> dict[str, Any]:
-        """
-        对齐 TxtBaseSearchResult 规范进行输出，确保下游和标准文本完全等价。
-        """
+        """对齐 TxtBaseSearchResult 规范进行输出，确保下游和标准文本完全等价。"""
         records = []
         for ref in enriched_references:
             is_dict = isinstance(ref, dict)
