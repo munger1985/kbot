@@ -197,6 +197,10 @@ class FileService:
             default_parser_conf = None
             try:
                 default_parser_conf = await parser_conf_service.get_parser_params_by_engine(domain_id=domain_id, engine=ParserEngine.TEXT.value)
+                default_parser_conf["img2txt_prompt"] = prompt
+                default_parser_conf["txt_embedding_model"] = txt_embedding_model
+                default_parser_conf["llm_model"] = llm_model
+                default_parser_conf["vlm_model"] = vlm_model
             except Exception as e:
                 logger.warning(f"获取默认解析引擎配置失败: {e}")
                 # 定义默认的解析引擎配置
