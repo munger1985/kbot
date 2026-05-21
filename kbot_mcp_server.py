@@ -9,7 +9,7 @@ from starlette.responses import Response
 from mcp.server import NotificationOptions, Server
 from mcp.server.stdio import stdio_server
 from mcp.server.sse import SseServerTransport
-from mcp_tools import KBSearchTool, KBAskTool
+from mcp_tools import KBAskTool
 from core.config.settings import get_app_config
 from starlette.middleware.cors import CORSMiddleware
 from anyio import BrokenResourceError, EndOfStream
@@ -19,20 +19,13 @@ from core.logger import LogConfig, LogManager
 
 # 1. 初始化 Server 实例
 server = Server("kbot-mcp-server")
-kb_search_tool = KBSearchTool()
 kb_ask_tool = KBAskTool()
 
 # 2. 注册工具列表
 @server.list_tools()
 async def handle_list_tools() -> list[types.Tool]:
-    search_schema = kb_search_tool.get_schema()
     ask_schema = kb_ask_tool.get_schema()
     return [
-        types.Tool(
-            name=kb_search_tool.tool_name,
-            description=kb_search_tool.description,
-            inputSchema=search_schema
-        ),
         types.Tool(
             name=kb_ask_tool.tool_name,
             description=kb_ask_tool.description,
@@ -50,12 +43,7 @@ async def handle_call_tool(
     if not arguments:
             raise ValueError("Missing arguments")
     
-    if name == kb_search_tool.tool_name:
-        results = await kb_search_tool.execute(
-            agent_id=int(arguments.get("agent_id")), # type: ignore
-            question=arguments.get("query", "")
-        )
-    elif name == kb_ask_tool.tool_name:
+    if name == kb_ask_tool.tool_name:
         results = await kb_ask_tool.execute(
             agent_id=int(arguments.get("agent_id")),  # type: ignore
             question=arguments.get("query", "")

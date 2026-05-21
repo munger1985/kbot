@@ -17,16 +17,9 @@ class Tool(BaseModel):
 class ToolResult(BaseModel):
     """最终组合结果 - 三种结果的并集"""
     tool_type: MCPToolType
-    
-    # 明确表示是三种结果之一的并集
     kb_results: list[TxtBaseSearchResult] = []
-    internet_results: list[InternetSearchResult] = []
-    calculator_result: CalculatorResult | None = None
-    
     confidence: float = 0.0
     metadata: list[dict[str, Any]] = []
-    
-    
 
 class MCPTool(ABC):
     """MCP工具基类"""

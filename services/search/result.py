@@ -27,20 +27,3 @@ class TxtBaseSearchResult(BaseModel):
 
     def to_dict(self, **kwargs) -> dict:
         return self.model_dump(**kwargs)
-
-class InternetSearchResult(BaseModel):
-    """网络搜索结果"""
-    title: str = ""
-    url: str = ""
-    content: str = ""
-    snippet: str = ""
-    relevance_score: float = 0.0
-    weight: float = 0.0
-    rerank_score: float = 0.0
-
-class CalculatorResult(BaseModel):
-    """计算器结果"""
-    expression: str = ""
-    result: str = ""
-    steps: list[str] = []  # 计算步骤
-    confidence: float = 1.0

@@ -3,13 +3,14 @@ from loguru import logger
 import uuid
 from typing import Any
 from fastapi import BackgroundTasks
-from mcp_tools import MCPTool
+from fastapi.responses import StreamingResponse
+from .base import MCPTool
 from core.dictionary import MCPToolType
 
-from services.agent.orchestrator import ChatOrchestrator
-from services.agent.chat_service import ChatService
-from services.memory import MemoryService
-from services.agent.agent_params import ModelParams
+from agent.orchestrator import RootOrchestrator
+from agent.agent import RootAgent
+from agent.memory import MemoryService
+from services.kb import ModelParams
 
 class KBAskTool(MCPTool):
     """知识库问答工具"""
@@ -20,9 +21,9 @@ class KBAskTool(MCPTool):
             tool_name="kbot_ask",
             description="知识库深度问答工具（RAG）。 专门用于回答涉及特定知识库的问题。它会自动检索相关文档，并结合检索到的背景信息生成准确、完整的答案。当你需要直接回答用户的咨询（如询问政策、操作流程或技术细节）而不仅仅是列出资料时，请优先使用此工具。该工具能有效减少模型幻觉，确保回答基于事实。"
         )
-        self.orchestrator = ChatOrchestrator()
+        self.orchestrator = RootOrchestrator()
         self.security_level = 9  # Level 9 bypasses security checks
-        self.chat_service = ChatService()
+        self.agent = RootAgent()
         self.memory_service = MemoryService()
     
     async def execute(
@@ -32,7 +33,7 @@ class KBAskTool(MCPTool):
         session_id: str | None = None,
         tags: list = [],
         user_id: str = "mcp_call"
-    ) -> list[dict]:
+    ) -> StreamingResponse:
         """
         Agent interaction for MCP (Search + Record Persistence).
         """
@@ -52,20 +53,15 @@ class KBAskTool(MCPTool):
         internal_tasks = BackgroundTasks()
 
         # 确保会话存在
-        result = await self.chat_service.non_stream_chat(
+        return await self.agent.chat(
             background_tasks=internal_tasks, 
             session_id=session_id,
             user_id=user_id,
             agent_id=agent_id,
-            question=question,
+            query=question,
             security_level=self.security_level, 
             tags=tags
         )
-        answer = result.get("answer")
-        if not answer:
-            raise ValueError(f"Answer is empty, please check the input parameters")
-
-        return answer
         
 
     def get_schema(self) -> dict[str, Any]:

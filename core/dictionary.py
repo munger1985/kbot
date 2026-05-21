@@ -124,24 +124,12 @@ class AgentStatus(IntEnum):
     ENABLED = 1
     ARCHIVED = 2
 
-class ToolType(IntEnum):
-    """Tool type enumeration."""
-    KB_SEARCH = 1
-    FUNCTION_CALL = 2
-    INTERNET_SEARCH = 3
-    AGENT_CALL = 4
-    CHAT_AI = 5
-    CALCULATOR = 6
-    CODE_EXECUTION = 7
-
 class MCPToolType(Enum):
     """MCP tool type enumeration."""
     KB_SEARCH = "kb_search"
     FUNCTION_CALL = "function_call"
     INTERNET_SEARCH = "internet_search"
     AGENT_CALL = "agent_call"
-    CHAT_AI = "chat_ai"
-    CALCULATOR = "calculator"
     CODE_EXECUTION = "code_execution"
     
 class KBSearchType(IntEnum):
