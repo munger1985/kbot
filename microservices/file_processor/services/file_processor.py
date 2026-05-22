@@ -13,7 +13,7 @@ from core.dictionary import FileStatus, ProcessPriority, ChunkType
 from core.exceptions import DataNotFoundException, DatabaseException
 from utils.clients import AIModelClient
 from utils.sanitize import sanitize_dict_for_oracle_json
-from services.basic.ai_model import AIModelService
+from services.basic import AIModelService, DomainService
 from services.graph import GraphIngestionService
 from agent.prompt import default_prompt
 
@@ -24,6 +24,7 @@ class FileProcessor:
         self.parser = ParserService()
         self.model_client = AIModelClient()
         self.model_service = AIModelService()
+        self.domain_service = DomainService()
         self.app_id = get_app_config().app_id
     
     @property
@@ -418,6 +419,9 @@ class FileProcessor:
             logger.info(f"No text entities provided for file {file_params.file_id}. Skipping graph ingestion.")
             return
 
+        # 根据 kb_id 获取业务域信息
+        domain_name, domain_descs = await self.domain_service.get_name_and_desc_by_kb(file_params.kb_id)
+
         # 初始化图谱上游服务
         graph_service = GraphIngestionService(embedding_model=embedding_model, llm_model=llm_model)
 
@@ -442,7 +446,9 @@ class FileProcessor:
                 # 1. 调用 LLM 提取当前切片的图谱结构
                 graph_analysis = await graph_service.extract_triplets(
                     user_input_text=chunk_text,
-                    llm_model_name=llm_model
+                    llm_model_name=llm_model,
+                    domain_name=domain_name,
+                    domain_description=domain_descs
                 )
 
                 if not graph_analysis.edges:

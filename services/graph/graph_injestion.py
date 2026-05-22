@@ -32,14 +32,16 @@ class GraphIngestionService:
         content = "_".join([str(arg).strip().lower() for arg in args])
         return hashlib.md5(content.encode("utf-8")).hexdigest()
 
-    async def extract_triplets(self, user_input_text: str, llm_model_name: str) -> GraphAnalysis:
+    async def extract_triplets(self, user_input_text: str, llm_model_name: str, domain_name: str, domain_description: str) -> GraphAnalysis:
         """利用大模型从输入文本中抽取知识图谱实体与关系"""
         from core.config.settings import get_prompt_config
         from agent.prompt import default_prompt
         try:
             prompt = await default_prompt.generate(
                 get_prompt_config().graph_extractor, 
-                text=user_input_text
+                text=user_input_text,
+                domain_name=domain_name,
+                domain_description=domain_description
             )
             data = await self.model_client.get_llm_json(
                 model_name=llm_model_name,

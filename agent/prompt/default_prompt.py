@@ -507,6 +507,11 @@ GRAPH_VERTEX_FUSION_PROMPT = """你是一个知识图谱专家，正在维护一
 GRAPH_EXTRACTOR_PROMPT = """你是一个顶级的企业级知识图谱抽取专家。
 请从用户提供的文本中，精准抽取出核心的实体（Vertices）以及它们之间的关联关系（Edges）。
 
+【核心业务结界约束】
+当前提取工作服务于特定的业务域，你**必须且只能**围绕该业务域的核心业务线索进行提取，严禁提取与该业务域无关的行政、格式、修饰性无用信息。
+* 核心业务域名称: {domain_name}
+* 业务域深度描述与业务范围: {domain_description}
+
 【抽取要求】:
 1. 实体识别（Vertices）:
    - vertex_name: 应为具体、有明确含义的词（如 "Oracle 26ai"、"PostgreSQL"）。避免过于宽泛的抽象概念。

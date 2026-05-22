@@ -1,7 +1,7 @@
 from typing import Sequence
 from sqlalchemy import select
 from core.exceptions import DatabaseException, DataNotFoundException
-from dao.entities import DomainEntity
+from dao.entities import DomainEntity, KBEntity
 from core.dictionary import Status
 from .base_repo import BaseRepository
 
@@ -46,3 +46,21 @@ class DomainRepository(BaseRepository[DomainEntity]):
             return domains
         except Exception as e:
             raise DatabaseException("Failed to get domains by status", original_error=e)
+        
+    async def get_name_and_desc_by_kb(self, kb_id: int) -> tuple[str, str]:
+        """根据知识库ID获取业务域名称与描述"""
+        try:
+            result = await self.session.execute(
+                select(DomainEntity.name, DomainEntity.descs)
+                .join(KBEntity, DomainEntity.domain_id == KBEntity.domain_id)
+                .where(KBEntity.kb_id == kb_id)
+            )
+            row = result.one_or_none()
+            if row is None:
+                raise DataNotFoundException(f"知识库ID {kb_id} 未绑定任何有效的业务域(Domain)")
+            
+            return row[0] if row[0] else "", row[1] if row[1] else ""
+        except DataNotFoundException as e:
+            raise e
+        except Exception as e:
+            raise DatabaseException(f"根据知识库ID获取业务域名称与描述失败", original_error=e)
