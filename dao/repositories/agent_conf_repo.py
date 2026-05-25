@@ -78,7 +78,7 @@ class AgentConfRepository(BaseRepository[AgentConfEntity]):
                 .where(
                     and_(
                         AgentConfEntity.agent_id == agent_id,
-                        AgentConfEntity.kb_id == kb_id
+                        AgentConfEntity.tool_id == kb_id
                     )
                 )
             )

@@ -106,7 +106,7 @@ class KBRepository(BaseRepository[KBEntity]):
             stmt = (
                 select(KBEntity.kb_id, KBEntity.kb_name, KBEntity.descs)
                 .select_from(AgentConfEntity)  # 明确以关联表为起点
-                .join(KBEntity, AgentConfEntity.kb_id == KBEntity.kb_id)
+                .join(KBEntity, AgentConfEntity.tool_id == KBEntity.kb_id)
                 .where(
                     and_(
                         AgentConfEntity.agent_id == agent_id, 
