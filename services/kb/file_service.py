@@ -511,6 +511,7 @@ class FileService:
             file_repo = FileRepository(session)
             kb_repo = KBRepository(session)
             chunk_repo = TxtChunkRepository(session)
+            graph_repo = GraphRepository(session)
 
             if batch or file_ids:
                 logger.info(f"开始删除知识库 {kb_id} 中的文件")
@@ -542,6 +543,9 @@ class FileService:
 
                     # 4. 删除文件元数据
                     await file_repo.delete(kb_id, all_file_ids)
+                    
+                    # 5. 删除图数据
+                    await graph_repo.delete_graph_by_file(kb_id, all_file_ids)
 
                 except DataNotFoundException as e:
                     logger.info(e.message)
@@ -567,8 +571,9 @@ class FileService:
                 await chunk_repo.delete_by_kb_id(kb_id)
                 # 2. 删除知识库中的所有文件的元数据
                 await file_repo.delete(kb_id, None)
-                # 3. 删除知识库中的所有的物理文件
-                
+                # 3. 删除知识库中的所有文件的图数据
+                await graph_repo.delete_graph_by_knowledge_base(kb_id)
+                # 4. 删除知识库中的所有的物理文件
                 # 获取知识库和业务域的名称用于构造物理删除路径
                 try:
                     kb_name = await kb_repo.get_name_by_id(kb_id)
