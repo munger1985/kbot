@@ -7,16 +7,17 @@ from skills import BaseSkill
 from agent.memory import MemoryService
 from core.dictionary import PacketType
 from agent.common import ContextMemory
+from utils.simulate_stream import simulate_stream
 
 
 class AskDocSkill(BaseSkill):
     """
-    文档检索技能：完全遵循分布式自治包、小写连字符命名及数据流回填总线规范。
+    Document retrieval skill: Fully compliant with distributed autonomous package, lowercase hyphen naming, and data flow backfill bus specifications.
     """
     def __init__(self):
         super().__init__()
         self.security_level = 9
-        # 延迟导入避免循环依赖
+        # Lazy import to avoid circular dependency
         from agent.agent import DocAgent
         self.doc_agent = DocAgent()
         self.memory_service = MemoryService()
@@ -27,9 +28,9 @@ class AskDocSkill(BaseSkill):
         **kwargs
     ) -> AsyncGenerator[dict[str, Any], None]:
         """
-        执行文档检索任务（高鲁棒性流式总线版本）
+        Execute document retrieval task (high robustness streaming bus version)
         """
-        # 1. 提取当前执行快照快照（规避硬编码硬取可能带来的系统级 Key 崩溃）
+        # 1. Extract current execution snapshot (avoid system-level Key crashes caused by hardcoded retrieval)
         current_execution = context.get("current_execution") or {}
         runtime_skill_name = current_execution.get("skill", "ask-doc-skill")
 
@@ -37,7 +38,7 @@ class AskDocSkill(BaseSkill):
         current_agent = context.get("agent_id")
         current_session = context.get("session_id") or uuid.uuid4().hex
         
-        # 2. 智能化、高置信度获取被基座 Runtime 替换好变量后的干净查询词
+        # 2. Intelligent and high-confidence retrieval of clean query text after variable replacement by the base Runtime
         query_text = (
             current_execution.get("resolved_input") 
             or getattr(context, 'current_task', None) 
@@ -49,26 +50,32 @@ class AskDocSkill(BaseSkill):
         tags = context.get("tags") or []
         
         if not query_text:
-            yield {"type": PacketType.ERROR, "content": f"{runtime_skill_name}: 变量解析异常，未能获取到任何有效的检索文本"}
+            content = f"{runtime_skill_name}: Variable parsing exception, failed to obtain any valid search text.\n"
+            async for char in simulate_stream(content):
+                yield {"type": PacketType.ERROR, "content": char}
             return
 
         if not current_agent:
-            yield {"type": PacketType.ERROR, "content": f"{runtime_skill_name}: 全局上下文缺失核心身份认证信息 agent_id"}
+            content = f"{runtime_skill_name}: Missing critical parameter agent_id in global context.\n"
+            async for char in simulate_stream(content):
+                yield {"type": PacketType.ERROR, "content": char}
             return
 
-        # 3. 异步任务句柄优先采用总线透传，次之本地隐式构建
+        # 3. Async task handle prioritizes bus passthrough, followed by local implicit construction
         bg_tasks = kwargs.get("background_tasks") or BackgroundTasks()
 
-        # 推送思考状态：开始检索
-        yield {"type": PacketType.THOUGHT, "content": f"正在检索知识库文档，查询词：'{query_text}'...\n"}
+        # Push thinking status: Start retrieving documents
+        content = f"Retrieving knowledge base documents, query: '{query_text}'...\n"
+        async for char in simulate_stream(content):
+            yield {"type": PacketType.THOUGHT, "content": char}
 
         try:
-            # 4. 执行底层 RAG 检索
+            # 4. Execute underlying RAG retrieval
             enriched_refs = await self.doc_agent.rag_retrieval(
                 background_tasks=bg_tasks,
                 session_id=current_session,
                 agent_id=current_agent,
-                question=context.get("question", query_text), # 传入原始问题或当前文本供参考
+                question=context.get("question", query_text),
                 standalone_query=query_text,
                 search_keywords=search_keywords,
                 security_level=self.security_level,
@@ -76,44 +83,47 @@ class AskDocSkill(BaseSkill):
                 tags=tags
             )
             
-            # 推送思考状态：检索完成，正在重排
-            yield {"type": PacketType.THOUGHT, "content": f"已在知识空间寻获 {len(enriched_refs)} 个关联文本碎片，正在启动混合重排...\n"}
+            # Push thinking status: Retrieval completed, rearranging documents
+            content = f"Found {len(enriched_refs)} related document slices in the knowledge base, performing correlation reorganization...\n"
+            async for char in simulate_stream(content):
+                yield {"type": PacketType.THOUGHT, "content": char}
 
-            # 5. 格式化并清洗结果
+            # 5. Format and clean the results
             records_dict = self._build_records(enriched_references=enriched_refs)
-            logger.debug(f"[{runtime_skill_name}] 格式化后的优质文档记录数: {len(records_dict['doc_results'])}")
+            logger.debug(f"[{runtime_skill_name}] Number of formatted high-quality document records: {len(records_dict['doc_results'])}")
             
-            # A. 推送最终前端渲染或编排层追踪需要的结果包
+            # 6. Push the result package required for final front-end rendering or orchestration layer tracking
             yield {"type": PacketType.DOC_RESULTS, "content": records_dict["doc_results"]}
             
-            # B. 【核心回填设计】：将最干净的数据对象塞入 DONE 包，交付给 Runtime 总线。
-            # 这能保障执行链条的下一棒（ReasoningSkill 或者是 ChartRender）可以直接在变量池中享用这份记录。
-            yield {"type": PacketType.DONE, "content": records_dict["doc_results"]}
+            # 7. Store the formatted results in the context and deliver them to the Runtime bus.
+            context["doc_results"] = records_dict["doc_results"]
 
         except Exception as e:
-            logger.error(f"自治组件 [{runtime_skill_name}] 运行时遭遇严重阻碍: {e}", exc_info=True)
-            yield {"type": PacketType.ERROR, "content": f"⚠️ 知识库检索出现系统级故障: {str(e)}"}
+            logger.error(f"Autonomous component [{runtime_skill_name}] encountered a critical obstacle during runtime: {e}", exc_info=True)
+            content = f"⚠️ System-level failure occurred in document retrieval: {str(e)}\n"
+            async for char in simulate_stream(content):
+                yield {"type": PacketType.ERROR, "content": char}
 
     def _build_records(self, enriched_references: list[dict]) -> dict[str, Any]:
         """
-        根据 TxtBaseSearchResult 的定义格式化输出。
-        确保下游 ReasoningSkill 能够获得完整的元数据用于溯源。
+        Format the output according to the TxtBaseSearchResult definition.
+        Ensure the downstream ReasoningSkill can obtain complete metadata for traceability.
         """
         records = []
         for ref in enriched_references:
             content = ref.get("content", "")
             
             record = {
-                # 基础展示信息
+                # Basic display information
                 "title": ref.get("file_name", "Unknown File"),
                 "content": content,
                 "chunk_type": ref.get("chunk_type", "text"),
                 "chunk_num": ref.get("chunk_num", 0),
 
-                # 评分体系（优先采用交叉高维重排分，次之采用原始向量距离分）
+                # Scoring system (prioritize cross-dimensional rerank score, then original vector distance score)
                 "score": ref.get("rerank_score") if ref.get("rerank_score", 0) > 0 else ref.get("score", 0),
                 
-                # 扩展元数据 (供前端渲染高亮或点击跳转定位)
+                # Extended metadata (for front-end rendering highlighting or click-to-locate navigation)
                 "metadata": {
                     "chunk_id": ref.get("chunk_id") or ref.get("id"), 
                     "file_id": ref.get("file_id"),
@@ -126,6 +136,6 @@ class AskDocSkill(BaseSkill):
             }
             records.append(record)
             
-        # 按分数从高到低排序，确保推理层先看到最相关的片段
+        # Sort by score from high to low to ensure the reasoning layer sees the most relevant fragments first
         records.sort(key=lambda x: x["score"], reverse=True)
         return {"doc_results": records}

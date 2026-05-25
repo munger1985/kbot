@@ -5,6 +5,7 @@ from agent.common import ContextMemory, ExecutionPlan
 from agent.planner.llm_planner import LLMPlanner
 from skills import SkillManager
 from core.dictionary import PacketType
+from utils.simulate_stream import simulate_stream
 
 
 class PlanningEngine:
@@ -75,8 +76,9 @@ class PlanningEngine:
         
         # --- 5. 向前端/用户输出“思考”过程流 ---
         thought = plan.get("thought", "正在依据规划部署任务流...")
-        prefix_thought = f"【当前意图：{intent_type}】\n{thought}\n"
+        prefix_thought = f"【current intent: {intent_type}】\n{thought}\n"
         
-        yield {"type": PacketType.THOUGHT, "content": prefix_thought}
+        async for char in simulate_stream(prefix_thought):
+            yield {"type": PacketType.THOUGHT, "content": char}
 
         logger.success(f"[PlanningEngine] 计划分发完成，最终决策 PlanType: {plan.get('plan_type')}")

@@ -6,11 +6,12 @@ from agent.prompt import default_prompt
 from core.config import get_prompt_config
 from agent.common import ContextMemory
 from core.dictionary import PacketType
+from utils.simulate_stream import simulate_stream
 
 
 class EChartsSkill(BaseSkill):
     """
-    可视化技能：根据数据分析结果，自动推荐并生成 ECharts 可视化配置。
+    Visualization Skill: Automatically recommend and generate ECharts visualization configuration based on data analysis results.
     """
     
     def __init__(self):
@@ -23,20 +24,22 @@ class EChartsSkill(BaseSkill):
         **kwargs
     ) -> AsyncGenerator[dict[str, Any], None]:
         """
-        :param task_input: Planner 传来的绘图指令，例如 "将过去一周的产量对比绘制为折线图"
-        :param context: 包含之前步骤获取的数据（如 sql_results）
+        :param task_input: Drawing instruction from Planner, e.g., "Draw a line chart comparing production in the past week"
+        :param context: Contains data obtained from previous steps (e.g. sql_results)
         """
         
         
-        # 1. 从上下文中获取实际要绘图的数据
-        # 从 context 中提取参数
+        # 1. Get the actual data to be plotted from context
+        # Extract parameters from context
         task_input = context["current_execution"] or context["standalone_query"]
         model_name = context["llm_model"]
 
-        logger.info(f"ImageSkill: 准备为数据生成可视化方案 -> {task_input}")
-        yield {"type": PacketType.THOUGHT, "content": f"开始为数据生成可视化方案: `{task_input}`\n"}
+        logger.info(f"ImageSkill: Preparing to generate visualization方案 for data -> {task_input}")
+        content = f"Start generating visualization solution for data: `{task_input}`\n"
+        async for char in simulate_stream(content):
+            yield {"type": PacketType.THOUGHT, "content": char}
 
-        # 从 context 中获取数据
+        # Get data from context
         raw_data = context["sql_results"] or task_input
 
         prompt = await default_prompt.generate(
@@ -46,23 +49,25 @@ class EChartsSkill(BaseSkill):
         )
 
         try:
-            # 3. 获取结构化 JSON 配置
+            # 3. Get structured JSON configuration
             chart_config = await self.model_client.get_llm_json(
                 model_name=model_name, 
                 prompt=prompt,
-                temperature=0.0  # 绘图配置需要高度严谨，不建议随机
+                temperature=0.0  # Highly rigorous required for drawing configuration, randomness not recommended
             )
             
-            # 4. 结果清洗与校验
+            # 4. Result cleaning and verification
             if "option" not in chart_config:
-                raise ValueError("LLM 返回的 JSON 缺少 option 字段")
+                raise ValueError("Missing option field in JSON returned by LLM")
                 
-            logger.info(f"ImageSkill: 成功生成 {chart_config.get('chart_type')} 类型图表")
+            logger.info(f"ImageSkill: Successfully generated {chart_config.get('chart_type')} type chart")
             yield {
                 "type": PacketType.ECHARTS,
                 "content": chart_config
             }
 
         except Exception as e:
-            logger.error(f"ImageSkill 执行异常: {e}")
-            yield {"type": PacketType.ERROR, "content": f"可视化生成失败: {str(e)}"}
+            logger.error(f"ImageSkill execution exception: {e}")
+            content = f"⚠️ Visualization generation failed: {str(e)}\n"
+            async for char in simulate_stream(content):
+                yield {"type": PacketType.ERROR, "content": char}

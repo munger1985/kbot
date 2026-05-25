@@ -67,14 +67,14 @@ class DocOrchestrator:
             模型参数对象
         """
         if not agent.models:
-            logger.error(f"智能体 {agent.id} 未配置任何模型")
-            raise NotFoundError(f"智能体 {agent.id} 未配置模型")
+            logger.error(f"智能体 {agent.agent_id} 未配置任何模型")
+            raise NotFoundError(f"智能体 {agent.agent_id} 未配置模型")
         
         llm_model = agent.models.get("llm_model")
         emb_model = agent.models.get("txt_embedding_model")
         rerank_model = agent.models.get("rerank_model")
         if not llm_model or not emb_model:
-            logger.error(f"智能体 {agent.id} 未配置有效大模型/嵌入模型")
+            logger.error(f"智能体 {agent.agent_id} 未配置有效大模型/嵌入模型")
             raise NotFoundError("智能体未配置有效大模型或嵌入模型")
 
         llm_params = {

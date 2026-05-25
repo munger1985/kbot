@@ -4,59 +4,54 @@ from skills import BaseSkill
 from utils.clients import AIModelClient
 from core.dictionary import PacketType
 from agent.common import ContextMemory
+from utils.simulate_stream import simulate_stream
 
 
 class ChitChatSkill(BaseSkill):
     """
-    轻量级闲聊技能：用于处理非业务类对话。
-    直接利用 get_llm_stream_parsed 获取解析后的流式数据。
+    Lightweight chat skill: For handling non-business conversations.
+    Directly use get_llm_stream_parsed to obtain parsed streaming data.
     """
     
     def __init__(self):
         super().__init__()
         self.name = "ChitChatSkill"
-        self.description = "处理通用对话、问候及非 RAG 业务的开放式提问。"
+        self.description = "Handle general conversations, greetings and open questions outside RAG business scenarios."
         self.model_client = AIModelClient()
 
     async def run_stream(
         self, 
-        context: ContextMemory,  # 统一使用 ContextMemory
+        context: ContextMemory,
         **kwargs
     ) -> AsyncGenerator[dict[str, Any], None]:
         """
-        全异步流式调用：改写后的问题 -> 解析后的内容包
+        Fully asynchronous streaming call: Rewritten question -> Parsed content package
         """
-        # 从 context 中提取参数
-        # current_execution 是 SkillExecutionContext 字典，不能直接作为消息内容
-        current_exec = context["current_execution"]
-        if isinstance(current_exec, dict):
-            task_input = current_exec.get("resolved_input") or current_exec.get("task_description") or ""
-        else:
-            task_input = ""
-        task_input = task_input or context.get("standalone_query") or context.get("question") or "hello"
+        # Extract parameters from context
+        task_input = context["current_execution"] or context["standalone_query"] or context["question"]
         model_name = context["llm_model"]
 
         messages = [
-            {"role": "system", "content": "你是一个智能助手。请根据用户的问题提供简洁、准确的回答。"},
+            {"role": "system", "content": "You are an intelligent assistant. Please provide concise and accurate answers based on the user's questions."},
             {"role": "user", "content": task_input}
         ]
-        logger.info(f"[{self.name}] 触发闲聊流，使用模型: {model_name}")
+        logger.info(f"[{self.name}] Trigger chat stream, using model: {model_name}")
 
         try:
-            # 2. 调用已有的解析方法，自动处理 JSON 解析和字段提取
+            # Call the existing parsing method, automatically handle JSON parsing and field extraction
             async for chunk in self.model_client.get_llm_stream_parsed(
                 model_name=model_name,
                 prompt=messages,
                 **kwargs
             ):
-                # A. 优先处理推理流（Thought/Reasoning）
+                # Prioritize reasoning stream (Thought/Reasoning)
                 if chunk.reasoning_content:
                     yield {
                         "type": PacketType.THOUGHT,
                         "content": chunk.reasoning_content
                     }
                 
-                # B. 处理标准答案流内容
+                # Process standard answer stream content
                 if chunk.content:
                     yield {
                         "type": PacketType.ANSWER,
@@ -64,5 +59,7 @@ class ChitChatSkill(BaseSkill):
                     }
                             
         except Exception as e:
-            logger.error(f"[{self.name}] 运行异常: {str(e)}", exc_info=True)
-            yield {"type": PacketType.ERROR, "content": f"对话生成遇到一点问题，请稍后再试。"}
+            logger.error(f"[{self.name}] Runtime exception: {str(e)}", exc_info=True)
+            content = f"⚠️ There was a problem with the conversation generation, please try again later. \n"
+            async for char in simulate_stream(content):
+                yield {"type": PacketType.ERROR, "content": char}

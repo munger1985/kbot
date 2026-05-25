@@ -2,16 +2,17 @@ from loguru import logger
 from typing import Any, AsyncGenerator
 from utils.clients import AIModelClient
 from agent.prompt import default_prompt
-from core.config.settings import get_prompt_config
+from core.config import get_prompt_config
 from core.dictionary import PacketType
 from skills import BaseSkill
 from agent.common import ContextMemory
 from services.basic import PromptService
+from utils.simulate_stream import simulate_stream
 
 
 class ReasoningSkill(BaseSkill):
     """
-    逻辑分析技能：整合数据与知识，支持思考过程(thought)与答案(answer)的流式分发。
+    Logical Analysis Skill: Integrates data and knowledge, supports streaming distribution of thought process and final answer.
     """
     
     def __init__(self):
@@ -21,47 +22,33 @@ class ReasoningSkill(BaseSkill):
 
     async def run_stream(
         self, 
-        context: ContextMemory,  # 统一使用 ContextMemory
+        context: ContextMemory,
         **kwargs 
     ) -> AsyncGenerator[dict[str, Any], None]:
-        # 1. 安全提取上下文
+        # 1. Safely extract context
         target_goal = getattr(context, 'current_task', None) or context.get("standalone_query") or context.get("question")
         current_model = context["llm_model"]
         
-        # A. 尝试从 Planner 定义的变量池中提取 (对应 AskDataSkill 写入的 output_var)
-        vars_pool = context.get("variables", {})
-        # 优先取 Planner 动态分配的键，或常见的默认键
-        sql_data = vars_pool.get("inspection_records") or vars_pool.get("query_result")
-
-        # B. 备选方案：从 context["sql_results"] 提取（兼容传统模式）
-        if not sql_data:
-            res_val = context.get("sql_results")
-            if isinstance(res_val, dict):
-                sql_data = res_val.get("data")
-            elif isinstance(res_val, list) and len(res_val) > 0:
-                # 如果是列表，取最后一项（最新的查询结果）
-                last_item = res_val[-1]
-                sql_data = last_item.get("data") if isinstance(last_item, dict) else last_item
-
+        sql_results = context.get("sql_results") or []
         doc_results = context.get("doc_results") or []
         graph_results = context.get("graph_results") or []
         combined_kb_results = doc_results + graph_results
 
-        # 2. 构建 LLM 上下文文本 (优化点：将 List 转为 Markdown 表格，LLM 更易理解)
-        kb_text = "\n".join([f"[{i+1}] {d.get('content')}" for i, d in enumerate(combined_kb_results)]) if combined_kb_results else "无参考文档"
+        # 2. Build LLM context text (Optimization: Convert List to Markdown table for better LLM understanding)
+        kb_text = "\n".join([f"[{i+1}] {d.get('content')}" for i, d in enumerate(combined_kb_results)]) if combined_kb_results else "No reference documents"
         
-        # 优化数据上下文展示
-        if sql_data and isinstance(sql_data, list):
+        # Optimize data context presentation
+        if sql_results and isinstance(sql_results, list):
             try:
                 import pandas as pd
-                # 转换为 Markdown 表格，并限制前 10 条，防止 Token 溢出
-                data_text = pd.DataFrame(sql_data[:10]).to_markdown(index=False)
+                # Convert to Markdown table and limit to top 10 items to prevent token overflow
+                data_text = pd.DataFrame(sql_results[:10]).to_markdown(index=False)
             except ImportError:
-                data_text = str(sql_data[:10])
+                data_text = str(sql_results[:10])
         else:
-            data_text = "无业务数据"
+            data_text = "No business data"
         
-        summary = context["session_state"].get("context_summary", "新会话")
+        summary = context["session_state"].get("context_summary", "New session")
 
         reasoning_prompt = await default_prompt.generate(
             get_prompt_config().reasoning,
@@ -71,11 +58,11 @@ class ReasoningSkill(BaseSkill):
             final_goal=target_goal
         )
 
-        # 3. 获取用户提示
+        # 3. Get user prompt
         user_prompt = await self.prompt_service.get_prompt_by_agent_id(context["agent_id"])
         final_prompt = f"{reasoning_prompt}\n{user_prompt}"
 
-        # 4. 状态机解析 LLM 输出
+        # 4. State machine to parse LLM output
         is_thinking = False
         output_buffer = ""
 
@@ -87,14 +74,14 @@ class ReasoningSkill(BaseSkill):
             ):
                 if not chunk: continue
 
-                # A. 原生推理字段支持 (DeepSeek-R1 等)
+                # A. Native reasoning content support (e.g., DeepSeek-R1)
                 if hasattr(chunk, "reasoning_content") and chunk.reasoning_content:
                     yield {"type": PacketType.THOUGHT, "content": chunk.reasoning_content}
                     continue
 
                 if not chunk.content: continue
                 
-                # B. 标签解析流
+                # B. Tag parsing stream
                 output_buffer += chunk.content
 
                 while output_buffer:
@@ -106,7 +93,7 @@ class ReasoningSkill(BaseSkill):
                             is_thinking = True
                             output_buffer = parts[1]
                         elif "<" in output_buffer and any(tag.startswith(output_buffer.rsplit("<", 1)[1]) for tag in ["thought>", "/thought>"]):
-                            # 命中标签前缀，等待后续片段
+                            # Hit tag prefix, wait for subsequent fragments
                             break
                         else:
                             yield {"type": PacketType.ANSWER, "content": output_buffer}
@@ -124,11 +111,13 @@ class ReasoningSkill(BaseSkill):
                             yield {"type": PacketType.THOUGHT, "content": output_buffer}
                             output_buffer = ""
 
-            # 处理末尾残留
+            # Process remaining buffer
             if output_buffer.strip():
                 m_type = PacketType.THOUGHT if is_thinking else PacketType.ANSWER
                 yield {"type": m_type, "content": output_buffer}
 
         except Exception as e:
-            logger.error(f"ReasoningSkill 异常: {e}")
-            yield {"type": PacketType.ERROR, "content": f"分析中断: {str(e)}"}
+            logger.error(f"ReasoningSkill runtime exception: {e}")
+            content = f"⚠️ Analysis interrupted: {str(e)}\n"
+            async for char in simulate_stream(content):
+                yield {"type": PacketType.ERROR, "content": char}

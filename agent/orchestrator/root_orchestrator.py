@@ -13,6 +13,8 @@ from agent.planner.decision_engine import PlanningEngine
 from skills import SkillRuntime
 from agent.common import ContextMemory, ExecutionPlan
 from core.dictionary import IntentType, PacketType
+from utils.simulate_stream import simulate_stream
+
 
 # 定义需要实时分发给前端的流包类型
 DISPLAY_PACKET_TYPES = {
@@ -52,7 +54,9 @@ class RootOrchestrator:
         
         # --- 1. 上下文预处理与画像同步 ---
         user_profile = await self.memory_service.get_user_profile(user_id)
-        yield {"type": PacketType.THOUGHT, "content": "正在同步用户画像与上下文...\n"}
+        content = "Synchronizing user profile and context...\n"
+        async for char in simulate_stream(content):
+            yield {"type": PacketType.THOUGHT, "content": char}
 
         prepared = await self.memory_service.prepare_context_and_rewrite(
             user_id=user_id,
@@ -144,7 +148,9 @@ class RootOrchestrator:
                         yield packet
             except Exception as e:
                 logger.critical(f"决策引擎崩溃: {str(e)}")
-                yield {"type": PacketType.ERROR, "content": "大脑控制中心遭遇致命故障，请联系系统管理员"}
+                content = "Decision engine crashed, unable to proceed with the task."
+                async for char in simulate_stream(content):
+                    yield {"type": PacketType.ERROR, "content": char}
                 return
 
         # --- 5. 统一流式循环执行阶段 ---
@@ -176,7 +182,9 @@ class RootOrchestrator:
             if not skill_instance:
                 exec_info.update({"status": "failed", "error": f"组件 {skill_name} 损坏或未注册"})
                 ctx["execution_history"].append(exec_info)
-                yield {"type": PacketType.ERROR, "content": f"⚠️ 关键组件 [{skill_name}] 离线，本步骤跳过"}
+                content = f"⚠️ Critical component [{skill_name}] offline, skip current step"
+                async for char in simulate_stream(content):
+                    yield {"type": PacketType.ERROR, "content": char}
                 continue
 
             try:

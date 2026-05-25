@@ -5,18 +5,19 @@ from typing import Any, AsyncGenerator
 from skills import BaseSkill
 from core.dictionary import PacketType
 from agent.common import ContextMemory
+from utils.simulate_stream import simulate_stream
 
 
 class AskGraphSkill(BaseSkill):
     """
-    知识图谱检索技能：基于拓扑关系与一二度关联建立的高级结构化检索自治组件。
-    完全遵循分布式自治包、小写连字符命名及数据流回填总线规范。
+    Knowledge Graph Retrieval Skill: An advanced structured retrieval autonomous component built on topological relationships and 1st/2nd degree associations.
+    Fully compliant with distributed autonomous package, lowercase hyphen naming, and data flow backfill bus specifications.
     """
     def __init__(self):
         super().__init__()
-        # 默认安全级别，可被 Runtime 覆盖
+        # Default security level, can be overridden by Runtime
         self.security_level = 9
-        # 延迟导入，防止 NexusCube 核心组件循环依赖
+        # Lazy import to prevent circular dependency of NexusCube core components
         from services.search.graph_search import GraphBaseSearch
         self.graph_search_service = GraphBaseSearch()
 
@@ -26,9 +27,9 @@ class AskGraphSkill(BaseSkill):
         **kwargs
     ) -> AsyncGenerator[dict[str, Any], None]:
         """
-        执行图谱拓扑检索任务（完全对接变量注册中心与流式总线版本）
+        Execute graph topology retrieval task (fully connected to variable registry and streaming bus version)
         """
-        # 1. 安全提取当前步骤的执行快照与控制信息
+        # 1. Securely extract execution snapshot and control info of current step
         current_execution = context.get("current_execution") or {}
         runtime_skill_name = current_execution.get("skill", "ask-graph-skill")
         output_var = current_execution.get("output_var") or "graph_results"
@@ -38,10 +39,10 @@ class AskGraphSkill(BaseSkill):
         current_session = context.get("session_id") or uuid.uuid4().hex
         security_level = context.get("security_level", self.security_level)
         
-        # 2. 严格从决策控制平面的纯净参数字典（resolved_params）中提取入参
+        # 2. Strictly extract input parameters from the clean parameter dictionary (resolved_params) of the decision control plane
         resolved_params = current_execution.get("resolved_params") or {}
         
-        # 提取实体词 (vertex_names)
+        # Extract entity words (vertex_names)
         vertex_names: list[str] = (
             resolved_params.get("vertex_names")
             or context.get("vertex_names") 
@@ -49,15 +50,17 @@ class AskGraphSkill(BaseSkill):
             or [k.strip() for k in context.get("search_keywords", "").split(",") if k.strip()]
         )
         
-        # 🛡️ 鲁棒性防御增强：如果提取出的实体太少/被切碎，尝试将 standalone_query 或 question 的原句做联动降级补充
-        # 这样即使实体里漏掉了“霍尔因子”，有原句撑腰也能触发更广泛的文本边界感知
+        # 🛡️ Robustness defense enhancement: If too few entities are extracted / fragmented, 
+        # try to use the original sentence of standalone_query or question for fallback supplementation
+        # This ensures broader text boundary awareness even if entities like "Hall Factor" are missed
         if len(vertex_names) < 4:
             fallback_query = context.get("standalone_query") or context.get("question")
             if fallback_query and fallback_query not in vertex_names:
-                # 提取原句中的可能片段或者直接追加原句作为超弦节点投喂
+                # Extract possible fragments from the original sentence or append the original sentence as a superstring node
                 pass
 
-        # 兜底策略：如果 Planner 或上层未提取出任何实体，则将干净的输入整串作为实体处理
+        # Fallback strategy: If no entities are extracted by Planner or upper layer, 
+        # treat the entire clean input string as an entity
         if not vertex_names:
             query_text = (
                 current_execution.get("resolved_input") 
@@ -68,54 +71,63 @@ class AskGraphSkill(BaseSkill):
             if query_text:
                 vertex_names = [query_text]
 
-        # 提取其余业务参数
+        # Extract other business parameters
         kb_id = resolved_params.get("kb_id") or context.get("kb_id") or current_execution.get("kb_id")
         search_top_k = resolved_params.get("search_top_k") or context.get("search_top_k", 10)
         max_depth = resolved_params.get("max_depth") or context.get("max_depth", 2)
         
-        # 参数对齐映射
+        # Parameter alignment mapping
         graph_weight = resolved_params.get("graph_weight") or context.get("graph_weight", 1.2)
 
-        # 3. 边界防御断言
+        # 3. Boundary defense assertions
         if not vertex_names:
-            yield {"type": PacketType.ERROR, "content": f"{runtime_skill_name}: 变量解析异常，未能在上下文中捕获到任何有效实体词"}
+            content = f"{runtime_skill_name}: Variable parsing exception, failed to capture any valid entity words in the context\n"
+            async for char in simulate_stream(content):
+                yield {"type": PacketType.ERROR, "content": char}
             return
 
         if not current_agent:
-            yield {"type": PacketType.ERROR, "content": f"{runtime_skill_name}: 全局上下文缺失核心身份认证信息 agent_id"}
+            content = f"{runtime_skill_name}: Missing critical parameter agent_id in global context\n"
+            async for char in simulate_stream(content):
+                yield {"type": PacketType.ERROR, "content": char}
             return
 
         if not kb_id:
-            yield {"type": PacketType.ERROR, "content": f"{runtime_skill_name}: 缺少核心知识库定位标识 kb_id"}
+            content = f"{runtime_skill_name}: Missing critical parameter kb_id in global context\n"
+            async for char in simulate_stream(content):
+                yield {"type": PacketType.ERROR, "content": char}
             return
 
-        # 发送思考状态：开始探索
+        # Send thinking status: Start exploration
         entities_str = ", ".join(f"'{v}'" for v in vertex_names)
-        yield {"type": PacketType.THOUGHT, "content": f"正在向图谱空间发起拓扑游走，核心实体：[{entities_str}]，最大深度：{max_depth}...\n"}
+        content = f"Initiating topological traversal to graph space, core entities: [{entities_str}], max depth: {max_depth}...\n"
+        async for char in simulate_stream(content):
+            yield {"type": PacketType.THOUGHT, "content": char}
 
         try:
-            # 4. 调用底层统一图检索服务
+            # 4. Call the underlying unified graph retrieval service
             graph_raw_bucket = await self.graph_search_service.search_by_graph(
-                kb_id=int(kb_id),
+                kb_id=kb_id,
                 vertex_names=vertex_names,
                 search_top_k=search_top_k,
                 weight=graph_weight,
-                security=security_level,
+                security_level=security_level,
                 max_depth=max_depth
             )
             
-            # 🛡️ 【核心修复】：精准对齐大一统格式的 "graph_result" 键名，彻底打通血脉
+            # Get graph search results
             enriched_refs = graph_raw_bucket.get("graph_result") or []
+            content = f"Graph topology traversal completed. Activated {len(enriched_refs)} normalized text slices along the relationship chain...\n"
+            async for char in simulate_stream(content):
+                yield {"type": PacketType.THOUGHT, "content": char}
 
-            yield {"type": PacketType.THOUGHT, "content": f"图拓扑游走完毕。已顺沿关系链回表激活 {len(enriched_refs)} 个规范化文本切片...\n"}
-
-            # 5. 格式化并清洗结果
+            # 5. Format and clean the results
             records_dict = self._build_records(enriched_references=enriched_refs)
             results_list = records_dict["graph_results"]
             
-            logger.debug(f"[{runtime_skill_name}] 图谱关联文本记录数: {len(results_list)}")
+            logger.debug(f"[{runtime_skill_name}] Number of graph-associated text records: {len(results_list)}")
             
-            # 6. 多维数据沉淀与回填总线
+            # 6. Multi-dimensional data precipitation and backfill bus
             if "graph_results" not in context:
                 context["graph_results"] = []
             context["graph_results"] = results_list
@@ -124,18 +136,20 @@ class AskGraphSkill(BaseSkill):
                 context["variables"] = {}
             context["variables"][output_var] = results_list
 
-            # C. 流式吐出结果包供前端渲染或编排层追踪
+            # 7. Stream output result package for front-end rendering or orchestration layer tracking
             yield {"type": PacketType.GRAPH_RESULTS, "content": results_list}
             
-            # D. 交付 DONE 包给 Runtime 总线
-            yield {"type": PacketType.DONE, "content": results_list}
+            # 8. Inject graph search results into context for subsequent skills
+            context["graph_results"] = results_list
 
         except Exception as e:
-            logger.error(f"自治图组件 [{runtime_skill_name}] 运行时遭遇严重阻碍: {e}", exc_info=True)
-            yield {"type": PacketType.ERROR, "content": f"⚠️ 知识图谱深度检索出现 system 级故障: {str(e)}"}
+            logger.error(f"Autonomous graph component [{runtime_skill_name}] encountered a critical obstacle during runtime: {e}", exc_info=True)
+            content = f"⚠️ System-level failure occurred in knowledge graph deep retrieval: {str(e)}\n"
+            async for char in simulate_stream(content):
+                yield {"type": PacketType.ERROR, "content": char}
 
     def _build_records(self, enriched_references: list[Any]) -> dict[str, Any]:
-        """对齐 TxtBaseSearchResult 规范进行输出，确保下游和标准文本完全等价。"""
+        """Align output with TxtBaseSearchResult specification to ensure full equivalence with standard text downstream."""
         records = []
         for ref in enriched_references:
             is_dict = isinstance(ref, dict)
