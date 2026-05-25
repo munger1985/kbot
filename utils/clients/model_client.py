@@ -406,8 +406,9 @@ class AIModelClient():
         
         try:
             # 聚合 generator 产出的内容
+            # 使用 stream=False，因为 json_object 模式不需要流式输出，且部分 LLM 后端对 stream+json 支持不佳
             async for chunk in self.call_llm_model(model_name=model_name, prompt=prompt, 
-                                                   response_format="json_object", temperature=0, **kwargs):
+                                                   response_format="json_object", temperature=0, stream=False, **kwargs):
                 line = chunk.strip()
                 if not line or line == "data: [DONE]":
                     continue
