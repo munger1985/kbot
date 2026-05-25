@@ -738,6 +738,7 @@ COMMENT ON COLUMN kbot_md_parser_conf.updated_time IS 'Update time';
 -- 1. 顶点表 (KBOT_GRAPH_KNOWLEDGE_VERTICES) 
 -- ========================================================
 CREATE TABLE KBOT_GRAPH_KNOWLEDGE_VERTICES (
+    kb_id          VARCHAR2(64) NOT NULL,
     vertex_id      VARCHAR2(64) NOT NULL,
     vertex_name    VARCHAR2(255) NOT NULL,
     vertex_type    VARCHAR2(64) NOT NULL,
@@ -746,14 +747,14 @@ CREATE TABLE KBOT_GRAPH_KNOWLEDGE_VERTICES (
     name_vector    VECTOR,
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at      TIMESTAMP,
-    CONSTRAINT pk_kbot_graph_knowledge_vertices PRIMARY KEY (vertex_id)
+    CONSTRAINT pk_kbot_graph_knowledge_vertices PRIMARY KEY (kb_id, vertex_id)
 );
 -- 为实体名称和类型建立索引，加速传统检索
-CREATE INDEX idx_vertex_name_type ON KBOT_GRAPH_KNOWLEDGE_VERTICES(vertex_name, vertex_type);
+CREATE INDEX idx_vertex_name ON KBOT_GRAPH_KNOWLEDGE_VERTICES(kb_id, vertex_name);
 
 
 COMMENT ON TABLE KBOT_GRAPH_KNOWLEDGE_VERTICES IS '知识图谱顶点表（实体表）：存储从非结构化文档中抽取的业务实体、术语或概念，并支持向量消歧。';
-
+COMMENT ON COLUMN KBOT_GRAPH_KNOWLEDGE_VERTICES.kb_id IS '知识库ID，引用知识库表。';
 COMMENT ON COLUMN KBOT_GRAPH_KNOWLEDGE_VERTICES.vertex_id IS '顶点（实体）的唯一标识。推荐使用名称+类型的规范化哈希值（如MD5），以天然实现初级消歧。';
 COMMENT ON COLUMN KBOT_GRAPH_KNOWLEDGE_VERTICES.vertex_name IS '实体或概念的实际名称（如"RTX 5080"、"晶圆厚度"）。';
 COMMENT ON COLUMN KBOT_GRAPH_KNOWLEDGE_VERTICES.vertex_type IS '实体的业务大类分类（如：技术、设备、指标、组织、概念等）。';
@@ -766,6 +767,7 @@ COMMENT ON COLUMN KBOT_GRAPH_KNOWLEDGE_VERTICES.name_vector IS '基于实体名�
 -- 2. 边表 (KBOT_GRAPH_KNOWLEDGE_EDGES) 
 -- ========================================================
 CREATE TABLE KBOT_GRAPH_KNOWLEDGE_EDGES (
+    kb_id          VARCHAR2(64) NOT NULL,
     edge_id        VARCHAR2(64) NOT NULL,
     source_id      VARCHAR2(64) NOT NULL,
     target_id      VARCHAR2(64) NOT NULL,
@@ -774,15 +776,15 @@ CREATE TABLE KBOT_GRAPH_KNOWLEDGE_EDGES (
     attributes     JSON,
     created_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at     TIMESTAMP,
-    CONSTRAINT pk_kbot_graph_knowledge_edges PRIMARY KEY (edge_id),
-    CONSTRAINT fk_edge_source FOREIGN KEY (source_id) REFERENCES KBOT_GRAPH_KNOWLEDGE_VERTICES(vertex_id),
-    CONSTRAINT fk_edge_target FOREIGN KEY (target_id) REFERENCES KBOT_GRAPH_KNOWLEDGE_VERTICES(vertex_id)
+    CONSTRAINT pk_graph_knowledge_edges PRIMARY KEY (kb_id, edge_id),
+    CONSTRAINT fk_edge_source FOREIGN KEY (kb_id, source_id) REFERENCES KBOT_GRAPH_KNOWLEDGE_VERTICES(kb_id, vertex_id) ON DELETE CASCADE,
+    CONSTRAINT fk_edge_target FOREIGN KEY (kb_id, target_id) REFERENCES KBOT_GRAPH_KNOWLEDGE_VERTICES(kb_id, vertex_id) ON DELETE CASCADE
 );
 
 CREATE INDEX idx_edge_source_target ON KBOT_GRAPH_KNOWLEDGE_EDGES(source_id, target_id);
 
 COMMENT ON TABLE KBOT_GRAPH_KNOWLEDGE_EDGES IS '知识图谱边表（关系表）：存储实体与实体之间的有向关系，通过权重记录关系的业务强弱和提及频次。';
-
+COMMENT ON COLUMN KBOT_GRAPH_KNOWLEDGE_EDGES.kb_id IS '知识库ID，引用知识库表。';
 COMMENT ON COLUMN KBOT_GRAPH_KNOWLEDGE_EDGES.edge_id IS '边的唯一标识。推荐由源节点ID、目标节点ID和关系类型进行组合哈希生成。';
 COMMENT ON COLUMN KBOT_GRAPH_KNOWLEDGE_EDGES.source_id IS '关系的源顶点ID（起点），对应 KNOWLEDGE_VERTICES 的主键。';
 COMMENT ON COLUMN KBOT_GRAPH_KNOWLEDGE_EDGES.target_id IS '关系的目标顶点ID（终点），对应 KNOWLEDGE_VERTICES 的主键。';
@@ -796,20 +798,20 @@ COMMENT ON COLUMN KBOT_GRAPH_KNOWLEDGE_EDGES.attributes IS 'JSON 格式的动态
 -- 3. 关系-切片映射表 (KBOT_GRAPH_EDGE_CHUNK_MAP) 
 -- ========================================================
 CREATE TABLE KBOT_GRAPH_EDGE_CHUNK_MAP (
+    kb_id          VARCHAR2(64) NOT NULL,
     edge_id        VARCHAR2(64) NOT NULL,
     chunk_id       VARCHAR2(64) NOT NULL,
     file_id        VARCHAR2(64),
     created_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at     TIMESTAMP,
-    CONSTRAINT pk_KBOT_GRAPH_EDGE_CHUNK_MAP PRIMARY KEY (edge_id, chunk_id),
-    CONSTRAINT fk_map_edge FOREIGN KEY (edge_id) REFERENCES KBOT_GRAPH_KNOWLEDGE_EDGES(edge_id)
+    CONSTRAINT pk_graph_edge_chunk_map PRIMARY KEY (kb_id, edge_id, chunk_id),
+    CONSTRAINT fk_map_edge FOREIGN KEY (kb_id, edge_id) REFERENCES KBOT_GRAPH_KNOWLEDGE_EDGES(kb_id, edge_id) ON DELETE CASCADE
 );
 
 CREATE INDEX idx_map_chunk ON KBOT_GRAPH_EDGE_CHUNK_MAP(chunk_id);
 
 COMMENT ON TABLE KBOT_GRAPH_EDGE_CHUNK_MAP IS '图关系与文档切片映射表（中间关联表）：记录每条关系是由哪些具体的文档切片抽取得来的，是图搜索 Skill 溯源到原文 Chunk 的核心依赖。';
-
-
+COMMENT ON COLUMN KBOT_GRAPH_EDGE_CHUNK_MAP.kb_id IS '知识库ID，引用知识库表。';
 COMMENT ON COLUMN KBOT_GRAPH_EDGE_CHUNK_MAP.edge_id IS '边（关系）的唯一标识，对应 KBOT_GRAPH_KNOWLEDGE_EDGES 的主键。';
 COMMENT ON COLUMN KBOT_GRAPH_EDGE_CHUNK_MAP.chunk_id IS '提取出该条关系的原始文档切片ID。对应 Vector DB 或系统其他业务表中的 Chunk ID，用于顺藤摸瓜检索原文。';
 COMMENT ON COLUMN KBOT_GRAPH_EDGE_CHUNK_MAP.file_id IS '冗余存储的文档唯一标识，方便在用户删除或更新整个文档时进行级联数据清理。';

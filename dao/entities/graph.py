@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import String, CLOB, Integer, ForeignKey, JSON, func
+from sqlalchemy import String, CLOB, Integer, ForeignKey, JSON, func, Numeric
 from sqlalchemy.orm import Mapped, mapped_column
 from .base import BaseEntity, VectorField
 
@@ -8,6 +8,7 @@ class GraphVertexEntity(BaseEntity):
     """知识图谱顶点表（实体表）"""
     __tablename__ = "KBOT_GRAPH_KNOWLEDGE_VERTICES"
 
+    kb_id: Mapped[int] = mapped_column(Numeric(38, 0), primary_key=True, name="KB_ID", comment="知识库ID，引用知识库表。")
     vertex_id: Mapped[str] = mapped_column(String(64), name="VERTEX_ID", primary_key=True, comment="顶点ID，推荐名称+类型MD5")
     vertex_name: Mapped[str] = mapped_column(String(255), name="VERTEX_NAME", comment="实体或概念的实际名称（如'RTX 5080'）")
     vertex_type: Mapped[str] = mapped_column(String(64), name="VERTEX_TYPE", comment="实体的业务大类分类（如：技术、设备、指标）")
@@ -22,6 +23,7 @@ class GraphEdgeEntity(BaseEntity):
     """知识图谱边表（关系表）"""
     __tablename__ = "KBOT_GRAPH_KNOWLEDGE_EDGES"
 
+    kb_id: Mapped[int] = mapped_column(Numeric(38, 0), primary_key=True, name="KB_ID", comment="知识库ID，引用知识库表。")
     edge_id: Mapped[str] = mapped_column(String(64), name="EDGE_ID", primary_key=True, comment="边的唯一标识，源ID+目标ID+关系类型MD5")
     source_id: Mapped[str] = mapped_column(String(64), ForeignKey("KBOT_GRAPH_KNOWLEDGE_VERTICES.VERTEX_ID"), name="SOURCE_ID", comment="源顶点ID（起点）")
     target_id: Mapped[str] = mapped_column(String(64), ForeignKey("KBOT_GRAPH_KNOWLEDGE_VERTICES.VERTEX_ID"), name="TARGET_ID", comment="目标顶点ID（终点）")
@@ -36,6 +38,7 @@ class GraphEdgeChunkMapEntity(BaseEntity):
     """图关系与文档切片映射表（中间关联表）"""
     __tablename__ = "KBOT_GRAPH_EDGE_CHUNK_MAP"
 
+    kb_id: Mapped[int] = mapped_column(Numeric(38, 0), primary_key=True, name="KB_ID", comment="知识库ID，引用知识库表。")
     edge_id: Mapped[str] = mapped_column(String(64), ForeignKey("KBOT_GRAPH_KNOWLEDGE_EDGES.EDGE_ID"), name="EDGE_ID", primary_key=True, comment="边ID")
     chunk_id: Mapped[str] = mapped_column(String(64), name="CHUNK_ID", primary_key=True, comment="提取出该关系的原始文档切片ID")
     file_id: Mapped[str | None] = mapped_column(String(64), name="FILE_ID", comment="冗余存储的文档唯一标识，方便级联清理")

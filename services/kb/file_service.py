@@ -10,7 +10,7 @@ from core.dictionary import FileStatus, ParserEngine
 from core.exceptions import *
 from core.database.oracle import get_session
 from dao.entities import FileEntity
-from dao.repositories import KBRepository, FileRepository, TxtChunkRepository
+from dao.repositories import KBRepository, FileRepository, TxtChunkRepository, GraphRepository
 from utils.common import run_in_thread_pool
 
 
@@ -653,6 +653,7 @@ class FileService:
         async with self.db_session as session:
             file_repo = FileRepository(session)
             chunk_repo = TxtChunkRepository(session)
+            graph_repo = GraphRepository(session)
             try:
                 # 1. 删除文件对应的文本片段数据
                 try:
@@ -660,7 +661,12 @@ class FileService:
                 except DataNotFoundException as e:
                     logger.debug(f"文件 {file_ids} 对应的文本片段数据不存在，跳过删除")
                 logger.info(f"文件 {file_ids} 对应的文本片段数据已删除")
-                # 2. 重置文件状态为未解析
+
+                # 2. 删除文件对应的图谱数据
+                await graph_repo.delete_graph_by_file(kb_id=kb_id, file_ids=file_ids)
+                logger.info(f"文件 {file_ids} 对应的图谱数据已删除")
+
+                # 3. 重置文件状态为未解析
                 await file_repo.update_file_status(
                     file_ids=file_ids, 
                     status=FileStatus.APPROVED, 

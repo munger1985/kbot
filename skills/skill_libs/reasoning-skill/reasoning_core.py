@@ -130,5 +130,5 @@ class ReasoningSkill(BaseSkill):
                 yield {"type": m_type, "content": output_buffer}
 
         except Exception as e:
-            logger.error(f"AnalysisSkill 异常: {e}")
+            logger.error(f"ReasoningSkill 异常: {e}")
             yield {"type": PacketType.ERROR, "content": f"分析中断: {str(e)}"}

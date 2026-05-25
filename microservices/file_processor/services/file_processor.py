@@ -14,7 +14,7 @@ from core.exceptions import DataNotFoundException, DatabaseException
 from utils.clients import AIModelClient
 from utils.sanitize import sanitize_dict_for_oracle_json
 from services.basic import AIModelService, DomainService
-from services.graph import GraphIngestionService
+from services.graph import GraphService
 from agent.prompt import default_prompt
 
 
@@ -423,7 +423,7 @@ class FileProcessor:
         domain_name, domain_descs = await self.domain_service.get_name_and_desc_by_kb(file_params.kb_id)
 
         # 初始化图谱上游服务
-        graph_service = GraphIngestionService(embedding_model=embedding_model, llm_model=llm_model)
+        graph_service = GraphService()
 
         # 抽取公共的图属性
         base_properties = {
@@ -521,9 +521,12 @@ class FileProcessor:
 
                 # 4. 录入图谱，此时的 chunk_id 是绝对准确、一一对应的
                 await graph_service.merge_and_ingest_graph(
+                    kb_id=file_params.kb_id,
                     chunk_id=chunk_id,
                     file_id=file_params.file_id,
-                    extracted_relations=extracted_relations
+                    extracted_relations=extracted_relations,
+                    llm_model=llm_model,
+                    embedding_model=embedding_model,
                 )
                 total_relations_count += len(extracted_relations)
 

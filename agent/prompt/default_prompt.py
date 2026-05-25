@@ -6,9 +6,7 @@ from typing import Any
 class DefaultPrompt(string.Formatter):
     def __init__(self):
         super().__init__()
-        # 延迟导入避免循环依赖
-        from services.basic import PromptService
-        self.prompt_service = PromptService()
+        self._prompt_service = None
         # 建立 默认提示词名称 与 默认内容 的映射关系
         self._prompts = {
             "SYSTEM/image2text": DESCRIBE_PIC_PROMPT,
@@ -40,13 +38,17 @@ class DefaultPrompt(string.Formatter):
         :param prompt_name: 提示词在系统中的唯一标识 (如 "SYSTEM/user_profile")
         :param kwargs: 需要填充到提示词模板中的变量
         """
+        if not self._prompt_service:
+            from services.basic import PromptService
+            self._prompt_service = PromptService()
+        
         # 1. 获取默认兜底内容
         fallback_content = self._prompts.get(prompt_name, "")
         
         # 2. 尝试从数据库获取
         template = fallback_content
         try:
-            db_prompt = await self.prompt_service.get_prompt_by_unique_name(unique_name=prompt_name)
+            db_prompt = await self._prompt_service.get_prompt_by_unique_name(unique_name=prompt_name)
             if db_prompt:
                 template = db_prompt
             elif not fallback_content:

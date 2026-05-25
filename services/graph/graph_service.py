@@ -5,26 +5,22 @@ from loguru import logger
 
 from core.database.oracle import get_session
 from core.exceptions import *
-from core.config.settings import get_prompt_config
-from utils.sanitize import sanitize_dict_for_oracle_json
+from core.config import get_prompt_config
 from dao.repositories import GraphRepository 
 from .schemas import GraphAnalysis
 from utils.clients import AIModelClient
 from agent.prompt import default_prompt
+from core.exceptions import handle_exception
 
 
-class GraphIngestionService:
-    """Graph Ingestion service for managing knowledge graph entity fusion and relation sync."""
+class GraphService:
+    """图谱导入服务，负责管理知识图谱实体与关系的导入。"""
 
-    def __init__(self, embedding_model: str, llm_model: str) -> None:
-        from utils.clients import AIModelClient # 延时引入
+    def __init__(self):
         self.model_client = AIModelClient()
-        self.embedding_model = embedding_model
-        self.llm_model = llm_model
 
     @property
-    def oracle_session(self):
-        from core.database.oracle import get_session
+    def db_session(self):
         return get_session()
 
     def _generate_md5_id(self, *args: str) -> str:
@@ -34,8 +30,6 @@ class GraphIngestionService:
 
     async def extract_triplets(self, user_input_text: str, llm_model_name: str, domain_name: str, domain_description: str) -> GraphAnalysis:
         """利用大模型从输入文本中抽取知识图谱实体与关系"""
-        from core.config.settings import get_prompt_config
-        from agent.prompt import default_prompt
         try:
             prompt = await default_prompt.generate(
                 get_prompt_config().graph_extractor, 
@@ -55,8 +49,11 @@ class GraphIngestionService:
         
     async def merge_and_ingest_graph(
         self, 
+        kb_id: int, 
         chunk_id: str, 
         file_id: str, 
+        llm_model: str,
+        embedding_model: str,
         extracted_relations: list[dict[str, Any]]
     ) -> None:
         """文档解析管道调用的核心入口，采用统一的懒加载 Session 管理事务边界。"""
@@ -64,7 +61,7 @@ class GraphIngestionService:
             return
 
         # =================================================================
-        # 【核心修复】第一步：前置深度清洗，彻底拔除带引号的脏 Key 和脏 Value
+        # 第一步：前置深度清洗，彻底拔除带引号的脏 Key 和脏 Value
         # =================================================================
         cleaned_relations: list[dict[str, Any]] = []
         for raw_rel in extracted_relations:
@@ -93,7 +90,7 @@ class GraphIngestionService:
             cleaned_relations.append(clean_rel)
 
         # 后续业务逻辑完全基于已清洗干净的 cleaned_relations 执行
-        async with self.oracle_session as session:
+        async with self.db_session as session:
             repo = GraphRepository(session)
             
             # --- 1: 提取出当前 Chunk 中所有独特的实体，避免同批内并发冲突 ---
@@ -124,18 +121,21 @@ class GraphIngestionService:
                 try:
                     actual_id = await self._process_vertex_fusion(
                         repo=repo,
+                        kb_id=kb_id,
                         vertex_id=v_id,
                         name=v_info["name"],
                         v_type=v_info["type"],
                         new_desc=v_info["desc"],
-                        chunk_id=chunk_id
+                        chunk_id=chunk_id,
+                        llm_model=llm_model,
+                        embedding_model=embedding_model
                     )
                     vertex_id_map[v_id] = actual_id
                 except Exception as e:
-                    logger.error(f"[GraphIngestion] 实体融合失败: {v_info['name']}, 错误: {str(e)}")
+                    logger.error(f"[GraphService] 实体融合失败: {v_info['name']}, 错误: {str(e)}")
 
             # --- 3: 串行处理边和映射 ---
-            async def _process_single_edge(edge_dict: dict[str, Any]) -> None:
+            async def _process_single_edge(edge_dict: dict[str, Any], kb_id: int) -> None:
                 try:
                     source_name = str(edge_dict.get("source_name") or "")
                     source_type = str(edge_dict.get("source_type") or "Entity")
@@ -159,12 +159,13 @@ class GraphIngestionService:
                     tgt_id = vertex_id_map.get(box_raw_id)
                     
                     if not src_id or not tgt_id:
-                        logger.warning(f"[GraphIngestion] 找不到顶点映射 ID，跳过边处理. SrcRaw: {src_raw_id}, TgtRaw: {box_raw_id}")
+                        logger.warning(f"[GraphService] 找不到顶点映射 ID，跳过边处理. SrcRaw: {src_raw_id}, TgtRaw: {box_raw_id}")
                         return
 
                     generated_edge_id = self._generate_md5_id(src_id, tgt_id, relation_type)
                     
                     await repo.upsert_edge_with_map(
+                        kb_id=kb_id,
                         edge_id=generated_edge_id,
                         source_id=src_id,
                         target_id=tgt_id,
@@ -174,17 +175,16 @@ class GraphIngestionService:
                         attributes=relation_attributes
                     )
                 except Exception as e:
-                    logger.error(f"[GraphIngestion] 处理图关系单条边录入失败: {edge_dict}, 错误详情: {str(e)}", exc_info=True)
+                    logger.error(f"[GraphService] 处理图关系单条边录入失败: {edge_dict}, 错误详情: {str(e)}", exc_info=True)
 
             for r in cleaned_relations:
-                await _process_single_edge(r)
+                await _process_single_edge(r, kb_id)
 
-            # 在这里，所有被推入 session 的解包属性均无外部单引号和大小写干扰
             await session.commit()
-            logger.info(f"Successfully processed and committed graph network for chunk {chunk_id}")
+            logger.info(f"成功处理并提交图谱网络，块 ID: {chunk_id}")
 
     async def _process_vertex_fusion(
-        self, repo: Any, vertex_id: str, name: str, v_type: str, new_desc: str, chunk_id: str
+        self, repo: GraphRepository, kb_id: int, vertex_id: str, name: str, v_type: str, new_desc: str, chunk_id: str, llm_model: str, embedding_model: str
     ) -> str:
         """百科体融合逻辑"""
 
@@ -192,10 +192,9 @@ class GraphIngestionService:
         
         # 1. 探测 repo.get_vertex_by_id 阶段
         try:
-            existing_vertex = await repo.get_vertex_by_id(vertex_id)
-        except Exception as repo_err:
-            logger.error(f"[GraphIngestion] generate vertex failed: {repo_err}", exc_info=True)
-            raise repo_err
+            existing_vertex = await repo.get_vertex_by_id(kb_id=kb_id, vertex_id=vertex_id)
+        except Exception as e:
+            handle_exception(e, f"[GraphService] 获取顶点失败")
                 
         final_desc = new_desc
         final_vector = None
@@ -220,9 +219,8 @@ class GraphIngestionService:
                         return val
                     val = getattr(obj, key, default)
                     return val
-                except Exception as attr_err:
-                    logger.error(f"[GraphIngestion] get_attr failed: {key}, error: {type(attr_err)}, detail: {attr_err}", exc_info=True)
-                    raise attr_err
+                except Exception as e:
+                    handle_exception(e, f"[GraphService] 获取属性失败: {key}")
 
             old_description = get_attr(existing_vertex, "description")
             old_vector = get_attr(existing_vertex, "name_vector")
@@ -238,13 +236,13 @@ class GraphIngestionService:
                         new_desc=final_desc
                     )
                     llm_response = await self.model_client.get_llm_answer(
-                        model_name=self.llm_model,
+                        model_name=llm_model,
                         prompt=fusion_prompt
                     )
                     if llm_response and llm_response.strip():
                         final_desc = llm_response.strip()
-                except Exception as llm_err:
-                    logger.warning(f"[GraphIngestion] call LLM for vertex fusion failed, error: {llm_err}")
+                except Exception as e:
+                    logger.warning(f"[GraphService] 调用 LLM 进行百科体融合失败, 错误: {e}")
                     final_desc = old_description
                 
             if old_description and final_desc == old_description:
@@ -256,35 +254,46 @@ class GraphIngestionService:
                         for key in banned_keys:
                             cleaned_old_attrs.pop(key, None)
                         attributes.update(cleaned_old_attrs)
-                    except Exception as attr_clean_err:
-                        logger.error(f"[GraphIngestion] clean old attributes failed: {attr_clean_err}", exc_info=True)
-                        raise attr_clean_err
+                    except Exception as e:
+                        handle_exception(e, f"[GraphService] 清理旧属性失败")
             else:
-                final_vector = await self.model_client.get_embedding(self.embedding_model, f"{name}: {final_desc}")
+                final_vector = await self.model_client.get_embedding(embedding_model, f"{name}: {final_desc}")
         else:
-            final_vector = await self.model_client.get_embedding(self.embedding_model, f"{name}: {final_desc}")
+            final_vector = await self.model_client.get_embedding(embedding_model, f"{name}: {final_desc}")
 
-        # 4. 探测 序列化 清洗阶段
-        try:
-            sanitized_attrs = sanitize_dict_for_oracle_json(attributes)
-            logger.debug("[GraphIngestion] sanitize 清洗成功")
-        except Exception as sanitize_err:
-            logger.error(f"[GraphIngestion] sanitize_dict_for_oracle_json failed: {sanitize_err}", exc_info=True)
-            raise sanitize_err
-
-        # 5. 探测 最终 Repo 写入阶段
+        # 4. 探测 最终 Repo 写入阶段
         try:
             await repo.upsert_vertex(
+                kb_id=kb_id,
                 vertex_id=vertex_id,
                 vertex_name=name,
                 vertex_type=v_type,
                 description=final_desc,
-                attributes=sanitized_attrs,
+                attributes=attributes,
                 name_vector=final_vector
             )
-            logger.success(f"[GraphIngestion] upsert_vertex success: {name}")
-        except Exception as repo_upsert_err:
-            logger.error(f"[GraphIngestion] upsert_vertex failed: {repo_upsert_err}", exc_info=True)
-            raise repo_upsert_err
+            logger.success(f"[GraphService] 更新顶点成功: {name}")
+        except Exception as e:
+            handle_exception(e, f"[GraphService] 更新顶点失败")
 
         return vertex_id
+    
+    async def delete_graph_by_file(self, kb_id: int, file_ids: list[str]) -> None:
+        """根据文件ID删除图谱"""
+        try:
+            async with self.db_session as session:
+                repo = GraphRepository(session)
+                await repo.delete_graph_by_file(kb_id=kb_id, file_ids=file_ids)
+                logger.success(f"[GraphService] 删除图谱成功")
+        except Exception as e:
+            handle_exception(e, f"[GraphService] 根据文件ID删除图谱失败")
+
+    async def delete_graph_by_kb(self, kb_id: int) -> None:
+        """根据知识库ID删除图谱"""
+        try:
+            async with self.db_session as session:
+                repo = GraphRepository(session)
+                await repo.delete_graph_by_knowledge_base(kb_id=kb_id)
+                logger.success(f"[GraphService] 删除图谱成功")
+        except Exception as e:
+            handle_exception(e, f"[GraphService] 根据知识库ID删除图谱失败")

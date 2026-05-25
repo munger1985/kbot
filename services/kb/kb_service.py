@@ -1,8 +1,8 @@
 from loguru import logger
-from dao.entities import KBEntity
 from dao.repositories import KBRepository
 from core.database.oracle import get_session
 from core.exceptions import *
+from services.graph.graph_service import GraphService
 from .file_service import FileService
 from .schema import KBModelParams
 
@@ -24,9 +24,13 @@ class KBService:
         """
         try:
             if cascade:
-                # 先删除知识库中的所有文件
+                # 1. 删除知识库中的所有文件
                 await FileService().delete_file_service(kb_id)
                 logger.info(f"知识库 {kb_id} 中的所有文件删除成功")
+                # 2. 删除知识库中的所有图谱数据
+                await GraphService().delete_graph_by_kb(kb_id)
+                logger.info(f"知识库 {kb_id} 中的所有图谱数据删除成功")
+
             # 删除知识库
             async with self.db_session as session:
                 kb_repo = KBRepository(session)
