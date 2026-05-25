@@ -1,6 +1,7 @@
 import aiohttp
 import re
 import json
+from datetime import datetime
 from PIL import Image
 from typing import AsyncGenerator
 from dataclasses import dataclass
@@ -270,18 +271,23 @@ class AIModelClient():
             "stream": kwargs.get("stream", True)  # 默认为流式
         }
 
-        # 处理额外参数（Decimal转float/int）
+        # 处理额外参数（Decimal转float/int，datetime转ISO字符串）
         if kwargs:
             processed_kwargs = {}
             for k, v in kwargs.items():
                 if v is not None:
                     if isinstance(v, Decimal):
                         processed_kwargs[k] = float(v) if v % 1 else int(v)
+                    elif isinstance(v, datetime):
+                        processed_kwargs[k] = v.isoformat()
                     else:
                         processed_kwargs[k] = v
             payload.update(processed_kwargs)
 
         # logger.debug(f"调用LLM服务，请求负载: {payload}")
+
+        # 确保 payload 可以被 JSON 序列化
+        payload = self._safe_json_payload(payload)
 
         try:
             async with aiohttp.ClientSession(timeout=timeout) as session:
@@ -306,6 +312,19 @@ class AIModelClient():
             msg = f"LLM服务发生错误: {e}"
             logger.error(msg)
             raise InternalServerError(msg)
+
+    @staticmethod
+    def _safe_json_payload(obj: Any) -> Any:
+        """递归转换 payload 中的非 JSON 可序列化对象（如 datetime）为安全类型。"""
+        if isinstance(obj, dict):
+            return {k: AIModelClient._safe_json_payload(v) for k, v in obj.items()}
+        if isinstance(obj, list):
+            return [AIModelClient._safe_json_payload(item) for item in obj]
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        if isinstance(obj, Decimal):
+            return float(obj) if obj % 1 else int(obj)
+        return obj
 
     async def call_vlm_model(
             self,

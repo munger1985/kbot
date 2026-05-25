@@ -27,7 +27,13 @@ class ChitChatSkill(BaseSkill):
         全异步流式调用：改写后的问题 -> 解析后的内容包
         """
         # 从 context 中提取参数
-        task_input = context["current_execution"] or context["standalone_query"] or context["question"]
+        # current_execution 是 SkillExecutionContext 字典，不能直接作为消息内容
+        current_exec = context["current_execution"]
+        if isinstance(current_exec, dict):
+            task_input = current_exec.get("resolved_input") or current_exec.get("task_description") or ""
+        else:
+            task_input = ""
+        task_input = task_input or context.get("standalone_query") or context.get("question") or "hello"
         model_name = context["llm_model"]
 
         messages = [
