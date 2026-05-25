@@ -229,7 +229,7 @@ class MemoryRepository(BaseRepository[MemoryEntryEntity]):
             stmt = select(MemoryEntryEntity.entry_id, 
                           MemoryEntryEntity.raw_question,
                           MemoryEntryEntity.answer,
-                          MemoryEntryEntity.retrieved_chunks,
+                          MemoryEntryEntity.blocks,
                           MemoryEntryEntity.feedback,
                           MemoryEntryEntity.request_time,
                           MemoryEntryEntity.response_time) \
@@ -241,7 +241,7 @@ class MemoryRepository(BaseRepository[MemoryEntryEntity]):
                 "entry_id": row[0],
                 "raw_question": safe_read_content(row[1]),
                 "answer": safe_read_content(row[2]),
-                "retrieved_chunks": row[3],
+                "blocks": row[3],
                 "feedback": row[4],
                 "request_time": row[5],
                 "response_time": row[6]
