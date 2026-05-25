@@ -28,7 +28,12 @@ class ChitChatSkill(BaseSkill):
         Fully asynchronous streaming call: Rewritten question -> Parsed content package
         """
         # Extract parameters from context
-        task_input = context["current_execution"] or context["standalone_query"] or context["question"]
+        current_exec = context["current_execution"]
+        if isinstance(current_exec, dict):
+            task_input = current_exec.get("resolved_input") or current_exec.get("task_description") or ""
+        else:
+            task_input = current_exec or ""
+        task_input = task_input or context["standalone_query"] or context["question"] or "hello"
         model_name = context["llm_model"]
 
         messages = [

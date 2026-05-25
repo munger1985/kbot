@@ -31,7 +31,12 @@ class EChartsSkill(BaseSkill):
         
         # 1. Get the actual data to be plotted from context
         # Extract parameters from context
-        task_input = context["current_execution"] or context["standalone_query"]
+        current_exec = context["current_execution"]
+        if isinstance(current_exec, dict):
+            task_input = current_exec.get("resolved_input") or current_exec.get("task_description") or ""
+        else:
+            task_input = current_exec or ""
+        task_input = task_input or context["standalone_query"] or ""
         model_name = context["llm_model"]
 
         logger.info(f"ImageSkill: Preparing to generate visualization方案 for data -> {task_input}")
