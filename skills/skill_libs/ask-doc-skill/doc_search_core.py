@@ -1,7 +1,6 @@
 import uuid
 from loguru import logger
 from typing import Any, AsyncGenerator
-from fastapi import BackgroundTasks
 
 from skills import BaseSkill
 from agent.memory import MemoryService
@@ -61,9 +60,6 @@ class AskDocSkill(BaseSkill):
                 yield {"type": PacketType.ERROR, "content": char}
             return
 
-        # 3. Async task handle prioritizes bus passthrough, followed by local implicit construction
-        bg_tasks = kwargs.get("background_tasks") or BackgroundTasks()
-
         # Push thinking status: Start retrieving documents
         content = f"Retrieving knowledge base documents, query: '{query_text}'...\n"
         async for char in simulate_stream(content):
@@ -72,7 +68,6 @@ class AskDocSkill(BaseSkill):
         try:
             # 4. Execute underlying RAG retrieval
             enriched_refs = await self.doc_agent.rag_retrieval(
-                background_tasks=bg_tasks,
                 session_id=current_session,
                 agent_id=current_agent,
                 question=context.get("question", query_text),

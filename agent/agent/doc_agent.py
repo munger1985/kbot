@@ -30,7 +30,6 @@ class DocAgent:
     # ========================== 核心业务接口 ==========================
     async def rag_retrieval(
         self,
-        background_tasks: BackgroundTasks,
         session_id: str,
         agent_id: int,
         question: str,
@@ -43,8 +42,6 @@ class DocAgent:
         """
         知识库检索入口：已修复 ContextMemory 传递与持久化逻辑
         """
-        request_time = datetime.now(tz=timezone.utc)
-        
         # 1. 确保会话存在并获取初始上下文 (包含 user_profile 等)
         # 假设 ensure_session_exists 现在返回或初始化了 ContextMemory
         await self.memory_service.ensure_session_exists(
