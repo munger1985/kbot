@@ -3,7 +3,7 @@ import re
 from loguru import logger
 from typing import Any, Sequence
 from sqlalchemy import text, select, update, delete, func, and_, or_, Float, literal_column, bindparam
-from sqlalchemy.sql import ClauseElement
+import array
 from dao.entities import TxtChunkEntity
 from core.exceptions import DatabaseException, DataNotFoundException
 from .base_repo import BaseRepository
@@ -59,191 +59,271 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
             logger.error("Oracle batch insert text chunks failed", e, max_length=500)
             raise DatabaseException("Oracle batch insert text chunks failed", original_error=e)
         
-    async def vector_search(
+    # async def vector_search(
+    #     self,
+    #     kb_id: int,
+    #     keywords: str,
+    #     query_vec: list[float],
+    #     security: int,
+    #     similarity_threshold: float = 0.5,
+    #     search_top_k: int = 10,
+    #     tags: list[str] = []
+    # ) -> list[dict[str, Any]]:
+    #     """
+    #     Oracle 向量检索增强版（针对虚拟标题和 search_helper 优化）
+    #     """
+    #     try:
+    #         # 1. 转换阈值
+    #         dist_limit = (1 - (similarity_threshold or 0.5)) * 2
+    #         vec_handler = OracleVecHandler()
+    #         vec_array = vec_handler.convert(vec=query_vec, to_string=False)
+
+    #         # 2. 基础参数
+    #         all_params: dict[str, Any] = {
+    #             "kb_id": kb_id,
+    #             "security": security,
+    #             "qv": vec_array,
+    #             "dist_limit": dist_limit,
+    #             "top_k": search_top_k,
+    #             "q_keywords": keywords  # LLM 提取的关键词
+    #         }
+
+    #         # --- 核心改动：文本加权逻辑 ---
+    #         # 权重分配：向量相似度 0.4 + search_helper 命中分 0.4 + header 命中分 0.2
+    #         # 这里的 SCORE(1) 对应 search_helper，SCORE(2) 对应 header
+    #         text_score_sql = "(SCORE(1) * 0.4 + SCORE(2) * 0.2)"
+            
+    #         # 使用 CONTAINS 触发 Oracle Text 的全文评分，不设置过滤阈值以免剔除潜在结果
+    #         contains_clauses = """
+    #             AND (CONTAINS(search_helper, :q_keywords, 1) >= 0)
+    #             AND (CONTAINS(header, :q_keywords, 2) >= 0)
+    #         """
+
+    #         # 3. 核心 SQL 构造
+    #         sql_query = f"""
+    #             SELECT 
+    #                 chunk_id, chunk_type, file_id, kb_id, content, header, chunk_num, chunk_metadata, biz_metadata,
+    #                 (
+    #                     ((1 - VECTOR_DISTANCE(embedding, :qv, COSINE)) * 100 * 0.4) 
+    #                     + 
+    #                     {text_score_sql}
+    #                 ) / 100 as similarity_score
+    #             FROM KBOT_BIZ_TXT_EMBEDDING
+    #             WHERE kb_id = :kb_id 
+    #             AND is_active = 1 
+    #             AND security_level <= :security
+    #             AND VECTOR_DISTANCE(embedding, :qv, COSINE) <= :dist_limit
+    #             {contains_clauses}
+    #         """
+
+    #         # 4. 标签过滤 (JSON)
+    #         if tags:
+    #             tag_clauses = []
+    #             for i, tag in enumerate(tags):
+    #                 t_key = f"t_{i}"
+    #                 tag_clauses.append(f"JSON_EXISTS(biz_metadata, '$.tags[*]?(@ == $t)' PASSING :{t_key} AS \"t\")")
+    #                 all_params[t_key] = tag
+    #             sql_query += f" AND ({' OR '.join(tag_clauses)})"
+
+    #         sql_query += """
+    #             ORDER BY similarity_score DESC
+    #             FETCH FIRST :top_k ROWS ONLY
+    #         """
+
+    #         # 5. 执行与结果映射
+    #         stmt = text(sql_query)
+    #         result = await self.session.execute(stmt, all_params)
+    #         chunks = result.fetchall()
+
+    #         results = []
+    #         for chunk in chunks:
+    #             results.append({
+    #                 "chunk_id": chunk.chunk_id,
+    #                 "chunk_num": chunk.chunk_num,
+    #                 "chunk_type": chunk.chunk_type,
+    #                 "file_id": chunk.file_id,
+    #                 "kb_id": chunk.kb_id,
+    #                 "content": chunk.content,
+    #                 "header": chunk.header,
+    #                 "metadata": chunk.chunk_metadata,
+    #                 "biz_metadata": chunk.biz_metadata,
+    #                 "score": float(chunk.similarity_score or 0.0)
+    #             })
+    #         return results
+
+    #     except Exception as e:
+    #         logger.error(f"Oracle hybrid vector search failed: {str(e)}")
+    #         raise DatabaseException("Exception occurred during vector search execution", original_error=e)
+
+    # async def full_text_search(
+    #     self,
+    #     kb_id: int,
+    #     keywords: str,
+    #     security: int,
+    #     search_top_k: int = 10,
+    #     tags: list[str] = []
+    # ) -> list[dict[str, Any]]:
+    #     try:
+    #         # 1. 清理：保留中英文数字和空格
+    #         clean_keyword = re.sub(r'[^\w\s\u4e00-\u9fa5]', '', keywords.strip())
+    #         words = [w for w in clean_keyword.split() if w]
+    #         if not words:
+    #             return []
+
+    #         # 2. 组装为 ACCUM 语法，并增加词组精准匹配的权重建议
+    #         # ACCUM 会匹配多个词，命中越多分数越高
+    #         formatted_key = " ACCUM ".join([f"{{{w}}}" for w in words])
+    #         logger.debug(f"Executing Oracle Full-Text Search with: {formatted_key}")
+
+    #         all_params: dict[str, Any] = {
+    #             "kb_id": kb_id,
+    #             "security": security,
+    #             "keyword": formatted_key,
+    #             "top_k": search_top_k
+    #         }
+
+    #         # 3. 构造基础条件 (WHERE 子句中的部分)
+    #         # 使用列表管理条件，避免手动处理 AND 的位置
+    #         conditions = [
+    #             "kb_id = :kb_id",
+    #             "is_active = 1",
+    #             "security_level <= :security",
+    #             "(CONTAINS(search_helper, :keyword, 1) > 0 OR CONTAINS(header, :keyword, 2) > 0 OR CONTAINS(content, :keyword, 4) > 0)"
+    #         ]
+
+    #         # 4. 处理标签过滤
+    #         if tags:
+    #             tag_clauses = []
+    #             for i, tag in enumerate(tags):
+    #                 t_key = f"tag_{i}"
+    #                 tag_clauses.append(f"JSON_EXISTS(biz_metadata, '$.tags[*]?(@ == $t)' PASSING :{t_key} AS \"t\")")
+    #                 all_params[t_key] = tag
+    #             conditions.append(f"({' OR '.join(tag_clauses)})")
+
+    #         # 5. 核心 SQL 逻辑：
+    #         # SCORE(1): search_helper (权重 50%) - 包含全局摘要+虚拟标题+正文前缀
+    #         # SCORE(2): header (权重 30%) - 纯语义虚拟标题
+    #         # SCORE(4): content (权重 20%) - 原始正文
+    #         # 归一化处理：/ 100 得到 0-1 之间的分数
+
+    #         # 使用 " AND ".join(conditions) 自动处理连接符
+    #         where_clause = " AND ".join(conditions)
+            
+    #         sql_query = f"""
+    #             SELECT 
+    #                 chunk_id, chunk_type, file_id, kb_id, content, header, chunk_num, chunk_metadata, biz_metadata,
+    #                 ((SCORE(1) * 0.5) + (SCORE(2) * 0.3) + (SCORE(4) * 0.2)) / 100 as similarity_score
+    #             FROM KBOT_BIZ_TXT_EMBEDDING
+    #             WHERE {where_clause}
+    #             ORDER BY similarity_score DESC
+    #             FETCH FIRST :top_k ROWS ONLY
+    #         """
+
+    #         # 6. 执行查询
+    #         stmt = text(sql_query)
+    #         result = await self.session.execute(stmt, all_params)
+    #         chunks = result.fetchall()
+
+    #         # 7. 格式化结果
+    #         results = []
+    #         for chunk in chunks:
+    #             results.append({
+    #                 "chunk_id": chunk.chunk_id,
+    #                 "chunk_num": chunk.chunk_num,
+    #                 "chunk_type": chunk.chunk_type,
+    #                 "file_id": chunk.file_id,
+    #                 "kb_id": chunk.kb_id,
+    #                 "content": chunk.content,
+    #                 "header": chunk.header,
+    #                 "metadata": chunk.chunk_metadata,
+    #                 "biz_metadata": chunk.biz_metadata,
+    #                 "score": float(chunk.similarity_score or 0.0)
+    #             })
+    #         return results
+
+    #     except Exception as e:
+    #         logger.error("Oracle full text search failed", e)
+    #         raise DatabaseException("Search execution failed", original_error=e)
+
+    async def native_hybrid_search(
         self,
         kb_id: int,
         keywords: str,
-        query_vec: list[float],
+        query_vec: array.array[float],
         security: int,
+        has_vec: int,
         similarity_threshold: float = 0.5,
-        search_top_k: int = 10,
+        search_top_k: int = 30,
         tags: list[str] = []
     ) -> list[dict[str, Any]]:
         """
-        Oracle 向量检索增强版（针对虚拟标题和 search_helper 优化）
+        Oracle 26ai 核心内核级混合查询（合并了原 vector_search 和 full_text_search）
         """
-        try:
-            # 1. 转换阈值
-            dist_limit = (1 - (similarity_threshold or 0.5)) * 2
-            vec_handler = OracleVecHandler()
-            vec_array = vec_handler.convert(vec=query_vec, to_string=False)
+        conditions = [
+            "kb_id = :kb_id",
+            "is_active = 1",
+            "security_level <= :security"
+        ]
+        
+        all_params: dict[str, Any] = {
+            "kb_id": kb_id,
+            "security": security,
+            "top_k": search_top_k,
+            "has_vec": has_vec,
+            "qv": query_vec
+        }
 
-            # 2. 基础参数
-            all_params: dict[str, Any] = {
-                "kb_id": kb_id,
-                "security": security,
-                "qv": vec_array,
-                "dist_limit": dist_limit,
-                "top_k": search_top_k,
-                "q_keywords": keywords  # LLM 提取的关键词
-            }
+        # 动态 JSON 标签硬过滤
+        if tags:
+            tag_clauses = []
+            for i, tag in enumerate(tags):
+                t_key = f"t_{i}"
+                tag_clauses.append(f"JSON_EXISTS(biz_metadata, '$.tags[*]?(@ == $t)' PASSING :{t_key} AS \"t\")")
+                all_params[t_key] = tag
+            conditions.append(f"({' OR '.join(tag_clauses)})")
 
-            # --- 核心改动：文本加权逻辑 ---
-            # 权重分配：向量相似度 0.4 + search_helper 命中分 0.4 + header 命中分 0.2
-            # 这里的 SCORE(1) 对应 search_helper，SCORE(2) 对应 header
-            text_score_sql = "(SCORE(1) * 0.4 + SCORE(2) * 0.2)"
-            
-            # 使用 CONTAINS 触发 Oracle Text 的全文评分，不设置过滤阈值以免剔除潜在结果
-            contains_clauses = """
-                AND (CONTAINS(search_helper, :q_keywords, 1) >= 0)
-                AND (CONTAINS(header, :q_keywords, 2) >= 0)
-            """
+        where_clause = " AND ".join(conditions)
+        has_kw = 1 if keywords else 0
+        all_params["has_kw"] = has_kw
+        all_params["q_keywords"] = keywords
+        all_params["dist_limit"] = (1 - (similarity_threshold or 0.5)) * 2
 
-            # 3. 核心 SQL 构造
-            sql_query = f"""
-                SELECT 
-                    chunk_id, chunk_type, file_id, kb_id, content, header, chunk_num, chunk_metadata, biz_metadata,
-                    (
-                        ((1 - VECTOR_DISTANCE(embedding, :qv, COSINE)) * 100 * 0.4) 
-                        + 
-                        {text_score_sql}
-                    ) / 100 as similarity_score
-                FROM KBOT_BIZ_TXT_EMBEDDING
-                WHERE kb_id = :kb_id 
-                AND is_active = 1 
-                AND security_level <= :security
-                AND VECTOR_DISTANCE(embedding, :qv, COSINE) <= :dist_limit
-                {contains_clauses}
-            """
-
-            # 4. 标签过滤 (JSON)
-            if tags:
-                tag_clauses = []
-                for i, tag in enumerate(tags):
-                    t_key = f"t_{i}"
-                    tag_clauses.append(f"JSON_EXISTS(biz_metadata, '$.tags[*]?(@ == $t)' PASSING :{t_key} AS \"t\")")
-                    all_params[t_key] = tag
-                sql_query += f" AND ({' OR '.join(tag_clauses)})"
-
-            sql_query += """
-                ORDER BY similarity_score DESC
-                FETCH FIRST :top_k ROWS ONLY
-            """
-
-            # 5. 执行与结果映射
-            stmt = text(sql_query)
-            result = await self.session.execute(stmt, all_params)
-            chunks = result.fetchall()
-
-            results = []
-            for chunk in chunks:
-                results.append({
-                    "chunk_id": chunk.chunk_id,
-                    "chunk_num": chunk.chunk_num,
-                    "chunk_type": chunk.chunk_type,
-                    "file_id": chunk.file_id,
-                    "kb_id": chunk.kb_id,
-                    "content": chunk.content,
-                    "header": chunk.header,
-                    "metadata": chunk.chunk_metadata,
-                    "biz_metadata": chunk.biz_metadata,
-                    "score": float(chunk.similarity_score or 0.0)
-                })
-            return results
-
-        except Exception as e:
-            logger.error(f"Oracle hybrid vector search failed: {str(e)}")
-            raise DatabaseException("Exception occurred during vector search execution", original_error=e)
-
-    async def full_text_search(
-        self,
-        kb_id: int,
-        keywords: str,
-        security: int,
-        search_top_k: int = 10,
-        tags: list[str] = []
-    ) -> list[dict[str, Any]]:
-        try:
-            # 1. 清理：保留中英文数字和空格
-            clean_keyword = re.sub(r'[^\w\s\u4e00-\u9fa5]', '', keywords.strip())
-            words = [w for w in clean_keyword.split() if w]
-            if not words:
-                return []
-
-            # 2. 组装为 ACCUM 语法，并增加词组精准匹配的权重建议
-            # ACCUM 会匹配多个词，命中越多分数越高
-            formatted_key = " ACCUM ".join([f"{{{w}}}" for w in words])
-            logger.debug(f"Executing Oracle Full-Text Search with: {formatted_key}")
-
-            all_params: dict[str, Any] = {
-                "kb_id": kb_id,
-                "security": security,
-                "keyword": formatted_key,
-                "top_k": search_top_k
-            }
-
-            # 3. 构造基础条件 (WHERE 子句中的部分)
-            # 使用列表管理条件，避免手动处理 AND 的位置
-            conditions = [
-                "kb_id = :kb_id",
-                "is_active = 1",
-                "security_level <= :security",
-                "(CONTAINS(search_helper, :keyword, 1) > 0 OR CONTAINS(header, :keyword, 2) > 0 OR CONTAINS(content, :keyword, 4) > 0)"
-            ]
-
-            # 4. 处理标签过滤
-            if tags:
-                tag_clauses = []
-                for i, tag in enumerate(tags):
-                    t_key = f"tag_{i}"
-                    tag_clauses.append(f"JSON_EXISTS(biz_metadata, '$.tags[*]?(@ == $t)' PASSING :{t_key} AS \"t\")")
-                    all_params[t_key] = tag
-                conditions.append(f"({' OR '.join(tag_clauses)})")
-
-            # 5. 核心 SQL 逻辑：
-            # SCORE(1): search_helper (权重 50%) - 包含全局摘要+虚拟标题+正文前缀
-            # SCORE(2): header (权重 30%) - 纯语义虚拟标题
-            # SCORE(4): content (权重 20%) - 原始正文
-            # 归一化处理：/ 100 得到 0-1 之间的分数
-
-            # 使用 " AND ".join(conditions) 自动处理连接符
-            where_clause = " AND ".join(conditions)
-            
-            sql_query = f"""
-                SELECT 
-                    chunk_id, chunk_type, file_id, kb_id, content, header, chunk_num, chunk_metadata, biz_metadata,
-                    ((SCORE(1) * 0.5) + (SCORE(2) * 0.3) + (SCORE(4) * 0.2)) / 100 as similarity_score
-                FROM KBOT_BIZ_TXT_EMBEDDING
-                WHERE {where_clause}
-                ORDER BY similarity_score DESC
-                FETCH FIRST :top_k ROWS ONLY
-            """
-
-            # 6. 执行查询
-            stmt = text(sql_query)
-            result = await self.session.execute(stmt, all_params)
-            chunks = result.fetchall()
-
-            # 7. 格式化结果
-            results = []
-            for chunk in chunks:
-                results.append({
-                    "chunk_id": chunk.chunk_id,
-                    "chunk_num": chunk.chunk_num,
-                    "chunk_type": chunk.chunk_type,
-                    "file_id": chunk.file_id,
-                    "kb_id": chunk.kb_id,
-                    "content": chunk.content,
-                    "header": chunk.header,
-                    "metadata": chunk.chunk_metadata,
-                    "biz_metadata": chunk.biz_metadata,
-                    "score": float(chunk.similarity_score or 0.0)
-                })
-            return results
-
-        except Exception as e:
-            logger.error("Oracle full text search failed", e)
-            raise DatabaseException("Search execution failed", original_error=e)
+        # 利用 Oracle 26ai 特性：单条 SQL 实现内核并行抓取 Vector 与 Text 分数并加权混合
+        sql_query = f"""
+            SELECT 
+                chunk_id, chunk_type, file_id, kb_id, content, header, chunk_num, structure_level, chunk_metadata, biz_metadata,
+                (
+                    CASE WHEN :has_vec = 1 THEN (1 - VECTOR_DISTANCE(embedding, :qv, COSINE)) * 100 * 0.4 ELSE 0 END +
+                    CASE WHEN :has_kw  = 1 THEN SCORE(1) * 0.4 + SCORE(2) * 0.2 ELSE 0 END
+                ) / 100 as similarity_score
+            FROM KBOT_BIZ_TXT_EMBEDDING
+            WHERE {where_clause}
+            AND (
+                (:has_vec = 1 AND VECTOR_DISTANCE(embedding, :qv, COSINE) <= :dist_limit)
+                OR 
+                (:has_kw = 1 AND (CONTAINS(search_helper, :q_keywords, 1) > 0 OR CONTAINS(header, :q_keywords, 2) > 0))
+            )
+            ORDER BY similarity_score DESC
+            FETCH FIRST :top_k ROWS ONLY
+        """
+        
+        stmt = text(sql_query)
+        result = await self.session.execute(stmt, all_params)
+        chunks = result.fetchall()
+        
+        return [{
+            "chunk_id": c.chunk_id,
+            "chunk_num": c.chunk_num,
+            "chunk_type": c.chunk_type,
+            "structure_level": getattr(c, 'structure_level', 0),
+            "file_id": c.file_id,
+            "kb_id": c.kb_id,
+            "content": c.content,
+            "header": c.header,
+            "metadata": c.chunk_metadata,
+            "biz_metadata": c.biz_metadata,
+            "score": float(c.similarity_score or 0.0)
+        } for c in chunks]
 
     async def get_chunks_by_range(
         self, 
