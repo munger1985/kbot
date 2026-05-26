@@ -25,6 +25,12 @@ class AgentConfEntity(BaseEntity):
     def search_top_k(self) -> int | None:
         """Alias for search_topk, providing compatibility with underscore naming convention."""
         return self.search_topk
+    
+    @property
+    def do_rerank(self) -> bool:
+        """Alias for reranker_flag, returns True when reranking is enabled (reranker_flag == 1)."""
+        return self.reranker_flag == 1
+    
     tool_type: Mapped[int] = mapped_column(Numeric(2, 0), comment="Enumeration type")
     tool_weight: Mapped[float | None] = mapped_column(Numeric(2, 2), comment="Knowledge base retrieval weight")
     reranker_flag: Mapped[int | None] = mapped_column(Numeric(1, 0), comment="Whether reranking is required")
