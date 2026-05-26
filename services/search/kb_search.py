@@ -120,7 +120,7 @@ class TxtBaseSearch:
         return list(await asyncio.gather(*tasks))
 
     def _construct_search_result(self, dataset: list, weight: float) -> list[TxtBaseSearchResult]:
-        """解析数据库结果，并揉入原本的业务 Boost 算分规则"""
+        """解析数据库结果，移除 structure_level 加权逻辑"""
         results = []
         for item in dataset:
             try:
@@ -130,14 +130,12 @@ class TxtBaseSearch:
                 meta = item.get("metadata") or {}
                 base_score = float(item.get("score") or 0.0)
                 
-                # 迁移原本 RRF 中的业务 Boost 算分规则
-                struct_lvl = int(item.get("structure_level") or 0)
-                level_boost = 1.5 if (0 < struct_lvl < 3) else 1.0
-                
+                # 只保留对图表的特殊类型 Boost 加权
                 chunk_type = item.get("chunk_type", "text")
                 type_boost = 1.1 if chunk_type in ["table", "picture"] else 1.0
                 
-                final_score = base_score * level_boost * type_boost * weight
+                # 最终算分
+                final_score = base_score * type_boost * weight
 
                 result = TxtBaseSearchResult(
                     chunk_id=item.get("chunk_id", ""),

@@ -257,7 +257,7 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
         tags: list[str] = []
     ) -> list[dict[str, Any]]:
         """
-        Oracle 26ai 核心内核级混合查询（合并了原 vector_search 和 full_text_search）
+        Oracle 26ai 内核级混合查询（已彻底移除 structure_level）
         """
         conditions = [
             "kb_id = :kb_id",
@@ -288,10 +288,10 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
         all_params["q_keywords"] = keywords
         all_params["dist_limit"] = (1 - (similarity_threshold or 0.5)) * 2
 
-        # 利用 Oracle 26ai 特性：单条 SQL 实现内核并行抓取 Vector 与 Text 分数并加权混合
+        # 纯净的混合检索 SQL
         sql_query = f"""
             SELECT 
-                chunk_id, chunk_type, file_id, kb_id, content, header, chunk_num, structure_level, chunk_metadata, biz_metadata,
+                chunk_id, chunk_type, file_id, kb_id, content, header, chunk_num, chunk_metadata, biz_metadata,
                 (
                     CASE WHEN :has_vec = 1 THEN (1 - VECTOR_DISTANCE(embedding, :qv, COSINE)) * 100 * 0.4 ELSE 0 END +
                     CASE WHEN :has_kw  = 1 THEN SCORE(1) * 0.4 + SCORE(2) * 0.2 ELSE 0 END
@@ -315,7 +315,6 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
             "chunk_id": c.chunk_id,
             "chunk_num": c.chunk_num,
             "chunk_type": c.chunk_type,
-            "structure_level": getattr(c, 'structure_level', 0),
             "file_id": c.file_id,
             "kb_id": c.kb_id,
             "content": c.content,
