@@ -20,6 +20,11 @@ class AgentConfEntity(BaseEntity):
     @property
     def kb_id(self) -> int:
         return self.tool_id
+
+    @property
+    def search_top_k(self) -> int | None:
+        """Alias for search_topk, providing compatibility with underscore naming convention."""
+        return self.search_topk
     tool_type: Mapped[int] = mapped_column(Numeric(2, 0), comment="Enumeration type")
     tool_weight: Mapped[float | None] = mapped_column(Numeric(2, 2), comment="Knowledge base retrieval weight")
     reranker_flag: Mapped[int | None] = mapped_column(Numeric(1, 0), comment="Whether reranking is required")
