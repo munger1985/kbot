@@ -82,11 +82,15 @@ class AgentController:
         """
         agent_id = int(form.knowledge_id)
         session_id = form.retrieval_setting.get("session_id") or uuid.uuid4().hex
+        security_level = form.retrieval_setting.get("security_level") or 9
+        user_id = form.retrieval_setting.get("user_id") or "dify_system"
         
         return await self.dify_service.search(
                     agent_id=agent_id, 
                     question=form.query, 
                     session_id=session_id,
+                    security_level=security_level,
+                    user_id=user_id
                 )
 
     async def get_conversation_list(self, user_id: str) -> SuccessResponse:

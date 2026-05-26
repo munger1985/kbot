@@ -16,9 +16,6 @@ class DifyService:
     """Dify 接口的检索服务适配器：复用系统原生 Skill 链。"""
 
     def __init__(self):
-        # 权限与身份定义
-        self.security_level = 9
-        self.user_id = "dify_system"
         
         # 技能与内存实例
         self.doc_skill = AskDocSkill()
@@ -29,6 +26,8 @@ class DifyService:
         agent_id: int,
         question: str,
         session_id: str,
+        security_level: int,
+        user_id: str,
         tags: List[str] | None = None
     ) -> Dict[str, List[Dict]]:
         """
@@ -40,14 +39,14 @@ class DifyService:
         # 1. 持久化层准备
         await self.memory_service.ensure_session_exists(
             session_id=session_id,
-            user_id=self.user_id,
+            user_id=user_id,
             agent_id=agent_id,
             question=question
         )
 
         # 2. 构造上下文 (只填充差异化部分，其余使用默认值)
         # 建议在 ContextMemory 类定义里加一个类方法 from_defaults
-        context = self._build_context(agent_id, session_id, question, tags)
+        context = self._build_context(agent_id, session_id, question, user_id, security_level, tags)
 
         records = []
         try:
@@ -76,16 +75,24 @@ class DifyService:
 
         return {"records": records}
 
-    def _build_context(self, agent_id: int, session_id: str, question: str, tags: List[str] | None) -> ContextMemory:
+    def _build_context(
+        self, 
+        agent_id: int, 
+        session_id: str, 
+        question: str, 
+        user_id: str, 
+        security_level: int, 
+        tags: List[str] | None = None
+    ) -> ContextMemory:
         """构建标准化的执行上下文"""
         return {
-            "user_id": self.user_id,
+            "user_id": user_id,
             "session_id": session_id,
             "agent_id": agent_id,
             "question": question,
             "standalone_query": question,
             "llm_model": "",
-            "security_level": self.security_level,
+            "security_level": security_level,
             "tags": tags or [],
             "intent_context": {},
             "runtime_plan": None,
