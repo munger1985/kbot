@@ -17,6 +17,11 @@ class AgentConfEntity(BaseEntity):
     app_id: Mapped[int | None] = mapped_column(Numeric(38, 0), comment="Associated APP_ID")
     agent_id: Mapped[int] = mapped_column(Numeric(38, 0), comment="AI agent ID")
     tool_id: Mapped[int] = mapped_column(Numeric(38, 0), comment="Knowledge base ID / FUNC_ID, etc.")
+
+    @property
+    def kb_id(self) -> int:
+        """Alias for tool_id, used when tool_id represents a knowledge base ID."""
+        return self.tool_id
     tool_type: Mapped[int] = mapped_column(Numeric(2, 0), comment="Enumeration type")
     tool_weight: Mapped[float | None] = mapped_column(Numeric(2, 2), comment="Knowledge base retrieval weight")
     reranker_flag: Mapped[int | None] = mapped_column(Numeric(1, 0), comment="Whether reranking is required")
