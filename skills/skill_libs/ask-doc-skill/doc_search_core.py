@@ -89,6 +89,7 @@ class AskDocSkill(BaseSkill):
             
             # 6. Push the result package required for final front-end rendering or orchestration layer tracking
             yield {"type": PacketType.DOC_RESULTS, "content": records_dict["doc_results"]}
+            logger.debug(f"[{runtime_skill_name}] Document retrieval results pushed to the bus.")
             
             # 7. Store the formatted results in the context and deliver them to the Runtime bus.
             context["doc_results"] = records_dict["doc_results"]
