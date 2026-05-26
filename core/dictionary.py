@@ -36,6 +36,7 @@ class IntentType(str, Enum):
     AMBIGUOUS = "ambiguous"             # 模糊：信息不足，需要 Agent 反问（Clarification）
 
 class PacketType(str, Enum):
+    METADATA = "metadata"      # 元数据，包含会话 ID、消息 ID 等
     THOUGHT = "thought"       # 思考流
     ANSWER = "answer"         # 最终回复（给用户看）
     SQL_RESULTS = "sql_results" # 结构化 SQL 结果

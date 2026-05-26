@@ -4,8 +4,6 @@ from skills import BaseSkill
 from utils.clients import AIModelClient
 from core.dictionary import PacketType
 from agent.common import ContextMemory
-from utils.simulate_stream import simulate_stream
-
 
 class ChitChatSkill(BaseSkill):
     """
@@ -66,5 +64,4 @@ class ChitChatSkill(BaseSkill):
         except Exception as e:
             logger.error(f"[{self.name}] Runtime exception: {str(e)}", exc_info=True)
             content = f"⚠️ There was a problem with the conversation generation, please try again later. \n"
-            async for char in simulate_stream(content):
-                yield {"type": PacketType.ERROR, "content": char}
+            yield {"type": PacketType.ERROR, "content": content}

@@ -13,7 +13,6 @@ from agent.planner.decision_engine import PlanningEngine
 from skills import SkillRuntime
 from agent.common import ContextMemory, ExecutionPlan
 from core.dictionary import IntentType, PacketType
-from utils.simulate_stream import simulate_stream
 
 
 # 定义需要实时分发给前端的流包类型
@@ -55,8 +54,7 @@ class RootOrchestrator:
         # --- 1. 上下文预处理与画像同步 ---
         user_profile = await self.memory_service.get_user_profile(user_id)
         content = "Synchronizing user profile and context...\n"
-        async for char in simulate_stream(content):
-            yield {"type": PacketType.THOUGHT, "content": char}
+        yield {"type": PacketType.THOUGHT, "content": content}
 
         prepared = await self.memory_service.prepare_context_and_rewrite(
             user_id=user_id,
@@ -149,8 +147,7 @@ class RootOrchestrator:
             except Exception as e:
                 logger.critical(f"决策引擎崩溃: {str(e)}")
                 content = "Decision engine crashed, unable to proceed with the task."
-                async for char in simulate_stream(content):
-                    yield {"type": PacketType.ERROR, "content": char}
+                yield {"type": PacketType.ERROR, "content": content}
                 return
 
         # --- 5. 统一流式循环执行阶段 ---
@@ -174,8 +171,10 @@ class RootOrchestrator:
             # B. 向前端下发明确的组件唤醒信号
             yield {
                 "type": PacketType.CALL, 
-                "skill": skill_name, 
-                "description": exec_info["resolved_input"]
+                "content":{
+                    "skill": skill_name, 
+                    "description": exec_info["resolved_input"]
+                }
             }
             
             skill_instance = self.skill_manager.get_skill_instance(skill_name)
@@ -183,8 +182,7 @@ class RootOrchestrator:
                 exec_info.update({"status": "failed", "error": f"组件 {skill_name} 损坏或未注册"})
                 ctx["execution_history"].append(exec_info)
                 content = f"⚠️ Critical component [{skill_name}] offline, skip current step"
-                async for char in simulate_stream(content):
-                    yield {"type": PacketType.ERROR, "content": char}
+                yield {"type": PacketType.ERROR, "content": content}
                 continue
 
             try:
@@ -261,4 +259,4 @@ class RootOrchestrator:
             response_time=datetime.now(timezone.utc)
         )
         
-        yield {"type": PacketType.DONE, "entry_id": entry_id}
+        yield {"type": PacketType.DONE, "content":{"entry_id": entry_id}}

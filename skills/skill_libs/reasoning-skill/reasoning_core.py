@@ -7,7 +7,6 @@ from core.dictionary import PacketType
 from skills import BaseSkill
 from agent.common import ContextMemory
 from services.basic import PromptService
-from utils.simulate_stream import simulate_stream
 
 
 class ReasoningSkill(BaseSkill):
@@ -119,5 +118,4 @@ class ReasoningSkill(BaseSkill):
         except Exception as e:
             logger.error(f"ReasoningSkill runtime exception: {e}")
             content = f"⚠️ Analysis interrupted: {str(e)}\n"
-            async for char in simulate_stream(content):
-                yield {"type": PacketType.ERROR, "content": char}
+            yield {"type": PacketType.ERROR, "content": content}

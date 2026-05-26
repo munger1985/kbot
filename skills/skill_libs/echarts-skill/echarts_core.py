@@ -6,7 +6,6 @@ from agent.prompt import default_prompt
 from core.config import get_prompt_config
 from agent.common import ContextMemory
 from core.dictionary import PacketType
-from utils.simulate_stream import simulate_stream
 
 
 class EChartsSkill(BaseSkill):
@@ -41,8 +40,7 @@ class EChartsSkill(BaseSkill):
 
         logger.info(f"ImageSkill: Preparing to generate visualization方案 for data -> {task_input}")
         content = f"Start generating visualization solution for data: `{task_input}`\n"
-        async for char in simulate_stream(content):
-            yield {"type": PacketType.THOUGHT, "content": char}
+        yield {"type": PacketType.THOUGHT, "content": content}
 
         # Get data from context
         raw_data = context["sql_results"] or task_input
@@ -74,5 +72,4 @@ class EChartsSkill(BaseSkill):
         except Exception as e:
             logger.error(f"ImageSkill execution exception: {e}")
             content = f"⚠️ Visualization generation failed: {str(e)}\n"
-            async for char in simulate_stream(content):
-                yield {"type": PacketType.ERROR, "content": char}
+            yield {"type": PacketType.ERROR, "content": content}

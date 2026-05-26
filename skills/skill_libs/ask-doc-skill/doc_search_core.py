@@ -6,7 +6,6 @@ from skills import BaseSkill
 from agent.memory import MemoryService
 from core.dictionary import PacketType
 from agent.common import ContextMemory
-from utils.simulate_stream import simulate_stream
 
 
 class AskDocSkill(BaseSkill):
@@ -50,20 +49,17 @@ class AskDocSkill(BaseSkill):
         
         if not query_text:
             content = f"{runtime_skill_name}: Variable parsing exception, failed to obtain any valid search text.\n"
-            async for char in simulate_stream(content):
-                yield {"type": PacketType.ERROR, "content": char}
+            yield {"type": PacketType.ERROR, "content": content}
             return
 
         if not current_agent:
             content = f"{runtime_skill_name}: Missing critical parameter agent_id in global context.\n"
-            async for char in simulate_stream(content):
-                yield {"type": PacketType.ERROR, "content": char}
+            yield {"type": PacketType.ERROR, "content": content}
             return
 
         # Push thinking status: Start retrieving documents
         content = f"Retrieving knowledge base documents, query: '{query_text}'...\n"
-        async for char in simulate_stream(content):
-            yield {"type": PacketType.THOUGHT, "content": char}
+        yield {"type": PacketType.THOUGHT, "content": content}
 
         try:
             # 4. Execute underlying RAG retrieval
@@ -80,8 +76,7 @@ class AskDocSkill(BaseSkill):
             
             # Push thinking status: Retrieval completed, rearranging documents
             content = f"Found {len(enriched_refs)} related document slices in the knowledge base, performing correlation reorganization...\n"
-            async for char in simulate_stream(content):
-                yield {"type": PacketType.THOUGHT, "content": char}
+            yield {"type": PacketType.THOUGHT, "content": content}
 
             # 5. Format and clean the results
             records_dict = self._build_records(enriched_references=enriched_refs)
@@ -97,8 +92,7 @@ class AskDocSkill(BaseSkill):
         except Exception as e:
             logger.error(f"Autonomous component [{runtime_skill_name}] encountered a critical obstacle during runtime: {e}", exc_info=True)
             content = f"⚠️ System-level failure occurred in document retrieval: {str(e)}\n"
-            async for char in simulate_stream(content):
-                yield {"type": PacketType.ERROR, "content": char}
+            yield {"type": PacketType.ERROR, "content": content}
 
     def _build_records(self, enriched_references: list[dict]) -> dict[str, Any]:
         """

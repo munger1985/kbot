@@ -5,7 +5,6 @@ from typing import Any, AsyncGenerator
 from skills import BaseSkill
 from core.dictionary import PacketType
 from agent.common import ContextMemory
-from utils.simulate_stream import simulate_stream
 
 
 class AskGraphSkill(BaseSkill):
@@ -82,27 +81,23 @@ class AskGraphSkill(BaseSkill):
         # 3. Boundary defense assertions
         if not vertex_names:
             content = f"{runtime_skill_name}: Variable parsing exception, failed to capture any valid entity words in the context\n"
-            async for char in simulate_stream(content):
-                yield {"type": PacketType.ERROR, "content": char}
+            yield {"type": PacketType.ERROR, "content": content}
             return
 
         if not current_agent:
             content = f"{runtime_skill_name}: Missing critical parameter agent_id in global context\n"
-            async for char in simulate_stream(content):
-                yield {"type": PacketType.ERROR, "content": char}
+            yield {"type": PacketType.ERROR, "content": content}
             return
 
         if not kb_id:
             content = f"{runtime_skill_name}: Missing critical parameter kb_id in global context\n"
-            async for char in simulate_stream(content):
-                yield {"type": PacketType.ERROR, "content": char}
+            yield {"type": PacketType.ERROR, "content": content}
             return
 
         # Send thinking status: Start exploration
         entities_str = ", ".join(f"'{v}'" for v in vertex_names)
         content = f"Initiating topological traversal to graph space, core entities: [{entities_str}], max depth: {max_depth}...\n"
-        async for char in simulate_stream(content):
-            yield {"type": PacketType.THOUGHT, "content": char}
+        yield {"type": PacketType.THOUGHT, "content": content}
 
         try:
             # 4. Call the underlying unified graph retrieval service
@@ -118,8 +113,7 @@ class AskGraphSkill(BaseSkill):
             # Get graph search results
             enriched_refs = graph_raw_bucket.get("graph_result") or []
             content = f"Graph topology traversal completed. Activated {len(enriched_refs)} normalized text slices along the relationship chain...\n"
-            async for char in simulate_stream(content):
-                yield {"type": PacketType.THOUGHT, "content": char}
+            yield {"type": PacketType.THOUGHT, "content": content}
 
             # 5. Format and clean the results
             records_dict = self._build_records(enriched_references=enriched_refs)
@@ -145,8 +139,7 @@ class AskGraphSkill(BaseSkill):
         except Exception as e:
             logger.error(f"Autonomous graph component [{runtime_skill_name}] encountered a critical obstacle during runtime: {e}", exc_info=True)
             content = f"⚠️ System-level failure occurred in knowledge graph deep retrieval: {str(e)}\n"
-            async for char in simulate_stream(content):
-                yield {"type": PacketType.ERROR, "content": char}
+            yield {"type": PacketType.ERROR, "content": content}
 
     def _build_records(self, enriched_references: list[Any]) -> dict[str, Any]:
         """Align output with TxtBaseSearchResult specification to ensure full equivalence with standard text downstream."""
