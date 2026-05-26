@@ -215,7 +215,7 @@ class ChatOrchestrator:
         emb_model = await self.model_service.get_display_name_by_id(agent.embedding_model_id) if agent.embedding_model_id else None
         rerank_model = await self.model_service.get_display_name_by_id(agent.reranker_model_id) if agent.reranker_model_id else None
         if not llm_model or not emb_model:
-            logger.error(f"No valid LLM/Embedding model configured for agent {agent.id}")
+            logger.error(f"No valid LLM/Embedding model configured for agent {agent.agent_id}")
             raise NotFoundError("Agent has no valid LLM/Embedding model configured.")
 
         params = ModelParams(
