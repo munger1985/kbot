@@ -8,6 +8,7 @@ from loguru import logger
 from fastapi import BackgroundTasks
 from fastapi.responses import StreamingResponse
 from core.dictionary import PacketType
+from utils.serializer import serialize_value
 
 
 class RootAgent:
@@ -109,9 +110,12 @@ class RootAgent:
         # 如果提供了消息 ID，则一并注入（metadata包本身content里已有，这里按需注入）
         if message_id:
             payload["message_id"] = message_id
+
+        # 用递归工具清洗整个 payload，把里面的 Decimal 转成 float，datetime/date 转成字符串
+        safe_payload = serialize_value(payload)
             
         # 3. 序列化为标准的 SSE 文本格式
-        json_str = json.dumps(payload, ensure_ascii=False)
+        json_str = json.dumps(safe_payload, ensure_ascii=False)
         sse_message = f"event: {event_str}\ndata: {json_str}\n\n"
         
         return sse_message.encode("utf-8")
