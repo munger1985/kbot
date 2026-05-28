@@ -5,6 +5,7 @@ from services.search.result import TxtBaseSearchResult
 from agent.prompt import default_prompt
 from utils.clients import AIModelClient
 from core.config.settings import get_prompt_config
+from utils.serializer import serialize_value
 
 
 class ContextManager:
@@ -28,12 +29,15 @@ class ContextManager:
         核心入口：
         输出包含意图、改写、话题、实体和状态更新的全套决策包。
         """
+        # 递归把 session_state 里的 Decimal 转换为 float/int，防止原生 json.dumps 报错
+        safe_session_state = serialize_value(session_state or {})
+
         # 1. 组装 Prompt (包含记忆与状态)
         prompt = await default_prompt.generate(
             self.rewrite_prompt,
             chat_history=chat_history if chat_history else 'No previous turns.',
             summary=context_summary or 'None',
-            session_state=json.dumps(session_state or {}, ensure_ascii=False),
+            session_state=json.dumps(safe_session_state, ensure_ascii=False),
             active_topic=active_topic or "None",
             query=query
         )
@@ -61,7 +65,7 @@ class ContextManager:
             turn_entities = result.get("turn_entities", {})
             new_state = {**current_state, **turn_entities}
 
-            return {
+            return serialize_value({
                 "standalone_query": standalone_query,
                 "turn_type": result.get("turn_type", "new_topic"),
                 "active_topic": detected_topic,      # 传递给下游持久化
@@ -71,7 +75,7 @@ class ContextManager:
                 "new_state": new_state,              # 合并后的完整状态
                 "user_profile_updates": result.get("user_profile_updates", {}), # 画像增量
                 "thought": result.get("thought", "") # 引导后续 Planner 的思考
-            }
+            })
 
         except Exception as e:
             logger.error(f"查询处理失败，降级为默认话题切换: {e}")
@@ -136,7 +140,8 @@ class ContextManager:
         构建最终 RAG 提示词
         """
         # 1. 环境信息
-        env_str = " | ".join([f"{k}: {v}" for k, v in session_state.items() if v]) if session_state else "通用环境"
+        safe_session_state = serialize_value(session_state or {})
+        env_str = " | ".join([f"{k}: {v}" for k, v in safe_session_state.items() if v]) if safe_session_state else "通用环境"
         
         # 2. 知识库引用
         kb_segments = []
