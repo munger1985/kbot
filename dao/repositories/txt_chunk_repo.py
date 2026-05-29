@@ -244,85 +244,102 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
     #     except Exception as e:
     #         logger.error("Oracle full text search failed", e)
     #         raise DatabaseException("Search execution failed", original_error=e)
-
     async def native_hybrid_search(
-        self,
-        kb_id: int,
-        keywords: str,
-        query_vec: array.array[float],
-        security: int,
-        has_vec: int,
-        similarity_threshold: float = 0.5,
-        search_top_k: int = 30,
-        tags: list[str] = []
-    ) -> list[dict[str, Any]]:
-        """
-        Oracle 26ai 内核级混合查询（已彻底移除 structure_level）
-        """
-        conditions = [
-            "kb_id = :kb_id",
-            "is_active = 1",
-            "security_level <= :security"
-        ]
-        
-        all_params: dict[str, Any] = {
-            "kb_id": kb_id,
-            "security": security,
-            "top_k": search_top_k,
-            "has_vec": has_vec,
-            "qv": query_vec
-        }
+            self,
+            kb_id: int,
+            keywords: str,
+            query_vec: array.array[float],
+            security: int,
+            has_vec: int,
+            similarity_threshold: float = 0.5,
+            search_top_k: int = 30,
+            tags: list[str] = []
+        ) -> list[dict[str, Any]]:
+            """
+            Oracle 26ai 内核级混合查询（动态 SQL 安全修正版）
+            """
+            # 1. 基础过滤条件
+            conditions = [
+                "kb_id = :kb_id",
+                "is_active = 1",
+                "security_level <= :security"
+            ]
+            
+            all_params: dict[str, Any] = {
+                "kb_id": kb_id,
+                "security": security,
+                "top_k": search_top_k,
+            }
 
-        # 动态 JSON 标签硬过滤
-        if tags:
-            tag_clauses = []
-            for i, tag in enumerate(tags):
-                t_key = f"t_{i}"
-                tag_clauses.append(f"JSON_EXISTS(biz_metadata, '$.tags[*]?(@ == $t)' PASSING :{t_key} AS \"t\")")
-                all_params[t_key] = tag
-            conditions.append(f"({' OR '.join(tag_clauses)})")
+            # 2. 动态 JSON 标签硬过滤
+            if tags:
+                tag_clauses = []
+                for i, tag in enumerate(tags):
+                    t_key = f"t_{i}"
+                    tag_clauses.append(f"JSON_EXISTS(biz_metadata, '$.tags[*]?(@ == $t)' PASSING :{t_key} AS \"t\")")
+                    all_params[t_key] = tag
+                conditions.append(f"({' OR '.join(tag_clauses)})")
 
-        where_clause = " AND ".join(conditions)
-        has_kw = 1 if keywords else 0
-        all_params["has_kw"] = has_kw
-        all_params["q_keywords"] = keywords
-        all_params["dist_limit"] = (1 - (similarity_threshold or 0.5)) * 2
+            # 3. 核心：动态构建权重分数和搜索条件
+            score_parts = []
+            search_parts = []
 
-        # 纯净的混合检索 SQL
-        sql_query = f"""
-            SELECT 
-                chunk_id, chunk_type, file_id, kb_id, content, header, chunk_num, chunk_metadata, biz_metadata,
-                (
-                    CASE WHEN :has_vec = 1 THEN (1 - VECTOR_DISTANCE(embedding, :qv, COSINE)) * 100 * 0.4 ELSE 0 END +
-                    CASE WHEN :has_kw  = 1 THEN SCORE(1) * 0.4 + SCORE(2) * 0.2 ELSE 0 END
-                ) / 100 as similarity_score
-            FROM KBOT_BIZ_TXT_EMBEDDING
-            WHERE {where_clause}
-            AND (
-                (:has_vec = 1 AND VECTOR_DISTANCE(embedding, :qv, COSINE) <= :dist_limit)
-                OR 
-                (:has_kw = 1 AND (CONTAINS(search_helper, :q_keywords, 1) > 0 OR CONTAINS(header, :q_keywords, 2) > 0))
-            )
-            ORDER BY similarity_score DESC
-            FETCH FIRST :top_k ROWS ONLY
-        """
-        
-        stmt = text(sql_query)
-        result = await self.session.execute(stmt, all_params)
-        chunks = result.fetchall()
-        
-        return [{
-            "chunk_id": c.chunk_id,
-            "chunk_num": c.chunk_num,
-            "chunk_type": c.chunk_type,
-            "file_id": c.file_id,
-            "kb_id": c.kb_id,
-            "content": c.content,
-            "header": c.header,
-            "metadata": c.chunk_metadata,
-            "biz_metadata": c.biz_metadata,
-            "score": float(c.similarity_score or 0.0)
-        } for c in chunks]
+            # 处理向量检索分支
+            if has_vec == 1 and query_vec:
+                score_parts.append("(1 - VECTOR_DISTANCE(embedding, :qv, COSINE)) * 100 * 0.4")
+                search_parts.append("VECTOR_DISTANCE(embedding, :qv, COSINE) <= :dist_limit")
+                all_params["qv"] = query_vec
+                all_params["dist_limit"] = (1 - (similarity_threshold or 0.5)) * 2
+
+            # 处理文本检索分支（严格过滤空字符串，并做基础清洗）
+            clean_keywords = keywords.strip() if keywords else ""
+            if clean_keywords:
+                # 基础安全防护：转义 Oracle Text 的保留字符（形如 '{keyword}'）
+                # 如果有更复杂的搜索需求，建议用专用函数对特殊字符加关键字大括号 {}
+                safe_keywords = f"{{{clean_keywords}}}" 
+                
+                score_parts.append("SCORE(1) * 0.4 + SCORE(2) * 0.2")
+                search_parts.append("(CONTAINS(search_helper, :q_keywords, 1) > 0 OR CONTAINS(header, :q_keywords, 2) > 0)")
+                all_params["q_keywords"] = safe_keywords
+
+            # 防御：如果既没有向量也没有文本，直接返回空
+            if not score_parts:
+                return []
+
+            # 组装相似度得分字段
+            similarity_score_sql = f"({' + '.join(score_parts)}) / 100"
+            
+            # 组装 WHERE 核心搜索条件 (向量与文本之间是 OR 关系)
+            conditions.append(f"({' OR '.join(search_parts)})")
+            where_clause = " AND ".join(conditions)
+
+            # 4. 构建最终纯净 SQL
+            sql_query = f"""
+                SELECT 
+                    chunk_id, chunk_type, file_id, kb_id, content, header, chunk_num, chunk_metadata, biz_metadata,
+                    {similarity_score_sql} as similarity_score
+                FROM KBOT_BIZ_TXT_EMBEDDING
+                WHERE {where_clause}
+                ORDER BY similarity_score DESC
+                FETCH FIRST :top_k ROWS ONLY
+            """
+            
+            stmt = text(sql_query)
+            result = await self.session.execute(stmt, all_params)
+            chunks = result.fetchall()
+            
+            return [{
+                "chunk_id": c.chunk_id,
+                "chunk_num": c.chunk_num,
+                "chunk_type": c.chunk_type,
+                "file_id": c.file_id,
+                "kb_id": c.kb_id,
+                "content": c.content,
+                "header": c.header,
+                "metadata": c.chunk_metadata,
+                "biz_metadata": c.biz_metadata,
+                "score": float(c.similarity_score or 0.0)
+            } for c in chunks]
 
     async def get_chunks_by_range(
         self, 
