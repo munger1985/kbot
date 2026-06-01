@@ -67,11 +67,20 @@ class GraphService:
             if isinstance(res, Exception):
                 logger.error(f"图谱知识库任务 {i} (KB_ID: {current_kb}) 执行失败：{res}")
                 continue
+            elif isinstance(res, dict):
+                # search_by_graph 返回 {"graph_result": [...]}
+                graph_items = res.get("graph_result", [])
+                if isinstance(graph_items, list):
+                    retrieved_results.extend(graph_items)
+                    logger.info(f"图谱知识库任务 {i} (KB_ID: {current_kb}) 成功返回 {len(graph_items)} 条拓扑路径记录")
+                else:
+                    logger.warning(f"图谱知识库任务 {i} (KB_ID: {current_kb}) graph_result 不是列表类型")
             elif isinstance(res, list):
+                # 兼容旧版直接返回列表的接口
                 retrieved_results.extend(res)
                 logger.info(f"图谱知识库任务 {i} (KB_ID: {current_kb}) 成功返回 {len(res)} 条拓扑路径记录")
             else:
-                logger.warning(f"图谱知识库任务 {i} (KB_ID: {current_kb}) 返回格式异常")
+                logger.warning(f"图谱知识库任务 {i} (KB_ID: {current_kb}) 返回格式异常: {type(res)}")
 
         # 4. 图谱层面的排序/剪枝逻辑（此处可根据权重、距离直接过滤，对齐重排占位）
         final_results = self._apply_graph_filter(retrieved_results)

@@ -108,7 +108,16 @@ class GraphBaseSearch:
                         c_type = item.get("chunk_type", "text")
                         f_id = item.get("file_id", "")
                         # 核心防御：防止数据库返回的键名被单引号 'kb_id' 污染，没有则直接用传入的干净 kb_id
-                        item_kb_id = item.get("kb_id") or item.get("'kb_id'") or kb_id
+                        # 同时防御 item 的 kb_id 值为非整数字符串（如字面量 "'kb_id'"）导致 int() 崩溃
+                        raw_kb_id = item.get("kb_id") or item.get("'kb_id'")
+                        try:
+                            item_kb_id = int(raw_kb_id) if raw_kb_id is not None else kb_id
+                        except (ValueError, TypeError):
+                            logger.warning(
+                                f"[GraphSearch] kb_id 值异常，无法转为整型，"
+                                f"原始值: {raw_kb_id!r}，回退使用参数 kb_id: {kb_id}"
+                            )
+                            item_kb_id = kb_id
                         c_content = item.get("content", "")
                         c_header = item.get("header", "")
                         c_summary = item.get("doc_summary", "")

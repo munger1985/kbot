@@ -159,7 +159,7 @@ def handle_exception(e: Exception, msg: str) -> NoReturn:
         raise InternalServerError(f"{msg}: {message}")
     if isinstance(e, (NotFoundError, ParamValueError, AuthorizationError, PrivilegeError, InternalServerError)):
         raise e
-    # 对于其他异常，也限制错误信息长度
+    # 对于其他未知异常（如 KeyError, ValueError 等），包装为 InternalServerError 以提供更好的上下文
     error_str = str(e)
     logger.error(f"{msg}: {error_str}")
-    raise e
+    raise InternalServerError(f"{msg}: {error_str}") from e
