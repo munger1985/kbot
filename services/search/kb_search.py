@@ -35,19 +35,25 @@ class TxtBaseSearch:
         """
         start_time = time.time()
 
-        # 1. 文本预处理（彻底规避特殊符号带来的语法解析崩溃）
-        if not keywords or not keywords.strip():
-            logger.warning(f"[TxtBaseSearch] 收到空的 keywords!")
+        # 1. 纯净清洗：只留中英文字符、数字和空格
+        raw_keywords = keywords.strip() if keywords else ""
+        
+        # 将所有特殊符号（包含 /, -, ! 等所有标点）直接置换为空格
+        clean_text = re.sub(r'[^\w\u4e00-\u9fa5]', ' ', raw_keywords)
+        
+        # 2. 提取出独立的词块列表
+        word_list = [w.strip() for w in clean_text.split() if w.strip()]
+        
+        # 3. ─── 严格控制大括号，有且仅有一层包围 ───
+        if word_list:
+            # 每一个词块用单层大括号包裹，中间用 ACCUM 拼接
+            # 生成结果形如: {GB} ACCUM {T} ACCUM {44687} ACCUM {半导体晶圆精密磨削用砂轮}
+            formatted_key = " ACCUM ".join([f"{{{w}}}" for w in word_list])
+        else:
+            formatted_key = ""
             
-        # ─── 核心修正：把所有非中英文字符、数字替换为空格，避免特殊符号（如 / 或 -）混入 ───
-        clean_keyword = re.sub(r'[^\w\u4e00-\u9fa5]', ' ', keywords.strip() if keywords else "")
-        
-        # 过滤掉空字符串，拿到纯粹的干净词块
-        words = [w.strip() for w in clean_keyword.split() if w.strip()]
-        
-        # 每一个词块用大括号包裹，词与词之间用 ACCUM 融合
-        # 例如: "{在} ACCUM {GBT} ACCUM {446872024标准文档中}"
-        formatted_key = " ACCUM ".join([f"{{{w}}}" for w in words]) if words else ""
+        logger.debug(f"[TxtBaseSearch] 最终生成的纯净 Oracle Text 检索串: '{formatted_key}'")
+        # 接下来把 formatted_key 作为 :q_keywords 传给数据库
 
         # 2. 向量状态检查
         if not query_vec:
