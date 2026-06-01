@@ -100,71 +100,86 @@ class GraphBaseSearch:
                 for item in raw_chunks_dict.values():
                     if not item: 
                         continue
-                    
-                    # 🛡️ 核心修复：对 item 的类型做彻底的解耦防御，严防 ORM 对象与字典导致的 Key 碰撞
-                    if isinstance(item, dict):
-                        c_id = item.get("chunk_id", "")
-                        c_num = item.get("chunk_num", 0)
-                        c_type = item.get("chunk_type", "text")
-                        f_id = item.get("file_id", "")
-                        # 核心防御：防止数据库返回的键名被单引号 'kb_id' 污染，没有则直接用传入的干净 kb_id
-                        # 同时防御 item 的 kb_id 值为非整数字符串（如字面量 "'kb_id'"）导致 int() 崩溃
-                        raw_kb_id = item.get("kb_id") or item.get("'kb_id'")
-                        try:
-                            item_kb_id = int(raw_kb_id) if raw_kb_id is not None else kb_id
-                        except (ValueError, TypeError):
-                            logger.warning(
-                                f"[GraphSearch] kb_id 值异常，无法转为整型，"
-                                f"原始值: {raw_kb_id!r}，回退使用参数 kb_id: {kb_id}"
-                            )
-                            item_kb_id = kb_id
-                        c_content = item.get("content", "")
-                        c_header = item.get("header", "")
-                        c_summary = item.get("doc_summary", "")
-                        c_helper = item.get("search_helper", "")
-                        raw_score = float(item.get("score") or 1.0)
-                        meta = item.get("metadata") or {}
-                        biz_meta = item.get("biz_metadata") or {}
-                    else:
-                        # 兼容处理 SQLAlchemy ORM Entity 实体属性模式
-                        c_id = getattr(item, "chunk_id", "")
-                        c_num = getattr(item, "chunk_num", 0)
-                        c_type = getattr(item, "chunk_type", "text")
-                        f_id = getattr(item, "file_id", "")
-                        item_kb_id = getattr(item, "kb_id", None) or kb_id
-                        c_content = getattr(item, "content", "")
-                        c_header = getattr(item, "header", "")
-                        c_summary = getattr(item, "doc_summary", "")
-                        c_helper = getattr(item, "search_helper", "")
-                        raw_score = float(getattr(item, "score", 1.0) or 1.0)
-                        meta = getattr(item, "metadata", {}) or {}
-                        biz_meta = getattr(item, "biz_metadata", {}) or {}
 
-                    # 格式化清洗 metadata 内部字段
-                    p_num = int(meta.get("page_num") or 0) if isinstance(meta, dict) else int(getattr(meta, "page_num", 0) or 0)
-                    img_n = (meta.get("image_name") or "") if isinstance(meta, dict) else (getattr(meta, "image_name", "") or "")
-                    bbox_list = (meta.get("bbox") or []) if isinstance(meta, dict) else (getattr(meta, "bbox", []) or [])
+                    try:
+                        # 🛡️ 核心修复：对 item 的类型做彻底的解耦防御，严防 ORM 对象与字典导致的 Key 碰撞
+                        if isinstance(item, dict):
+                            c_id = item.get("chunk_id", "")
+                            c_num = item.get("chunk_num", 0)
+                            c_type = item.get("chunk_type", "text")
+                            f_id = item.get("file_id", "")
+                            # 核心防御：防止数据库返回的键名被单引号 'kb_id' 污染，没有则直接用传入的干净 kb_id
+                            # 同时防御 item 的 kb_id 值为非整数字符串（如字面量 "'kb_id'"）导致 int() 崩溃
+                            raw_kb_id = item.get("kb_id") or item.get("'kb_id'")
+                            try:
+                                item_kb_id = int(raw_kb_id) if raw_kb_id is not None else kb_id
+                            except (ValueError, TypeError):
+                                logger.warning(
+                                    f"[GraphSearch] kb_id 值异常，无法转为整型，"
+                                    f"原始值: {raw_kb_id!r}，回退使用参数 kb_id: {kb_id}"
+                                )
+                                item_kb_id = kb_id
+                            c_content = item.get("content", "")
+                            c_header = item.get("header", "")
+                            c_summary = item.get("doc_summary", "")
+                            c_helper = item.get("search_helper", "")
+                            raw_score = float(item.get("score") or 1.0)
+                            meta = item.get("metadata") or {}
+                            biz_meta = item.get("biz_metadata") or {}
+                        else:
+                            # 兼容处理 SQLAlchemy ORM Entity 实体属性模式
+                            c_id = getattr(item, "chunk_id", "")
+                            c_num = getattr(item, "chunk_num", 0)
+                            c_type = getattr(item, "chunk_type", "text")
+                            f_id = getattr(item, "file_id", "")
+                            item_kb_id = getattr(item, "kb_id", None) or kb_id
+                            c_content = getattr(item, "content", "")
+                            c_header = getattr(item, "header", "")
+                            c_summary = getattr(item, "doc_summary", "")
+                            c_helper = getattr(item, "search_helper", "")
+                            raw_score = float(getattr(item, "score", 1.0) or 1.0)
+                            meta = getattr(item, "metadata", {}) or {}
+                            biz_meta = getattr(item, "biz_metadata", {}) or {}
 
-                    # 实例化干净、高容错的标准结果集对象
-                    result = TxtBaseSearchResult(
-                        chunk_id=str(c_id),
-                        chunk_num=int(c_num),
-                        chunk_type=str(c_type),
-                        file_id=str(f_id),
-                        kb_id=int(item_kb_id),  # 🎯 确保转换为纯净的 int，绝不携带任何字符串引号
-                        content=str(c_content),
-                        header=str(c_header),
-                        doc_summary=str(c_summary),
-                        search_helper=f"[Graph Matrix: {graph_context_str}] " + (c_helper or ""),
-                        page_num=p_num,
-                        image_name=img_n,
-                        bbox=bbox_list,
-                        score=raw_score * weight, # 乘上混合检索分配给图谱的图置信度权重系数
-                        biz_metadata=biz_meta if isinstance(biz_meta, dict) else {},
-                        weight=float(weight),
-                        rerank_score=0.0
-                    )
-                    results.append(result)
+                        # 格式化清洗 metadata 内部字段（防御非 dict 类型的 meta）
+                        if not isinstance(meta, dict):
+                            meta = {}
+                        p_num = int(meta.get("page_num") or 0)
+                        img_n = meta.get("image_name") or ""
+                        bbox_list = meta.get("bbox") or []
+
+                        # biz_metadata 防御：确保一定是 dict，拒绝一切非 dict 值（包括 str/None/ORM 代理对象）
+                        if not isinstance(biz_meta, dict):
+                            biz_meta = {}
+
+                        # 实例化干净、高容错的标准结果集对象
+                        result = TxtBaseSearchResult(
+                            chunk_id=str(c_id),
+                            chunk_num=int(c_num),
+                            chunk_type=str(c_type),
+                            file_id=str(f_id),
+                            kb_id=int(item_kb_id),  # 🎯 确保转换为纯净的 int，绝不携带任何字符串引号
+                            content=str(c_content),
+                            header=str(c_header),
+                            doc_summary=str(c_summary),
+                            search_helper=f"[Graph Matrix: {graph_context_str}] " + (c_helper or ""),
+                            page_num=p_num,
+                            image_name=img_n,
+                            bbox=bbox_list if isinstance(bbox_list, list) else [],
+                            score=raw_score * weight, # 乘上混合检索分配给图谱的图置信度权重系数
+                            biz_metadata=biz_meta,
+                            weight=float(weight),
+                            rerank_score=0.0
+                        )
+                        results.append(result)
+                    except Exception as item_err:
+                        # 逐条防御：单条 item 构造失败不中断整体流程，打印 item keys 辅助排查
+                        item_keys = list(item.keys()) if isinstance(item, dict) else type(item).__name__
+                        logger.error(
+                            f"[GraphSearch] 单条 chunk 结果构造失败 (KB_ID {kb_id})，"
+                            f"item keys/type: {item_keys!r}，错误: {item_err}"
+                        )
+                        continue
 
                 # 5. 调用上下文滑动窗口增强（复用原有标准 RAG 基础设施）
                 tb_search = TxtBaseSearch()

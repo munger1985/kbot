@@ -162,4 +162,4 @@ def handle_exception(e: Exception, msg: str) -> NoReturn:
     # 对于其他未知异常（如 KeyError, ValueError 等），包装为 InternalServerError 以提供更好的上下文
     error_str = str(e)
     logger.error(f"{msg}: {error_str}")
-    raise InternalServerError(f"{msg}: {error_str}") from e
+    raise InternalServerError(f"{msg}") from e
