@@ -74,6 +74,7 @@ class RootOrchestrator:
             "agent_id": agent_id,
             "question": question,
             "standalone_query": prepared['standalone_query'],
+            "search_keywords": prepared.get('search_keywords') or prepared.get('keywords') or "",
             "llm_model": llm_model,
             "security_level": int(security_level),
             "tags": tags or [],

@@ -91,6 +91,7 @@ class DifyService:
             "agent_id": agent_id,
             "question": question,
             "standalone_query": question,
+            "search_keywords": "",
             "llm_model": "",
             "security_level": security_level,
             "tags": tags or [],

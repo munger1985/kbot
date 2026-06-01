@@ -39,6 +39,7 @@ class ContextMemory(TypedDict):
     agent_id: int
     question: str                # 原始输入
     standalone_query: str         # LLM 改写后的意图清晰的问题
+    search_keywords: str  # 从用户输入中提取的搜索关键词
     llm_model: str
     security_level: int
     tags: list[str] | None  # 用于分类和检索的标签
