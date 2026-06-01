@@ -231,6 +231,10 @@ class GraphRepository:
 
             for row in rows:
                 r = {str(k).lower(): v for k, v in row._mapping.items()}
+                
+                # 🔍 诊断日志：记录第一行的所有键名，便于排查 Oracle 返回的列名是否异常
+                if rows and row is rows[0]:
+                    logger.debug(f"[GraphRepo] search_graph_context 返回第一行映射键名 (KB_ID {kb_id}): {list(r.keys())!r}")
 
                 source_id = r.get("source_id")
                 source_name = r.get("source_name")

@@ -86,20 +86,44 @@ class TxtBaseSearch:
             return []
 
         async def expand_single_chunk(res: TxtBaseSearchResult):
-            async with self.oracle_session as session:
-                repo = TxtChunkRepository(session)
-                if res.chunk_type == "text":
-                    try:
-                        neighbors = await repo.get_chunks_by_range(
-                            file_id=res.file_id, 
-                            center_chunk_num=res.chunk_num, 
-                            window_size=window_size
-                        )
-                        if neighbors:
-                            res.content = "\n---\n".join([c.get('content', "") for c in neighbors])
-                    except Exception as e:
-                        logger.error(f"Failed to fetch neighbors for chunk {res.chunk_id}: {e}")
-                return res
+            # 🔍 诊断日志：记录进入时的 chunk 关键信息
+            logger.debug(
+                f"[EnhanceWindow] 开始处理 chunk: chunk_id={res.chunk_id!r}, "
+                f"file_id={res.file_id!r}, chunk_type={res.chunk_type!r}, "
+                f"chunk_num={res.chunk_num}, kb_id={getattr(res, 'kb_id', 'N/A')!r}"
+            )
+            try:
+                async with self.oracle_session as session:
+                    repo = TxtChunkRepository(session)
+                    if res.chunk_type == "text":
+                        try:
+                            neighbors = await repo.get_chunks_by_range(
+                                file_id=res.file_id, 
+                                center_chunk_num=res.chunk_num, 
+                                window_size=window_size
+                            )
+                            if neighbors:
+                                # 🔍 诊断日志：记录 neighbors 的键名
+                                neighbor_keys = [list(n.keys()) for n in neighbors[:3]]
+                                logger.debug(
+                                    f"[EnhanceWindow] chunk {res.chunk_id!r} 获取到 {len(neighbors)} 个邻居, "
+                                    f"前3个的 keys: {neighbor_keys!r}"
+                                )
+                                res.content = "\n---\n".join([c.get('content', "") for c in neighbors])
+                        except Exception as e:
+                            logger.error(
+                                f"[EnhanceWindow] 获取邻居失败 chunk {res.chunk_id!r}: "
+                                f"错误类型: {type(e).__name__}, 错误: {e}",
+                                exc_info=True
+                            )
+            except Exception as outer_err:
+                logger.error(
+                    f"[EnhanceWindow] expand_single_chunk 外层异常 chunk {res.chunk_id!r}: "
+                    f"错误类型: {type(outer_err).__name__}, 错误: {outer_err}",
+                    exc_info=True
+                )
+                raise
+            return res
 
         tasks = [expand_single_chunk(res) for res in initial_results]
         return list(await asyncio.gather(*tasks))

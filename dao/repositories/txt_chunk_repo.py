@@ -693,7 +693,24 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
                     logger.error(f"[TxtChunkRepo] 并发查询非结构化块在第 {i} 批次遭遇意外崩溃，错误详情: {batch_res}")
                     continue
                 if isinstance(batch_res, dict):
+                    # 🔍 诊断日志：记录每批次返回的数据样本键名
+                    if batch_res:
+                        sample_key = next(iter(batch_res))
+                        sample_val = batch_res[sample_key]
+                        sample_val_keys = list(sample_val.keys()) if isinstance(sample_val, dict) else type(sample_val).__name__
+                        logger.debug(
+                            f"[TxtChunkRepo] 批次 {i} 返回 {len(batch_res)} 条, "
+                            f"样本 key={sample_key!r}, 样本 value keys/type={sample_val_keys!r}"
+                        )
                     chunk_dict.update(batch_res)
+            
+            # 🔍 诊断日志：汇总所有键名，确认无异常
+            if chunk_dict:
+                all_keys_set = set()
+                for v in chunk_dict.values():
+                    if isinstance(v, dict):
+                        all_keys_set.update(v.keys())
+                logger.debug(f"[TxtChunkRepo] 汇总所有 chunk 的字典键名: {sorted(all_keys_set)!r}")
             
             logger.info(f"[TxtChunkRepo] 完美通过 Oracle 安全过滤 (<= {security_level}) 成功召回并清洗完成 {len(chunk_dict)} 条标准文本块。")
             return chunk_dict

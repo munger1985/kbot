@@ -72,8 +72,27 @@ class GraphBaseSearch:
                     logger.debug("[GraphSearch] 未能捕获到该实体网络链条下的任何底层关联文本块(chunk_ids).")
                     return {"graph_result": []}
 
+                logger.debug(
+                    f"[GraphSearch] 准备批量回表反查 (KB_ID {kb_id}), "
+                    f"target_chunk_ids 数量: {len(target_chunk_ids)}, "
+                    f"前5个: {target_chunk_ids[:5]!r}"
+                )
+
                 # 2. 批量回表反查非结构化文本块明细
-                raw_chunks_dict = await chunk_repo.get_chunks_by_ids(chunk_ids=target_chunk_ids, security_level=security_level)
+                try:
+                    raw_chunks_dict = await chunk_repo.get_chunks_by_ids(chunk_ids=target_chunk_ids, security_level=security_level)
+                    logger.debug(
+                        f"[GraphSearch] get_chunks_by_ids 返回 (KB_ID {kb_id}): "
+                        f"返回 {len(raw_chunks_dict)} 条, "
+                        f"raw_chunks_dict 类型: {type(raw_chunks_dict).__name__}"
+                    )
+                except Exception as chunk_fetch_err:
+                    logger.error(
+                        f"[GraphSearch] get_chunks_by_ids 调用失败 (KB_ID {kb_id}): "
+                        f"错误类型: {type(chunk_fetch_err).__name__}, 错误: {chunk_fetch_err}",
+                        exc_info=True
+                    )
+                    raise
                 if not raw_chunks_dict:
                     return {"graph_result": []}
 
@@ -97,11 +116,29 @@ class GraphBaseSearch:
                 # 4. 拼装结构化图谱上下文背景列表
                 # ========================================================
                 results = []
-                for item in raw_chunks_dict.values():
+                logger.debug(
+                    f"[GraphSearch] 开始映射 {len(raw_chunks_dict)} 条 chunk 至标准结果集 (KB_ID {kb_id})，"
+                    f"graph_context_str={graph_context_str[:200] if graph_context_str else 'N/A'}"
+                )
+                for idx, (chunk_key, item) in enumerate(raw_chunks_dict.items()):
                     if not item: 
+                        logger.debug(f"[GraphSearch] 跳过空 item (KB_ID {kb_id}, idx={idx}, chunk_key={chunk_key!r})")
                         continue
 
                     try:
+                        # 🔍 诊断日志：记录 item 的类型和所有键名，用于定位 KeyError 根因
+                        if isinstance(item, dict):
+                            item_keys = list(item.keys())
+                            logger.debug(
+                                f"[GraphSearch] 处理第 {idx} 条 item (KB_ID {kb_id}), "
+                                f"type=dict, keys={item_keys!r}, chunk_key={chunk_key!r}"
+                            )
+                        else:
+                            logger.debug(
+                                f"[GraphSearch] 处理第 {idx} 条 item (KB_ID {kb_id}), "
+                                f"type={type(item).__name__}, chunk_key={chunk_key!r}"
+                            )
+
                         # 🛡️ 核心修复：对 item 的类型做彻底的解耦防御，严防 ORM 对象与字典导致的 Key 碰撞
                         if isinstance(item, dict):
                             c_id = item.get("chunk_id", "")
@@ -141,6 +178,13 @@ class GraphBaseSearch:
                             meta = getattr(item, "metadata", {}) or {}
                             biz_meta = getattr(item, "biz_metadata", {}) or {}
 
+                        # 🔍 诊断日志：记录提取后的关键字段值
+                        logger.debug(
+                            f"[GraphSearch] item 字段提取完成 (KB_ID {kb_id}, idx={idx}): "
+                            f"c_id={c_id!r}, item_kb_id={item_kb_id!r}, f_id={f_id!r}, "
+                            f"c_type={c_type!r}, biz_meta_type={type(biz_meta).__name__}"
+                        )
+
                         # 格式化清洗 metadata 内部字段（防御非 dict 类型的 meta）
                         if not isinstance(meta, dict):
                             meta = {}
@@ -153,6 +197,10 @@ class GraphBaseSearch:
                             biz_meta = {}
 
                         # 实例化干净、高容错的标准结果集对象
+                        logger.debug(
+                            f"[GraphSearch] 即将构造 TxtBaseSearchResult (KB_ID {kb_id}, idx={idx}): "
+                            f"kb_id={int(item_kb_id)}, file_id={str(f_id)!r}, chunk_id={str(c_id)!r}"
+                        )
                         result = TxtBaseSearchResult(
                             chunk_id=str(c_id),
                             chunk_num=int(c_num),
@@ -177,13 +225,30 @@ class GraphBaseSearch:
                         item_keys = list(item.keys()) if isinstance(item, dict) else type(item).__name__
                         logger.error(
                             f"[GraphSearch] 单条 chunk 结果构造失败 (KB_ID {kb_id})，"
-                            f"item keys/type: {item_keys!r}，错误: {item_err}"
+                            f"item keys/type: {item_keys!r}，错误类型: {type(item_err).__name__}，错误: {item_err}",
+                            exc_info=True
                         )
                         continue
 
                 # 5. 调用上下文滑动窗口增强（复用原有标准 RAG 基础设施）
+                logger.debug(
+                    f"[GraphSearch] 即将调用 _enhance_context_with_window (KB_ID {kb_id}), "
+                    f"results 数量: {len(results)}, 首条 chunk_id: {results[0].chunk_id if results else 'N/A'}"
+                )
                 tb_search = TxtBaseSearch()
-                search_result = await tb_search._enhance_context_with_window(results)
+                try:
+                    search_result = await tb_search._enhance_context_with_window(results)
+                    logger.debug(
+                        f"[GraphSearch] _enhance_context_with_window 完成 (KB_ID {kb_id}), "
+                        f"返回 {len(search_result)} 条结果"
+                    )
+                except Exception as enhance_err:
+                    logger.error(
+                        f"[GraphSearch] _enhance_context_with_window 崩溃 (KB_ID {kb_id}): "
+                        f"错误类型: {type(enhance_err).__name__}, 错误: {enhance_err}",
+                        exc_info=True
+                    )
+                    raise
                 
                 duration = time.time() - start_time
                 logger.info(f"图谱空间分析检索(Graph-RAG)优雅结束，耗时: {duration:.2f}s. 成功向总线交付 {len(search_result)} 条标准文本块.")
