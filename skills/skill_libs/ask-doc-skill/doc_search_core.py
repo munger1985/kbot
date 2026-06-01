@@ -44,7 +44,15 @@ class AskDocSkill(BaseSkill):
             or context.get("question")
         )
         
-        search_keywords = context.get("search_keywords", "")
+        search_keywords = (
+            current_execution.get("search_keywords")
+            or current_execution.get("keywords")
+            or context.get("search_keywords")
+            or context.get("keywords")
+            or ""
+        )
+        logger.debug(f"[{runtime_skill_name}] 接收到的 search_keywords: '{search_keywords}'")
+        
         tags = context.get("tags") or []
         
         if not query_text:

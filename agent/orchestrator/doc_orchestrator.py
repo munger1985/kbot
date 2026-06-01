@@ -30,6 +30,11 @@ class DocOrchestrator:
         专注于检索流程的编排。
         注意：此处不再处理记忆回写和 Prompt 组装，只负责提供“素材”。
         """
+        logger.debug(
+            f"[DocOrchestrator] 收到编排请求 - standalone_query: '{standalone_query}', "
+            f"接收到的 search_keywords: '{search_keywords}'"
+        )
+        
         async with self.db_session as session:
             # 1. 获取 Agent 和模型配置 (复用原有的 _get_agent_and_params 逻辑)
             agent_repo = AgentRepository(session)

@@ -35,12 +35,18 @@ class TxtBaseSearch:
         """
         start_time = time.time()
 
-        # 1. 文本预处理
+        # 1. 文本预处理（彻底规避特殊符号带来的语法解析崩溃）
         if not keywords or not keywords.strip():
-            logger.warning(f"[TxtBaseSearch] 收到空的 keywords! 传入的原始值为: '{keywords}'")
+            logger.warning(f"[TxtBaseSearch] 收到空的 keywords!")
+            
+        # ─── 核心修正：把所有非中英文字符、数字替换为空格，避免特殊符号（如 / 或 -）混入 ───
+        clean_keyword = re.sub(r'[^\w\u4e00-\u9fa5]', ' ', keywords.strip() if keywords else "")
         
-        clean_keyword = re.sub(r'[^\w\s\u4e00-\u9fa5]', '', keywords.strip() if keywords else "")
-        words = [w for w in clean_keyword.split() if w]
+        # 过滤掉空字符串，拿到纯粹的干净词块
+        words = [w.strip() for w in clean_keyword.split() if w.strip()]
+        
+        # 每一个词块用大括号包裹，词与词之间用 ACCUM 融合
+        # 例如: "{在} ACCUM {GBT} ACCUM {446872024标准文档中}"
         formatted_key = " ACCUM ".join([f"{{{w}}}" for w in words]) if words else ""
 
         # 2. 向量状态检查
