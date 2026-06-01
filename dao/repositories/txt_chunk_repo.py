@@ -1,5 +1,6 @@
 import json
 import re
+import asyncio
 from loguru import logger
 from typing import Any, Sequence
 from sqlalchemy import text, select, update, delete, func, and_, or_, Float, literal_column, bindparam
@@ -614,53 +615,87 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
         
     async def get_chunks_by_ids(self, chunk_ids: list[str], security_level: int) -> dict[str, dict]:
         """
-        Get text chunks by chunk IDs with security level screening.
+        根据文本块ID列表批量获取文本块详情，并进行安全级别过滤。
         
-        :param chunk_ids: List of chunk unique identifiers
+        :param chunk_ids: 文本块唯一标识符列表
         :param security_level: 安全级别过滤阈值 (只召回 <= 该级别的文本块)
-        :return: Dict of chunk_id -> entity dict
+        :return: 字典格式，键为纯净的 chunk_id 字符串，值为大小写归一化后的实体字典
         """
         if not chunk_ids:
             return {}
 
         try:
-            # 1. 规避 Oracle IN 1000 限制的防御性切片（防患于未然）
-            safe_chunk_ids = chunk_ids[:1000]
-            if len(chunk_ids) > 1000:
-                logger.warning(f"[TxtChunkRepo] 输入的 chunk_ids 数量 ({len(chunk_ids)}) 超过 Oracle IN 限制，已截断前 1000 条")
-
-            # 2. 构建动态绑定字典，并注入安全级别变量
-            # 基础展开：{"cid_0": "id1", "cid_1": "id2", ...}
-            bind_params: dict[str, Any] = {f"cid_{i}": cid for i, cid in enumerate(safe_chunk_ids)}
+            # ========================================================
+            # 核心优化一：无损动态分批，优雅攻克 Oracle IN 1000 条上限限制
+            # ========================================================
+            # 不采用暴力的 [:1000] 截断策略，而是通过合理切片加 asyncio.gather 并发无损召回
+            batch_size = 900
+            batches = [chunk_ids[i:i + batch_size] for i in range(0, len(chunk_ids), batch_size)]
             
-            bind_params["security_level"] = security_level
-            
-            # 构造 SQL 的 IN 字符串片段
-            in_clause = ", ".join(f":cid_{i}" for i in range(len(safe_chunk_ids)))
-
-            # 3. 动态组装干净的原生 SQL (注意大小写对齐 Oracle 标准)
-            sql = text(f"""
-                SELECT * FROM KBOT_BIZ_TXT_EMBEDDING
-                WHERE CHUNK_ID IN ({in_clause})
-                AND SECURITY_LEVEL <= :security_level
-            """)
-            
-            # Execute query (此时 bind_params 既包含了所有的 cid_x，也包含了 security_level)
-            result = await self.session.execute(sql, bind_params)
-            rows = result.fetchall()
-            
-            # 4. 大小写免疫转换与结果字典组装
             chunk_dict = {}
-            for row in rows:
-                # 强行将 row 的映射 Key 归一化为小写，确保小写 'chunk_id' 100% 能提到值
-                row_lowercase_dict = {str(k).lower(): v for k, v in row._mapping.items()}
+
+            # 定义内部异步闭包，专门负责单个分批切片的安全驱动与清洗
+            async def fetch_batch(sub_ids: list[str]) -> dict[str, dict]:
+                # 构建局部动态绑定字典，防 SQL 注入
+                sub_bind_params = {f"cid_{i}": cid for i, cid in enumerate(sub_ids)}
+                sub_bind_params["security_level"] = security_level # type: ignore
                 
-                # 提取归一化后的核心主键
-                real_chunk_id = row_lowercase_dict.get("chunk_id")
-                if real_chunk_id:
-                    chunk_dict[real_chunk_id] = row_lowercase_dict
+                # 构造符合当前批次长度的 IN 占位符片段
+                in_clause = ", ".join(f":cid_{i}" for i in range(len(sub_ids)))
+
+                # 原生 SQL 显式指定（大小写与 Oracle 数据字典对齐）
+                sub_sql = text(f"""
+                    SELECT * FROM KBOT_BIZ_TXT_EMBEDDING
+                    WHERE CHUNK_ID IN ({in_clause})
+                    AND SECURITY_LEVEL <= :security_level
+                """)
+                
+                # 执行当前批次的异步会话游标
+                res = await self.session.execute(sub_sql, sub_bind_params)
+                sub_rows = res.fetchall()
+                
+                sub_batch_dict = {}
+                for row in sub_rows:
+                    # ========================================================
+                    # 核心优化二：大小写免疫与多余单双引号剥离（从根源斩断 "'kb_id'" 异常）
+                    # ========================================================
+                    row_lowercase_dict = {}
+                    for k, v in row._mapping.items():
+                        # 🛡️ 终极清洗：先转小写，然后彻底剔除由于 Oracle 驱动反射或者多表别名导致的各类单、双引号
+                        clean_key = str(k).lower().strip("'\"")
+                        row_lowercase_dict[clean_key] = v
+                    
+                    # 提取归一化后、纯净安全的文本块主键
+                    real_chunk_id = row_lowercase_dict.get("chunk_id")
+                    if real_chunk_id:
+                        # 🛡️ 辅助防护：确保存储的 kb_id 在底层就归一化为纯净的 int 类型，拒绝单双引号字符串残留
+                        if "kb_id" in row_lowercase_dict and row_lowercase_dict["kb_id"] is not None:
+                            try:
+                                row_lowercase_dict["kb_id"] = int(row_lowercase_dict["kb_id"])
+                            except (ValueError, TypeError):
+                                logger.warning(f"[TxtChunkRepo] 强转 kb_id 为整型失败，当前原始值为: {row_lowercase_dict['kb_id']}")
+                                pass
+                                
+                        sub_batch_dict[str(real_chunk_id)] = row_lowercase_dict
+                return sub_batch_dict
+
+            # ========================================================
+            # 核心优化三：多任务并行驱动
+            # ========================================================
+            logger.debug(f"[TxtChunkRepo] 准备执行图谱文本回表，总 ID 数: {len(chunk_ids)}，已安全切分为 {len(batches)} 个批次并行下沉查询")
             
-            logger.debug(f"[TxtChunkRepo] Successfully fetched {len(chunk_dict)} chunks from Oracle (Security Filter <= {security_level}).")
+            tasks = [fetch_batch(batch) for batch in batches]
+            completed_batches = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            # 合并并发结果集
+            for i, batch_res in enumerate(completed_batches):
+                if isinstance(batch_res, Exception):
+                    logger.error(f"[TxtChunkRepo] 并发查询非结构化块在第 {i} 批次遭遇意外崩溃，错误详情: {batch_res}")
+                    continue
+                if isinstance(batch_res, dict):
+                    chunk_dict.update(batch_res)
+            
+            logger.info(f"[TxtChunkRepo] 完美通过 Oracle 安全过滤 (<= {security_level}) 成功召回并清洗完成 {len(chunk_dict)} 条标准文本块。")
             return chunk_dict
             
         except Exception as e:

@@ -29,22 +29,9 @@ class GraphBaseSearch:
         security_level: int,
         max_depth: int = 2
     ) -> dict[str, list[TxtBaseSearchResult]]:
-        """Executes knowledge graph traversal and maps results to standard text chunks.
-        
-        Args:
-            kb_id: 知识库ID
-            vertex_names: 从用户Query中提取出的实体名称列表 (e.g., ['RTX 5080', 'Oracle 26ai'])
-            search_top_k: 目标返回数量
-            weight: 图检索的分数权重系数
-            security_level: 安全级别过滤
-            max_depth: 拓扑图下游走的最大深度 (默认2度)
-            do_rerank: 是否将其分类进后续的重排池中
-
-        Returns:
-            符合统一格式的字典: {"rerank_result": [...]} 或 {"norerank_result": [...]}
-        """
+        """执行知识图谱深度空间网络下游走，并将拓扑关系无缝映射回标准的非结构化文本块。"""
         start_time = time.time()
-        logger.debug(f"Starting Graph-RAG retrieval for entities: {vertex_names} ...")
+        logger.debug(f"开始为实体驱动图谱检索 (Graph-RAG): {vertex_names} ...")
         
         if not vertex_names:
             return {"graph_result": []}
@@ -55,9 +42,9 @@ class GraphBaseSearch:
             
             try:
                 # ========================================================
-                # 核心优化一：双轨退化检索，完美解决冷启动问题
+                # 1. 双轨退化检索，完美解决冷启动问题
                 # ========================================================
-                # 1. 高置信度硬核子图 (限制 min_weight >= 2)
+                # 轨道 A：优先追溯高置信度高频核心子图 (min_weight >= 2)
                 graph_data = await graph_repo.search_graph_context(
                     kb_id=kb_id,
                     vertex_names=vertex_names,
@@ -66,7 +53,7 @@ class GraphBaseSearch:
                     min_weight=2  
                 )
                 
-                # 2. 触发退化防御：如果没有高频成熟边，降低门槛容忍原始抽取的边 (min_weight = 1)
+                # 轨道 B：触发退化防御：如果没有高频成熟边，降低门槛容忍原始抽取的轻量边 (min_weight = 1)
                 if not graph_data or not graph_data.get("edges"):
                     logger.warning(f"[GraphSearch] 高置信度路径未击中，触发冷启动退化防御，降级搜索原始图谱。")
                     graph_data = await graph_repo.search_graph_context(
@@ -77,79 +64,111 @@ class GraphBaseSearch:
                         min_weight=1  
                     )
                 
-                target_chunk_ids = graph_data.get("chunk_ids", [])
-                if not target_chunk_ids:
-                    logger.debug("[GraphSearch] No underlying chunks found for these entities.")
+                if not graph_data:
                     return {"graph_result": []}
 
-                # 2. 批量回表反查非结构化文本块
+                target_chunk_ids = graph_data.get("chunk_ids", [])
+                if not target_chunk_ids:
+                    logger.debug("[GraphSearch] 未能捕获到该实体网络链条下的任何底层关联文本块(chunk_ids).")
+                    return {"graph_result": []}
+
+                # 2. 批量回表反查非结构化文本块明细
                 raw_chunks_dict = await chunk_repo.get_chunks_by_ids(chunk_ids=target_chunk_ids, security_level=security_level)
                 if not raw_chunks_dict:
                     return {"graph_result": []}
 
                 # ========================================================
-                # 核心优化二：建立 Chunk ID 到最大边权重的物理映射
+                # 3. 提炼核心拓扑关系链条（增强防御，防止字典键名带引号或缺失）
                 # ========================================================
-                # 因为一个 Chunk 可能绑定了多条不同的边，我们取这些边中最高的权重作为它的置信度基准
-                chunk_weight_map: dict[str, int] = {}
-                edges_list = graph_data.get("edges", [])
-                
-                # 顺便提炼排名前 10 的高权重核心因果拓扑写入 search_helper，留给大模型阅读
-                graph_context_str = " | ".join([
-                    f"({edge['source']})-[{edge['relation']} (w:{edge['weight']})]->({edge['target']})" 
-                    for edge in edges_list[:10]
-                ])
+                edges_list = graph_data.get("edges", []) or []
+                cleaned_edges = []
+                for edge in edges_list[:10]:
+                    # 鲁棒兼容：无论底层返回的是类对象还是字典，安全提取
+                    src = edge.get("source") if isinstance(edge, dict) else getattr(edge, "source", None)
+                    rel = edge.get("relation") if isinstance(edge, dict) else getattr(edge, "relation", None)
+                    tgt = edge.get("target") if isinstance(edge, dict) else getattr(edge, "target", None)
+                    wgt = edge.get("weight") if isinstance(edge, dict) else getattr(edge, "weight", 1)
+                    if src and tgt:
+                        cleaned_edges.append(f"({src})-[{rel} (w:{wgt})]->({tgt})")
 
-                # 异步回溯定位每一个 chunk_id 的最大图谱权重贡献度
-                # 提示：需要在你的 repo 层的 edges 返回字典里，确保持有 'weight' 并能取到关联的 chunk 映射
-                # 鉴于你的 repo 中是用原始 SQL 做子图聚合，这里我们直接遍历 edges。如果你的 repo 返回没有细分，
-                # 我们通过 SQL 的 ROWNUM 降序排列，已经保证了最前面的是最优质的边。
-                
-                # 3. 拼装图谱上下文背景串
+                graph_context_str = " | ".join(cleaned_edges) if cleaned_edges else "无显式拓扑连通路径"
+
+                # ========================================================
+                # 4. 拼装结构化图谱上下文背景列表
+                # ========================================================
                 results = []
                 for item in raw_chunks_dict.values():
-                    if not isinstance(item, dict): 
+                    if not item: 
                         continue
                     
-                    c_id = item.get("chunk_id", "")
-                    meta = item.get("metadata") or {}
-                    
-                    # 计算动态图置信度得分（如果没有命中边权重，默认给 1）
-                    # 我们可以从 repo 返回的带有权重的拓扑网中提取综合热度，这里作为一个扩充因子
-                    # 这能保证：越是在核心推理链上的文本块，在后续的混合排序/混合检索总得分里排得越靠前！
-                    raw_score = float(item.get("score") or 1.0)
-                    
+                    # 🛡️ 核心修复：对 item 的类型做彻底的解耦防御，严防 ORM 对象与字典导致的 Key 碰撞
+                    if isinstance(item, dict):
+                        c_id = item.get("chunk_id", "")
+                        c_num = item.get("chunk_num", 0)
+                        c_type = item.get("chunk_type", "text")
+                        f_id = item.get("file_id", "")
+                        # 核心防御：防止数据库返回的键名被单引号 'kb_id' 污染，没有则直接用传入的干净 kb_id
+                        item_kb_id = item.get("kb_id") or item.get("'kb_id'") or kb_id
+                        c_content = item.get("content", "")
+                        c_header = item.get("header", "")
+                        c_summary = item.get("doc_summary", "")
+                        c_helper = item.get("search_helper", "")
+                        raw_score = float(item.get("score") or 1.0)
+                        meta = item.get("metadata") or {}
+                        biz_meta = item.get("biz_metadata") or {}
+                    else:
+                        # 兼容处理 SQLAlchemy ORM Entity 实体属性模式
+                        c_id = getattr(item, "chunk_id", "")
+                        c_num = getattr(item, "chunk_num", 0)
+                        c_type = getattr(item, "chunk_type", "text")
+                        f_id = getattr(item, "file_id", "")
+                        item_kb_id = getattr(item, "kb_id", None) or kb_id
+                        c_content = getattr(item, "content", "")
+                        c_header = getattr(item, "header", "")
+                        c_summary = getattr(item, "doc_summary", "")
+                        c_helper = getattr(item, "search_helper", "")
+                        raw_score = float(getattr(item, "score", 1.0) or 1.0)
+                        meta = getattr(item, "metadata", {}) or {}
+                        biz_meta = getattr(item, "biz_metadata", {}) or {}
+
+                    # 格式化清洗 metadata 内部字段
+                    p_num = int(meta.get("page_num") or 0) if isinstance(meta, dict) else int(getattr(meta, "page_num", 0) or 0)
+                    img_n = (meta.get("image_name") or "") if isinstance(meta, dict) else (getattr(meta, "image_name", "") or "")
+                    bbox_list = (meta.get("bbox") or []) if isinstance(meta, dict) else (getattr(meta, "bbox", []) or [])
+
+                    # 实例化干净、高容错的标准结果集对象
                     result = TxtBaseSearchResult(
-                        chunk_id=c_id,
-                        chunk_num=item.get("chunk_num", 0),
-                        chunk_type=item.get("chunk_type", "text"),
-                        file_id=item.get("file_id", ""),
-                        kb_id=item.get("kb_id", ""),
-                        content=item.get("content", ""),
-                        header=item.get("header", ""),
-                        doc_summary=item.get("doc_summary", ""),
-                        # search_helper 带有真实的 weight 物理标定
-                        search_helper=f"[Graph Matrix: {graph_context_str}] " + (item.get("search_helper", "") or ""),
-                        page_num=int(meta.get("page_num") or 0),
-                        image_name=meta.get("image_name") or "",
-                        bbox=meta.get("bbox") or [],
-                        # 🎯 物理置信度分数增强：结合混合搜索全局权重系数
-                        score=raw_score * weight, 
-                        biz_metadata=item.get("biz_metadata") or {},
-                        weight=weight,
+                        chunk_id=str(c_id),
+                        chunk_num=int(c_num),
+                        chunk_type=str(c_type),
+                        file_id=str(f_id),
+                        kb_id=int(item_kb_id),  # 🎯 确保转换为纯净的 int，绝不携带任何字符串引号
+                        content=str(c_content),
+                        header=str(c_header),
+                        doc_summary=str(c_summary),
+                        search_helper=f"[Graph Matrix: {graph_context_str}] " + (c_helper or ""),
+                        page_num=p_num,
+                        image_name=img_n,
+                        bbox=bbox_list,
+                        score=raw_score * weight, # 乘上混合检索分配给图谱的图置信度权重系数
+                        biz_metadata=biz_meta if isinstance(biz_meta, dict) else {},
+                        weight=float(weight),
                         rerank_score=0.0
                     )
                     results.append(result)
 
+                # 5. 调用上下文滑动窗口增强（复用原有标准 RAG 基础设施）
                 tb_search = TxtBaseSearch()
                 search_result = await tb_search._enhance_context_with_window(results)
                 
                 duration = time.time() - start_time
-                logger.info(f"Graph-RAG retrieval finished in {duration:.2f}s. Formatted {len(search_result)} chunks.")
+                logger.info(f"图谱空间分析检索(Graph-RAG)优雅结束，耗时: {duration:.2f}s. 成功向总线交付 {len(search_result)} 条标准文本块.")
                 
                 return {"graph_result": search_result}
 
             except DataNotFoundException:
+                logger.warning(f"[GraphSearch] 关联知识库 {kb_id} 触发业务层未找到空数据信号。")
                 return {"graph_result": []}
             except Exception as e:
-                handle_exception(e, f"Graph-RAG search failed for KB {kb_id}: {str(e)}")
+                # 捕获崩溃并抛给统一控制平面异常处理器
+                handle_exception(e, f"图谱混合检索在映射结果集生命周期内崩溃，KB_ID {kb_id}: {str(e)}")
