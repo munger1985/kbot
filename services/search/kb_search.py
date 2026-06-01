@@ -36,7 +36,10 @@ class TxtBaseSearch:
         start_time = time.time()
 
         # 1. 文本预处理
-        clean_keyword = re.sub(r'[^\w\s\u4e00-\u9fa5]', '', keywords.strip())
+        if not keywords or not keywords.strip():
+            logger.warning(f"[TxtBaseSearch] 收到空的 keywords! 传入的原始值为: '{keywords}'")
+        
+        clean_keyword = re.sub(r'[^\w\s\u4e00-\u9fa5]', '', keywords.strip() if keywords else "")
         words = [w for w in clean_keyword.split() if w]
         formatted_key = " ACCUM ".join([f"{{{w}}}" for w in words]) if words else ""
 
