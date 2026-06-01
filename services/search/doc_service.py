@@ -38,6 +38,19 @@ class DocService:
 
         # 3. 并行检索
         logger.info(f"开始为智能体 {agent_id} 执行知识库检索，安全等级：{security_level}")
+        logger.debug(
+            f"[DocService] 接收到上层流量 - 原始 question: '{question}', "
+            f"原始 keywords 长度: {len(keywords) if keywords else 0}, 内容: '{keywords}'"
+        )
+        effective_keywords = keywords.strip() if keywords else ""
+        if not effective_keywords:
+            # 如果大模型提取的结果是空字符串、None或者全是空格，用用户原始问题做全文检索
+            effective_keywords = question.strip() if question else ""
+            logger.warning(
+                f"[DocService] 智能体 {agent_id} 的 keywords 为空！"
+                f"已自动触发防御性兜底，将使用原始问题作为检索词: '{effective_keywords}'"
+            )
+
         start_time = time.time()
         
         # 组装任务池
@@ -45,7 +58,7 @@ class DocService:
         for conf in agent_confs:
             tb_tasks.append(self.tb_search.search(
                 int(conf.kb_id),
-                str(keywords),
+                str(effective_keywords),
                 int(conf.search_top_k or 10),
                 float(conf.search_score_threshold or 0.0),
                 float(conf.tool_weight or 1.0),
