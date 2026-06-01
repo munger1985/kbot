@@ -245,6 +245,8 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
     #     except Exception as e:
     #         logger.error("Oracle full text search failed", e)
     #         raise DatabaseException("Search execution failed", original_error=e)
+
+
     async def native_hybrid_search(
             self,
             kb_id: int,
@@ -258,7 +260,7 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
         ) -> list[dict[str, Any]]:
             """
             Oracle 26ai 内核级混合查询（动态 SQL 安全修正版）
-            """
+            """            
             # 1. 基础过滤条件
             conditions = [
                 "kb_id = :kb_id",
@@ -295,13 +297,17 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
             # 处理文本检索分支（严格过滤空字符串，并做基础清洗）
             clean_keywords = keywords.strip() if keywords else ""
             if clean_keywords:
-                # 基础安全防护：转义 Oracle Text 的保留字符（形如 '{keyword}'）
-                # 如果有更复杂的搜索需求，建议用专用函数对特殊字符加关键字大括号 {}
-                safe_keywords = f"{{{clean_keywords}}}" 
+                words = [w.strip() for w in clean_keywords.split() if w.strip()]
+
+                # 核心拼装：有且仅有一层大括号包裹每一个词，中间用 ACCUM 拼接
+                if words:
+                    final_oracle_text_query = " ACCUM ".join([f"{{{w}}}" for w in words])
+                else:
+                    final_oracle_text_query = ""
                 
                 score_parts.append("SCORE(1) * 0.4 + SCORE(2) * 0.2")
                 search_parts.append("(CONTAINS(search_helper, :q_keywords, 1) > 0 OR CONTAINS(header, :q_keywords, 2) > 0)")
-                all_params["q_keywords"] = safe_keywords
+                all_params["q_keywords"] = final_oracle_text_query
 
             # 防御：如果既没有向量也没有文本，直接返回空
             if not score_parts:

@@ -38,22 +38,15 @@ class TxtBaseSearch:
         # 1. 纯净清洗：只留中英文字符、数字和空格
         raw_keywords = keywords.strip() if keywords else ""
         
-        # 将所有特殊符号（包含 /, -, ! 等所有标点）直接置换为空格
+        # 将所有特殊符号（包含 /, -, ! 以及所有标点）直接置换为空格
         clean_text = re.sub(r'[^\w\u4e00-\u9fa5]', ' ', raw_keywords)
         
-        # 2. 提取出独立的词块列表
+        # 2. 仅保留有效的词块，并用纯空格重新组合
         word_list = [w.strip() for w in clean_text.split() if w.strip()]
+        pure_keywords = " ".join(word_list)
         
-        # 3. ─── 严格控制大括号，有且仅有一层包围 ───
-        if word_list:
-            # 每一个词块用单层大括号包裹，中间用 ACCUM 拼接
-            # 生成结果形如: {GB} ACCUM {T} ACCUM {44687} ACCUM {半导体晶圆精密磨削用砂轮}
-            formatted_key = " ACCUM ".join([f"{{{w}}}" for w in word_list])
-        else:
-            formatted_key = ""
-            
-        logger.debug(f"[TxtBaseSearch] 最终生成的纯净 Oracle Text 检索串: '{formatted_key}'")
-        # 接下来把 formatted_key 作为 :q_keywords 传给数据库
+        logger.debug(f"[TxtBaseSearch] 处理后的纯净关键词串: '{pure_keywords}'")
+        # 把 pure_keywords 往后传递，不要带任何大括号
 
         # 2. 向量状态检查
         if not query_vec:
@@ -72,7 +65,7 @@ class TxtBaseSearch:
             repo = TxtChunkRepository(session)
             try:
                 dataset = await repo.native_hybrid_search(
-                    kb_id=kb_id, keywords=formatted_key, query_vec=vec_array, security=security, # type: ignore
+                    kb_id=kb_id, keywords=pure_keywords, query_vec=vec_array, security=security, # type: ignore
                     has_vec=has_vec, similarity_threshold=threshold, search_top_k=over_fetch_k, tags=tags
                 )
             except DataNotFoundException:
