@@ -57,8 +57,9 @@ class GraphBaseSearch:
                 # ========================================================
                 # 核心优化一：双轨退化检索，完美解决冷启动问题
                 # ========================================================
-                # 1. 先生存高置信度硬核子图 (限制 min_weight >= 2)
+                # 1. 高置信度硬核子图 (限制 min_weight >= 2)
                 graph_data = await graph_repo.search_graph_context(
+                    kb_id=kb_id,
                     vertex_names=vertex_names,
                     max_depth=max_depth,
                     limit=search_top_k * 3,
@@ -69,6 +70,7 @@ class GraphBaseSearch:
                 if not graph_data or not graph_data.get("edges"):
                     logger.warning(f"[GraphSearch] 高置信度路径未击中，触发冷启动退化防御，降级搜索原始图谱。")
                     graph_data = await graph_repo.search_graph_context(
+                        kb_id=kb_id,
                         vertex_names=vertex_names,
                         max_depth=max_depth,
                         limit=search_top_k * 3,
