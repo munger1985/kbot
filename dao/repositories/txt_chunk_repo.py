@@ -324,6 +324,8 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
                 ORDER BY similarity_score DESC
                 FETCH FIRST :top_k ROWS ONLY
             """
+
+            logger.debug(f"[TxtChunkRepo] 执行 SQL: {sql_query}")
             
             stmt = text(sql_query)
             result = await self.session.execute(stmt, all_params)
