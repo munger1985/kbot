@@ -535,29 +535,32 @@ class GraphRepository:
             raise DatabaseException(f"Failed to delete graph by knowledge base", original_error=e)
         
     async def get_vertex_names_by_embedding(self, kb_id: int, keyword_embedding: list[float], top_k: int = 10) -> list[str]:
+        """
+        利用 Oracle 23ai/26ai 原生向量检索，单次通过单个 Embedding 向量召回最接近的真实节点名称。
+        """
         if not keyword_embedding:
             return []
 
-        try:
-            # 1. 强制将向量转为纯字符串标量
-            vec_str = OracleVecHandler().convert(keyword_embedding, to_string=True)
+        logger.info(f"[BUG_TRACK_VECTOR] === 物理净化向量检索开始 ===")
 
-            # 2. 物理掐断旧缓存：kb_id 和 top_k 直接物理嵌入，绑定参数【彻底更名】为 :p_vector_val
+        try:
+            # 1. 强制在 Python 内存中直接完成向量文本组装，变成类似 '[0.112, -0.342, 0.994]' 的纯文本
+            vec_literal = '[' + ','.join(map(str, keyword_embedding)) + ']'
+
+            # 2. 🚨 物理核平：SQL 语句中不留任何一个冒号参数！全部使用 Python 的 f-string 物理嵌入字面量
+            # 彻底断绝任何内置/外置组件对 bind_params 字典做手脚、加单引号的可能
             vertices_sql = text(f"""
                 SELECT VERTEX_NAME
                 FROM KBOT_GRAPH_KNOWLEDGE_VERTICES
                 WHERE KB_ID = {int(kb_id)}
                 AND VERTEX_NAME_VECTOR IS NOT NULL
-                ORDER BY VECTOR_DISTANCE(VERTEX_NAME_VECTOR, :p_vector_val, COSINE) ASC
+                ORDER BY VECTOR_DISTANCE(VERTEX_NAME_VECTOR, to_vector('{vec_literal}'), COSINE) ASC
                 FETCH FIRST {int(top_k)} ROWS ONLY
             """)
 
-            # 3. 铁壁防御字典
-            bind_params = {
-                "p_vector_val": vec_str,
-                "'p_vector_val'": vec_str
-            }
-
+            # 3. 传入绝对为空的绑定字典。我看哪个鬼魅组件还能抛出关于参数名的 KeyError！
+            bind_params = {}
+            
             result = await self.session.execute(vertices_sql, bind_params)
             rows = result.fetchall()
             
@@ -567,8 +570,10 @@ class GraphRepository:
                     clean_name = str(row[0]).strip("'\" ")
                     if clean_name:
                         clean_names.append(clean_name)
+            
+            logger.info(f"[BUG_TRACK_VECTOR] 物理净化检索大获成功，召回行数: {len(clean_names)}")
             return clean_names
 
         except Exception as e:
-            logger.error(f"[BUG_TRACK_VECTOR] 崩溃: {str(e)}", exc_info=True)
+            logger.error(f"[BUG_TRACK_VECTOR] 物理净化模式遭遇异常: {str(e)}", exc_info=True)
             raise e
