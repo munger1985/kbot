@@ -549,8 +549,11 @@ class GraphRepository:
             """)
 
             # 【锁强类型】直接截断底层针对向量和 kb_id 混用时的自爆逻辑
+            # 🛡️ 关键修复：kw_vector 也必须显式声明，防止 SQLAlchemy 2.0 严格模式下参数绑定异常
+            # 向量类型不指定具体 type_，由 python-oracledb 驱动自动识别 array.array 类型
             stmt = vertices_sql.bindparams(
                 bindparam("kb_id", type_=Integer),
+                bindparam("kw_vector"),
                 bindparam("top_k", type_=Integer)
             )
 

@@ -375,7 +375,15 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
         }
         
         result = await self.session.execute(text(sql), params)
-        return [dict(row._mapping) for row in result.fetchall()]
+        # 🛡️ 关键修复：对 row._mapping 进行键名清洗，防止 Oracle 驱动返回带单引号的列名（如 'CHUNK_ID' 变成 chunk_id）
+        cleaned_rows = []
+        for row in result.fetchall():
+            row_dict = {}
+            for k, v in row._mapping.items():
+                clean_key = str(k).lower().strip("'\"")
+                row_dict[clean_key] = v
+            cleaned_rows.append(row_dict)
+        return cleaned_rows
 
     async def delete_by_file_ids(self, file_ids: list[str]):
         """
