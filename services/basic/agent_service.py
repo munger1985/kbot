@@ -114,3 +114,25 @@ class AgentService:
                 )
             except Exception as e:
                 handle_exception(e, "获取模型参数失败")
+
+    async def get_kb_list(self, agent_id: int) -> list[int]:
+        """
+        获取智能体的知识库ID列表
+
+        Args:
+            agent_id: 智能体ID
+
+        Returns:
+            知识库配置列表
+        """
+        async with self.oracle_session as session:
+            conf_repo = AgentConfRepository(session)
+            try:
+                confs = await conf_repo.get_by_agent(agent_id)
+                kb_ids = []
+                for c in confs:
+                    if c.search_type == "hybrid":
+                        kb_ids.append(c.kb_id)
+                return kb_ids
+            except Exception as e:
+                handle_exception(e, "获取知识库配置列表失败")

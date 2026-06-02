@@ -405,70 +405,126 @@ class GraphService:
         top_k: int = 3
     ) -> list[str]:
         """
-        [Service 层封装]
-        多关键词语义实体消歧对齐算子。
-        并发计算多路关键词的 Embedding 向量，并并发驱动 Oracle 向量引擎完成近义碰撞与交叉去重。
+        [Service 层重构封装]
+        多关键词 × 多知识库矩阵级语义实体消歧对齐算子。
+        
+        支持一个 Agent 下关联多个独立 KB 的标准架构。并发计算各关键词的 Embedding 向量，
+        并并发驱动底层向量引擎对所有关联知识库执行跨库近义碰撞与全局交叉去重。
         
         :param keywords: 规划层或上下文提取出的模糊关键词/白话短语列表
-        :param agent_id: 知识库/智能体隔离 ID
-        :param top_k: 每个关键词辐射匹配的实体上限数量
-        :return: 100% 存在于图谱中的真实节点名称列表
+        :param agent_id: 智能体隔离 ID (非底层物理 KB_ID)
+        :param top_k: 每个关键词在单个物理知识库中辐射匹配的实体上限数量
+        :return: 100% 存在于该智能体图谱网络中的标准真实节点名称列表
         """
         if not keywords:
             return []
 
-        # 清洗初始输入的无意义、空字符串
+        # 1. 清洗初始输入的无意义、空字符串
         valid_keywords = [kw.strip() for kw in keywords if kw and len(kw.strip()) >= 2]
         if not valid_keywords:
             return keywords
         
-        # 根据 agent_id 获取embedding_model（懒加载 AgentService 以避免循环导入）
+        # 2. 懒加载 AgentService 并获取智能体配置参数
         if self._agent_service is None:
             from services.basic import AgentService
             self._agent_service = AgentService()
+            
         model_params = await self._agent_service.get_agent_model_params(agent_id)
         embedding_model = model_params.txt_embedding_model
         
-        # 定义内部子任务：负责单词的 [向量转换 -> 数据库近邻查询] 闭环
-        async def process_single_keyword(kw: str) -> list[str]:
-            try:
-                # 1. 生成关键词的向量表示
-                kw_embedding = await self._get_embedding(content=kw, model_name=embedding_model)
-                if not kw_embedding:
-                    return [kw] # 向量化失败则保留原词，交由字面量硬碰防御
+        # 获取该 Agent 旗下绑定的所有真实物理知识库 ID 集合
+        kb_ids = await self._agent_service.get_kb_list(agent_id)
+        if not kb_ids:
+            logger.warning(f"[GraphService] Agent '{agent_id}' 未绑定任何有效知识库(KB)，退化至字面量防御流程。")
+            return keywords
 
-                # 2. 调用数据库查询近邻实体
+        logger.info(
+            f"[GraphService] 触发矩阵图谱消歧. Agent: {agent_id}, "
+            f"关联 KB 数量: {len(kb_ids)}, 关键词数量: {len(valid_keywords)}"
+        )
+
+        # 3. 生成所有有效关键词的 Embedding 向量（批量并发，提前在数据库检索外层收敛）
+        kw_embedding_map = {}
+        embedding_tasks = []
+        
+        for kw in valid_keywords:
+            embedding_tasks.append(self._get_embedding(content=kw, model_name=embedding_model))
+            
+        embedded_results = await asyncio.gather(*embedding_tasks, return_exceptions=True)
+        
+        for kw, kw_embedding in zip(valid_keywords, embedded_results):
+            if kw_embedding and not isinstance(kw_embedding, Exception):
+                kw_embedding_map[kw] = kw_embedding
+            else:
+                logger.warning(f"[GraphService] 关键词 '{kw}' 向量化失败，稍后将直接透传使用字面量硬碰防御。")
+
+        # 4. 负责单个 [关键词 × 单个知识库ID] 的独立隔离检索闭环
+        async def query_single_keyword_against_kb(kw: str, kb_id: int) -> list[str]:
+            embedding_vec = kw_embedding_map.get(kw)
+            if not embedding_vec:
+                return [kw]  # 没有向量，返回原词作为字面量硬配兜底
+                
+            try:
                 async with self.db_session as session:
                     local_repo = GraphRepository(session)
                     db_hits = await local_repo.get_vertex_names_by_embedding(
-                        kb_id=agent_id,
-                        keyword_embedding=kw_embedding,
+                        kb_id=kb_id,
+                        keyword_embedding=embedding_vec,
                         top_k=top_k
                     )
-                # 如果这个关键词在向量检索中沉寂（图谱里可能还没有这类实体点），原样返还以提供字面量硬匹配的机会
-                return db_hits if db_hits else [kw]
-                
+                return db_hits if db_hits else []
             except Exception as ex:
-                logger.warning(f"[GraphService] 单个关键词 '{kw}' 执行语义消歧碰撞失败，降级保持原样。异常原因: {ex}")
+                logger.error(
+                    f"[GraphService] 实体消歧矩阵坍塌失败。单个单元格冲突 -> "
+                    f"关键词: '{kw}', KB_ID: {kb_id}，异常原因: {str(ex)}"
+                )
                 return [kw]
 
-        aligned_names_set = set()
+        # 5. 组装 [N 个词 × M 个库] 的交叉并发任务矩阵
+        matrix_tasks = []
+        task_info_tracker = []  # 追踪器，用于排查并发队列
+        
+        for kw in valid_keywords:
+            for kb_id in kb_ids:
+                matrix_tasks.append(query_single_keyword_against_kb(kw, kb_id))
+                task_info_tracker.append((kw, kb_id))
+
+        global_aligned_set = set()
 
         try:
-            tasks = [process_single_keyword(kw) for kw in valid_keywords]
-            completed_results = await asyncio.gather(*tasks, return_exceptions=True)
+            # 6. 全线并发查询
+            matrix_results = await asyncio.gather(*matrix_tasks, return_exceptions=True)
 
-            # 3. 内存聚合与跨路去重
-            for res_list in completed_results:
+            # 7. 跨路结果聚合与交叉消歧去重
+            for idx, res_list in enumerate(matrix_results):
+                orig_kw, target_kb = task_info_tracker[idx]
+                
                 if isinstance(res_list, list):
-                    for name in res_list:
-                        aligned_names_set.add(name)
+                    if not res_list and orig_kw not in global_aligned_set:
+                        # 如果该库完全无碰撞且全局没有任何实体接纳这个词，暂时放入原始词，让最后的非结构化回表有硬碰概率
+                        global_aligned_set.add(orig_kw)
+                    else:
+                        for name in res_list:
+                            global_aligned_set.add(name)
+                elif isinstance(res_list, Exception):
+                    logger.error(f"[GraphService] 矩阵单元任务引发崩溃 (词: {orig_kw}, 库: {target_kb}): {res_list}")
+                    global_aligned_set.add(orig_kw)
 
-            final_aligned_vertices = list(aligned_names_set)
-            
-            logger.info(f"[GraphService] 实体消歧对齐完成。原始关键词: {valid_keywords} -> 融合去重后图节点: {final_aligned_vertices}")
+            # 移除如果存在多个实体召回而导致的原始未对齐模糊词残留（若存在真实匹配，则清洗掉原白话词）
+            has_real_hits = any(name not in valid_keywords for name in global_aligned_set)
+            if has_real_hits:
+                # 智能清洗：若某模糊词已成功被消歧转换为实体，则从集合中剔除原始模糊词，全面提升下游图谱深度检索的精准度
+                for kw in valid_keywords:
+                    if any(hit != kw and (kw in hit or hit in kw) for hit in global_aligned_set):
+                        global_aligned_set.discard(kw)
+
+            final_aligned_vertices = list(global_aligned_set)
+            logger.info(
+                f"[GraphService] 全局矩阵级消歧完美收网。原始白话词: {valid_keywords} "
+                f"-> 辐射多库交叉检索去重后标准图实体节点: {final_aligned_vertices}"
+            )
             return final_aligned_vertices
 
         except Exception as global_err:
-            logger.error(f"[GraphService] 调度全局向量实体对齐引发未知崩溃: {global_err}，安全降级回原始词", exc_info=True)
+            logger.error(f"[GraphService] 调度全局矩阵实体对齐引发未知毁灭性崩溃: {global_err}，安全降级回原始词", exc_info=True)
             return keywords
