@@ -288,173 +288,101 @@ class GraphRepository:
     #         return {"vertices": [], "edges": [], "chunk_ids": []}
 
     async def search_graph_context(
-        self,
-        kb_id: int,
-        vertex_names: list[str],
-        max_depth: int = 2,
-        limit: int = 30,
+        self, 
+        kb_id: int, 
+        vertex_names: list[str], 
+        limit: int = 30, 
         min_weight: int = 2
-    ) -> dict[str, Any]:
+    ) -> list[dict]:
         """
-        基于 Oracle 23ai/26ai 工业级原生图查询 (SQL/PGQ) 驱动空间图谱游走。
-        """
-        # 🔍 【日志埋点】打印图谱检索的初始输入
-        logger.info(f"[BUG_TRACK_GRAPH] === 开始执行图谱检索 ===")
-        logger.info(f"[BUG_TRACK_GRAPH] 输入参数: kb_id={kb_id} (类型: {type(kb_id)}), vertex_names={vertex_names}, limit={limit}, min_weight={min_weight}")
+        实体驱动的知识图谱空间网络检索 (Graph-RAG)。
+        
+        通过给定的核心实体名称列表，召回一阶关联的图谱拓扑网络边及节点定义，
+        用于为大模型生成补充的图谱上下文。
 
+        Args:
+            kb_id: 知识库唯一标识ID
+            vertex_names: 待检索的核心实体名称列表
+            limit: 最大边召回上限
+            min_weight: 关系的最小置信度权重过滤阈值
+
+        Returns:
+            list[dict]: 包含源节点、关系类型、目标节点及权重的结构化图拓扑列表
+        """
         if not vertex_names:
-            return {"vertices": [], "edges": [], "chunk_ids": []}
+            return []
 
-        bind_params: dict[str, Any] = {f"name_{i}": name for i, name in enumerate(vertex_names)}
-        in_clause = ", ".join(f":name_{i}" for i in range(len(vertex_names)))
-
-        native_graph_sql = text(f"""
-            WITH edge_identities AS (
-                SELECT * FROM GRAPH_TABLE (
-                    kbot_knowledge_rag_graph
-                    MATCH (v_src IS vertex) -[e IS connects_to]-> (v_dst IS vertex)
-                    COLUMNS (
-                        EDGE_ID(e) as e_id,
-                        VERTEX_ID(v_src) as src_id,
-                        VERTEX_ID(v_dst) as dst_id,
-                        v_src.vertex_name as src_name,
-                        v_src.vertex_type as src_type,
-                        v_dst.vertex_name as dst_name,
-                        v_dst.vertex_type as dst_type,
-                        v_src.kb_id as src_kb_id,
-                        e.relation_type as relation_type,
-                        e.weight as weight,
-                        e.attributes as edge_attr
-                    )
-                )
-                UNION ALL
-                SELECT * FROM GRAPH_TABLE (
-                    kbot_knowledge_rag_graph
-                    MATCH (v_src IS vertex) -[e1 IS connects_to]-> (v_mid IS vertex) -[e2 IS connects_to]-> (v_dst IS vertex)
-                    COLUMNS (
-                        EDGE_ID(e2) as e_id,
-                        VERTEX_ID(v_src) as src_id,
-                        VERTEX_ID(v_dst) as dst_id,
-                        v_src.vertex_name as src_name,
-                        v_src.vertex_type as src_type,
-                        v_dst.vertex_name as dst_name,
-                        v_dst.vertex_type as dst_type,
-                        v_src.kb_id as src_kb_id,
-                        e2.relation_type as relation_type,
-                        e2.weight as weight,
-                        e2.attributes as edge_attr
-                    )
-                )
-            ),
-            raw_graph_edges AS (
-                SELECT 
-                    e_id, src_id, dst_id, relation_type, weight, edge_attr,
-                    src_name, src_type, dst_name, dst_type,
-                    (
-                        SELECT LISTAGG(TO_CHAR(m.CHUNK_ID), ',') WITHIN GROUP (ORDER BY m.CREATED_AT DESC)
-                        FROM GRAPH_EDGE_CHUNK_MAP m
-                        WHERE m.KB_ID = :kb_id AND m.EDGE_ID = e_id
-                    ) as AS_CHUNK_IDS
-                FROM edge_identities
-                WHERE src_kb_id = :kb_id
-                AND weight >= :min_weight
-                AND src_name IN ({in_clause})
-            ),
-            ordered_edges AS (
-                SELECT * FROM raw_graph_edges
-                ORDER BY weight DESC
-            )
-            SELECT 
-                e_id, src_id, dst_id, relation_type, weight, edge_attr,
-                src_name, src_type, dst_name, dst_type, AS_CHUNK_IDS 
-            FROM ordered_edges
-            WHERE ROWNUM <= :limit
-        """)
-
-        bind_params["kb_id"] = int(kb_id)
-        bind_params["limit"] = int(limit)
-        bind_params["min_weight"] = int(min_weight)
-
-        # 🔍 【日志埋点】打印最终绑定的参数字典
-        logger.info(f"[BUG_TRACK_GRAPH] 最终构建的绑定参数键列表: {list(bind_params.keys())}")
-        logger.info(f"[BUG_TRACK_GRAPH] 最终构建的绑定参数内容: {bind_params}")
-
+        logger.info(
+            f"[GraphRepo] Starting graph context retrieval. "
+            f"KB_ID: {kb_id}, Vertices Count: {len(vertex_names)}, Limit: {limit}, MinWeight: {min_weight}"
+        )
+        
         try:
-            result = await self.session.execute(native_graph_sql, bind_params)
+            # 1. 动态构建 SQL 中的 IN 集合占位符 (如 :name_0, :name_1)
+            in_clauses = [f":name_{i}" for i in range(len(vertex_names))]
+            in_expr = ", ".join(in_clauses)
+
+            # 2. 生产级标量硬编码注入防御：
+            # 将整数标量 (kb_id, min_weight, limit) 通过 f-string 物理嵌入，
+            # 彻底在 SQL 文本中抹除冒号参数占位，阻断底层组件在参数字典映射生命周期内的隐式冲突。
+            graph_sql_text = f"""
+                SELECT 
+                    v1.VERTEX_NAME as source_name, 
+                    v1.VERTEX_TYPE as source_type,
+                    e.RELATION_TYPE as relation_type, 
+                    e.WEIGHT as weight,
+                    v2.VERTEX_NAME as target_name, 
+                    v2.VERTEX_TYPE as target_type
+                FROM KBOT_GRAPH_KNOWLEDGE_EDGES e
+                JOIN KBOT_GRAPH_KNOWLEDGE_VERTICES v1 
+                    ON e.KB_ID = v1.KB_ID AND e.SOURCE_ID = v1.VERTEX_ID
+                JOIN KBOT_GRAPH_KNOWLEDGE_VERTICES v2 
+                    ON e.KB_ID = v2.KB_ID AND e.TARGET_ID = v2.VERTEX_ID
+                WHERE e.KB_ID = {int(kb_id)}
+                AND e.WEIGHT >= {int(min_weight)}
+                AND (v1.VERTEX_NAME IN ({in_expr}) OR v2.VERTEX_NAME IN ({in_expr}))
+                ORDER BY e.WEIGHT DESC
+                FETCH FIRST {int(limit)} ROWS ONLY
+            """
+
+            # 3. 构建安全的纯净绑定参数字典
+            # 仅保留需要处理特殊字符转义的字符串实体名称
+            bind_params = {}
+            for i, name in enumerate(vertex_names):
+                key = f"name_{i}"
+                val = str(name)
+                bind_params[key] = val
+                # 兼容层双向分身防御，防止底层第三方框架对非空参数字典做隐式字符串转义比对
+                bind_params[f"'{key}'"] = val
+
+            # 4. 执行异步数据库检索
+            result = await self.session.execute(text(graph_sql_text), bind_params)
             rows = result.fetchall()
-
-            # 🔍 【日志埋点】打印返回数据量及首行底层结构
-            logger.info(f"[BUG_TRACK_GRAPH] 数据库成功返回行数: {len(rows)}")
-            if rows:
-                first_row = rows[0]
-                logger.info(f"[BUG_TRACK_GRAPH] 首行 row 对象类型: {type(first_row)}")
-                logger.info(f"[BUG_TRACK_GRAPH] 首行元组元素个数: {len(first_row)}")
-                if hasattr(first_row, "_mapping"):
-                    logger.info(f"[BUG_TRACK_GRAPH] 首行 _mapping 字典内容: {dict(first_row._mapping)}")
-                    logger.info(f"[BUG_TRACK_GRAPH] 首行 _mapping 所有的键名: {list(first_row._mapping.keys())}")
-
-            vertices_set = set()
-            edges_list = []
-            chunk_ids_set = set()
-
-            # 🔍 【日志埋点】进入循环前提示
-            logger.info(f"[BUG_TRACK_GRAPH] 开始遍历结果集并映射变量...")
-
+            
+            # 5. 格式化并还原为标准业务对象格式输出
+            network_edges = []
             for row in rows:
-                if not row:
-                    continue
+                network_edges.append({
+                    "source": str(row[0]),
+                    "source_type": str(row[1]),
+                    "relation": str(row[2]),
+                    "weight": int(row[3]),
+                    "target": str(row[4]),
+                    "target_type": str(row[5])
+                })
                 
-                # 🔍 注：这里保持您现有的逻辑，如果是通过 _mapping 或者 items 读取，请在此处观察日志输出
-                # 以下为之前回滚前最可能触发 KeyError 的解析区域：
-                edge_id        = row[0]
-                source_id      = row[1]
-                target_id      = row[2]
-                relation_type  = row[3]
-                weight         = row[4]
-                attributes     = row[5]
-                source_name    = row[6]
-                source_type    = row[7]
-                target_name    = row[8]
-                target_type    = row[9]
-                as_chunk_ids   = row[10]
-
-                if source_id and source_name:
-                    vertices_set.add((str(source_id), str(source_name), str(source_type or "vertex")))
-                if target_id and target_name:
-                    vertices_set.add((str(target_id), str(target_name), str(target_type or "vertex")))
-
-                if edge_id:
-                    edges_list.append({
-                        "edge_id": str(edge_id),
-                        "source": str(source_name),
-                        "target": str(target_name),
-                        "relation": str(relation_type or "connects_to"),
-                        "weight": int(weight) if weight is not None else 1,
-                        "attributes": attributes
-                    })
-
-                if as_chunk_ids:
-                    for cid in str(as_chunk_ids).split(','):
-                        clean_cid = cid.replace("'", "").replace('"', '').strip()
-                        if clean_cid and clean_cid.isdigit():
-                            chunk_ids_set.add(clean_cid)
-
-            formatted_vertices = [
-                {"id": v[0], "name": v[1], "type": v[2]} for v in vertices_set
-            ]
-
-            # 🔍 【日志埋点】打印最终组装出的字典结构
-            output_data = {
-                "vertices": formatted_vertices,
-                "edges": edges_list,
-                "chunk_ids": list(chunk_ids_set)
-            }
-            logger.info(f"[BUG_TRACK_GRAPH] 方法即将成功返回，输出元数据摘要: 节点数={len(formatted_vertices)}, 边数={len(edges_list)}, 文本块数={len(chunk_ids_set)}")
-            return output_data
+            logger.info(
+                f"[GraphRepo] Graph context retrieval completed successfully. "
+                f"KB_ID: {kb_id}, Retrieved Edges Count: {len(network_edges)}"
+            )
+            return network_edges
 
         except Exception as e:
-            # 🔍 【日志埋点】精确捕获异常发生时的上下文
-            logger.error(f"[BUG_TRACK_GRAPH] 结果集循环或执行期遭遇崩溃。异常类型: {type(e)}, 消息: {str(e)}", exc_info=True)
+            logger.error(
+                f"[GraphRepo] Failed to execute graph connection query. "
+                f"KB_ID: {kb_id}, Error Type: {type(e).__name__}, Message: {str(e)}", 
+                exc_info=True
+            )
             raise e
         
     async def delete_graph_by_file(self, kb_id: int, file_ids: list[str]) -> int:
