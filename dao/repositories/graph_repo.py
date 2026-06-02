@@ -4,6 +4,7 @@ from sqlalchemy import select, func, text, bindparam
 from loguru import logger
 from core.exceptions import DatabaseException
 from dao.entities import GraphVertexEntity, GraphEdgeEntity
+from utils.oracle_vec_handler import OracleVecHandler
 
 class GraphRepository:
     """Repository for managing Oracle 26ai Property Graph data structures using SQLAlchemy 2.0 ORM & Native SQL"""
@@ -161,6 +162,131 @@ class GraphRepository:
             logger.error(f"[GraphRepo] Failed to fetch edge by id {edge_id} in KB {kb_id}: {str(e)}", exc_info=True)
             raise DatabaseException(f"Failed to fetch graph edge by id", original_error=e)
 
+    # async def search_graph_context(
+    #     self,
+    #     kb_id: int,
+    #     vertex_names: list[str],
+    #     max_depth: int = 2,
+    #     limit: int = 30,
+    #     min_weight: int = 2
+    # ) -> dict[str, Any]:
+    #     """
+    #     Performs graph traversal retrieval via native Oracle CONNECT BY.
+    #     Locates 1 to max_depth subgraphs based on extracted entities and gathers chunk references.
+    #     """
+    #     if not vertex_names:
+    #         return {"vertices": [], "edges": [], "chunk_ids": []}
+
+    #     bind_params: dict[str, Any] = {f"name_{i}": name for i, name in enumerate(vertex_names)}
+    #     in_clause = ", ".join(f":name_{i}" for i in range(len(vertex_names)))
+
+    #     search_sql = text(f"""
+    #         WITH sub_edges AS (
+    #             SELECT DISTINCT
+    #                 e.EDGE_ID, e.SOURCE_ID, e.TARGET_ID, e.RELATION_TYPE, e.WEIGHT, e.ATTRIBUTES, e.KB_ID
+    #             FROM KBOT_GRAPH_KNOWLEDGE_EDGES e
+    #             WHERE e.KB_ID = :kb_id AND e.WEIGHT >= :min_weight
+    #             START WITH e.KB_ID = :kb_id AND e.SOURCE_ID IN (
+    #                 SELECT v.VERTEX_ID 
+    #                 FROM KBOT_GRAPH_KNOWLEDGE_VERTICES v 
+    #                 WHERE v.KB_ID = :kb_id AND v.VERTEX_NAME IN ({in_clause})
+    #             )
+    #             CONNECT BY PRIOR e.TARGET_ID = e.SOURCE_ID 
+    #             AND PRIOR e.KB_ID = e.KB_ID
+    #             AND e.WEIGHT >= :min_weight    
+    #             AND LEVEL <= :max_depth
+    #         ),
+    #         ranked_edges AS (
+    #             SELECT 
+    #                 se.EDGE_ID, se.SOURCE_ID, se.TARGET_ID, se.RELATION_TYPE, se.WEIGHT, se.ATTRIBUTES,
+    #                 (
+    #                     SELECT LISTAGG(TO_CHAR(m.CHUNK_ID), ',') WITHIN GROUP (ORDER BY m.CREATED_AT DESC)
+    #                     FROM KBOT_GRAPH_EDGE_CHUNK_MAP m
+    #                     WHERE m.KB_ID = se.KB_ID AND m.EDGE_ID = se.EDGE_ID
+    #                 ) as AS_CHUNK_IDS,
+    #                 v_src.VERTEX_NAME as SOURCE_NAME,
+    #                 v_src.VERTEX_TYPE as SOURCE_TYPE,
+    #                 v_dst.VERTEX_NAME as TARGET_NAME,
+    #                 v_dst.VERTEX_TYPE as TARGET_TYPE
+    #             FROM sub_edges se
+    #             JOIN KBOT_GRAPH_KNOWLEDGE_VERTICES v_src ON se.KB_ID = v_src.KB_ID AND se.SOURCE_ID = v_src.VERTEX_ID
+    #             JOIN KBOT_GRAPH_KNOWLEDGE_VERTICES v_dst ON se.KB_ID = v_dst.KB_ID AND se.TARGET_ID = v_dst.VERTEX_ID
+    #             ORDER BY se.WEIGHT DESC
+    #         )
+    #         SELECT * FROM ranked_edges 
+    #         WHERE ROWNUM <= :limit
+    #     """)
+
+    #     bind_params["kb_id"] = int(kb_id)
+    #     bind_params["max_depth"] = max_depth
+    #     bind_params["limit"] = limit
+    #     bind_params["min_weight"] = min_weight
+
+    #     try:
+    #         result = await self.session.execute(search_sql, bind_params)
+    #         rows = result.fetchall()
+
+    #         vertices_set = set()
+    #         edges_list = []
+    #         chunk_ids_set = set()
+
+    #         for row in rows:
+    #             r = {str(k).lower(): v for k, v in row._mapping.items()}
+                
+    #             # 🔍 诊断日志：记录第一行的所有键名，便于排查 Oracle 返回的列名是否异常
+    #             if rows and row is rows[0]:
+    #                 logger.debug(f"[GraphRepo] search_graph_context 返回第一行映射键名 (KB_ID {kb_id}): {list(r.keys())!r}")
+
+    #             source_id = r.get("source_id")
+    #             source_name = r.get("source_name")
+    #             source_type = r.get("source_type")
+                
+    #             target_id = r.get("target_id")
+    #             target_name = r.get("target_name")
+    #             target_type = r.get("target_type")
+                
+    #             edge_id = r.get("edge_id")
+    #             relation_type = r.get("relation_type")
+    #             weight = r.get("weight")
+    #             attributes = r.get("attributes")
+    #             as_chunk_ids = r.get("as_chunk_ids")
+
+    #             if source_id and source_name:
+    #                 vertices_set.add((str(source_id), source_name, source_type))
+    #             if target_id and target_name:
+    #                 vertices_set.add((str(target_id), target_name, target_type))
+
+    #             if edge_id:
+    #                 edges_list.append({
+    #                     "edge_id": str(edge_id),
+    #                     "source": source_name,
+    #                     "target": target_name,
+    #                     "relation": relation_type,
+    #                     "weight": weight,
+    #                     "attributes": attributes
+    #                 })
+
+    #             if as_chunk_ids:
+    #                 for cid in str(as_chunk_ids).split(','):
+    #                     if cid.strip():
+    #                         chunk_ids_set.add(cid.strip())
+
+    #         formatted_vertices = [
+    #             {"id": v[0], "name": v[1], "type": v[2]} for v in vertices_set
+    #         ]
+
+    #         logger.info(f"[GraphSearch] Traversal successful. Recalled {len(formatted_vertices)} vertices, {len(edges_list)} edges, and {len(chunk_ids_set)} chunks for KB: {kb_id}")
+
+    #         return {
+    #             "vertices": formatted_vertices,
+    #             "edges": edges_list,
+    #             "chunk_ids": list(chunk_ids_set)
+    #         }
+
+    #     except Exception as e:
+    #         logger.error(f"[GraphSearch Failed] Graph retrieval execution crashed: {str(e)}", exc_info=True)
+    #         return {"vertices": [], "edges": [], "chunk_ids": []}
+
     async def search_graph_context(
         self,
         kb_id: int,
@@ -170,59 +296,69 @@ class GraphRepository:
         min_weight: int = 2
     ) -> dict[str, Any]:
         """
-        Performs graph traversal retrieval via native Oracle CONNECT BY.
-        Locates 1 to max_depth subgraphs based on extracted entities and gathers chunk references.
+        基于 Oracle 23ai/26ai 工业级原生图查询 (SQL/PGQ) 驱动空间图谱游走。
+        利用 MATCH 变长路径语法定位 1 到 max_depth 度的局部关联子图，并聚合无损反查 chunk_ids。
         """
         if not vertex_names:
             return {"vertices": [], "edges": [], "chunk_ids": []}
 
+        # 1. 动态安全绑定外部输入的过滤实体群
         bind_params: dict[str, Any] = {f"name_{i}": name for i, name in enumerate(vertex_names)}
         in_clause = ", ".join(f":name_{i}" for i in range(len(vertex_names)))
 
-        search_sql = text(f"""
-            WITH sub_edges AS (
-                SELECT DISTINCT
-                    e.EDGE_ID, e.SOURCE_ID, e.TARGET_ID, e.RELATION_TYPE, e.WEIGHT, e.ATTRIBUTES, e.KB_ID
-                FROM KBOT_GRAPH_KNOWLEDGE_EDGES e
-                WHERE e.KB_ID = :kb_id AND e.WEIGHT >= :min_weight
-                START WITH e.KB_ID = :kb_id AND e.SOURCE_ID IN (
-                    SELECT v.VERTEX_ID 
-                    FROM KBOT_GRAPH_KNOWLEDGE_VERTICES v 
-                    WHERE v.KB_ID = :kb_id AND v.VERTEX_NAME IN ({in_clause})
-                )
-                CONNECT BY PRIOR e.TARGET_ID = e.SOURCE_ID 
-                AND PRIOR e.KB_ID = e.KB_ID
-                AND e.WEIGHT >= :min_weight    
-                AND LEVEL <= :max_depth
-            ),
-            ranked_edges AS (
+        # ========================================================
+        # 2. 构建 23ai / 26ai 原生属性图 SQL/PGQ 查询
+        # ========================================================
+        # 使用 MATCH (v_src)-[e]->{1, N} (v_dst) 代替 CONNECT BY
+        # 同时通过单表内聚的子查询无缝拉取关联的文本块块清单
+        native_graph_sql = text(f"""
+            WITH raw_graph_edges AS (
                 SELECT 
-                    se.EDGE_ID, se.SOURCE_ID, se.TARGET_ID, se.RELATION_TYPE, se.WEIGHT, se.ATTRIBUTES,
+                    e_id, src_id, dst_id, relation_type, weight, edge_attr,
+                    src_name, src_type, dst_name, dst_type,
                     (
                         SELECT LISTAGG(TO_CHAR(m.CHUNK_ID), ',') WITHIN GROUP (ORDER BY m.CREATED_AT DESC)
                         FROM KBOT_GRAPH_EDGE_CHUNK_MAP m
-                        WHERE m.KB_ID = se.KB_ID AND m.EDGE_ID = se.EDGE_ID
-                    ) as AS_CHUNK_IDS,
-                    v_src.VERTEX_NAME as SOURCE_NAME,
-                    v_src.VERTEX_TYPE as SOURCE_TYPE,
-                    v_dst.VERTEX_NAME as TARGET_NAME,
-                    v_dst.VERTEX_TYPE as TARGET_TYPE
-                FROM sub_edges se
-                JOIN KBOT_GRAPH_KNOWLEDGE_VERTICES v_src ON se.KB_ID = v_src.KB_ID AND se.SOURCE_ID = v_src.VERTEX_ID
-                JOIN KBOT_GRAPH_KNOWLEDGE_VERTICES v_dst ON se.KB_ID = v_dst.KB_ID AND se.TARGET_ID = v_dst.VERTEX_ID
-                ORDER BY se.WEIGHT DESC
+                        WHERE m.KB_ID = :kb_id AND m.EDGE_ID = e_id
+                    ) as AS_CHUNK_IDS
+                FROM GRAPH_TABLE (
+                    kbot_knowledge_rag_graph
+                    MATCH (v_src IS vertex) -[e IS connects_to]->{{1, :max_depth}} (v_dst IS vertex)
+                    COLUMNS (
+                        EDGE_ID(e) as e_id,
+                        VERTEX_ID(v_src) as src_id,
+                        VERTEX_ID(v_dst) as dst_id,
+                        v_src.vertex_name as src_name,
+                        v_src.vertex_type as src_type,
+                        v_dst.vertex_name as dst_name,
+                        v_dst.vertex_type as dst_type,
+                        v_src.kb_id as src_kb_id,
+                        e.relation_type as relation_type,
+                        e.weight as weight,
+                        e.attributes as edge_attr
+                    )
+                )
+                WHERE src_kb_id = :kb_id
+                  AND weight >= :min_weight
+                  AND src_name IN ({in_clause})
+            ),
+            ordered_edges AS (
+                SELECT * FROM raw_graph_edges
+                ORDER BY weight DESC
             )
-            SELECT * FROM ranked_edges 
+            SELECT * FROM ordered_edges
             WHERE ROWNUM <= :limit
         """)
 
+        # 3. 封装绑定标量，注入防注入清洗
         bind_params["kb_id"] = int(kb_id)
-        bind_params["max_depth"] = max_depth
-        bind_params["limit"] = limit
-        bind_params["min_weight"] = min_weight
+        bind_params["max_depth"] = int(max_depth)
+        bind_params["limit"] = int(limit)
+        bind_params["min_weight"] = int(min_weight)
 
         try:
-            result = await self.session.execute(search_sql, bind_params)
+            # 4. 会话层驱动
+            result = await self.session.execute(native_graph_sql, bind_params)
             rows = result.fetchall()
 
             vertices_set = set()
@@ -230,51 +366,57 @@ class GraphRepository:
             chunk_ids_set = set()
 
             for row in rows:
-                r = {str(k).lower(): v for k, v in row._mapping.items()}
+                # 统一转小写，并彻底剥离可能残留的任何引号前缀（配合底层二次防御）
+                r = {str(k).lower().strip("'\""): v for k, v in row._mapping.items()}
                 
-                # 🔍 诊断日志：记录第一行的所有键名，便于排查 Oracle 返回的列名是否异常
+                # 🔍 RAG 调试观察哨
                 if rows and row is rows[0]:
-                    logger.debug(f"[GraphRepo] search_graph_context 返回第一行映射键名 (KB_ID {kb_id}): {list(r.keys())!r}")
+                    logger.debug(f"[NativeGraphRepo] 命中图谱网络，首行映射键名 (KB_ID {kb_id}): {list(r.keys())!r}")
 
-                source_id = r.get("source_id")
-                source_name = r.get("source_name")
-                source_type = r.get("source_type")
+                source_id = r.get("src_id")
+                source_name = r.get("src_name")
+                source_type = r.get("src_type")
                 
-                target_id = r.get("target_id")
-                target_name = r.get("target_name")
-                target_type = r.get("target_type")
+                target_id = r.get("dst_id")
+                target_name = r.get("dst_name")
+                target_type = r.get("dst_type")
                 
-                edge_id = r.get("edge_id")
+                edge_id = r.get("e_id")
                 relation_type = r.get("relation_type")
                 weight = r.get("weight")
-                attributes = r.get("attributes")
+                attributes = r.get("edge_attr")
                 as_chunk_ids = r.get("as_chunk_ids")
 
+                # 解构装配节点集
                 if source_id and source_name:
-                    vertices_set.add((str(source_id), source_name, source_type))
+                    vertices_set.add((str(source_id), str(source_name), str(source_type or "vertex")))
                 if target_id and target_name:
-                    vertices_set.add((str(target_id), target_name, target_type))
+                    vertices_set.add((str(target_id), str(target_name), str(target_type or "vertex")))
 
+                # 解构装配边拓扑
                 if edge_id:
                     edges_list.append({
                         "edge_id": str(edge_id),
-                        "source": source_name,
-                        "target": target_name,
-                        "relation": relation_type,
-                        "weight": weight,
+                        "source": str(source_name),
+                        "target": str(target_name),
+                        "relation": str(relation_type or "connects_to"),
+                        "weight": int(weight) if weight is not None else 1,
                         "attributes": attributes
                     })
 
+                # 切割并提取回表指针 Chunk ID
                 if as_chunk_ids:
                     for cid in str(as_chunk_ids).split(','):
-                        if cid.strip():
-                            chunk_ids_set.add(cid.strip())
+                        clean_cid = cid.strip()
+                        if clean_cid:
+                            chunk_ids_set.add(clean_cid)
 
+            # 序列化格式化节点集
             formatted_vertices = [
                 {"id": v[0], "name": v[1], "type": v[2]} for v in vertices_set
             ]
 
-            logger.info(f"[GraphSearch] Traversal successful. Recalled {len(formatted_vertices)} vertices, {len(edges_list)} edges, and {len(chunk_ids_set)} chunks for KB: {kb_id}")
+            logger.info(f"[NativeGraphSearch] 🚀 原生图提取成功. 召回 {len(formatted_vertices)} 实体节点, {len(edges_list)} 拓扑关系边, {len(chunk_ids_set)} 映射文本块，所属KB: {kb_id}")
 
             return {
                 "vertices": formatted_vertices,
@@ -283,9 +425,9 @@ class GraphRepository:
             }
 
         except Exception as e:
-            logger.error(f"[GraphSearch Failed] Graph retrieval execution crashed: {str(e)}", exc_info=True)
+            logger.error(f"[NativeGraphSearch Failed] Oracle SQL/PGQ 原生引擎检索崩溃: {str(e)}", exc_info=True)
             return {"vertices": [], "edges": [], "chunk_ids": []}
-
+        
     async def delete_graph_by_file(self, kb_id: int, file_ids: list[str]) -> int:
         """
         Removes file graph components from Oracle based on KB ID and an incoming string list of File IDs.
@@ -362,3 +504,49 @@ class GraphRepository:
         except Exception as e:
             logger.error(f"[GraphRepo] Failed to wipe graph for kb_id: {kb_id}, Error: {str(e)}")
             raise DatabaseException(f"Failed to delete graph by knowledge base", original_error=e)
+        
+    async def get_vertex_names_by_embedding(self, kb_id: int, keyword_embedding: list[float], top_k: int = 10) -> list[str]:
+        """
+        利用 Oracle 23ai/26ai 原生向量检索，单次通过单个 Embedding 向量召回最接近的真实节点名称。
+        """
+        if not keyword_embedding:
+            return []
+
+        try:
+            vec = OracleVecHandler().convert(keyword_embedding)
+
+            vertices_sql = text("""
+                SELECT VERTEX_NAME
+                FROM (
+                    SELECT VERTEX_NAME,
+                           VECTOR_DISTANCE(VERTEX_NAME_VECTOR, :kw_vector, COSINE) as dist
+                    FROM KBOT_GRAPH_KNOWLEDGE_VERTICES
+                    WHERE KB_ID = :kb_id
+                      AND VERTEX_NAME_VECTOR IS NOT NULL
+                    ORDER BY dist ASC
+                )
+                WHERE ROWNUM <= :top_k
+            """)
+
+            result = await self.session.execute(
+                vertices_sql, 
+                {
+                    "kb_id": int(kb_id), 
+                    "kw_vector": vec, 
+                    "top_k": int(top_k)
+                }
+            )
+            rows = result.fetchall()
+            
+            clean_names = []
+            for row in rows:
+                if row and row[0]:
+                    clean_name = str(row[0]).strip("'\" ")
+                    if clean_name:
+                        clean_names.append(clean_name)
+            
+            return clean_names
+
+        except Exception as e:
+            logger.error(f"[GraphRepo] Failed to fetch vertices for kb_id: {kb_id}, Error: {str(e)}", exc_info=True)
+            raise DatabaseException(f"Failed to fetch vertices by knowledge base vector", original_error=e)

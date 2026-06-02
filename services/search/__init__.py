@@ -2,7 +2,6 @@ from .rerank import TxtBaseRerank
 from .kb_search import TxtBaseSearch
 from .result import TxtBaseSearchResult
 from .graph_search import GraphBaseSearch
-from .graph_service import GraphService
 
 
 
@@ -11,5 +10,4 @@ __all__ = [
     "TxtBaseSearch", 
     "TxtBaseSearchResult",
     "GraphBaseSearch",
-    "GraphService"
 ]

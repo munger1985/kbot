@@ -246,3 +246,20 @@ class KBService:
                 return await kb_repo.get_by_agent_and_category(agent_id=agent_id, category=category)
         except Exception as e:
             handle_exception(e, "获取知识库列表失败")
+
+    async def get_name_and_desc(self, kb_id: int) -> tuple:
+        """根据知识库ID获取知识库名称和描述
+
+        Args:
+            kb_id: 知识库ID
+
+        Returns:
+            tuple[str, str]: 知识库名称和描述
+        """
+        try:
+            async with self.db_session as session:
+                kb_repo = KBRepository(session)
+                kb = await kb_repo.get_by_id(kb_id)
+                return kb.kb_name, kb.descs
+        except Exception as e:
+            handle_exception(e, "获取知识库名称和描述失败")

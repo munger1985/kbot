@@ -7,6 +7,7 @@ from skills import BaseSkill
 from agent.agent.graph_agent import GraphAgent
 from core.dictionary import PacketType
 from agent.common import ContextMemory
+from services.graph import GraphService
 
 class AskGraphSkill(BaseSkill):
     """
@@ -17,6 +18,7 @@ class AskGraphSkill(BaseSkill):
         super().__init__()
         self.security_level = 9
         self.graph_agent = GraphAgent()
+        self.graph_service = GraphService()
 
     async def run_stream(
         self,
@@ -37,67 +39,99 @@ class AskGraphSkill(BaseSkill):
         
         # 2. 从控制平面参数池中提取输入的实体词 (优先拿路由器和规划层抽出来的实体词)
         resolved_params = current_execution.get("resolved_params") or {}
-        vertex_names: list[str] = (
-            resolved_params.get("vertex_names")
-            or context.get("variables", {}).get("extracted_entities")
-            or []
-        )
+        variables = context.get("variables") or {}
         
-        # 3. 兜底参数保护：如果模型规划漏掉了实体提取，将整句话作为原始游走入口
-        if not vertex_names:
-            query_text = (
-                current_execution.get("resolved_input") 
-                or context.get("standalone_query") 
+        # 建立高容错的提取管道
+        raw_source: list[str] | str | None = (
+            # 1. 编排层动态注入的显式入参
+            resolved_params.get("vertex_names")
+            or resolved_params.get("keywords")
+            
+            # 2. 从变量中心 (Variables Registry) 容错反查各种可能的 Key
+            or variables.get("extracted_entities")
+            or variables.get("search_keywords")
+            or variables.get("keywords")
+            
+            # 3. 直接回溯到全局上下文顶层的 search_keywords 字段
+            or context.get("search_keywords")
+        )
+
+        # 归一化处理：清洗上面捞出来的各种奇葩数据格式（可能是 list，可能是逗号分隔的 str）
+        raw_keywords: list[str] = []
+        if raw_source:
+            if isinstance(raw_source, list):
+                raw_keywords = [str(item).strip() for item in raw_source if item]
+            elif isinstance(raw_source, str):
+                # 兼容 "轮廓仪法, 半导体晶圆测量" 这种逗号分隔的字符串
+                split_char = "," if "," in raw_source else " "
+                raw_keywords = [item.strip() for item in raw_source.split(split_char) if item.strip()]
+
+        # 4. 终极参数防御：如果上述漏斗全部踩空，直接借用改写后的 Standalone Query 或者原始 question
+        if not raw_keywords:
+            fallback_text = (
+                context.get("standalone_query") 
                 or context.get("question")
             )
-            if query_text:
-                vertex_names = [query_text]
+            if fallback_text:
+                logger.warning(f"[{runtime_skill_name}] 核心实体漏斗全部踩空，触发终极防御：直接将文本整体作为输入")
+                raw_keywords = [fallback_text]
 
-        # 4. 核心边界防御断言
-        if not vertex_names:
-            content = f"{runtime_skill_name}: 变量解析异常，无法捕获任何有效的实体词网络节点。\n"
-            yield {"type": PacketType.ERROR, "content": content}
+        # 5. 核心边界断言
+        if not raw_keywords:
+            yield {"type": PacketType.ERROR, "content": f"{runtime_skill_name}: 无法从上下文提炼任何检索线索。"}
             return
-
         if not current_agent:
-            content = f"{runtime_skill_name}: 全局记忆体缺失关键参数 agent_id，拒绝下沉查询。\n"
-            yield {"type": PacketType.ERROR, "content": content}
+            yield {"type": PacketType.ERROR, "content": f"{runtime_skill_name}: 缺失全局变量 agent_id。"}
             return
 
-        # 推送思考状态包：开始游走
-        entities_str = ", ".join(f"'{v}'" for v in vertex_names)
-        content = f"正在检索知识图谱空间，深度追踪核心实体：[{entities_str}]...\n"
-        yield {"type": PacketType.THOUGHT, "content": content}
+        # 推送思考状态：准备进入向量实体消歧
+        yield {
+            "type": PacketType.THOUGHT, 
+            "content": f"分析执行上下文，捕获到检索线索: {raw_keywords}。正在基于 Oracle 26ai 向量库进行图谱实体消歧对齐...\n"
+        }
 
         try:
-            # 5. 调用核心 Agent 层执行图谱检索（彻底消除 Skill 一层的 kb_id 硬编码）
+            # ========================================================
+            # 🎯 核心机制升级：通过关键词向量近义反查图谱里的真实 VERTEX_NAME
+            # ========================================================
+            aligned_vertex_names = []
+            aligned_vertex_names = await self.graph_service.align_vertices_by_embedding(
+                keywords=raw_keywords,
+                agent_id=current_agent,
+                top_k=2
+            )
+            
+            # 如果向量对齐层未就绪或者未匹配到，则降级使用清洗后的 raw_keywords
+            if not aligned_vertex_names:
+                aligned_vertex_names = raw_keywords
+
+            entities_str = ", ".join(f"'{v}'" for v in aligned_vertex_names)
+            yield {
+                "type": PacketType.THOUGHT, 
+                "content": f"语义实体对齐成功。正在驱动图谱网络进行多维路径游走，目标核心节点: [{entities_str}]...\n"
+            }
+
+            # ========================================================
+            # 6. 下沉进入原生 SQL/PGQ 原生图拓扑检索
+            # ========================================================
             enriched_graph_edges = await self.graph_agent.graph_retrieval(
                 session_id=current_session,
                 agent_id=current_agent,
                 question=context.get("question", ""),
                 standalone_query=context.get("standalone_query", ""),
-                vertex_names=vertex_names,
+                vertex_names=aligned_vertex_names,  # 🎯 传入洗干净且对齐后的真实图实体
                 security_level=self.security_level,
                 user_id=current_user,
                 tags=tags
             )
 
-            # 推送思考状态：图游走完成
-            content = f"图谱空间游走结束，共召回 {len(enriched_graph_edges)} 组高价值显式实体拓扑路径，启动图结构去重裁剪...\n"
-            yield {"type": PacketType.THOUGHT, "content": content}
-
-            # 6. 对齐结果字典组织
-            # 按边的关联置信度或者相似度进行降序，保证下游 Reasoning 层最先捕获核心主线
+            # 后续原有的排序、投递及沉淀逻辑...
             enriched_graph_edges.sort(key=lambda x: x.get("score", 0.0), reverse=True)
-
-            # 7. 统一向前端下发标准化图包信号，用作图谱组件卡片的高级渲染
             yield {"type": PacketType.GRAPH_RESULTS, "content": enriched_graph_edges}
-            logger.debug(f"[{runtime_skill_name}] 图谱分析结果包已成功投递至实时分发队列。")
-
-            # 8. 交付至 Runtime 隔离总线进行记忆体落盘沉淀，供后续生命周期的 Reasoning 总结时使用
+            
+            # 数据沉淀回 ContextMemory 指定的数据结构槽位中
             context["graph_results"] = enriched_graph_edges
 
         except Exception as e:
-            logger.error(f"自治组件 [{runtime_skill_name}] 在执行图谱检索生命周期内遭遇致命崩溃: {e}", exc_info=True)
-            content = f"⚠️ 图谱网络空间探索发生内部系统故障: {str(e)}\n"
-            yield {"type": PacketType.ERROR, "content": content}
+            logger.error(f"自治组件 [{runtime_skill_name}] 执行失败: {e}", exc_info=True)
+            yield {"type": PacketType.ERROR, "content": f"⚠️ 图谱空间检索中断: {str(e)}\n"}

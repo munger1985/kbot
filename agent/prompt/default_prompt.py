@@ -509,24 +509,34 @@ GRAPH_VERTEX_FUSION_PROMPT = """你是一个知识图谱专家，正在维护一
 GRAPH_EXTRACTOR_PROMPT = """你是一个顶级的企业级知识图谱抽取专家。
 请从用户提供的文本中，精准抽取出核心的实体（Vertices）以及它们之间的关联关系（Edges）。
 
-【核心业务结界约束】
-当前提取工作服务于特定的业务域，你**必须且只能**围绕该业务域的核心业务线索进行提取，严禁提取与该业务域无关的行政、格式、修饰性无用信息。
+=========================================
+【第一层：全局业务域上下文 (Domain Context)】
 * 核心业务域名称: {domain_name}
-* 业务域深度描述与业务范围: {domain_description}
+* 业务域深度范围: {domain_description}
 
-【抽取要求】:
+【第二层：精准知识库物理背景 (KB Context)】
+你当前正在为该业务域下的**特定垂直知识库**进行图谱精细化沉淀。请将你的认知焦点、实体对齐粒度、边界剪枝策略，**100% 聚焦于该知识库特定的业务线索与核心资产**：
+* 目标知识库名称: {kb_name}
+* 知识库定位与专属业务范围: {kb_description}
+=========================================
+
+【核心抽取结界约束】
+1. 严禁提取任何与当前【业务域】及【目标知识库】双重上下文无关的行政审批、格式修饰、无关人员或通用的格式化无用信息。
+2. 实体命名（vertex_name）必须天然切合该知识库（KB）的垂直专业语义语境，避免过于宏观的泛化词。
+
+【具体抽取要求】:
 1. 实体识别（Vertices）:
-   - vertex_name: 应为具体、有明确含义的词（如 "Oracle 26ai"、"PostgreSQL"）。避免过于宽泛的抽象概念。
-   - vertex_type: 必须使用大写英文标识，清晰分类（如 "DATABASE"、"PROJECT"、"TECH"、"FRAMEWORK"、"PERSON"）。
-   - vertex_desc: 简要描述该实体在文本中的核心职责、版本或属性补充。若无相关上下文，可设为空。
+   - vertex_name: 应为具体、有明确含义且符合当前 KB 专属业务领域的词（如 "Oracle 26ai"、"pgvector"、"RTX 5080"）。严禁提取宽泛、抽象概念（如 "系统"、"功能"、"方案"、"指标"）。
+   - vertex_type: 必须使用符合业务抽象的大写英文标识，清晰分类（如 "DATABASE"、"HARDWARE"、"PROJECT"、"TECH"、"FRAMEWORK"、"PERSON"、"ALGORITHM"）。
+   - vertex_desc: 结合当前 KB 业务场景，简要描述该实体在当前文本中的核心职责、具体版本、参数或者关键特征属性。若无相关上下文，可设为空。
 
 2. 关系识别（Edges）:
-   - source_name 与 target_name: 必须精准对应 vertices 列表中出现的 vertex_name，严禁拼写不一致。
-   - relation_type: 必须使用大写英文下划线格式（如 "SUPPORT_INDEX"、"INTEGRATED_IN"、"VERSION_MIGRATION"）。关系需具备方向性（源实体 -> 目标实体）。
+   - source_name 与 target_name: 必须精准、百分之百对应 vertices 列表中出现的 vertex_name，严禁产生任何拼写不一致、多字、少字或单双引号残留。
+   - relation_type: 必须使用大写英文下划线格式（如 "SUPPORT_INDEX"、"INTEGRATED_IN"、"VERSION_MIGRATION"、"OPTIMIZE_PERFORMANCE"）。关系必须具备明确的方向性（源实体 -> 目标实体）。
 
 3. 格式约束:
    - 必须以纯净的 JSON 格式返回，严禁包含任何 Markdown 标签（如 ```json 标记）、任何前导引言、后缀或解释性文字。
-   - 如果文本中不包含任何图谱信息，请返回 vertices 和 edges 为空列表的 JSON 对象。
+   - 如果文本中经过评估不包含任何符合当前 KB 业务主线的图谱信息，请直接返回 vertices 和 edges 为空列表的 JSON 对象。
 
 【待抽取文本】:
 {text}
@@ -537,7 +547,7 @@ GRAPH_EXTRACTOR_PROMPT = """你是一个顶级的企业级知识图谱抽取专�
     {{
       "vertex_name": "实体名称",
       "vertex_type": "实体类型",
-      "vertex_desc": "实体描述"
+      "vertex_desc": "结合KB语境的实体深度描述"
     }}
   ],
   "edges": [

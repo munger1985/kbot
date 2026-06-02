@@ -1,16 +1,20 @@
 import asyncio
 import hashlib
+import time
 from typing import Any
 from loguru import logger
 
 from core.database.oracle import get_session
 from core.exceptions import *
 from core.config import get_prompt_config
-from dao.repositories import GraphRepository 
+from dao.repositories import GraphRepository, AgentConfRepository
 from .schemas import GraphAnalysis
 from utils.clients import AIModelClient
 from agent.prompt import default_prompt
 from core.exceptions import handle_exception
+from services.search import TxtBaseSearchResult, GraphBaseSearch
+from services.kb import ModelParams
+from services.basic import AgentService
 
 
 class GraphService:
@@ -18,6 +22,8 @@ class GraphService:
 
     def __init__(self):
         self.model_client = AIModelClient()
+        self.graph_search = GraphBaseSearch()
+        self.agent_service = AgentService()
 
     @property
     def db_session(self):
@@ -28,14 +34,18 @@ class GraphService:
         content = "_".join([str(arg).strip().lower() for arg in args])
         return hashlib.md5(content.encode("utf-8")).hexdigest()
 
-    async def extract_triplets(self, user_input_text: str, llm_model_name: str, domain_name: str, domain_description: str) -> GraphAnalysis:
+    async def extract_triplets(self, user_input_text: str, llm_model_name: str, 
+                               domain_name: str, domain_description: str,
+                               kb_name: str, kb_description: str) -> GraphAnalysis:
         """利用大模型从输入文本中抽取知识图谱实体与关系"""
         try:
             prompt = await default_prompt.generate(
                 get_prompt_config().graph_extractor, 
                 text=user_input_text,
                 domain_name=domain_name,
-                domain_description=domain_description
+                domain_description=domain_description,
+                kb_name=kb_name,
+                kb_description=kb_description
             )
             data = await self.model_client.get_llm_json(
                 model_name=llm_model_name,
@@ -297,3 +307,163 @@ class GraphService:
                 logger.success(f"[GraphService] 删除图谱成功")
         except Exception as e:
             handle_exception(e, f"[GraphService] 根据知识库ID删除图谱失败")
+
+    async def get_graph_context(
+        self,
+        db_session,
+        agent_id: int,
+        question: str,
+        vertex_names: list[str],
+        security_level: int,
+        model_params: ModelParams,
+        tags: list[str] = []
+    ) -> tuple[list[TxtBaseSearchResult], list[float]]:
+        """
+        核心业务流水线：问题向量化 -> 并行图谱子图游走召回 -> 结果剪枝聚合
+        """
+        # 1. 向量化（如有需要，某些图谱混合检索可能用到查询向量，对齐 DocService）
+        query_vec = await self._get_embedding(question, model_params.txt_embedding_model)
+
+        # 2. 获取该智能体挂载的知识库配置（支持 1个 Agent 挂载多个图谱知识库）
+        conf_repo = AgentConfRepository(db_session)
+        agent_confs = await conf_repo.get_by_agent(agent_id)
+
+        # 3. 多路并行图谱检索
+        logger.info(f"开始为智能体 {agent_id} 执行图谱空间网络检索，安全等级：{security_level}")
+        start_time = time.time()
+        
+        graph_tasks = []
+        for conf in agent_confs:
+            # 优先从配置表读取图谱专属参数，若无则常数兜底
+            search_top_k = int(conf.search_top_k or 5)
+            # 假设图深度存储在扩展字段中，或默认取 2 
+            max_depth = int(getattr(conf, "max_depth", 2) or 2)
+            tool_weight = float(conf.tool_weight or 1.2)
+
+            graph_tasks.append(self.graph_search.search_by_graph(
+                kb_id=int(conf.kb_id),
+                vertex_names=vertex_names,
+                search_top_k=search_top_k,
+                max_depth=max_depth,
+                weight=tool_weight,
+                security_level=int(security_level)
+            ))
+
+        # 执行并行分布式拓扑网络游走
+        raw_results = await asyncio.gather(*graph_tasks, return_exceptions=True)
+        retrieved_results = []
+        
+        for i, res in enumerate(raw_results):
+            current_kb = agent_confs[i].kb_id if i < len(agent_confs) else "Unknown"
+            if isinstance(res, Exception):
+                logger.error(f"图谱知识库任务 {i} (KB_ID: {current_kb}) 执行失败：{res}")
+                continue
+            elif isinstance(res, dict):
+                # search_by_graph 返回 {"graph_result": [...]}
+                graph_items = res.get("graph_result", [])
+                if isinstance(graph_items, list):
+                    retrieved_results.extend(graph_items)
+                    logger.info(f"图谱知识库任务 {i} (KB_ID: {current_kb}) 成功返回 {len(graph_items)} 条拓扑路径记录")
+                else:
+                    logger.warning(f"图谱知识库任务 {i} (KB_ID: {current_kb}) graph_result 不是列表类型")
+            elif isinstance(res, list):
+                # 兼容旧版直接返回列表的接口
+                retrieved_results.extend(res)
+                logger.info(f"图谱知识库任务 {i} (KB_ID: {current_kb}) 成功返回 {len(res)} 条拓扑路径记录")
+            else:
+                logger.warning(f"图谱知识库任务 {i} (KB_ID: {current_kb}) 返回格式异常: {type(res)}")
+
+        # 4. 图谱层面的排序/剪枝逻辑（此处可根据权重、距离直接过滤，对齐重排占位）
+        final_results = self._apply_graph_filter(retrieved_results)
+
+        logger.info(f"图谱空间检索完成，耗时：{time.time() - start_time:.2f}s，最终合并 {len(final_results)} 条实体关系边")
+        return final_results, query_vec
+
+    async def _get_embedding(self, content: str, model_name: str) -> list[float]:
+        content = content.strip() if content else ""
+        if not content:
+            raise ParamValueError(f"图谱相关检索内容不能为空")
+        vec = await self.model_client.get_embedding(model_name, content)
+        if not vec:
+            raise InternalServerError("图谱检索前置嵌入向量生成失败")
+        return vec
+
+    def _apply_graph_filter(self, results: list[TxtBaseSearchResult]) -> list[TxtBaseSearchResult]:
+        # 根据图节点或边的权值进行基本排序，确保下游 Reasoning 层能拿到关联度最高的实体属性
+        results.sort(key=lambda x: getattr(x, "score", 0.0), reverse=True)
+        return results
+    
+
+    async def align_vertices_by_embedding(
+        self,
+        keywords: list[str],
+        agent_id: int,
+        top_k: int = 3
+    ) -> list[str]:
+        """
+        [Service 层封装]
+        多关键词语义实体消歧对齐算子。
+        并发计算多路关键词的 Embedding 向量，并并发驱动 Oracle 向量引擎完成近义碰撞与交叉去重。
+        
+        :param keywords: 规划层或上下文提取出的模糊关键词/白话短语列表
+        :param agent_id: 知识库/智能体隔离 ID
+        :param top_k: 每个关键词辐射匹配的实体上限数量
+        :return: 100% 存在于图谱中的真实节点名称列表
+        """
+        if not keywords:
+            return []
+
+        # 清洗初始输入的无意义、空字符串
+        valid_keywords = [kw.strip() for kw in keywords if kw and len(kw.strip()) >= 2]
+        if not valid_keywords:
+            return keywords
+        
+        # 根据 agent_id 获取embedding_model
+        model_params = await self.agent_service.get_agent_model_params(agent_id)
+        embedding_model = model_params.txt_embedding_model
+        
+        # 定义内部子任务：负责单词的 [向量转换 -> 数据库近邻查询] 闭环
+        async def process_single_keyword(kw: str, graph_repo: GraphRepository) -> list[str]:
+            try:
+                # 1. 生成关键词的向量表示
+                kw_embedding = await self._get_embedding(content=kw, model_name=embedding_model)
+                if not kw_embedding:
+                    return [kw] # 向量化失败则保留原词，交由字面量硬碰防御
+
+                # 2. 调用数据库查询近邻实体
+
+                db_hits = await graph_repo.get_vertex_names_by_embedding(
+                    kb_id=agent_id,
+                    keyword_embedding=kw_embedding,
+                    top_k=top_k
+                )
+                
+                # 如果这个关键词在向量检索中沉寂（图谱里可能还没有这类实体点），原样返还以提供字面量硬匹配的机会
+                return db_hits if db_hits else [kw]
+                
+            except Exception as ex:
+                logger.warning(f"[GraphService] 单个关键词 '{kw}' 执行语义消歧碰撞失败，降级保持原样。异常原因: {ex}")
+                return [kw]
+
+        aligned_names_set = set()
+        async with self.db_session as session:
+            graph_repo = GraphRepository(session)
+
+            try:
+                tasks = [process_single_keyword(kw, graph_repo) for kw in valid_keywords]
+                completed_results = await asyncio.gather(*tasks, return_exceptions=True)
+
+                # 3. 内存聚合与跨路去重
+                for res_list in completed_results:
+                    if isinstance(res_list, list):
+                        for name in res_list:
+                            aligned_names_set.add(name)
+
+                final_aligned_vertices = list(aligned_names_set)
+                
+                logger.info(f"[GraphService] 实体消歧对齐完成。原始关键词: {valid_keywords} -> 融合去重后图节点: {final_aligned_vertices}")
+                return final_aligned_vertices
+
+            except Exception as global_err:
+                logger.error(f"[GraphService] 调度全局向量实体对齐引发未知崩溃: {global_err}，安全降级回原始词", exc_info=True)
+                return keywords

@@ -15,6 +15,7 @@ from utils.clients import AIModelClient
 from utils.sanitize import sanitize_dict_for_oracle_json
 from services.basic import AIModelService, DomainService
 from services.graph import GraphService
+from services.kb import KBService
 from agent.prompt import default_prompt
 
 
@@ -25,6 +26,7 @@ class FileProcessor:
         self.model_client = AIModelClient()
         self.model_service = AIModelService()
         self.domain_service = DomainService()
+        self.kb_service = KBService()
         self.app_id = get_app_config().app_id
     
     @property
@@ -419,8 +421,10 @@ class FileProcessor:
             logger.info(f"No text entities provided for file {file_params.file_id}. Skipping graph ingestion.")
             return
 
-        # 根据 kb_id 获取业务域信息
+        # 根据 kb_id 获取业务域信息和知识库信息
         domain_name, domain_descs = await self.domain_service.get_name_and_desc_by_kb(file_params.kb_id)
+        kb_name, kb_descs = await self.kb_service.get_name_and_desc(file_params.kb_id)
+
 
         # 初始化图谱上游服务
         graph_service = GraphService()
@@ -448,7 +452,9 @@ class FileProcessor:
                     user_input_text=chunk_text,
                     llm_model_name=llm_model,
                     domain_name=domain_name,
-                    domain_description=domain_descs
+                    domain_description=domain_descs,
+                    kb_name=kb_name,
+                    kb_description=kb_descs,
                 )
 
                 if not graph_analysis.edges:
