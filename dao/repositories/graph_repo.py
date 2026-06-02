@@ -541,45 +541,33 @@ class GraphRepository:
         if not keyword_embedding:
             return []
 
-        # 🔍 【日志埋点】打印方法的原始输入
         logger.info(f"[BUG_TRACK_VECTOR] === 开始执行向量检索 ===")
         logger.info(f"[BUG_TRACK_VECTOR] 输入参数: kb_id={kb_id} (类型: {type(kb_id)}), top_k={top_k}, embedding长度={len(keyword_embedding)}")
 
         try:
+            # 🎯 向量部分：继续保持安全的 to_string 模式或还原为数组皆可（推荐 to_string，防止它在单独面对向量冒号时又抽风）
             vec = OracleVecHandler().convert(keyword_embedding, to_string=True)
 
-            vertices_sql = text("""
+            # 🎯【核心物理卡点：彻底抹除让编译器死锁的冒号参数】
+            # 将 kb_id 和 top_k 两个纯整数直接通过 f-string 物理嵌入，不让 SQLAlchemy 的 text 扫描它们
+            vertices_sql = text(f"""
                 SELECT VERTEX_NAME
                 FROM KBOT_GRAPH_KNOWLEDGE_VERTICES
-                WHERE KB_ID = :kb_id
+                WHERE KB_ID = {int(kb_id)}
                 AND VERTEX_NAME_VECTOR IS NOT NULL
                 ORDER BY VECTOR_DISTANCE(VERTEX_NAME_VECTOR, :kw_vector, COSINE) ASC
-                FETCH FIRST :top_k ROWS ONLY
+                FETCH FIRST {int(top_k)} ROWS ONLY
             """)
 
+            # 🚀 现在整个 SQL 里只剩下唯一一个无争议、无嵌套的冒号参数 :kw_vector 
             bind_params = {
-                "kb_id": int(kb_id),
-                "kw_vector": vec,
-                "top_k": int(top_k)
+                "kw_vector": vec
             }
             
-            # 🔍 【日志埋点】打印最终传递给 SQLAlchemy 的绑定参数字典
-            logger.info(f"[BUG_TRACK_VECTOR] SQL 绑定参数字典内容: {bind_params}")
-            logger.info(f"[BUG_TRACK_VECTOR] SQL 绑定参数键列表: {list(bind_params.keys())}")
+            logger.info(f"[BUG_TRACK_VECTOR] 最终净化的 SQL 绑定参数字典内容: {bind_params}")
 
             result = await self.session.execute(vertices_sql, bind_params)
             rows = result.fetchall()
-            
-            # 🔍 【日志埋点】打印原生驱动返回的结果集元数据
-            logger.info(f"[BUG_TRACK_VECTOR] 返回行数: {len(rows)}")
-            if rows:
-                first_row = rows[0]
-                logger.info(f"[BUG_TRACK_VECTOR] 首行 row 对象类型: {type(first_row)}")
-                logger.info(f"[BUG_TRACK_VECTOR] 首行 tuple 内容: {tuple(first_row)}")
-                # 尝试抓取 SQLAlchemy Row 的内部映射键，暴露出底层真实的列名
-                if hasattr(first_row, "_mapping"):
-                    logger.info(f"[BUG_TRACK_VECTOR] 首行 _mapping 字典内容: {dict(first_row._mapping)}")
-                    logger.info(f"[BUG_TRACK_VECTOR] 首行 _mapping 所有的键: {list(first_row._mapping.keys())}")
             
             clean_names = []
             for row in rows:
@@ -588,11 +576,9 @@ class GraphRepository:
                     if clean_name:
                         clean_names.append(clean_name)
             
-            # 🔍 【日志埋点】打印最终输出
             logger.info(f"[BUG_TRACK_VECTOR] 最终返回的节点名称列表: {clean_names}")
             return clean_names
 
         except Exception as e:
-            # 🔍 【日志埋点】捕获异常瞬间的现场
             logger.error(f"[BUG_TRACK_VECTOR] 崩溃时异常类型: {type(e)}, 消息: {str(e)}", exc_info=True)
             raise e
