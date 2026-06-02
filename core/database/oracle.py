@@ -1,6 +1,5 @@
 import json
 from contextlib import asynccontextmanager
-from decimal import Decimal
 from typing import AsyncIterator
 from loguru import logger
 from sqlalchemy import text
@@ -33,37 +32,11 @@ pool_use_lifo = db_config.sqlalchemy.pool_use_lifo
 
 
 # ==============================================================================
-# 2. 声明增强型 JSON 序列化/反序列化处理器（处理 Oracle 23ai OSON/JSON 映射）
-# ==============================================================================
-def extended_json_dumps(obj, **kwargs) -> str:
-    """增强型 JSON 编码器：无损兼容 Oracle 变长数值中的 Decimal 类型，并完美防原生中文转义。"""
-    def default_encoder(item):
-        if isinstance(item, Decimal):
-            # 将高精度 Decimal 安全转换为 float（若业务要求绝对精度，可改为 str(item)）
-            return float(item)
-        raise TypeError(f"Object of type {item.__class__.__name__} is not JSON serializable")
-    
-    kwargs.setdefault('ensure_ascii', False)
-    return json.dumps(obj, default=default_encoder, **kwargs)
-
-
-def flexible_json_loads(value):
-    """自适应 JSON 解码器：兼容驱动层已自动反序列化的复合对象或原生字节/字符串。"""
-    if value is None:
-        return None
-    # 若驱动层（oracledb）已提前将数据解构成结构化字典/列表，直接放行
-    if isinstance(value, (dict, list)):
-        return value
-    try:
-        return json.loads(value)
-    except (TypeError, json.JSONDecodeError):
-        return value
-
-
-# ==============================================================================
-# 3. 异步引擎 (Engine) 实例化与单例静态补丁注入
+# 2. 异步引擎 (Engine) 实例化
 # ==============================================================================
 try:
+    # 彻底移除 `async_engine.dialect._json_serializer` 和 `_json_deserializer` 静态注入补丁
+    # 彻底杜绝多协程高并发竞争时，参数编译命名空间踩踏与键名引号退化变异 Bug
     async_engine = create_async_engine(
         url,
         echo=echo,
@@ -76,14 +49,7 @@ try:
         future=True
     )
     
-    # 🎯【最佳实践核心修复】
-    # 严禁将处理器覆盖写在 @event.listens_for("connect") 事件中！
-    # 应该在 Engine 刚刚初始化完成后的单线程安全期，直接静态注入到全局全局单例 dialect 中，
-    # 从物理层面上彻底根除多协程高并发竞争（asyncio.gather）时参数编译命名空间踩踏 Bug。
-    async_engine.dialect._json_serializer = extended_json_dumps    # type: ignore
-    async_engine.dialect._json_deserializer = flexible_json_loads  # type: ignore
-    
-    logger.info("Async database engine initialized and JSON dialect patched successfully (Thread-Safe)")
+    logger.info("Async database engine initialized successfully (Pure Native Dialect)")
 
 except Exception as e:
     logger.critical(f"Failed to create async database engine: {str(e)}", exc_info=True)
@@ -91,7 +57,7 @@ except Exception as e:
 
 
 # ==============================================================================
-# 4. 异步会话工厂 (Session Factory) 绑定
+# 3. 异步会话工厂 (Session Factory) 绑定
 # ==============================================================================
 async_session = async_sessionmaker(
     bind=async_engine,
@@ -102,7 +68,7 @@ async_session = async_sessionmaker(
 
 
 # ==============================================================================
-# 5. 上下文管理器与系统级生命周期管控
+# 4. 上下文管理器与系统级生命周期管控
 # ==============================================================================
 @asynccontextmanager
 async def get_session() -> AsyncIterator[AsyncSession]:
@@ -119,23 +85,18 @@ async def get_session() -> AsyncIterator[AsyncSession]:
         yield session
         await session.commit()
     except DataNotFoundException as e:
-        # 业务级别预期内的未命中，执行轻量警告，无需回滚基础设施
         logger.warning(f"Data status alert: {str(e)}")
     except NotFoundError as e:
-        # 流程级常规降级（例如未找到配置），不标记为系统错误
         logger.warning(f"Resource status alert: {str(e)}")
     except Exception as e:
-        # 🚨 第一线真实物理崩溃卡点（网络断连、SQL语法错误、Oracle ORA等异常）
         try:
             await session.rollback()
             logger.warning("[Database] Rollback executed successfully due to query exception.")
         except Exception as rollback_err:
             logger.critical(f"[Critical] Rollback failed! Resource might be locked: {rollback_err}")
             
-        # 打印纯粹干净的异常堆栈，绝不受变异参数拦截器的干扰
         logger.error(
-            "Database operation unexpected crashed - "
-            "Type: {}, Message: {}, Module: {}",
+            "Database operation unexpected crashed - Type: {}, Message: {}, Module: {}",
             type(e).__name__,
             repr(str(e)),
             type(e).__module__,
@@ -143,7 +104,7 @@ async def get_session() -> AsyncIterator[AsyncSession]:
         )
         raise RuntimeError(f"Database operation failed: {str(e)}") from e
     finally:
-        # 🛡️ 铁壁防御：强行卡死连接释放。无论 commit/rollback 是否暴毙，连接必须退回连接池！
+        # 🛡️ 铁壁防御：无论 commit/rollback 是否暴毙，连接必须退回连接池！
         await session.close()
 
 
