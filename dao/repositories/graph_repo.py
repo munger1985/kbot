@@ -546,7 +546,7 @@ class GraphRepository:
         logger.info(f"[BUG_TRACK_VECTOR] 输入参数: kb_id={kb_id} (类型: {type(kb_id)}), top_k={top_k}, embedding长度={len(keyword_embedding)}")
 
         try:
-            vec = OracleVecHandler().convert(keyword_embedding)
+            vec = OracleVecHandler().convert(keyword_embedding, to_string=True)
 
             vertices_sql = text("""
                 SELECT VERTEX_NAME
