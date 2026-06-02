@@ -115,33 +115,33 @@ async def get_session() -> AsyncIterator[AsyncSession]:
     """
     session: AsyncSession = async_session()
 
-    original_execute = session.execute
+    # original_execute = session.execute
     
-    async def monitored_execute(statement, params=None, *args, **kwargs):
-        try:
-            # 💡 条件过滤：只要绑定的参数字典中包含 "kb_id" 或 "vector"，立刻打印抓拍快照
-            if params and isinstance(params, dict) and any(k for k in params.keys() if "kb_id" in str(k) or "vector" in str(k)):
-                logger.critical(
-                    "\n"
-                    "========================================================================\n"
-                    "🚨 [Execute 哨兵触发] 捕获到 RAG 核心数据库请求前夕状态！\n"
-                    "------------------------------------------------------------------------\n"
-                    f"👉 原始 SQL 语句 (SQL/PGQ Text):\n{getattr(statement, 'text', str(statement)).strip()}\n"
-                    "------------------------------------------------------------------------\n"
-                    f"👉 传参字典类型 (Params Type): {type(params)}\n"
-                    f"👉 传参字典键名 (Raw Keys):    {list(params.keys())!r}\n"
-                    f"👉 传参明细数据 (Raw Values):  {params}\n"
-                    "========================================================================"
-                )
-        except Exception as patch_err:
-            logger.error(f"[Execute 哨兵内部解析异常（不影响主业务）]: {patch_err}")
+    # async def monitored_execute(statement, params=None, *args, **kwargs):
+    #     try:
+    #         # 💡 条件过滤：只要绑定的参数字典中包含 "kb_id" 或 "vector"，立刻打印抓拍快照
+    #         if params and isinstance(params, dict) and any(k for k in params.keys() if "kb_id" in str(k) or "vector" in str(k)):
+    #             logger.critical(
+    #                 "\n"
+    #                 "========================================================================\n"
+    #                 "🚨 [Execute 哨兵触发] 捕获到 RAG 核心数据库请求前夕状态！\n"
+    #                 "------------------------------------------------------------------------\n"
+    #                 f"👉 原始 SQL 语句 (SQL/PGQ Text):\n{getattr(statement, 'text', str(statement)).strip()}\n"
+    #                 "------------------------------------------------------------------------\n"
+    #                 f"👉 传参字典类型 (Params Type): {type(params)}\n"
+    #                 f"👉 传参字典键名 (Raw Keys):    {list(params.keys())!r}\n"
+    #                 f"👉 传参明细数据 (Raw Values):  {params}\n"
+    #                 "========================================================================"
+    #             )
+    #     except Exception as patch_err:
+    #         logger.error(f"[Execute 哨兵内部解析异常（不影响主业务）]: {patch_err}")
             
-        # 回归并执行原本的 SQLAlchemy execute 逻辑
-        return await original_execute(statement, params, *args, **kwargs)
+    #     # 回归并执行原本的 SQLAlchemy execute 逻辑
+    #     return await original_execute(statement, params, *args, **kwargs)
     
-    # 替换当前会话实例的 execute 方法（仅对当前单次 get_session 生效，安全隔离）
-    session.execute = monitored_execute  # type: ignore
-    
+    # # 替换当前会话实例的 execute 方法（仅对当前单次 get_session 生效，安全隔离）
+    # session.execute = monitored_execute  # type: ignore
+
     try:
         yield session
         await session.commit()
