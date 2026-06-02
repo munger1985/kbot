@@ -1,7 +1,9 @@
+from __future__ import annotations
+
 import asyncio
 import hashlib
 import time
-from typing import Any
+from typing import Any, TYPE_CHECKING
 from loguru import logger
 
 from core.database.oracle import get_session
@@ -13,8 +15,10 @@ from utils.clients import AIModelClient
 from agent.prompt import default_prompt
 from core.exceptions import handle_exception
 from services.search import TxtBaseSearchResult, GraphBaseSearch
-from services.kb import ModelParams
-from services.basic import AgentService
+
+if TYPE_CHECKING:
+    from services.kb import ModelParams
+    from services.basic import AgentService
 
 
 class GraphService:
@@ -23,7 +27,7 @@ class GraphService:
     def __init__(self):
         self.model_client = AIModelClient()
         self.graph_search = GraphBaseSearch()
-        self.agent_service = AgentService()
+        self._agent_service = None  # 懒加载，避免循环导入
 
     @property
     def db_session(self):
@@ -418,8 +422,11 @@ class GraphService:
         if not valid_keywords:
             return keywords
         
-        # 根据 agent_id 获取embedding_model
-        model_params = await self.agent_service.get_agent_model_params(agent_id)
+        # 根据 agent_id 获取embedding_model（懒加载 AgentService 以避免循环导入）
+        if self._agent_service is None:
+            from services.basic import AgentService
+            self._agent_service = AgentService()
+        model_params = await self._agent_service.get_agent_model_params(agent_id)
         embedding_model = model_params.txt_embedding_model
         
         # 定义内部子任务：负责单词的 [向量转换 -> 数据库近邻查询] 闭环
