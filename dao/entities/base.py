@@ -53,15 +53,24 @@ def VectorField():
     """
     return UniversalVector()
 
+
 class OracleJSON(TypeDecorator):
     """
     自适应 Oracle JSON 处理器。
     完美调和 oracledb 驱动底层自动反序列化 OSON 与 SQLAlchemy 二次解析带来的冲突。
     """
-    impl = JSON
+    # 🎯 核心修正 1：避开原生 JSON 类型的深度拦截，由我们完全接管处理流程
+    impl = Text  
     cache_ok = True
 
-    def process_bind_param(self, value, dialect):
+    def load_dialect_impl(self, dialect: Dialect):
+        """根据当前数据库方言动态加载底层实现类型"""
+        # 🎯 核心修正 2：如果是在 Oracle 下，通知 SQLAlchemy 底层使用的是原生 JSON/OSON 存储层
+        if dialect.name == 'oracle':
+            return dialect.type_descriptor(JSON())
+        return dialect.type_descriptor(Text())
+
+    def process_bind_param(self, value, dialect: Dialect):
         """序列化：将 Python 对象转换为 JSON 字符串或保持原样供驱动处理"""
         if value is None:
             return None
@@ -72,18 +81,22 @@ class OracleJSON(TypeDecorator):
                 return float(item)
             raise TypeError(f"Object of type {item.__class__.__name__} is not JSON serializable")
             
+        # 即使底层是原生 JSON 类型，直接传纯净的 JSON 字符串也是最安全的写入方式
         return json.dumps(value, default=default_encoder, ensure_ascii=False)
 
-    def process_result_value(self, value, dialect):
+    def process_result_value(self, value, dialect: Dialect):
         """反序列化：如果驱动已经解构成 dict/list，则直接放行，杜绝 TypeError"""
         if value is None:
             return None
-        # 🎯 核心防御：如果已经是结构化对象，直接返回，不再交由 json.loads 处理
+            
+        # 🎯 核心防御：如果 oracledb 驱动在 thin 异步模式下已经自动反序列化成了字典/列表，直接放行
         if isinstance(value, (dict, list)):
             return value
+            
         if isinstance(value, str):
             try:
                 return json.loads(value)
             except (TypeError, json.JSONDecodeError):
                 return value
+                
         return value
