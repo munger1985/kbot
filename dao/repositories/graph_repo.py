@@ -292,7 +292,9 @@ class GraphRepository:
         kb_id: int, 
         vertex_names: list[str], 
         limit: int = 30, 
-        min_weight: int = 2
+        min_weight: int = 2,
+        *args,
+        **kwargs
     ) -> list[dict]:
         """
         实体驱动的知识图谱空间网络检索 (Graph-RAG)。
@@ -305,6 +307,8 @@ class GraphRepository:
             vertex_names: 待检索的核心实体名称列表
             limit: 最大边召回上限
             min_weight: 关系的最小置信度权重过滤阈值
+            *args: 向上兼容的匿名位置参数
+            **kwargs: 向上兼容的动态关键字参数 (例如自动吸收上层传递的 max_depth 等参数)
 
         Returns:
             list[dict]: 包含源节点、关系类型、目标节点及权重的结构化图拓扑列表
@@ -312,9 +316,13 @@ class GraphRepository:
         if not vertex_names:
             return []
 
+        # 提取并记录上层可能传入的 max_depth，留作未来二阶、多阶拓扑检索扩展
+        max_depth = kwargs.get("max_depth", 1)
+
         logger.info(
             f"[GraphRepo] Starting graph context retrieval. "
-            f"KB_ID: {kb_id}, Vertices Count: {len(vertex_names)}, Limit: {limit}, MinWeight: {min_weight}"
+            f"KB_ID: {kb_id}, Vertices Count: {len(vertex_names)}, Limit: {limit}, "
+            f"MinWeight: {min_weight}, MaxDepth(Ext): {max_depth}"
         )
         
         try:
@@ -383,7 +391,7 @@ class GraphRepository:
                 f"KB_ID: {kb_id}, Error Type: {type(e).__name__}, Message: {str(e)}", 
                 exc_info=True
             )
-            raise e
+            raise DatabaseException(message="Failed to execute graph connection query.", original_error=e)
         
     async def delete_graph_by_file(self, kb_id: int, file_ids: list[str]) -> int:
         """
