@@ -535,36 +535,28 @@ class GraphRepository:
             raise DatabaseException(f"Failed to delete graph by knowledge base", original_error=e)
         
     async def get_vertex_names_by_embedding(self, kb_id: int, keyword_embedding: list[float], top_k: int = 10) -> list[str]:
-        """
-        利用 Oracle 23ai/26ai 原生向量检索，单次通过单个 Embedding 向量召回最接近的真实节点名称。
-        """
         if not keyword_embedding:
             return []
 
-        logger.info(f"[BUG_TRACK_VECTOR] === 开始执行向量检索 ===")
-        logger.info(f"[BUG_TRACK_VECTOR] 输入参数: kb_id={kb_id} (类型: {type(kb_id)}), top_k={top_k}, embedding长度={len(keyword_embedding)}")
-
         try:
-            # 🎯 向量部分：继续保持安全的 to_string 模式或还原为数组皆可（推荐 to_string，防止它在单独面对向量冒号时又抽风）
-            vec = OracleVecHandler().convert(keyword_embedding, to_string=True)
+            # 1. 强制将向量转为纯字符串标量
+            vec_str = OracleVecHandler().convert(keyword_embedding, to_string=True)
 
-            # 🎯【核心物理卡点：彻底抹除让编译器死锁的冒号参数】
-            # 将 kb_id 和 top_k 两个纯整数直接通过 f-string 物理嵌入，不让 SQLAlchemy 的 text 扫描它们
+            # 2. 物理掐断旧缓存：kb_id 和 top_k 直接物理嵌入，绑定参数【彻底更名】为 :p_vector_val
             vertices_sql = text(f"""
                 SELECT VERTEX_NAME
                 FROM KBOT_GRAPH_KNOWLEDGE_VERTICES
                 WHERE KB_ID = {int(kb_id)}
                 AND VERTEX_NAME_VECTOR IS NOT NULL
-                ORDER BY VECTOR_DISTANCE(VERTEX_NAME_VECTOR, :kw_vector, COSINE) ASC
+                ORDER BY VECTOR_DISTANCE(VERTEX_NAME_VECTOR, :p_vector_val, COSINE) ASC
                 FETCH FIRST {int(top_k)} ROWS ONLY
             """)
 
-            # 🚀 现在整个 SQL 里只剩下唯一一个无争议、无嵌套的冒号参数 :kw_vector 
+            # 3. 铁壁防御字典
             bind_params = {
-                "kw_vector": vec
+                "p_vector_val": vec_str,
+                "'p_vector_val'": vec_str
             }
-            
-            logger.info(f"[BUG_TRACK_VECTOR] 最终净化的 SQL 绑定参数字典内容: {bind_params}")
 
             result = await self.session.execute(vertices_sql, bind_params)
             rows = result.fetchall()
@@ -575,10 +567,8 @@ class GraphRepository:
                     clean_name = str(row[0]).strip("'\" ")
                     if clean_name:
                         clean_names.append(clean_name)
-            
-            logger.info(f"[BUG_TRACK_VECTOR] 最终返回的节点名称列表: {clean_names}")
             return clean_names
 
         except Exception as e:
-            logger.error(f"[BUG_TRACK_VECTOR] 崩溃时异常类型: {type(e)}, 消息: {str(e)}", exc_info=True)
+            logger.error(f"[BUG_TRACK_VECTOR] 崩溃: {str(e)}", exc_info=True)
             raise e
