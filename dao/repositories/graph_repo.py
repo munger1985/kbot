@@ -1,6 +1,6 @@
 import json
 from typing import Any
-from sqlalchemy import select, func, text, bindparam
+from sqlalchemy import select, func, text, bindparam, Integer
 from loguru import logger
 from core.exceptions import DatabaseException
 from dao.entities import GraphVertexEntity, GraphEdgeEntity
@@ -288,13 +288,13 @@ class GraphRepository:
     #         return {"vertices": [], "edges": [], "chunk_ids": []}
 
     async def search_graph_context(
-        self,
-        kb_id: int,
-        vertex_names: list[str],
-        max_depth: int = 2,
-        limit: int = 30,
-        min_weight: int = 2
-    ) -> dict[str, Any]:
+            self,
+            kb_id: int,
+            vertex_names: list[str],
+            max_depth: int = 2,
+            limit: int = 30,
+            min_weight: int = 2
+        ) -> dict[str, Any]:
         """
         基于 Oracle 23ai/26ai 工业级原生图查询 (SQL/PGQ) 驱动空间图谱游走。
         利用 MATCH 变长路径语法定位 1 到 max_depth 度的局部关联子图，并聚合无损反查 chunk_ids。
@@ -302,125 +302,118 @@ class GraphRepository:
         if not vertex_names:
             return {"vertices": [], "edges": [], "chunk_ids": []}
 
-        # 1. 动态安全绑定外部输入的过滤实体群
+        # 1. 动态绑定参数构建
         bind_params: dict[str, Any] = {f"name_{i}": name for i, name in enumerate(vertex_names)}
         in_clause = ", ".join(f":name_{i}" for i in range(len(vertex_names)))
 
         # ========================================================
         # 2. 构建 23ai / 26ai 原生属性图 SQL/PGQ 查询
         # ========================================================
-        # 使用 MATCH (v_src)-[e]->{1, N} (v_dst) 代替 CONNECT BY
-        # 同时通过单表内聚的子查询无缝拉取关联的文本块块清单
+        # 强制显式声明最终 SELECT 的字段顺序，决不使用 SELECT * 
         native_graph_sql = text(f"""
             WITH edge_identities AS (
-            -- 1度关系
-            SELECT * FROM GRAPH_TABLE (
-                kbot_knowledge_rag_graph
-                MATCH (v_src IS vertex) -[e IS connects_to]-> (v_dst IS vertex)
-                COLUMNS (
-                    EDGE_ID(e) as e_id,
-                    VERTEX_ID(v_src) as src_id,
-                    VERTEX_ID(v_dst) as dst_id,
-                    v_src.vertex_name as src_name,
-                    v_src.vertex_type as src_type,
-                    v_dst.vertex_name as dst_name,
-                    v_dst.vertex_type as dst_type,
-                    v_src.kb_id as src_kb_id,
-                    e.relation_type as relation_type,
-                    e.weight as weight,
-                    e.attributes as edge_attr
+                SELECT * FROM GRAPH_TABLE (
+                    kbot_knowledge_rag_graph
+                    MATCH (v_src IS vertex) -[e IS connects_to]-> (v_dst IS vertex)
+                    COLUMNS (
+                        EDGE_ID(e) as e_id,
+                        VERTEX_ID(v_src) as src_id,
+                        VERTEX_ID(v_dst) as dst_id,
+                        v_src.vertex_name as src_name,
+                        v_src.vertex_type as src_type,
+                        v_dst.vertex_name as dst_name,
+                        v_dst.vertex_type as dst_type,
+                        v_src.kb_id as src_kb_id,
+                        e.relation_type as relation_type,
+                        e.weight as weight,
+                        e.attributes as edge_attr
+                    )
                 )
-            )
-            UNION ALL
-            -- 2度关系（通过两步单度 MATCH 显式展开，完全规避变长集合变量 e 的产生）
-            SELECT * FROM GRAPH_TABLE (
-                kbot_knowledge_rag_graph
-                MATCH (v_src IS vertex) -[e1 IS connects_to]-> (v_mid IS vertex) -[e2 IS connects_to]-> (v_dst IS vertex)
-                COLUMNS (
-                    EDGE_ID(e2) as e_id, -- 取当前落地边的ID
-                    VERTEX_ID(v_src) as src_id,
-                    VERTEX_ID(v_dst) as dst_id,
-                    v_src.vertex_name as src_name,
-                    v_src.vertex_type as src_type,
-                    v_dst.vertex_name as dst_name,
-                    v_dst.vertex_type as dst_type,
-                    v_src.kb_id as src_kb_id,
-                    e2.relation_type as relation_type,
-                    e2.weight as weight,
-                    e2.attributes as edge_attr
+                UNION ALL
+                SELECT * FROM GRAPH_TABLE (
+                    kbot_knowledge_rag_graph
+                    MATCH (v_src IS vertex) -[e1 IS connects_to]-> (v_mid IS vertex) -[e2 IS connects_to]-> (v_dst IS vertex)
+                    COLUMNS (
+                        EDGE_ID(e2) as e_id,
+                        VERTEX_ID(v_src) as src_id,
+                        VERTEX_ID(v_dst) as dst_id,
+                        v_src.vertex_name as src_name,
+                        v_src.vertex_type as src_type,
+                        v_dst.vertex_name as dst_name,
+                        v_dst.vertex_type as dst_type,
+                        v_src.kb_id as src_kb_id,
+                        e2.relation_type as relation_type,
+                        e2.weight as weight,
+                        e2.attributes as edge_attr
+                    )
                 )
+            ),
+            raw_graph_edges AS (
+                SELECT 
+                    e_id, src_id, dst_id, relation_type, weight, edge_attr,
+                    src_name, src_type, dst_name, dst_type,
+                    (
+                        SELECT LISTAGG(TO_CHAR(m.CHUNK_ID), ',') WITHIN GROUP (ORDER BY m.CREATED_AT DESC)
+                        FROM GRAPH_EDGE_CHUNK_MAP m
+                        WHERE m.KB_ID = :kb_id AND m.EDGE_ID = e_id
+                    ) as AS_CHUNK_IDS
+                FROM edge_identities
+                WHERE src_kb_id = :kb_id
+                AND weight >= :min_weight
+                AND src_name IN ({in_clause})
+            ),
+            ordered_edges AS (
+                SELECT * FROM raw_graph_edges
+                ORDER BY weight DESC
             )
-        ),
-        raw_graph_edges AS (
             SELECT 
                 e_id, src_id, dst_id, relation_type, weight, edge_attr,
-                src_name, src_type, dst_name, dst_type,
-                (
-                    SELECT LISTAGG(TO_CHAR(m.CHUNK_ID), ',') WITHIN GROUP (ORDER BY m.CREATED_AT DESC)
-                    FROM GRAPH_EDGE_CHUNK_MAP m
-                    WHERE m.KB_ID = :kb_id AND m.EDGE_ID = e_id
-                ) as AS_CHUNK_IDS
-            FROM edge_identities
-            WHERE src_kb_id = :kb_id
-            AND weight >= :min_weight
-            AND src_name IN ({in_clause})
-        ),
-        ordered_edges AS (
-            SELECT * FROM raw_graph_edges
-            ORDER BY weight DESC
-        )
-        SELECT * FROM ordered_edges
-        WHERE ROWNUM <= :limit
+                src_name, src_type, dst_name, dst_type, AS_CHUNK_IDS 
+            FROM ordered_edges
+            WHERE ROWNUM <= :limit
         """)
 
-        # 3. 封装绑定标量，注入防注入清洗
+        # 3. 强类型卡锁锁死编译期，杜绝 AST 树在多层 UNION 与子查询嵌套中退化
+        stmt = native_graph_sql.bindparams(
+            bindparam("kb_id", type_=Integer),
+            bindparam("limit", type_=Integer),
+            bindparam("min_weight", type_=Integer)
+        )
+
         bind_params["kb_id"] = int(kb_id)
-        bind_params["max_depth"] = int(max_depth)
         bind_params["limit"] = int(limit)
         bind_params["min_weight"] = int(min_weight)
 
         try:
-            # 4. 会话层驱动
-            result = await self.session.execute(native_graph_sql, bind_params)
+            result = await self.session.execute(stmt, bind_params)
             rows = result.fetchall()
 
             vertices_set = set()
             edges_list = []
             chunk_ids_set = set()
 
+            # ========================================================
+            # 【铁壁修复核心】绝不使用 row._mapping，彻底绕过底层驱动列名自爆缺陷
+            # 严格按照上方最终 SELECT 语句中定义的严格索引位置 (Index-based Tuple) 获取数据
+            # ========================================================
             for row in rows:
-                # 1. 极其安全的建立映射字典，主动捕捉并防御不合法的特殊驱动列名
-                try:
-                    r = {}
-                    for k, v in row._mapping.items():
-                        clean_key = str(k).lower().strip("'\" ")
-                        # 🛡️ 核心卡点：如果键名包含了逗号、空格或纯数字等图谱残渣（例如 '1, '），说明是驱动错位，直接抛弃该列
-                        if ',' in clean_key or clean_key.isdigit():
-                            continue
-                        r[clean_key] = v
-                except Exception as map_err:
-                    logger.warning(f"[NativeGraphSearch] 解析行映射字典时遭遇脏数据干扰，已自动跳过: {map_err}")
+                if not row:
                     continue
                 
-                # 🔍 RAG 调试观察哨
-                if rows and row is rows[0]:
-                    logger.debug(f"[NativeGraphRepo] 🛡️ 铁壁防御清洗后首行键名 (KB_ID {kb_id}): {list(r.keys())!r}")
+                # 0:e_id, 1:src_id, 2:dst_id, 3:relation_type, 4:weight, 5:edge_attr,
+                # 6:src_name, 7:src_type, 8:dst_name, 9:dst_type, 10:AS_CHUNK_IDS
+                edge_id        = row[0]
+                source_id      = row[1]
+                target_id      = row[2]
+                relation_type  = row[3]
+                weight         = row[4]
+                attributes     = row[5]
+                source_name    = row[6]
+                source_type    = row[7]
+                target_name    = row[8]
+                target_type    = row[9]
+                as_chunk_ids   = row[10]
 
-                source_id = r.get("src_id")
-                source_name = r.get("src_name")
-                source_type = r.get("src_type")
-                
-                target_id = r.get("dst_id")
-                target_name = r.get("dst_name")
-                target_type = r.get("dst_type")
-                
-                edge_id = r.get("e_id")
-                relation_type = r.get("relation_type")
-                weight = r.get("weight")
-                attributes = r.get("edge_attr")
-                as_chunk_ids = r.get("as_chunk_ids")
-
-                # 以下装配逻辑完全保持不变...
                 if source_id and source_name:
                     vertices_set.add((str(source_id), str(source_name), str(source_type or "vertex")))
                 if target_id and target_name:
@@ -436,16 +429,12 @@ class GraphRepository:
                         "attributes": attributes
                     })
 
-                # 🛡️ 极其稳健的防爆 Chunk_ID 切割法
                 if as_chunk_ids:
-                    # 确保转化为干净字符串再做切割
                     for cid in str(as_chunk_ids).split(','):
                         clean_cid = cid.replace("'", "").replace('"', '').strip()
-                        # 只有当它纯粹由数字组成时才放行，完美过滤类似 '1, ' 后面带出的长尾空残渣
                         if clean_cid and clean_cid.isdigit():
                             chunk_ids_set.add(clean_cid)
 
-            # 序列化格式化节点集
             formatted_vertices = [
                 {"id": v[0], "name": v[1], "type": v[2]} for v in vertices_set
             ]
@@ -460,7 +449,7 @@ class GraphRepository:
 
         except Exception as e:
             logger.error(f"[NativeGraphSearch Failed] Oracle SQL/PGQ 原生引擎检索崩溃: {str(e)}", exc_info=True)
-            return {"vertices": [], "edges": [], "chunk_ids": []}
+            raise DatabaseException(f"Oracle SQL/PGQ native engine crashed", original_error=e)
         
     async def delete_graph_by_file(self, kb_id: int, file_ids: list[str]) -> int:
         """
@@ -549,6 +538,7 @@ class GraphRepository:
         try:
             vec = OracleVecHandler().convert(keyword_embedding)
 
+            # 同样精确声明输出字段
             vertices_sql = text("""
                 SELECT VERTEX_NAME
                 FROM KBOT_GRAPH_KNOWLEDGE_VERTICES
@@ -558,19 +548,23 @@ class GraphRepository:
                 FETCH FIRST :top_k ROWS ONLY
             """)
 
+            # 【锁强类型】直接截断底层针对向量和 kb_id 混用时的自爆逻辑
+            stmt = vertices_sql.bindparams(
+                bindparam("kb_id", type_=Integer),
+                bindparam("top_k", type_=Integer)
+            )
+
             bind_params = {
                 "kb_id": int(kb_id),
                 "kw_vector": vec,
                 "top_k": int(top_k)
             }
             
-            result = await self.session.execute(
-                vertices_sql, 
-                bind_params
-            )
+            result = await self.session.execute(stmt, bind_params)
             rows = result.fetchall()
             
             clean_names = []
+            # 同样改用严格的位置下标 row[0]，跳过对元数据字典的遍历，安全隔离 KeyError
             for row in rows:
                 if row and row[0]:
                     clean_name = str(row[0]).strip("'\" ")

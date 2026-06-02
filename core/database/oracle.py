@@ -115,34 +115,6 @@ async def get_session() -> AsyncIterator[AsyncSession]:
     """
     session: AsyncSession = async_session()
     
-    # 🚀 拦截当前 session 的 execute 核心入口
-    original_execute = session.execute
-    
-    async def monitored_execute(statement, params=None, *args, **kwargs):
-        # 🎯 物理防线：如果发现上游任何拦截器作妖，强行过滤掉带单引号或双引号的变异畸形键
-        if params and isinstance(params, dict):
-            purified_params = {}
-            for k, v in params.items():
-                k_str = str(k).strip()
-                # 🛡️ 只要键名两端被包了引号，说明被上游拦截器搞脏了，直接剥离两端的引号恢复原样！
-                if (k_str.startswith("'") and k_str.endswith("'")) or (k_str.startswith('"') and k_str.endswith('"')):
-                    clean_key = k_str[1:-1] # 剥去引号
-                    # 如果剥离后的干净键已经在字典里了，就不用重复赋值，避免重复污染
-                    if clean_key not in purified_params:
-                        purified_params[clean_key] = v
-                    logger.debug(f"[Engine强力净化] 成功拦截变异键 {k_str!r}，已无损将其剥离还原为 {clean_key!r}")
-                else:
-                    purified_params[k] = v
-            
-            # 将绝对无污染的纯净字典回传给 SQLAlchemy 编译器
-            params = purified_params
-
-        # 回归并执行原本的 SQLAlchemy 逻辑
-        return await original_execute(statement, params, *args, **kwargs)
-    
-    # 挂载底层净化盾牌
-    session.execute = monitored_execute  # type: ignore
-
     try:
         yield session
         await session.commit()
