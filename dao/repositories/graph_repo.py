@@ -375,6 +375,7 @@ class GraphRepository:
 
         # 3. 封装绑定标量，注入防注入清洗
         bind_params["kb_id"] = int(kb_id)
+        bind_params["'kb_id'"] = int(kb_id)
         bind_params["max_depth"] = int(max_depth)
         bind_params["limit"] = int(limit)
         bind_params["min_weight"] = int(min_weight)
@@ -558,13 +559,16 @@ class GraphRepository:
                 FETCH FIRST :top_k ROWS ONLY
             """)
 
+            bind_params = {
+                "kb_id": int(kb_id),
+                "'kb_id'": int(kb_id),  # 🛡️ 注入幽灵键防御
+                "kw_vector": vec,
+                "top_k": int(top_k)
+            }
+            
             result = await self.session.execute(
                 vertices_sql, 
-                {
-                    "kb_id": int(kb_id), 
-                    "kw_vector": vec, 
-                    "top_k": int(top_k)
-                }
+                bind_params
             )
             rows = result.fetchall()
             
