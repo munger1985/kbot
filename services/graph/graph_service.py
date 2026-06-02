@@ -430,7 +430,7 @@ class GraphService:
         embedding_model = model_params.txt_embedding_model
         
         # 定义内部子任务：负责单词的 [向量转换 -> 数据库近邻查询] 闭环
-        async def process_single_keyword(kw: str, graph_repo: GraphRepository) -> list[str]:
+        async def process_single_keyword(kw: str) -> list[str]:
             try:
                 # 1. 生成关键词的向量表示
                 kw_embedding = await self._get_embedding(content=kw, model_name=embedding_model)
@@ -438,13 +438,13 @@ class GraphService:
                     return [kw] # 向量化失败则保留原词，交由字面量硬碰防御
 
                 # 2. 调用数据库查询近邻实体
-
-                db_hits = await graph_repo.get_vertex_names_by_embedding(
-                    kb_id=agent_id,
-                    keyword_embedding=kw_embedding,
-                    top_k=top_k
-                )
-                
+                async with self.db_session as session:
+                    local_repo = GraphRepository(session)
+                    db_hits = await local_repo.get_vertex_names_by_embedding(
+                        kb_id=agent_id,
+                        keyword_embedding=kw_embedding,
+                        top_k=top_k
+                    )
                 # 如果这个关键词在向量检索中沉寂（图谱里可能还没有这类实体点），原样返还以提供字面量硬匹配的机会
                 return db_hits if db_hits else [kw]
                 
@@ -453,24 +453,22 @@ class GraphService:
                 return [kw]
 
         aligned_names_set = set()
-        async with self.db_session as session:
-            graph_repo = GraphRepository(session)
 
-            try:
-                tasks = [process_single_keyword(kw, graph_repo) for kw in valid_keywords]
-                completed_results = await asyncio.gather(*tasks, return_exceptions=True)
+        try:
+            tasks = [process_single_keyword(kw) for kw in valid_keywords]
+            completed_results = await asyncio.gather(*tasks, return_exceptions=True)
 
-                # 3. 内存聚合与跨路去重
-                for res_list in completed_results:
-                    if isinstance(res_list, list):
-                        for name in res_list:
-                            aligned_names_set.add(name)
+            # 3. 内存聚合与跨路去重
+            for res_list in completed_results:
+                if isinstance(res_list, list):
+                    for name in res_list:
+                        aligned_names_set.add(name)
 
-                final_aligned_vertices = list(aligned_names_set)
-                
-                logger.info(f"[GraphService] 实体消歧对齐完成。原始关键词: {valid_keywords} -> 融合去重后图节点: {final_aligned_vertices}")
-                return final_aligned_vertices
+            final_aligned_vertices = list(aligned_names_set)
+            
+            logger.info(f"[GraphService] 实体消歧对齐完成。原始关键词: {valid_keywords} -> 融合去重后图节点: {final_aligned_vertices}")
+            return final_aligned_vertices
 
-            except Exception as global_err:
-                logger.error(f"[GraphService] 调度全局向量实体对齐引发未知崩溃: {global_err}，安全降级回原始词", exc_info=True)
-                return keywords
+        except Exception as global_err:
+            logger.error(f"[GraphService] 调度全局向量实体对齐引发未知崩溃: {global_err}，安全降级回原始词", exc_info=True)
+            return keywords
