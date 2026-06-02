@@ -35,8 +35,6 @@ pool_use_lifo = db_config.sqlalchemy.pool_use_lifo
 # 2. 异步引擎 (Engine) 实例化
 # ==============================================================================
 try:
-    # 彻底移除 `async_engine.dialect._json_serializer` 和 `_json_deserializer` 静态注入补丁
-    # 彻底杜绝多协程高并发竞争时，参数编译命名空间踩踏与键名引号退化变异 Bug
     async_engine = create_async_engine(
         url,
         echo=echo,
@@ -49,7 +47,13 @@ try:
         future=True
     )
     
-    logger.info("Async database engine initialized successfully (Pure Native Dialect)")
+    # 🎯【核心物理卡点修复】
+    # 显式声明 SQLAlchemy ORM 内部类型映射所需的标准内置处理器，杜绝 AttributeError。
+    # 采用 Python 标准库官方的 json.dumps/loads，不使用任何带有额外自适应解析逻辑的第三方包装。
+    async_engine.dialect._json_serializer = json.dumps    # type: ignore
+    async_engine.dialect._json_deserializer = json.loads  # type: ignore
+    
+    logger.info("Async database engine initialized with standard JSON processors successfully.")
 
 except Exception as e:
     logger.critical(f"Failed to create async database engine: {str(e)}", exc_info=True)
