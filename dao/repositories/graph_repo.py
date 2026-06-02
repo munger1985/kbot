@@ -544,24 +544,20 @@ class GraphRepository:
         logger.info(f"[BUG_TRACK_VECTOR] === 物理净化向量检索开始 ===")
 
         try:
-            # 1. 强制在 Python 内存中直接完成向量文本组装
+            # 1. 强制在 Python 内存中直接完成向量文本组装，变成纯文本字面量
             vec_literal = '[' + ','.join(map(str, keyword_embedding)) + ']'
 
-            # 🎯 核心修正：考虑到 ORA-00904 提示 VERTEX_NAME_VECTOR 无效，
-            # 这里将列名切换为图谱表中更常见的原生向量列名：VERTEX_VECTOR
-            # (备注：如果你的实际列名是其他名字，如 EMBEDDING，请在此处修改对应的列名占位)
-            target_vector_column = "VERTEX_VECTOR"  
-
+            # 2. 🚨 物理核平：SQL 语句中绝对不留任何一个冒号参数！列名精确定位为 "NAME_VECTOR"
             vertices_sql = text(f"""
                 SELECT VERTEX_NAME
                 FROM KBOT_GRAPH_KNOWLEDGE_VERTICES
                 WHERE KB_ID = {int(kb_id)}
-                AND {target_vector_column} IS NOT NULL
-                ORDER BY VECTOR_DISTANCE({target_vector_column}, to_vector('{vec_literal}'), COSINE) ASC
+                AND NAME_VECTOR IS NOT NULL
+                ORDER BY VECTOR_DISTANCE(NAME_VECTOR, to_vector('{vec_literal}'), COSINE) ASC
                 FETCH FIRST {int(top_k)} ROWS ONLY
             """)
 
-            # 保持空的绑定字典，防止触发底层的参数拦截 Bug
+            # 3. 保持空的绑定字典，彻底断绝任何内置/外置组件对 bind_params 字典做手脚、加单引号的可能
             bind_params = {}
             
             result = await self.session.execute(vertices_sql, bind_params)
@@ -578,6 +574,5 @@ class GraphRepository:
             return clean_names
 
         except Exception as e:
-            # 如果依然报错 ORA-00904，我们通过日志输出具体的错误，方便进行二次确认
             logger.error(f"[BUG_TRACK_VECTOR] 物理净化模式遭遇异常: {str(e)}", exc_info=True)
             raise e
