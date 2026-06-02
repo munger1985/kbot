@@ -20,40 +20,38 @@ class SkillMetadata(BaseModel):
         """
         将系统内部元数据，完美转化为严格对齐 Anthropic / JSON Schema 规范的 Tool 协议
         """
-        # 核心：建立 Python/常识类型 到 标准 JSON Schema 类型的强映射表
         type_mapping = {
-            "int": "integer",
-            "integer": "integer",
-            "float": "number",
-            "number": "number",
-            "list": "array",
-            "array": "array",
-            "dict": "object",
-            "object": "object",
-            "bool": "boolean",
-            "boolean": "boolean",
-            "string": "string",
-            "str": "string",
-            "date": "string"  # 日期在 JSON Schema 中通常作为 string 处理
+            "int": "integer", "integer": "integer",
+            "float": "number", "number": "number",
+            "list": "array", "array": "array",
+            "dict": "object", "object": "object",
+            "bool": "boolean", "boolean": "boolean",
+            "string": "string", "str": "string", "date": "string"
         }
 
         properties = {}
         required_params = []
         
         for p in self.params:
-            # 安全获取标准类型，如果识别不到，默认退化为 "string" 兜底
             json_type = type_mapping.get(p.param_type.lower(), "string")
-            
             properties[p.name] = {
                 "type": json_type, 
                 "description": p.description
             }
             if p.required:
                 required_params.append(p.name)
+
+        # 🚨 核心修复：输出给大模型的工具名称，必须与 SkillManager 内部注册的 Kebab-case 键 100% 强对齐
+        # 比如将 "AskGraphSkill" 转换为 "ask-graph-skill"
+        import re
+        # 下面这行正则可以将大写驼峰转换为小写中划线 (e.g., AskGraphSkill -> ask-graph-skill)
+        kebab_name = re.sub(r'(?<!^)(?=[A-Z])', '-', self.name).lower().replace('_', '-')
+        # 兜底：如果它本身就已经带了中划线，防止重复处理
+        if '--' in kebab_name:
+            kebab_name = self.name.lower().replace('_', '-')
                 
         return {
-            "name": self.name,
-            # 将功能描述和示例融合，最大化帮助 Claude 理解这个工具什么时候该调、怎么调
+            "name": kebab_name, # 🎯 扔给 Claude 的名字现在变成 'ask-graph-skill'
             "description": f"【功能】{self.description} | 【使用示例】{self.usage_example}",
             "input_schema": {
                 "type": "object",

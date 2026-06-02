@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import time
-from typing import Any, TYPE_CHECKING
+from typing import Any
 from loguru import logger
 
 from core.database.oracle import get_session
@@ -15,10 +15,7 @@ from utils.clients import AIModelClient
 from agent.prompt import default_prompt
 from core.exceptions import handle_exception
 from services.search import TxtBaseSearchResult, GraphBaseSearch
-
-if TYPE_CHECKING:
-    from services.kb import ModelParams
-    from services.basic import AgentService
+from services.kb.schema import ModelParams
 
 
 class GraphService:

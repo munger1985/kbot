@@ -16,7 +16,6 @@ class AskGraphSkill(BaseSkill):
     """
     def __init__(self):
         super().__init__()
-        self.security_level = 9
         self.graph_agent = GraphAgent()
         self.graph_service = GraphService()
 
@@ -35,6 +34,7 @@ class AskGraphSkill(BaseSkill):
         current_user = context.get("user_id", "default_user")
         current_agent = context.get("agent_id")
         current_session = context.get("session_id") or uuid.uuid4().hex
+        current_security_level = context.get("security_level") or 0
         tags = context.get("tags") or []
         
         # 2. 从控制平面参数池中提取输入的实体词 (优先拿路由器和规划层抽出来的实体词)
@@ -120,7 +120,7 @@ class AskGraphSkill(BaseSkill):
                 question=context.get("question", ""),
                 standalone_query=context.get("standalone_query", ""),
                 vertex_names=aligned_vertex_names,  # 🎯 传入洗干净且对齐后的真实图实体
-                security_level=self.security_level,
+                security_level=current_security_level,
                 user_id=current_user,
                 tags=tags
             )
