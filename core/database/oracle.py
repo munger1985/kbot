@@ -31,35 +31,8 @@ pool_pre_ping = db_config.sqlalchemy.pool_pre_ping
 pool_recycle = db_config.sqlalchemy.pool_recycle
 pool_use_lifo = db_config.sqlalchemy.pool_use_lifo
 
-
 # ==============================================================================
-# 2. 声明健壮的内置自适应 JSON 序列化/反序列化器
-# ==============================================================================
-def _pure_json_dumps(obj, **kwargs) -> str:
-    """标准内置 JSON 编码器，安全兼容高精度 Decimal 并防止中文转义"""
-    def default_encoder(item):
-        if isinstance(item, Decimal):
-            return float(item)
-        raise TypeError(f"Object of type {item.__class__.__name__} is not JSON serializable")
-    kwargs.setdefault('ensure_ascii', False)
-    return json.dumps(obj, default=default_encoder, **kwargs)
-
-
-def _pure_json_loads(value):
-    """自适应 JSON 解码器：完美调和 oracledb 自动反序列化输出 dict 与 SQLAlchemy 的二次调用冲突"""
-    if value is None:
-        return None
-    # 🎯 核心卡点修复：如果 oracledb 驱动已经将 JSON 字段解构成结构化 dict/list，直接放行，杜绝 TypeError
-    if isinstance(value, (dict, list)):
-        return value
-    try:
-        return json.loads(value)
-    except (TypeError, json.JSONDecodeError):
-        return value
-
-
-# ==============================================================================
-# 3. 异步引擎 (Engine) 实例化
+# 异步引擎 (Engine) 实例化
 # ==============================================================================
 try:
     async_engine = create_async_engine(
@@ -73,12 +46,8 @@ try:
         pool_use_lifo=pool_use_lifo,      # 🚀 后进先出：优先复用活跃连接，最大化共享连接利用率
         future=True
     )
-    
-    # 注入安全的自适应 JSON 处理器，既能消除 AttributeError，又能防御二次反序列化引起的 TypeError
-    async_engine.dialect._json_serializer = _pure_json_dumps      # type: ignore
-    async_engine.dialect._json_deserializer = _pure_json_loads    # type: ignore
-    
-    logger.info("Async database engine initialized with adaptive JSON processors successfully.")
+
+    logger.info("Async database engine initialized cleanly without global extensions.")
 
 except Exception as e:
     logger.critical(f"Failed to create async database engine: {str(e)}", exc_info=True)
@@ -86,7 +55,7 @@ except Exception as e:
 
 
 # ==============================================================================
-# 4. 异步会话工厂 (Session Factory) 绑定
+# 异步会话工厂 (Session Factory) 绑定
 # ==============================================================================
 async_session = async_sessionmaker(
     bind=async_engine,
@@ -97,7 +66,7 @@ async_session = async_sessionmaker(
 
 
 # ==============================================================================
-# 5. 上下文管理器与系统级生命周期管控
+# 异步会话上下文管理器与系统级生命周期管控
 # ==============================================================================
 @asynccontextmanager
 async def get_session() -> AsyncIterator[AsyncSession]:

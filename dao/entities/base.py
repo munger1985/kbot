@@ -1,8 +1,9 @@
 import json
+from decimal import Decimal
 from sqlalchemy import TypeDecorator, Text
 import array as array_module
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy import TypeDecorator, Text, Dialect
+from sqlalchemy import TypeDecorator, Text, Dialect, JSON
 from sqlalchemy.dialects.oracle import VECTOR as ORA_VECTOR  # Oracle 23ai+
 from core.config.settings import get_embed_config
 
@@ -51,3 +52,38 @@ def VectorField():
     便捷工厂函数，定义指定维度的向量字段
     """
     return UniversalVector()
+
+class OracleJSON(TypeDecorator):
+    """
+    自适应 Oracle JSON 处理器。
+    完美调和 oracledb 驱动底层自动反序列化 OSON 与 SQLAlchemy 二次解析带来的冲突。
+    """
+    impl = JSON
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        """序列化：将 Python 对象转换为 JSON 字符串或保持原样供驱动处理"""
+        if value is None:
+            return None
+        
+        # 兼容高精度 Decimal 并防止中文被转义为 \uXXXX
+        def default_encoder(item):
+            if isinstance(item, Decimal):
+                return float(item)
+            raise TypeError(f"Object of type {item.__class__.__name__} is not JSON serializable")
+            
+        return json.dumps(value, default=default_encoder, ensure_ascii=False)
+
+    def process_result_value(self, value, dialect):
+        """反序列化：如果驱动已经解构成 dict/list，则直接放行，杜绝 TypeError"""
+        if value is None:
+            return None
+        # 🎯 核心防御：如果已经是结构化对象，直接返回，不再交由 json.loads 处理
+        if isinstance(value, (dict, list)):
+            return value
+        if isinstance(value, str):
+            try:
+                return json.loads(value)
+            except (TypeError, json.JSONDecodeError):
+                return value
+        return value

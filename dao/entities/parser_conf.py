@@ -1,6 +1,6 @@
-from sqlalchemy import Numeric, String, Date, JSON, func
+from sqlalchemy import Numeric, String, Date, func
 from sqlalchemy.orm import Mapped, mapped_column
-from .base import BaseEntity
+from .base import BaseEntity, OracleJSON
 
 
 class ParserConfEntity(BaseEntity):
@@ -9,7 +9,7 @@ class ParserConfEntity(BaseEntity):
     parser_conf_id: Mapped[int] = mapped_column(Numeric(38, 0), primary_key=True, autoincrement=True, comment="自增ID，主键")
     domain_id: Mapped[int] = mapped_column(Numeric(38, 0), comment="Domain ID, referencing domain table")
     engine: Mapped[str] = mapped_column(String(10), comment="Parser engine：Enum：ParserEngine")
-    parser_params: Mapped[dict] = mapped_column(JSON, comment="Parser parameters")
+    parser_params: Mapped[dict] = mapped_column(OracleJSON, comment="Parser parameters")
     created_by: Mapped[str | None] = mapped_column(String(256), comment="Creator user")
     created_time: Mapped[Date] = mapped_column(Date, server_default=func.now(), comment="Creation time")
     updated_by: Mapped[str | None] = mapped_column(String(256), comment="Updater user")

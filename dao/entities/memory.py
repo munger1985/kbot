@@ -1,9 +1,9 @@
 
 from datetime import datetime
 from typing import Any
-from sqlalchemy import String, Integer, CLOB, JSON, DateTime, Numeric, func, Boolean
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-from .base import BaseEntity, VectorField
+from sqlalchemy import String, Integer, CLOB, DateTime, Numeric, func, Boolean
+from sqlalchemy.orm import Mapped, mapped_column
+from .base import BaseEntity, VectorField, OracleJSON
 from agent.common import SkillExecutionContext
 
 
@@ -14,10 +14,10 @@ class UserProfileEntity(BaseEntity):
     __tablename__ = "kbot_md_user_profile"
 
     user_id: Mapped[str] = mapped_column(String(256), primary_key=True, comment="Unique identifier for the user")
-    global_preferences: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=True, comment="Persistent technical stack preferences")
-    frequent_entities: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=True, comment="Frequently occurring entities (e.g., project names, IPs)")
-    entity_relations: Mapped[list[dict]] = mapped_column(JSON, nullable=True, comment="Frequently occurring entity relations (e.g., project -> IP)")
-    correction_history: Mapped[list[str]] = mapped_column(JSON, nullable=True, comment="User correction history")
+    global_preferences: Mapped[dict[str, Any]] = mapped_column(OracleJSON, nullable=True, comment="Persistent technical stack preferences")
+    frequent_entities: Mapped[dict[str, Any]] = mapped_column(OracleJSON, nullable=True, comment="Frequently occurring entities (e.g., project names, IPs)")
+    entity_relations: Mapped[list[dict]] = mapped_column(OracleJSON, nullable=True, comment="Frequently occurring entity relations (e.g., project -> IP)")
+    correction_history: Mapped[list[str]] = mapped_column(OracleJSON, nullable=True, comment="User correction history")
     profile_summary: Mapped[str | None] = mapped_column(CLOB, comment="LLM-generated user behavior summary")
     last_update_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
@@ -34,9 +34,9 @@ class ConversationContextEntity(BaseEntity):
     app_id: Mapped[int] = mapped_column(Numeric(38, 0), comment="Associated application ID")
     agent_id: Mapped[int] = mapped_column(Numeric(38, 0), comment="Associated AI Agent identifier")
 
-    session_state: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=True, comment="Current active state machine parameters")
-    current_plan: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=True, comment="Current active plan")
-    step_outputs: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=True, comment="Skill step outputs")
+    session_state: Mapped[dict[str, Any]] = mapped_column(OracleJSON, nullable=True, comment="Current active state machine parameters")
+    current_plan: Mapped[dict[str, Any]] = mapped_column(OracleJSON, nullable=True, comment="Current active plan")
+    step_outputs: Mapped[dict[str, Any]] = mapped_column(OracleJSON, nullable=True, comment="Skill step outputs")
 
     context_summary: Mapped[str | None] = mapped_column(CLOB, comment="Short-to-medium term rolling summary")
     last_relevance_score: Mapped[float | None] = mapped_column(Numeric(2, 1), comment="Last relevance score computed by the model")
@@ -63,17 +63,17 @@ class MemoryEntryEntity(BaseEntity):
     memory_vector: Mapped[list[float]] = mapped_column(VectorField(), comment="Oracle 23ai native vector for semantic search")
     
     thought: Mapped[str | None] = mapped_column(CLOB, comment="LLM thought process for this turn")
-    current_plan: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=True, comment="Current active plan")
-    reasoning_path: Mapped[list[SkillExecutionContext] | list[dict[str, Any]]] = mapped_column(JSON, nullable=True, comment="Reasoning path for this turn")
+    current_plan: Mapped[dict[str, Any]] = mapped_column(OracleJSON, nullable=True, comment="Current active plan")
+    reasoning_path: Mapped[list[SkillExecutionContext] | list[dict[str, Any]]] = mapped_column(OracleJSON, nullable=True, comment="Reasoning path for this turn")
     memory_summary: Mapped[str | None] = mapped_column(CLOB, comment="LLM reflected knowledge snapshot for long-term memory")
     turn_type: Mapped[str | None] = mapped_column(String(64), comment="Intent category for this turn, e.g., FOLLOW-UP, NEW TOPIC, CORRECTION")
-    turn_entities: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=True, comment="Entity snapshot for this specific turn")
+    turn_entities: Mapped[dict[str, Any]] = mapped_column(OracleJSON, nullable=True, comment="Entity snapshot for this specific turn")
 
     # Metadata & Content
     
     raw_question: Mapped[str] = mapped_column(CLOB, comment="Original user input")
     answer: Mapped[str | None] = mapped_column(CLOB, comment="AI generated response")
-    blocks: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=True, comment="Streaming blocks used for this answer")
+    blocks: Mapped[list[dict[str, Any]]] = mapped_column(OracleJSON, nullable=True, comment="Streaming blocks used for this answer")
     feedback: Mapped[int] = mapped_column(Numeric(1, 0), default=0, comment="User feedback for this turn, -1: bad, 0: neutral, 1: good")
     request_time: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     response_time: Mapped[datetime] = mapped_column(DateTime(timezone=True))

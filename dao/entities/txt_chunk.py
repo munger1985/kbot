@@ -1,9 +1,9 @@
 import json
 import uuid
 from typing import Any
-from sqlalchemy import String, Numeric, CLOB, Index, JSON
+from sqlalchemy import String, Numeric, CLOB, Index
 from sqlalchemy.orm import Mapped, mapped_column
-from .base import BaseEntity, VectorField
+from .base import BaseEntity, VectorField, OracleJSON
 
 
 class TxtChunkEntity(BaseEntity):
@@ -27,13 +27,13 @@ class TxtChunkEntity(BaseEntity):
     doc_summary: Mapped[str] = mapped_column(String(4000), nullable=True, comment="Summary of document content")
     search_helper: Mapped[str] = mapped_column(String(4000), nullable=True, comment="Search helper of chunk content")
     embedding: Mapped[list[float]] = mapped_column(VectorField(), nullable=False, comment="Vector embedding of text chunk")
-    chunk_metadata: Mapped[dict] = mapped_column(JSON, nullable=False, comment="Chunk metadata (JSON, e.g. page_num/image_name)")
+    chunk_metadata: Mapped[dict] = mapped_column(OracleJSON, nullable=False, comment="Chunk metadata (JSON, e.g. page_num/image_name)")
 
     # Extended fields
     # Note: OracleJSON is a TypeDecorator that ensures proper JSON serialization
     security_level: Mapped[int | None] = mapped_column(Numeric(1, 0), nullable=True, comment="Data security level (1=public, 0=private, nullable)")
     is_active: Mapped[int] = mapped_column(Numeric(1), default=1, nullable=False, comment="Embedding status (1=active, 0=inactive, default=1)")
-    biz_metadata: Mapped[dict | None] = mapped_column(JSON, nullable=True, comment="Business custom metadata (JSON, nullable)")
+    biz_metadata: Mapped[dict | None] = mapped_column(OracleJSON, nullable=True, comment="Business custom metadata (JSON, nullable)")
 
 # Performance optimization indexes for vector search
 Index("idx_embedding_kb_status", TxtChunkEntity.kb_id, TxtChunkEntity.is_active, TxtChunkEntity.security_level)
