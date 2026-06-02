@@ -288,28 +288,26 @@ class GraphRepository:
     #         return {"vertices": [], "edges": [], "chunk_ids": []}
 
     async def search_graph_context(
-            self,
-            kb_id: int,
-            vertex_names: list[str],
-            max_depth: int = 2,
-            limit: int = 30,
-            min_weight: int = 2
-        ) -> dict[str, Any]:
+        self,
+        kb_id: int,
+        vertex_names: list[str],
+        max_depth: int = 2,
+        limit: int = 30,
+        min_weight: int = 2
+    ) -> dict[str, Any]:
         """
         基于 Oracle 23ai/26ai 工业级原生图查询 (SQL/PGQ) 驱动空间图谱游走。
-        利用 MATCH 变长路径语法定位 1 到 max_depth 度的局部关联子图，并聚合无损反查 chunk_ids。
         """
+        # 🔍 【日志埋点】打印图谱检索的初始输入
+        logger.info(f"[BUG_TRACK_GRAPH] === 开始执行图谱检索 ===")
+        logger.info(f"[BUG_TRACK_GRAPH] 输入参数: kb_id={kb_id} (类型: {type(kb_id)}), vertex_names={vertex_names}, limit={limit}, min_weight={min_weight}")
+
         if not vertex_names:
             return {"vertices": [], "edges": [], "chunk_ids": []}
 
-        # 1. 动态绑定参数构建
         bind_params: dict[str, Any] = {f"name_{i}": name for i, name in enumerate(vertex_names)}
         in_clause = ", ".join(f":name_{i}" for i in range(len(vertex_names)))
 
-        # ========================================================
-        # 2. 构建 23ai / 26ai 原生属性图 SQL/PGQ 查询
-        # ========================================================
-        # 强制显式声明最终 SELECT 的字段顺序，决不使用 SELECT * 
         native_graph_sql = text(f"""
             WITH edge_identities AS (
                 SELECT * FROM GRAPH_TABLE (
@@ -373,35 +371,41 @@ class GraphRepository:
             WHERE ROWNUM <= :limit
         """)
 
-        # 3. 强类型卡锁锁死编译期，杜绝 AST 树在多层 UNION 与子查询嵌套中退化
-        stmt = native_graph_sql.bindparams(
-            bindparam("kb_id", type_=Integer),
-            bindparam("limit", type_=Integer),
-            bindparam("min_weight", type_=Integer)
-        )
-
         bind_params["kb_id"] = int(kb_id)
         bind_params["limit"] = int(limit)
         bind_params["min_weight"] = int(min_weight)
 
+        # 🔍 【日志埋点】打印最终绑定的参数字典
+        logger.info(f"[BUG_TRACK_GRAPH] 最终构建的绑定参数键列表: {list(bind_params.keys())}")
+        logger.info(f"[BUG_TRACK_GRAPH] 最终构建的绑定参数内容: {bind_params}")
+
         try:
-            result = await self.session.execute(stmt, bind_params)
+            result = await self.session.execute(native_graph_sql, bind_params)
             rows = result.fetchall()
+
+            # 🔍 【日志埋点】打印返回数据量及首行底层结构
+            logger.info(f"[BUG_TRACK_GRAPH] 数据库成功返回行数: {len(rows)}")
+            if rows:
+                first_row = rows[0]
+                logger.info(f"[BUG_TRACK_GRAPH] 首行 row 对象类型: {type(first_row)}")
+                logger.info(f"[BUG_TRACK_GRAPH] 首行元组元素个数: {len(first_row)}")
+                if hasattr(first_row, "_mapping"):
+                    logger.info(f"[BUG_TRACK_GRAPH] 首行 _mapping 字典内容: {dict(first_row._mapping)}")
+                    logger.info(f"[BUG_TRACK_GRAPH] 首行 _mapping 所有的键名: {list(first_row._mapping.keys())}")
 
             vertices_set = set()
             edges_list = []
             chunk_ids_set = set()
 
-            # ========================================================
-            # 【铁壁修复核心】绝不使用 row._mapping，彻底绕过底层驱动列名自爆缺陷
-            # 严格按照上方最终 SELECT 语句中定义的严格索引位置 (Index-based Tuple) 获取数据
-            # ========================================================
+            # 🔍 【日志埋点】进入循环前提示
+            logger.info(f"[BUG_TRACK_GRAPH] 开始遍历结果集并映射变量...")
+
             for row in rows:
                 if not row:
                     continue
                 
-                # 0:e_id, 1:src_id, 2:dst_id, 3:relation_type, 4:weight, 5:edge_attr,
-                # 6:src_name, 7:src_type, 8:dst_name, 9:dst_type, 10:AS_CHUNK_IDS
+                # 🔍 注：这里保持您现有的逻辑，如果是通过 _mapping 或者 items 读取，请在此处观察日志输出
+                # 以下为之前回滚前最可能触发 KeyError 的解析区域：
                 edge_id        = row[0]
                 source_id      = row[1]
                 target_id      = row[2]
@@ -439,17 +443,19 @@ class GraphRepository:
                 {"id": v[0], "name": v[1], "type": v[2]} for v in vertices_set
             ]
 
-            logger.info(f"[NativeGraphSearch] 🚀 原生图提取成功. 召回 {len(formatted_vertices)} 实体节点, {len(edges_list)} 拓扑关系边, {len(chunk_ids_set)} 映射文本块，所属KB: {kb_id}")
-
-            return {
+            # 🔍 【日志埋点】打印最终组装出的字典结构
+            output_data = {
                 "vertices": formatted_vertices,
                 "edges": edges_list,
                 "chunk_ids": list(chunk_ids_set)
             }
+            logger.info(f"[BUG_TRACK_GRAPH] 方法即将成功返回，输出元数据摘要: 节点数={len(formatted_vertices)}, 边数={len(edges_list)}, 文本块数={len(chunk_ids_set)}")
+            return output_data
 
         except Exception as e:
-            logger.error(f"[NativeGraphSearch Failed] Oracle SQL/PGQ 原生引擎检索崩溃: {str(e)}", exc_info=True)
-            raise DatabaseException(f"Oracle SQL/PGQ native engine crashed", original_error=e)
+            # 🔍 【日志埋点】精确捕获异常发生时的上下文
+            logger.error(f"[BUG_TRACK_GRAPH] 结果集循环或执行期遭遇崩溃。异常类型: {type(e)}, 消息: {str(e)}", exc_info=True)
+            raise e
         
     async def delete_graph_by_file(self, kb_id: int, file_ids: list[str]) -> int:
         """
@@ -535,10 +541,13 @@ class GraphRepository:
         if not keyword_embedding:
             return []
 
+        # 🔍 【日志埋点】打印方法的原始输入
+        logger.info(f"[BUG_TRACK_VECTOR] === 开始执行向量检索 ===")
+        logger.info(f"[BUG_TRACK_VECTOR] 输入参数: kb_id={kb_id} (类型: {type(kb_id)}), top_k={top_k}, embedding长度={len(keyword_embedding)}")
+
         try:
             vec = OracleVecHandler().convert(keyword_embedding)
 
-            # 同样精确声明输出字段
             vertices_sql = text("""
                 SELECT VERTEX_NAME
                 FROM KBOT_GRAPH_KNOWLEDGE_VERTICES
@@ -548,34 +557,42 @@ class GraphRepository:
                 FETCH FIRST :top_k ROWS ONLY
             """)
 
-            # 【锁强类型】直接截断底层针对向量和 kb_id 混用时的自爆逻辑
-            # 🛡️ 关键修复：kw_vector 也必须显式声明，防止 SQLAlchemy 2.0 严格模式下参数绑定异常
-            # 向量类型不指定具体 type_，由 python-oracledb 驱动自动识别 array.array 类型
-            stmt = vertices_sql.bindparams(
-                bindparam("kb_id", type_=Integer),
-                bindparam("kw_vector"),
-                bindparam("top_k", type_=Integer)
-            )
-
             bind_params = {
                 "kb_id": int(kb_id),
                 "kw_vector": vec,
                 "top_k": int(top_k)
             }
             
-            result = await self.session.execute(stmt, bind_params)
+            # 🔍 【日志埋点】打印最终传递给 SQLAlchemy 的绑定参数字典
+            logger.info(f"[BUG_TRACK_VECTOR] SQL 绑定参数字典内容: {bind_params}")
+            logger.info(f"[BUG_TRACK_VECTOR] SQL 绑定参数键列表: {list(bind_params.keys())}")
+
+            result = await self.session.execute(vertices_sql, bind_params)
             rows = result.fetchall()
             
+            # 🔍 【日志埋点】打印原生驱动返回的结果集元数据
+            logger.info(f"[BUG_TRACK_VECTOR] 返回行数: {len(rows)}")
+            if rows:
+                first_row = rows[0]
+                logger.info(f"[BUG_TRACK_VECTOR] 首行 row 对象类型: {type(first_row)}")
+                logger.info(f"[BUG_TRACK_VECTOR] 首行 tuple 内容: {tuple(first_row)}")
+                # 尝试抓取 SQLAlchemy Row 的内部映射键，暴露出底层真实的列名
+                if hasattr(first_row, "_mapping"):
+                    logger.info(f"[BUG_TRACK_VECTOR] 首行 _mapping 字典内容: {dict(first_row._mapping)}")
+                    logger.info(f"[BUG_TRACK_VECTOR] 首行 _mapping 所有的键: {list(first_row._mapping.keys())}")
+            
             clean_names = []
-            # 同样改用严格的位置下标 row[0]，跳过对元数据字典的遍历，安全隔离 KeyError
             for row in rows:
                 if row and row[0]:
                     clean_name = str(row[0]).strip("'\" ")
                     if clean_name:
                         clean_names.append(clean_name)
             
+            # 🔍 【日志埋点】打印最终输出
+            logger.info(f"[BUG_TRACK_VECTOR] 最终返回的节点名称列表: {clean_names}")
             return clean_names
 
         except Exception as e:
-            logger.error(f"[GraphRepo] Failed to fetch vertices for kb_id: {kb_id}, Error: {str(e)}", exc_info=True)
-            raise DatabaseException(f"Failed to fetch vertices by knowledge base vector", original_error=e)
+            # 🔍 【日志埋点】捕获异常瞬间的现场
+            logger.error(f"[BUG_TRACK_VECTOR] 崩溃时异常类型: {type(e)}, 消息: {str(e)}", exc_info=True)
+            raise e
