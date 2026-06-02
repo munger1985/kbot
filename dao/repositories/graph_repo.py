@@ -312,46 +312,65 @@ class GraphRepository:
         # 使用 MATCH (v_src)-[e]->{1, N} (v_dst) 代替 CONNECT BY
         # 同时通过单表内聚的子查询无缝拉取关联的文本块块清单
         native_graph_sql = text(f"""
-            WITH raw_graph_edges AS (
-                SELECT 
-                    e_id, src_id, dst_id, relation_type, weight, edge_attr,
-                    src_name, src_type, dst_name, dst_type,
-                    (
-                        SELECT LISTAGG(TO_CHAR(m.CHUNK_ID), ',') WITHIN GROUP (ORDER BY m.CREATED_AT DESC)
-                        FROM KBOT_GRAPH_EDGE_CHUNK_MAP m
-                        WHERE m.KB_ID = :kb_id AND m.EDGE_ID = e_id
-                    ) as AS_CHUNK_IDS
-                FROM GRAPH_TABLE (
-                    kbot_knowledge_rag_graph
-                    -- 🎯 关键加固：如果需要游走到2度且稳定召回每一条边，通过分步显式路径或单步锚定
-                    -- 这里我们保持变长语法，但在 COLUMNS 里使用标准的标量反射，或通过明确的别名函数隔离
-                    MATCH (v_src IS vertex) -[e IS connects_to]->{{1, :max_depth}} (v_dst IS vertex)
-                    COLUMNS (
-                        -- 🛡️ 使用更稳健的显式转型与确定性别名，防止变长路径下单标量反射退化为匿名列
-                        CAST(EDGE_ID(e) AS VARCHAR2(128)) as e_id,
-                        VERTEX_ID(v_src) as src_id,
-                        VERTEX_ID(v_dst) as dst_id,
-                        v_src.vertex_name as src_name,
-                        v_src.vertex_type as src_type,
-                        v_dst.vertex_name as dst_name,
-                        v_dst.vertex_type as dst_type,
-                        v_src.kb_id as src_kb_id,
-                        CAST(e.relation_type AS VARCHAR2(64)) as relation_type,
-                        CAST(e.weight AS NUMBER) as weight,
-                        e.attributes as edge_attr
-                    )
+            WITH edge_identities AS (
+            -- 1度关系
+            SELECT * FROM GRAPH_TABLE (
+                kbot_knowledge_rag_graph
+                MATCH (v_src IS vertex) -[e IS connects_to]-> (v_dst IS vertex)
+                COLUMNS (
+                    EDGE_ID(e) as e_id,
+                    VERTEX_ID(v_src) as src_id,
+                    VERTEX_ID(v_dst) as dst_id,
+                    v_src.vertex_name as src_name,
+                    v_src.vertex_type as src_type,
+                    v_dst.vertex_name as dst_name,
+                    v_dst.vertex_type as dst_type,
+                    v_src.kb_id as src_kb_id,
+                    e.relation_type as relation_type,
+                    e.weight as weight,
+                    e.attributes as edge_attr
                 )
-                WHERE src_kb_id = :kb_id
-                  AND weight >= :min_weight
-                  AND src_name IN ({in_clause})
-            ),
-            ordered_edges AS (
-                SELECT * FROM raw_graph_edges
-                WHERE e_id IS NOT NULL -- 过滤掉变长游走中可能产生的路径虚列
-                ORDER BY weight DESC
             )
-            SELECT * FROM ordered_edges
-            WHERE ROWNUM <= :limit
+            UNION ALL
+            -- 2度关系（通过两步单度 MATCH 显式展开，完全规避变长集合变量 e 的产生）
+            SELECT * FROM GRAPH_TABLE (
+                kbot_knowledge_rag_graph
+                MATCH (v_src IS vertex) -[e1 IS connects_to]-> (v_mid IS vertex) -[e2 IS connects_to]-> (v_dst IS vertex)
+                COLUMNS (
+                    EDGE_ID(e2) as e_id, -- 取当前落地边的ID
+                    VERTEX_ID(v_src) as src_id,
+                    VERTEX_ID(v_dst) as dst_id,
+                    v_src.vertex_name as src_name,
+                    v_src.vertex_type as src_type,
+                    v_dst.vertex_name as dst_name,
+                    v_dst.vertex_type as dst_type,
+                    v_src.kb_id as src_kb_id,
+                    e2.relation_type as relation_type,
+                    e2.weight as weight,
+                    e2.attributes as edge_attr
+                )
+            )
+        ),
+        raw_graph_edges AS (
+            SELECT 
+                e_id, src_id, dst_id, relation_type, weight, edge_attr,
+                src_name, src_type, dst_name, dst_type,
+                (
+                    SELECT LISTAGG(TO_CHAR(m.CHUNK_ID), ',') WITHIN GROUP (ORDER BY m.CREATED_AT DESC)
+                    FROM GRAPH_EDGE_CHUNK_MAP m
+                    WHERE m.KB_ID = :kb_id AND m.EDGE_ID = e_id
+                ) as AS_CHUNK_IDS
+            FROM edge_identities
+            WHERE src_kb_id = :kb_id
+            AND weight >= :min_weight
+            AND src_name IN ({in_clause})
+        ),
+        ordered_edges AS (
+            SELECT * FROM raw_graph_edges
+            ORDER BY weight DESC
+        )
+        SELECT * FROM ordered_edges
+        WHERE ROWNUM <= :limit
         """)
 
         # 3. 封装绑定标量，注入防注入清洗
@@ -532,15 +551,11 @@ class GraphRepository:
 
             vertices_sql = text("""
                 SELECT VERTEX_NAME
-                FROM (
-                    SELECT VERTEX_NAME,
-                           VECTOR_DISTANCE(VERTEX_NAME_VECTOR, :kw_vector, COSINE) as dist
-                    FROM KBOT_GRAPH_KNOWLEDGE_VERTICES
-                    WHERE KB_ID = :kb_id
-                      AND VERTEX_NAME_VECTOR IS NOT NULL
-                    ORDER BY dist ASC
-                )
-                WHERE ROWNUM <= :top_k
+                FROM KBOT_GRAPH_KNOWLEDGE_VERTICES
+                WHERE KB_ID = :kb_id
+                AND VERTEX_NAME_VECTOR IS NOT NULL
+                ORDER BY VECTOR_DISTANCE(VERTEX_NAME_VECTOR, :kw_vector, COSINE) ASC
+                FETCH FIRST :top_k ROWS ONLY
             """)
 
             result = await self.session.execute(
