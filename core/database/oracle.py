@@ -114,33 +114,34 @@ async def get_session() -> AsyncIterator[AsyncSession]:
         AsyncSession: 隔离的 SQLAlchemy 异步会话对象
     """
     session: AsyncSession = async_session()
-
-    # original_execute = session.execute
     
-    # async def monitored_execute(statement, params=None, *args, **kwargs):
-    #     try:
-    #         # 💡 条件过滤：只要绑定的参数字典中包含 "kb_id" 或 "vector"，立刻打印抓拍快照
-    #         if params and isinstance(params, dict) and any(k for k in params.keys() if "kb_id" in str(k) or "vector" in str(k)):
-    #             logger.critical(
-    #                 "\n"
-    #                 "========================================================================\n"
-    #                 "🚨 [Execute 哨兵触发] 捕获到 RAG 核心数据库请求前夕状态！\n"
-    #                 "------------------------------------------------------------------------\n"
-    #                 f"👉 原始 SQL 语句 (SQL/PGQ Text):\n{getattr(statement, 'text', str(statement)).strip()}\n"
-    #                 "------------------------------------------------------------------------\n"
-    #                 f"👉 传参字典类型 (Params Type): {type(params)}\n"
-    #                 f"👉 传参字典键名 (Raw Keys):    {list(params.keys())!r}\n"
-    #                 f"👉 传参明细数据 (Raw Values):  {params}\n"
-    #                 "========================================================================"
-    #             )
-    #     except Exception as patch_err:
-    #         logger.error(f"[Execute 哨兵内部解析异常（不影响主业务）]: {patch_err}")
+    # 🚀 拦截当前 session 的 execute 核心入口
+    original_execute = session.execute
+    
+    async def monitored_execute(statement, params=None, *args, **kwargs):
+        # 🎯 物理防线：如果发现上游任何拦截器作妖，强行过滤掉带单引号或双引号的变异畸形键
+        if params and isinstance(params, dict):
+            purified_params = {}
+            for k, v in params.items():
+                k_str = str(k).strip()
+                # 🛡️ 只要键名两端被包了引号，说明被上游拦截器搞脏了，直接剥离两端的引号恢复原样！
+                if (k_str.startswith("'") and k_str.endswith("'")) or (k_str.startswith('"') and k_str.endswith('"')):
+                    clean_key = k_str[1:-1] # 剥去引号
+                    # 如果剥离后的干净键已经在字典里了，就不用重复赋值，避免重复污染
+                    if clean_key not in purified_params:
+                        purified_params[clean_key] = v
+                    logger.debug(f"[Engine强力净化] 成功拦截变异键 {k_str!r}，已无损将其剥离还原为 {clean_key!r}")
+                else:
+                    purified_params[k] = v
             
-    #     # 回归并执行原本的 SQLAlchemy execute 逻辑
-    #     return await original_execute(statement, params, *args, **kwargs)
+            # 将绝对无污染的纯净字典回传给 SQLAlchemy 编译器
+            params = purified_params
+
+        # 回归并执行原本的 SQLAlchemy 逻辑
+        return await original_execute(statement, params, *args, **kwargs)
     
-    # # 替换当前会话实例的 execute 方法（仅对当前单次 get_session 生效，安全隔离）
-    # session.execute = monitored_execute  # type: ignore
+    # 挂载底层净化盾牌
+    session.execute = monitored_execute  # type: ignore
 
     try:
         yield session
