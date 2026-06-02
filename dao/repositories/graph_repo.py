@@ -293,14 +293,12 @@ class GraphRepository:
         vertex_names: list[str], 
         limit: int = 30, 
         min_weight: int = 2,
-        *args,
         **kwargs
-    ) -> list[dict]:
+    ) -> dict:
         """
         实体驱动的知识图谱空间网络检索 (Graph-RAG)。
         
-        通过给定的核心实体名称列表，召回一阶关联的图谱拓扑网络边及节点定义，
-        用于为大模型生成补充的图谱上下文。
+        通过给定的核心实体名称列表，召回关联的图谱拓扑网络边及映射的底层文本切片 ID 集合。
 
         Args:
             kb_id: 知识库唯一标识ID
@@ -308,15 +306,18 @@ class GraphRepository:
             limit: 最大边召回上限
             min_weight: 关系的最小置信度权重过滤阈值
             *args: 向上兼容的匿名位置参数
-            **kwargs: 向上兼容的动态关键字参数 (例如自动吸收上层传递的 max_depth 等参数)
+            **kwargs: 向上兼容的动态关键字参数（自动吸纳 max_depth 等参数）
 
         Returns:
-            list[dict]: 包含源节点、关系类型、目标节点及权重的结构化图拓扑列表
+            dict: 符合上层契约要求的结构化字典：
+                {
+                    "edges": list[dict],    # 拓扑边关系列表
+                    "chunk_ids": list[str]  # 关联的底层非结构化文本块切片ID集合
+                }
         """
         if not vertex_names:
-            return []
+            return {"edges": [], "chunk_ids": []}
 
-        # 提取并记录上层可能传入的 max_depth，留作未来二阶、多阶拓扑检索扩展
         max_depth = kwargs.get("max_depth", 1)
 
         logger.info(
@@ -330,9 +331,9 @@ class GraphRepository:
             in_clauses = [f":name_{i}" for i in range(len(vertex_names))]
             in_expr = ", ".join(in_clauses)
 
-            # 2. 生产级标量硬编码注入防御：
-            # 将整数标量 (kb_id, min_weight, limit) 通过 f-string 物理嵌入，
-            # 彻底在 SQL 文本中抹除冒号参数占位，阻断底层组件在参数字典映射生命周期内的隐式冲突。
+            # 2. 标量硬编码注入防御 + 多表连接提取 CHUNK_ID：
+            # 连接关系边切片映射表 (KBOT_GRAPH_EDGE_CHUNK_MAP) 以便为上层提供批量回表所需的 chunk_ids。
+            # 整数标量通过 f-string 物理嵌入，阻断底层组件在映射生命周期内的参数字典冲突。
             graph_sql_text = f"""
                 SELECT 
                     v1.VERTEX_NAME as source_name, 
@@ -340,12 +341,15 @@ class GraphRepository:
                     e.RELATION_TYPE as relation_type, 
                     e.WEIGHT as weight,
                     v2.VERTEX_NAME as target_name, 
-                    v2.VERTEX_TYPE as target_type
+                    v2.VERTEX_TYPE as target_type,
+                    m.CHUNK_ID as chunk_id
                 FROM KBOT_GRAPH_KNOWLEDGE_EDGES e
                 JOIN KBOT_GRAPH_KNOWLEDGE_VERTICES v1 
                     ON e.KB_ID = v1.KB_ID AND e.SOURCE_ID = v1.VERTEX_ID
                 JOIN KBOT_GRAPH_KNOWLEDGE_VERTICES v2 
                     ON e.KB_ID = v2.KB_ID AND e.TARGET_ID = v2.VERTEX_ID
+                LEFT JOIN KBOT_GRAPH_EDGE_CHUNK_MAP m
+                    ON e.KB_ID = m.KB_ID AND e.EDGE_ID = m.EDGE_ID
                 WHERE e.KB_ID = {int(kb_id)}
                 AND e.WEIGHT >= {int(min_weight)}
                 AND (v1.VERTEX_NAME IN ({in_expr}) OR v2.VERTEX_NAME IN ({in_expr}))
@@ -354,36 +358,50 @@ class GraphRepository:
             """
 
             # 3. 构建安全的纯净绑定参数字典
-            # 仅保留需要处理特殊字符转义的字符串实体名称
             bind_params = {}
             for i, name in enumerate(vertex_names):
                 key = f"name_{i}"
                 val = str(name)
                 bind_params[key] = val
-                # 兼容层双向分身防御，防止底层第三方框架对非空参数字典做隐式字符串转义比对
-                bind_params[f"'{key}'"] = val
+                bind_params[f"'{key}'"] = val  # 铁壁防线：防备隐式转义比对冲突
 
             # 4. 执行异步数据库检索
             result = await self.session.execute(text(graph_sql_text), bind_params)
             rows = result.fetchall()
             
-            # 5. 格式化并还原为标准业务对象格式输出
+            # 5. 严格对齐上层服务的 Dict 契约结构进行解析封装
             network_edges = []
+            chunk_ids_set = set()
+            
+            # 提取去重，保证拓扑边和 chunk_id 的平铺归集
             for row in rows:
-                network_edges.append({
+                # 封装拓扑关系边
+                edge_item = {
                     "source": str(row[0]),
                     "source_type": str(row[1]),
                     "relation": str(row[2]),
                     "weight": int(row[3]),
                     "target": str(row[4]),
                     "target_type": str(row[5])
-                })
+                }
+                # 避免将重复的边放入列表
+                if edge_item not in network_edges:
+                    network_edges.append(edge_item)
+                    
+                # 归集底层关联文本块 ID
+                if row[6]:
+                    chunk_ids_set.add(str(row[6]))
+                
+            ret_dict = {
+                "edges": network_edges,
+                "chunk_ids": list(chunk_ids_set)
+            }
                 
             logger.info(
                 f"[GraphRepo] Graph context retrieval completed successfully. "
-                f"KB_ID: {kb_id}, Retrieved Edges Count: {len(network_edges)}"
+                f"KB_ID: {kb_id}, Unique Edges Count: {len(network_edges)}, Unique Chunk IDs Count: {len(ret_dict['chunk_ids'])}"
             )
-            return network_edges
+            return ret_dict
 
         except Exception as e:
             logger.error(
