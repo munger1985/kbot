@@ -1,9 +1,8 @@
 import json
 from decimal import Decimal
-from sqlalchemy import TypeDecorator, Text
+from sqlalchemy import TypeDecorator, Text, Dialect
 import array as array_module
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy import TypeDecorator, Text, Dialect, JSON
 from sqlalchemy.dialects.oracle import VECTOR as ORA_VECTOR  # Oracle 23ai+
 from core.config.settings import get_embed_config
 
@@ -65,9 +64,9 @@ class OracleJSON(TypeDecorator):
 
     def load_dialect_impl(self, dialect: Dialect):
         """根据当前数据库方言动态加载底层实现类型"""
-        # 🎯 核心修正 2：如果是在 Oracle 下，通知 SQLAlchemy 底层使用的是原生 JSON/OSON 存储层
-        if dialect.name == 'oracle':
-            return dialect.type_descriptor(JSON())
+        # 🎯 始终使用 Text 作为底层实现，由 process_bind_param/process_result_value 完全接管序列化/反序列化
+        # 避免使用原生 JSON() 类型，因为在 oracledb async 模式下会触发
+        # 'OracleDialectAsync_oracledb' object has no attribute '_json_deserializer' 错误
         return dialect.type_descriptor(Text())
 
     def process_bind_param(self, value, dialect: Dialect):
