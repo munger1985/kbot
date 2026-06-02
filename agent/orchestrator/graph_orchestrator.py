@@ -5,7 +5,7 @@ from loguru import logger
 from core.database.oracle import get_session
 from core.exceptions import NotFoundError
 from dao.repositories import AgentRepository
-from services.search import GraphService
+from services.graph import GraphService
 from services.kb import ModelParams
 
 class GraphOrchestrator:

@@ -183,7 +183,7 @@ class SkillManager:
                 logger.info(f"分布式自治技能 [ {standard_name} ] 注册激活！类别: {meta_data['category']}")
 
             except Exception as e:
-                logger.error(f"扫描解析技能包 {md_path.parent.name} 失败: {e}")
+                logger.error(f"扫描解析技能包 {md_path.parent.name} 失败: {e}", exc_info=True)
 
         self._skills = new_skills
         logger.success(f"全局自治域技能库构建完毕，共激活 {len(self._skills)} 个组件")
