@@ -323,9 +323,12 @@ class GraphRepository:
                     ) as AS_CHUNK_IDS
                 FROM GRAPH_TABLE (
                     kbot_knowledge_rag_graph
+                    -- 🎯 关键加固：如果需要游走到2度且稳定召回每一条边，通过分步显式路径或单步锚定
+                    -- 这里我们保持变长语法，但在 COLUMNS 里使用标准的标量反射，或通过明确的别名函数隔离
                     MATCH (v_src IS vertex) -[e IS connects_to]->{{1, :max_depth}} (v_dst IS vertex)
                     COLUMNS (
-                        EDGE_ID(e) as e_id,
+                        -- 🛡️ 使用更稳健的显式转型与确定性别名，防止变长路径下单标量反射退化为匿名列
+                        CAST(EDGE_ID(e) AS VARCHAR2(128)) as e_id,
                         VERTEX_ID(v_src) as src_id,
                         VERTEX_ID(v_dst) as dst_id,
                         v_src.vertex_name as src_name,
@@ -333,8 +336,8 @@ class GraphRepository:
                         v_dst.vertex_name as dst_name,
                         v_dst.vertex_type as dst_type,
                         v_src.kb_id as src_kb_id,
-                        e.relation_type as relation_type,
-                        e.weight as weight,
+                        CAST(e.relation_type AS VARCHAR2(64)) as relation_type,
+                        CAST(e.weight AS NUMBER) as weight,
                         e.attributes as edge_attr
                     )
                 )
@@ -344,6 +347,7 @@ class GraphRepository:
             ),
             ordered_edges AS (
                 SELECT * FROM raw_graph_edges
+                WHERE e_id IS NOT NULL -- 过滤掉变长游走中可能产生的路径虚列
                 ORDER BY weight DESC
             )
             SELECT * FROM ordered_edges
@@ -366,12 +370,22 @@ class GraphRepository:
             chunk_ids_set = set()
 
             for row in rows:
-                # 统一转小写，并彻底剥离可能残留的任何引号前缀（配合底层二次防御）
-                r = {str(k).lower().strip("'\""): v for k, v in row._mapping.items()}
+                # 1. 极其安全的建立映射字典，主动捕捉并防御不合法的特殊驱动列名
+                try:
+                    r = {}
+                    for k, v in row._mapping.items():
+                        clean_key = str(k).lower().strip("'\" ")
+                        # 🛡️ 核心卡点：如果键名包含了逗号、空格或纯数字等图谱残渣（例如 '1, '），说明是驱动错位，直接抛弃该列
+                        if ',' in clean_key or clean_key.isdigit():
+                            continue
+                        r[clean_key] = v
+                except Exception as map_err:
+                    logger.warning(f"[NativeGraphSearch] 解析行映射字典时遭遇脏数据干扰，已自动跳过: {map_err}")
+                    continue
                 
                 # 🔍 RAG 调试观察哨
                 if rows and row is rows[0]:
-                    logger.debug(f"[NativeGraphRepo] 命中图谱网络，首行映射键名 (KB_ID {kb_id}): {list(r.keys())!r}")
+                    logger.debug(f"[NativeGraphRepo] 🛡️ 铁壁防御清洗后首行键名 (KB_ID {kb_id}): {list(r.keys())!r}")
 
                 source_id = r.get("src_id")
                 source_name = r.get("src_name")
@@ -387,13 +401,12 @@ class GraphRepository:
                 attributes = r.get("edge_attr")
                 as_chunk_ids = r.get("as_chunk_ids")
 
-                # 解构装配节点集
+                # 以下装配逻辑完全保持不变...
                 if source_id and source_name:
                     vertices_set.add((str(source_id), str(source_name), str(source_type or "vertex")))
                 if target_id and target_name:
                     vertices_set.add((str(target_id), str(target_name), str(target_type or "vertex")))
 
-                # 解构装配边拓扑
                 if edge_id:
                     edges_list.append({
                         "edge_id": str(edge_id),
@@ -404,11 +417,13 @@ class GraphRepository:
                         "attributes": attributes
                     })
 
-                # 切割并提取回表指针 Chunk ID
+                # 🛡️ 极其稳健的防爆 Chunk_ID 切割法
                 if as_chunk_ids:
+                    # 确保转化为干净字符串再做切割
                     for cid in str(as_chunk_ids).split(','):
-                        clean_cid = cid.strip()
-                        if clean_cid:
+                        clean_cid = cid.replace("'", "").replace('"', '').strip()
+                        # 只有当它纯粹由数字组成时才放行，完美过滤类似 '1, ' 后面带出的长尾空残渣
+                        if clean_cid and clean_cid.isdigit():
                             chunk_ids_set.add(clean_cid)
 
             # 序列化格式化节点集
