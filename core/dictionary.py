@@ -46,6 +46,13 @@ class PacketType(str, Enum):
     ECHARTS = "echarts"       # 图表数据展示
     ERROR = "error"           # 错误信息
     DONE = "done"             # 结束信号
+    WARNING = "warning"       # 警告信息（运维Agent使用）
+    REQUIRE_APPROVAL = "require_approval"  # 需要人工审批（运维Agent高危操作门禁）
+
+class AgentCategory(IntEnum):
+    """Agent category enumeration."""
+    BUSINESS = 1    # 通用业务智能体
+    OPS = 2         # 运维智能体
 
 class ChunkType(str, Enum):
     """Knowledge chunk type enumeration."""

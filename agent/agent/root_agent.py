@@ -1,17 +1,12 @@
-import json
 import uuid
-import asyncio
-import random
-from typing import Any, AsyncGenerator
-from datetime import datetime, timezone
 from loguru import logger
 from fastapi import BackgroundTasks
 from fastapi.responses import StreamingResponse
 from core.dictionary import PacketType
-from utils.serializer import serialize_value
+from agent.common import AgentStreamMixin
 
 
-class RootAgent:
+class RootAgent(AgentStreamMixin):
     def __init__(self):
         from agent.orchestrator import RootOrchestrator
         from agent.memory.context_manager import ContextManager
@@ -90,70 +85,3 @@ class RootAgent:
                 "X-Accel-Buffering": "no"
             }
         )
-
-    def _format_sse(self, event_type: PacketType, content: Any, message_id: str | None = None) -> bytes:
-        """
-        标准 SSE 格式化器：
-        - 传入的 event_type 保证是 PacketType 枚举，自动取其 .value 并转纯小写。
-        - 传入的 content 会作为 data 核心，包装进包含时间戳和消息ID的载荷中。
-        """
-        # 1. 提取并清洗外层事件类型字符串
-        event_str = str(event_type.value).lower()
-        
-        # 2. 构建内层 data 的标准 Payload 字典
-        # 此时载荷内部绝不包含任何重复的 type 字段
-        payload = {
-            "content": content,
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        }
-        
-        # 如果提供了消息 ID，则一并注入（metadata包本身content里已有，这里按需注入）
-        if message_id:
-            payload["message_id"] = message_id
-
-        # 用递归工具清洗整个 payload，把里面的 Decimal 转成 float，datetime/date 转成字符串
-        safe_payload = serialize_value(payload)
-            
-        # 3. 序列化为标准的 SSE 文本格式
-        json_str = json.dumps(safe_payload, ensure_ascii=False)
-        sse_message = f"event: {event_str}\ndata: {json_str}\n\n"
-        
-        return sse_message.encode("utf-8")
-    
-    async def _smooth_stream_pipeline(self, raw_pipeline: AsyncGenerator[dict, None]) -> AsyncGenerator[tuple[PacketType, Any], None]:
-        """
-        全链路流式拦截平滑滤镜：
-        1. 保持下层原有的大对象完整性（方便做日志、审计或数据库持久化）。
-        2. 根据数据类型，自动决定直接投递还是智能降级为“打字机逐字模拟流”。
-        """
-        async for event in raw_pipeline:
-            packet_type = event["type"]
-            content = event["content"]
-
-            # 策略 A：如果是结构化结果（列表、字典）、图表、或者工具调用状态，直接透传，绝不模拟
-            if isinstance(content, (dict, list)) or packet_type in (PacketType.SQL_RESULTS, PacketType.DOC_RESULTS, PacketType.ECHARTS, PacketType.CALL):
-                yield packet_type, content
-                continue
-
-            # 策略 B：如果是文本类型（ANSWER, THOUGHT, ERROR），检查是否需要模拟打字机
-            if isinstance(content, str):
-                # 健壮性判断：如果 content 长度为 1，说明下层本身已经实现并吐出的是原生字流/词流（例如接了原生大模型流），无需二次模拟
-                if len(content) <= 1:
-                    yield packet_type, content
-                else:
-                    # 如果下层吐出的是一段完整的话（比如报错信息，或者本地Skill生成的静态文本）
-                    # 统一收拢到这里，平滑演变为逐字流分发给前端
-                    async for p_res, char_res in self._simulate_char_stream(packet_type, content):
-                        yield p_res, char_res
-
-    async def _simulate_char_stream(self, packet_type: PacketType, text: str) -> AsyncGenerator[tuple[PacketType, str], None]:
-        """
-        文字拆分与随机延迟的核心模拟器
-        """
-        if not text:
-            return
-        for char in text:
-            yield packet_type, char
-            # 遇到标点符号或换行停顿长一点，普通文字停顿短一点
-            delay = 0.12 if char in "，。！？\n；" else random.uniform(0.02, 0.05)
-            await asyncio.sleep(delay)

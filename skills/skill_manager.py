@@ -10,6 +10,7 @@ from typing import Any, Type, AsyncGenerator
 from .skill_registry import SkillMetadata, SkillParam
 from core.dictionary import PacketType
 from agent.common import ContextMemory
+from skills.base import SkillDomain, SkillRunMode
 
 
 class SkillManager:
@@ -176,6 +177,8 @@ class SkillManager:
                     name=standard_name,
                     description=meta_data["description"],
                     category=meta_data["category"],
+                    domain=meta_data.get("domain", SkillDomain.BUSINESS),
+                    run_mode=meta_data.get("run_mode", SkillRunMode.READ_ONLY),
                     usage_example=meta_data["usage_example"],
                     params=meta_data["params"],
                     implementation_class=adapted_impl_class
@@ -213,6 +216,19 @@ class SkillManager:
             meta.setdefault("category", "general")
             meta.setdefault("description", "暂无描述")
             meta.setdefault("usage_example", "暂无示例")
+            # 解析 domain 和 run_mode（运维Agent 移植需要）
+            raw_domain = meta.get("domain", "business").lower()
+            raw_run_mode = meta.get("run_mode", "read_only").lower()
+            try:
+                skill_domain = SkillDomain(raw_domain)
+            except ValueError:
+                skill_domain = SkillDomain.BUSINESS
+            try:
+                skill_run_mode = SkillRunMode(raw_run_mode)
+            except ValueError:
+                skill_run_mode = SkillRunMode.READ_ONLY
+            meta["domain"] = skill_domain
+            meta["run_mode"] = skill_run_mode
 
             params = []
             param_matches = re.findall(r"\*\s+(\w+)\s+\((\w+),\s*(必填|可选)\):\s*(.*)", body_raw)
@@ -320,25 +336,43 @@ class SkillManager:
             if extract_dir.exists():
                 shutil.rmtree(extract_dir)
 
-    def get_skill_list_for_planner(self, category_filter: str | None = None) -> str:
-        """生成给 Planner 看的协议描述（支持工具动态裁剪），输出大模型极度亲和的标准的连字符键名"""
+    def get_skill_list_for_planner(self, category_filter: str | None = None, domain_filter: SkillDomain | None = None) -> str:
+        """生成给 Planner 看的协议描述（支持工具动态裁剪），输出大模型极度亲和的标准的连字符键名。
+
+        Args:
+            category_filter: 按 skill.md 中的 category 字段过滤
+            domain_filter: 按 SkillDomain 枚举过滤（运维Agent使用 OPS 域隔离）
+        """
         if not self._skills:
             return "当前系统未配置任何业务技能，请使用通用知识回答。"
 
         segments = []
         for name, meta in self._skills.items():
+            # 领域过滤（运维Agent 的 OPS 域隔离）
+            if domain_filter is not None:
+                skill_domain = getattr(meta, "domain", SkillDomain.BUSINESS)
+                if skill_domain != domain_filter:
+                    continue
+
+            # 类别过滤（兼容原有逻辑）
             skill_category = getattr(meta, "category", "general")
             if category_filter and skill_category != "general" and skill_category != category_filter:
                 continue
+
+            # 安全检查：输出技能运行模式（供 OpsOrchestrator 安全门禁使用）
+            skill_run_mode = getattr(meta, "run_mode", SkillRunMode.READ_ONLY)
+            mode_tag = ""
+            if skill_run_mode == SkillRunMode.MUTATION:
+                mode_tag = " ⚠️[高危变更操作·需审批]"
 
             param_details = [
                 f"{p.name}({p.param_type}, {'必填' if p.required else '可选'}): {p.description}"
                 for p in meta.params
             ]
             p_str = " | ".join(param_details) if param_details else "无参数"
-            
+
             block = (
-                f"### 技能: `{name}`\n"
+                f"### 技能: `{name}`{mode_tag}\n"
                 f"- **功能**: {meta.description}\n"
                 f"- **输入参数**: [{p_str}]\n"
                 f"- **场景示例**: {meta.usage_example}"
@@ -346,7 +380,8 @@ class SkillManager:
             segments.append(block)
 
         if not segments:
-            return "当前意图下无特定专属工具，请使用通用推理直接回答。"
+            filter_desc = f" [{domain_filter.value}] 域" if domain_filter else ""
+            return f"当前{filter_desc}下无特定专属工具，请使用通用推理直接回答。"
 
         return "\n\n".join(segments)
 

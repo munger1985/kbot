@@ -5,7 +5,7 @@ from services.search.result import TxtBaseSearchResult
 from agent.prompt import default_prompt
 from utils.clients import AIModelClient
 from core.config.settings import get_prompt_config
-from utils.serializer import serialize_value
+from utils.codec import serialize_value
 
 
 class ContextManager:

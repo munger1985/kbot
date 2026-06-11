@@ -11,7 +11,7 @@ from core.exceptions import *
 from core.database.oracle import get_session
 from dao.entities import FileEntity
 from dao.repositories import KBRepository, FileRepository, TxtChunkRepository, GraphRepository
-from utils.common import run_in_thread_pool
+from utils.thread import run_in_thread_pool
 
 
 class FileService:

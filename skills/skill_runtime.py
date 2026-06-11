@@ -6,48 +6,68 @@ from typing import Any, AsyncGenerator
 from loguru import logger
 
 from core.dictionary import PacketType
-from agent.common import ContextMemory, SkillExecutionContext, TaskStep
+# 引入两种 Context 的定义
+from agent.common import ContextMemory, SkillExecutionContext, TaskStep, OpsContextMemory
 
 
 class SkillRuntime:
     """
-    Skill 运行时处理器
+    Skill 运行时处理器 (4.0 双模多态版)
     负责处理强类型多维变量注入、状态追踪、执行结果回填以及数据总线交互。
+    支持统一调度 Business 级通用业务 Context 与 AIOps 级强类型特化 OpsContext。
     """
 
-    def __init__(self, context: ContextMemory):
+    def __init__(self, context: ContextMemory | OpsContextMemory):
+        # 在运行时，通过强制转型或通用字典兼容来保障统一处理流程
         self.ctx = context
         # 变量占位符正则表达式，匹配 {{variable_name}}
-        self.var_pattern = re.compile(r"\{\{\s*(\w+)\s*\}\}")
+        self.var_pattern = re.compile(r"\{\{\s*([\w\.]+)\s*\}\}")
 
     def _resolve_variables(self, text: str) -> str:
         """
         解析并替换文本中的变量占位符。
-        强类型判定：若变量为 list/dict（如 SQL 结果集），自动转换为 JSON 字符串形式。
+        支持 'variables.prod_speed_data'、'global_inputs.line_id' 等多层级路径提取。
+        强类型判定：若变量为 list/dict，自动转换为 JSON 字符串形式。
         """
         if not text or not isinstance(text, str):
             return text
 
         def replace_match(match):
-            var_name = match.group(1)
-            # 优先从 ctx["variables"] 取值，找不到则保持原样占位
-            value = self.ctx["variables"].get(var_name)
-            if value is None:
+            full_path = match.group(1).strip()
+            path_parts = full_path.split('.')
+            
+            # 动态多层级路径提取导航
+            current_value = self.ctx
+            
+            try:
+                for part in path_parts:
+                    if isinstance(current_value, dict):
+                        current_value = current_value.get(part)
+                    else:
+                        current_value = getattr(current_value, part, None)
+                        
+                if current_value is None:
+                    # 💡 多模适配兜底：不管是 business 还是 ops，都去 variables 字典里找全路径
+                    variables_pool = self.ctx.get("variables")
+                    if isinstance(variables_pool, dict):
+                        current_value = variables_pool.get(full_path)
+                    
+                if current_value is None:
+                    return match.group(0)  # 维持原样占位符
+                
+                if isinstance(current_value, (dict, list)):
+                    return json.dumps(current_value, ensure_ascii=False)
+                
+                return str(current_value)
+                
+            except Exception as e:
+                logger.warning(f"解析变量路径 {full_path} 时发生异常: {e}")
                 return match.group(0)
-            
-            # 如果是列表、字典等复杂数据结构，转为标准符合大模型直觉的 JSON 字符串
-            if isinstance(value, (dict, list)):
-                return json.dumps(value, ensure_ascii=False)
-            
-            return str(value)
 
         return self.var_pattern.sub(replace_match, text)
 
     def _resolve_any(self, target: Any) -> Any:
-        """
-        【工业级新增】：递归清洗器。
-        支持对任意嵌套的字符串、列表、字典进行全局占位符替换，完美支持多参数技能（如 compute）。
-        """
+        """递归清洗器：清洗任意嵌套结构中的 {{占位符}}"""
         if isinstance(target, str):
             return self._resolve_variables(target)
         elif isinstance(target, dict):
@@ -62,25 +82,28 @@ class SkillRuntime:
         """
         skill_name = step_config.get("skill", "UnknownSkill")
         
-        # 🟢 升级：深拷贝一份原始参数，排除掉路由控制元数据，剩下全当做业务参数清洗
+        # 深拷贝一份原始参数，排除掉路由控制元数据，剩下全当做业务参数清洗
         raw_params = copy.deepcopy(step_config)
         raw_params.pop("skill", None)
         raw_params.pop("step_id", None)
         raw_params.pop("output_var", None)
         raw_params.pop("condition", None)
 
-        # 🟢 升级：利用递归清洗器，把诸如 formula, variables, task_input 里所有的 {{占位符}} 批量一网打尽
         resolved_params = self._resolve_any(raw_params)
 
-        # 兼容老框架的 resolved_input 字段，若有 task_description 则用它，否则用配置全貌
-        resolved_input_legacy = resolved_params.get("task_description") or resolved_params.get("task_input") or json.dumps(resolved_params, ensure_ascii=False)
+        # 兼容老框架的 resolved_input 字段
+        resolved_input_legacy = (
+            resolved_params.get("task_description") or 
+            resolved_params.get("task_input") or 
+            json.dumps(resolved_params, ensure_ascii=False)
+        )
 
-        # 2. 构建执行快照
+        # 构建执行快照
         execution: SkillExecutionContext = {
             "skill": skill_name,
             "task_description": step_config.get("task_description", ""),
-            "resolved_input": resolved_input_legacy,  # 留给传统展现层/日志使用
-            "resolved_params": resolved_params,      # 🟢 核心：塞给具体武器（Skill）开箱即用的多维纯净参数字典
+            "resolved_input": str(resolved_input_legacy),
+            "resolved_params": resolved_params,      
             "start_time": datetime.now(timezone.utc),
             "end_time": None,
             "status": "running",
@@ -89,8 +112,8 @@ class SkillRuntime:
             "error": None
         }
         
-        # 3. 更新 Context 中的当前执行槽位
-        self.ctx["current_execution"] = execution
+        # 更新 Context 中的当前执行槽位（双模均支持此 key 设为可选或 None）
+        self.ctx["current_execution"] = execution  # type: ignore
         return execution
 
     async def execute_skill(
@@ -104,33 +127,34 @@ class SkillRuntime:
         skill_name = execution["skill"]
         logger.info(f"Runtime 开始执行 Skill: {skill_name} | Input: {execution['resolved_input'][:100]}...")
 
-        # 引入局部文本累加器，专门用来对付流式退化备选输出
         answer_text_accumulator = ""
 
         try:
-            # 调用业务 Skill 的流式入口
+            # 统一流式入口调度
             async for packet in skill_instance.run_stream(context=self.ctx):
                 p_type = packet.get("type")
                 content = packet.get("content")
 
-                # 1. 总线数据自动监听（历史追溯）
+                # 💡 核心改造：针对不同上下文的总线异构数据监听与存储隔离防御
                 if p_type == PacketType.DOC_RESULTS:
-                    self.ctx["doc_results"].extend(content if isinstance(content, list) else [])
+                    if "doc_results" in self.ctx and self.ctx["doc_results"] is not None:
+                        # 确保以 list 方式安全合并
+                        target_list = content if isinstance(content, list) else [content]
+                        self.ctx["doc_results"].extend(target_list) # type: ignore
+                        
                 elif p_type == PacketType.SQL_RESULTS:
-                    self.ctx["sql_results"].append(content)
+                    if "sql_results" in self.ctx and self.ctx["sql_results"] is not None:
+                        self.ctx["sql_results"].append(content) # type: ignore
                 
-                # 2. 收集最终产出
+                # 收集最终产出
                 if p_type == PacketType.DONE:
-                    # 优先：业务 Skill 显式宣告执行完毕吐出的干净结构体
                     execution["output"] = content
                 elif p_type == PacketType.ANSWER:
                     answer_text_accumulator += str(content or "")
 
                 yield packet
 
-            # 3. 判定最终落袋的 Output
             if execution["output"] is None and answer_text_accumulator:
-                # 降级：如果业务没有显式给 DONE 包带料，则使用累加完的流文本作为产出
                 execution["output"] = answer_text_accumulator.strip()
 
             execution["status"] = "success"
@@ -142,13 +166,16 @@ class SkillRuntime:
             yield {"type": PacketType.ERROR, "content": f"组件 {skill_name} 执行异常: {str(e)}"}
 
         finally:
-            # 4. 执行收尾记时
             execution["end_time"] = datetime.now(timezone.utc)
             
-            # 5. 强类型变量回填逻辑 (送回全局总线变量池，供接下来的步骤消费)
+            # 变量回填逻辑
             if execution["output_var"] and execution["status"] == "success":
-                self.ctx["variables"][execution["output_var"]] = execution["output"]
+                # 双模上下文里均有一级成员 variables 字典
+                if "variables" in self.ctx and isinstance(self.ctx["variables"], dict):
+                    self.ctx["variables"][execution["output_var"]] = execution["output"]
             
-            # 6. 归档到历史记录快照，清空当前活动槽位
-            self.ctx["execution_history"].append(execution)
-            self.ctx["current_execution"] = None
+            # 归档到历史记录快照
+            if "execution_history" in self.ctx and isinstance(self.ctx["execution_history"], list):
+                self.ctx["execution_history"].append(execution) # type: ignore
+                
+            self.ctx["current_execution"] = None # type: ignore

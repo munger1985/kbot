@@ -194,6 +194,13 @@ class ExecutorConfig(BaseModel):
     service_port: int = Field(default=18096, ge=1, le=65535)
     timeout: int = Field(default=300, ge=10, le=3600)
 
+class PrometheusConfig(BaseModel):
+    """Prometheus 监控配置（运维Agent使用）"""
+    base_url: str = Field(default="http://localhost:9090", description="Prometheus Server 地址")
+    token: str = Field(default="", description="Bearer Token (可选)")
+    timeout: int = Field(default=30, ge=5, le=300, description="HTTP 请求超时 (秒)")
+    default_step: str = Field(default="15s", description="范围查询默认采样步长")
+
 class PromptConfig(BaseModel):
     """Prompt template configuration.
     
@@ -213,6 +220,10 @@ class PromptConfig(BaseModel):
     db_router: str = Field(default="SYSTEM/db_router", description="Database router prompt template")
     graph_vertex_fusion: str = Field(default="SYSTEM/graph_vertex_fusion", description="Graph vertex fusion prompt template")
     graph_extractor: str = Field(default="SYSTEM/graph_extractor", description="Graph extractor prompt template")
+    # 运维Agent (AIOps) prompt templates
+    ops_rewrite: str = Field(default="SYSTEM/ops_rewrite", description="Ops query rewrite prompt template")
+    ops_diagnosis: str = Field(default="SYSTEM/ops_diagnosis", description="Ops RCA diagnosis prompt template")
+    ops_planner: str = Field(default="SYSTEM/ops_planner", description="Ops task planner prompt template")
 
 
 class Settings(BaseSettings):
@@ -236,6 +247,7 @@ class Settings(BaseSettings):
     vlm: VLMConfig = VLMConfig()
     parser: ParserConfig = ParserConfig()
     executor: ExecutorConfig = ExecutorConfig()
+    prometheus: PrometheusConfig = PrometheusConfig()
     prompt: PromptConfig = PromptConfig()
     
     model_config = {
@@ -470,3 +482,7 @@ def get_parser_config() -> ParserConfig:
 def get_executor_config() -> ExecutorConfig:
     """Get executor configuration."""
     return get_settings().executor
+
+def get_prometheus_config() -> PrometheusConfig:
+    """Get Prometheus configuration (运维Agent使用)."""
+    return get_settings().prometheus

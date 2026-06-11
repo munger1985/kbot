@@ -1,9 +1,39 @@
 from abc import ABC, abstractmethod
+from enum import Enum
 from typing import Any, AsyncGenerator
+from dataclasses import dataclass
 from agent.common import ContextMemory
 
 
+class SkillDomain(str, Enum):
+    """Skill domain enumeration for sandbox-level isolation."""
+    BUSINESS = "business"   # 通用业务域（普通文档、业务报表 Text-SQL 等）
+    OPS = "ops"             # 自动化运维域（DBMetric, DBAction 等专有能力）
+    SECURITY = "security"   # 安全与审计域
+
+
+class SkillRunMode(str, Enum):
+    """Skill execution mode — controls safety gate behavior."""
+    READ_ONLY = "read_only" # 只读探测（无副作用，可交给 Planner 自由编排）
+    MUTATION = "mutation"   # 变更/高危操作（需要挂载人工审批组件或二次确认）
+
+
+@dataclass
+class SkillMeta:
+    """Skill metadata declared as a class attribute on each Skill subclass."""
+    name: str
+    description: str
+    domain: SkillDomain = SkillDomain.BUSINESS
+    run_mode: SkillRunMode = SkillRunMode.READ_ONLY
+
+
 class BaseSkill(ABC):
+    # 类属性元数据定义：每个子类通过复写此属性来进行自我声明
+    meta: SkillMeta = SkillMeta(
+        name="base_skill",
+        description="系统基础技能基类"
+    )
+
     @abstractmethod
     async def run_stream(self, context: ContextMemory, **kwargs) -> AsyncGenerator[Any, None]:
         """

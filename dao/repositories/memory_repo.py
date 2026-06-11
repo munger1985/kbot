@@ -5,10 +5,10 @@ from loguru import logger
 from sqlalchemy import select, update, delete, func, text, desc, and_
 from core.exceptions import DatabaseException
 from .base_repo import BaseRepository
-from utils.oracle_vec_handler import OracleVecHandler
+from utils.codec import OracleVecHandler
 from dao.entities import MemoryEntryEntity, ConversationContextEntity, UserProfileEntity, ConversationContextModel
 from core.config.settings import get_app_config
-from utils.common import safe_read_content
+from utils.thread import safe_read_content
 
 
 class MemoryRepository(BaseRepository[MemoryEntryEntity]):

@@ -8,8 +8,8 @@ import array
 from dao.entities import TxtChunkEntity
 from core.exceptions import DatabaseException, DataNotFoundException
 from .base_repo import BaseRepository
-from utils.oracle_vec_handler import OracleVecHandler
-from utils.common import safe_read_content
+from utils.codec import OracleVecHandler
+from utils.thread import safe_read_content
 
 
 class TxtChunkRepository(BaseRepository[TxtChunkEntity]):

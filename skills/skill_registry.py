@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import Any, Type
+from skills.base import SkillDomain, SkillRunMode
 
 class SkillParam(BaseModel):
     name: str
@@ -13,6 +14,8 @@ class SkillMetadata(BaseModel):
     description: str
     usage_example: str
     category: str = "general"
+    domain: SkillDomain = SkillDomain.BUSINESS
+    run_mode: SkillRunMode = SkillRunMode.READ_ONLY
     params: list[SkillParam] = Field(default_factory=list)
     implementation_class: Type[Any]
 

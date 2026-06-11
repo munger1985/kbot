@@ -97,3 +97,15 @@ reasoning = "SYSTEM/reasoning"
 generate_chart = "SYSTEM/generate_chart"
 graph_vertex_fusion = "SYSTEM/graph_vertex_fusion"
 graph_extractor = "SYSTEM/graph_extractor"
+sql_gen = "SYSTEM/sql_gen"
+sql_repair = "SYSTEM/sql_repair"
+db_router = "SYSTEM/db_router"
+ops_rewrite = "SYSTEM/ops_rewrite"
+ops_diagnosis = "SYSTEM/ops_diagnosis"
+ops_planner = "SYSTEM/ops_planner"
+
+[prometheus]
+base_url = "http://localhost:9090"
+token = ""
+timeout = 30
+default_step = "15s"

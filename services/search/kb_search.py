@@ -8,7 +8,7 @@ from core.exceptions import *
 from core.database.oracle import get_session
 from dao.repositories import TxtChunkRepository
 from .result import TxtBaseSearchResult
-from utils.oracle_vec_handler import OracleVecHandler
+from utils.codec import OracleVecHandler
 
 
 class TxtBaseSearch:

@@ -11,7 +11,7 @@ load_dotenv(env_path)
 # Add both project root and backend directory to Python path
 project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(project_root))
-from utils.clients.model_client import AIModelClient
+from utils.clients.model import AIModelClient
 
 model_client = AIModelClient()
 

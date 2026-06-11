@@ -13,6 +13,8 @@ from .user_repo import UserRepository
 from .service_repo import ServiceRepository
 from .txt_chunk_repo import TxtChunkRepository
 from .graph_repo import GraphRepository
+from .ops_db_instance_repo import OpsDbInstanceRepository
+from .ops_agent_conf_repo import OpsAgentConfRepository
 
 
 
@@ -31,5 +33,7 @@ __all__ = [
     "UserRepository",
     "ServiceRepository",
     "TxtChunkRepository",
-    "GraphRepository"
+    "GraphRepository",
+    "OpsDbInstanceRepository",
+    "OpsAgentConfRepository"
 ]

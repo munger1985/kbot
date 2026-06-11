@@ -13,6 +13,8 @@ from .user import User
 from .service import Service
 from .txt_chunk import TxtChunkEntity
 from .graph import GraphVertexEntity, GraphEdgeEntity, GraphEdgeChunkMapEntity
+from .ops_db_instance import OpsDbInstanceEntity
+from .ops_agent_conf import OpsAgentConfEntity
 
 
 
@@ -33,7 +35,9 @@ __all__ = [
     "PromptEntity",
     "TxtChunkEntity",
     "APIKey", "UserToken", "User", "Service",
-    "GraphVertexEntity", 
-    "GraphEdgeEntity", 
-    "GraphEdgeChunkMapEntity"
+    "GraphVertexEntity",
+    "GraphEdgeEntity",
+    "GraphEdgeChunkMapEntity",
+    "OpsDbInstanceEntity",
+    "OpsAgentConfEntity"
 ]

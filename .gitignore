@@ -41,3 +41,4 @@ nacos-data/
 # configuration files
 configuration/*.json
 *.toml
+CLAUDE.md

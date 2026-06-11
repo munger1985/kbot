@@ -133,7 +133,7 @@ DROP TABLE kbot_md_kb_batch PURGE;
 -- 1. 顶点表 (KBOT_GRAPH_KNOWLEDGE_VERTICES) 
 -- ========================================================
 CREATE TABLE KBOT_GRAPH_KNOWLEDGE_VERTICES (
-    kb_id          VARCHAR2(64) NOT NULL,
+    kb_id          NUMBER(38,0) NOT NULL,
     vertex_id      VARCHAR2(64) NOT NULL,
     vertex_name    VARCHAR2(255) NOT NULL,
     vertex_type    VARCHAR2(64) NOT NULL,
@@ -162,7 +162,7 @@ COMMENT ON COLUMN KBOT_GRAPH_KNOWLEDGE_VERTICES.name_vector IS '基于实体名�
 -- 2. 边表 (KBOT_GRAPH_KNOWLEDGE_EDGES) 
 -- ========================================================
 CREATE TABLE KBOT_GRAPH_KNOWLEDGE_EDGES (
-    kb_id          VARCHAR2(64) NOT NULL,
+    kb_id          NUMBER(38,0) NOT NULL,
     edge_id        VARCHAR2(64) NOT NULL,
     source_id      VARCHAR2(64) NOT NULL,
     target_id      VARCHAR2(64) NOT NULL,
@@ -193,7 +193,7 @@ COMMENT ON COLUMN KBOT_GRAPH_KNOWLEDGE_EDGES.attributes IS 'JSON 格式的动态
 -- 3. 关系-切片映射表 (KBOT_GRAPH_EDGE_CHUNK_MAP) 
 -- ========================================================
 CREATE TABLE KBOT_GRAPH_EDGE_CHUNK_MAP (
-    kb_id          VARCHAR2(64) NOT NULL,
+    kb_id          NUMBER(38,0) NOT NULL,
     edge_id        VARCHAR2(64) NOT NULL,
     chunk_id       VARCHAR2(64) NOT NULL,
     file_id        VARCHAR2(64),
@@ -219,7 +219,7 @@ CREATE PROPERTY GRAPH kbot_knowledge_rag_graph
         KBOT_GRAPH_KNOWLEDGE_VERTICES
             KEY (vertex_id)
             LABEL vertex
-            PROPERTIES (vertex_id, vertex_name, vertex_type, description, attributes)
+            PROPERTIES (kb_id, vertex_id, vertex_name, vertex_type, description, attributes)
     )
     EDGE TABLES (
         KBOT_GRAPH_KNOWLEDGE_EDGES
@@ -227,6 +227,81 @@ CREATE PROPERTY GRAPH kbot_knowledge_rag_graph
             SOURCE KEY (source_id) REFERENCES KBOT_GRAPH_KNOWLEDGE_VERTICES(vertex_id)
             DESTINATION KEY (target_id) REFERENCES KBOT_GRAPH_KNOWLEDGE_VERTICES(vertex_id)
             LABEL connects_to
-            PROPERTIES (edge_id, relation_type, weight, attributes)
+            PROPERTIES (kb_id, edge_id, relation_type, weight, attributes)
     );
+
+-- ==========================================
+-- 运维Agent (AIOps) 移植 — 新增表
+-- ==========================================
+
+-- KBOT_OPS_DB_INSTANCE: 数据库实例资产配置表 (CMDB)
+CREATE TABLE KBOT_OPS_DB_INSTANCE (
+    instance_id    VARCHAR2(36) PRIMARY KEY,
+    instance_name  VARCHAR2(128) NOT NULL,
+    environment    VARCHAR2(16) DEFAULT 'dev',
+    security_level NUMBER(1) DEFAULT 3,
+    db_type        VARCHAR2(32) NOT NULL,
+    version_code   NUMBER DEFAULT 0,
+    charset        VARCHAR2(32) DEFAULT 'utf8mb4',
+    host           VARCHAR2(256) NOT NULL,
+    port           NUMBER(5) NOT NULL,
+    service_name   VARCHAR2(128),
+    database_name  VARCHAR2(128),
+    dsn            VARCHAR2(512),
+    db_role        VARCHAR2(32) DEFAULT 'primary',
+    monitor_type   VARCHAR2(32) DEFAULT 'prometheus',
+    prometheus_instance_label VARCHAR2(256),
+    cluster_id     VARCHAR2(36),
+    ops_user       VARCHAR2(64) NOT NULL,
+    encrypted_password VARCHAR2(512) NOT NULL,
+    secret_vault_key VARCHAR2(256),
+    status         VARCHAR2(16) DEFAULT 'active',
+    created_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_ops_instance_host_port UNIQUE (host, port),
+    CONSTRAINT ck_ops_db_env CHECK (environment IN ('prod', 'stg', 'dev')),
+    CONSTRAINT ck_ops_db_role CHECK (db_role IN ('primary', 'standby', 'cluster_node')),
+    CONSTRAINT ck_ops_db_status CHECK (status IN ('active', 'maintenance', 'offline'))
+);
+
+COMMENT ON TABLE KBOT_OPS_DB_INSTANCE IS '智能运维线 - 物理与云端数据库实例资产配置表 (CMDB 核心表)';
+COMMENT ON COLUMN KBOT_OPS_DB_INSTANCE.instance_id IS '运维全域唯一实例ID (UUID v7 格式)';
+COMMENT ON COLUMN KBOT_OPS_DB_INSTANCE.instance_name IS '实例直观可读名称';
+COMMENT ON COLUMN KBOT_OPS_DB_INSTANCE.environment IS '环境分级隔离策略: prod, stg, dev';
+COMMENT ON COLUMN KBOT_OPS_DB_INSTANCE.security_level IS '安全控制等级, 数值越高触发变更自愈时的审批流越严格';
+COMMENT ON COLUMN KBOT_OPS_DB_INSTANCE.db_type IS '数据库引擎内核类型: oracle, postgresql, mysql';
+COMMENT ON COLUMN KBOT_OPS_DB_INSTANCE.version_code IS '精准内核版本数字代码, 例如: 26000000';
+COMMENT ON COLUMN KBOT_OPS_DB_INSTANCE.host IS '物理机/虚拟机 IP 地址或高可用对外域名';
+COMMENT ON COLUMN KBOT_OPS_DB_INSTANCE.port IS '数据库内核监听服务的物理端口号';
+COMMENT ON COLUMN KBOT_OPS_DB_INSTANCE.db_role IS '物理角色: primary(主), standby(备), cluster_node';
+COMMENT ON COLUMN KBOT_OPS_DB_INSTANCE.monitor_type IS '监控数据源类型: prometheus, zabbix, none';
+COMMENT ON COLUMN KBOT_OPS_DB_INSTANCE.prometheus_instance_label IS '对应 Prometheus 采集时的 instance 标签值';
+COMMENT ON COLUMN KBOT_OPS_DB_INSTANCE.ops_user IS '大模型运维通道专属的高权/监控账号';
+COMMENT ON COLUMN KBOT_OPS_DB_INSTANCE.encrypted_password IS '经过强加密后的运维账号物理密码密文';
+COMMENT ON COLUMN KBOT_OPS_DB_INSTANCE.status IS '生命周期状态: active, maintenance, offline';
+
+-- KBOT_OPS_AGENT_CONF: 智能体与运维资产多对多绑定配置表
+CREATE TABLE KBOT_OPS_AGENT_CONF (
+    id                   NUMBER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+    agent_id             NUMBER NOT NULL,
+    instance_id          VARCHAR2(36) NOT NULL,
+    is_mutation_allowed  NUMBER(1) DEFAULT 0,
+    require_approval     NUMBER(1) DEFAULT 1,
+    max_daily_execution  NUMBER DEFAULT 10,
+    created_by           VARCHAR2(64),
+    created_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_by           VARCHAR2(64),
+    updated_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_agent_ops UNIQUE (agent_id, instance_id),
+    CONSTRAINT fk_agent_ops_agent FOREIGN KEY (agent_id) REFERENCES kbot_md_agent(agent_id),
+    CONSTRAINT fk_agent_ops_instance FOREIGN KEY (instance_id) REFERENCES KBOT_OPS_DB_INSTANCE(instance_id)
+);
+
+COMMENT ON TABLE KBOT_OPS_AGENT_CONF IS '智能运维线 - 智能体与运维物理资产多对多动态绑定配置表';
+COMMENT ON COLUMN KBOT_OPS_AGENT_CONF.id IS '关系配置自增 ID, 主键';
+COMMENT ON COLUMN KBOT_OPS_AGENT_CONF.agent_id IS '关联的智能体 Agent ID (int, 对应 kbot_md_agent.agent_id)';
+COMMENT ON COLUMN KBOT_OPS_AGENT_CONF.instance_id IS '关联的运维实例 ID (对应 KBOT_OPS_DB_INSTANCE.instance_id)';
+COMMENT ON COLUMN KBOT_OPS_AGENT_CONF.is_mutation_allowed IS '是否允许执行变更动作(如 Kill/DDL)';
+COMMENT ON COLUMN KBOT_OPS_AGENT_CONF.require_approval IS '是否必须触发人工审批门禁';
+COMMENT ON COLUMN KBOT_OPS_AGENT_CONF.max_daily_execution IS '单日高危变更自愈动作上限频次';
 

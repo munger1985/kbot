@@ -12,8 +12,8 @@ from .context_manager import ContextManager
 from agent.prompt import default_prompt
 from agent.common import ContextMemory
 from services.kb import ModelParams
-from utils.clients.model_client import AIModelClient
-from utils.common import safe_read_content
+from utils.clients.model import AIModelClient
+from utils.thread import safe_read_content
 
 
 class MemoryService:

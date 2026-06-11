@@ -4,7 +4,7 @@ from sqlalchemy import select, func, text, bindparam, Integer
 from loguru import logger
 from core.exceptions import DatabaseException
 from dao.entities import GraphVertexEntity, GraphEdgeEntity
-from utils.oracle_vec_handler import OracleVecHandler
+from utils.codec import OracleVecHandler
 
 class GraphRepository:
     """Repository for managing Oracle 26ai Property Graph data structures using SQLAlchemy 2.0 ORM & Native SQL"""

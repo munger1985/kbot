@@ -1,7 +1,7 @@
 from loguru import logger
 from typing import Any
 from dao.repositories import KBRepository, TxtChunkRepository
-from utils.clients.model_client import AIModelClient
+from utils.clients.model import AIModelClient
 from core.database.oracle import get_session
 from services.basic import AIModelService
 from core.exceptions import NotFoundError, handle_exception, InternalServerError, ParamValueError

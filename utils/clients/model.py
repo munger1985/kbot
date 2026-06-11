@@ -9,7 +9,7 @@ from decimal import Decimal
 from loguru import logger
 from typing import Any
 from microservices.embedding.model.base import EmbeddingDataItem
-from ..encoder import ImageEncoder
+from ..codec import ImageEncoder
 from core.config.settings import get_embed_config, get_llm_config, get_reranker_config, get_vlm_config, get_prompt_config
 from core.exceptions import *
 
