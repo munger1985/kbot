@@ -106,8 +106,12 @@ class ChunkerGenerator:
             # 2. 使用LLM生成动态提取虚拟标题，如果失败则使用从内容提取的默认值
             lines = [l for l in content.split('\n') if l.strip()]
             virtual_header = lines[0].replace('#', '').strip()[:50] if lines else "正文详情"
-            # 使用LLM生成virtual_header
-            header_prompt = f"阅读以下文本片段并生成5-10个字的标题，文本片段：{content}"
+            # 使用LLM生成virtual_header，要求输出仅标题本身，不超过50字
+            header_prompt = (
+                f"阅读以下文本片段，生成一个简洁的标题（5-15个字）。"
+                f"要求：仅输出标题文本，不要加任何前缀、编号、引号或解释。"
+                f"\n文本片段：{content}"
+            )
             
             # 调用LLM进行背景总结
             llm_res = await self.model_task.llm_task(
@@ -117,6 +121,12 @@ class ChunkerGenerator:
             )
             if llm_res:
                 virtual_header = str(llm_res).replace("\n", " ").strip()
+                # 清理LLM可能额外输出的前缀/编号（如 "标题："、"1. "等）
+                virtual_header = re.sub(r'^(标题[：:]?\s*|[\d]+[\.\、]\s*)', '', virtual_header)
+                # 兜底截断，防止LLM不遵守约束导致超DB列长
+                if len(virtual_header) > 200:
+                    logger.warning(f"LLM生成的标题过长({len(virtual_header)}字)，已截断: {virtual_header[:50]}...")
+                    virtual_header = virtual_header[:200]
                 logger.debug(f"文档片段标题生成成功: {virtual_header}")
             else:
                 logger.warning("文档片段标题生成失败，使用默认值")

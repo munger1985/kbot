@@ -52,9 +52,9 @@ class ChunkResult(BaseModel):
         """统一构造工厂"""
         return cls(
             content=content.strip(),
-            doc_summary=summary,
-            header=header,
-            search_helper=search_helper,
+            doc_summary=summary[:4000] if summary else summary,
+            header=header[:256] if header else header,
+            search_helper=search_helper[:4000] if search_helper else search_helper,
             chunk_type=chunk_type,
             chunk_num=chunk_num,
             metadata=metadata
