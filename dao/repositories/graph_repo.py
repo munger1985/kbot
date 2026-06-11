@@ -428,8 +428,11 @@ class GraphRepository:
             # ========================================================
             delete_map_sql = text("""
                 DELETE FROM KBOT_GRAPH_EDGE_CHUNK_MAP 
-                WHERE kb_id = :kb_id AND file_id IN :file_ids;
-            """).bindparams(bindparam('file_ids', expanding=True))
+                WHERE kb_id = :kb_id AND file_id IN :file_ids
+            """).bindparams(
+                bindparam('kb_id', type_=Integer),
+                bindparam('file_ids', expanding=True)
+            )
             await self.session.execute(
                 delete_map_sql, 
                 {
