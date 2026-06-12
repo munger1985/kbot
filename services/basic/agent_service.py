@@ -4,7 +4,7 @@ from core.database.oracle import get_session
 from core.exceptions import *
 from dao.repositories import (AgentRepository, AgentConfRepository,
                              PromptRepository, MemoryRepository)
-from services.kb import ModelParams
+from services.kb.schema import ModelParams
 
 
 
