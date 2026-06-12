@@ -139,10 +139,6 @@ class OpsOrchestrator:
                 ctx["variables"]["max_daily_execution"] = target_db["max_daily_execution"]
                 ctx["variables"]["security_level"] = target_db["security_level"]
 
-                ctx["variables"]["_prometheus_client"] = self.prometheus_client
-                ctx["variables"]["_metric_registry"] = self.metric_registry
-                ctx["variables"]["_ops_db_executor"] = self.ops_db_executor
-
                 logger.success(f"[{ctx['trace_id']}] 资产网关锁定成功 | 实例: {ctx['instance_id']} ({ctx['db_type']})")
                 yield {
                     "type": PacketType.THOUGHT,
@@ -177,6 +173,11 @@ class OpsOrchestrator:
             }
             yield {"type": PacketType.DONE, "content": {"entry_id": entry_id}}
             return
+
+        # --- 注入监控与诊断基础设施引用 (供 Skill 使用, 必须在规划完成后注入以避免 JSON 序列化问题) ---
+        ctx["variables"]["_prometheus_client"] = self.prometheus_client
+        ctx["variables"]["_metric_registry"] = self.metric_registry
+        ctx["variables"]["_ops_db_executor"] = self.ops_db_executor
 
         # --- 3. 驱动强类型状态机执行线性原子技能 ---
         plan_steps = ctx["runtime_plan"]["steps"] if ctx["runtime_plan"] else []

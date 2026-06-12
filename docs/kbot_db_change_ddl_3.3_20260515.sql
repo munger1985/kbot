@@ -106,10 +106,10 @@ ALTER TABLE kbot_md_memory_entry DROP COLUMN retrieved_chunks;
 -- 7. 表变更：kbot_md_agent
 -- ==========================================
 -- 添加统一配置字段
-ALTER TABLE kbot_md_agent ADD (
-    models CLOB CONSTRAINT chk_agent_models_json CHECK (models IS JSON)
-);
+ALTER TABLE kbot_md_agent ADD (models CLOB CONSTRAINT chk_agent_models_json CHECK (models IS JSON));
+ALTER TABLE kbot_md_agent ADD category NUMBER(1, 0) DEFAULT 0 NOT NULL;
 COMMENT ON COLUMN kbot_md_agent.models IS 'AI模型统一配置（整合原LLM、Embedding、Reranker配置）';
+COMMENT ON COLUMN kbot_md_agent.category IS '代理分类，0：通用代理，1：运维代理';
 
 -- 删除分散的旧字段
 ALTER TABLE kbot_md_agent DROP COLUMN llm_id;

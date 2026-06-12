@@ -74,7 +74,10 @@ class DBAnalysisSkill(BaseSkill):
             db_type=db_type,
             version_code=context.get("version_code", 0),
             db_role=context.get("db_role", "primary"),
-            variables=json.dumps(context.get("variables", {}), ensure_ascii=False),
+            variables=json.dumps(
+                {k: v for k, v in context.get("variables", {}).items() if not k.startswith("_")},
+                ensure_ascii=False,
+            ),
             metric_results=json.dumps(metric_results, ensure_ascii=False, indent=2),
             monitor_results=monitor_context,
             os_log_snapshots=json.dumps(context.get("os_log_snapshots", []), ensure_ascii=False, indent=2),

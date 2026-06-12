@@ -149,6 +149,7 @@ class DBMetricSkill(BaseSkill):
                 db_type=db_type,
                 db_executor=ops_db_executor,
                 llm_model=llm_model,
+                instance_id=instance_id,
                 extracted_params=extracted_params,
             )
 
@@ -244,6 +245,7 @@ class DBMetricSkill(BaseSkill):
         db_type: str,
         db_executor: OpsDBExecutor,
         llm_model: str,
+        instance_id: str,
         extracted_params: dict[str, Any] | None = None,
     ) -> tuple[str, list[dict[str, Any]]] | None:
         """让 LLM 从 16 个专家诊断工具中做单选题, 然后执行选中的工具。"""
@@ -280,7 +282,7 @@ class DBMetricSkill(BaseSkill):
 
             logger.info(f"[OpsTrack v2] LLM 选择工具: {tool_name} | 参数: {args}")
 
-            tools = DatabaseDiagnosticTools(db_type=db_type, db_executor=db_executor)
+            tools = DatabaseDiagnosticTools(db_type=db_type, db_executor=db_executor, instance_id=instance_id)
             tool_method = getattr(tools, tool_name, None)
 
             if tool_method is None:

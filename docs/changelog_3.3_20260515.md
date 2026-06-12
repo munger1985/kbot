@@ -92,6 +92,7 @@
 | 操作类型 | 字段名称 | 数据类型 | 备注 |
 | :--- | :--- | :--- | :--- |
 | ➕ 新增字段 | `models` | `JSON` | AI模型统一配置（整合原LLM、Embedding、Reranker配置） |
+| ➕ 新增字段 | `category` | `NUMBER(1,0)` | 代理分类，0：通用代理，1：运维代理 |
 | 🗑️ 删除字段 | `llm_id` | `NUMBER(38,0)` | 旧字段，已迁移至 `models` |
 | 🗑️ 删除字段 | `llm_params` | `JSON` | 旧字段，已迁移至 `models` |
 | 🗑️ 删除字段 | `embedding_model_id` | `NUMBER(38,0)` | 旧字段，已迁移至 `models` |

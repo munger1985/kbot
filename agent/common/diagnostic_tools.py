@@ -30,9 +30,10 @@ class DatabaseDiagnosticTools:
         result = await tools.db_lock_chains()
     """
 
-    def __init__(self, db_type: str, db_executor: Any):
+    def __init__(self, db_type: str, db_executor: Any, instance_id: str = ""):
         self.db_type = db_type.lower()
         self.executor = db_executor
+        self.instance_id = instance_id
 
     # ========================================================================
     # 场景一: 并发与卡死诊断（锁与事务冲突）
@@ -121,7 +122,7 @@ class DatabaseDiagnosticTools:
         if not sql:
             raise NotImplementedError(f"db_lock_chains 暂不支持: {self.db_type}")
         logger.info(f"[DiagnosticTools] db_lock_chains -> {self.db_type}")
-        return await self.executor.execute_readonly_ops_sql("diagnostic", sql)
+        return await self.executor.execute_readonly_ops_sql(self.instance_id, sql)
 
     async def db_lock_matrix(self) -> list[dict[str, Any]]:
         """
@@ -184,7 +185,7 @@ class DatabaseDiagnosticTools:
         if not sql:
             raise NotImplementedError(f"db_lock_matrix 暂不支持: {self.db_type}")
         logger.info(f"[DiagnosticTools] db_lock_matrix -> {self.db_type}")
-        return await self.executor.execute_readonly_ops_sql("diagnostic", sql)
+        return await self.executor.execute_readonly_ops_sql(self.instance_id, sql)
 
     async def db_distributed_tx(self) -> list[dict[str, Any]]:
         """
@@ -229,7 +230,7 @@ class DatabaseDiagnosticTools:
         if not sql:
             raise NotImplementedError(f"db_distributed_tx 暂不支持: {self.db_type}")
         logger.info(f"[DiagnosticTools] db_distributed_tx -> {self.db_type}")
-        return await self.executor.execute_readonly_ops_sql("diagnostic", sql)
+        return await self.executor.execute_readonly_ops_sql(self.instance_id, sql)
 
     # ========================================================================
     # 场景二: 资源暴满诊断（CPU / 内存 / 存储）
@@ -289,7 +290,7 @@ class DatabaseDiagnosticTools:
         if not sql:
             raise NotImplementedError(f"db_top_cpu_sql 暂不支持: {self.db_type}")
         logger.info(f"[DiagnosticTools] db_top_cpu_sql (top_n={top_n}) -> {self.db_type}")
-        return await self.executor.execute_readonly_ops_sql("diagnostic", sql)
+        return await self.executor.execute_readonly_ops_sql(self.instance_id, sql)
 
     async def db_session_memory(self) -> list[dict[str, Any]]:
         """适用场景: 会话内存泄漏、PGA内存爆满、查找内存占用最高的会话"""
@@ -340,7 +341,7 @@ class DatabaseDiagnosticTools:
         if not sql:
             raise NotImplementedError(f"db_session_memory 暂不支持: {self.db_type}")
         logger.info(f"[DiagnosticTools] db_session_memory -> {self.db_type}")
-        return await self.executor.execute_readonly_ops_sql("diagnostic", sql)
+        return await self.executor.execute_readonly_ops_sql(self.instance_id, sql)
 
     async def db_tablespace_top_segments(self, tablespace_name: str = "") -> list[dict[str, Any]]:
         """适用场景: 分析空间由谁占用、查找大表/大索引、定位疯狂膨胀的对象"""
@@ -391,7 +392,7 @@ class DatabaseDiagnosticTools:
         if not sql:
             raise NotImplementedError(f"db_tablespace_top_segments 暂不支持: {self.db_type}")
         logger.info(f"[DiagnosticTools] db_tablespace_top_segments (ts={tablespace_name or 'ALL'}) -> {self.db_type}")
-        return await self.executor.execute_readonly_ops_sql("diagnostic", sql)
+        return await self.executor.execute_readonly_ops_sql(self.instance_id, sql)
 
     async def db_temp_segments_usage(self) -> list[dict[str, Any]]:
         """适用场景: 临时表空间爆满、大排序撑爆临时空间、查找Temp消耗者"""
@@ -441,7 +442,7 @@ class DatabaseDiagnosticTools:
         if not sql:
             raise NotImplementedError(f"db_temp_segments_usage 暂不支持: {self.db_type}")
         logger.info(f"[DiagnosticTools] db_temp_segments_usage -> {self.db_type}")
-        return await self.executor.execute_readonly_ops_sql("diagnostic", sql)
+        return await self.executor.execute_readonly_ops_sql(self.instance_id, sql)
 
     # ========================================================================
     # 场景三: 性能瓶颈诊断（等待事件与线程现场）
@@ -503,7 +504,7 @@ class DatabaseDiagnosticTools:
         if not sql:
             raise NotImplementedError(f"db_active_session_wait 暂不支持: {self.db_type}")
         logger.info(f"[DiagnosticTools] db_active_session_wait -> {self.db_type}")
-        return await self.executor.execute_readonly_ops_sql("diagnostic", sql)
+        return await self.executor.execute_readonly_ops_sql(self.instance_id, sql)
 
     async def db_historical_session_history(self, minutes_ago: int = 60) -> list[dict[str, Any]]:
         """适用场景: 回溯历史等待事件、查看ASH/AWR采样、复现半夜故障瞬间现场"""
@@ -554,7 +555,7 @@ class DatabaseDiagnosticTools:
         if not sql:
             raise NotImplementedError(f"db_historical_session_history 暂不支持: {self.db_type}")
         logger.info(f"[DiagnosticTools] db_historical_session_history (mins={minutes_ago}) -> {self.db_type}")
-        return await self.executor.execute_readonly_ops_sql("diagnostic", sql)
+        return await self.executor.execute_readonly_ops_sql(self.instance_id, sql)
 
     async def db_undo_segments_usage(self) -> list[dict[str, Any]]:
         """适用场景: UNDO爆满、回滚段压力、大事务长时间未提交"""
@@ -605,7 +606,7 @@ class DatabaseDiagnosticTools:
         if not sql:
             raise NotImplementedError(f"db_undo_segments_usage 暂不支持: {self.db_type}")
         logger.info(f"[DiagnosticTools] db_undo_segments_usage -> {self.db_type}")
-        return await self.executor.execute_readonly_ops_sql("diagnostic", sql)
+        return await self.executor.execute_readonly_ops_sql(self.instance_id, sql)
 
     # ========================================================================
     # 场景四: 变更与审计诊断（怀疑有人动了系统）
@@ -660,7 +661,7 @@ class DatabaseDiagnosticTools:
         if not sql:
             raise NotImplementedError(f"db_recent_ddl_changes 暂不支持: {self.db_type}")
         logger.info(f"[DiagnosticTools] db_recent_ddl_changes (hours={hours}) -> {self.db_type}")
-        return await self.executor.execute_readonly_ops_sql("diagnostic", sql)
+        return await self.executor.execute_readonly_ops_sql(self.instance_id, sql)
 
     async def db_invalid_objects(self) -> list[dict[str, Any]]:
         """适用场景: 查找失效对象、排查INVALID状态、存储过程/触发器/视图失效"""
@@ -707,7 +708,7 @@ class DatabaseDiagnosticTools:
         if not sql:
             raise NotImplementedError(f"db_invalid_objects 暂不支持: {self.db_type}")
         logger.info(f"[DiagnosticTools] db_invalid_objects -> {self.db_type}")
-        return await self.executor.execute_readonly_ops_sql("diagnostic", sql)
+        return await self.executor.execute_readonly_ops_sql(self.instance_id, sql)
 
     async def db_non_default_parameters(self) -> list[dict[str, Any]]:
         """适用场景: 核对初始化参数基线、查看非默认参数、配置审计"""
@@ -751,7 +752,7 @@ class DatabaseDiagnosticTools:
         if not sql:
             raise NotImplementedError(f"db_non_default_parameters 暂不支持: {self.db_type}")
         logger.info(f"[DiagnosticTools] db_non_default_parameters -> {self.db_type}")
-        return await self.executor.execute_readonly_ops_sql("diagnostic", sql)
+        return await self.executor.execute_readonly_ops_sql(self.instance_id, sql)
 
     # ========================================================================
     # 场景五: 集群与高可用状态诊断（主备/分布式节点）
@@ -795,7 +796,7 @@ class DatabaseDiagnosticTools:
         if not sql:
             raise NotImplementedError(f"db_replication_lag_status 暂不支持: {self.db_type}")
         logger.info(f"[DiagnosticTools] db_replication_lag_status -> {self.db_type}")
-        return await self.executor.execute_readonly_ops_sql("diagnostic", sql)
+        return await self.executor.execute_readonly_ops_sql(self.instance_id, sql)
 
     async def db_cluster_interconnect_wait(self) -> list[dict[str, Any]]:
         """适用场景: RAC集群节点间竞争、gc buffer busy、私网交换延迟、MGR组复制流控"""
@@ -838,7 +839,7 @@ class DatabaseDiagnosticTools:
         if not sql:
             raise NotImplementedError(f"db_cluster_interconnect_wait 暂不支持: {self.db_type}")
         logger.info(f"[DiagnosticTools] db_cluster_interconnect_wait -> {self.db_type}")
-        return await self.executor.execute_readonly_ops_sql("diagnostic", sql)
+        return await self.executor.execute_readonly_ops_sql(self.instance_id, sql)
 
     async def db_archivelog_dest_status(self) -> list[dict[str, Any]]:
         """适用场景: 归档日志写满、归档目录空间不足、ARCH进程卡住、WAL归档失败"""
@@ -880,7 +881,7 @@ class DatabaseDiagnosticTools:
         if not sql:
             raise NotImplementedError(f"db_archivelog_dest_status 暂不支持: {self.db_type}")
         logger.info(f"[DiagnosticTools] db_archivelog_dest_status -> {self.db_type}")
-        return await self.executor.execute_readonly_ops_sql("diagnostic", sql)
+        return await self.executor.execute_readonly_ops_sql(self.instance_id, sql)
 
     # ========================================================================
     # 工具清单辅助方法 (供 LLM Prompt 注入)

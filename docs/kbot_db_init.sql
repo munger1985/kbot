@@ -267,6 +267,7 @@ CREATE TABLE KBOT_MD_AGENT (
     WELCOME                 VARCHAR2(512),
     PROMPT_ID               NUMBER,
     MODELS                  JSON CHECK (MODELS IS JSON),
+    CATEGORY                NUMBER(1,0) DEFAULT 0 NOT NULL,
     AGENT_STATUS            NUMBER(2),
     CREATED_BY              VARCHAR2(256),
     CREATED_TIME            DATE DEFAULT CURRENT_DATE,

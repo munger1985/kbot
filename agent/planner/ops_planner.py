@@ -84,7 +84,10 @@ class OpsTaskPlanner:
             get_prompt_config().ops_rewrite,
             raw_question=ctx["command_or_query"],
             topology=json.dumps(topology_snapshot, ensure_ascii=False),
-            variables=json.dumps(ctx["variables"], ensure_ascii=False),
+            variables=json.dumps(
+                {k: v for k, v in ctx["variables"].items() if not k.startswith("_")},
+                ensure_ascii=False,
+            ),
             chat_history=chat_history
         )
 

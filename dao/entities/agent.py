@@ -21,6 +21,7 @@ class AgentEntity(BaseEntity):
     welcome: Mapped[str | None] = mapped_column(String(512), comment="Welcome message")
     prompt_id: Mapped[int | None] = mapped_column(Numeric(38, 0), comment="Prompt ID")
     models: Mapped[dict | None] = mapped_column(OracleJSON, comment="AI model configuration (JSON format)")
+    category: Mapped[int | None] = mapped_column(Numeric(1, 0), comment="Category: 0: General, 1: Maintenance")
     agent_status: Mapped[int | None] = mapped_column(Numeric(2, 0), comment="Status: Enumeration type")
     created_by: Mapped[str | None] = mapped_column(String(256), comment="Creator user")
     created_time: Mapped[Date] = mapped_column(Date, server_default=func.now(), comment="Creation time")
