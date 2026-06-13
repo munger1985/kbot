@@ -201,6 +201,17 @@ class PrometheusConfig(BaseModel):
     timeout: int = Field(default=30, ge=5, le=300, description="HTTP 请求超时 (秒)")
     default_step: str = Field(default="15s", description="范围查询默认采样步长")
 
+class SlackConfig(BaseModel):
+    """Slack integration configuration.
+
+    Configuration parameters for Slack Events API integration, including
+    authentication credentials and agent routing settings.
+    """
+    signing_secret: str = Field(default="", description="Slack App Signing Secret for request verification")
+    bot_token: str = Field(default="", description="Slack Bot User OAuth Token (xoxb-...)")
+    agent_id: int = Field(default=1, ge=1, description="KBOT Agent ID to use for answering Slack messages")
+    api_timeout: int = Field(default=10, ge=5, le=60, description="Timeout in seconds for Slack API HTTP calls")
+
 class PromptConfig(BaseModel):
     """Prompt template configuration.
     
@@ -248,6 +259,7 @@ class Settings(BaseSettings):
     parser: ParserConfig = ParserConfig()
     executor: ExecutorConfig = ExecutorConfig()
     prometheus: PrometheusConfig = PrometheusConfig()
+    slack: SlackConfig = SlackConfig()
     prompt: PromptConfig = PromptConfig()
     
     model_config = {
@@ -486,3 +498,11 @@ def get_executor_config() -> ExecutorConfig:
 def get_prometheus_config() -> PrometheusConfig:
     """Get Prometheus configuration (运维Agent使用)."""
     return get_settings().prometheus
+
+def get_slack_config() -> SlackConfig:
+    """Get Slack integration configuration.
+
+    Returns:
+        SlackConfig: Slack configuration object
+    """
+    return get_settings().slack
