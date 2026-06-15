@@ -29,6 +29,7 @@ from api.schemas.agent_schema import AgentChatForm
 from api.schemas.base_response import SuccessResponse
 from core.config.settings import get_slack_config
 from utils.sse import parse_sse_for_answer
+from utils.thread import detect_language
 
 # ---------------------------------------------------------------------------
 # In-memory deduplication sets
@@ -285,17 +286,31 @@ def parse_slack_event(payload: dict) -> dict | None:
 # Background agent processing (fire-and-forget)
 # ---------------------------------------------------------------------------
 
+# Waiting / "please wait" message, localised by the user's question language.
+_WAITING_MESSAGES: dict[str, str] = {
+    "zh": "您的问题 KM 助手正在搜集材料分析中，请稍等.",
+    "en": "KM Assistant is gathering materials and analyzing your question, please wait.",
+}
+
+
+def _get_waiting_message(text: str) -> str:
+    """Return a localised "please wait" message matching the language of *text*."""
+    lang = detect_language(text)
+    return _WAITING_MESSAGES.get(lang, _WAITING_MESSAGES["en"])
+
+
 async def _process_event_background(parsed: dict) -> None:
     """Call the kbot agent and send the reply to Slack.
 
     Runs inside ``asyncio.create_task`` after the HTTP handler has already
     returned ``200 OK``. This function is entirely self-contained:
 
-    1. Build an ``AgentChatForm`` from the parsed Slack event.
-    2. Call ``agent_controller.agent_chat_nonstream`` (direct Python call).
-    3. Extract clean answer text from the raw SSE output.
-    4. Send the reply back to Slack via ``chat.postMessage``.
-    5. Manually run background tasks for memory persistence.
+    1. Detect the user's language and send an immediate "please wait" reply.
+    2. Build an ``AgentChatForm`` from the parsed Slack event.
+    3. Call ``agent_controller.agent_chat_nonstream`` (direct Python call).
+    4. Extract clean answer text from the raw SSE output.
+    5. Send the final answer back to Slack via ``chat.postMessage``.
+    6. Manually run background tasks for memory persistence.
     """
     # --- Resolve secrets ---
     slack_cfg = get_slack_config()
@@ -305,7 +320,17 @@ async def _process_event_background(parsed: dict) -> None:
         logger.error("SLACK_BOT_TOKEN is not configured — cannot reply to Slack")
         return
 
-    # --- Build agent request ---
+    # --- 1. Send immediate "please wait" message (in thread) ---
+    waiting_text = _get_waiting_message(parsed["text"])
+    await _send_slack_reply(
+        bot_token=bot_token,
+        channel_id=parsed["channel_id"],
+        user_id=parsed["user_id"],
+        text=waiting_text,
+        thread_ts=parsed["event_ts"],
+    )
+
+    # --- 2. Build agent request ---
     # Each Slack user gets their own session so conversation context is
     # scoped per-user rather than per-channel.
     form = AgentChatForm(
