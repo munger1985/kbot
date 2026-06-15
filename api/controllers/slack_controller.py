@@ -207,8 +207,9 @@ async def _send_slack_reply(
 def parse_slack_event(payload: dict) -> dict | None:
     """Extract key fields from a Slack Events API payload.
 
-    Only message-like events (``message``, ``app_mention``) are returned.
-    Bot messages are silently dropped to prevent echo loops.
+    Only human-sent message-like events (``message``, ``app_mention``) are
+    returned.  Every guard from the original ``test-slack/slack_event_server.py``
+    ``send_reply_to_user`` is mirrored here to prevent infinite reply loops.
 
     Args:
         payload: Parsed JSON body of the Slack request.
@@ -223,32 +224,60 @@ def parse_slack_event(payload: dict) -> dict | None:
 
     event = payload.get("event", {})
 
-    # Guard: never reply to a bot message (prevents infinite loops).
-    if event.get("subtype") == "bot_message":
+    # ── 1. 不回复机器人消息 ──────────────────────────────────
+    # subtype=bot_message 明确标记了由机器人发出的消息。
+    # 这是 Slack 原生的反死循环机制——所有通过 chat.postMessage (bot token)
+    # 发出的消息都会带上此标记。
+    subtype = event.get("subtype", "")
+    if subtype == "bot_message":
         logger.debug("Skipping bot_message event")
         return None
 
-    event_type = event.get("type", "")
+    # bot_id 兜底：部分边缘场景下 subtype 可能缺失但 bot_id 存在。
+    if event.get("bot_id"):
+        logger.debug("Skipping event from bot (bot_id={})", event.get("bot_id"))
+        return None
 
-    # Only handle message and app_mention events.
+    # 跳过消息编辑（message_changed），只处理新消息。
+    if subtype == "message_changed":
+        logger.debug("Skipping message_changed event (edit, not new message)")
+        return None
+
+    # ── 2. 只处理消息和 @提及事件 ────────────────────────────
+    event_type = event.get("type", "")
     if not (event_type.startswith("message") or event_type == "app_mention"):
         return None
 
-    user_id = event.get("user", "")
     channel_id = event.get("channel", "")
     text = event.get("text", "")
 
     if not channel_id or not text:
         return None
 
+    # ── 3. 避免死循环：检查消息是否来自机器人自己 ────────────
+    # 机器人回复格式为 ``<@user_id> answer``。如果意外收到以此格式开头
+    # 且未被 bot_message 标记的消息，跳过以防万一。
+    if text.strip().startswith("<@") and event_type != "app_mention":
+        logger.info(
+            "检测到疑似机器人自己的回复，跳过 | text=%s",
+            text[:80],
+        )
+        return None
+
+    # ── 4. 必须有 event_ts，用于后续去重和线程回复 ────────────
+    event_ts = event.get("event_ts", "")
+    if not event_ts:
+        logger.debug("Skipping event without event_ts")
+        return None
+
     return {
         "event_id": payload.get("event_id", ""),
-        "user_id": user_id,
+        "user_id": event.get("user", ""),
         "channel_id": channel_id,
         "text": text,
-        "event_ts": event.get("event_ts", ""),
+        "event_ts": event_ts,
         "event_type": event_type,
-        "subtype": event.get("subtype", ""),
+        "subtype": subtype,
     }
 
 
