@@ -255,17 +255,7 @@ def parse_slack_event(payload: dict) -> dict | None:
     if not channel_id or not text:
         return None
 
-    # ── 3. 避免死循环：检查消息是否来自机器人自己 ────────────
-    # 机器人回复格式为 ``<@user_id> answer``。如果意外收到以此格式开头
-    # 且未被 bot_message 标记的消息，跳过以防万一。
-    if text.strip().startswith("<@") and event_type != "app_mention":
-        logger.info(
-            "检测到疑似机器人自己的回复，跳过 | text=%s",
-            text[:80],
-        )
-        return None
-
-    # ── 4. 必须有 event_ts，用于后续去重和线程回复 ────────────
+    # ── 3. 必须有 event_ts，用于后续去重和线程回复 ────────────
     event_ts = event.get("event_ts", "")
     if not event_ts:
         logger.debug("Skipping event without event_ts")
