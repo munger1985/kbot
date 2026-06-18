@@ -105,6 +105,18 @@ class OpsAgentConfRepository(BaseRepository[OpsAgentConfEntity]):
                 raise
             raise DatabaseException(f"拉取智能体 [{agent_id}] 绑定的物理实例集群拓扑失败", original_error=e)
 
+    async def delete_by_agent_id(self, agent_id: int) -> None:
+        """根据 agent_id 删除该智能体的所有运维资产绑定配置"""
+        try:
+            await self.session.execute(
+                delete(OpsAgentConfEntity)
+                .where(OpsAgentConfEntity.agent_id == agent_id)
+            )
+        except Exception as e:
+            if isinstance(e, (APIException, DataNotFoundException)):
+                raise
+            raise DatabaseException(f"删除智能体 [{agent_id}] 的所有运维资产绑定配置失败", original_error=e)
+
     async def unbind_instance(self, agent_id: int, instance_id: str) -> bool:
         """根据 agent_id (int) 与 instance_id (str) 显式快捷解绑关系"""
         try:

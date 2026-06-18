@@ -88,7 +88,6 @@ class PromptRepository(BaseRepository[PromptEntity]):
                 clean_text = prompt_text.strip()
                 entity = PromptEntity(
                     app_id=get_app_config().app_id,
-                    domain_id=0,
                     name=name,
                     prompt_unique_name=name,
                     prompt_category=PromptCategory.SYSTEM_PROMPT.value,
@@ -102,7 +101,6 @@ class PromptRepository(BaseRepository[PromptEntity]):
             # add prompt template
             template_cn = PromptEntity(
                     app_id=get_app_config().app_id,
-                    domain_id=0,
                     name="Common_CN",
                     prompt_unique_name="TEMPLATE/Common_CN",
                     prompt_category=PromptCategory.PROMPT_TEMPLATE.value,
@@ -115,7 +113,6 @@ class PromptRepository(BaseRepository[PromptEntity]):
 
             template_en = PromptEntity(
                     app_id=get_app_config().app_id,
-                    domain_id=0,
                     name="Common_EN",
                     prompt_unique_name="TEMPLATE/Common_EN",
                     prompt_category=PromptCategory.PROMPT_TEMPLATE.value,

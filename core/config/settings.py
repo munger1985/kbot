@@ -543,3 +543,43 @@ def get_slack_config() -> SlackConfig:
         SlackConfig: Slack configuration object
     """
     return get_settings().slack
+
+
+# OCR 引擎中文标签映射
+OCR_ENGINE_LABELS: dict[str, str] = {
+    "easyocr": "EasyOCR",
+    "tesseract": "Tesseract",
+    "rapidocr": "RapidOCR",
+    "deepseek_ocr": "DeepSeek OCR",
+}
+
+
+def detect_builtin_ocr_engines() -> dict[str, bool]:
+    """检测本机已安装的内置 OCR 引擎。
+
+    Returns:
+        dict[str, bool]: 引擎名 → 是否可用
+    """
+    import shutil
+    import importlib
+
+    engines: dict[str, bool] = {}
+
+    # EasyOCR
+    try:
+        importlib.import_module("easyocr")
+        engines["easyocr"] = True
+    except ImportError:
+        engines["easyocr"] = False
+
+    # Tesseract
+    engines["tesseract"] = shutil.which("tesseract") is not None
+
+    # RapidOCR
+    try:
+        importlib.import_module("rapidocr_onnxruntime")
+        engines["rapidocr"] = True
+    except ImportError:
+        engines["rapidocr"] = False
+
+    return engines
