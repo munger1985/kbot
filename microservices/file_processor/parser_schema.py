@@ -12,11 +12,21 @@ class DocParserParams(BaseModel):
     image_dir: str | None = Field(None, description="抽取图片保存路径")
     do_ocr: bool = Field(True, description="是否启用 OCR 识别扫描 PDF 中的文字")
     ocr_engine: str | None = Field("easyocr", description="指定 OCR 引擎 (easyocr, tesseract)")
+    ocr_model: str | None = Field(None, description="指定 AI OCR 模型名称 (如 DeepSeek OCR)，优先级高于内置 OCR")
     use_vlm: bool = Field(True, description="是否使用全量 VLM 解析")
     vlm_model: str | None = Field(None, description="指定 VLM 模型名称")
     llm_model: str = Field(..., description="指定 LLM 模型名称")
     img2txt_prompt: str = Field(..., description="自定义 VLM 提取图片提示词")
     extract_graph: bool = Field(False, description="是否提取图实体")
+
+    @property
+    def effective_do_ocr(self) -> bool:
+        """自动推导：仅当没有配置 AI OCR 模型时，才启用 docling 内置 OCR 兜底。
+
+        当配置了 DeepSeek OCR 等 AI 模型时，文字提取由 AI 模型在 post-processing 阶段完成，
+        docling 内置 OCR 不再需要运行（节省处理时间）。
+        """
+        return self.ocr_model is None
 
 class FileParams(BaseModel):
     file_id: str = Field(..., description="文件ID")

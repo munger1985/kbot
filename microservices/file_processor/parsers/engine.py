@@ -123,23 +123,34 @@ class DoclingEngine:
         self._vlm_enhancement_cache = {}
 
     async def convert_document(
-        self, 
-        file_id: str, 
-        file_path: str, 
-        params: DocParserParams, 
+        self,
+        file_id: str,
+        file_path: str,
+        params: DocParserParams,
         output_format: OutputFormat = OutputFormat.MARKDOWN
     ) -> str | dict | list[ChunkResult]:
         """文档解析方法的入口"""
-        # 开启并行
+        # 自动注入 ocr_model：如果 DS OCR 已部署但 params 中未指定
+        from core.config.settings import get_dsocr_config
+        if not params.ocr_model and get_dsocr_config().enabled:
+            params.ocr_model = "deepseek-ocr-2"
+
+        # 自动推导 do_ocr：配置了 AI OCR 模型则跳过内置 OCR
+        effective_do_ocr = params.effective_do_ocr
+        logger.info(
+            f"OCR 策略: effective_do_ocr={effective_do_ocr}, "
+            f"ocr_model={params.ocr_model or 'None'}, "
+            f"vlm_model={params.vlm_model or 'None'}"
+        )
+
         loop = asyncio.get_running_loop()
         try:
-            # 修正并行调用：只传递基础数据类型
             doc = await loop.run_in_executor(
                 self.executor,
                 _do_convert,
                 str(file_path),
                 self.artifacts_path,
-                params.do_ocr,
+                effective_do_ocr,
                 params.ocr_engine or "tesseract",
                 params.image_scale
             )
@@ -149,16 +160,24 @@ class DoclingEngine:
 
         # 判断后续流程
         if output_format == OutputFormat.CHUNKS:
-            # --- Stage 1: 调用VLM处理复杂表格和图片 ---
             file_ext = Path(file_path).suffix.lower()
-            # 只有在参数开启了 VLM 且不是纯文本时才触发
-            if params.use_vlm:
+
+            # --- Stage 1: 扫描件检测 + DS OCR 全页增强 ---
+            is_scanned = self._detect_scanned_document(doc, file_ext)
+            if is_scanned and params.ocr_model:
+                logger.info(f"检测到扫描件 PDF，启用 DS OCR 全页增强")
+                await self._enhance_scanned_with_dsocr(doc, params, file_id)
+            elif is_scanned:
+                logger.info(f"检测到扫描件 PDF，但未配置 AI OCR 模型，依赖内置 OCR 结果")
+
+            # --- Stage 2: AI 增强（DS OCR + VLM） ---
+            if params.ocr_model or params.use_vlm:
                 await self._enhance_document_content(doc, params, file_ext, file_id)
-            # 局部导入避免循环依赖
+
+            # --- Stage 3: 分块生成 ---
             from .chunk_generator import ChunkerGenerator
             chunker = ChunkerGenerator(params)
             vlm_data: dict = self._vlm_enhancement_cache.get(file_id, {})
-            # logger.debug(f"向generate chunk方法传递的vlm描述：{vlm_data}")
             return await chunker.generate_chunks(doc, file_ext, vlm_data)
 
         # 其他格式序列化
@@ -180,16 +199,218 @@ class DoclingEngine:
             return doc.export_to_html()
         if fmt == OutputFormat.JSON: 
             return doc.export_to_dict()
-        if fmt == OutputFormat.DOCTAGS: 
+        if fmt == OutputFormat.DOCTAGS:
             return doc.export_to_doctags()
         return ""
-    
+
+    def _detect_scanned_document(self, doc: DoclingDocument, file_ext: str) -> bool:
+        """检测是否为扫描件 PDF（无原生文本层，内容全为图片）。
+
+        判断条件:
+        1. 仅对 PDF 文件检测
+        2. 文本项极少（不足页面数），图片项占多数
+        """
+        ext = file_ext.lower()
+        if ext not in [".pdf"]:
+            return False
+
+        page_count = len(doc.pages)
+        text_count = len(doc.texts)
+        picture_count = len(doc.pictures)
+
+        # 扫描件特征：几乎没有文本，但有很多图片（每页至少一张整页图）
+        is_scanned = (
+            text_count <= page_count * 0.3  # 文本项不足页面数的 30%
+            and picture_count >= page_count * 0.5  # 图片项至少覆盖一半页面
+        )
+
+        if is_scanned:
+            logger.info(
+                f"扫描件判定: pages={page_count}, texts={text_count}, "
+                f"pictures={picture_count}, text_ratio={text_count/max(page_count,1):.2f}"
+            )
+        return is_scanned
+
+    async def _enhance_scanned_with_dsocr(
+        self, doc: DoclingDocument, params: DocParserParams, file_id: str
+    ) -> None:
+        """扫描件 PDF 全页 DS OCR 增强。
+
+        对每页调用 DS OCR (grounding prompt) 获取结构化 markdown 文字，
+        将识别结果注入为 docling 的 TextItem，供后续 ChunkGenerator 正常处理。
+
+        原始的页面 PictureItem 保留不动，VLM 增强阶段仍可对其生成图片描述。
+        """
+        if not params.ocr_model:
+            return
+
+        tasks = []
+        page_map: dict[str, int] = {}
+
+        for page_no, page_obj in doc.pages.items():
+            if not page_obj.image or not page_obj.image.pil_image:
+                continue
+
+            task_key = f"page:{page_no}"
+            page_map[task_key] = page_no
+
+            tasks.append(self.model_task.dsocr_task(
+                self.model_client, params.ocr_model,
+                "<|grounding|>Convert the document to markdown.",
+                task_key,
+                page_obj.image.pil_image
+            ))
+
+        if not tasks:
+            logger.warning("扫描件无有效页面图片，跳过 DS OCR 增强")
+            return
+
+        logger.info(f"启动 {len(tasks)} 个全页 DS OCR 任务")
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        injected_count = 0
+        for res in results:
+            if isinstance(res, (BaseException, type(None))) or not isinstance(res, tuple):
+                continue
+
+            key, content = res
+            if not content or not isinstance(content, str):
+                continue
+
+            page_no = page_map.get(key)
+            if page_no is None:
+                continue
+
+            # 解析 grounding 标记，按元素类型拆分并注入文档
+            elements = self._parse_grounding_elements(content, page_no)
+            for el in elements:
+                item = doc.add_text(
+                    label=el["label"],
+                    text=el["text"],
+                    orig=el["text"],
+                    prov=el["prov"],
+                )
+                # 标注 DS OCR 识别的元素类型，供 ChunkGenerator 映射到 chunk_type
+                if item and el.get("dsocr_type") and hasattr(item, "annotations"):
+                    item.annotations.append(
+                        DescriptionAnnotation(text=el["dsocr_type"], provenance="dsocr_type")
+                    )
+                injected_count += 1
+
+        logger.success(f"DS OCR 扫描件增强完成: {injected_count}/{len(results)} 页成功注入文字")
+
+    @staticmethod
+    def _parse_grounding_elements(raw: str, page_no: int) -> list[dict]:
+        """解析 DS OCR grounding 输出，按元素类型拆分为含 bbox 的结构化列表。
+
+        DS OCR 输出格式：
+            text[[x1, y1, x2, y2]]          ← 行级标记（坐标 0-999）
+            文本内容...
+
+            table[[x1, y1, x2, y2]]
+            | 表头 | ...
+
+            image[[x1, y1, x2, y2]]
+
+        返回: [{"label": DocItemLabel, "text": str, "prov": ProvenanceItem}, ...]
+        """
+        from docling_core.types.doc.labels import DocItemLabel
+        from docling_core.types.doc.document import ProvenanceItem, BoundingBox
+        from docling_core.types.doc.base import CoordOrigin
+
+        # 行级标记: type[[x1, y1, x2, y2]]
+        block_pattern = re.compile(
+            r'^(text|title|table_caption|table|image|code|formula)\[\[(\d+),\s*(\d+),\s*(\d+),\s*(\d+)\]\]',
+            re.MULTILINE
+        )
+
+        elements = []
+        matches = list(block_pattern.finditer(raw))
+
+        if not matches:
+            # 无标记 → 整段作为纯文本
+            clean = re.sub(r'<\|ref\|>.*?<\|/ref\|><\|det\|>\[\[.*?\]\]<\|/det\|>', '', raw)
+            clean = clean.replace('\n\n\n\n', '\n\n').replace('\n\n\n', '\n\n').strip()
+            if clean:
+                prov = ProvenanceItem(
+                    page_no=page_no,
+                    bbox=BoundingBox(l=0, t=0, r=1, b=1, coord_origin=CoordOrigin.TOPLEFT),
+                    charspan=(0, len(clean)),
+                )
+                elements.append({"label": DocItemLabel.TEXT, "text": clean, "prov": prov})
+            return elements
+
+        # 有标记 → 逐段提取
+        for i, m in enumerate(matches):
+            elem_type = m.group(1)
+            x1, y1, x2, y2 = int(m.group(2)), int(m.group(3)), int(m.group(4)), int(m.group(5))
+
+            # 确定该元素覆盖的文本范围
+            start = m.end()
+            end = matches[i + 1].start() if i + 1 < len(matches) else len(raw)
+            text = raw[start:end].strip()
+
+            # 清洗内联 grounding 标记
+            text = re.sub(r'<\|ref\|>.*?<\|/ref\|><\|det\|>\[\[.*?\]\]<\|/det\|>', '', text)
+            text = text.replace('\n\n\n\n', '\n\n').replace('\n\n\n', '\n\n').strip()
+
+            if not text:
+                continue
+
+            # 坐标从 0-999 归一化到 0-1
+            box = BoundingBox(
+                l=max(0.0, min(1.0, x1 / 999.0)),
+                t=max(0.0, min(1.0, y1 / 999.0)),
+                r=max(0.0, min(1.0, x2 / 999.0)),
+                b=max(0.0, min(1.0, y2 / 999.0)),
+                coord_origin=CoordOrigin.TOPLEFT,
+            )
+
+            # 映射元素类型 → DocItemLabel (TABLE/PICTURE 需特殊处理 → 用 TEXT)
+            label_map = {
+                "title": DocItemLabel.TITLE,
+                "table_caption": DocItemLabel.CAPTION,
+                "table": DocItemLabel.TEXT,     # TextItem 不接受 TABLE label
+                "image": DocItemLabel.TEXT,     # TextItem 不接受 PICTURE label
+                "code": DocItemLabel.CODE,
+                "formula": DocItemLabel.FORMULA,
+            }
+            # DS OCR 元素类型 → 现有 chunk_type (text / table / picture)
+            chunk_type_map = {
+                "title": "text",
+                "text": "text",
+                "table_caption": "text",
+                "table": "table",
+                "image": "picture",
+                "code": "text",
+                "formula": "text",
+            }
+            label = label_map.get(elem_type, DocItemLabel.TEXT)
+            dsocr_type = chunk_type_map.get(elem_type, "text")
+
+            prov = ProvenanceItem(
+                page_no=page_no,
+                bbox=box,
+                charspan=(0, len(text)),
+            )
+            elements.append({
+                "label": label, "text": text, "prov": prov, "dsocr_type": dsocr_type
+            })
+
+        return elements
+
     async def _enhance_document_content(self, doc: DoclingDocument, params: DocParserParams, file_ext: str, file_id: str) -> None:
         """
-        视觉增强：复杂 Excel/PDF 表格截图调用 VLM 重构。
+        视觉增强：DS OCR 文字识别 + VLM 图片描述。
+        对 PictureItem：DS OCR 优先（文字型图片），VLM 兜底（真实照片）。
+        对 TableItem：VLM 视觉重构（现有逻辑不变）。
         """
-        if not params.use_vlm or not params.vlm_model:
+        has_vlm = params.use_vlm and params.vlm_model
+        has_ocr = params.ocr_model is not None
+
+        if not has_vlm and not has_ocr:
             return
+
         is_ppt = file_ext.lower() in [".pptx", ".ppt"]
 
         tasks = []
@@ -260,38 +481,48 @@ class DoclingEngine:
                 if img_hash not in hash_to_pic_indices:
                     hash_to_pic_indices[img_hash] = [i]
                     pic_context = item_id_to_header.get(id(pic), "未知章节")
-                    # 动态组装 Prompt
-                    vlm_final_prompt = default_prompt.format(
-                        params.img2txt_prompt, 
-                        current_header=pic_context
-                    )
 
-                    tasks.append(self.model_task.vlm_task(
-                        self.model_client, params.vlm_model, 
-                        vlm_final_prompt, f"pic:hash:{img_hash}", raw_img
-                    ))
+                    # 4a. DS OCR 任务（优先：识别文字型图片）
+                    if has_ocr:
+                        ocr_prompt = "Parse the figure."
+                        tasks.append(self.model_task.dsocr_task(
+                            self.model_client, params.ocr_model,
+                            ocr_prompt, f"ocr:hash:{img_hash}", raw_img
+                        ))
+
+                    # 4b. VLM 任务（兜底：照片描述 / 表格重构）
+                    if has_vlm:
+                        vlm_final_prompt = default_prompt.format(
+                            params.img2txt_prompt,
+                            current_header=pic_context
+                        )
+                        tasks.append(self.model_task.vlm_task(
+                            self.model_client, params.vlm_model,
+                            vlm_final_prompt, f"pic:hash:{img_hash}", raw_img
+                        ))
                 else:
                     hash_to_pic_indices[img_hash].append(i)
             
             logger.debug(f"构建完成 Hash 映射表，共 {len(hash_to_pic_indices)} 组唯一图片")
 
             # --- 3. 处理表格 (VLM) ---
-            for i, table in enumerate(doc.tables):
-                # 路径：有图（复杂 Excel 渲染或 PDF 表格）-> VLM 视觉重构
-                if table.image and table.image.pil_image:
-                    table_context = item_id_to_header.get(id(table), "未知章节")
+            if has_vlm:
+                for i, table in enumerate(doc.tables):
+                    # 路径：有图（复杂 Excel 渲染或 PDF 表格）-> VLM 视觉重构
+                    if table.image and table.image.pil_image:
+                        table_context = item_id_to_header.get(id(table), "未知章节")
 
-                    table_prompt = f"""你是一个专业的文档解析专家。当前表格处于文本上下文：【{table_context}】中。
+                        table_prompt = f"""你是一个专业的文档解析专家。当前表格处于文本上下文：【{table_context}】中。
 请将图片中的表格解析为 JSON 格式。
 必须严格遵守以下约束：
 1. 返回格式必须为：{{"header": "Markdown格式表头", "rows": ["数据行1", "数据行2", ...]}}
 2. rows 数组中的每一项必须是单行 Markdown。
 3. 严禁输出任何 JSON 以外的文字。"""
-                
-                    tasks.append(self.model_task.vlm_task(
-                        self.model_client, params.vlm_model, 
-                        table_prompt, f"table:index:{i}", table.image.pil_image
-                    ))
+
+                        tasks.append(self.model_task.vlm_task(
+                            self.model_client, params.vlm_model,
+                            table_prompt, f"table:index:{i}", table.image.pil_image
+                        ))
 
             if not tasks:
                 return
@@ -302,26 +533,43 @@ class DoclingEngine:
         for res in results:
             if isinstance(res, (BaseException, type(None))) or not isinstance(res, tuple):
                 if isinstance(res, BaseException):
-                    logger.error(f"VLM 任务执行崩溃: {res}")
+                    logger.error(f"AI 增强任务执行崩溃: {res}")
                 continue
-                
-            key, content = res 
+
+            key, content = res
             if not content: continue
-                
+
             parts = key.split(':')
             if len(parts) < 3: continue
 
             category, sub_type, identifier = parts[0], parts[1], parts[2]
 
-            # 1. 处理表格 (table:index:0)
-            if category == "table":
+            # 1. 处理 DS OCR 结果 (ocr:hash:abcd...)
+            if category == "ocr":
+                clean_content = content.strip() if isinstance(content, str) else ""
+                if sub_type == "hash":
+                    img_hash = identifier
+                    if clean_content:
+                        # 回填给所有引用此 Hash 的图片项
+                        for p_idx in hash_to_pic_indices.get(img_hash, []):
+                            doc.pictures[p_idx].annotations.append(
+                                DescriptionAnnotation(
+                                    text=clean_content,
+                                    provenance="ocr_inference"
+                                )
+                            )
+                    else:
+                        logger.debug(f"图片 {identifier} 的 DS OCR 返回内容为空，将使用 VLM 兜底")
+
+            # 2. 处理表格 (table:index:0)
+            elif category == "table":
                 if identifier.isnumeric():
                     idx = int(identifier)
                     doc.tables[idx].annotations.append(
                         DescriptionAnnotation(text=content, provenance="vlm_table_rebuild")
                     )
 
-            # 2. 处理图片 (pic:hash:abcd...)
+            # 3. 处理图片 VLM 结果 (pic:hash:abcd...)
             elif category == "pic":
                 clean_content = content.strip() if content else ""
                 if not clean_content:
@@ -350,7 +598,7 @@ class DoclingEngine:
                     else:
                         logger.error(f"索引越界：尝试回填不存在的图片索引 {idx}")
 
-            # 3. 处理标题/层级 (heading:index:0)
+            # 4. 处理标题/层级 (heading:index:0)
             elif category == "heading":
                 if identifier.isnumeric():
                     idx = int(identifier)
@@ -369,7 +617,7 @@ class DoclingEngine:
                         logger.error(f"处理标题/层级时获取annotations失败： {e}")
                         pass
 
-            # 4. 处理PPT slide
+            # 5. 处理PPT slide
             elif category == "slide":
                 if identifier.isnumeric():
                     page_no = int(identifier)

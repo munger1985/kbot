@@ -104,6 +104,7 @@ class FileProcessor:
                     image_dir=image_dir,
                     do_ocr=file.chunk_parser.get("do_ocr", False),
                     ocr_engine=file.chunk_parser.get("ocr_engine", None),
+                    ocr_model=file.chunk_parser.get("ocr_model", None),
                     use_vlm=use_vlm,
                     vlm_model=vlm_model,
                     llm_model=llm_model,
