@@ -288,35 +288,31 @@ TASK_PLANNER_PROMPT = """
 2. **变量注入机制**: 
     - 使用 `{{user_query}}` 获取原始问题。
     - 使用 `{{step_var_name}}` 引用前序步骤输出。
-3. **三核检索与融合协议 (Tri-Core Retrieval & Fusion)**:
-    - **AskDocSkill (问文)**: 负责在非结构化文档库中通过语义或全文检索知识。输出变量命名为 `doc_results`。
-    - **AskDataSkill (问数)**: 负责在结构化数据库中执行数据查询。输出变量命名为 `sql_results`。
-    - **AskGraphSkill (问图)**: 负责在知识图谱中执行实体拓扑下游走与关联性溯源。主要用于挖掘**影响链路、因果血缘、组织/物料隶属关系、复杂实体关联**。输出变量命名为 `graph_results`。
-    - **多核混合调用**: 根据用户意图，你可以自由组合以上三种核心检索。当问题同时涉及概念标准、图谱关联及明细数据时，必须同时规划这三个技能。
+3. **检索与融合策略**:
+    - 根据用户问题类型，从 [可用技能库] 中选择合适的检索类技能（如文档检索、数据查询、图谱游走等）。
+    - 多源检索后，必须以 `reasoning` 技能收尾进行信息融合。
+    - 如需可视化，在推理前调用图表类技能。
 4. **指令传递规范**: 
-    - 使用 AskDataSkill 时，`task_description` 必须是自然语言描述，**禁止**在规划阶段自行编写 SQL 语句。
-    - 使用 AskGraphSkill 时，`task_description` 必须明确指出需要图游走的核心实体词。
+    - 调用数据查询类技能时，`task_description` 必须是自然语言描述，**禁止**在规划阶段自行编写 SQL 语句。
+    - 调用图谱类技能时，`task_description` 必须明确指出需要游走的核心实体词。
 5. **Reasoning 核心职能**:
-    - **强制收尾**: 只要调用了 `AskDocSkill`、`AskDataSkill` 或 `AskGraphSkill` 中的任意一个，必须以 `reasoning` 技能收尾。
-    - **多模态信息融合**: `reasoning` 负责将 `doc_results`（文本背景）、`sql_results`（实时数据）与 `graph_results`（拓扑关系链）进行交叉比对和深度分析。
+    - **强制收尾**: 只要调用了任何检索类技能，必须以 `reasoning` 技能收尾。
+    - **多模态信息融合**: `reasoning` 负责将各检索结果进行交叉比对和深度分析。
     - **内置计算**: 所有的统计计算（均值、极差、波动等）由 `reasoning` 直接完成，严禁调用外部计算工具。
-6. **可视化增强 (EChartsSkill)**:
-    - 当需求包含“图表”、“占比”、“趋势”、“分布”等视觉需求时，必须在结果返回前调用 `EChartsSkill`。
-    - `task_description` 应包含：1. 绘图意图；2. 绘图所需的数据引用 `{{var}}`。
-7. **ChitChat 判定**: 
-    - 仅当用户意图完全不涉及私有文档、图谱或数据库（如：礼貌问候）时，才单点调用 `CHIT-CHAT-SKILL` 并结束。
+6. **ChitChat 判定**: 
+    - 仅当用户意图完全不涉及私有文档、图谱或数据库（如：礼貌问候）时，才单点调用闲聊类技能并结束。
 
-### 可用技能库:
+### 可用技能库 (仅限以下技能):
 {skills_list}
 
 ### 输出格式要求 (严格 JSON):
 {{
-  "thought": "你的思考过程。必须详细说明是否需要激活三核检索（文/数/图）中的哪些资源，以及如何通过 reasoning 进行多维信息融合。",
+  "thought": "你的思考过程。说明选择了哪些技能及其原因。",
   "final_goal": "最终业务目标",
   "steps": [
     {{
       "step_id": 1,
-      "skill": "...",
+      "skill": "（必须来自可用技能库）",
       "task_description": "...",
       "output_var": "...",
       "condition": null
@@ -324,37 +320,37 @@ TASK_PLANNER_PROMPT = """
   ]
 }}
 
-### 任务规划示例 (复杂三核混合查询场景):
-用户指令: "若厂区设备 A101 因高负载发生故障，结合关系图谱，分析它会波及哪些下游产线？并结合近期的检修日志和这些产线的良率指标评估损失。"
+### 任务规划示例 (动态引用，仅供参考):
+用户指令: "若厂区设备 A101 因高负载发生故障，分析它会波及哪些下游产线，并结合检修日志和良率指标评估损失。"
 {{
-  "thought": "用户问题涉及故障波及范围的影响链路分析（需要 AskGraphSkill 游走关系图）、近期的检修日志（非结构化文档，需要 AskDocSkill）、以及产线的良率指标（实时结构化数据，需要 AskDataSkill）。这是一个典型的三核检索场景，最后需要 reasoning 联合比对评估。",
-  "final_goal": "设备故障下游产线波及与损失深度评估",
+  "thought": "问题需要图谱关系分析、文档检索和数据分析，从技能库中选择对应的技能进行多源检索，最后由 reasoning 融合。",
+  "final_goal": "设备故障下游产线波及与损失评估",
   "steps": [
     {{
       "step_id": 1,
-      "skill": "AskGraphSkill",
-      "task_description": "以 '设备 A101' 为核心实体进行图谱拓扑游走，检索其所有下游连接及受影响的产线关系链",
+      "skill": "图谱关系检索技能",
+      "task_description": "以 '设备 A101' 为核心实体检索其所有下游连接及受影响的产线关系链",
       "output_var": "graph_results",
       "condition": null
     }},
     {{
       "step_id": 2,
-      "skill": "AskDocSkill",
-      "task_description": "检索设备 A101 及相关受波及产线近期的设备检修日志与故障排除标准（SOP）",
+      "skill": "文档检索技能",
+      "task_description": "检索设备 A101 及相关产线近期的检修日志与故障排除标准",
       "output_var": "doc_results",
       "condition": null
     }},
     {{
       "step_id": 3,
-      "skill": "AskDataSkill",
+      "skill": "数据查询技能",
       "task_description": "查询受影响下游产线最近一月的实时生产良率和产量统计数据",
       "output_var": "sql_results",
       "condition": null
     }},
     {{
       "step_id": 4,
-      "skill": "reasoning",
-      "task_description": "深度综合图谱关联链 {{graph_results}}、检修文档 {{doc_results}} 以及实时良率数据 {{sql_results}}，交叉比对分析设备故障扩散路径，计算潜在的产能损失，最终完整回答用户: {{user_query}}",
+      "skill": "推理融合技能",
+      "task_description": "综合图谱关联链 {{graph_results}}、检修文档 {{doc_results}} 以及实时良率数据 {{sql_results}}，交叉分析故障扩散路径，计算潜在损失，回答用户: {{user_query}}",
       "output_var": "final_result",
       "condition": null
     }}
