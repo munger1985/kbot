@@ -6,6 +6,7 @@ from api.schemas.agent_schema import *
 from api.schemas.base_response import SuccessResponse
 from agent.agent import RootAgent, DifyService
 from core.exceptions import *
+from services.basic import PromptService
 
 
 class AgentController:
@@ -13,6 +14,7 @@ class AgentController:
         self.agent_service = AgentService()
         self.dify_service = DifyService()
         self.root_agent = RootAgent()
+        self.prompt_service = PromptService()
 
     async def feedback(self, form: AgentChatFeedbackForm) -> SuccessResponse:
         """Submits user feedback for a chat record."""
@@ -103,6 +105,10 @@ class AgentController:
         await self.agent_service.rename_conversation(form.session_id, form.new_title)
         return SuccessResponse(message="Session renamed")
 
+    async def reset_sys_prompt(self) -> SuccessResponse:
+        """重置系统提示词"""
+        await self.prompt_service.reset_sys_prompt()
+        return SuccessResponse(message="System prompt reset successfully")
     
 # initialize the controller
 agent_controller = AgentController()
