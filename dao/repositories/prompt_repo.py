@@ -78,7 +78,7 @@ class PromptRepository(BaseRepository[PromptEntity]):
                 .where(
                     and_(
                         PromptEntity.domain_id == 0,
-                        PromptEntity.category == PromptCategory.SYSTEM_PROMPT.value
+                        PromptEntity.prompt_category == PromptCategory.SYSTEM_PROMPT.value
                     )
                 )
             )
