@@ -87,3 +87,10 @@ class PromptService:
             except Exception as e:
                 logger.error(f"Failed to get prompt by agent id '{agent_id}', original_error={e}")
                 return None
+            
+    async def reset_sys_prompt(self) -> None:
+        """重置系统提示词"""
+        async with self.oracle_session as session:
+            repo = PromptRepository(session)
+            await repo.reset_sys_prompt()
+            logger.info("System prompt reset successfully")

@@ -191,3 +191,20 @@ async def handle_rename_conversation(form: AgentRenameConversationForm, auth: An
     - **SuccessResponse**: Confirms the renaming operation.
     """
     return await agent_controller.rename_conversation(form)
+
+
+@router.post(
+    "/reset-system-prompt",
+    response_model=SuccessResponse,
+    status_code=status.HTTP_200_OK,
+    summary="重置系统提示词"
+)
+async def handle_reset_sys_prompt(auth: UserAuth):
+    """重置系统提示词。
+
+    Access: User
+
+    Returns:
+        SuccessResponse: 包含重置结果的成功响应。
+    """
+    return await agent_controller.reset_sys_prompt()

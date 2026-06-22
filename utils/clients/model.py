@@ -10,7 +10,7 @@ from loguru import logger
 from typing import Any
 from microservices.embedding.model.base import EmbeddingDataItem
 from ..codec import ImageEncoder
-from core.config.settings import get_embed_config, get_llm_config, get_reranker_config, get_vlm_config, get_prompt_config
+from core.config.settings import get_embed_config, get_llm_config, get_reranker_config, get_vlm_config, get_dsocr_config, get_prompt_config
 from core.exceptions import *
 
 
@@ -28,6 +28,7 @@ class AIModelClient():
         self.llm_config = get_llm_config()  # 获取 LLM 模型配置
         self.reranker_config = get_reranker_config()  # 获取 Reranker 模型配置
         self.vlm_config = get_vlm_config()  # 获取 VLMPrompt 模型配置
+        self.dsocr_config = get_dsocr_config()  # 获取 DeepSeek OCR 模型配置
         self.prompt_config = get_prompt_config()  # 获取 Prompt 配置
 
     async def call_embedding_model(self,
@@ -415,6 +416,132 @@ class AIModelClient():
                 logger.exception(msg)
                 raise InternalServerError(msg)
     
+    async def call_dsocr_model(
+            self,
+            model_name: str,
+            image: str | Image.Image,
+            prompt: str,
+            **kwargs
+        ) -> AsyncGenerator:
+            """调用 DeepSeek OCR 模型进行图片文字识别。
+
+            直接调用标准 OpenAI 兼容的 /v1/chat/completions 端点，
+            支持 Docker vLLM 部署和本地微服务两种模式（通过 api_endpoint 配置切换）。
+
+            Args:
+                model_name: 模型技术名称。
+                image: 输入图片（文件路径或 PIL.Image 对象）。
+                prompt: OCR 指令文本。
+                **kwargs: 推理的额外参数（如 temperature, max_tokens 等）。
+
+            Returns:
+                AsyncGenerator: 流式或非流式响应生成器。
+            """
+            url = self.dsocr_config.api_endpoint
+
+            use_health_check_timeout = kwargs.pop("use_health_check_timeout", False)
+            total = self.dsocr_config.health_check_timeout if use_health_check_timeout else self.dsocr_config.timeout
+            timeout = aiohttp.ClientTimeout(total=total)
+
+            # 图片编码（Base64）
+            try:
+                image_base64 = await ImageEncoder.encode(image)
+            except Exception as e:
+                msg = f"DSOCR 图片编码失败: {e}"
+                logger.error(msg)
+                raise InternalServerError(msg)
+
+            # 构建标准 OpenAI Chat Completions 消息体
+            messages = [{
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"}}
+                ]
+            }]
+
+            # 构建请求体（标准 OpenAI 格式：model + messages + stream）
+            payload = {
+                "model": model_name,
+                "messages": messages,
+                "stream": kwargs.get("stream", False),
+            }
+            if "max_tokens" in kwargs:
+                payload["max_tokens"] = kwargs["max_tokens"]
+            if "temperature" in kwargs:
+                payload["temperature"] = kwargs["temperature"]
+
+            headers = {"Content-Type": "application/json"}
+
+            # 执行请求
+            try:
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    async with session.post(url, headers=headers, json=payload) as response:
+                        if response.status != 200:
+                            error_text = await response.text()
+                            msg = f"DSOCR 服务 HTTP {response.status} 错误: {error_text}"
+                            logger.error(msg)
+                            raise InternalServerError(msg)
+
+                        if kwargs.get("stream"):
+                            async for line in response.content:
+                                yield line.decode('utf-8')
+                        else:
+                            yield await response.text()
+
+            except aiohttp.ClientConnectorError:
+                msg = f"无法连接到 DSOCR 服务 ({url})"
+                logger.error(msg)
+                raise InternalServerError(msg)
+
+            except aiohttp.ServerTimeoutError:
+                msg = f"DSOCR 服务响应超时 ({total}s)"
+                logger.error(msg)
+                raise InternalServerError(msg)
+
+            except Exception as e:
+                msg = f"DSOCR 调用过程中发生异常: {str(e)}"
+                logger.exception(msg)
+                raise InternalServerError(msg)
+
+    async def get_dsocr_answer(self, model_name: str, image: str | Image.Image, prompt: str, **kwargs) -> str:
+        """高层封装：直接获取 DeepSeek OCR 聚合后的纯文本字符串。"""
+        full_content = []
+        try:
+            kwargs["stream"] = True
+
+            async for raw_line in self.call_dsocr_model(model_name, image, prompt, **kwargs):
+                line = raw_line.strip()
+
+                if not line or line == "data: [DONE]" or not line.startswith("data: "):
+                    continue
+
+                try:
+                    json_str = line[6:]
+                    resp = json.loads(json_str)
+                    choices = resp.get("choices", [])
+                    if not choices:
+                        continue
+
+                    choice = choices[0]
+                    content = ""
+                    if "delta" in choice:
+                        content = choice["delta"].get("content", "")
+                    elif "message" in choice:
+                        content = choice["message"].get("content", "")
+
+                    if content:
+                        full_content.append(content)
+
+                except (json.JSONDecodeError, KeyError, IndexError):
+                    continue
+
+            return "".join(full_content).strip()
+
+        except Exception as e:
+            logger.error(f"get_dsocr_answer 失败: {e}")
+            return ""
+
     async def get_llm_json(self, model_name: str, prompt:  list[dict[str, str]] | str, **kwargs) -> dict:
         """
         调用 LLM 并强制获取结构化 JSON 结果。

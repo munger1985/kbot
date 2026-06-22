@@ -5,6 +5,7 @@ from fastapi.responses import StreamingResponse
 from api.controllers.ops_controller import ops_controller
 from api.schemas.ops_schema import CreateInstanceRequest, UpdateInstanceRequest, OpsChatRequest
 from api.schemas.base_response import SuccessResponse
+from core.auth.shortcuts import UserAuth
 
 router = APIRouter(prefix="/ops", tags=["OPS - 数据库智能运维管理"])
 
@@ -16,7 +17,7 @@ router = APIRouter(prefix="/ops", tags=["OPS - 数据库智能运维管理"])
     summary="注册新数据库实例",
     description="DBA 控制面或自动化脚本调用, 将一个新的数据库实例纳入运维监控体系。"
 )
-async def register_instance(payload: CreateInstanceRequest):
+async def register_instance(auth: UserAuth, payload: CreateInstanceRequest):
     """注册新数据库实例"""
     return await ops_controller.create_instance(payload)
 
@@ -28,6 +29,7 @@ async def register_instance(payload: CreateInstanceRequest):
     response_model=SuccessResponse
 )
 async def get_agent_instances(
+    auth: UserAuth,
     agent_id: int = Query(..., description="智能体 ID (int)")
 ):
     """资产拉取接口"""
@@ -41,7 +43,7 @@ async def get_agent_instances(
     summary="获取所有运维数据库实例列表",
     description="返回CMDB中所有活跃的数据库实例, 用于Agent表单中的实例选择器。"
 )
-async def get_all_instances():
+async def get_all_instances(auth: UserAuth):
     """获取所有活跃的运维实例（不区分Agent绑定关系）"""
     return await ops_controller.get_all_instances()
 
@@ -56,7 +58,7 @@ async def get_all_instances():
     status_code=status.HTTP_200_OK,
     summary="获取单个运维实例详情"
 )
-async def get_instance_detail(instance_id: str):
+async def get_instance_detail(auth: UserAuth, instance_id: str):
     """获取指定运维实例的完整信息（不含密码）。"""
     return await ops_controller.get_instance_detail(instance_id)
 
@@ -67,7 +69,7 @@ async def get_instance_detail(instance_id: str):
     status_code=status.HTTP_200_OK,
     summary="更新运维实例信息"
 )
-async def update_instance(instance_id: str, payload: UpdateInstanceRequest):
+async def update_instance(auth: UserAuth, instance_id: str, payload: UpdateInstanceRequest):
     """更新指定运维实例的配置信息。所有字段均为可选, 仅更新传入的非空字段。"""
     return await ops_controller.update_instance(instance_id, payload)
 
@@ -77,7 +79,7 @@ async def update_instance(instance_id: str, payload: UpdateInstanceRequest):
     status_code=status.HTTP_204_NO_CONTENT,
     summary="删除运维实例"
 )
-async def delete_instance(instance_id: str):
+async def delete_instance(auth: UserAuth,instance_id: str):
     """删除指定的运维实例。此操作不可逆。"""
     await ops_controller.delete_instance(instance_id)
 
@@ -89,6 +91,7 @@ async def delete_instance(instance_id: str):
     response_class=StreamingResponse
 )
 async def ops_agent_chat_stream(
+    auth: UserAuth,
     request: OpsChatRequest,
     background_tasks: BackgroundTasks
 ):

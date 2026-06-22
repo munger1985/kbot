@@ -74,6 +74,19 @@ service_host = "0.0.0.0"
 service_port = 18094
 timeout = 600
 
+[dsocr]
+enabled = false
+service_name = "kbot-dsocr-service"
+service_version = "1.0.0"
+service_host = "0.0.0.0"
+service_port = 18097
+api_endpoint = "http://localhost:18097/v1/chat/completions"
+timeout = 600
+model_path = ""
+crop_mode = true
+max_tokens = 8192
+temperature = 0.0
+
 [parser]
 service_name = "kbot-parser-service"
 service_version = "1.0.0"

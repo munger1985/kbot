@@ -47,19 +47,30 @@ class ReasoningSkill(BaseSkill):
         else:
             data_text = "No business data"
         
-        summary = context["session_state"].get("context_summary", "New session")
+        # summary = context["session_state"].get("context_summary", "New session")
+        question = context["standalone_query"] or context["question"]
 
         reasoning_prompt = await default_prompt.generate(
-            get_prompt_config().reasoning,
-            data_context=data_text,
-            kb_context=kb_text,
-            context_summary=summary,
-            final_goal=target_goal
+            get_prompt_config().reasoning
         )
 
         # 3. Get user prompt
         user_prompt = await self.prompt_service.get_prompt_by_agent_id(context["agent_id"])
-        final_prompt = f"{reasoning_prompt}\n{user_prompt}"
+        final_prompt = f"""
+【用户的分析需求】
+{user_prompt}
+
+【后台查询到的结构化数据】
+{data_text if data_text else "（暂无数据）"}
+
+【后台检索到的相关知识库文档】
+{kb_text if kb_text else "（暂无相关文档）"}
+
+【本次分析任务】
+{target_goal}
+
+请基于以上数据与知识，按照系统指令要求进行分析并回答用户的提问：{question}
+"""
 
         # 4. State machine to parse LLM output
         is_thinking = False
@@ -68,7 +79,10 @@ class ReasoningSkill(BaseSkill):
         try:
             async for chunk in self.model_client.get_llm_stream_parsed(
                 model_name=current_model,
-                prompt=final_prompt,
+                prompt=[
+                        {"role": "system", "content": reasoning_prompt},
+                        {"role": "user", "content": final_prompt}
+                    ],
                 temperature=0.3
             ):
                 if not chunk: continue

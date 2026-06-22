@@ -13,6 +13,7 @@ class ParserParams(BaseModel):
     generate_picture_images: bool = Field(description="Whether to generate image descriptions (for picture content)")
     do_ocr: bool = Field(description="Whether to perform OCR recognition (extract text from images)")
     ocr_engine: str | None = Field(None, description="OCR engine name (specific OCR engine to use, optional)")
+    ocr_model: str | None = Field(None, description="AI OCR model name (e.g. DeepSeek OCR), takes priority over built-in OCR")
     images_scale: float = Field(..., description="Image scaling ratio (scale factor for processing images)")
     use_vlm: bool = Field(default=False, description="Whether to use VLM for generating image descriptions")
     vlm_model: int | None = Field(None, description="VLMParser model ID (unique identifier for VLM model, optional)")

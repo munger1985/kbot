@@ -207,17 +207,18 @@ class FileService:
             
             if not default_parser_conf:
                 default_parser_conf = {
-                    "do_ocr": False, 
-                    "overlap": 50, 
-                    "use_vlm": bool(vlm_model), 
+                    "do_ocr": False,
+                    "overlap": 50,
+                    "use_vlm": bool(vlm_model),
                     "llm_model": llm_model,
-                    "vlm_model": vlm_model, 
+                    "vlm_model": vlm_model,
                     "txt_embedding_model": txt_embedding_model,
-                    "chunk_size": 1000, 
-                    "ocr_engine": "tesseract", 
-                    "img2txt_prompt": prompt, 
+                    "chunk_size": 1000,
+                    "ocr_engine": "tesseract",
+                    "ocr_model": None,
+                    "img2txt_prompt": prompt,
                     "image_scale": 2.0,
-                    "min_chunk_len": 200, 
+                    "min_chunk_len": 200,
                     "generate_picture_images": True,
                     "extract_graph": False
                 }

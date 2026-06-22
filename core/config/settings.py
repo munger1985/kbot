@@ -170,9 +170,37 @@ class VLMConfig(BaseModel):
         """
         return f"http://{self.service_host}:{self.service_port}"
 
+class DsocrConfig(BaseModel):
+    """DeepSeek OCR service configuration.
+
+    Configuration parameters for the DeepSeek OCR service, supporting both
+    Docker vLLM deployment and local microservice modes (via api_endpoint).
+    """
+    enabled: bool = Field(default=False, description="Whether DeepSeek OCR service is deployed")
+    service_name: str = Field(default="dsocr-service", description="Name of the DS OCR service")
+    service_version: str = Field(default="1.0.0", description="DS OCR service version")
+    service_host: str = Field(default="0.0.0.0", description="DS OCR service host address")
+    service_port: int = Field(default=18097, ge=1, le=65535, description="DS OCR service port (1-65535)")
+    api_endpoint: str = Field(default="http://localhost:18097/v1/chat/completions", description="OpenAI-compatible API endpoint")
+    timeout: int = Field(default=600, ge=10, le=3600, description="Request timeout in seconds (10-3600)")
+    health_check_timeout: int = Field(default=10, ge=5, le=60, description="Health check timeout in seconds (5-60)")
+    model_path: str = Field(default="", description="Local model path for vLLM deployment")
+    crop_mode: bool = Field(default=True, description="Enable crop mode for OCR preprocessing")
+    max_tokens: int = Field(default=8192, ge=512, le=32768, description="Maximum output tokens (512-32768)")
+    temperature: float = Field(default=0.0, ge=0.0, le=2.0, description="Generation temperature (0.0-2.0)")
+
+    @property
+    def service_url(self) -> str:
+        """Generate full service URL for DS OCR service.
+
+        Returns:
+            str: Complete URL for accessing the DS OCR service.
+        """
+        return f"http://{self.service_host}:{self.service_port}"
+
 class ParserConfig(BaseModel):
     """Document parser service configuration.
-    
+
     Configuration parameters for the document parsing service, including network settings,
     parallel processing limits, and artifact storage.
     """
@@ -200,6 +228,17 @@ class PrometheusConfig(BaseModel):
     token: str = Field(default="", description="Bearer Token (可选)")
     timeout: int = Field(default=30, ge=5, le=300, description="HTTP 请求超时 (秒)")
     default_step: str = Field(default="15s", description="范围查询默认采样步长")
+
+class SlackConfig(BaseModel):
+    """Slack integration configuration.
+
+    Configuration parameters for Slack Events API integration, including
+    authentication credentials and agent routing settings.
+    """
+    signing_secret: str = Field(default="", description="Slack App Signing Secret for request verification")
+    bot_token: str = Field(default="", description="Slack Bot User OAuth Token (xoxb-...)")
+    agent_id: int = Field(default=1, ge=1, description="KBOT Agent ID to use for answering Slack messages")
+    api_timeout: int = Field(default=10, ge=5, le=60, description="Timeout in seconds for Slack API HTTP calls")
 
 class PromptConfig(BaseModel):
     """Prompt template configuration.
@@ -245,9 +284,11 @@ class Settings(BaseSettings):
     llm: LLMConfig = LLMConfig()
     reranker: RerankerConfig = RerankerConfig()
     vlm: VLMConfig = VLMConfig()
+    dsocr: DsocrConfig = DsocrConfig()
     parser: ParserConfig = ParserConfig()
     executor: ExecutorConfig = ExecutorConfig()
     prometheus: PrometheusConfig = PrometheusConfig()
+    slack: SlackConfig = SlackConfig()
     prompt: PromptConfig = PromptConfig()
     
     model_config = {
@@ -465,11 +506,19 @@ def get_reranker_config() -> RerankerConfig:
 
 def get_vlm_config() -> VLMConfig:
     """Get VLM service configuration.
-    
+
     Returns:
         VLMConfig: VLM service configuration object
     """
     return get_settings().vlm
+
+def get_dsocr_config() -> DsocrConfig:
+    """Get DeepSeek OCR configuration.
+
+    Returns:
+        DsocrConfig: DeepSeek OCR service configuration object
+    """
+    return get_settings().dsocr
 
 def get_parser_config() -> ParserConfig:
     """Get document parser configuration.
@@ -486,3 +535,51 @@ def get_executor_config() -> ExecutorConfig:
 def get_prometheus_config() -> PrometheusConfig:
     """Get Prometheus configuration (运维Agent使用)."""
     return get_settings().prometheus
+
+def get_slack_config() -> SlackConfig:
+    """Get Slack integration configuration.
+
+    Returns:
+        SlackConfig: Slack configuration object
+    """
+    return get_settings().slack
+
+
+# OCR 引擎中文标签映射
+OCR_ENGINE_LABELS: dict[str, str] = {
+    "easyocr": "EasyOCR",
+    "tesseract": "Tesseract",
+    "rapidocr": "RapidOCR",
+    "deepseek_ocr": "DeepSeek OCR",
+}
+
+
+def detect_builtin_ocr_engines() -> dict[str, bool]:
+    """检测本机已安装的内置 OCR 引擎。
+
+    Returns:
+        dict[str, bool]: 引擎名 → 是否可用
+    """
+    import shutil
+    import importlib
+
+    engines: dict[str, bool] = {}
+
+    # EasyOCR
+    try:
+        importlib.import_module("easyocr")
+        engines["easyocr"] = True
+    except ImportError:
+        engines["easyocr"] = False
+
+    # Tesseract
+    engines["tesseract"] = shutil.which("tesseract") is not None
+
+    # RapidOCR
+    try:
+        importlib.import_module("rapidocr_onnxruntime")
+        engines["rapidocr"] = True
+    except ImportError:
+        engines["rapidocr"] = False
+
+    return engines
