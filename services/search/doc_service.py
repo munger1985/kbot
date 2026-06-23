@@ -30,11 +30,15 @@ class DocService:
         核心业务流水线：向量化 -> 并行检索 -> 重排序
         """
         # 1. 向量化 (验证问题有效性)
+        logger.debug(f"[DocService] Step 1/4: 获取嵌入向量，model={model_params.txt_embedding_model}")
         query_vec = await self._get_embedding(question, model_params.txt_embedding_model, agent_id)
+        logger.debug(f"[DocService] Step 1/4: 嵌入向量获取完成，维度={len(query_vec)}")
 
         # 2. 获取知识库配置
+        logger.debug(f"[DocService] Step 2/4: 获取知识库配置")
         conf_repo = AgentConfRepository(db_session)
         agent_confs = await conf_repo.get_by_agent(agent_id)
+        logger.debug(f"[DocService] Step 2/4: 获取到 {len(agent_confs)} 个知识库配置")
 
         # 3. 并行检索
         logger.info(f"开始为智能体 {agent_id} 执行知识库检索，安全等级：{security_level}")
@@ -69,6 +73,7 @@ class DocService:
 
         # 执行并行任务
         raw_results = await asyncio.gather(*tb_tasks, return_exceptions=True)
+        logger.debug(f"[DocService] Step 3/4: 并行检索完成，{len(raw_results)} 个任务")
         retrieved_results = []
         for i, res in enumerate(raw_results):
             if isinstance(res, Exception):
@@ -81,6 +86,7 @@ class DocService:
                 logger.warning(f"知识库任务 {i} 返回结果为空或格式错误")
 
         # 4. 重排序逻辑
+        logger.debug(f"[DocService] Step 4/4: 开始重排序，待排文档数={len(retrieved_results)}")
         final_results = await self._apply_rerank(
             retrieved_results, question, model_params
         )
