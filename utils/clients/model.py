@@ -554,6 +554,10 @@ class AIModelClient():
         # 防御：在 prompt 中强制注入 JSON-only 指令，防止 LLM 忽略格式要求
         prompt = self._enforce_json_format(prompt)
 
+        # 确保 max_tokens 足够容纳完整的 JSON 响应（若调用方未指定则设一个合理默认值）
+        if 'max_tokens' not in kwargs:
+            kwargs['max_tokens'] = 4096
+
         try:
             # 聚合 generator 产出的内容
             # 使用 stream=False，因为 json_object 模式不需要流式输出，且部分 LLM 后端对 stream+json 支持不佳
@@ -667,10 +671,14 @@ class AIModelClient():
                     pass
 
         # 5. 全部失败：给出更清晰的错误信息
-        snippet = text[:300]
+        snippet = text[:500]
+        # 额外诊断：检查是否因为大括号不平衡导致提取失败
+        brace_count = text.count('{') - text.count('}')
+        brace_diag = f"Unbalanced braces: {brace_count:+d}" if brace_count != 0 else "Braces balanced"
         raise ValueError(
             f"Could not parse valid JSON from LLM response. "
-            f"First 300 chars: {snippet}..."
+            f"({brace_diag}, total_len={len(text)}). "
+            f"First 500 chars: {snippet}..."
         )
 
     @staticmethod
@@ -831,8 +839,11 @@ class AIModelClient():
 
             try:
                 data = json.loads(data_str)
+                # 防御：部分 provider（OCI Grok 等）可能返回非 OpenAI 格式的 chunk
+                if 'choices' not in data or not data['choices']:
+                    continue
                 delta = data['choices'][0].get('delta', {})
-                
+
                 # 同时兼容普通内容和推理内容
                 content = delta.get('content', '')
                 # 适配 DeepSeek R1 常见的推理字段
@@ -840,6 +851,6 @@ class AIModelClient():
 
                 if content or reasoning:
                     yield LLMChunk(content=content, reasoning_content=reasoning)
-                    
-            except json.JSONDecodeError:
+
+            except (json.JSONDecodeError, KeyError, IndexError):
                 continue
