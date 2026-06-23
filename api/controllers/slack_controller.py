@@ -279,6 +279,11 @@ def parse_slack_event(payload: dict) -> dict | None:
 # Waiting / "please wait" message, localised by the user's question language.
 _WAITING_MESSAGES: dict[str, str] = {
     "zh": "您的问题 KM 助手正在搜集材料分析中，请稍等.",
+    "ja": "ご質問の内容について、KMアシスタントが情報を収集し分析しています。少々お待ちください。",
+    "ko": "문의하신 내용에 대해 KM 어시스턴트가 자료를 수집하고 분석 중입니다. 잠시만 기다려 주세요.",
+    "th": "KM Assistant กำลังรวบรวมข้อมูลและวิเคราะห์คำถามของท่าน กรุณารอสักครู่",
+    "hi": "आपके प्रश्न का विश्लेषण करने के लिए KM असिस्टेंट सामग्री एकत्र कर रहा है, कृपया प्रतीक्षा करें।",
+    "vi": "Trợ lý KM đang thu thập tài liệu và phân tích câu hỏi của bạn, vui lòng đợi trong giây lát.",
     "en": "KM Assistant is gathering materials and analyzing your question, please wait.",
 }
 

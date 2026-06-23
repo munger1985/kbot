@@ -15,7 +15,7 @@ async def run_in_thread_pool(
 ) -> AsyncGenerator:
     """Run batch tasks in a thread pool and return results as an async generator.
 
-    Note: Ensure all operations in tasks are thread-safe, and task functions must 
+    Note: Ensure all operations in tasks are thread-safe, and task functions must
     use keyword arguments only.
 
     Args:
@@ -57,7 +57,7 @@ def safe_read_content(content_obj):
     else:
         # ES string type or other types
         return str(content_obj) if content_obj is not None else ""
-    
+
 @staticmethod
 def model_to_dict(obj):
     """Recursively convert SQLAlchemy model object to dictionary.
@@ -85,32 +85,62 @@ def model_to_dict(obj):
         return result
     else:
         return obj
-    
+
 @staticmethod
-def detect_language(text: str, threshold: float = 0.1) -> str:
-    """Detect the language of input text (Chinese/English only).
+def detect_language(text: str) -> str:
+    """Detect the language of input text from Asia-Pacific languages.
+
+    Uses Unicode character ranges to identify the script, which reliably
+    distinguishes CJK, Hangul, Kana, Thai, Devanagari, etc.
+
+    Language coverage (ISO 639-1 codes):
+    - zh : Chinese (CJK Unified Ideographs, no Kana)
+    - ja : Japanese (Hiragana / Katakana — checked before shared CJK)
+    - ko : Korean (Hangul Syllables + Jamo)
+    - th : Thai (Thai script)
+    - hi : Hindi / Marathi / Nepali (Devanagari)
+    - vi : Vietnamese (Latin + additional diacritics)
+    - en : English / Indonesian / Malay / Tagalog (Latin script — default)
 
     Args:
         text: Text to detect language for.
-        threshold: Threshold ratio of Chinese characters. Text with Chinese 
-                   character ratio exceeding this value is considered Chinese.
 
     Returns:
-        str: 'zh' for Chinese, 'en' for English.
+        ISO 639-1 language code.
     """
     if not text:
         return "en"
-    
-    # Filter out non-alphabetic and non-Chinese characters (e.g., punctuation, numbers, spaces)
-    clean_text = re.sub(r'[^\u4e00-\u9fa5a-zA-Z]', '', text)
-    if not clean_text:
-        return "en"
-        
-    # Count Chinese characters (\u4e00-\u9fff is the basic Chinese character range)
-    chinese_chars = re.findall(r'[\u4e00-\u9fff]', clean_text)
-    chinese_ratio = len(chinese_chars) / len(clean_text)
-    
-    return "zh" if chinese_ratio > threshold else "en"
+
+    # 1. Japanese — Kana (Hiragana / Katakana) is unique to Japanese.
+    if re.search(r'[぀-ゟ]|[゠-ヿ]', text):
+        return "ja"
+
+    # 2. Chinese — CJK Unified Ideographs + Extension A.
+    if re.search(r'[一-鿿㐀-䶿]', text):
+        return "zh"
+
+    # 3. Korean — Hangul syllables + Jamo.
+    if re.search(r'[가-힯ᄀ-ᇿ㄰-㆏]', text):
+        return "ko"
+
+    # 4. Thai.
+    if re.search(r'[฀-๿]', text):
+        return "th"
+
+    # 5. Hindi / Devanagari.
+    if re.search(r'[ऀ-ॿ]', text):
+        return "hi"
+
+    # 6. Vietnamese — Latin-1 tonal marks (À-ÿ) + horn letters (ơ/ư) +
+    #    Vietnamese-specific diacritics (hook, tilde, etc.).
+    if re.search(r'[À-ɏ]'             # Latin-1 Supplement + Extended-A/B
+                 r'|[Ơ-ư]'            # horn: ơ, ư
+                 r'|[Ḁ-ỹ]',           # Latin Extended Additional (ả, ấ, ầ, …)
+                 text):
+        return "vi"
+
+    # 7. Latin script (English, Indonesian, Malay, Tagalog, ...).
+    return "en"
 
 @staticmethod
 def get_embedding_dimension(embedding: list[float]) -> int:
@@ -126,7 +156,7 @@ def get_embedding_dimension(embedding: list[float]) -> int:
         return len(embedding)
     else:
         return 0
-    
+
 
 @staticmethod
 def detect_file_encoding(file_path):
@@ -149,11 +179,11 @@ def detect_file_encoding(file_path):
     try:
         # One line: detect content, try multiple encodings, verify decoding feasibility
         results = from_path(file_path).best()
-        
+
         if results:
             logger.debug(f"Detected encoding: {results.encoding} Confidence: {results.coherence}")
             return results.encoding.lower()
     except Exception as e:
         logger.error(f"Encoding detection exception: {e}")
-        
+
     return 'utf-8' # Fallback encoding
