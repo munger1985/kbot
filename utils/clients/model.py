@@ -659,7 +659,14 @@ class AIModelClient():
             try:
                 return json.loads(json_str)
             except json.JSONDecodeError as e:
-                logger.error(f"Balanced brace extraction found but failed to parse: {e}")
+                logger.error(f"Balanced brace extraction found ({len(json_str)} chars) but failed to parse: {e}")
+                # 内容级修复：处理常见的 LLM JSON 格式错误
+                repaired = self._repair_json_content(json_str)
+                if repaired:
+                    try:
+                        return json.loads(repaired)
+                    except json.JSONDecodeError:
+                        pass
 
         # 4. 兜底：在剥离 markdown 后的文本中再试平衡大括号提取
         if cleaned != text:
@@ -668,7 +675,12 @@ class AIModelClient():
                 try:
                     return json.loads(json_str)
                 except json.JSONDecodeError:
-                    pass
+                    repaired = self._repair_json_content(json_str)
+                    if repaired:
+                        try:
+                            return json.loads(repaired)
+                        except json.JSONDecodeError:
+                            pass
 
         # 5. 截断修复：LLM 输出可能因 max_tokens 不足而被截断，
         #    尝试自动补全缺失的 } 和 ]
@@ -750,6 +762,100 @@ class AIModelClient():
         # 补全缺失的闭合符号
         suffix = '}' * max(brace_depth, 0) + ']' * max(bracket_depth, 0)
         return text + suffix
+
+    @staticmethod
+    def _repair_json_content(json_str: str) -> str | None:
+        """
+        修复常见的 LLM JSON 格式错误：
+        1. 尾部多余逗号 (trailing comma): {"a": 1,} → {"a": 1}
+        2. 字符串值内未转义的 ASCII 双引号 (最常见的 LLM JSON 错误)
+        """
+        if not json_str:
+            return None
+
+        fixed = json_str
+
+        # 1. 移除 } 或 ] 前的尾部逗号
+        fixed = re.sub(r',(\s*[}\]])', r'\1', fixed)
+
+        if fixed != json_str:
+            try:
+                json.loads(fixed)
+                return fixed
+            except json.JSONDecodeError:
+                pass
+
+        # 2. 修复字符串值内未转义的双引号
+        #    状态机遍历：在字符串值内部遇到 " 后紧跟非 JSON 界定符的字符时，将其转义
+        repaired_quotes = AIModelClient._escape_content_quotes(json_str)
+        if repaired_quotes != json_str:
+            # 重新应用尾部逗号修复
+            repaired_quotes = re.sub(r',(\s*[}\]])', r'\1', repaired_quotes)
+            try:
+                json.loads(repaired_quotes)
+                return repaired_quotes
+            except json.JSONDecodeError:
+                pass
+
+        return None
+
+    @staticmethod
+    def _escape_content_quotes(text: str) -> str:
+        """
+        修复字符串 VALUE 内部的未转义 ASCII 双引号。
+        策略：跟踪 in_string 状态（区分字符串内/外）。
+        只有在字符串内部遇到 " 且后续是内容字符（非 JSON 结构符）时才转义。
+        """
+        result: list[str] = []
+        i = 0
+        n = len(text)
+        in_string = False
+
+        while i < n:
+            ch = text[i]
+
+            if ch == '\\':
+                result.append(ch)
+                if i + 1 < n:
+                    i += 1
+                    result.append(text[i])
+                i += 1
+                continue
+
+            if ch == '"':
+                if not in_string:
+                    # 进入字符串（key 或 value 的开始引号）
+                    in_string = True
+                    result.append(ch)
+                else:
+                    # 在字符串内部遇到引号 → 判断是否是结束引号
+                    j = i + 1
+                    while j < n and text[j] in ' \t\n\r':
+                        j += 1
+                    next_ch = text[j] if j < n else ''
+
+                    if next_ch in ':':
+                        # key 的结束引号，后面跟冒号
+                        in_string = False
+                        result.append(ch)
+                    elif next_ch in ',}]':
+                        # value 的结束引号，后面跟结构符
+                        in_string = False
+                        result.append(ch)
+                    elif next_ch == '':
+                        # 文本末尾，视为结束引号
+                        in_string = False
+                        result.append(ch)
+                    else:
+                        # 内容引号 → 转义，保持在字符串内
+                        result.append('\\"')
+                i += 1
+                continue
+
+            result.append(ch)
+            i += 1
+
+        return ''.join(result)
 
     @staticmethod
     def _strip_markdown_code_block(text: str) -> str:
