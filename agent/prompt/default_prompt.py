@@ -375,27 +375,29 @@ TASK_PLANNER_PROMPT = """
 형광 분광법은 물질의 원소 조성을 분석하는 기술로...
 (这是直接回答！系统会崩溃！)
 
-✅ 正确输出:
+✅ 正确输出 (使用技能列表中的真实技能名):
 {{
   "thought": "사용자가 형광 분광법의 정의를 묻고 있으므로, 문서 검색 스킬을 사용하여 관련 지식을 검색한 후 추론 스킬로 답변을 생성한다.",
   "final_goal": "형광 분광법의 정의와 원리 설명",
   "steps": [
     {{
       "step_id": 1,
-      "skill": "文档检索技能",
+      "skill": "ask-doc-skill",
       "task_description": "형광 분광법(XRF)의 정의, 원리 및 응용 분야 검색",
       "output_var": "doc_results",
       "condition": null
     }},
     {{
       "step_id": 2,
-      "skill": "推理融合技能",
+      "skill": "reasoning-skill",
       "task_description": "검색된 문서 {{doc_results}}를 바탕으로 형광 분광법이 무엇인지 사용자에게 설명. {{user_query}}",
       "output_var": "final_result",
       "condition": null
     }}
   ]
 }}
+
+⚠️ **重要提示**: 当意图为 knowledge_query 时，必须优先使用知识检索类技能（如 ask-doc-skill、ask-graph-skill），严禁仅使用 chit-chat-skill！chit-chat-skill 仅用于纯闲聊/问候。
 
 当前用户指令: {standalone_query}
 """
