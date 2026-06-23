@@ -205,7 +205,8 @@ async def handle_chat_completions(
                         temperature=request.temperature,
                         timeout=request.timeout,
                         tools=request.tools,
-                        tool_choice=request.tool_choice
+                        tool_choice=request.tool_choice,
+                        response_format=request.response_format
                     )
 
                     async for chunk in stream_iter: # type: ignore
@@ -278,7 +279,8 @@ async def handle_chat_completions(
             temperature=request.temperature,
             timeout=request.timeout,
             tools=request.tools,
-            tool_choice=request.tool_choice
+            tool_choice=request.tool_choice,
+            response_format=request.response_format
         )
 
         proc_time = time.time() - start_time

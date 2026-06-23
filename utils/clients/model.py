@@ -546,14 +546,18 @@ class AIModelClient():
         """
         调用 LLM 并强制获取结构化 JSON 结果。
         内部自动处理非流式请求与 JSON 提取。
+        会强制注入 JSON-only 指令以防止 LLM 返回非 JSON 内容。
         """
         full_text = ""
         kwargs.pop('temperature', None)
-        
+
+        # 防御：在 prompt 中强制注入 JSON-only 指令，防止 LLM 忽略格式要求
+        prompt = self._enforce_json_format(prompt)
+
         try:
             # 聚合 generator 产出的内容
             # 使用 stream=False，因为 json_object 模式不需要流式输出，且部分 LLM 后端对 stream+json 支持不佳
-            async for chunk in self.call_llm_model(model_name=model_name, prompt=prompt, 
+            async for chunk in self.call_llm_model(model_name=model_name, prompt=prompt,
                                                    response_format="json_object", temperature=0, stream=False, **kwargs):
                 line = chunk.strip()
                 if not line or line == "data: [DONE]":
@@ -587,27 +591,134 @@ class AIModelClient():
             logger.error(f"Failed to get JSON response from LLM: {e}")
             raise
 
+    @staticmethod
+    def _enforce_json_format(prompt: list[dict[str, str]] | str) -> list[dict[str, str]] | str:
+        """
+        在 prompt 中强制注入 JSON-only 指令。
+        如果 prompt 是对话列表，在第一条 system 消息末尾追加指令；
+        如果列表中没有 system 消息，在开头插入一条；
+        如果是纯字符串，直接包装为 system 消息。
+        """
+        json_enforcement = (
+            "\n\n---\n"
+            "⛔ CRITICAL INSTRUCTION: You MUST respond with ONLY a valid JSON object. "
+            "No markdown, no explanations, no code fences, no text before or after the JSON. "
+            "Your entire response must be parseable by a JSON parser. "
+            "Start your response with '{' and end with '}'."
+        )
+
+        if isinstance(prompt, str):
+            return [{"role": "system", "content": prompt + json_enforcement}]
+
+        # 处理列表形式的 prompt
+        modified = []
+        has_system = False
+        for msg in prompt:
+            if isinstance(msg, dict) and msg.get("role") == "system":
+                new_msg = dict(msg)
+                new_msg["content"] = (msg.get("content", "") or "") + json_enforcement
+                modified.append(new_msg)
+                has_system = True
+            else:
+                modified.append(msg)
+
+        # 如果列表中没有 system 消息，在开头插入一条
+        if not has_system:
+            modified.insert(0, {"role": "system", "content": json_enforcement.lstrip()})
+
+        return modified
+
     def _extract_json_from_text(self, text: str) -> dict:
         """
-        从 LLM 的回复中提取 JSON。处理可能存在的 Markdown 标签。
+        从 LLM 的回复中提取 JSON。使用平衡大括号匹配 + markdown 代码块剥离，
+        比正则贪婪匹配更鲁棒。
         """
         text = text.strip()
-        # 1. 尝试直接解析
+
+        # 1. 尝试直接解析（最理想的情况）
         try:
             return json.loads(text)
         except json.JSONDecodeError:
             pass
 
-        # 2. 正则匹配 ```json { ... } ``` 或直接匹配 { ... }
-        # 匹配最外层的花括号内容
-        match = re.search(r'\{.*\}', text, re.DOTALL)
-        if match:
+        # 2. 剥离 markdown ```json ... ``` 或 ``` ... ``` 代码块后直接解析
+        cleaned = self._strip_markdown_code_block(text)
+        if cleaned != text:
             try:
-                return json.loads(match.group(0))
+                return json.loads(cleaned)
+            except json.JSONDecodeError:
+                pass
+
+        # 3. 在原始文本中查找第一个完整的 JSON 对象（平衡大括号）
+        json_str = self._extract_first_json_object(text)
+        if json_str:
+            try:
+                return json.loads(json_str)
             except json.JSONDecodeError as e:
-                logger.error(f"Regex found potential JSON but failed to parse: {e}")
-        
-        raise ValueError(f"Could not parse valid JSON from LLM response: {text[:100]}...")
+                logger.error(f"Balanced brace extraction found but failed to parse: {e}")
+
+        # 4. 兜底：在剥离 markdown 后的文本中再试平衡大括号提取
+        if cleaned != text:
+            json_str = self._extract_first_json_object(cleaned)
+            if json_str:
+                try:
+                    return json.loads(json_str)
+                except json.JSONDecodeError:
+                    pass
+
+        # 5. 全部失败：给出更清晰的错误信息
+        snippet = text[:300]
+        raise ValueError(
+            f"Could not parse valid JSON from LLM response. "
+            f"First 300 chars: {snippet}..."
+        )
+
+    @staticmethod
+    def _strip_markdown_code_block(text: str) -> str:
+        """移除 markdown ```json ... ``` 或 ``` ... ``` 代码块包裹。"""
+        match = re.search(r'```(?:json|JSON)?\s*\n?(.*?)```', text, re.DOTALL)
+        if match:
+            return match.group(1).strip()
+        return text
+
+    @staticmethod
+    def _extract_first_json_object(text: str) -> str | None:
+        """
+        使用平衡大括号计数器提取文本中第一个完整的 JSON 对象。
+        正确处理字符串内的转义引号和大括号。
+        """
+        start_idx = text.find('{')
+        if start_idx == -1:
+            return None
+
+        depth = 0
+        in_string = False
+        escape = False
+
+        for i in range(start_idx, len(text)):
+            ch = text[i]
+
+            if escape:
+                escape = False
+                continue
+
+            if ch == '\\' and in_string:
+                escape = True
+                continue
+
+            if ch == '"':
+                in_string = not in_string
+                continue
+
+            if not in_string:
+                if ch == '{':
+                    depth += 1
+                elif ch == '}':
+                    depth -= 1
+                    if depth == 0:
+                        return text[start_idx:i + 1]
+
+        return None
     
     async def get_llm_answer(self, model_name: str, prompt:  list[dict[str, str]] | str, **kwargs) -> str:
         """

@@ -92,6 +92,7 @@ class ChatRequest(BaseModel):
     tools: list[dict[str, Any]] | None = Field(None, description="List of tools for MCP tool calling")
     tool_choice: str | None = Field(None, description="Tool selection strategy ('auto', 'none', or specific tool name)")
     enable_tool_calls: bool = Field(False, description="Whether to enable tool calling functionality")
+    response_format: str | dict[str, str] | None = Field(None, description="Response format specification (e.g., 'json_object' for JSON mode)")
 
 class ToggleModelRequest(BaseModel):
     """Request model for loading/unloading models from the model pool.
