@@ -223,6 +223,26 @@ class ChunkerGenerator:
             MAX_CHUNK_LEN = self.params.chunk_size or 1000 # 达到此长度强制刷出
 
             for item, _ in doc.iterate_items():
+                # 0. DS OCR 类型标记：按识别的元素类型路由
+                dsocr_type = None
+                for anno in getattr(item, "annotations", []):
+                    if isinstance(anno, DescriptionAnnotation) and anno.provenance == "dsocr_type":
+                        dsocr_type = anno.text
+                        break
+
+                if dsocr_type == "table":
+                    if text_buffer:
+                        await add_to_results("\n".join(text_buffer), item)
+                        text_buffer, current_len = [], 0
+                    await add_to_results(item.text, item, c_type="table")
+                    continue
+                if dsocr_type == "picture":
+                    if text_buffer:
+                        await add_to_results("\n".join(text_buffer), item)
+                        text_buffer, current_len = [], 0
+                    await add_to_results(item.text, item, c_type="picture")
+                    continue
+
                 # 1. 标题逻辑：作为内容存入buffer
                 if isinstance(item, SectionHeaderItem):
                     header_line = f"## {item.text.strip()}"
@@ -468,38 +488,41 @@ class ChunkerGenerator:
     
     async def _should_skip_image(self, item: PictureItem, seen_hashes: set) -> tuple[bool, str]:
         """
-        重构后的过滤器：仅依赖 _enhance_document_content 的预处理结果
+        重构后的过滤器：优先使用 DS OCR 结果，VLM 作为兜底。
         """
-        # 1. 获取物理层 Hash (直接从 item 引用中获取，如果之前没存，这里再取一次 MD5)
-        # 注意：为了性能，建议在 _enhance_document_content 里把 hash 塞进 metadata，这里直接取
         img_hash = None
+        ocr_desc = ""
         vlm_desc = ""
 
         # --- 从预处理注入的 annotations 中提取信息 ---
         for anno in item.annotations:
             if not isinstance(anno, DescriptionAnnotation):
                 continue
-            
+
             # 提取之前存入的 Hash
             if anno.provenance == "hash_marker":
                 img_hash = anno.text
-            # 检查是否被尺寸过滤器拦截
+            # DS OCR 文字识别结果（优先）
+            elif anno.provenance == "ocr_inference":
+                ocr_desc = anno.text
+            # VLM 图片描述结果（兜底）
             elif anno.provenance == "vlm_inference":
                 vlm_desc = anno.text
 
+        # 2. 逻辑判定：DS OCR 优先，VLM 兜底
+        final_desc = ocr_desc or vlm_desc
 
-        # 2. 逻辑判定
         # 过滤规则 A: 重复图过滤 (基于 Hash)
         if img_hash:
             if img_hash in seen_hashes:
                 return True, "" # 已经处理过同指纹图片，跳过输出
 
-        # 过滤规则 B: 无语义图过滤 (基于尺寸或 VLM 返回)
-        if not vlm_desc or vlm_desc.strip() in ["", "[NONE]", "[VLM 无法生成描述]"]:
+        # 过滤规则 B: 无语义图过滤 (基于尺寸或返回内容)
+        if not final_desc or final_desc.strip() in ["", "[NONE]", "[VLM 无法生成描述]"]:
             return True, ""
-        
+
         # 3. 记录已输出的 Hash，并返回描述
         if img_hash:
             seen_hashes.add(img_hash)
 
-        return False, vlm_desc
+        return False, final_desc

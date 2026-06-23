@@ -23,3 +23,5 @@ drop PROPERTY GRAPH kbot_knowledge_rag_graph;
 drop table if exists KBOT_GRAPH_EDGE_CHUNK_MAP;
 drop table if exists KBOT_GRAPH_KNOWLEDGE_EDGES;
 drop table if exists KBOT_GRAPH_KNOWLEDGE_VERTICES;
+drop table if exists KBOT_OPS_DB_INSTANCE;
+drop table if exists KBOT_OPS_AGENT_CONF;

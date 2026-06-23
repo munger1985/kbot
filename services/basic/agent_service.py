@@ -3,7 +3,8 @@ from typing import Any
 from core.database.oracle import get_session
 from core.exceptions import *
 from dao.repositories import (AgentRepository, AgentConfRepository,
-                             PromptRepository, MemoryRepository)
+                             PromptRepository, MemoryRepository,
+                             OpsAgentConfRepository)
 from services.kb.schema import ModelParams
 
 
@@ -43,6 +44,7 @@ class AgentService:
                         logger.info(f"Deleted prompt {agent.prompt_id} for agent {agent_id}")
 
                 await AgentConfRepository(session).delete_by_agent_id(agent_id)
+                await OpsAgentConfRepository(session).delete_by_agent_id(agent_id)
                 await agent_repo.delete(agent_id)
                 
                 sess_repo = MemoryRepository(session)

@@ -186,6 +186,13 @@ class VLMProvider(str, Enum):
     API_QWEN = "api_qwen"
     CHATGPT = "chatgpt"
 
+class OCRProvider(str, Enum):
+    """OCR provider enumeration."""
+    EASYOCR = "easyocr"
+    TESSERACT = "tesseract"
+    RAPIDOCR = "rapidocr"
+    DEEPSEEK_OCR = "deepseek_ocr"
+
 # Service type enumeration
 class ServiceType(str, Enum):
     INTERNAL = "internal"    # Internal service
