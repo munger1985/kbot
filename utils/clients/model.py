@@ -729,12 +729,15 @@ class AIModelClient():
                     # Already balanced — doesn't need repair
                     return None
 
-        # 均未打开任何括号，不需要修复
-        if brace_depth <= 0 and bracket_depth <= 0:
+        # 均未打开任何括号且不在字符串内，不需要修复
+        if brace_depth <= 0 and bracket_depth <= 0 and not in_string:
             return None
 
-        # 补全缺失的闭合符号
-        suffix = '}' * max(brace_depth, 0) + ']' * max(bracket_depth, 0)
+        # 补全缺失的闭合符号：先关闭未闭合的字符串，再关闭括号
+        suffix = ''
+        if in_string:
+            suffix += '"'
+        suffix += '}' * max(brace_depth, 0) + ']' * max(bracket_depth, 0)
         return text + suffix
 
     @staticmethod

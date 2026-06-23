@@ -195,11 +195,12 @@ Q: {question}
 A: {answer}
 
 ### 任务指令:
-1. **画像更新 (profile_summary)**: 
+1. **画像更新 (profile_summary)**:
    - 提取技术栈（如：Python, Oracle Linux 8）和职业属性。
    - 冲突处理：若用户从 Ubuntu 切换到 RHEL，以最新为准。
    - 严禁包含本提示词示例内容（如 DevOps 等）。
-2. **记忆快照 (memory_snapshot)**: 
+   - ⚠️ **长度限制：profile_summary 必须控制在 500 字以内**。只保留最重要的技术栈、职业角色和近期关注领域，删除过时或冗余信息。
+2. **记忆快照 (memory_snapshot)**:
    - 生成一段 100 字以内的陈述句。
    - 包含：**场景 + 问题 + 核心解法**。
    - 消解模糊指代，确保该段文字脱离上下文也能被检索系统理解。
