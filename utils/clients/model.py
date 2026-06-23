@@ -670,7 +670,23 @@ class AIModelClient():
                 except json.JSONDecodeError:
                     pass
 
-        # 5. 全部失败：给出更清晰的错误信息
+        # 5. 截断修复：LLM 输出可能因 max_tokens 不足而被截断，
+        #    尝试自动补全缺失的 } 和 ]
+        repaired = self._repair_truncated_json(text)
+        if repaired:
+            try:
+                return json.loads(repaired)
+            except json.JSONDecodeError:
+                pass
+        if cleaned != text:
+            repaired = self._repair_truncated_json(cleaned)
+            if repaired:
+                try:
+                    return json.loads(repaired)
+                except json.JSONDecodeError:
+                    pass
+
+        # 6. 全部失败：给出更清晰的错误信息
         snippet = text[:500]
         # 额外诊断：检查是否因为大括号不平衡导致提取失败
         brace_count = text.count('{') - text.count('}')
@@ -680,6 +696,60 @@ class AIModelClient():
             f"({brace_diag}, total_len={len(text)}). "
             f"First 500 chars: {snippet}..."
         )
+
+    @staticmethod
+    def _repair_truncated_json(text: str) -> str | None:
+        """
+        尝试修复因 max_tokens 不足而被截断的 JSON。
+        从第一个 { 开始计数大括号和方括号，在末尾补全缺失的闭合符号。
+        同时处理字符串内的转义，避免误判字符串中的括号。
+        """
+        start_idx = text.find('{')
+        if start_idx == -1:
+            return None
+
+        brace_depth = 0
+        bracket_depth = 0
+        in_string = False
+        escape = False
+        last_valid_pos = start_idx
+
+        for i in range(start_idx, len(text)):
+            ch = text[i]
+
+            if escape:
+                escape = False
+                continue
+
+            if ch == '\\' and in_string:
+                escape = True
+                continue
+
+            if ch == '"':
+                in_string = not in_string
+                continue
+
+            if not in_string:
+                if ch == '{':
+                    brace_depth += 1
+                elif ch == '}':
+                    brace_depth -= 1
+                elif ch == '[':
+                    bracket_depth += 1
+                elif ch == ']':
+                    bracket_depth -= 1
+
+                if brace_depth <= 0 and bracket_depth <= 0 and i > start_idx:
+                    # Already balanced — doesn't need repair
+                    return None
+
+        # 均未打开任何括号，不需要修复
+        if brace_depth <= 0 and bracket_depth <= 0:
+            return None
+
+        # 补全缺失的闭合符号
+        suffix = '}' * max(brace_depth, 0) + ']' * max(bracket_depth, 0)
+        return text + suffix
 
     @staticmethod
     def _strip_markdown_code_block(text: str) -> str:
