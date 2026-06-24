@@ -248,12 +248,18 @@ class OpsOrchestrator:
         response_time = datetime.now(timezone.utc)
         plan_skills_trace = [s.get("skill") for s in plan_steps] if plan_steps else []
 
+        # 过滤掉不可序列化的内部对象（如 PrometheusClient），只保留可持久化的数据
+        safe_variables = {
+            k: v for k, v in ctx["variables"].items()
+            if not k.startswith("_") and not hasattr(v, '__dict__')
+        }
+
         prepared_data_payload = {
             "standalone_query": ctx["command_or_query"],
             "search_keywords": ctx["command_or_query"],
             "turn_type": "task_oriented",
-            "turn_entities": ctx["variables"],
-            "new_state": ctx["variables"],
+            "turn_entities": safe_variables,
+            "new_state": safe_variables,
             "active_topic": "AIOps内核指标探测与故障自愈",
             "current_plan": {"skill_sequence": plan_skills_trace, "total_steps": len(plan_skills_trace)},
             "thought": ctx["runtime_plan"]["thought"] if ctx["runtime_plan"] else "",
