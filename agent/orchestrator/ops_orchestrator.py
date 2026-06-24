@@ -230,6 +230,16 @@ class OpsOrchestrator:
                                 "data": content["data"],
                                 "meta": content.get("meta", {})
                             })
+                            logger.debug(
+                                f"[Orchestrator] 捕获 MONITOR_RESULTS #{len(ctx['monitor_results'])} "
+                                f"| metric={content['meta'].get('metric_code')} "
+                                f"| data_len={len(content['data'])}"
+                            )
+                        else:
+                            logger.warning(
+                                f"[Orchestrator] MONITOR_RESULTS 格式异常, 未捕获 | "
+                                f"type={type(content)}, keys={list(content.keys()) if isinstance(content, dict) else 'N/A'}"
+                            )
                     elif p_type == PacketType.METRIC_RESULTS:
                         if isinstance(content, dict) and "data" in content:
                             ctx["metric_results"].append({
@@ -238,6 +248,15 @@ class OpsOrchestrator:
                                 "data": content["data"],
                                 "meta": content.get("meta", {})
                             })
+                            logger.debug(
+                                f"[Orchestrator] 捕获 METRIC_RESULTS #{len(ctx['metric_results'])} "
+                                f"| tool={content['meta'].get('tool_name')}"
+                            )
+                        else:
+                            logger.warning(
+                                f"[Orchestrator] METRIC_RESULTS 格式异常, 未捕获 | "
+                                f"type={type(content)}, keys={list(content.keys()) if isinstance(content, dict) else 'N/A'}"
+                            )
 
                     if p_type in DISPLAY_PACKET_TYPES:
                         yield packet

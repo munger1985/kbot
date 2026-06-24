@@ -50,6 +50,15 @@ class DBAnalysisSkill(BaseSkill):
             f"[{trace_id}] DBAnalysisSkill v2 诊断大脑激活 | 实例: {instance_id} | 引擎: {db_type} "
             f"| 监控数据: {len(monitor_results)} 条 | 诊断数据: {len(metric_results)} 条 | 手册: {len(doc_results)} 篇"
         )
+        # 诊断日志：打印 monitor_results 摘要
+        for i, mr in enumerate(monitor_results):
+            meta = mr.get("meta", {}) if isinstance(mr, dict) else {}
+            data = mr.get("data", []) if isinstance(mr, dict) else []
+            logger.debug(
+                f"[{trace_id}] monitor_results[{i}]: step={mr.get('step_id') if isinstance(mr, dict) else '?'}, "
+                f"metric={meta.get('metric_code', meta.get('tool_name', '?'))}, "
+                f"source={meta.get('source', '?')}, data_len={len(data)}"
+            )
 
         # 拦截决策: 如果两路探针都没捞到线索, 拒绝盲目猜测
         if not metric_results and not monitor_results:

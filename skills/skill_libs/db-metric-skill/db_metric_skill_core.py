@@ -108,7 +108,17 @@ class DBMetricSkill(BaseSkill):
                 monitor_result = await prometheus_client.query_instant(promql)
                 monitor_result.metric_code = metric_code
 
+                logger.info(
+                    f"[OpsTrack v2] Prometheus 查询成功 | metric={metric_code} "
+                    f"| series_count={len(monitor_result.series)} "
+                    f"| sample={monitor_result.series[:1]}"
+                )
+
                 summary_text = self._format_monitor_result(metric_code, monitor_result)
+                logger.debug(
+                    f"[OpsTrack v2] 即将 yield MONITOR_RESULTS | "
+                    f"data_len={len(monitor_result.series)}, meta_keys={list(monitor_result.series[0].keys()) if monitor_result.series else 'empty'}"
+                )
                 yield {
                     "type": PacketType.MONITOR_RESULTS,
                     "content": {

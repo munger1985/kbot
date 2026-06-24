@@ -1,5 +1,6 @@
 # utils/clients/ops.py
 
+import json
 import os
 import aiohttp
 from loguru import logger
@@ -125,7 +126,10 @@ class OpsDBExecutor:
                     # 4. 透传内核报错与异常
                     if res_json.get("status") == "error":
                         error_message = res_json.get("error_message", "未知物理内核错误")
-                        logger.error(f"[OpsClient] 内核拒绝执行该运维指令: {error_message}")
+                        logger.error(
+                            f"[OpsClient] 内核拒绝执行该运维指令: {error_message}\n"
+                            f"完整响应: {json.dumps(res_json, ensure_ascii=False, indent=2)}"
+                        )
                         return {
                             "status": "error",
                             "error_message": error_message,
