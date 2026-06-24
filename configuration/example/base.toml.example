@@ -74,6 +74,23 @@ service_host = "0.0.0.0"
 service_port = 18094
 timeout = 600
 
+[parser]
+service_name = "kbot-parser-service"
+service_version = "1.0.0"
+service_host = "0.0.0.0"
+service_port = 18095
+timeout = 600
+local_artifacts_path = "/home/chris/models/docling_models"
+queue_workers = 2
+parser_parallel = 4
+db_check_interval = 120
+
+[executor]
+service_name = "cube-sql-executor-service"
+service_version = "1.0.0"
+service_host = "0.0.0.0"
+service_port = 18096
+
 [dsocr]
 enabled = false
 service_name = "kbot-dsocr-service"
@@ -87,16 +104,11 @@ crop_mode = true
 max_tokens = 8192
 temperature = 0.0
 
-[parser]
-service_name = "kbot-parser-service"
-service_version = "1.0.0"
-service_host = "0.0.0.0"
-service_port = 18095
-timeout = 600
-local_artifacts_path = "/home/chris/models/docling_models"
-queue_workers = 2
-parser_parallel = 4
-db_check_interval = 120
+[prometheus]
+base_url = "http://localhost:9090"
+token = ""
+timeout = 15
+default_step = "60s"
 
 [prompt]
 image2text = "SYSTEM/image2text"
@@ -116,9 +128,3 @@ db_router = "SYSTEM/db_router"
 ops_rewrite = "SYSTEM/ops_rewrite"
 ops_diagnosis = "SYSTEM/ops_diagnosis"
 ops_planner = "SYSTEM/ops_planner"
-
-[prometheus]
-base_url = "http://localhost:9090"
-token = ""
-timeout = 30
-default_step = "15s"

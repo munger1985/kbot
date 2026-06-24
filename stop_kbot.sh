@@ -44,6 +44,7 @@ MICROSERVICES=(
     "kbot_app_reranker.py"
     "kbot_app_parser.py"
     "kbot_mcp_server.py"
+    "kbot_db_executor.py"
 )
 
 for service_script in "${MICROSERVICES[@]}"; do
