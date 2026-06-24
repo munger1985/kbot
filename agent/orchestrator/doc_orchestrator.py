@@ -35,30 +35,43 @@ class DocOrchestrator:
             f"接收到的 search_keywords: '{search_keywords}'"
         )
         
-        async with self.db_session as session:
-            # 1. 获取 Agent 和模型配置 (复用原有的 _get_agent_and_params 逻辑)
-            agent_repo = AgentRepository(session)
-            agent = await agent_repo.get_by_id(agent_id)
-            model_params = await self._get_model_params(agent) 
+        kb_results = []
+        query_vec = []
+        model_params = None
+        agent_prompt = None
 
-            # 2. 执行完整的检索流水线 (调用 DocService)
-            kb_results, query_vec = await self.doc_service.get_knowledge_context(
-                db_session=session,
-                agent_id=agent_id,
-                question=standalone_query,
-                keywords=search_keywords,
-                security_level=security_level,
-                model_params=model_params,
-                tags=tags
-            )
+        try:
+            async with self.db_session as session:
+                # 1. 获取 Agent 和模型配置
+                agent_repo = AgentRepository(session)
+                agent = await agent_repo.get_by_id(agent_id)
+                model_params = await self._get_model_params(agent)
+                agent_prompt = agent.prompt_id
+
+                # 2. 执行完整的检索流水线 (调用 DocService)
+                kb_results, query_vec = await self.doc_service.get_knowledge_context(
+                    db_session=session,
+                    agent_id=agent_id,
+                    question=standalone_query,
+                    keywords=search_keywords,
+                    security_level=security_level,
+                    model_params=model_params,
+                    tags=tags
+                )
+        except Exception as e:
+            logger.warning(f"[DocOrchestrator] 检索流水线异常（返回空结果降级）: {e}")
 
         # 3. 返回检索结果及其元数据
-        # 供后续 MultiSkillOrchestrator 放入 context_memory 或进行下一步推理
+        if model_params is None:
+            model_params = ModelParams(
+                llm_model="", txt_embedding_model="", img_embedding_model="",
+                vlm_model="", rerank_model="", do_rerank=False, llm_params={}, rerank_top_k=10
+            )
         return {
             "kb_results": kb_results,
             "query_vec": query_vec,
             "model_params": model_params,
-            "agent_prompt": agent.prompt_id # 仅返回引用，不在此处查询具体内容
+            "agent_prompt": agent_prompt
         }
 
     async def _get_model_params(self, agent: AgentEntity) -> ModelParams:
