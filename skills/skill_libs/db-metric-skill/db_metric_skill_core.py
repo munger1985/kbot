@@ -108,10 +108,6 @@ class DBMetricSkill(BaseSkill):
                 monitor_result = await prometheus_client.query_instant(promql)
                 monitor_result.metric_code = metric_code
 
-                if "monitor_results" not in context:
-                    context["monitor_results"] = []
-                context["monitor_results"].append(monitor_result.to_summary())
-
                 summary_text = self._format_monitor_result(metric_code, monitor_result)
                 yield {
                     "type": PacketType.MONITOR_RESULTS,
@@ -160,15 +156,6 @@ class DBMetricSkill(BaseSkill):
                 return
 
             tool_name, exec_result = tool_result
-
-            if "monitor_results" not in context:
-                context["monitor_results"] = []
-            context["monitor_results"].append({
-                "tool_name": tool_name,
-                "task_description": task_desc,
-                "data": exec_result,
-                "meta": {"source": "diagnostic_tool", "db_type": db_type},
-            })
 
             yield {
                 "type": PacketType.METRIC_RESULTS,

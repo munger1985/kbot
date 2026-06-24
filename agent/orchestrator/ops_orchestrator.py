@@ -6,7 +6,6 @@ from datetime import datetime, timezone
 from typing import Any, AsyncGenerator, cast
 from fastapi import BackgroundTasks
 
-from core.database.oracle import get_session
 from core.dictionary import PacketType
 from agent.memory import MemoryService
 from skills.skill_manager import SkillManager
@@ -25,9 +24,11 @@ DISPLAY_PACKET_TYPES = {
     PacketType.ANSWER,
     PacketType.ERROR,
     PacketType.DOC_RESULTS,
-    PacketType.SQL_RESULTS,
+    PacketType.MONITOR_RESULTS,
+    PacketType.METRIC_RESULTS,
     PacketType.WARNING,
     PacketType.REQUIRE_APPROVAL,
+    PacketType.CALL,
     PacketType.DONE
 }
 
@@ -220,8 +221,16 @@ class OpsOrchestrator:
                     if p_type == PacketType.ANSWER:
                         final_answer_accumulator += (content or "")
 
-                    # 数据沉淀区
-                    if p_type == PacketType.SQL_RESULTS:
+                    # 数据沉淀区：MONITOR_RESULTS → 监控数据, METRIC_RESULTS → 诊断数据
+                    if p_type == PacketType.MONITOR_RESULTS:
+                        if isinstance(content, dict) and "data" in content:
+                            ctx["monitor_results"].append({
+                                "step_id": step.get("step_id"),
+                                "task_description": step.get("task_description") or exec_info.get("resolved_input"),
+                                "data": content["data"],
+                                "meta": content.get("meta", {})
+                            })
+                    elif p_type == PacketType.METRIC_RESULTS:
                         if isinstance(content, dict) and "data" in content:
                             ctx["metric_results"].append({
                                 "step_id": step.get("step_id"),
