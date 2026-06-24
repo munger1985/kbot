@@ -655,7 +655,9 @@ ADVANCED_OPS_DIAGNOSIS_PROMPT = """
 {variables}
 
 【3. 数据沉淀区数据 (实时指标与日志快照)】:
-- 沉淀的时序指标 (Metrics):
+- Prometheus 监控指标 (Metrics):
+{monitor_results}
+- 数据库诊断工具返回:
 {metric_results}
 - 捞出的日志快照 (Logs):
 {os_log_snapshots}

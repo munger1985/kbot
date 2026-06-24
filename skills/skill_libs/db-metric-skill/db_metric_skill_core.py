@@ -105,18 +105,18 @@ class DBMetricSkill(BaseSkill):
                 promql = metric_registry.render_query(metric_code, "prometheus", db_type, render_params)
                 logger.info(f"[OpsTrack v2] db_type={db_type} PromQL: {promql}")
 
-                metric_result = await prometheus_client.query_instant(promql)
-                metric_result.metric_code = metric_code
+                monitor_result = await prometheus_client.query_instant(promql)
+                monitor_result.metric_code = metric_code
 
                 if "monitor_results" not in context:
                     context["monitor_results"] = []
-                context["monitor_results"].append(metric_result.to_summary())
+                context["monitor_results"].append(monitor_result.to_summary())
 
-                summary_text = self._format_metric_result(metric_code, metric_result)
+                summary_text = self._format_monitor_result(metric_code, monitor_result)
                 yield {
-                    "type": PacketType.SQL_RESULTS,
+                    "type": PacketType.MONITOR_RESULTS,
                     "content": {
-                        "data": metric_result.series,
+                        "data": monitor_result.series,
                         "meta": {
                             "metric_code": metric_code,
                             "source": "prometheus",
@@ -161,9 +161,9 @@ class DBMetricSkill(BaseSkill):
 
             tool_name, exec_result = tool_result
 
-            if "metric_results" not in context:
-                context["metric_results"] = []
-            context["metric_results"].append({
+            if "monitor_results" not in context:
+                context["monitor_results"] = []
+            context["monitor_results"].append({
                 "tool_name": tool_name,
                 "task_description": task_desc,
                 "data": exec_result,
@@ -171,7 +171,7 @@ class DBMetricSkill(BaseSkill):
             })
 
             yield {
-                "type": PacketType.SQL_RESULTS,
+                "type": PacketType.METRIC_RESULTS,
                 "content": {
                     "data": exec_result,
                     "meta": {
@@ -297,7 +297,7 @@ class DBMetricSkill(BaseSkill):
             logger.error(f"[OpsTrack v2] 诊断工具调用失败: {e}")
             raise
 
-    def _format_metric_result(self, metric_code: str, result) -> str:
+    def _format_monitor_result(self, metric_code: str, result) -> str:
         """将 Prometheus MetricResult 格式化为可读摘要"""
         info = {}
         if hasattr(result, 'series') and result.series:

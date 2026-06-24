@@ -42,6 +42,8 @@ class PacketType(str, Enum):
     SQL_RESULTS = "sql_results" # 结构化 SQL 结果
     DOC_RESULTS = "doc_results" # 文档检索结果
     GRAPH_RESULTS = "graph_results" # 图谱检索结果
+    METRIC_RESULTS = "metric_results" # 数据库指标查询结果
+    MONITOR_RESULTS = "monitor_results" # Prometheus 指标查询结果
     CALL = "call"             # 工具调用状态
     ECHARTS = "echarts"       # 图表数据展示
     ERROR = "error"           # 错误信息
