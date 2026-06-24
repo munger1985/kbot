@@ -174,7 +174,10 @@ class OpenaiClient(BaseLLM[OpenaiLLMConfig]):
         api_params = {k: v for k, v in base_params.items() if v is not None}
 
         try:
-            logger.debug(f"🚀 Sending request to [{self.config.model_name}] - Stream: {stream}")
+            logger.debug(
+                f"🚀 Sending request to [{self.config.model_name}] - Stream: {stream}"
+                f" | response_format={api_params.get('response_format')!r}"
+            )
             response = await self._client.chat.completions.create(**api_params)
 
             # Step 3: Enhanced logging for non-streaming responses
