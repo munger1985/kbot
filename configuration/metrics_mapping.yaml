@@ -6,7 +6,8 @@
 # 此文件定义了 LLM 认识的 metric_code 到 Prometheus PromQL 的查询模板映射。
 # 支持按 db_type (oracle / postgresql / mysql / ...) 分流到不同的 PromQL 模板。
 #
-# =============================================================================
+# Oracle 指标基于 oracledb_exporter 2.4.1 实际暴露的指标
+# 校验命令: curl -s http://localhost:9161/metrics | grep "^oracledb_" | awk -F'{' '{print $1}' | sort -u
 # 结构约定:
 #   每个指标包含:
 #     name          — 中文名称
@@ -28,7 +29,7 @@
 # =============================================================================
 
 # ---------------------------------------------------------------------------
-# 场景一: 可用性与健康检查
+# 可用性与健康检查
 # ---------------------------------------------------------------------------
 db_availability:
   name: "数据库实例可用性"
@@ -36,12 +37,12 @@ db_availability:
   tags: [availability, health, fundamental]
   required_params: [instance]
   providers:
-    oracle: 'up{{instance="{instance}"}}'
+    oracle: 'oracledb_up{{instance="{instance}"}}'
     postgresql: 'pg_up{{instance="{instance}"}}'
     mysql: 'mysql_up{{instance="{instance}"}}'
 
 # ---------------------------------------------------------------------------
-# 场景二: CPU / 内存资源
+# CPU / 内存资源
 # ---------------------------------------------------------------------------
 db_cpu_utilization:
   name: "数据库CPU使用率"
@@ -49,7 +50,7 @@ db_cpu_utilization:
   tags: [cpu, performance, resource]
   required_params: [instance]
   providers:
-    oracle: 'oracledb_cpu_utilization_ratio{{instance="{instance}"}}'
+    oracle: 'oracledb_activity_execute_count{{instance="{instance}"}}'
     postgresql: 'rate(process_cpu_seconds_total{{instance="{instance}"}}[5m])'
     mysql: 'rate(mysql_global_status_cpu_time{{instance="{instance}"}}[5m])'
 
@@ -59,28 +60,12 @@ db_memory_utilization:
   tags: [memory, performance, resource]
   required_params: [instance]
   providers:
-    oracle: 'oracledb_memory_utilization_ratio{{instance="{instance}"}}'
+    oracle: 'oracledb_cache_hit_ratio_value{{instance="{instance}"}}'
     postgresql: 'pg_database_size_bytes{{instance="{instance}"}} / node_memory_MemTotal_bytes{{instance="{instance}"}}'
     mysql: 'mysql_global_status_innodb_buffer_pool_pages_data{{instance="{instance}"}} / mysql_global_variables_innodb_buffer_pool_size{{instance="{instance}"}}'
 
-db_sga_utilization:
-  name: "SGA系统全局区使用率(Oracle)"
-  description: "监控Oracle SGA各组件（buffer cache, shared pool, large pool等）的内存分配与使用"
-  tags: [memory, oracle, sga]
-  required_params: [instance]
-  providers:
-    oracle: 'oracledb_sga_utilization_ratio{{instance="{instance}"}}'
-
-db_pga_utilization:
-  name: "PGA程序全局区使用率(Oracle)"
-  description: "监控Oracle PGA内存使用，排查单个会话内存泄漏导致的服务器内存耗尽"
-  tags: [memory, oracle, pga]
-  required_params: [instance]
-  providers:
-    oracle: 'oracledb_pga_utilization_ratio{{instance="{instance}"}}'
-
 # ---------------------------------------------------------------------------
-# 场景三: 会话与并发
+# 会话与并发
 # ---------------------------------------------------------------------------
 db_active_sessions:
   name: "活动会话数"
@@ -88,7 +73,7 @@ db_active_sessions:
   tags: [session, performance, concurrency]
   required_params: [instance]
   providers:
-    oracle: 'oracledb_active_sessions{{instance="{instance}"}}'
+    oracle: 'oracledb_sessions_value{{instance="{instance}"}}'
     postgresql: 'pg_stat_database_numbackends{{instance="{instance}"}}'
     mysql: 'mysql_global_status_threads_running{{instance="{instance}"}}'
 
@@ -112,8 +97,16 @@ db_connection_utilization:
     postgresql: 'pg_stat_database_numbackends{{instance="{instance}"}} / pg_settings_max_connections{{instance="{instance}"}}'
     mysql: 'mysql_global_status_threads_connected{{instance="{instance}"}} / mysql_global_variables_max_connections{{instance="{instance}"}}'
 
+db_process_count:
+  name: "数据库进程数"
+  description: "监控数据库当前进程总数，判断是否接近 processes 参数上限"
+  tags: [process, capacity, oracle]
+  required_params: [instance]
+  providers:
+    oracle: 'oracledb_process_count{{instance="{instance}"}}'
+
 # ---------------------------------------------------------------------------
-# 场景四: 存储与表空间
+# 存储与表空间
 # ---------------------------------------------------------------------------
 db_tablespace_usage:
   name: "表空间使用率"
@@ -121,7 +114,7 @@ db_tablespace_usage:
   tags: [storage, tablespace, capacity]
   required_params: [instance, ts_name]
   providers:
-    oracle: 'oracledb_tablespace_used_percentage{{instance="{instance}", tablespace="{ts_name}"}}'
+    oracle: 'oracledb_tablespace_used_percent{{instance="{instance}", tablespace="{ts_name}"}}'
     postgresql: 'pg_tablespace_size_bytes{{instance="{instance}", tablespace="{ts_name}"}} / pg_tablespace_size_max_bytes{{instance="{instance}", tablespace="{ts_name}"}}'
     mysql: 'mysql_table_schema_size_bytes{{instance="{instance}", schema="{ts_name}"}} / mysql_database_size_limit_bytes{{instance="{instance}"}}'
 
@@ -131,7 +124,7 @@ db_tablespace_free:
   tags: [storage, tablespace, capacity]
   required_params: [instance, ts_name]
   providers:
-    oracle: 'oracledb_tablespace_free_bytes{{instance="{instance}", tablespace="{ts_name}"}}'
+    oracle: 'oracledb_tablespace_free{{instance="{instance}", tablespace="{ts_name}"}}'
     postgresql: 'pg_tablespace_size_max_bytes{{instance="{instance}", tablespace="{ts_name}"}} - pg_tablespace_size_bytes{{instance="{instance}", tablespace="{ts_name}"}}'
 
 db_database_size:
@@ -153,7 +146,7 @@ db_temp_tablespace_usage:
     oracle: 'oracledb_temp_tablespace_used_percentage{{instance="{instance}"}}'
 
 # ---------------------------------------------------------------------------
-# 场景五: 磁盘 I/O 吞吐
+# 磁盘 I/O 吞吐
 # ---------------------------------------------------------------------------
 db_physical_reads_rate:
   name: "物理读速率(IOPS)"
@@ -184,7 +177,7 @@ db_io_latency:
     oracle: 'oracledb_io_latency_seconds{{instance="{instance}"}}'
 
 # ---------------------------------------------------------------------------
-# 场景六: 事务与查询吞吐
+# 事务与查询吞吐
 # ---------------------------------------------------------------------------
 db_transaction_rate:
   name: "事务处理速率(TPS)"
@@ -217,7 +210,7 @@ db_slow_queries_rate:
     mysql: 'rate(mysql_global_status_slow_queries{{instance="{instance}"}}[5m])'
 
 # ---------------------------------------------------------------------------
-# 场景七: 锁与并发冲突
+# 锁与并发冲突
 # ---------------------------------------------------------------------------
 db_deadlocks_rate:
   name: "死锁发生速率"
@@ -248,7 +241,74 @@ db_enqueue_waits_rate:
     oracle: 'rate(oracledb_enqueue_waits_total{{instance="{instance}"}}[5m])'
 
 # ---------------------------------------------------------------------------
-# 场景八: 等待事件与性能瓶颈
+# 等待事件：按等待类别统计（oracledb_exporter 2.4.1 实际暴露的指标）
+# ---------------------------------------------------------------------------
+db_wait_application:
+  name: "应用级等待"
+  description: "应用层等待（如行锁、显式锁），定位应用并发设计问题"
+  tags: [wait, performance, lock]
+  required_params: [instance]
+  providers:
+    oracle: 'oracledb_wait_time_application{{instance="{instance}"}}'
+
+db_wait_commit:
+  name: "提交等待"
+  description: "日志刷盘等待（log file sync），高值说明 redo 写入存在瓶颈"
+  tags: [wait, commit, io]
+  required_params: [instance]
+  providers:
+    oracle: 'oracledb_wait_time_commit{{instance="{instance}"}}'
+
+db_wait_concurrency:
+  name: "并发等待"
+  description: "内部并发竞争等待（如 buffer busy waits、latch），定位热点块争用"
+  tags: [wait, concurrency, performance]
+  required_params: [instance]
+  providers:
+    oracle: 'oracledb_wait_time_concurrency{{instance="{instance}"}}'
+
+db_wait_configuration:
+  name: "配置等待"
+  description: "因数据库参数配置不当引发的等待（如日志组太少、空间不足）"
+  tags: [wait, configuration, tuning]
+  required_params: [instance]
+  providers:
+    oracle: 'oracledb_wait_time_configuration{{instance="{instance}"}}'
+
+db_wait_network:
+  name: "网络等待"
+  description: "SQL*Net 消息往返延迟，高值说明网络带宽或延迟存在问题"
+  tags: [wait, network, performance]
+  required_params: [instance]
+  providers:
+    oracle: 'oracledb_wait_time_network{{instance="{instance}"}}'
+
+db_wait_other:
+  name: "其他等待"
+  description: "无法归入标准类别的等待事件总和"
+  tags: [wait, other, diagnosis]
+  required_params: [instance]
+  providers:
+    oracle: 'oracledb_wait_time_other{{instance="{instance}"}}'
+
+db_wait_system_io:
+  name: "系统I/O等待"
+  description: "操作系统层 I/O 等待，定位存储系统性能瓶颈"
+  tags: [wait, io, system]
+  required_params: [instance]
+  providers:
+    oracle: 'oracledb_wait_time_system_io{{instance="{instance}"}}'
+
+db_wait_user_io:
+  name: "用户I/O等待"
+  description: "数据库读取数据文件的等待，高值通常说明SQL缺索引或磁盘性能不足"
+  tags: [wait, io, performance]
+  required_params: [instance]
+  providers:
+    oracle: 'oracledb_wait_time_user_io{{instance="{instance}"}}'
+
+# ---------------------------------------------------------------------------
+# 缓存命中率
 # ---------------------------------------------------------------------------
 db_buffer_cache_hit_ratio:
   name: "Buffer Cache命中率"
@@ -256,19 +316,54 @@ db_buffer_cache_hit_ratio:
   tags: [cache, performance, memory]
   required_params: [instance]
   providers:
-    oracle: 'oracledb_buffer_cache_hit_ratio{{instance="{instance}"}}'
+    oracle: 'oracledb_cache_hit_ratio_value{{instance="{instance}"}}'
     postgresql: 'pg_stat_database_blks_hit{{instance="{instance}"}} / (pg_stat_database_blks_hit{{instance="{instance}"}} + pg_stat_database_blks_read{{instance="{instance}"}})'
 
-db_top_wait_events:
-  name: "Top等待事件耗时"
-  description: "按等待类别统计当前数据库会话的全部等待时间分布，暴露主要瓶颈所在"
-  tags: [wait, performance, diagnosis]
+# ---------------------------------------------------------------------------
+# SQL 负载
+# ---------------------------------------------------------------------------
+db_top_sql:
+  name: "Top SQL执行耗时"
+  description: "按执行时间排序的最耗资源 SQL 语句，定位性能瓶颈SQL"
+  tags: [sql, performance, top]
   required_params: [instance]
   providers:
-    oracle: 'topk(10, oracledb_wait_time_seconds{{instance="{instance}"}})'
+    oracle: 'oracledb_top_sql_elapsed{{instance="{instance}"}}'
+
+db_parse_count:
+  name: "SQL解析次数"
+  description: "监控SQL解析累计次数（硬解析+软解析），突增说明未使用绑定变量或共享池压力大"
+  tags: [query, parse, performance]
+  required_params: [instance]
+  providers:
+    oracle: 'oracledb_activity_parse_count_total{{instance="{instance}"}}'
+
+db_execute_count:
+  name: "SQL执行次数"
+  description: "监控SQL执行累计次数，反映数据库查询负载"
+  tags: [query, throughput, performance]
+  required_params: [instance]
+  providers:
+    oracle: 'oracledb_activity_execute_count{{instance="{instance}"}}'
+
+db_user_commits:
+  name: "用户提交数"
+  description: "监控用户提交事务的累计次数，反映业务写入负载量级"
+  tags: [transaction, throughput, performance]
+  required_params: [instance]
+  providers:
+    oracle: 'oracledb_activity_user_commits{{instance="{instance}"}}'
+
+db_user_rollbacks:
+  name: "用户回滚数"
+  description: "监控用户回滚事务的累计次数，持续增长说明应用存在异常或锁冲突"
+  tags: [transaction, rollback, performance]
+  required_params: [instance]
+  providers:
+    oracle: 'oracledb_activity_user_rollbacks{{instance="{instance}"}}'
 
 # ---------------------------------------------------------------------------
-# 场景九: 日志与归档
+# 日志与归档
 # ---------------------------------------------------------------------------
 db_redo_generation_rate:
   name: "Redo/WAL日志生成速率"
@@ -289,7 +384,7 @@ db_archivelog_usage:
     oracle: 'oracledb_archivelog_used_percentage{{instance="{instance}"}}'
 
 # ---------------------------------------------------------------------------
-# 场景十: 集群与高可用
+# 集群与高可用
 # ---------------------------------------------------------------------------
 db_replication_lag:
   name: "主备复制延迟"
@@ -312,7 +407,7 @@ db_replication_status:
     mysql: 'mysql_slave_status_slave_io_running{{instance="{instance}"}}'
 
 # ---------------------------------------------------------------------------
-# 场景十一: 网络
+# 网络
 # ---------------------------------------------------------------------------
 db_network_throughput:
   name: "数据库网络吞吐量"
@@ -325,7 +420,7 @@ db_network_throughput:
     mysql: 'rate(mysql_global_status_bytes_received{{instance="{instance}"}}[5m]) + rate(mysql_global_status_bytes_sent{{instance="{instance}"}}[5m])'
 
 # ---------------------------------------------------------------------------
-# 场景十二: 进程与资源限制
+# 进程与资源限制
 # ---------------------------------------------------------------------------
 db_process_limit_utilization:
   name: "进程数上限使用率"
@@ -336,7 +431,8 @@ db_process_limit_utilization:
     oracle: 'oracledb_process_utilization_ratio{{instance="{instance}"}}'
 
 # ---------------------------------------------------------------------------
-# 场景十三: 系统级负载（OS 层，node_exporter 提供）----------
+# 系统级负载（OS 层，node_exporter 提供）
+# ---------------------------------------------------------------------------
 db_system_load:
   name: "数据库主机系统负载"
   description: "监控数据库所在主机的系统负载（Load Average），辅助判断是DB问题还是OS问题"
