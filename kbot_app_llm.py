@@ -115,6 +115,10 @@ app.add_middleware(
 # 4. Request logging middleware
 app.middleware("http")(log_requests)
 
+# 5. Internal service authentication middleware
+from microservices.common.security import create_internal_auth_middleware
+app.middleware("http")(create_internal_auth_middleware())
+
 
 def get_llm_service() -> LLMService:
     """Get LLM service instance via dependency injection."""

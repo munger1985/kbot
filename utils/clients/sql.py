@@ -2,6 +2,7 @@
 
 集成数据库执行微服务的远程调用逻辑，支持动态数据库配置获取。
 """
+import os
 import aiohttp
 from loguru import logger
 from typing import Any
@@ -18,11 +19,17 @@ class SQLClient:
         self.executor_config = get_executor_config()
         self.service_host = self.executor_config.service_host
         self.service_port = self.executor_config.service_port
-        
+
         # 延迟导入以避免循环依赖
         from services.kb import KBService
         # 初始化元数据仓库（用于取连接字符串）
         self.kb_service = KBService()
+
+    @staticmethod
+    def _auth_headers() -> dict[str, str]:
+        """获取内部服务认证请求头。"""
+        token = os.getenv("KBOT_INTERNAL_SERVICE_TOKEN", "kbot-internal-dev-token-2026")
+        return {"X-KBot-Internal-Token": token}
 
     async def execute_sql(
         self, 
@@ -68,8 +75,8 @@ class SQLClient:
         try:
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 logger.info(f"发起 SQL 执行请求 | 目标库: {kb_id} | 类型: {db_config['db_type']}")
-                
-                async with session.post(url, json=payload) as response:
+
+                async with session.post(url, json=payload, headers=self._auth_headers()) as response:
                     if response.status != 200:
                         err_text = await response.text()
                         logger.error(f"执行服务响应错误: {response.status} | {err_text}")

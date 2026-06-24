@@ -23,6 +23,8 @@ class OpsDBExecutor:
 
         # 从环境变量提取用于微服务互信的通信令牌
         self.internal_token = os.getenv("INTERNAL_OPS_TOKEN", "SECRET_TOKEN_FOR_PROMETHEUS_2026")
+        # 统一内部服务认证令牌 (与 microservices/common/security.py 保持一致)
+        self.unified_internal_token = os.getenv("KBOT_INTERNAL_SERVICE_TOKEN", "kbot-internal-dev-token-2026")
 
         # 延迟导入运维专用的 CMDB 元数据服务
         from services.basic import OpsDBInstanceService
@@ -84,6 +86,7 @@ class OpsDBExecutor:
         url = f"http://{self.service_host}:{self.service_port}/api/v1/ops/execute"
 
         headers = {
+            "X-KBot-Internal-Token": self.unified_internal_token,
             "X-KBot-Internal-Ops-Token": self.internal_token,
             "Content-Type": "application/json"
         }

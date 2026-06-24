@@ -1,3 +1,4 @@
+import os
 import aiohttp
 import re
 import json
@@ -31,6 +32,16 @@ class AIModelClient():
         self.dsocr_config = get_dsocr_config()  # 获取 DeepSeek OCR 模型配置
         self.prompt_config = get_prompt_config()  # 获取 Prompt 配置
 
+    @staticmethod
+    def _auth_headers() -> dict[str, str]:
+        """获取内部服务认证请求头。
+
+        Returns:
+            包含 X-KBot-Internal-Token 的请求头字典。
+        """
+        token = os.getenv("KBOT_INTERNAL_SERVICE_TOKEN", "kbot-internal-dev-token-2026")
+        return {"X-KBot-Internal-Token": token}
+
     async def call_embedding_model(self,
                                 model_name: str,
                                 texts: list[str],
@@ -57,7 +68,7 @@ class AIModelClient():
         total = self.embedding_config.health_check_timeout if use_health_check_timeout else self.embedding_config.timeout
         timeout = aiohttp.ClientTimeout(total=total)
         url = f"http://{service_host}:{service_port}/v1/embeddings"
-        headers = {"Content-Type": "application/json"}
+        headers = {**self._auth_headers(), "Content-Type": "application/json"}
         payload = {
             "model_name": model_name,
             "texts": texts,
@@ -157,7 +168,7 @@ class AIModelClient():
         total = self.embedding_config.timeout
         timeout = aiohttp.ClientTimeout(total=total)
         url = f"http://{service_host}:{service_port}/v1/similarity"
-        headers = {"Content-Type": "application/json"}
+        headers = {**self._auth_headers(), "Content-Type": "application/json"}
         payload = {
             "model_name": model_name,
             "text1": text1,
@@ -210,7 +221,7 @@ class AIModelClient():
         total = self.reranker_config.health_check_timeout if use_health_check_timeout else self.reranker_config.timeout
         timeout = aiohttp.ClientTimeout(total=total)
         url = f"http://{service_host}:{service_port}/v1/rerank"
-        headers = {"Content-Type": "application/json"}
+        headers = {**self._auth_headers(), "Content-Type": "application/json"}
         payload = {
             "model_name": model_name,
             "query": query,
@@ -263,7 +274,7 @@ class AIModelClient():
         total = self.llm_config.health_check_timeout if use_health_check_timeout else self.llm_config.timeout
         timeout = aiohttp.ClientTimeout(total=total)
         url = f"http://{service_host}:{service_port}/v1/chat/completions"
-        headers = {"Content-Type": "application/json"}
+        headers = {**self._auth_headers(), "Content-Type": "application/json"}
 
         # 构建请求体
         payload = {
@@ -354,7 +365,7 @@ class AIModelClient():
             timeout = aiohttp.ClientTimeout(total=total)
             
             url = f"http://{service_host}:{service_port}/v1/inference"
-            headers = {"Content-Type": "application/json"}
+            headers = {**self._auth_headers(), "Content-Type": "application/json"}
 
             # 2. 图片编码（Base64）
             try:
@@ -549,6 +560,7 @@ class AIModelClient():
         会强制注入 JSON-only 指令以防止 LLM 返回非 JSON 内容。
         """
         full_text = ""
+        raw_lines_log: list[str] = []  # 记录前几条原始响应行用于调试
         kwargs.pop('temperature', None)
 
         # 防御：在 prompt 中强制注入 JSON-only 指令，防止 LLM 忽略格式要求
@@ -566,11 +578,15 @@ class AIModelClient():
                 line = chunk.strip()
                 if not line or line == "data: [DONE]":
                     continue
-                
+
+                # 记录前 3 条非空行用于调试
+                if len(raw_lines_log) < 3:
+                    raw_lines_log.append(line[:200])
+
                 # 处理可能存在的 data: 前缀（标准 SSE）
                 if line.startswith("data: "):
                     line = line[6:]
-                
+
                 try:
                     data = json.loads(line)
                     # 适配 OpenAI 格式的响应体
@@ -586,13 +602,26 @@ class AIModelClient():
                     full_text += line
 
             if not full_text:
+                logger.error(
+                    f"LLM 返回了空响应。model={model_name}, "
+                    f"raw_lines_sample={raw_lines_log}"
+                )
                 raise ValueError("LLM returned an empty response")
+
+            # 输出原始响应用于调试
+            logger.debug(f"LLM raw response ({len(full_text)} chars): {full_text[:500]}...")
 
             # 鲁棒性 JSON 提取逻辑
             return self._extract_json_from_text(full_text)
 
         except Exception as e:
-            logger.error(f"Failed to get JSON response from LLM: {e}")
+            # 打印 raw response 以便排查
+            logger.error(
+                f"无法从 LLM 提取 JSON 响应，错误: {e}\n"
+                f"model={model_name}, full_text_len={len(full_text)}, "
+                f"raw_lines_sample={raw_lines_log}, "
+                f"full_text_preview={full_text[:500] if full_text else '(空)'}"
+            )
             raise
 
     @staticmethod
@@ -673,14 +702,10 @@ class AIModelClient():
                 except json.JSONDecodeError:
                     pass
 
-        # 5. 失败：输出完整内容到日志以便排查
-        logger.error(
-            f"JSON extraction failed. Full LLM response ({len(text)} chars):\n{text}"
-        )
+        # 5. 失败：raw text 已在上层 get_llm_json 中记录
         raise ValueError(
             f"Could not parse valid JSON from LLM response. "
-            f"(len={len(text)}, braces={'{'}:'{text.count('{')}'{'}'}:'{text.count('}')}'{'}'}). "
-            f"Full response logged above."
+            f"(len={len(text)}, braces={text.count('{')}/{text.count('}')})."
         )
 
     @staticmethod

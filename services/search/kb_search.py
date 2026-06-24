@@ -95,11 +95,11 @@ class TxtBaseSearch:
 
         async def expand_single_chunk(res: TxtBaseSearchResult):
             # 🔍 诊断日志：记录进入时的 chunk 关键信息
-            logger.debug(
-                f"[EnhanceWindow] 开始处理 chunk: chunk_id={res.chunk_id!r}, "
-                f"file_id={res.file_id!r}, chunk_type={res.chunk_type!r}, "
-                f"chunk_num={res.chunk_num}, kb_id={getattr(res, 'kb_id', 'N/A')!r}"
-            )
+            # logger.debug(
+            #     f"[EnhanceWindow] 开始处理 chunk: chunk_id={res.chunk_id!r}, "
+            #     f"file_id={res.file_id!r}, chunk_type={res.chunk_type!r}, "
+            #     f"chunk_num={res.chunk_num}, kb_id={getattr(res, 'kb_id', 'N/A')!r}"
+            # )
             try:
                 async with self.oracle_session as session:
                     repo = TxtChunkRepository(session)

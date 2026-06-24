@@ -85,6 +85,7 @@ declare -A services=(
     ["VLM"]="kbot_app_vlm.py"
     ["Parser"]="kbot_app_parser.py"
     ["MCP"]="kbot_mcp_server.py"
+    ["DB Executor"]="kbot_db_executor.py"
 )
 
 # Iterate and start all microservices

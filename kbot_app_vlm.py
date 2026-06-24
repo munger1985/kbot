@@ -149,6 +149,9 @@ app.add_middleware(
 # Request logging middleware
 app.middleware("http")(log_requests)
 
+# Internal service authentication middleware
+from microservices.common.security import create_internal_auth_middleware
+app.middleware("http")(create_internal_auth_middleware())
 
 def get_vlm_service() -> VLMService:
     """Get VLM service instance dependency."""
