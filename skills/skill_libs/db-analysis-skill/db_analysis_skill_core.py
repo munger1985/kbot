@@ -58,7 +58,6 @@ class DBAnalysisSkill(BaseSkill):
                 "type": PacketType.WARNING,
                 "content": "⚠️ 故障诊断控制面提示: 由于前置探针未采集到任何监控时序数据或库表诊断数据, 诊断大脑拒绝进行盲目猜测。请检查 Prometheus 连接和数据库连接是否正常。"
             }
-            yield {"type": PacketType.DONE, "content": "技能执行完成, 无更多数据可展示。"}
             return
 
         # 构建融合证据链

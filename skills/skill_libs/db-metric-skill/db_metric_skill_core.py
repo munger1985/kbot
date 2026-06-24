@@ -125,7 +125,6 @@ class DBMetricSkill(BaseSkill):
                         },
                     },
                 }
-                yield {"type": PacketType.DONE, "content": "Prometheus 指标查询完成。"}
                 return
 
             except ValueError as e:
@@ -182,7 +181,6 @@ class DBMetricSkill(BaseSkill):
                     },
                 },
             }
-            yield {"type": PacketType.DONE, "content": f"专家诊断工具 [{tool_name}] 执行完毕。"}
 
         except Exception as sql_err:
             logger.error(f"专家诊断工具执行崩溃: {str(sql_err)}")
