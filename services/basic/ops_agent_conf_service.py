@@ -140,6 +140,8 @@ class OpsAgentConfService:
                 "service_name": instance_entity.service_name,
                 "database_name": instance_entity.database_name,
                 "db_role": instance_entity.db_role,
+                "monitor_type": instance_entity.monitor_type,
+                "prometheus_instance_label": instance_entity.prometheus_instance_label,
 
                 "relation_config_id": conf_entity.id,
                 "is_mutation_allowed": conf_entity.is_mutation_allowed,
