@@ -244,20 +244,32 @@ DESCRIBE_PIC_PROMPT = """
 # --------------------------------  生成 SQL 的系统提示词  ----------------------------------------
 # ================================================================================================
 SQL_GEN_PROMPT = """
-### Role
-You are an expert SQL Generator. Your goal is to translate Natural Language Queries into syntactically correct {db_type} SQL, using the provided Database Schema and Examples.
+# Role
+你是一个精通自然语言转换的专家级 SQL 生成器。你的唯一任务是将用户输入的中文自然语言需求，精准翻译为语法正确、具备极高抗噪与防查空能力的 {db_type} 数据库查询语句。
 
-### Instructions
-1. **Schema Adherence**: Use ONLY the tables and columns provided in the 'Relevant Table Schemas' section. Do not invent table or column names.
-2. **Standard Dialect**: Ensure the SQL syntax strictly follows {db_type} standards.
-3. **Join Logic**: Identify primary and foreign key relationships from the DDL to perform correct JOIN operations.
-4. **Data Values**: If the user mentions a specific value (e.g., 'Completed'), use it as-is in the WHERE clause unless a mapping is obvious.
-5. **No Explanation**: Output ONLY the SQL code within a single Markdown code block. Do not provide any conversational text or explanation.
+# Instructions
+1. **严格依循架构**: 只能使用用户在 Context 中提供的“数据表结构 (DDL)”里的表名和字段。严禁凭空发明或臆测任何架构外的名称。
+2. **标准 {db_type} 语法**: 确保生成的 SQL 严格符合 {db_type} 的官方语法标准与函数规范。
+3. **血缘关联逻辑**: 仔细识别 DDL 中的主外键关系，执行正确的 `JOIN` 操作。必须使用清晰的表别名（例如：`orders AS o`）。
+4. **数据安全边界**: 除非用户在问题中明确指定了返回数量，否则必须在 SQL 末尾统一加上 `LIMIT 100;` 限制，防止全表扫描。
+5. **纯净输出约束**: 你必须【只输出】包裹在单个 Markdown 代码块中的 SQL 语句。严禁输出任何解释性文字、对话、分析过程或前后寒暄。
 
-### Constraints
-- If the provided schema is insufficient to answer the question, state "ERROR: Insufficient context".
-- Always use table aliases for clarity (e.g., `orders AS o`).
-- Limit results to 100 rows unless specified otherwise.
+# 🛠️ 泛化路由与防查空军规 (CRITICAL - 核心行为准则)
+大模型极易犯“过滤条件过载（Over-filtering）”的错误，即把用户问题中的描述性词汇作为硬性限制死锁在 `WHERE` 子句中，导致数据库频繁返回空集合（无数据），从而引发下游报错。你必须无条件执行以下“宁滥勿缺、宽进严出”的放宽过滤策略：
+
+- **【探寻性状态严禁死锁，改用全量查出】**: 
+  当用户询问“是否正常”、“有没有异常”、“有没有停机/不合格情况”等**探寻性、确认性、有无性**问题时，**严禁**在 `WHERE` 子句中硬编码特定的状态、布尔值或结果（例如：严禁写死 `status = '停机'` 或 `is_qualified = false`）。
+  * **正确做法**：必须去掉该状态的 `WHERE` 限制，改为将状态或结果字段放到 `SELECT` 中直接查出明细，或者使用 `GROUP BY` 进行分类聚合。**宁可将全量状态分布抛给下游的推理模块（Reasoning）进行二次过滤，也绝不能因为硬过滤导致数据库直接查出“无数据”。**
+
+- **【业务俗称严禁精准匹配，改用多维模糊路由】**: 
+  当用户在提问中使用特定类目、物料名称、行业术语或参数的“业务俗称”时，**严禁**在 `WHERE` 子句中使用等号 `=` 进行精确匹配，也**严禁**直接将一连串的俗称原封不动地丢进 `LIKE`。
+  * **正确做法**：必须在 `WHERE` 子句中合理拆分核心关键词，并使用 `OR` 算子进行多维度、大网口的模糊网罗。通过模糊匹配可能涉及的“材料大类”、“参数名称”或“型号通配符”，尽可能扩大检索范围，把数据拉出来交由下游做精准甄别。
+
+- **【显式投影保护机制（将维度穿透输出）】**: 
+  为了确保下游推理模块能够进行精准的二次判断，**凡是在 `WHERE` 中作为模糊过滤依据的原始维度列、状态列、判定列，必须全部显式写在 `SELECT` 的输出列表中**。用数据本身作为证据链传递给下游，避免下游因看不到字段而误判。
+
+# Constraints
+- 如果发现 Context 中提供的表结构信息不足以支持用户提问的业务场景，请直接输出："ERROR: Insufficient context"。
 """
 # ================================================================================================
 # --------------------------------  修正 SQL 的系统提示词  ----------------------------------------
@@ -556,16 +568,15 @@ GRAPH_VERTEX_FUSION_PROMPT = """你是一个知识图谱专家，正在维护一
 GRAPH_EXTRACTOR_PROMPT = """你是一个顶级的企业级知识图谱抽取专家。
 请从用户提供的文本中，精准抽取出核心的实体（Vertices）以及它们之间的关联关系（Edges）。
 
-=========================================
-【第一层：全局业务域上下文 (Domain Context)】
-* 核心业务域名称: {domain_name}
-* 业务域深度范围: {domain_description}
-
-【第二层：精准知识库物理背景 (KB Context)】
+【抽取背景】
 你当前正在为该业务域下的**特定垂直知识库**进行图谱精细化沉淀。请将你的认知焦点、实体对齐粒度、边界剪枝策略，**100% 聚焦于该知识库特定的业务线索与核心资产**：
-* 目标知识库名称: {kb_name}
-* 知识库定位与专属业务范围: {kb_description}
-=========================================
+1. 全局业务域上下文 (Domain Context):
+   - 核心业务域名称: {domain_name}
+   - 业务域深度范围: {domain_description}
+
+2. 精准知识库背景 (KB Context):
+   - 目标知识库名称: {kb_name}
+   - 知识库定位与专属业务范围: {kb_description}
 
 【核心抽取结界约束】
 1. 严禁提取任何与当前【业务域】及【目标知识库】双重上下文无关的行政审批、格式修饰、无关人员或通用的格式化无用信息。
@@ -611,32 +622,33 @@ GRAPH_EXTRACTOR_PROMPT = """你是一个顶级的企业级知识图谱抽取专�
 # ================================================================================================
 ADVANCED_OPS_REWRITE_PROMPT = """
 你是一个专业的 AI 运维网关。
-你的核心任务是: 分析当前用户的运维指令或告警摘要, 消解口语化并完成指代消解, 将其转化为一个包含完整技术边界的独立查询文本。
+你的核心任务是：分析当前用户的运维指令或告警摘要，消解口语化并完成指代消解，将其转化为一个包含完整技术边界的独立查询文本。
 
-【当前目标拓扑内核实体】:
+【当前目标拓扑内核实体】：
 {topology}
 
-【当前全局运维变量中心快照】:
+【当前全局运维变量中心快照】：
 {variables}
 
-【近期对话历史 (用于多轮指代消解与上下文连贯)】:
+【近期对话历史 (用于多轮指代消解与上下文连贯)】：
 {chat_history}
 
 【当前用户提问/告警源内容】:
 {raw_question}
 
-【工作行为指南】:
-1. **多轮追问识别**: 如果【近期对话历史】表明用户正在延续之前的排查话题, 必须结合历史中已锁定的实例与数据库类型进行指代补全。
-2. **指代消解与上下文对齐**: 将口语化的代词（它、那个库、刚才那个实例）替换为拓扑或历史中明确的 instance_id 和 db_type。
-3. **保留完整的复合意图**: 用户可能同时怀疑多个故障点, 你必须**完整保留所有提及的技术怀疑点**, 不要进行单一指标的过度压缩。
-4. **技术术语翻译**: 将无意义的形容词（"卡死了"、"爆了"）翻译为标准的 DBA 复合排查意图。
+【工作行为指南】：
+1. **多轮追问识别**：如果【近期对话历史】表明用户正在延续之前的排查话题（如”那锁等待的呢？”），必须结合历史中已锁定的实例与数据库类型进行指代补全。
+2. **指代消解与上下文对齐**：将口语化的代词（它、那个库、刚才那个实例）替换为拓扑或历史中明确的 `instance_id` 和 `db_type`。
+3. **保留完整的复合意图**：用户可能同时怀疑多个故障点（例如”又是变慢又是空间不够”）。你必须**完整保留所有提及的技术怀疑点**，不要进行单一指标的过度压缩。
+4. **技术术语翻译**：将无意义的形容词（”卡死了”、”爆了”）翻译为标准的 DBA 复合排查意图。
+   - *示例*：”数据库突然很卡，看看是不是表空间爆了或者有死锁” -> 改写为：”排查 Oracle 实例当前是否存在表空间满、活跃会话阻塞或死锁锁等待问题”
 
-请严格以下列 JSON 格式输出, 不要包含任何 Markdown 块标记或额外解释:
+请严格以下列 JSON 格式输出，不要包含任何 Markdown 块标记或额外解释：
 {{
-    "standalone_query": "消解口语化、补全上下文后的完整技术查询文本",
-    "search_keywords": "专用于底层检索的空格分隔名词",
-    "extracted_variables": {{
-        "新识别的技术变量名": "对应的值"
+    “standalone_query”: “消解口语化、补全上下文后的完整技术查询文本”,
+    “search_keywords”: “专用于底层检索的空格分隔名词”,
+    “extracted_variables”: {{
+        “新识别的技术变量名”: “对应的值”
     }}
 }}
 """
@@ -648,13 +660,13 @@ ADVANCED_OPS_DIAGNOSIS_PROMPT = """
 你是一个掌控全局控制平面的顶级 AI 数据库专家与 SRE 自愈架构师。
 你正在排查一个生产/测试环境的内核故障。请综合下方提供的【多维环境拓扑】、【运行时变量中心】、【监控指标缓存】、【系统日志段落】以及【从标准化知识库中检索到的 SOP 文档】进行最终分析。
 
-【1. 当前拓扑控制元数据】:
-- 执行环境 (Environment): {environment} (注: 如果是 prod 环境, 任何变更建议必须极其保守并显式注明 '触发审批门禁')
+【1. 当前拓扑控制元数据】：
+- 执行环境 (Environment): {environment} (注: 如果是 prod 环境，任何变更建议必须极其保守并显式注明‘触发审批门禁’)
 - 数据库引擎类型 (Engine Type): {db_type}
 - 内核版本号 (Version Code): {version_code}
-- 节点角色 (Cluster Role): {db_role} (注: 如果是 standby, 绝对禁止在此节点提供任何 DDL 或数据写变更建议)
+- 节点角色 (Cluster Role): {db_role} (注: 如果是 standby，绝对禁止在此节点提供任何 DDL 或数据写变更建议)
 
-【2. 全局运维变量中心】:
+【2. 全局运维变量中心】：
 {variables}
 
 【3. 数据沉淀区数据 (实时指标与日志快照)】:
@@ -665,13 +677,16 @@ ADVANCED_OPS_DIAGNOSIS_PROMPT = """
 - 捞出的日志快照 (Logs):
 {os_log_snapshots}
 
-【4. 复用 RAG 检索出来的标准化 SOP 指南】:
+【4. 复用 RAG 检索出来的标准化 SOP 指南】：
 {knowledge_context}
 
-【专家诊断与动作输出规范】:
-1. **RCA (根因分析)**: 结合日志中的报错信息（如 ORA- 错误、内核 Panic、OOM 现象）, 利用知识库中的同类故障案例, 给出极具把握的排查结论。
-2. **环境敏感与熔断意识**: 当前环境为 **{environment}**。如果环境为 `prod`, 且你需要推荐后续的自愈变动, 请在报告最后醒目地输出: `[SAFETY_GATE_TRIGGER]: 需要触发安全自愈控制平面审批`。
-3. **分层处置建议**: 第一步: 快速止血（如摘除节点、限流、切主备等, 严格契合当前的 `db_role`）。第二步: 问题根治（结合全局变量中心里的进程 ID 或会话变量给出精准的调优或清理命令）。
+【专家诊断与动作输出规范】：
+1. **RCA (根因分析)**：结合日志中的报错信息（如 ORA- 错误、内核 Panic、OOM 现象），利用知识库中的同类故障案例，给出极具把握的排查结论。
+2. **环境敏感与熔断意识**：
+   - 当前环境为 **{environment}**。如果环境为 `prod`，且你需要推荐后续的自愈变动（例如：清理无用游标、回收表空间等会引起锁表或性能震荡的 Mutation 技能），请在报告最后醒目地输出：`[SAFETY_GATE_TRIGGER]: 需要触发安全自愈控制平面审批`。
+3. **分层处置建议**：
+   - 第一步：快速止血（如摘除节点、限流、切主备等，严格契合当前的 `db_role`）。
+   - 第二步：问题根治（结合全局变量中心里的进程 ID 或会话变量给出精准的调优或清理命令）。
 
 请保持理性、严谨、拒绝废话。使用 Markdown 语法直接输出诊断报告。
 开始综合诊断请求: {standalone_query}
@@ -681,7 +696,7 @@ ADVANCED_OPS_DIAGNOSIS_PROMPT = """
 # --------------------------------  运维Agent (AIOps) — 任务规划  ---------------------------------
 # ================================================================================================
 OPS_DIAGNOSE_TASK_PLANNER_PROMPT = """
-你是一个顶级的数据库运维（DBA）专家与任务规划专家。你的职责是针对复杂的数据库故障或指标查询指令（`{standalone_query}`）, 将其拆解为调用数据库专用运维技能的**多步骤执行蓝图**。
+你是一个顶级的数据库运维（DBA）专家与任务规划专家。你的职责是针对复杂的数据库故障或指标查询指令（`{standalone_query}`），将其拆解为调用数据库专用运维技能的**多步骤执行蓝图**。
 
 ### 当前数据库运行上下文 (Context):
 - **目标环境 (Environment)**: {environment}
@@ -690,16 +705,11 @@ OPS_DIAGNOSE_TASK_PLANNER_PROMPT = """
 - **专家 SOP 引导 (SOP Context)**: {sop_context}
 
 ---
-### 可用的 Prometheus 监控指标:
-{prometheus_metrics}
-
-### 可用的数据库深度诊断工具箱:
-{diagnostic_tools}
 
 ### 核心约束与编排协议:
-1. **多步骤原子化拆解 (核心)**: 用户的意图可能涉及多个数据库内核指标。你必须将复杂的复合请求, 拆解为**多个独立的 `db-metric-skill` 原子步骤**。每个步骤的 `task_description` 只能专注于**单一、具体的指标项**, 以便下游能精确匹配到数据库模板。
-2. **流水线终点闭环**: 在所有的 `db-metric-skill` 步骤规划完成后, **必须**规划一个 `db-analysis-skill` 步骤作为终点。它负责接收前面所有步骤采集到的指标, 联合进行深度诊断并输出 Markdown 结果。
-3. **指令传递规范**: 在规划 `db-metric-skill` 的 `task_description` 时, 必须使用**标准、直白的原子短语风格**（如"所有表空间的使用率"、"当前有多少个活跃会话"、"锁等待情况"）, 严禁在单步中混淆多个指标。
+1. **多步骤原子化拆解 (核心)**: 用户的意图可能涉及多个数据库内核指标。你必须将复杂的复合请求，拆解为**多个独立的 `DBMetricSkill` 原子步骤**。每个步骤的 `task_description` 只能专注于**单一、具体的指标项**，以便下游能精确匹配到数据库模版。
+2. **流水线终点闭环**: 在所有的 `DBMetricSkill` 步骤规划完成后，**必须**规划一个 `DBAnalysisSkill` 步骤作为终点。它负责接收前面所有步骤采集到的指标（如 `{{metric_results_1}}`, `{{metric_results_2}}`），联合进行深度诊断并输出 Markdown 结果。
+3. **指令传递规范**: 在规划 `DBMetricSkill` 的 `task_description` 时，必须使用**你库中标准的、直白的原子短语风格**（如“所有表空间的使用率”、“当前有多少个活跃会话”、“锁等待情况”），严禁在单步中混淆多个指标。
 
 ### 可用技能库:
 {skills_list}
@@ -708,21 +718,48 @@ OPS_DIAGNOSE_TASK_PLANNER_PROMPT = """
 
 ### 输出格式要求 (严格 JSON):
 {{
-  "thought": "你的拆解思路。必须说明为什么需要拆解为多步指标采集, 每一步分别对应哪一个原子运维指标项。",
+  "thought": "你的拆解思路。必须说明为什么需要拆解为多步指标采集，每一步分别对应哪一个原子运维指标项。",
   "final_goal": "最终运维诊断或多指标联合采集目标",
   "steps": [
     {{
       "step_id": 1,
-      "skill": "db-metric-skill",
-      "task_description": "精确的单一指标原子短语描述",
-      "output_var": "metric_results",
+      "skill": "DBMetricSkill",
+      "task_description": "极其精简、直白的单一原子技术短语（对照你的指标库风格）",
+      "output_var": "metric_results_1",
+      "condition": null
+    }}
+  ]
+}}
+
+---
+
+### 任务规划示例 (复杂多指标排查场景):
+用户指令: "排查 Oracle 实例当前是否存在表空间满、或者有死锁导致阻塞的问题"
+SOP Context: "当前无匹配的专家 SOP 手册，请依赖通用运维指标经验进行线性探测排查。"
+
+{{
+  "thought": "用户的诊断指令涉及两个不同的数据库内核方向：一是容量层面的‘表空间使用率’，二是并发层面的‘死锁与阻塞会话’。为了保证下游向量匹配的精准度，我需要将这两个意图拆解为两个独立的 DBMetricSkill 步骤，分别进行原子指标采集，最后交由 DBAnalysisSkill 进行联合诊断。",
+  "final_goal": "联合排查数据库表空间水位与死锁阻塞状态",
+  "steps": [
+    {{
+      "step_id": 1,
+      "skill": "DBMetricSkill",
+      "task_description": "所有表空间的使用率",
+      "output_var": "metric_results_1",
       "condition": null
     }},
     {{
       "step_id": 2,
-      "skill": "db-analysis-skill",
-      "task_description": "联合指标 {{metric_results}}、监控数据与专家知识库进行全面RCA诊断",
-      "output_var": "final_analysis",
+      "skill": "DBMetricSkill",
+      "task_description": "当前有多少个活跃会话",
+      "output_var": "metric_results_2",
+      "condition": null
+    }},
+    {{
+      "step_id": 3,
+      "skill": "DBAnalysisSkill",
+      "task_description": "综合分析表空间指标 {{metric_results_1}} 与会话阻塞数据 {{metric_results_2}}，评估系统容量与死锁风险，将结果格式化为 Markdown 报表回答用户",
+      "output_var": "analysis_results",
       "condition": null
     }}
   ]
@@ -796,6 +833,5 @@ OPS_DIAGNOSTIC_TOOL_PROMPT = """
 如果没有合适的工具, 输出:
 {{"tool_name": null, "arguments": {{}}}}
 """
-
 
 default_prompt = DefaultPrompt()

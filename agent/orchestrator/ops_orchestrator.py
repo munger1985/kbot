@@ -1,6 +1,7 @@
 # agent/orchestrator/ops_orchestrator.py
 
 import uuid
+import json
 from loguru import logger
 from datetime import datetime, timezone
 from typing import Any, AsyncGenerator, cast
@@ -214,6 +215,10 @@ class OpsOrchestrator:
                 continue
 
             try:
+                # 记录步骤执行前的数据快照，用于 output_var 回写
+                _monitor_snapshot = len(ctx.get("monitor_results", []))
+                _metric_snapshot = len(ctx.get("metric_results", []))
+
                 async for packet in runtime.execute_skill(skill_instance, exec_info):
                     p_type = packet.get("type")
                     content = packet.get("content")
@@ -230,16 +235,6 @@ class OpsOrchestrator:
                                 "data": content["data"],
                                 "meta": content.get("meta", {})
                             })
-                            logger.debug(
-                                f"[Orchestrator] 捕获 MONITOR_RESULTS #{len(ctx['monitor_results'])} "
-                                f"| metric={content['meta'].get('metric_code')} "
-                                f"| data_len={len(content['data'])}"
-                            )
-                        else:
-                            logger.warning(
-                                f"[Orchestrator] MONITOR_RESULTS 格式异常, 未捕获 | "
-                                f"type={type(content)}, keys={list(content.keys()) if isinstance(content, dict) else 'N/A'}"
-                            )
                     elif p_type == PacketType.METRIC_RESULTS:
                         if isinstance(content, dict) and "data" in content:
                             ctx["metric_results"].append({
@@ -248,20 +243,22 @@ class OpsOrchestrator:
                                 "data": content["data"],
                                 "meta": content.get("meta", {})
                             })
-                            logger.debug(
-                                f"[Orchestrator] 捕获 METRIC_RESULTS #{len(ctx['metric_results'])} "
-                                f"| tool={content['meta'].get('tool_name')}"
-                            )
-                        else:
-                            logger.warning(
-                                f"[Orchestrator] METRIC_RESULTS 格式异常, 未捕获 | "
-                                f"type={type(content)}, keys={list(content.keys()) if isinstance(content, dict) else 'N/A'}"
-                            )
 
                     if p_type in DISPLAY_PACKET_TYPES:
                         yield packet
 
                 exec_info.update({"status": "success"})
+                # 将本步骤新采集的数据回写到 variables，使后续步骤的 {{output_var}} 可被解析
+                output_var = exec_info.get("output_var")
+                if output_var:
+                    new_monitor = ctx.get("monitor_results", [])[_monitor_snapshot:]
+                    new_metric = ctx.get("metric_results", [])[_metric_snapshot:]
+                    # 合并本步骤产生的所有数据
+                    step_data = {
+                        "monitor": new_monitor,
+                        "metric": new_metric,
+                    }
+                    ctx["variables"][output_var] = json.dumps(step_data, ensure_ascii=False, default=str)
                 ctx["execution_history"].append(cast(Any, exec_info))
                 ctx["current_execution"] = None
 

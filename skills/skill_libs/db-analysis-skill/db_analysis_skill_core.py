@@ -50,15 +50,6 @@ class DBAnalysisSkill(BaseSkill):
             f"[{trace_id}] DBAnalysisSkill v2 诊断大脑激活 | 实例: {instance_id} | 引擎: {db_type} "
             f"| 监控数据: {len(monitor_results)} 条 | 诊断数据: {len(metric_results)} 条 | 手册: {len(doc_results)} 篇"
         )
-        # 诊断日志：打印 monitor_results 摘要
-        for i, mr in enumerate(monitor_results):
-            meta = mr.get("meta", {}) if isinstance(mr, dict) else {}
-            data = mr.get("data", []) if isinstance(mr, dict) else []
-            logger.debug(
-                f"[{trace_id}] monitor_results[{i}]: step={mr.get('step_id') if isinstance(mr, dict) else '?'}, "
-                f"metric={meta.get('metric_code', meta.get('tool_name', '?'))}, "
-                f"source={meta.get('source', '?')}, data_len={len(data)}"
-            )
 
         # 拦截决策: 如果两路探针都没捞到线索, 拒绝盲目猜测
         if not metric_results and not monitor_results:
@@ -74,19 +65,29 @@ class DBAnalysisSkill(BaseSkill):
             [f"- 《{d.get('file_name', '未命名文档')}》: {d.get('text_content', '')}" for d in doc_results]
         ) if doc_results else "当前无匹配的专家 SOP 手册, 请依赖通用运维指标经验进行分析。"
 
-        # 清洗 Prometheus 原始数据为 LLM 可读的简化格式
+        # 清洗 Prometheus 原始数据为 LLM 可读的逐行明细
         monitor_context_parts = []
         for mr in monitor_results if isinstance(monitor_results, list) else []:
             task = mr.get("task_description", "?")
             meta = mr.get("meta", {})
             metric_code = meta.get("metric_code", "?")
-            summary = meta.get("summary", "")
             raw_data = mr.get("data", [])
-            # 只提取 value，去掉 labels/timestamp 等元数据
-            values = [d.get("value", "N/A") for d in (raw_data if isinstance(raw_data, list) else [])]
-            monitor_context_parts.append(
-                f"- [{metric_code}] {task}: {summary} | 采样值: {', '.join(str(v) for v in values[:5])}"
-            )
+            if isinstance(raw_data, list) and len(raw_data) > 0:
+                lines = [f"  - [{metric_code}] {task} (共 {len(raw_data)} 条):"]
+                for d in raw_data:
+                    labels = d.get("labels", {})
+                    # 提取有意义的标签（过滤掉 __ 开头的系统标签和固定的 instance/job）
+                    meaningful = {k: v for k, v in labels.items()
+                                  if not k.startswith("__") and k not in ("instance", "job", "database")}
+                    label_str = ", ".join(f"{k}={v}" for k, v in meaningful.items())
+                    val = d.get("value", "N/A")
+                    pct = f"{float(val) * 100:.2f}%" if isinstance(val, (int, float)) else str(val)
+                    lines.append(f"      {label_str}: {pct}")
+                monitor_context_parts.append("\n".join(lines))
+            else:
+                monitor_context_parts.append(
+                    f"  - [{metric_code}] {task}: 无数据"
+                )
         monitor_context = "\n".join(monitor_context_parts) if monitor_context_parts else "（无 Prometheus 监控数据）"
 
         # 清洗诊断数据
@@ -95,10 +96,26 @@ class DBAnalysisSkill(BaseSkill):
             task = mr.get("task_description", "?")
             meta = mr.get("meta", {})
             tool = meta.get("tool_name", meta.get("metric_code", "?"))
+            desc = meta.get("description", "")
             raw_data = mr.get("data", [])
-            metric_context_parts.append(
-                f"- [{tool}] {task}: raw_len={len(raw_data) if isinstance(raw_data, list) else 0}"
-            )
+            if isinstance(raw_data, list) and len(raw_data) > 0:
+                lines = [f"- [{tool}] {task}:"]
+                for d in raw_data[:20]:  # 最多展示 20 行
+                    if isinstance(d, dict):
+                        # 提取可读键值对
+                        readable = {k: v for k, v in d.items() if not k.startswith("__")}
+                        lines.append(f"    {readable}")
+                    else:
+                        lines.append(f"    {d}")
+                metric_context_parts.append("\n".join(lines))
+            elif isinstance(raw_data, dict):
+                metric_context_parts.append(
+                    f"- [{tool}] {task}: {desc}\n    {json.dumps(raw_data, ensure_ascii=False, default=str)}"
+                )
+            else:
+                metric_context_parts.append(
+                    f"- [{tool}] {task}: {desc} | 结果: {str(raw_data)[:500]}"
+                )
         metric_context = "\n".join(metric_context_parts) if metric_context_parts else "（无数据库诊断数据）"
 
         logger.debug(
