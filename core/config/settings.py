@@ -263,6 +263,9 @@ class PromptConfig(BaseModel):
     ops_rewrite: str = Field(default="SYSTEM/ops_rewrite", description="Ops query rewrite prompt template")
     ops_diagnosis: str = Field(default="SYSTEM/ops_diagnosis", description="Ops RCA diagnosis prompt template")
     ops_planner: str = Field(default="SYSTEM/ops_planner", description="Ops task planner prompt template")
+    ops_metric_supplement: str = Field(default="SYSTEM/ops_metric_supplement", description="Ops metric supplement decision prompt")
+    ops_metric_matching: str = Field(default="SYSTEM/ops_metric_matching", description="Ops metric matching prompt")
+    ops_diagnostic_tool: str = Field(default="SYSTEM/ops_diagnostic_tool", description="Ops diagnostic tool selection prompt")
 
 
 class Settings(BaseSettings):

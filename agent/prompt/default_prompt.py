@@ -26,6 +26,9 @@ class DefaultPrompt(string.Formatter):
             "SYSTEM/ops_rewrite": ADVANCED_OPS_REWRITE_PROMPT,
             "SYSTEM/ops_diagnosis": ADVANCED_OPS_DIAGNOSIS_PROMPT,
             "SYSTEM/ops_planner": OPS_DIAGNOSE_TASK_PLANNER_PROMPT,
+            "SYSTEM/ops_metric_supplement": OPS_METRIC_SUPPLEMENT_PROMPT,
+            "SYSTEM/ops_metric_matching": OPS_METRIC_MATCHING_PROMPT,
+            "SYSTEM/ops_diagnostic_tool": OPS_DIAGNOSTIC_TOOL_PROMPT,
         }
 
     def get_value(self, key: Any, args: Any, kwargs: Any) -> Any:
@@ -726,6 +729,72 @@ OPS_DIAGNOSE_TASK_PLANNER_PROMPT = """
 }}
 
 当前用户指令: {standalone_query}
+"""
+
+# ================================================================================================
+# --------------------------------  运维Agent (AIOps) — 指标补充决策  --------------------------------
+# ================================================================================================
+OPS_METRIC_SUPPLEMENT_PROMPT = """
+你是数据库运维专家。请判断以下 Prometheus 指标数据是否已经足够完成诊断任务，还是需要进一步查询数据库获取更细粒度的明细数据。
+
+【诊断任务】: {task_desc}
+【数据库类型】: {db_type}
+【Prometheus 指标】: {metric_code}
+【返回数据量】: {series_count} 条
+【数据样本（前3条，已去除系统标签）】:
+{sample_json}
+
+判断标准：
+- 如果数据包含了具体的明细信息（如表空间名+使用率、SQL_ID+耗时、等待事件分类+时间），且覆盖了诊断任务需要的维度 → 回答 NO（数据已足够）
+- 如果只有宏观聚合值（如总数、百分比），缺少明细（如具体是哪个SQL慢、哪个表空间快满了、哪个会话在等待什么），需要查数据库获取更细粒度的信息 → 回答 YES（需要补充）
+
+只回答 YES 或 NO。"""
+
+# ================================================================================================
+# --------------------------------  运维Agent (AIOps) — 指标匹配  ---------------------------------
+# ================================================================================================
+OPS_METRIC_MATCHING_PROMPT = """
+你是一个数据库运维专家。请根据用户的运维需求, 从以下 Prometheus 监控指标列表中选择最匹配的一个。
+
+【用户运维需求】:
+"{task_desc}"
+
+【可用的 Prometheus 监控指标】:
+{metrics_list}
+
+【任务】:
+1. 从上述指标中选择最匹配用户需求的一个, 输出其 metric_code
+2. 如果用户提到了具体参数（如表空间名、阈值等）, 请一并提取
+
+严格输出以下 JSON 格式（只输出 JSON, 不要包含 ```json 标记）:
+{{"metric_code": "选中的指标编码", "params": {{"ts_name": "USERS"}}}}
+
+如果没有任何指标能匹配用户需求, 输出:
+{{"metric_code": null, "params": {{}}}}
+"""
+
+# ================================================================================================
+# --------------------------------  运维Agent (AIOps) — 诊断工具匹配  ------------------------------
+# ================================================================================================
+OPS_DIAGNOSTIC_TOOL_PROMPT = """
+你是一个资深 DBA 根因诊断专家。当前需要深入数据库内部查证根因。
+你只能从下面的【可用诊断工具箱】中精确选择一个工具来执行。
+
+【诊断需求】:
+"{task_desc}"
+
+【数据库类型】: {db_type}
+
+{tools_manifest}
+
+【任务】:
+根据诊断需求, 从上述工具箱中选择最匹配的一个工具并提取参数。
+
+严格输出以下 JSON 格式（只输出 JSON）:
+{{"tool_name": "选中的工具方法名", "arguments": {{"tablespace_name": "USERS"}}}}
+
+如果没有合适的工具, 输出:
+{{"tool_name": null, "arguments": {{}}}}
 """
 
 

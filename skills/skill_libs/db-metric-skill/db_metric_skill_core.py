@@ -23,6 +23,8 @@ from skills import BaseSkill, SkillMeta, SkillDomain, SkillRunMode
 from agent.common.ops_context import OpsContextMemory
 from agent.common.diagnostic_tools import DatabaseDiagnosticTools
 from core.dictionary import PacketType
+from agent.prompt import default_prompt
+from core.config.settings import get_prompt_config
 from utils.clients import AIModelClient, OpsDBExecutor
 from utils.monitor import PrometheusClient, UnifiedMetricRegistry
 
@@ -146,6 +148,8 @@ class DBMetricSkill(BaseSkill):
                     except Exception:
                         pass
 
+                prometheus_has_data = len(monitor_result.series) > 0
+
                 summary_text = self._format_monitor_result(metric_code, monitor_result)
                 logger.debug(
                     f"[OpsTrack v2] 即将 yield MONITOR_RESULTS | "
@@ -163,7 +167,29 @@ class DBMetricSkill(BaseSkill):
                         },
                     },
                 }
-                return
+
+                # Prometheus 有数据时，让 LLM 判断是否需要补充 DB 诊断
+                if prometheus_has_data:
+                    should_query_db = await self._should_supplement_with_db(
+                        metric_code=metric_code,
+                        series=monitor_result.series,
+                        task_desc=task_desc,
+                        db_type=db_type,
+                        llm_model=llm_model,
+                    )
+                    if should_query_db:
+                        logger.info(
+                            f"[OpsTrack v2] LLM 判定 Prometheus 数据不足，"
+                            f"继续尝试专家 SQL 工具箱补充深度诊断..."
+                        )
+                        # 继续执行阶段二
+                    else:
+                        logger.info(
+                            f"[OpsTrack v2] LLM 判定 Prometheus 数据已足够，跳过数据库查询"
+                        )
+                        return
+                else:
+                    return  # Prometheus 无数据，不重复尝试诊断工具（阶段二会接管）
 
             except ValueError as e:
                 logger.warning(f"[OpsTrack v2] Prometheus 查询失败, 降级: {e}")
@@ -176,7 +202,7 @@ class DBMetricSkill(BaseSkill):
                 yield {"type": PacketType.WARNING, "content": f"⚠️ Prometheus 查询异常: {e}, 尝试专家 SQL 工具箱..."}
 
         # =====================================================================
-        # 阶段二: 专家 SQL 工具箱（兜底路径）
+        # 阶段二: 专家 SQL 工具箱（Prometheus 有数据时作为补充，无数据时作为兜底）
         # =====================================================================
         yield {"type": PacketType.THOUGHT, "content": "🔧 正在通过专家诊断工具箱进行深度数据库探查...\n"}
 
@@ -232,25 +258,11 @@ class DBMetricSkill(BaseSkill):
 
         metrics_prompt = registry.list_for_llm_prompt(monitor_type="prometheus", db_type=db_type)
 
-        prompt = f"""
-你是一个数据库运维专家。请根据用户的运维需求, 从以下 Prometheus 监控指标列表中选择最匹配的一个。
-
-【用户运维需求】:
-"{task_desc}"
-
-【可用的 Prometheus 监控指标】:
-{metrics_prompt}
-
-【任务】:
-1. 从上述指标中选择最匹配用户需求的一个, 输出其 metric_code
-2. 如果用户提到了具体参数（如表空间名、阈值等）, 请一并提取
-
-严格输出以下 JSON 格式（只输出 JSON, 不要包含 ```json 标记）:
-{{"metric_code": "选中的指标编码", "params": {{"ts_name": "USERS"}}}}
-
-如果没有任何指标能匹配用户需求, 输出:
-{{"metric_code": null, "params": {{}}}}
-"""
+        prompt = await default_prompt.generate(
+            get_prompt_config().ops_metric_matching,
+            task_desc=task_desc,
+            metrics_list=metrics_prompt,
+        )
         try:
             result = await self.model_client.get_llm_json(llm_model, prompt)
             code = result.get("metric_code")
@@ -278,26 +290,12 @@ class DBMetricSkill(BaseSkill):
         """让 LLM 从 16 个专家诊断工具中做单选题, 然后执行选中的工具。"""
         tools_manifest = DatabaseDiagnosticTools.get_tool_manifest()
 
-        prompt = f"""
-你是一个资深 DBA 根因诊断专家。当前需要深入数据库内部查证根因。
-你只能从下面的【可用诊断工具箱】中精确选择一个工具来执行。
-
-【诊断需求】:
-"{task_desc}"
-
-【数据库类型】: {db_type}
-
-{tools_manifest}
-
-【任务】:
-根据诊断需求, 从上述工具箱中选择最匹配的一个工具并提取参数。
-
-严格输出以下 JSON 格式（只输出 JSON）:
-{{"tool_name": "选中的工具方法名", "arguments": {{"tablespace_name": "USERS"}}}}
-
-如果没有合适的工具, 输出:
-{{"tool_name": null, "arguments": {{}}}}
-"""
+        prompt = await default_prompt.generate(
+            get_prompt_config().ops_diagnostic_tool,
+            task_desc=task_desc,
+            db_type=db_type,
+            tools_manifest=tools_manifest,
+        )
         try:
             llm_choice = await self.model_client.get_llm_json(llm_model, prompt)
             tool_name = llm_choice.get("tool_name")
@@ -325,6 +323,49 @@ class DBMetricSkill(BaseSkill):
         except Exception as e:
             logger.error(f"[OpsTrack v2] 诊断工具调用失败: {e}")
             raise
+
+    async def _should_supplement_with_db(
+        self,
+        metric_code: str,
+        series: list[dict],
+        task_desc: str,
+        db_type: str,
+        llm_model: str,
+    ) -> bool:
+        """让 LLM 判断 Prometheus 数据是否足够，还是需要补充数据库诊断"""
+        if len(series) == 0:
+            return True  # 没数据，肯定要查库
+
+        # 取前 3 条数据样本，去掉 __ 系统标签
+        sample = []
+        for s in series[:3]:
+            labels = {k: v for k, v in s.get("labels", {}).items()
+                      if not k.startswith("__")}
+            sample.append({
+                "value": s.get("value", "N/A"),
+                "labels": labels,
+            })
+
+        prompt = await default_prompt.generate(
+            get_prompt_config().ops_metric_supplement,
+            task_desc=task_desc,
+            db_type=db_type,
+            metric_code=metric_code,
+            series_count=len(series),
+            sample_json=json.dumps(sample, ensure_ascii=False, indent=2),
+        )
+
+        try:
+            resp = await self.model_client.get_llm_json(
+                model_name=llm_model,
+                prompt=prompt,
+                temperature=0,
+            )
+            decision = str(resp.get("decision", resp.get("answer", "YES"))).strip().upper()
+            return decision.startswith("Y")
+        except Exception:
+            # LLM 调用失败，保守处理：需要查库
+            return True
 
     def _format_monitor_result(self, metric_code: str, result) -> str:
         """将 Prometheus MetricResult 格式化为可读摘要"""
