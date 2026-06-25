@@ -153,7 +153,17 @@ async def ops_execute(request: OpsExecuteRequest) -> dict[str, Any]:
     专门承接自愈系统、DBARootAgent 的内核调用。
     支持 READ_ONLY 黄金指标库查询与 MUTATION 会话强杀等高危变更动作。
     """
-    logger.warning(f"[OpsService] 收到运维核心调用 | 实例: {request.instance_id} | 模式: {request.run_mode} | 环境: {request.environment}")
+    logger.warning(
+        f"[OpsService] 收到运维核心调用 | 实例: {request.instance_id} "
+        f"| 模式: {request.run_mode} | 环境: {request.environment}"
+    )
+    logger.debug(
+        f"[OpsService] connection_config: host={request.connection_config.get('host')}, "
+        f"port={request.connection_config.get('port')}, "
+        f"service_name={request.connection_config.get('service_name')}, "
+        f"dsn={request.connection_config.get('dsn')}, "
+        f"user={request.connection_config.get('user')}"
+    )
 
     # 1. 运维线专属的白名单语义审计（不使用业务层盲防注入的 SQLValidator）
     if request.run_mode == "mutation":
@@ -176,7 +186,10 @@ async def ops_execute(request: OpsExecuteRequest) -> dict[str, Any]:
 
     # 2. 动态调度执行
     try:
-        driver = DriverFactory.get_driver(request.db_type, request.connection_config)
+        # 清洗连接配置：过滤掉 None/空值，避免 oracledb 因无效 DSN 报 DPY-4021
+        clean_config = {k: v for k, v in request.connection_config.items() if v is not None and v != ""}
+        logger.debug(f"[OpsService] 清洗后 connection_config keys: {list(clean_config.keys())}")
+        driver = DriverFactory.get_driver(request.db_type, clean_config)
         await driver.connect()
         try:
             logger.info(f"数据库驱动正在向实例 [{request.instance_id}] 投递指令...")

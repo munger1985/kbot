@@ -10,9 +10,11 @@ class OracleDriver(BaseDriver):
     def __init__(self, config: OracleConfig):
         super().__init__(config)
         self.dsn = self.config.dsn or f"{self.config.host}:{self.config.port}/{self.config.service_name}"
-        
-        # 💡 运维线关键优化：如果当前实例是 Oracle 23ai / 26ai 且运行在 Linux 环境下，
-        # 建议开启 thin 模式（默认即为 thin），无需安装任何 Oracle Client 客户端厚驱动
+        logger.info(
+            f"[OracleDriver] DSN 构建完成: {self.dsn} "
+            f"(raw_dsn={self.config.dsn!r}, host={self.config.host}, "
+            f"port={self.config.port}, service_name={self.config.service_name})"
+        )
         
     async def connect(self):
         """建立真正的异步、非阻塞 Oracle 物理内核连接"""
