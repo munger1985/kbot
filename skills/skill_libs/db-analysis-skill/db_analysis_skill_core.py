@@ -74,13 +74,37 @@ class DBAnalysisSkill(BaseSkill):
             [f"- 《{d.get('file_name', '未命名文档')}》: {d.get('text_content', '')}" for d in doc_results]
         ) if doc_results else "当前无匹配的专家 SOP 手册, 请依赖通用运维指标经验进行分析。"
 
-        monitor_context = json.dumps(monitor_results, ensure_ascii=False, indent=2) if monitor_results else "（无 Prometheus 监控数据）"
-        metric_context = json.dumps(metric_results, ensure_ascii=False, indent=2) if metric_results else "（无数据库诊断数据）"
+        # 清洗 Prometheus 原始数据为 LLM 可读的简化格式
+        monitor_context_parts = []
+        for mr in monitor_results if isinstance(monitor_results, list) else []:
+            task = mr.get("task_description", "?")
+            meta = mr.get("meta", {})
+            metric_code = meta.get("metric_code", "?")
+            summary = meta.get("summary", "")
+            raw_data = mr.get("data", [])
+            # 只提取 value，去掉 labels/timestamp 等元数据
+            values = [d.get("value", "N/A") for d in (raw_data if isinstance(raw_data, list) else [])]
+            monitor_context_parts.append(
+                f"- [{metric_code}] {task}: {summary} | 采样值: {', '.join(str(v) for v in values[:5])}"
+            )
+        monitor_context = "\n".join(monitor_context_parts) if monitor_context_parts else "（无 Prometheus 监控数据）"
+
+        # 清洗诊断数据
+        metric_context_parts = []
+        for mr in metric_results if isinstance(metric_results, list) else []:
+            task = mr.get("task_description", "?")
+            meta = mr.get("meta", {})
+            tool = meta.get("tool_name", meta.get("metric_code", "?"))
+            raw_data = mr.get("data", [])
+            metric_context_parts.append(
+                f"- [{tool}] {task}: raw_len={len(raw_data) if isinstance(raw_data, list) else 0}"
+            )
+        metric_context = "\n".join(metric_context_parts) if metric_context_parts else "（无数据库诊断数据）"
 
         logger.debug(
-            f"[{trace_id}] 注入 LLM 的 prompt 数据长度: "
-            f"monitor_context={len(monitor_context)} chars, "
-            f"metric_context={len(metric_context)} chars, "
+            f"[{trace_id}] 注入 LLM 的 prompt 数据: "
+            f"monitor_lines={len(monitor_context_parts)}, "
+            f"metric_lines={len(metric_context_parts)}, "
             f"monitor_preview={monitor_context[:300]}"
         )
 
