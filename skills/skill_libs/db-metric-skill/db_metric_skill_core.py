@@ -110,6 +110,8 @@ class DBMetricSkill(BaseSkill):
                         f"如果 Prometheus 中 instance 标签值为其他格式（如 host:port），查询将返回空。"
                     )
                 if extracted_params:
+                    # 禁止 LLM 覆盖 instance 标签：instance 必须来自 CMDB 配置
+                    extracted_params.pop("instance", None)
                     render_params.update(extracted_params)
 
                 promql = metric_registry.render_query(metric_code, "prometheus", db_type, render_params)
