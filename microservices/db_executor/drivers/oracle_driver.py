@@ -9,11 +9,10 @@ from ..schemas.db_config import OracleConfig
 class OracleDriver(BaseDriver):
     def __init__(self, config: OracleConfig):
         super().__init__(config)
-        self.dsn = self.config.dsn or f"{self.config.host}:{self.config.port}/{self.config.service_name}"
+        # 直接用 host:port/service_name 拼接，不读 dsn 字段避免协议前缀问题
+        self.dsn = f"{config.host}:{config.port}/{config.service_name}"
         logger.info(
-            f"[OracleDriver] DSN 构建完成: {self.dsn} "
-            f"(raw_dsn={self.config.dsn!r}, host={self.config.host}, "
-            f"port={self.config.port}, service_name={self.config.service_name})"
+            f"[OracleDriver] DSN={self.dsn} (host={config.host}, port={config.port}, service={config.service_name})"
         )
         
     async def connect(self):
