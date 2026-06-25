@@ -75,6 +75,14 @@ class DBAnalysisSkill(BaseSkill):
         ) if doc_results else "当前无匹配的专家 SOP 手册, 请依赖通用运维指标经验进行分析。"
 
         monitor_context = json.dumps(monitor_results, ensure_ascii=False, indent=2) if monitor_results else "（无 Prometheus 监控数据）"
+        metric_context = json.dumps(metric_results, ensure_ascii=False, indent=2) if metric_results else "（无数据库诊断数据）"
+
+        logger.debug(
+            f"[{trace_id}] 注入 LLM 的 prompt 数据长度: "
+            f"monitor_context={len(monitor_context)} chars, "
+            f"metric_context={len(metric_context)} chars, "
+            f"monitor_preview={monitor_context[:300]}"
+        )
 
         system_prompt = await default_prompt.generate(
             get_prompt_config().ops_diagnosis,

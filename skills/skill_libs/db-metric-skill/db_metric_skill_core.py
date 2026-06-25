@@ -99,6 +99,16 @@ class DBMetricSkill(BaseSkill):
 
             try:
                 render_params = {"instance": prometheus_label or instance_id}
+                if prometheus_label:
+                    logger.debug(
+                        f"[OpsTrack v2] 使用 CMDB 配置的 prometheus_label: {prometheus_label}"
+                    )
+                else:
+                    logger.warning(
+                        f"[OpsTrack v2] CMDB 未配置 prometheus_instance_label, "
+                        f"降级使用 instance_id={instance_id} 作为 Prometheus instance 标签. "
+                        f"如果 Prometheus 中 instance 标签值为其他格式（如 host:port），查询将返回空。"
+                    )
                 if extracted_params:
                     render_params.update(extracted_params)
 
@@ -110,9 +120,29 @@ class DBMetricSkill(BaseSkill):
 
                 logger.info(
                     f"[OpsTrack v2] Prometheus 查询成功 | metric={metric_code} "
+                    f"| instance_label={render_params.get('instance')} "
                     f"| series_count={len(monitor_result.series)} "
                     f"| sample={monitor_result.series[:1]}"
                 )
+
+                # 诊断：如果指定 instance 没数据，不加过滤查一次看指标是否存在
+                if len(monitor_result.series) == 0:
+                    metric_name = promql.split("{")[0] if "{" in promql else promql
+                    diag_promql = f"{metric_name}"
+                    try:
+                        diag_result = await prometheus_client.query_instant(diag_promql)
+                        instances = list({
+                            s.get("labels", {}).get("instance", "?")
+                            for s in diag_result.series[:10]
+                        }) if diag_result.series else []
+                        logger.warning(
+                            f"[OpsTrack v2] 指标 {metric_code} 查询返回空。"
+                            f"不带 label 过滤查询 ({diag_promql}): "
+                            f"total={len(diag_result.series)}, "
+                            f"可用 instance 值: {instances}"
+                        )
+                    except Exception:
+                        pass
 
                 summary_text = self._format_monitor_result(metric_code, monitor_result)
                 logger.debug(
