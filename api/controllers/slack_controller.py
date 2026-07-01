@@ -457,10 +457,6 @@ async def _process_event_background(parsed: dict) -> None:
     raw_sse = str(sse_text) if sse_text else ""
     answer = parse_sse_for_answer(raw_sse)
 
-    # --- Parse doc_results and build asset blocks ---
-    biz_list = parse_sse_doc_results(raw_sse)
-    asset_blocks = _build_asset_blocks(biz_list)
-
     if not answer:
         logger.info(
             "Empty answer from agent for Slack user {} — not replying",
@@ -468,14 +464,32 @@ async def _process_event_background(parsed: dict) -> None:
         )
         return
 
-    # --- Reply to Slack (answer + asset blocks appended) ---
+    # --- Assemble Slack blocks: answer text first, then asset cards ---
+    # Slack renders ``blocks`` for the message body and uses ``text`` only as a
+    # fallback (notifications).  We must therefore prepend a section block
+    # containing the answer so it is visible in the Slack client.
+    answer_block = {
+        "type": "section",
+        "text": {"type": "mrkdwn", "text": answer},
+    }
+
+    # Only append asset cards when the answer indicates matching documents
+    # were found.  Skip when the answer explicitly says nothing matched.
+    asset_blocks: list[dict] = []
+    if "No relevant information is available" not in answer:
+        biz_list = parse_sse_doc_results(raw_sse)
+        asset_blocks = _build_asset_blocks(biz_list)
+
+    full_blocks = [answer_block] + asset_blocks
+
+    # --- Reply to Slack ---
     await _send_slack_reply(
         bot_token=bot_token,
         channel_id=parsed["channel_id"],
         user_id=parsed["user_id"],
         text=answer,
         thread_ts=parsed["event_ts"],
-        blocks=asset_blocks or None,
+        blocks=full_blocks,
     )
 
 
