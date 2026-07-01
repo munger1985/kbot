@@ -320,6 +320,9 @@ def _build_asset_blocks(biz_metadata_list: list[dict]) -> list[dict]:
             continue
         if title:
             seen_titles.add(title)
+            # Limit to first 3 assets.
+            if len(seen_titles) > 3:
+                break
 
         blocks.append({"type": "divider"})
 
