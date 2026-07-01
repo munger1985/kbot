@@ -166,7 +166,7 @@ class RootOrchestrator:
             exec_info = runtime.create_execution_context(step_config=step)
             skill_name = exec_info["skill"]
             
-            if skill_name in ("ReasoningSkill", "reasoning"):
+            if skill_name in ("ReasoningSkill", "reasoning", "reasoning-skill"):
                 reasoning_triggered = True
 
             # B. 向前端下发明确的组件唤醒信号
