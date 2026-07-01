@@ -102,3 +102,43 @@ def parse_sse_thought(sse_text: str) -> str:
                 current_event = None
 
     return "".join(chunks)
+
+
+def parse_sse_doc_results(sse_text: str) -> list[dict]:
+    """Extract ``doc_results`` biz_metadata from an SSE stream.
+
+    Returns a list of ``biz_metadata`` dicts (one per search result item).
+    Items without ``biz_metadata`` are skipped.
+
+    Args:
+        sse_text: Raw SSE text from ``agent_chat_nonstream``.
+
+    Returns:
+        List of biz_metadata dicts with keys like ``asset_title``,
+        ``solution_briefing``, ``original_asset_url``, ``contributor``.
+    """
+    if not sse_text:
+        return []
+
+    current_event = None
+    for line in sse_text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("event: "):
+            current_event = stripped[7:]
+            continue
+        if current_event != "doc_results":
+            continue
+        if stripped.startswith("data: "):
+            json_str = stripped[6:]
+            try:
+                payload = json.loads(json_str)
+            except json.JSONDecodeError:
+                return []
+            items = payload.get("content", [])
+            return [
+                item["biz_metadata"]
+                for item in items
+                if isinstance(item, dict) and item.get("biz_metadata")
+            ]
+
+    return []

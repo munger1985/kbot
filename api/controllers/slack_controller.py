@@ -28,7 +28,7 @@ from api.controllers.agent_controller import agent_controller
 from api.schemas.agent_schema import AgentChatForm
 from api.schemas.base_response import SuccessResponse
 from core.config.settings import get_slack_config
-from utils.sse import parse_sse_for_answer
+from utils.sse import parse_sse_doc_results, parse_sse_for_answer
 from utils.thread import detect_language
 
 # ---------------------------------------------------------------------------
@@ -140,6 +140,7 @@ async def _send_slack_reply(
     user_id: str,
     text: str,
     thread_ts: str | None = None,
+    blocks: list[dict] | None = None,
 ) -> bool:
     """Post a threaded reply to Slack via ``chat.postMessage``.
 
@@ -149,6 +150,7 @@ async def _send_slack_reply(
         user_id: Slack user ID to @-mention.
         text: Message body (the agent's answer).
         thread_ts: If set, reply in-thread to the message with this timestamp.
+        blocks: Optional Slack Block Kit blocks appended after *text*.
 
     Returns:
         ``True`` if Slack accepted the message.
@@ -159,6 +161,8 @@ async def _send_slack_reply(
     }
     if thread_ts:
         payload["thread_ts"] = thread_ts
+    if blocks:
+        payload["blocks"] = blocks
 
     headers = {
         "Authorization": f"Bearer {bot_token}",
@@ -288,6 +292,85 @@ _WAITING_MESSAGES: dict[str, str] = {
 }
 
 
+def _build_asset_blocks(biz_metadata_list: list[dict]) -> list[dict]:
+    """Build Slack Block Kit blocks from doc_results biz_metadata.
+
+    Deduplicates by ``asset_title``.  Each field independently checked —
+    empty fields cause their corresponding block or entry to be omitted.
+    """
+    if not biz_metadata_list:
+        return []
+
+    seen_titles: set[str] = set()
+    blocks: list[dict] = []
+
+    for bm in biz_metadata_list:
+        title = (bm.get("asset_title") or "").strip()
+        briefing = (bm.get("solution_briefing") or "").strip()
+        url = (bm.get("original_asset_url") or "").strip()
+        contributor = (bm.get("contributor") or "").strip()
+
+        if not any([title, briefing, url, contributor]):
+            continue
+
+        if title and title in seen_titles:
+            continue
+        if title:
+            seen_titles.add(title)
+
+        blocks.append({"type": "divider"})
+
+        if title:
+            blocks.append({
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f"*Asset Title:* {title}",
+                },
+            })
+
+        if briefing:
+            blocks.append({
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f"*Solution Briefing:* {briefing}",
+                },
+            })
+
+        has_contributor = bool(contributor)
+        has_url = bool(url)
+        if has_contributor or has_url:
+            section: dict = {"type": "section"}
+            fields: list[dict] = []
+
+            if has_contributor:
+                fields.append({
+                    "type": "mrkdwn",
+                    "text": (
+                        f"*Contributor:*\n"
+                        f"<mailto:{contributor}|{contributor}>"
+                    ),
+                })
+
+            if has_url:
+                fields.append({
+                    "type": "mrkdwn",
+                    "text": "[VPN required] please visit us:",
+                })
+                section["accessory"] = {
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": "KM Link"},
+                    "url": url,
+                    "action_id": "open_km_resource",
+                }
+
+            section["fields"] = fields
+            blocks.append(section)
+
+    return blocks
+
+
 def _get_waiting_message(text: str) -> str:
     """Return a localised "please wait" message matching the language of *text*."""
     lang = detect_language(text)
@@ -371,7 +454,12 @@ async def _process_event_background(parsed: dict) -> None:
 
     # --- Extract clean answer from SSE ---
     sse_text = response.data if isinstance(response, SuccessResponse) else ""
-    answer = parse_sse_for_answer(str(sse_text) if sse_text else "")
+    raw_sse = str(sse_text) if sse_text else ""
+    answer = parse_sse_for_answer(raw_sse)
+
+    # --- Parse doc_results and build asset blocks ---
+    biz_list = parse_sse_doc_results(raw_sse)
+    asset_blocks = _build_asset_blocks(biz_list)
 
     if not answer:
         logger.info(
@@ -380,13 +468,14 @@ async def _process_event_background(parsed: dict) -> None:
         )
         return
 
-    # --- Reply to Slack ---
+    # --- Reply to Slack (answer + asset blocks appended) ---
     await _send_slack_reply(
         bot_token=bot_token,
         channel_id=parsed["channel_id"],
         user_id=parsed["user_id"],
         text=answer,
         thread_ts=parsed["event_ts"],
+        blocks=asset_blocks or None,
     )
 
 
