@@ -119,14 +119,12 @@ class AskDataSkill(BaseSkill):
                 context["variables"] = {}
             context["variables"][clean_output_key] = raw_rows
 
-            # 3. 同步写入 context["sql_results"]
+            # 3. 组装结构化结果并通过 SQL_RESULTS 包发送
+            #    root_orchestrator 会从中提取 data 行 extend 至 context["sql_results"]
             formatted_res = {
                 "sql": payload.get("ask"),
                 "data": raw_rows,
             }
-            context["sql_results"] = [formatted_res]
-
-            # 4. yield 给前端渲染
             yield {"type": PacketType.SQL_RESULTS, "content": formatted_res}
             return
 

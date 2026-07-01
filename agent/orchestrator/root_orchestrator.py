@@ -197,7 +197,7 @@ class RootOrchestrator:
 
                     if p_type == PacketType.SQL_RESULTS:
                         if isinstance(content, dict) and "data" in content:
-                            ctx["sql_results"].append(content["data"])
+                            ctx["sql_results"].extend(content["data"])
 
                     # UI Block 聚合（在 Orchestrator 层做防碎化去重）
                     if p_type not in (PacketType.DONE, PacketType.CALL):

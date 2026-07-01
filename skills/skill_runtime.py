@@ -162,9 +162,7 @@ class SkillRuntime:
                         target_list = content if isinstance(content, list) else [content]
                         self.ctx["doc_results"].extend(target_list) # type: ignore
                         
-                elif p_type == PacketType.SQL_RESULTS:
-                    if "sql_results" in self.ctx and self.ctx["sql_results"] is not None:
-                        self.ctx["sql_results"].append(content) # type: ignore
+                # SQL_RESULTS 已统一在 root_orchestrator 层处理（避免与 skill_runtime 重复回填）
                 
                 # 收集最终产出
                 if p_type == PacketType.DONE:
