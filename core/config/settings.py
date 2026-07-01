@@ -235,6 +235,7 @@ class AskDataApiConfig(BaseModel):
     对接外部问数接口，将自然语言查询转发至 SelectAI API 并获取结构化数据结果。
     """
     api_endpoint: str = Field(default="http://132.145.80.161:10090/aireport/chat/with_selectai_api", description="SelectAI 问数 API 端点")
+    profiles_endpoint: str = Field(default="http://132.145.80.161:10090/aireport/admin/list_profiles", description="SelectAI Profile 列表 API 端点")
     api_key: str = Field(default="airpt-8f4e8d5abeffbc5b793eb78d666b580f", description="SelectAI API 认证密钥")
     timeout: int = Field(default=120, ge=10, le=600, description="HTTP 请求超时 (秒)")
 

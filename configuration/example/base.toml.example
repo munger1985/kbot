@@ -135,5 +135,6 @@ api_timeout = 10
 
 [ask_data_api]
 api_endpoint = "http://132.145.80.161:10090/aireport/chat/with_selectai_api"
+profiles_endpoint = "http://132.145.80.161:10090/aireport/admin/list_profiles"
 api_key = "airpt-8f4e8d5abeffbc5b793eb78d666b580f"
 timeout = 120

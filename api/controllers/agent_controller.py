@@ -1,4 +1,6 @@
 import uuid
+import aiohttp
+from loguru import logger
 from fastapi import BackgroundTasks
 from fastapi.responses import StreamingResponse
 from services.basic import AgentService
@@ -6,6 +8,7 @@ from api.schemas.agent_schema import *
 from api.schemas.base_response import SuccessResponse
 from agent.agent import RootAgent, DifyService
 from core.exceptions import *
+from core.config.settings import get_ask_data_api_config
 from services.basic import PromptService
 
 
@@ -104,6 +107,45 @@ class AgentController:
         """Renamesames a chat session title in the database."""
         await self.agent_service.rename_conversation(form.session_id, form.new_title)
         return SuccessResponse(message="Session renamed")
+
+    async def list_profiles(self) -> SuccessResponse:
+        """获取 AIReport SelectAI 的 profile 列表。
+
+        通过外部问数 API 的管理端点获取所有可用的 profile 元数据，
+        供前端配置 agent 时选择对应的数据源 profile。
+        """
+        api_config = get_ask_data_api_config()
+        api_key = api_config.api_key
+        profiles_endpoint = api_config.profiles_endpoint
+        timeout = aiohttp.ClientTimeout(total=api_config.timeout)
+
+        headers = {
+            "accept": "application/json",
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+
+        logger.info(f"[AgentController] 请求 profile 列表 | endpoint={profiles_endpoint}")
+
+        try:
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(profiles_endpoint, headers=headers) as response:
+                    if response.status != 200:
+                        err_text = await response.text()
+                        logger.error(f"[AgentController] 获取 profile 列表失败 {response.status}: {err_text}")
+                        raise InternalServerError(f"外部接口返回异常状态 {response.status}")
+
+                    res_json = await response.json()
+                    return SuccessResponse(data=res_json, message="Profile list retrieved")
+
+        except aiohttp.ClientConnectorError:
+            logger.error(f"[AgentController] 无法连接 profile 列表接口: {profiles_endpoint}")
+            raise InternalServerError("无法连接至外部 profile 接口")
+        except InternalServerError:
+            raise
+        except Exception as e:
+            logger.exception(f"[AgentController] 获取 profile 列表异常: {e}")
+            raise InternalServerError(f"获取 profile 列表失败: {str(e)}")
 
     async def reset_sys_prompt(self) -> SuccessResponse:
         """重置系统提示词"""
