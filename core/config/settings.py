@@ -229,6 +229,16 @@ class PrometheusConfig(BaseModel):
     timeout: int = Field(default=30, ge=5, le=300, description="HTTP 请求超时 (秒)")
     default_step: str = Field(default="15s", description="范围查询默认采样步长")
 
+class AskDataApiConfig(BaseModel):
+    """问数外部 API 配置（SelectAI / AIReport）。
+
+    对接外部问数接口，将自然语言查询转发至 SelectAI API 并获取结构化数据结果。
+    """
+    api_endpoint: str = Field(default="http://132.145.80.161:10090/aireport/chat/with_selectai_api", description="SelectAI 问数 API 端点")
+    api_key: str = Field(default="airpt-8f4e8d5abeffbc5b793eb78d666b580f", description="SelectAI API 认证密钥")
+    timeout: int = Field(default=120, ge=10, le=600, description="HTTP 请求超时 (秒)")
+
+
 class SlackConfig(BaseModel):
     """Slack integration configuration.
 
@@ -291,6 +301,7 @@ class Settings(BaseSettings):
     parser: ParserConfig = ParserConfig()
     executor: ExecutorConfig = ExecutorConfig()
     prometheus: PrometheusConfig = PrometheusConfig()
+    ask_data_api: AskDataApiConfig = AskDataApiConfig()
     slack: SlackConfig = SlackConfig()
     prompt: PromptConfig = PromptConfig()
     
@@ -538,6 +549,15 @@ def get_executor_config() -> ExecutorConfig:
 def get_prometheus_config() -> PrometheusConfig:
     """Get Prometheus configuration (运维Agent使用)."""
     return get_settings().prometheus
+
+def get_ask_data_api_config() -> AskDataApiConfig:
+    """Get ask-data external API configuration.
+
+    Returns:
+        AskDataApiConfig: Ask-data API configuration object
+    """
+    return get_settings().ask_data_api
+
 
 def get_slack_config() -> SlackConfig:
     """Get Slack integration configuration.

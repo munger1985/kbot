@@ -356,28 +356,28 @@ TASK_PLANNER_PROMPT = """
   "steps": [
     {{
       "step_id": 1,
-      "skill": "图谱关系检索技能",
+      "skill": "ask-graph-skill",
       "task_description": "以 '设备 A101' 为核心实体检索其所有下游连接及受影响的产线关系链",
       "output_var": "graph_results",
       "condition": null
     }},
     {{
       "step_id": 2,
-      "skill": "文档检索技能",
+      "skill": "ask-doc-skill",
       "task_description": "检索设备 A101 及相关产线近期的检修日志与故障排除标准",
       "output_var": "doc_results",
       "condition": null
     }},
     {{
       "step_id": 3,
-      "skill": "数据查询技能",
+      "skill": "ask-data-skill",
       "task_description": "查询受影响下游产线最近一月的实时生产良率和产量统计数据",
       "output_var": "sql_results",
       "condition": null
     }},
     {{
       "step_id": 4,
-      "skill": "推理融合技能",
+      "skill": "reasoning-skill",
       "task_description": "综合图谱关联链 {{graph_results}}、检修文档 {{doc_results}} 以及实时良率数据 {{sql_results}}，交叉分析故障扩散路径，计算潜在损失，回答用户: {{user_query}}",
       "output_var": "final_result",
       "condition": null
@@ -385,35 +385,7 @@ TASK_PLANNER_PROMPT = """
   ]
 }}
 
-### ❌ 错误示例 (绝对禁止 — 直接回答问题):
-用户指令: "형광 분광법이 뭐야?"
-❌ 错误输出:
-형광 분광법은 물질의 원소 조성을 분석하는 기술로...
-(这是直接回答！系统会崩溃！)
-
-✅ 正确输出 (使用技能列表中的真实技能名):
-{{
-  "thought": "사용자가 형광 분광법의 정의를 묻고 있으므로, 문서 검색 스킬을 사용하여 관련 지식을 검색한 후 추론 스킬로 답변을 생성한다.",
-  "final_goal": "형광 분광법의 정의와 원리 설명",
-  "steps": [
-    {{
-      "step_id": 1,
-      "skill": "ask-doc-skill",
-      "task_description": "형광 분광법(XRF)의 정의, 원리 및 응용 분야 검색",
-      "output_var": "doc_results",
-      "condition": null
-    }},
-    {{
-      "step_id": 2,
-      "skill": "reasoning-skill",
-      "task_description": "검색된 문서 {{doc_results}}를 바탕으로 형광 분광법이 무엇인지 사용자에게 설명. {{user_query}}",
-      "output_var": "final_result",
-      "condition": null
-    }}
-  ]
-}}
-
-⚠️ **重要提示**: 当意图为 knowledge_query 时，必须优先使用知识检索类技能（如 ask-doc-skill、ask-graph-skill），严禁仅使用 chit-chat-skill！chit-chat-skill 仅用于纯闲聊/问候。
+⚠️ **重要提示**: 当意图为 knowledge_query 时，必须优先使用知识检索类技能（如 ask-doc-skill、ask-graph-skill、ask-data-skill 等），严禁仅使用 chit-chat-skill！chit-chat-skill 仅用于纯闲聊/问候。
 
 当前用户指令: {standalone_query}
 """

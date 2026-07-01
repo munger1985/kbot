@@ -138,3 +138,27 @@ class AgentService:
                 return kb_ids
             except Exception as e:
                 handle_exception(e, "获取知识库配置列表失败")
+
+    async def get_agent_profile(self, agent_id: int) -> int:
+        """
+        获取智能体的 profile ID
+
+        Args:
+            agent_id: 智能体ID
+
+        Returns:
+            profile ID
+        """
+        async with self.oracle_session as session:
+            agent_repo = AgentRepository(session)
+            try:
+                agent = await agent_repo.get_by_id(agent_id)
+                models = agent.models
+                if not models:
+                    raise NotFoundError(f"智能体 {agent_id} 没有配置 profile")
+                profile = models.get("profile")
+                if not profile:
+                    raise NotFoundError(f"智能体 {agent_id} 没有配置 profile")
+                return profile
+            except Exception as e:
+                handle_exception(e, "获取 profile 失败")
