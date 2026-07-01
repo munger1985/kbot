@@ -130,7 +130,8 @@ class AskDocSkill(BaseSkill):
                     "page_num": ref.get("page_num", 0),
                     "bbox": ref.get("bbox", []),
                     "image_name": ref.get("image_name", "")
-                }
+                },
+                "biz_metadata": ref.get("biz_metadata", {})
             }
             records.append(record)
             
