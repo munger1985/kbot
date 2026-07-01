@@ -190,8 +190,11 @@ async def _send_slack_reply(
                     return True
                 else:
                     logger.error(
-                        "Slack chat.postMessage error: {}",
+                        "Slack chat.postMessage error: {} | details={} | "
+                        "block_count={}",
                         body.get("error", "unknown"),
+                        body.get("errors", ""),
+                        len(payload.get("blocks", [])),
                     )
                     return False
     except aiohttp.ClientConnectorError as e:
@@ -464,23 +467,37 @@ async def _process_event_background(parsed: dict) -> None:
         )
         return
 
-    # --- Assemble Slack blocks: answer text first, then asset cards ---
-    # Slack renders ``blocks`` for the message body and uses ``text`` only as a
-    # fallback (notifications).  We must therefore prepend a section block
-    # containing the answer so it is visible in the Slack client.
-    answer_block = {
-        "type": "section",
-        "text": {"type": "mrkdwn", "text": answer},
-    }
-
-    # Only append asset cards when the answer indicates matching documents
-    # were found.  Skip when the answer explicitly says nothing matched.
+    # --- Assemble Slack message ---
+    # Parse doc_results only when the answer suggests documents were found.
     asset_blocks: list[dict] = []
     if "No relevant information is available" not in answer:
         biz_list = parse_sse_doc_results(raw_sse)
         asset_blocks = _build_asset_blocks(biz_list)
 
-    full_blocks = [answer_block] + asset_blocks
+    if not asset_blocks:
+        # No cards — send plain text only (no blocks, so ``text`` is rendered).
+        await _send_slack_reply(
+            bot_token=bot_token,
+            channel_id=parsed["channel_id"],
+            user_id=parsed["user_id"],
+            text=answer,
+            thread_ts=parsed["event_ts"],
+        )
+        return
+
+    # Cards present — build blocks: answer sections first, then asset cards.
+    # Use ``plain_text`` to avoid escaping issues and split long text into
+    # chunks that fit Slack's 3000-char section limit.
+    _SLACK_TEXT_LIMIT = 3000
+    answer_blocks: list[dict] = []
+    for i in range(0, len(answer), _SLACK_TEXT_LIMIT):
+        chunk = answer[i:i + _SLACK_TEXT_LIMIT]
+        answer_blocks.append({
+            "type": "section",
+            "text": {"type": "plain_text", "text": chunk},
+        })
+
+    full_blocks = answer_blocks + asset_blocks
 
     # --- Reply to Slack ---
     await _send_slack_reply(
