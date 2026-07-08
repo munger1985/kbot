@@ -167,16 +167,40 @@ async def ops_execute(request: OpsExecuteRequest) -> dict[str, Any]:
 
     # 1. 运维线专属的白名单语义审计（不使用业务层盲防注入的 SQLValidator）
     if request.run_mode == "mutation":
-        # 针对高危变更动作，进行强白名单语法检测（只放行特定的运维管理白名单命令）
         is_valid_ops_cmd = False
         upper_sql = request.sql.upper().strip()
-        
-        # 示例：只允许执行特定模式的杀会话或切换日志等管理操作，坚决杜绝 DROP TABLE / DELETE FROM 等业务表破坏动作
-        if request.db_type == "oracle" and ("ALTER SYSTEM KILL SESSION" in upper_sql or "DISCONNECT SESSION" in upper_sql):
-            is_valid_ops_cmd = True
-        elif request.db_type == "mysql" and upper_sql.startswith("KILL "):
-            is_valid_ops_cmd = True
-            
+
+        if request.db_type == "oracle":
+            _allowed_oracle = (
+                "ALTER SYSTEM KILL SESSION", "DISCONNECT SESSION",
+                "ALTER TABLESPACE", "ALTER DATABASE DATAFILE",
+                "ALTER SYSTEM SWITCH LOGFILE", "ALTER SYSTEM CHECKPOINT",
+                "ALTER SYSTEM SET ", "ALTER SESSION ",
+                "PURGE ", "TRUNCATE TABLE ",
+                "BEGIN ", "EXEC ", "EXECUTE ", "CALL ",
+                "DBMS_SPM", "DBMS_STATS", "DBMS_SPACE", "DBMS_SPACE_ADMIN",
+                "DBMS_SCHEDULER", "DBMS_AUTO_TASK_ADMIN", "DBMS_AUTO_INDEX",
+                "DBMS_SQLTUNE", "DBMS_ADVISOR",
+                "DBMS_SPM_INTERNAL", "DBMS_AUTO_INDEX_INTERNAL",
+            )
+            is_valid_ops_cmd = any(p in upper_sql for p in _allowed_oracle)
+        elif request.db_type == "mysql":
+            _allowed_mysql = (
+                "KILL ", "ALTER TABLE", "ALTER DATABASE",
+                "SET GLOBAL ", "FLUSH ", "OPTIMIZE TABLE",
+                "ANALYZE TABLE", "TRUNCATE TABLE",
+                "PURGE BINARY LOGS",
+            )
+            is_valid_ops_cmd = any(upper_sql.startswith(p) or p in upper_sql for p in _allowed_mysql)
+        elif request.db_type in ("postgresql", "postgres"):
+            _allowed_pg = (
+                "ALTER TABLESPACE", "ALTER DATABASE", "ALTER SYSTEM",
+                "ALTER TABLE", "SELECT pg_terminate_backend",
+                "SELECT pg_cancel_backend", "VACUUM", "ANALYZE",
+                "REINDEX", "CHECKPOINT",
+            )
+            is_valid_ops_cmd = any(p in upper_sql for p in _allowed_pg)
+
         if not is_valid_ops_cmd:
             logger.critical(f"安全熔断：检测到非法的生产运维变更指令！| 实例: {request.instance_id} | SQL: {request.sql}")
             raise HTTPException(status_code=400, detail="拒绝执行：该命令未在 DBA 专家自愈变更安全白名单中放行。")

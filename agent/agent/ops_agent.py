@@ -87,3 +87,123 @@ class OpsAgent(AgentStreamMixin):
                 "X-Accel-Buffering": "no"
             }
         )
+
+    async def approve(
+        self,
+        background_tasks: BackgroundTasks,
+        request_id: str,
+        approved: bool,
+        approver_note: str | None = None,
+    ) -> StreamingResponse:
+        """AIOps HITL 审批接口 — 用户审批后恢复或终止变更执行"""
+        message_id = str(uuid.uuid4())
+
+        logger.info(
+            f"[OpsAgent] HITL 审批 | RequestID: {request_id} | "
+            f"Approved: {approved} | MsgID: {message_id}"
+        )
+
+        async def event_generator():
+            try:
+                yield self._format_sse(
+                    event_type=PacketType.METADATA,
+                    content={"message_id": message_id, "status": "approving"}
+                )
+
+                raw_pipeline = self.orchestrator.resume_with_approval(
+                    background_tasks=background_tasks,
+                    request_id=request_id,
+                    approved=approved,
+                    approver_note=approver_note,
+                )
+
+                async for packet_type, content in self._smooth_stream_pipeline(raw_pipeline):
+                    yield self._format_sse(
+                        event_type=packet_type,
+                        content=content,
+                        message_id=message_id
+                    )
+
+            except Exception as e:
+                logger.exception(f"[OpsAgent] 审批恢复流水线崩溃: {str(e)}")
+                fallback_msg = "审批处理过程中遇到非预期错误，已安全熔断。"
+                async for p_type, content in self._simulate_char_stream(
+                    PacketType.ERROR, fallback_msg
+                ):
+                    yield self._format_sse(
+                        event_type=p_type, content=content, message_id=message_id
+                    )
+
+        return StreamingResponse(
+            event_generator(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no"
+            }
+        )
+
+    async def resume(
+        self,
+        background_tasks: BackgroundTasks,
+        request_id: str,
+        user_data: dict[str, Any] | None = None,
+        user_note: str | None = None,
+        user_error: str | None = None,
+    ) -> StreamingResponse:
+        """AIOps HITL 恢复执行接口 — 从挂起点恢复诊断流水线"""
+        message_id = str(uuid.uuid4())
+
+        logger.info(
+            f"[OpsAgent] HITL 恢复请求 | RequestID: {request_id} | "
+            f"MsgID: {message_id}"
+        )
+
+        async def event_generator():
+            try:
+                # 握手阶段
+                yield self._format_sse(
+                    event_type=PacketType.METADATA,
+                    content={"message_id": message_id, "status": "resuming"}
+                )
+
+                # 从挂起点恢复
+                raw_pipeline = self.orchestrator.resume_ops_stream_pipeline(
+                    background_tasks=background_tasks,
+                    request_id=request_id,
+                    user_data=user_data,
+                    user_note=user_note,
+                    user_error=user_error,
+                )
+
+                async for packet_type, content in self._smooth_stream_pipeline(raw_pipeline):
+                    yield self._format_sse(
+                        event_type=packet_type,
+                        content=content,
+                        message_id=message_id
+                    )
+
+            except Exception as e:
+                logger.exception(
+                    f"[OpsAgent] HITL 恢复流水线崩溃: {str(e)}"
+                )
+                fallback_msg = (
+                    "内核诊断层在恢复过程中遇到非预期阻碍，诊断控制面已安全熔断。"
+                )
+                async for p_type, content in self._simulate_char_stream(
+                    PacketType.ERROR, fallback_msg
+                ):
+                    yield self._format_sse(
+                        event_type=p_type, content=content, message_id=message_id
+                    )
+
+        return StreamingResponse(
+            event_generator(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no"
+            }
+        )

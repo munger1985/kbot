@@ -5,7 +5,7 @@ from loguru import logger
 from fastapi import BackgroundTasks
 from fastapi.responses import StreamingResponse
 
-from api.schemas.ops_schema import CreateInstanceRequest, UpdateInstanceRequest, OpsChatRequest
+from api.schemas.ops_schema import CreateInstanceRequest, UpdateInstanceRequest, OpsChatRequest, OpsResumeRequest, OpsApproveRequest
 from api.schemas.base_response import SuccessResponse
 from services.basic import OpsDBInstanceService, OpsAgentConfService
 
@@ -72,6 +72,78 @@ class OpsController:
             instance_id=request.instance_id,
             query=request.query,
             session_id=request.session_id
+        )
+
+    async def resume_chat(
+        self,
+        request: OpsResumeRequest,
+        background_tasks: BackgroundTasks
+    ) -> StreamingResponse:
+        """HITL 恢复执行接口端点"""
+        from agent.agent.ops_agent import OpsAgent
+        ops_agent = OpsAgent()
+
+        return await ops_agent.resume(
+            background_tasks=background_tasks,
+            request_id=request.request_id,
+            user_data=request.user_data,
+            user_note=request.user_note,
+            user_error=request.user_error,
+        )
+
+    async def approve_action(
+        self,
+        request: OpsApproveRequest,
+        background_tasks: BackgroundTasks
+    ) -> StreamingResponse:
+        """HITL 审批接口端点"""
+        from agent.agent.ops_agent import OpsAgent
+        ops_agent = OpsAgent()
+
+        return await ops_agent.approve(
+            background_tasks=background_tasks,
+            request_id=request.request_id,
+            approved=request.approved,
+            approver_note=request.approver_note,
+        )
+
+    async def cancel_pending(self, request_id: str) -> SuccessResponse:
+        """取消挂起的 HITL 请求"""
+        from core.database.oracle import get_session
+        from dao.repositories import PendingRequestRepository, MemoryRepository
+        from sqlalchemy import update as sql_update
+        from dao.entities import ConversationContextEntity
+
+        async with get_session() as session:
+            repo = PendingRequestRepository(session)
+            pending = await repo.get_by_request_id(request_id)
+
+            if not pending:
+                return SuccessResponse(message="挂起请求不存在", data=None)
+
+            if pending["status"] != "pending":
+                return SuccessResponse(
+                    message=f"挂起请求状态为 {pending['status']}，无需取消",
+                    data=None
+                )
+
+            # 标记为已取消
+            await repo.mark_cancelled(request_id)
+
+            # 清除会话挂起标记
+            mem_repo = MemoryRepository(session)
+            stmt = (
+                sql_update(ConversationContextEntity)
+                .where(ConversationContextEntity.session_id == pending["session_id"])
+                .values(pending_request_id=None, is_suspended=0)
+            )
+            await session.execute(stmt)
+            await session.commit()
+
+        logger.info(f"[HITL Cancel] request_id={request_id} 已被用户取消")
+        return SuccessResponse(
+            message="挂起请求已取消",
+            data={"request_id": request_id}
         )
 
 

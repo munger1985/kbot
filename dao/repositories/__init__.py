@@ -15,6 +15,7 @@ from .txt_chunk_repo import TxtChunkRepository
 from .graph_repo import GraphRepository
 from .ops_db_instance_repo import OpsDbInstanceRepository
 from .ops_agent_conf_repo import OpsAgentConfRepository
+from .ops_pending_repo import PendingRequestRepository
 
 
 
@@ -35,5 +36,6 @@ __all__ = [
     "TxtChunkRepository",
     "GraphRepository",
     "OpsDbInstanceRepository",
-    "OpsAgentConfRepository"
+    "OpsAgentConfRepository",
+    "PendingRequestRepository"
 ]

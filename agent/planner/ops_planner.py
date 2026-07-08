@@ -150,7 +150,7 @@ class OpsTaskPlanner:
             skills_list=skills_list_str,
             standalone_query=standalone_query,
             intent_type="ops_diagnose",
-            existing_variables=", ".join(ctx["variables"].keys()),
+            existing_variables=", ".join(f"{k}={v}" for k, v in ctx["variables"].items() if not k.startswith("_")),
             db_type=ctx["db_type"],
             environment=ctx["environment"],
             sop_context=sop_context_str or "当前无匹配的专家 SOP 手册, 请依赖通用运维指标经验进行线性探测排查。",

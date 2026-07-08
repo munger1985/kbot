@@ -1,7 +1,7 @@
 # api/schemas/ops_schema.py
 
 from pydantic import BaseModel, Field
-from typing import Literal
+from typing import Literal, Any
 
 
 class CreateInstanceRequest(BaseModel):
@@ -73,3 +73,33 @@ class AgentOpsBindUpdateForm(BaseModel):
     is_mutation_allowed: bool | None = None
     require_approval: bool | None = None
     max_daily_execution: int | None = None
+
+
+class OpsResumeRequest(BaseModel):
+    """HITL 恢复执行请求体 — 用户提交采集到的数据并恢复诊断"""
+    request_id: str = Field(
+        ..., description="挂起请求 ID（来自 WAIT_FOR_USER 包的 request_id）"
+    )
+    user_data: dict[str, Any] | None = Field(
+        None, description="用户回填的数据，key-value 形式"
+    )
+    user_note: str | None = Field(
+        None, description="用户备注/补充说明"
+    )
+    user_error: str | None = Field(
+        None,
+        description="用户执行 SQL 时的报错信息，如 ORA-00942: table or view does not exist"
+    )
+
+
+class OpsApproveRequest(BaseModel):
+    """HITL 审批请求体 — 用户对高危变更操作进行审批"""
+    request_id: str = Field(
+        ..., description="审批请求 ID（来自 REQUIRE_APPROVAL 包的 request_id）"
+    )
+    approved: bool = Field(
+        ..., description="是否批准执行: true=批准, false=拒绝"
+    )
+    approver_note: str | None = Field(
+        None, description="审批人备注（批准或拒绝的理由）"
+    )

@@ -3,11 +3,12 @@
 import uuid
 import json
 from loguru import logger
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Any, AsyncGenerator, cast
 from fastapi import BackgroundTasks
 
 from core.dictionary import PacketType
+from core.database.oracle import get_session
 from agent.memory import MemoryService
 from skills.skill_manager import SkillManager
 from skills import SkillRuntime, SkillRunMode
@@ -16,8 +17,10 @@ from agent.orchestrator import DocOrchestrator
 from services.basic import AgentService
 from services.basic import OpsAgentConfService
 from agent.common.ops_context import OpsContextMemory
+from agent.common.skill_context import ExecutionPlan
 from utils.clients import OpsDBExecutor
 from utils.monitor import PrometheusClient, UnifiedMetricRegistry
+from dao.repositories import PendingRequestRepository, MemoryRepository
 
 
 DISPLAY_PACKET_TYPES = {
@@ -29,7 +32,9 @@ DISPLAY_PACKET_TYPES = {
     PacketType.METRIC_RESULTS,
     PacketType.WARNING,
     PacketType.REQUIRE_APPROVAL,
+    PacketType.ACTION_ITEMS,
     PacketType.CALL,
+    PacketType.WAIT_FOR_USER,
     PacketType.DONE
 }
 
@@ -119,7 +124,11 @@ class OpsOrchestrator:
             "monitor_results": [],
             "os_log_snapshots": [],
             "doc_results": [],
-            "temp": {}
+            "temp": {},
+
+            # HITL 人机协同
+            "is_resuming": False,
+            "hitl_history": [],
         }
 
         # --- 1.2 拓扑资产锁定与安全策略注入 ---
@@ -196,7 +205,7 @@ class OpsOrchestrator:
 
             yield {
                 "type": PacketType.CALL,
-                "content": {"skill": skill_name, "description": exec_info["resolved_input"]}
+                "content": {"skill": skill_name, "description": (exec_info["resolved_input"] or "")[:120]}
             }
 
             skill_instance = self.skill_manager.get_skill_instance(skill_name)
@@ -206,13 +215,70 @@ class OpsOrchestrator:
                 yield {"type": PacketType.ERROR, "content": f"⚠️ 关键自愈组件 [{skill_name}] 离线, 本步骤跳过。"}
                 continue
 
-            # --- 🔒 安全熔断门禁 ---
+            # --- 🔒 安全熔断门禁 (v2: 支持审批中断) ---
             gate_result = self._check_safety_gate(ctx, skill_instance, skill_name)
             if not gate_result["allowed"]:
-                exec_info.update({"status": "blocked", "error": gate_result["reason"]})  # type: ignore
-                ctx["execution_history"].append(cast(Any, exec_info))
-                yield {"type": PacketType.ERROR, "content": f"🚫 安全熔断: {gate_result['reason']}"}
-                continue
+                if gate_result.get("needs_approval"):
+                    # ──── 审批中断: 挂起等待用户审批 ────
+                    approval_request_id = f"appr_{uuid.uuid4().hex[:12]}"
+                    action_sql = ctx["variables"].get("pending_action_sql", "")
+                    action_impact = ctx["variables"].get("pending_action_impact", "")
+                    action_rollback = ctx["variables"].get("pending_action_rollback", "")
+                    action_risk = ctx["variables"].get("pending_action_risk_level", "medium")
+
+                    logger.info(
+                        f"[{ctx['trace_id']}] 🔴 审批中断触发 | "
+                        f"Skill: {skill_name} | Step: {idx} | "
+                        f"ApprovalID: {approval_request_id}"
+                    )
+
+                    # 向前端推送审批请求
+                    yield {
+                        "type": PacketType.REQUIRE_APPROVAL,
+                        "content": {
+                            "request_id": approval_request_id,
+                            "skill_name": skill_name,
+                            "reason": gate_result["reason"],
+                            "action_sql": action_sql,
+                            "impact": action_impact,
+                            "rollback_sql": action_rollback,
+                            "risk_level": action_risk,
+                            "instance_id": ctx["instance_id"],
+                            "environment": ctx["environment"],
+                        }
+                    }
+
+                    # 持久化挂起状态 (复用 HITL 机制，status 标记为 awaiting_approval)
+                    await self._suspend_for_approval(
+                        ctx=ctx,
+                        approval_request_id=approval_request_id,
+                        current_step_index=idx,
+                        entry_id=entry_id,
+                        action_sql=action_sql,
+                        action_impact=action_impact,
+                        action_rollback=action_rollback,
+                        skill_name=skill_name,
+                    )
+
+                    await self._mark_session_suspended(
+                        ctx["session_id"], approval_request_id
+                    )
+
+                    yield {
+                        "type": PacketType.DONE,
+                        "content": {
+                            "entry_id": entry_id,
+                            "status": "awaiting_approval",
+                            "request_id": approval_request_id,
+                        }
+                    }
+                    return  # 🔴 中断，等待审批后恢复
+                else:
+                    # Hard block
+                    exec_info.update({"status": "blocked", "error": gate_result["reason"]})  # type: ignore
+                    ctx["execution_history"].append(cast(Any, exec_info))
+                    yield {"type": PacketType.ERROR, "content": f"🚫 安全熔断: {gate_result['reason']}"}
+                    continue
 
             try:
                 # 记录步骤执行前的数据快照，用于 output_var 回写
@@ -244,10 +310,64 @@ class OpsOrchestrator:
                                 "meta": content.get("meta", {})
                             })
 
+                    # ──── HITL: 中断检测 ────
+                    if p_type == PacketType.WAIT_FOR_USER:
+                        suspend_ctx = content
+                        request_id = suspend_ctx["request_id"]
+
+                        logger.info(
+                            f"[{ctx['trace_id']}] 🔴 HITL 中断触发 | "
+                            f"Skill: {skill_name} | Step: {idx} | "
+                            f"RequestID: {request_id}"
+                        )
+
+                        # 持久化完整快照
+                        await self._suspend_execution(
+                            ctx=ctx,
+                            suspend_ctx=suspend_ctx,
+                            request_id=request_id,
+                            current_step_index=idx,
+                            entry_id=entry_id,
+                            start_time=start_time,
+                        )
+
+                        # 更新会话挂起状态
+                        await self._mark_session_suspended(
+                            ctx["session_id"], request_id
+                        )
+
+                        # 将中断的步骤记录到 execution_history，供恢复时下游技能读取其产出
+                        exec_info["status"] = "suspended"
+                        if final_answer_accumulator:
+                            exec_info["answer"] = final_answer_accumulator.strip()
+                        ctx["execution_history"].append(cast(Any, exec_info))
+                        ctx["current_execution"] = None
+
+                        # 推送中断包给前端
+                        yield packet
+
+                        yield {
+                            "type": PacketType.DONE,
+                            "content": {
+                                "entry_id": entry_id,
+                                "status": "suspended",
+                                "request_id": request_id,
+                            }
+                        }
+                        return  # 🔴 正常结束 HTTP 请求
+
                     if p_type in DISPLAY_PACKET_TYPES:
                         yield packet
 
                 exec_info.update({"status": "success"})
+                # 检测执行类技能是否失败
+                action_result = ctx.get("variables", {}).get("action_result", {})
+                if isinstance(action_result, dict) and action_result.get("status") in ("failed", "error"):
+                    exec_info["status"] = "failed"
+                    exec_info["error"] = action_result.get("error", "执行失败")
+                    ctx["execution_history"].append(cast(Any, exec_info))
+                    ctx["current_execution"] = None
+                    break
                 # 将本步骤新采集的数据回写到 variables，使后续步骤的 {{output_var}} 可被解析
                 output_var = exec_info.get("output_var")
                 if output_var:
@@ -270,6 +390,14 @@ class OpsOrchestrator:
                 continue
 
         # --- 4. 闭环落库: 挂载后台反思与审计任务 ---
+        # 汇总执行结果（失败时向用户展示明确信息）
+        action_result = ctx.get("variables", {}).get("action_result", {})
+        if isinstance(action_result, dict) and action_result.get("status") == "failed":
+            final_answer_accumulator = f"❌ 变更执行失败: {action_result.get('error', '未知错误')}"
+            yield {
+                "type": PacketType.ANSWER,
+                "content": final_answer_accumulator,
+            }
         response_time = datetime.now(timezone.utc)
         plan_skills_trace = [s.get("skill") for s in plan_steps] if plan_steps else []
 
@@ -316,9 +444,17 @@ class OpsOrchestrator:
         skill_name: str
     ) -> dict[str, Any]:
         """
-        🔒 运维安全熔断门禁:
-        在执行任何技能前, 校验该技能是否被允许在当前实例上运行。
-        对 MUTATION 类高危技能执行多层策略校验（变更许可、审批门禁、频次上限）。
+        🔒 运维安全熔断门禁 (v2 — 支持审批中断):
+
+        三重校验:
+          1. 变更许可 (is_mutation_allowed): False → 硬阻断 (allowed=False)
+          2. 审批门禁 (require_approval): True + 无令牌 → 软中断 (needs_approval=True)
+          3. 生产环境警告: prod → 日志告警但放行
+
+        Returns:
+          {"allowed": True}                                         — 放行
+          {"allowed": False, "reason": "..."}                       — 硬阻断
+          {"allowed": False, "needs_approval": True, "reason": "..."} — 审批中断
         """
         skill_meta = getattr(skill_instance, "meta", None)
         skill_run_mode = getattr(skill_meta, "run_mode", SkillRunMode.READ_ONLY) if skill_meta else SkillRunMode.READ_ONLY
@@ -332,7 +468,7 @@ class OpsOrchestrator:
         environment = ctx.get("environment", "prod")
         instance_id = ctx.get("instance_id", "unknown")
 
-        # 1. 变更许可检查
+        # 1. 变更许可检查 (硬阻断)
         is_mutation_allowed = variables.get("is_mutation_allowed", False)
         if not is_mutation_allowed:
             logger.warning(
@@ -341,26 +477,29 @@ class OpsOrchestrator:
             )
             return {
                 "allowed": False,
+                "needs_approval": False,
                 "reason": (
                     f"自愈组件 [{skill_name}] 属于变更类高危操作, 但实例 `{instance_id}` "
                     f"未开启变更许可 (is_mutation_allowed=False)。请联系 DBA 管理员在资产控制面开启此实例的自愈变更权限。"
                 )
             }
 
-        # 2. 审批门禁检查
+        # 2. 审批门禁检查 (软中断)
         require_approval = variables.get("require_approval", True)
         if require_approval:
             approval_ctx = ctx.get("approval_context")
             if not approval_ctx or not approval_ctx.get("approved"):
                 logger.warning(
-                    f"[SafetyGate] 拦截高危自愈动作 | Skill: {skill_name} | "
-                    f"实例: {instance_id} | 原因: 缺少有效的人工审批令牌"
+                    f"[SafetyGate] 需要审批 | Skill: {skill_name} | "
+                    f"实例: {instance_id} | 触发审批中断"
                 )
                 return {
                     "allowed": False,
+                    "needs_approval": True,
                     "reason": (
-                        f"自愈组件 [{skill_name}] 需要人工审批授权方可执行。"
-                        f"请在前端确认该高危操作的风险后, 重新发起携带审批令牌的请求。"
+                        f"自愈组件 [{skill_name}] 即将执行高危变更操作。\n"
+                        f"实例: `{instance_id}` | 环境: `{environment}`\n"
+                        f"请在前端确认风险后授权执行。"
                     )
                 }
 
@@ -375,4 +514,848 @@ class OpsOrchestrator:
             f"[SafetyGate] ✅ 安全门禁通过 | Skill: {skill_name} | "
             f"实例: {instance_id} | 环境: {environment}"
         )
-        return {"allowed": True}
+        return {"allowed": True, "needs_approval": False}
+
+    # ==================================================================
+    # HITL: 挂起与恢复
+    # ==================================================================
+
+    async def _suspend_execution(
+        self,
+        ctx: OpsContextMemory,
+        suspend_ctx: dict[str, Any],
+        request_id: str,
+        current_step_index: int,
+        entry_id: str,
+        start_time: datetime,
+    ) -> None:
+        """持久化完整执行快照到 kbot_ops_pending_request"""
+        timeout_at = datetime.now(timezone.utc) + timedelta(minutes=30)
+
+        pending_data = {
+            "request_id": request_id,
+            "session_id": ctx["session_id"],
+            "user_id": ctx["user_id"],
+            "agent_id": ctx["agent_id"],
+            "instance_id": ctx["instance_id"],
+            "entry_id": entry_id,
+            "suspend_reason": suspend_ctx.get("reason", ""),
+            "user_prompt": suspend_ctx.get("sql_to_run", ""),
+            "sql_to_run": suspend_ctx.get("sql_to_run", ""),
+            "expected_fields": json.dumps(
+                suspend_ctx.get("expected_fields", []), ensure_ascii=False
+            ),
+            "suspended_by_skill": suspend_ctx.get("suspended_by", "unknown"),
+            "current_step_index": current_step_index,
+            "completed_steps": json.dumps(
+                ctx.get("execution_history", []), default=str, ensure_ascii=False
+            ),
+            "accumulated_results": json.dumps({
+                "metric_results": ctx.get("metric_results", []),
+                "monitor_results": ctx.get("monitor_results", []),
+                "doc_results": ctx.get("doc_results", []),
+            }, default=str, ensure_ascii=False),
+            "pending_variables": json.dumps({
+                k: v for k, v in ctx["variables"].items()
+                if not k.startswith("_")
+            }, default=str, ensure_ascii=False),
+            "hitl_history": json.dumps(
+                ctx.get("hitl_history", []), default=str, ensure_ascii=False
+            ),
+            "runtime_plan": json.dumps(
+                ctx.get("runtime_plan"), default=str, ensure_ascii=False
+            ),
+            "status": "pending",
+            "timeout_at": timeout_at,
+        }
+
+        async with get_session() as session:
+            repo = PendingRequestRepository(session)
+            await repo.create(pending_data)
+
+        logger.info(
+            f"[HITL Suspend] request_id={request_id} | "
+            f"step={current_step_index} | 快照已持久化"
+        )
+
+    async def _mark_session_suspended(self, session_id: str, request_id: str) -> None:
+        """标记会话为挂起状态"""
+        async with get_session() as session:
+            repo = MemoryRepository(session)
+            # 通过原始 SQL 更新（避免 entity 不完整的问题）
+            from sqlalchemy import update as sql_update
+            from dao.entities import ConversationContextEntity
+            stmt = (
+                sql_update(ConversationContextEntity)
+                .where(ConversationContextEntity.session_id == session_id)
+                .values(pending_request_id=request_id, is_suspended=1)
+            )
+            await session.execute(stmt)
+            await session.commit()
+
+    async def _clear_session_suspended(self, session_id: str) -> None:
+        """清除会话挂起标记"""
+        async with get_session() as session:
+            from sqlalchemy import update as sql_update
+            from dao.entities import ConversationContextEntity
+            stmt = (
+                sql_update(ConversationContextEntity)
+                .where(ConversationContextEntity.session_id == session_id)
+                .values(pending_request_id=None, is_suspended=0)
+            )
+            await session.execute(stmt)
+            await session.commit()
+
+    async def _suspend_for_approval(
+        self,
+        ctx: OpsContextMemory,
+        approval_request_id: str,
+        current_step_index: int,
+        entry_id: str,
+        action_sql: str,
+        action_impact: str,
+        action_rollback: str,
+        skill_name: str,
+    ) -> None:
+        """审批挂起: 持久化执行状态，等待用户审批"""
+        timeout_at = datetime.now(timezone.utc) + timedelta(minutes=30)
+
+        pending_data = {
+            "request_id": approval_request_id,
+            "session_id": ctx["session_id"],
+            "user_id": ctx["user_id"],
+            "agent_id": ctx["agent_id"],
+            "instance_id": ctx["instance_id"],
+            "entry_id": entry_id,
+            "suspend_reason": f"等待审批: {skill_name}",
+            "user_prompt": (
+                f"## 待审批的变更操作\n\n"
+                f"**SQL**:\n```sql\n{action_sql}\n```\n\n"
+                f"**影响**: {action_impact}\n\n"
+                f"**回滚**: {action_rollback}\n"
+            ),
+            "sql_to_run": action_sql,
+            "expected_fields": json.dumps({
+                "type": "approval",
+                "action_sql": action_sql,
+                "impact": action_impact,
+                "rollback_sql": action_rollback,
+            }, ensure_ascii=False),
+            "suspended_by_skill": skill_name,
+            "current_step_index": current_step_index,
+            "completed_steps": json.dumps(
+                ctx.get("execution_history", []), default=str, ensure_ascii=False
+            ),
+            "accumulated_results": json.dumps({
+                "metric_results": ctx.get("metric_results", []),
+                "monitor_results": ctx.get("monitor_results", []),
+                "doc_results": ctx.get("doc_results", []),
+            }, default=str, ensure_ascii=False),
+            "pending_variables": json.dumps({
+                k: v for k, v in ctx["variables"].items()
+                if not k.startswith("_")
+            }, default=str, ensure_ascii=False),
+            "hitl_history": json.dumps(
+                ctx.get("hitl_history", []), default=str, ensure_ascii=False
+            ),
+            "runtime_plan": json.dumps(
+                ctx.get("runtime_plan"), default=str, ensure_ascii=False
+            ),
+            "status": "pending",  # pending approval
+            "timeout_at": timeout_at,
+        }
+
+        async with get_session() as session:
+            repo = PendingRequestRepository(session)
+            await repo.create(pending_data)
+
+        logger.info(
+            f"[HITL Approval] approval_id={approval_request_id} | "
+            f"skill={skill_name} | 审批挂起已持久化"
+        )
+
+    async def resume_with_approval(
+        self,
+        background_tasks: BackgroundTasks,
+        request_id: str,
+        approved: bool,
+        approver_note: str | None = None,
+    ) -> AsyncGenerator[dict[str, Any], None]:
+        """
+        审批恢复执行: 用户审批后（通过或拒绝），从挂起点恢复。
+
+        Args:
+            request_id: 审批挂起请求 ID
+            approved: True=批准执行, False=拒绝
+            approver_note: 审批人备注
+        """
+        # 1. 从数据库恢复挂起状态
+        async with get_session() as session:
+            repo = PendingRequestRepository(session)
+            pending = await repo.get_by_request_id(request_id)
+
+            if not pending:
+                yield {
+                    "type": PacketType.ERROR,
+                    "content": f"❌ 审批请求 {request_id} 不存在或已过期"
+                }
+                yield {"type": PacketType.DONE,
+                       "content": {"entry_id": "N/A", "status": "error"}}
+                return
+
+            if pending["status"] != "pending":
+                yield {
+                    "type": PacketType.ERROR,
+                    "content": (
+                        f"❌ 审批请求 {request_id} 状态为 {pending['status']}，"
+                        f"不可重复处理"
+                    )
+                }
+                yield {"type": PacketType.DONE,
+                       "content": {"entry_id": pending.get("entry_id", "N/A"),
+                                   "status": "already_handled"}}
+                return
+
+            # 标记为已处理
+            await repo.mark_answered(request_id)
+
+        # 清除会话挂起
+        await self._clear_session_suspended(pending["session_id"])
+
+        if not approved:
+            # 审批拒绝: 不执行变更
+            logger.warning(
+                f"[HITL Approval] 审批拒绝 | request_id={request_id} | "
+                f"note={approver_note}"
+            )
+            yield {
+                "type": PacketType.WARNING,
+                "content": (
+                    f"⚠️ 变更操作已被拒绝。\n"
+                    f"审批人备注: {approver_note or '无'}\n"
+                    f"诊断流程结束，未执行任何变更。\n"
+                )
+            }
+            yield {
+                "type": PacketType.DONE,
+                "content": {
+                    "entry_id": pending.get("entry_id", ""),
+                    "status": "rejected",
+                }
+            }
+            return
+
+        # 审批通过: 重建上下文，注入审批令牌，恢复执行
+        logger.info(
+            f"[HITL Approval] 审批通过 | request_id={request_id} | "
+            f"恢复执行变更操作"
+        )
+
+        ctx = self._rebuild_context_from_pending(pending)
+
+        # 注入审批令牌
+        ctx["approval_context"] = {
+            "approved": True,
+            "approved_by": "user",
+            "approved_at": datetime.now(timezone.utc).isoformat(),
+            "approver_note": approver_note or "",
+        }
+
+        # 恢复基础设施引用
+        ctx["variables"]["_prometheus_client"] = self.prometheus_client
+        ctx["variables"]["_metric_registry"] = self.metric_registry
+        ctx["variables"]["_ops_db_executor"] = self.ops_db_executor
+
+        # 标记为恢复模式
+        ctx["is_resuming"] = True
+
+        # 从断点继续执行
+        plan_steps = ctx["runtime_plan"]["steps"] if ctx["runtime_plan"] else []
+        current_step_index = pending["current_step_index"]
+        entry_id = pending["entry_id"]
+        start_time = pending.get("requested_at", datetime.now(timezone.utc))
+
+        logger.info(
+            f"[HITL Approval] 从 Step {current_step_index} "
+            f"({plan_steps[current_step_index].get('skill') if current_step_index < len(plan_steps) else '?'}) "
+            f"恢复执行 (审批已通过)"
+        )
+
+        yield {
+            "type": PacketType.THOUGHT,
+            "content": "✅ 审批已通过，正在执行自愈变更操作...\n"
+        }
+
+        # 继续步骤循环 (安全门禁此次检测到 approval_context.approved=True，放行)
+        final_answer_accumulator = ""
+        for idx in range(current_step_index, len(plan_steps)):
+            ctx["current_step_index"] = idx
+            step = plan_steps[idx]
+
+            runtime = SkillRuntime(context=ctx)
+            exec_info = runtime.create_execution_context(step_config=step)
+            skill_name = exec_info["skill"]
+
+            ctx["current_execution"] = cast(Any, exec_info)
+
+            yield {
+                "type": PacketType.CALL,
+                "content": {
+                    "skill": skill_name,
+                    "description": (exec_info["resolved_input"] or "")[:120]
+                }
+            }
+
+            skill_instance = self.skill_manager.get_skill_instance(skill_name)
+            if not skill_instance:
+                exec_info.update({"status": "failed",
+                                  "error": f"组件 {skill_name} 未激活"})
+                ctx["execution_history"].append(cast(Any, exec_info))
+                continue
+
+            # 安全门禁: 此次 approval_context 已设置，直接放行
+            gate_result = self._check_safety_gate(ctx, skill_instance, skill_name)
+            if not gate_result["allowed"]:
+                exec_info.update({"status": "blocked",
+                                  "error": gate_result["reason"]})
+                ctx["execution_history"].append(cast(Any, exec_info))
+                yield {
+                    "type": PacketType.ERROR,
+                    "content": f"🚫 安全熔断: {gate_result['reason']}"
+                }
+                continue
+
+            try:
+                async for packet in runtime.execute_skill(skill_instance, exec_info):
+                    p_type = packet.get("type")
+                    content = packet.get("content")
+
+                    if p_type == PacketType.ANSWER:
+                        final_answer_accumulator += (content or "")
+
+                    if p_type in DISPLAY_PACKET_TYPES:
+                        yield packet
+
+                exec_info.update({"status": "success"})
+                ctx["execution_history"].append(cast(Any, exec_info))
+                ctx["current_execution"] = None
+
+            except Exception as e:
+                logger.error(f"[Approval Resume] Skill [{skill_name}] 异常: {e}")
+                exec_info.update({"status": "failed", "error": str(e)})
+                ctx["execution_history"].append(cast(Any, exec_info))
+                ctx["current_execution"] = None
+                continue
+
+        # 闭环落库
+        action_result = ctx.get("variables", {}).get("action_result", {})
+        if isinstance(action_result, dict) and action_result.get("status") == "failed":
+            final_answer_accumulator = f"❌ 变更执行失败: {action_result.get('error', '未知错误')}"
+            yield {"type": PacketType.ANSWER, "content": final_answer_accumulator}
+        response_time = datetime.now(timezone.utc)
+        plan_skills_trace = [
+            s.get("skill") for s in plan_steps
+        ] if plan_steps else []
+
+        safe_variables = {
+            k: v for k, v in ctx["variables"].items()
+            if not k.startswith("_") and not hasattr(v, '__dict__')
+        }
+
+        prepared_data_payload = {
+            "standalone_query": ctx["command_or_query"],
+            "search_keywords": ctx["command_or_query"],
+            "turn_type": "task_oriented",
+            "turn_entities": safe_variables,
+            "new_state": safe_variables,
+            "active_topic": "AIOps自愈变更执行",
+            "current_plan": {
+                "skill_sequence": plan_skills_trace,
+                "total_steps": len(plan_skills_trace)
+            },
+            "thought": (
+                ctx["runtime_plan"]["thought"]
+                if ctx["runtime_plan"] else ""
+            ),
+            "metric_results_snapshot": ctx.get("metric_results", []),
+            "doc_results_snapshot": ctx.get("doc_results", []),
+        }
+
+        model_params = await self.agent_service.get_agent_model_params(
+            ctx["agent_id"]
+        )
+
+        background_tasks.add_task(
+            self.memory_service.persist_and_reflect_memory,
+            session_id=ctx["session_id"],
+            user_id=ctx["user_id"],
+            entry_id=entry_id,
+            raw_question=ctx["command_or_query"],
+            answer=final_answer_accumulator.strip() or "自愈变更执行完毕。",
+            model_params=model_params,
+            prepared_data=prepared_data_payload,
+            context_memory=cast(Any, ctx),
+            request_time=start_time,
+            response_time=response_time
+        )
+
+        logger.success(
+            f"[HITL Approval] 变更执行完成, Entry ID: {entry_id}"
+        )
+        yield {"type": PacketType.DONE, "content": {"entry_id": entry_id}}
+
+    async def resume_ops_stream_pipeline(
+        self,
+        background_tasks: BackgroundTasks,
+        request_id: str,
+        user_data: dict[str, Any] | None,
+        user_note: str | None,
+        user_error: str | None,
+    ) -> AsyncGenerator[dict[str, Any], None]:
+        """
+        从挂起状态恢复执行。
+
+        Args:
+            request_id: 挂起请求 ID (来自 WAIT_FOR_USER 包)
+            user_data: 用户回填的数据 (dict)
+            user_note: 用户备注
+            user_error: 用户执行 SQL 时的报错信息 (如 ORA-00942)
+        """
+        # 1. 从数据库恢复挂起状态
+        async with get_session() as session:
+            repo = PendingRequestRepository(session)
+            pending = await repo.get_by_request_id(request_id)
+
+            if not pending:
+                yield {
+                    "type": PacketType.ERROR,
+                    "content": f"❌ 挂起请求 {request_id} 不存在或已过期"
+                }
+                yield {
+                    "type": PacketType.DONE,
+                    "content": {"entry_id": "N/A", "status": "error"}
+                }
+                return
+
+            if pending["status"] != "pending":
+                yield {
+                    "type": PacketType.ERROR,
+                    "content": (
+                        f"❌ 挂起请求 {request_id} 状态为 {pending['status']}，"
+                        f"不可恢复"
+                    )
+                }
+                yield {
+                    "type": PacketType.DONE,
+                    "content": {
+                        "entry_id": pending.get("entry_id", "N/A"),
+                        "status": "already_handled"
+                    }
+                }
+                return
+
+            logger.info(
+                f"[HITL Resume] request_id={request_id} | "
+                f"session={pending['session_id']} | "
+                f"has_data={user_data is not None} | "
+                f"has_error={user_error is not None}"
+            )
+
+        # 2. 重建 OpsContextMemory
+        ctx = self._rebuild_context_from_pending(pending)
+
+        # 3. 恢复基础设施引用
+        ctx["variables"]["_prometheus_client"] = self.prometheus_client
+        ctx["variables"]["_metric_registry"] = self.metric_registry
+        ctx["variables"]["_ops_db_executor"] = self.ops_db_executor
+
+        # 4. HITL: 追加本轮到 Timeline (不是覆盖!)
+        hitl_history: list[dict] = ctx.get("hitl_history", [])
+        round_num = len(hitl_history) + 1
+
+        hitl_history.append({
+            "round": round_num,
+            "request_id": request_id,
+            "reason": pending.get("suspend_reason", ""),
+            "sql_to_run": pending.get("sql_to_run", ""),
+            "user_data": user_data,
+            "user_error": user_error,
+            "user_note": user_note,
+            "submitted_at": datetime.now(timezone.utc).isoformat(),
+        })
+        ctx["hitl_history"] = hitl_history
+
+        # 5. 标记为恢复模式
+        ctx["is_resuming"] = True
+
+        # 6. 从断点继续执行
+        plan_steps = ctx["runtime_plan"]["steps"] if ctx["runtime_plan"] else []
+        current_step_index = pending["current_step_index"]
+        entry_id = pending["entry_id"]
+        start_time = pending.get("requested_at", datetime.now(timezone.utc))
+
+        logger.info(
+            f"[HITL Resume] 从 Step {current_step_index} "
+            f"({plan_steps[current_step_index].get('skill') if current_step_index < len(plan_steps) else '?'}) "
+            f"恢复 | 总步骤: {len(plan_steps)} | HITL 轮次: {len(hitl_history)}"
+        )
+
+        # 7. 标记挂起为已处理 + 清除会话挂起
+        async with get_session() as session:
+            repo = PendingRequestRepository(session)
+            await repo.mark_answered(request_id)
+        await self._clear_session_suspended(pending["session_id"])
+
+        # 8. 从断点继续步骤循环
+        final_answer_accumulator = ""
+        for idx in range(current_step_index, len(plan_steps)):
+            ctx["current_step_index"] = idx
+            step = plan_steps[idx]
+
+            runtime = SkillRuntime(context=ctx)
+            exec_info = runtime.create_execution_context(step_config=step)
+            skill_name = exec_info["skill"]
+
+            ctx["current_execution"] = cast(Any, exec_info)
+
+            yield {
+                "type": PacketType.CALL,
+                "content": {
+                    "skill": skill_name,
+                    "description": (exec_info["resolved_input"] or "")[:120]
+                }
+            }
+
+            skill_instance = self.skill_manager.get_skill_instance(skill_name)
+            if not skill_instance:
+                exec_info.update({"status": "failed",
+                                  "error": f"组件 {skill_name} 未激活"})
+                ctx["execution_history"].append(cast(Any, exec_info))
+                yield {
+                    "type": PacketType.ERROR,
+                    "content": f"⚠️ 关键自愈组件 [{skill_name}] 离线, 本步骤跳过。"
+                }
+                continue
+
+            # --- 🔒 安全熔断门禁 (v2: 支持审批中断, resume 路径) ---
+            gate_result = self._check_safety_gate(ctx, skill_instance, skill_name)
+            if not gate_result["allowed"]:
+                if gate_result.get("needs_approval"):
+                    approval_request_id = f"appr_{uuid.uuid4().hex[:12]}"
+                    action_sql = ctx["variables"].get("pending_action_sql", "")
+                    action_impact = ctx["variables"].get("pending_action_impact", "")
+                    action_rollback = ctx["variables"].get("pending_action_rollback", "")
+                    action_risk = ctx["variables"].get("pending_action_risk_level", "medium")
+
+                    yield {
+                        "type": PacketType.REQUIRE_APPROVAL,
+                        "content": {
+                            "request_id": approval_request_id,
+                            "skill_name": skill_name,
+                            "reason": gate_result["reason"],
+                            "action_sql": action_sql,
+                            "impact": action_impact,
+                            "rollback_sql": action_rollback,
+                            "risk_level": action_risk,
+                            "instance_id": ctx["instance_id"],
+                            "environment": ctx["environment"],
+                        }
+                    }
+
+                    await self._suspend_for_approval(
+                        ctx=ctx,
+                        approval_request_id=approval_request_id,
+                        current_step_index=idx,
+                        entry_id=entry_id,
+                        action_sql=action_sql,
+                        action_impact=action_impact,
+                        action_rollback=action_rollback,
+                        skill_name=skill_name,
+                    )
+                    await self._mark_session_suspended(
+                        ctx["session_id"], approval_request_id
+                    )
+
+                    yield {
+                        "type": PacketType.DONE,
+                        "content": {
+                            "entry_id": entry_id,
+                            "status": "awaiting_approval",
+                            "request_id": approval_request_id,
+                        }
+                    }
+                    return
+                else:
+                    exec_info.update({"status": "blocked",
+                                      "error": gate_result["reason"]})
+                    ctx["execution_history"].append(cast(Any, exec_info))
+                    yield {
+                        "type": PacketType.ERROR,
+                        "content": f"🚫 安全熔断: {gate_result['reason']}"
+                    }
+                    continue
+
+            try:
+                _monitor_snapshot = len(ctx.get("monitor_results", []))
+                _metric_snapshot = len(ctx.get("metric_results", []))
+
+                async for packet in runtime.execute_skill(skill_instance, exec_info):
+                    p_type = packet.get("type")
+                    content = packet.get("content")
+
+                    # ──── HITL: 支持恢复后再中断 (多轮交互) ────
+                    if p_type == PacketType.WAIT_FOR_USER:
+                        suspend_ctx = content
+                        new_request_id = suspend_ctx["request_id"]
+
+                        await self._suspend_execution(
+                            ctx=ctx,
+                            suspend_ctx=suspend_ctx,
+                            request_id=new_request_id,
+                            current_step_index=idx,
+                            entry_id=entry_id,
+                            start_time=start_time,
+                        )
+                        await self._mark_session_suspended(
+                            ctx["session_id"], new_request_id
+                        )
+
+                        yield packet
+                        yield {
+                            "type": PacketType.DONE,
+                            "content": {
+                                "entry_id": entry_id,
+                                "status": "suspended",
+                                "request_id": new_request_id,
+                            }
+                        }
+                        return
+
+                    if p_type == PacketType.ANSWER:
+                        final_answer_accumulator += (content or "")
+
+                    if p_type == PacketType.MONITOR_RESULTS:
+                        if isinstance(content, dict) and "data" in content:
+                            ctx["monitor_results"].append({
+                                "step_id": step.get("step_id"),
+                                "task_description": (
+                                    step.get("task_description")
+                                    or exec_info.get("resolved_input")
+                                ),
+                                "data": content["data"],
+                                "meta": content.get("meta", {})
+                            })
+                    elif p_type == PacketType.METRIC_RESULTS:
+                        if isinstance(content, dict) and "data" in content:
+                            ctx["metric_results"].append({
+                                "step_id": step.get("step_id"),
+                                "task_description": (
+                                    step.get("task_description")
+                                    or exec_info.get("resolved_input")
+                                ),
+                                "data": content["data"],
+                                "meta": content.get("meta", {})
+                            })
+
+                    if p_type in DISPLAY_PACKET_TYPES:
+                        yield packet
+
+                exec_info.update({"status": "success"})
+                output_var = exec_info.get("output_var")
+                if output_var:
+                    new_monitor = ctx.get("monitor_results", [])[_monitor_snapshot:]
+                    new_metric = ctx.get("metric_results", [])[_metric_snapshot:]
+                    step_data = {"monitor": new_monitor, "metric": new_metric}
+                    ctx["variables"][output_var] = json.dumps(
+                        step_data, ensure_ascii=False, default=str
+                    )
+                ctx["execution_history"].append(cast(Any, exec_info))
+                ctx["current_execution"] = None
+
+            except Exception as e:
+                logger.error(
+                    f"[Orchestrator Resume] Skill [{skill_name}] 异常: {e}"
+                )
+                exec_info.update({"status": "failed", "error": str(e)})
+                ctx["execution_history"].append(cast(Any, exec_info))
+                ctx["current_execution"] = None
+                continue
+
+        # 9. 闭环落库
+        response_time = datetime.now(timezone.utc)
+        plan_skills_trace = [
+            s.get("skill") for s in plan_steps
+        ] if plan_steps else []
+
+        safe_variables = {
+            k: v for k, v in ctx["variables"].items()
+            if not k.startswith("_") and not hasattr(v, '__dict__')
+        }
+
+        prepared_data_payload = {
+            "standalone_query": ctx["command_or_query"],
+            "search_keywords": ctx["command_or_query"],
+            "turn_type": "task_oriented",
+            "turn_entities": safe_variables,
+            "new_state": safe_variables,
+            "active_topic": "AIOps内核指标探测与故障自愈",
+            "current_plan": {
+                "skill_sequence": plan_skills_trace,
+                "total_steps": len(plan_skills_trace)
+            },
+            "thought": (
+                ctx["runtime_plan"]["thought"]
+                if ctx["runtime_plan"] else ""
+            ),
+            "metric_results_snapshot": ctx.get("metric_results", []),
+            "doc_results_snapshot": ctx.get("doc_results", []),
+        }
+
+        # 获取模型参数
+        model_params = await self.agent_service.get_agent_model_params(
+            ctx["agent_id"]
+        )
+
+        background_tasks.add_task(
+            self.memory_service.persist_and_reflect_memory,
+            session_id=ctx["session_id"],
+            user_id=ctx["user_id"],
+            entry_id=entry_id,
+            raw_question=ctx["command_or_query"],
+            answer=final_answer_accumulator.strip() or "自动化自愈 SOP 链路安全执行完毕。",
+            model_params=model_params,
+            prepared_data=prepared_data_payload,
+            context_memory=cast(Any, ctx),
+            request_time=start_time,
+            response_time=response_time
+        )
+
+        logger.success(
+            f"[Orchestrator Resume] 运维自愈流水线圆满结束, "
+            f"Entry ID: {entry_id} | HITL 总轮次: {len(hitl_history)}"
+        )
+        yield {"type": PacketType.DONE, "content": {"entry_id": entry_id}}
+
+    def _rebuild_context_from_pending(
+        self, pending: dict[str, Any]
+    ) -> OpsContextMemory:
+        """从持久化快照重建 OpsContextMemory"""
+        runtime_plan = pending.get("runtime_plan") or {}
+        variables = pending.get("pending_variables") or {}
+        accumulated = pending.get("accumulated_results") or {}
+        hitl_history = pending.get("hitl_history") or []
+        completed_steps = pending.get("completed_steps") or []
+
+        if isinstance(runtime_plan, str):
+            runtime_plan = json.loads(runtime_plan)
+        if isinstance(variables, str):
+            variables = json.loads(variables)
+        if isinstance(accumulated, str):
+            accumulated = json.loads(accumulated)
+        if isinstance(hitl_history, str):
+            hitl_history = json.loads(hitl_history)
+        if isinstance(completed_steps, str):
+            completed_steps = json.loads(completed_steps)
+
+        ctx: OpsContextMemory = {
+            "trace_id": f"trace-resume-{uuid.uuid4().hex[:12]}",
+            "user_id": pending.get("user_id", ""),
+            "session_id": pending.get("session_id", ""),
+            "agent_id": pending.get("agent_id", 0),
+            "trigger_type": cast(Any, "manual"),
+            "command_or_query": (
+                runtime_plan.get("inputs", {}).get("user_query", "")
+                if isinstance(runtime_plan, dict) else ""
+            ),
+            "llm_model": (
+                runtime_plan.get("inputs", {}).get("model_name", "")
+                if isinstance(runtime_plan, dict) else ""
+            ),
+            "embedding_model": "",
+            "instance_id": pending.get("instance_id", ""),
+            "db_type": "",
+            "version_code": 0,
+            "db_role": "primary",
+            "environment": "dev",
+            "monitor_type": "prometheus",
+            "prometheus_instance_label": None,
+            "alert_context": None,
+            "runtime_plan": cast(ExecutionPlan, runtime_plan),
+            "current_step_index": pending.get("current_step_index", 0),
+            "current_execution": None,
+            "execution_history": cast(Any, completed_steps),
+            "approval_context": None,
+            "variables": variables,
+            "metric_results": (
+                accumulated.get("metric_results", [])
+                if isinstance(accumulated, dict) else []
+            ),
+            "monitor_results": (
+                accumulated.get("monitor_results", [])
+                if isinstance(accumulated, dict) else []
+            ),
+            "os_log_snapshots": [],
+            "doc_results": (
+                accumulated.get("doc_results", [])
+                if isinstance(accumulated, dict) else []
+            ),
+            "temp": {},
+            # HITL
+            "is_resuming": True,
+            "hitl_history": hitl_history,
+        }
+        return ctx
+
+    async def check_pending_timeouts(self) -> list[dict[str, Any]]:
+        """
+        HITL 超时检测: 扫描所有超时的 pending 请求，标记为 timeout 并清除会话挂起状态。
+
+        建议通过 cron 定时调用（如每 5 分钟一次）:
+          */5 * * * * cd /path/to/kbot3 && python kbot_hitl_timeout_check.py
+
+        Returns:
+            超时请求列表，每个包含 request_id, session_id, user_id
+        """
+        from sqlalchemy import update as sql_update
+        from dao.entities import ConversationContextEntity
+
+        timed_out_requests = []
+
+        async with get_session() as session:
+            repo = PendingRequestRepository(session)
+            pending_list = await repo.find_timeout_pending()
+
+            for pending in pending_list:
+                request_id = pending["request_id"]
+                session_id = pending["session_id"]
+                logger.warning(
+                    f"[HITL Timeout] request_id={request_id} | "
+                    f"session={session_id} | 已超时，自动标记为 timeout"
+                )
+
+                # 标记挂起为超时
+                await repo.mark_timeout(request_id)
+
+                # 清除会话挂起标记
+                stmt = (
+                    sql_update(ConversationContextEntity)
+                    .where(ConversationContextEntity.session_id == session_id)
+                    .values(pending_request_id=None, is_suspended=0)
+                )
+                await session.execute(stmt)
+
+                timed_out_requests.append({
+                    "request_id": request_id,
+                    "session_id": session_id,
+                    "user_id": pending.get("user_id", ""),
+                    "instance_id": pending.get("instance_id", ""),
+                    "requested_at": str(pending.get("requested_at", "")),
+                })
+
+            if timed_out_requests:
+                await session.commit()
+                logger.info(
+                    f"[HITL Timeout] 本轮标记 {len(timed_out_requests)} 个超时请求"
+                )
+
+        return timed_out_requests

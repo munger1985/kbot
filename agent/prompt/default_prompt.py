@@ -29,6 +29,10 @@ class DefaultPrompt(string.Formatter):
             "SYSTEM/ops_metric_supplement": OPS_METRIC_SUPPLEMENT_PROMPT,
             "SYSTEM/ops_metric_matching": OPS_METRIC_MATCHING_PROMPT,
             "SYSTEM/ops_diagnostic_tool": OPS_DIAGNOSTIC_TOOL_PROMPT,
+            "SYSTEM/ops_sufficiency_check": OPS_SUFFICIENCY_CHECK_PROMPT,
+            "SYSTEM/ops_execute_action": OPS_EXECUTE_ACTION_PROMPT,
+            "SYSTEM/ops_action_plan": OPS_ACTION_PLAN_PROMPT,
+            "SYSTEM/ops_heal_decision": OPS_HEAL_DECISION_PROMPT,
         }
 
     def get_value(self, key: Any, args: Any, kwargs: Any) -> Any:
@@ -652,21 +656,49 @@ ADVANCED_OPS_DIAGNOSIS_PROMPT = """
 【4. 复用 RAG 检索出来的标准化 SOP 指南】：
 {knowledge_context}
 
-【专家诊断与动作输出规范】：
-1. **RCA (根因分析)**：结合日志中的报错信息（如 ORA- 错误、内核 Panic、OOM 现象），利用知识库中的同类故障案例，给出极具把握的排查结论。
-2. **环境敏感与熔断意识**：
-   - 当前环境为 **{environment}**。如果环境为 `prod`，且你需要推荐后续的自愈变动（例如：清理无用游标、回收表空间等会引起锁表或性能震荡的 Mutation 技能），请在报告最后醒目地输出：`[SAFETY_GATE_TRIGGER]: 需要触发安全自愈控制平面审批`。
-3. **分层处置建议**：
-   - 第一步：快速止血（如摘除节点、限流、切主备等，严格契合当前的 `db_role`）。
-   - 第二步：问题根治（结合全局变量中心里的进程 ID 或会话变量给出精准的调优或清理命令）。
+【5. 多轮人机协同排查历史 (HITL Timeline)】：
+{hitl_context}
+
+【专家诊断规范】：
+1. **RCA (根因分析)**：结合数据，给出极具把握的排查结论。
+2. **环境敏感与熔断意识**：当前环境为 **{environment}**。prod 环境下变更建议必须极其保守。
+3. **分层处置建议**：第一步快速止血 → 第二步问题根治。
+4. **不要在本报告中输出 action_json 或 SQL 代码块**——系统会在诊断完成后自动生成具体执行方案。
 
 请保持理性、严谨、拒绝废话。使用 Markdown 语法直接输出诊断报告。
 开始综合诊断请求: {standalone_query}
+
 """
 
 # ================================================================================================
 # --------------------------------  运维Agent (AIOps) — 任务规划  ---------------------------------
 # ================================================================================================
+
+OPS_ACTION_PLAN_PROMPT = """
+你是一个 {db_type} 数据库运维专家。下面是完整的诊断报告。请根据诊断结论生成具体可执行的自愈动作。
+
+【诊断报告】: {diagnosis_report}
+【环境信息】: 数据库类型: {db_type} | 环境: {environment} | 节点角色: {db_role}
+【诊断工具全部结果（含真实 SID/SERIAL#/FILE_NAME 等）】: {metric_results_full}
+
+【要求】:
+- 如果诊断报告明确建议了具体 SQL 操作，则生成结构化动作
+- 如果报告结论是"无需操作"则 actions 留空
+- 核心规则: 所有 SQL 参数必须来自上面数据中的真实值，禁止编造
+- 禁止生成 SELECT 作为 action_sql
+请输出严格 JSON: {{"actions": [{{"action_sql": "...", "action_context": "...", "impact": "...", "rollback_sql": "..."}}], "risk_level": "low/medium/high/critical", "reason": "如果 actions 为空，说明原因"}}
+"""
+
+OPS_HEAL_DECISION_PROMPT = """
+你是 {db_type} 数据库运维专家。请决定下一步操作。
+【诊断报告】: {diagnosis}
+【已有数据】: {knowledge}
+【当前轮次】: {round_num}/{max_rounds}
+【已完成动作】: {results}
+决策规则: 1.如果有具体SQL且参数真实→execute 2.缺参数→query查询 3.全部完成→done 4.禁止编造参数
+输出 JSON: {{"action": "query/execute/done", "sql": "SQL", "reason": "理由", "impact": "影响(execute时)", "rollback_sql": "回滚(execute时)"}}
+"""
+
 OPS_DIAGNOSE_TASK_PLANNER_PROMPT = """
 你是一个顶级的数据库运维（DBA）专家与任务规划专家。你的职责是针对复杂的数据库故障或指标查询指令（`{standalone_query}`），将其拆解为调用数据库专用运维技能的**多步骤执行蓝图**。
 
@@ -681,7 +713,8 @@ OPS_DIAGNOSE_TASK_PLANNER_PROMPT = """
 ### 核心约束与编排协议:
 1. **多步骤原子化拆解 (核心)**: 用户的意图可能涉及多个数据库内核指标。你必须将复杂的复合请求，拆解为**多个独立的 `DBMetricSkill` 原子步骤**。每个步骤的 `task_description` 只能专注于**单一、具体的指标项**，以便下游能精确匹配到数据库模版。
 2. **流水线终点闭环**: 在所有的 `DBMetricSkill` 步骤规划完成后，**必须**规划一个 `DBAnalysisSkill` 步骤作为终点。它负责接收前面所有步骤采集到的指标（如 `{{metric_results_1}}`, `{{metric_results_2}}`），联合进行深度诊断并输出 Markdown 结果。
-3. **指令传递规范**: 在规划 `DBMetricSkill` 的 `task_description` 时，必须使用**你库中标准的、直白的原子短语风格**（如“所有表空间的使用率”、“当前有多少个活跃会话”、“锁等待情况”），严禁在单步中混淆多个指标。
+3. **变更执行收尾（可选）**: 如果你的技能库中包含 `ops-heal-skill`（变更执行技能），且你预判 DBAnalysisSkill 的诊断结果可能产出具体的变更 SQL（如 KILL SESSION、ALTER SYSTEM），你**可以**在 DBAnalysisSkill 之后追加一个 `ops-heal-skill` 步骤。该步骤会接收 DBAnalysisSkill 产出的结构化自愈动作，通过安全门禁后执行。注意：如果技能库中没有此技能，不要规划此步骤。
+4. **指令传递规范**: 在规划 `DBMetricSkill` 的 `task_description` 时，必须使用**你库中标准的、直白的原子短语风格**（如”所有表空间的使用率”、”当前有多少个活跃会话”、”锁等待情况”），严禁在单步中混淆多个指标。
 
 ### 可用技能库:
 {skills_list}
@@ -804,6 +837,70 @@ OPS_DIAGNOSTIC_TOOL_PROMPT = """
 
 如果没有合适的工具, 输出:
 {{"tool_name": null, "arguments": {{}}}}
+"""
+
+OPS_SUFFICIENCY_CHECK_PROMPT = """
+你是一个 {db_type} 数据库诊断专家。你的任务是评估现有证据是否足以给出确定性根因分析（RCA）。
+
+## 用户问题
+{query_text}
+
+## 当前环境
+- 数据库类型: {db_type}
+- 环境: {environment}
+
+## 已采集的证据
+{evidence_summary}
+
+## 历史 HITL 交互 (多轮排查 Timeline)
+{hitl_context}
+
+## 评估规则
+1. 如果 Prometheus 监控数据 + 数据库诊断 SQL 结果 + SOP 手册已经构成完整的故障证据链 → verdict: "sufficient"
+2. 如果证据指向某个方向但缺少关键数据来确认根因 → verdict: "insufficient"
+   - 你必须生成一条用户可以在 {db_type} 数据库执行的 SELECT SQL 语句
+   - SQL 必须包含行数限制（Oracle: ROWNUM <= 20, PostgreSQL/MySQL: LIMIT 20）
+   - 使用通用系统视图（避免需要 DBA 权限的高权限视图，如 Oracle 的 v$lock 改用 dba_locks）
+   - 告知用户期望返回哪些关键字段及其中文含义
+   - 如果 Prometheus 完全不可达且数据库诊断工具也全部失败，please 直接建议用户检查连接
+3. 如果已经进行了 5 轮以上交互仍未定位 → 强制 verdict: "sufficient"，基于现有证据给出最优推测
+
+## 输出格式（严格 JSON，不超过 500 tokens）
+{{
+  "verdict": "sufficient" 或 "insufficient",
+  "reason": "用中文简洁解释你做此判断的原因（1-2句话）",
+  "sql_to_run": "需要用户执行的完整 SQL 语句（仅 verdict=insufficient 时输出）",
+  "expected_fields": ["字段1(含义)", "字段2(含义)"]
+}}
+
+请严格按 JSON 输出，不要输出其他内容。
+"""
+
+OPS_EXECUTE_ACTION_PROMPT = """
+你是一个 {db_type} 数据库运维专家。你需要分析一条即将执行的变更 SQL，评估其影响并制定回滚方案。
+
+## 当前环境
+- 数据库类型: {db_type}
+- 环境: {environment}
+
+## 待执行的变更 SQL
+```sql
+{action_sql}
+```
+
+## 变更上下文（来自诊断分析）
+{action_context}
+
+## 输出要求
+请以 JSON 格式输出以下内容：
+
+{{
+  "impact": "用中文描述执行此 SQL 可能造成的影响。包括：影响范围（单会话/多会话/全局）、预计持续时间、对业务的影响程度、是否需要停机窗口。对于 KILL SESSION：说明被终止会话的事务将自动回滚，对连接的应用会短暂报错并自动重连。对于 ALTER SYSTEM：说明参数变更的生效范围（立即/重启后）及潜在风险。",
+  "rollback_sql": "用中文给出精确的回滚/恢复方案。对于 KILL SESSION：注明 Oracle 自动回滚事务，无需额外操作，应用自动重连即可。对于参数变更：给出恢复原值的反向 SQL。如果无法自动回滚，明确说明人工操作步骤。",
+  "risk_level": "low / medium / high / critical。评估标准：low=影响单个非核心会话且自动恢复；medium=影响单个核心会话或短时性能波动；high=影响多个会话或需要重启；critical=可能导致数据丢失或服务中断"
+}}
+
+严格按 JSON 输出，risk_level 必须为 low/medium/high/critical 之一。
 """
 
 default_prompt = DefaultPrompt()

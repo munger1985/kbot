@@ -3,7 +3,7 @@
 from fastapi import APIRouter, Depends, status, Query, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from api.controllers.ops_controller import ops_controller
-from api.schemas.ops_schema import CreateInstanceRequest, UpdateInstanceRequest, OpsChatRequest
+from api.schemas.ops_schema import CreateInstanceRequest, UpdateInstanceRequest, OpsChatRequest, OpsResumeRequest, OpsApproveRequest
 from api.schemas.base_response import SuccessResponse
 from core.auth.shortcuts import UserAuth
 
@@ -74,12 +74,61 @@ async def update_instance(auth: UserAuth, instance_id: str, payload: UpdateInsta
     return await ops_controller.update_instance(instance_id, payload)
 
 
+@router.post(
+    "/chat/resume",
+    summary="【HITL】提交用户采集的数据并恢复诊断",
+    description="用户在收到 WAIT_FOR_USER 事件后，执行 SQL 并将结果通过此接口提交，Agent 从断点恢复分析。",
+    response_class=StreamingResponse
+)
+async def resume_ops_chat(
+    auth: UserAuth,
+    request: OpsResumeRequest,
+    background_tasks: BackgroundTasks
+):
+    """HITL 恢复执行接口"""
+    return await ops_controller.resume_chat(
+        request=request,
+        background_tasks=background_tasks
+    )
+
+
+@router.post(
+    "/chat/cancel-pending",
+    summary="【HITL】取消当前挂起的诊断请求",
+    description="用户在等待 Agent 回复期间主动放弃等待，取消挂起的诊断。"
+)
+async def cancel_pending_request(
+    auth: UserAuth,
+    request_id: str = Query(..., description="挂起请求 ID")
+):
+    """取消挂起的 HITL 请求"""
+    return await ops_controller.cancel_pending(request_id)
+
+
+@router.post(
+    "/chat/approve",
+    summary="【HITL 审批】用户对高危变更操作进行审批",
+    description="用户在收到 REQUIRE_APPROVAL 事件后，确认风险并提交审批决定（批准或拒绝）。审批通过后 Agent 从断点恢复执行变更 SQL。",
+    response_class=StreamingResponse
+)
+async def approve_ops_action(
+    auth: UserAuth,
+    request: OpsApproveRequest,
+    background_tasks: BackgroundTasks
+):
+    """HITL 审批接口"""
+    return await ops_controller.approve_action(
+        request=request,
+        background_tasks=background_tasks
+    )
+
+
 @router.delete(
     "/instances/{instance_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="删除运维实例"
 )
-async def delete_instance(auth: UserAuth,instance_id: str):
+async def delete_instance(auth: UserAuth, instance_id: str):
     """删除指定的运维实例。此操作不可逆。"""
     await ops_controller.delete_instance(instance_id)
 

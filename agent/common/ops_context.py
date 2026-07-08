@@ -64,5 +64,11 @@ class OpsContextMemory(TypedDict):
     os_log_snapshots: list[str]              # 沉淀捞出来的 alert.log 或操作系统的 OOM 崩溃日志段
     doc_results: list[dict[str, Any]]        # 沉淀本轮检索后命中的知识库 SOP 文档切片
 
+    # =========================================================================
+    # --- 8. HITL 人机协同 (Human-in-the-Loop) ---
+    # =========================================================================
+    is_resuming: bool                    # 是否从挂起状态恢复（Skill 检测到此标志时跳过充分性检查）
+    hitl_history: list[dict[str, Any]]   # 多轮排查 Timeline（追加而非覆盖），每轮包含 request_id/reason/sql/user_data/user_error
+
     # 瞬时空间: 仅限单个 Skill 内部使用的无污染临时沙箱
     temp: dict[str, Any]

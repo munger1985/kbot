@@ -598,7 +598,9 @@ class FileService:
                     logger.error(f"删除知识库 {kb_id} 的物理目录失败: {e}")
                     raise InternalServerError(f"删除知识库 {kb_id} 的物理目录失败: {e}")
                 
-                logger.info(f"知识库 {kb_id} 中的所有文件删除成功")
+                # 5. 删除知识库记录
+                await kb_repo.delete(kb_id)
+                logger.info(f"知识库 {kb_id} 删除成功")
 
 
 ###############################################################################

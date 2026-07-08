@@ -197,26 +197,44 @@ class MemoryService:
                 execution_history = context_memory.get("execution_history") or []
                 
                 for step in execution_history:
-                    # 假设 step 是包含 skill_name, status, start_time, end_time 的对象或字典
-                    t_start = getattr(step, 'start_time', None)
-                    t_end = getattr(step, 'end_time', None)
-                    duration = int((t_end - t_start).total_seconds() * 1000) if t_start and t_end else None
+                    # 兼容 dict（JSON 反序列化）和对象两种格式
+                    if isinstance(step, dict):
+                        t_start = step.get("start_time")
+                        t_end = step.get("end_time")
+                        skill_name = step.get("skill") or step.get("skill_name", "unknown")
+                        status = step.get("status", "unknown")
+                        task_desc = step.get("task_description", "")
+                        error = step.get("error") if status == "failed" else None
+                        resolved_input = step.get("resolved_input")
+                    else:
+                        t_start = getattr(step, 'start_time', None)
+                        t_end = getattr(step, 'end_time', None)
+                        skill_name = getattr(step, 'skill', None) or getattr(step, 'skill_name', 'unknown')
+                        status = getattr(step, 'status', 'unknown')
+                        task_desc = getattr(step, 'task_description', "")
+                        error = getattr(step, 'error', None) if status == "failed" else None
+                        resolved_input = getattr(step, 'resolved_input', None)
+
+                    duration = None
+                    if t_start and t_end:
+                        try:
+                            if isinstance(t_start, str):
+                                t_start = datetime.fromisoformat(t_start)
+                            if isinstance(t_end, str):
+                                t_end = datetime.fromisoformat(t_end)
+                            duration = int((t_end - t_start).total_seconds() * 1000)
+                        except Exception:
+                            pass
 
                     step_info = {
-                        "skill": getattr(step, 'skill_name', 'unknown'),
-                        "status": getattr(step, 'status', 'unknown'),
+                        "skill": str(skill_name) if skill_name else "unknown",
+                        "status": str(status) if status else "unknown",
                         "duration_ms": duration,
-                        "task_description": str(getattr(step, 'task_description', ""))[:200],
+                        "task_description": str(task_desc)[:200] if task_desc else "",
                     }
-                    
-                    # 异常信息提取
-                    if step_info["status"] == "failed":
-                        error = getattr(step, 'error', None)
-                        if error:
-                            step_info["error"] = str(error)[:500]
-                    
-                    # 输入参数提取
-                    resolved_input = getattr(step, 'resolved_input', None)
+
+                    if error:
+                        step_info["error"] = str(error)[:500]
                     if resolved_input:
                         step_info["resolved_input"] = str(resolved_input)[:1200]
 

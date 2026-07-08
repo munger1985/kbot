@@ -277,6 +277,10 @@ class PromptConfig(BaseModel):
     ops_metric_supplement: str = Field(default="SYSTEM/ops_metric_supplement", description="Ops metric supplement decision prompt")
     ops_metric_matching: str = Field(default="SYSTEM/ops_metric_matching", description="Ops metric matching prompt")
     ops_diagnostic_tool: str = Field(default="SYSTEM/ops_diagnostic_tool", description="Ops diagnostic tool selection prompt")
+    ops_sufficiency_check: str = Field(default="SYSTEM/ops_sufficiency_check", description="Ops HITL data sufficiency check prompt")
+    ops_execute_action: str = Field(default="SYSTEM/ops_execute_action", description="Ops mutation action execution prompt")
+    ops_action_plan: str = Field(default="SYSTEM/ops_action_plan", description="Ops post-diagnosis action planning prompt")
+    ops_heal_decision: str = Field(default="SYSTEM/ops_heal_decision", description="Ops heal loop decision prompt")
 
 
 class Settings(BaseSettings):

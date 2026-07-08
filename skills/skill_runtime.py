@@ -172,6 +172,9 @@ class SkillRuntime:
 
                 yield packet
 
+            # 始终保留 answer 文本，供下游技能提取 SQL 等结构化产物
+            if answer_text_accumulator:
+                execution["answer"] = answer_text_accumulator.strip()
             if execution["output"] is None and answer_text_accumulator:
                 execution["output"] = answer_text_accumulator.strip()
 
