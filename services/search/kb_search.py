@@ -238,59 +238,53 @@ class TxtBaseSearch:
         per_route_k = search_top_k * 2
 
         # ------------------------------------------------------------------
-        # Phase 1: 两路独立并行检索
+        # Phase 1: 两路独立并行检索（各自使用独立 session 避免并发冲突）
         # ------------------------------------------------------------------
-        async with self.oracle_session as session:
-            repo = TxtChunkRepository(session)
 
-            vector_task = None
-            text_task = None
+        async def _do_vector_search() -> list[dict[str, Any]]:
+            """独立 session 的向量检索"""
+            try:
+                async with self.oracle_session as session:
+                    repo = TxtChunkRepository(session)
+                    return await repo.vector_search(
+                        kb_id=kb_id,
+                        query_vec=vec_array,
+                        security=security,
+                        similarity_threshold=threshold,
+                        search_top_k=per_route_k,
+                        tags=tags,
+                    )
+            except Exception as e:
+                logger.error(f"[TxtBaseSearch] KB {kb_id} 向量检索异常: {e}")
+                return []
 
-            if has_vec:
-                vector_task = repo.vector_search(
-                    kb_id=kb_id,
-                    query_vec=vec_array,
-                    security=security,
-                    similarity_threshold=threshold,
-                    search_top_k=per_route_k,
-                    tags=tags,
-                )
+        async def _do_text_search() -> list[dict[str, Any]]:
+            """独立 session 的全文检索"""
+            try:
+                async with self.oracle_session as session:
+                    repo = TxtChunkRepository(session)
+                    return await repo.full_text_search(
+                        kb_id=kb_id,
+                        keywords=pure_keywords,
+                        security=security,
+                        search_top_k=per_route_k,
+                        tags=tags,
+                    )
+            except Exception as e:
+                logger.error(f"[TxtBaseSearch] KB {kb_id} 全文检索异常: {e}")
+                return []
 
-            if pure_keywords:
-                text_task = repo.full_text_search(
-                    kb_id=kb_id,
-                    keywords=pure_keywords,
-                    security=security,
-                    search_top_k=per_route_k,
-                    tags=tags,
-                )
+        vec_results: list[dict[str, Any]] = []
+        text_results: list[dict[str, Any]] = []
 
-            # 并行执行两路检索
-            vec_results: list[dict[str, Any]] = []
-            text_results: list[dict[str, Any]] = []
-
-            if vector_task and text_task:
-                vec_results, text_results = await asyncio.gather(
-                    vector_task, text_task, return_exceptions=True
-                )
-                if isinstance(vec_results, Exception):
-                    logger.error(f"[TxtBaseSearch] KB {kb_id} 向量检索异常: {vec_results}")
-                    vec_results = []
-                if isinstance(text_results, Exception):
-                    logger.error(f"[TxtBaseSearch] KB {kb_id} 全文检索异常: {text_results}")
-                    text_results = []
-            elif vector_task:
-                try:
-                    vec_results = await vector_task
-                except Exception as e:
-                    logger.error(f"[TxtBaseSearch] KB {kb_id} 向量检索异常: {e}")
-                    vec_results = []
-            elif text_task:
-                try:
-                    text_results = await text_task
-                except Exception as e:
-                    logger.error(f"[TxtBaseSearch] KB {kb_id} 全文检索异常: {e}")
-                    text_results = []
+        if has_vec and pure_keywords:
+            vec_results, text_results = await asyncio.gather(
+                _do_vector_search(), _do_text_search()
+            )
+        elif has_vec:
+            vec_results = await _do_vector_search()
+        elif pure_keywords:
+            text_results = await _do_text_search()
 
         # ------------------------------------------------------------------
         # Phase 1: RRF 融合
