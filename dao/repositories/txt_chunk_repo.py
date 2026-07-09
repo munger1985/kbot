@@ -117,7 +117,7 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
                     (1 - VECTOR_DISTANCE(embedding, :qv, COSINE)) as similarity_score
                 FROM KBOT_BIZ_TXT_EMBEDDING
                 WHERE {where_clause}
-                ORDER BY similarity_score DESC
+                ORDER BY similarity_score DESC, chunk_id ASC
                 FETCH FIRST :top_k ROWS ONLY
             """
 
@@ -201,7 +201,7 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
                     (SCORE(1) * 0.5 + SCORE(2) * 0.3 + SCORE(3) * 0.2) as similarity_score
                 FROM KBOT_BIZ_TXT_EMBEDDING
                 WHERE {where_clause}
-                ORDER BY similarity_score DESC
+                ORDER BY similarity_score DESC, chunk_id ASC
                 FETCH FIRST :top_k ROWS ONLY
             """
 
@@ -315,7 +315,7 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
                     {similarity_score_sql} as similarity_score
                 FROM KBOT_BIZ_TXT_EMBEDDING
                 WHERE {where_clause}
-                ORDER BY similarity_score DESC
+                ORDER BY similarity_score DESC, chunk_id ASC
                 FETCH FIRST :top_k ROWS ONLY
             """
 
