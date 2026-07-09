@@ -51,7 +51,7 @@ class DocService:
         security_level: int,
         model_params: ModelParams,
         tags: list[str] = [],
-        enable_multi_query: bool = True,
+        enable_multi_query: bool = False,
     ) -> tuple[list[TxtBaseSearchResult], list[float]]:
         """
         核心业务流水线：多查询生成 → 向量化 → 并行检索 → 融池 → 重排序。

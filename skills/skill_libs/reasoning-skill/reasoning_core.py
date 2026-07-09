@@ -27,14 +27,32 @@ class ReasoningSkill(BaseSkill):
         # 1. Safely extract context
         target_goal = getattr(context, 'current_task', None) or context.get("standalone_query") or context.get("question")
         current_model = context["llm_model"]
-        
+
         sql_results = context.get("sql_results") or []
         doc_results = context.get("doc_results") or []
         graph_results = context.get("graph_results") or []
         combined_kb_results = doc_results + graph_results
 
-        # 2. Build LLM context text (Optimization: Convert List to Markdown table for better LLM understanding)
-        kb_text = "\n".join([f"[{i+1}] {d.get('content')}" for i, d in enumerate(combined_kb_results)]) if combined_kb_results else "No reference documents"
+        # ---- 上下文尺寸安全阀（仅兜底，正常由 search_top_k / rerank_top_k 控制） ----
+        MAX_CONTENT_LEN = 2000       # 单个 chunk 内容最大字符数
+        MAX_KB_TEXT_CHARS = 48000    # kb_text 总字符数硬上限（约 12000 tokens），仅在异常大量结果时触发
+
+        kb_parts: list[str] = []
+        kb_chars = 0
+        for i, d in enumerate(combined_kb_results):
+            raw = d.get("content", "") if isinstance(d, dict) else ""
+            truncated = raw[:MAX_CONTENT_LEN]
+            if len(raw) > MAX_CONTENT_LEN:
+                truncated += "…"
+            part = f"[{i+1}] {truncated}"
+            if kb_chars + len(part) > MAX_KB_TEXT_CHARS:
+                kb_parts.append(f"…（共 {len(combined_kb_results)} 条文档，受上下文窗口限制仅展示前 {i} 条）")
+                break
+            kb_parts.append(part)
+            kb_chars += len(part)
+
+        kb_text = "\n".join(kb_parts) if kb_parts else "No reference documents"
+        # --------------------------------------------------
         
         # Optimize data context presentation
         if sql_results and isinstance(sql_results, list):
@@ -76,6 +94,15 @@ class ReasoningSkill(BaseSkill):
         is_thinking = False
         output_buffer = ""
 
+        # 从 agent 配置获取 max_tokens，兜底 4096
+        model_params = context.get("model_params", {})
+        if isinstance(model_params, dict):
+            llm_params = model_params.get("llm_params", {}) or {}
+            max_tokens = llm_params.get("max_tokens") or 4096
+        else:
+            max_tokens = 4096
+        logger.debug(f"[ReasoningSkill] max_tokens={max_tokens}")
+
         try:
             async for chunk in self.model_client.get_llm_stream_parsed(
                 model_name=current_model,
@@ -83,7 +110,8 @@ class ReasoningSkill(BaseSkill):
                         {"role": "system", "content": reasoning_prompt},
                         {"role": "user", "content": final_prompt}
                     ],
-                temperature=0.3
+                temperature=0.3,
+                max_tokens=max_tokens,
             ):
                 if not chunk: continue
 
