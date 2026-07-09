@@ -33,8 +33,25 @@ class ReasoningSkill(BaseSkill):
         graph_results = context.get("graph_results") or []
         combined_kb_results = doc_results + graph_results
 
-        # 2. Build LLM context text (Optimization: Convert List to Markdown table for better LLM understanding)
-        kb_text = "\n".join([f"[{i+1}] {d.get('content')}" for i, d in enumerate(combined_kb_results)]) if combined_kb_results else "No reference documents"
+        # 2. 构建知识库上下文（保留全部 RRF 排序结果，裁剪单个 chunk 防止 prompt 溢出）
+        MAX_CONTENT_LEN = 2000       # 单 chunk 最大字符数
+        MAX_KB_TEXT_CHARS = 48000    # kb_text 总字符硬上限（约 12000 tokens）
+
+        kb_parts: list[str] = []
+        kb_chars = 0
+        for i, d in enumerate(combined_kb_results):
+            raw = d.get("content", "") if isinstance(d, dict) else ""
+            truncated = raw[:MAX_CONTENT_LEN]
+            if len(raw) > MAX_CONTENT_LEN:
+                truncated += "…"
+            part = f"[{i+1}] {truncated}"
+            if kb_chars + len(part) > MAX_KB_TEXT_CHARS:
+                kb_parts.append(f"…（共 {len(combined_kb_results)} 条文档，上下文窗口限制仅展示前 {i} 条）")
+                break
+            kb_parts.append(part)
+            kb_chars += len(part)
+
+        kb_text = "\n".join(kb_parts) if kb_parts else "No reference documents"
         
         # Optimize data context presentation
         if sql_results and isinstance(sql_results, list):
