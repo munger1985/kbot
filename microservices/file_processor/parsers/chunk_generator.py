@@ -131,8 +131,10 @@ class ChunkerGenerator:
             else:
                 logger.warning("文档片段标题生成失败，使用默认值")
             
-            # 3. 构造 search_helper：[全局背景] > [虚拟标题] > [内容前缀]
-            search_helper = f"{global_summary} > {virtual_header} > {content[:120].replace('\n', ' ')}"
+            # 3. 构造 search_helper：[全局背景] > [虚拟标题] > [内容前缀（扩展至300字符）]
+            # Phase 4: 扩展 content 前缀从 120 → 300 字符，提升全文检索命中率
+            content_prefix = content[:300].replace('\n', ' ')
+            search_helper = f"{global_summary} > {virtual_header} > {content_prefix}"
 
             # 4. 封装结果
             metadata = ChunkMetadata(
@@ -322,7 +324,7 @@ class ChunkerGenerator:
                                 new_lines = [l for l in new_content.split('\n') if l.strip()]
                                 new_v_header = new_lines[0].replace('#','').strip()[:50] if new_lines else "正文片段"
                                 target_chunk.header = new_v_header
-                                target_chunk.search_helper = f"{global_summary} > {new_v_header} > {new_content[:120].replace('\n',' ')}"
+                                target_chunk.search_helper = f"{global_summary} > {new_v_header} > {new_content[:300].replace('\n',' ')}"
                                 merged = True
                                 break
                 
