@@ -85,4 +85,3 @@ class AgentStreamMixin:
                 await asyncio.sleep(0.04)
             else:
                 await asyncio.sleep(0.006)
-            await asyncio.sleep(delay)
