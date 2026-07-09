@@ -167,6 +167,19 @@ class DocService:
                 f"[DocService] 多查询去重: {before_dedup} → {len(retrieved_results)}"
             )
 
+        # 按分数降序排列（RRF 分数已在 kb_search 中计算）
+        retrieved_results.sort(key=lambda x: x.score, reverse=True)
+
+        # ---- 跨知识库池化后的总上限（取各 KB 中最大的 search_top_k） ----
+        max_top_k = max((int(c.search_top_k or 10) for c in agent_confs), default=10)
+        # reranker 需要更大的候选池；未启用时直接用 search_top_k 截断
+        pool_cap = max_top_k * 3 if model_params.do_rerank else max_top_k
+        if len(retrieved_results) > pool_cap:
+            logger.debug(
+                f"[DocService] 跨KB池化截断: {len(retrieved_results)} → {pool_cap}"
+            )
+            retrieved_results = retrieved_results[:pool_cap]
+
         # ------------------------------------------------------------------
         # Step 4: 重排序
         # ------------------------------------------------------------------
