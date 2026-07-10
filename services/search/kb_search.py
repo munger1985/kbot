@@ -208,7 +208,7 @@ class TxtBaseSearch:
         Args:
             kb_id: 知识库 ID
             keywords: LLM 提取的原始关键词
-            search_top_k: 最终返回数量
+            search_top_k: 每路检索返回数量（全文/向量各取 search_top_k，RRF 合并后返回）
             threshold: 向量相似度阈值
             weight: 知识库业务权重乘数
             security: 安全等级上限
@@ -234,8 +234,8 @@ class TxtBaseSearch:
             vec_handler = OracleVecHandler()
             vec_array = vec_handler.convert(vec=query_vec, to_string=False)  # type: ignore[arg-type]
 
-        # 每路召回量：为 RRF 留余量，取 2 倍
-        per_route_k = search_top_k * 2
+        # 每路召回量：各取 search_top_k，RRF 合并后直接返回
+        per_route_k = search_top_k
 
         # ------------------------------------------------------------------
         # Phase 1: 两路独立并行检索（各自使用独立 session 避免并发冲突）
@@ -293,7 +293,7 @@ class TxtBaseSearch:
             vector_results=vec_results,
             text_results=text_results,
             k=60,
-            top_k=per_route_k,
+            top_k=search_top_k * 2,  # 两路各 search_top_k，最多 2*search_top_k 条不重复结果
         )
 
         if not fused_dataset:
@@ -311,17 +311,14 @@ class TxtBaseSearch:
         enhanced_results = await self._enhance_context_with_window_batch(raw_results)
         final_results = self._merge_adjacent_chunks(enhanced_results, window_size=1)
 
-        # 裁剪至最终 top-k
-        final_pool = final_results[:search_top_k]
-
         elapsed = time.time() - start_time
         logger.debug(
             f"[TxtBaseSearch] KB {kb_id} 检索完成: "
             f"vec={len(vec_results)}, text={len(text_results)}, "
-            f"fused={len(fused_dataset)}, final={len(final_pool)}, "
+            f"fused={len(fused_dataset)}, final={len(final_results)}, "
             f"elapsed={elapsed:.3f}s"
         )
-        return final_pool
+        return final_results
 
     # ------------------------------------------------------------------
     # Phase 4: 批量滑窗查询
