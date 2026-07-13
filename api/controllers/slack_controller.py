@@ -470,35 +470,21 @@ async def _process_event_background(parsed: dict) -> None:
         )
         return
 
-    # --- Assemble Slack message ---
-    # Parse doc_results only when the answer suggests documents were found.
-    asset_blocks: list[dict] = []
-    if "No relevant information is available" not in answer:
-        biz_list = parse_sse_doc_results(raw_sse)
-        asset_blocks = _build_asset_blocks(biz_list)
-
-    if not asset_blocks:
-        # No cards — send plain text only (no blocks, so ``text`` is rendered).
-        await _send_slack_reply(
-            bot_token=bot_token,
-            channel_id=parsed["channel_id"],
-            user_id=parsed["user_id"],
-            text=answer,
-            thread_ts=parsed["event_ts"],
-        )
-        return
-
-    # Cards present — build blocks: answer sections first, then asset cards.
-    # Use ``plain_text`` to avoid escaping issues and split long text into
-    # chunks that fit Slack's 3000-char section limit.
+    # --- Assemble Slack message as markdown blocks ---
     _SLACK_TEXT_LIMIT = 3000
     answer_blocks: list[dict] = []
     for i in range(0, len(answer), _SLACK_TEXT_LIMIT):
         chunk = answer[i:i + _SLACK_TEXT_LIMIT]
         answer_blocks.append({
-            "type": "section",
-            "text": {"type": "plain_text", "text": chunk},
+            "type": "markdown",
+            "text": chunk,
         })
+
+    # Parse doc_results only when the answer suggests documents were found.
+    asset_blocks: list[dict] = []
+    if "No relevant information is available" not in answer:
+        biz_list = parse_sse_doc_results(raw_sse)
+        asset_blocks = _build_asset_blocks(biz_list)
 
     full_blocks = answer_blocks + asset_blocks
 
