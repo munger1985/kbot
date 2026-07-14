@@ -1,6 +1,7 @@
 import os
 import shutil
 import uuid
+import urllib.parse
 from pathlib import Path
 from typing import Any
 from fastapi import UploadFile
@@ -57,7 +58,8 @@ class FileService:
             filename = file.filename
             if filename is None:
                 raise ParamValueError("文件名不能为空")
-            
+            # URL 解码文件名（如 %20 -> 空格, %3A -> : 等）
+            filename = urllib.parse.unquote(filename)
             
             logger.debug(f"开始保存文件: {filename} 到知识库")
             try:
