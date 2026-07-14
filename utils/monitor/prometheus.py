@@ -1,3 +1,4 @@
+# utils/clients/prometheus_client.py
 """
 Prometheus HTTP API 客户端适配器。
 
@@ -5,7 +6,6 @@ Prometheus HTTP API 客户端适配器。
 处理网络超时、认证和错误重试。
 """
 
-import json
 import aiohttp
 from typing import Any
 from loguru import logger
@@ -93,17 +93,10 @@ class PrometheusClient(BaseMonitorProvider):
                         logger.error(f"[PrometheusClient] Prometheus 查询失败: {error_msg}")
                         raise RuntimeError(f"Prometheus 查询失败: {error_msg}")
 
-                    result = MetricResult.from_prometheus(
+                    return MetricResult.from_prometheus(
                         metric_code="",  # 由上层调用者填充
                         raw_response=raw,
                     )
-                    data = raw.get("data", {})
-                    logger.debug(
-                        f"[PrometheusClient] 查询成功 | resultType={data.get('resultType')} "
-                        f"| resultCount={len(data.get('result', []))} "
-                        f"| rawData={json.dumps(data, ensure_ascii=False)[:500]}"
-                    )
-                    return result
 
             except aiohttp.ClientConnectorError as e:
                 logger.error(f"[PrometheusClient] 无法连接 Prometheus Server: {self.base_url} | {e}")

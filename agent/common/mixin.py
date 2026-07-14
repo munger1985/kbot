@@ -4,6 +4,7 @@ import asyncio
 import random
 from typing import Any, AsyncGenerator
 from datetime import datetime, timezone
+from loguru import logger
 from core.dictionary import PacketType
 
 class AgentStreamMixin:
@@ -47,7 +48,7 @@ class AgentStreamMixin:
                 yield packet_type, content
                 continue
 
-            # 策略 B：文本流做打字机平滑
+            # 策略 B：文本/错误流做打字机平滑
             if isinstance(content, str):
                 if len(content) <= 1:
                     yield packet_type, content
@@ -56,7 +57,7 @@ class AgentStreamMixin:
                         yield p_res, char_res
                 continue
 
-            # 策略 C：兜底 — 非标准内容转字符串透传，避免丢包
+            # 策略 C：兜底 — 将非标准内容转为字符串透传，避免丢包
             if content is not None:
                 logger.warning(f"[StreamFilter] 非标准内容类型 {type(content).__name__} (type={packet_type}), 转为字符串透传")
                 yield packet_type, str(content)
@@ -69,7 +70,7 @@ class AgentStreamMixin:
         """
         if not text:
             return
-        # 思考过程/调用状态直接整段输出
+        # 思考过程/调用状态直接整段输出，不做逐字延迟
         if packet_type in (PacketType.THOUGHT, PacketType.CALL):
             yield packet_type, text
             return

@@ -1,9 +1,9 @@
 # services/orchestrator/doc_orchestrator.py
 from loguru import logger
 from typing import Any
-from core.database.oracle import get_session
+from core.database import db_instance
 
-from services.search.doc_service import DocService
+from services.search.doc.doc_service import DocService
 from services.kb import ModelParams
 from core.exceptions import *
 from dao.entities import AgentEntity
@@ -16,11 +16,11 @@ class DocOrchestrator:
 
     @property
     def db_session(self):
-        return get_session()
+        return db_instance().get_session()
 
     async def run_pipeline(
         self,
-        agent_id: int,
+        agent_id: str,
         standalone_query: str,  # 接收 Root Agent 改写后的问题
         search_keywords: str,    # 接收 Root Agent 提取的关键词
         security_level: int,
@@ -35,43 +35,30 @@ class DocOrchestrator:
             f"接收到的 search_keywords: '{search_keywords}'"
         )
         
-        kb_results = []
-        query_vec = []
-        model_params = None
-        agent_prompt = None
+        async with self.db_session as session:
+            # 1. 获取 Agent 和模型配置 (复用原有的 _get_agent_and_params 逻辑)
+            agent_repo = AgentRepository(session)
+            agent = await agent_repo.get(agent_id)
+            model_params = await self._get_model_params(agent) 
 
-        try:
-            async with self.db_session as session:
-                # 1. 获取 Agent 和模型配置
-                agent_repo = AgentRepository(session)
-                agent = await agent_repo.get_by_id(agent_id)
-                model_params = await self._get_model_params(agent)
-                agent_prompt = agent.prompt_id
-
-                # 2. 执行完整的检索流水线 (调用 DocService)
-                kb_results, query_vec = await self.doc_service.get_knowledge_context(
-                    db_session=session,
-                    agent_id=agent_id,
-                    question=standalone_query,
-                    keywords=search_keywords,
-                    security_level=security_level,
-                    model_params=model_params,
-                    tags=tags
-                )
-        except Exception as e:
-            logger.warning(f"[DocOrchestrator] 检索流水线异常（返回空结果降级）: {e}")
+            # 2. 执行完整的检索流水线 (调用 DocService)
+            kb_results, query_vec = await self.doc_service.get_knowledge_context(
+                db_session=session,
+                agent_id=agent_id,
+                question=standalone_query,
+                keywords=search_keywords,
+                security_level=security_level,
+                model_params=model_params,
+                tags=tags
+            )
 
         # 3. 返回检索结果及其元数据
-        if model_params is None:
-            model_params = ModelParams(
-                llm_model="", txt_embedding_model="", img_embedding_model="",
-                vlm_model="", rerank_model="", do_rerank=False, llm_params={}, rerank_top_k=10
-            )
+        # 供后续 MultiSkillOrchestrator 放入 context_memory 或进行下一步推理
         return {
             "kb_results": kb_results,
             "query_vec": query_vec,
             "model_params": model_params,
-            "agent_prompt": agent_prompt
+            "agent_prompt": agent.prompt_id # 仅返回引用，不在此处查询具体内容
         }
 
     async def _get_model_params(self, agent: AgentEntity) -> ModelParams:
@@ -85,14 +72,13 @@ class DocOrchestrator:
             模型参数对象
         """
         if not agent.models:
-            logger.error(f"智能体 {agent.agent_id} 未配置任何模型")
-            raise NotFoundError(f"智能体 {agent.agent_id} 未配置模型")
+            logger.error(f"智能体 {agent.id} 未配置任何模型")
+            raise NotFoundError(f"智能体 {agent.id} 未配置模型")
         
         llm_model = agent.models.get("llm_model")
         emb_model = agent.models.get("txt_embedding_model")
-        rerank_model = agent.models.get("rerank_model")
         if not llm_model or not emb_model:
-            logger.error(f"智能体 {agent.agent_id} 未配置有效大模型/嵌入模型")
+            logger.error(f"智能体 {agent.id} 未配置有效大模型/嵌入模型")
             raise NotFoundError("智能体未配置有效大模型或嵌入模型")
 
         llm_params = {
@@ -110,12 +96,13 @@ class DocOrchestrator:
 
         params = ModelParams(
             llm_model=llm_model,
+            llm_model_light=agent.models.get("llm_model_light"),
             llm_params=llm_params,
             txt_embedding_model=emb_model,
-            img_embedding_model="",
+            visual_embedding_model="",
             vlm_model="",
             do_rerank=agent.models.get("do_rerank", False),
-            rerank_model= rerank_model or "",
-            rerank_top_k=agent.models.get("rerank_top_k", 10)
+            rerank_top_k=agent.models.get("rerank_top_k", 10),
+            enable_hyde=agent.models.get("enable_hyde", False),
         )
         return params

@@ -16,7 +16,10 @@ from .graph_repo import GraphRepository
 from .ops_db_instance_repo import OpsDbInstanceRepository
 from .ops_agent_conf_repo import OpsAgentConfRepository
 from .ops_pending_repo import PendingRequestRepository
-
+from .doc_meta_repo import DocMetaRepository
+from .doc_relation_repo import DocRelationRepository
+from .extracted_image_repo import ExtractedImageRepository
+from .page_visual_index_repo import PageVisualIndexRepository
 
 
 __all__ = [
@@ -37,5 +40,9 @@ __all__ = [
     "GraphRepository",
     "OpsDbInstanceRepository",
     "OpsAgentConfRepository",
-    "PendingRequestRepository"
+    "PendingRequestRepository",
+    "DocMetaRepository",
+    "DocRelationRepository",
+    "ExtractedImageRepository",
+    "PageVisualIndexRepository",
 ]

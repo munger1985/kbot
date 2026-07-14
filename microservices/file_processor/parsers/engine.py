@@ -130,11 +130,6 @@ class DoclingEngine:
         output_format: OutputFormat = OutputFormat.MARKDOWN
     ) -> str | dict | list[ChunkResult]:
         """文档解析方法的入口"""
-        # 自动注入 ocr_model：如果 DS OCR 已部署但 params 中未指定
-        from core.config.settings import get_dsocr_config
-        if not params.ocr_model and get_dsocr_config().enabled:
-            params.ocr_model = "deepseek-ocr-2"
-
         # 自动推导 do_ocr：配置了 AI OCR 模型则跳过内置 OCR
         effective_do_ocr = params.effective_do_ocr
         logger.info(
@@ -145,22 +140,47 @@ class DoclingEngine:
 
         loop = asyncio.get_running_loop()
         try:
-            doc = await loop.run_in_executor(
-                self.executor,
-                _do_convert,
-                str(file_path),
-                self.artifacts_path,
-                effective_do_ocr,
-                params.ocr_engine or "tesseract",
-                params.image_scale
-            )
+            # vlm 模式：仅渲染，不做文本提取
+            engine_mode = params.engine_mode or "auto"
+            if engine_mode == "precision":
+                engine_mode = "vlm"
+            file_ext = Path(file_path).suffix.lower()
+            if file_ext == ".pdf" and engine_mode == "vlm":
+                doc = await loop.run_in_executor(
+                    self.executor,
+                    _do_convert_render_only,
+                    str(file_path),
+                    self.artifacts_path,
+                    params.image_scale,
+                )
+            else:
+                doc = await loop.run_in_executor(
+                    self.executor,
+                    _do_convert,
+                    str(file_path),
+                    self.artifacts_path,
+                    effective_do_ocr,
+                    params.ocr_engine or "tesseract",
+                    params.image_scale,
+                )
         except Exception as e:
             logger.error(f"子进程转换异常: {file_path}, 详情: {e}")
             raise
 
         # 判断后续流程
         if output_format == OutputFormat.CHUNKS:
-            file_ext = Path(file_path).suffix.lower()
+            # engine_mode 和 file_ext 已在上面计算
+
+            # ═══════════════════════════════════════════════════════
+            # vlm 模式：PDF 纯视觉解析（走完全独立的 pipeline）
+            # ═══════════════════════════════════════════════════════
+            if file_ext == ".pdf" and engine_mode == "vlm":
+                return await self._process_pdf_vlm(doc, params, file_id)
+
+            # ═══════════════════════════════════════════════════════
+            # Docling 文本提取 pipeline
+            # Word/PPT/Excel 也走这里
+            # ═══════════════════════════════════════════════════════
 
             # --- Stage 1: 扫描件检测 + DS OCR 全页增强 ---
             is_scanned = self._detect_scanned_document(doc, file_ext)
@@ -171,17 +191,278 @@ class DoclingEngine:
                 logger.info(f"检测到扫描件 PDF，但未配置 AI OCR 模型，依赖内置 OCR 结果")
 
             # --- Stage 2: AI 增强（DS OCR + VLM） ---
-            if params.ocr_model or params.use_vlm:
+            if params.ocr_model or params.vlm_model:
                 await self._enhance_document_content(doc, params, file_ext, file_id)
 
-            # --- Stage 3: 分块生成 ---
+            # --- Stage 3: 统一级联分块生成 ---
             from .chunk_generator import ChunkerGenerator
+            from .hierarchy_builder import HierarchyBuilder
+            from .layout_cluster import LayoutClusterer
+            from .page_span_stitcher import PageSpanStitcher
+
             chunker = ChunkerGenerator(params)
-            vlm_data: dict = self._vlm_enhancement_cache.get(file_id, {})
-            return await chunker.generate_chunks(doc, file_ext, vlm_data)
+
+            # 文本解析质量门阈值
+            threshold = 0.70
+
+            logger.info(
+                f"[Cascade] {engine_mode} 模式启动 | "
+                f"threshold={threshold} | vlm={params.vlm_model or '无'}"
+            )
+
+            # ── Step A: 构建层级树 ──
+            builder = HierarchyBuilder(doc)
+            hierarchy = builder.build()
+            clusterer = LayoutClusterer()
+            hierarchy = clusterer.correct_reading_order(hierarchy)
+            stitcher = PageSpanStitcher()
+            hierarchy = stitcher.stitch(hierarchy)
+
+            # ── Step B: 全局摘要（1 次 LLM 调用）──
+            global_summary = await chunker._get_global_summary(doc)
+
+            # ── Step C: 结构质量门 ──
+            from .structure_quality_gate import StructureQualityGate
+            gate = StructureQualityGate(threshold=threshold)
+            reports = gate.assess(hierarchy)
+            repair_pages = [r.page_no for r in reports if r.needs_vlm_repair]
+
+            if not repair_pages:
+                logger.info(
+                    f"[Cascade] 质量门全部通过，"
+                    f"0/{len(reports)} 页需要修复 → 直接分块"
+                )
+                chunks = await chunker.generate_chunks(
+                    doc, file_ext, {}, prebuilt_hierarchy=hierarchy
+                )
+                await self._index_visual_content(doc, params, file_id, pages=[])
+                return await self._maybe_reflect_chunks(
+                    chunks, doc, params, global_summary=global_summary
+                )
+
+            # ── Step D: VLM 结构修复 ──
+            if not params.vlm_model:
+                logger.warning(
+                    f"[Cascade] {len(repair_pages)} 页需要修复，"
+                    f"但 VLM 模型未配置，跳过修复直接分块"
+                )
+                chunks = await chunker.generate_chunks(
+                    doc, file_ext, {}, prebuilt_hierarchy=hierarchy
+                )
+                await self._index_visual_content(doc, params, file_id, pages=[])
+                return await self._maybe_reflect_chunks(
+                    chunks, doc, params, global_summary=global_summary
+                )
+
+            # 准备每页的全局上下文
+            prev_stacks: dict[int, list[str]] = {}
+            next_headings: dict[int, str] = {}
+            docling_hds: dict[int, list[dict]] = {}
+            for page_no in repair_pages:
+                prev_stacks[page_no] = _get_prev_heading_stack(hierarchy, page_no)
+                next_headings[page_no] = _get_next_first_heading(hierarchy, page_no)
+                docling_hds[page_no] = _get_docling_headings_for_page(hierarchy, page_no)
+
+            from .structure_repairer import StructureRepairer
+            repairer = StructureRepairer(self.model_client)
+            repair_results = await repairer.repair_pages(
+                doc=doc,
+                repair_pages=repair_pages,
+                global_summary=global_summary,
+                prev_heading_stacks=prev_stacks,
+                next_first_headings=next_headings,
+                docling_headings=docling_hds,
+                vlm_model=params.vlm_model,
+            )
+
+            # ── Step E: 合并修复结果到层级树 ──
+            from .hierarchy_merger import HierarchyMerger
+            merger = HierarchyMerger()
+            hierarchy = merger.merge(hierarchy, repair_results)
+
+            # ── Step F: 分块（传入修复后的层级树）──
+            chunks = await chunker.generate_chunks(
+                doc, file_ext, {}, prebuilt_hierarchy=hierarchy
+            )
+            await self._index_visual_content(doc, params, file_id, pages=[])
+            return await self._maybe_reflect_chunks(
+                chunks, doc, params, global_summary=global_summary
+            )
 
         # 其他格式序列化
         return self._serialize(doc, output_format)
+
+    # ═══════════════════════════════════════════════════════════
+    # vlm 模式：PDF 纯视觉解析 pipeline
+    # ═══════════════════════════════════════════════════════════
+
+    async def _process_pdf_vlm(
+        self,
+        doc: DoclingDocument,
+        params: DocParserParams,
+        file_id: str,
+    ) -> list[ChunkResult]:
+        """vlm 模式：逐页 VLM Markdown → MarkdownSectionChunker → reflect → chunks。"""
+        if not params.vlm_model:
+            logger.error("[VLM] vlm 模式需要 VLM 模型，但未配置")
+            return []
+
+        from .precision_analyzer import PrecisionAnalyzer
+        from .section_chunker import MarkdownSectionChunker
+        from .chunk_generator import ChunkerGenerator
+
+        # Step 1: VLM 逐页 Markdown
+        analyzer = PrecisionAnalyzer(self.model_client)
+        pages = await analyzer.analyze_document(
+            doc=doc, vlm_model=params.vlm_model, file_id=file_id,
+        )
+
+        # Step 2: 全局摘要
+        chunker = ChunkerGenerator(params)
+        global_summary = await chunker._get_global_summary(doc)
+
+        # Step 3: Markdown → ChunkResult
+        chunker_md = MarkdownSectionChunker()
+        chunks = chunker_md.convert(
+            pages=pages, global_summary=global_summary, file_id=file_id,
+        )
+
+        # Step 4: 图片序列化 + VLM 描述 + 视觉向量入库
+        try:
+            await self._index_visual_content(doc, params, file_id, pages)
+        except Exception as e:
+            logger.warning(f"[VLM] 视觉索引失败: {e}")
+
+        # Step 5: ChunkReflector
+        return await self._maybe_reflect_chunks(
+            chunks, doc, params, global_summary=global_summary,
+        )
+
+    async def _index_visual_content(
+        self,
+        doc,
+        params,
+        file_id: str,
+        pages: list,
+    ) -> None:
+        """图片保存 + VLM 描述 + VisualIndexer 入库。
+
+        - doc.pictures -> 裁剪保存 + VLM 描述 -> extracted_images 表
+        - doc.pages 整页截图 -> page_visual_index 表
+        """
+        import os
+
+        kb_id = getattr(params, 'kb_id', None) or "unknown"
+        image_dir = getattr(params, 'image_dir', None)
+        visual_model = getattr(params, 'visual_model', '')
+
+        if not image_dir:
+            logger.warning("[VisualIndex] image_dir 未设置，跳过")
+            return
+        if not visual_model:
+            logger.info(
+                "[VisualIndex] visual_model 未配置，跳过 embedding 生成，"
+                "仅保存图片及描述到 extracted_images"
+            )
+
+        pic_count = len(doc.pictures)
+        if pic_count > 0:
+            logger.info(f"[VisualIndex] {pic_count} 张嵌入图片")
+
+        # --- 裁剪图片 ---
+        pic_serializer = VLMAnnotationPictureSerializer()
+        for i, pic in enumerate(doc.pictures):
+            try:
+                _, img_name = pic_serializer.serialize(item=pic, doc=doc, image_dir=image_dir)
+                if not img_name:
+                    continue
+                img_path = os.path.join(image_dir, img_name)
+                page_no = getattr(pic, 'page_no', 0) or 0
+
+                # VLM 描述：优先复用已有 annotation，否则调用 VLM 获取
+                desc = ""
+                for annotation in pic.annotations:
+                    from docling_core.types.doc.document import DescriptionAnnotation
+                    if isinstance(annotation, DescriptionAnnotation):
+                        text = annotation.text.strip() if annotation.text else ""
+                        prov = getattr(annotation, 'provenance', '') or ''
+                        if text and text != "[NONE]" and prov not in ("hash_marker", ""):
+                            desc = text
+                            break
+                if not desc:
+                    if params.vlm_model and hasattr(pic, 'image') and pic.image and pic.image.pil_image:
+                        try:
+                            prompt = getattr(params, 'img2txt_prompt', '') or "请用一句话描述这张图片的内容和用途。"
+                            desc = await self.model_client.get_vlm_answer(
+                                params.vlm_model, pic.image.pil_image, prompt=prompt,
+                            )
+                        except Exception as e:
+                            logger.warning(f"[VisualIndex] VLM desc pic {i}: {e}")
+
+                # 入库（有 visual_model 则同时生成 embedding，否则仅保存图片路径和描述）
+                from services.visual.visual_indexer import VisualIndexer
+                try:
+                    await VisualIndexer().index_extracted_image(
+                        file_id=file_id, kb_id=kb_id, page_no=page_no,
+                        image_path=img_path, description=desc, image_type="figure",
+                        bbox=getattr(pic, 'bbox', None) or {},
+                        visual_model=visual_model,
+                    )
+                except Exception as e:
+                    logger.warning(f"[VisualIndex] pic {i} index: {e}")
+
+            except Exception as e:
+                logger.warning(f"[VisualIndex] pic {i}: {e}")
+
+        # --- 整页截图（仅在有 visual_model 时生成 embedding）---
+        from services.visual.visual_indexer import VisualIndexer
+        idx = VisualIndexer()
+        for pn, po in doc.pages.items():
+            try:
+                if not po.image or not po.image.pil_image:
+                    continue
+                pp = os.path.join(image_dir, f"page_{pn}.png")
+                po.image.pil_image.save(pp)
+                cap = ""
+                for p in pages:
+                    if getattr(p, 'page', 0) == pn and getattr(p, 'markdown', ''):
+                        cap = p.markdown[:200]
+                        break
+                await idx.index_page(
+                    file_id=file_id, kb_id=kb_id, page_no=pn,
+                    image_path=pp, caption=cap, visual_model=visual_model,
+                )
+            except Exception as e:
+                logger.warning(f"[VisualIndex] page {pn}: {e}")
+
+        if pic_count > 0 or doc.pages:
+            logger.success(f"[VisualIndex] done: {pic_count} pics, {len(doc.pages)} pages")
+
+    async def _maybe_reflect_chunks(
+        self,
+        chunks: list[ChunkResult],
+        doc,
+        params: DocParserParams,
+        global_summary: str,
+    ) -> list[ChunkResult]:
+        """可选：LLM 后反思重组短 chunk。
+
+        仅在 enable_chunk_reflection=True 时执行。
+        """
+        if not getattr(params, 'enable_chunk_reflection', False):
+            logger.info("[ChunkReflector] 开关未开启 (enable_chunk_reflection=false)，跳过")
+            return chunks
+        if not params.llm_model:
+            logger.info("[ChunkReflector] LLM 模型未配置，跳过 chunk 反思")
+            return chunks
+
+        from .chunk_reflector import ChunkReflector
+        reflector = ChunkReflector(
+            global_summary=global_summary or "未知文档",
+            llm_model=params.llm_model,
+            model_client=self.model_client,
+        )
+        return await reflector.reflect(chunks)
 
     def _serialize(self, doc: DoclingDocument, fmt: OutputFormat) -> str | dict:
         """将DoclingDocument序列化为指定格式
@@ -199,10 +480,10 @@ class DoclingEngine:
             return doc.export_to_html()
         if fmt == OutputFormat.JSON: 
             return doc.export_to_dict()
-        if fmt == OutputFormat.DOCTAGS:
+        if fmt == OutputFormat.DOCTAGS: 
             return doc.export_to_doctags()
         return ""
-
+    
     def _detect_scanned_document(self, doc: DoclingDocument, file_ext: str) -> bool:
         """检测是否为扫描件 PDF（无原生文本层，内容全为图片）。
 
@@ -297,7 +578,7 @@ class DoclingEngine:
                     )
                 injected_count += 1
 
-        logger.success(f"DS OCR 扫描件增强完成: {injected_count}/{len(results)} 页成功注入文字")
+        logger.success(f"DS OCR 扫描件增强完成: {injected_count} 个文本元素 / {len(results)} 页")
 
     @staticmethod
     def _parse_grounding_elements(raw: str, page_no: int) -> list[dict]:
@@ -314,6 +595,7 @@ class DoclingEngine:
 
         返回: [{"label": DocItemLabel, "text": str, "prov": ProvenanceItem}, ...]
         """
+        import re
         from docling_core.types.doc.labels import DocItemLabel
         from docling_core.types.doc.document import ProvenanceItem, BoundingBox
         from docling_core.types.doc.base import CoordOrigin
@@ -405,7 +687,7 @@ class DoclingEngine:
         对 PictureItem：DS OCR 优先（文字型图片），VLM 兜底（真实照片）。
         对 TableItem：VLM 视觉重构（现有逻辑不变）。
         """
-        has_vlm = params.use_vlm and params.vlm_model
+        has_vlm = params.vlm_model is not None
         has_ocr = params.ocr_model is not None
 
         if not has_vlm and not has_ocr:
@@ -482,15 +764,17 @@ class DoclingEngine:
                     hash_to_pic_indices[img_hash] = [i]
                     pic_context = item_id_to_header.get(id(pic), "未知章节")
 
-                    # 4a. DS OCR 任务（优先：识别文字型图片）
+                    # 图片处理策略：
+                    # 两者都配 → DS OCR 提取文字 + VLM 理解语义，并行协作（图文并茂最佳）
+                    # 仅 DS OCR → 纯文字提取（成本优先）
+                    # 仅 VLM    → 语义描述（图表/照片）
+                    # 都没有    → 依赖 Docling 内置 OCR
                     if has_ocr:
                         ocr_prompt = "Parse the figure."
                         tasks.append(self.model_task.dsocr_task(
                             self.model_client, params.ocr_model,
                             ocr_prompt, f"ocr:hash:{img_hash}", raw_img
                         ))
-
-                    # 4b. VLM 任务（兜底：照片描述 / 表格重构）
                     if has_vlm:
                         vlm_final_prompt = default_prompt.format(
                             params.img2txt_prompt,
@@ -516,7 +800,7 @@ class DoclingEngine:
 请将图片中的表格解析为 JSON 格式。
 必须严格遵守以下约束：
 1. 返回格式必须为：{{"header": "Markdown格式表头", "rows": ["数据行1", "数据行2", ...]}}
-2. rows 数组中的每一项必须是单行 Markdown。
+2.  rows 数组中的每一项必须是单行 Markdown。
 3. 严禁输出任何 JSON 以外的文字。"""
 
                         tasks.append(self.model_task.vlm_task(
@@ -535,10 +819,10 @@ class DoclingEngine:
                 if isinstance(res, BaseException):
                     logger.error(f"AI 增强任务执行崩溃: {res}")
                 continue
-
-            key, content = res
+                
+            key, content = res 
             if not content: continue
-
+                
             parts = key.split(':')
             if len(parts) < 3: continue
 
@@ -584,7 +868,7 @@ class DoclingEngine:
                     for p_idx in hash_to_pic_indices.get(img_hash, []):
                         doc.pictures[p_idx].annotations.append(
                             DescriptionAnnotation(
-                                text=clean_content, 
+                                text=clean_content,
                                 provenance="vlm_inference"
                             )
                         )
@@ -650,6 +934,102 @@ class DoclingEngine:
             else:
                 logger.warning(f"解析文档时通过VLM增强图片和表格时获取的category是未知类型，跳过处理")
     
+# ═══════════════════════════════════════════════════════════════
+# 级联管线辅助函数 — 从层级树中提取 VLM 修复所需全局上下文
+# ═══════════════════════════════════════════════════════════════
+
+def _get_prev_heading_stack(hierarchy, page_no: int) -> list[str]:
+    """获取指定页之前最后一页的标题栈（按层级顺序）。
+
+    遍历整个文档的标题节点，找到 page_no 前一页的最后一个标题栈。
+    """
+    from .hierarchy_builder import SemanticNode
+
+    # 收集全文档标题，按页码排序
+    all_headings: list[tuple[int, int, str]] = []  # (page_no, level, text)
+
+    def _collect_headings(node: SemanticNode):
+        if node.node_type == 'title' and node.text.strip():
+            all_headings.append((node.page_num, node.level, node.text.strip()))
+        for child in node.children:
+            _collect_headings(child)
+
+    _collect_headings(hierarchy)
+
+    if not all_headings:
+        return []
+
+    # 找到 page_no 之前的最大页码
+    prev_page = 0
+    for pg, _, _ in all_headings:
+        if pg < page_no and pg > prev_page:
+            prev_page = pg
+
+    if prev_page == 0:
+        return []
+
+    # 重建上一页的标题栈
+    stack: list[str] = []
+    for pg, lv, text in all_headings:
+        if pg > prev_page:
+            break
+        if pg == prev_page:
+            while stack and len(stack) >= lv:
+                stack.pop()
+            stack.append(text)
+
+    return stack
+
+
+def _get_next_first_heading(hierarchy, page_no: int) -> str:
+    """获取指定页之后第一页的第一个标题文本。"""
+    from .hierarchy_builder import SemanticNode
+
+    first_text = ""
+
+    def _find_first(node: SemanticNode):
+        nonlocal first_text
+        if first_text:
+            return
+        if node.node_type == 'title' and node.page_num > page_no and node.text.strip():
+            first_text = node.text.strip()
+            return
+        for child in node.children:
+            _find_first(child)
+
+    _find_first(hierarchy)
+    return first_text
+
+
+def _get_docling_headings_for_page(hierarchy, page_no: int) -> list[dict]:
+    """提取指定页 Docling 识别的标题列表（供 VLM 验证）。"""
+    from .hierarchy_builder import SemanticNode
+
+    headings: list[dict] = []
+
+    def _collect(node: SemanticNode):
+        if node.page_num == page_no and node.node_type == 'title' and node.text.strip():
+            bbox_hint = "未知"
+            if node.bbox:
+                y_center = (node.bbox[1] + node.bbox[3]) / 2
+                if y_center < 0.33:
+                    bbox_hint = "页面上部"
+                elif y_center < 0.66:
+                    bbox_hint = "页面中部"
+                else:
+                    bbox_hint = "页面下部"
+            headings.append({
+                "text": node.text.strip(),
+                "level": node.level,
+                "bbox_hint": bbox_hint,
+            })
+        for child in node.children:
+            _collect(child)
+
+    _collect(hierarchy)
+    return headings
+
+
 def _do_convert(file_path: str, artifacts_path: str, do_ocr: bool, ocr_engine: str, image_scale: float) -> DoclingDocument:
     """子进程执行函数：在子进程内部初始化转换器"""
     # 延迟导入，减少主进程启动负担
@@ -703,4 +1083,47 @@ def _do_convert(file_path: str, artifacts_path: str, do_ocr: bool, ocr_engine: s
     else:
         result = converter.convert(file_path)
     # 返回 DoclingDocument 对象，该对象在 Docling 2.x 中是支持 pickle 的
+    return result.document
+
+
+def _do_convert_render_only(
+    file_path: str, artifacts_path: str, image_scale: float
+) -> DoclingDocument:
+    """子进程执行函数（vlm 模式）：仅渲染页面图 + 提取嵌入图片，不做文本 OCR。
+
+    与 _do_convert 的区别：do_ocr=False，generate_table_images=False。
+    """
+    import subprocess
+    from pathlib import Path
+    from docling.datamodel.base_models import InputFormat
+    from docling.document_converter import DocumentConverter, PdfFormatOption
+    from docling.datamodel.pipeline_options import PdfPipelineOptions
+
+    pipeline_opts = PdfPipelineOptions(
+        artifacts_path=artifacts_path,
+        do_ocr=False,
+        do_chart_extraction=False,
+        generate_table_images=False,
+        generate_picture_images=True,
+        generate_page_images=True,
+        images_scale=image_scale,
+    )
+
+    converter = DocumentConverter(
+        format_options={
+            InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_opts),
+        }
+    )
+
+    file_ext = Path(file_path).suffix.lower()
+    if file_ext in [".pptx", ".ppt"]:
+        temp_dir = os.path.dirname(file_path)
+        subprocess.run([
+            'soffice', '--headless', '--convert-to', 'pdf',
+            '--outdir', temp_dir, file_path
+        ], check=True)
+        pdf_path = os.path.join(temp_dir, Path(file_path).stem + ".pdf")
+        result = converter.convert(pdf_path)
+    else:
+        result = converter.convert(file_path)
     return result.document

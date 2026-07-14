@@ -1,4 +1,6 @@
+import json
 import uuid
+import asyncio
 from loguru import logger
 from datetime import datetime, timezone
 from typing import Any, AsyncGenerator
@@ -10,8 +12,9 @@ from skills.skill_manager import SkillManager
 from services.basic.agent_service import AgentService
 from .intent_router import IntentRouter
 from agent.planner.decision_engine import PlanningEngine
+from agent.planner.execution_scheduler import compute_execution_waves
 from skills import SkillRuntime
-from agent.common import ContextMemory, ExecutionPlan
+from agent.common import ContextMemory
 from core.dictionary import IntentType, PacketType
 
 
@@ -40,7 +43,7 @@ class RootOrchestrator:
         background_tasks: BackgroundTasks,
         user_id: str,
         session_id: str,
-        agent_id: int,
+        agent_id: str,
         question: str,
         security_level: int,
         tags: list[str] | None = None
@@ -50,11 +53,12 @@ class RootOrchestrator:
         entry_id = str(uuid.uuid4())
         model_params = await self.agent_service.get_agent_model_params(agent_id)
         llm_model = model_params.llm_model
+        embedding_model = model_params.txt_embedding_model
         
         # --- 1. 上下文预处理与画像同步 ---
         user_profile = await self.memory_service.get_user_profile(user_id)
-        content = "Synchronizing user profile and context...\n"
-        yield {"type": PacketType.THOUGHT, "content": content}
+        init_thought = {"type": PacketType.THOUGHT, "content": "正在同步用户画像与上下文...\n"}
+        yield init_thought
 
         prepared = await self.memory_service.prepare_context_and_rewrite(
             user_id=user_id,
@@ -64,8 +68,8 @@ class RootOrchestrator:
             user_profile=user_profile
         )
         
-        # --- 2. 精细化意图路由 ---
-        analysis = await self.intent_router.route(llm_model, prepared['standalone_query'])
+        # --- 2. 精细化意图路由（含 SOP 工作流匹配） ---
+        analysis = await self.intent_router.route(llm_model, prepared['standalone_query'], agent_id=agent_id)
         
         # --- 3. 初始化 ContextMemory 实例 (严格对齐规范) ---
         ctx: ContextMemory = {
@@ -76,6 +80,7 @@ class RootOrchestrator:
             "standalone_query": prepared['standalone_query'],
             "search_keywords": prepared.get('search_keywords') or prepared.get('keywords') or "",
             "llm_model": llm_model,
+            "embedding_model": embedding_model,
             "security_level": int(security_level),
             "tags": tags or [],
             "intent_context": analysis.model_dump() if hasattr(analysis, 'model_dump') else {},
@@ -90,7 +95,7 @@ class RootOrchestrator:
             "sql_results": [],
             "graph_results": [],
             "session_state": prepared.get('new_state', {}),
-            "blocks": [],
+            "blocks": [init_thought],  # 初始 thought 也需保存以支持历史重放
             "temp": {}
         }
 
@@ -144,76 +149,68 @@ class RootOrchestrator:
             try:
                 async for packet in self.planning_engine.decide_stream(context=ctx):
                     if packet.get("type") == PacketType.THOUGHT:
+                        ctx["blocks"].append(packet)
                         yield packet
             except Exception as e:
                 logger.critical(f"决策引擎崩溃: {str(e)}")
-                content = "Decision engine crashed, unable to proceed with the task."
-                yield {"type": PacketType.ERROR, "content": content}
+                err_packet = {"type": PacketType.ERROR, "content": "决策引擎崩溃，无法继续执行任务。"}
+                ctx["blocks"].append(err_packet)
+                yield err_packet
                 return
 
-        # --- 5. 统一流式循环执行阶段 ---
+        # --- 5. 波次执行阶段 (支持并行) ---
         final_answer_accumulator = ""
         reasoning_triggered = False
         plan_steps = ctx["runtime_plan"].get("steps", []) if ctx["runtime_plan"] else []
 
-        for idx, step in enumerate(plan_steps):
-            ctx["current_step_index"] = idx
-            
-            # 每个独立步骤，精准拉起一个专属的 SkillRuntime 隔离沙箱
-            runtime = SkillRuntime(context=ctx)
-            
-            # 建立执行快照（Runtime 内部自动完成输入变量占位符替换）
-            exec_info = runtime.create_execution_context(step_config=step)
-            skill_name = exec_info["skill"]
-            
-            if skill_name in ("ReasoningSkill", "reasoning", "reasoning-skill"):
-                reasoning_triggered = True
+        # 获取依赖图并计算执行波次
+        dep_graph = ctx.get("temp", {}).get("_dep_graph", {})
+        if dep_graph:
+            waves = compute_execution_waves(plan_steps, dep_graph)
+            logger.info(f"波次调度: {len(plan_steps)} 步骤 → {len(waves)} 个波次")
+        else:
+            # 无依赖图时回退为串行（每个步骤一个波次）
+            waves = [[i] for i in range(len(plan_steps))]
 
-            # B. 向前端下发明确的组件唤醒信号
-            yield {
-                "type": PacketType.CALL, 
-                "content":{
-                    "skill": skill_name, 
-                    "description": exec_info["resolved_input"]
-                }
-            }
-            
-            skill_instance = self.skill_manager.get_skill_instance(skill_name)
-            if not skill_instance:
-                exec_info.update({"status": "failed", "error": f"组件 {skill_name} 损坏或未注册"})
-                ctx["execution_history"].append(exec_info)
-                content = f"⚠️ Critical component [{skill_name}] offline, skip current step"
-                yield {"type": PacketType.ERROR, "content": content}
-                continue
+        for wave_idx, wave_indices in enumerate(waves):
+            wave_steps = [plan_steps[i] for i in wave_indices]
 
-            try:
-                # C. 托管给沙箱驱动具体的技能执行周期
-                async for packet in runtime.execute_skill(skill_instance, exec_info):
+            if len(wave_steps) == 1:
+                # 单步骤波次：串行执行
+                async for packet in self._execute_single_step(
+                    ctx, wave_steps[0], wave_indices[0]
+                ):
                     p_type = packet.get("type")
                     content = packet.get("content")
 
                     if p_type == PacketType.ANSWER:
                         final_answer_accumulator += (content or "")
-
                     if p_type == PacketType.SQL_RESULTS:
                         if isinstance(content, dict) and "data" in content:
-                            ctx["sql_results"].extend(content["data"])
-
-                    # UI Block 聚合（在 Orchestrator 层做防碎化去重）
-                    if p_type not in (PacketType.DONE, PacketType.CALL):
-                        if p_type in (PacketType.THOUGHT, PacketType.ANSWER) and ctx["blocks"]:
-                            if ctx["blocks"][-1]["type"] == p_type:
-                                ctx["blocks"][-1]["content"] += (content or "")
-                            else:
-                                ctx["blocks"].append({"type": p_type, "content": content or ""})
-                        else:
-                            ctx["blocks"].append({"type": p_type, "content": content})
-
+                            ctx["sql_results"].append(content["data"])
                     if p_type in DISPLAY_PACKET_TYPES:
                         yield packet
-                        
-            except Exception as e:
-                logger.error(f"运行时在驱动组件 {skill_name} 时遭遇未知错误: {e}")
+
+                    # 追踪 reasoning
+                    skill_name = wave_steps[0].get("skill", "")
+                    if skill_name in ("ReasoningSkill", "reasoning-skill"):
+                        reasoning_triggered = True
+            else:
+                # 多步骤波次：并行执行
+                logger.info(f"Wave {wave_idx}: 并行执行 {len(wave_steps)} 个步骤")
+                async for packet in self._execute_wave_parallel(
+                    ctx, wave_steps, wave_indices
+                ):
+                    p_type = packet.get("type")
+                    content = packet.get("content")
+
+                    if p_type == PacketType.ANSWER:
+                        final_answer_accumulator += (content or "")
+                    if p_type == PacketType.SQL_RESULTS:
+                        if isinstance(content, dict) and "data" in content:
+                            ctx["sql_results"].append(content["data"])
+                    if p_type in DISPLAY_PACKET_TYPES:
+                        yield packet
 
         # --- 6. 兜底强制总结判定 ---
         if (ctx["doc_results"] or ctx["sql_results"]) and not reasoning_triggered:
@@ -229,10 +226,27 @@ class RootOrchestrator:
                     "condition": None
                 })
                 async for packet in fallback_runtime.execute_skill(reasoning_skill, exec_info):
-                    if packet.get("type") == PacketType.ANSWER:
-                        final_answer_accumulator += (packet.get("content") or "")
-                    if packet.get("type") in DISPLAY_PACKET_TYPES:
+                    p_type = packet.get("type")
+                    content = packet.get("content")
+                    if p_type == PacketType.ANSWER:
+                        final_answer_accumulator += (content or "")
+                    # 保存到 blocks 以支持历史重放
+                    if p_type != PacketType.DONE:
+                        ctx["blocks"].append(packet)
+                    if p_type in DISPLAY_PACKET_TYPES:
                         yield packet
+
+        # --- 6.5 合并相邻同类型 block，避免流式传输碎片化影响历史重放 ---
+        merged_blocks = []
+        for blk in ctx["blocks"]:
+            if blk["type"] in (PacketType.THOUGHT, PacketType.ANSWER):
+                if merged_blocks and merged_blocks[-1]["type"] == blk["type"]:
+                    merged_blocks[-1]["content"] += (blk.get("content") or "")
+                else:
+                    merged_blocks.append(blk)
+            else:
+                merged_blocks.append(blk)
+        ctx["blocks"] = merged_blocks
 
         # --- 7. 异步非阻塞记忆持久化与画像反思 ---
         plan_skills_trace = [s.get("skill") for s in plan_steps] if plan_steps else []
@@ -260,4 +274,118 @@ class RootOrchestrator:
             response_time=datetime.now(timezone.utc)
         )
         
-        yield {"type": PacketType.DONE, "content":{"entry_id": entry_id}}
+        yield {"type": PacketType.DONE, "content": {"entry_id": entry_id}}
+
+    # ═══════════════════════════════════════════════════════════════
+    # 步骤执行辅助方法
+    # ═══════════════════════════════════════════════════════════════
+
+    async def _execute_single_step(
+        self,
+        ctx: ContextMemory,
+        step: dict[str, Any],
+        step_index: int,
+    ) -> AsyncGenerator[dict[str, Any], None]:
+        """执行单个步骤（串行路径）"""
+        ctx["current_step_index"] = step_index
+
+        runtime = SkillRuntime(context=ctx)
+        exec_info = runtime.create_execution_context(step_config=step)
+        skill_name = exec_info["skill"]
+
+        # 下发 CALL 信号
+        call_packet = {
+            "type": PacketType.CALL,
+            "content": {
+                "skill": skill_name,
+                "description": step["task_description"]
+            }
+        }
+        ctx["blocks"].append(call_packet)
+        yield call_packet
+
+        skill_instance = self.skill_manager.get_skill_instance(skill_name)
+        if not skill_instance:
+            exec_info.update({"status": "failed", "error": f"组件 {skill_name} 损坏或未注册"})
+            ctx["execution_history"].append(exec_info)
+            err_packet = {"type": PacketType.ERROR, "content": f"⚠️ 关键组件 [{skill_name}] 离线，本步骤跳过"}
+            ctx["blocks"].append(err_packet)
+            yield err_packet
+            return
+
+        try:
+            async for packet in runtime.execute_skill(skill_instance, exec_info):
+                self._collect_packet_to_blocks(ctx, packet)
+                yield packet
+        except Exception as e:
+            logger.error(f"运行时在驱动组件 {skill_name} 时遭遇未知错误: {e}")
+
+    async def _execute_wave_parallel(
+        self,
+        ctx: ContextMemory,
+        wave_steps: list[dict[str, Any]],
+        step_indices: list[int],
+    ) -> AsyncGenerator[dict[str, Any], None]:
+        """
+        并行执行一个波次内的多个步骤。
+
+        策略:
+        - THOUGHT 实时 yield（前端可看到各步骤进度）
+        - ANSWER/DATA 类 packet 也实时 yield
+        - 使用 asyncio.Queue 收集各任务输出，避免竞态
+        """
+        queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
+        step_count = len(wave_steps)
+
+        async def run_one(step: dict[str, Any], idx: int):
+            """并行任务：执行单个步骤，将输出推入队列"""
+            try:
+                async for packet in self._execute_single_step(ctx, step, idx):
+                    await queue.put(packet)
+            except Exception as e:
+                logger.error(f"并行步骤执行异常: {e}")
+                await queue.put({
+                    "type": PacketType.ERROR,
+                    "content": f"并行步骤 {step.get('skill', '?')} 执行异常: {e}"
+                })
+            finally:
+                await queue.put(None)  # 哨兵：标记本任务完成
+
+        # 启动所有并行任务
+        tasks = [
+            asyncio.create_task(run_one(step, idx))
+            for step, idx in zip(wave_steps, step_indices)
+        ]
+
+        # 收集输出直到所有任务完成
+        finished = 0
+        while finished < step_count:
+            packet = await queue.get()
+            if packet is None:
+                finished += 1
+                continue
+
+            p_type = packet.get("type")
+            if p_type != PacketType.DONE:
+                self._collect_packet_to_blocks(ctx, packet)
+
+            yield packet
+
+        # 确保所有任务清理完毕
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+    def _collect_packet_to_blocks(self, ctx: ContextMemory, packet: dict[str, Any]) -> None:
+        """将 packet 收集到 ctx['blocks']，合并相邻同类型文本块"""
+        p_type = packet.get("type")
+        content = packet.get("content", "")
+
+        if p_type == PacketType.DONE:
+            return
+
+        if p_type in (PacketType.THOUGHT, PacketType.ANSWER) and ctx["blocks"]:
+            if ctx["blocks"][-1]["type"] == p_type:
+                ctx["blocks"][-1]["content"] += (content or "")
+            else:
+                ctx["blocks"].append({"type": p_type, "content": content or ""})
+        else:
+            ctx["blocks"].append({"type": p_type, "content": content})

@@ -110,6 +110,13 @@ token = ""
 timeout = 15
 default_step = "60s"
 
+[zabbix]
+api_url = "http://localhost/zabbix/api_jsonrpc.php"
+token = ""
+user = "Admin"
+password = ""
+timeout = 15
+
 [prompt]
 image2text = "SYSTEM/image2text"
 rewrite_question = "SYSTEM/rewrite_question"

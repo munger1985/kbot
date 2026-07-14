@@ -114,6 +114,8 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
                 SELECT
                     chunk_id, chunk_type, file_id, kb_id, content, header, chunk_num,
                     chunk_metadata, biz_metadata, search_helper,
+                    doc_summary, hierarchy_path, hierarchy_depth, heading_level,
+                    parent_chunk_id, section_id, created_at,
                     (1 - VECTOR_DISTANCE(embedding, :qv, COSINE)) as similarity_score
                 FROM KBOT_BIZ_TXT_EMBEDDING
                 WHERE {where_clause}
@@ -198,6 +200,8 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
                 SELECT
                     chunk_id, chunk_type, file_id, kb_id, content, header, chunk_num,
                     chunk_metadata, biz_metadata, search_helper,
+                    doc_summary, hierarchy_path, hierarchy_depth, heading_level,
+                    parent_chunk_id, section_id, created_at,
                     (SCORE(1) * 0.5 + SCORE(2) * 0.3 + SCORE(3) * 0.2) as similarity_score
                 FROM KBOT_BIZ_TXT_EMBEDDING
                 WHERE {where_clause}
@@ -229,8 +233,15 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
                 "content": c.content,
                 "header": c.header,
                 "search_helper": getattr(c, "search_helper", ""),
+                "doc_summary": getattr(c, "doc_summary", ""),
                 "metadata": c.chunk_metadata,
                 "biz_metadata": c.biz_metadata,
+                "hierarchy_path": getattr(c, "hierarchy_path", None),
+                "hierarchy_depth": getattr(c, "hierarchy_depth", None),
+                "heading_level": getattr(c, "heading_level", None),
+                "parent_chunk_id": getattr(c, "parent_chunk_id", None),
+                "section_id": getattr(c, "section_id", None),
+                "created_at": getattr(c, "created_at", None),
                 "score": float(c.similarity_score or 0.0),
             })
         return results
@@ -312,6 +323,8 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
             sql_query = f"""
                 SELECT 
                     chunk_id, chunk_type, file_id, kb_id, content, header, chunk_num, chunk_metadata, biz_metadata,
+                    search_helper, doc_summary, hierarchy_path, hierarchy_depth, heading_level,
+                    parent_chunk_id, section_id, created_at,
                     {similarity_score_sql} as similarity_score
                 FROM KBOT_BIZ_TXT_EMBEDDING
                 WHERE {where_clause}
@@ -335,6 +348,14 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
                 "header": c.header,
                 "metadata": c.chunk_metadata,
                 "biz_metadata": c.biz_metadata,
+                "search_helper": getattr(c, "search_helper", ""),
+                "doc_summary": getattr(c, "doc_summary", ""),
+                "hierarchy_path": getattr(c, "hierarchy_path", None),
+                "hierarchy_depth": getattr(c, "hierarchy_depth", None),
+                "heading_level": getattr(c, "heading_level", None),
+                "parent_chunk_id": getattr(c, "parent_chunk_id", None),
+                "section_id": getattr(c, "section_id", None),
+                "created_at": getattr(c, "created_at", None),
                 "score": float(c.similarity_score or 0.0)
             } for c in chunks]
 
@@ -528,18 +549,16 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
         """
         oracle_embedding = OracleVecHandler().convert(new_embedding)
         try:
-            stmt = (
-                update(TxtChunkEntity)
-                .where(TxtChunkEntity.chunk_id == chunk_id)
-                .values(content=new_content)
-                .values(embedding=oracle_embedding)
-                .returning(func.count(TxtChunkEntity.chunk_id))
-            )
-
-            rowcount = await self.session.execute(stmt)
-            
-            if rowcount == 0:
+            # 先检查 chunk 是否存在
+            stmt = select(TxtChunkEntity).where(TxtChunkEntity.chunk_id == chunk_id)
+            result = await self.session.execute(stmt)
+            entity = result.scalar_one_or_none()
+            if not entity:
                 raise DataNotFoundException(f"Chunk ID not found: {chunk_id}")
+
+            entity.content = new_content
+            entity.embedding = oracle_embedding
+            await self.session.flush()
 
             logger.info(f"Successfully updated content for chunk {chunk_id}")
             return True

@@ -1,14 +1,14 @@
 # agent/orchestrator/ops_orchestrator.py
 
-import uuid
 import json
+import uuid
 from loguru import logger
 from datetime import datetime, timezone, timedelta
 from typing import Any, AsyncGenerator, cast
 from fastapi import BackgroundTasks
 
 from core.dictionary import PacketType
-from core.database.oracle import get_session
+from core.database import db_instance
 from agent.memory import MemoryService
 from skills.skill_manager import SkillManager
 from skills import SkillRuntime, SkillRunMode
@@ -19,8 +19,8 @@ from services.basic import OpsAgentConfService
 from agent.common.ops_context import OpsContextMemory
 from agent.common.skill_context import ExecutionPlan
 from utils.clients import OpsDBExecutor
-from utils.monitor import PrometheusClient, UnifiedMetricRegistry
-from dao.repositories import PendingRequestRepository, MemoryRepository
+from utils.monitor import PrometheusClient, ZabbixProvider, UnifiedMetricRegistry
+from dao.repositories import PendingRequestRepository
 
 
 DISPLAY_PACKET_TYPES = {
@@ -41,8 +41,7 @@ DISPLAY_PACKET_TYPES = {
 
 class OpsOrchestrator:
     """
-    智能故障自愈核心流水线编排器 (UI 强管控·精准定靶版)
-    【⚠️ ID 类型】: agent_id 为 int, instance_id 为 str
+    智能故障自愈核心流水线编排器 (UI 强管控·精准定靶版) v3 — 支持 HITL 人机协同
     """
 
     def __init__(self):
@@ -55,6 +54,7 @@ class OpsOrchestrator:
         # --- 监控数据源基础设施 ---
         self.metric_registry = UnifiedMetricRegistry()
         self.prometheus_client = PrometheusClient()
+        self.zabbix_client = ZabbixProvider()
         self.ops_db_executor = OpsDBExecutor()
 
         self.planner = OpsTaskPlanner(
@@ -68,17 +68,19 @@ class OpsOrchestrator:
         background_tasks: BackgroundTasks,
         user_id: str,
         session_id: str,
-        agent_id: int,
+        agent_id: str,
         question: str,
         instance_id: str,
-        trigger_type: str = "manual"
+        trigger_type: str = "manual",
+        client_time: str | None = None,
+        client_tz: str | None = None,
     ) -> AsyncGenerator[dict[str, Any], None]:
 
         # --- 0. 全周期元数据计算 ---
         start_time = datetime.now(timezone.utc)
         if not session_id or session_id == "new_session":
             session_id = f"sess_{uuid.uuid4().hex[:12]}"
-        entry_id = f"entr_{uuid.uuid4().hex[:12]}"
+        entry_id = str(uuid.uuid4())
 
         # 从底座获取模型参数
         model_params = await self.agent_service.get_agent_model_params(agent_id)
@@ -98,6 +100,8 @@ class OpsOrchestrator:
             "agent_id": agent_id,
             "trigger_type": cast(Any, trigger_type),
             "command_or_query": question,
+            "client_time": client_time or "",
+            "client_tz": client_tz or "",
             "llm_model": llm_model,
             "embedding_model": embedding_model,
 
@@ -108,6 +112,7 @@ class OpsOrchestrator:
             "environment": "dev",
             "monitor_type": "prometheus",
             "prometheus_instance_label": None,
+            "zabbix_host_name": None,
 
             "alert_context": None,
 
@@ -132,10 +137,11 @@ class OpsOrchestrator:
         }
 
         # --- 1.2 拓扑资产锁定与安全策略注入 ---
+        logger.info(f"[{ctx['trace_id']}] 自愈流水线启动 | 用户: {user_id} | 实例: {instance_id} | 问题: {question[:80]}")
         yield {"type": PacketType.THOUGHT, "content": "正在锁定指定物理实例资产并注入安全边界策略...\n"}
 
         try:
-            target_db = await self.ops_agent_conf_service.get_instance_detail_by_id(instance_id)
+            target_db = await self.ops_agent_conf_service.get_instance_detail_by_id(instance_id, agent_id=agent_id)
 
             if target_db:
                 ctx["db_type"] = target_db["db_type"]
@@ -144,6 +150,7 @@ class OpsOrchestrator:
                 ctx["environment"] = cast(Any, target_db["environment"])
                 ctx["monitor_type"] = target_db.get("monitor_type", "prometheus")
                 ctx["prometheus_instance_label"] = target_db.get("prometheus_instance_label")
+                ctx["zabbix_host_name"] = target_db.get("zabbix_host_name")
 
                 ctx["variables"]["is_mutation_allowed"] = target_db["is_mutation_allowed"]
                 ctx["variables"]["require_approval"] = target_db["require_approval"]
@@ -185,8 +192,9 @@ class OpsOrchestrator:
             yield {"type": PacketType.DONE, "content": {"entry_id": entry_id}}
             return
 
-        # --- 注入监控与诊断基础设施引用 (供 Skill 使用, 必须在规划完成后注入以避免 JSON 序列化问题) ---
+        # --- 注入监控与诊断基础设施引用 ---
         ctx["variables"]["_prometheus_client"] = self.prometheus_client
+        ctx["variables"]["_zabbix_client"] = self.zabbix_client
         ctx["variables"]["_metric_registry"] = self.metric_registry
         ctx["variables"]["_ops_db_executor"] = self.ops_db_executor
 
@@ -219,8 +227,8 @@ class OpsOrchestrator:
             gate_result = self._check_safety_gate(ctx, skill_instance, skill_name)
             if not gate_result["allowed"]:
                 if gate_result.get("needs_approval"):
-                    # ──── 审批中断: 挂起等待用户审批 ────
-                    approval_request_id = f"appr_{uuid.uuid4().hex[:12]}"
+                    # ──── 审批中断 ────
+                    approval_request_id = str(uuid.uuid4())
                     action_sql = ctx["variables"].get("pending_action_sql", "")
                     action_impact = ctx["variables"].get("pending_action_impact", "")
                     action_rollback = ctx["variables"].get("pending_action_rollback", "")
@@ -232,7 +240,6 @@ class OpsOrchestrator:
                         f"ApprovalID: {approval_request_id}"
                     )
 
-                    # 向前端推送审批请求
                     yield {
                         "type": PacketType.REQUIRE_APPROVAL,
                         "content": {
@@ -248,7 +255,6 @@ class OpsOrchestrator:
                         }
                     }
 
-                    # 持久化挂起状态 (复用 HITL 机制，status 标记为 awaiting_approval)
                     await self._suspend_for_approval(
                         ctx=ctx,
                         approval_request_id=approval_request_id,
@@ -260,10 +266,6 @@ class OpsOrchestrator:
                         skill_name=skill_name,
                     )
 
-                    await self._mark_session_suspended(
-                        ctx["session_id"], approval_request_id
-                    )
-
                     yield {
                         "type": PacketType.DONE,
                         "content": {
@@ -272,16 +274,15 @@ class OpsOrchestrator:
                             "request_id": approval_request_id,
                         }
                     }
-                    return  # 🔴 中断，等待审批后恢复
+                    return
                 else:
                     # Hard block
-                    exec_info.update({"status": "blocked", "error": gate_result["reason"]})  # type: ignore
+                    exec_info.update({"status": "blocked", "error": gate_result["reason"]})
                     ctx["execution_history"].append(cast(Any, exec_info))
                     yield {"type": PacketType.ERROR, "content": f"🚫 安全熔断: {gate_result['reason']}"}
                     continue
 
             try:
-                # 记录步骤执行前的数据快照，用于 output_var 回写
                 _monitor_snapshot = len(ctx.get("monitor_results", []))
                 _metric_snapshot = len(ctx.get("metric_results", []))
 
@@ -292,7 +293,7 @@ class OpsOrchestrator:
                     if p_type == PacketType.ANSWER:
                         final_answer_accumulator += (content or "")
 
-                    # 数据沉淀区：MONITOR_RESULTS → 监控数据, METRIC_RESULTS → 诊断数据
+                    # 数据沉淀区
                     if p_type == PacketType.MONITOR_RESULTS:
                         if isinstance(content, dict) and "data" in content:
                             ctx["monitor_results"].append({
@@ -321,7 +322,6 @@ class OpsOrchestrator:
                             f"RequestID: {request_id}"
                         )
 
-                        # 持久化完整快照
                         await self._suspend_execution(
                             ctx=ctx,
                             suspend_ctx=suspend_ctx,
@@ -331,11 +331,6 @@ class OpsOrchestrator:
                             start_time=start_time,
                         )
 
-                        # 更新会话挂起状态
-                        await self._mark_session_suspended(
-                            ctx["session_id"], request_id
-                        )
-
                         # 将中断的步骤记录到 execution_history，供恢复时下游技能读取其产出
                         exec_info["status"] = "suspended"
                         if final_answer_accumulator:
@@ -343,9 +338,7 @@ class OpsOrchestrator:
                         ctx["execution_history"].append(cast(Any, exec_info))
                         ctx["current_execution"] = None
 
-                        # 推送中断包给前端
                         yield packet
-
                         yield {
                             "type": PacketType.DONE,
                             "content": {
@@ -354,7 +347,7 @@ class OpsOrchestrator:
                                 "request_id": request_id,
                             }
                         }
-                        return  # 🔴 正常结束 HTTP 请求
+                        return
 
                     if p_type in DISPLAY_PACKET_TYPES:
                         yield packet
@@ -368,16 +361,11 @@ class OpsOrchestrator:
                     ctx["execution_history"].append(cast(Any, exec_info))
                     ctx["current_execution"] = None
                     break
-                # 将本步骤新采集的数据回写到 variables，使后续步骤的 {{output_var}} 可被解析
                 output_var = exec_info.get("output_var")
                 if output_var:
                     new_monitor = ctx.get("monitor_results", [])[_monitor_snapshot:]
                     new_metric = ctx.get("metric_results", [])[_metric_snapshot:]
-                    # 合并本步骤产生的所有数据
-                    step_data = {
-                        "monitor": new_monitor,
-                        "metric": new_metric,
-                    }
+                    step_data = {"monitor": new_monitor, "metric": new_metric}
                     ctx["variables"][output_var] = json.dumps(step_data, ensure_ascii=False, default=str)
                 ctx["execution_history"].append(cast(Any, exec_info))
                 ctx["current_execution"] = None
@@ -389,8 +377,7 @@ class OpsOrchestrator:
                 ctx["current_execution"] = None
                 continue
 
-        # --- 4. 闭环落库: 挂载后台反思与审计任务 ---
-        # 汇总执行结果（失败时向用户展示明确信息）
+        # --- 4. 闭环落库 ---
         action_result = ctx.get("variables", {}).get("action_result", {})
         if isinstance(action_result, dict) and action_result.get("status") == "failed":
             final_answer_accumulator = f"❌ 变更执行失败: {action_result.get('error', '未知错误')}"
@@ -401,9 +388,12 @@ class OpsOrchestrator:
         response_time = datetime.now(timezone.utc)
         plan_skills_trace = [s.get("skill") for s in plan_steps] if plan_steps else []
 
-        # 过滤掉不可序列化的内部对象（如 PrometheusClient），只保留可持久化的数据
         safe_variables = {
-            k: v for k, v in ctx["variables"].items()
+            k: (
+                json.loads(v) if isinstance(v, str) and len(v) > 0
+                and v[0] in ('{', '[') else v
+            )
+            for k, v in ctx["variables"].items()
             if not k.startswith("_") and not hasattr(v, '__dict__')
         }
 
@@ -437,6 +427,10 @@ class OpsOrchestrator:
         logger.success(f"[Orchestrator] 运维自愈强类型流水线圆满结束, Entry ID: {entry_id}")
         yield {"type": PacketType.DONE, "content": {"entry_id": entry_id}}
 
+    # ==================================================================
+    # 安全门禁 v2
+    # ==================================================================
+
     def _check_safety_gate(
         self,
         ctx: OpsContextMemory,
@@ -445,25 +439,14 @@ class OpsOrchestrator:
     ) -> dict[str, Any]:
         """
         🔒 运维安全熔断门禁 (v2 — 支持审批中断):
-
-        三重校验:
-          1. 变更许可 (is_mutation_allowed): False → 硬阻断 (allowed=False)
-          2. 审批门禁 (require_approval): True + 无令牌 → 软中断 (needs_approval=True)
-          3. 生产环境警告: prod → 日志告警但放行
-
-        Returns:
-          {"allowed": True}                                         — 放行
-          {"allowed": False, "reason": "..."}                       — 硬阻断
-          {"allowed": False, "needs_approval": True, "reason": "..."} — 审批中断
+        三重校验: 变更许可(硬阻断) → 审批门禁(软中断) → 生产环境警告
         """
         skill_meta = getattr(skill_instance, "meta", None)
         skill_run_mode = getattr(skill_meta, "run_mode", SkillRunMode.READ_ONLY) if skill_meta else SkillRunMode.READ_ONLY
 
-        # 只读探测技能不受安全门禁限制
         if skill_run_mode == SkillRunMode.READ_ONLY:
             return {"allowed": True}
 
-        # --- 变更类技能必须通过多重安全校验 ---
         variables = ctx.get("variables", {})
         environment = ctx.get("environment", "prod")
         instance_id = ctx.get("instance_id", "unknown")
@@ -480,7 +463,7 @@ class OpsOrchestrator:
                 "needs_approval": False,
                 "reason": (
                     f"自愈组件 [{skill_name}] 属于变更类高危操作, 但实例 `{instance_id}` "
-                    f"未开启变更许可 (is_mutation_allowed=False)。请联系 DBA 管理员在资产控制面开启此实例的自愈变更权限。"
+                    f"未开启变更许可 (is_mutation_allowed=False)。请联系 DBA 管理员开启。"
                 )
             }
 
@@ -503,7 +486,7 @@ class OpsOrchestrator:
                     )
                 }
 
-        # 3. 生产环境额外警告
+        # 3. 生产环境警告
         if environment == "prod":
             logger.warning(
                 f"[SafetyGate] ⚠️ 生产环境高危动作即将执行 | Skill: {skill_name} | "
@@ -569,7 +552,7 @@ class OpsOrchestrator:
             "timeout_at": timeout_at,
         }
 
-        async with get_session() as session:
+        async with db_instance().get_session() as session:
             repo = PendingRequestRepository(session)
             await repo.create(pending_data)
 
@@ -577,34 +560,6 @@ class OpsOrchestrator:
             f"[HITL Suspend] request_id={request_id} | "
             f"step={current_step_index} | 快照已持久化"
         )
-
-    async def _mark_session_suspended(self, session_id: str, request_id: str) -> None:
-        """标记会话为挂起状态"""
-        async with get_session() as session:
-            repo = MemoryRepository(session)
-            # 通过原始 SQL 更新（避免 entity 不完整的问题）
-            from sqlalchemy import update as sql_update
-            from dao.entities import ConversationContextEntity
-            stmt = (
-                sql_update(ConversationContextEntity)
-                .where(ConversationContextEntity.session_id == session_id)
-                .values(pending_request_id=request_id, is_suspended=1)
-            )
-            await session.execute(stmt)
-            await session.commit()
-
-    async def _clear_session_suspended(self, session_id: str) -> None:
-        """清除会话挂起标记"""
-        async with get_session() as session:
-            from sqlalchemy import update as sql_update
-            from dao.entities import ConversationContextEntity
-            stmt = (
-                sql_update(ConversationContextEntity)
-                .where(ConversationContextEntity.session_id == session_id)
-                .values(pending_request_id=None, is_suspended=0)
-            )
-            await session.execute(stmt)
-            await session.commit()
 
     async def _suspend_for_approval(
         self,
@@ -661,11 +616,11 @@ class OpsOrchestrator:
             "runtime_plan": json.dumps(
                 ctx.get("runtime_plan"), default=str, ensure_ascii=False
             ),
-            "status": "pending",  # pending approval
+            "status": "pending",
             "timeout_at": timeout_at,
         }
 
-        async with get_session() as session:
+        async with db_instance().get_session() as session:
             repo = PendingRequestRepository(session)
             await repo.create(pending_data)
 
@@ -673,236 +628,6 @@ class OpsOrchestrator:
             f"[HITL Approval] approval_id={approval_request_id} | "
             f"skill={skill_name} | 审批挂起已持久化"
         )
-
-    async def resume_with_approval(
-        self,
-        background_tasks: BackgroundTasks,
-        request_id: str,
-        approved: bool,
-        approver_note: str | None = None,
-    ) -> AsyncGenerator[dict[str, Any], None]:
-        """
-        审批恢复执行: 用户审批后（通过或拒绝），从挂起点恢复。
-
-        Args:
-            request_id: 审批挂起请求 ID
-            approved: True=批准执行, False=拒绝
-            approver_note: 审批人备注
-        """
-        # 1. 从数据库恢复挂起状态
-        async with get_session() as session:
-            repo = PendingRequestRepository(session)
-            pending = await repo.get_by_request_id(request_id)
-
-            if not pending:
-                yield {
-                    "type": PacketType.ERROR,
-                    "content": f"❌ 审批请求 {request_id} 不存在或已过期"
-                }
-                yield {"type": PacketType.DONE,
-                       "content": {"entry_id": "N/A", "status": "error"}}
-                return
-
-            if pending["status"] != "pending":
-                yield {
-                    "type": PacketType.ERROR,
-                    "content": (
-                        f"❌ 审批请求 {request_id} 状态为 {pending['status']}，"
-                        f"不可重复处理"
-                    )
-                }
-                yield {"type": PacketType.DONE,
-                       "content": {"entry_id": pending.get("entry_id", "N/A"),
-                                   "status": "already_handled"}}
-                return
-
-            # 标记为已处理
-            await repo.mark_answered(request_id)
-
-        # 清除会话挂起
-        await self._clear_session_suspended(pending["session_id"])
-
-        if not approved:
-            # 审批拒绝: 不执行变更
-            logger.warning(
-                f"[HITL Approval] 审批拒绝 | request_id={request_id} | "
-                f"note={approver_note}"
-            )
-            yield {
-                "type": PacketType.WARNING,
-                "content": (
-                    f"⚠️ 变更操作已被拒绝。\n"
-                    f"审批人备注: {approver_note or '无'}\n"
-                    f"诊断流程结束，未执行任何变更。\n"
-                )
-            }
-            yield {
-                "type": PacketType.DONE,
-                "content": {
-                    "entry_id": pending.get("entry_id", ""),
-                    "status": "rejected",
-                }
-            }
-            return
-
-        # 审批通过: 重建上下文，注入审批令牌，恢复执行
-        logger.info(
-            f"[HITL Approval] 审批通过 | request_id={request_id} | "
-            f"恢复执行变更操作"
-        )
-
-        ctx = self._rebuild_context_from_pending(pending)
-
-        # 注入审批令牌
-        ctx["approval_context"] = {
-            "approved": True,
-            "approved_by": "user",
-            "approved_at": datetime.now(timezone.utc).isoformat(),
-            "approver_note": approver_note or "",
-        }
-
-        # 恢复基础设施引用
-        ctx["variables"]["_prometheus_client"] = self.prometheus_client
-        ctx["variables"]["_metric_registry"] = self.metric_registry
-        ctx["variables"]["_ops_db_executor"] = self.ops_db_executor
-
-        # 标记为恢复模式
-        ctx["is_resuming"] = True
-
-        # 从断点继续执行
-        plan_steps = ctx["runtime_plan"]["steps"] if ctx["runtime_plan"] else []
-        current_step_index = pending["current_step_index"]
-        entry_id = pending["entry_id"]
-        start_time = pending.get("requested_at", datetime.now(timezone.utc))
-
-        logger.info(
-            f"[HITL Approval] 从 Step {current_step_index} "
-            f"({plan_steps[current_step_index].get('skill') if current_step_index < len(plan_steps) else '?'}) "
-            f"恢复执行 (审批已通过)"
-        )
-
-        yield {
-            "type": PacketType.THOUGHT,
-            "content": "✅ 审批已通过，正在执行自愈变更操作...\n"
-        }
-
-        # 继续步骤循环 (安全门禁此次检测到 approval_context.approved=True，放行)
-        final_answer_accumulator = ""
-        for idx in range(current_step_index, len(plan_steps)):
-            ctx["current_step_index"] = idx
-            step = plan_steps[idx]
-
-            runtime = SkillRuntime(context=ctx)
-            exec_info = runtime.create_execution_context(step_config=step)
-            skill_name = exec_info["skill"]
-
-            ctx["current_execution"] = cast(Any, exec_info)
-
-            yield {
-                "type": PacketType.CALL,
-                "content": {
-                    "skill": skill_name,
-                    "description": (exec_info["resolved_input"] or "")[:120]
-                }
-            }
-
-            skill_instance = self.skill_manager.get_skill_instance(skill_name)
-            if not skill_instance:
-                exec_info.update({"status": "failed",
-                                  "error": f"组件 {skill_name} 未激活"})
-                ctx["execution_history"].append(cast(Any, exec_info))
-                continue
-
-            # 安全门禁: 此次 approval_context 已设置，直接放行
-            gate_result = self._check_safety_gate(ctx, skill_instance, skill_name)
-            if not gate_result["allowed"]:
-                exec_info.update({"status": "blocked",
-                                  "error": gate_result["reason"]})
-                ctx["execution_history"].append(cast(Any, exec_info))
-                yield {
-                    "type": PacketType.ERROR,
-                    "content": f"🚫 安全熔断: {gate_result['reason']}"
-                }
-                continue
-
-            try:
-                async for packet in runtime.execute_skill(skill_instance, exec_info):
-                    p_type = packet.get("type")
-                    content = packet.get("content")
-
-                    if p_type == PacketType.ANSWER:
-                        final_answer_accumulator += (content or "")
-
-                    if p_type in DISPLAY_PACKET_TYPES:
-                        yield packet
-
-                exec_info.update({"status": "success"})
-                ctx["execution_history"].append(cast(Any, exec_info))
-                ctx["current_execution"] = None
-
-            except Exception as e:
-                logger.error(f"[Approval Resume] Skill [{skill_name}] 异常: {e}")
-                exec_info.update({"status": "failed", "error": str(e)})
-                ctx["execution_history"].append(cast(Any, exec_info))
-                ctx["current_execution"] = None
-                continue
-
-        # 闭环落库
-        action_result = ctx.get("variables", {}).get("action_result", {})
-        if isinstance(action_result, dict) and action_result.get("status") == "failed":
-            final_answer_accumulator = f"❌ 变更执行失败: {action_result.get('error', '未知错误')}"
-            yield {"type": PacketType.ANSWER, "content": final_answer_accumulator}
-        response_time = datetime.now(timezone.utc)
-        plan_skills_trace = [
-            s.get("skill") for s in plan_steps
-        ] if plan_steps else []
-
-        safe_variables = {
-            k: v for k, v in ctx["variables"].items()
-            if not k.startswith("_") and not hasattr(v, '__dict__')
-        }
-
-        prepared_data_payload = {
-            "standalone_query": ctx["command_or_query"],
-            "search_keywords": ctx["command_or_query"],
-            "turn_type": "task_oriented",
-            "turn_entities": safe_variables,
-            "new_state": safe_variables,
-            "active_topic": "AIOps自愈变更执行",
-            "current_plan": {
-                "skill_sequence": plan_skills_trace,
-                "total_steps": len(plan_skills_trace)
-            },
-            "thought": (
-                ctx["runtime_plan"]["thought"]
-                if ctx["runtime_plan"] else ""
-            ),
-            "metric_results_snapshot": ctx.get("metric_results", []),
-            "doc_results_snapshot": ctx.get("doc_results", []),
-        }
-
-        model_params = await self.agent_service.get_agent_model_params(
-            ctx["agent_id"]
-        )
-
-        background_tasks.add_task(
-            self.memory_service.persist_and_reflect_memory,
-            session_id=ctx["session_id"],
-            user_id=ctx["user_id"],
-            entry_id=entry_id,
-            raw_question=ctx["command_or_query"],
-            answer=final_answer_accumulator.strip() or "自愈变更执行完毕。",
-            model_params=model_params,
-            prepared_data=prepared_data_payload,
-            context_memory=cast(Any, ctx),
-            request_time=start_time,
-            response_time=response_time
-        )
-
-        logger.success(
-            f"[HITL Approval] 变更执行完成, Entry ID: {entry_id}"
-        )
-        yield {"type": PacketType.DONE, "content": {"entry_id": entry_id}}
 
     async def resume_ops_stream_pipeline(
         self,
@@ -912,46 +637,23 @@ class OpsOrchestrator:
         user_note: str | None,
         user_error: str | None,
     ) -> AsyncGenerator[dict[str, Any], None]:
-        """
-        从挂起状态恢复执行。
-
-        Args:
-            request_id: 挂起请求 ID (来自 WAIT_FOR_USER 包)
-            user_data: 用户回填的数据 (dict)
-            user_note: 用户备注
-            user_error: 用户执行 SQL 时的报错信息 (如 ORA-00942)
-        """
-        # 1. 从数据库恢复挂起状态
-        async with get_session() as session:
+        """从挂起状态恢复执行（多轮 HITL 数据回填）"""
+        async with db_instance().get_session() as session:
             repo = PendingRequestRepository(session)
             pending = await repo.get_by_request_id(request_id)
 
             if not pending:
-                yield {
-                    "type": PacketType.ERROR,
-                    "content": f"❌ 挂起请求 {request_id} 不存在或已过期"
-                }
-                yield {
-                    "type": PacketType.DONE,
-                    "content": {"entry_id": "N/A", "status": "error"}
-                }
+                yield {"type": PacketType.ERROR,
+                       "content": f"❌ 挂起请求 {request_id} 不存在或已过期"}
+                yield {"type": PacketType.DONE,
+                       "content": {"entry_id": "N/A", "status": "error"}}
                 return
 
             if pending["status"] != "pending":
-                yield {
-                    "type": PacketType.ERROR,
-                    "content": (
-                        f"❌ 挂起请求 {request_id} 状态为 {pending['status']}，"
-                        f"不可恢复"
-                    )
-                }
-                yield {
-                    "type": PacketType.DONE,
-                    "content": {
-                        "entry_id": pending.get("entry_id", "N/A"),
-                        "status": "already_handled"
-                    }
-                }
+                yield {"type": PacketType.ERROR,
+                       "content": f"❌ 挂起请求 {request_id} 状态为 {pending['status']}，不可恢复"}
+                yield {"type": PacketType.DONE,
+                       "content": {"entry_id": pending.get("entry_id", "N/A"), "status": "already_handled"}}
                 return
 
             logger.info(
@@ -961,15 +663,18 @@ class OpsOrchestrator:
                 f"has_error={user_error is not None}"
             )
 
-        # 2. 重建 OpsContextMemory
+            # 标记为已处理
+            await repo.mark_answered(request_id)
+
+        # 重建上下文
         ctx = self._rebuild_context_from_pending(pending)
 
-        # 3. 恢复基础设施引用
+        # 恢复基础设施引用
         ctx["variables"]["_prometheus_client"] = self.prometheus_client
         ctx["variables"]["_metric_registry"] = self.metric_registry
         ctx["variables"]["_ops_db_executor"] = self.ops_db_executor
 
-        # 4. HITL: 追加本轮到 Timeline (不是覆盖!)
+        # HITL: 追加本轮到 Timeline
         hitl_history: list[dict] = ctx.get("hitl_history", [])
         round_num = len(hitl_history) + 1
 
@@ -984,29 +689,20 @@ class OpsOrchestrator:
             "submitted_at": datetime.now(timezone.utc).isoformat(),
         })
         ctx["hitl_history"] = hitl_history
-
-        # 5. 标记为恢复模式
         ctx["is_resuming"] = True
 
-        # 6. 从断点继续执行
+        # 从断点继续
         plan_steps = ctx["runtime_plan"]["steps"] if ctx["runtime_plan"] else []
         current_step_index = pending["current_step_index"]
         entry_id = pending["entry_id"]
         start_time = pending.get("requested_at", datetime.now(timezone.utc))
 
         logger.info(
-            f"[HITL Resume] 从 Step {current_step_index} "
-            f"({plan_steps[current_step_index].get('skill') if current_step_index < len(plan_steps) else '?'}) "
-            f"恢复 | 总步骤: {len(plan_steps)} | HITL 轮次: {len(hitl_history)}"
+            f"[HITL Resume] 从 Step {current_step_index} 恢复 | "
+            f"总步骤: {len(plan_steps)} | HITL 轮次: {len(hitl_history)}"
         )
 
-        # 7. 标记挂起为已处理 + 清除会话挂起
-        async with get_session() as session:
-            repo = PendingRequestRepository(session)
-            await repo.mark_answered(request_id)
-        await self._clear_session_suspended(pending["session_id"])
-
-        # 8. 从断点继续步骤循环
+        # 继续步骤循环
         final_answer_accumulator = ""
         for idx in range(current_step_index, len(plan_steps)):
             ctx["current_step_index"] = idx
@@ -1015,33 +711,25 @@ class OpsOrchestrator:
             runtime = SkillRuntime(context=ctx)
             exec_info = runtime.create_execution_context(step_config=step)
             skill_name = exec_info["skill"]
-
             ctx["current_execution"] = cast(Any, exec_info)
 
             yield {
                 "type": PacketType.CALL,
-                "content": {
-                    "skill": skill_name,
-                    "description": (exec_info["resolved_input"] or "")[:120]
-                }
+                "content": {"skill": skill_name, "description": (exec_info["resolved_input"] or "")[:120]}
             }
 
             skill_instance = self.skill_manager.get_skill_instance(skill_name)
             if not skill_instance:
-                exec_info.update({"status": "failed",
-                                  "error": f"组件 {skill_name} 未激活"})
+                exec_info.update({"status": "failed", "error": f"组件 {skill_name} 未激活"})
                 ctx["execution_history"].append(cast(Any, exec_info))
-                yield {
-                    "type": PacketType.ERROR,
-                    "content": f"⚠️ 关键自愈组件 [{skill_name}] 离线, 本步骤跳过。"
-                }
+                yield {"type": PacketType.ERROR,
+                       "content": f"⚠️ 关键自愈组件 [{skill_name}] 离线, 本步骤跳过。"}
                 continue
 
-            # --- 🔒 安全熔断门禁 (v2: 支持审批中断, resume 路径) ---
             gate_result = self._check_safety_gate(ctx, skill_instance, skill_name)
             if not gate_result["allowed"]:
                 if gate_result.get("needs_approval"):
-                    approval_request_id = f"appr_{uuid.uuid4().hex[:12]}"
+                    approval_request_id = str(uuid.uuid4())
                     action_sql = ctx["variables"].get("pending_action_sql", "")
                     action_impact = ctx["variables"].get("pending_action_impact", "")
                     action_rollback = ctx["variables"].get("pending_action_rollback", "")
@@ -1063,36 +751,23 @@ class OpsOrchestrator:
                     }
 
                     await self._suspend_for_approval(
-                        ctx=ctx,
-                        approval_request_id=approval_request_id,
-                        current_step_index=idx,
-                        entry_id=entry_id,
-                        action_sql=action_sql,
-                        action_impact=action_impact,
-                        action_rollback=action_rollback,
-                        skill_name=skill_name,
-                    )
-                    await self._mark_session_suspended(
-                        ctx["session_id"], approval_request_id
+                        ctx=ctx, approval_request_id=approval_request_id,
+                        current_step_index=idx, entry_id=entry_id,
+                        action_sql=action_sql, action_impact=action_impact,
+                        action_rollback=action_rollback, skill_name=skill_name,
                     )
 
                     yield {
                         "type": PacketType.DONE,
-                        "content": {
-                            "entry_id": entry_id,
-                            "status": "awaiting_approval",
-                            "request_id": approval_request_id,
-                        }
+                        "content": {"entry_id": entry_id, "status": "awaiting_approval",
+                                    "request_id": approval_request_id}
                     }
                     return
                 else:
-                    exec_info.update({"status": "blocked",
-                                      "error": gate_result["reason"]})
+                    exec_info.update({"status": "blocked", "error": gate_result["reason"]})
                     ctx["execution_history"].append(cast(Any, exec_info))
-                    yield {
-                        "type": PacketType.ERROR,
-                        "content": f"🚫 安全熔断: {gate_result['reason']}"
-                    }
+                    yield {"type": PacketType.ERROR,
+                           "content": f"🚫 安全熔断: {gate_result['reason']}"}
                     continue
 
             try:
@@ -1103,94 +778,94 @@ class OpsOrchestrator:
                     p_type = packet.get("type")
                     content = packet.get("content")
 
-                    # ──── HITL: 支持恢复后再中断 (多轮交互) ────
                     if p_type == PacketType.WAIT_FOR_USER:
                         suspend_ctx = content
                         new_request_id = suspend_ctx["request_id"]
-
                         await self._suspend_execution(
-                            ctx=ctx,
-                            suspend_ctx=suspend_ctx,
-                            request_id=new_request_id,
-                            current_step_index=idx,
-                            entry_id=entry_id,
-                            start_time=start_time,
+                            ctx=ctx, suspend_ctx=suspend_ctx,
+                            request_id=new_request_id, current_step_index=idx,
+                            entry_id=entry_id, start_time=start_time,
                         )
-                        await self._mark_session_suspended(
-                            ctx["session_id"], new_request_id
-                        )
-
+                        exec_info["status"] = "suspended"
+                        if final_answer_accumulator:
+                            exec_info["answer"] = final_answer_accumulator.strip()
+                        ctx["execution_history"].append(cast(Any, exec_info))
+                        ctx["current_execution"] = None
                         yield packet
                         yield {
                             "type": PacketType.DONE,
-                            "content": {
-                                "entry_id": entry_id,
-                                "status": "suspended",
-                                "request_id": new_request_id,
-                            }
+                            "content": {"entry_id": entry_id, "status": "suspended",
+                                        "request_id": new_request_id}
                         }
                         return
 
                     if p_type == PacketType.ANSWER:
                         final_answer_accumulator += (content or "")
-
                     if p_type == PacketType.MONITOR_RESULTS:
                         if isinstance(content, dict) and "data" in content:
                             ctx["monitor_results"].append({
                                 "step_id": step.get("step_id"),
-                                "task_description": (
-                                    step.get("task_description")
-                                    or exec_info.get("resolved_input")
-                                ),
-                                "data": content["data"],
-                                "meta": content.get("meta", {})
+                                "task_description": step.get("task_description") or exec_info.get("resolved_input"),
+                                "data": content["data"], "meta": content.get("meta", {})
                             })
                     elif p_type == PacketType.METRIC_RESULTS:
                         if isinstance(content, dict) and "data" in content:
                             ctx["metric_results"].append({
                                 "step_id": step.get("step_id"),
-                                "task_description": (
-                                    step.get("task_description")
-                                    or exec_info.get("resolved_input")
-                                ),
-                                "data": content["data"],
-                                "meta": content.get("meta", {})
+                                "task_description": step.get("task_description") or exec_info.get("resolved_input"),
+                                "data": content["data"], "meta": content.get("meta", {})
                             })
 
                     if p_type in DISPLAY_PACKET_TYPES:
                         yield packet
 
                 exec_info.update({"status": "success"})
+                # 检测执行类技能是否失败（ExecuteOpsSkill 通过 ctx 传递结果）
+                action_result = ctx.get("variables", {}).get("action_result", {})
+                if isinstance(action_result, dict) and action_result.get("status") in ("failed", "error"):
+                    exec_info["status"] = "failed"
+                    exec_info["error"] = action_result.get("error", "执行失败")
+                    ctx["execution_history"].append(cast(Any, exec_info))
+                    ctx["current_execution"] = None
+                    break  # 停止后续步骤，不再继续
                 output_var = exec_info.get("output_var")
                 if output_var:
                     new_monitor = ctx.get("monitor_results", [])[_monitor_snapshot:]
                     new_metric = ctx.get("metric_results", [])[_metric_snapshot:]
                     step_data = {"monitor": new_monitor, "metric": new_metric}
-                    ctx["variables"][output_var] = json.dumps(
-                        step_data, ensure_ascii=False, default=str
-                    )
+                    ctx["variables"][output_var] = json.dumps(step_data, ensure_ascii=False, default=str)
                 ctx["execution_history"].append(cast(Any, exec_info))
                 ctx["current_execution"] = None
 
             except Exception as e:
-                logger.error(
-                    f"[Orchestrator Resume] Skill [{skill_name}] 异常: {e}"
-                )
+                logger.error(f"[Orchestrator Resume] Skill [{skill_name}] 异常: {e}")
                 exec_info.update({"status": "failed", "error": str(e)})
                 ctx["execution_history"].append(cast(Any, exec_info))
                 ctx["current_execution"] = None
                 continue
 
-        # 9. 闭环落库
+        # 闭环落库 — 跳过纯成功信息，若有失败则汇总
         response_time = datetime.now(timezone.utc)
-        plan_skills_trace = [
-            s.get("skill") for s in plan_steps
-        ] if plan_steps else []
-
+        plan_skills_trace = [s.get("skill") for s in plan_steps] if plan_steps else []
         safe_variables = {
-            k: v for k, v in ctx["variables"].items()
+            k: (
+                json.loads(v) if isinstance(v, str) and len(v) > 0
+                and v[0] in ('{', '[') else v
+            )
+            for k, v in ctx["variables"].items()
             if not k.startswith("_") and not hasattr(v, '__dict__')
         }
+
+        # 汇总执行结果（失败时向用户展示明确信息）
+        action_result = ctx.get("variables", {}).get("action_result", {})
+        if isinstance(action_result, dict) and action_result.get("status") == "failed":
+            final_answer_accumulator = f"❌ 变更执行失败: {action_result.get('error', '未知错误')}"
+            yield {
+                "type": PacketType.ANSWER,
+                "content": final_answer_accumulator,
+            }
+
+        model_params = await self.agent_service.get_agent_model_params(ctx["agent_id"])
 
         prepared_data_payload = {
             "standalone_query": ctx["command_or_query"],
@@ -1199,41 +874,153 @@ class OpsOrchestrator:
             "turn_entities": safe_variables,
             "new_state": safe_variables,
             "active_topic": "AIOps内核指标探测与故障自愈",
-            "current_plan": {
-                "skill_sequence": plan_skills_trace,
-                "total_steps": len(plan_skills_trace)
-            },
-            "thought": (
-                ctx["runtime_plan"]["thought"]
-                if ctx["runtime_plan"] else ""
-            ),
+            "current_plan": {"skill_sequence": plan_skills_trace, "total_steps": len(plan_skills_trace)},
+            "thought": ctx["runtime_plan"]["thought"] if ctx["runtime_plan"] else "",
             "metric_results_snapshot": ctx.get("metric_results", []),
             "doc_results_snapshot": ctx.get("doc_results", []),
         }
 
-        # 获取模型参数
-        model_params = await self.agent_service.get_agent_model_params(
-            ctx["agent_id"]
+        background_tasks.add_task(
+            self.memory_service.persist_and_reflect_memory,
+            session_id=ctx["session_id"], user_id=ctx["user_id"],
+            entry_id=entry_id, raw_question=ctx["command_or_query"],
+            answer=final_answer_accumulator.strip() or "自动化自愈 SOP 链路安全执行完毕。",
+            model_params=model_params, prepared_data=prepared_data_payload,
+            context_memory=cast(Any, ctx), request_time=start_time, response_time=response_time
         )
+
+        logger.success(f"[Orchestrator Resume] 运维自愈流水线圆满结束, Entry ID: {entry_id}")
+        yield {"type": PacketType.DONE, "content": {"entry_id": entry_id}}
+
+    async def resume_with_approval(
+        self,
+        background_tasks: BackgroundTasks,
+        request_id: str,
+        approved: bool,
+        approver_note: str | None = None,
+    ) -> AsyncGenerator[dict[str, Any], None]:
+        """审批恢复执行: 用户审批后从挂起点恢复"""
+        async with db_instance().get_session() as session:
+            repo = PendingRequestRepository(session)
+            pending = await repo.get_by_request_id(request_id)
+
+            if not pending:
+                yield {"type": PacketType.ERROR,
+                       "content": f"❌ 审批请求 {request_id} 不存在或已过期"}
+                yield {"type": PacketType.DONE,
+                       "content": {"entry_id": "N/A", "status": "error"}}
+                return
+
+            if pending["status"] != "pending":
+                yield {"type": PacketType.ERROR,
+                       "content": f"❌ 审批请求 {request_id} 状态为 {pending['status']}，不可重复处理"}
+                yield {"type": PacketType.DONE,
+                       "content": {"entry_id": pending.get("entry_id", "N/A"), "status": "already_handled"}}
+                return
+
+            await repo.mark_answered(request_id)
+
+        if not approved:
+            logger.warning(
+                f"[HITL Approval] 审批拒绝 | request_id={request_id} | note={approver_note}"
+            )
+            yield {"type": PacketType.WARNING,
+                   "content": f"⚠️ 变更操作已被拒绝。\n审批人备注: {approver_note or '无'}\n诊断流程结束。\n"}
+            yield {"type": PacketType.DONE,
+                   "content": {"entry_id": pending.get("entry_id", ""), "status": "rejected"}}
+            return
+
+        logger.info(f"[HITL Approval] 审批通过 | request_id={request_id}")
+
+        ctx = self._rebuild_context_from_pending(pending)
+        ctx["approval_context"] = {
+            "approved": True,
+            "approved_by": "user",
+            "approved_at": datetime.now(timezone.utc).isoformat(),
+            "approver_note": approver_note or "",
+        }
+        ctx["variables"]["_prometheus_client"] = self.prometheus_client
+        ctx["variables"]["_metric_registry"] = self.metric_registry
+        ctx["variables"]["_ops_db_executor"] = self.ops_db_executor
+        ctx["is_resuming"] = True
+
+        plan_steps = ctx["runtime_plan"]["steps"] if ctx["runtime_plan"] else []
+        current_step_index = pending["current_step_index"]
+        entry_id = pending["entry_id"]
+        start_time = pending.get("requested_at", datetime.now(timezone.utc))
+
+        yield {"type": PacketType.THOUGHT,
+               "content": "✅ 审批已通过，正在执行自愈变更操作...\n"}
+
+        final_answer_accumulator = ""
+        for idx in range(current_step_index, len(plan_steps)):
+            ctx["current_step_index"] = idx
+            step = plan_steps[idx]
+            runtime = SkillRuntime(context=ctx)
+            exec_info = runtime.create_execution_context(step_config=step)
+            skill_name = exec_info["skill"]
+            ctx["current_execution"] = cast(Any, exec_info)
+
+            yield {"type": PacketType.CALL,
+                   "content": {"skill": skill_name, "description": (exec_info["resolved_input"] or "")[:120]}}
+
+            skill_instance = self.skill_manager.get_skill_instance(skill_name)
+            if not skill_instance:
+                exec_info.update({"status": "failed", "error": f"组件 {skill_name} 未激活"})
+                ctx["execution_history"].append(cast(Any, exec_info))
+                continue
+
+            gate_result = self._check_safety_gate(ctx, skill_instance, skill_name)
+            if not gate_result["allowed"]:
+                exec_info.update({"status": "blocked", "error": gate_result["reason"]})
+                ctx["execution_history"].append(cast(Any, exec_info))
+                yield {"type": PacketType.ERROR,
+                       "content": f"🚫 安全熔断: {gate_result['reason']}"}
+                continue
+
+            try:
+                async for packet in runtime.execute_skill(skill_instance, exec_info):
+                    p_type = packet.get("type")
+                    content = packet.get("content")
+                    if p_type == PacketType.ANSWER:
+                        final_answer_accumulator += (content or "")
+                    if p_type in DISPLAY_PACKET_TYPES:
+                        yield packet
+                exec_info.update({"status": "success"})
+                ctx["execution_history"].append(cast(Any, exec_info))
+                ctx["current_execution"] = None
+            except Exception as e:
+                logger.error(f"[Approval Resume] Skill [{skill_name}] 异常: {e}")
+                exec_info.update({"status": "failed", "error": str(e)})
+                ctx["execution_history"].append(cast(Any, exec_info))
+                ctx["current_execution"] = None
+                continue
+
+        response_time = datetime.now(timezone.utc)
+        model_params = await self.agent_service.get_agent_model_params(ctx["agent_id"])
 
         background_tasks.add_task(
             self.memory_service.persist_and_reflect_memory,
-            session_id=ctx["session_id"],
-            user_id=ctx["user_id"],
-            entry_id=entry_id,
-            raw_question=ctx["command_or_query"],
-            answer=final_answer_accumulator.strip() or "自动化自愈 SOP 链路安全执行完毕。",
+            session_id=ctx["session_id"], user_id=ctx["user_id"],
+            entry_id=entry_id, raw_question=ctx["command_or_query"],
+            answer=final_answer_accumulator.strip() or "自愈变更执行完毕。",
             model_params=model_params,
-            prepared_data=prepared_data_payload,
+            prepared_data={
+                "standalone_query": ctx["command_or_query"],
+                "search_keywords": ctx["command_or_query"],
+                "turn_type": "task_oriented",
+                "turn_entities": {}, "new_state": {},
+                "active_topic": "AIOps自愈变更执行",
+                "current_plan": {},
+                "thought": ctx["runtime_plan"]["thought"] if ctx["runtime_plan"] else "",
+                "metric_results_snapshot": ctx.get("metric_results", []),
+                "doc_results_snapshot": ctx.get("doc_results", []),
+            },
             context_memory=cast(Any, ctx),
-            request_time=start_time,
-            response_time=response_time
+            request_time=start_time, response_time=response_time
         )
 
-        logger.success(
-            f"[Orchestrator Resume] 运维自愈流水线圆满结束, "
-            f"Entry ID: {entry_id} | HITL 总轮次: {len(hitl_history)}"
-        )
+        logger.success(f"[HITL Approval] 变更执行完成, Entry ID: {entry_id}")
         yield {"type": PacketType.DONE, "content": {"entry_id": entry_id}}
 
     def _rebuild_context_from_pending(
@@ -1261,7 +1048,7 @@ class OpsOrchestrator:
             "trace_id": f"trace-resume-{uuid.uuid4().hex[:12]}",
             "user_id": pending.get("user_id", ""),
             "session_id": pending.get("session_id", ""),
-            "agent_id": pending.get("agent_id", 0),
+            "agent_id": pending.get("agent_id", ""),
             "trigger_type": cast(Any, "manual"),
             "command_or_query": (
                 runtime_plan.get("inputs", {}).get("user_query", "")
@@ -1279,6 +1066,7 @@ class OpsOrchestrator:
             "environment": "dev",
             "monitor_type": "prometheus",
             "prometheus_instance_label": None,
+            "zabbix_host_name": None,
             "alert_context": None,
             "runtime_plan": cast(ExecutionPlan, runtime_plan),
             "current_step_index": pending.get("current_step_index", 0),
@@ -1300,62 +1088,34 @@ class OpsOrchestrator:
                 if isinstance(accumulated, dict) else []
             ),
             "temp": {},
-            # HITL
             "is_resuming": True,
             "hitl_history": hitl_history,
         }
         return ctx
 
     async def check_pending_timeouts(self) -> list[dict[str, Any]]:
-        """
-        HITL 超时检测: 扫描所有超时的 pending 请求，标记为 timeout 并清除会话挂起状态。
-
-        建议通过 cron 定时调用（如每 5 分钟一次）:
-          */5 * * * * cd /path/to/kbot3 && python kbot_hitl_timeout_check.py
-
-        Returns:
-            超时请求列表，每个包含 request_id, session_id, user_id
-        """
-        from sqlalchemy import update as sql_update
-        from dao.entities import ConversationContextEntity
-
+        """HITL 超时检测: 扫描超时 pending 记录"""
         timed_out_requests = []
-
-        async with get_session() as session:
+        async with db_instance().get_session() as session:
             repo = PendingRequestRepository(session)
             pending_list = await repo.find_timeout_pending()
 
             for pending in pending_list:
                 request_id = pending["request_id"]
-                session_id = pending["session_id"]
                 logger.warning(
                     f"[HITL Timeout] request_id={request_id} | "
-                    f"session={session_id} | 已超时，自动标记为 timeout"
+                    f"session={pending['session_id']} | 已超时"
                 )
-
-                # 标记挂起为超时
                 await repo.mark_timeout(request_id)
-
-                # 清除会话挂起标记
-                stmt = (
-                    sql_update(ConversationContextEntity)
-                    .where(ConversationContextEntity.session_id == session_id)
-                    .values(pending_request_id=None, is_suspended=0)
-                )
-                await session.execute(stmt)
-
                 timed_out_requests.append({
                     "request_id": request_id,
-                    "session_id": session_id,
+                    "session_id": pending.get("session_id", ""),
                     "user_id": pending.get("user_id", ""),
                     "instance_id": pending.get("instance_id", ""),
                     "requested_at": str(pending.get("requested_at", "")),
                 })
 
             if timed_out_requests:
-                await session.commit()
-                logger.info(
-                    f"[HITL Timeout] 本轮标记 {len(timed_out_requests)} 个超时请求"
-                )
+                logger.info(f"[HITL Timeout] 标记 {len(timed_out_requests)} 个超时请求")
 
         return timed_out_requests

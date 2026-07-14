@@ -1,8 +1,7 @@
-import os
 import aiohttp
+import os
 import re
 import json
-from datetime import datetime
 from PIL import Image
 from typing import AsyncGenerator
 from dataclasses import dataclass
@@ -10,9 +9,16 @@ from decimal import Decimal
 from loguru import logger
 from typing import Any
 from microservices.embedding.model.base import EmbeddingDataItem
-from ..codec import ImageEncoder
-from core.config.settings import get_embed_config, get_llm_config, get_reranker_config, get_vlm_config, get_dsocr_config, get_prompt_config
+from ..codec.encoder import ImageEncoder
+from core.config.settings import get_embed_config, get_llm_config, get_vlm_config, get_dsocr_config, get_prompt_config, get_visual_config
 from core.exceptions import *
+
+# 内部服务通信令牌
+INTERNAL_TOKEN_HEADER = "X-NexusCube-Internal-Token"
+
+def _get_internal_token() -> str:
+    """延迟读取内部通信令牌，确保 load_dotenv() 之后才获取"""
+    return os.getenv("CUBE_INTERNAL_SERVICE_TOKEN", "cube-internal-dev-token-2026")
 
 
 @dataclass
@@ -25,22 +31,19 @@ class LLMChunk:
 class AIModelClient():
     """模型微服务客户端"""
     def __init__(self):
-        self.embedding_config = get_embed_config()  # 获取 Embedding 模型配置
-        self.llm_config = get_llm_config()  # 获取 LLM 模型配置
-        self.reranker_config = get_reranker_config()  # 获取 Reranker 模型配置
-        self.vlm_config = get_vlm_config()  # 获取 VLMPrompt 模型配置
-        self.dsocr_config = get_dsocr_config()  # 获取 DeepSeek OCR 模型配置
-        self.prompt_config = get_prompt_config()  # 获取 Prompt 配置
+        self.embedding_config = get_embed_config()
+        self.llm_config = get_llm_config()
+        self.vlm_config = get_vlm_config()
+        self.dsocr_config = get_dsocr_config()
+        self.prompt_config = get_prompt_config()
+        self.internal_token = _get_internal_token()
 
-    @staticmethod
-    def _auth_headers() -> dict[str, str]:
-        """获取内部服务认证请求头。
-
-        Returns:
-            包含 X-KBot-Internal-Token 的请求头字典。
-        """
-        token = os.getenv("KBOT_INTERNAL_SERVICE_TOKEN", "kbot-internal-dev-token-2026")
-        return {"X-KBot-Internal-Token": token}
+    def _auth_headers(self, extra: dict | None = None) -> dict:
+        """构建带内部认证的请求头"""
+        headers = {"Content-Type": "application/json", INTERNAL_TOKEN_HEADER: self.internal_token}
+        if extra:
+            headers.update(extra)
+        return headers
 
     async def call_embedding_model(self,
                                 model_name: str,
@@ -68,7 +71,7 @@ class AIModelClient():
         total = self.embedding_config.health_check_timeout if use_health_check_timeout else self.embedding_config.timeout
         timeout = aiohttp.ClientTimeout(total=total)
         url = f"http://{service_host}:{service_port}/v1/embeddings"
-        headers = {**self._auth_headers(), "Content-Type": "application/json"}
+        headers = self._auth_headers()
         payload = {
             "model_name": model_name,
             "texts": texts,
@@ -168,7 +171,7 @@ class AIModelClient():
         total = self.embedding_config.timeout
         timeout = aiohttp.ClientTimeout(total=total)
         url = f"http://{service_host}:{service_port}/v1/similarity"
-        headers = {**self._auth_headers(), "Content-Type": "application/json"}
+        headers = self._auth_headers()
         payload = {
             "model_name": model_name,
             "text1": text1,
@@ -195,66 +198,6 @@ class AIModelClient():
             logger.error(msg)
             raise InternalServerError(msg)
 
-    async def call_reranker_model(self,
-                                  model_name: str,
-                                  query: str,
-                                  documents: list[str],
-                                  top_k: int | None,
-                                  use_health_check_timeout: bool = False
-                                ) -> list[dict[str, Any]]:
-        """
-        调用重排序模型对文档进行重新排序
-
-        Args:
-            model_name: 用于重排序的模型技术名称
-            query: 查询文本
-            documents: 待重排序的文档列表
-            top_k: 返回的顶部文档数量（None表示返回所有）
-            use_health_check_timeout: 是否使用健康检查超时（较短）
-
-        Returns:
-            重排序结果列表
-        """
-
-        service_host = self.reranker_config.service_host
-        service_port = self.reranker_config.service_port
-        total = self.reranker_config.health_check_timeout if use_health_check_timeout else self.reranker_config.timeout
-        timeout = aiohttp.ClientTimeout(total=total)
-        url = f"http://{service_host}:{service_port}/v1/rerank"
-        headers = {**self._auth_headers(), "Content-Type": "application/json"}
-        payload = {
-            "model_name": model_name,
-            "query": query,
-            "documents": documents,
-            "top_k": top_k if top_k else 99999  # 设置一个很大的值，防止rerank返回的文档数小于top_k
-        }
-
-        try:
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.post(url, headers=headers, json=payload) as response:
-                    if response.status != 200:
-                        text = await response.text()
-                        msg = f"重排序服务错误: HTTP {response.status}, {text}"
-                        logger.error(msg)
-                        raise InternalServerError(msg)
-
-                    response_data = await response.json()
-                    rerank = response_data["rerankers"]
-                    logger.info("成功获取重排序结果")
-                    return rerank
-        except aiohttp.ClientConnectorError as e:
-            msg = f"无法连接到重排序服务 {service_host}:{service_port}，请检查服务是否启动"
-            logger.error(msg)
-            raise InternalServerError(msg)
-        except aiohttp.ServerTimeoutError:
-            msg = f"重排序服务响应超时（{total}秒），请检查服务状态"
-            logger.error(msg)
-            raise InternalServerError(msg)
-        except Exception as e:
-            msg = f"重排序服务发生错误: {e}"
-            logger.error(msg)
-            raise InternalServerError(msg)
-        
     async def call_llm_model(self, model_name: str, prompt:  list[dict[str, str]] | str, **kwargs):
         """
         调用LLM微服务并处理SSE格式的响应
@@ -274,7 +217,7 @@ class AIModelClient():
         total = self.llm_config.health_check_timeout if use_health_check_timeout else self.llm_config.timeout
         timeout = aiohttp.ClientTimeout(total=total)
         url = f"http://{service_host}:{service_port}/v1/chat/completions"
-        headers = {**self._auth_headers(), "Content-Type": "application/json"}
+        headers = self._auth_headers()
 
         # 构建请求体
         payload = {
@@ -283,23 +226,18 @@ class AIModelClient():
             "stream": kwargs.get("stream", True)  # 默认为流式
         }
 
-        # 处理额外参数（Decimal转float/int，datetime转ISO字符串）
+        # 处理额外参数（Decimal转float/int）
         if kwargs:
             processed_kwargs = {}
             for k, v in kwargs.items():
                 if v is not None:
                     if isinstance(v, Decimal):
                         processed_kwargs[k] = float(v) if v % 1 else int(v)
-                    elif isinstance(v, datetime):
-                        processed_kwargs[k] = v.isoformat()
                     else:
                         processed_kwargs[k] = v
             payload.update(processed_kwargs)
 
         # logger.debug(f"调用LLM服务，请求负载: {payload}")
-
-        # 确保 payload 可以被 JSON 序列化
-        payload = self._safe_json_payload(payload)
 
         try:
             async with aiohttp.ClientSession(timeout=timeout) as session:
@@ -324,19 +262,6 @@ class AIModelClient():
             msg = f"LLM服务发生错误: {e}"
             logger.error(msg)
             raise InternalServerError(msg)
-
-    @staticmethod
-    def _safe_json_payload(obj: Any) -> Any:
-        """递归转换 payload 中的非 JSON 可序列化对象（如 datetime）为安全类型。"""
-        if isinstance(obj, dict):
-            return {k: AIModelClient._safe_json_payload(v) for k, v in obj.items()}
-        if isinstance(obj, list):
-            return [AIModelClient._safe_json_payload(item) for item in obj]
-        if isinstance(obj, datetime):
-            return obj.isoformat()
-        if isinstance(obj, Decimal):
-            return float(obj) if obj % 1 else int(obj)
-        return obj
 
     async def call_vlm_model(
             self,
@@ -365,7 +290,7 @@ class AIModelClient():
             timeout = aiohttp.ClientTimeout(total=total)
             
             url = f"http://{service_host}:{service_port}/v1/inference"
-            headers = {**self._auth_headers(), "Content-Type": "application/json"}
+            headers = self._auth_headers()
 
             # 2. 图片编码（Base64）
             try:
@@ -563,16 +488,16 @@ class AIModelClient():
         raw_lines_log: list[str] = []  # 记录前几条原始响应行用于调试
         kwargs.pop('temperature', None)
 
-        # 防御：在 prompt 中强制注入 JSON-only 指令，防止 LLM 忽略格式要求
-        prompt = self._enforce_json_format(prompt)
-
-        # 确保 max_tokens 足够容纳完整的 JSON 响应（若调用方未指定则设一个合理默认值）
+        # 确保 max_tokens 足够容纳完整的 JSON 响应
         if 'max_tokens' not in kwargs:
             kwargs['max_tokens'] = 4096
 
+        # 防御：在 prompt 中强制注入 JSON-only 指令，防止 LLM 忽略格式要求
+        prompt = self._enforce_json_format(prompt)
+
         try:
             # 聚合 generator 产出的内容
-            # 使用 stream=False，因为 json_object 模式不需要流式输出，且部分 LLM 后端对 stream+json 支持不佳
+            # 使用 stream=False 确保 JSON mode 正常工作 + 避免 OCI 流式格式兼容问题
             async for chunk in self.call_llm_model(model_name=model_name, prompt=prompt,
                                                    response_format={"type": "json_object"}, temperature=0, stream=False, **kwargs):
                 line = chunk.strip()
@@ -624,6 +549,73 @@ class AIModelClient():
             )
             raise
 
+    async def get_vlm_json(
+        self, model_name: str, image: str | Image.Image, prompt: str, **kwargs
+    ) -> dict:
+        """
+        调用 VLM 并强制获取结构化 JSON 结果。
+        内部自动处理 API 响应提取与 JSON 解析。
+
+        Args:
+            model_name: VLM 模型名称
+            image: 输入图片（文件路径或 PIL.Image 对象）
+            prompt: 提示词文本
+            **kwargs: 推理额外参数
+
+        Returns:
+            解析后的 JSON dict
+        """
+        full_text = ""
+        kwargs.pop('temperature', None)
+
+        if 'max_tokens' not in kwargs:
+            kwargs['max_tokens'] = 4096
+
+        # 注入 JSON-only 指令（VLM 用字符串 prompt，不用 _enforce_json_format）
+        json_instruction = (
+            "\n\n---\n"
+            "CRITICAL: You MUST respond with ONLY a valid JSON object. "
+            "No markdown, no explanations, no code fences, no text before or after the JSON. "
+            "Start your response with '{' and end with '}'."
+        )
+        prompt = prompt + json_instruction
+
+        try:
+            async for chunk in self.call_vlm_model(
+                model_name=model_name,
+                image=image,
+                prompt=prompt,
+                temperature=0,
+                stream=False,
+                **kwargs,
+            ):
+                line = chunk.strip()
+                if not line:
+                    continue
+
+                try:
+                    data = json.loads(line)
+                    if "choices" in data and len(data["choices"]) > 0:
+                        choice = data["choices"][0]
+                        if "message" in choice:
+                            full_text += choice["message"].get("content", "")
+                except json.JSONDecodeError:
+                    full_text += line
+
+            if not full_text:
+                logger.error(f"VLM 返回了空响应。model={model_name}")
+                raise ValueError("VLM returned an empty response")
+
+            logger.debug(f"VLM raw response ({len(full_text)} chars): {full_text[:300]}...")
+            return self._extract_json_from_text(full_text)
+
+        except Exception as e:
+            logger.error(
+                f"无法从 VLM 提取 JSON 响应，错误: {e}\n"
+                f"model={model_name}, full_text_preview={full_text[:300] if full_text else '(空)'}"
+            )
+            raise
+
     @staticmethod
     def _enforce_json_format(prompt: list[dict[str, str]] | str) -> list[dict[str, str]] | str:
         """
@@ -660,7 +652,7 @@ class AIModelClient():
             modified.insert(0, {"role": "system", "content": json_enforcement.lstrip()})
 
         return modified
-
+    
     def _extract_json_from_text(self, text: str) -> dict:
         """
         从 LLM 的回复中提取 JSON。逐级降级：直接解析 → markdown去除 →
@@ -923,11 +915,8 @@ class AIModelClient():
 
             try:
                 data = json.loads(data_str)
-                # 防御：部分 provider（OCI Grok 等）可能返回非 OpenAI 格式的 chunk
-                if 'choices' not in data or not data['choices']:
-                    continue
                 delta = data['choices'][0].get('delta', {})
-
+                
                 # 同时兼容普通内容和推理内容
                 content = delta.get('content', '')
                 # 适配 DeepSeek R1 常见的推理字段
@@ -935,6 +924,69 @@ class AIModelClient():
 
                 if content or reasoning:
                     yield LLMChunk(content=content, reasoning_content=reasoning)
-
-            except (json.JSONDecodeError, KeyError, IndexError):
+                    
+            except json.JSONDecodeError:
                 continue
+
+    # ═══════════════════════════════════════════════════════════
+    # 视觉嵌入（Phase 2 多模态检索）
+    # ═══════════════════════════════════════════════════════════
+
+    async def get_visual_embedding(self, image_base64: str, model_name: str = "") -> list[float]:
+        """图片 → 视觉 embedding（调用 Visual 微服务）
+
+        Args:
+            image_base64: base64 编码的图片
+            model_name: 模型名称（空则取第一个激活模型）
+
+        Returns:
+            embedding 向量列表
+        """
+        import aiohttp
+
+        config = get_visual_config()
+        service_host = config.service_host
+        service_port = config.service_port
+        total = config.timeout
+        timeout = aiohttp.ClientTimeout(total=total)
+        url = f"http://{service_host}:{service_port}/v1/embed"
+        headers = self._auth_headers()
+
+        # 修复 base64 padding：长度必须为 4 的倍数
+        import math
+        if image_base64:
+            # 去除 data URI 前缀（如 data:image/png;base64,）
+            if "," in image_base64:
+                image_base64 = image_base64.split(",", 1)[1]
+            missing_padding = (4 - len(image_base64) % 4) % 4
+            if missing_padding:
+                image_base64 += "=" * missing_padding
+
+        payload = {"model_name": model_name, "image_base64": image_base64}
+
+        try:
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.post(
+                    url, headers=headers, json=payload
+                ) as response:
+                    if response.status != 200:
+                        error_text = await response.text()
+                        msg = f"视觉嵌入服务 HTTP {response.status}: {error_text}"
+                        logger.error(msg)
+                        raise InternalServerError(msg)
+
+                    data = await response.json()
+                    return data.get("embedding", [])
+
+        except aiohttp.ClientConnectorError:
+            msg = f"无法连接到视觉嵌入服务 {service_host}:{service_port}"
+            logger.error(msg)
+            raise InternalServerError(msg)
+        except aiohttp.ServerTimeoutError:
+            msg = f"视觉嵌入服务响应超时 ({total}s)"
+            logger.error(msg)
+            raise InternalServerError(msg)
+        except Exception as e:
+            msg = f"视觉嵌入调用异常: {e}"
+            logger.exception(msg)
+            raise InternalServerError(msg)

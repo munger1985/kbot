@@ -16,7 +16,10 @@ from .graph import GraphVertexEntity, GraphEdgeEntity, GraphEdgeChunkMapEntity
 from .ops_db_instance import OpsDbInstanceEntity
 from .ops_agent_conf import OpsAgentConfEntity
 from .ops_pending import OpsPendingRequestEntity
-
+from .doc_metadata import DocMetadataEntity
+from .doc_relation import DocRelationEntity
+from .extracted_image import ExtractedImageEntity
+from .page_visual_index import PageVisualIndexEntity
 
 
 __all__ = [
@@ -41,5 +44,9 @@ __all__ = [
     "GraphEdgeChunkMapEntity",
     "OpsDbInstanceEntity",
     "OpsAgentConfEntity",
-    "OpsPendingRequestEntity"
+    "OpsPendingRequestEntity",
+    "DocMetadataEntity",
+    "DocRelationEntity",
+    "ExtractedImageEntity",
+    "PageVisualIndexEntity",
 ]

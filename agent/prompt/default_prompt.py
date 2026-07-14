@@ -2,6 +2,8 @@ import string
 from loguru import logger
 from typing import Any
 
+from core.exceptions import DataNotFoundException
+
 
 class DefaultPrompt(string.Formatter):
     def __init__(self):
@@ -30,9 +32,9 @@ class DefaultPrompt(string.Formatter):
             "SYSTEM/ops_metric_matching": OPS_METRIC_MATCHING_PROMPT,
             "SYSTEM/ops_diagnostic_tool": OPS_DIAGNOSTIC_TOOL_PROMPT,
             "SYSTEM/ops_sufficiency_check": OPS_SUFFICIENCY_CHECK_PROMPT,
-            "SYSTEM/ops_execute_action": OPS_EXECUTE_ACTION_PROMPT,
             "SYSTEM/ops_action_plan": OPS_ACTION_PLAN_PROMPT,
             "SYSTEM/ops_heal_decision": OPS_HEAL_DECISION_PROMPT,
+            "SYSTEM/ops_execute_action": OPS_EXECUTE_ACTION_PROMPT,
         }
 
     def get_value(self, key: Any, args: Any, kwargs: Any) -> Any:
@@ -51,14 +53,14 @@ class DefaultPrompt(string.Formatter):
         if not self._prompt_service:
             from services.basic import PromptService
             self._prompt_service = PromptService()
-        
+            
         # 1. 获取默认兜底内容
         fallback_content = self._prompts.get(prompt_name, "")
         
         # 2. 尝试从数据库获取
         template = fallback_content
         try:
-            db_prompt = await self._prompt_service.get_prompt_by_unique_name(unique_name=prompt_name)
+            db_prompt = await self._prompt_service.get_prompt_content(prompt_name=prompt_name)
             if db_prompt:
                 template = db_prompt
             elif not fallback_content:
@@ -66,8 +68,16 @@ class DefaultPrompt(string.Formatter):
                 return "" # 或者抛出异常
             else:
                 logger.warning(f"Prompt '{prompt_name}' not found in DB, using fallback.")
+        except DataNotFoundException:
+            # DB 中没有该提示词是正常情况，使用内存中的默认值即可
+            if not fallback_content:
+                logger.error(f"Prompt '{prompt_name}' not found in DB or Memory.")
+                return ""
+            logger.info(f"Prompt '{prompt_name}' not in DB, using built-in fallback.")
         except Exception as e:
-            logger.warning(f"Failed to fetch prompt '{prompt_name}' from DB: {e}")
+            logger.error(f"Failed to fetch prompt '{prompt_name}' from DB: {e}")
+            if not fallback_content:
+                raise
 
         # 3. 使用 self (LazyFormatter) 进行格式化填充
         try:
@@ -203,19 +213,32 @@ A: {answer}
 
 ### 任务指令:
 1. **画像更新 (profile_summary)**:
-   - 提取技术栈（如：Python, Oracle Linux 8）和职业属性。
-   - 冲突处理：若用户从 Ubuntu 切换到 RHEL，以最新为准。
-   - 严禁包含本提示词示例内容（如 DevOps 等）。
-   - ⚠️ **长度限制：profile_summary 必须控制在 500 字以内**。只保留最重要的技术栈、职业角色和近期关注领域，删除过时或冗余信息。
+   - 提取技术栈和职业属性。
+   - 冲突处理：若用户信息有变更，以最新为准。
+   - ⚠️ **长度限制：profile_summary 必须控制在 500 字以内**。
 2. **记忆快照 (memory_snapshot)**:
-   - 生成一段 100 字以内的陈述句。
-   - 包含：**场景 + 问题 + 核心解法**。
-   - 消解模糊指代，确保该段文字脱离上下文也能被检索系统理解。
+   - 生成一段 100 字以内的陈述句，包含场景+问题+核心解法。
+3. **全局偏好 (global_preferences)**:
+   - 从对话中提取用户的持久性偏好：输出语言、代码风格、数据库偏好、操作系统等。
+   - 格式：`{{"偏好项": "偏好值"}}`，无新偏好时返回 `{{}}`。
+4. **高频实体 (frequent_entities)**:
+   - 统计用户反复提及的实体名称及次数。
+   - 格式：`{{"实体名": 出现次数}}`，无新实体时返回 `{{}}`。
+5. **实体关联 (entity_relations)**:
+   - 发现实体间的关联关系（如：产线-负责人、系统-数据库等）。
+   - 格式：`[{{"source": "实体A", "target": "实体B", "relation": "关系描述"}}]`。
+6. **纠错记录 (correction_history)**:
+   - 如果本轮用户纠正了之前的错误回答，记录错误内容和正确信息。
+   - 格式：`[{{"wrong": "错误内容", "correct": "正确内容"}}]`。
 
 ### 输出格式:
 {{
-    "profile_summary": "更新后的完整画像...",
-    "memory_snapshot": "场景：... 采取了... 解决了..."
+    "profile_summary": "...",
+    "memory_snapshot": "...",
+    "global_preferences": {{}},
+    "frequent_entities": {{}},
+    "entity_relations": [],
+    "correction_history": []
 }}
 """
 
@@ -317,34 +340,38 @@ TASK_PLANNER_PROMPT = """
 
 ### 核心约束:
 1. **技能调用规范**: 你只能使用以下提供的 [可用技能库] 中的技能。严禁捏造技能名称。
-2. **变量注入机制**:
+2. **变量注入机制**: 
     - 使用 `{{user_query}}` 获取原始问题。
     - 使用 `{{step_var_name}}` 引用前序步骤输出。
-3. **检索与融合策略**:
-    - 根据用户问题类型，从 [可用技能库] 中选择合适的检索类技能（如文档检索、数据查询、图谱游走等）。
-    - 多源检索后，必须以 `reasoning` 技能收尾进行信息融合。
-    - 如需可视化，在推理前调用图表类技能。
-4. **指令传递规范**:
-    - 调用数据查询类技能时，`task_description` 必须是自然语言描述，**禁止**在规划阶段自行编写 SQL 语句。
-    - 调用图谱类技能时，`task_description` 必须明确指出需要游走的核心实体词。
+3. **三核检索与融合协议 (Tri-Core Retrieval & Fusion)**:
+    - **AskDocSkill (问文)**: 负责在非结构化文档库中通过语义或全文检索知识。输出变量命名为 `doc_results`。
+    - **AskDataSkill (问数)**: 负责在结构化数据库中执行数据查询。输出变量命名为 `sql_results`。
+    - **AskGraphSkill (问图)**: 负责在知识图谱中执行实体拓扑下游走与关联性溯源。主要用于挖掘**影响链路、因果血缘、组织/物料隶属关系、复杂实体关联**。输出变量命名为 `graph_results`。
+    - **多核混合调用**: 根据用户意图，你可以自由组合以上三种核心检索。当问题同时涉及概念标准、图谱关联及明细数据时，必须同时规划这三个技能。
+4. **指令传递规范**: 
+    - 使用 AskDataSkill 时，`task_description` 必须是自然语言描述，**禁止**在规划阶段自行编写 SQL 语句。
+    - 使用 AskGraphSkill 时，`task_description` 必须明确指出需要图游走的核心实体词。
 5. **Reasoning 核心职能**:
-    - **强制收尾**: 只要调用了任何检索类技能，必须以 `reasoning` 技能收尾。
-    - **多模态信息融合**: `reasoning` 负责将各检索结果进行交叉比对和深度分析。
+    - **强制收尾**: 只要调用了 `AskDocSkill`、`AskDataSkill` 或 `AskGraphSkill` 中的任意一个，必须以 `reasoning` 技能收尾。
+    - **多模态信息融合**: `reasoning` 负责将 `doc_results`（文本背景）、`sql_results`（实时数据）与 `graph_results`（拓扑关系链）进行交叉比对和深度分析。
     - **内置计算**: 所有的统计计算（均值、极差、波动等）由 `reasoning` 直接完成，严禁调用外部计算工具。
-6. **ChitChat 判定**:
-    - 仅当用户意图完全不涉及私有文档、图谱或数据库（如：礼貌问候）时，才单点调用闲聊类技能并结束。
+6. **可视化增强 (EChartsSkill)**:
+    - 当需求包含“图表”、“占比”、“趋势”、“分布”等视觉需求时，必须在结果返回前调用 `EChartsSkill`。
+    - `task_description` 应包含：1. 绘图意图；2. 绘图所需的数据引用 `{{var}}`。
+7. **ChitChat 判定**: 
+    - 仅当用户意图完全不涉及私有文档、图谱或数据库（如：礼貌问候）时，才单点调用 `CHIT-CHAT-SKILL` 并结束。
 
-### 可用技能库 (仅限以下技能):
+### 可用技能库:
 {skills_list}
 
-### 输出格式要求 (严格 JSON — 这是你唯一被允许输出的内容):
+### 输出格式要求 (严格 JSON):
 {{
-  "thought": "你的思考过程。说明选择了哪些技能及其原因。",
+  "thought": "你的思考过程。必须详细说明是否需要激活三核检索（文/数/图）中的哪些资源，以及如何通过 reasoning 进行多维信息融合。",
   "final_goal": "最终业务目标",
   "steps": [
     {{
       "step_id": 1,
-      "skill": "（必须来自可用技能库）",
+      "skill": "...",
       "task_description": "...",
       "output_var": "...",
       "condition": null
@@ -352,23 +379,23 @@ TASK_PLANNER_PROMPT = """
   ]
 }}
 
-### 正确示例 (JSON 计划):
-用户指令: "若厂区设备 A101 因高负载发生故障，分析它会波及哪些下游产线，并结合检修日志和良率指标评估损失。"
+### 任务规划示例 (复杂三核混合查询场景):
+用户指令: "若厂区设备 A101 因高负载发生故障，结合关系图谱，分析它会波及哪些下游产线？并结合近期的检修日志和这些产线的良率指标评估损失。"
 {{
-  "thought": "问题需要图谱关系分析、文档检索和数据分析，从技能库中选择对应的技能进行多源检索，最后由 reasoning 融合。",
-  "final_goal": "设备故障下游产线波及与损失评估",
+  "thought": "用户问题涉及故障波及范围的影响链路分析（需要 AskGraphSkill 游走关系图）、近期的检修日志（非结构化文档，需要 AskDocSkill）、以及产线的良率指标（实时结构化数据，需要 AskDataSkill）。这是一个典型的三核检索场景，最后需要 reasoning 联合比对评估。",
+  "final_goal": "设备故障下游产线波及与损失深度评估",
   "steps": [
     {{
       "step_id": 1,
-      "skill": "ask-graph-skill",
-      "task_description": "以 '设备 A101' 为核心实体检索其所有下游连接及受影响的产线关系链",
+      "skill": "AskGraphSkill",
+      "task_description": "以 '设备 A101' 为核心实体进行图谱拓扑游走，检索其所有下游连接及受影响的产线关系链",
       "output_var": "graph_results",
       "condition": null
     }},
     {{
       "step_id": 2,
       "skill": "ask-doc-skill",
-      "task_description": "检索设备 A101 及相关产线近期的检修日志与故障排除标准",
+      "task_description": "检索设备 A101 及相关受波及产线近期的设备检修日志与故障排除标准（SOP）",
       "output_var": "doc_results",
       "condition": null
     }},
@@ -382,14 +409,14 @@ TASK_PLANNER_PROMPT = """
     {{
       "step_id": 4,
       "skill": "reasoning-skill",
-      "task_description": "综合图谱关联链 {{graph_results}}、检修文档 {{doc_results}} 以及实时良率数据 {{sql_results}}，交叉分析故障扩散路径，计算潜在损失，回答用户: {{user_query}}",
+      "task_description": "深度综合图谱关联链 {{graph_results}}、检修文档 {{doc_results}} 以及实时良率数据 {{sql_results}}，交叉比对分析设备故障扩散路径，计算潜在的产能损失，最终完整回答用户: {{user_query}}",
       "output_var": "final_result",
       "condition": null
     }}
   ]
 }}
 
-⚠️ **重要提示**: 当意图为 knowledge_query 时，必须优先使用知识检索类技能（如 ask-doc-skill、ask-graph-skill、ask-data-skill 等），严禁仅使用 chit-chat-skill！chit-chat-skill 仅用于纯闲聊/问候。
+⚠️ **重要提示**: 当意图为 knowledge_query 时，必须优先使用知识检索类技能（如 ask-doc-skill、ask-graph-skill），严禁仅使用 chit-chat-skill！chit-chat-skill 仅用于纯闲聊/问候。
 
 当前用户指令: {standalone_query}
 """
@@ -637,7 +664,8 @@ ADVANCED_OPS_DIAGNOSIS_PROMPT = """
 你正在排查一个生产/测试环境的内核故障。请综合下方提供的【多维环境拓扑】、【运行时变量中心】、【监控指标缓存】、【系统日志段落】以及【从标准化知识库中检索到的 SOP 文档】进行最终分析。
 
 【1. 当前拓扑控制元数据】：
-- 执行环境 (Environment): {environment} (注: 如果是 prod 环境，任何变更建议必须极其保守并显式注明‘触发审批门禁’)
+- 当前服务器时间: {current_time}
+- 执行环境 (Environment): {environment} (注: 如果是 prod 环境，任何变更建议必须极其保守并显式注明’触发审批门禁’)
 - 数据库引擎类型 (Engine Type): {db_type}
 - 内核版本号 (Version Code): {version_code}
 - 节点角色 (Cluster Role): {db_role} (注: 如果是 standby，绝对禁止在此节点提供任何 DDL 或数据写变更建议)
@@ -667,36 +695,78 @@ ADVANCED_OPS_DIAGNOSIS_PROMPT = """
 
 请保持理性、严谨、拒绝废话。使用 Markdown 语法直接输出诊断报告。
 开始综合诊断请求: {standalone_query}
-
 """
 
 # ================================================================================================
 # --------------------------------  运维Agent (AIOps) — 任务规划  ---------------------------------
 # ================================================================================================
-
+# ================================================================================================
+# --------------------------------  运维Agent (AIOps) — 动作规划  ----------------------------------
+# ================================================================================================
 OPS_ACTION_PLAN_PROMPT = """
 你是一个 {db_type} 数据库运维专家。下面是完整的诊断报告。请根据诊断结论生成具体可执行的自愈动作。
 
-【诊断报告】: {diagnosis_report}
-【环境信息】: 数据库类型: {db_type} | 环境: {environment} | 节点角色: {db_role}
-【诊断工具全部结果（含真实 SID/SERIAL#/FILE_NAME 等）】: {metric_results_full}
+【诊断报告】:
+{diagnosis_report}
+
+【环境信息】:
+- 数据库类型: {db_type}
+- 环境: {environment}
+- 节点角色: {db_role}
+- 诊断工具全部结果（含真实 SID/SERIAL#/FILE_NAME 等）:
+{metric_results_full}
 
 【要求】:
 - 如果诊断报告明确建议了具体 SQL 操作，则生成结构化动作
 - 如果报告结论是"无需操作"则 actions 留空
-- 核心规则: 所有 SQL 参数必须来自上面数据中的真实值，禁止编造
+- **核心规则: 所有 SQL 参数必须来自上面「诊断工具全部结果」中的真实值**
+  * KILL SESSION 的 SID/SERIAL# → 从数据中查找，一般格式为 "sid": "123", "serial#": "45678"
+  * ALTER TABLESPACE 的 FILE_NAME → 从数据中查找
+  * ALTER DATABASE 的路径 → 从数据中查找
+  * **如果数据中没有对应的真实值，actions 留空，不要编造**
 - 禁止生成 SELECT 作为 action_sql
-请输出严格 JSON: {{"actions": [{{"action_sql": "...", "action_context": "...", "impact": "...", "rollback_sql": "..."}}], "risk_level": "low/medium/high/critical", "reason": "如果 actions 为空，说明原因"}}
+- 每条 SQL 必须是完整可执行的语句
+
+请输出严格 JSON（不要 Markdown 包裹）:
+{{
+  "actions": [
+    {{
+      "action_sql": "完整的可执行 SQL",
+      "action_context": "为什么执行（1句话）",
+      "impact": "影响分析",
+      "rollback_sql": "回滚方案"
+    }}
+  ],
+  "risk_level": "low / medium / high / critical",
+  "reason": "如果 actions 为空，说明原因"
+}}
 """
 
+# ================================================================================================
+# --------------------------------  运维Agent (AIOps) — 愈合决策  ----------------------------------
+# ================================================================================================
 OPS_HEAL_DECISION_PROMPT = """
-你是 {db_type} 数据库运维专家。请决定下一步操作。
+你是 {db_type} 数据库运维专家。下面是诊断报告和已收集的数据。请决定下一步操作。
+
 【诊断报告】: {diagnosis}
 【已有数据】: {knowledge}
 【当前轮次】: {round_num}/{max_rounds}
 【已完成动作】: {results}
-决策规则: 1.如果有具体SQL且参数真实→execute 2.缺参数→query查询 3.全部完成→done 4.禁止编造参数
-输出 JSON: {{"action": "query/execute/done", "sql": "SQL", "reason": "理由", "impact": "影响(execute时)", "rollback_sql": "回滚(execute时)"}}
+
+【决策规则】:
+1. 如果诊断报告中提到了需要执行的具体 SQL(如 KILL SESSION、ALTER TABLESPACE 等)，且 SQL 所需的参数(如 SID/SERIAL#、FILE_NAME)在【已有数据】中能找到真实值 → action="execute"
+2. 如果报告中建议了操作，但缺少真实参数 → action="query"，生成一条 SELECT 查询来获取参数
+3. 如果所有建议的操作已完成，或报告说"无需操作" → action="done"
+4. 禁止凭空编造参数值。如果数据中没有，必须先 query
+
+【输出 JSON】:
+{{
+  "action": "query" | "execute" | "done",
+  "sql": "SQL 语句 (query 时为 SELECT，execute 时为 DDL/DML)",
+  "reason": "决策理由 (1句话)",
+  "impact": "影响分析 (仅 execute 时)",
+  "rollback_sql": "回滚方案 (仅 execute 时)"
+}}
 """
 
 OPS_DIAGNOSE_TASK_PLANNER_PROMPT = """
@@ -711,10 +781,11 @@ OPS_DIAGNOSE_TASK_PLANNER_PROMPT = """
 ---
 
 ### 核心约束与编排协议:
-1. **多步骤原子化拆解 (核心)**: 用户的意图可能涉及多个数据库内核指标。你必须将复杂的复合请求，拆解为**多个独立的 `DBMetricSkill` 原子步骤**。每个步骤的 `task_description` 只能专注于**单一、具体的指标项**，以便下游能精确匹配到数据库模版。
-2. **流水线终点闭环**: 在所有的 `DBMetricSkill` 步骤规划完成后，**必须**规划一个 `DBAnalysisSkill` 步骤作为终点。它负责接收前面所有步骤采集到的指标（如 `{{metric_results_1}}`, `{{metric_results_2}}`），联合进行深度诊断并输出 Markdown 结果。
-3. **变更执行收尾（可选）**: 如果你的技能库中包含 `ops-heal-skill`（变更执行技能），且你预判 DBAnalysisSkill 的诊断结果可能产出具体的变更 SQL（如 KILL SESSION、ALTER SYSTEM），你**可以**在 DBAnalysisSkill 之后追加一个 `ops-heal-skill` 步骤。该步骤会接收 DBAnalysisSkill 产出的结构化自愈动作，通过安全门禁后执行。注意：如果技能库中没有此技能，不要规划此步骤。
-4. **指令传递规范**: 在规划 `DBMetricSkill` 的 `task_description` 时，必须使用**你库中标准的、直白的原子短语风格**（如”所有表空间的使用率”、”当前有多少个活跃会话”、”锁等待情况”），严禁在单步中混淆多个指标。
+1. **多步骤原子化拆解 (核心)**: 用户的意图可能涉及多个数据库内核指标。你必须将复杂的复合请求，拆解为**多个独立的 `db-metric-skill` 原子步骤**。每个步骤的 `task_description` 只能专注于**单一、具体的指标项**，以便下游能精确匹配到数据库模版。
+2. **纯执行类请求（仅变更/清理/DDL，不带查询意图）**: 用户**只**要求执行一个数据库变更操作（如扩容、收缩、清理回收站、KILL 会话），**不要求看数据**。此时只需 `db-metric-skill` + `ops-heal-skill`。ops-heal-skill 会自己输出执行结果，**不需要** db-analysis-skill。
+3. **查询/诊断/分析类请求（含"查看""显示""是多少""有没有""分析"等关键词）**: 只要用户想知道**数据是什么**（如"查看表空间使用率""当前有多少活跃会话""分析性能瓶颈"），在所有 `db-metric-skill` 之后**必须**以 `db-analysis-skill` 作为终点。即使只有一个指标、只有一步 db-metric-skill，也必须追加 db-analysis-skill 来格式化输出结果。**`db-metric-skill` 只采集数据不输出答案，没有 `db-analysis-skill` 用户看不到任何结果。** **如果诊断发现需要执行变更操作（KILL 会话、扩容、清理等），必须在 `db-analysis-skill` 之后追加 `ops-heal-skill` 步骤，由系统自动执行，禁止让用户手动操作。**
+4. **诊断后自动执行**: 如果上下文变量中 `is_mutation_allowed: true`，在 `db-analysis-skill` 之后**必须无条件追加** `ops-heal-skill` 步骤。该技能会检查是否有待执行的动作，没有则自动跳过。**绝对禁止**只输出 SQL 让用户自己去执行。如果 `is_mutation_allowed: false`，则不需要 ops-heal-skill（诊断报告会附带格式化的建议动作）。
+5. **指令传递规范**: 在规划 `db-metric-skill` 的 `task_description` 时，必须使用**你库中标准的、直白的原子短语风格**，严禁在单步中混淆多个指标。
 
 ### 可用技能库:
 {skills_list}
@@ -728,7 +799,7 @@ OPS_DIAGNOSE_TASK_PLANNER_PROMPT = """
   "steps": [
     {{
       "step_id": 1,
-      "skill": "DBMetricSkill",
+      "skill": "db-metric-skill",
       "task_description": "极其精简、直白的单一原子技术短语（对照你的指标库风格）",
       "output_var": "metric_results_1",
       "condition": null
@@ -738,33 +809,112 @@ OPS_DIAGNOSE_TASK_PLANNER_PROMPT = """
 
 ---
 
-### 任务规划示例 (复杂多指标排查场景):
-用户指令: "排查 Oracle 实例当前是否存在表空间满、或者有死锁导致阻塞的问题"
-SOP Context: "当前无匹配的专家 SOP 手册，请依赖通用运维指标经验进行线性探测排查。"
+### 任务规划示例 1 (简单查询 — 必须带 db-analysis-skill):
+用户指令: "查看当前表空间使用率"
 
 {{
-  "thought": "用户的诊断指令涉及两个不同的数据库内核方向：一是容量层面的‘表空间使用率’，二是并发层面的‘死锁与阻塞会话’。为了保证下游向量匹配的精准度，我需要将这两个意图拆解为两个独立的 DBMetricSkill 步骤，分别进行原子指标采集，最后交由 DBAnalysisSkill 进行联合诊断。",
-  "final_goal": "联合排查数据库表空间水位与死锁阻塞状态",
+  "thought": "用户想查看数据，这是一个查询请求。只需要一步 db-metric-skill 采集所有表空间使用率，然后用 db-analysis-skill 格式化输出。即使只有一个指标也必须加 db-analysis-skill，因为 db-metric-skill 只采集不输出。",
+  "final_goal": "展示当前所有表空间的使用率报表",
   "steps": [
     {{
       "step_id": 1,
-      "skill": "DBMetricSkill",
+      "skill": "db-metric-skill",
       "task_description": "所有表空间的使用率",
       "output_var": "metric_results_1",
       "condition": null
     }},
     {{
       "step_id": 2,
-      "skill": "DBMetricSkill",
+      "skill": "db-analysis-skill",
+      "task_description": "分析表空间指标 {{{{metric_results_1}}}}，将各表空间使用率格式化为 Markdown 报表",
+      "output_var": null,
+      "condition": null
+    }}
+  ]
+}}
+
+### 任务规划示例 3 (复杂多指标排查场景):
+用户指令: "排查 Oracle 实例当前是否存在表空间满、或者有死锁导致阻塞的问题"
+SOP Context: "当前无匹配的专家 SOP 手册，请依赖通用运维指标经验进行线性探测排查。"
+
+{{
+  "thought": "用户的诊断指令涉及两个不同的数据库内核方向：一是容量层面的‘表空间使用率’，二是并发层面的‘死锁与阻塞会话’。为了保证下游向量匹配的精准度，我需要将这两个意图拆解为两个独立的 db-metric-skill 步骤，分别进行原子指标采集，最后交由 db-analysis-skill 进行联合诊断。",
+  "final_goal": "联合排查数据库表空间水位与死锁阻塞状态",
+  "steps": [
+    {{
+      "step_id": 1,
+      "skill": "db-metric-skill",
+      "task_description": "所有表空间的使用率",
+      "output_var": "metric_results_1",
+      "condition": null
+    }},
+    {{
+      "step_id": 2,
+      "skill": "db-metric-skill",
       "task_description": "当前有多少个活跃会话",
       "output_var": "metric_results_2",
       "condition": null
     }},
     {{
       "step_id": 3,
-      "skill": "DBAnalysisSkill",
+      "skill": "db-analysis-skill",
       "task_description": "综合分析表空间指标 {{metric_results_1}} 与会话阻塞数据 {{metric_results_2}}，评估系统容量与死锁风险，将结果格式化为 Markdown 报表回答用户",
       "output_var": "analysis_results",
+      "condition": null
+    }}
+  ]
+}}
+
+### 任务规划示例 4 (纯变更执行场景):
+用户指令: "将 users 表空间扩容 10MB"
+
+{{
+  "thought": "这是一个明确的变更指令，不是诊断请求。只需要 db-metric-skill 采集前置指标 + ops-heal-skill 执行变更，不需要 db-analysis-skill。",
+  "final_goal": "执行 users 表空间扩容 10MB",
+  "steps": [
+    {{
+      "step_id": 1,
+      "skill": "db-metric-skill",
+      "task_description": "users表空间的使用率",
+      "output_var": "metric_results_1",
+      "condition": null
+    }},
+    {{
+      "step_id": 2,
+      "skill": "ops-heal-skill",
+      "task_description": "执行ALTER TABLESPACE users ADD DATAFILE '/u01/app/oracle/oradata/XE/users02.dbf' SIZE 10M; 扩容users表空间10MB",
+      "output_var": null,
+      "condition": null
+    }}
+  ]
+}}
+
+### 任务规划示例 5 (诊断+自动执行场景):
+用户指令: "查看数据库是否存在锁阻塞，如果有则杀掉阻塞源头会话"
+
+{{
+  "thought": "用户想先诊断是否有锁阻塞，如果有则执行清理。需要 DBMetricSkill 采集锁信息，db-analysis-skill 分析判断是否存在阻塞并生成 KILL SQL，最后 ops-heal-skill 自动执行。",
+  "final_goal": "诊断并自动清理数据库锁阻塞",
+  "steps": [
+    {{
+      "step_id": 1,
+      "skill": "db-metric-skill",
+      "task_description": "当前锁阻塞情况",
+      "output_var": "metric_results_1",
+      "condition": null
+    }},
+    {{
+      "step_id": 2,
+      "skill": "db-analysis-skill",
+      "task_description": "分析锁阻塞数据 {{{{metric_results_1}}}}，判断是否存在需要清理的阻塞会话，如有则生成 KILL SESSION SQL",
+      "output_var": null,
+      "condition": null
+    }},
+    {{
+      "step_id": 3,
+      "skill": "ops-heal-skill",
+      "task_description": "执行 db-analysis-skill 生成的 KILL SESSION 命令",
+      "output_var": null,
       "condition": null
     }}
   ]
@@ -856,22 +1006,22 @@ OPS_SUFFICIENCY_CHECK_PROMPT = """
 {hitl_context}
 
 ## 评估规则
-1. 如果 Prometheus 监控数据 + 数据库诊断 SQL 结果 + SOP 手册已经构成完整的故障证据链 → verdict: "sufficient"
-2. 如果证据指向某个方向但缺少关键数据来确认根因 → verdict: "insufficient"
-   - 你必须生成一条用户可以在 {db_type} 数据库执行的 SELECT SQL 语句
-   - SQL 必须包含行数限制（Oracle: ROWNUM <= 20, PostgreSQL/MySQL: LIMIT 20）
-   - 使用通用系统视图（避免需要 DBA 权限的高权限视图，如 Oracle 的 v$lock 改用 dba_locks）
-   - 告知用户期望返回哪些关键字段及其中文含义
-   - 如果 Prometheus 完全不可达且数据库诊断工具也全部失败，please 直接建议用户检查连接
-3. 如果已经进行了 5 轮以上交互仍未定位 → 强制 verdict: "sufficient"，基于现有证据给出最优推测
+1. 如果 Prometheus 数据 + 数据库诊断结果 + SOP 手册已构成完整证据链 → verdict: "sufficient"
+2. 如果证据指向某个方向但缺少关键数据 → verdict: "insufficient"
+   - **不要生成让用户执行的 SQL**（系统有自动诊断工具可执行查询）
+   - 只需说明缺少什么类型的数据（如"缺少活跃会话等待事件""缺少锁阻塞详情"）
+   - 系统会自动调度对应的诊断工具采集数据
+3. 如果已进行 5 轮以上交互仍未定位 → 强制 verdict: "sufficient"
 
-## 输出格式（严格 JSON，不超过 500 tokens）
+## 输出格式（严格 JSON，不超过 300 tokens）
 {{
   "verdict": "sufficient" 或 "insufficient",
-  "reason": "用中文简洁解释你做此判断的原因（1-2句话）",
-  "sql_to_run": "需要用户执行的完整 SQL 语句（仅 verdict=insufficient 时输出）",
+  "reason": "用中文简洁解释缺少什么数据、建议用什么诊断工具（1-2句话）",
+  "suggested_tools": ["db_active_session_wait", "db_lock_chains"],
   "expected_fields": ["字段1(含义)", "字段2(含义)"]
 }}
+
+注意: suggested_tools 必须从以下工具中选择: db_lock_chains, db_lock_matrix, db_top_cpu_sql, db_session_memory, db_tablespace_top_segments, db_tablespace_datafiles, db_temp_segments_usage, db_active_session_wait, db_historical_session_history, db_undo_segments_usage, db_invalid_objects, db_non_default_parameters。如果不确定用哪个，可以留空数组。
 
 请严格按 JSON 输出，不要输出其他内容。
 """
@@ -895,12 +1045,13 @@ OPS_EXECUTE_ACTION_PROMPT = """
 请以 JSON 格式输出以下内容：
 
 {{
-  "impact": "用中文描述执行此 SQL 可能造成的影响。包括：影响范围（单会话/多会话/全局）、预计持续时间、对业务的影响程度、是否需要停机窗口。对于 KILL SESSION：说明被终止会话的事务将自动回滚，对连接的应用会短暂报错并自动重连。对于 ALTER SYSTEM：说明参数变更的生效范围（立即/重启后）及潜在风险。",
-  "rollback_sql": "用中文给出精确的回滚/恢复方案。对于 KILL SESSION：注明 Oracle 自动回滚事务，无需额外操作，应用自动重连即可。对于参数变更：给出恢复原值的反向 SQL。如果无法自动回滚，明确说明人工操作步骤。",
+  "impact": "用中文描述执行此 SQL 可能造成的影响。包括：影响范围（单会话/多会话/全局）、预计持续时间、对业务的影响程度。对于 KILL SESSION：说明被终止会话的事务将自动回滚。对于参数变更：说明生效范围及潜在风险。",
+  "rollback_sql": "用中文给出精确的回滚/恢复方案。对于 KILL SESSION：注明事务自动回滚，应用自动重连。对于参数变更：给出恢复原值的反向 SQL。如果无法自动回滚，明确说明人工操作步骤。",
   "risk_level": "low / medium / high / critical。评估标准：low=影响单个非核心会话且自动恢复；medium=影响单个核心会话或短时性能波动；high=影响多个会话或需要重启；critical=可能导致数据丢失或服务中断"
 }}
 
 严格按 JSON 输出，risk_level 必须为 low/medium/high/critical 之一。
 """
+
 
 default_prompt = DefaultPrompt()

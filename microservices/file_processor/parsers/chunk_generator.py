@@ -1,26 +1,19 @@
 import re
-import json
-from pathlib import Path
 from typing import Any
 from loguru import logger
 from docling_core.types.doc.document import (
     DoclingDocument,
-    DescriptionAnnotation,
-    PictureItem,
     TableItem,
-    TextItem, 
-    TitleItem,
-    SectionHeaderItem  # 用于标题处理的专用类
+    TextItem,
 )
-from .utils import ParserToolLib, ModelTask
-from .engine import VLMAnnotationPictureSerializer
+from .utils import ModelTask
 from ..parser_schema import DocParserParams, ChunkMetadata, ChunkResult
 from utils.clients import AIModelClient
 
 
 class ChunkerGenerator:
     """分块生成类"""
-    
+
     def __init__(self, params: DocParserParams):
         self.params = params
         self.min_len = params.min_chunk_len or 200
@@ -28,503 +21,489 @@ class ChunkerGenerator:
         self.chunk_count = 1
         self.model_task = ModelTask()
         self.model_client = AIModelClient()
+        from .engine import VLMAnnotationPictureSerializer
         self.serializer = VLMAnnotationPictureSerializer()
 
-    async def generate_chunks(self, doc: DoclingDocument, file_ext: str, vlm_enhancement: dict) -> list[ChunkResult]:
-        """
-        分块生成逻辑：
-        1. Stage 1: 调用VLM处理复杂表格和图片
-        2. Stage 2: 全局感知 - 提取文档全局摘要
-        3. Stage 3: 语义聚合 - 聚合并判定 Header/Text
-        4. Stage 4: 逻辑输出 - 注入全局背景
-        
-        PPT：  按照每一页一个chunk
-        Excel：复杂Excel给VLM进行识别，每个table作为单独的chunk，
-               除非chunk超过Embedding的max tokens，则按照每40行切分为子表，每个子表补充相同的表头。
-        """
-        chunk_results: list[ChunkResult] = []
-        current_chunk_num = 1
-        is_ppt = file_ext in [".pptx", ".ppt"]
-        seen_image_hashes = set() # 用于过滤重复图片
+    async def generate_chunks(self, doc: DoclingDocument, file_ext: str,
+                              vlm_enhancement: dict,
+                              prebuilt_hierarchy=None) -> list[ChunkResult]:
+        """分块入口（统一走智能分块）"""
+        return await self.generate_chunks_v2(doc, file_ext, vlm_enhancement,
+                                             prebuilt_hierarchy=prebuilt_hierarchy)
 
-        # --- Stage 1: 全局感知 (Global Context) ---
-        # 提取前 3000 字用于生成全局摘要
+    # ═══════════════════════════════════════════════════════════════
+    # 智能分块 (v2) — 层级感知 + 语义边界
+
+    async def generate_chunks_v2(self, doc: DoclingDocument, file_ext: str,
+                                  vlm_enhancement: dict,
+                                  prebuilt_hierarchy=None) -> list[ChunkResult]:
+        """智能分块：层级感知 + 语义边界，无 per-chunk LLM 调用。
+
+        流程: 层级树构建 → 多栏检测 → 跨页缝合 → 智能分块 → 全局摘要 → 转换输出
+
+        Args:
+            prebuilt_hierarchy: 可选，已经构建好的 SemanticNode 层级树。
+                               如果提供，跳过 Step 1-3 直接进入分块。
+                               用于级联管线中 QualityGate→VLM Repair→Merge 后传入。
+        """
+        from .hierarchy_builder import HierarchyBuilder
+        from .layout_cluster import LayoutClusterer
+        from .page_span_stitcher import PageSpanStitcher
+
+        # 特殊格式：无标题层级，走专用处理器
+        is_ppt = file_ext in [".pptx", ".ppt"]
+        is_spreadsheet = file_ext in [".xlsx", ".xls", ".csv"]
+
+        if is_ppt:
+            return await self._generate_chunks_ppt(doc, vlm_enhancement)
+
+        if is_spreadsheet:
+            return await self._generate_chunks_spreadsheet(doc)
+
+        kb_id = getattr(self.params, 'kb_id', None) or "unknown"
+        file_id = getattr(self.params, 'file_id', None) or "unknown"
+
+        # Step 0: 图片预序列化（保存到磁盘，记录文件名）
+        pic_image_map: dict[int, str] = {}
+        if self.params.generate_picture_images and self.params.image_dir:
+            for pic in doc.pictures:
+                try:
+                    _, img_name = self.serializer.serialize(
+                        item=pic, doc=doc, image_dir=self.params.image_dir
+                    )
+                    if img_name:
+                        pic_image_map[id(pic)] = img_name
+                except Exception as e:
+                    logger.warning(f"图片序列化失败: {e}")
+
+        # Step 1-3: 语义重构 (如果外部已提供 hierarchy 则跳过)
+        if prebuilt_hierarchy is not None:
+            hierarchy = prebuilt_hierarchy
+            builder = HierarchyBuilder(doc)
+        else:
+            builder = HierarchyBuilder(doc)
+            hierarchy = builder.build()
+            clusterer = LayoutClusterer()
+            hierarchy = clusterer.correct_reading_order(hierarchy)
+            stitcher = PageSpanStitcher()
+            hierarchy = stitcher.stitch(hierarchy)
+
+        # Step 4: 智能分块
+        smart = SmartChunker(
+            min_len=self.params.min_chunk_len or 100,
+            max_len=self.params.chunk_size or 800,
+            hierarchy_builder=builder,
+            kb_id=kb_id,
+            file_id=file_id,
+        )
+        candidates = smart.chunk(hierarchy)
+
+        # Step 5: 全局摘要（1 次 LLM 调用）
+        global_summary = await self._get_global_summary(doc)
+
+        # Step 6: 转换为 ChunkResult（纯规则，无 LLM！）
+        results: list[ChunkResult] = []
+        for i, cand in enumerate(candidates):
+            result = self._candidate_to_result(cand, global_summary, i + 1, pic_image_map)
+            results.append(result)
+
+        return results
+
+    async def _get_global_summary(self, doc: DoclingDocument) -> str:
+        """生成文档全局摘要（1 次 LLM 调用，50 字以内）"""
         full_text_snapshot = ""
-        max_summary_chars = 3000
-        
+        max_chars = 3000
         for item, _ in doc.iterate_items():
             if isinstance(item, TextItem):
                 full_text_snapshot += item.text + "\n"
-                if len(full_text_snapshot) > max_summary_chars: break
-        
-        global_summary = "未知主题文档"
-        if full_text_snapshot:
-            summary_prompt = f"请用一句话（50字以内）概括以下文档的核心主题（含标准号或项目名）。文档片段：\n{full_text_snapshot[:max_summary_chars]}"
-            
-            # 调用LLM进行背景总结
+                if len(full_text_snapshot) > max_chars:
+                    break
+
+        if not full_text_snapshot:
+            return "未知主题文档"
+
+        summary_prompt = (
+            f"请用一句话（50字以内）概括以下文档的核心主题（含标准号或项目名）。"
+            f"文档片段：\n{full_text_snapshot[:max_chars]}"
+        )
+        try:
             llm_res = await self.model_task.llm_task(
-                self.model_client, 
+                self.model_client,
                 self.params.llm_model,
                 summary_prompt
             )
             if llm_res:
-                global_summary = str(llm_res).replace("\n", " ").strip()
-                logger.debug(f"文档全局摘要提取成功: {global_summary}")
-            else:
-                logger.warning("文档全局摘要提取失败，使用默认值")
-
-        # --- Stage 2: add_to_results 闭包，处理 chunk 结果生成 ---
-        async def add_to_results(content, item_ref, c_type="text", img_name=None) -> None:
-            nonlocal current_chunk_num
-            if not content.strip(): return
-
-            # 1. 提取坐标
-            bbox = None
-            page_num = 1
-            try: 
-                if item_ref and hasattr(item_ref, "prov") and item_ref.prov:
-                    prov = item_ref.prov[0]
-                    page_num = prov.page_no
-                    if hasattr(prov, "bbox") and prov.bbox:
-                        # 获取页面尺寸计算归一化坐标
-                        p_obj = doc.pages.get(page_num)
-                        if p_obj:
-                            w, h = p_obj.size.width, p_obj.size.height
-                            raw_y_max = max(prov.bbox.t, prov.bbox.b) # PDF 中更高的位置
-                            raw_y_min = min(prov.bbox.t, prov.bbox.b) # PDF 中更低的位置
-
-                            bbox = [
-                                round(min(prov.bbox.l, prov.bbox.r) / w, 4), # Left
-                                round(1 - (raw_y_max / h), 4),               # Web Top (镜像反转)
-                                round(max(prov.bbox.l, prov.bbox.r) / w, 4), # Right
-                                round(1 - (raw_y_min / h), 4)                # Web Bottom (镜像反转)
-                            ]
-            except Exception as e:
-                logger.error(f"坐标转换失败: {e}")
-                bbox = None # 降级处理：不带坐标，但不能让解析中断
-            
-            # 2. 使用LLM生成动态提取虚拟标题，如果失败则使用从内容提取的默认值
-            lines = [l for l in content.split('\n') if l.strip()]
-            virtual_header = lines[0].replace('#', '').strip()[:50] if lines else "正文详情"
-            # 使用LLM生成virtual_header，要求输出仅标题本身，不超过50字
-            header_prompt = (
-                f"阅读以下文本片段，生成一个简洁的标题（5-15个字）。"
-                f"要求：仅输出标题文本，不要加任何前缀、编号、引号或解释。"
-                f"\n文本片段：{content}"
-            )
-            
-            # 调用LLM进行背景总结
-            llm_res = await self.model_task.llm_task(
-                self.model_client, 
-                self.params.llm_model,
-                header_prompt
-            )
-            if llm_res:
-                virtual_header = str(llm_res).replace("\n", " ").strip()
-                # 清理LLM可能额外输出的前缀/编号（如 "标题："、"1. "等）
-                virtual_header = re.sub(r'^(标题[：:]?\s*|[\d]+[\.\、]\s*)', '', virtual_header)
-                # 兜底截断，防止LLM不遵守约束导致超DB列长
-                if len(virtual_header) > 200:
-                    logger.warning(f"LLM生成的标题过长({len(virtual_header)}字)，已截断: {virtual_header[:50]}...")
-                    virtual_header = virtual_header[:200]
-                logger.debug(f"文档片段标题生成成功: {virtual_header}")
-            else:
-                logger.warning("文档片段标题生成失败，使用默认值")
-            
-            # 3. 构造 search_helper：[全局背景] > [虚拟标题] > [内容前缀（扩展至300字符）]
-            # Phase 4: 扩展 content 前缀从 120 → 300 字符，提升全文检索命中率
-            content_prefix = content[:300].replace('\n', ' ')
-            search_helper = f"{global_summary} > {virtual_header} > {content_prefix}"
-
-            # 4. 封装结果
-            metadata = ChunkMetadata(
-                page_num=page_num,
-                image_name=img_name,
-                bbox=bbox
-            )
-            
-            chunk = ChunkResult.create(
-                content=content,
-                summary=global_summary,
-                header=virtual_header,  # 传入提取的虚拟标题
-                search_helper=search_helper, # 显式传入增强检索字段
-                chunk_num=current_chunk_num,
-                chunk_type=c_type,
-                metadata=metadata
-            )
-            
-            chunk_results.append(chunk) 
-            current_chunk_num += 1
-
-        # --- Stage 3: 解析路由：PPT单独处理，其他文档进行语义聚合 ---
-
-        if is_ppt:
-            logger.debug(f"文档类型为 PPT，以 PPT 模式开始解析")
-            # PPT 模式：按页物理聚合
-            page_buckets = {}
-            page_titles = {}
-
-            # 1. 建立基础内容 Bucket
-            for item, _ in doc.iterate_items():
-                p_no = self._get_page_num(item)
-                if p_no not in page_buckets: 
-                    page_buckets[p_no] = []
-                    page_titles[p_no] = ""
-                
-                # 提取标题：用于生成 Chunk 的元数据
-                if isinstance(item, (SectionHeaderItem, TitleItem)):
-                    txt = item.text.strip()
-                    if txt and not page_titles[p_no]:
-                        page_titles[p_no] = txt
-                
-                # 收集文本：保留原始文本用于关键词检索 (Keyword Hit)
-                if isinstance(item, TextItem):
-                    page_buckets[p_no].append(item.text)
-                
-                # 注意：PPT 模式下，不再单独处理 TableItem 和 PictureItem
-                # 因为它们的内容已经包含在“整页视觉总结”中了
-
-            # 2. 物理页排序并注入 VLM 视觉总结
-            for p_no in sorted(page_buckets.keys()):
-                # 获取该页的 Page 对象
-                page_obj = doc.pages.get(p_no)
-                if not page_obj:
-                    logger.warning(f"PPT 页面 {p_no} 不存在")
-                    continue
-                
-                # --- 核心：提取预处理回填的视觉总结 ---
-                page_info = vlm_enhancement.get(p_no, {})
-                slide_vlm_desc = page_info.get("description", None)
-                slide_img_name = page_info.get("image_name", None)
-                
-                logger.debug(f"slide_img_name: {slide_img_name}, slide No.{p_no}")
-
-                # 3. 构造最终的 Chunk 内容
-                bucket_content = page_buckets[p_no]
-                raw_text = "\n".join(bucket_content).strip()
-                
-                # 组合内容：视觉总结置顶（语义核心）+ 原始文本（检索辅助）
-                final_parts = []
-                if slide_vlm_desc:
-                    final_parts.append(f"【页面视觉总结】\n{slide_vlm_desc}")
-                
-                if raw_text:
-                    final_parts.append(f"【原始文本内容】\n{raw_text}")
-                
-                combined_text = "\n\n".join(final_parts)
-                if not combined_text: continue
-
-                # 5. 保存整页截图并在前端展示
-                await add_to_results(combined_text, None, c_type="slide", img_name=slide_img_name)
-        else:
-            logger.debug("使用常规模式：线性追踪解析文档")
-            # 常规模式：线性追踪
-            text_buffer = []
-            current_len = 0
-            MIN_CHUNK_LEN = self.params.min_chunk_len or 200 # 最小合并字符数，低于此值会尝试与下一段合并
-            MAX_CHUNK_LEN = self.params.chunk_size or 1000 # 达到此长度强制刷出
-
-            for item, _ in doc.iterate_items():
-                # 0. DS OCR 类型标记：按识别的元素类型路由
-                dsocr_type = None
-                for anno in getattr(item, "annotations", []):
-                    if isinstance(anno, DescriptionAnnotation) and anno.provenance == "dsocr_type":
-                        dsocr_type = anno.text
-                        break
-
-                if dsocr_type == "table":
-                    if text_buffer:
-                        await add_to_results("\n".join(text_buffer), item)
-                        text_buffer, current_len = [], 0
-                    await add_to_results(item.text, item, c_type="table")
-                    continue
-                if dsocr_type == "picture":
-                    if text_buffer:
-                        await add_to_results("\n".join(text_buffer), item)
-                        text_buffer, current_len = [], 0
-                    await add_to_results(item.text, item, c_type="picture")
-                    continue
-
-                # 1. 标题逻辑：作为内容存入buffer
-                if isinstance(item, SectionHeaderItem):
-                    header_line = f"## {item.text.strip()}"
-                    text_buffer.append(header_line)
-                    current_len += len(header_line)
-                    continue
-
-                # 2. 表格逻辑
-                if isinstance(item, TableItem):
-                    if text_buffer:
-                        await add_to_results("\n".join(text_buffer), item)
-                        text_buffer, current_len = [], 0
-                    
-                    # 处理表格
-                    table_chunks = await self._process_table_vlm(item, doc, self.params, "表格")
-                    for tc in table_chunks:
-                        raw_content = tc.get("content", "").strip()
-                        final_table_md = ParserToolLib.ensure_markdown_table_integrity(raw_content)
-                        await add_to_results(final_table_md, item, c_type="table")
-                    continue
-
-                # 3. 图片逻辑
-                if isinstance(item, PictureItem):
-                    if text_buffer:
-                        await add_to_results("\n".join(text_buffer), item)
-                        text_buffer, current_len = [], 0
-                    
-                    skip, vlm_desc = await self._should_skip_image(item, seen_image_hashes)
-                    logger.debug(f"图片处理诊断: skip={skip}, desc_len={len(vlm_desc) if vlm_desc else 0}, hash_seen={len(seen_image_hashes)}")
-                    if not skip:
-                        try:
-                            # 执行序列化逻辑，获取验证过的 img_name
-                            _, img_name = self.serializer.serialize(item=item, doc=doc, image_dir=self.params.image_dir)
-                            if img_name:
-                                logger.debug(f"图片序列化成功: {img_name}")
-                                await add_to_results(
-                                    content=f"[图片内容描述]: {vlm_desc}", 
-                                    item_ref=item, 
-                                    c_type="picture", 
-                                    img_name=img_name
-                                )
-                            else:
-                                logger.error("图片序列化失败：返回的 img_name 为空")
-                        except Exception as e:
-                            logger.exception(f"序列化图片时发生异常: {e}")
-                    continue
-
-                # 4. 正文逻辑
-                if isinstance(item, TextItem):
-                    txt = item.text.strip()
-                    if not txt: continue
-                    text_buffer.append(txt)
-                    current_len += len(txt)
-                    # 只有当 buffer 加上新内容会“过度溢出”时，才刷出旧内容
-                    # 这样可以保证 text_buffer 总是尽量接近 MAX_CHUNK_LEN
-                    if current_len >= MAX_CHUNK_LEN:
-                        await add_to_results("\n".join(text_buffer), item)
-                        text_buffer, current_len = [], 0
-
-            # 5. 收尾工作与合并
-            if text_buffer:
-                final_content = "\n".join(text_buffer)
-                merged = False
-                # 只有内容短于阈值时才尝试合并
-                if len(final_content) < MIN_CHUNK_LEN and chunk_results:
-                    # 从后往前找第一个类型为 "text" 的 chunk
-                    for i in range(len(chunk_results) - 1, -1, -1):
-                        target_chunk = chunk_results[i]
-                        
-                        # 限制 1：必须是正文类型
-                        # 限制 2：合并后不能超过 MAX_CHUNK_LEN 太远 (比如 1.2 倍)
-                        if target_chunk.chunk_type == "text":
-                            new_content = target_chunk.content + "\n" + final_content
-                            if len(new_content) < MAX_CHUNK_LEN * 1.2:
-                                target_chunk.content = new_content
-                                # 合并后需要重新生成该块的虚拟标题和检索路径
-                                new_lines = [l for l in new_content.split('\n') if l.strip()]
-                                new_v_header = new_lines[0].replace('#','').strip()[:50] if new_lines else "正文片段"
-                                target_chunk.header = new_v_header
-                                target_chunk.search_helper = f"{global_summary} > {new_v_header} > {new_content[:300].replace('\n',' ')}"
-                                merged = True
-                                break
-                
-                # 如果不符合合并条件或没找到合适的 text chunk，则独立成块
-                if not merged:
-                    await add_to_results(final_content, None)
-
-        return chunk_results
-    
-    def _get_page_num(self, item: Any) -> int:
-        try:
-            # 1. 标准路径 (PPT 元素通常走这里)
-            if hasattr(item, "prov") and item.prov:
-                # 增加对 page_no 的防御性检查
-                p_no = getattr(item.prov[0], "page_no", None)
-                if p_no is not None:
-                    return p_no
-
-            # 2. 针对某些版本的 Docling，可能会把位置信息放在属性里
-            # 有些 Item 具有 origin 属性，里面包含 page_index (从0开始)
-            origin = getattr(item, "origin", None)
-            if origin:
-                # PPT 解析中 page_index 往往就是 Slide 索引
-                return getattr(origin, "page_index", 0) + 1 
-
-            # 3. 兼容 page_reference
-            page_ref = getattr(item, "page_reference", None)
-            if page_ref:
-                return getattr(page_ref, "page_no", 1) if not isinstance(page_ref, dict) else page_ref.get("page_no", 1)
-
+                summary = str(llm_res).replace("\n", " ").strip()
+                logger.debug(f"文档全局摘要提取成功: {summary}")
+                return summary
         except Exception as e:
-            logger.debug(f"页码获取异常: {e}")
-        return 1
+            logger.warning(f"文档全局摘要提取失败: {e}")
 
-    async def _process_table_vlm(self, item: TableItem, doc: DoclingDocument, params: DocParserParams, current_header: str) -> list[dict]:
-        """专门处理表格的分块逻辑：VLM解析 + JSON切片 + 物理硬切防溢出"""
-        table_chunks = []
-        img_name = None
-        TABLE_ROW_STEP = 40 
-        MAX_CHAR_LIMIT = 15000
-        
-        if item.image: # 如果表格有关联图片（PDF中的表格通常有截图）
-            _, img_name = self.serializer.serialize(item=item, doc=doc, image_dir=self.params.image_dir) # type: ignore
+        return "未知主题文档"
 
-        logger.debug("Calling VLM for table rebuild...")
+    async def _generate_chunks_spreadsheet(self, doc: DoclingDocument) -> list[ChunkResult]:
+        """Excel/CSV 模式：每张表独立成块，大表按行拆分并用 section_id 关联"""
+        import uuid
 
-        # 提取 VLM 标注
-        vlm_res = next((ann.text for ann in getattr(item, "annotations", []) 
-                    if getattr(ann, "provenance", "") == "vlm_table_rebuild"), None)
-        
-        # 1. 优先获取完整内容
-        if vlm_res:
-            final_content_str = self._convert_vlm_json_to_markdown(vlm_res)
-        else:
-            # 增加 export_to_dict 或更稳健的导出方式
-            final_content_str = item.export_to_markdown(doc=doc)
+        global_summary = await self._get_global_summary(doc)
+        results: list[ChunkResult] = []
+        chunk_num = 1
+        ROWS_PER_CHUNK = 40
 
-        lines = final_content_str.split('\n')
-        if len(lines) <= 40:
-            # 如果行数不多，直接返回，不进行切片，避免表头识别错误
-            return [{"content": final_content_str, "type": "table"}]
-        
-        # 2. 只有当行数真的很多时，才考虑切片
-        # 改进：检查是否有标准的 | --- | 分隔符来确定表头
-        header_idx = 0
-        for idx, line in enumerate(lines[:5]): # 只看前5行
-            if '---|---' in line.replace(' ', ''):
-                header_idx = idx
-                break
-
-        table_header = "\n".join(lines[:header_idx + 1])
-        data_lines = lines[header_idx + 1:]
-
-        # 3. 按行切分数据，每个块40行
-        table_chunks = []
-        for i in range(0, len(data_lines), 40):
-            chunk_data = data_lines[i : i + 40]
-            # 重新拼接：表头 + 40行数据
-            combined_content = table_header + "\n" + "\n".join(chunk_data)
-            table_chunks.append({"content": combined_content, "type": "table"})
-
-        # 获取总块数用于判断是否是子表格
-        total_chunks = len(table_chunks)
-        sheet_index = 1
-        if hasattr(item, "prov") and item.prov:
-            # Docling 的 prov (Provenance) 记录了来源
-            # 对于 Excel，prov.page_no 通常映射为 Sheet Index (1-based)
-            sheet_index = item.prov[0].page_no 
-            logger.debug(f"Got sheet index: {sheet_index}")
-
-        elif hasattr(item, "label"): 
-            # 有些解析器会将 Sheet1, Sheet2 作为 label 传入
-            sheet_index = int(item.label.replace("Sheet", "")) if item.label.startswith("Sheet") and item.label[5:].isdigit() else sheet_index
-
-        # 映射为标准业务输出格式
-        return [{
-            "content": tc["content"],
-            "current_header": current_header,
-            "chunk_type": "table",
-            "metadata": {
-                "page_num": sheet_index,
-                "is_sub_table": total_chunks > 1,
-                "image_name": img_name
-            }
-        } for tc in table_chunks]
-    
-    def _convert_vlm_json_to_markdown(self, vlm_res: str) -> str:
-        """
-        将 VLM 返回的 JSON 表格结构转换为标准的 Markdown 格式。
-        支持格式：
-        1. {"header": ["col1", "col2"], "rows": [["val1", "val2"], [...]]}
-        2. {"header": "col1 | col2", "rows": ["val1 | val2", "..."]}
-        """
-        if not vlm_res:
-            return ""
-
-        try:
-            logger.debug("Preparing to convert vlm response to markdown table...")
-
-            # 1. 清理 Markdown 代码块标签
-            clean_json = re.sub(r'```json\s*|\s*```', '', vlm_res).strip()
-            data = json.loads(clean_json)
-
-            header_data = data.get("header", [])
-            rows_data = data.get("rows", [])
-
-            # 2. 处理表头 (Normalize Header)
-            if isinstance(header_data, list):
-                # 处理 list[str] 或 list[list] (防止嵌套)
-                header_cells = [str(h).replace("\n", " ").strip() for h in header_data]
-                header_line = "| " + " | ".join(header_cells) + " |"
-            else:
-                # 已经是字符串形式 "col1 | col2"
-                header_line = "| " + str(header_data).strip().strip("|") + " |"
-            logger.debug(f"Header line: {header_line[:20]}...")
-
-            # 3. 生成分割线 (Separator)
-            # 根据表头列数生成相应的 --- | ---
-            col_count = header_line.count("|") - 1
-            separator = "| " + " | ".join(["---"] * col_count) + " |"
-
-            # 4. 处理行数据 (Normalize Rows)
-            md_rows = []
-            for row in rows_data:
-                if isinstance(row, list):
-                    row_cells = [str(r).replace("\n", " ").strip() for r in row]
-                    md_rows.append("| " + " | ".join(row_cells) + " |")
-                elif isinstance(row, dict):
-                    # 如果 VLM 返回的是对象数组 [{"col1": "val1"}, ...]
-                    row_cells = [str(v).replace("\n", " ").strip() for v in row.values()]
-                    md_rows.append("| " + " | ".join(row_cells) + " |")
-                else:
-                    # 已经是字符串形式
-                    md_rows.append("| " + str(row).strip().strip("|") + " |")
-
-            # 5. 组合最终 Markdown
-            return f"{header_line}\n{separator}\n" + "\n".join(md_rows)
-
-        except Exception as e:
-            logger.error(f"VLM JSON 转 Markdown 失败: {e}")
-            # 降级处理：如果解析失败，尝试直接返回原始文本（去掉代码块标记）
-            return re.sub(r'```json\s*|\s*```', '', vlm_res).strip()
-    
-    async def _should_skip_image(self, item: PictureItem, seen_hashes: set) -> tuple[bool, str]:
-        """
-        重构后的过滤器：优先使用 DS OCR 结果，VLM 作为兜底。
-        """
-        img_hash = None
-        ocr_desc = ""
-        vlm_desc = ""
-
-        # --- 从预处理注入的 annotations 中提取信息 ---
-        for anno in item.annotations:
-            if not isinstance(anno, DescriptionAnnotation):
+        for item, _ in doc.iterate_items():
+            if not isinstance(item, TableItem):
                 continue
 
-            # 提取之前存入的 Hash
-            if anno.provenance == "hash_marker":
-                img_hash = anno.text
-            # DS OCR 文字识别结果（优先）
-            elif anno.provenance == "ocr_inference":
-                ocr_desc = anno.text
-            # VLM 图片描述结果（兜底）
-            elif anno.provenance == "vlm_inference":
-                vlm_desc = anno.text
+            try:
+                md_table = item.export_to_markdown(doc=doc)
+            except Exception:
+                continue
 
-        # 2. 逻辑判定：DS OCR 优先，VLM 兜底
-        final_desc = ocr_desc or vlm_desc
+            if not md_table or not md_table.strip():
+                continue
 
-        # 过滤规则 A: 重复图过滤 (基于 Hash)
-        if img_hash:
-            if img_hash in seen_hashes:
-                return True, "" # 已经处理过同指纹图片，跳过输出
+            page_no = 1
+            if hasattr(item, 'prov') and item.prov:
+                page_no = item.prov[0].page_no
 
-        # 过滤规则 B: 无语义图过滤 (基于尺寸或返回内容)
-        if not final_desc or final_desc.strip() in ["", "[NONE]", "[VLM 无法生成描述]"]:
-            return True, ""
+            lines = md_table.split('\n')
+            section_id = f"tbl-{uuid.uuid4().hex[:12]}"
 
-        # 3. 记录已输出的 Hash，并返回描述
-        if img_hash:
-            seen_hashes.add(img_hash)
+            if len(lines) <= ROWS_PER_CHUNK + 2:  # 表头2行 + 数据行
+                results.append(ChunkResult.create(
+                    content=md_table,
+                    summary=global_summary,
+                    header=f"Sheet{page_no} 数据表",
+                    search_helper=f"{global_summary}\nSheet{page_no} 数据表\n{md_table[:300]}",
+                    chunk_num=chunk_num,
+                    chunk_type="table",
+                    metadata=ChunkMetadata(page_num=page_no, is_sub_table=False),
+                    section_id=section_id,
+                ))
+                chunk_num += 1
+                continue
 
-        return False, final_desc
+            # 大表拆分：找表头分隔行
+            header_idx = 0
+            for idx, line in enumerate(lines[:5]):
+                if '---|---' in line.replace(' ', ''):
+                    header_idx = idx
+                    break
+
+            table_header = "\n".join(lines[:header_idx + 1])
+            data_lines = lines[header_idx + 1:]
+
+            for i in range(0, len(data_lines), ROWS_PER_CHUNK):
+                chunk_data = data_lines[i:i + ROWS_PER_CHUNK]
+                combined = table_header + "\n" + "\n".join(chunk_data)
+                results.append(ChunkResult.create(
+                    content=combined,
+                    summary=global_summary,
+                    header=f"Sheet{page_no} 数据表 (行{i + 1}-{min(i + ROWS_PER_CHUNK, len(data_lines))})",
+                    search_helper=f"{global_summary}\nSheet{page_no} 数据表\n{combined[:300]}",
+                    chunk_num=chunk_num,
+                    chunk_type="table",
+                    metadata=ChunkMetadata(page_num=page_no, is_sub_table=True),
+                    section_id=section_id,
+                ))
+                chunk_num += 1
+
+        logger.info(f"Spreadsheet chunking: {chunk_num - 1} chunks from {len(results)} items")
+        return results
+
+    async def _generate_chunks_ppt(self, doc: DoclingDocument,
+                                    vlm_enhancement: dict) -> list[ChunkResult]:
+        """PPT 模式：每页一个 chunk + VLM 视觉总结"""
+        from .hierarchy_builder import HierarchyBuilder
+        builder = HierarchyBuilder(doc)
+        hierarchy = builder.build()
+
+        global_summary = await self._get_global_summary(doc)
+        results: list[ChunkResult] = []
+        chunk_num = 1
+
+        for page_no in sorted(doc.pages.keys()):
+            page_obj = doc.pages.get(page_no)
+            if not page_obj:
+                continue
+
+            page_info = vlm_enhancement.get(page_no, {})
+            slide_vlm_desc = page_info.get("description", "")
+            slide_img_name = page_info.get("image_name", "")
+
+            # 收集该页文本
+            page_texts: list[tuple[str, int]] = []
+            for child in hierarchy.children:
+                for p_node in self._iter_descendants(child):
+                    if p_node.page_num == page_no and p_node.text.strip():
+                        page_texts.append((p_node.text, p_node.page_num))
+
+            raw_text = "\n".join([t for t, _ in page_texts])
+
+            final_parts = []
+            if slide_vlm_desc:
+                final_parts.append(f"【页面视觉总结】\n{slide_vlm_desc}")
+            if raw_text:
+                final_parts.append(f"【原始文本内容】\n{raw_text}")
+            combined = "\n\n".join(final_parts)
+            if not combined:
+                continue
+
+            result = ChunkResult.create(
+                content=combined,
+                summary=global_summary,
+                header=f"幻灯片 {page_no}",
+                search_helper=f"{global_summary}\n幻灯片 {page_no}\n{combined[:300]}",
+                chunk_num=chunk_num,
+                chunk_type="slide",
+                metadata=ChunkMetadata(
+                    page_num=page_no,
+                    image_name=slide_img_name,
+                    bbox=None,
+                ),
+            )
+            results.append(result)
+            chunk_num += 1
+
+        return results
+
+    def _candidate_to_result(self, cand, global_summary: str,
+                              chunk_num: int,
+                              pic_image_map: dict[int, str] | None = None) -> ChunkResult:
+        """将 ChunkCandidate 转为 ChunkResult — 纯规则，不调用 LLM"""
+        hierarchy_str = " > ".join(cand.hierarchy_path)
+        last_heading = cand.hierarchy_path[-1] if cand.hierarchy_path else ""
+        first_sentence = self._extract_first_sentence(cand.content)
+        virtual_header = f"{last_heading} - {first_sentence}"[:200]
+
+        search_helper = (
+            f"文档: {global_summary}\n"
+            f"章节: {hierarchy_str}\n"
+            f"段落: {virtual_header}\n"
+            f"内容: {cand.content[:500]}"
+        )
+
+        # 查找图片文件名（picture/slide 类型）
+        image_name = None
+        if cand.content_type in ("picture", "slide") and pic_image_map:
+            for node in getattr(cand, "nodes", []):
+                item = getattr(node, "item", None)
+                if item is not None:
+                    img_name = pic_image_map.get(id(item))
+                    if img_name:
+                        image_name = img_name
+                        break
+
+        return ChunkResult.create(
+            content=cand.content,
+            summary=global_summary,
+            header=virtual_header,
+            search_helper=search_helper,
+            chunk_num=chunk_num,
+            chunk_type=cand.content_type,
+            metadata=ChunkMetadata(
+                page_num=cand.page_range[0] if cand.page_range else 1,
+                image_name=image_name,
+                bbox=cand.bbox,
+            ),
+            hierarchy_path=cand.hierarchy_path,
+            hierarchy_depth=cand.hierarchy_depth,
+            heading_level=cand.heading_level,
+            parent_chunk_id=cand.parent_chunk_id,
+            section_id=cand.section_id,
+        )
+
+    @staticmethod
+    def _extract_first_sentence(text: str) -> str:
+        """从文本中提取第一句（最多 50 字）"""
+        text = text.strip()
+        for sep in ('。', '？', '！', '\n', '.', '?', '!'):
+            idx = text.find(sep)
+            if idx > 0:
+                return text[:idx + 1].strip()[:50]
+        return text[:50]
+
+    @staticmethod
+    def _iter_descendants(node) -> list:
+        """递归遍历所有子孙节点"""
+        result = []
+        for child in node.children:
+            result.append(child)
+            result.extend(SmartChunker._iter_descendants_static(child))
+        return result
+
+
+class SmartChunker:
+    """以语义边界（标题层级）为主，长度阈值为辅的智能分块引擎。
+
+    原则:
+    1. 标题作为块边界标记，不作为独立块
+    2. 同一标题下的连续段落合并（不超过 max_len）
+    3. 表格/图片独立成块，携带层级路径
+    4. 超长段落（> max_len * 1.2）在句子边界切分
+    5. 同一 section 下的所有 chunk 共享 section_id
+    """
+
+    def __init__(self, min_len: int, max_len: int,
+                 hierarchy_builder, kb_id: str, file_id: str):
+        self.min_len = min_len
+        self.max_len = max_len
+        self.builder = hierarchy_builder
+        self.kb_id = kb_id
+        self.file_id = file_id
+
+    def chunk(self, hierarchy) -> list:
+        """递归遍历层级树生成块候选"""
+        chunks = []
+        for section in hierarchy.children:
+            if section.node_type == 'title':
+                chunks.extend(self._chunk_section(section))
+        chunks = self._merge_short_chunks(chunks)
+        chunks = self._split_long_chunks(chunks)
+        return chunks
+
+    def _chunk_section(self, section) -> list:
+        path = self.builder.get_breadcrumb_path(section)
+        # path 的第一项是 section 自己的标题
+        if section.text.strip():
+            path = path + [section.text.strip()] if path else [section.text.strip()]
+
+        section_id = self.builder.make_section_id(
+            self.kb_id, self.file_id, path
+        )
+        chunks = []
+        buffer_nodes, buffer_len = [], 0
+
+        for child in section.children:
+            if child.node_type in ('paragraph',):
+                text = child.text.strip()
+                if not text:
+                    continue
+                if buffer_len + len(text) > self.max_len and buffer_len >= self.min_len:
+                    chunks.append(self._make_chunk(buffer_nodes, path, section_id))
+                    buffer_nodes, buffer_len = [child], len(text)
+                else:
+                    buffer_nodes.append(child)
+                    buffer_len += len(text)
+
+            elif child.node_type in ('table', 'picture'):
+                if buffer_nodes:
+                    chunks.append(self._make_chunk(buffer_nodes, path, section_id))
+                    buffer_nodes, buffer_len = [], 0
+                chunks.append(self._make_chunk([child], path, section_id))
+
+        if buffer_nodes:
+            chunks.append(self._make_chunk(buffer_nodes, path, section_id))
+
+        # 设置相邻 chunk 的 parent_chunk_id
+        for i in range(1, len(chunks)):
+            chunks[i].parent_chunk_id = chunks[i - 1].section_id
+        return chunks
+
+    def _make_chunk(self, nodes: list, hierarchy_path: list[str],
+                    section_id: str) -> "ChunkCandidate":
+        content = "\n\n".join([n.text.strip() for n in nodes if n.text.strip()])
+        pages = sorted({n.page_num for n in nodes if n.page_num})
+        bbox = nodes[0].bbox if nodes else None
+        ct = 'mixed'
+        if len(nodes) == 1:
+            ct = nodes[0].node_type
+            if ct == 'paragraph':
+                ct = 'text'
+
+        depth = len(hierarchy_path)
+        heading_level = 0
+        for n in nodes:
+            if n.node_type == 'title' and n.level > 0:
+                heading_level = n.level
+                break
+
+        return ChunkCandidate(
+            nodes=nodes, hierarchy_path=hierarchy_path,
+            content=content, content_type=ct,
+            page_range=pages, bbox=bbox,
+            hierarchy_depth=depth, heading_level=heading_level,
+            section_id=section_id,
+        )
+
+    def _merge_short_chunks(self, chunks: list) -> list:
+        """合并过短的块（< min_len）到前一个块"""
+        if len(chunks) < 2:
+            return chunks
+        merged = []
+        for c in chunks:
+            if merged and len(c.content) < self.min_len:
+                prev = merged[-1]
+                if c.hierarchy_path == prev.hierarchy_path:
+                    prev.content = prev.content + "\n" + c.content
+                    prev.nodes.extend(c.nodes)
+                    prev.page_range = sorted(set(prev.page_range + c.page_range))
+                    prev.content_type = 'mixed'
+                    continue
+            merged.append(c)
+        return merged
+
+    def _split_long_chunks(self, chunks: list) -> list:
+        """拆分过长的块（> max_len * 1.2），在句子边界切分"""
+        result = []
+        for c in chunks:
+            if len(c.content) <= self.max_len * 1.2:
+                result.append(c)
+                continue
+            # 在句子边界切分
+            sub_content = ""
+            for sentence in self._split_sentences(c.content):
+                if len(sub_content) + len(sentence) > self.max_len and sub_content:
+                    result.append(ChunkCandidate(
+                        nodes=c.nodes[:1], hierarchy_path=c.hierarchy_path,
+                        content=sub_content.strip(), content_type=c.content_type,
+                        page_range=c.page_range, bbox=c.bbox,
+                        hierarchy_depth=c.hierarchy_depth,
+                        heading_level=c.heading_level,
+                        section_id=c.section_id,
+                    ))
+                    sub_content = sentence
+                else:
+                    sub_content += " " + sentence if sub_content else sentence
+            if sub_content.strip():
+                result.append(ChunkCandidate(
+                    nodes=c.nodes[-1:], hierarchy_path=c.hierarchy_path,
+                    content=sub_content.strip(), content_type=c.content_type,
+                    page_range=c.page_range, bbox=c.bbox,
+                    hierarchy_depth=c.hierarchy_depth,
+                    heading_level=c.heading_level,
+                    section_id=c.section_id,
+                ))
+        return result
+
+    @staticmethod
+    def _split_sentences(text: str) -> list[str]:
+        """按中英文标点拆分句子"""
+        import re
+        return [s.strip() for s in re.split(r'(?<=[。！？.!?；;])\s*', text) if s.strip()]
+
+    @staticmethod
+    def _iter_descendants_static(node) -> list:
+        result = []
+        for child in node.children:
+            result.append(child)
+            result.extend(SmartChunker._iter_descendants_static(child))
+        return result
+
+
+from dataclasses import dataclass, field
+
+
+@dataclass
+class ChunkCandidate:
+    """分块候选"""
+    nodes: list = field(default_factory=list)
+    hierarchy_path: list[str] = field(default_factory=list)
+    content: str = ""
+    content_type: str = "text"
+    page_range: list[int] = field(default_factory=list)
+    bbox: tuple | None = None
+    hierarchy_depth: int = 0
+    heading_level: int = 0
+    parent_chunk_id: str | None = None
+    section_id: str | None = None

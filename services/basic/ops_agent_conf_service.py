@@ -142,6 +142,7 @@ class OpsAgentConfService:
                 "db_role": instance_entity.db_role,
                 "monitor_type": instance_entity.monitor_type,
                 "prometheus_instance_label": instance_entity.prometheus_instance_label,
+                "zabbix_host_name": instance_entity.zabbix_host_name,
 
                 "relation_config_id": conf_entity.id,
                 "is_mutation_allowed": conf_entity.is_mutation_allowed,

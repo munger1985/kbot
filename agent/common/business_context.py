@@ -2,16 +2,16 @@ from typing import Any, TypedDict
 
 from .skill_context import SkillExecutionContext, ExecutionPlan
 
-
 class ContextMemory(TypedDict):
     # --- 1. 基础元数据 (Session Basics) ---
     user_id: str
     session_id: str
-    agent_id: int
+    agent_id: str
     question: str                # 原始输入
     standalone_query: str         # LLM 改写后的意图清晰的问题
     search_keywords: str  # 从用户输入中提取的搜索关键词
-    llm_model: str
+    llm_model: str # 编排与参数提取所使用的大模型名称
+    embedding_model: str           #_model: str          
     security_level: int
     tags: list[str] | None  # 用于分类和检索的标签
 

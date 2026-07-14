@@ -26,7 +26,7 @@ from core.dictionary import PacketType
 from agent.prompt import default_prompt
 from core.config.settings import get_prompt_config
 from utils.clients import AIModelClient, OpsDBExecutor
-from utils.monitor import PrometheusClient, UnifiedMetricRegistry
+from utils.monitor import PrometheusClient, ZabbixProvider, UnifiedMetricRegistry
 
 
 class DBMetricSkill(BaseSkill):
@@ -63,12 +63,15 @@ class DBMetricSkill(BaseSkill):
 
         # 从 ctx.variables 中获取基础设施引用（由 OpsOrchestrator 注入）
         prometheus_client: PrometheusClient | None = context.get("variables", {}).get("_prometheus_client")
+        zabbix_client: ZabbixProvider | None = context.get("variables", {}).get("_zabbix_client")
         metric_registry: UnifiedMetricRegistry | None = context.get("variables", {}).get("_metric_registry")
         ops_db_executor: OpsDBExecutor | None = context.get("variables", {}).get("_ops_db_executor")
 
         # 回退到自行初始化
         if prometheus_client is None:
             prometheus_client = PrometheusClient()
+        if zabbix_client is None:
+            zabbix_client = ZabbixProvider()
         if metric_registry is None:
             metric_registry = UnifiedMetricRegistry()
         if ops_db_executor is None:
@@ -78,6 +81,7 @@ class DBMetricSkill(BaseSkill):
         db_type = context["db_type"]
         monitor_type = context.get("monitor_type", "prometheus")
         prometheus_label = context.get("prometheus_instance_label")
+        zabbix_host_name = context.get("zabbix_host_name")
         llm_model = context["llm_model"]
 
         logger.info(
@@ -90,10 +94,10 @@ class DBMetricSkill(BaseSkill):
             return
 
         # =====================================================================
-        # 阶段一: Prometheus 监控指标查询（主路径）
+        # 阶段一: 监控指标查询（按 monitor_type 选择数据源）
         # =====================================================================
         metric_code, extracted_params = await self._resolve_metric_code(
-            task_desc, metric_registry, db_type, llm_model
+            task_desc, metric_registry, db_type, llm_model, monitor_type
         )
 
         if metric_code and monitor_type == "prometheus":
@@ -201,6 +205,84 @@ class DBMetricSkill(BaseSkill):
                 logger.error(f"[OpsTrack v2] Prometheus 查询异常: {e}")
                 yield {"type": PacketType.WARNING, "content": f"⚠️ Prometheus 查询异常: {e}, 尝试专家 SQL 工具箱..."}
 
+        elif metric_code and monitor_type == "zabbix":
+            yield {"type": PacketType.THOUGHT, "content": f"📊 正在通过 Zabbix 查询指标: [{metric_code}]...\n"}
+
+            try:
+                render_params = {"instance": zabbix_host_name or instance_id}
+                if zabbix_host_name:
+                    logger.debug(
+                        f"[OpsTrack v2] 使用 CMDB 配置的 zabbix_host_name: {zabbix_host_name}"
+                    )
+                else:
+                    logger.warning(
+                        f"[OpsTrack v2] CMDB 未配置 zabbix_host_name, "
+                        f"降级使用 instance_id={instance_id} 作为 Zabbix host 名称. "
+                        f"如果 Zabbix 中主机名为其他值，查询将返回空。"
+                    )
+                if extracted_params:
+                    extracted_params.pop("instance", None)
+                    render_params.update(extracted_params)
+
+                item_key = metric_registry.render_query(metric_code, "zabbix", db_type, render_params)
+                logger.info(f"[OpsTrack v2] db_type={db_type} Zabbix Item Key: {item_key}")
+
+                monitor_result = await zabbix_client.query_instant(item_key)
+                monitor_result.metric_code = metric_code
+
+                logger.info(
+                    f"[OpsTrack v2] Zabbix 查询成功 | metric={metric_code} "
+                    f"| host={render_params.get('instance')} "
+                    f"| series_count={len(monitor_result.series)}"
+                )
+
+                zabbix_has_data = len(monitor_result.series) > 0
+
+                summary_text = self._format_monitor_result(metric_code, monitor_result)
+                yield {
+                    "type": PacketType.MONITOR_RESULTS,
+                    "content": {
+                        "data": monitor_result.series,
+                        "meta": {
+                            "metric_code": metric_code,
+                            "source": "zabbix",
+                            "item_key": item_key,
+                            "summary": summary_text,
+                        },
+                    },
+                }
+
+                if zabbix_has_data:
+                    should_query_db = await self._should_supplement_with_db(
+                        metric_code=metric_code,
+                        series=monitor_result.series,
+                        task_desc=task_desc,
+                        db_type=db_type,
+                        llm_model=llm_model,
+                    )
+                    if should_query_db:
+                        logger.info(
+                            f"[OpsTrack v2] LLM 判定 Zabbix 数据不足，"
+                            f"继续尝试专家 SQL 工具箱补充深度诊断..."
+                        )
+                    else:
+                        logger.info(
+                            f"[OpsTrack v2] LLM 判定 Zabbix 数据已足够，跳过数据库查询"
+                        )
+                        return
+                else:
+                    return
+
+            except ValueError as e:
+                logger.warning(f"[OpsTrack v2] Zabbix 查询失败, 降级: {e}")
+                yield {"type": PacketType.WARNING, "content": f"⚠️ Zabbix 指标查询未命中: {e}, 尝试专家 SQL 工具箱..."}
+            except ConnectionError as e:
+                logger.error(f"[OpsTrack v2] Zabbix 连接失败: {e}")
+                yield {"type": PacketType.WARNING, "content": f"⚠️ Zabbix Server 不可达 ({e}), 降级到专家 SQL 工具箱..."}
+            except Exception as e:
+                logger.error(f"[OpsTrack v2] Zabbix 查询异常: {e}")
+                yield {"type": PacketType.WARNING, "content": f"⚠️ Zabbix 查询异常: {e}, 尝试专家 SQL 工具箱..."}
+
         # =====================================================================
         # 阶段二: 专家 SQL 工具箱（Prometheus 有数据时作为补充，无数据时作为兜底）
         # =====================================================================
@@ -251,12 +333,13 @@ class DBMetricSkill(BaseSkill):
         registry: UnifiedMetricRegistry,
         db_type: str,
         llm_model: str,
+        monitor_type: str = "prometheus",
     ) -> tuple[str | None, dict[str, Any] | None]:
         """通过 LLM 将自然语言任务匹配到 Prometheus 指标编码。"""
         if len(registry) == 0:
             return None, None
 
-        metrics_prompt = registry.list_for_llm_prompt(monitor_type="prometheus", db_type=db_type)
+        metrics_prompt = registry.list_for_llm_prompt(monitor_type=monitor_type, db_type=db_type)
 
         prompt = await default_prompt.generate(
             get_prompt_config().ops_metric_matching,
@@ -272,7 +355,7 @@ class DBMetricSkill(BaseSkill):
                 logger.info(f"[OpsTrack v2] LLM 匹配指标: {code} | 参数: {params}")
                 return code, params
             else:
-                logger.info("[OpsTrack v2] LLM 未能匹配任何 Prometheus 指标")
+                logger.info("[OpsTrack v2] LLM 未能匹配任何监控指标")
                 return None, None
         except Exception as e:
             logger.warning(f"[OpsTrack v2] LLM 指标匹配失败: {e}")

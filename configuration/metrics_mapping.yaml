@@ -2,6 +2,9 @@
 # =============================================================================
 # Oracle 指标基于 oracledb_exporter 2.4.1 实际暴露的指标，校验命令:
 # curl -s http://localhost:9161/metrics | grep "^oracledb_" | awk -F'{' '{print $1}' | sort -u
+#
+# Zabbix 指标 Item Key 基于常见的 Zabbix 数据库监控模板命名约定,
+# 实际使用时需根据用户 Zabbix 模板配置调整 Item Key。
 # =============================================================================
 
 # ---------------------------------------------------------------------------
@@ -16,6 +19,10 @@ db_availability:
     oracle: 'oracledb_up{{instance="{instance}"}}'
     postgresql: 'pg_up{{instance="{instance}"}}'
     mysql: 'mysql_up{{instance="{instance}"}}'
+  zabbix:
+    oracle: 'oracledb.ping[{instance}]'
+    postgresql: 'pgsql.ping[{instance}]'
+    mysql: 'mysql.ping[{instance}]'
 
 # ---------------------------------------------------------------------------
 # 会话与进程
@@ -29,6 +36,10 @@ db_active_sessions:
     oracle: 'oracledb_sessions_value{{instance="{instance}"}}'
     postgresql: 'pg_stat_database_numbackends{{instance="{instance}"}}'
     mysql: 'mysql_global_status_threads_running{{instance="{instance}"}}'
+  zabbix:
+    oracle: 'oracledb.sessions[{instance}]'
+    postgresql: 'pgsql.sessions[{instance}]'
+    mysql: 'mysql.threads[{instance}]'
 
 db_process_count:
   name: "数据库进程数"
@@ -37,6 +48,8 @@ db_process_count:
   required_params: [instance]
   providers:
     oracle: 'oracledb_process_count{{instance="{instance}"}}'
+  zabbix:
+    oracle: 'oracledb.processes[{instance}]'
 
 # ---------------------------------------------------------------------------
 # SQL 负载
@@ -48,6 +61,8 @@ db_execute_count:
   required_params: [instance]
   providers:
     oracle: 'oracledb_activity_execute_count{{instance="{instance}"}}'
+  zabbix:
+    oracle: 'oracledb.executes[{instance}]'
 
 db_parse_count:
   name: "SQL解析次数"
@@ -56,6 +71,8 @@ db_parse_count:
   required_params: [instance]
   providers:
     oracle: 'oracledb_activity_parse_count_total{{instance="{instance}"}}'
+  zabbix:
+    oracle: 'oracledb.parses[{instance}]'
 
 db_user_commits:
   name: "用户提交数"
@@ -64,6 +81,8 @@ db_user_commits:
   required_params: [instance]
   providers:
     oracle: 'oracledb_activity_user_commits{{instance="{instance}"}}'
+  zabbix:
+    oracle: 'oracledb.commits[{instance}]'
 
 db_user_rollbacks:
   name: "用户回滚数"
@@ -72,6 +91,8 @@ db_user_rollbacks:
   required_params: [instance]
   providers:
     oracle: 'oracledb_activity_user_rollbacks{{instance="{instance}"}}'
+  zabbix:
+    oracle: 'oracledb.rollbacks[{instance}]'
 
 # ---------------------------------------------------------------------------
 # 缓存命中率
@@ -84,6 +105,9 @@ db_buffer_cache_hit_ratio:
   providers:
     oracle: 'oracledb_cache_hit_ratio_value{{instance="{instance}"}}'
     postgresql: 'pg_stat_database_blks_hit{{instance="{instance}"}} / (pg_stat_database_blks_hit{{instance="{instance}"}} + pg_stat_database_blks_read{{instance="{instance}"}})'
+  zabbix:
+    oracle: 'oracledb.buffer_hit_ratio[{instance}]'
+    postgresql: 'pgsql.buffer_hit_ratio[{instance}]'
 
 # ---------------------------------------------------------------------------
 # 等待事件（按类别，oracledb_exporter 2.4.1 实际暴露的 8 个等待分类）
@@ -95,6 +119,8 @@ db_wait_application:
   required_params: [instance]
   providers:
     oracle: 'oracledb_wait_time_application{{instance="{instance}"}}'
+  zabbix:
+    oracle: 'oracledb.wait_application[{instance}]'
 
 db_wait_commit:
   name: "提交等待"
@@ -103,6 +129,8 @@ db_wait_commit:
   required_params: [instance]
   providers:
     oracle: 'oracledb_wait_time_commit{{instance="{instance}"}}'
+  zabbix:
+    oracle: 'oracledb.wait_commit[{instance}]'
 
 db_wait_concurrency:
   name: "并发等待"
@@ -111,6 +139,8 @@ db_wait_concurrency:
   required_params: [instance]
   providers:
     oracle: 'oracledb_wait_time_concurrency{{instance="{instance}"}}'
+  zabbix:
+    oracle: 'oracledb.wait_concurrency[{instance}]'
 
 db_wait_configuration:
   name: "配置等待"
@@ -119,6 +149,8 @@ db_wait_configuration:
   required_params: [instance]
   providers:
     oracle: 'oracledb_wait_time_configuration{{instance="{instance}"}}'
+  zabbix:
+    oracle: 'oracledb.wait_configuration[{instance}]'
 
 db_wait_network:
   name: "网络等待"
@@ -127,6 +159,8 @@ db_wait_network:
   required_params: [instance]
   providers:
     oracle: 'oracledb_wait_time_network{{instance="{instance}"}}'
+  zabbix:
+    oracle: 'oracledb.wait_network[{instance}]'
 
 db_wait_other:
   name: "其他等待"
@@ -135,6 +169,8 @@ db_wait_other:
   required_params: [instance]
   providers:
     oracle: 'oracledb_wait_time_other{{instance="{instance}"}}'
+  zabbix:
+    oracle: 'oracledb.wait_other[{instance}]'
 
 db_wait_system_io:
   name: "系统I/O等待"
@@ -143,6 +179,8 @@ db_wait_system_io:
   required_params: [instance]
   providers:
     oracle: 'oracledb_wait_time_system_io{{instance="{instance}"}}'
+  zabbix:
+    oracle: 'oracledb.wait_system_io[{instance}]'
 
 db_wait_user_io:
   name: "用户I/O等待"
@@ -151,6 +189,8 @@ db_wait_user_io:
   required_params: [instance]
   providers:
     oracle: 'oracledb_wait_time_user_io{{instance="{instance}"}}'
+  zabbix:
+    oracle: 'oracledb.wait_user_io[{instance}]'
 
 # ---------------------------------------------------------------------------
 # Top SQL
@@ -162,6 +202,8 @@ db_top_sql:
   required_params: [instance]
   providers:
     oracle: 'oracledb_top_sql_elapsed{{instance="{instance}"}}'
+  zabbix:
+    oracle: 'oracledb.top_sql[{instance}]'
 
 # ---------------------------------------------------------------------------
 # 表空间
@@ -173,6 +215,8 @@ db_tablespace_usage:
   required_params: [instance]
   providers:
     oracle: 'oracledb_tablespace_used_percent{{instance="{instance}"}}'
+  zabbix:
+    oracle: 'oracledb.tablespace_usage[{instance}]'
 
 db_tablespace_free:
   name: "表空间剩余空间"
@@ -181,6 +225,8 @@ db_tablespace_free:
   required_params: [instance]
   providers:
     oracle: 'oracledb_tablespace_free{{instance="{instance}"}}'
+  zabbix:
+    oracle: 'oracledb.tablespace_free[{instance}]'
 
 db_tablespace_max:
   name: "表空间最大容量"
@@ -189,6 +235,8 @@ db_tablespace_max:
   required_params: [instance]
   providers:
     oracle: 'oracledb_tablespace_max_bytes{{instance="{instance}"}}'
+  zabbix:
+    oracle: 'oracledb.tablespace_max[{instance}]'
 
 db_tablespace_total:
   name: "表空间当前大小"
@@ -197,6 +245,8 @@ db_tablespace_total:
   required_params: [instance]
   providers:
     oracle: 'oracledb_tablespace_bytes{{instance="{instance}"}}'
+  zabbix:
+    oracle: 'oracledb.tablespace_bytes[{instance}]'
 
 # ---------------------------------------------------------------------------
 # 系统负载（node_exporter）
@@ -210,6 +260,10 @@ db_system_load:
     oracle: 'node_load1{{instance="{instance}"}}'
     postgresql: 'node_load1{{instance="{instance}"}}'
     mysql: 'node_load1{{instance="{instance}"}}'
+  zabbix:
+    oracle: 'system.load1[{instance}]'
+    postgresql: 'system.load1[{instance}]'
+    mysql: 'system.load1[{instance}]'
 
 db_disk_usage:
   name: "数据库挂载点磁盘可用空间"
@@ -220,3 +274,7 @@ db_disk_usage:
     oracle: 'node_filesystem_avail_bytes{{instance="{instance}"}}'
     postgresql: 'node_filesystem_avail_bytes{{instance="{instance}"}}'
     mysql: 'node_filesystem_avail_bytes{{instance="{instance}"}}'
+  zabbix:
+    oracle: 'system.disk_avail[{instance}]'
+    postgresql: 'system.disk_avail[{instance}]'
+    mysql: 'system.disk_avail[{instance}]'

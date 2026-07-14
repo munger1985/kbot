@@ -1,3 +1,4 @@
+# utils/clients/unified_metric_registry.py
 """
 统一指标注册中心 (Unified Metric Registry)。
 
@@ -132,19 +133,25 @@ class UnifiedMetricRegistry:
                 ) from e
 
         elif monitor_type == "zabbix":
-            # Zabbix 暂未实现，走预留路径
-            providers = info.get("providers")
-            if providers and isinstance(providers, dict):
-                item_key = providers.get(db_type) if isinstance(providers, dict) else None
+            # 使用 zabbix 独立字典（与 providers 分离）
+            zabbix_map = info.get("zabbix")
+            if zabbix_map and isinstance(zabbix_map, dict):
+                template = zabbix_map.get(db_type)
+                if not template:
+                    supported = list(zabbix_map.keys())
+                    raise ValueError(
+                        f"指标 [{metric_code}] 不支持数据库类型 [{db_type}]。"
+                        f"支持的数据库: {supported}"
+                    )
             else:
-                item_key = info.get("zabbix_item_key")
-            if not item_key:
-                raise NotImplementedError(
-                    f"指标 [{metric_code}] 未配置 Zabbix Item Key，"
-                    f"且 Zabbix 驱动暂未实现"
-                )
+                # 向后兼容: 旧的扁平 zabbix_item_key 字段
+                template = info.get("zabbix_item_key")
+                if not template:
+                    raise NotImplementedError(
+                        f"指标 [{metric_code}] 未配置 Zabbix Item Key"
+                    )
             try:
-                return item_key.format(**params)
+                return template.format(**params)
             except KeyError as e:
                 missing_key = str(e).strip("'")
                 raise ValueError(
@@ -190,7 +197,11 @@ class UnifiedMetricRegistry:
                 if not has_template:
                     continue
             elif monitor_type == "zabbix":
-                if not info.get("zabbix_item_key"):
+                zabbix_map = info.get("zabbix")
+                has_zabbix = bool(
+                    zabbix_map and isinstance(zabbix_map, dict) and any(zabbix_map.values())
+                )
+                if not has_zabbix:
                     continue
 
             name = info.get("name", code)

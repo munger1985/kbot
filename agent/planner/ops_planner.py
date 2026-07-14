@@ -1,4 +1,4 @@
-# agent/planner/ops_planner.py
+# agent/planners/ops_planner.py
 
 import json
 from datetime import datetime
@@ -9,12 +9,11 @@ from utils.clients import AIModelClient
 from utils.monitor import UnifiedMetricRegistry
 from core.dictionary import PacketType
 from core.config import get_prompt_config
-from core.database.oracle import get_session
+from core.database import db_instance
 from agent.prompt import default_prompt
 from dao.repositories import FileRepository, MemoryRepository
 from skills import SkillManager, SkillDomain
-from agent.common.ops_context import OpsContextMemory
-from agent.common import ExecutionPlan
+from agent.common import OpsContextMemory, ExecutionPlan
 from agent.common.diagnostic_tools import DatabaseDiagnosticTools
 
 
@@ -36,33 +35,36 @@ class OpsTaskPlanner:
 
     @property
     def db_session(self):
-        return get_session()
+        return db_instance().get_session()
 
     async def _get_recent_chat_history(self, user_id: str, session_id: str) -> str:
-        """获取近期对话历史, 用于运维改写时的多轮指代消解"""
+        """获取近期对话历史，用于运维改写时的多轮指代消解"""
         try:
             async with self.db_session as session:
-                repo = MemoryRepository(session)
+                repo = MemoryRepository(session, user_id)
                 recent_entries = await repo.get_recent_entries(session_id, limit=3)
-                if not recent_entries:
-                    return "（无历史对话记录, 这是此会话的第一轮提问）"
+            if not recent_entries:
+                return "（无历史对话记录，这是此会话的第一轮提问）"
 
-                lines = []
-                for entry in reversed(recent_entries):
-                    ans = (entry.answer or "")[:200]
-                    lines.append(f"User: {entry.raw_question}\nAssistant: {ans}")
-                return "\n\n".join(lines)
+            lines = []
+            for entry in reversed(recent_entries):
+                ans = (entry.answer or "")[:200]
+                lines.append(f"User: {entry.raw_question}\nAssistant: {ans}")
+            return "\n\n".join(lines)
         except Exception as e:
-            logger.warning(f"[OpsPlanner] 获取会话历史失败: {e}, 降级为空历史")
+            logger.warning(f"[OpsPlanner] 获取会话历史失败: {e}，降级为空历史")
             return "（历史记录暂时不可用）"
 
     async def generate_plan(self, ctx: OpsContextMemory) -> AsyncGenerator[dict[str, Any], None]:
         """
-        根据前端已锁定的实例与原始问题, 运行精准 RAG 检索 SOP 并生成线性运维执行计划。
+        根据前端已锁定的实例与原始问题，运行精准 RAG 检索 SOP 并生成线性运维执行计划
         """
         logger.info(
             f"[OpsPlanner] 激活运维规划大脑 | 目标实例: {ctx['instance_id']} ({ctx['db_type']}) | 指令: {ctx['command_or_query']}"
         )
+
+        # 🟢 纯净化平移：砍掉原有的 `if not ctx.get("instance_id")` 模糊匹配与反向澄清选单的一整套逻辑。
+        # 此时 ctx['db_type'] 已经在编排器拉取完资产元数据后精准就绪，Planner 直接开工。
 
         yield {"type": PacketType.THOUGHT, "content": "正在启动运维专属改写引擎并检索 DBA 专家知识库...\n"}
 
@@ -73,8 +75,8 @@ class OpsTaskPlanner:
             "version_code": ctx.get("version_code", 0),
             "environment": ctx.get("environment", "dev")
         }
-
-        # 多轮上下文感知: 拉取近期对话历史用于指代消解
+        
+        # 🎯 多轮上下文感知：拉取近期对话历史用于指代消解
         chat_history = await self._get_recent_chat_history(
             user_id=ctx.get("user_id", "unknown"),
             session_id=ctx["session_id"]
@@ -94,28 +96,30 @@ class OpsTaskPlanner:
         standalone_query = ctx["command_or_query"]
         search_keywords = ctx["command_or_query"]
 
+        yield {"type": PacketType.THOUGHT, "content": "🔍 正在理解运维意图并提取关键实体...\n"}
+
         try:
             rewrite_res = await self.model_client.get_llm_json(ctx["llm_model"], system_prompt)
             standalone_query = rewrite_res.get("standalone_query", ctx["command_or_query"])
             search_keywords = rewrite_res.get("search_keywords", ctx["command_or_query"])
-
+            
             # 强类型安全回填
             if rewrite_res.get("extracted_variables"):
                 ctx["variables"].update(rewrite_res["extracted_variables"])
         except Exception as e:
-            logger.error(f"[OpsPlanner] 运维语义改写解析异常: {e}, 降级使用原始问题。")
+            logger.error(f"[OpsPlanner] 运维语义改写解析异常: {e}，降级使用原始问题。")
 
-        # 2. 复用问文编排流水线, 检索匹配的标准化 SOP
+        # 2. 复用问文编排流水线，检索匹配的标准化 SOP
         try:
             pipe_out = await self.doc_orchestrator.run_pipeline(
                 agent_id=ctx["agent_id"],
                 standalone_query=standalone_query,
                 search_keywords=search_keywords,
                 security_level=1,
-                tags=["ops", "sop"]  # 运维领域隔离: 仅检索带运维/SOP标签的知识库文档
+                tags=["ops", "sop"]  # 🎯 运维领域隔离：仅检索带运维/SOP标签的知识库文档
             )
-
-            # 3. 映射文件名元数据, 并存入特化的 doc_results 缓存区
+            
+            # 3. 映射文件名元数据，并存入特化的 doc_results 缓存区
             enriched_refs = await self._enrich_results_with_metadata(pipe_out.get('kb_results', []))
             if enriched_refs:
                 ctx["doc_results"] = enriched_refs
@@ -124,10 +128,12 @@ class OpsTaskPlanner:
                     "type": PacketType.DOC_RESULTS,
                     "content": enriched_refs
                 }
+            
             else:
-                logger.warning(f"[OpsPlanner] 前置故障 SOP 检索未返回有效结果, 降级使用空列表。")
+                logger.warning(f"[OpsPlanner] 前置故障 SOP 检索未返回有效结果，降级使用空列表。")
                 enriched_refs = []
         except Exception as rag_err:
+            # 捕获你日志中报出的异常，并记录精确日志
             logger.error(f"[OpsPlanner] 前置故障 SOP 检索发生异常: {rag_err}")
             enriched_refs = []
 
@@ -135,16 +141,16 @@ class OpsTaskPlanner:
         skills_list_str = self.skill_manager.get_skill_list_for_planner(domain_filter=SkillDomain.OPS)
         sop_context_str = "\n---\n".join([f"《{d['file_name']}》:\n{d['text_content']}" for d in enriched_refs])
 
-        # 5.1 注入 Prometheus 可用监控指标清单
+        # 5.1 注入 Prometheus 可用监控指标清单（按当前 db_type 过滤，供 LLM 规划监控查询步骤）
         prometheus_metrics_str = self.metric_registry.list_for_llm_prompt(
             monitor_type="prometheus",
             db_type=ctx["db_type"],
         )
 
-        # 5.2 注入 16 个专家诊断工具清单
+        # 5.2 注入 16 个专家诊断工具清单（供 LLM 在需要深入诊断时做单选题）
         diagnostic_tools_str = DatabaseDiagnosticTools.get_tool_manifest()
 
-        # 6. 渲染任务蓝图生成 Prompt（双轨注入: 监控指标 + 诊断工具）
+        # 6. 渲染任务蓝图生成 Prompt（双轨注入：监控指标 + 诊断工具）
         final_prompt_content = await default_prompt.generate(
             get_prompt_config().ops_planner,
             skills_list=skills_list_str,
@@ -153,7 +159,7 @@ class OpsTaskPlanner:
             existing_variables=", ".join(f"{k}={v}" for k, v in ctx["variables"].items() if not k.startswith("_")),
             db_type=ctx["db_type"],
             environment=ctx["environment"],
-            sop_context=sop_context_str or "当前无匹配的专家 SOP 手册, 请依赖通用运维指标经验进行线性探测排查。",
+            sop_context=sop_context_str or "当前无匹配的专家 SOP 手册，请依赖通用运维指标经验进行线性探测排查。",
             prometheus_metrics=prometheus_metrics_str,
             diagnostic_tools=diagnostic_tools_str,
         )
@@ -166,6 +172,7 @@ class OpsTaskPlanner:
                 temperature=0.1
             )
 
+            # 对齐 TypedDict 的 runtime_plan 结构契约
             ctx["runtime_plan"] = {
                 "thought": plan_data.get("thought", "正在基于标准运维 SOP 指导编排集群诊断逻辑..."),
                 "steps": plan_data.get("steps", []),
@@ -187,9 +194,9 @@ class OpsTaskPlanner:
             yield {"type": PacketType.THOUGHT, "content": f"💡 故障自愈控制面编排完毕: {ctx['runtime_plan']['thought']}\n"}
 
         except Exception as plan_err:
-            logger.error(f"[OpsPlanner] 大模型生成计划失败: {plan_err}, 安全熔断注入兜底单步计划。")
+            logger.error(f"[OpsPlanner] 大模型生成计划失败: {plan_err}，安全熔断注入兜底单步计划。")
             ctx["runtime_plan"] = cast(ExecutionPlan, {
-                "thought": "智能规划引擎产生异常, 强制降级为基础内核指标安全查验。",
+                "thought": "智能规划引擎产生异常，强制降级为基础内核指标安全查验。",
                 "final_goal": "回捞底层观测指标以防故障扩大",
                 "plan_type": "dynamic",
                 "workflow_id": None,

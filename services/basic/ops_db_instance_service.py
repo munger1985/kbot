@@ -50,6 +50,7 @@ class OpsDBInstanceService:
                 "version_code": entity.version_code,
                 "monitor_type": entity.monitor_type,
                 "prometheus_instance_label": entity.prometheus_instance_label,
+                "zabbix_host_name": entity.zabbix_host_name,
                 "connection_config": {
                     "host": entity.host,
                     "port": entity.port,
@@ -131,6 +132,7 @@ class OpsDBInstanceService:
                 "db_role": inst.db_role,
                 "monitor_type": inst.monitor_type,
                 "prometheus_instance_label": inst.prometheus_instance_label,
+                "zabbix_host_name": inst.zabbix_host_name,
                 "cluster_id": inst.cluster_id,
                 "ops_user": inst.ops_user,
                 "secret_vault_key": inst.secret_vault_key,

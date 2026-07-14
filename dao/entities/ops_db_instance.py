@@ -26,6 +26,7 @@ class OpsDbInstanceEntity(BaseEntity):
     db_role: Mapped[str] = mapped_column(String(32), default="primary", comment="物理角色: primary(主), standby(备), cluster_node")
     monitor_type: Mapped[str] = mapped_column(String(32), default="prometheus", comment="监控数据源类型: prometheus, zabbix, none")
     prometheus_instance_label: Mapped[str | None] = mapped_column(String(256), comment="对应 Prometheus 采集时的 instance 标签值")
+    zabbix_host_name: Mapped[str | None] = mapped_column(String(256), comment="Zabbix 监控主机名称")
     cluster_id: Mapped[str | None] = mapped_column(String(36), comment="高可用集群级关联ID")
     ops_user: Mapped[str] = mapped_column(String(64), comment="大模型运维通道专属的高权/监控账号")
     encrypted_password: Mapped[str] = mapped_column(String(512), comment="经过强加密后的运维账号物理密码密文")

@@ -139,7 +139,7 @@ class ModelTask:
         """LLM 任务，用于处理文本语义并返回 JSON"""
         try:
             async with self.llm_semaphore:
-                return await client.call_llm_json(
+                return await client.get_llm_json(
                     model_name=model_name, 
                     prompt=prompt,
                     stream=True  # 即使是内部聚合，开启 stream 也能更早释放资源

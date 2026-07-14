@@ -1,18 +1,25 @@
+import pandas as pd
 from loguru import logger
 from typing import Any, AsyncGenerator
 from utils.clients import AIModelClient
 from agent.prompt import default_prompt
 from core.config import get_prompt_config
 from core.dictionary import PacketType
-from skills import BaseSkill
+from skills import BaseSkill, SkillMeta, SkillDomain, SkillRunMode
 from agent.common import ContextMemory
 from services.basic import PromptService
 
 
 class ReasoningSkill(BaseSkill):
     """
-    Logical Analysis Skill: Integrates data and knowledge, supports streaming distribution of thought process and final answer.
+    逻辑分析技能：整合数据与知识，支持思考过程(thought)与答案(answer)的流式分发。
     """
+    meta = SkillMeta(
+        name="reasoning-skill",
+        description="整合数据与知识，支持思考过程(thought)与答案(answer)的流式分发",
+        domain=SkillDomain.BUSINESS,
+        run_mode=SkillRunMode.READ_ONLY
+    )
     
     def __init__(self):
         super().__init__()
@@ -21,61 +28,71 @@ class ReasoningSkill(BaseSkill):
 
     async def run_stream(
         self, 
-        context: ContextMemory,
+        context: ContextMemory,  # 统一使用 ContextMemory
         **kwargs 
     ) -> AsyncGenerator[dict[str, Any], None]:
-        # 1. Safely extract context
-        target_goal = getattr(context, 'current_task', None) or context.get("standalone_query") or context.get("question")
+        # 1. 安全提取上下文
         current_model = context["llm_model"]
-
+        question = context["standalone_query"] or context["question"]
+        # 从 current_execution 中取 planner 下发的 task_description 作为分析任务
+        current_exec = context.get("current_execution") or {}
+        task_desc = (current_exec.get("task_description") or current_exec.get("resolved_input") or question) if isinstance(current_exec, dict) else question
         sql_results = context.get("sql_results") or []
         doc_results = context.get("doc_results") or []
         graph_results = context.get("graph_results") or []
         combined_kb_results = doc_results + graph_results
 
-        # 2. 构建知识库上下文（保留全部 RRF 排序结果，裁剪单个 chunk 防止 prompt 溢出）
-        MAX_CONTENT_LEN = 2000       # 单 chunk 最大字符数
-        MAX_KB_TEXT_CHARS = 48000    # kb_text 总字符硬上限（约 12000 tokens）
-
+        # 2. 构建 LLM 上下文文本：只提取 content 字段，忽略元数据（score/kb_id/bbox等）
         kb_parts: list[str] = []
-        kb_chars = 0
         for i, d in enumerate(combined_kb_results):
-            raw = d.get("content", "") if isinstance(d, dict) else ""
-            truncated = raw[:MAX_CONTENT_LEN]
-            if len(raw) > MAX_CONTENT_LEN:
-                truncated += "…"
-            part = f"[{i+1}] {truncated}"
-            if kb_chars + len(part) > MAX_KB_TEXT_CHARS:
-                kb_parts.append(f"…（共 {len(combined_kb_results)} 条文档，上下文窗口限制仅展示前 {i} 条）")
-                break
-            kb_parts.append(part)
-            kb_chars += len(part)
+            # 兼容 Pydantic 模型和普通 dict
+            if hasattr(d, 'content'):
+                text = d.content # type: ignore
+            elif isinstance(d, dict):
+                text = d.get('content', '')
+            else:
+                text = str(d)
+            if text and text.strip():
+                kb_parts.append(f"[{i+1}] {text}")
+        kb_text = "\n".join(kb_parts) if kb_parts else "无参考文档"
+        kb_count = len(kb_parts)
 
-        kb_text = "\n".join(kb_parts) if kb_parts else "No reference documents"
-        
-        # Optimize data context presentation
-        if sql_results and isinstance(sql_results, list):
+        # 优化数据上下文展示
+        # 提取实际的数据集：sql_results 结构为 [{"sql": "...", "data": [dict1, dict2, ...]}]
+        sql_data: list[dict[str, Any]] = []
+        if isinstance(sql_results, list) and len(sql_results) > 0:
+            # 优先取最后一条结果的 data 字段（最新的查询结果）
+            last_result = sql_results[-1]
+            if isinstance(last_result, dict) and "data" in last_result:
+                raw_data = last_result["data"]
+                if isinstance(raw_data, list):
+                    sql_data = raw_data
+            elif isinstance(last_result, list):
+                # 兼容旧格式：sql_results 直接是数据列表
+                sql_data = last_result
+
+        if sql_data:
             try:
-                import pandas as pd
-                # Convert to Markdown table and limit to top 10 items to prevent token overflow
-                data_text = pd.DataFrame(sql_results[:10]).to_markdown(index=False)
-            except ImportError:
-                data_text = str(sql_results[:10])
+                data_text = pd.DataFrame(sql_data[:10]).to_markdown(index=False) # type: ignore
+            except (ImportError, Exception) as e:
+                logger.warning(f"SQL 数据转换 Markdown 表格失败: {e}")
+                data_text = str(sql_data[:10]) # type: ignore
         else:
-            data_text = "No business data"
-        
-        # summary = context["session_state"].get("context_summary", "New session")
-        question = context["standalone_query"] or context["question"]
+            data_text = "无业务数据"
 
         reasoning_prompt = await default_prompt.generate(
             get_prompt_config().reasoning
         )
 
-        # 3. Get user prompt
+        # 3. 获取用户提示词
         user_prompt = await self.prompt_service.get_prompt_by_agent_id(context["agent_id"])
+        original_question = context.get("question", "")
         final_prompt = f"""
-【用户的分析需求】
+【系统指令】
 {user_prompt}
+
+【用户原始问题】
+{original_question}
 
 【后台查询到的结构化数据】
 {data_text if data_text else "（暂无数据）"}
@@ -84,23 +101,30 @@ class ReasoningSkill(BaseSkill):
 {kb_text if kb_text else "（暂无相关文档）"}
 
 【本次分析任务】
-{target_goal}
+{task_desc}
 
-请基于以上数据与知识，按照系统指令要求进行分析并回答用户的提问：{question}
+请基于以上数据与知识，按照系统指令要求进行分析并回答。
 """
+        
+        # 4. 流式输出前，先发送上下文摘要（不暴露原始文档内容）
+        sql_rows = len(sql_data)
+        summary_parts: list[str] = []
+        if sql_rows > 0:
+            summary_parts.append(f"已获取 {sql_rows} 条结构化查询结果")
+        if kb_count > 0:
+            summary_parts.append(f"检索到 {kb_count} 个相关知识文档")
+        if graph_results:
+            g_count = len(graph_results) if isinstance(graph_results, list) else 1
+            summary_parts.append(f"匹配 {g_count} 条知识图谱数据")
+        if summary_parts:
+            yield {
+                "type": PacketType.THOUGHT,
+                "content": "正在综合分析：" + "，".join(summary_parts) + "。\n"
+            }
 
-        # 4. State machine to parse LLM output
+        # 5. 状态机解析 LLM 输出
         is_thinking = False
         output_buffer = ""
-
-        # 从 agent 配置获取 max_tokens，兜底 32768
-        model_params = context.get("model_params", {})
-        if isinstance(model_params, dict):
-            llm_params = model_params.get("llm_params", {}) or {}
-            max_tokens = llm_params.get("max_tokens") or 32768
-        else:
-            max_tokens = 32768
-        logger.debug(f"[ReasoningSkill] max_tokens={max_tokens}")
 
         try:
             async for chunk in self.model_client.get_llm_stream_parsed(
@@ -109,19 +133,18 @@ class ReasoningSkill(BaseSkill):
                         {"role": "system", "content": reasoning_prompt},
                         {"role": "user", "content": final_prompt}
                     ],
-                temperature=0.3,
-                max_tokens=max_tokens,
+                temperature=0.3
             ):
                 if not chunk: continue
 
-                # A. Native reasoning content support (e.g., DeepSeek-R1)
+                # A. 原生推理字段支持 (DeepSeek-R1 等)
                 if hasattr(chunk, "reasoning_content") and chunk.reasoning_content:
                     yield {"type": PacketType.THOUGHT, "content": chunk.reasoning_content}
                     continue
 
                 if not chunk.content: continue
                 
-                # B. Tag parsing stream
+                # B. 标签解析流
                 output_buffer += chunk.content
 
                 while output_buffer:
@@ -133,7 +156,7 @@ class ReasoningSkill(BaseSkill):
                             is_thinking = True
                             output_buffer = parts[1]
                         elif "<" in output_buffer and any(tag.startswith(output_buffer.rsplit("<", 1)[1]) for tag in ["thought>", "/thought>"]):
-                            # Hit tag prefix, wait for subsequent fragments
+                            # 命中标签前缀，等待后续片段
                             break
                         else:
                             yield {"type": PacketType.ANSWER, "content": output_buffer}
@@ -151,12 +174,11 @@ class ReasoningSkill(BaseSkill):
                             yield {"type": PacketType.THOUGHT, "content": output_buffer}
                             output_buffer = ""
 
-            # Process remaining buffer
+            # 处理末尾残留
             if output_buffer.strip():
                 m_type = PacketType.THOUGHT if is_thinking else PacketType.ANSWER
                 yield {"type": m_type, "content": output_buffer}
 
         except Exception as e:
-            logger.error(f"ReasoningSkill runtime exception: {e}")
-            content = f"⚠️ Analysis interrupted: {str(e)}\n"
-            yield {"type": PacketType.ERROR, "content": content}
+            logger.error(f"ReasoningSkill 运行异常: {e}")
+            yield {"type": PacketType.ERROR, "content": f"⚠️ 分析中断: {str(e)}\n"}

@@ -229,6 +229,14 @@ class PrometheusConfig(BaseModel):
     timeout: int = Field(default=30, ge=5, le=300, description="HTTP 请求超时 (秒)")
     default_step: str = Field(default="15s", description="范围查询默认采样步长")
 
+class ZabbixConfig(BaseModel):
+    """Zabbix 监控数据源配置"""
+    api_url: str = Field(default="http://localhost/zabbix/api_jsonrpc.php", description="Zabbix JSON-RPC API 地址")
+    token: str = Field(default="", description="Zabbix API Token（可选，优先级高于 user/password）")
+    user: str = Field(default="Admin", description="Zabbix API 登录用户")
+    password: str = Field(default="", description="Zabbix API 登录密码")
+    timeout: int = Field(default=15, ge=5, le=120, description="HTTP 请求超时秒数")
+
 class AskDataApiConfig(BaseModel):
     """问数外部 API 配置（SelectAI / AIReport）。
 
@@ -306,6 +314,7 @@ class Settings(BaseSettings):
     parser: ParserConfig = ParserConfig()
     executor: ExecutorConfig = ExecutorConfig()
     prometheus: PrometheusConfig = PrometheusConfig()
+    zabbix: ZabbixConfig = ZabbixConfig()
     ask_data_api: AskDataApiConfig = AskDataApiConfig()
     slack: SlackConfig = SlackConfig()
     prompt: PromptConfig = PromptConfig()
@@ -554,6 +563,10 @@ def get_executor_config() -> ExecutorConfig:
 def get_prometheus_config() -> PrometheusConfig:
     """Get Prometheus configuration (运维Agent使用)."""
     return get_settings().prometheus
+
+def get_zabbix_config() -> ZabbixConfig:
+    """获取 Zabbix 监控数据源配置"""
+    return get_settings().zabbix
 
 def get_ask_data_api_config() -> AskDataApiConfig:
     """Get ask-data external API configuration.

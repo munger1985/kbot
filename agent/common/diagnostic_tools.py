@@ -2,21 +2,21 @@
 """
 数据库深度诊断专家工具箱 (Database Diagnostic Tools)。
 
-提供 16 个核心诊断工具, 覆盖数据库故障根因分析 (RCA) 的五大场景。
-LLM 通过 Function Calling / 单选题机制从工具箱中选择最合适的工具,
+提供 16 个核心诊断工具，覆盖数据库故障根因分析 (RCA) 的五大场景。
+LLM 通过 Function Calling / 单选题机制从工具箱中选择最合适的工具，
 底层根据 db_type 自动路由到 Oracle / PostgreSQL / MySQL 的专家 SQL。
 
-专家 SQL 来源: DBA 沉淀的黄金诊断脚本, 针对各数据库最新版本优化。
-  - Oracle: 基于 19c/21c/26ai, 兼容 CDB/PDB 多租户架构
-  - PostgreSQL: 基于 PG 18, 需加载 pg_stat_statements 扩展
-  - MySQL: 基于 8.0/8.4 LTS, 依赖 performance_schema + sys 库
+专家 SQL 来源: DBA 沉淀的黄金诊断脚本，针对各数据库最新版本优化。
+  - Oracle: 基于 19c/21c/26ai，兼容 CDB/PDB 多租户架构
+  - PostgreSQL: 基于 PG 18，需加载 pg_stat_statements 扩展
+  - MySQL: 基于 8.0/8.4 LTS，依赖 performance_schema + sys 库
 
 扩展方式:
   - 新增数据库: 在 sql_registry 中添加对应的 db_type 条目即可
   - 新增工具: 添加方法 + SQL 注册表条目
 """
 
-from typing import Any
+from typing import Any, Dict, List
 
 from loguru import logger
 
@@ -36,15 +36,15 @@ class DatabaseDiagnosticTools:
         self.instance_id = instance_id
 
     # ========================================================================
-    # 场景一: 并发与卡死诊断（锁与事务冲突）
+    # 场景一：并发与卡死诊断（锁与事务冲突）
     # ========================================================================
 
-    async def db_lock_chains(self) -> list[dict[str, Any]]:
+    async def db_lock_chains(self) -> List[Dict[str, Any]]:
         """
         适用场景: 当手册提到'排查锁冲突'、'查找阻塞源头'、'分析死锁'、
         '查看行级锁/表级锁阻塞关系'、'事务卡死'、'大面积锁死'、'揪出源头会话'时调用。
 
-        功能: 层级化展现阻塞关系, 通过树形结构直接定位处于根部的源头会话及其 SQL。
+        功能: 层级化展现阻塞关系，通过树形结构直接定位处于根部的源头会话及其 SQL。
         """
         sql_registry = {
             "oracle": """
@@ -121,13 +121,15 @@ class DatabaseDiagnosticTools:
         sql = sql_registry.get(self.db_type)
         if not sql:
             raise NotImplementedError(f"db_lock_chains 暂不支持: {self.db_type}")
-        logger.info(f"[DiagnosticTools] db_lock_chains -> {self.db_type}")
+        logger.info(f"[DiagnosticTools] db_lock_chains → {self.db_type}")
         return await self.executor.execute_readonly_ops_sql(self.instance_id, sql)
 
-    async def db_lock_matrix(self) -> list[dict[str, Any]]:
+    async def db_lock_matrix(self) -> List[Dict[str, Any]]:
         """
         适用场景: 当手册提到'分析锁类型'、'查看锁模式'、'判断行锁还是表锁'、
         'DDL元数据锁'、'意向锁冲突'、'长事务未提交引发锁持有'时调用。
+
+        功能: 看清具体是哪张表被锁，以及锁的持有模式和申请模式。
         """
         sql_registry = {
             "oracle": """
@@ -184,13 +186,15 @@ class DatabaseDiagnosticTools:
         sql = sql_registry.get(self.db_type)
         if not sql:
             raise NotImplementedError(f"db_lock_matrix 暂不支持: {self.db_type}")
-        logger.info(f"[DiagnosticTools] db_lock_matrix -> {self.db_type}")
+        logger.info(f"[DiagnosticTools] db_lock_matrix → {self.db_type}")
         return await self.executor.execute_readonly_ops_sql(self.instance_id, sql)
 
-    async def db_distributed_tx(self) -> list[dict[str, Any]]:
+    async def db_distributed_tx(self) -> List[Dict[str, Any]]:
         """
         适用场景: 当手册提到'排查分布式事务'、'跨库XA事务卡死'、
         '两阶段提交悬挂'、'分布式死锁'、'微服务跨库调用异常'时调用。
+
+        功能: 抓取处于 PREPARED 状态的悬挂 XA 事务。
         """
         sql_registry = {
             "oracle": """
@@ -229,15 +233,20 @@ class DatabaseDiagnosticTools:
         sql = sql_registry.get(self.db_type)
         if not sql:
             raise NotImplementedError(f"db_distributed_tx 暂不支持: {self.db_type}")
-        logger.info(f"[DiagnosticTools] db_distributed_tx -> {self.db_type}")
+        logger.info(f"[DiagnosticTools] db_distributed_tx → {self.db_type}")
         return await self.executor.execute_readonly_ops_sql(self.instance_id, sql)
 
     # ========================================================================
-    # 场景二: 资源暴满诊断（CPU / 内存 / 存储）
+    # 场景二：资源暴满诊断（CPU / 内存 / 存储）
     # ========================================================================
 
-    async def db_top_cpu_sql(self, top_n: int = 5) -> list[dict[str, Any]]:
-        """适用场景: 查找消耗CPU最高的SQL、查看Top SQL、定位慢查询"""
+    async def db_top_cpu_sql(self, top_n: int = 5) -> List[Dict[str, Any]]:
+        """
+        适用场景: 当手册提到'查找消耗CPU最高的SQL'、'查看Top SQL'、
+        '定位慢查询'、'排查烂SQL'、'抓取当前高负载语句'、'揪出CPU暴满的罪魁祸首'时调用。
+
+        功能: 按总 CPU 时间降序，抓出消耗资源的 Top N SQL 文本及执行统计。
+        """
         sql_registry = {
             "oracle": f"""
                 SELECT * FROM (
@@ -289,11 +298,16 @@ class DatabaseDiagnosticTools:
         sql = sql_registry.get(self.db_type)
         if not sql:
             raise NotImplementedError(f"db_top_cpu_sql 暂不支持: {self.db_type}")
-        logger.info(f"[DiagnosticTools] db_top_cpu_sql (top_n={top_n}) -> {self.db_type}")
+        logger.info(f"[DiagnosticTools] db_top_cpu_sql (top_n={top_n}) → {self.db_type}")
         return await self.executor.execute_readonly_ops_sql(self.instance_id, sql)
 
-    async def db_session_memory(self) -> list[dict[str, Any]]:
-        """适用场景: 会话内存泄漏、PGA内存爆满、查找内存占用最高的会话"""
+    async def db_session_memory(self) -> List[Dict[str, Any]]:
+        """
+        适用场景: 当手册提到'会话内存泄漏'、'PGA内存爆满'、'查找内存占用最高的会话'、
+        '哪个连接吃光了服务器内存'、'排查OOM根因'时调用。
+
+        功能: 揪出哪些会话大量侵占了私有内存（Oracle PGA / PG work_mem / MySQL 会话缓存）。
+        """
         sql_registry = {
             "oracle": """
                 SELECT * FROM (
@@ -340,11 +354,17 @@ class DatabaseDiagnosticTools:
         sql = sql_registry.get(self.db_type)
         if not sql:
             raise NotImplementedError(f"db_session_memory 暂不支持: {self.db_type}")
-        logger.info(f"[DiagnosticTools] db_session_memory -> {self.db_type}")
+        logger.info(f"[DiagnosticTools] db_session_memory → {self.db_type}")
         return await self.executor.execute_readonly_ops_sql(self.instance_id, sql)
 
-    async def db_tablespace_top_segments(self, tablespace_name: str = "") -> list[dict[str, Any]]:
-        """适用场景: 分析空间由谁占用、查找大表/大索引、定位疯狂膨胀的对象"""
+    async def db_tablespace_top_segments(self, tablespace_name: str = "") -> List[Dict[str, Any]]:
+        """
+        适用场景: 当手册提到'分析空间由谁占用'、'查找大表/大索引'、
+        '看表空间段分布'、'定位大Segment'、'找出疯狂膨胀的对象'、
+        '查谁占满了表空间'时调用。
+
+        功能: 返回占用空间最大的 Top 10 段（表/索引），可选按表空间过滤。
+        """
         oracle_filter = f"WHERE tablespace_name = '{tablespace_name}'" if tablespace_name else ""
         sql_registry = {
             "oracle": f"""
@@ -391,11 +411,50 @@ class DatabaseDiagnosticTools:
         sql = sql_registry.get(self.db_type)
         if not sql:
             raise NotImplementedError(f"db_tablespace_top_segments 暂不支持: {self.db_type}")
-        logger.info(f"[DiagnosticTools] db_tablespace_top_segments (ts={tablespace_name or 'ALL'}) -> {self.db_type}")
+        logger.info(f"[DiagnosticTools] db_tablespace_top_segments (ts={tablespace_name or 'ALL'}) → {self.db_type}")
         return await self.executor.execute_readonly_ops_sql(self.instance_id, sql)
 
-    async def db_temp_segments_usage(self) -> list[dict[str, Any]]:
-        """适用场景: 临时表空间爆满、大排序撑爆临时空间、查找Temp消耗者"""
+    async def db_tablespace_datafiles(self, tablespace_name: str = "") -> List[Dict[str, Any]]:
+        """
+        适用场景: 表空间扩容/收缩、文件路径查询。当需要知道表空间的实际数据文件路径、
+        当前大小、最大大小、是否自动扩展时调用。
+
+        功能: 查询 DBA_DATA_FILES 获取表空间的数据文件详细信息（含真实 FILE_NAME）。
+        """
+        sql_registry = {
+            "oracle": (
+                "SELECT TABLESPACE_NAME, FILE_NAME, BYTES/1024/1024 AS SIZE_MB, "
+                "MAXBYTES/1024/1024 AS MAXSIZE_MB, AUTOEXTENSIBLE "
+                "FROM DBA_DATA_FILES"
+                + (f" WHERE TABLESPACE_NAME = UPPER('{tablespace_name}')" if tablespace_name else "")
+                + " ORDER BY TABLESPACE_NAME"
+            ),
+            "mysql": (
+                "SELECT FILE_ID, FILE_NAME, TABLESPACE_NAME, "
+                "TOTAL_EXTENTS*EXTENT_SIZE/1024/1024 AS SIZE_MB, "
+                "MAXIMUM_SIZE/1024/1024 AS MAXSIZE_MB "
+                "FROM INFORMATION_SCHEMA.FILES WHERE FILE_TYPE = 'DATAFILE'"
+            ),
+            "postgresql": (
+                "SELECT spcname AS TABLESPACE_NAME, "
+                "pg_tablespace_location(oid) AS FILE_NAME, "
+                "0 AS SIZE_MB, 0 AS MAXSIZE_MB, 'NO' AS AUTOEXTENSIBLE "
+                "FROM pg_tablespace"
+            ),
+        }
+        sql = sql_registry.get(self.db_type)
+        if not sql:
+            raise NotImplementedError(f"db_tablespace_datafiles 暂不支持: {self.db_type}")
+        logger.info(f"[DiagnosticTools] db_tablespace_datafiles (ts={tablespace_name or 'ALL'}) → {self.db_type}")
+        return await self.executor.execute_readonly_ops_sql(self.instance_id, sql)
+
+    async def db_temp_segments_usage(self) -> List[Dict[str, Any]]:
+        """
+        适用场景: 当手册提到'临时表空间爆满'、'大排序撑爆临时空间'、
+        '查找临时段消耗者'、'谁在做大排序/大Hash Join'、'Temp使用率告警'时调用。
+
+        功能: 抓出当前正在消耗临时表空间的会话及 SQL。
+        """
         sql_registry = {
             "oracle": """
                 SELECT
@@ -441,15 +500,20 @@ class DatabaseDiagnosticTools:
         sql = sql_registry.get(self.db_type)
         if not sql:
             raise NotImplementedError(f"db_temp_segments_usage 暂不支持: {self.db_type}")
-        logger.info(f"[DiagnosticTools] db_temp_segments_usage -> {self.db_type}")
+        logger.info(f"[DiagnosticTools] db_temp_segments_usage → {self.db_type}")
         return await self.executor.execute_readonly_ops_sql(self.instance_id, sql)
 
     # ========================================================================
-    # 场景三: 性能瓶颈诊断（等待事件与线程现场）
+    # 场景三：性能瓶颈诊断（等待事件与线程现场）
     # ========================================================================
 
-    async def db_active_session_wait(self) -> list[dict[str, Any]]:
-        """适用场景: 查看当前等待事件、活跃会话在等什么、定位卡顿本质"""
+    async def db_active_session_wait(self) -> List[Dict[str, Any]]:
+        """
+        适用场景: 当手册提到'查看当前等待事件'、'活跃会话在等什么'、
+        '数据库慢但CPU空闲'、'分析等待瓶颈'、'会话现场快照'、'定位数据库卡顿本质'时调用。
+
+        功能: 实时现场切片。展示当前活跃会话正在等待什么事件及具体的 p1/p2/p3 参数。
+        """
         sql_registry = {
             "oracle": """
                 SELECT
@@ -503,11 +567,16 @@ class DatabaseDiagnosticTools:
         sql = sql_registry.get(self.db_type)
         if not sql:
             raise NotImplementedError(f"db_active_session_wait 暂不支持: {self.db_type}")
-        logger.info(f"[DiagnosticTools] db_active_session_wait -> {self.db_type}")
+        logger.info(f"[DiagnosticTools] db_active_session_wait → {self.db_type}")
         return await self.executor.execute_readonly_ops_sql(self.instance_id, sql)
 
-    async def db_historical_session_history(self, minutes_ago: int = 60) -> list[dict[str, Any]]:
-        """适用场景: 回溯历史等待事件、查看ASH/AWR采样、复现半夜故障瞬间现场"""
+    async def db_historical_session_history(self, minutes_ago: int = 60) -> List[Dict[str, Any]]:
+        """
+        适用场景: 当手册提到'回溯历史等待事件'、'查看ASH/AWR采样'、
+        '复现半夜故障瞬间现场'、'历史活动会话分析'时调用。
+
+        功能: 基于历史采样数据复盘过去一段时间的等待事件分布和引发源。
+        """
         sql_registry = {
             "oracle": f"""
                 SELECT * FROM (
@@ -554,11 +623,16 @@ class DatabaseDiagnosticTools:
         sql = sql_registry.get(self.db_type)
         if not sql:
             raise NotImplementedError(f"db_historical_session_history 暂不支持: {self.db_type}")
-        logger.info(f"[DiagnosticTools] db_historical_session_history (mins={minutes_ago}) -> {self.db_type}")
+        logger.info(f"[DiagnosticTools] db_historical_session_history (mins={minutes_ago}) → {self.db_type}")
         return await self.executor.execute_readonly_ops_sql(self.instance_id, sql)
 
-    async def db_undo_segments_usage(self) -> list[dict[str, Any]]:
-        """适用场景: UNDO爆满、回滚段压力、大事务长时间未提交"""
+    async def db_undo_segments_usage(self) -> List[Dict[str, Any]]:
+        """
+        适用场景: 当手册提到'UNDO爆满'、'回滚段压力'、'大事务长时间未提交'、
+        '排查ORA-01555快照过旧'、'UNDO使用率告警'时调用。
+
+        功能: 揪出产生海量 Undo / 回滚记录的大事务。
+        """
         sql_registry = {
             "oracle": """
                 SELECT
@@ -605,15 +679,20 @@ class DatabaseDiagnosticTools:
         sql = sql_registry.get(self.db_type)
         if not sql:
             raise NotImplementedError(f"db_undo_segments_usage 暂不支持: {self.db_type}")
-        logger.info(f"[DiagnosticTools] db_undo_segments_usage -> {self.db_type}")
+        logger.info(f"[DiagnosticTools] db_undo_segments_usage → {self.db_type}")
         return await self.executor.execute_readonly_ops_sql(self.instance_id, sql)
 
     # ========================================================================
-    # 场景四: 变更与审计诊断（怀疑有人动了系统）
+    # 场景四：变更与审计诊断（怀疑有人动了系统）
     # ========================================================================
 
-    async def db_recent_ddl_changes(self, hours: int = 24) -> list[dict[str, Any]]:
-        """适用场景: 查看最近DDL变更、排查谁改过表结构、审计索引删除"""
+    async def db_recent_ddl_changes(self, hours: int = 24) -> List[Dict[str, Any]]:
+        """
+        适用场景: 当手册提到'查看最近DDL变更'、'排查谁改过表结构'、
+        '审计索引删除'、'近期ALTER/DROP/CREATE操作'、'故障由变更引起'时调用。
+
+        功能: 抓取过去 N 小时内被修改过的数据库对象结构。
+        """
         sql_registry = {
             "oracle": f"""
                 SELECT
@@ -660,11 +739,16 @@ class DatabaseDiagnosticTools:
         sql = sql_registry.get(self.db_type)
         if not sql:
             raise NotImplementedError(f"db_recent_ddl_changes 暂不支持: {self.db_type}")
-        logger.info(f"[DiagnosticTools] db_recent_ddl_changes (hours={hours}) -> {self.db_type}")
+        logger.info(f"[DiagnosticTools] db_recent_ddl_changes (hours={hours}) → {self.db_type}")
         return await self.executor.execute_readonly_ops_sql(self.instance_id, sql)
 
-    async def db_invalid_objects(self) -> list[dict[str, Any]]:
-        """适用场景: 查找失效对象、排查INVALID状态、存储过程/触发器/视图失效"""
+    async def db_invalid_objects(self) -> List[Dict[str, Any]]:
+        """
+        适用场景: 当手册提到'查找失效对象'、'排查INVALID状态'、
+        '存储过程/触发器/视图失效'、'索引不可用'、'DDL变更导致级联失效'时调用。
+
+        功能: 排查全库处于 INVALID / 不可用状态的对象。
+        """
         sql_registry = {
             "oracle": """
                 SELECT
@@ -707,11 +791,16 @@ class DatabaseDiagnosticTools:
         sql = sql_registry.get(self.db_type)
         if not sql:
             raise NotImplementedError(f"db_invalid_objects 暂不支持: {self.db_type}")
-        logger.info(f"[DiagnosticTools] db_invalid_objects -> {self.db_type}")
+        logger.info(f"[DiagnosticTools] db_invalid_objects → {self.db_type}")
         return await self.executor.execute_readonly_ops_sql(self.instance_id, sql)
 
-    async def db_non_default_parameters(self) -> list[dict[str, Any]]:
-        """适用场景: 核对初始化参数基线、查看非默认参数、配置审计"""
+    async def db_non_default_parameters(self) -> List[Dict[str, Any]]:
+        """
+        适用场景: 当手册提到'核对初始化参数基线'、'查看非默认参数'、
+        '配置审计'、'排查参数被动态修改'、'比对参数变动'时调用。
+
+        功能: 列出所有被修改过的非默认初始化参数，含修改来源。
+        """
         sql_registry = {
             "oracle": """
                 SELECT
@@ -751,15 +840,20 @@ class DatabaseDiagnosticTools:
         sql = sql_registry.get(self.db_type)
         if not sql:
             raise NotImplementedError(f"db_non_default_parameters 暂不支持: {self.db_type}")
-        logger.info(f"[DiagnosticTools] db_non_default_parameters -> {self.db_type}")
+        logger.info(f"[DiagnosticTools] db_non_default_parameters → {self.db_type}")
         return await self.executor.execute_readonly_ops_sql(self.instance_id, sql)
 
     # ========================================================================
-    # 场景五: 集群与高可用状态诊断（主备/分布式节点）
+    # 场景五：集群与高可用状态诊断（主备/分布式节点）
     # ========================================================================
 
-    async def db_replication_lag_status(self) -> list[dict[str, Any]]:
-        """适用场景: 主备延迟、复制链路异常、备库重做卡住、DataGuard状态检查"""
+    async def db_replication_lag_status(self) -> List[Dict[str, Any]]:
+        """
+        适用场景: 当手册提到'主备延迟'、'复制链路异常'、'备库日志重做卡住'、
+        'DataGuard状态检查'、'流复制延迟'、'主备同步中断'时调用。
+
+        功能: 查明主备复制的传输延迟和应用延迟。
+        """
         sql_registry = {
             "oracle": """
                 SELECT
@@ -795,11 +889,17 @@ class DatabaseDiagnosticTools:
         sql = sql_registry.get(self.db_type)
         if not sql:
             raise NotImplementedError(f"db_replication_lag_status 暂不支持: {self.db_type}")
-        logger.info(f"[DiagnosticTools] db_replication_lag_status -> {self.db_type}")
+        logger.info(f"[DiagnosticTools] db_replication_lag_status → {self.db_type}")
         return await self.executor.execute_readonly_ops_sql(self.instance_id, sql)
 
-    async def db_cluster_interconnect_wait(self) -> list[dict[str, Any]]:
-        """适用场景: RAC集群节点间竞争、gc buffer busy、私网交换延迟、MGR组复制流控"""
+    async def db_cluster_interconnect_wait(self) -> List[Dict[str, Any]]:
+        """
+        适用场景: 当手册提到'RAC集群节点间竞争'、'gc buffer busy'、
+        '私网交换延迟'、'集群内耗'、'cache fusion问题'、
+        'MGR组复制流控'、'Citus/Patroni分布式等待'时调用。
+
+        功能: 分析集群节点间缓存同步与网络竞争。
+        """
         sql_registry = {
             "oracle": """
                 SELECT
@@ -838,11 +938,17 @@ class DatabaseDiagnosticTools:
         sql = sql_registry.get(self.db_type)
         if not sql:
             raise NotImplementedError(f"db_cluster_interconnect_wait 暂不支持: {self.db_type}")
-        logger.info(f"[DiagnosticTools] db_cluster_interconnect_wait -> {self.db_type}")
+        logger.info(f"[DiagnosticTools] db_cluster_interconnect_wait → {self.db_type}")
         return await self.executor.execute_readonly_ops_sql(self.instance_id, sql)
 
-    async def db_archivelog_dest_status(self) -> list[dict[str, Any]]:
-        """适用场景: 归档日志写满、归档目录空间不足、ARCH进程卡住、WAL归档失败"""
+    async def db_archivelog_dest_status(self) -> List[Dict[str, Any]]:
+        """
+        适用场景: 当手册提到'归档日志写满'、'归档目录空间不足'、
+        '归档切换频率异常'、'ARCH进程卡住'、'数据库写入挂起风险'、
+        'WAL归档失败'、'Binlog磁盘爆满'时调用。
+
+        功能: 检查归档/Binlog/WAL 的状态与空间预警。
+        """
         sql_registry = {
             "oracle": """
                 SELECT
@@ -880,7 +986,7 @@ class DatabaseDiagnosticTools:
         sql = sql_registry.get(self.db_type)
         if not sql:
             raise NotImplementedError(f"db_archivelog_dest_status 暂不支持: {self.db_type}")
-        logger.info(f"[DiagnosticTools] db_archivelog_dest_status -> {self.db_type}")
+        logger.info(f"[DiagnosticTools] db_archivelog_dest_status → {self.db_type}")
         return await self.executor.execute_readonly_ops_sql(self.instance_id, sql)
 
     # ========================================================================
@@ -889,14 +995,17 @@ class DatabaseDiagnosticTools:
 
     @classmethod
     def get_tool_manifest(cls) -> str:
-        """返回所有 16 个诊断工具的清单文本, 供 LLM Prompt 注入。LLM 通过此清单做单选题。"""
+        """
+        返回所有 17 个诊断工具的清单文本，供 LLM Prompt 注入。
+        LLM 通过此清单做"单选题"，选择最匹配的工具。
+        """
         return """
 【可用的数据库深度诊断工具箱 (Database Diagnostic Tools)】
 
-当监控指标发现异常, 需要深入数据库内部查证根因时, 你只能从以下 16 个工具中选择。
-请根据参考手册中的排查动作, 输出精确的 tool_name:
+当监控指标发现异常，需要深入数据库内部查证根因时，你只能从以下 17 个工具中选择。
+请根据参考手册中的排查动作，输出精确的 tool_name：
 
-场景一: 并发与卡死诊断（锁与事务冲突）
+场景一：并发与卡死诊断（锁与事务冲突）
   1. db_lock_chains()
      适用: 排查锁冲突、查找阻塞源头、分析死锁、大面积锁死、揪出源头会话
   2. db_lock_matrix()
@@ -904,36 +1013,38 @@ class DatabaseDiagnosticTools:
   3. db_distributed_tx()
      适用: 排查分布式事务、跨库XA事务卡死、两阶段提交悬挂、分布式死锁
 
-场景二: 资源暴满诊断（CPU/内存/存储）
+场景二：资源暴满诊断（CPU/内存/存储）
   4. db_top_cpu_sql(top_n=5)
      适用: 查找消耗CPU最高的SQL、查看Top SQL、定位慢查询、排查烂SQL、揪出CPU暴满的罪魁祸首
   5. db_session_memory()
      适用: 会话内存泄漏、PGA内存爆满、查找内存占用最高的会话、排查OOM根因
   6. db_tablespace_top_segments(tablespace_name="")
      适用: 分析空间由谁占用、查找大表/大索引、看表空间段分布、定位疯狂膨胀的对象
-  7. db_temp_segments_usage()
+  7. db_tablespace_datafiles(tablespace_name="")
+     适用: 查询表空间数据文件真实路径、当前大小、最大大小、是否自动扩展。表空间扩容/收缩前必须调用此工具获取真实 FILE_NAME
+  8. db_temp_segments_usage()
      适用: 临时表空间爆满、大排序撑爆临时空间、查找Temp消耗者
 
-场景三: 性能瓶颈诊断（等待事件与线程现场）
-  8. db_active_session_wait()
+场景三：性能瓶颈诊断（等待事件与线程现场）
+  9. db_active_session_wait()
      适用: 查看当前等待事件、活跃会话在等什么、数据库慢但CPU空闲、定位卡顿本质
-  9. db_historical_session_history(minutes_ago=60)
+  10. db_historical_session_history(minutes_ago=60)
      适用: 回溯历史等待事件、查看ASH/AWR采样、复现半夜故障瞬间现场
-  10. db_undo_segments_usage()
+  11. db_undo_segments_usage()
       适用: UNDO爆满、回滚段压力、大事务长时间未提交、排查ORA-01555快照过旧
 
-场景四: 变更与审计诊断（怀疑有人动了系统）
-  11. db_recent_ddl_changes(hours=24)
+场景四：变更与审计诊断（怀疑有人动了系统）
+  12. db_recent_ddl_changes(hours=24)
       适用: 查看最近DDL变更、排查谁改过表结构、审计索引删除、查找引发性能暴跌的变更
-  12. db_invalid_objects()
+  13. db_invalid_objects()
       适用: 查找失效对象、排查INVALID状态、存储过程/触发器/视图/索引失效
-  13. db_non_default_parameters()
+  14. db_non_default_parameters()
       适用: 核对初始化参数基线、查看非默认参数、配置审计、排查参数被动态修改
 
-场景五: 集群与高可用状态诊断（主备/分布式节点）
-  14. db_replication_lag_status()
+场景五：集群与高可用状态诊断（主备/分布式节点）
+  15. db_replication_lag_status()
       适用: 主备延迟、复制链路异常、备库重做卡住、DataGuard/流复制/主从状态检查
-  15. db_cluster_interconnect_wait()
+  16. db_cluster_interconnect_wait()
       适用: RAC集群节点间竞争、gc buffer busy、私网交换延迟、MGR组复制流控
   16. db_archivelog_dest_status()
       适用: 归档日志写满、归档目录空间不足、ARCH进程卡住、WAL归档失败、Binlog磁盘爆满
