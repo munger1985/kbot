@@ -300,6 +300,7 @@ def _build_asset_blocks(biz_metadata_list: list[dict]) -> list[dict]:
 
     Deduplicates by ``asset_title``.  Each field independently checked —
     empty fields cause their corresponding block or entry to be omitted.
+    Template: ``slack_temp.txt``.
     """
     if not biz_metadata_list:
         return []
@@ -311,21 +312,28 @@ def _build_asset_blocks(biz_metadata_list: list[dict]) -> list[dict]:
         title = (bm.get("asset_title") or "").strip()
         briefing = (bm.get("solution_briefing") or "").strip()
         url = (bm.get("original_asset_url") or "").strip()
-        contributor = (bm.get("contributor") or "").strip()
 
-        if not any([title, briefing, url, contributor]):
+        # author_mail → lowercase, used in two positions in mailto link
+        author_mail = (bm.get("author_mail") or "").strip().lower()
+
+        # create_time → keep YYYY-MM-DD only
+        raw_ct = (bm.get("create_time") or "").strip()
+        create_date = raw_ct[:10] if len(raw_ct) >= 10 else raw_ct
+
+        if not any([title, briefing, url, author_mail, create_date]):
             continue
 
         if title and title in seen_titles:
             continue
         if title:
             seen_titles.add(title)
-            # Limit to first 3 assets.
             if len(seen_titles) > 3:
                 break
 
+        # ── divider ──────────────────────────────────────────
         blocks.append({"type": "divider"})
 
+        # ── Asset Title ──────────────────────────────────────
         if title:
             blocks.append({
                 "type": "section",
@@ -335,6 +343,10 @@ def _build_asset_blocks(biz_metadata_list: list[dict]) -> list[dict]:
                 },
             })
 
+        # ── divider ──────────────────────────────────────────
+        blocks.append({"type": "divider"})
+
+        # ── Solution Briefing ────────────────────────────────
         if briefing:
             blocks.append({
                 "type": "section",
@@ -344,35 +356,49 @@ def _build_asset_blocks(biz_metadata_list: list[dict]) -> list[dict]:
                 },
             })
 
-        has_contributor = bool(contributor)
-        has_url = bool(url)
-        if has_contributor or has_url:
+        # ── divider ──────────────────────────────────────────
+        blocks.append({"type": "divider"})
+
+        # ── Contributor + Publish_date (fields section) ──────
+        has_mail = bool(author_mail)
+        has_date = bool(create_date)
+        if has_mail or has_date:
             section: dict = {"type": "section"}
             fields: list[dict] = []
 
-            if has_contributor:
+            if has_mail:
                 fields.append({
                     "type": "mrkdwn",
                     "text": (
                         f"*Contributor:*\n"
-                        f"<mailto:{contributor}|{contributor}>"
+                        f"<mailto:{author_mail}|{author_mail}>"
                     ),
                 })
 
-            if has_url:
+            if has_date:
                 fields.append({
                     "type": "mrkdwn",
-                    "text": "[VPN required] please visit us:",
+                    "text": f"*Publish_date:*\n{create_date}",
                 })
-                section["accessory"] = {
+
+            section["fields"] = fields
+            blocks.append(section)
+
+        # ── URL button section ───────────────────────────────
+        if url:
+            blocks.append({
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": "[VPN required] please visit us:",
+                },
+                "accessory": {
                     "type": "button",
                     "text": {"type": "plain_text", "text": "KM Link"},
                     "url": url,
                     "action_id": "open_km_resource",
-                }
-
-            section["fields"] = fields
-            blocks.append(section)
+                },
+            })
 
     return blocks
 
