@@ -12,7 +12,7 @@ import json
 from datetime import date as date_type, datetime
 from typing import Sequence
 from loguru import logger
-from sqlalchemy import text, select
+from sqlalchemy import text, select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from core.exceptions import DatabaseException
 from dao.entities import DocMetadataEntity
@@ -45,44 +45,19 @@ class DocMetaRepository(BaseRepository[DocMetadataEntity]):
     """文档元数据表 (doc_metadata) 的数据访问层"""
 
     async def upsert(self, kb_id: int, file_id: str, meta: dict) -> None:
-        """插入或更新文档元数据
-
-        使用 Oracle MERGE INTO 实现 upsert 语义，
-        以 file_id 为匹配键。
-        """
-        stmt = text("""
-            MERGE INTO kbot_doc_metadata t
-            USING (SELECT :kb_id AS kb_id, :file_id AS file_id FROM DUAL) s
-            ON (t.file_id = s.file_id)
-            WHEN MATCHED THEN
-                UPDATE SET
-                    kb_id = s.kb_id,
-                    doc_name = :doc_name,
-                    doc_type = :doc_type,
-                    doc_number = :doc_number,
-                    doc_version = :doc_version,
-                    doc_date = :doc_date,
-                    page_count = :page_count,
-                    chunk_count = :chunk_count,
-                    doc_abstract = :doc_abstract,
-                    doc_keywords = :doc_keywords,
-                    doc_references = :doc_references,
-                    biz_metadata = :biz_metadata,
-                    updated_at = CURRENT_TIMESTAMP
-            WHEN NOT MATCHED THEN
-                INSERT (kb_id, file_id, doc_name, doc_type, doc_number,
-                        doc_version, doc_date, page_count, chunk_count,
-                        doc_abstract, doc_keywords, doc_references, biz_metadata)
-                VALUES (s.kb_id, s.file_id, :doc_name, :doc_type, :doc_number,
-                        :doc_version, :doc_date, :page_count, :chunk_count,
-                        :doc_abstract, :doc_keywords, :doc_references, :biz_metadata)
-        """)
+        """插入或更新文档元数据，以 file_id 为匹配键"""
         try:
+            existing = await self.session.execute(
+                select(DocMetadataEntity).where(
+                    DocMetadataEntity.file_id == file_id
+                )
+            )
+            entity = existing.scalar_one_or_none()
+
             doc_date_str = meta.get("doc_date")
             doc_date = _parse_date(doc_date_str) if doc_date_str else None
 
-            # OracleJSON type handler 接收 JSON 字符串，手动序列化
-            await self.session.execute(stmt, {
+            data = {
                 "kb_id": kb_id,
                 "file_id": file_id,
                 "doc_name": meta.get("doc_name", ""),
@@ -96,7 +71,14 @@ class DocMetaRepository(BaseRepository[DocMetadataEntity]):
                 "doc_keywords": json.dumps(meta.get("doc_keywords", []), ensure_ascii=False),
                 "doc_references": json.dumps(meta.get("doc_references", []), ensure_ascii=False),
                 "biz_metadata": json.dumps(meta.get("biz_metadata", {}), ensure_ascii=False),
-            })
+            }
+
+            if entity:
+                for key, value in data.items():
+                    setattr(entity, key, value)
+            else:
+                self.session.add(DocMetadataEntity(**data))
+
             await self.session.flush()
             logger.debug(f"[DocMetaRepo] upsert 成功: file_id={file_id}")
         except Exception as e:
@@ -172,13 +154,28 @@ class DocMetaRepository(BaseRepository[DocMetadataEntity]):
     async def delete_by_file_id(self, file_id: str) -> None:
         """根据 file_id 删除文档元数据"""
         try:
-            stmt = text("DELETE FROM kbot_doc_metadata WHERE file_id = :fid")
-            await self.session.execute(stmt, {"fid": file_id})
+            stmt = delete(DocMetadataEntity).where(
+                DocMetadataEntity.file_id == file_id
+            )
+            await self.session.execute(stmt)
             await self.session.flush()
             logger.debug(f"[DocMetaRepo] 删除成功: file_id={file_id}")
         except Exception as e:
             logger.error(f"[DocMetaRepo] delete_by_file_id 失败: {e}")
             raise DatabaseException("删除文档元数据失败", original_error=e)
+
+    async def delete_by_kb_id(self, kb_id: int) -> None:
+        """根据 kb_id 删除整个知识库的文档元数据"""
+        try:
+            stmt = delete(DocMetadataEntity).where(
+                DocMetadataEntity.kb_id == kb_id
+            )
+            await self.session.execute(stmt)
+            await self.session.flush()
+            logger.debug(f"[DocMetaRepo] 删除知识库元数据成功: kb_id={kb_id}")
+        except Exception as e:
+            logger.error(f"[DocMetaRepo] delete_by_kb_id 失败: {e}")
+            raise DatabaseException("删除知识库文档元数据失败", original_error=e)
 
     async def get_by_kb_id(self, kb_id: int) -> list[dict]:
         """根据 kb_id 获取所有文档元数据"""

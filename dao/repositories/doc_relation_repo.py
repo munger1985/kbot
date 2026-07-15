@@ -8,7 +8,7 @@ Oracle 23ai 兼容的文档引用关系仓库 — doc_relation 表的 CRUD 操�
 import json
 from typing import Sequence
 from loguru import logger
-from sqlalchemy import text, select
+from sqlalchemy import text, select, delete, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from core.exceptions import DatabaseException
 from dao.entities import DocRelationEntity
@@ -20,37 +20,17 @@ class DocRelationRepository(BaseRepository[DocRelationEntity]):
 
     async def upsert(self, kb_id: int, source_file_id: str,
                      target_file_id: str, relation: dict) -> None:
-        """插入或更新文档引用关系
-
-        使用 Oracle MERGE INTO 实现 upsert 语义，
-        以 (source_file_id, target_file_id) 为匹配键。
-        """
-        stmt = text("""
-            MERGE INTO kbot_doc_relation t
-            USING (SELECT :source_file_id AS source_file_id,
-                          :target_file_id AS target_file_id FROM DUAL) s
-            ON (t.source_file_id = s.source_file_id
-                AND t.target_file_id = s.target_file_id)
-            WHEN MATCHED THEN
-                UPDATE SET
-                    kb_id = :kb_id,
-                    target_doc_name = :target_doc_name,
-                    target_chapter = :target_chapter,
-                    target_section = :target_section,
-                    relation_type = :relation_type,
-                    context_snippet = :context_snippet,
-                    confidence = :confidence,
-                    biz_metadata = :biz_metadata
-            WHEN NOT MATCHED THEN
-                INSERT (kb_id, source_file_id, target_file_id,
-                        target_doc_name, target_chapter, target_section,
-                        relation_type, context_snippet, confidence, biz_metadata)
-                VALUES (:kb_id, :source_file_id, :target_file_id,
-                        :target_doc_name, :target_chapter, :target_section,
-                        :relation_type, :context_snippet, :confidence, :biz_metadata)
-        """)
+        """插入或更新文档引用关系，以 (source_file_id, target_file_id) 为匹配键"""
         try:
-            await self.session.execute(stmt, {
+            existing = await self.session.execute(
+                select(DocRelationEntity).where(
+                    DocRelationEntity.source_file_id == source_file_id,
+                    DocRelationEntity.target_file_id == target_file_id
+                )
+            )
+            entity = existing.scalar_one_or_none()
+
+            data = {
                 "kb_id": kb_id,
                 "source_file_id": source_file_id,
                 "target_file_id": target_file_id,
@@ -61,7 +41,14 @@ class DocRelationRepository(BaseRepository[DocRelationEntity]):
                 "context_snippet": relation.get("context_snippet", ""),
                 "confidence": relation.get("confidence", 1.0),
                 "biz_metadata": json.dumps(relation.get("biz_metadata", {}), ensure_ascii=False),
-            })
+            }
+
+            if entity:
+                for key, value in data.items():
+                    setattr(entity, key, value)
+            else:
+                self.session.add(DocRelationEntity(**data))
+
             await self.session.flush()
             logger.debug(
                 f"[DocRelationRepo] upsert 成功: "
@@ -72,36 +59,31 @@ class DocRelationRepository(BaseRepository[DocRelationEntity]):
             raise DatabaseException("保存文档引用关系失败", original_error=e)
 
     async def batch_insert(self, relations: list[dict]) -> None:
-        """批量插入引用关系（使用 MERGE INTO 避免重复）"""
+        """批量插入引用关系，已存在则跳过"""
         if not relations:
             return
-        stmt = text("""
-            MERGE INTO kbot_doc_relation t
-            USING (SELECT :source_file_id AS source_file_id,
-                          :target_file_id AS target_file_id FROM DUAL) s
-            ON (t.source_file_id = s.source_file_id
-                AND t.target_file_id = s.target_file_id)
-            WHEN NOT MATCHED THEN
-                INSERT (kb_id, source_file_id, target_file_id,
-                        target_doc_name, target_chapter, target_section,
-                        relation_type, context_snippet, confidence)
-                VALUES (:kb_id, :source_file_id, :target_file_id,
-                        :target_doc_name, :target_chapter, :target_section,
-                        :relation_type, :context_snippet, :confidence)
-        """)
         try:
             for r in relations:
-                await self.session.execute(stmt, {
-                    "kb_id": r.get("kb_id"),
-                    "source_file_id": r.get("source_file_id"),
-                    "target_file_id": r.get("target_file_id"),
-                    "target_doc_name": r.get("target_doc_name", ""),
-                    "target_chapter": r.get("target_chapter", ""),
-                    "target_section": r.get("target_section", ""),
-                    "relation_type": r.get("relation_type", "reference"),
-                    "context_snippet": r.get("context_snippet", ""),
-                    "confidence": r.get("confidence", 1.0),
-                })
+                existing = await self.session.execute(
+                    select(DocRelationEntity).where(
+                        DocRelationEntity.source_file_id == r.get("source_file_id"),
+                        DocRelationEntity.target_file_id == r.get("target_file_id")
+                    )
+                )
+                if existing.scalar_one_or_none() is not None:
+                    continue
+                entity = DocRelationEntity(
+                    kb_id=r.get("kb_id"),
+                    source_file_id=r.get("source_file_id"),
+                    target_file_id=r.get("target_file_id"),
+                    target_doc_name=r.get("target_doc_name", ""),
+                    target_chapter=r.get("target_chapter", ""),
+                    target_section=r.get("target_section", ""),
+                    relation_type=r.get("relation_type", "reference"),
+                    context_snippet=r.get("context_snippet", ""),
+                    confidence=r.get("confidence", 1.0),
+                )
+                self.session.add(entity)
             await self.session.flush()
             logger.debug(f"[DocRelationRepo] batch_insert 成功: {len(relations)} 条")
         except Exception as e:
@@ -140,13 +122,28 @@ class DocRelationRepository(BaseRepository[DocRelationEntity]):
     async def delete_by_file(self, file_id: str) -> None:
         """删除指定文件相关的所有引用关系（source 或 target）"""
         try:
-            stmt = text("""
-                DELETE FROM kbot_doc_relation
-                WHERE source_file_id = :fid OR target_file_id = :fid
-            """)
-            await self.session.execute(stmt, {"fid": file_id})
+            stmt = delete(DocRelationEntity).where(
+                or_(
+                    DocRelationEntity.source_file_id == file_id,
+                    DocRelationEntity.target_file_id == file_id
+                )
+            )
+            await self.session.execute(stmt)
             await self.session.flush()
             logger.debug(f"[DocRelationRepo] 删除文件相关引用成功: file_id={file_id}")
         except Exception as e:
             logger.error(f"[DocRelationRepo] delete_by_file 失败: {e}")
             raise DatabaseException("删除文档引用关系失败", original_error=e)
+
+    async def delete_by_kb_id(self, kb_id: int) -> None:
+        """删除指定知识库的所有引用关系"""
+        try:
+            stmt = delete(DocRelationEntity).where(
+                DocRelationEntity.kb_id == kb_id
+            )
+            await self.session.execute(stmt)
+            await self.session.flush()
+            logger.debug(f"[DocRelationRepo] 删除知识库引用成功: kb_id={kb_id}")
+        except Exception as e:
+            logger.error(f"[DocRelationRepo] delete_by_kb_id 失败: {e}")
+            raise DatabaseException("删除知识库文档引用关系失败", original_error=e)
