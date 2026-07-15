@@ -28,6 +28,10 @@ class VisualTextPair:
 class VisualSearchEngine:
     """双向互检索"""
 
+    @property
+    def oracle_session(self):
+        return db_instance.get_session()
+
     async def search(
         self,
         query: str = "",
@@ -88,19 +92,19 @@ class VisualSearchEngine:
         except Exception as e:
             logger.error(f"[VSE] embed failed: {e}")
             return []
+        async with self.oracle_session as session:
+            repo = ExtractedImageRepository(session)
+            rows = await repo.search_by_embedding(emb, kb_ids, top_k, image_types=["page"])
 
-        repo = ExtractedImageRepository()
-        rows = await repo.search_by_embedding(emb, kb_ids, top_k, image_types=["page"])
-
-        return [
-            VisualTextPair(
-                file_id=str(r.get("file_id", "")), page_no=int(r.get("page_no", 0)),
-                page_image_path=str(r.get("image_path", "")),
-                image_description=str(r.get("description", "")),
-                similarity=float(r.get("similarity", 0)), source="visual",
-            )
-            for r in rows
-        ]
+            return [
+                VisualTextPair(
+                    file_id=str(r.get("file_id", "")), page_no=int(r.get("page_no", 0)),
+                    page_image_path=str(r.get("image_path", "")),
+                    image_description=str(r.get("description", "")),
+                    similarity=float(r.get("similarity", 0)), source="visual",
+                )
+                for r in rows
+            ]
 
     async def _text_search(
         self, query: str, kb_ids: list[int] | None, top_k: int
@@ -108,42 +112,43 @@ class VisualSearchEngine:
         """ParadeDB 文本搜索 → 按 file_id+page_no 分组"""
         try:
             from services.search.kb_search import TxtBaseSearch
+            from services.kb import KBService
             from utils.clients import AIModelClient
 
             kb_list = kb_ids or []
             client = AIModelClient()
-            emb_cfg = __import__('core.config.settings', fromlist=['get_embed_config']).get_embed_config()
+            kb_service = KBService()
 
             grouped: dict[str, VisualTextPair] = {}
 
             for kb_id in kb_list[:5]:
+                # 获取该KB配置的txt_embedding_model做嵌入
+                q_emb = None
                 try:
-                    q_emb = await client.get_embedding(
-                        getattr(emb_cfg, 'model_name', 'bge-m3'), query
-                    ) if hasattr(client, 'get_embedding') else None
-                except Exception:
-                    q_emb = None
+                    kb_model_params = await kb_service.get_models_and_dbconf(kb_id)
+                    emb_model = kb_model_params.txt_embedding_model
+                    if emb_model:
+                        q_emb = await client.get_embedding(emb_model, query)
+                except Exception as e:
+                    logger.warning(f"[VSE] 获取KB {kb_id} 嵌入模型失败: {e}")
 
-                async with db_instance().get_session() as session:
-                    searcher = TxtBaseSearch()
-                    chunks = await searcher.search(
-                        kb_id=kb_id, keywords=query, search_top_k=top_k,
-                        threshold=0.3, weight=0.5, security=3, query_vec=q_emb,
-                    )
+                searcher = TxtBaseSearch()
+                chunks = await searcher.search(
+                    kb_id=kb_id, keywords=query, search_top_k=top_k,
+                    threshold=0.3, weight=0.5, security=3, query_vec=q_emb,
+                )
 
                 for c in chunks:
-                    fid = getattr(c, "file_id", "")
                     pn = c.page_num if c.page_num else 1
-                    content = getattr(c, "content", "")
-                    if not fid or not content:
+                    if not c.file_id or not c.content:
                         continue
-                    key = f"{fid}:{pn}"
+                    key = f"{c.file_id}:{pn}"
                     if key not in grouped:
                         grouped[key] = VisualTextPair(
-                            file_id=fid, page_no=pn, source="text",
+                            file_id=c.file_id, page_no=pn, source="text",
                             similarity=getattr(c, "score", 0.0) or 0.0,
                         )
-                    grouped[key].text_snippets.append(content)
+                    grouped[key].text_snippets.append(c.content)
 
             return list(grouped.values())[:top_k]
         except Exception as e:
@@ -154,7 +159,7 @@ class VisualSearchEngine:
         """图 → 文: ParadeDB 按 file_id+page_no 查文本"""
         try:
             from dao.repositories import TxtChunkRepository
-            async with db_instance().get_session() as session:
+            async with self.oracle_session as session:
                 repo = TxtChunkRepository(session)
                 chunks = await repo.search_by_file_and_page(file_id, page_no)
             return [c.get("content", "") for c in chunks if c.get("content")]
@@ -164,5 +169,6 @@ class VisualSearchEngine:
 
     async def _get_page_image(self, file_id: str, page_no: int) -> str | None:
         """文 → 图: 查 extracted_images (image_type='page')"""
-        repo = ExtractedImageRepository()
-        return await repo.get_page_image(file_id, page_no)
+        async with self.oracle_session as session:
+            repo = ExtractedImageRepository(session)
+            return await repo.get_page_image(file_id, page_no)

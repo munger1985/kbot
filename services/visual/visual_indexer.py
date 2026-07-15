@@ -10,6 +10,7 @@ from PIL import Image
 from loguru import logger
 from utils.clients import AIModelClient
 from dao.repositories import ExtractedImageRepository
+from core.database.oracle import get_session
 
 
 class VisualIndexer:
@@ -58,8 +59,9 @@ class VisualIndexer:
         """
         try:
             emb = await self.get_embedding(image_path, model_name=visual_model) if visual_model else None
-            repo = ExtractedImageRepository()
-            await repo.insert(
+            async with get_session() as session:
+                repo = ExtractedImageRepository(session)
+                await repo.insert(
                 file_id=file_id, kb_id=kb_id, page_no=page_no,
                 image_path=image_path, embedding=emb,
                 description=description, image_type=image_type,

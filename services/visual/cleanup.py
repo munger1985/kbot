@@ -7,6 +7,7 @@ import shutil
 from pathlib import Path
 from loguru import logger
 from dao.repositories import ExtractedImageRepository
+from core.database.oracle import get_session
 
 
 async def cleanup_visual_data(
@@ -16,11 +17,12 @@ async def cleanup_visual_data(
 ) -> None:
     """清理视觉索引数据（Oracle VECTOR 表 + 图片文件目录）。"""
     try:
-        repo = ExtractedImageRepository()
-        if file_ids:
-            await repo.delete_by_file_ids(file_ids)
-        else:
-            await repo.delete_by_kb_id(kb_id)
+        async with get_session() as session:
+            repo = ExtractedImageRepository(session)
+            if file_ids:
+                await repo.delete_by_file_ids(file_ids)
+            else:
+                await repo.delete_by_kb_id(kb_id)
         logger.info("[VisualCleanup] db: kb=%s files=%s", kb_id, file_ids or "ALL")
 
         root = Path(file_storage).resolve()
