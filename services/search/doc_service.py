@@ -255,9 +255,9 @@ class DocService:
         params: ModelParams,
     ) -> list[TxtBaseSearchResult]:
         """LLM Reranker — 在原始 chunk 上逐条判断相关性"""
-        if not params.do_rerank or len(results) <= 1:
-            logger.debug("检索结果数量不足或未启用重排序，直接返回原始结果")
-            return results
+        # if not params.do_rerank or len(results) <= 1:
+        #     logger.debug("检索结果数量不足或未启用重排序，直接返回原始结果")
+        #     return results
 
         llm_model = params.llm_model_light or params.llm_model
         return await self.llm_reranker.rerank(

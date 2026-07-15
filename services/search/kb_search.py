@@ -461,6 +461,7 @@ class TxtBaseSearch:
                     biz_metadata=item.get("biz_metadata") or {},
                     weight=weight,
                     rerank_score=0.0,
+                    is_relevant=False,
                 )
                 results.append(result)
             except Exception as e:
