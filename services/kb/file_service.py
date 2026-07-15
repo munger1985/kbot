@@ -555,8 +555,8 @@ class FileService:
                     await graph_repo.delete_graph_by_file(kb_id, all_file_ids)
 
                     # 6. 删除文档元数据
-                    for fid in all_file_ids:
-                        await doc_meta_repo.delete_by_file_id(fid)
+                    if all_file_ids:
+                        await doc_meta_repo.delete_by_file_ids(all_file_ids)
                     # 7. 删除文档引用关系
                     for fid in all_file_ids:
                         await doc_rel_repo.delete_by_file(fid)
@@ -696,8 +696,8 @@ class FileService:
                 logger.info(f"文件 {file_ids} 对应的文本片段数据已删除")
 
                 # 1.1 删除文档元数据
-                for fid in file_ids:
-                    await doc_meta_repo.delete_by_file_id(fid)
+                if file_ids:
+                    await doc_meta_repo.delete_by_file_ids(file_ids)
                 # 1.2 删除文档引用关系
                 for fid in file_ids:
                     await doc_rel_repo.delete_by_file(fid)
