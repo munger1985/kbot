@@ -82,6 +82,7 @@ declare -A services=(
     ["Embedding"]="kbot_app_embedding.py"
     ["LLM"]="kbot_app_llm.py" 
     ["VLM"]="kbot_app_vlm.py"
+    ["Visual"]="kbot_app_visual.py"
     ["Parser"]="kbot_app_parser.py"
     ["MCP"]="kbot_mcp_server.py"
     ["DB Executor"]="kbot_db_executor.py"

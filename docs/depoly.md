@@ -549,7 +549,7 @@ print('ColQwen2 loaded OK')
 [visual]
 service_name = "cube-visual-service"
 service_host = "0.0.0.0"
-service_port = 18094
+service_port = 18093
 timeout = 300
 max_retries = 3
 ```
@@ -570,8 +570,8 @@ max_retries = 3
 | Main API | 18099 | ✓ |
 | Embedding | 18091 | ✓ |
 | LLM | 18092 | ✓ |
-| VLM（视觉大模型） | 18093 | ✓ |
-| Visual（视觉嵌入） | 18094 | ✓ |
+| VLM（视觉大模型） | 18094 | ✓ |
+| Visual（视觉嵌入） | 18093 | ✓ |
 | Parser | 18095 | ✓ |
 | DB Executor | 18096 | ✓ |
 | DeepSeek-OCR | 18097 | 按需 |

@@ -40,8 +40,8 @@ fi
 MICROSERVICES=(
     "kbot_app_embedding.py"
     "kbot_app_llm.py" 
+    "kbot_app_visual.py"
     "kbot_app_vlm.py"
-    "kbot_app_reranker.py"
     "kbot_app_parser.py"
     "kbot_mcp_server.py"
     "kbot_db_executor.py"
