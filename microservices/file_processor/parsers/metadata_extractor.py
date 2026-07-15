@@ -50,7 +50,7 @@ class MetadataExtractor:
         self.model_client = model_client or AIModelClient()
 
     async def extract_from_text(self, text_snapshot: str, llm_model: str,
-                                 kb_id: str, file_id: str) -> dict[str, Any] | None:
+                                 kb_id: int, file_id: str) -> dict[str, Any] | None:
         """从文本快照中提取结构化元数据（1 次 LLM 调用）。
 
         Returns:

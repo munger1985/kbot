@@ -79,7 +79,7 @@ class FileStatus(IntEnum):
     REJECTED = 4
     PARSING = 5
     PARSED = 6
-    PARSE_FAILED = 7
+    FAILED = 7
     ARCHIVED = 8
 
 class ProcessPriority(IntEnum):

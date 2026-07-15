@@ -22,7 +22,7 @@ class DocParserParams(BaseModel):
     engine_mode: str = Field("auto", description="PDF 解析方式: vlm(视觉解析) / auto(文本提取)。Word/PPT/Excel 始终用 Docling 不受此影响")
     enable_chunk_reflection: bool = Field(False, description="启用 LLM 后反思重组短 chunk（仅在 auto/precision 模式下生效）")
     visual_model: str = Field("", description="视觉嵌入模型名称（选填，用于生成图片向量并入库，支持以图搜图）")
-    kb_id: str = Field("", description="知识库ID（由调用方自动填充）")
+    kb_id: int = Field(..., description="知识库ID（由调用方自动填充）")
     # 移除: extract_graph, overlap
 
     @property
@@ -36,7 +36,7 @@ class DocParserParams(BaseModel):
 
 class FileParams(BaseModel):
     file_id: str = Field(..., description="文件ID")
-    kb_id: str = Field(..., description="知识库ID")
+    kb_id: int = Field(..., description="知识库ID")
     file_path: str = Field(..., description="文件路径")
     file_ext: str = Field(..., description="文件扩展名")
     priority: int = Field(0, description="处理优先级")

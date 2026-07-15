@@ -71,6 +71,43 @@ class DocRelationRepository(BaseRepository[DocRelationEntity]):
             logger.error(f"[DocRelationRepo] upsert 失败: {e}")
             raise DatabaseException("保存文档引用关系失败", original_error=e)
 
+    async def batch_insert(self, relations: list[dict]) -> None:
+        """批量插入引用关系（使用 MERGE INTO 避免重复）"""
+        if not relations:
+            return
+        stmt = text("""
+            MERGE INTO doc_relation t
+            USING (SELECT :source_file_id AS source_file_id,
+                          :target_file_id AS target_file_id FROM DUAL) s
+            ON (t.source_file_id = s.source_file_id
+                AND t.target_file_id = s.target_file_id)
+            WHEN NOT MATCHED THEN
+                INSERT (kb_id, source_file_id, target_file_id,
+                        target_doc_name, target_chapter, target_section,
+                        relation_type, context_snippet, confidence)
+                VALUES (:kb_id, :source_file_id, :target_file_id,
+                        :target_doc_name, :target_chapter, :target_section,
+                        :relation_type, :context_snippet, :confidence)
+        """)
+        try:
+            for r in relations:
+                await self.session.execute(stmt, {
+                    "kb_id": r.get("kb_id"),
+                    "source_file_id": r.get("source_file_id"),
+                    "target_file_id": r.get("target_file_id"),
+                    "target_doc_name": r.get("target_doc_name", ""),
+                    "target_chapter": r.get("target_chapter", ""),
+                    "target_section": r.get("target_section", ""),
+                    "relation_type": r.get("relation_type", "reference"),
+                    "context_snippet": r.get("context_snippet", ""),
+                    "confidence": r.get("confidence", 1.0),
+                })
+            await self.session.flush()
+            logger.debug(f"[DocRelationRepo] batch_insert 成功: {len(relations)} 条")
+        except Exception as e:
+            logger.error(f"[DocRelationRepo] batch_insert 失败: {e}")
+            raise DatabaseException("批量插入文档引用关系失败", original_error=e)
+
     async def get_by_source_file(self, source_file_id: str) -> list[dict]:
         """查询某文档引用了哪些文档"""
         try:

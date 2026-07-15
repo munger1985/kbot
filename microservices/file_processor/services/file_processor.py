@@ -105,16 +105,23 @@ class FileProcessor:
 
                 # 将数据库中的字典类型解析参数转换为DocParserParams对象
                 doc_params = DocParserParams(
-                    generate_picture_images=file.chunk_parser.get("generate_picture_images", True),
+                    chunk_size=file.parser_params.get("chunk_size", 800),
+                    min_chunk_len=file.parser_params.get("min_chunk_len", 100),
+                    generate_picture_images=file.parser_params.get("generate_picture_images", True),
+                    image_scale=file.parser_params.get("image_scale", 2.0),
                     image_dir=image_dir,
-                    do_ocr=file.chunk_parser.get("do_ocr", False),
-                    ocr_engine=file.chunk_parser.get("ocr_engine", None),
-                    ocr_model=file.chunk_parser.get("ocr_model", None),
+                    do_ocr=file.parser_params.get("do_ocr", False),
+                    ocr_engine=file.parser_params.get("ocr_engine", None),
+                    ocr_model=file.parser_params.get("ocr_model", None),
                     vlm_model=vlm_model,
                     llm_model=llm_model,
                     img2txt_prompt=img2txt_prompt,
-                    engine_mode=file.chunk_parser.get("engine_mode", "auto"),
-                    visual_model=file.chunk_parser.get("visual_model", ""),
+                    enable_layout_clustering=file.parser_params.get("enable_layout_clustering", True),
+                    enable_page_span_stitch=file.parser_params.get("enable_page_span_stitch", True),
+                    enable_doc_metadata=file.parser_params.get("enable_doc_metadata", True),
+                    engine_mode=file.parser_params.get("engine_mode", "auto"),
+                    enable_chunk_reflection=file.parser_params.get("enable_chunk_reflection", False),
+                    visual_model=file.parser_params.get("visual_model", ""),
                     kb_id=file.kb_id,
                 )
 
@@ -134,7 +141,7 @@ class FileProcessor:
                 # 添加到结果列表（优先级、时间戳、文件参数）
                 timestamp = datetime.now().timestamp()
                 result.append((file_params.priority, timestamp, file_params))
-                logger.info(f"文件已加入处理队列：{file_params.file_path} (优先级：{ProcessPriority.get_by_value(file_params.priority).name})")
+                logger.info(f"文件已加入处理队列：{file_params.file_path} (优先级：{ProcessPriority(file_params.priority).name})")
                 
             return result
 
@@ -380,12 +387,10 @@ class FileProcessor:
             logger.error(f"生成向量嵌入失败：{str(e)}", exc_info=True)
             return []
 
-    async def _save_chunks(self, kb_id: str, file_id: str, chunks: list[TxtChunkEntity]):
+    async def _save_chunks(self, kb_id: int, file_id: str, chunks: list[TxtChunkEntity]):
         """将带嵌入向量的解析分块保存到 ParadeDB"""
         async with self.db_session as session:
-            chunk_repo = TxtChunkRepository(session, kb_id)
-            await chunk_repo.ensure_partition()
-            await session.commit()  # 先提交 DDL，避免事务回滚时撤销分区
+            chunk_repo = TxtChunkRepository(session)
             await chunk_repo.create(chunks=chunks)
         logger.info(f"文件 {file_id} 已成功保存 {len(chunks)} 个文本分块")
 
@@ -490,13 +495,14 @@ class FileProcessor:
                 meta["doc_abstract"] = fallback_abstract
 
             # 保存元数据
-            meta_repo = DocMetaRepository()
-            await meta_repo.upsert(kb_id, file_id, meta)
+            async with self.db_session as session:
+                meta_repo = DocMetaRepository(session)
+                await meta_repo.upsert(kb_id, file_id, meta)
 
-            # 保存引用关系
-            if result.get("relations"):
-                rel_repo = DocRelationRepository()
-                await rel_repo.batch_insert(result["relations"])
+                # 保存引用关系
+                if result.get("relations"):
+                    rel_repo = DocRelationRepository(session)
+                    await rel_repo.batch_insert(result["relations"])
 
         except Exception as e:
             logger.error(f"[FileProcessor] 文档元数据提取失败: {e}")
