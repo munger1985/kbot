@@ -31,7 +31,7 @@ class WorkflowEntity(BaseEntity):
     config: Mapped[dict[str, Any] | None] = mapped_column(OracleJSON, comment="全局配置")
 
     # --- 强制执行模式 ---
-    mode: Mapped[str] = mapped_column(
+    exec_mode: Mapped[str] = mapped_column(
         String(20), nullable=False, default="guided", server_default=text("'guided'"),
         comment="SOP 强制执行模式: strict(严格遵循) / guided(引导增强,默认) / suggested(建议参考)"
     )
@@ -67,7 +67,7 @@ class WorkflowEntity(BaseEntity):
             "nodes": self.nodes,
             "edges": self.edges,
             "config": self.config,
-            "mode": self.mode,
+            "exec_mode": self.exec_mode,
             "is_active": self.is_active_bool,
             "created_by": self.created_by,
             "created_at": self.created_at,
