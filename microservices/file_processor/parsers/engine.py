@@ -573,7 +573,7 @@ class DoclingEngine:
                 )
                 # 标注 DS OCR 识别的元素类型，供 ChunkGenerator 映射到 chunk_type
                 if item and el.get("dsocr_type") and hasattr(item, "annotations"):
-                    item.annotations.append(
+                    item.annotations.append( # type: ignore
                         DescriptionAnnotation(text=el["dsocr_type"], provenance="dsocr_type")
                     )
                 injected_count += 1
@@ -597,7 +597,8 @@ class DoclingEngine:
         """
         import re
         from docling_core.types.doc.labels import DocItemLabel
-        from docling_core.types.doc.document import ProvenanceItem, BoundingBox
+        from docling_core.types.doc.document import ProvenanceItem
+        from docling_core.types.doc.base import BoundingBox
         from docling_core.types.doc.base import CoordOrigin
 
         # 行级标记: type[[x1, y1, x2, y2]]
@@ -709,7 +710,7 @@ class DoclingEngine:
                 vlm_prompt = f"请简要描述这张幻灯片的内容，不要长篇大论，不要编造不存在的内容。重点识别其中的逻辑关系、架构图、流程图和核心结论。"
                 
                 tasks.append(self.model_task.vlm_task(
-                    self.model_client, params.vlm_model, 
+                    self.model_client, params.vlm_model,  # type: ignore
                     vlm_prompt, f"slide:index:{page_no}", page_obj.image.pil_image
                 ))
                 
@@ -772,7 +773,7 @@ class DoclingEngine:
                     if has_ocr:
                         ocr_prompt = "Parse the figure."
                         tasks.append(self.model_task.dsocr_task(
-                            self.model_client, params.ocr_model,
+                            self.model_client, params.ocr_model, # type: ignore
                             ocr_prompt, f"ocr:hash:{img_hash}", raw_img
                         ))
                     if has_vlm:
@@ -781,7 +782,7 @@ class DoclingEngine:
                             current_header=pic_context
                         )
                         tasks.append(self.model_task.vlm_task(
-                            self.model_client, params.vlm_model,
+                            self.model_client, params.vlm_model, # type: ignore
                             vlm_final_prompt, f"pic:hash:{img_hash}", raw_img
                         ))
                 else:
@@ -804,7 +805,7 @@ class DoclingEngine:
 3. 严禁输出任何 JSON 以外的文字。"""
 
                         tasks.append(self.model_task.vlm_task(
-                            self.model_client, params.vlm_model,
+                            self.model_client, params.vlm_model, # type: ignore
                             table_prompt, f"table:index:{i}", table.image.pil_image
                         ))
 

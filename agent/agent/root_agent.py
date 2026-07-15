@@ -27,7 +27,7 @@ class RootAgent(AgentStreamMixin):
         self, 
         background_tasks: BackgroundTasks, 
         user_id: str, 
-        agent_id: str, 
+        agent_id: int, 
         query: str, 
         session_id: str | None = None,
         security_level: int = 1,

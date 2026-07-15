@@ -32,7 +32,7 @@ class VisualSearchEngine:
         self,
         query: str = "",
         image_base64: str = "",
-        kb_ids: list[str] | None = None,
+        kb_ids: list[int] | None = None,
         top_k: int = 5,
         visual_model: str = "",
     ) -> list[VisualTextPair]:
@@ -80,7 +80,7 @@ class VisualSearchEngine:
         return f"{p.file_id}:{p.page_no}"
 
     async def _visual_search(
-        self, image_base64: str, kb_ids: list[str] | None, top_k: int, visual_model: str = ""
+        self, image_base64: str, kb_ids: list[int] | None, top_k: int, visual_model: str = ""
     ) -> list[VisualTextPair]:
         from utils.clients import AIModelClient
         try:
@@ -104,7 +104,7 @@ class VisualSearchEngine:
         ]
 
     async def _text_search(
-        self, query: str, kb_ids: list[str] | None, top_k: int
+        self, query: str, kb_ids: list[int] | None, top_k: int
     ) -> list[VisualTextPair]:
         """ParadeDB 文本搜索 → 按 file_id+page_no 分组"""
         try:
@@ -128,7 +128,7 @@ class VisualSearchEngine:
                 async with db_instance().get_session() as session:
                     searcher = TxtBaseSearch()
                     chunks = await searcher.search(
-                        session=session, kb_id=kb_id, keywords=query, search_top_k=top_k,
+                        kb_id=kb_id, keywords=query, search_top_k=top_k,
                         threshold=0.3, weight=0.5, security=3, query_vec=q_emb,
                     )
 
@@ -156,7 +156,7 @@ class VisualSearchEngine:
         try:
             from dao.repositories import TxtChunkRepository
             async with db_instance().get_session() as session:
-                repo = TxtChunkRepository(session, "")
+                repo = TxtChunkRepository(session)
                 chunks = await repo.search_by_file_and_page(file_id, page_no)
             return [c.get("content", "") for c in chunks if c.get("content")]
         except Exception as e:

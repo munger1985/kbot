@@ -20,7 +20,7 @@ class WorkflowEntity(BaseEntity):
 
     # --- 核心标识与关联 ---
     id: Mapped[str] = mapped_column(String(36), primary_key=True, comment="UUID, 主键")
-    agent_id: Mapped[str] = mapped_column(String(36), nullable=False, comment="所属 Agent ID")
+    agent_id: Mapped[int] = mapped_column(Numeric, nullable=False, comment="所属 Agent ID")
     name: Mapped[str] = mapped_column(String(255), nullable=False, comment="流程名称")
     description: Mapped[str] = mapped_column(String(1024), nullable=False, comment="流程语义描述")
     embedding: Mapped[list[float] | None] = mapped_column(VectorField(), comment="Oracle 23ai 语义向量")

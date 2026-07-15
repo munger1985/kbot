@@ -1,8 +1,9 @@
 from datetime import datetime
-from typing import AsyncGenerator, Any
+from typing import AsyncGenerator, Any, cast
 from loguru import logger
 
 from agent.common import ContextMemory, ExecutionPlan
+from agent.common.skill_context import TaskStep
 from agent.planner.workflow_planner import WorkflowPlanner
 from agent.planner.llm_planner import LLMPlanner
 from agent.planner.plan_validator import PlanValidator, format_validation_errors
@@ -92,7 +93,7 @@ class PlanningEngine:
                             variables=variables,
                             sop_summary=sop_summary,
                             sop_name=sop_name,
-                            sop_description=sop_description,
+                            sop_description=sop_description or "",
                             sop_mode=sop_mode,
                         )
                     else:
@@ -109,11 +110,11 @@ class PlanningEngine:
                         model_name=model_name,
                         intent_type=intent_type,
                         variables=variables,
-                        previous_plan=last_plan,
-                        validation_errors=last_error,
+                        previous_plan=cast(ExecutionPlan, last_plan),
+                        validation_errors=cast(str, last_error),
                         sop_summary=sop_summary,
                         sop_name=sop_name,
-                        sop_description=sop_description,
+                        sop_description=sop_description or "",
                         sop_mode=sop_mode,
                     )
 
@@ -184,7 +185,7 @@ class PlanningEngine:
             logger.info("降级为 SOP 确定性编译")
             return {
                 "thought": "LLM 规划多次失败，降级为 SOP 确定性编译执行。",
-                "steps": sop_steps,
+                "steps": cast(list[TaskStep], sop_steps),
                 "final_goal": query,
                 "plan_type": "workflow",
                 "workflow_id": None,

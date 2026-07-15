@@ -32,8 +32,8 @@ class MemoryService:
     async def get_user_profile(self, user_id: str) -> dict:
         """获取用户画像并转换为用于 Context 的字典格式"""
         async with self.db_session as session:
-            repo = MemoryRepository(session, user_id)
-            profile = await repo.get_user_profile()
+            repo = MemoryRepository(session)
+            profile = await repo.get_user_profile(user_id)
 
         if not profile:
             return {}
@@ -59,7 +59,7 @@ class MemoryService:
         2. 增加对 active_topic 的感知。
         """
         async with self.db_session as session:
-            context_repo = MemoryRepository(session, user_id)
+            context_repo = MemoryRepository(session)
 
             # 1. 加载 Session 上下文
             context = await context_repo.get_context_by_id(session_id)
@@ -205,7 +205,7 @@ class MemoryService:
         standalone_query = prepared_data.get('standalone_query', raw_question)
 
         async with self.db_session as session:
-            repo = MemoryRepository(session, user_id)
+            repo = MemoryRepository(session)
             try:
                 # ========== 1. 从 context_memory 提取执行轨迹 ==========
                 reasoning_path_structured = []
@@ -278,7 +278,6 @@ class MemoryService:
                     new_state=new_state,
                     active_topic=prepared_data.get('active_topic'),
                     current_plan=current_plan,
-                    agent_id=str(context_memory.get("agent_id", "")),
                     increment_count=True,
                 )
                 # 持久化上下文摘要：优先 LLM 改写输出，兜底用记忆快照
@@ -308,7 +307,7 @@ class MemoryService:
                 await repo.add_memory_entry(new_entry)
 
                 # ========== 5. 反思逻辑 ==========
-                profile_entity = await repo.get_user_profile()
+                profile_entity = await repo.get_user_profile(user_id=user_id)
                 old_summary = (profile_entity.profile_summary or "") if profile_entity else ""
                 if not old_summary:
                     old_summary = "新用户，暂无历史画像"
@@ -336,7 +335,7 @@ class MemoryService:
                         vector = res[0].embedding
 
                 # 持久化画像摘要
-                await repo.update_user_profile_summary(summary=reflection["profile_summary"])
+                await repo.update_user_profile_summary(user_id=user_id, profile_summary=reflection["profile_summary"])
                 # 合并所有画像更新到一次调用
                 profile_updates: dict[str, Any] = dict(prepared_data.get("user_profile_updates") or {})
                 if reflection.get("entity_relations"):
@@ -344,9 +343,8 @@ class MemoryService:
                 if reflection.get("corrections"):
                     profile_updates["correction_history"] = reflection["corrections"]
                 await repo.upsert_user_profile(
-                    global_preferences=reflection["global_preferences"] or None,
-                    frequent_entities=reflection["frequent_entities"] or None,
-                    profile_updates=profile_updates or None,
+                    user_id=user_id,
+                    profile_updates=profile_updates
                 )
 
                 # 回写条目向量
@@ -442,11 +440,12 @@ class MemoryService:
         召回长期记忆并格式化为带权重的字符串 (适配结构化推理路径)
         """
         async with self.db_session as session:
-            repo = MemoryRepository(session, user_id)
+            repo = MemoryRepository(session)
 
             # 1. 向量检索
             entries = await repo.search_vector_memory(
-                query_vec=query_vector,
+                user_id=user_id,
+                query_vector=query_vector,
                 limit=5
             )
         
@@ -512,7 +511,7 @@ class MemoryService:
             raise ValueError("反馈值必须为 -1、0 或 1")
 
         async with self.db_session as session:
-            context_repo = MemoryRepository(session, user_id)
+            context_repo = MemoryRepository(session)
             try:
                 await context_repo.update_feedback(entry_id, feedback)
 
@@ -526,12 +525,13 @@ class MemoryService:
                 logger.error(f"记录 {entry_id} 的反馈信息失败: {e}")
                 return False
 
-    async def ensure_session_exists(self, session_id: str, user_id: str, agent_id: str, question: str | None = None):
+    async def ensure_session_exists(self, session_id: str, user_id: str, agent_id: int, question: str | None = None):
         """确保数据库中存在会话 Context 主记录，防止写入 Entry 时找不到父文档"""
         async with self.db_session as session:
-            repo = MemoryRepository(session, user_id)
+            repo = MemoryRepository(session)
             try:
                 await repo.ensure_session(
+                    user_id=user_id,
                     session_id=session_id,
                     agent_id=agent_id,
                     question=question
@@ -548,10 +548,10 @@ class MemoryService:
             return
 
         async with self.db_session as session:
-            repo = MemoryRepository(session, user_id)
+            repo = MemoryRepository(session)
             try:
                 logger.debug(f"后台任务：正在增量同步用户 {user_id} 的结构化画像字段")
-                await repo.upsert_user_profile(profile_updates=profile_updates)
+                await repo.upsert_user_profile(user_id=user_id, profile_updates=profile_updates)
                 logger.info(f"用户 {user_id} 画像同步完成")
 
             except Exception as e:
@@ -563,7 +563,7 @@ class MemoryService:
         更新会话 State（实体、路径等临时变量）
         """
         async with self.db_session as session:
-            repo = MemoryRepository(session, user_id)
+            repo = MemoryRepository(session)
             try:
                 await repo.update_context_state(
                     session_id=session_id,
@@ -579,7 +579,7 @@ class MemoryService:
         纯粹的上下文读取接口：供上层 Agent 或专职 Skill 获取历史持久化的 State 字典
         """
         async with self.db_session as session:
-            repo = MemoryRepository(session, user_id)
+            repo = MemoryRepository(session)
             try:
                 context = await repo.get_context_by_id(session_id)
                 if context and context.state_machine:

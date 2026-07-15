@@ -30,7 +30,7 @@ class DocAgent:
         self,
         background_tasks: BackgroundTasks,
         session_id: str,
-        agent_id: str,
+        agent_id: int,
         question: str,
         standalone_query: str,
         search_keywords: str,

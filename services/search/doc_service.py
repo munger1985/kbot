@@ -21,7 +21,7 @@ class DocService:
     async def get_knowledge_context(
         self,
         db_session,
-        agent_id: str,
+        agent_id: int,
         question: str,
         keywords: str,
         security_level: int,
@@ -36,7 +36,7 @@ class DocService:
 
         # 2. 获取知识库配置（仅文件型 KB，数据库型 KB 走 SQL 检索路径）
         conf_repo = AgentConfRepository(db_session)
-        agent_confs = await conf_repo.get_file_kb_by_agent(agent_id)
+        agent_confs = await conf_repo.get_by_agent(agent_id)
 
         # 3. 并行检索
         logger.info(f"开始为智能体 {agent_id} 执行知识库检索，安全等级：{security_level}")
@@ -47,7 +47,7 @@ class DocService:
         for conf in agent_confs:
             # 每个并行搜索使用独立 session（避免 asyncpg 并发争用）
             tb_tasks.append(self._search_single_kb(
-                str(conf.kb_id),
+                conf.kb_id,
                 str(keywords),
                 int(conf.search_top_k or 10),
                 float(conf.search_score_threshold or 0.0),
@@ -79,7 +79,7 @@ class DocService:
         logger.info(f"知识库检索完成，耗时：{time.time() - start_time:.2f}s，最终返回 {len(final_results)} 条结果")
         return final_results, query_vec
 
-    async def _get_embedding(self, question: str, model_name: str, agent_id: str) -> list[float]:
+    async def _get_embedding(self, question: str, model_name: str, agent_id: int) -> list[float]:
         question = question.strip() if question else ""
         if not question:
             raise ParamValueError(f"智能体 {agent_id} 的检索问题不能为空")
@@ -104,14 +104,13 @@ class DocService:
         )
 
     async def _search_single_kb(
-        self, kb_id: str, keywords: str, top_k: int,
+        self, kb_id: int, keywords: str, top_k: int,
         threshold: float, weight: float, security: int,
         query_vec: list[float] | None, tags: list[str]
     ) -> list[TxtBaseSearchResult]:
         """单个知识库的检索封装，使用独立 session"""
         async with db_instance().get_session() as session:
             return await self.tb_search.search(
-                session=session,
                 kb_id=kb_id,
                 keywords=keywords,
                 search_top_k=top_k,

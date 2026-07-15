@@ -75,9 +75,8 @@ class GraphOrchestrator:
             llm_model=llm_model,
             llm_params=llm_params,
             txt_embedding_model=emb_model,
-            img_embedding_model="",
+            visual_embedding_model="",
             vlm_model="",
             do_rerank=False,  # 图节点暂时不需要标准 TxtRerank，由算法算距离
-            rerank_model="",
             rerank_top_k=0
         )

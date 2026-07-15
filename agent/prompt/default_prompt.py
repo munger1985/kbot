@@ -60,7 +60,7 @@ class DefaultPrompt(string.Formatter):
         # 2. 尝试从数据库获取
         template = fallback_content
         try:
-            db_prompt = await self._prompt_service.get_prompt_content(prompt_name=prompt_name)
+            db_prompt = await self._prompt_service.get_prompt_by_unique_name(unique_name=prompt_name)
             if db_prompt:
                 template = db_prompt
             elif not fallback_content:

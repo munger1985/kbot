@@ -30,9 +30,10 @@ class SkillExecutionContext(TypedDict):
     start_time: datetime | None      # 技能物理启动时间
     end_time: datetime | None        # 技能物理结束时间
     
-    # 物理状态：引入 Ops 的悬挂状态，完美支持“人工审批/自愈熔断”拦截机制
-    status: Literal["pending", "running", "suspended", "success", "failed"] 
+    # 物理状态：引入 Ops 的悬挂状态，完美支持"人工审批/自愈熔断"拦截机制
+    status: Literal["pending", "running", "suspended", "success", "failed", "blocked"]
     
     output: Any | None               # 技能执行的最终结算实体数据（如 SQL 结果集、RAG 召回块）
     output_var: str                  # 执行完毕后，指定将 output 挂载到 context.variables 的哪个 Key 中
     error: str | None                # 发生异常崩溃时的完整堆栈或错误描述错误快照
+    answer: str | None               # 步骤执行过程中累积的回答文本（HITL 挂起时记录）

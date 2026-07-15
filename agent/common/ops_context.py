@@ -9,9 +9,11 @@ class OpsContextMemory(TypedDict):
     trace_id: str                  # 运维全链路追踪 ID（串联告警、自愈流程、审计日志）
     user_id: str                   # 发起运维指令的用户 ID，用于记忆检索与审计追溯
     session_id: str                # 对齐业务线：前端单次长连接的会话 ID
-    agent_id: str                  # 执行此任务的专职运维 Agent ID（如 "oracle-dba-agent"）
+    agent_id: int                  # 执行此任务的专职运维 Agent ID（如 "oracle-dba-agent"）
     trigger_type: Literal["manual", "webhook", "cron"] # 触发源：人工提问、监控系统回调、定时巡检
     command_or_query: str          # 原始输入的运维指令或告警摘要
+    client_time: str               # 客户端请求时间
+    client_tz: str                 # 客户端时区
     llm_model: str                 # 编排与参数提取所使用的大模型名称
     embedding_model: str           # 嵌入模型名称，用于文本相似度计算
 

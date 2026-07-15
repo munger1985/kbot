@@ -24,7 +24,7 @@ class DifyService:
 
     async def search(
         self,
-        agent_id: str,
+        agent_id: int,
         question: str,
         session_id: str,
         security_level: int,
@@ -85,7 +85,7 @@ class DifyService:
 
         return {"records": records}
 
-    def _build_context(self, agent_id: str, session_id: str, question: str, user_id: str, security_level: int, tags: list[str] | None) -> ContextMemory:
+    def _build_context(self, agent_id: int, session_id: str, question: str, user_id: str, security_level: int, tags: list[str] | None) -> ContextMemory:
         """构建标准化的执行上下文"""
         return {
             "user_id": user_id,
@@ -95,6 +95,7 @@ class DifyService:
             "standalone_query": question,
             "search_keywords": "",
             "llm_model": "",
+            "embedding_model": "",
             "security_level": security_level,
             "tags": tags or [],
             "intent_context": {},

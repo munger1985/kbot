@@ -39,9 +39,9 @@ class PageSpanStitcher:
             if self._should_stitch(last_of_a, first_of_b):
                 logger.debug(
                     f"[PageSpanStitch] 缝合跨页段落: "
-                    f"p{page_a}#{last_of_a.text[:30]}... ↔ p{page_b}#{first_of_b.text[:30]}..."
+                    f"p{page_a}#{last_of_a.text[:30]}... ↔ p{page_b}#{first_of_b.text[:30]}..." # type: ignore
                 )
-                self._merge_nodes(last_of_a, first_of_b)
+                self._merge_nodes(last_of_a, first_of_b) # type: ignore
                 # 从 pages[page_b] 移除已合并节点
                 if first_of_b in pages[page_b]:
                     pages[page_b].remove(first_of_b)

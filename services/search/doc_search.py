@@ -1,189 +1,255 @@
-"""ParadeDB 知识库混合检索服务 — BM25 + pgvector + RRF"""
-
 import time
 import asyncio
 from loguru import logger
-from sqlalchemy.ext.asyncio import AsyncSession
-from dao.repositories import TxtChunkRepository
-from .result import TxtBaseSearchResult
+
+from dao.repositories import AgentConfRepository
+from services.search.kb_search import TxtBaseSearchResult, TxtBaseSearch
+from utils.clients import AIModelClient
+from core.exceptions import ParamValueError, InternalServerError
+from services.kb import ModelParams
+
+# ---------------------------------------------------------------------------
+# Phase 5: 多查询生成 prompt
+# ---------------------------------------------------------------------------
+
+_SUB_QUERY_PROMPT = """你是一个查询优化专家。请从不同角度改写用户问题，生成 2 个互补的检索查询。
+
+要求：
+1. 每个查询从不同角度或使用不同措辞表达相同的语义需求
+2. 查询应简洁、具体，适合用于向量检索和关键词检索
+3. 仅输出查询本身，每行一个，不要编号、引号或额外解释
+
+用户问题：{question}
+
+改写查询："""
 
 
-class TxtBaseSearch:
-    """基于 ParadeDB 的知识库检索服务。
+def _dedup_by_chunk_id(
+    results: list[TxtBaseSearchResult],
+) -> list[TxtBaseSearchResult]:
+    """按 chunk_id 去重，保留最高分的记录。"""
+    seen: dict[str, TxtBaseSearchResult] = {}
+    for r in results:
+        if r.chunk_id not in seen or r.score > seen[r.chunk_id].score:
+            seen[r.chunk_id] = r
+    return list(seen.values())
 
-    使用 pg_bm25 + pgvector + RRF 替代 ES 混合检索。
-    """
 
-    async def search(
+class DocService:
+    def __init__(self):
+        self.tb_search = TxtBaseSearch()
+        self.model_client = AIModelClient()
+
+    async def get_knowledge_context(
         self,
-        session: AsyncSession,
-        kb_id: str,
+        db_session,
+        agent_id: int,
+        question: str,
         keywords: str,
-        search_top_k: int,
-        threshold: float,
-        weight: float,
-        security: int,
-        query_vec: list[float] | None = None,
+        security_level: int,
+        model_params: ModelParams,
         tags: list[str] = [],
-        window_size: int = 1
-    ) -> list[TxtBaseSearchResult]:
-        """执行混合检索并返回增强后的结果。"""
-        start_time = time.time()
-        logger.info(f"开始知识库检索: kb_id={kb_id}, keywords='{keywords}', mode={'混合' if query_vec else '纯文本'}")
+        enable_multi_query: bool = False,
+    ) -> tuple[list[TxtBaseSearchResult], list[float]]:
+        """
+        核心业务流水线：多查询生成 → 向量化 → 并行检索 → 融池 → 重排序。
 
-        repo = TxtChunkRepository(session, kb_id)
+        Phase 5 改动：可选的多查询融合 — 从不同角度生成子查询，
+        分别检索后合并去重，提升复杂问题的召回覆盖率。
+        """
+        # ------------------------------------------------------------------
+        # Step 0 (Phase 5): 生成多角度子查询
+        # ------------------------------------------------------------------
+        sub_queries: list[tuple[str, str]] = []  # [(query_text, keywords_text), ...]
+
+        # 主查询始终参与
+        effective_keywords = keywords.strip() if keywords else ""
+        if not effective_keywords:
+            effective_keywords = question.strip() if question else ""
+            logger.warning(
+                f"[DocService] agent {agent_id} 的 keywords 为空，"
+                f"使用原始问题作为检索词: '{effective_keywords[:80]}'"
+            )
+
+        sub_queries.append((question.strip(), effective_keywords))
+
+        if enable_multi_query and len(question.strip()) > 10:
+            try:
+                variants = await self._generate_sub_queries(
+                    question=question.strip(),
+                    model_name=model_params.llm_model,
+                )
+                for v_text in variants:
+                    if v_text and v_text != question.strip():
+                        # 变体查询使用自身作为 keywords（也会经过 _process_keywords）
+                        sub_queries.append((v_text, v_text))
+                logger.debug(
+                    f"[DocService] 多查询生成: {len(sub_queries)} 个查询变体"
+                )
+            except Exception as e:
+                logger.warning(f"[DocService] 子查询生成失败，回退单查询模式: {e}")
+
+        # ------------------------------------------------------------------
+        # Step 1: 向量化所有子查询
+        # ------------------------------------------------------------------
+        logger.debug(
+            f"[DocService] Step 1/4: 获取嵌入向量，model={model_params.txt_embedding_model}"
+        )
+        all_vecs: list[list[float]] = []
+        for q_text, _ in sub_queries:
+            vec = await self._get_embedding(
+                q_text, model_params.txt_embedding_model, agent_id
+            )
+            all_vecs.append(vec)
+        logger.debug(
+            f"[DocService] Step 1/4: {len(all_vecs)} 个嵌入向量获取完成"
+        )
+
+        # ------------------------------------------------------------------
+        # Step 2: 获取知识库配置
+        # ------------------------------------------------------------------
+        logger.debug(f"[DocService] Step 2/4: 获取知识库配置")
+        conf_repo = AgentConfRepository(db_session)
+        agent_confs = await conf_repo.get_by_agent(agent_id)
+        logger.debug(
+            f"[DocService] Step 2/4: 获取到 {len(agent_confs)} 个知识库配置"
+        )
+
+        # ------------------------------------------------------------------
+        # Step 3: 并行检索（多查询 × 多知识库）
+        # ------------------------------------------------------------------
+        logger.info(f"开始为智能体 {agent_id} 执行知识库检索，安全等级：{security_level}")
+        start_time = time.time()
+
+        # 构建所有 (query_text, query_vec) × KB 配置的任务
+        tb_tasks = []
+        for q_idx, (q_text, q_keywords) in enumerate(sub_queries):
+            query_vec = all_vecs[q_idx]
+            for conf in agent_confs:
+                tb_tasks.append(
+                    self.tb_search.search(
+                        int(conf.kb_id),
+                        str(q_keywords),
+                        int(conf.search_top_k or 10),
+                        float(conf.search_score_threshold or 0.0),
+                        float(conf.tool_weight or 1.0),
+                        int(security_level),
+                        query_vec,
+                        tags,
+                    )
+                )
+
+        # 并行执行所有任务
+        raw_results = await asyncio.gather(*tb_tasks, return_exceptions=True)
+        logger.debug(
+            f"[DocService] Step 3/4: 并行检索完成，{len(raw_results)} 个任务"
+        )
+
+        retrieved_results: list[TxtBaseSearchResult] = []
+        for i, res in enumerate(raw_results):
+            if isinstance(res, Exception):
+                logger.error(f"知识库任务 {i} 执行失败：{res}")
+                continue
+            elif isinstance(res, list):
+                retrieved_results.extend(res)
+            else:
+                logger.warning(f"知识库任务 {i} 返回结果为空或格式错误")
+
+        # Phase 5: 多查询结果去重（按 chunk_id 保留最高分）
+        if len(sub_queries) > 1:
+            before_dedup = len(retrieved_results)
+            retrieved_results = _dedup_by_chunk_id(retrieved_results)
+            # 按分数重新排序
+            retrieved_results.sort(key=lambda x: x.score, reverse=True)
+            logger.debug(
+                f"[DocService] 多查询去重: {before_dedup} → {len(retrieved_results)}"
+            )
+
+        # ------------------------------------------------------------------
+        # Step 4: 重排序
+        # ------------------------------------------------------------------
+        logger.debug(
+            f"[DocService] Step 4/4: 开始重排序，待排文档数={len(retrieved_results)}"
+        )
+        final_results = await self._apply_rerank(
+            retrieved_results, sub_queries[0][0], model_params
+        )
+
+        logger.info(
+            f"知识库检索完成，耗时：{time.time() - start_time:.2f}s，"
+            f"最终返回 {len(final_results)} 条结果"
+        )
+        return final_results, all_vecs[0]
+
+    # ------------------------------------------------------------------
+    # Phase 5: 子查询生成
+    # ------------------------------------------------------------------
+
+    async def _generate_sub_queries(
+        self, question: str, model_name: str
+    ) -> list[str]:
+        """
+        使用 LLM 从不同角度生成 2 个互补检索查询。
+
+        Returns:
+            子查询文本列表（不含原始问题）
+        """
+        prompt = _SUB_QUERY_PROMPT.format(question=question)
 
         try:
-            dataset = await repo.hybrid_search(
-                keywords=keywords,
-                security=security,
-                query_vec=query_vec,
-                search_top_k=search_top_k * 2,
-                tags=tags
+            response = await self.model_client.get_llm_answer(
+                model_name=model_name,
+                prompt=prompt,
+                temperature=0.3,
+                max_tokens=200,
             )
         except Exception as e:
-            logger.error(f"混合检索阶段发生系统异常: {str(e)}")
+            logger.warning(f"[DocService] LLM 子查询生成调用失败: {e}")
             return []
 
-        if not dataset:
-            logger.info(f"检索结束：未找到匹配内容 (kb_id={kb_id})")
+        if not response:
             return []
 
-        # 映射为业务对象
-        initial_results = self._construct_search_result(dataset, weight=weight)
-        logger.debug(f"原始召回数量: {len(initial_results)}")
+        # 解析响应：每行一个查询
+        lines = [
+            line.strip()
+            for line in str(response).split("\n")
+            if line.strip()
+        ]
+        # 过滤掉明显的编号前缀和引号
+        import re
 
-        # Section 级上下文扩展
-        if getattr(self, '_enable_section_context', True):
-            enhanced_results = await self._enhance_context_by_section(session, kb_id, initial_results)
-        else:
-            enhanced_results = await self._enhance_context_with_window(session, kb_id, initial_results, window_size)
+        cleaned = []
+        for line in lines:
+            line = re.sub(r'^[\d]+[\.\、\)]\s*', '', line)
+            line = line.strip('"\'""''').strip()
+            if line and len(line) > 3:
+                cleaned.append(line)
 
-        # 基于覆盖范围的智能合并与冗余剔除
-        final_result = self._merge_adjacent_chunks(enhanced_results, window_size=window_size)
+        logger.debug(f"[DocService] 生成子查询: {cleaned}")
+        return cleaned[:2]  # 最多 2 个额外子查询
 
-        duration = time.time() - start_time
-        logger.info(f"检索完成: 耗时={duration:.4f}s, 最终返回={len(final_result[:search_top_k])}条")
-        return final_result[:search_top_k]
+    # ------------------------------------------------------------------
+    # 原有方法
+    # ------------------------------------------------------------------
 
-    async def _enhance_context_by_section(
+    async def _get_embedding(
+        self, question: str, model_name: str, agent_id: int
+    ) -> list[float]:
+        question = question.strip() if question else ""
+        if not question:
+            raise ParamValueError(f"智能体 {agent_id} 的检索问题不能为空")
+
+        vec = await self.model_client.get_embedding(model_name, question)
+        if not vec:
+            raise InternalServerError("嵌入向量生成失败")
+        return vec
+
+    async def _apply_rerank(
         self,
-        session: AsyncSession,
-        kb_id: str,
         results: list[TxtBaseSearchResult],
+        question: str,
+        params: ModelParams,
     ) -> list[TxtBaseSearchResult]:
-        """Section 级上下文扩展"""
-        repo = TxtChunkRepository(session, kb_id)
-        section_ids: set[str] = set()
-        for r in results:
-            sid = getattr(r, 'section_id', None)
-            if sid:
-                section_ids.add(sid)
-
-        if not section_ids:
-            return await self._enhance_context_with_window(session, kb_id, results, 1)
-
-        section_contents = await repo.get_chunks_by_section_ids(section_ids=list(section_ids))
-
-        for r in results:
-            sid = getattr(r, 'section_id', None)
-            if sid and sid in section_contents:
-                sorted_chunks = sorted(
-                    section_contents[sid], key=lambda c: c.get("chunk_num", 0)
-                )
-                r.content = "\n\n".join([c.get("content", "") for c in sorted_chunks])
-        return results
-
-    async def _enhance_context_with_window(
-        self,
-        session: AsyncSession,
-        kb_id: str,
-        initial_results: list[TxtBaseSearchResult],
-        window_size: int = 1
-    ) -> list[TxtBaseSearchResult]:
-        """并行扩展所有检索结果的上下文窗口"""
-        if not initial_results:
-            return []
-        repo = TxtChunkRepository(session, kb_id)
-        tasks = [self._expand_single_chunk(repo, res, window_size) for res in initial_results]
-        return list(await asyncio.gather(*tasks))
-
-    async def _expand_single_chunk(
-        self, repo: TxtChunkRepository, res: TxtBaseSearchResult, window_size: int = 1
-    ) -> TxtBaseSearchResult:
-        """对单个切片进行前后文拉取与内容拼接"""
-        if res.chunk_type == "text":
-            try:
-                neighbors = await repo.get_chunks_by_range(
-                    file_id=res.file_id,
-                    center_chunk_num=res.chunk_num,
-                    window_size=window_size
-                )
-                if neighbors:
-                    res.content = "\n---\n".join([c.get('content', "") for c in neighbors])
-            except Exception as e:
-                logger.error(f"切片 {res.chunk_id} 扩展上下文失败: {str(e)}")
-        return res
-
-    def _construct_search_result(self, dataset: list, weight: float) -> list[TxtBaseSearchResult]:
-        """将 ParadeDB 返回的原始数据映射为 TxtBaseSearchResult 业务对象"""
-        results = []
-        for item in dataset:
-            try:
-                meta = item.get("chunk_metadata") or {}
-                result = TxtBaseSearchResult(
-                    chunk_id=item.get("chunk_id", ""),
-                    chunk_num=item.get("chunk_num", 0),
-                    chunk_type=item.get("chunk_type", "text"),
-                    file_id=item.get("file_id", ""),
-                    kb_id=item.get("kb_id", ""),
-                    content=item.get("content", ""),
-                    header=item.get("header", ""),
-                    doc_summary=item.get("doc_summary", ""),
-                    search_helper=item.get("search_helper", ""),
-                    page_num=int(meta.get("page_num") or 0),
-                    image_name=meta.get("image_name") or "",
-                    bbox=meta.get("bbox") or [],
-                    hierarchy_path=item.get("hierarchy_path", []),
-                    heading_level=item.get("heading_level", 0),
-                    section_id=item.get("section_id"),
-                    score=float(item.get("score") or 0.0),
-                    weight=weight,
-                    rerank_score=0.0,
-                )
-                results.append(result)
-            except Exception as e:
-                logger.warning(f"映射检索结果失败 (ID: {item.get('chunk_id')}): {str(e)}")
-        return results
-
-    def _merge_adjacent_chunks(self, results: list[TxtBaseSearchResult], window_size: int = 1) -> list[TxtBaseSearchResult]:
-        """改进的去重策略"""
-        if not results:
-            return []
-        results.sort(key=lambda x: x.score, reverse=True)
-        final_results = []
-        file_coverage = {}
-        MIN_KEEP_COUNT = 10
-
-        for res in results:
-            fid = res.file_id
-            cnum = res.chunk_num
-            if fid not in file_coverage:
-                file_coverage[fid] = set()
-
-            if len(final_results) < MIN_KEEP_COUNT:
-                final_results.append(res)
-                file_coverage[fid].add(cnum)
-                continue
-
-            is_redundant = False
-            for existing_num in file_coverage[fid]:
-                if abs(existing_num - cnum) <= window_size:
-                    is_redundant = True
-                    break
-
-            if not is_redundant:
-                final_results.append(res)
-                file_coverage[fid].add(cnum)
-
-        return final_results
+        # TODO
+        return []

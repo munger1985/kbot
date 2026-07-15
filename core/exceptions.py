@@ -1,165 +1,221 @@
 # exceptions.py
-from fastapi import HTTPException, status
+from fastapi import HTTPException, status, Request
+from fastapi.responses import JSONResponse
 from loguru import logger
 from typing import NoReturn
 
 
 # --------------------------------------------------
-# 1. Infrastructure layer exceptions (used in DAO layer)
+# 1. 基础设施层异常（DAO 层使用）
 # --------------------------------------------------
 class DatabaseException(Exception):
-    """Database exception"""
+    """数据库异常 — 由全局 handler 统一转为 500"""
+
     def __init__(self, message: str, original_error: Exception | None = None):
         self.message = message
         self.original_error = original_error
-        if original_error:
-            # 限制原始异常的字符串长度，避免打印大量向量数据
-            error_str = str(original_error)
-            if len(error_str) > 500:
-                error_str = error_str[:500] + "... (truncated)"
-            logger.debug(f"[DatabaseException] Created: {message}, original error type: {type(original_error).__name__}, "
-                        f"original error: {error_str}")
 
-class DataNotFoundException(DatabaseException):
-    """Data not found exception"""
-    def __init__(self, message: str):
-        super().__init__(message)
-
-class DataConflictException(DatabaseException):
-    """Data conflict exception"""
-    def __init__(self, message: str):
-        super().__init__(message)
 
 # --------------------------------------------------
-# 2. Business layer exceptions (used in Service layer)
+# 2. 业务层异常（Service 层使用，均继承 HTTPException）
 # --------------------------------------------------
 class APIException(HTTPException):
-    """Generic API exception base class - supports dynamic message"""
+    """通用 API 异常基类 — 支持动态 message 格式化"""
+
     def __init__(
         self,
-        code: str,                    # Business error code
-        message: str,                 # Dynamic message template
-        http_status: int = 400,       # HTTP status code
-        detail: dict | None = None    # Additional information (can be used for message formatting)
+        code: str,
+        message: str,
+        http_status: int = 400,
+        detail: dict | None = None,
     ):
-        # If there is data to format in detail
         formatted_message = message
         if detail:
-            # Simple formatting: {key} in message will be replaced with detail[key]
             try:
                 formatted_message = message.format(**detail)
-            except:
-                pass  # Use original message if formatting fails
-        
+            except Exception:
+                pass
+
         super().__init__(
             status_code=http_status,
             detail={
                 "code": code,
-                "message": formatted_message,  # ✅ Formatted message
-                "detail": detail or {}
-            }
+                "message": formatted_message,
+                "detail": detail or {},
+            },
         )
 
+
 class NotFoundError(APIException):
-    """Resource not found exception"""
+    """资源不存在异常 → 404 (通用业务层使用)"""
+
     def __init__(self, message: str, **extra_details):
-        """
-        Args:
-            message: Specific description of resource not found
-            **extra_details: Additional information (e.g., resource_type, resource_id, etc.)
-        """
-        # Use generic NOT_FOUND code if not specified
         code = extra_details.pop("code", "NOT_FOUND")
-        
         super().__init__(
             code=code,
             message=message,
             http_status=status.HTTP_404_NOT_FOUND,
-            detail=extra_details or None
+            detail=extra_details or None,
         )
 
+
+class DataNotFoundException(Exception):
+    """数据不存在异常。
+
+    关键设计：继承自 plain Exception 而非 HTTPException。
+    - 在普通 API 请求中：由全局 data_not_found_handler 转为 404 JSON
+    - 在 SSE 异步生成器中：作为普通异常安全传播，不会触发 Starlette 的
+      HTTPException 特殊处理（该处理会终止流式响应）。
+    """
+    is_business_exception = True  # 避免 DB session 回滚时打印 ERROR 日志
+
+    def __init__(self, message: str):
+        self.message = message
+        self.status_code = status.HTTP_404_NOT_FOUND
+        super().__init__(message)
+
+
+class DataConflictException(APIException):
+    """数据冲突异常 → 409"""
+
+    def __init__(self, message: str):
+        super().__init__(
+            code="CONFLICT",
+            message=message,
+            http_status=status.HTTP_409_CONFLICT,
+        )
+
+
 class ParamValueError(APIException):
-    """Parameter value error exception"""
+    """参数错误异常 → 400"""
+
     def __init__(self, message: str, **extra_details):
-        """
-        Args:
-            message: Message template, e.g., "The selected {param} value is invalid"
-            **extra_details: Formatting parameters, e.g., param="color"
-        """
         super().__init__(
             code="VALUE_ERROR",
             message=message,
             http_status=status.HTTP_400_BAD_REQUEST,
-            detail=extra_details or None
+            detail=extra_details or None,
         )
 
+
 class AuthorizationError(APIException):
-    """Authorization error exception"""
+    """授权错误异常 → 401"""
+
     def __init__(self, message: str, **extra_details):
-        """
-        Args:
-            message: Specific description of authorization failure
-            **extra_details: Additional information (e.g., required_role, current_role, etc.)
-        """
-        # Use generic UNAUTHORIZED code if not specified
         code = extra_details.pop("code", "UNAUTHORIZED")
-        
         super().__init__(
             code=code,
             message=message,
             http_status=status.HTTP_401_UNAUTHORIZED,
-            detail=extra_details or None
+            detail=extra_details or None,
         )
 
+
 class PrivilegeError(APIException):
-    """Privilege error exception"""
+    """权限错误异常 → 403"""
+
     def __init__(self, message: str, **extra_details):
-        """
-        Args:
-            message: Specific description of insufficient privileges
-            **extra_details: Additional information (e.g., required_privilege, current_privilege, etc.)
-        """
-        # Use generic FORBIDDEN code if not specified
         code = extra_details.pop("code", "FORBIDDEN")
-        
         super().__init__(
             code=code,
             message=message,
             http_status=status.HTTP_403_FORBIDDEN,
-            detail=extra_details or None
+            detail=extra_details or None,
         )
 
+
+class ConflictError(APIException):
+    """冲突错误异常 → 409"""
+
+    def __init__(self, message: str, **extra_details):
+        code = extra_details.pop("code", "CONFLICT")
+        super().__init__(
+            code=code,
+            message=message,
+            http_status=status.HTTP_409_CONFLICT,
+            detail=extra_details or None,
+        )
+
+
 class InternalServerError(APIException):
-    """Internal server error"""
-    def __init__(self, message: str = "Internal server error", **extra_details):
+    """服务器内部错误 → 500"""
+
+    def __init__(self, message: str = "服务器内部错误", **extra_details):
         super().__init__(
             code="INTERNAL_ERROR",
             message=message,
             http_status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=extra_details or None
+            detail=extra_details or None,
         )
 
 
+# --------------------------------------------------
+# 3. 异常翻译工具函数
+# --------------------------------------------------
 def handle_exception(e: Exception, msg: str) -> NoReturn:
-    """Exception management standardization"""
-    if isinstance(e, DataNotFoundException):
-        message = getattr(e, 'message', str(e))
-        raise NotFoundError(message)
-    if isinstance(e, DataConflictException):
-        message = getattr(e, 'message', str(e))
-        raise ParamValueError(message)
-    if isinstance(e, (DatabaseException)):
-        # 输出详细错误日志，不包含堆栈信息以避免打印大量向量数据
-        message = getattr(e, 'message', str(e))
-        logger.error(f"{msg}: {message}")
-        if e.original_error:
-            error_str = str(e.original_error)
-            logger.error(f"Original error type: {type(e.original_error).__name__}: {error_str}")
-            logger.error(f"Original error: {error_str}")
-        raise InternalServerError(f"{msg}: {message}")
-    if isinstance(e, (NotFoundError, ParamValueError, AuthorizationError, PrivilegeError, InternalServerError)):
+    """将基础设施层异常统一翻译为 HTTP 异常。
+
+    保留此函数供 Service 层可选使用。由于 DataNotFoundException /
+    DataConflictException 已直接继承 APIException，它们会自动被
+    FastAPI 转为正确的 HTTP 响应，不再需要显式转换。
+    """
+    # 1. APIException / DataNotFoundException — 直接透传
+    if isinstance(e, (APIException, DataNotFoundException)):
         raise e
-    # 对于其他未知异常（如 KeyError, ValueError 等），包装为 InternalServerError 以提供更好的上下文
-    error_str = str(e)
-    logger.error(f"{msg}: {error_str}")
-    raise InternalServerError(f"{msg}") from e
+
+    # 2. 数据库底层异常 → 500
+    if isinstance(e, DatabaseException):
+        logger.error(f"{msg} [DB_ERR]: {getattr(e, 'original_error', e)}")
+        raise InternalServerError(f"{msg}: {e.message}")
+
+    # 3. 未知异常 → 500
+    logger.exception(f"{msg} [UNKNOWN_ERR]: {e}")
+    raise InternalServerError(f"{msg}: 发生未知错误")
+
+
+# --------------------------------------------------
+# 4. FastAPI 全局异常处理器（在 cube_main.py 中注册）
+# --------------------------------------------------
+async def data_not_found_handler(request: Request, exc: DataNotFoundException):
+    """DataNotFoundException → 404 JSON"""
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "code": "NOT_FOUND",
+            "message": exc.message,
+            "detail": {},
+        },
+    )
+
+
+async def database_exception_handler(request: Request, exc: DatabaseException):
+    """DatabaseException → 500 JSON（含日志）"""
+    original = getattr(exc, 'original_error', None)
+    logger.error(f"未捕获的数据库异常: {exc.message} | 原始错误: {original}")
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={
+            "code": "INTERNAL_ERROR",
+            "message": f"数据库错误: {exc.message}",
+        },
+    )
+
+
+async def api_exception_handler(request: Request, exc: APIException):
+    """APIException 通用处理器 — 确保统一的 JSON 格式"""
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=exc.detail,
+    )
+
+
+async def generic_exception_handler(request: Request, exc: Exception):
+    """兜底处理器 — 未知异常 → 500"""
+    logger.exception(f"未处理的异常: {exc}")
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={
+            "code": "INTERNAL_ERROR",
+            "message": "服务器内部错误",
+        },
+    )

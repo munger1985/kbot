@@ -24,6 +24,9 @@ class TxtBaseSearchResult(BaseModel):
     heading_level: int = Field(0, description="标题级别 0-6")
     section_id: str | None = Field(None, description="所属 section 标识")
 
+    # 业务元数据
+    biz_metadata: dict = Field(default_factory=dict, description="业务元数据")
+
     # 评分与权重
     score: float = Field(0.0, description="原始搜索评分")
     weight: float = Field(0.0, description="搜索权重")

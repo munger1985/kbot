@@ -52,7 +52,7 @@ class WorkflowRepository(BaseRepository[WorkflowEntity]):
                 .values(**update_data)
             )
             result = await self.session.execute(stmt)
-            if result.rowcount == 0:
+            if result.rowcount == 0: # type: ignore
                 raise DataNotFoundException(f"更新失败，未找到 ID 为 {workflow_id} 的 Workflow")
             # 重新查询
             return await self.get_by_id(workflow_id)
@@ -72,7 +72,7 @@ class WorkflowRepository(BaseRepository[WorkflowEntity]):
             raise DatabaseException(f"删除 Workflow 失败", original_error=e)
 
     async def get_workflows_by_agent(
-        self, agent_id: str, is_active: bool | None = None
+        self, agent_id: int, is_active: bool | None = None
     ) -> list[WorkflowEntity]:
         """获取某个 Agent 下所有流程"""
         try:
@@ -103,7 +103,7 @@ class WorkflowRepository(BaseRepository[WorkflowEntity]):
             raise DatabaseException(f"切换工作流状态失败: {workflow_id}", original_error=e)
 
     async def search_workflow(
-        self, agent_id: str, query_text: str, query_vector: list[float], top_k: int = 5
+        self, agent_id: int, query_text: str, query_vector: list[float], top_k: int = 5
     ) -> list[dict]:
         """向量检索 + 可选全文搜索（Oracle 23ai）"""
         try:

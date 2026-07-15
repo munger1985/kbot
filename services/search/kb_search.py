@@ -248,7 +248,7 @@ class TxtBaseSearch:
                     repo = TxtChunkRepository(session)
                     return await repo.vector_search(
                         kb_id=kb_id,
-                        query_vec=vec_array,
+                        query_vec=vec_array,  # type: ignore[arg-type]
                         security=security,
                         similarity_threshold=threshold,
                         search_top_k=per_route_k,
@@ -451,6 +451,8 @@ class TxtBaseSearch:
                     page_num=int(meta.get("page_num") or 0),
                     image_name=meta.get("image_name") or "",
                     bbox=meta.get("bbox") or [],
+                    heading_level=int(meta.get("heading_level") or 0),
+                    section_id=meta.get("section_id") or None,
                     score=final_score,
                     biz_metadata=item.get("biz_metadata") or {},
                     weight=weight,
