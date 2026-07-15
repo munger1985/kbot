@@ -82,7 +82,7 @@ class MemoryService:
         history_summary = (context.context_summary if context else "") or ""
         
         # --- 新增：获取当前的执行计划和主题 ---
-        current_plan = (context.execution_plan if context else None)
+        current_plan = (context.current_plan if context else None)
         active_topic = (context.active_topic if context else None)
 
         # 3. 优先级合并：Session State 覆盖 User Profile
