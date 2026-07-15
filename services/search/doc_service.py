@@ -5,7 +5,7 @@ from loguru import logger
 
 from dao.repositories import AgentConfRepository
 from services.search import TxtBaseSearchResult, TxtBaseSearch
-from services.search.doc.llm_reranker import LLMReranker
+from services.search.reranker import LLMReranker
 from utils.clients import AIModelClient
 from core.exceptions import ParamValueError, InternalServerError
 from services.kb import ModelParams

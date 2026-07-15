@@ -2,6 +2,7 @@
 
 from .encoder import DecimalEncoder, ImageEncoder
 from .serializer import SerializerUtils
+from .oracle_vec_handler import OracleVecHandler
 
 __all__ = [
     "DecimalEncoder",

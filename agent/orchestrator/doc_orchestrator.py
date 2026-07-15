@@ -3,7 +3,7 @@ from loguru import logger
 from typing import Any
 from core.database import db_instance
 
-from services.search.doc.doc_service import DocService
+from services.search.doc_service import DocService
 from services.kb import ModelParams
 from core.exceptions import *
 from dao.entities import AgentEntity

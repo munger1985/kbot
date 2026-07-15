@@ -198,6 +198,21 @@ class DsocrConfig(BaseModel):
         """
         return f"http://{self.service_host}:{self.service_port}"
 
+class VisualConfig(BaseModel):
+    """视觉嵌入服务配置（Phase 2 多模态检索）"""
+    service_name: str = Field(default="cube-visual-service")
+    service_version: str = Field(default="1.0.0")
+    service_host: str = Field(default="0.0.0.0")
+    service_port: int = Field(default=18094, ge=1, le=65535)
+    timeout: int = Field(default=300, ge=10, le=1800)
+    max_retries: int = Field(default=3, ge=0, le=10)
+    # 模型参数（dimension, device, model_path）从数据库 ai_model 表读取
+
+    @property
+    def service_url(self) -> str:
+        return f"http://{self.service_host}:{self.service_port}"
+
+
 class ParserConfig(BaseModel):
     """Document parser service configuration.
 
@@ -311,6 +326,7 @@ class Settings(BaseSettings):
     reranker: RerankerConfig = RerankerConfig()
     vlm: VLMConfig = VLMConfig()
     dsocr: DsocrConfig = DsocrConfig()
+    visual: VisualConfig = VisualConfig()
     parser: ParserConfig = ParserConfig()
     executor: ExecutorConfig = ExecutorConfig()
     prometheus: PrometheusConfig = PrometheusConfig()
@@ -491,6 +507,12 @@ def get_embed_config() -> EmbedConfig:
         EmbedConfig: Embedding service configuration object
     """
     return get_settings().embed
+
+
+def get_visual_config() -> VisualConfig:
+    """获取视觉嵌入服务配置"""
+    return get_settings().visual
+
 
 def get_llm_config() -> LLMConfig:
     """Get LLM service configuration.

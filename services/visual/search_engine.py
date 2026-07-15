@@ -108,7 +108,7 @@ class VisualSearchEngine:
     ) -> list[VisualTextPair]:
         """ParadeDB 文本搜索 → 按 file_id+page_no 分组"""
         try:
-            from services.search.doc.search import TxtBaseSearch
+            from services.search.doc_search import TxtBaseSearch
             from utils.clients import AIModelClient
 
             kb_list = kb_ids or []

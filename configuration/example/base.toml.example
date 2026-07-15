@@ -104,6 +104,22 @@ crop_mode = true
 max_tokens = 8192
 temperature = 0.0
 
+[visual]
+# 视觉嵌入服务配置（Phase 2 多模态检索）
+service_name = "cube-visual-service"
+service_host = "0.0.0.0"
+service_port = 18094
+timeout = 300
+max_retries = 3
+
+[visual]
+# 视觉嵌入服务配置（Phase 2 多模态检索）
+service_name = "cube-visual-service"
+service_host = "0.0.0.0"
+service_port = 18094
+timeout = 300
+max_retries = 3
+
 [prometheus]
 base_url = "http://localhost:9090"
 token = ""
