@@ -51,7 +51,7 @@ class DocMetaRepository(BaseRepository[DocMetadataEntity]):
         以 file_id 为匹配键。
         """
         stmt = text("""
-            MERGE INTO doc_metadata t
+            MERGE INTO kbot_doc_metadata t
             USING (SELECT :kb_id AS kb_id, :file_id AS file_id FROM DUAL) s
             ON (t.file_id = s.file_id)
             WHEN MATCHED THEN
@@ -122,7 +122,7 @@ class DocMetaRepository(BaseRepository[DocMetadataEntity]):
 
             sql = text(f"""
                 SELECT file_id, doc_name, doc_number, doc_type
-                FROM doc_metadata
+                FROM kbot_doc_metadata
                 WHERE kb_id IN ({placeholders})
                   AND (UPPER(doc_name) LIKE UPPER(:pattern)
                        OR UPPER(doc_number) LIKE UPPER(:pattern))
@@ -172,7 +172,7 @@ class DocMetaRepository(BaseRepository[DocMetadataEntity]):
     async def delete_by_file_id(self, file_id: str) -> None:
         """根据 file_id 删除文档元数据"""
         try:
-            stmt = text("DELETE FROM doc_metadata WHERE file_id = :fid")
+            stmt = text("DELETE FROM kbot_doc_metadata WHERE file_id = :fid")
             await self.session.execute(stmt, {"fid": file_id})
             await self.session.flush()
             logger.debug(f"[DocMetaRepo] 删除成功: file_id={file_id}")

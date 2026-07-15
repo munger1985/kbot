@@ -26,7 +26,7 @@ class DocRelationRepository(BaseRepository[DocRelationEntity]):
         以 (source_file_id, target_file_id) 为匹配键。
         """
         stmt = text("""
-            MERGE INTO doc_relation t
+            MERGE INTO kbot_doc_relation t
             USING (SELECT :source_file_id AS source_file_id,
                           :target_file_id AS target_file_id FROM DUAL) s
             ON (t.source_file_id = s.source_file_id
@@ -76,7 +76,7 @@ class DocRelationRepository(BaseRepository[DocRelationEntity]):
         if not relations:
             return
         stmt = text("""
-            MERGE INTO doc_relation t
+            MERGE INTO kbot_doc_relation t
             USING (SELECT :source_file_id AS source_file_id,
                           :target_file_id AS target_file_id FROM DUAL) s
             ON (t.source_file_id = s.source_file_id
@@ -141,7 +141,7 @@ class DocRelationRepository(BaseRepository[DocRelationEntity]):
         """删除指定文件相关的所有引用关系（source 或 target）"""
         try:
             stmt = text("""
-                DELETE FROM doc_relation
+                DELETE FROM kbot_doc_relation
                 WHERE source_file_id = :fid OR target_file_id = :fid
             """)
             await self.session.execute(stmt, {"fid": file_id})

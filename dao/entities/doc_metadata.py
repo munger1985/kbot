@@ -11,7 +11,7 @@ from .base import BaseEntity, OracleJSON
 class DocMetadataEntity(BaseEntity):
     """文档级元数据表 (doc_metadata) 实体"""
 
-    __tablename__ = "doc_metadata"
+    __tablename__ = "kbot_doc_metadata"
 
     id: Mapped[int] = mapped_column(
         Numeric(38, 0), primary_key=True, autoincrement=True,
