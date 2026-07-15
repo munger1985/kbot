@@ -9,20 +9,12 @@ import asyncio
 from loguru import logger
 from .result import TxtBaseSearchResult
 from utils.clients import AIModelClient
+from agent.prompt.default_prompt import default_prompt
+from core.config import get_prompt_config
 
 
 class LLMReranker:
     """LLM 逐条相关性判断 — 支持自适应阈值过滤，保底 min_keep 条"""
-
-    JUDGE_PROMPT = """判断以下文档片段是否能帮助回答用户的问题。
-只回答 YES 或 NO。
-
-用户问题：{question}
-
-文档片段（标题: {header}，章节: {hierarchy}）：
-{content}
-
-这条文档片段能帮助回答用户的问题吗？"""
 
     def __init__(self):
         self.model_client = AIModelClient()
@@ -39,7 +31,7 @@ class LLMReranker:
         """对检索结果的原始 chunk 内容逐条判断相关性。
 
         使用 origin_content（原始未扩展内容）而非 content（可能已被上下文扩展覆盖）。
-        YES 结果得分上浮 20%，NO 结果降权至 30%。
+        YES 结果得分上浮 20%，NO 结果降权至 5%（确保 YES 无条件排在 NO 前）。
         通过自适应阈值过滤低相关结果，保留至少 min_keep 条。
 
         Args:
@@ -60,11 +52,13 @@ class LLMReranker:
         async def judge_one(r: TxtBaseSearchResult) -> tuple[TxtBaseSearchResult, str]:
             async with sem:
                 hierarchy = " > ".join(getattr(r, 'hierarchy_path', []) or [])
-                prompt = self.JUDGE_PROMPT.format(
+                raw_content = getattr(r, 'origin_content', None) or r.content
+                prompt = await default_prompt.generate(
+                    get_prompt_config().rerank_judge,
                     question=question,
                     header=r.header,
                     hierarchy=hierarchy or "根目录",
-                    content=(getattr(r, 'origin_content', None) or r.content)[:800],  # 优先使用扩展前的原始 chunk
+                    content=raw_content[:800],  # 优先使用扩展前的原始 chunk
                 )
                 try:
                     verdict = await self.model_client.get_llm_answer(
@@ -84,15 +78,18 @@ class LLMReranker:
         yes_count = 0
         no_count = 0
         for r, verdict in judged:
-            if "YES" in verdict:
+            is_yes = "YES" in verdict
+            r.is_relevant = is_yes
+            if is_yes:
                 r.rerank_score = r.score * 1.2
                 yes_count += 1
             else:
-                r.rerank_score = r.score * 0.3
+                r.rerank_score = r.score * 0.05  # 极度压低 NO，确保 YES 无条件排在 NO 前
                 no_count += 1
             scored.append(r)
 
-        scored.sort(key=lambda x: x.rerank_score, reverse=True)
+        # 排序策略：相关性（YES > NO）第一优先，rerank_score 第二优先
+        scored.sort(key=lambda x: (1 if x.is_relevant else 0, x.rerank_score), reverse=True)
 
         # === 自适应阈值过滤 ===
         if not scored:
@@ -107,8 +104,8 @@ class LLMReranker:
 
         max_score = scored[0].rerank_score
         # 阈值 = 最高分的 35%
-        # NO 的结果分数暴跌 (×0.3 vs YES ×1.2, 差距 4 倍)，
-        # 35% 阈值能精准滤除绝大多数 NO 结果
+        # NO 的结果分数暴跌 (×0.05 vs YES ×1.2, 差距 24 倍)，
+        # 加上相关性优先排序，阈值过滤作为第二道保险
         threshold = max_score * 0.35
 
         kept = [r for r in scored if r.rerank_score >= threshold]

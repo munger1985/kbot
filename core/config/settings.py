@@ -265,6 +265,7 @@ class PromptConfig(BaseModel):
     ops_execute_action: str = Field(default="SYSTEM/ops_execute_action", description="Ops mutation action execution prompt")
     ops_action_plan: str = Field(default="SYSTEM/ops_action_plan", description="Ops post-diagnosis action planning prompt")
     ops_heal_decision: str = Field(default="SYSTEM/ops_heal_decision", description="Ops heal loop decision prompt")
+    rerank_judge: str = Field(default="SYSTEM/rerank_judge", description="Rerank relevance judgment prompt")
 
 
 class Settings(BaseSettings):

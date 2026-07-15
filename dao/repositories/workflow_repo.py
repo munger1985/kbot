@@ -115,7 +115,7 @@ class WorkflowRepository(BaseRepository[WorkflowEntity]):
                 try:
                     sql_text = text("""
                         SELECT id, 1.0 AS text_score
-                        FROM kbot_agent_workflow
+                        FROM kbot_md_agent_workflow
                         WHERE agent_id = :agent_id
                           AND (UPPER(name) LIKE UPPER(:like_q) OR UPPER(description) LIKE UPPER(:like_q))
                     """)
@@ -130,21 +130,24 @@ class WorkflowRepository(BaseRepository[WorkflowEntity]):
 
             # Oracle 23ai 向量检索
             if query_vector:
-                vec_str = ",".join(str(v) for v in query_vector)
-                sql_vec = text(f"""
-                    SELECT id, 1 - (embedding <=> TO_VECTOR(:vec)) AS vec_score
-                    FROM kbot_agent_workflow
-                    WHERE agent_id = :agent_id AND embedding IS NOT NULL
-                    ORDER BY embedding <=> TO_VECTOR(:vec)
-                    FETCH FIRST :top_k ROWS ONLY
-                """)
-                rows_vec = await self.session.execute(sql_vec, {
-                    "agent_id": agent_id,
-                    "vec": f"[{vec_str}]",
-                    "top_k": top_k * 2,
-                })
-                for idx, row in enumerate(rows_vec.fetchall()):
-                    scores[row[0]] = scores.get(row[0], 0) + 1.0 / (rrf_k + idx)
+                try:
+                    vec_str = ",".join(str(v) for v in query_vector)
+                    sql_vec = text(f"""
+                        SELECT id, 1 - (embedding <=> TO_VECTOR(:vec)) AS vec_score
+                        FROM kbot_md_agent_workflow
+                        WHERE agent_id = :agent_id AND embedding IS NOT NULL
+                        ORDER BY embedding <=> TO_VECTOR(:vec)
+                        FETCH FIRST :top_k ROWS ONLY
+                    """)
+                    rows_vec = await self.session.execute(sql_vec, {
+                        "agent_id": agent_id,
+                        "vec": f"[{vec_str}]",
+                        "top_k": top_k * 2,
+                    })
+                    for idx, row in enumerate(rows_vec.fetchall()):
+                        scores[row[0]] = scores.get(row[0], 0) + 1.0 / (rrf_k + idx)
+                except Exception as e:
+                    logger.warning(f"[WorkflowRepo] 向量搜索异常: {e}")
 
             if not scores:
                 return []

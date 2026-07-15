@@ -32,6 +32,7 @@ class TxtBaseSearchResult(BaseModel):
     score: float = Field(0.0, description="原始搜索评分")
     weight: float = Field(0.0, description="搜索权重")
     rerank_score: float = Field(0.0, description="重排后的评分")
+    is_relevant: bool = Field(False, description="LLM 判定是否与问题相关")
 
     def to_dict(self, **kwargs) -> dict:
         return self.model_dump(**kwargs)
