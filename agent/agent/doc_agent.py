@@ -28,7 +28,6 @@ class DocAgent:
     # ========================== 核心业务接口 ==========================
     async def rag_retrieval(
         self,
-        background_tasks: BackgroundTasks,
         session_id: str,
         agent_id: int,
         question: str,
@@ -36,7 +35,8 @@ class DocAgent:
         search_keywords: str,
         security_level: int,
         user_id: str,
-        tags: list[str] = []
+        tags: list[str] = [],
+        background_tasks: BackgroundTasks | None = None,
     ) -> list[dict]:
         """
         知识库检索入口：已修复 ContextMemory 传递与持久化逻辑
