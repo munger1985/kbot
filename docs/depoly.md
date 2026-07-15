@@ -498,8 +498,8 @@ python docs/install/models/download_colqwen_model.py
 
 | 组件 | 路径 | 大小 |
 |------|------|------|
-| Base | `/home/ubuntu/models/colqwen2-base` | ~3.8 GB |
-| Adapter | `/home/ubuntu/models/colqwen2-v1.0` | ~2.3 GB |
+| Base | `/home/ubuntu/cached_models/colqwen2-base` | ~3.8 GB |
+| Adapter | `/home/ubuntu/cached_models/colqwen2-v1.0` | ~2.3 GB |
 
 ### 10.2 修复 base model 引用
 
@@ -510,8 +510,8 @@ python3 -c "
 import json
 with open('/home/ubuntu/models/colqwen2-v1.0/adapter_config.json') as f:
     cfg = json.load(f)
-cfg['base_model_name_or_path'] = '/home/ubuntu/models/colqwen2-base'
-with open('/home/ubuntu/models/colqwen2-v1.0/adapter_config.json', 'w') as f:
+cfg['base_model_name_or_path'] = '/home/ubuntu/cached_models/colqwen2-base'
+with open('/home/ubuntu/cached_models/colqwen2-v1.0/adapter_config.json', 'w') as f:
     json.dump(cfg, f, indent=2)
 print('Updated')
 "

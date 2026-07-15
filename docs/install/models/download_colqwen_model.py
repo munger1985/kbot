@@ -14,8 +14,8 @@ BASE_MODEL_ID = "vidore/colqwen2-base"
 ADAPTER_ID = "vidore/colqwen2-v1.0"
 
 # 默认保存路径（与其他模型一致）
-DEFAULT_BASE_DIR = os.path.expanduser("/home/chris/models/colqwen2-base")
-DEFAULT_ADAPTER_DIR = os.path.expanduser("/home/chris/models/colqwen2-v1.0")
+DEFAULT_BASE_DIR = os.path.expanduser("~/cached_models/colqwen2-base")
+DEFAULT_ADAPTER_DIR = os.path.expanduser("~/cached_models/colqwen2-v1.0")
 
 
 def download_hf(repo_id: str, save_dir: str, label: str):
