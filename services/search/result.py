@@ -1,10 +1,10 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 class TxtBaseSearchResult(BaseModel):
     """文本知识库搜索结果 - 适配分层检索架构"""
     chunk_id: str = Field(..., description="分片ID")
     file_id: str = Field(..., description="文件ID")
-    kb_id: str = Field(..., description="知识库ID")
+    kb_id: int = Field(..., description="知识库ID")
     chunk_num: int = Field(0, description="分片号")
     chunk_type: str = Field("text", description="分片类别: text, table, picture，heading")
     
