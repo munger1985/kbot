@@ -78,7 +78,7 @@ class MemoryService:
         # 倒序排列，确保时间线正确（从旧到新）
         chat_history = "\n\n".join(reversed(chat_history_list))
 
-        old_state = (context.state_machine if context else {}) or {}
+        old_state = (context.session_state if context else {}) or {}
         history_summary = (context.context_summary if context else "") or ""
         
         # --- 新增：获取当前的执行计划和主题 ---
@@ -582,9 +582,9 @@ class MemoryService:
             repo = MemoryRepository(session)
             try:
                 context = await repo.get_context_by_id(session_id)
-                if context and context.state_machine:
+                if context and context.session_state:
                     # 确保返回的是纯字典，方便上层做类型转换或二次加工
-                    return context.state_machine
+                    return context.session_state
                 return None
             except Exception as e:
                 logger.error(f"从仓库加载会话上下文失败 {session_id}: {e}")
