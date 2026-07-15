@@ -73,9 +73,9 @@ class FileProcessor:
             for file in files:
                 # 跳过解析参数为空的文件
                 if not file.chunk_parser:
-                    msg = f"文件 {file.id} 解析参数为空，跳过处理"
+                    msg = f"文件 {file.file_id} 解析参数为空，跳过处理"
                     logger.warning(msg)
-                    await self._update_file_status(file.id, FileStatus.FAILED, msg)
+                    await self._update_file_status(file.file_id, FileStatus.FAILED, msg)
                     continue
 
                 txt_embed_model = file.chunk_parser.get("txt_embedding_model", None) # 文本嵌入模型
@@ -83,20 +83,20 @@ class FileProcessor:
                 vlm_model = file.chunk_parser.get("vlm_model", None) # 视觉语言模型
                 
                 if not txt_embed_model:
-                    msg = f"文件 {file.id} 解析参数缺少文本嵌入模型配置，无法生成向量，跳过处理"
+                    msg = f"文件 {file.file_id} 解析参数缺少文本嵌入模型配置，无法生成向量，跳过处理"
                     logger.warning(msg)
-                    await self._update_file_status(file.id, FileStatus.FAILED, msg)
+                    await self._update_file_status(file.file_id, FileStatus.FAILED, msg)
                     continue
 
                 if not llm_model:
-                    msg = f"文件 {file.id} 解析参数缺少LLM模型，跳过处理"
+                    msg = f"文件 {file.file_id} 解析参数缺少LLM模型，跳过处理"
                     logger.warning(msg)
-                    await self._update_file_status(file.id, FileStatus.FAILED, msg)
+                    await self._update_file_status(file.file_id, FileStatus.FAILED, msg)
                     continue
 
                 # 抽取图片保存路径：文件所在目录下，以文件ID命名的子文件夹
                 dir_name = os.path.dirname(file.file_path)
-                image_dir = os.path.join(dir_name, file.id)
+                image_dir = os.path.join(dir_name, file.file_id)
 
                 # 获取VLM提示词配置
                 img2txt_prompt = file.chunk_parser.get("img2txt_prompt", None)
@@ -127,7 +127,7 @@ class FileProcessor:
 
                 # 构建队列用的文件参数对象
                 file_params = FileParams(
-                    file_id=file.id,                               # 文件唯一标识
+                    file_id=file.file_id,                               # 文件唯一标识
                     kb_id=file.kb_id,                              # 所属知识库ID
                     file_path=file.file_path if file.file_path is not None else "",  # 文件路径
                     file_ext=file.file_ext,                        # 文件扩展名
