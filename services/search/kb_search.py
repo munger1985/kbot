@@ -1,6 +1,7 @@
 import asyncio
 import re
 import time
+import json
 from typing import Any
 from loguru import logger
 from core.exceptions import *
@@ -443,7 +444,7 @@ class TxtBaseSearch:
                     chunk_num=item.get("chunk_num", 0),
                     chunk_type=chunk_type,
                     file_id=item.get("file_id", ""),
-                    kb_id=item.get("kb_id", ""),
+                    kb_id=int(item.get("kb_id", 0)),
                     content=item.get("content", ""),
                     header=item.get("header", ""),
                     doc_summary=item.get("doc_summary", ""),
@@ -451,7 +452,7 @@ class TxtBaseSearch:
                     page_num=int(meta.get("page_num") or 0),
                     image_name=meta.get("image_name") or "",
                     bbox=meta.get("bbox") or [],
-                    hierarchy_path=item.get("hierarchy_path") or [],
+                    hierarchy_path=json.loads(item.get("hierarchy_path", "[]")) if isinstance(item.get("hierarchy_path"), str) else (item.get("hierarchy_path") or []),
                     heading_level=int(item.get("heading_level") or 0),
                     section_id=item.get("section_id") or None,
                     score=final_score,
