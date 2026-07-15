@@ -19,7 +19,6 @@ from .ops_pending import OpsPendingRequestEntity
 from .doc_metadata import DocMetadataEntity
 from .doc_relation import DocRelationEntity
 from .extracted_image import ExtractedImageEntity
-from .page_visual_index import PageVisualIndexEntity
 from .workflow import WorkflowEntity
 
 
@@ -49,5 +48,4 @@ __all__ = [
     "DocMetadataEntity",
     "DocRelationEntity",
     "ExtractedImageEntity",
-    "PageVisualIndexEntity",
 ]

@@ -20,7 +20,6 @@ from .doc_meta_repo import DocMetaRepository
 from .doc_relation_repo import DocRelationRepository
 from .workflow_repo import WorkflowRepository
 from .extracted_image_repo import ExtractedImageRepository
-from .page_visual_index_repo import PageVisualIndexRepository
 
 
 __all__ = [
@@ -45,5 +44,4 @@ __all__ = [
     "DocMetaRepository",
     "DocRelationRepository",
     "ExtractedImageRepository",
-    "PageVisualIndexRepository",
 ]

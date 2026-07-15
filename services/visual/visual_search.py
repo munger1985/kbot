@@ -1,12 +1,13 @@
 """视觉检索服务 — 文本查询 + 以图搜图。
 
-通过 Visual 微服务 API 获取 embedding，pgvector 余弦搜索。
+通过 Visual 微服务 API 获取 embedding，Oracle VECTOR 余弦搜索。
+已合并 page_visual_index：统一查询 extracted_images 表。
 """
 
 from dataclasses import dataclass, field
 from loguru import logger
 from utils.clients import AIModelClient
-from dao.repositories import PageVisualIndexRepository, ExtractedImageRepository
+from dao.repositories import ExtractedImageRepository
 
 
 @dataclass
@@ -23,7 +24,9 @@ class VisualSearchResult:
 
 
 class VisualSearch:
-    """视觉检索：文本/图片 → embedding → pgvector 余弦搜索。
+    """视觉检索：文本/图片 → embedding → Oracle VECTOR 余弦搜索。
+
+    统一查询 extracted_images 表，image_type 区分 page / figure / table / chart。
 
     用法:
         search = VisualSearch()
@@ -58,7 +61,7 @@ class VisualSearch:
         kb_ids: list[str],
         top_k: int = 5,
     ) -> list[VisualSearchResult]:
-        """以图搜图：图片 → 视觉 embedding → pgvector 搜索"""
+        """以图搜图：图片 → 视觉 embedding → Oracle VECTOR 搜索"""
         try:
             emb = await self.model_client.get_visual_embedding(image_base64)
         except Exception as e:
@@ -76,36 +79,31 @@ class VisualSearch:
         search_pages: bool,
         search_images: bool,
     ) -> list[VisualSearchResult]:
+        """统一的 Oracle VECTOR 搜索 — 单次查询覆盖 page + figure + table + chart。"""
+        repo = ExtractedImageRepository()
+
+        # 确定要搜索的 image_type
+        types: list[str] | None = None
+        if search_pages and not search_images:
+            types = ["page"]
+        elif search_images and not search_pages:
+            types = ["figure", "table", "chart"]
+        # else: both → None 表示全部类型
+
+        rows = await repo.search_by_embedding(emb, kb_ids, top_k, image_types=types)
+
         results: list[VisualSearchResult] = []
-        emb_str = "[" + ",".join(str(x) for x in emb) + "]"
-
-        if search_pages:
-            page_repo = PageVisualIndexRepository()
-            for row in await page_repo.search_by_embedding(emb_str, kb_ids, top_k):
-                results.append(VisualSearchResult(
-                    file_id=str(row.get("file_id", "")),
-                    kb_id=str(row.get("kb_id", "")),
-                    page_no=int(row.get("page_no", 0)),
-                    image_path=str(row.get("image_path", "")),
-                    similarity=float(row.get("sim", 0)),
-                    description=str(row.get("caption", "")),
-                    image_type="page",
-                    chunk_id="",
-                ))
-
-        if search_images:
-            img_repo = ExtractedImageRepository()
-            for row in await img_repo.search_by_embedding(emb_str, kb_ids, top_k):
-                results.append(VisualSearchResult(
-                    file_id=str(row.get("file_id", "")),
-                    kb_id=str(row.get("kb_id", "")),
-                    page_no=int(row.get("page_no", 0)),
-                    image_path=str(row.get("image_path", "")),
-                    similarity=float(row.get("similarity", 0)),
-                    description=str(row.get("description", "")),
-                    image_type=str(row.get("image_type", "")),
-                    chunk_id=str(row.get("chunk_id", "")),
-                ))
+        for row in rows:
+            results.append(VisualSearchResult(
+                file_id=str(row.get("file_id", "")),
+                kb_id=str(row.get("kb_id", "")),
+                page_no=int(row.get("page_no", 0)),
+                image_path=str(row.get("image_path", "")),
+                similarity=float(row.get("similarity", 0)),
+                description=str(row.get("description", "")),
+                image_type=str(row.get("image_type", "")),
+                chunk_id=str(row.get("chunk_id", "")),
+            ))
 
         results.sort(key=lambda r: r.similarity, reverse=True)
         return results[:top_k]

@@ -345,10 +345,10 @@ class DoclingEngine:
         file_id: str,
         pages: list,
     ) -> None:
-        """图片保存 + VLM 描述 + VisualIndexer 入库。
+        """图片保存 + VLM 描述 + VisualIndexer 入库 → extracted_images 表。
 
-        - doc.pictures -> 裁剪保存 + VLM 描述 -> extracted_images 表
-        - doc.pages 整页截图 -> page_visual_index 表
+        - doc.pictures → 裁剪保存 + VLM 描述 (image_type='figure')
+        - doc.pages 整页截图 (image_type='page')
         """
         import os
 
@@ -414,7 +414,7 @@ class DoclingEngine:
             except Exception as e:
                 logger.warning(f"[VisualIndex] pic {i}: {e}")
 
-        # --- 整页截图（仅在有 visual_model 时生成 embedding）---
+        # --- 整页截图（统一写入 extracted_images，image_type='page'）---
         from services.visual.visual_indexer import VisualIndexer
         idx = VisualIndexer()
         for pn, po in doc.pages.items():
@@ -428,9 +428,10 @@ class DoclingEngine:
                     if getattr(p, 'page', 0) == pn and getattr(p, 'markdown', ''):
                         cap = p.markdown[:200]
                         break
-                await idx.index_page(
+                await idx.index(
                     file_id=file_id, kb_id=kb_id, page_no=pn,
-                    image_path=pp, caption=cap, visual_model=visual_model,
+                    image_path=pp, description=cap, image_type="page",
+                    visual_model=visual_model,
                 )
             except Exception as e:
                 logger.warning(f"[VisualIndex] page {pn}: {e}")

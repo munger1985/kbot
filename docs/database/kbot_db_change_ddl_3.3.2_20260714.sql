@@ -63,6 +63,12 @@ COMMENT ON COLUMN KBOT_BIZ_TXT_EMBEDDING.PARENT_CHUNK_ID IS '父块 ID';
 COMMENT ON COLUMN KBOT_BIZ_TXT_EMBEDDING.SECTION_ID IS '所属 section ID';
 COMMENT ON COLUMN KBOT_BIZ_TXT_EMBEDDING.CREATED_AT IS '创建时间';
 
+-- 2.3 Oracle Text CONTEXT index on HIERARCHY_PATH — 全文检索第四目标字段
+-- NexusCube 中 BM25 搜索覆盖 hierarchy_path，kbot3 需补充对应的 CONTEXT 索引
+-- HIERARCHY_PATH 底层为 VARCHAR2(4000)，CONTEXT 索引完全兼容
+CREATE INDEX IDX_FULLSEARCH_TXT_HIERARCHY ON KBOT_BIZ_TXT_EMBEDDING("HIERARCHY_PATH")
+    INDEXTYPE IS "CTXSYS"."CONTEXT" PARAMETERS ('lexer chinese_lexer');
+
 
 -- ============================================================================
 -- 3. kbot_doc_metadata — 新建表（文档元数据）
@@ -195,16 +201,16 @@ CREATE INDEX IDX_WORKFLOW_AGENT ON KBOT_AGENT_WORKFLOW(AGENT_ID);
 
 
 -- ============================================================================
--- 6. EXTRACTED_IMAGES — 新建表（提取图片记录）
+-- 6. EXTRACTED_IMAGES — 新建表（统一视觉索引）
 -- ============================================================================
--- NexusCube 对应表: extracted_images
--- 用途: 存储从文档中提取的图片及其视觉 embedding
+-- NexusCube 对应表: extracted_images（已合并原 page_visual_index）
+-- 用途: 存储页面截图(image_type='page') + 提取图片(image_type='figure'/'table'/'chart')
 
 CREATE TABLE EXTRACTED_IMAGES (
     ID              VARCHAR2(36) PRIMARY KEY,
     FILE_ID         VARCHAR2(256) NOT NULL,
-    KB_ID           VARCHAR2(256) NOT NULL,
-    PAGE_NO         NUMBER(38,0) NOT NULL,
+    KB_ID           NUMBER NOT NULL,
+    PAGE_NO         NUMBER NOT NULL,
     IMAGE_PATH      VARCHAR2(1000) NOT NULL,
     EMBEDDING       VECTOR,
     DESCRIPTION     CLOB,
@@ -232,34 +238,12 @@ CREATE INDEX IDX_EXTRACTED_IMG_KB ON EXTRACTED_IMAGES(KB_ID);
 
 
 -- ============================================================================
--- 7. PAGE_VISUAL_INDEX — 新建表（页面视觉索引）
+-- 7. PAGE_VISUAL_INDEX — 已合并到 EXTRACTED_IMAGES（已删除）
 -- ============================================================================
--- NexusCube 对应表: page_visual_index
--- 用途: 存储文档页面的视觉索引（截图+embedding），支持以图搜图
-
-CREATE TABLE PAGE_VISUAL_INDEX (
-    ID              VARCHAR2(36) PRIMARY KEY,
-    FILE_ID         VARCHAR2(256) NOT NULL,
-    KB_ID           VARCHAR2(256) NOT NULL,
-    PAGE_NO         NUMBER(38,0) NOT NULL,
-    IMAGE_PATH      VARCHAR2(1000) NOT NULL,
-    EMBEDDING       VECTOR,
-    CAPTION         CLOB,
-    CREATED_AT      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-COMMENT ON TABLE PAGE_VISUAL_INDEX IS '页面视觉索引表 - 文档页面截图及其视觉特征';
-COMMENT ON COLUMN PAGE_VISUAL_INDEX.ID IS '主键，UUID';
-COMMENT ON COLUMN PAGE_VISUAL_INDEX.FILE_ID IS '关联的文件 ID';
-COMMENT ON COLUMN PAGE_VISUAL_INDEX.KB_ID IS '关联的知识库 ID';
-COMMENT ON COLUMN PAGE_VISUAL_INDEX.PAGE_NO IS '页码编号';
-COMMENT ON COLUMN PAGE_VISUAL_INDEX.IMAGE_PATH IS '页面截图存储路径';
-COMMENT ON COLUMN PAGE_VISUAL_INDEX.EMBEDDING IS '页面视觉 embedding（Oracle VECTOR）';
-COMMENT ON COLUMN PAGE_VISUAL_INDEX.CAPTION IS 'VLM 生成的页面摘要描述';
-COMMENT ON COLUMN PAGE_VISUAL_INDEX.CREATED_AT IS '创建时间';
-
-CREATE INDEX IDX_VISUAL_INDEX_FILE ON PAGE_VISUAL_INDEX(FILE_ID);
-CREATE INDEX IDX_VISUAL_INDEX_KB ON PAGE_VISUAL_INDEX(KB_ID);
+-- NexusCube 表 page_visual_index 的功能已合并入 extracted_images：
+--   页面截图用 image_type='page' 写入 extracted_images，caption → description
+--   原 PAGE_VISUAL_INDEX 表不再创建，相关代码已清理。
+-- ============================================================================
 
 
 -- ============================================================================

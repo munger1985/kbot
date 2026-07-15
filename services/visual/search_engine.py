@@ -7,7 +7,7 @@
 
 from dataclasses import dataclass, field
 from loguru import logger
-from dao.repositories import PageVisualIndexRepository
+from dao.repositories import ExtractedImageRepository
 from core.database import db_instance
 
 
@@ -89,16 +89,15 @@ class VisualSearchEngine:
             logger.error(f"[VSE] embed failed: {e}")
             return []
 
-        emb_str = "[" + ",".join(str(x) for x in emb) + "]"
-        repo = PageVisualIndexRepository()
-        rows = await repo.search_by_embedding(emb_str, kb_ids, top_k)
+        repo = ExtractedImageRepository()
+        rows = await repo.search_by_embedding(emb, kb_ids, top_k, image_types=["page"])
 
         return [
             VisualTextPair(
                 file_id=str(r.get("file_id", "")), page_no=int(r.get("page_no", 0)),
                 page_image_path=str(r.get("image_path", "")),
-                image_description=str(r.get("caption", "")),
-                similarity=float(r.get("sim", 0)), source="visual",
+                image_description=str(r.get("description", "")),
+                similarity=float(r.get("similarity", 0)), source="visual",
             )
             for r in rows
         ]
@@ -108,7 +107,7 @@ class VisualSearchEngine:
     ) -> list[VisualTextPair]:
         """ParadeDB 文本搜索 → 按 file_id+page_no 分组"""
         try:
-            from services.search.doc_search import TxtBaseSearch
+            from services.search.kb_search import TxtBaseSearch
             from utils.clients import AIModelClient
 
             kb_list = kb_ids or []
@@ -164,6 +163,6 @@ class VisualSearchEngine:
             return []
 
     async def _get_page_image(self, file_id: str, page_no: int) -> str | None:
-        """文 → 图: pg 查 page_visual_index"""
-        repo = PageVisualIndexRepository()
+        """文 → 图: 查 extracted_images (image_type='page')"""
+        repo = ExtractedImageRepository()
         return await repo.get_page_image(file_id, page_no)

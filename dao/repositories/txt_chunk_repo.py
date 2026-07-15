@@ -114,6 +114,7 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
                 SELECT
                     chunk_id, chunk_type, file_id, kb_id, content, header, chunk_num,
                     chunk_metadata, biz_metadata, search_helper,
+                    doc_summary, hierarchy_path, section_id, heading_level,
                     (1 - VECTOR_DISTANCE(embedding, :qv, COSINE)) as similarity_score
                 FROM KBOT_BIZ_TXT_EMBEDDING
                 WHERE {where_clause}
@@ -179,7 +180,8 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
                 "security_level <= :security",
                 "(CONTAINS(search_helper, :keyword, 1) > 0 "
                 "OR CONTAINS(header, :keyword, 2) > 0 "
-                "OR CONTAINS(content, :keyword, 3) > 0)",
+                "OR CONTAINS(content, :keyword, 3) > 0 "
+                "OR CONTAINS(hierarchy_path, :keyword, 4) > 0)",
             ]
 
             if tags:
@@ -198,7 +200,8 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
                 SELECT
                     chunk_id, chunk_type, file_id, kb_id, content, header, chunk_num,
                     chunk_metadata, biz_metadata, search_helper,
-                    (SCORE(1) * 0.5 + SCORE(2) * 0.3 + SCORE(3) * 0.2) as similarity_score
+                    doc_summary, hierarchy_path, section_id, heading_level,
+                    (SCORE(1) * 0.40 + SCORE(2) * 0.25 + SCORE(3) * 0.20 + SCORE(4) * 0.15) as similarity_score
                 FROM KBOT_BIZ_TXT_EMBEDDING
                 WHERE {where_clause}
                 ORDER BY similarity_score DESC, chunk_id ASC
@@ -229,6 +232,10 @@ class TxtChunkRepository(BaseRepository[TxtChunkEntity]):
                 "content": c.content,
                 "header": c.header,
                 "search_helper": getattr(c, "search_helper", ""),
+                "doc_summary": getattr(c, "doc_summary", ""),
+                "hierarchy_path": getattr(c, "hierarchy_path", []),
+                "section_id": getattr(c, "section_id", None),
+                "heading_level": getattr(c, "heading_level", 0),
                 "metadata": c.chunk_metadata,
                 "biz_metadata": c.biz_metadata,
                 "score": float(c.similarity_score or 0.0),
