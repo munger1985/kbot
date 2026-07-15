@@ -21,8 +21,8 @@ class OpsDBExecutor:
         self.service_host = self.executor_config.service_host
         self.service_port = self.executor_config.service_port
         
-        # 统一使用内部服务令牌（与 LLM/Embedding 等微服务共用 CUBE_INTERNAL_SERVICE_TOKEN）
-        self.internal_token = os.getenv("CUBE_INTERNAL_SERVICE_TOKEN", "cube-internal-dev-token-2026")
+        # 统一使用内部服务令牌（与 LLM/Embedding 等微服务共用 KBOT_INTERNAL_SERVICE_TOKEN）
+        self.internal_token = os.getenv("KBOT_INTERNAL_SERVICE_TOKEN", "kbot-internal-dev-token-2026")
         
         # 💡 架构演进：延迟导入运维专用的 OPS DB 拓扑元数据服务（彻底告别业务线 KBService）
         from services.basic import OpsDBInstanceService
@@ -85,7 +85,7 @@ class OpsDBExecutor:
         url = f"http://{self.service_host}:{self.service_port}/api/v1/ops/execute"
         
         headers = {
-            "X-NexusCube-Internal-Token": self.internal_token,
+            "X-KBot-Internal-Token": self.internal_token,
             "Content-Type": "application/json"
         }
         
@@ -110,7 +110,7 @@ class OpsDBExecutor:
                 
                 async with session.post(url, json=payload) as response:
                     if response.status == 403:
-                        logger.critical("[OpsClient] 密钥被微服务拒绝！请检查 CUBE_INTERNAL_SERVICE_TOKEN 配置。")
+                        logger.critical("[OpsClient] 密钥被微服务拒绝！请检查 KBOT_INTERNAL_SERVICE_TOKEN 配置。")
                         return {"status": "error", "error_message": "运维通道鉴权失败，拒绝访问。"}
                         
                     if response.status != 200:
