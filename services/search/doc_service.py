@@ -136,7 +136,7 @@ class DocService:
                     str(q_keywords),
                     int(conf.search_top_k or 10),
                     float(conf.search_score_threshold or 0.0),
-                    float(conf.weight or 1.0),
+                    float(conf.tool_weight or 1.0),
                     int(security_level),
                     query_vec,
                     tags
