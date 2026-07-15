@@ -10,13 +10,10 @@ from .base import BaseEntity, OracleJSON, VectorField
 # SOP 强制执行模式
 # strict: 严格遵循 / guided: 引导增强(默认) / suggested: 建议参考
 
-WORKFLOW_TABLENAME = "kbot_agent_workflow"
-
-
 class WorkflowEntity(BaseEntity):
     """SOP 编排流程实体：存储用户自定义的任务执行蓝图（Oracle 23ai）"""
 
-    __tablename__ = WORKFLOW_TABLENAME
+    __tablename__ = "KBOT_MD_AGENT_WORKFLOW"
 
     # --- 核心标识与关联 ---
     id: Mapped[str] = mapped_column(String(36), primary_key=True, comment="UUID, 主键")

@@ -8,7 +8,7 @@ from .base import BaseEntity, VectorField, OracleJSON
 
 
 class ExtractedImageEntity(BaseEntity):
-    __tablename__ = "extracted_images"
+    __tablename__ = "KBOT_MD_EXTRACTED_IMAGES"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), comment="主键")
     file_id: Mapped[str] = mapped_column(String(256), nullable=False, comment="关联的文件 ID")
