@@ -195,7 +195,75 @@ CREATE INDEX IDX_WORKFLOW_AGENT ON KBOT_AGENT_WORKFLOW(AGENT_ID);
 
 
 -- ============================================================================
--- 6. DDL 执行验证
+-- 6. EXTRACTED_IMAGES — 新建表（提取图片记录）
+-- ============================================================================
+-- NexusCube 对应表: extracted_images
+-- 用途: 存储从文档中提取的图片及其视觉 embedding
+
+CREATE TABLE EXTRACTED_IMAGES (
+    ID              VARCHAR2(36) PRIMARY KEY,
+    FILE_ID         VARCHAR2(256) NOT NULL,
+    KB_ID           VARCHAR2(256) NOT NULL,
+    PAGE_NO         NUMBER(38,0) NOT NULL,
+    IMAGE_PATH      VARCHAR2(1000) NOT NULL,
+    EMBEDDING       VECTOR,
+    DESCRIPTION     CLOB,
+    IMAGE_TYPE      VARCHAR2(32) DEFAULT 'figure' NOT NULL,
+    BBOX            JSON DEFAULT '{}',
+    CHUNK_ID        VARCHAR2(256),
+    CREATED_AT      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+COMMENT ON TABLE EXTRACTED_IMAGES IS '提取图片记录表 - 文档中提取的图片及其视觉特征';
+COMMENT ON COLUMN EXTRACTED_IMAGES.ID IS '主键，UUID';
+COMMENT ON COLUMN EXTRACTED_IMAGES.FILE_ID IS '关联的文件 ID';
+COMMENT ON COLUMN EXTRACTED_IMAGES.KB_ID IS '关联的知识库 ID';
+COMMENT ON COLUMN EXTRACTED_IMAGES.PAGE_NO IS '图片所在页码编号';
+COMMENT ON COLUMN EXTRACTED_IMAGES.IMAGE_PATH IS '图片存储路径';
+COMMENT ON COLUMN EXTRACTED_IMAGES.EMBEDDING IS 'ColQwen2 视觉 embedding（Oracle VECTOR）';
+COMMENT ON COLUMN EXTRACTED_IMAGES.DESCRIPTION IS 'VLM 图片描述文本';
+COMMENT ON COLUMN EXTRACTED_IMAGES.IMAGE_TYPE IS '图片类型: figure/table/chart/photo';
+COMMENT ON COLUMN EXTRACTED_IMAGES.BBOX IS '图片边界框坐标（JSON）';
+COMMENT ON COLUMN EXTRACTED_IMAGES.CHUNK_ID IS '关联的文本 chunk ID';
+COMMENT ON COLUMN EXTRACTED_IMAGES.CREATED_AT IS '创建时间';
+
+CREATE INDEX IDX_EXTRACTED_IMG_FILE ON EXTRACTED_IMAGES(FILE_ID);
+CREATE INDEX IDX_EXTRACTED_IMG_KB ON EXTRACTED_IMAGES(KB_ID);
+
+
+-- ============================================================================
+-- 7. PAGE_VISUAL_INDEX — 新建表（页面视觉索引）
+-- ============================================================================
+-- NexusCube 对应表: page_visual_index
+-- 用途: 存储文档页面的视觉索引（截图+embedding），支持以图搜图
+
+CREATE TABLE PAGE_VISUAL_INDEX (
+    ID              VARCHAR2(36) PRIMARY KEY,
+    FILE_ID         VARCHAR2(256) NOT NULL,
+    KB_ID           VARCHAR2(256) NOT NULL,
+    PAGE_NO         NUMBER(38,0) NOT NULL,
+    IMAGE_PATH      VARCHAR2(1000) NOT NULL,
+    EMBEDDING       VECTOR,
+    CAPTION         CLOB,
+    CREATED_AT      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+COMMENT ON TABLE PAGE_VISUAL_INDEX IS '页面视觉索引表 - 文档页面截图及其视觉特征';
+COMMENT ON COLUMN PAGE_VISUAL_INDEX.ID IS '主键，UUID';
+COMMENT ON COLUMN PAGE_VISUAL_INDEX.FILE_ID IS '关联的文件 ID';
+COMMENT ON COLUMN PAGE_VISUAL_INDEX.KB_ID IS '关联的知识库 ID';
+COMMENT ON COLUMN PAGE_VISUAL_INDEX.PAGE_NO IS '页码编号';
+COMMENT ON COLUMN PAGE_VISUAL_INDEX.IMAGE_PATH IS '页面截图存储路径';
+COMMENT ON COLUMN PAGE_VISUAL_INDEX.EMBEDDING IS '页面视觉 embedding（Oracle VECTOR）';
+COMMENT ON COLUMN PAGE_VISUAL_INDEX.CAPTION IS 'VLM 生成的页面摘要描述';
+COMMENT ON COLUMN PAGE_VISUAL_INDEX.CREATED_AT IS '创建时间';
+
+CREATE INDEX IDX_VISUAL_INDEX_FILE ON PAGE_VISUAL_INDEX(FILE_ID);
+CREATE INDEX IDX_VISUAL_INDEX_KB ON PAGE_VISUAL_INDEX(KB_ID);
+
+
+-- ============================================================================
+-- 8. DDL 执行验证
 -- ============================================================================
 -- 执行后通过以下查询验证:
 --
@@ -203,7 +271,8 @@ CREATE INDEX IDX_WORKFLOW_AGENT ON KBOT_AGENT_WORKFLOW(AGENT_ID);
 -- FROM user_tab_columns
 -- WHERE table_name IN ('KBOT_OPS_DB_INSTANCE', 'KBOT_BIZ_TXT_EMBEDDING',
 --                       'KBOT_DOC_METADATA', 'KBOT_DOC_RELATION',
---                       'KBOT_AGENT_WORKFLOW')
+--                       'KBOT_AGENT_WORKFLOW', 'EXTRACTED_IMAGES',
+--                       'PAGE_VISUAL_INDEX')
 -- ORDER BY table_name, column_id;
 
 
