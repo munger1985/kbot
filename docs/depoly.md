@@ -508,7 +508,7 @@ adapter 的 `adapter_config.json` 需指向本地 base model：
 ```bash
 python3 -c "
 import json
-with open('/home/ubuntu/models/colqwen2-v1.0/adapter_config.json') as f:
+with open('/home/ubuntu/cached_models/colqwen2-v1.0/adapter_config.json') as f:
     cfg = json.load(f)
 cfg['base_model_name_or_path'] = '/home/ubuntu/cached_models/colqwen2-base'
 with open('/home/ubuntu/cached_models/colqwen2-v1.0/adapter_config.json', 'w') as f:
@@ -519,21 +519,7 @@ print('Updated')
 
 ### 10.3 注册模型到数据库
 
-模型配置在 `ai_model` 表中注册（和其他模型一致）：
-
-```sql
-INSERT INTO KBOT_AI_MODEL (MODEL_NAME, CATEGORY, PROVIDER, MODEL_PATH, MODEL_PARAMS, IS_ACTIVE)
-VALUES (
-  'colqwen2-v1.0',
-  3,              -- IMG_EMBEDDING
-  'colqwen2',     -- VisualEmbeddingProvider
-  '/home/ubuntu/models/colqwen2-v1.0',
-  '{"device": "cuda", "dimension": 128}',
-  1
-);
-```
-
-也可在 Web UI 的「模型与解析 → 视觉嵌入模型」页面中通过表单注册。
+在 Web UI 的「LLM 模型管理」页面中通过表单注册。
 
 ### 10.4 验证
 
@@ -541,7 +527,7 @@ VALUES (
 python3 -c "
 import torch
 from colpali_engine.models import ColQwen2, ColQwen2Processor
-m = ColQwen2.from_pretrained('/home/ubuntu/models/colqwen2-v1.0', torch_dtype=torch.bfloat16, device_map='cpu')
+m = ColQwen2.from_pretrained('/home/ubuntu/cached_models/colqwen2-v1.0', torch_dtype=torch.bfloat16, device_map='cpu')
 print('ColQwen2 loaded OK')
 "
 ```

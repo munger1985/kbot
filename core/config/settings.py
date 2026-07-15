@@ -125,27 +125,18 @@ class LLMConfig(BaseModel):
         """
         return f"http://{self.service_host}:{self.service_port}"
 
-class RerankerConfig(BaseModel):
-    """Reranker service configuration.
-    
-    Configuration parameters for the reranking service (reordering search results),
-    including network settings and model caching.
-    """
-    service_name: str = Field(default="reranker-service", description="Name of the reranker service")
-    service_version: str = Field(default="1.0.0", description="Reranker service version")
-    service_host: str = Field(default="0.0.0.0", description="Reranker service host address")
-    service_port: int = Field(default=18093, ge=1, le=65535, description="Reranker service port (1-65535)")
-    cache_dir: str = Field(default="./cached_models", description="Directory for cached reranker models")
-    timeout: int = Field(default=300, ge=10, le=65535, description="Request timeout in seconds (10-65535)")
-    health_check_timeout: int = Field(default=10, ge=5, le=60, description="Health check timeout in seconds (5-60)")
-    
+class VisualConfig(BaseModel):
+    """视觉嵌入服务配置（Phase 2 多模态检索）"""
+    service_name: str = Field(default="cube-visual-service")
+    service_version: str = Field(default="1.0.0")
+    service_host: str = Field(default="0.0.0.0")
+    service_port: int = Field(default=18093, ge=1, le=65535)
+    timeout: int = Field(default=300, ge=10, le=1800)
+    max_retries: int = Field(default=3, ge=0, le=10)
+    # 模型参数（dimension, device, model_path）从数据库 ai_model 表读取
+
     @property
     def service_url(self) -> str:
-        """Generate full service URL for reranker service.
-        
-        Returns:
-            str: Complete URL for accessing the reranker service.
-        """
         return f"http://{self.service_host}:{self.service_port}"
 
 class VLMConfig(BaseModel):
@@ -177,41 +168,11 @@ class DsocrConfig(BaseModel):
     Docker vLLM deployment and local microservice modes (via api_endpoint).
     """
     enabled: bool = Field(default=False, description="Whether DeepSeek OCR service is deployed")
-    service_name: str = Field(default="dsocr-service", description="Name of the DS OCR service")
-    service_version: str = Field(default="1.0.0", description="DS OCR service version")
-    service_host: str = Field(default="0.0.0.0", description="DS OCR service host address")
-    service_port: int = Field(default=18097, ge=1, le=65535, description="DS OCR service port (1-65535)")
     api_endpoint: str = Field(default="http://localhost:18097/v1/chat/completions", description="OpenAI-compatible API endpoint")
     timeout: int = Field(default=600, ge=10, le=3600, description="Request timeout in seconds (10-3600)")
-    health_check_timeout: int = Field(default=10, ge=5, le=60, description="Health check timeout in seconds (5-60)")
-    model_path: str = Field(default="", description="Local model path for vLLM deployment")
     crop_mode: bool = Field(default=True, description="Enable crop mode for OCR preprocessing")
     max_tokens: int = Field(default=8192, ge=512, le=32768, description="Maximum output tokens (512-32768)")
     temperature: float = Field(default=0.0, ge=0.0, le=2.0, description="Generation temperature (0.0-2.0)")
-
-    @property
-    def service_url(self) -> str:
-        """Generate full service URL for DS OCR service.
-
-        Returns:
-            str: Complete URL for accessing the DS OCR service.
-        """
-        return f"http://{self.service_host}:{self.service_port}"
-
-class VisualConfig(BaseModel):
-    """视觉嵌入服务配置（Phase 2 多模态检索）"""
-    service_name: str = Field(default="cube-visual-service")
-    service_version: str = Field(default="1.0.0")
-    service_host: str = Field(default="0.0.0.0")
-    service_port: int = Field(default=18094, ge=1, le=65535)
-    timeout: int = Field(default=300, ge=10, le=1800)
-    max_retries: int = Field(default=3, ge=0, le=10)
-    # 模型参数（dimension, device, model_path）从数据库 ai_model 表读取
-
-    @property
-    def service_url(self) -> str:
-        return f"http://{self.service_host}:{self.service_port}"
-
 
 class ParserConfig(BaseModel):
     """Document parser service configuration.
@@ -323,7 +284,6 @@ class Settings(BaseSettings):
     sqlalchemy: SQLAlchemyConfig = SQLAlchemyConfig()
     embed: EmbedConfig = EmbedConfig()
     llm: LLMConfig = LLMConfig()
-    reranker: RerankerConfig = RerankerConfig()
     vlm: VLMConfig = VLMConfig()
     dsocr: DsocrConfig = DsocrConfig()
     visual: VisualConfig = VisualConfig()
@@ -546,14 +506,6 @@ def get_prompt_config() -> PromptConfig:
     """
     return get_settings().prompt
 
-def get_reranker_config() -> RerankerConfig:
-    """Get reranker service configuration.
-    
-    Returns:
-        RerankerConfig: Reranker service configuration object
-    """
-    return get_settings().reranker
-
 def get_vlm_config() -> VLMConfig:
     """Get VLM service configuration.
 
@@ -606,16 +558,6 @@ def get_slack_config() -> SlackConfig:
         SlackConfig: Slack configuration object
     """
     return get_settings().slack
-
-
-# OCR 引擎中文标签映射
-OCR_ENGINE_LABELS: dict[str, str] = {
-    "easyocr": "EasyOCR",
-    "tesseract": "Tesseract",
-    "rapidocr": "RapidOCR",
-    "deepseek_ocr": "DeepSeek OCR",
-}
-
 
 def detect_builtin_ocr_engines() -> dict[str, bool]:
     """检测本机已安装的内置 OCR 引擎。

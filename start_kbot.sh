@@ -81,7 +81,6 @@ start_service "KBOT3 Main Program" "$(dirname "$0")" "kbot_main.py" "true" || ex
 declare -A services=(
     ["Embedding"]="kbot_app_embedding.py"
     ["LLM"]="kbot_app_llm.py" 
-    ["Reranker"]="kbot_app_reranker.py"
     ["VLM"]="kbot_app_vlm.py"
     ["Parser"]="kbot_app_parser.py"
     ["MCP"]="kbot_mcp_server.py"
