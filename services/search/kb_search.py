@@ -431,6 +431,7 @@ class TxtBaseSearch:
                     continue
 
                 meta = item.get("metadata") or {}
+                raw_content = item.get("content", "")
                 base_score = float(item.get("score") or 0.0)
 
                 # 对表格和图片类型给予小幅 Boost
@@ -445,7 +446,8 @@ class TxtBaseSearch:
                     chunk_type=chunk_type,
                     file_id=item.get("file_id", ""),
                     kb_id=int(item.get("kb_id", 0)),
-                    content=item.get("content", ""),
+                    content=raw_content,
+                    origin_content=raw_content,
                     header=item.get("header", ""),
                     doc_summary=item.get("doc_summary", ""),
                     search_helper=item.get("search_helper", ""),

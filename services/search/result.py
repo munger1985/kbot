@@ -9,7 +9,8 @@ class TxtBaseSearchResult(BaseModel):
     chunk_type: str = Field("text", description="分片类别: text, table, picture，heading")
     
     # 核心字段对齐
-    content: str = Field(..., description="分片内容")
+    content: str = Field(..., description="分片内容（可能已被上下文扩展覆盖）")
+    origin_content: str | None = Field(None, description="原始分片内容（上下文扩展前），供 Rerank 判断使用")
     header: str = Field("", description="当前标题")
     doc_summary: str = Field("", description="文档摘要")
     search_helper: str = Field("", description="搜索助手")

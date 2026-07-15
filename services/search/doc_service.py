@@ -265,6 +265,7 @@ class DocService:
             question=question,
             llm_model=llm_model,
             top_k=params.rerank_top_k or 10,
+            min_keep=3,
         )
 
     async def _search_single_kb(
