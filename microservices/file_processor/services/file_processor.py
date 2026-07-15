@@ -72,15 +72,15 @@ class FileProcessor:
 
             for file in files:
                 # 跳过解析参数为空的文件
-                if not file.parser_params:
+                if not file.chunk_parser:
                     msg = f"文件 {file.id} 解析参数为空，跳过处理"
                     logger.warning(msg)
                     await self._update_file_status(file.id, FileStatus.FAILED, msg)
                     continue
 
-                txt_embed_model = file.parser_params.get("txt_embedding_model", None) # 文本嵌入模型
-                llm_model = file.parser_params.get("llm_model", None) # LLM模型
-                vlm_model = file.parser_params.get("vlm_model", None) # 视觉语言模型
+                txt_embed_model = file.chunk_parser.get("txt_embedding_model", None) # 文本嵌入模型
+                llm_model = file.chunk_parser.get("llm_model", None) # LLM模型
+                vlm_model = file.chunk_parser.get("vlm_model", None) # 视觉语言模型
                 
                 if not txt_embed_model:
                     msg = f"文件 {file.id} 解析参数缺少文本嵌入模型配置，无法生成向量，跳过处理"
@@ -99,22 +99,22 @@ class FileProcessor:
                 image_dir = os.path.join(dir_name, file.id)
 
                 # 获取VLM提示词配置
-                img2txt_prompt = file.parser_params.get("img2txt_prompt", None)
+                img2txt_prompt = file.chunk_parser.get("img2txt_prompt", None)
                 if not img2txt_prompt:
                     img2txt_prompt = await default_prompt.generate(get_prompt_config().image2text)
 
                 # 将数据库中的字典类型解析参数转换为DocParserParams对象
                 doc_params = DocParserParams(
-                    generate_picture_images=file.parser_params.get("generate_picture_images", True),
+                    generate_picture_images=file.chunk_parser.get("generate_picture_images", True),
                     image_dir=image_dir,
-                    do_ocr=file.parser_params.get("do_ocr", False),
-                    ocr_engine=file.parser_params.get("ocr_engine", None),
-                    ocr_model=file.parser_params.get("ocr_model", None),
+                    do_ocr=file.chunk_parser.get("do_ocr", False),
+                    ocr_engine=file.chunk_parser.get("ocr_engine", None),
+                    ocr_model=file.chunk_parser.get("ocr_model", None),
                     vlm_model=vlm_model,
                     llm_model=llm_model,
                     img2txt_prompt=img2txt_prompt,
-                    engine_mode=file.parser_params.get("engine_mode", "auto"),
-                    visual_model=file.parser_params.get("visual_model", ""),
+                    engine_mode=file.chunk_parser.get("engine_mode", "auto"),
+                    visual_model=file.chunk_parser.get("visual_model", ""),
                     kb_id=file.kb_id,
                 )
 
