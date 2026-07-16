@@ -35,6 +35,7 @@ class DefaultPrompt(string.Formatter):
             "SYSTEM/ops_action_plan": OPS_ACTION_PLAN_PROMPT,
             "SYSTEM/ops_heal_decision": OPS_HEAL_DECISION_PROMPT,
             "SYSTEM/ops_execute_action": OPS_EXECUTE_ACTION_PROMPT,
+            "SYSTEM/rerank_judge": RERANK_JUDGE_PROMPT,
         }
 
     def get_value(self, key: Any, args: Any, kwargs: Any) -> Any:
@@ -60,7 +61,7 @@ class DefaultPrompt(string.Formatter):
         # 2. 尝试从数据库获取
         template = fallback_content
         try:
-            db_prompt = await self._prompt_service.get_prompt_content(prompt_name=prompt_name)
+            db_prompt = await self._prompt_service.get_prompt_by_unique_name(unique_name=prompt_name)
             if db_prompt:
                 template = db_prompt
             elif not fallback_content:
@@ -1052,6 +1053,24 @@ OPS_EXECUTE_ACTION_PROMPT = """
 
 严格按 JSON 输出，risk_level 必须为 low/medium/high/critical 之一。
 """
+
+# ================================================================================================
+# --------------------------------  Rerank 相关性判断系统提示词  ----------------------------------
+# ================================================================================================
+RERANK_JUDGE_PROMPT = """你是一个严苛的文档筛查专家。请判断以下文档片段是否包含直接回答用户问题所需的实质性知识或事实。
+
+判断标准：
+1. 如果文档只是主题相近，但没有提及问题核心、或者无法推导出答案，必须回答 NO。
+2. 只有当文档包含了解答问题的关键事实、步骤、定义或直接答案时，才回答 YES。
+
+只回答 YES 或 NO，不要有任何多余字符。
+
+用户问题：{question}
+
+文档片段（标题: {header}，章节: {hierarchy}）：
+{content}
+
+这条文档片段能帮助回答用户的问题吗？"""
 
 
 default_prompt = DefaultPrompt()

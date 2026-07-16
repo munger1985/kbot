@@ -11,7 +11,8 @@ from core.dictionary import FileStatus, ParserEngine
 from core.exceptions import *
 from core.database.oracle import get_session
 from dao.entities import FileEntity
-from dao.repositories import KBRepository, FileRepository, TxtChunkRepository, GraphRepository
+from dao.repositories import KBRepository, FileRepository, TxtChunkRepository, GraphRepository, \
+    DocMetaRepository, DocRelationRepository, ExtractedImageRepository
 from utils.thread import run_in_thread_pool
 
 
@@ -515,6 +516,9 @@ class FileService:
             kb_repo = KBRepository(session)
             chunk_repo = TxtChunkRepository(session)
             graph_repo = GraphRepository(session)
+            doc_meta_repo = DocMetaRepository(session)
+            doc_rel_repo = DocRelationRepository(session)
+            img_repo = ExtractedImageRepository(session)
 
             if batch or file_ids:
                 logger.info(f"开始删除知识库 {kb_id} 中的文件")
@@ -550,6 +554,16 @@ class FileService:
                     # 5. 删除图数据
                     await graph_repo.delete_graph_by_file(kb_id, all_file_ids)
 
+                    # 6. 删除文档元数据
+                    if all_file_ids:
+                        await doc_meta_repo.delete_by_file_ids(all_file_ids)
+                    # 7. 删除文档引用关系
+                    for fid in all_file_ids:
+                        await doc_rel_repo.delete_by_file(fid)
+                    # 8. 删除提取图片记录
+                    if all_file_ids:
+                        await img_repo.delete_by_file_ids(all_file_ids)
+
                 except DataNotFoundException as e:
                     logger.info(e.message)
                 except DatabaseException as e:
@@ -576,6 +590,12 @@ class FileService:
                 await file_repo.delete(kb_id, None)
                 # 3. 删除知识库中的所有文件的图数据
                 await graph_repo.delete_graph_by_knowledge_base(kb_id)
+                # 4. 删除文档元数据
+                await doc_meta_repo.delete_by_kb_id(kb_id)
+                # 5. 删除文档引用关系
+                await doc_rel_repo.delete_by_kb_id(kb_id)
+                # 6. 删除提取图片记录
+                await img_repo.delete_by_kb_id(str(kb_id))
                 # 4. 删除知识库中的所有的物理文件
                 # 获取知识库和业务域的名称用于构造物理删除路径
                 try:
@@ -664,6 +684,9 @@ class FileService:
             file_repo = FileRepository(session)
             chunk_repo = TxtChunkRepository(session)
             graph_repo = GraphRepository(session)
+            doc_meta_repo = DocMetaRepository(session)
+            doc_rel_repo = DocRelationRepository(session)
+            img_repo = ExtractedImageRepository(session)
             try:
                 # 1. 删除文件对应的文本片段数据
                 try:
@@ -671,6 +694,15 @@ class FileService:
                 except DataNotFoundException as e:
                     logger.debug(f"文件 {file_ids} 对应的文本片段数据不存在，跳过删除")
                 logger.info(f"文件 {file_ids} 对应的文本片段数据已删除")
+
+                # 1.1 删除文档元数据
+                if file_ids:
+                    await doc_meta_repo.delete_by_file_ids(file_ids)
+                # 1.2 删除文档引用关系
+                for fid in file_ids:
+                    await doc_rel_repo.delete_by_file(fid)
+                # 1.3 删除提取图片记录
+                await img_repo.delete_by_file_ids(file_ids)
 
                 # 2. 删除文件对应的图谱数据
                 await graph_repo.delete_graph_by_file(kb_id=kb_id, file_ids=file_ids)

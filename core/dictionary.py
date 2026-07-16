@@ -79,7 +79,7 @@ class FileStatus(IntEnum):
     REJECTED = 4
     PARSING = 5
     PARSED = 6
-    PARSE_FAILED = 7
+    FAILED = 7
     ARCHIVED = 8
 
 class ProcessPriority(IntEnum):
@@ -196,6 +196,14 @@ class OCRProvider(str, Enum):
     TESSERACT = "tesseract"
     RAPIDOCR = "rapidocr"
     DEEPSEEK_OCR = "deepseek_ocr"
+
+# OCR 引擎中文标签映射
+OCR_ENGINE_LABELS: dict[str, str] = {
+    "easyocr": "EasyOCR",
+    "tesseract": "Tesseract",
+    "rapidocr": "RapidOCR",
+    "deepseek_ocr": "DeepSeek OCR",
+}
 
 # Service type enumeration
 class ServiceType(str, Enum):

@@ -1,9 +1,4 @@
-import json
 import uuid
-import asyncio
-import random
-from typing import Any, AsyncGenerator
-from datetime import datetime, timezone
 from loguru import logger
 from fastapi import BackgroundTasks
 from fastapi.responses import StreamingResponse
@@ -27,7 +22,7 @@ class RootAgent(AgentStreamMixin):
         self, 
         background_tasks: BackgroundTasks, 
         user_id: str, 
-        agent_id: str, 
+        agent_id: int, 
         query: str, 
         session_id: str | None = None,
         security_level: int = 1,
@@ -85,12 +80,15 @@ class RootAgent(AgentStreamMixin):
                     try:
                         from services.visual.search_engine import VisualSearchEngine
                         engine = VisualSearchEngine()
+                        # 获取智能体关联的知识库，限定图片搜索范围
+                        kb_ids = await self.agent_service.get_kb_list(agent_id)
                         all_visual_results = []
                         for idx, img in enumerate(all_images):
                             try:
                                 results = await engine.search(
                                     query=query, image_base64=img, top_k=3,
                                     visual_model=visual_model,
+                                    kb_ids=kb_ids,
                                 )
                                 all_visual_results.extend(results)
                             except Exception as e:

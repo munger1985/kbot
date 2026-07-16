@@ -7,6 +7,7 @@ from fastapi.responses import StreamingResponse
 from core.dictionary import PacketType
 from agent.orchestrator import OpsOrchestrator
 from agent.common import AgentStreamMixin
+from services.basic import AgentService
 
 
 class OpsAgent(AgentStreamMixin):
@@ -19,12 +20,13 @@ class OpsAgent(AgentStreamMixin):
     def __init__(self):
         # 核心：持有新一代自愈流水线执行面编排器
         self.orchestrator = OpsOrchestrator()
+        self.agent_service = AgentService()
 
     async def chat(
         self,
         background_tasks: BackgroundTasks,
         user_id: str,
-        agent_id: str,
+        agent_id: int,
         instance_id: str,
         query: str,
         session_id: str | None = None,
@@ -58,8 +60,11 @@ class OpsAgent(AgentStreamMixin):
                     try:
                         from services.visual.search_engine import VisualSearchEngine
                         engine = VisualSearchEngine()
+                        # 获取智能体关联的知识库，限定图片搜索范围
+                        kb_ids = await self.agent_service.get_kb_list(int(agent_id))
                         visual_results = await engine.search(
                             query=query, image_base64=image_base64, top_k=5,
+                            kb_ids=kb_ids,
                         )
                         if visual_results:
                             parts = [f"用户问题: {query}\n\n以下是通过图片搜索找到的相关文档页面的图文内容:"]

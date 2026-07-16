@@ -9,6 +9,7 @@
 
 import re
 from dataclasses import dataclass, field
+from typing import Callable
 from loguru import logger
 
 from agent.common.skill_context import TaskStep
@@ -330,7 +331,7 @@ def _is_subsequence(sub: list[str], full: list[str]) -> bool:
 
 
 def _fuzzy_is_subsequence(
-    sub: list[str], full: list[str], match_fn: callable
+    sub: list[str], full: list[str], match_fn: Callable[[str, str], bool]
 ) -> bool:
     """检查 sub 是否为 full 的模糊子序列（使用 match_fn 比较技能名）"""
     fi = 0

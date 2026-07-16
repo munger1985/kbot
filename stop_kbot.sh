@@ -1,20 +1,29 @@
 #!/bin/bash
 
-# Define service root directory (adjust according to your startup script)
+# Define service root directory
 SERVICE_ROOT="$(cd "$(dirname "$0")" && pwd)"
 CURRENT_PID=$$
+
+# 统一服务列表（与启动脚本保持一致）
+SERVICES=(
+    "kbot_main.py"
+    "kbot_app_embedding.py"
+    "kbot_app_llm.py"
+    "kbot_app_vlm.py"
+    "kbot_app_visual.py"
+    "kbot_app_parser.py"
+    "kbot_mcp_server.py"
+    "kbot_db_executor.py"
+)
 
 # Function: Safely get PID of specific Python script running in specified directory
 get_service_pid() {
     local script_dir="$1"
     local script_name="$2"
     
-    # Use pgrep to find processes and pwdx to check if working directory matches
-    # This ensures only the specific script running in the specified directory is targeted
+    # Use pgrep to find processes and pwdx to check working directory
     pgrep -f "python.*${script_name}" | grep -v "$CURRENT_PID" | while read pid; do
-        # 再次确认该 PID 依然存在（防止由于并发产生的瞬时 PID 失效）
         if [ -d "/proc/$pid" ]; then
-            # 检查工作目录
             if pwdx "$pid" 2>/dev/null | grep -q "${script_dir}"; then
                 echo "$pid"
             fi
@@ -23,37 +32,16 @@ get_service_pid() {
 }
 
 # Collect PIDs of processes to be terminated
-declare -A PID_MAP  # Use associative array to remove duplicates
+declare -A PID_MAP
 
-# Get main program PID (ensure only the one running in current project directory)
-MAIN_PIDS=$(get_service_pid "${SERVICE_ROOT}" "kbot_main.py")
-if [ -n "$MAIN_PIDS" ]; then
-    while read pid; do
-        if [ -n "$pid" ]; then
-            PID_MAP["$pid"]=1
-            echo "Found main program process: $pid"
-        fi
-    done <<< "$MAIN_PIDS"
-fi
-
-# Get PIDs of each microservice (now all in project root directory)
-MICROSERVICES=(
-    "kbot_app_embedding.py"
-    "kbot_app_llm.py" 
-    "kbot_app_vlm.py"
-    "kbot_app_reranker.py"
-    "kbot_app_parser.py"
-    "kbot_mcp_server.py"
-    "kbot_db_executor.py"
-)
-
-for service_script in "${MICROSERVICES[@]}"; do
+# 遍历所有服务获取PID
+for service_script in "${SERVICES[@]}"; do
     SERVICE_PIDS=$(get_service_pid "${SERVICE_ROOT}" "${service_script}")
     if [ -n "$SERVICE_PIDS" ]; then
         while read pid; do
             if [ -n "$pid" ]; then
                 PID_MAP["$pid"]=1
-                echo "Found ${service_script} microservice process: $pid"
+                echo "Found ${service_script} process: $pid"
             fi
         done <<< "$SERVICE_PIDS"
     fi
@@ -69,6 +57,8 @@ fi
 PIDS="${!PID_MAP[@]}"
 
 echo "About to terminate the following processes: $PIDS"
+
+# 如果需要确认，取消注释下面的代码
 # read -p "Confirm termination of these services? (y/n): " -n 1 -r
 # echo
 # if [[ ! $REPLY =~ ^[Yy]$ ]]; then

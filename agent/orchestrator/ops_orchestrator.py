@@ -68,7 +68,7 @@ class OpsOrchestrator:
         background_tasks: BackgroundTasks,
         user_id: str,
         session_id: str,
-        agent_id: str,
+        agent_id: int,
         question: str,
         instance_id: str,
         trigger_type: str = "manual",
@@ -141,7 +141,7 @@ class OpsOrchestrator:
         yield {"type": PacketType.THOUGHT, "content": "正在锁定指定物理实例资产并注入安全边界策略...\n"}
 
         try:
-            target_db = await self.ops_agent_conf_service.get_instance_detail_by_id(instance_id, agent_id=agent_id)
+            target_db = await self.ops_agent_conf_service.get_instance_detail_by_id(instance_id)
 
             if target_db:
                 ctx["db_type"] = target_db["db_type"]
@@ -313,6 +313,8 @@ class OpsOrchestrator:
 
                     # ──── HITL: 中断检测 ────
                     if p_type == PacketType.WAIT_FOR_USER:
+                        if not isinstance(content, dict):
+                            continue
                         suspend_ctx = content
                         request_id = suspend_ctx["request_id"]
 
@@ -779,6 +781,8 @@ class OpsOrchestrator:
                     content = packet.get("content")
 
                     if p_type == PacketType.WAIT_FOR_USER:
+                        if not isinstance(content, dict):
+                            continue
                         suspend_ctx = content
                         new_request_id = suspend_ctx["request_id"]
                         await self._suspend_execution(
@@ -1050,6 +1054,8 @@ class OpsOrchestrator:
             "session_id": pending.get("session_id", ""),
             "agent_id": pending.get("agent_id", ""),
             "trigger_type": cast(Any, "manual"),
+            "client_time": "",
+            "client_tz": "",
             "command_or_query": (
                 runtime_plan.get("inputs", {}).get("user_query", "")
                 if isinstance(runtime_plan, dict) else ""

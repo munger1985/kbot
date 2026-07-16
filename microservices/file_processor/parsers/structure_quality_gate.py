@@ -192,7 +192,7 @@ class StructureQualityGate:
         if len(items_with_bbox) < 4:
             return 0.0
 
-        x_centers = [(n.bbox[0] + n.bbox[2]) / 2 for n in items_with_bbox]
+        x_centers = [(n.bbox[0] + n.bbox[2]) / 2 for n in items_with_bbox] # type: ignore
         x_centers.sort()
 
         gaps = [x_centers[i + 1] - x_centers[i]

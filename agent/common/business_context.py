@@ -6,7 +6,7 @@ class ContextMemory(TypedDict):
     # --- 1. 基础元数据 (Session Basics) ---
     user_id: str
     session_id: str
-    agent_id: str
+    agent_id: int
     question: str                # 原始输入
     standalone_query: str         # LLM 改写后的意图清晰的问题
     search_keywords: str  # 从用户输入中提取的搜索关键词

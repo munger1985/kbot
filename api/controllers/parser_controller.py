@@ -1,6 +1,6 @@
 from api.schemas.base_response import SuccessResponse
-from core.config.settings import get_dsocr_config, detect_builtin_ocr_engines, OCR_ENGINE_LABELS
-from core.dictionary import OCRProvider
+from core.config.settings import get_dsocr_config, detect_builtin_ocr_engines
+from core.dictionary import OCRProvider, OCR_ENGINE_LABELS
 
 
 class ParserController:

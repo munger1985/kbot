@@ -3,7 +3,7 @@ from loguru import logger
 from typing import Any
 from core.database import db_instance
 
-from services.search.doc.doc_service import DocService
+from services.search.doc_service import DocService
 from services.kb import ModelParams
 from core.exceptions import *
 from dao.entities import AgentEntity
@@ -20,7 +20,7 @@ class DocOrchestrator:
 
     async def run_pipeline(
         self,
-        agent_id: str,
+        agent_id: int,
         standalone_query: str,  # 接收 Root Agent 改写后的问题
         search_keywords: str,    # 接收 Root Agent 提取的关键词
         security_level: int,
@@ -38,7 +38,7 @@ class DocOrchestrator:
         async with self.db_session as session:
             # 1. 获取 Agent 和模型配置 (复用原有的 _get_agent_and_params 逻辑)
             agent_repo = AgentRepository(session)
-            agent = await agent_repo.get(agent_id)
+            agent = await agent_repo.get_by_id(agent_id)
             model_params = await self._get_model_params(agent) 
 
             # 2. 执行完整的检索流水线 (调用 DocService)

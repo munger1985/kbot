@@ -59,13 +59,12 @@ timeout = 300
 frequency_penalty = 0.0
 presence_penalty = 0.0
 
-[reranker]
-service_name = "kbot-reranker-service"
-service_version = "1.0.0"
+[visual]
+service_name = "cube-visual-service"
 service_host = "0.0.0.0"
 service_port = 18093
-cache_dir = "/home/chris/cached_models/"
 timeout = 300
+max_retries = 3
 
 [vlm]
 service_name = "kbot-vlm-service"
@@ -93,13 +92,8 @@ service_port = 18096
 
 [dsocr]
 enabled = false
-service_name = "kbot-dsocr-service"
-service_version = "1.0.0"
-service_host = "0.0.0.0"
-service_port = 18097
 api_endpoint = "http://localhost:18097/v1/chat/completions"
 timeout = 600
-model_path = ""
 crop_mode = true
 max_tokens = 8192
 temperature = 0.0
@@ -116,25 +110,6 @@ token = ""
 user = "Admin"
 password = ""
 timeout = 15
-
-[prompt]
-image2text = "SYSTEM/image2text"
-rewrite_question = "SYSTEM/rewrite_question"
-refresh_summary = "SYSTEM/refresh_summary"
-rag_final_render = "SYSTEM/rag_final_render"
-user_profile = "SYSTEM/user_profile"
-task_planner = "SYSTEM/task_planner"
-intent_router = "SYSTEM/intent_router"
-reasoning = "SYSTEM/reasoning"
-generate_chart = "SYSTEM/generate_chart"
-graph_vertex_fusion = "SYSTEM/graph_vertex_fusion"
-graph_extractor = "SYSTEM/graph_extractor"
-sql_gen = "SYSTEM/sql_gen"
-sql_repair = "SYSTEM/sql_repair"
-db_router = "SYSTEM/db_router"
-ops_rewrite = "SYSTEM/ops_rewrite"
-ops_diagnosis = "SYSTEM/ops_diagnosis"
-ops_planner = "SYSTEM/ops_planner"
 
 [slack]
 agent_id = 164

@@ -41,7 +41,7 @@ class OpsTaskPlanner:
         """获取近期对话历史，用于运维改写时的多轮指代消解"""
         try:
             async with self.db_session as session:
-                repo = MemoryRepository(session, user_id)
+                repo = MemoryRepository(session)
                 recent_entries = await repo.get_recent_entries(session_id, limit=3)
             if not recent_entries:
                 return "（无历史对话记录，这是此会话的第一轮提问）"

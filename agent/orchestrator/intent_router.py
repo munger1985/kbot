@@ -32,7 +32,7 @@ class IntentRouter:
             self._workflow_service = WorkflowService()
         return self._workflow_service
 
-    async def route(self, llm_model_name: str, query: str, agent_id: str | None = None) -> IntentAnalysis:
+    async def route(self, llm_model_name: str, query: str, agent_id: int | None = None) -> IntentAnalysis:
         """识别意图并返回多维路由结果（含可选的工作流 SOP 匹配）"""
         try:
             # 1. 获取配置好的重构版 Prompt

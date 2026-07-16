@@ -1,7 +1,7 @@
 import json
 from loguru import logger
 from typing import Any
-from services.search.doc.result import TxtBaseSearchResult
+from services.search.result import TxtBaseSearchResult
 from agent.prompt import default_prompt
 from utils.clients import AIModelClient
 from core.config import get_prompt_config

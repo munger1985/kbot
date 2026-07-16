@@ -219,9 +219,8 @@ class KBService:
                 return KBModelParams(
                     llm_model=models.get("llm_model", ""),
                     vlm_model=models.get("vlm_model", ""),
-                    img_embedding_model=models.get("img_embedding_model", ""),
+                    visual_embedding_model=models.get("visual_embedding_model", ""),
                     txt_embedding_model=models.get("txt_embedding_model", ""),
-                    rerank_model=models.get("rerank_model", ""),
                     do_rerank=False,
                     llm_params=None,
                     rerank_top_k=None,

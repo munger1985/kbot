@@ -1,6 +1,7 @@
 import asyncio
 import re
 import time
+import json
 from typing import Any
 from loguru import logger
 from core.exceptions import *
@@ -248,7 +249,7 @@ class TxtBaseSearch:
                     repo = TxtChunkRepository(session)
                     return await repo.vector_search(
                         kb_id=kb_id,
-                        query_vec=vec_array,
+                        query_vec=vec_array,  # type: ignore[arg-type]
                         security=security,
                         similarity_threshold=threshold,
                         search_top_k=per_route_k,
@@ -430,6 +431,7 @@ class TxtBaseSearch:
                     continue
 
                 meta = item.get("metadata") or {}
+                raw_content = item.get("content", "")
                 base_score = float(item.get("score") or 0.0)
 
                 # 对表格和图片类型给予小幅 Boost
@@ -443,18 +445,23 @@ class TxtBaseSearch:
                     chunk_num=item.get("chunk_num", 0),
                     chunk_type=chunk_type,
                     file_id=item.get("file_id", ""),
-                    kb_id=item.get("kb_id", ""),
-                    content=item.get("content", ""),
+                    kb_id=int(item.get("kb_id", 0)),
+                    content=raw_content,
+                    origin_content=raw_content,
                     header=item.get("header", ""),
                     doc_summary=item.get("doc_summary", ""),
                     search_helper=item.get("search_helper", ""),
                     page_num=int(meta.get("page_num") or 0),
                     image_name=meta.get("image_name") or "",
                     bbox=meta.get("bbox") or [],
+                    hierarchy_path=json.loads(item.get("hierarchy_path", "[]")) if isinstance(item.get("hierarchy_path"), str) else (item.get("hierarchy_path") or []),
+                    heading_level=int(item.get("heading_level") or 0),
+                    section_id=item.get("section_id") or None,
                     score=final_score,
                     biz_metadata=item.get("biz_metadata") or {},
                     weight=weight,
                     rerank_score=0.0,
+                    is_relevant=False,
                 )
                 results.append(result)
             except Exception as e:

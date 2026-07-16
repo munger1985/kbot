@@ -5,5 +5,6 @@ from .agent_service import AgentService
 from .domain_service import DomainService
 from .ops_db_instance_service import OpsDBInstanceService
 from .ops_agent_conf_service import OpsAgentConfService
+from .workflow_service import WorkflowService
 
-__all__ = ["AIModelService", "ParserConfService", "PromptService", "AgentService", "DomainService", "OpsDBInstanceService", "OpsAgentConfService"]
+__all__ = ["AIModelService", "ParserConfService", "PromptService", "AgentService", "DomainService", "OpsDBInstanceService", "OpsAgentConfService", "WorkflowService"]

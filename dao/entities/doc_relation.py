@@ -11,7 +11,7 @@ from .base import BaseEntity, OracleJSON
 class DocRelationEntity(BaseEntity):
     """文档引用关系表 (doc_relation) 实体"""
 
-    __tablename__ = "doc_relation"
+    __tablename__ = "KBOT_MD_DOC_RELATION"
 
     id: Mapped[int] = mapped_column(
         Numeric(38, 0), primary_key=True, autoincrement=True,

@@ -107,9 +107,8 @@ class AgentService:
                 return ModelParams(
                     llm_model=model_params.get("llm_model", ""),
                     txt_embedding_model=model_params.get("txt_embedding_model", ""),
-                    img_embedding_model=model_params.get("img_embedding_model", ""),
+                    visual_embedding_model=model_params.get("visual_embedding_model", ""),
                     vlm_model=model_params.get("vlm_model", ""),
-                    rerank_model=model_params.get("rerank_model", ""),
                     do_rerank=model_params.get("do_rerank", False),
                     llm_params=llm_params,
                     rerank_top_k=model_params.get("rerank_top_k"),

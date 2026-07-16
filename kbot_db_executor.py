@@ -41,7 +41,7 @@ LOG_LEVEL: str = app_config.log.level
 LOG_ROTATION: str = app_config.log.rotation
 LOG_RETENTION: str = app_config.log.retention
 
-# OPS token 已合并至统一的 create_internal_auth_middleware（CUBE_INTERNAL_SERVICE_TOKEN）
+# OPS token 已合并至统一的 create_internal_auth_middleware（KBOT_INTERNAL_SERVICE_TOKEN）
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

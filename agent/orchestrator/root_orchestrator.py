@@ -15,6 +15,7 @@ from agent.planner.decision_engine import PlanningEngine
 from agent.planner.execution_scheduler import compute_execution_waves
 from skills import SkillRuntime
 from agent.common import ContextMemory
+from agent.common.skill_context import TaskStep
 from core.dictionary import IntentType, PacketType
 
 
@@ -43,7 +44,7 @@ class RootOrchestrator:
         background_tasks: BackgroundTasks,
         user_id: str,
         session_id: str,
-        agent_id: str,
+        agent_id: int,
         question: str,
         security_level: int,
         tags: list[str] | None = None
@@ -283,7 +284,7 @@ class RootOrchestrator:
     async def _execute_single_step(
         self,
         ctx: ContextMemory,
-        step: dict[str, Any],
+        step: TaskStep,
         step_index: int,
     ) -> AsyncGenerator[dict[str, Any], None]:
         """执行单个步骤（串行路径）"""
@@ -323,7 +324,7 @@ class RootOrchestrator:
     async def _execute_wave_parallel(
         self,
         ctx: ContextMemory,
-        wave_steps: list[dict[str, Any]],
+        wave_steps: list[TaskStep],
         step_indices: list[int],
     ) -> AsyncGenerator[dict[str, Any], None]:
         """
@@ -337,7 +338,7 @@ class RootOrchestrator:
         queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
         step_count = len(wave_steps)
 
-        async def run_one(step: dict[str, Any], idx: int):
+        async def run_one(step: TaskStep, idx: int):
             """并行任务：执行单个步骤，将输出推入队列"""
             try:
                 async for packet in self._execute_single_step(ctx, step, idx):

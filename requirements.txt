@@ -22,3 +22,5 @@ bcrypt==5.0.0
 starlette
 asyncpg
 aiomysql
+colpali-engine
+jieba

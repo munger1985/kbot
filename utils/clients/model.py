@@ -14,11 +14,11 @@ from core.config.settings import get_embed_config, get_llm_config, get_vlm_confi
 from core.exceptions import *
 
 # 内部服务通信令牌
-INTERNAL_TOKEN_HEADER = "X-NexusCube-Internal-Token"
+INTERNAL_TOKEN_HEADER = "X-KBot-Internal-Token"
 
 def _get_internal_token() -> str:
     """延迟读取内部通信令牌，确保 load_dotenv() 之后才获取"""
-    return os.getenv("CUBE_INTERNAL_SERVICE_TOKEN", "cube-internal-dev-token-2026")
+    return os.getenv("KBOT_INTERNAL_SERVICE_TOKEN", "kbot-internal-dev-token-2026")
 
 
 @dataclass
