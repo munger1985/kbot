@@ -28,7 +28,7 @@ from api.controllers.agent_controller import agent_controller
 from api.schemas.agent_schema import AgentChatForm
 from api.schemas.base_response import SuccessResponse
 from core.config.settings import get_slack_config
-from utils.sse import parse_sse_doc_results, parse_sse_for_answer
+from core.dictionary import PacketType
 from utils.thread import detect_language
 
 # ---------------------------------------------------------------------------
@@ -295,11 +295,56 @@ _WAITING_MESSAGES: dict[str, str] = {
 }
 
 
+def _parse_sse_all(sse_text: str) -> dict:
+    """Parse raw SSE text into a dict keyed by ``PacketType`` value.
+
+    Follows the SSE format defined in ``agent/common/mixin.py:_format_sse``::
+
+        event: <type>
+        data: {"content": ..., "timestamp": "...", "message_id": "..."}
+
+    Text events (answer, thought) are concatenated strings.
+    Structured events are lists of content dicts.
+    """
+    if not sse_text:
+        return {}
+
+    TEXT_EVENTS = {PacketType.ANSWER, PacketType.THOUGHT}
+    result: dict = {}
+    current_event = None
+
+    for line in sse_text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("event: "):
+            current_event = stripped[7:]
+            continue
+        if current_event is None:
+            continue
+        if stripped.startswith("data: "):
+            json_str = stripped[6:]
+            try:
+                payload = json.loads(json_str)
+            except json.JSONDecodeError:
+                current_event = None
+                continue
+            content = payload.get("content", "")
+            ptype = PacketType(current_event) if current_event else None
+            if ptype and ptype in TEXT_EVENTS:
+                if content:
+                    result[current_event] = result.get(current_event, "") + str(content)
+            else:
+                result.setdefault(current_event, []).append(content)
+            current_event = None
+
+    return result
+
+
 def _build_asset_blocks(biz_metadata_list: list[dict]) -> list[dict]:
     """Build Slack Block Kit blocks from doc_results biz_metadata.
 
-    Deduplicates by ``asset_title``.  Each field independently checked —
-    empty fields cause their corresponding block or entry to be omitted.
+    Template: ``slack_temp.txt``.  Deduplicates by ``asset_title``.
+    Each field is independently checked — empty fields cause the
+    corresponding block or entry to be omitted.
     """
     if not biz_metadata_list:
         return []
@@ -311,21 +356,24 @@ def _build_asset_blocks(biz_metadata_list: list[dict]) -> list[dict]:
         title = (bm.get("asset_title") or "").strip()
         briefing = (bm.get("solution_briefing") or "").strip()
         url = (bm.get("original_asset_url") or "").strip()
-        contributor = (bm.get("contributor") or "").strip()
+        author_mail = (bm.get("author_mail") or "").strip().lower()
+        raw_ct = (bm.get("create_time") or "").strip()
+        create_date = raw_ct[:10] if len(raw_ct) >= 10 else raw_ct
 
-        if not any([title, briefing, url, contributor]):
+        if not any([title, briefing, url, author_mail, create_date]):
             continue
 
         if title and title in seen_titles:
             continue
         if title:
             seen_titles.add(title)
-            # Limit to first 3 assets.
             if len(seen_titles) > 3:
                 break
 
+        # ── divider ──────────────────────────────────────────
         blocks.append({"type": "divider"})
 
+        # ── Asset Title ──────────────────────────────────────
         if title:
             blocks.append({
                 "type": "section",
@@ -335,6 +383,10 @@ def _build_asset_blocks(biz_metadata_list: list[dict]) -> list[dict]:
                 },
             })
 
+        # ── divider ──────────────────────────────────────────
+        blocks.append({"type": "divider"})
+
+        # ── Solution Briefing ────────────────────────────────
         if briefing:
             blocks.append({
                 "type": "section",
@@ -344,35 +396,49 @@ def _build_asset_blocks(biz_metadata_list: list[dict]) -> list[dict]:
                 },
             })
 
-        has_contributor = bool(contributor)
-        has_url = bool(url)
-        if has_contributor or has_url:
+        # ── divider ──────────────────────────────────────────
+        blocks.append({"type": "divider"})
+
+        # ── Contributor + Publish_date (fields) ──────────────
+        has_mail = bool(author_mail)
+        has_date = bool(create_date)
+        if has_mail or has_date:
             section: dict = {"type": "section"}
             fields: list[dict] = []
 
-            if has_contributor:
+            if has_mail:
                 fields.append({
                     "type": "mrkdwn",
                     "text": (
                         f"*Contributor:*\n"
-                        f"<mailto:{contributor}|{contributor}>"
+                        f"<mailto:{author_mail}|{author_mail}>"
                     ),
                 })
 
-            if has_url:
+            if has_date:
                 fields.append({
                     "type": "mrkdwn",
-                    "text": "[VPN required] please visit us:",
+                    "text": f"*Publish_date:*\n{create_date}",
                 })
-                section["accessory"] = {
+
+            section["fields"] = fields
+            blocks.append(section)
+
+        # ── URL button ───────────────────────────────────────
+        if url:
+            blocks.append({
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": "[VPN required] please visit us:",
+                },
+                "accessory": {
                     "type": "button",
                     "text": {"type": "plain_text", "text": "KM Link"},
                     "url": url,
                     "action_id": "open_km_resource",
-                }
-
-            section["fields"] = fields
-            blocks.append(section)
+                },
+            })
 
     return blocks
 
@@ -458,10 +524,12 @@ async def _process_event_background(parsed: dict) -> None:
                     parsed["user_id"],
                 )
 
-    # --- Extract clean answer from SSE ---
+    # --- Parse SSE into structured data (mixin.py format) ---
     sse_text = response.data if isinstance(response, SuccessResponse) else ""
     raw_sse = str(sse_text) if sse_text else ""
-    answer = parse_sse_for_answer(raw_sse)
+    parsed_sse = _parse_sse_all(raw_sse)
+
+    answer = parsed_sse.get("answer", "")
 
     if not answer:
         logger.info(
@@ -470,35 +538,25 @@ async def _process_event_background(parsed: dict) -> None:
         )
         return
 
-    # --- Assemble Slack message ---
-    # Parse doc_results only when the answer suggests documents were found.
-    asset_blocks: list[dict] = []
-    if "No relevant information is available" not in answer:
-        biz_list = parse_sse_doc_results(raw_sse)
-        asset_blocks = _build_asset_blocks(biz_list)
-
-    if not asset_blocks:
-        # No cards — send plain text only (no blocks, so ``text`` is rendered).
-        await _send_slack_reply(
-            bot_token=bot_token,
-            channel_id=parsed["channel_id"],
-            user_id=parsed["user_id"],
-            text=answer,
-            thread_ts=parsed["event_ts"],
-        )
-        return
-
-    # Cards present — build blocks: answer sections first, then asset cards.
-    # Use ``plain_text`` to avoid escaping issues and split long text into
-    # chunks that fit Slack's 3000-char section limit.
+    # --- Assemble Slack message as markdown blocks ---
     _SLACK_TEXT_LIMIT = 3000
     answer_blocks: list[dict] = []
     for i in range(0, len(answer), _SLACK_TEXT_LIMIT):
         chunk = answer[i:i + _SLACK_TEXT_LIMIT]
         answer_blocks.append({
-            "type": "section",
-            "text": {"type": "plain_text", "text": chunk},
+            "type": "markdown",
+            "text": chunk,
         })
+
+    # Parse doc_results only when the answer suggests documents were found.
+    asset_blocks: list[dict] = []
+    if "No relevant information is available" not in answer:
+        doc_items = parsed_sse.get("doc_results", [])
+        biz_list = []
+        for item in doc_items:
+            if isinstance(item, dict) and item.get("biz_metadata"):
+                biz_list.append(item["biz_metadata"])
+        asset_blocks = _build_asset_blocks(biz_list)
 
     full_blocks = answer_blocks + asset_blocks
 
