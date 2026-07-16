@@ -47,14 +47,17 @@ class LLMReranker:
         """
         candidates = results[:top_k]
 
+        # 一次获取 prompt 模板，避免每条结果重复查 DB
+        prompt_name = get_prompt_config().rerank_judge
+        judge_template = await default_prompt.resolve_template(prompt_name)
+
         sem = asyncio.Semaphore(parallel)
 
         async def judge_one(r: TxtBaseSearchResult) -> tuple[TxtBaseSearchResult, str]:
             async with sem:
                 hierarchy = " > ".join(getattr(r, 'hierarchy_path', []) or [])
                 raw_content = getattr(r, 'origin_content', None) or r.content
-                prompt = await default_prompt.generate(
-                    get_prompt_config().rerank_judge,
+                prompt = judge_template.format(
                     question=question,
                     header=r.header,
                     hierarchy=hierarchy or "根目录",
