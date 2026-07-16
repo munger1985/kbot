@@ -527,6 +527,21 @@ async def _process_event_background(parsed: dict) -> None:
     # --- Parse SSE into structured data (mixin.py format) ---
     sse_text = response.data if isinstance(response, SuccessResponse) else ""
     raw_sse = str(sse_text) if sse_text else ""
+
+    # --- Debug: save raw SSE to /tmp/slackmess/ (configurable) ---
+    if get_slack_config().debug_save_sse and raw_sse:
+        from pathlib import Path
+        from datetime import datetime, timezone
+        try:
+            _dir = Path("/tmp/slackmess")
+            _dir.mkdir(parents=True, exist_ok=True)
+            _ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+            _u = parsed["user_id"].replace("/", "_").replace("\\", "_")
+            (_dir / f"{_u}_{_ts}.txt").write_text(raw_sse, encoding="utf-8")
+            logger.info("Debug SSE saved | user={}", parsed["user_id"])
+        except Exception:
+            logger.exception("Failed to save debug SSE")
+
     parsed_sse = _parse_sse_all(raw_sse)
 
     answer = parsed_sse.get("answer", "")
