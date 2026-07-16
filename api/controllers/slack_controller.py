@@ -387,9 +387,6 @@ def _build_asset_blocks(biz_metadata_list: list[dict]) -> list[dict]:
                 },
             })
 
-        # ── divider ──────────────────────────────────────────
-        blocks.append({"type": "divider"})
-
         # ── Solution Briefing ────────────────────────────────
         if briefing:
             blocks.append({
@@ -399,9 +396,6 @@ def _build_asset_blocks(biz_metadata_list: list[dict]) -> list[dict]:
                     "text": f"*Solution Briefing:* {briefing}",
                 },
             })
-
-        # ── divider ──────────────────────────────────────────
-        blocks.append({"type": "divider"})
 
         # ── Contributor + Publish_date (fields) ──────────────
         has_mail = bool(author_mail)
