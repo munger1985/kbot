@@ -408,7 +408,7 @@ def _build_asset_blocks(biz_metadata_list: list[dict]) -> list[dict]:
                 fields.append({
                     "type": "mrkdwn",
                     "text": (
-                        f"*Contributor:*\n"
+                        f"*Contributor:* \n"
                         f"<mailto:{author_mail}|{author_mail}>"
                     ),
                 })
@@ -416,7 +416,7 @@ def _build_asset_blocks(biz_metadata_list: list[dict]) -> list[dict]:
             if has_date:
                 fields.append({
                     "type": "mrkdwn",
-                    "text": f"*Publish_date:*\n{create_date}",
+                    "text": f"*Publish_date:* \n{create_date}",
                 })
 
             section["fields"] = fields
