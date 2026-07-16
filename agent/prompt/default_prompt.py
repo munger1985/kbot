@@ -87,6 +87,36 @@ class DefaultPrompt(string.Formatter):
             logger.error(f"Format prompt '{prompt_name}' failed: {e}")
             return template
 
+    async def resolve_template(self, prompt_name: str) -> str:
+        """仅解析 prompt 模板文本（DB → 内存默认），不做格式化填充。
+
+        适用于批量场景：先一次获取模板，再对每条数据自行 format。
+        """
+        if not self._prompt_service:
+            from services.basic import PromptService
+            self._prompt_service = PromptService()
+
+        fallback_content = self._prompts.get(prompt_name, "")
+
+        template = fallback_content
+        try:
+            db_prompt = await self._prompt_service.get_prompt_by_unique_name(unique_name=prompt_name)
+            if db_prompt:
+                template = db_prompt
+            elif not fallback_content:
+                logger.error(f"Prompt '{prompt_name}' not found in DB or Memory.")
+                return ""
+        except DataNotFoundException:
+            if not fallback_content:
+                logger.error(f"Prompt '{prompt_name}' not found in DB or Memory.")
+                return ""
+        except Exception as e:
+            logger.error(f"Failed to fetch prompt '{prompt_name}' from DB: {e}")
+            if not fallback_content:
+                raise
+
+        return template
+
 # ================================================================================================
 # --------------------------------  生成查询改写系统提示词  ----------------------------------------
 # ================================================================================================
