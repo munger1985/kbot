@@ -527,6 +527,10 @@ async def _fetch_and_callback(
 ) -> None:
     """Fetch user info and POST to external callback URL."""
     username, email = await _fetch_user_info(bot_token, user_id)
+    logger.info(
+        "[DEBUG] Slack user info | user_id={} | name={} | email={}",
+        user_id, username, email,
+    )
     await _post_external_callback(
         user_id=user_id,
         username=username,
