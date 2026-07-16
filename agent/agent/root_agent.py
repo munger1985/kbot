@@ -27,8 +27,7 @@ class RootAgent(AgentStreamMixin):
         session_id: str | None = None,
         security_level: int = 1,
         tags: list[str] = [],
-        image_base64: str = "",
-        image_base64_list: list[str] = [],
+        images_base64: list[str] = [],
     ) -> StreamingResponse:
         """
         API 调用的统一入口（流式返回版）
@@ -51,7 +50,7 @@ class RootAgent(AgentStreamMixin):
         logger.info(
             f"[Chat入参] user={user_id} agent={agent_id} session={session_id} "
             f"security_level={security_level} tags={tags} "
-            f"images={len(image_base64_list)} query={query[:80]}"
+            f"images={len(images_base64)} query={query[:80]}"
         )
 
         async def event_generator():
@@ -69,12 +68,7 @@ class RootAgent(AgentStreamMixin):
 
                 # 2.5 视觉搜索：检测到图片时，先做双向互检索
                 enriched_query = query
-                # 收集所有图片（单张 + 多张列表）
-                all_images = []
-                if image_base64 and len(image_base64) > 100:
-                    all_images.append(image_base64)
-                if image_base64_list:
-                    all_images.extend([img for img in image_base64_list if img and len(img) > 100])
+                all_images = [img for img in images_base64 if img and len(img) > 100]
 
                 if all_images:
                     try:

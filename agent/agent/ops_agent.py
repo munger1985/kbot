@@ -32,7 +32,7 @@ class OpsAgent(AgentStreamMixin):
         session_id: str | None = None,
         client_time: str | None = None,
         client_tz: str | None = None,
-        image_base64: str = "",
+        images_base64: list[str] = [],
     ) -> StreamingResponse:
         """
         AIOps 智能运维统一接口入口（流式 text/event-stream 返回版）
@@ -56,19 +56,33 @@ class OpsAgent(AgentStreamMixin):
 
                 # Step 2. 视觉搜索：检测到图片时，先做双向互检索
                 enriched_query = query
-                if image_base64 and len(image_base64) > 100:
+                all_images = [img for img in images_base64 if img and len(img) > 100]
+                if all_images:
                     try:
                         from services.visual.search_engine import VisualSearchEngine
                         engine = VisualSearchEngine()
-                        # 获取智能体关联的知识库，限定图片搜索范围
                         kb_ids = await self.agent_service.get_kb_list(int(agent_id))
-                        visual_results = await engine.search(
-                            query=query, image_base64=image_base64, top_k=5,
-                            kb_ids=kb_ids,
-                        )
-                        if visual_results:
+                        all_visual_results = []
+                        for idx, img in enumerate(all_images):
+                            try:
+                                results = await engine.search(
+                                    query=query, image_base64=img, top_k=5,
+                                    kb_ids=kb_ids,
+                                )
+                                all_visual_results.extend(results)
+                            except Exception as e:
+                                logger.warning(f"[VisualSearch] 第 {idx+1} 张图片搜索跳过: {e}")
+
+                        if all_visual_results:
+                            seen = set()
+                            unique_results = []
+                            for r in sorted(all_visual_results, key=lambda x: x.similarity, reverse=True):
+                                key = f"{r.file_id}:{r.page_no}"
+                                if key not in seen:
+                                    seen.add(key)
+                                    unique_results.append(r)
                             parts = [f"用户问题: {query}\n\n以下是通过图片搜索找到的相关文档页面的图文内容:"]
-                            for i, r in enumerate(visual_results):
+                            for i, r in enumerate(unique_results[:10]):
                                 parts.append(
                                     f"\n### 页面 {i+1} (相似度: {r.similarity:.2f})\n"
                                     f"图片路径: {r.page_image_path}\n"
@@ -76,7 +90,7 @@ class OpsAgent(AgentStreamMixin):
                                     f"文本内容: {' '.join(r.text_snippets[:3])}"
                                 )
                             enriched_query = "\n".join(parts)
-                            logger.info(f"[VisualSearch] 图片搜索完成, 找到 {len(visual_results)} 个结果")
+                            logger.info(f"[VisualSearch] 图片搜索完成, 找到 {len(unique_results)} 个结果")
                     except Exception as e:
                         logger.warning(f"[VisualSearch] 图片搜索跳过: {e}")
 

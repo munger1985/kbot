@@ -11,6 +11,7 @@ class AgentChatForm(BaseModel):
     agent_id: int = Field(..., description="Agent ID (unique identifier for the AI agent)")
     security_level: int = Field(0, description="Security level (default: 0)")
     question: str = Field(..., description="User's question/query content")
+    images_base64: list[str] = Field([], description="可选: base64 编码的图片列表（单图传一个元素即可），用于视觉搜索")
     tags: list[str] = Field([], description="Tags associated with the query (default: empty list)")
 
 class AgentChatFeedbackForm(BaseModel):

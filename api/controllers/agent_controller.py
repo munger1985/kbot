@@ -51,7 +51,8 @@ class AgentController:
             agent_id=form.agent_id,
             query=form.question,
             security_level=form.security_level,
-            tags=form.tags or []
+            tags=form.tags or [],
+            images_base64=form.images_base64,
         )
         
         full_answer = ""
@@ -77,7 +78,8 @@ class AgentController:
             agent_id=form.agent_id,
             query=form.question,
             security_level=form.security_level,
-            tags=form.tags or []
+            tags=form.tags or [],
+            images_base64=form.images_base64,
         )
     
     async def dify_search(self, form: DifySearchForm, background_tasks: BackgroundTasks) -> dict:
