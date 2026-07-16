@@ -235,6 +235,7 @@ class SlackConfig(BaseModel):
     agent_id: int = Field(default=1, ge=1, description="KBOT Agent ID to use for answering Slack messages")
     api_timeout: int = Field(default=10, ge=5, le=60, description="Timeout in seconds for Slack API HTTP calls")
     debug_save_sse: bool = Field(default=False, description="Save raw SSE responses to /tmp/slackmess/ for debugging")
+    external_callback_url: str = Field(default="", description="External callback URL for user question forwarding")
 
 class PromptConfig(BaseModel):
     """Prompt template configuration.

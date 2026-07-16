@@ -434,6 +434,107 @@ def _get_waiting_message(text: str) -> str:
     return _WAITING_MESSAGES.get(lang, _WAITING_MESSAGES["en"])
 
 
+async def _fetch_user_info(
+    bot_token: str,
+    user_id: str,
+) -> tuple[str, str]:
+    """Call Slack ``users.info`` and return (real_name, email)."""
+    headers = {
+        "Authorization": f"Bearer {bot_token}",
+        "Content-Type": "application/json; charset=utf-8",
+    }
+    url = f"https://slack.com/api/users.info?user={user_id}"
+    cfg = get_slack_config()
+    timeout = aiohttp.ClientTimeout(total=cfg.api_timeout)
+
+    try:
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(url, headers=headers) as resp:
+                body = await resp.json()
+                if body.get("ok"):
+                    user = body.get("user", {})
+                    profile = user.get("profile", {})
+                    return (
+                        user.get("real_name", ""),
+                        profile.get("email", ""),
+                    )
+                else:
+                    logger.warning(
+                        "users.info failed for {}: {}",
+                        user_id,
+                        body.get("error", ""),
+                    )
+                    return "", ""
+    except Exception:
+        logger.exception("users.info exception for {}", user_id)
+        return "", ""
+
+
+async def _post_external_callback(
+    user_id: str,
+    username: str,
+    user_email: str,
+    question: str,
+) -> None:
+    """POST user question info to the configured external callback URL."""
+    callback_url = get_slack_config().external_callback_url
+    if not callback_url:
+        return
+
+    from datetime import datetime, timezone
+
+    payload = {
+        "user_id": user_id,
+        "username": username,
+        "user_email": user_email,
+        "user_question": question,
+        "request_time": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+    }
+
+    timeout = aiohttp.ClientTimeout(total=10)
+    try:
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(
+                callback_url,
+                json=payload,
+                headers={"Content-Type": "application/json"},
+            ) as resp:
+                if 200 <= resp.status < 300:
+                    logger.info(
+                        "External callback OK | user={} | status={}",
+                        user_id,
+                        resp.status,
+                    )
+                else:
+                    logger.warning(
+                        "External callback failed | user={} | status={} | body={}",
+                        user_id,
+                        resp.status,
+                        await resp.text(),
+                    )
+    except Exception:
+        logger.exception(
+            "External callback exception | user={} | url={}",
+            user_id,
+            callback_url,
+        )
+
+
+async def _fetch_and_callback(
+    bot_token: str,
+    user_id: str,
+    question: str,
+) -> None:
+    """Fetch user info and POST to external callback URL."""
+    username, email = await _fetch_user_info(bot_token, user_id)
+    await _post_external_callback(
+        user_id=user_id,
+        username=username,
+        user_email=email,
+        question=question,
+    )
+
+
 async def _process_event_background(parsed: dict) -> None:
     """Call the kbot agent and send the reply to Slack.
 
@@ -465,7 +566,14 @@ async def _process_event_background(parsed: dict) -> None:
         thread_ts=parsed["event_ts"],
     )
 
-    # --- 2. Build agent request ---
+    # --- 2. Fetch user info & post external callback (fire-and-forget) ---
+    asyncio.create_task(_fetch_and_callback(
+        bot_token=bot_token,
+        user_id=parsed["user_id"],
+        question=parsed["text"],
+    ))
+
+    # --- 3. Build agent request ---
     # Each Slack user gets their own session so conversation context is
     # scoped per-user rather than per-channel.
     form = AgentChatForm(
