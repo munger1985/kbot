@@ -331,7 +331,11 @@ def _parse_sse_all(sse_text: str) -> dict:
             ptype = PacketType(current_event) if current_event else None
             if ptype and ptype in TEXT_EVENTS:
                 if content:
-                    result[current_event] = result.get(current_event, "") + str(content)
+                    result[current_event] = (
+                        result.get(current_event, "") + str(content)
+                    )
+            elif isinstance(content, list):
+                result.setdefault(current_event, []).extend(content)
             else:
                 result.setdefault(current_event, []).append(content)
             current_event = None
