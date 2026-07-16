@@ -397,46 +397,33 @@ def _build_asset_blocks(biz_metadata_list: list[dict]) -> list[dict]:
                 },
             })
 
-        # ── Contributor + Publish_date (fields) ──────────────
+        # ── Date | Contributor + URL button ──────────────────
         has_mail = bool(author_mail)
         has_date = bool(create_date)
-        if has_mail or has_date:
-            section: dict = {"type": "section"}
-            fields: list[dict] = []
+        has_url = bool(url)
 
-            if has_mail:
-                fields.append({
-                    "type": "mrkdwn",
-                    "text": (
-                        f"*Contributor:* "
-                        f"<mailto:{author_mail}|{author_mail}>"
-                    ),
-                })
+        parts: list[str] = []
+        if has_date:
+            parts.append(create_date)
+        if has_mail:
+            parts.append(f"<mailto:{author_mail}|{author_mail}>")
 
-            if has_date:
-                fields.append({
-                    "type": "mrkdwn",
-                    "text": f"*Publish_date:* {create_date}",
-                })
-
-            section["fields"] = fields
-            blocks.append(section)
-
-        # ── URL button ───────────────────────────────────────
-        if url:
-            blocks.append({
+        if parts or has_url:
+            section: dict = {
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
-                    "text": "[VPN required] please visit us:",
+                    "text": "   |   ".join(parts) if parts else " ",
                 },
-                "accessory": {
+            }
+            if has_url:
+                section["accessory"] = {
                     "type": "button",
-                    "text": {"type": "plain_text", "text": "KM Link"},
+                    "text": {"type": "plain_text", "text": "KM Link (VPN)"},
                     "url": url,
                     "action_id": "open_km_resource",
-                },
-            })
+                }
+            blocks.append(section)
 
     return blocks
 
