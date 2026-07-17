@@ -3,7 +3,7 @@
 from fastapi import APIRouter, Depends, status, Query, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from api.controllers.ops_controller import ops_controller
-from api.schemas.ops_schema import CreateInstanceRequest, UpdateInstanceRequest, OpsChatRequest, OpsResumeRequest, OpsApproveRequest, AlertWebhookRequest
+from api.schemas.ops_schema import *
 from api.schemas.base_response import SuccessResponse
 from core.auth.shortcuts import UserAuth
 
