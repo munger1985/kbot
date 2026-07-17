@@ -81,7 +81,8 @@ class ReasoningSkill(BaseSkill):
             data_text = "无业务数据"
 
         reasoning_prompt = await default_prompt.generate(
-            get_prompt_config().reasoning
+            get_prompt_config().reasoning,
+            user_language=context.get("user_language", "English")
         )
 
         # 3. 获取用户提示词

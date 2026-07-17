@@ -7,6 +7,8 @@ from datetime import datetime, timezone
 from typing import Any
 from loguru import logger
 
+from utils.lang_detect import detect_user_language
+
 
 # Add both project root and backend directory to Python path
 project_root = Path(__file__).resolve().parent.parent
@@ -99,7 +101,10 @@ def build_mock_context_memory(
         },
         "blocks": [],
 
-        # --- 7. 瞬时空间 (Ephemeral Space) ---
+        # --- 7. 语言信息 ---
+        "user_language": detect_user_language(question),
+
+        # --- 8. 瞬时空间 (Ephemeral Space) ---
         "temp": {}
     }
 

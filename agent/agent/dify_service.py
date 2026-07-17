@@ -10,6 +10,7 @@ AskDocSkill = ask_doc_module.AskDocSkill
 from agent.common import ContextMemory # 确保这里包含了基础定义
 from agent.memory import MemoryService
 from core.dictionary import PacketType
+from utils.lang_detect import detect_user_language
 from services.basic.agent_service import AgentService
 
 
@@ -112,6 +113,7 @@ class DifyService:
 
             "session_state": {},
             "blocks": [],
+            "user_language": detect_user_language(question),
             "temp": {}    
         }
 

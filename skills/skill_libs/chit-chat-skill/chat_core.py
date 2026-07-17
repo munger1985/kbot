@@ -35,7 +35,7 @@ class ChitChatSkill(BaseSkill):
         model_name = context["llm_model"]
 
         messages = [
-            {"role": "system", "content": "You are an intelligent assistant. Please provide concise and accurate answers based on the user's questions."},
+            {"role": "system", "content": f"You are an intelligent assistant. The user's language is: {context.get('user_language', 'English')}. You MUST reply in {context.get('user_language', 'English')}. Please provide concise and accurate answers based on the user's questions."},
             {"role": "user", "content": task_input}
         ]
         logger.info(f"[{self.name}] Trigger chat stream, using model: {model_name}")

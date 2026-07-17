@@ -44,5 +44,8 @@ class ContextMemory(TypedDict):
     session_state: dict[str, Any] # 跨会话的长期记忆（如用户偏好）
     blocks: list[dict[str, Any]]   # 前端渲染流，存储 Thought, Call, Answer, Chart 等
 
-    # --- 7. 瞬时空间 (Ephemeral Space) ---
+    # --- 7. 语言信息 (Language) ---
+    user_language: str            # 检测到的用户语言（如 "Chinese"/"English"/"Japanese"/"Korean"）
+
+    # --- 8. 瞬时空间 (Ephemeral Space) ---
     temp: dict[str, Any]          # 仅限单个 Skill 内部使用的垃圾袋
