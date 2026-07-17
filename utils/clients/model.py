@@ -385,7 +385,7 @@ class AIModelClient():
             url = self.dsocr_config.api_endpoint
 
             use_health_check_timeout = kwargs.pop("use_health_check_timeout", False)
-            total = self.dsocr_config.health_check_timeout if use_health_check_timeout else self.dsocr_config.timeout
+            total = self.dsocr_config.timeout
             timeout = aiohttp.ClientTimeout(total=total)
 
             # 图片编码（Base64）
@@ -543,7 +543,7 @@ class AIModelClient():
                 raise ValueError("LLM returned an empty response")
 
             # 输出原始响应用于调试
-            logger.debug(f"LLM raw response ({len(full_text)} chars): {full_text[:500]}...")
+            # logger.debug(f"LLM raw response ({len(full_text)} chars): {full_text[:500]}...")
 
             # 鲁棒性 JSON 提取逻辑
             return self._extract_json_from_text(full_text)
