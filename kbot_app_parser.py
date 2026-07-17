@@ -9,6 +9,7 @@ from typing import Any
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 import uvicorn
+from pathlib import Path
 from dotenv import load_dotenv
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi_offline import FastAPIOffline
@@ -20,7 +21,7 @@ from core.middleware.log_middleware import log_requests
 from microservices.file_processor.services import FileParseEngine
 
 # Load environment variables
-load_dotenv()
+load_dotenv(Path(__file__).parent / ".env")
 
 # Get service configuration from config center
 config = get_parser_config()

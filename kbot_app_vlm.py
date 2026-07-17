@@ -18,6 +18,7 @@ from contextlib import asynccontextmanager
 
 import uvicorn
 from PIL import Image
+from pathlib import Path
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
@@ -63,7 +64,7 @@ Image.Image.__get_pydantic_core_schema__ = get_pydantic_core_schema  # type: ign
 
 
 # Load environment variables
-load_dotenv()
+load_dotenv(Path(__file__).parent / ".env")
 
 # Get service configuration from config center
 config = get_vlm_config()

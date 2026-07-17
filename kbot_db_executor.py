@@ -7,6 +7,7 @@ from typing import Any
 from contextlib import asynccontextmanager
 
 import uvicorn
+from pathlib import Path
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, status, Security, Depends
 from fastapi.security import APIKeyHeader
@@ -24,7 +25,7 @@ from microservices.db_executor.security.sql_validator import SQLValidator
 from microservices.db_executor.schemas.executor import ExecuteRequest, OpsExecuteRequest
 
 # 加载环境变量
-load_dotenv()
+load_dotenv(Path(__file__).parent / ".env")
 
 # --- 配置获取 ---
 executor_config = get_executor_config()

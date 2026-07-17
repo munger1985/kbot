@@ -26,9 +26,18 @@ INTERNAL_TOKEN_HEADER = "X-KBot-Internal-Token"
 PUBLIC_PATHS = {"/health", "/docs", "/redoc", "/openapi.json"}
 
 
+def _mask_token(token: str) -> str:
+    """对令牌进行脱敏显示（仅显示前 8 位）"""
+    if len(token) <= 8:
+        return token[:4] + "****"
+    return token[:8] + "****"
+
+
 def get_internal_token() -> str:
     """获取配置的内部通信令牌"""
-    return os.getenv(INTERNAL_TOKEN_ENV, DEFAULT_DEV_TOKEN)
+    token = os.getenv(INTERNAL_TOKEN_ENV, DEFAULT_DEV_TOKEN)
+    logger.debug(f"[InternalAuth] 服务端期望令牌: {_mask_token(token)}")
+    return token
 
 
 def create_internal_auth_middleware(
@@ -81,7 +90,10 @@ def create_internal_auth_middleware(
             )
 
         if provided_token != expected_token:
-            logger.warning(f"[Security] 拒绝无效令牌请求: {request.method} {request.url.path}")
+            logger.warning(
+                f"[InternalAuth] 令牌不匹配: 期望={_mask_token(expected_token)}, 收到={_mask_token(provided_token)}, "
+                f"请求={request.method} {request.url.path}"
+            )
             return JSONResponse(
                 status_code=403,
                 content={

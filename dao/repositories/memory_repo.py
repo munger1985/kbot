@@ -258,36 +258,48 @@ class MemoryRepository(BaseRepository[MemoryEntryEntity]):
         context = await self.get_context_by_id(session_id)
         if context:
             context.context_summary = new_summary
-            context.last_update_at = datetime.now(timezone.utc)
+            context.last_active_at = datetime.now(timezone.utc)
 
-    async def upsert_user_profile(self, user_id: str, profile_updates: dict):
+    async def upsert_user_profile(
+        self,
+        user_id: str,
+        global_preferences: dict | None = None,
+        frequent_entities: dict | None = None,
+        entity_relations: list | None = None,
+        correction_history: list | None = None,
+    ):
         """
-        更新用户画像
+        更新用户画像 — 每个 JSON 列独立写入各自的字段，不再共用同一份数据。
         """
-        # 1. 转换字典为 JSON 字符串
-        updates_json = json.dumps(profile_updates, ensure_ascii=False)
-        
-        # 2. 使用 text() 包装 SQL 语句
-        # 注意：Oracle 的 MERGE 语句在 SQLAlchemy 中必须用 text()
+        prefs_json = json.dumps(global_preferences or {}, ensure_ascii=False)
+        ents_json = json.dumps(frequent_entities or {}, ensure_ascii=False)
+        rels_json = json.dumps(entity_relations or [], ensure_ascii=False)
+        corrs_json = json.dumps(correction_history or [], ensure_ascii=False)
+
         sql = text("""
             MERGE INTO kbot_md_user_profile p
             USING (SELECT :uid as user_id FROM dual) s
             ON (p.user_id = s.user_id)
             WHEN MATCHED THEN
                 UPDATE SET 
-                    global_preferences = JSON_PARSE(:updates), 
-                    frequent_entities  = JSON_PARSE(:updates),
-                    entity_relations   = JSON_PARSE(:updates),
-                    correction_history = JSON_PARSE(:updates),
+                    global_preferences = JSON_PARSE(:prefs),
+                    frequent_entities  = JSON_PARSE(:ents),
+                    entity_relations   = JSON_PARSE(:rels),
+                    correction_history = JSON_PARSE(:corrs),
                     profile_summary    = COALESCE(p.profile_summary, ''),
                     last_update_time   = SYSTIMESTAMP
             WHEN NOT MATCHED THEN
                 INSERT (user_id, global_preferences, frequent_entities, entity_relations, correction_history, last_update_time)
-                VALUES (:uid, JSON_PARSE(:updates), JSON_PARSE(:updates), JSON_PARSE(:updates), JSON_PARSE(:updates), SYSTIMESTAMP)
+                VALUES (:uid, JSON_PARSE(:prefs), JSON_PARSE(:ents), JSON_PARSE(:rels), JSON_PARSE(:corrs), SYSTIMESTAMP)
         """)
-        
-        # 3. 传入参数字典
-        await self.session.execute(sql, {"uid": user_id, "updates": updates_json})
+
+        await self.session.execute(sql, {
+            "uid": user_id,
+            "prefs": prefs_json,
+            "ents": ents_json,
+            "rels": rels_json,
+            "corrs": corrs_json,
+        })
 
     async def search_vector_memory(self, user_id: str, query_vector: list[float], limit: int = 3):
         """

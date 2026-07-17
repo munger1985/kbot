@@ -13,7 +13,6 @@ fastapi-mcp==0.4.0
 docling==2.70.0
 aiohttp==3.13.3
 python-jose==3.5.0
-passlib==1.7.4
 jieba==0.42.1
 oci==2.166.0
 cohere==5.20.2

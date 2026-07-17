@@ -16,6 +16,7 @@ from typing import Any
 from contextlib import asynccontextmanager
 
 import uvicorn
+from pathlib import Path
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
@@ -31,7 +32,7 @@ from microservices.llm.llm_service import LLMService
 from microservices.llm.schema import *
 
 # Load environment variables
-load_dotenv()
+load_dotenv(Path(__file__).parent / ".env")
 
 # Service basic information
 config = get_llm_config()

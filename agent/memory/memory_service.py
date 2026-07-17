@@ -213,6 +213,8 @@ class MemoryService:
         async with self.db_session as session:
             repo = MemoryRepository(session)
             try:
+                logger.debug(f"[MemoryPersist] Step0: 开始持久化 entry={entry_id}, user={user_id}, session={session_id}")
+
                 # ========== 1. 从 context_memory 提取执行轨迹 ==========
                 reasoning_path_structured = []
                 execution_history = context_memory.get("execution_history") or []
@@ -279,6 +281,7 @@ class MemoryService:
                 new_state = prepared_data.get('new_state') or {}
                 current_plan = prepared_data.get('current_plan')
 
+                logger.debug(f"[MemoryPersist] Step4: 持久化会话状态...")
                 await repo.update_context_state(
                     session_id=session_id,
                     new_state=new_state,
@@ -291,6 +294,7 @@ class MemoryService:
                 if not ctx_summary:
                     ctx_summary = standalone_query  # 至少用改写后的问题作为摘要
                 await repo.update_context_summary(session_id, ctx_summary)
+                logger.debug(f"[MemoryPersist] Step4b: 上下文摘要已持久化, len={len(ctx_summary)}")
 
                 new_entry = MemoryEntryEntity(
                     entry_id=entry_id,
@@ -311,6 +315,7 @@ class MemoryService:
                     memory_summary="",
                 )
                 await repo.add_memory_entry(new_entry)
+                logger.debug(f"[MemoryPersist] Step4c: 记忆条目已添加, turn_type={new_entry.turn_type}")
 
                 # ========== 5. 反思逻辑 ==========
                 profile_entity = await repo.get_user_profile(user_id=user_id)
@@ -331,6 +336,7 @@ class MemoryService:
                     question=standalone_query, answer=reflection_context,
                     llm_model=llm_model,
                 )
+                logger.debug(f"[MemoryPersist] Step5a: 反思完成, profile_summary_len={len(reflection.get('profile_summary',''))}, has_relations={bool(reflection.get('entity_relations'))}")
 
                 # 向量化
                 memory_snapshot = reflection["memory_snapshot"]
@@ -342,22 +348,22 @@ class MemoryService:
 
                 # 持久化画像摘要
                 await repo.update_user_profile_summary(user_id=user_id, profile_summary=reflection["profile_summary"])
-                # 合并所有画像更新到一次调用
-                profile_updates: dict[str, Any] = dict(prepared_data.get("user_profile_updates") or {})
-                if reflection.get("entity_relations"):
-                    profile_updates["entity_relations"] = reflection["entity_relations"]
-                if reflection.get("corrections"):
-                    profile_updates["correction_history"] = reflection["corrections"]
+                logger.debug(f"[MemoryPersist] Step6: 画像摘要已持久化")
+                # 各画像字段独立写入，不再混入同一 dict
                 await repo.upsert_user_profile(
                     user_id=user_id,
-                    profile_updates=profile_updates
+                    global_preferences=reflection.get("global_preferences"),
+                    frequent_entities=reflection.get("frequent_entities"),
+                    entity_relations=reflection.get("entity_relations"),
+                    correction_history=reflection.get("corrections"),
                 )
 
                 # 回写条目向量
                 await repo.update_entry_vector(entry_id=entry_id, vector=vector, summary=memory_snapshot)
+                logger.debug(f"[MemoryPersist] Step7: 条目向量已回写, has_vector={vector is not None}")
 
             except Exception as e:
-                logger.error(f"Persistence error ({entry_id}): {e}", exc_info=True)
+                logger.error(f"[MemoryPersist] 持久化失败 entry={entry_id}: {e}", exc_info=True)
 
 
     def _build_reflection_context(

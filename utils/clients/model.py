@@ -16,9 +16,18 @@ from core.exceptions import *
 # 内部服务通信令牌
 INTERNAL_TOKEN_HEADER = "X-KBot-Internal-Token"
 
+def _mask_token(token: str) -> str:
+    """对令牌进行脱敏显示（仅显示前 8 位）"""
+    if len(token) <= 8:
+        return token[:4] + "****"
+    return token[:8] + "****"
+
+
 def _get_internal_token() -> str:
     """延迟读取内部通信令牌，确保 load_dotenv() 之后才获取"""
-    return os.getenv("KBOT_INTERNAL_SERVICE_TOKEN", "kbot_internal_service_token")
+    token = os.getenv("KBOT_INTERNAL_SERVICE_TOKEN", "kbot_internal_service_token")
+    logger.debug(f"[InternalAuth] 客户端使用令牌: {_mask_token(token)}")
+    return token
 
 
 @dataclass
@@ -970,6 +979,8 @@ class AIModelClient():
                     url, headers=headers, json=payload
                 ) as response:
                     if response.status != 200:
+                        if response.status == 403:
+                            logger.error(f"[InternalAuth] 视觉服务拒绝令牌: 客户端token={_mask_token(self.internal_token)}, 服务={service_host}:{service_port}")
                         error_text = await response.text()
                         msg = f"视觉嵌入服务 HTTP {response.status}: {error_text}"
                         logger.error(msg)

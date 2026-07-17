@@ -263,6 +263,8 @@ class RootOrchestrator:
             "total_steps": len(plan_skills_trace)
         }
         
+        logger.debug(f"[Pipeline] 提交记忆持久化任务: entry={entry_id}, session={session_id}")
+
         background_tasks.add_task(
             self.memory_service.persist_and_reflect_memory,
             session_id=session_id,
@@ -281,6 +283,8 @@ class RootOrchestrator:
             request_time=start_time,
             response_time=datetime.now(timezone.utc)
         )
+
+        logger.debug(f"[Pipeline] 记忆持久化任务已提交: entry={entry_id}")
         
         yield {"type": PacketType.DONE, "content": {"entry_id": entry_id}}
 
