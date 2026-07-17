@@ -216,9 +216,10 @@ class MemoryRepository(BaseRepository[MemoryEntryEntity]):
             raise DatabaseException("Failed to update context state", original_error=e)
 
     async def add_memory_entry(self, entry: MemoryEntryEntity):
-        """Persist memory entry to storage"""
+        """Persist memory entry to storage — 显式 flush 确保后续 update_entry_vector 能命中该行"""
         try:
             self.session.add(entry)
+            await self.session.flush()
         except Exception as e:
             logger.error(f"Failed to add memory entry", exc_info=e)
             raise DatabaseException("Failed to add memory entry", original_error=e)
@@ -271,35 +272,39 @@ class MemoryRepository(BaseRepository[MemoryEntryEntity]):
         """
         更新用户画像 — 每个 JSON 列独立写入各自的字段，不再共用同一份数据。
         """
-        prefs_json = json.dumps(global_preferences or {}, ensure_ascii=False)
-        ents_json = json.dumps(frequent_entities or {}, ensure_ascii=False)
-        rels_json = json.dumps(entity_relations or [], ensure_ascii=False)
-        corrs_json = json.dumps(correction_history or [], ensure_ascii=False)
+        try:
+            prefs_json = json.dumps(global_preferences or {}, ensure_ascii=False)
+            ents_json = json.dumps(frequent_entities or {}, ensure_ascii=False)
+            rels_json = json.dumps(entity_relations or [], ensure_ascii=False)
+            corrs_json = json.dumps(correction_history or [], ensure_ascii=False)
 
-        sql = text("""
-            MERGE INTO kbot_md_user_profile p
-            USING (SELECT :uid as user_id FROM dual) s
-            ON (p.user_id = s.user_id)
-            WHEN MATCHED THEN
-                UPDATE SET 
-                    global_preferences = JSON_PARSE(:prefs),
-                    frequent_entities  = JSON_PARSE(:ents),
-                    entity_relations   = JSON_PARSE(:rels),
-                    correction_history = JSON_PARSE(:corrs),
-                    profile_summary    = COALESCE(p.profile_summary, ''),
-                    last_update_time   = SYSTIMESTAMP
-            WHEN NOT MATCHED THEN
-                INSERT (user_id, global_preferences, frequent_entities, entity_relations, correction_history, last_update_time)
-                VALUES (:uid, JSON_PARSE(:prefs), JSON_PARSE(:ents), JSON_PARSE(:rels), JSON_PARSE(:corrs), SYSTIMESTAMP)
-        """)
+            sql = text("""
+                MERGE INTO kbot_md_user_profile p
+                USING (SELECT :uid as user_id FROM dual) s
+                ON (p.user_id = s.user_id)
+                WHEN MATCHED THEN
+                    UPDATE SET
+                        global_preferences = JSON_PARSE(:prefs),
+                        frequent_entities  = JSON_PARSE(:ents),
+                        entity_relations   = JSON_PARSE(:rels),
+                        correction_history = JSON_PARSE(:corrs),
+                        profile_summary    = COALESCE(p.profile_summary, ''),
+                        last_update_time   = SYSTIMESTAMP
+                WHEN NOT MATCHED THEN
+                    INSERT (user_id, global_preferences, frequent_entities, entity_relations, correction_history, last_update_time)
+                    VALUES (:uid, JSON_PARSE(:prefs), JSON_PARSE(:ents), JSON_PARSE(:rels), JSON_PARSE(:corrs), SYSTIMESTAMP)
+            """)
 
-        await self.session.execute(sql, {
-            "uid": user_id,
-            "prefs": prefs_json,
-            "ents": ents_json,
-            "rels": rels_json,
-            "corrs": corrs_json,
-        })
+            await self.session.execute(sql, {
+                "uid": user_id,
+                "prefs": prefs_json,
+                "ents": ents_json,
+                "rels": rels_json,
+                "corrs": corrs_json,
+            })
+        except Exception as e:
+            logger.error(f"Failed to upsert user profile for user {user_id}", exc_info=e)
+            raise DatabaseException("Failed to upsert user profile", original_error=e)
 
     async def search_vector_memory(self, user_id: str, query_vector: list[float], limit: int = 3):
         """

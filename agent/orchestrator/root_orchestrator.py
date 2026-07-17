@@ -267,7 +267,7 @@ class RootOrchestrator:
 
         # 使用 asyncio.create_task 而非 background_tasks.add_task，
         # 避免在非流式接口中 BackgroundTasks 不执行导致记忆丢失
-        asyncio.create_task(
+        task = asyncio.create_task(
             self.memory_service.persist_and_reflect_memory(
                 session_id=session_id,
                 user_id=user_id,
@@ -285,6 +285,10 @@ class RootOrchestrator:
                 request_time=start_time,
                 response_time=datetime.now(timezone.utc)
             )
+        )
+        task.add_done_callback(
+            lambda t: logger.error(f"[MemoryPersist] 后台记忆持久化任务异常: {t.exception()}", exc_info=t.exception())
+            if t.exception() else None
         )
 
         logger.debug(f"[Pipeline] 记忆持久化任务已提交: entry={entry_id}")
