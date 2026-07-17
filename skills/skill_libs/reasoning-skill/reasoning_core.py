@@ -84,6 +84,8 @@ class ReasoningSkill(BaseSkill):
             get_prompt_config().reasoning,
             user_language=context.get("user_language", "English")
         )
+        logger.info(f"[ReasoningSkill] user_language from context: {context.get('user_language', 'NOT_SET')!r}")
+        logger.info(f"[ReasoningSkill] reasoning_prompt first 300 chars: {reasoning_prompt[:300]}")
 
         # 3. 获取用户提示词
         user_prompt = await self.prompt_service.get_prompt_by_agent_id(context["agent_id"])

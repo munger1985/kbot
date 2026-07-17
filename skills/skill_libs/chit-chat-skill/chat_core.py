@@ -39,6 +39,8 @@ class ChitChatSkill(BaseSkill):
             {"role": "user", "content": task_input}
         ]
         logger.info(f"[{self.name}] Trigger chat stream, using model: {model_name}")
+        logger.info(f"[{self.name}] user_language from context: {context.get('user_language', 'NOT_SET')!r}")
+        logger.info(f"[{self.name}] System prompt: {messages[0]['content'][:200]}")
 
         try:
             # Call the existing parsing method, automatically handle JSON parsing and field extraction

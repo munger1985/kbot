@@ -39,7 +39,10 @@ class ContextManager:
             query=query,
             user_language=user_language
         )
-        
+
+        logger.info(f"[LangTrace] process_query_with_memory user_language={user_language!r} query={query[:60]!r}")
+        logger.debug(f"[LangTrace] REWRITE_PROMPT first 300 chars: {prompt[:300]}")
+
         try:
             # 2. 获取结构化结果
             # 设置 low temperature 以获得稳定的 JSON

@@ -46,7 +46,7 @@ class LLMPlanner:
             )
 
             plan = self._build_plan(plan_data, standalone_query, model_name, intent_type, variables)
-            logger.success(f"动态计划生成成功，意图驱动共 {len(plan['steps'])} 步")
+            logger.success(f"动态计划生成成功，user_language={user_language!r}, 意图驱动共 {len(plan['steps'])} 步")
             return plan
 
         except Exception as e:

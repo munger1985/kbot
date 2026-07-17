@@ -105,6 +105,8 @@ class RootOrchestrator:
             "temp": {}
         }
 
+        logger.info(f"[LangTrace] RootOrchestrator user_language={user_language!r} question={question[:80]!r} intent={analysis.intent}")
+
         # --- 4. 分支任务规划阶段 ---
         if analysis.intent == IntentType.CHITCHAT:
             ctx["runtime_plan"] = {

@@ -5,6 +5,7 @@ No external dependencies required.
 """
 
 import re
+from loguru import logger
 
 
 # Unicode ranges for CJK, Japanese-specific, and Korean characters
@@ -21,6 +22,7 @@ def detect_user_language(text: str) -> str:
     suitable for injecting into LLM prompts.
     """
     if not text or not text.strip():
+        logger.debug("[LangDetect] Empty text -> English")
         return "English"
 
     text_stripped = text.strip()
@@ -33,17 +35,26 @@ def detect_user_language(text: str) -> str:
     katakana = len(_KATAKANA_RE.findall(text_stripped))
     hangul = len(_HANGUL_RE.findall(text_stripped))
 
+    logger.debug(
+        f"[LangDetect] text={text_stripped[:60]!r} total={total_chars} "
+        f"cjk={cjk} hiragana={hiragana} katakana={katakana} hangul={hangul}"
+    )
+
     # Japanese has hiragana/katakana + CJK — check Japanese-specific chars first
     if hiragana + katakana > 0:
+        logger.debug("[LangDetect] -> Japanese")
         return "Japanese"
 
     # Chinese uses CJK characters — threshold at 10% to catch mixed input
     if cjk > total_chars * 0.1:
+        logger.debug("[LangDetect] -> Chinese")
         return "Chinese"
 
-    # Korean hangul
-    if hangul > total_chars * 0.2:
+    # Korean hangul — threshold at 10% to catch mixed input
+    if hangul > total_chars * 0.1:
+        logger.debug("[LangDetect] -> Korean")
         return "Korean"
 
     # Default to English for everything else (Latin, Cyrillic, etc.)
+    logger.debug("[LangDetect] -> English (default)")
     return "English"

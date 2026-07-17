@@ -41,6 +41,9 @@ class DefaultPrompt(string.Formatter):
     def get_value(self, key: Any, args: Any, kwargs: Any) -> Any:
         """继承自 string.Formatter: 如果 key 缺失，返回原样 {key}"""
         if isinstance(key, str):
+            if key not in kwargs:
+                if key == "user_language":
+                    logger.warning(f"[LangTrace] CRITICAL: 'user_language' not in kwargs for a prompt that uses it! Available keys: {list(kwargs.keys())}")
             # 如果 kwargs 中没有该 key，返回 {key} 字符串
             return kwargs.get(key, "{" + key + "}")
         return super().get_value(key, args, kwargs)

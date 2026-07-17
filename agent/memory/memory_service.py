@@ -108,6 +108,8 @@ class MemoryService:
             user_language=user_language
         )
 
+        logger.info(f"[LangTrace] prepare_context_and_rewrite detected user_language={user_language!r} for question={raw_question[:60]!r}")
+
         # 5. 合并状态 (逻辑保持不变)
         new_state = SessionStateManager.merge_state(
             rewrite_context_state, 
