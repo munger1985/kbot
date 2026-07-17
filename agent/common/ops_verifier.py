@@ -125,13 +125,31 @@ class OpsVerifier:
 
     @staticmethod
     def _extract_value(query_result: Any) -> float | None:
-        """从 Prometheus/Zabbix 返回结果中提取数值。
+        """从 MetricResult 或 Prometheus/Zabbix 原始结果中提取数值。
 
-        Prometheus 返回格式: [{"metric": {...}, "value": [ts, "val"]}]
-        Zabbix 返回格式: [{"value": "val"}]
+        MetricResult.series 格式: [{"labels": {...}, "value": float, "timestamp": int}]
         """
-        if not query_result:
+        if query_result is None:
             return None
+
+        # MetricResult 对象
+        if hasattr(query_result, "series"):
+            series = query_result.series
+            if series and isinstance(series, list) and len(series) > 0:
+                item = series[0]
+                if isinstance(item, dict):
+                    v = item.get("value")
+                    if v is not None:
+                        return float(v)
+                    # datapoints (matrix 类型)
+                    datapoints = item.get("datapoints")
+                    if datapoints and len(datapoints) > 0:
+                        last = datapoints[-1]
+                        if isinstance(last, list) and len(last) >= 2:
+                            return float(last[1])
+            return None
+
+        # 兼容: 原始列表格式
         if isinstance(query_result, list) and len(query_result) > 0:
             item = query_result[0]
             if isinstance(item, dict):
@@ -142,10 +160,8 @@ class OpsVerifier:
                     if isinstance(v, (int, float)):
                         return float(v)
                     if isinstance(v, str):
-                        try:
-                            return float(v)
-                        except ValueError:
-                            return None
+                        try: return float(v)
+                        except ValueError: return None
                 if "values" in item:
                     vals = item["values"]
                     if isinstance(vals, list) and len(vals) > 0:
