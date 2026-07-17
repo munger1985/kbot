@@ -1,9 +1,9 @@
 """AIOps 执行报告实体 (Oracle 23ai)"""
 
 from datetime import datetime, timezone
-from sqlalchemy import String, Float, DateTime, text
+from sqlalchemy import String, Float, DateTime, Text, text
 from sqlalchemy.orm import Mapped, mapped_column
-from .base import BaseEntity, OracleJSON, OracleCLOB
+from .base import BaseEntity, OracleJSON
 
 
 class OpsExecutionReportEntity(BaseEntity):
@@ -57,11 +57,11 @@ class OpsExecutionReportEntity(BaseEntity):
         comment="manual / webhook / cron",
     )
     original_question: Mapped[str] = mapped_column(
-        OracleCLOB, nullable=False, default="",
+        Text, nullable=False, default="",
         comment="用户原始问题或告警摘要",
     )
     diagnosis_summary: Mapped[str] = mapped_column(
-        OracleCLOB, nullable=False, default="",
+        Text, nullable=False, default="",
         comment="LLM 诊断结论摘要",
     )
 
@@ -94,11 +94,11 @@ class OpsExecutionReportEntity(BaseEntity):
 
     # 报告内容 (CLOB)
     report_content: Mapped[str] = mapped_column(
-        OracleCLOB, nullable=False, default="",
+        Text, nullable=False, default="",
         comment="Markdown 格式完整报告",
     )
     recommendations: Mapped[str] = mapped_column(
-        OracleCLOB, nullable=False, default="",
+        Text, nullable=False, default="",
         comment="LLM 后续优化建议",
     )
 
