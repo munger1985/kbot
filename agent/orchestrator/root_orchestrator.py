@@ -265,23 +265,26 @@ class RootOrchestrator:
         
         logger.debug(f"[Pipeline] 提交记忆持久化任务: entry={entry_id}, session={session_id}")
 
-        background_tasks.add_task(
-            self.memory_service.persist_and_reflect_memory,
-            session_id=session_id,
-            user_id=user_id,
-            entry_id=entry_id,
-            raw_question=question,
-            answer=final_answer_accumulator.strip() or "任务处理完成。",
-            model_params=model_params,
-            prepared_data={
-                **prepared,
-                "thought": ctx["runtime_plan"].get("thought", "") if ctx["runtime_plan"] else "",
-                "current_plan": current_plan_payload,
-                "turn_type": "chitchat" if analysis.intent in [IntentType.CHITCHAT, IntentType.OFF_TOPIC] else "task_oriented"
-            },
-            context_memory=ctx,  # 完美沉淀清洗后的 ContextMemory
-            request_time=start_time,
-            response_time=datetime.now(timezone.utc)
+        # 使用 asyncio.create_task 而非 background_tasks.add_task，
+        # 避免在非流式接口中 BackgroundTasks 不执行导致记忆丢失
+        asyncio.create_task(
+            self.memory_service.persist_and_reflect_memory(
+                session_id=session_id,
+                user_id=user_id,
+                entry_id=entry_id,
+                raw_question=question,
+                answer=final_answer_accumulator.strip() or "任务处理完成。",
+                model_params=model_params,
+                prepared_data={
+                    **prepared,
+                    "thought": ctx["runtime_plan"].get("thought", "") if ctx["runtime_plan"] else "",
+                    "current_plan": current_plan_payload,
+                    "turn_type": "chitchat" if analysis.intent in [IntentType.CHITCHAT, IntentType.OFF_TOPIC] else "task_oriented"
+                },
+                context_memory=ctx,
+                request_time=start_time,
+                response_time=datetime.now(timezone.utc)
+            )
         )
 
         logger.debug(f"[Pipeline] 记忆持久化任务已提交: entry={entry_id}")

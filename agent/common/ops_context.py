@@ -21,6 +21,7 @@ class OpsContextMemory(TypedDict):
     # --- 2. 目标拓扑与内核实体 (Target Topology & Kernel Info) ---
     # =========================================================================
     instance_id: str               # 物理/云端实例唯一ID (e.g., "ins-oracle-prod-01")
+    instance_name: str             # 物理/云端实例名称（如 "oracle-prod-01"）
     db_type: str                   # 数据库类型（如 "oracle" "mysql" "postgresql"）
     version_code: int              # 精准到内核版本的数字代码 (e.g., 26000000)
     db_role: Literal["primary", "standby", "cluster_node"] # 节点角色，防止 Planner 跑到备库去执行高危变动

@@ -132,7 +132,7 @@ class OpsDbInstanceRepository(BaseRepository[OpsDbInstanceEntity]):
             .where(OpsDbInstanceEntity.status == "active")
             .fetch(1)
         )
-        result = await self._session.execute(stmt)
+        result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
     async def find_by_zabbix_host(self, host_name: str) -> OpsDbInstanceEntity | None:
@@ -143,5 +143,5 @@ class OpsDbInstanceRepository(BaseRepository[OpsDbInstanceEntity]):
             .where(OpsDbInstanceEntity.status == "active")
             .fetch(1)
         )
-        result = await self._session.execute(stmt)
+        result = await self.session.execute(stmt)
         return result.scalar_one_or_none()

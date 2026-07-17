@@ -1,6 +1,6 @@
 """视觉嵌入服务 — 通过模型池管理 ColQwen2 等视觉模型。
 
-模型配置从数据库 ai_model 表读取（category=IMG_EMBEDDING），
+模型配置从数据库 model 表读取（category=IMG_EMBEDDING），
 服务级配置从 TOML [visual] 段读取。
 """
 

@@ -1,7 +1,6 @@
 """视觉嵌入模型配置与基类。"""
 
 from pydantic import BaseModel
-from typing import Any
 
 
 class VisualModelConfig(BaseModel):

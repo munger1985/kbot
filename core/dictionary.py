@@ -181,11 +181,9 @@ class LLMProvider(str, Enum):
     CHATGPT = "chatgpt"
     OCI = "oci"
 
-class RerankerProvider(str, Enum):
-    """Supported reranker model enumeration."""
-    LOCAL_BGE = "local_bge"
+class VisualEmbeddingProvider(str, Enum):
+    """Supported visual embedding model provider enumeration."""
     LOCAL_QWEN = "local_qwen"
-    API_QWEN = "api_qwen"
 
 class VLMProvider(str, Enum):
     """Supported VLM provider enumeration."""

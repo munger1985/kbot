@@ -17,7 +17,7 @@ class OpsAgentConfEntity(BaseEntity):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True, comment="关系配置自增 ID, 主键")
     agent_id: Mapped[int] = mapped_column(Integer, nullable=False, comment="关联的智能体 Agent ID (int, 对应 kbot_md_agent.agent_id)")
-    instance_id: Mapped[str] = mapped_column(String(36), nullable=False, comment="关联的运维实例 ID (对应 ops_db_instance.instance_id)")
+    instance_id: Mapped[int] = mapped_column(Integer, nullable=False, comment="关联的运维实例 ID (对应 ops_db_instance.instance_id)")
     is_mutation_allowed: Mapped[bool] = mapped_column(Boolean, default=False, comment="是否允许执行变更动作(如 Kill/DDL),False 则将此 Agent 锁死在只读听诊器状态")
     require_approval: Mapped[bool] = mapped_column(Boolean, default=True, comment="对此实例执行高危自愈动作时,是否必须触发人工审批门禁")
     max_daily_execution: Mapped[int] = mapped_column(Integer, default=10, comment="单日高危变更自愈动作上限频次,防止大模型陷入死循环")
