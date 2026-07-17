@@ -15,7 +15,11 @@ from .txt_chunk import TxtChunkEntity
 from .graph import GraphVertexEntity, GraphEdgeEntity, GraphEdgeChunkMapEntity
 from .ops_db_instance import OpsDbInstanceEntity
 from .ops_agent_conf import OpsAgentConfEntity
-
+from .ops_pending import OpsPendingRequestEntity
+from .doc_metadata import DocMetadataEntity
+from .doc_relation import DocRelationEntity
+from .extracted_image import ExtractedImageEntity
+from .workflow import WorkflowEntity
 
 
 __all__ = [
@@ -39,5 +43,9 @@ __all__ = [
     "GraphEdgeEntity",
     "GraphEdgeChunkMapEntity",
     "OpsDbInstanceEntity",
-    "OpsAgentConfEntity"
+    "OpsAgentConfEntity",
+    "OpsPendingRequestEntity",
+    "DocMetadataEntity",
+    "DocRelationEntity",
+    "ExtractedImageEntity",
 ]

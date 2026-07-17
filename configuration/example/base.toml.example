@@ -59,13 +59,12 @@ timeout = 300
 frequency_penalty = 0.0
 presence_penalty = 0.0
 
-[reranker]
-service_name = "kbot-reranker-service"
-service_version = "1.0.0"
+[visual]
+service_name = "cube-visual-service"
 service_host = "0.0.0.0"
 service_port = 18093
-cache_dir = "/home/chris/cached_models/"
 timeout = 300
+max_retries = 3
 
 [vlm]
 service_name = "kbot-vlm-service"
@@ -85,27 +84,39 @@ queue_workers = 2
 parser_parallel = 4
 db_check_interval = 120
 
-[prompt]
-image2text = "SYSTEM/image2text"
-rewrite_question = "SYSTEM/rewrite_question"
-refresh_summary = "SYSTEM/refresh_summary"
-rag_final_render = "SYSTEM/rag_final_render"
-user_profile = "SYSTEM/user_profile"
-task_planner = "SYSTEM/task_planner"
-intent_router = "SYSTEM/intent_router"
-reasoning = "SYSTEM/reasoning"
-generate_chart = "SYSTEM/generate_chart"
-graph_vertex_fusion = "SYSTEM/graph_vertex_fusion"
-graph_extractor = "SYSTEM/graph_extractor"
-sql_gen = "SYSTEM/sql_gen"
-sql_repair = "SYSTEM/sql_repair"
-db_router = "SYSTEM/db_router"
-ops_rewrite = "SYSTEM/ops_rewrite"
-ops_diagnosis = "SYSTEM/ops_diagnosis"
-ops_planner = "SYSTEM/ops_planner"
+[executor]
+service_name = "cube-sql-executor-service"
+service_version = "1.0.0"
+service_host = "0.0.0.0"
+service_port = 18096
+
+[dsocr]
+enabled = false
+api_endpoint = "http://localhost:18097/v1/chat/completions"
+timeout = 600
+crop_mode = true
+max_tokens = 8192
+temperature = 0.0
 
 [prometheus]
 base_url = "http://localhost:9090"
 token = ""
-timeout = 30
-default_step = "15s"
+timeout = 15
+default_step = "60s"
+
+[zabbix]
+api_url = "http://localhost/zabbix/api_jsonrpc.php"
+token = ""
+user = "Admin"
+password = ""
+timeout = 15
+
+[slack]
+agent_id = 164
+api_timeout = 10
+
+[ask_data_api]
+api_endpoint = "http://132.145.80.161:10090/aireport/chat/with_selectai_api"
+profiles_endpoint = "http://132.145.80.161:10090/aireport/admin/list_profiles"
+api_key = "airpt-8f4e8d5abeffbc5b793eb78d666b580f"
+timeout = 120

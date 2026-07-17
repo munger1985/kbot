@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import Any, List, Dict
+from typing import Any
 from loguru import logger
 import importlib
 
@@ -10,16 +10,18 @@ AskDocSkill = ask_doc_module.AskDocSkill
 from agent.common import ContextMemory # 确保这里包含了基础定义
 from agent.memory import MemoryService
 from core.dictionary import PacketType
+from utils.lang_detect import detect_user_language
+from services.basic.agent_service import AgentService
 
 
 class DifyService:
     """Dify 接口的检索服务适配器：复用系统原生 Skill 链。"""
 
     def __init__(self):
-        
         # 技能与内存实例
         self.doc_skill = AskDocSkill()
         self.memory_service = MemoryService()
+        self.agent_service = AgentService()
 
     async def search(
         self,
@@ -27,21 +29,30 @@ class DifyService:
         question: str,
         session_id: str,
         security_level: int,
-        user_id: str,
-        tags: List[str] | None = None
-    ) -> Dict[str, List[Dict]]:
+        user_id: str = "dify_system",
+        tags: list[str] | None = None
+    ) -> dict[str, list[dict]]:
         """
         Dify 代理交互接口：调用 AskDocSkill 检索知识。
         """
         question = str(question) if question else ""
-        logger.info(f"🚀 Dify RAG 请求 | 会话: {session_id} | 长度: {len(question)}")
-
+        logger.info(f"Dify RAG 请求 | 会话: {session_id} | 长度: {len(question)}")
+        model_params = await self.agent_service.get_agent_model_params(agent_id)
+        llm_model = model_params.llm_model
         # 1. 持久化层准备
         await self.memory_service.ensure_session_exists(
             session_id=session_id,
             user_id=user_id,
             agent_id=agent_id,
             question=question
+        )
+        user_profile = await self.memory_service.get_user_profile(user_id)
+        prepared = await self.memory_service.prepare_context_and_rewrite(
+            user_id=user_id,
+            session_id=session_id,
+            raw_question=question,
+            llm_model=llm_model,
+            user_profile=user_profile
         )
 
         # 2. 构造上下文 (只填充差异化部分，其余使用默认值)
@@ -75,15 +86,7 @@ class DifyService:
 
         return {"records": records}
 
-    def _build_context(
-        self, 
-        agent_id: int, 
-        session_id: str, 
-        question: str, 
-        user_id: str, 
-        security_level: int, 
-        tags: List[str] | None = None
-    ) -> ContextMemory:
+    def _build_context(self, agent_id: int, session_id: str, question: str, user_id: str, security_level: int, tags: list[str] | None) -> ContextMemory:
         """构建标准化的执行上下文"""
         return {
             "user_id": user_id,
@@ -93,6 +96,7 @@ class DifyService:
             "standalone_query": question,
             "search_keywords": "",
             "llm_model": "",
+            "embedding_model": "",
             "security_level": security_level,
             "tags": tags or [],
             "intent_context": {},
@@ -109,11 +113,12 @@ class DifyService:
 
             "session_state": {},
             "blocks": [],
+            "user_language": detect_user_language(question),
             "temp": {}    
         }
 
 
-    def _convert_to_dify_format(self, skill_docs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _convert_to_dify_format(self, skill_docs: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """标准化 Dify 外部数据源格式"""
         return [
             {

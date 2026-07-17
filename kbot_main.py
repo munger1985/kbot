@@ -107,6 +107,11 @@ def create_app() -> FastAPI:
         # 5. Router registration
         app.include_router(router)
 
+        # 6. Slack router (registered at root level — Slack requires exact
+        #    paths like /slack/events without an /api prefix).
+        from api.routers.slack_router import router as slack_router
+        app.include_router(slack_router)
+
         return app
 
     except Exception as e:

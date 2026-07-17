@@ -125,27 +125,18 @@ class LLMConfig(BaseModel):
         """
         return f"http://{self.service_host}:{self.service_port}"
 
-class RerankerConfig(BaseModel):
-    """Reranker service configuration.
-    
-    Configuration parameters for the reranking service (reordering search results),
-    including network settings and model caching.
-    """
-    service_name: str = Field(default="reranker-service", description="Name of the reranker service")
-    service_version: str = Field(default="1.0.0", description="Reranker service version")
-    service_host: str = Field(default="0.0.0.0", description="Reranker service host address")
-    service_port: int = Field(default=18093, ge=1, le=65535, description="Reranker service port (1-65535)")
-    cache_dir: str = Field(default="./cached_models", description="Directory for cached reranker models")
-    timeout: int = Field(default=300, ge=10, le=65535, description="Request timeout in seconds (10-65535)")
-    health_check_timeout: int = Field(default=10, ge=5, le=60, description="Health check timeout in seconds (5-60)")
-    
+class VisualConfig(BaseModel):
+    """视觉嵌入服务配置（Phase 2 多模态检索）"""
+    service_name: str = Field(default="cube-visual-service")
+    service_version: str = Field(default="1.0.0")
+    service_host: str = Field(default="0.0.0.0")
+    service_port: int = Field(default=18093, ge=1, le=65535)
+    timeout: int = Field(default=300, ge=10, le=1800)
+    max_retries: int = Field(default=3, ge=0, le=10)
+    # 模型参数（dimension, device, model_path）从数据库 ai_model 表读取
+
     @property
     def service_url(self) -> str:
-        """Generate full service URL for reranker service.
-        
-        Returns:
-            str: Complete URL for accessing the reranker service.
-        """
         return f"http://{self.service_host}:{self.service_port}"
 
 class VLMConfig(BaseModel):
@@ -170,9 +161,22 @@ class VLMConfig(BaseModel):
         """
         return f"http://{self.service_host}:{self.service_port}"
 
+class DsocrConfig(BaseModel):
+    """DeepSeek OCR service configuration.
+
+    Configuration parameters for the DeepSeek OCR service, supporting both
+    Docker vLLM deployment and local microservice modes (via api_endpoint).
+    """
+    enabled: bool = Field(default=False, description="Whether DeepSeek OCR service is deployed")
+    api_endpoint: str = Field(default="http://localhost:18097/v1/chat/completions", description="OpenAI-compatible API endpoint")
+    timeout: int = Field(default=600, ge=10, le=3600, description="Request timeout in seconds (10-3600)")
+    crop_mode: bool = Field(default=True, description="Enable crop mode for OCR preprocessing")
+    max_tokens: int = Field(default=8192, ge=512, le=32768, description="Maximum output tokens (512-32768)")
+    temperature: float = Field(default=0.0, ge=0.0, le=2.0, description="Generation temperature (0.0-2.0)")
+
 class ParserConfig(BaseModel):
     """Document parser service configuration.
-    
+
     Configuration parameters for the document parsing service, including network settings,
     parallel processing limits, and artifact storage.
     """
@@ -201,6 +205,38 @@ class PrometheusConfig(BaseModel):
     timeout: int = Field(default=30, ge=5, le=300, description="HTTP 请求超时 (秒)")
     default_step: str = Field(default="15s", description="范围查询默认采样步长")
 
+class ZabbixConfig(BaseModel):
+    """Zabbix 监控数据源配置"""
+    api_url: str = Field(default="http://localhost/zabbix/api_jsonrpc.php", description="Zabbix JSON-RPC API 地址")
+    token: str = Field(default="", description="Zabbix API Token（可选，优先级高于 user/password）")
+    user: str = Field(default="Admin", description="Zabbix API 登录用户")
+    password: str = Field(default="", description="Zabbix API 登录密码")
+    timeout: int = Field(default=15, ge=5, le=120, description="HTTP 请求超时秒数")
+
+class AskDataApiConfig(BaseModel):
+    """问数外部 API 配置（SelectAI / AIReport）。
+
+    对接外部问数接口，将自然语言查询转发至 SelectAI API 并获取结构化数据结果。
+    """
+    api_endpoint: str = Field(default="http://132.145.80.161:10090/aireport/chat/with_selectai_api", description="SelectAI 问数 API 端点")
+    profiles_endpoint: str = Field(default="http://132.145.80.161:10090/aireport/admin/list_profiles", description="SelectAI Profile 列表 API 端点")
+    api_key: str = Field(default="airpt-8f4e8d5abeffbc5b793eb78d666b580f", description="SelectAI API 认证密钥")
+    timeout: int = Field(default=120, ge=10, le=600, description="HTTP 请求超时 (秒)")
+
+
+class SlackConfig(BaseModel):
+    """Slack integration configuration.
+
+    Configuration parameters for Slack Events API integration, including
+    authentication credentials and agent routing settings.
+    """
+    signing_secret: str = Field(default="", description="Slack App Signing Secret for request verification")
+    bot_token: str = Field(default="", description="Slack Bot User OAuth Token (xoxb-...)")
+    agent_id: int = Field(default=1, ge=1, description="KBOT Agent ID to use for answering Slack messages")
+    api_timeout: int = Field(default=10, ge=5, le=60, description="Timeout in seconds for Slack API HTTP calls")
+    debug_save_sse: bool = Field(default=False, description="Save raw SSE responses to /tmp/slackmess/ for debugging")
+    external_callback_url: str = Field(default="", description="External callback URL for user question forwarding")
+
 class PromptConfig(BaseModel):
     """Prompt template configuration.
     
@@ -224,6 +260,14 @@ class PromptConfig(BaseModel):
     ops_rewrite: str = Field(default="SYSTEM/ops_rewrite", description="Ops query rewrite prompt template")
     ops_diagnosis: str = Field(default="SYSTEM/ops_diagnosis", description="Ops RCA diagnosis prompt template")
     ops_planner: str = Field(default="SYSTEM/ops_planner", description="Ops task planner prompt template")
+    ops_metric_supplement: str = Field(default="SYSTEM/ops_metric_supplement", description="Ops metric supplement decision prompt")
+    ops_metric_matching: str = Field(default="SYSTEM/ops_metric_matching", description="Ops metric matching prompt")
+    ops_diagnostic_tool: str = Field(default="SYSTEM/ops_diagnostic_tool", description="Ops diagnostic tool selection prompt")
+    ops_sufficiency_check: str = Field(default="SYSTEM/ops_sufficiency_check", description="Ops HITL data sufficiency check prompt")
+    ops_execute_action: str = Field(default="SYSTEM/ops_execute_action", description="Ops mutation action execution prompt")
+    ops_action_plan: str = Field(default="SYSTEM/ops_action_plan", description="Ops post-diagnosis action planning prompt")
+    ops_heal_decision: str = Field(default="SYSTEM/ops_heal_decision", description="Ops heal loop decision prompt")
+    rerank_judge: str = Field(default="SYSTEM/rerank_judge", description="Rerank relevance judgment prompt")
 
 
 class Settings(BaseSettings):
@@ -243,11 +287,15 @@ class Settings(BaseSettings):
     sqlalchemy: SQLAlchemyConfig = SQLAlchemyConfig()
     embed: EmbedConfig = EmbedConfig()
     llm: LLMConfig = LLMConfig()
-    reranker: RerankerConfig = RerankerConfig()
     vlm: VLMConfig = VLMConfig()
+    dsocr: DsocrConfig = DsocrConfig()
+    visual: VisualConfig = VisualConfig()
     parser: ParserConfig = ParserConfig()
     executor: ExecutorConfig = ExecutorConfig()
     prometheus: PrometheusConfig = PrometheusConfig()
+    zabbix: ZabbixConfig = ZabbixConfig()
+    ask_data_api: AskDataApiConfig = AskDataApiConfig()
+    slack: SlackConfig = SlackConfig()
     prompt: PromptConfig = PromptConfig()
     
     model_config = {
@@ -423,6 +471,12 @@ def get_embed_config() -> EmbedConfig:
     """
     return get_settings().embed
 
+
+def get_visual_config() -> VisualConfig:
+    """获取视觉嵌入服务配置"""
+    return get_settings().visual
+
+
 def get_llm_config() -> LLMConfig:
     """Get LLM service configuration.
     
@@ -455,21 +509,21 @@ def get_prompt_config() -> PromptConfig:
     """
     return get_settings().prompt
 
-def get_reranker_config() -> RerankerConfig:
-    """Get reranker service configuration.
-    
-    Returns:
-        RerankerConfig: Reranker service configuration object
-    """
-    return get_settings().reranker
-
 def get_vlm_config() -> VLMConfig:
     """Get VLM service configuration.
-    
+
     Returns:
         VLMConfig: VLM service configuration object
     """
     return get_settings().vlm
+
+def get_dsocr_config() -> DsocrConfig:
+    """Get DeepSeek OCR configuration.
+
+    Returns:
+        DsocrConfig: DeepSeek OCR service configuration object
+    """
+    return get_settings().dsocr
 
 def get_parser_config() -> ParserConfig:
     """Get document parser configuration.
@@ -486,3 +540,54 @@ def get_executor_config() -> ExecutorConfig:
 def get_prometheus_config() -> PrometheusConfig:
     """Get Prometheus configuration (运维Agent使用)."""
     return get_settings().prometheus
+
+def get_zabbix_config() -> ZabbixConfig:
+    """获取 Zabbix 监控数据源配置"""
+    return get_settings().zabbix
+
+def get_ask_data_api_config() -> AskDataApiConfig:
+    """Get ask-data external API configuration.
+
+    Returns:
+        AskDataApiConfig: Ask-data API configuration object
+    """
+    return get_settings().ask_data_api
+
+
+def get_slack_config() -> SlackConfig:
+    """Get Slack integration configuration.
+
+    Returns:
+        SlackConfig: Slack configuration object
+    """
+    return get_settings().slack
+
+def detect_builtin_ocr_engines() -> dict[str, bool]:
+    """检测本机已安装的内置 OCR 引擎。
+
+    Returns:
+        dict[str, bool]: 引擎名 → 是否可用
+    """
+    import shutil
+    import importlib
+
+    engines: dict[str, bool] = {}
+
+    # EasyOCR
+    try:
+        importlib.import_module("easyocr")
+        engines["easyocr"] = True
+    except ImportError:
+        engines["easyocr"] = False
+
+    # Tesseract
+    engines["tesseract"] = shutil.which("tesseract") is not None
+
+    # RapidOCR
+    try:
+        importlib.import_module("rapidocr_onnxruntime")
+        engines["rapidocr"] = True
+    except ImportError:
+        engines["rapidocr"] = False
+
+    return engines

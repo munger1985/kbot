@@ -2,12 +2,19 @@
 
 集成数据库执行微服务的远程调用逻辑，支持动态数据库配置获取。
 """
+import os
 import aiohttp
 from loguru import logger
 from typing import Any
 
 from core.config.settings import get_executor_config
 from core.exceptions import *
+
+INTERNAL_TOKEN_HEADER = "X-KBot-Internal-Token"
+
+def _get_internal_token() -> str:
+    """延迟读取内部通信令牌，确保 load_dotenv() 之后才获取"""
+    return os.getenv("KBOT_INTERNAL_SERVICE_TOKEN", "kbot_internal_service_token")
 
 class SQLClient:
     """数据库执行微服务调用类。"""
@@ -18,16 +25,17 @@ class SQLClient:
         self.executor_config = get_executor_config()
         self.service_host = self.executor_config.service_host
         self.service_port = self.executor_config.service_port
-        
+        self.internal_token = _get_internal_token()
+
         # 延迟导入以避免循环依赖
         from services.kb import KBService
         # 初始化元数据仓库（用于取连接字符串）
         self.kb_service = KBService()
 
     async def execute_sql(
-        self, 
-        kb_id: int, 
-        sql: str, 
+        self,
+        kb_id: str,
+        sql: str,
         limit: int = 100
     ) -> dict[str, Any]:
         """调用数据库执行微服务。
@@ -40,19 +48,16 @@ class SQLClient:
         Returns:
             dict[str, Any]: 执行结果，包含 status, data, row_count 等。
         """
-        
-        # 1. 根据 kb_id 获取数据库连接配置 (从项目元数据库获取)
-        try:
-            db_config = await self.kb_service.get_dbconf_of_kb(kb_id)
-            db_type = db_config["db_type"]
-            connection_config = db_config["connection_config"]
 
-        except Exception as e:
-            handle_exception(e, "获取数据库配置失败")
+        # 1. 根据 kb_id 获取数据库连接配置 (通过引用的运维实例实时解密)
+        db_config = await self.kb_service.get_connection_config(kb_id)
+        db_type = db_config["db_type"]
+        connection_config = db_config["connection_config"]
+
 
         # 2. 构造请求报文
         url = f"http://{self.service_host}:{self.service_port}/api/v1/execute"
-        
+
         payload = {
             "db_type": db_type,
             "connection_config": connection_config,
@@ -61,28 +66,33 @@ class SQLClient:
             "kb_id": kb_id
         }
 
+        headers = {
+            "Content-Type": "application/json",
+            INTERNAL_TOKEN_HEADER: self.internal_token
+        }
+
         # 超时设置 (通常 SQL 执行可能较慢，建议设长一点)
-        timeout = aiohttp.ClientTimeout(total=60) 
+        timeout = aiohttp.ClientTimeout(total=60)
 
         # 3. 发起请求
         try:
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 logger.info(f"发起 SQL 执行请求 | 目标库: {kb_id} | 类型: {db_config['db_type']}")
-                
-                async with session.post(url, json=payload) as response:
+
+                async with session.post(url, json=payload, headers=headers) as response:
                     if response.status != 200:
                         err_text = await response.text()
                         logger.error(f"执行服务响应错误: {response.status} | {err_text}")
                         return {"status": "error", "error_message": f"微服务网络错误: {err_text}"}
 
                     res_json = await response.json()
-                    
+
                     # 关键修改点：直接透传微服务的 status 和 error_message
                     if res_json.get("status") == "error":
                         error_message = res_json.get("error_message", "未知执行错误")
                         logger.warning(f"SQL 执行逻辑失败: {error_message}")
                         return {
-                            "status": "error", 
+                            "status": "error",
                             "error_message": error_message,
                             "kb_id": kb_id
                         }

@@ -1,3 +1,4 @@
+# utils/clients/base_monitor_provider.py
 """
 监控数据源抽象基类。
 面向 Prometheus / Zabbix / 国产监控工具的统一接口定义，
@@ -84,6 +85,50 @@ class MetricResult:
 
     def __repr__(self) -> str:
         return f"<MetricResult(code={self.metric_code}, type={self.data_type}, series_count={len(self.series)})>"
+
+    @classmethod
+    def from_zabbix(cls, metric_code: str, items: list[dict]) -> "MetricResult":
+        """
+        从 Zabbix item.get / history.get 响应解析为标准 MetricResult。
+
+        Zabbix item.get 返回:
+          [{"itemid": "1", "name": "...", "key_": "...", "lastvalue": "42", "lastclock": "1712345678", "value_type": "3"}, ...]
+
+        Zabbix history.get 返回:
+          [{"itemid": "1", "clock": "1712345678", "value": "42", "ns": "123456789"}, ...]
+        """
+        series: list[dict[str, Any]] = []
+        for item in items:
+            entry: dict[str, Any] = {"labels": {}}
+            # item.get 返回 lastvalue / lastclock
+            if "lastvalue" in item and "lastclock" in item:
+                entry["value"] = _parse_zabbix_value(item.get("lastvalue", "0"))
+                entry["timestamp"] = int(item.get("lastclock", 0))
+                entry["labels"]["itemid"] = item.get("itemid", "")
+                entry["labels"]["name"] = item.get("name", "")
+                entry["labels"]["key_"] = item.get("key_", "")
+            # history.get 返回 clock / value（批量）
+            elif "clock" in item:
+                entry["value"] = _parse_zabbix_value(item.get("value", "0"))
+                entry["timestamp"] = int(item.get("clock", 0))
+                if "ns" in item:
+                    entry["labels"]["ns"] = item.get("ns", "")
+            if "value" in entry:
+                series.append(entry)
+
+        return cls(
+            metric_code=metric_code,
+            data_type="vector",
+            series=series,
+        )
+
+
+def _parse_zabbix_value(raw: Any) -> float:
+    """安全解析 Zabbix 值（可能为字符串或数字）"""
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 class BaseMonitorProvider(ABC):

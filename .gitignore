@@ -30,6 +30,7 @@ logs/
 # IDE directories
 .idea/
 .vscode/
+.claude/
 
 # Project-generated files
 knowledge_base/

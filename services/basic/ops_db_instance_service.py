@@ -50,6 +50,7 @@ class OpsDBInstanceService:
                 "version_code": entity.version_code,
                 "monitor_type": entity.monitor_type,
                 "prometheus_instance_label": entity.prometheus_instance_label,
+                "zabbix_host_name": entity.zabbix_host_name,
                 "connection_config": {
                     "host": entity.host,
                     "port": entity.port,
@@ -131,6 +132,7 @@ class OpsDBInstanceService:
                 "db_role": inst.db_role,
                 "monitor_type": inst.monitor_type,
                 "prometheus_instance_label": inst.prometheus_instance_label,
+                "zabbix_host_name": inst.zabbix_host_name,
                 "cluster_id": inst.cluster_id,
                 "ops_user": inst.ops_user,
                 "secret_vault_key": inst.secret_vault_key,
@@ -193,3 +195,39 @@ class OpsDBInstanceService:
     def _encrypt_password(self, raw_str: str) -> str:
         """调用 AES-256-GCM 安全套件加密"""
         return self.crypto.encrypt(raw_str)
+
+    # ------------------------------------------------------------------
+    # 告警 Webhook 实例匹配
+    # ------------------------------------------------------------------
+
+    async def find_by_prometheus_label(self, label: str) -> dict[str, Any] | None:
+        """通过 Prometheus instance label 查找 active 实例 (用于告警匹配)。"""
+        async with self.session as session:
+            repo = OpsDbInstanceRepository(session)
+            entity = await repo.find_by_prometheus_label(label)
+            if not entity:
+                return None
+            return {
+                "instance_id": entity.instance_id,
+                "instance_name": entity.instance_name,
+                "db_type": entity.db_type,
+                "environment": entity.environment,
+                "db_role": entity.db_role,
+                "monitor_type": entity.monitor_type or "prometheus",
+            }
+
+    async def find_by_zabbix_host(self, host_name: str) -> dict[str, Any] | None:
+        """通过 Zabbix host name 查找 active 实例 (用于告警匹配)。"""
+        async with self.session as session:
+            repo = OpsDbInstanceRepository(session)
+            entity = await repo.find_by_zabbix_host(host_name)
+            if not entity:
+                return None
+            return {
+                "instance_id": entity.instance_id,
+                "instance_name": entity.instance_name,
+                "db_type": entity.db_type,
+                "environment": entity.environment,
+                "db_role": entity.db_role,
+                "monitor_type": entity.monitor_type or "zabbix",
+            }

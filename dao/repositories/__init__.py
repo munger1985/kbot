@@ -15,7 +15,12 @@ from .txt_chunk_repo import TxtChunkRepository
 from .graph_repo import GraphRepository
 from .ops_db_instance_repo import OpsDbInstanceRepository
 from .ops_agent_conf_repo import OpsAgentConfRepository
-
+from .ops_pending_repo import PendingRequestRepository
+from .doc_meta_repo import DocMetaRepository
+from .doc_relation_repo import DocRelationRepository
+from .workflow_repo import WorkflowRepository
+from .extracted_image_repo import ExtractedImageRepository
+from .ops_execution_report_repo import OpsExecutionReportRepository
 
 
 __all__ = [
@@ -35,5 +40,10 @@ __all__ = [
     "TxtChunkRepository",
     "GraphRepository",
     "OpsDbInstanceRepository",
-    "OpsAgentConfRepository"
+    "OpsAgentConfRepository",
+    "PendingRequestRepository",
+    "DocMetaRepository",
+    "DocRelationRepository",
+    "ExtractedImageRepository",
+    "OpsExecutionReportRepository",
 ]

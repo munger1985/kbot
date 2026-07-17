@@ -1,7 +1,7 @@
 # services/orchestrator/doc_orchestrator.py
 from loguru import logger
 from typing import Any
-from core.database.oracle import get_session
+from core.database import db_instance
 
 from services.search.doc_service import DocService
 from services.kb import ModelParams
@@ -16,7 +16,7 @@ class DocOrchestrator:
 
     @property
     def db_session(self):
-        return get_session()
+        return db_instance().get_session()
 
     async def run_pipeline(
         self,
@@ -72,14 +72,13 @@ class DocOrchestrator:
             模型参数对象
         """
         if not agent.models:
-            logger.error(f"智能体 {agent.agent_id} 未配置任何模型")
-            raise NotFoundError(f"智能体 {agent.agent_id} 未配置模型")
+            logger.error(f"智能体 {agent.id} 未配置任何模型")
+            raise NotFoundError(f"智能体 {agent.id} 未配置模型")
         
         llm_model = agent.models.get("llm_model")
         emb_model = agent.models.get("txt_embedding_model")
-        rerank_model = agent.models.get("rerank_model")
         if not llm_model or not emb_model:
-            logger.error(f"智能体 {agent.agent_id} 未配置有效大模型/嵌入模型")
+            logger.error(f"智能体 {agent.id} 未配置有效大模型/嵌入模型")
             raise NotFoundError("智能体未配置有效大模型或嵌入模型")
 
         llm_params = {
@@ -97,12 +96,13 @@ class DocOrchestrator:
 
         params = ModelParams(
             llm_model=llm_model,
+            llm_model_light=agent.models.get("llm_model_light"),
             llm_params=llm_params,
             txt_embedding_model=emb_model,
-            img_embedding_model="",
+            visual_embedding_model="",
             vlm_model="",
             do_rerank=agent.models.get("do_rerank", False),
-            rerank_model= rerank_model or "",
-            rerank_top_k=agent.models.get("rerank_top_k", 10)
+            rerank_top_k=agent.models.get("rerank_top_k", 10),
+            enable_hyde=agent.models.get("enable_hyde", False),
         )
         return params

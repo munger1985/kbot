@@ -479,3 +479,111 @@ WantedBy=multi-user.target
 http://localhost:18099/docs
 
 http://localhost:18099/redoc
+
+
+## 10. 视觉嵌入模型（ColQwen2 · 多模态检索）
+
+用于 多模态检索，将图片转为视觉向量，支持以图搜图和反向文本检索。ColQwen2 由 base model + LoRA adapter 两部分组成，均需下载。
+
+### 10.1 下载模型
+
+```bash
+# 一步下载 base + adapter（约 6 GB）
+# 若网络不通，先设置 HuggingFace 镜像:
+# export HF_ENDPOINT=https://hf-mirror.com
+python docs/install/models/download_colqwen_model.py
+```
+
+下载后默认路径：
+
+| 组件 | 路径 | 大小 |
+|------|------|------|
+| Base | `/home/ubuntu/cached_models/colqwen2-base` | ~3.8 GB |
+| Adapter | `/home/ubuntu/cached_models/colqwen2-v1.0` | ~2.3 GB |
+
+### 10.2 修复 base model 引用
+
+adapter 的 `adapter_config.json` 需指向本地 base model：
+
+```bash
+python3 -c "
+import json
+with open('/home/ubuntu/cached_models/colqwen2-v1.0/adapter_config.json') as f:
+    cfg = json.load(f)
+cfg['base_model_name_or_path'] = '/home/ubuntu/cached_models/colqwen2-base'
+with open('/home/ubuntu/cached_models/colqwen2-v1.0/adapter_config.json', 'w') as f:
+    json.dump(cfg, f, indent=2)
+print('Updated')
+"
+```
+
+### 10.3 注册模型到数据库
+
+在 Web UI 的「LLM 模型管理」页面中通过表单注册。
+
+### 10.4 验证
+
+```bash
+python3 -c "
+import torch
+from colpali_engine.models import ColQwen2, ColQwen2Processor
+m = ColQwen2.from_pretrained('/home/ubuntu/cached_models/colqwen2-v1.0', torch_dtype=torch.bfloat16, device_map='cpu')
+print('ColQwen2 loaded OK')
+"
+```
+
+### 10.5 硬件要求
+
+| 配置 | 最低 | 推荐 |
+|------|------|------|
+| GPU 显存 | 8 GB | 16 GB+ |
+| 磁盘 | +6 GB（模型文件） | — |
+
+> 无 GPU 时将数据库 `model_params` 中的 `device` 改为 `"cpu"`，推理延迟增加 5-10 倍。
+
+### 10.6 TOML 配置
+
+`base.toml` 中 `[visual]` 段只需服务级参数，模型参数在数据库中：
+
+```toml
+[visual]
+service_name = "cube-visual-service"
+service_host = "0.0.0.0"
+service_port = 18093
+timeout = 300
+max_retries = 3
+```
+
+
+## 11. 端口与依赖速查
+
+### 外部依赖端口
+
+| 服务 | 默认端口 | 必需 |
+|---|---|---|
+| Oracle 23ai | 1521 | ✓ |
+
+### 应用服务端口
+
+| 服务 | 端口 | 必需 |
+|---|---|---|
+| Main API | 18099 | ✓ |
+| Embedding | 18091 | ✓ |
+| LLM | 18092 | ✓ |
+| VLM（视觉大模型） | 18094 | ✓ |
+| Visual（视觉嵌入） | 18093 | ✓ |
+| Parser | 18095 | ✓ |
+| DB Executor | 18096 | ✓ |
+| DeepSeek-OCR | 18097 | 按需 |
+
+
+## 12. 故障排查
+
+| 症状 | 排查步骤 |
+|---|---|
+| 服务启动失败 | 检查 `logs/` 目录日志，确认 conda 环境 `kbot3` 正确激活 |
+| 数据库连接超时 | 检查 Oracle 监听状态和防火墙 1521 端口 |
+| 文档解析不工作 | 确认 LibreOffice 已安装，Docling 模型路径正确 |
+| 模型加载失败 | 检查 `cache_dir` 路径和模型文件完整性 |
+| 视觉搜索异常 | 确认 ColQwen2 模型已下载并在 `ai_model` 表中注册 |
+| 内存不足 | 减少 `pool_size` 和 `parser_parallel` 配置 |

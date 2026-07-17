@@ -70,6 +70,7 @@ class LLMService:
         presence_penalty: float | None = None,
         tools: list[dict[str, Any]] | None = None,
         tool_choice: str | None = None,
+        response_format: str | dict[str, str] | None = None,
     ):
         """Generate chat completion responses with MCP tool call support.
         
@@ -115,7 +116,8 @@ class LLMService:
             "temperature": temperature,
             "top_p": top_p,
             "frequency_penalty": frequency_penalty,
-            "presence_penalty": presence_penalty
+            "presence_penalty": presence_penalty,
+            "response_format": response_format,
         }
 
         # Add tool call parameters if provided

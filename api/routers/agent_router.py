@@ -191,3 +191,37 @@ async def handle_rename_conversation(form: AgentRenameConversationForm, auth: An
     - **SuccessResponse**: Confirms the renaming operation.
     """
     return await agent_controller.rename_conversation(form)
+
+
+@router.get(
+    "/list-profiles",
+    summary="List AIReport Profiles",
+    response_model=SuccessResponse,
+    status_code=status.HTTP_200_OK
+)
+async def handle_list_profiles(auth: UserAuth):
+    """获取 AIReport SelectAI 的 profile 列表。
+
+    Access: Any
+
+    Returns:
+        SuccessResponse: 包含 profile 列表数据。
+    """
+    return await agent_controller.list_profiles()
+
+
+@router.post(
+    "/reset-system-prompt",
+    response_model=SuccessResponse,
+    status_code=status.HTTP_200_OK,
+    summary="重置系统提示词"
+)
+async def handle_reset_sys_prompt(auth: UserAuth):
+    """重置系统提示词。
+
+    Access: User
+
+    Returns:
+        SuccessResponse: 包含重置结果的成功响应。
+    """
+    return await agent_controller.reset_sys_prompt()

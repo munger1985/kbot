@@ -140,8 +140,9 @@ class FileParseEngine:
         关闭流程：
         1. 取消所有生产者/消费者任务
         2. 等待任务取消完成
-        3. 清理处理状态
-        4. 等待队列剩余任务完成（可选）
+        3. 回滚所有 PARSING 状态文件 → APPROVED
+        4. 清理内存处理状态
+        5. 等待队列剩余任务完成（可选）
         """
         logger.warning("开始执行文件解析引擎的优雅关闭流程...")
         
@@ -164,10 +165,13 @@ class FileParseEngine:
             # return_exceptions=True 避免抛出 CancelledError 异常
             await asyncio.gather(*tasks_to_cancel, return_exceptions=True)
         
-        # 3. 清理处理状态
+        # 3. 回滚所有 PARSING 文件，防止卡在中间态
+        await self.processor.rollback_parsing_files()
+
+        # 4. 清理处理状态
         self.processing_ids.clear()
-        
-        # 4. 等待队列中剩余任务处理完成（可选）
+
+        # 5. 等待队列中剩余任务处理完成（可选）
         if not self.queue.empty():
             logger.info(f"等待队列中剩余 {self.queue.qsize()} 个任务处理完成...")
             await self.queue.join()

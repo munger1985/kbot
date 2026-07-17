@@ -1,6 +1,7 @@
 import os
 import shutil
 import uuid
+import urllib.parse
 from pathlib import Path
 from typing import Any
 from fastapi import UploadFile
@@ -10,7 +11,8 @@ from core.dictionary import FileStatus, ParserEngine
 from core.exceptions import *
 from core.database.oracle import get_session
 from dao.entities import FileEntity
-from dao.repositories import KBRepository, FileRepository, TxtChunkRepository, GraphRepository
+from dao.repositories import KBRepository, FileRepository, TxtChunkRepository, GraphRepository, \
+    DocMetaRepository, DocRelationRepository, ExtractedImageRepository
 from utils.thread import run_in_thread_pool
 
 
@@ -57,7 +59,8 @@ class FileService:
             filename = file.filename
             if filename is None:
                 raise ParamValueError("文件名不能为空")
-            
+            # URL 解码文件名（如 %20 -> 空格, %3A -> : 等）
+            filename = urllib.parse.unquote(filename)
             
             logger.debug(f"开始保存文件: {filename} 到知识库")
             try:
@@ -207,17 +210,18 @@ class FileService:
             
             if not default_parser_conf:
                 default_parser_conf = {
-                    "do_ocr": False, 
-                    "overlap": 50, 
-                    "use_vlm": bool(vlm_model), 
+                    "do_ocr": False,
+                    "overlap": 50,
+                    "use_vlm": bool(vlm_model),
                     "llm_model": llm_model,
-                    "vlm_model": vlm_model, 
+                    "vlm_model": vlm_model,
                     "txt_embedding_model": txt_embedding_model,
-                    "chunk_size": 1000, 
-                    "ocr_engine": "tesseract", 
-                    "img2txt_prompt": prompt, 
+                    "chunk_size": 1000,
+                    "ocr_engine": "tesseract",
+                    "ocr_model": None,
+                    "img2txt_prompt": prompt,
                     "image_scale": 2.0,
-                    "min_chunk_len": 200, 
+                    "min_chunk_len": 200,
                     "generate_picture_images": True,
                     "extract_graph": False
                 }
@@ -512,6 +516,9 @@ class FileService:
             kb_repo = KBRepository(session)
             chunk_repo = TxtChunkRepository(session)
             graph_repo = GraphRepository(session)
+            doc_meta_repo = DocMetaRepository(session)
+            doc_rel_repo = DocRelationRepository(session)
+            img_repo = ExtractedImageRepository(session)
 
             if batch or file_ids:
                 logger.info(f"开始删除知识库 {kb_id} 中的文件")
@@ -547,6 +554,16 @@ class FileService:
                     # 5. 删除图数据
                     await graph_repo.delete_graph_by_file(kb_id, all_file_ids)
 
+                    # 6. 删除文档元数据
+                    if all_file_ids:
+                        await doc_meta_repo.delete_by_file_ids(all_file_ids)
+                    # 7. 删除文档引用关系
+                    for fid in all_file_ids:
+                        await doc_rel_repo.delete_by_file(fid)
+                    # 8. 删除提取图片记录
+                    if all_file_ids:
+                        await img_repo.delete_by_file_ids(all_file_ids)
+
                 except DataNotFoundException as e:
                     logger.info(e.message)
                 except DatabaseException as e:
@@ -573,6 +590,12 @@ class FileService:
                 await file_repo.delete(kb_id, None)
                 # 3. 删除知识库中的所有文件的图数据
                 await graph_repo.delete_graph_by_knowledge_base(kb_id)
+                # 4. 删除文档元数据
+                await doc_meta_repo.delete_by_kb_id(kb_id)
+                # 5. 删除文档引用关系
+                await doc_rel_repo.delete_by_kb_id(kb_id)
+                # 6. 删除提取图片记录
+                await img_repo.delete_by_kb_id(str(kb_id))
                 # 4. 删除知识库中的所有的物理文件
                 # 获取知识库和业务域的名称用于构造物理删除路径
                 try:
@@ -597,7 +620,9 @@ class FileService:
                     logger.error(f"删除知识库 {kb_id} 的物理目录失败: {e}")
                     raise InternalServerError(f"删除知识库 {kb_id} 的物理目录失败: {e}")
                 
-                logger.info(f"知识库 {kb_id} 中的所有文件删除成功")
+                # 5. 删除知识库记录
+                await kb_repo.delete(kb_id)
+                logger.info(f"知识库 {kb_id} 删除成功")
 
 
 ###############################################################################
@@ -659,6 +684,9 @@ class FileService:
             file_repo = FileRepository(session)
             chunk_repo = TxtChunkRepository(session)
             graph_repo = GraphRepository(session)
+            doc_meta_repo = DocMetaRepository(session)
+            doc_rel_repo = DocRelationRepository(session)
+            img_repo = ExtractedImageRepository(session)
             try:
                 # 1. 删除文件对应的文本片段数据
                 try:
@@ -666,6 +694,15 @@ class FileService:
                 except DataNotFoundException as e:
                     logger.debug(f"文件 {file_ids} 对应的文本片段数据不存在，跳过删除")
                 logger.info(f"文件 {file_ids} 对应的文本片段数据已删除")
+
+                # 1.1 删除文档元数据
+                if file_ids:
+                    await doc_meta_repo.delete_by_file_ids(file_ids)
+                # 1.2 删除文档引用关系
+                for fid in file_ids:
+                    await doc_rel_repo.delete_by_file(fid)
+                # 1.3 删除提取图片记录
+                await img_repo.delete_by_file_ids(file_ids)
 
                 # 2. 删除文件对应的图谱数据
                 await graph_repo.delete_graph_by_file(kb_id=kb_id, file_ids=file_ids)

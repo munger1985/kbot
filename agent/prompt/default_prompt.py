@@ -2,6 +2,8 @@ import string
 from loguru import logger
 from typing import Any
 
+from core.exceptions import DataNotFoundException
+
 
 class DefaultPrompt(string.Formatter):
     def __init__(self):
@@ -26,11 +28,22 @@ class DefaultPrompt(string.Formatter):
             "SYSTEM/ops_rewrite": ADVANCED_OPS_REWRITE_PROMPT,
             "SYSTEM/ops_diagnosis": ADVANCED_OPS_DIAGNOSIS_PROMPT,
             "SYSTEM/ops_planner": OPS_DIAGNOSE_TASK_PLANNER_PROMPT,
+            "SYSTEM/ops_metric_supplement": OPS_METRIC_SUPPLEMENT_PROMPT,
+            "SYSTEM/ops_metric_matching": OPS_METRIC_MATCHING_PROMPT,
+            "SYSTEM/ops_diagnostic_tool": OPS_DIAGNOSTIC_TOOL_PROMPT,
+            "SYSTEM/ops_sufficiency_check": OPS_SUFFICIENCY_CHECK_PROMPT,
+            "SYSTEM/ops_action_plan": OPS_ACTION_PLAN_PROMPT,
+            "SYSTEM/ops_heal_decision": OPS_HEAL_DECISION_PROMPT,
+            "SYSTEM/ops_execute_action": OPS_EXECUTE_ACTION_PROMPT,
+            "SYSTEM/rerank_judge": RERANK_JUDGE_PROMPT,
         }
 
     def get_value(self, key: Any, args: Any, kwargs: Any) -> Any:
         """继承自 string.Formatter: 如果 key 缺失，返回原样 {key}"""
         if isinstance(key, str):
+            if key not in kwargs:
+                if key == "user_language":
+                    logger.warning(f"[LangTrace] CRITICAL: 'user_language' not in kwargs for a prompt that uses it! Available keys: {list(kwargs.keys())}")
             # 如果 kwargs 中没有该 key，返回 {key} 字符串
             return kwargs.get(key, "{" + key + "}")
         return super().get_value(key, args, kwargs)
@@ -44,7 +57,7 @@ class DefaultPrompt(string.Formatter):
         if not self._prompt_service:
             from services.basic import PromptService
             self._prompt_service = PromptService()
-        
+            
         # 1. 获取默认兜底内容
         fallback_content = self._prompts.get(prompt_name, "")
         
@@ -59,8 +72,16 @@ class DefaultPrompt(string.Formatter):
                 return "" # 或者抛出异常
             else:
                 logger.warning(f"Prompt '{prompt_name}' not found in DB, using fallback.")
+        except DataNotFoundException:
+            # DB 中没有该提示词是正常情况，使用内存中的默认值即可
+            if not fallback_content:
+                logger.error(f"Prompt '{prompt_name}' not found in DB or Memory.")
+                return ""
+            logger.info(f"Prompt '{prompt_name}' not in DB, using built-in fallback.")
         except Exception as e:
-            logger.warning(f"Failed to fetch prompt '{prompt_name}' from DB: {e}")
+            logger.error(f"Failed to fetch prompt '{prompt_name}' from DB: {e}")
+            if not fallback_content:
+                raise
 
         # 3. 使用 self (LazyFormatter) 进行格式化填充
         try:
@@ -68,6 +89,36 @@ class DefaultPrompt(string.Formatter):
         except Exception as e:
             logger.error(f"Format prompt '{prompt_name}' failed: {e}")
             return template
+
+    async def resolve_template(self, prompt_name: str) -> str:
+        """仅解析 prompt 模板文本（DB → 内存默认），不做格式化填充。
+
+        适用于批量场景：先一次获取模板，再对每条数据自行 format。
+        """
+        if not self._prompt_service:
+            from services.basic import PromptService
+            self._prompt_service = PromptService()
+
+        fallback_content = self._prompts.get(prompt_name, "")
+
+        template = fallback_content
+        try:
+            db_prompt = await self._prompt_service.get_prompt_by_unique_name(unique_name=prompt_name)
+            if db_prompt:
+                template = db_prompt
+            elif not fallback_content:
+                logger.error(f"Prompt '{prompt_name}' not found in DB or Memory.")
+                return ""
+        except DataNotFoundException:
+            if not fallback_content:
+                logger.error(f"Prompt '{prompt_name}' not found in DB or Memory.")
+                return ""
+        except Exception as e:
+            logger.error(f"Failed to fetch prompt '{prompt_name}' from DB: {e}")
+            if not fallback_content:
+                raise
+
+        return template
 
 # ================================================================================================
 # --------------------------------  生成查询改写系统提示词  ----------------------------------------
@@ -77,12 +128,18 @@ REWRITE_PROMPT = """
 你的任务是根据历史记忆和当前活跃话题，将用户的原始输入转化为一个**独立且信息丰富**的查询语句。
 
 ### 历史记忆 (Contextual Memory)
-- **活跃话题 (Active Topic)**: {active_topic}  # 当前正在讨论的核心领域
-- **历史摘要 (Summary)**: {summary} 
+- **活跃话题 (Active Topic)**: {active_topic}
+- **历史摘要 (Summary)**: {summary}
 - **当前会话状态 (Session State)**: {session_state}
 
 ### 近期对话 (Recent History)
 {chat_history}
+
+### 语言自适应 (CRITICAL)
+- 用户输入 `{query}` 的语言类型是: **{user_language}**
+- **所有输出内容必须使用 {user_language}**
+- 包括：`thought`、`standalone_query`、`search_keywords`、`active_topic`、`turn_entities` 中的值
+- 示例：{user_language} 为 Chinese → 所有字段用中文输出；{user_language} 为 English → 所有字段用英文输出
 
 ### 任务逻辑 (Reasoning Steps)
 1. **语境转折判定 (Context Turn Detection)**:
@@ -102,7 +159,7 @@ REWRITE_PROMPT = """
    - 如果用户输入是短语（如“好的”、“行”、“继续”、“然后呢”），必须结合【近期对话】中 Assistant 的最后一句话。
    - **核心规则**：若 Assistant 最后一句话是提问或建议（如“要换个温暖的故事吗？”），用户的“好的”必须改写为对该建议的接受（如“请给我讲一个温暖的故事”）。
 
-### 强制指令：虚词膨胀 (Lexical Expansion) ###
+### 强制指令：虚词膨胀 (Lexical Expansion)
 如果用户输入 < 5 个字符且包含 [确认/肯定/继续] 的语义（如“是的”、“好的”、“接着讲”）：
 1. 必须回溯【近期对话】中 Assistant 的最后一条信息。
 2. 将 standalone_query 改写为：[用户的肯定动作] + [Assistant 提到的具体内容/建议]。
@@ -111,17 +168,17 @@ REWRITE_PROMPT = """
    - 如果 Assistant 上一轮提供了特定的【选项】（如：讲笑话、说温暖的话、聊电影），而用户回复“继续”或“是的”。
    - **禁止**生成通用的“继续闲聊”。
    - **必须**生成具体的动作指令，例如：“继续分享刚才提到的温暖的话语”。
-   
+
 ### 输出格式 (严格遵循 JSON)
 {{
-  "thought": "简述：1.当前话题与 {active_topic} 的关系；2.判定 turn_type 的依据；3.实体注入的具体逻辑。",
+  "thought": "（使用与用户输入相同的语言）简述：1.当前话题与 {active_topic} 的关系；2.判定 turn_type 的依据；3.实体注入的具体逻辑。",
   "context_relevance": 0.0,
-  "active_topic": "提取当前最核心的话题标签（若为延续则保持不变，若切换则更新）", 
-  "standalone_query": "重写后的自包含查询语句，需包含所有必要的业务上下文信息",
-  "search_keywords": ["关键词1", "关键词2"],
-  "turn_entities": {{ "提取本轮出现的新实体": "值" }},
+  "active_topic": "（使用与用户输入相同的语言）提取当前最核心的话题标签",
+  "standalone_query": "（使用与用户输入相同的语言）重写后的自包含查询语句，需包含所有必要的业务上下文信息",
+  "search_keywords": ["（使用与用户输入相同的语言）关键词1", "（使用与用户输入相同的语言）关键词2"],
+  "turn_entities": {{ "（使用与用户输入相同的语言）实体名": "值" }},
   "turn_type": "NEW_TOPIC | FOLLOW_UP | CORRECTION",
-  "user_profile_updates": {{ "发现的用户偏好或长期特征": "值" }}
+  "user_profile_updates": {{ "（使用与用户输入相同的语言）发现的用户偏好": "值" }}
 }}
 
 用户输入：{query}
@@ -167,8 +224,9 @@ FINAL_RAG_PROMPT = """{prompt}
 
 ---
 任务：结合背景摘要与参考资料，回答用户。
-1. 如果【环境约束】与【参考资料】中的建议冲突，优先适配【环境约束】。
-2. 在回答末尾，根据执行路径简要说明引用了哪些资料。
+1. **语言自适应**：用户语言为 **{user_language}**。必须使用 **{user_language}** 进行回复（包括正文回答与末尾的引用说明）。
+2. 如果【环境约束】与【参考资料】中的建议冲突，优先适配【环境约束】。
+3. 在回答末尾，根据执行路径简要说明引用了哪些资料。
 
 用户当前问题：{user_question}
 助手回答：
@@ -188,19 +246,33 @@ Q: {question}
 A: {answer}
 
 ### 任务指令:
-1. **画像更新 (profile_summary)**: 
-   - 提取技术栈（如：Python, Oracle Linux 8）和职业属性。
-   - 冲突处理：若用户从 Ubuntu 切换到 RHEL，以最新为准。
-   - 严禁包含本提示词示例内容（如 DevOps 等）。
-2. **记忆快照 (memory_snapshot)**: 
-   - 生成一段 100 字以内的陈述句。
-   - 包含：**场景 + 问题 + 核心解法**。
-   - 消解模糊指代，确保该段文字脱离上下文也能被检索系统理解。
+1. **画像更新 (profile_summary)**:
+   - 提取技术栈和职业属性。
+   - 冲突处理：若用户信息有变更，以最新为准。
+   - ⚠️ **长度限制：profile_summary 必须控制在 500 字以内**。
+2. **记忆快照 (memory_snapshot)**:
+   - 生成一段 100 字以内的陈述句，包含场景+问题+核心解法。
+3. **全局偏好 (global_preferences)**:
+   - 从对话中提取用户的持久性偏好：输出语言、代码风格、数据库偏好、操作系统等。
+   - 格式：`{{"偏好项": "偏好值"}}`，无新偏好时返回 `{{}}`。
+4. **高频实体 (frequent_entities)**:
+   - 统计用户反复提及的实体名称及次数。
+   - 格式：`{{"实体名": 出现次数}}`，无新实体时返回 `{{}}`。
+5. **实体关联 (entity_relations)**:
+   - 发现实体间的关联关系（如：产线-负责人、系统-数据库等）。
+   - 格式：`[{{"source": "实体A", "target": "实体B", "relation": "关系描述"}}]`。
+6. **纠错记录 (correction_history)**:
+   - 如果本轮用户纠正了之前的错误回答，记录错误内容和正确信息。
+   - 格式：`[{{"wrong": "错误内容", "correct": "正确内容"}}]`。
 
 ### 输出格式:
 {{
-    "profile_summary": "更新后的完整画像...",
-    "memory_snapshot": "场景：... 采取了... 解决了..."
+    "profile_summary": "...",
+    "memory_snapshot": "...",
+    "global_preferences": {{}},
+    "frequent_entities": {{}},
+    "entity_relations": [],
+    "correction_history": []
 }}
 """
 
@@ -233,20 +305,32 @@ DESCRIBE_PIC_PROMPT = """
 # --------------------------------  生成 SQL 的系统提示词  ----------------------------------------
 # ================================================================================================
 SQL_GEN_PROMPT = """
-### Role
-You are an expert SQL Generator. Your goal is to translate Natural Language Queries into syntactically correct {db_type} SQL, using the provided Database Schema and Examples.
+# Role
+你是一个精通自然语言转换的专家级 SQL 生成器。你的唯一任务是将用户输入的中文自然语言需求，精准翻译为语法正确、具备极高抗噪与防查空能力的 {db_type} 数据库查询语句。
 
-### Instructions
-1. **Schema Adherence**: Use ONLY the tables and columns provided in the 'Relevant Table Schemas' section. Do not invent table or column names.
-2. **Standard Dialect**: Ensure the SQL syntax strictly follows {db_type} standards.
-3. **Join Logic**: Identify primary and foreign key relationships from the DDL to perform correct JOIN operations.
-4. **Data Values**: If the user mentions a specific value (e.g., 'Completed'), use it as-is in the WHERE clause unless a mapping is obvious.
-5. **No Explanation**: Output ONLY the SQL code within a single Markdown code block. Do not provide any conversational text or explanation.
+# Instructions
+1. **严格依循架构**: 只能使用用户在 Context 中提供的“数据表结构 (DDL)”里的表名和字段。严禁凭空发明或臆测任何架构外的名称。
+2. **标准 {db_type} 语法**: 确保生成的 SQL 严格符合 {db_type} 的官方语法标准与函数规范。
+3. **血缘关联逻辑**: 仔细识别 DDL 中的主外键关系，执行正确的 `JOIN` 操作。必须使用清晰的表别名（例如：`orders AS o`）。
+4. **数据安全边界**: 除非用户在问题中明确指定了返回数量，否则必须在 SQL 末尾统一加上 `LIMIT 100;` 限制，防止全表扫描。
+5. **纯净输出约束**: 你必须【只输出】包裹在单个 Markdown 代码块中的 SQL 语句。严禁输出任何解释性文字、对话、分析过程或前后寒暄。
 
-### Constraints
-- If the provided schema is insufficient to answer the question, state "ERROR: Insufficient context".
-- Always use table aliases for clarity (e.g., `orders AS o`).
-- Limit results to 100 rows unless specified otherwise.
+# 🛠️ 泛化路由与防查空军规 (CRITICAL - 核心行为准则)
+大模型极易犯“过滤条件过载（Over-filtering）”的错误，即把用户问题中的描述性词汇作为硬性限制死锁在 `WHERE` 子句中，导致数据库频繁返回空集合（无数据），从而引发下游报错。你必须无条件执行以下“宁滥勿缺、宽进严出”的放宽过滤策略：
+
+- **【探寻性状态严禁死锁，改用全量查出】**: 
+  当用户询问“是否正常”、“有没有异常”、“有没有停机/不合格情况”等**探寻性、确认性、有无性**问题时，**严禁**在 `WHERE` 子句中硬编码特定的状态、布尔值或结果（例如：严禁写死 `status = '停机'` 或 `is_qualified = false`）。
+  * **正确做法**：必须去掉该状态的 `WHERE` 限制，改为将状态或结果字段放到 `SELECT` 中直接查出明细，或者使用 `GROUP BY` 进行分类聚合。**宁可将全量状态分布抛给下游的推理模块（Reasoning）进行二次过滤，也绝不能因为硬过滤导致数据库直接查出“无数据”。**
+
+- **【业务俗称严禁精准匹配，改用多维模糊路由】**: 
+  当用户在提问中使用特定类目、物料名称、行业术语或参数的“业务俗称”时，**严禁**在 `WHERE` 子句中使用等号 `=` 进行精确匹配，也**严禁**直接将一连串的俗称原封不动地丢进 `LIKE`。
+  * **正确做法**：必须在 `WHERE` 子句中合理拆分核心关键词，并使用 `OR` 算子进行多维度、大网口的模糊网罗。通过模糊匹配可能涉及的“材料大类”、“参数名称”或“型号通配符”，尽可能扩大检索范围，把数据拉出来交由下游做精准甄别。
+
+- **【显式投影保护机制（将维度穿透输出）】**: 
+  为了确保下游推理模块能够进行精准的二次判断，**凡是在 `WHERE` 中作为模糊过滤依据的原始维度列、状态列、判定列，必须全部显式写在 `SELECT` 的输出列表中**。用数据本身作为证据链传递给下游，避免下游因看不到字段而误判。
+
+# Constraints
+- 如果发现 Context 中提供的表结构信息不足以支持用户提问的业务场景，请直接输出："ERROR: Insufficient context"。
 """
 # ================================================================================================
 # --------------------------------  修正 SQL 的系统提示词  ----------------------------------------
@@ -275,6 +359,19 @@ Analyze the provided Error Message and the Previous SQL, then provide the correc
 # ================================================================================================
 TASK_PLANNER_PROMPT = """
 你是一个高级任务规划专家。你必须将用户指令拆解为调用工具的逻辑步骤。
+
+⛔ **关键角色约束 (CRITICAL — 必须遵守)**:
+- 你是**规划器 (Planner)**，不是回答机器人。你的唯一职责是生成执行计划的 JSON。
+- **绝对禁止**直接回答用户的问题、提供知识解释、或输出任何非 JSON 的内容。
+- **无论用户使用什么语言提问（中文、英文、日文、韩文等），你的输出必须是纯 JSON**。
+- 用户指令中的 `{{user_query}}` 是一个变量占位符，不要尝试理解或回答它——你只需要把它作为参数传给 skill。
+- 如果你直接回答了用户的问题而不是生成 JSON 计划，系统将彻底崩溃。
+
+### 多语言支持:
+- 用户语言: **{user_language}**
+- `standalone_query` 可能是 {user_language}。
+- 你需要理解问题的**语义意图**（知识检索/数据分析/闲聊等），而不是被语言迷惑。
+- JSON 中的 `thought`、`final_goal`、`task_description` 字段必须使用 **{user_language}** 编写。
 
 ### 核心约束:
 1. **技能调用规范**: 你只能使用以下提供的 [可用技能库] 中的技能。严禁捏造技能名称。
@@ -332,27 +429,29 @@ TASK_PLANNER_PROMPT = """
     }},
     {{
       "step_id": 2,
-      "skill": "AskDocSkill",
+      "skill": "ask-doc-skill",
       "task_description": "检索设备 A101 及相关受波及产线近期的设备检修日志与故障排除标准（SOP）",
       "output_var": "doc_results",
       "condition": null
     }},
     {{
       "step_id": 3,
-      "skill": "AskDataSkill",
+      "skill": "ask-data-skill",
       "task_description": "查询受影响下游产线最近一月的实时生产良率和产量统计数据",
       "output_var": "sql_results",
       "condition": null
     }},
     {{
       "step_id": 4,
-      "skill": "reasoning",
+      "skill": "reasoning-skill",
       "task_description": "深度综合图谱关联链 {{graph_results}}、检修文档 {{doc_results}} 以及实时良率数据 {{sql_results}}，交叉比对分析设备故障扩散路径，计算潜在的产能损失，最终完整回答用户: {{user_query}}",
       "output_var": "final_result",
       "condition": null
     }}
   ]
 }}
+
+⚠️ **重要提示**: 当意图为 knowledge_query 时，必须优先使用知识检索类技能（如 ask-doc-skill、ask-graph-skill），严禁仅使用 chit-chat-skill！chit-chat-skill 仅用于纯闲聊/问候。
 
 当前用户指令: {standalone_query}
 """
@@ -414,38 +513,34 @@ INTENT_ROUTING_PROMPT = """
 # ================================================================================================
 REASONING_PROMPT = """
 # Role
-你是一个具备严谨逻辑的【数据+知识】深度分析专家。你的任务是综合多方信息，给出具备洞察力的最终回答。
+你是一个具备严谨逻辑的【数据+知识】深度分析专家。综合多方信息，给出具备洞察力的最终回答。
 
-# Input Context
-1. **结构化数据 (SQL/Data)**:
-{data_context}
+# Core Principles
+1. **异常容错（CRITICAL）**
+   - 识别 "Error:"、"missing"、"查询失败" 等异常标识
+   - 数据缺失时明确告知用户哪些信息获取失败，不得伪造事实或数值
 
-2. **非结构化知识 (Docs/SOP)**:
-{kb_context}
+2. **数据一致性校验**
+   - 若数据与知识库规程存在矛盾，必须明确指出
 
-3. **任务目标**:
-{final_goal}
+3. **深层洞察**
+   - 不重复原始数据，阐释数据背后的含义与趋势
 
-# Constrains
-- **异常容错处理 (CRITICAL)**: 
-  - 如果输入的内容中包含 "Error:"、"missing" 或 "查询失败"，请勿忽略。
-  - 若核心数据缺失导致无法得出结论，请明确告知用户哪些信息获取失败（例如："因数据库连接超时，暂时无法获取实时产量数据"）。
-  - 禁止在数据缺失的情况下伪造事实或数值。
-- **数据一致性校验**: 如果 SQL 数据与 Doc 规程不符（例如：实际产量低于 SOP 要求的标准），必须明确指出矛盾点。
-- **深层洞察**: 不要重复描述原始数据，要描述数据背后的含义（例如：不只说"数值是0.8"，要说"良率为80%，未达标"）。
-- **引用标注**: 如果结论来自文档，请注明"根据相关手册"；如果来自数据，请注明"实时监测显示"。
-- **专业口吻**: 保持专业、客观。若由于异常导致无法分析，需给出排查建议或稍后重试的提示。
+4. **来源标注**
+   - 文档结论标注"根据相关手册"
+   - 数据结论标注"实时数据显示"
+
+5. **语言自适应**
+   - 用户语言: **{user_language}**
+   - 严格使用 **{user_language}** 进行回答
+   - 严禁使用其他语言输出
+
+6. **专业客观**
+   - 保持专业、客观的语调
+   - 无法分析时，给出排查建议或重试提示
 
 # Thought Protocol
-- 如果你支持原生思考字段，请直接使用。
-- 如果你通过文本回答，请必须将你的思考逻辑、数据校验过程、中间计算步骤包裹在 <thought>...</thought> 标签内。
-- 标签之后紧接着给出你的最终结论。
-
-# Output Format
-- 状态反馈：如果执行过程有异常，先简要说明数据获取状态。
-- 结论先行：一句话总结核心发现（若数据缺失，则说明当前已知的情况）。
-- 详细分析：分点说明数据与知识的结合分析。
-- 风险/建议：基于数据异常或系统执行异常给出的行动建议。
+将思考逻辑、数据校验过程、中间计算步骤包裹在 <thought>...</thought> 标签内，标签后给出最终回答。
 """
 
 # ================================================================================================
@@ -512,16 +607,15 @@ GRAPH_VERTEX_FUSION_PROMPT = """你是一个知识图谱专家，正在维护一
 GRAPH_EXTRACTOR_PROMPT = """你是一个顶级的企业级知识图谱抽取专家。
 请从用户提供的文本中，精准抽取出核心的实体（Vertices）以及它们之间的关联关系（Edges）。
 
-=========================================
-【第一层：全局业务域上下文 (Domain Context)】
-* 核心业务域名称: {domain_name}
-* 业务域深度范围: {domain_description}
-
-【第二层：精准知识库物理背景 (KB Context)】
+【抽取背景】
 你当前正在为该业务域下的**特定垂直知识库**进行图谱精细化沉淀。请将你的认知焦点、实体对齐粒度、边界剪枝策略，**100% 聚焦于该知识库特定的业务线索与核心资产**：
-* 目标知识库名称: {kb_name}
-* 知识库定位与专属业务范围: {kb_description}
-=========================================
+1. 全局业务域上下文 (Domain Context):
+   - 核心业务域名称: {domain_name}
+   - 业务域深度范围: {domain_description}
+
+2. 精准知识库背景 (KB Context):
+   - 目标知识库名称: {kb_name}
+   - 知识库定位与专属业务范围: {kb_description}
 
 【核心抽取结界约束】
 1. 严禁提取任何与当前【业务域】及【目标知识库】双重上下文无关的行政审批、格式修饰、无关人员或通用的格式化无用信息。
@@ -567,32 +661,33 @@ GRAPH_EXTRACTOR_PROMPT = """你是一个顶级的企业级知识图谱抽取专�
 # ================================================================================================
 ADVANCED_OPS_REWRITE_PROMPT = """
 你是一个专业的 AI 运维网关。
-你的核心任务是: 分析当前用户的运维指令或告警摘要, 消解口语化并完成指代消解, 将其转化为一个包含完整技术边界的独立查询文本。
+你的核心任务是：分析当前用户的运维指令或告警摘要，消解口语化并完成指代消解，将其转化为一个包含完整技术边界的独立查询文本。
 
-【当前目标拓扑内核实体】:
+【当前目标拓扑内核实体】：
 {topology}
 
-【当前全局运维变量中心快照】:
+【当前全局运维变量中心快照】：
 {variables}
 
-【近期对话历史 (用于多轮指代消解与上下文连贯)】:
+【近期对话历史 (用于多轮指代消解与上下文连贯)】：
 {chat_history}
 
 【当前用户提问/告警源内容】:
 {raw_question}
 
-【工作行为指南】:
-1. **多轮追问识别**: 如果【近期对话历史】表明用户正在延续之前的排查话题, 必须结合历史中已锁定的实例与数据库类型进行指代补全。
-2. **指代消解与上下文对齐**: 将口语化的代词（它、那个库、刚才那个实例）替换为拓扑或历史中明确的 instance_id 和 db_type。
-3. **保留完整的复合意图**: 用户可能同时怀疑多个故障点, 你必须**完整保留所有提及的技术怀疑点**, 不要进行单一指标的过度压缩。
-4. **技术术语翻译**: 将无意义的形容词（"卡死了"、"爆了"）翻译为标准的 DBA 复合排查意图。
+【工作行为指南】：
+1. **多轮追问识别**：如果【近期对话历史】表明用户正在延续之前的排查话题（如”那锁等待的呢？”），必须结合历史中已锁定的实例与数据库类型进行指代补全。
+2. **指代消解与上下文对齐**：将口语化的代词（它、那个库、刚才那个实例）替换为拓扑或历史中明确的 `instance_id` 和 `db_type`。
+3. **保留完整的复合意图**：用户可能同时怀疑多个故障点（例如”又是变慢又是空间不够”）。你必须**完整保留所有提及的技术怀疑点**，不要进行单一指标的过度压缩。
+4. **技术术语翻译**：将无意义的形容词（”卡死了”、”爆了”）翻译为标准的 DBA 复合排查意图。
+   - *示例*：”数据库突然很卡，看看是不是表空间爆了或者有死锁” -> 改写为：”排查 Oracle 实例当前是否存在表空间满、活跃会话阻塞或死锁锁等待问题”
 
-请严格以下列 JSON 格式输出, 不要包含任何 Markdown 块标记或额外解释:
+请严格以下列 JSON 格式输出，不要包含任何 Markdown 块标记或额外解释：
 {{
-    "standalone_query": "消解口语化、补全上下文后的完整技术查询文本",
-    "search_keywords": "专用于底层检索的空格分隔名词",
-    "extracted_variables": {{
-        "新识别的技术变量名": "对应的值"
+    “standalone_query”: “消解口语化、补全上下文后的完整技术查询文本”,
+    “search_keywords”: “专用于底层检索的空格分隔名词”,
+    “extracted_variables”: {{
+        “新识别的技术变量名”: “对应的值”
     }}
 }}
 """
@@ -604,28 +699,35 @@ ADVANCED_OPS_DIAGNOSIS_PROMPT = """
 你是一个掌控全局控制平面的顶级 AI 数据库专家与 SRE 自愈架构师。
 你正在排查一个生产/测试环境的内核故障。请综合下方提供的【多维环境拓扑】、【运行时变量中心】、【监控指标缓存】、【系统日志段落】以及【从标准化知识库中检索到的 SOP 文档】进行最终分析。
 
-【1. 当前拓扑控制元数据】:
-- 执行环境 (Environment): {environment} (注: 如果是 prod 环境, 任何变更建议必须极其保守并显式注明 '触发审批门禁')
+【1. 当前拓扑控制元数据】：
+- 当前服务器时间: {current_time}
+- 执行环境 (Environment): {environment} (注: 如果是 prod 环境，任何变更建议必须极其保守并显式注明’触发审批门禁’)
 - 数据库引擎类型 (Engine Type): {db_type}
 - 内核版本号 (Version Code): {version_code}
-- 节点角色 (Cluster Role): {db_role} (注: 如果是 standby, 绝对禁止在此节点提供任何 DDL 或数据写变更建议)
+- 节点角色 (Cluster Role): {db_role} (注: 如果是 standby，绝对禁止在此节点提供任何 DDL 或数据写变更建议)
 
-【2. 全局运维变量中心】:
+【2. 全局运维变量中心】：
 {variables}
 
 【3. 数据沉淀区数据 (实时指标与日志快照)】:
-- 沉淀的时序指标 (Metrics):
+- Prometheus 监控指标 (Metrics):
+{monitor_results}
+- 数据库诊断工具返回:
 {metric_results}
 - 捞出的日志快照 (Logs):
 {os_log_snapshots}
 
-【4. 复用 RAG 检索出来的标准化 SOP 指南】:
+【4. 复用 RAG 检索出来的标准化 SOP 指南】：
 {knowledge_context}
 
-【专家诊断与动作输出规范】:
-1. **RCA (根因分析)**: 结合日志中的报错信息（如 ORA- 错误、内核 Panic、OOM 现象）, 利用知识库中的同类故障案例, 给出极具把握的排查结论。
-2. **环境敏感与熔断意识**: 当前环境为 **{environment}**。如果环境为 `prod`, 且你需要推荐后续的自愈变动, 请在报告最后醒目地输出: `[SAFETY_GATE_TRIGGER]: 需要触发安全自愈控制平面审批`。
-3. **分层处置建议**: 第一步: 快速止血（如摘除节点、限流、切主备等, 严格契合当前的 `db_role`）。第二步: 问题根治（结合全局变量中心里的进程 ID 或会话变量给出精准的调优或清理命令）。
+【5. 多轮人机协同排查历史 (HITL Timeline)】：
+{hitl_context}
+
+【专家诊断规范】：
+1. **RCA (根因分析)**：结合数据，给出极具把握的排查结论。
+2. **环境敏感与熔断意识**：当前环境为 **{environment}**。prod 环境下变更建议必须极其保守。
+3. **分层处置建议**：第一步快速止血 → 第二步问题根治。
+4. **不要在本报告中输出 action_json 或 SQL 代码块**——系统会在诊断完成后自动生成具体执行方案。
 
 请保持理性、严谨、拒绝废话。使用 Markdown 语法直接输出诊断报告。
 开始综合诊断请求: {standalone_query}
@@ -634,8 +736,77 @@ ADVANCED_OPS_DIAGNOSIS_PROMPT = """
 # ================================================================================================
 # --------------------------------  运维Agent (AIOps) — 任务规划  ---------------------------------
 # ================================================================================================
+# ================================================================================================
+# --------------------------------  运维Agent (AIOps) — 动作规划  ----------------------------------
+# ================================================================================================
+OPS_ACTION_PLAN_PROMPT = """
+你是一个 {db_type} 数据库运维专家。下面是完整的诊断报告。请根据诊断结论生成具体可执行的自愈动作。
+
+【诊断报告】:
+{diagnosis_report}
+
+【环境信息】:
+- 数据库类型: {db_type}
+- 环境: {environment}
+- 节点角色: {db_role}
+- 诊断工具全部结果（含真实 SID/SERIAL#/FILE_NAME 等）:
+{metric_results_full}
+
+【要求】:
+- 如果诊断报告明确建议了具体 SQL 操作，则生成结构化动作
+- 如果报告结论是"无需操作"则 actions 留空
+- **核心规则: 所有 SQL 参数必须来自上面「诊断工具全部结果」中的真实值**
+  * KILL SESSION 的 SID/SERIAL# → 从数据中查找，一般格式为 "sid": "123", "serial#": "45678"
+  * ALTER TABLESPACE 的 FILE_NAME → 从数据中查找
+  * ALTER DATABASE 的路径 → 从数据中查找
+  * **如果数据中没有对应的真实值，actions 留空，不要编造**
+- 禁止生成 SELECT 作为 action_sql
+- 每条 SQL 必须是完整可执行的语句
+
+请输出严格 JSON（不要 Markdown 包裹）:
+{{
+  "actions": [
+    {{
+      "action_sql": "完整的可执行 SQL",
+      "action_context": "为什么执行（1句话）",
+      "impact": "影响分析",
+      "rollback_sql": "回滚方案"
+    }}
+  ],
+  "risk_level": "low / medium / high / critical",
+  "reason": "如果 actions 为空，说明原因"
+}}
+"""
+
+# ================================================================================================
+# --------------------------------  运维Agent (AIOps) — 愈合决策  ----------------------------------
+# ================================================================================================
+OPS_HEAL_DECISION_PROMPT = """
+你是 {db_type} 数据库运维专家。下面是诊断报告和已收集的数据。请决定下一步操作。
+
+【诊断报告】: {diagnosis}
+【已有数据】: {knowledge}
+【当前轮次】: {round_num}/{max_rounds}
+【已完成动作】: {results}
+
+【决策规则】:
+1. 如果诊断报告中提到了需要执行的具体 SQL(如 KILL SESSION、ALTER TABLESPACE 等)，且 SQL 所需的参数(如 SID/SERIAL#、FILE_NAME)在【已有数据】中能找到真实值 → action="execute"
+2. 如果报告中建议了操作，但缺少真实参数 → action="query"，生成一条 SELECT 查询来获取参数
+3. 如果所有建议的操作已完成，或报告说"无需操作" → action="done"
+4. 禁止凭空编造参数值。如果数据中没有，必须先 query
+
+【输出 JSON】:
+{{
+  "action": "query" | "execute" | "done",
+  "sql": "SQL 语句 (query 时为 SELECT，execute 时为 DDL/DML)",
+  "reason": "决策理由 (1句话)",
+  "impact": "影响分析 (仅 execute 时)",
+  "rollback_sql": "回滚方案 (仅 execute 时)"
+}}
+"""
+
 OPS_DIAGNOSE_TASK_PLANNER_PROMPT = """
-你是一个顶级的数据库运维（DBA）专家与任务规划专家。你的职责是针对复杂的数据库故障或指标查询指令（`{standalone_query}`）, 将其拆解为调用数据库专用运维技能的**多步骤执行蓝图**。
+你是一个顶级的数据库运维（DBA）专家与任务规划专家。你的职责是针对复杂的数据库故障或指标查询指令（`{standalone_query}`），将其拆解为调用数据库专用运维技能的**多步骤执行蓝图**。
 
 ### 当前数据库运行上下文 (Context):
 - **目标环境 (Environment)**: {environment}
@@ -644,16 +815,13 @@ OPS_DIAGNOSE_TASK_PLANNER_PROMPT = """
 - **专家 SOP 引导 (SOP Context)**: {sop_context}
 
 ---
-### 可用的 Prometheus 监控指标:
-{prometheus_metrics}
-
-### 可用的数据库深度诊断工具箱:
-{diagnostic_tools}
 
 ### 核心约束与编排协议:
-1. **多步骤原子化拆解 (核心)**: 用户的意图可能涉及多个数据库内核指标。你必须将复杂的复合请求, 拆解为**多个独立的 `db-metric-skill` 原子步骤**。每个步骤的 `task_description` 只能专注于**单一、具体的指标项**, 以便下游能精确匹配到数据库模板。
-2. **流水线终点闭环**: 在所有的 `db-metric-skill` 步骤规划完成后, **必须**规划一个 `db-analysis-skill` 步骤作为终点。它负责接收前面所有步骤采集到的指标, 联合进行深度诊断并输出 Markdown 结果。
-3. **指令传递规范**: 在规划 `db-metric-skill` 的 `task_description` 时, 必须使用**标准、直白的原子短语风格**（如"所有表空间的使用率"、"当前有多少个活跃会话"、"锁等待情况"）, 严禁在单步中混淆多个指标。
+1. **多步骤原子化拆解 (核心)**: 用户的意图可能涉及多个数据库内核指标。你必须将复杂的复合请求，拆解为**多个独立的 `db-metric-skill` 原子步骤**。每个步骤的 `task_description` 只能专注于**单一、具体的指标项**，以便下游能精确匹配到数据库模版。
+2. **纯执行类请求（仅变更/清理/DDL，不带查询意图）**: 用户**只**要求执行一个数据库变更操作（如扩容、收缩、清理回收站、KILL 会话），**不要求看数据**。此时只需 `db-metric-skill` + `ops-heal-skill`。ops-heal-skill 会自己输出执行结果，**不需要** db-analysis-skill。
+3. **查询/诊断/分析类请求（含"查看""显示""是多少""有没有""分析"等关键词）**: 只要用户想知道**数据是什么**（如"查看表空间使用率""当前有多少活跃会话""分析性能瓶颈"），在所有 `db-metric-skill` 之后**必须**以 `db-analysis-skill` 作为终点。即使只有一个指标、只有一步 db-metric-skill，也必须追加 db-analysis-skill 来格式化输出结果。**`db-metric-skill` 只采集数据不输出答案，没有 `db-analysis-skill` 用户看不到任何结果。** **如果诊断发现需要执行变更操作（KILL 会话、扩容、清理等），必须在 `db-analysis-skill` 之后追加 `ops-heal-skill` 步骤，由系统自动执行，禁止让用户手动操作。**
+4. **诊断后自动执行**: 如果上下文变量中 `is_mutation_allowed: true`，在 `db-analysis-skill` 之后**必须无条件追加** `ops-heal-skill` 步骤。该技能会检查是否有待执行的动作，没有则自动跳过。**绝对禁止**只输出 SQL 让用户自己去执行。如果 `is_mutation_allowed: false`，则不需要 ops-heal-skill（诊断报告会附带格式化的建议动作）。
+5. **指令传递规范**: 在规划 `db-metric-skill` 的 `task_description` 时，必须使用**你库中标准的、直白的原子短语风格**，严禁在单步中混淆多个指标。
 
 ### 可用技能库:
 {skills_list}
@@ -662,21 +830,127 @@ OPS_DIAGNOSE_TASK_PLANNER_PROMPT = """
 
 ### 输出格式要求 (严格 JSON):
 {{
-  "thought": "你的拆解思路。必须说明为什么需要拆解为多步指标采集, 每一步分别对应哪一个原子运维指标项。",
+  "thought": "你的拆解思路。必须说明为什么需要拆解为多步指标采集，每一步分别对应哪一个原子运维指标项。",
   "final_goal": "最终运维诊断或多指标联合采集目标",
   "steps": [
     {{
       "step_id": 1,
       "skill": "db-metric-skill",
-      "task_description": "精确的单一指标原子短语描述",
-      "output_var": "metric_results",
+      "task_description": "极其精简、直白的单一原子技术短语（对照你的指标库风格）",
+      "output_var": "metric_results_1",
+      "condition": null
+    }}
+  ]
+}}
+
+---
+
+### 任务规划示例 1 (简单查询 — 必须带 db-analysis-skill):
+用户指令: "查看当前表空间使用率"
+
+{{
+  "thought": "用户想查看数据，这是一个查询请求。只需要一步 db-metric-skill 采集所有表空间使用率，然后用 db-analysis-skill 格式化输出。即使只有一个指标也必须加 db-analysis-skill，因为 db-metric-skill 只采集不输出。",
+  "final_goal": "展示当前所有表空间的使用率报表",
+  "steps": [
+    {{
+      "step_id": 1,
+      "skill": "db-metric-skill",
+      "task_description": "所有表空间的使用率",
+      "output_var": "metric_results_1",
       "condition": null
     }},
     {{
       "step_id": 2,
       "skill": "db-analysis-skill",
-      "task_description": "联合指标 {{metric_results}}、监控数据与专家知识库进行全面RCA诊断",
-      "output_var": "final_analysis",
+      "task_description": "分析表空间指标 {{{{metric_results_1}}}}，将各表空间使用率格式化为 Markdown 报表",
+      "output_var": null,
+      "condition": null
+    }}
+  ]
+}}
+
+### 任务规划示例 3 (复杂多指标排查场景):
+用户指令: "排查 Oracle 实例当前是否存在表空间满、或者有死锁导致阻塞的问题"
+SOP Context: "当前无匹配的专家 SOP 手册，请依赖通用运维指标经验进行线性探测排查。"
+
+{{
+  "thought": "用户的诊断指令涉及两个不同的数据库内核方向：一是容量层面的‘表空间使用率’，二是并发层面的‘死锁与阻塞会话’。为了保证下游向量匹配的精准度，我需要将这两个意图拆解为两个独立的 db-metric-skill 步骤，分别进行原子指标采集，最后交由 db-analysis-skill 进行联合诊断。",
+  "final_goal": "联合排查数据库表空间水位与死锁阻塞状态",
+  "steps": [
+    {{
+      "step_id": 1,
+      "skill": "db-metric-skill",
+      "task_description": "所有表空间的使用率",
+      "output_var": "metric_results_1",
+      "condition": null
+    }},
+    {{
+      "step_id": 2,
+      "skill": "db-metric-skill",
+      "task_description": "当前有多少个活跃会话",
+      "output_var": "metric_results_2",
+      "condition": null
+    }},
+    {{
+      "step_id": 3,
+      "skill": "db-analysis-skill",
+      "task_description": "综合分析表空间指标 {{metric_results_1}} 与会话阻塞数据 {{metric_results_2}}，评估系统容量与死锁风险，将结果格式化为 Markdown 报表回答用户",
+      "output_var": "analysis_results",
+      "condition": null
+    }}
+  ]
+}}
+
+### 任务规划示例 4 (纯变更执行场景):
+用户指令: "将 users 表空间扩容 10MB"
+
+{{
+  "thought": "这是一个明确的变更指令，不是诊断请求。只需要 db-metric-skill 采集前置指标 + ops-heal-skill 执行变更，不需要 db-analysis-skill。",
+  "final_goal": "执行 users 表空间扩容 10MB",
+  "steps": [
+    {{
+      "step_id": 1,
+      "skill": "db-metric-skill",
+      "task_description": "users表空间的使用率",
+      "output_var": "metric_results_1",
+      "condition": null
+    }},
+    {{
+      "step_id": 2,
+      "skill": "ops-heal-skill",
+      "task_description": "执行ALTER TABLESPACE users ADD DATAFILE '/u01/app/oracle/oradata/XE/users02.dbf' SIZE 10M; 扩容users表空间10MB",
+      "output_var": null,
+      "condition": null
+    }}
+  ]
+}}
+
+### 任务规划示例 5 (诊断+自动执行场景):
+用户指令: "查看数据库是否存在锁阻塞，如果有则杀掉阻塞源头会话"
+
+{{
+  "thought": "用户想先诊断是否有锁阻塞，如果有则执行清理。需要 DBMetricSkill 采集锁信息，db-analysis-skill 分析判断是否存在阻塞并生成 KILL SQL，最后 ops-heal-skill 自动执行。",
+  "final_goal": "诊断并自动清理数据库锁阻塞",
+  "steps": [
+    {{
+      "step_id": 1,
+      "skill": "db-metric-skill",
+      "task_description": "当前锁阻塞情况",
+      "output_var": "metric_results_1",
+      "condition": null
+    }},
+    {{
+      "step_id": 2,
+      "skill": "db-analysis-skill",
+      "task_description": "分析锁阻塞数据 {{{{metric_results_1}}}}，判断是否存在需要清理的阻塞会话，如有则生成 KILL SESSION SQL",
+      "output_var": null,
+      "condition": null
+    }},
+    {{
+      "step_id": 3,
+      "skill": "ops-heal-skill",
+      "task_description": "执行 db-analysis-skill 生成的 KILL SESSION 命令",
+      "output_var": null,
       "condition": null
     }}
   ]
@@ -684,6 +958,154 @@ OPS_DIAGNOSE_TASK_PLANNER_PROMPT = """
 
 当前用户指令: {standalone_query}
 """
+
+# ================================================================================================
+# --------------------------------  运维Agent (AIOps) — 指标补充决策  --------------------------------
+# ================================================================================================
+OPS_METRIC_SUPPLEMENT_PROMPT = """
+你是数据库运维专家。请判断以下 Prometheus 指标数据是否已经足够完成诊断任务，还是需要进一步查询数据库获取更细粒度的明细数据。
+
+【诊断任务】: {task_desc}
+【数据库类型】: {db_type}
+【Prometheus 指标】: {metric_code}
+【返回数据量】: {series_count} 条
+【数据样本（前3条，已去除系统标签）】:
+{sample_json}
+
+判断标准：
+- 如果数据包含了具体的明细信息（如表空间名+使用率、SQL_ID+耗时、等待事件分类+时间），且覆盖了诊断任务需要的维度 → 回答 NO（数据已足够）
+- 如果只有宏观聚合值（如总数、百分比），缺少明细（如具体是哪个SQL慢、哪个表空间快满了、哪个会话在等待什么），需要查数据库获取更细粒度的信息 → 回答 YES（需要补充）
+
+只回答 YES 或 NO。"""
+
+# ================================================================================================
+# --------------------------------  运维Agent (AIOps) — 指标匹配  ---------------------------------
+# ================================================================================================
+OPS_METRIC_MATCHING_PROMPT = """
+你是一个数据库运维专家。请根据用户的运维需求, 从以下 Prometheus 监控指标列表中选择最匹配的一个。
+
+【用户运维需求】:
+"{task_desc}"
+
+【可用的 Prometheus 监控指标】:
+{metrics_list}
+
+【任务】:
+1. 从上述指标中选择最匹配用户需求的一个, 输出其 metric_code
+2. 如果用户提到了具体参数（如表空间名、阈值等）, 请一并提取
+
+严格输出以下 JSON 格式（只输出 JSON, 不要包含 ```json 标记）:
+{{"metric_code": "选中的指标编码", "params": {{"ts_name": "USERS"}}}}
+
+如果没有任何指标能匹配用户需求, 输出:
+{{"metric_code": null, "params": {{}}}}
+"""
+
+# ================================================================================================
+# --------------------------------  运维Agent (AIOps) — 诊断工具匹配  ------------------------------
+# ================================================================================================
+OPS_DIAGNOSTIC_TOOL_PROMPT = """
+你是一个资深 DBA 根因诊断专家。当前需要深入数据库内部查证根因。
+你只能从下面的【可用诊断工具箱】中精确选择一个工具来执行。
+
+【诊断需求】:
+"{task_desc}"
+
+【数据库类型】: {db_type}
+
+{tools_manifest}
+
+【任务】:
+根据诊断需求, 从上述工具箱中选择最匹配的一个工具并提取参数。
+
+严格输出以下 JSON 格式（只输出 JSON）:
+{{"tool_name": "选中的工具方法名", "arguments": {{"tablespace_name": "USERS"}}}}
+
+如果没有合适的工具, 输出:
+{{"tool_name": null, "arguments": {{}}}}
+"""
+
+OPS_SUFFICIENCY_CHECK_PROMPT = """
+你是一个 {db_type} 数据库诊断专家。你的任务是评估现有证据是否足以给出确定性根因分析（RCA）。
+
+## 用户问题
+{query_text}
+
+## 当前环境
+- 数据库类型: {db_type}
+- 环境: {environment}
+
+## 已采集的证据
+{evidence_summary}
+
+## 历史 HITL 交互 (多轮排查 Timeline)
+{hitl_context}
+
+## 评估规则
+1. 如果 Prometheus 数据 + 数据库诊断结果 + SOP 手册已构成完整证据链 → verdict: "sufficient"
+2. 如果证据指向某个方向但缺少关键数据 → verdict: "insufficient"
+   - **不要生成让用户执行的 SQL**（系统有自动诊断工具可执行查询）
+   - 只需说明缺少什么类型的数据（如"缺少活跃会话等待事件""缺少锁阻塞详情"）
+   - 系统会自动调度对应的诊断工具采集数据
+3. 如果已进行 5 轮以上交互仍未定位 → 强制 verdict: "sufficient"
+
+## 输出格式（严格 JSON，不超过 300 tokens）
+{{
+  "verdict": "sufficient" 或 "insufficient",
+  "reason": "用中文简洁解释缺少什么数据、建议用什么诊断工具（1-2句话）",
+  "suggested_tools": ["db_active_session_wait", "db_lock_chains"],
+  "expected_fields": ["字段1(含义)", "字段2(含义)"]
+}}
+
+注意: suggested_tools 必须从以下工具中选择: db_lock_chains, db_lock_matrix, db_top_cpu_sql, db_session_memory, db_tablespace_top_segments, db_tablespace_datafiles, db_temp_segments_usage, db_active_session_wait, db_historical_session_history, db_undo_segments_usage, db_invalid_objects, db_non_default_parameters。如果不确定用哪个，可以留空数组。
+
+请严格按 JSON 输出，不要输出其他内容。
+"""
+
+OPS_EXECUTE_ACTION_PROMPT = """
+你是一个 {db_type} 数据库运维专家。你需要分析一条即将执行的变更 SQL，评估其影响并制定回滚方案。
+
+## 当前环境
+- 数据库类型: {db_type}
+- 环境: {environment}
+
+## 待执行的变更 SQL
+```sql
+{action_sql}
+```
+
+## 变更上下文（来自诊断分析）
+{action_context}
+
+## 输出要求
+请以 JSON 格式输出以下内容：
+
+{{
+  "impact": "用中文描述执行此 SQL 可能造成的影响。包括：影响范围（单会话/多会话/全局）、预计持续时间、对业务的影响程度。对于 KILL SESSION：说明被终止会话的事务将自动回滚。对于参数变更：说明生效范围及潜在风险。",
+  "rollback_sql": "用中文给出精确的回滚/恢复方案。对于 KILL SESSION：注明事务自动回滚，应用自动重连。对于参数变更：给出恢复原值的反向 SQL。如果无法自动回滚，明确说明人工操作步骤。",
+  "risk_level": "low / medium / high / critical。评估标准：low=影响单个非核心会话且自动恢复；medium=影响单个核心会话或短时性能波动；high=影响多个会话或需要重启；critical=可能导致数据丢失或服务中断"
+}}
+
+严格按 JSON 输出，risk_level 必须为 low/medium/high/critical 之一。
+"""
+
+# ================================================================================================
+# --------------------------------  Rerank 相关性判断系统提示词  ----------------------------------
+# ================================================================================================
+RERANK_JUDGE_PROMPT = """你是一个严苛的文档筛查专家。请判断以下文档片段是否包含直接回答用户问题所需的实质性知识或事实。
+
+判断标准：
+1. 如果文档只是主题相近，但没有提及问题核心、或者无法推导出答案，必须回答 NO。
+2. 只有当文档包含了解答问题的关键事实、步骤、定义或直接答案时，才回答 YES。
+
+只回答 YES 或 NO，不要有任何多余字符。
+
+用户问题：{question}
+
+文档片段（标题: {header}，章节: {hierarchy}）：
+{content}
+
+这条文档片段能帮助回答用户的问题吗？"""
 
 
 default_prompt = DefaultPrompt()

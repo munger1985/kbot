@@ -1,7 +1,7 @@
 #!/bin/bash
 
+# Conda 环境配置
 CONDA_BIN_PATH=$(which conda 2>/dev/null)
-
 if [ -z "$CONDA_BIN_PATH" ]; then
     POSSIBLE_PATHS=("$HOME/anaconda3/bin/conda" "$HOME/miniconda3/bin/conda" "/opt/anaconda3/bin/conda" "/opt/miniconda3/bin/conda")
     for path in "${POSSIBLE_PATHS[@]}"; do
@@ -18,54 +18,35 @@ if [ -z "$CONDA_BIN_PATH" ]; then
 fi
 
 CONDA_ROOT=$(dirname "$(dirname "$CONDA_BIN_PATH")")
-
 source "$CONDA_ROOT/etc/profile.d/conda.sh"
-
 conda activate kbot3
 
-# ------------------------------
+# 统一服务列表：格式 "服务名:脚本路径:启动目录"
+# 注意：脚本路径支持相对路径和绝对路径
+SERVICES=(
+    "主程序:kbot_main.py:."
+    "Embedding:kbot_app_embedding.py:."
+    "LLM:kbot_app_llm.py:."
+    "VLM:kbot_app_vlm.py:."
+    "Visual:kbot_app_visual.py:."
+    "Parser:kbot_app_parser.py:."
+    "MCP:kbot_mcp_server.py:."
+    "DB Executor:kbot_db_executor.py:."
+)
 
+# 启动服务函数
 start_service() {
-    local service_name=$1
-    local directory=$2
-    local script=$3
-    local wait_for_ready=$4
+    local service_name="$1"
+    local script="$2"
+    local directory="$3"
     
-    echo "正在启动 ${service_name}..."
-
-    local python_exec=$(which python)
-    
+    echo "🚀 Starting ${service_name}..."
     cd "$directory" && python "$script" >/dev/null 2>&1 &
     local pid=$!
     
-    sleep 2
-    if kill -0 $pid 2>/dev/null; then
-        echo "✅ ${service_name} started successfully (PID: $pid)" 
-        return 0
-    else
-        echo "❌ ${service_name} start failed!"
-        return 1
-    fi
-}
-
-
-# Function: start service and check status
-start_service() {
-    local service_name=$1
-    local directory=$2
-    local script=$3
-    local wait_for_ready=$4
-
-    echo "Starting ${service_name}..."
-
-    # Switch to directory and start service, discard all output
-    cd "$directory" && python "$script" >/dev/null 2>&1 &
-    local pid=$!
-
     sleep 1
     if kill -0 $pid 2>/dev/null; then
         echo "✅ ${service_name} started successfully (PID: $pid)"
-
         return 0
     else
         echo "❌ Failed to start ${service_name}!"
@@ -73,24 +54,12 @@ start_service() {
     fi
 }
 
-# Start main program (and wait for full initialization)
-start_service "KBOT3 Main Program" "$(dirname "$0")" "kbot_main.py" "true" || exit 1
-
-
-# Microservices array
-declare -A services=(
-    ["Embedding"]="kbot_app_embedding.py"
-    ["LLM"]="kbot_app_llm.py" 
-    ["Reranker"]="kbot_app_reranker.py"
-    ["VLM"]="kbot_app_vlm.py"
-    ["Parser"]="kbot_app_parser.py"
-    ["MCP"]="kbot_mcp_server.py"
-)
-
-# Iterate and start all microservices
-for service_name in "${!services[@]}"; do
-    start_service "${service_name} Microservice" "$(dirname "${services[$service_name]}")" "$(basename "${services[$service_name]}")" "false" || exit 1
+# 启动所有服务
+echo "Starting all KBot services..."
+for service in "${SERVICES[@]}"; do
+    IFS=':' read -r name script dir <<< "$service"
+    start_service "$name" "$script" "$dir" || exit 1
 done
 
 echo
-echo "🎉 All KM services started successfully!"
+echo "🎉 All KBot services started successfully!"

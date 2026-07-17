@@ -16,6 +16,17 @@ from skills.base import SkillDomain, SkillRunMode
 class SkillManager:
     _instance = None
 
+    # IntentType → skill category 映射：确保 LLM 规划时能看到正确的技能
+    # None 表示不过滤，展示全部技能
+    INTENT_CATEGORY_MAP: dict[str, list[str] | None] = {
+        "chitchat": ["general"],
+        "knowledge_query": ["knowledge_retrieval", "cognitive_reasoning"],
+        "data_analysis": ["data_visualization", "cognitive_reasoning"],
+        "task_execution": None,
+        "complex_hybrid": None,
+        "ambiguous": ["general"],
+    }
+
     def __new__(cls, skills_dir: str = "skills/skill_libs"):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
@@ -346,6 +357,11 @@ class SkillManager:
         if not self._skills:
             return "当前系统未配置任何业务技能，请使用通用知识回答。"
 
+        # 将 IntentType 映射到 skill category 列表
+        allowed_categories: list[str] | None = None
+        if category_filter:
+            allowed_categories = self.INTENT_CATEGORY_MAP.get(category_filter)
+
         segments = []
         for name, meta in self._skills.items():
             # 领域过滤（运维Agent 的 OPS 域隔离）
@@ -354,10 +370,12 @@ class SkillManager:
                 if skill_domain != domain_filter:
                     continue
 
-            # 类别过滤（兼容原有逻辑）
+            # 类别过滤：将 IntentType 映射到 skill category
             skill_category = getattr(meta, "category", "general")
-            if category_filter and skill_category != "general" and skill_category != category_filter:
-                continue
+            if allowed_categories is not None:
+                # "general" 类别始终保留（兜底用），其他类别需在允许列表中
+                if skill_category != "general" and skill_category not in allowed_categories:
+                    continue
 
             # 安全检查：输出技能运行模式（供 OpsOrchestrator 安全门禁使用）
             skill_run_mode = getattr(meta, "run_mode", SkillRunMode.READ_ONLY)

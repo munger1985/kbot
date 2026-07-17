@@ -73,7 +73,7 @@ class ParserService:
         对外提供的核心解析接口，包含文件校验、格式转换、解析调用全流程。
 
         Args:
-            file_id: 文件ID，用于标识文件的唯一性
+            file_id: 待解析文件的 ID
             file_path: 待解析文件的完整路径
             parser_params: 解析参数对象，包含文件路径、VLM配置、输出格式等信息
             output_format: 期望的输出格式，默认为 "markdown"

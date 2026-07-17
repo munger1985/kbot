@@ -42,12 +42,18 @@ class PacketType(str, Enum):
     SQL_RESULTS = "sql_results" # 结构化 SQL 结果
     DOC_RESULTS = "doc_results" # 文档检索结果
     GRAPH_RESULTS = "graph_results" # 图谱检索结果
+    METRIC_RESULTS = "metric_results" # 数据库指标查询结果
+    MONITOR_RESULTS = "monitor_results" # Prometheus 指标查询结果
     CALL = "call"             # 工具调用状态
     ECHARTS = "echarts"       # 图表数据展示
     ERROR = "error"           # 错误信息
     DONE = "done"             # 结束信号
     WARNING = "warning"       # 警告信息（运维Agent使用）
     REQUIRE_APPROVAL = "require_approval"  # 需要人工审批（运维Agent高危操作门禁）
+    WAIT_FOR_USER = "wait_for_user"  # HITL: Agent 需要用户输入（携带 request_id + 表单定义）
+    ACTION_ITEMS = "action_items"  # 结构化自愈变更建议（含 SQL + 影响分析 + 回滚方案）
+    VERIFICATION_RESULTS = "verification_results"  # 自愈验证结果
+    CONFIRM_ACTION = "confirm_action"             # HITL: 逐条确认变更命令
 
 class AgentCategory(IntEnum):
     """Agent category enumeration."""
@@ -75,7 +81,7 @@ class FileStatus(IntEnum):
     REJECTED = 4
     PARSING = 5
     PARSED = 6
-    PARSE_FAILED = 7
+    FAILED = 7
     ARCHIVED = 8
 
 class ProcessPriority(IntEnum):
@@ -185,6 +191,21 @@ class VLMProvider(str, Enum):
     """Supported VLM provider enumeration."""
     API_QWEN = "api_qwen"
     CHATGPT = "chatgpt"
+
+class OCRProvider(str, Enum):
+    """OCR provider enumeration."""
+    EASYOCR = "easyocr"
+    TESSERACT = "tesseract"
+    RAPIDOCR = "rapidocr"
+    DEEPSEEK_OCR = "deepseek_ocr"
+
+# OCR 引擎中文标签映射
+OCR_ENGINE_LABELS: dict[str, str] = {
+    "easyocr": "EasyOCR",
+    "tesseract": "Tesseract",
+    "rapidocr": "RapidOCR",
+    "deepseek_ocr": "DeepSeek OCR",
+}
 
 # Service type enumeration
 class ServiceType(str, Enum):

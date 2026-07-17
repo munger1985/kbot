@@ -4,8 +4,7 @@ from typing import Any
 from services.search.result import TxtBaseSearchResult
 from agent.prompt import default_prompt
 from utils.clients import AIModelClient
-from core.config.settings import get_prompt_config
-from utils.codec import serialize_value
+from core.config import get_prompt_config
 
 
 class ContextManager:
@@ -23,25 +22,27 @@ class ContextManager:
         context_summary: str | None, 
         session_state: dict | None,
         model_name: str,
-        active_topic: str | None = None # 当前感知的话题
+        active_topic: str | None = None,
+        user_language: str = "English"
     ) -> dict:
         """
         核心入口：
         输出包含意图、改写、话题、实体和状态更新的全套决策包。
         """
-        # 递归把 session_state 里的 Decimal 转换为 float/int，防止原生 json.dumps 报错
-        safe_session_state = serialize_value(session_state or {})
-
         # 1. 组装 Prompt (包含记忆与状态)
         prompt = await default_prompt.generate(
             self.rewrite_prompt,
             chat_history=chat_history if chat_history else 'No previous turns.',
             summary=context_summary or 'None',
-            session_state=json.dumps(safe_session_state, ensure_ascii=False),
+            session_state=json.dumps(session_state or {}, ensure_ascii=False),
             active_topic=active_topic or "None",
-            query=query
+            query=query,
+            user_language=user_language
         )
-        
+
+        logger.info(f"[LangTrace] process_query_with_memory user_language={user_language!r} query={query[:60]!r}")
+        logger.debug(f"[LangTrace] REWRITE_PROMPT first 300 chars: {prompt[:300]}")
+
         try:
             # 2. 获取结构化结果
             # 设置 low temperature 以获得稳定的 JSON
@@ -65,7 +66,7 @@ class ContextManager:
             turn_entities = result.get("turn_entities", {})
             new_state = {**current_state, **turn_entities}
 
-            return serialize_value({
+            return {
                 "standalone_query": standalone_query,
                 "turn_type": result.get("turn_type", "new_topic"),
                 "active_topic": detected_topic,      # 传递给下游持久化
@@ -75,7 +76,7 @@ class ContextManager:
                 "new_state": new_state,              # 合并后的完整状态
                 "user_profile_updates": result.get("user_profile_updates", {}), # 画像增量
                 "thought": result.get("thought", "") # 引导后续 Planner 的思考
-            })
+            }
 
         except Exception as e:
             logger.error(f"查询处理失败，降级为默认话题切换: {e}")
@@ -134,14 +135,14 @@ class ContextManager:
         session_state: dict[str, Any] | None = None,
         context_summary: str | None = "",
         long_term_memory: str | None = "",
-        reasoning_path: list[str] | None = None # 新增：展示推理路径
+        reasoning_path: list[str] | None = None,
+        user_language: str = "English"
     ) -> str:
         """
         构建最终 RAG 提示词
         """
         # 1. 环境信息
-        safe_session_state = serialize_value(session_state or {})
-        env_str = " | ".join([f"{k}: {v}" for k, v in safe_session_state.items() if v]) if safe_session_state else "通用环境"
+        env_str = " | ".join([f"{k}: {v}" for k, v in session_state.items() if v]) if session_state else "通用环境"
         
         # 2. 知识库引用
         kb_segments = []
@@ -160,5 +161,6 @@ class ContextManager:
             context_summary=context_summary or "新对话。",
             long_term_memory=long_term_memory or "暂无相关跨会话记忆。",
             kb_context=kb_context,
-            user_question=user_question
+            user_question=user_question,
+            user_language=user_language
         )

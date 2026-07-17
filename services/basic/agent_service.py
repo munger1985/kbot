@@ -3,7 +3,8 @@ from typing import Any
 from core.database.oracle import get_session
 from core.exceptions import *
 from dao.repositories import (AgentRepository, AgentConfRepository,
-                             PromptRepository, MemoryRepository)
+                             PromptRepository, MemoryRepository,
+                             OpsAgentConfRepository)
 from services.kb.schema import ModelParams
 
 
@@ -43,6 +44,7 @@ class AgentService:
                         logger.info(f"Deleted prompt {agent.prompt_id} for agent {agent_id}")
 
                 await AgentConfRepository(session).delete_by_agent_id(agent_id)
+                await OpsAgentConfRepository(session).delete_by_agent_id(agent_id)
                 await agent_repo.delete(agent_id)
                 
                 sess_repo = MemoryRepository(session)
@@ -105,9 +107,8 @@ class AgentService:
                 return ModelParams(
                     llm_model=model_params.get("llm_model", ""),
                     txt_embedding_model=model_params.get("txt_embedding_model", ""),
-                    img_embedding_model=model_params.get("img_embedding_model", ""),
+                    visual_embedding_model=model_params.get("visual_embedding_model", ""),
                     vlm_model=model_params.get("vlm_model", ""),
-                    rerank_model=model_params.get("rerank_model", ""),
                     do_rerank=model_params.get("do_rerank", False),
                     llm_params=llm_params,
                     rerank_top_k=model_params.get("rerank_top_k"),
@@ -136,3 +137,27 @@ class AgentService:
                 return kb_ids
             except Exception as e:
                 handle_exception(e, "获取知识库配置列表失败")
+
+    async def get_agent_profile(self, agent_id: int) -> int:
+        """
+        获取智能体的 profile ID
+
+        Args:
+            agent_id: 智能体ID
+
+        Returns:
+            profile ID
+        """
+        async with self.oracle_session as session:
+            agent_repo = AgentRepository(session)
+            try:
+                agent = await agent_repo.get_by_id(agent_id)
+                models = agent.models
+                if not models:
+                    raise NotFoundError(f"智能体 {agent_id} 没有配置 profile")
+                profile = models.get("profile")
+                if not profile:
+                    raise NotFoundError(f"智能体 {agent_id} 没有配置 profile")
+                return profile
+            except Exception as e:
+                handle_exception(e, "获取 profile 失败")

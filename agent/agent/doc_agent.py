@@ -1,16 +1,14 @@
-import uuid
 from datetime import datetime, timezone
 from loguru import logger
 from fastapi import BackgroundTasks
 
-from core.database.oracle import get_session
+from core.database import db_instance
 from core.exceptions import *
 from dao.repositories import FileRepository
 from services.search import TxtBaseSearchResult
 from utils.clients import AIModelClient
 from agent.memory import MemoryService
 from ..orchestrator import DocOrchestrator
-from agent.common import ContextMemory
 
 
 class DocAgent:
@@ -25,7 +23,7 @@ class DocAgent:
     @property
     def db_session(self):
         """获取数据库会话对象"""
-        return get_session()
+        return db_instance().get_session()
 
     # ========================== 核心业务接口 ==========================
     async def rag_retrieval(
@@ -37,11 +35,14 @@ class DocAgent:
         search_keywords: str,
         security_level: int,
         user_id: str,
-        tags: list[str] = []
+        tags: list[str] = [],
+        background_tasks: BackgroundTasks | None = None,
     ) -> list[dict]:
         """
         知识库检索入口：已修复 ContextMemory 传递与持久化逻辑
         """
+        request_time = datetime.now(tz=timezone.utc)
+        
         # 1. 确保会话存在并获取初始上下文 (包含 user_profile 等)
         # 假设 ensure_session_exists 现在返回或初始化了 ContextMemory
         await self.memory_service.ensure_session_exists(

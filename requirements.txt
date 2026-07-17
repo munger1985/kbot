@@ -20,3 +20,7 @@ cohere==5.20.2
 imagehash==4.3.2
 bcrypt==5.0.0
 starlette
+asyncpg
+aiomysql
+colpali-engine
+jieba

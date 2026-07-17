@@ -2,7 +2,6 @@ from typing import Any, TypedDict
 
 from .skill_context import SkillExecutionContext, ExecutionPlan
 
-
 class ContextMemory(TypedDict):
     # --- 1. 基础元数据 (Session Basics) ---
     user_id: str
@@ -11,7 +10,8 @@ class ContextMemory(TypedDict):
     question: str                # 原始输入
     standalone_query: str         # LLM 改写后的意图清晰的问题
     search_keywords: str  # 从用户输入中提取的搜索关键词
-    llm_model: str
+    llm_model: str # 编排与参数提取所使用的大模型名称
+    embedding_model: str           #_model: str          
     security_level: int
     tags: list[str] | None  # 用于分类和检索的标签
 
@@ -44,5 +44,8 @@ class ContextMemory(TypedDict):
     session_state: dict[str, Any] # 跨会话的长期记忆（如用户偏好）
     blocks: list[dict[str, Any]]   # 前端渲染流，存储 Thought, Call, Answer, Chart 等
 
-    # --- 7. 瞬时空间 (Ephemeral Space) ---
+    # --- 7. 语言信息 (Language) ---
+    user_language: str            # 检测到的用户语言（如 "Chinese"/"English"/"Japanese"/"Korean"）
+
+    # --- 8. 瞬时空间 (Ephemeral Space) ---
     temp: dict[str, Any]          # 仅限单个 Skill 内部使用的垃圾袋

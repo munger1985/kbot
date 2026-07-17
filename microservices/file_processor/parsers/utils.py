@@ -48,11 +48,13 @@ class ModelTask:
     """
     模型任务类
     1. 调用VLM解析图片
-    2. 调用LLM提取全文摘要或文本语义
+    2. 调用DS OCR识别文字
+    3. 调用LLM提取全文摘要或文本语义
     """
     def __init__(self):
         self.llm_semaphore = asyncio.Semaphore(2)  # LLM API调用限流（最多2个并发）
-        self.vlm_semaphore = asyncio.Semaphore(2)  # LLM API调用限流（最多2个并发）
+        self.vlm_semaphore = asyncio.Semaphore(2)  # VLM API调用限流（最多2个并发）
+        self.dsocr_semaphore = asyncio.Semaphore(2)  # DS OCR API调用限流（最多2个并发）
 
     async def vlm_task(self, client: AIModelClient, model_name: str, prompt: str, index: str, image_obj) -> tuple:
         """VLM 任务，用于处理图片逻辑"""
@@ -94,7 +96,32 @@ class ModelTask:
             except Exception as e:
                 logger.error(f"VLM处理失败 (Index {index}): {e}")
                 return index, None
-            
+
+    async def dsocr_task(self, client: AIModelClient, model_name: str, prompt: str, index: str, image_obj) -> tuple:
+        """DS OCR 任务，用于高精度图片文字识别"""
+        async with self.dsocr_semaphore:
+            try:
+                if image_obj:
+                    max_size = 1024
+                    w, h = image_obj.size
+                    if max(w, h) > max_size:
+                        scale = max_size / max(w, h)
+                        new_size = (int(w * scale), int(h * scale))
+                        image_obj = image_obj.resize(new_size, Image.Resampling.BICUBIC)
+                    if image_obj.mode != "RGB":
+                        image_obj = image_obj.convert("RGB")
+
+                res = await client.get_dsocr_answer(
+                    model_name=model_name,
+                    image=image_obj,
+                    prompt=prompt,
+                    stream=True
+                )
+                return index, res
+            except Exception as e:
+                logger.error(f"DS OCR 处理失败 (Index {index}): {e}")
+                return index, None
+
     async def llm_task(self, client: AIModelClient, model_name: str, prompt: str) -> str | None:
         """LLM 任务，用于处理全文摘要"""
         try:
@@ -112,7 +139,7 @@ class ModelTask:
         """LLM 任务，用于处理文本语义并返回 JSON"""
         try:
             async with self.llm_semaphore:
-                return await client.call_llm_json(
+                return await client.get_llm_json(
                     model_name=model_name, 
                     prompt=prompt,
                     stream=True  # 即使是内部聚合，开启 stream 也能更早释放资源

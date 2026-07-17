@@ -5,45 +5,32 @@ from datetime import datetime, date
 from typing import Any
 
 class SerializerUtils:
-    """Serialization utility class.
-    
-    Provides recursive serialization methods to convert non-serializable Python objects
-    (e.g., datetime, Decimal, array.array, custom objects) into JSON-serializable formats
-    like strings, lists, and dictionaries.
-    """
+    """序列化工具类"""
     
     @staticmethod
     def safe_serialize(obj: Any) -> Any:
         """
-        Safe serialization method that handles various non-serializable types.
-        This is an alias for serialize_value to maintain backward compatibility.
+        安全序列化方法，处理各种不可序列化的类型
+        这是对serialize_value方法的别名，保持向后兼容
         
         Args:
-            obj: Object to be serialized
+            obj: 需要序列化的对象
             
         Returns:
-            JSON-serializable value
+            可序列化的值
         """
         return SerializerUtils.serialize_value(obj)
     
     @staticmethod
     def serialize_value(value: Any) -> Any:
         """
-        Recursively serialize values, handling various non-serializable types.
-        
-        Converts complex types to JSON-serializable formats while preserving data integrity:
-        - datetime/date → ISO format string
-        - Decimal → float
-        - array.array → list
-        - bytes → UTF-8 string (with error handling)
-        - Objects → dict (via to_dict method or __dict__)
-        - Collections → recursively serialized
+        递归序列化值，处理各种不可序列化的类型
         
         Args:
-            value: Value to be serialized
+            value: 需要序列化的值
             
         Returns:
-            JSON-serializable value
+            可序列化的值
         """
         if value is None:
             return None
@@ -61,7 +48,7 @@ class SerializerUtils:
             except:
                 return str(value)
         elif hasattr(value, 'to_dict'):
-            # Prefer object's native to_dict method if available
+            # 优先使用对象的to_dict方法
             return value.to_dict()
         elif hasattr(value, '__dict__'):
             return SerializerUtils.object_to_dict(value)
@@ -78,13 +65,13 @@ class SerializerUtils:
     @staticmethod
     def array_to_list(arr: array.array) -> list:
         """
-        Convert array.array object to standard Python list.
+        将array.array转换为list
         
         Args:
-            arr: array.array object to convert
+            arr: array.array对象
             
         Returns:
-            list: Converted list of values
+            list对象
         """
         try:
             if hasattr(arr, 'tolist'):
@@ -92,24 +79,21 @@ class SerializerUtils:
             else:
                 return list(arr)
         except Exception as e:
-            print(f"Error converting array.array to list: {e}")
+            print(f"转换array.array到list时出错: {e}")
             return []
     
     @staticmethod
     def object_to_dict(obj: Any) -> dict:
         """
-        Convert arbitrary object to dictionary by extracting attributes.
-        
-        Excludes private attributes (starting with '_'), metadata, and registry attributes,
-        and skips callable methods/properties.
+        将对象转换为字典
         
         Args:
-            obj: Any Python object to convert
+            obj: 任意对象
             
         Returns:
-            dict: Dictionary of object attributes with serialized values
+            字典
         """
-        # Use to_dict method if available (highest priority)
+        # 如果有to_dict方法，优先使用
         if hasattr(obj, 'to_dict'):
             return obj.to_dict()
             
@@ -118,79 +102,73 @@ class SerializerUtils:
             if not attr_name.startswith('_') and attr_name not in ['metadata', 'registry']:
                 try:
                     attr_value = getattr(obj, attr_name)
-                    if not callable(attr_value):  # Exclude methods/functions
+                    if not callable(attr_value):  # 排除方法
                         result[attr_name] = SerializerUtils.serialize_value(attr_value)
                 except Exception as e:
-                    print(f"Error processing attribute {attr_name}: {e}")
+                    print(f"处理属性 {attr_name} 时出错: {e}")
                     result[attr_name] = None
         return result
     
     @staticmethod
     def model_to_dict(model_instance: Any) -> dict:
         """
-        Specialized serialization for SQLAlchemy model instances.
-        
-        Serializes model columns and relationship fields:
-        - Columns: Serialized using standard serialize_value method
-        - One-to-many relationships: List of serialized model dicts
-        - Many-to-one relationships: Serialized model dict
+        专门用于SQLAlchemy模型的序列化
         
         Args:
-            model_instance: SQLAlchemy model instance
+            model_instance: SQLAlchemy模型实例
             
         Returns:
-            dict: Serialized model data including columns and relationships
+            序列化后的字典
         """
         if model_instance is None:
             return {}
         
         result = {}
-        # Serialize table columns
         for column in model_instance.__table__.columns:
             try:
                 value = getattr(model_instance, column.name)
                 result[column.name] = SerializerUtils.serialize_value(value)
             except Exception as e:
-                print(f"Error serializing column {column.name}: {e}")
+                print(f"序列化列 {column.name} 时出错: {e}")
                 result[column.name] = None
         
-        # Process relationship fields
+        # 处理关系字段
         for rel_name in dir(model_instance):
             if not rel_name.startswith('_') and rel_name not in ['metadata', 'registry']:
                 try:
                     rel_value = getattr(model_instance, rel_name)
                     if hasattr(rel_value, '__iter__') and not isinstance(rel_value, (str, dict)):
-                        # Handle one-to-many relationships
+                        # 处理一对多关系
                         result[rel_name] = [SerializerUtils.model_to_dict(item) for item in rel_value]
                     elif hasattr(rel_value, '__table__'):
-                        # Handle many-to-one relationships
+                        # 处理多对一关系
                         result[rel_name] = SerializerUtils.model_to_dict(rel_value)
                 except Exception as e:
-                    print(f"Error processing relationship field {rel_name}: {e}")
+                    print(f"处理关系字段 {rel_name} 时出错: {e}")
         
         return result
 
-# Create convenience functions
+# 创建便捷函数
 def safe_serialize(obj: Any) -> Any:
     """
-    Convenience function that directly calls SerializerUtils.safe_serialize.
+    便捷函数，直接使用SerializerUtils.safe_serialize
     
     Args:
-        obj: Object to be serialized
+        obj: 需要序列化的对象
         
     Returns:
-        JSON-serializable value
+        可序列化的值
     """
     return SerializerUtils.safe_serialize(obj)
 
 def serialize_value(value: Any) -> Any:
     """
-    Convenience function that directly calls SerializerUtils.serialize_value.
+    便捷函数，直接使用SerializerUtils.serialize_value
     
     Args:
-        value: Value to be serialized
+        value: 需要序列化的值
         
     Returns:
-        JSON-serializable value
+        可序列化的值
     """
     return SerializerUtils.serialize_value(value)
