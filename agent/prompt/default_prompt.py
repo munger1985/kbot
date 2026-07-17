@@ -85,7 +85,10 @@ class DefaultPrompt(string.Formatter):
 
         # 3. 使用 self (LazyFormatter) 进行格式化填充
         try:
-            return self.format(template, **kwargs)
+            rendered = self.format(template, **kwargs)
+            if "user_language" in kwargs:
+                logger.debug(f"[LangTrace] RENDERED prompt {prompt_name}: {rendered[:600]}")
+            return rendered
         except Exception as e:
             logger.error(f"Format prompt '{prompt_name}' failed: {e}")
             return template
