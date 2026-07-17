@@ -22,7 +22,7 @@ class OpsDBExecutor:
         self.service_port = self.executor_config.service_port
         
         # 统一使用内部服务令牌（与 LLM/Embedding 等微服务共用 KBOT_INTERNAL_SERVICE_TOKEN）
-        self.internal_token = os.getenv("KBOT_INTERNAL_SERVICE_TOKEN", "kbot-internal-dev-token-2026")
+        self.internal_token = os.getenv("KBOT_INTERNAL_SERVICE_TOKEN", "kbot_internal_service_token")
         
         # 💡 架构演进：延迟导入运维专用的 OPS DB 拓扑元数据服务（彻底告别业务线 KBService）
         from services.basic import OpsDBInstanceService
@@ -62,6 +62,29 @@ class OpsDBExecutor:
             sql=sql,
             run_mode="mutation",
             limit=None
+        )
+
+    async def execute_rollback_ops_sql(
+        self,
+        instance_id: str,
+        db_type: str,
+        rollback_sql: str,
+        reason: str = "",
+    ) -> dict[str, Any]:
+        """
+        【轨道 C】执行回滚 SQL — 验证失败时自动回滚变更。
+
+        与 mutation 走同一安全通道，但附加回滚原因用于审计日志。
+        """
+        logger.warning(
+            f"[OpsDBExecutor] 执行回滚: instance={instance_id}, "
+            f"db_type={db_type}, reason={reason}"
+        )
+        return await self._dispatch_to_ops_service(
+            instance_id=instance_id,
+            sql=rollback_sql,
+            run_mode="mutation",
+            limit=None,
         )
 
     async def _dispatch_to_ops_service(

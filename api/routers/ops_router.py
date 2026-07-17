@@ -106,6 +106,37 @@ async def cancel_pending_request(
 
 
 @router.post(
+    "/chat/alert-webhook",
+    summary="【告警驱动】接收监控系统告警回调并自动触发 AIOps 诊断",
+    description="Prometheus AlertManager / Zabbix Action 回调入口。解析告警→自动诊断→流式输出。",
+    response_class=StreamingResponse,
+)
+async def ops_alert_webhook_chat(
+    request: AlertWebhookRequest,
+    background_tasks: BackgroundTasks,
+):
+    """告警 Webhook 接口"""
+    return await ops_controller.alert_webhook_chat(
+        request=request,
+        background_tasks=background_tasks,
+    )
+
+
+@router.post(
+    "/chat/confirm-action",
+    summary="【逐命令确认】用户确认/取消单条变更命令",
+    description="用户在收到 CONFIRM_ACTION 事件后，对 SQL 逐条确认或跳过。",
+    response_class=StreamingResponse,
+)
+async def confirm_ops_action(
+    request: OpsConfirmActionRequest,
+    background_tasks: BackgroundTasks,
+):
+    """逐命令确认接口"""
+    return await ops_controller.confirm_action(request, background_tasks)
+
+
+@router.post(
     "/chat/approve",
     summary="【HITL 审批】用户对高危变更操作进行审批",
     description="用户在收到 REQUIRE_APPROVAL 事件后，确认风险并提交审批决定（批准或拒绝）。审批通过后 Agent 从断点恢复执行变更 SQL。",

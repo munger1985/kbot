@@ -133,6 +133,75 @@ class OpsAgent(AgentStreamMixin):
             }
         )
 
+    async def chat_from_alert(
+        self,
+        background_tasks: BackgroundTasks,
+        user_id: str,
+        agent_id: str,
+        instance_id: str,
+        alert_context: dict[str, Any],
+        session_id: str | None = None,
+    ) -> StreamingResponse:
+        """
+        AIOps 告警驱动自动诊断入口 (trigger_type="webhook")。
+
+        由 Prometheus AlertManager / Zabbix Action webhook 触发，
+        自动将告警内容转化为诊断查询并启动自愈流水线。
+        """
+        if not session_id or session_id == "new_session":
+            session_id = f"sess_{uuid.uuid4().hex[:12]}"
+        message_id = str(uuid.uuid4())
+
+        alert_summary = alert_context.get("summary", "未知告警")
+        alert_source = alert_context.get("source", "generic")
+        query = f"[{alert_source} 告警] {alert_summary}"
+
+        logger.info(
+            f"[OpsAgent] 告警驱动自愈 | User: {user_id} | Session: {session_id} | "
+            f"Instance: {instance_id} | Source: {alert_source}"
+        )
+
+        async def event_generator():
+            try:
+                yield self._format_sse(
+                    event_type=PacketType.METADATA,
+                    content={"message_id": message_id, "session_id": session_id, "status": "alert_triggered"},
+                    message_id=message_id,
+                )
+
+                raw_pipeline = self.orchestrator.execute_ops_stream_pipeline(
+                    background_tasks=background_tasks,
+                    user_id=user_id,
+                    session_id=session_id,
+                    agent_id=agent_id,
+                    question=query,
+                    trigger_type="webhook",
+                    instance_id=instance_id,
+                    alert_context=alert_context,
+                )
+
+                async for packet_type, content in self._smooth_stream_pipeline(raw_pipeline):
+                    yield self._format_sse(
+                        event_type=packet_type, content=content, message_id=message_id,
+                    )
+
+            except Exception as e:
+                logger.exception(f"[OpsAgent] 告警自愈流水线崩溃: {str(e)}")
+                async for p_type, content in self._simulate_char_stream(
+                    PacketType.ERROR, f"告警自愈处理失败: {str(e)}",
+                ):
+                    yield self._format_sse(event_type=p_type, content=content, message_id=message_id)
+
+        return StreamingResponse(
+            event_generator(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
+
     async def resume(
         self,
         background_tasks: BackgroundTasks,
@@ -201,6 +270,41 @@ class OpsAgent(AgentStreamMixin):
                 logger.exception(f"[OpsAgent] 审批恢复流水线崩溃: {str(e)}")
                 async for p_type, content in self._simulate_char_stream(
                     PacketType.ERROR, "审批处理过程中遇到非预期错误。"
+                ):
+                    yield self._format_sse(event_type=p_type, content=content, message_id=message_id)
+
+        return StreamingResponse(
+            event_generator(), media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"}
+        )
+
+    async def confirm_action(
+        self,
+        background_tasks: BackgroundTasks,
+        request_id: str,
+        confirmed: bool,
+    ) -> StreamingResponse:
+        """逐命令确认接口 — 用户确认/取消后恢复执行"""
+        message_id = str(uuid.uuid4())
+        logger.info(f"[OpsAgent] ConfirmAction | RequestID: {request_id} | Confirmed: {confirmed}")
+
+        async def event_generator():
+            try:
+                yield self._format_sse(
+                    event_type=PacketType.METADATA,
+                    content={"message_id": message_id, "status": "confirming"},
+                )
+                raw_pipeline = self.orchestrator.resume_confirm_action(
+                    background_tasks=background_tasks,
+                    request_id=request_id,
+                    confirmed=confirmed,
+                )
+                async for packet_type, content in self._smooth_stream_pipeline(raw_pipeline):
+                    yield self._format_sse(event_type=packet_type, content=content, message_id=message_id)
+            except Exception as e:
+                logger.exception(f"[OpsAgent] Confirm 恢复流水线崩溃: {str(e)}")
+                async for p_type, content in self._simulate_char_stream(
+                    PacketType.ERROR, "确认处理过程中遇到非预期错误。"
                 ):
                     yield self._format_sse(event_type=p_type, content=content, message_id=message_id)
 

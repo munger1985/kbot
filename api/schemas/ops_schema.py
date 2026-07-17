@@ -75,6 +75,20 @@ class AgentOpsBindUpdateForm(BaseModel):
     max_daily_execution: int | None = None
 
 
+class OpsConfirmActionRequest(BaseModel):
+    """逐命令确认请求体 — 用户确认/取消单条变更命令"""
+    request_id: str = Field(..., description="确认请求 ID（来自 CONFIRM_ACTION 包的 request_id）")
+    confirmed: bool = Field(..., description="是否确认执行: true=执行, false=跳过")
+
+
+class AlertWebhookRequest(BaseModel):
+    """告警 Webhook 请求体 — 接收 Prometheus AlertManager / Zabbix Action 回调"""
+    source: str | None = Field(None, description="告警来源: prometheus / zabbix / generic，留空则自动检测")
+    instance_id: str = Field(..., description="目标数据库实例 ID（CMDB 中注册的 ID）")
+    agent_id: str = Field(..., description="运维 Agent ID (int converted to str)")
+    payload: dict[str, Any] = Field(..., description="原始告警 JSON payload")
+
+
 class OpsResumeRequest(BaseModel):
     """HITL 恢复执行请求体 — 用户提交采集到的数据并恢复诊断"""
     request_id: str = Field(

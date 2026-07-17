@@ -17,7 +17,7 @@ from loguru import logger
 
 # 环境变量名
 INTERNAL_TOKEN_ENV = "KBOT_INTERNAL_SERVICE_TOKEN"
-DEFAULT_DEV_TOKEN = "kbot-internal-dev-token-2026"
+DEFAULT_DEV_TOKEN = "kbot_internal_service_token"
 
 # 自定义 Header 名 (统一内部服务通信令牌)
 INTERNAL_TOKEN_HEADER = "X-KBot-Internal-Token"
