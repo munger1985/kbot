@@ -13,15 +13,15 @@ async def run_in_thread_pool(
 ) -> AsyncGenerator:
     """
     在线程池中批量运行任务，并将运行结果以生成器的形式返回
-    
+
     注意：请确保任务中的所有操作是线程安全的，任务函数请全部使用关键字参数
-    
+
     Args:
         func: 在线程池中执行的任务函数
         params: 任务参数字典列表
         workers: 线程池大小
         pool: 可选的外部线程池执行器
-        
+
     Returns:
         AsyncGenerator: 任务结果生成器
     """
@@ -48,7 +48,7 @@ def safe_read_content(content_obj):
     else:
         # ES字符串类型或其他
         return str(content_obj) if content_obj is not None else ""
-    
+
 @staticmethod
 def model_to_dict(obj):
     """递归将SQLAlchemy对象转换为字典"""
@@ -69,28 +69,97 @@ def model_to_dict(obj):
         return result
     else:
         return obj
-    
+
+
+# ── Language detection helpers ────────────────────────────────────────
+
+# Explicit language-request patterns → ISO 639-1 code.
+# Ordered: more-specific patterns first to avoid partial matches.
+_EXPLICIT_LANG_PATTERNS: list[tuple[str, str]] = [
+    # Chinese
+    (r"(?:use|speak|reply\s+in|answer\s+in|用|使用|请用|请使用)\s*(?:chinese|中文|简体中文|繁体中文|汉语)", "zh"),
+    (r"(?:chinese|中文|简体中文|繁体中文|汉语)\s*(?:please|pls|回答|回复|应答)", "zh"),
+    # Japanese
+    (r"(?:use|speak|reply\s+in|answer\s+in|用|使用|请用|请使用)\s*(?:japanese|日语|日本語|日文)", "ja"),
+    (r"(?:japanese|日语|日本語|日文)\s*(?:please|pls|回答|回复|应答|で)", "ja"),
+    # Korean
+    (r"(?:use|speak|reply\s+in|answer\s+in|用|使用|请用|请使用)\s*(?:korean|韩语|韓語|韩国语|朝鲜语|한국어|한글)", "ko"),
+    (r"(?:korean|韩语|韓國語|한국어)\s*(?:please|pls|回答|回复|应答|로)", "ko"),
+    # Thai
+    (r"(?:use|speak|reply\s+in|answer\s+in|用|使用|请用|请使用)\s*(?:thai|泰语|泰文|ภาษาไทย)", "th"),
+    (r"(?:thai|泰语|ภาษาไทย)\s*(?:please|pls|回答|回复|应答)", "th"),
+    # Vietnamese
+    (r"(?:use|speak|reply\s+in|answer\s+in|用|使用|请用|请使用)\s*(?:vietnamese|越南语|越南文|tiếng\s*việt)", "vi"),
+    (r"(?:vietnamese|越南语|tiếng\s*việt)\s*(?:please|pls|回答|回复|应答)", "vi"),
+    # Hindi
+    (r"(?:use|speak|reply\s+in|answer\s+in|用|使用|请用|请使用)\s*(?:hindi|印地语|印地文|हिन्दी|हिंदी)", "hi"),
+    (r"(?:hindi|印地语|हिन्दी)\s*(?:please|pls|回答|回复|应答|में)", "hi"),
+    # English
+    (r"(?:use|speak|reply\s+in|answer\s+in|用|使用|请用|请使用)\s*(?:english|英文|英语|anglais)", "en"),
+    (r"(?:english|英文|英语)\s*(?:please|pls|回答|回复|应答)", "en"),
+]
+
+
+def _detect_explicit_lang(text: str) -> str | None:
+    """Return the language code if the user explicitly requests a language."""
+    t = text.lower().strip()
+    for pattern, lang in _EXPLICIT_LANG_PATTERNS:
+        if re.search(pattern, t):
+            return lang
+    return None
+
+
+def _detect_by_script(text: str) -> str:
+    """Detect language by Unicode character ranges (APAC languages)."""
+    # Japanese — Kana is unique to Japanese (check before shared CJK).
+    if re.search(r'[぀-ゟ]|[゠-ヿ]', text):
+        return "ja"
+
+    # Chinese — CJK Unified Ideographs + Extension A.
+    if re.search(r'[一-鿿㐀-䶿]', text):
+        return "zh"
+
+    # Korean — Hangul syllables + Jamo.
+    if re.search(r'[가-힯ᄀ-ᇿ㄰-㆏]', text):
+        return "ko"
+
+    # Thai.
+    if re.search(r'[฀-๿]', text):
+        return "th"
+
+    # Hindi / Devanagari.
+    if re.search(r'[ऀ-ॿ]', text):
+        return "hi"
+
+    # Vietnamese — Latin-1 tonal marks + horn letters + specific diacritics.
+    if re.search(r'[À-ɏ]|[Ơ-ư]|[Ḁ-ỹ]', text):
+        return "vi"
+
+    # Latin script (English, Indonesian, Malay, Tagalog, …).
+    return "en"
+
+# ── End of language detection helpers ─────────────────────────────────
+
+
 @staticmethod
-def detect_language(text: str, threshold: float = 0.1) -> str:
-    """
-    探测文本语言
-    :param text: 待检测的文本
-    :param threshold: 中文字符占比阈值，超过此比例视为中文
-    :return: 'zh' 或 'en'
+def detect_language(text: str) -> str:
+    """Detect language from Asia-Pacific region.
+
+    1. Explicit language requests (e.g. "use Chinese") take priority.
+    2. Falls back to Unicode script detection.
+    3. Defaults to ``"en"`` for pure Latin-script text.
+
+    Returns ISO 639-1 code: zh / ja / ko / th / hi / vi / en.
     """
     if not text:
         return "en"
-    
-    # 过滤掉非字母和非中文字符（如标点、数字、空格）
-    clean_text = re.sub(r'[^\u4e00-\u9fa5a-zA-Z]', '', text)
-    if not clean_text:
-        return "en"
-        
-    # 统计中文字符数量 (\u4e00-\u9fff 是基本汉字范围)
-    chinese_chars = re.findall(r'[\u4e00-\u9fff]', clean_text)
-    chinese_ratio = len(chinese_chars) / len(clean_text)
-    
-    return "zh" if chinese_ratio > threshold else "en"
+
+    lang = _detect_explicit_lang(text)
+    if lang:
+        return lang
+
+    return _detect_by_script(text)
+
 
 @staticmethod
 def get_embedding_dimension(embedding: list[float]) -> int:
