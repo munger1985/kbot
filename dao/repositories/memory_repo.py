@@ -303,7 +303,7 @@ class MemoryRepository(BaseRepository[MemoryEntryEntity]):
                 "corrs": corrs_json,
             })
         except Exception as e:
-            logger.error(f"Failed to upsert user profile for user {user_id}", exc_info=e)
+            logger.opt(exception=e).error(f"Failed to upsert user profile for user {user_id}")
             raise DatabaseException("Failed to upsert user profile", original_error=e)
 
     async def search_vector_memory(self, user_id: str, query_vector: list[float], limit: int = 3):
