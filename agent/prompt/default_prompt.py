@@ -142,7 +142,7 @@ REWRITE_PROMPT = """
 - 用户输入 `{query}` 的语言类型是: **{user_language}**
 - **所有输出内容必须使用 {user_language}**
 - 包括：`thought`、`standalone_query`、`search_keywords`、`active_topic`、`turn_entities` 中的值
-- 示例：{user_language} 为 Chinese → 所有字段用中文输出；{user_language} 为 English → 所有字段用英文输出
+- 示例：{user_language} 为 中文/日本語/한국어 → 所有字段用对应语言的文字输出；{user_language} 为 English → 所有字段用英文输出
 
 ### 任务逻辑 (Reasoning Steps)
 1. **语境转折判定 (Context Turn Detection)**:

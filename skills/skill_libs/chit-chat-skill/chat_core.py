@@ -36,7 +36,7 @@ class ChitChatSkill(BaseSkill):
 
         messages = [
             {"role": "system", "content": f"You are an intelligent assistant. The user's language is: {context.get('user_language', 'English')}. You MUST reply in {context.get('user_language', 'English')}. Please provide concise and accurate answers based on the user's questions."},
-            {"role": "user", "content": task_input}
+            {"role": "user", "content": f"{task_input}\n\n【重要语言指令】用户的语言是 {context.get('user_language', 'English')}。你必须使用 {context.get('user_language', 'English')} 进行回答，严禁使用其他语言。"}
         ]
         logger.info(f"[{self.name}] Trigger chat stream, using model: {model_name}")
         logger.info(f"[{self.name}] user_language from context: {context.get('user_language', 'NOT_SET')!r}")

@@ -107,6 +107,8 @@ class ReasoningSkill(BaseSkill):
 {task_desc}
 
 请基于以上数据与知识，按照系统指令要求进行分析并回答。
+
+【重要语言指令】用户的语言是 **{context.get('user_language', 'English')}**。你必须使用 **{context.get('user_language', 'English')}** 进行回答，严禁使用其他语言。
 """
         
         # 4. 流式输出前，先发送上下文摘要（不暴露原始文档内容）

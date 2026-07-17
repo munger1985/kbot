@@ -18,8 +18,9 @@ _HANGUL_RE = re.compile(r'[\uac00-\ud7af]')
 def detect_user_language(text: str) -> str:
     """Detect the language of user input using Unicode-range heuristics.
 
-    Returns a human-readable language name (e.g. "Chinese", "English")
-    suitable for injecting into LLM prompts.
+    Returns the language's **native name** (e.g. "中文", "English", "日本語", "한국어")
+    suitable for injecting into LLM prompts — LLMs respond better to native
+    language names than English words.
     """
     if not text or not text.strip():
         logger.debug("[LangDetect] Empty text -> English")
@@ -42,18 +43,18 @@ def detect_user_language(text: str) -> str:
 
     # Japanese has hiragana/katakana + CJK — check Japanese-specific chars first
     if hiragana + katakana > 0:
-        logger.debug("[LangDetect] -> Japanese")
-        return "Japanese"
+        logger.debug("[LangDetect] -> Japanese (日本語)")
+        return "日本語"
 
     # Chinese uses CJK characters — threshold at 10% to catch mixed input
     if cjk > total_chars * 0.1:
-        logger.debug("[LangDetect] -> Chinese")
-        return "Chinese"
+        logger.debug("[LangDetect] -> Chinese (中文)")
+        return "中文"
 
     # Korean hangul — threshold at 10% to catch mixed input
     if hangul > total_chars * 0.1:
-        logger.debug("[LangDetect] -> Korean")
-        return "Korean"
+        logger.debug("[LangDetect] -> Korean (한국어)")
+        return "한국어"
 
     # Default to English for everything else (Latin, Cyrillic, etc.)
     logger.debug("[LangDetect] -> English (default)")
