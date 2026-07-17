@@ -563,7 +563,13 @@ class MemoryService:
             repo = MemoryRepository(session)
             try:
                 logger.debug(f"后台任务：正在增量同步用户 {user_id} 的结构化画像字段")
-                await repo.upsert_user_profile(user_id=user_id, profile_updates=profile_updates)
+                await repo.upsert_user_profile(
+                    user_id=user_id,
+                    global_preferences=profile_updates.get('global_preferences'),
+                    frequent_entities=profile_updates.get('frequent_entities'),
+                    entity_relations=profile_updates.get('entity_relations'),
+                    correction_history=profile_updates.get('correction_history'),
+                )
                 logger.info(f"用户 {user_id} 画像同步完成")
 
             except Exception as e:
