@@ -50,6 +50,7 @@ class PlanningEngine:
         if not model_name:
             raise ValueError("llm_model is required in context but was not set")
         variables = context.get("variables", {})
+        user_language = context.get("user_language", "English")
 
         logger.info(
             f"[PlanningEngine] 统一决策入口 | 意图: {intent_type} | "
@@ -95,6 +96,7 @@ class PlanningEngine:
                             sop_name=sop_name,
                             sop_description=sop_description or "",
                             sop_mode=sop_mode,
+                            user_language=user_language,
                         )
                     else:
                         plan = await self.llm_planner.generate_plan(
@@ -102,6 +104,7 @@ class PlanningEngine:
                             model_name=model_name,
                             intent_type=intent_type,
                             variables=variables,
+                            user_language=user_language,
                         )
                 else:
                     # 重试：基于前次校验错误重新生成
@@ -116,6 +119,7 @@ class PlanningEngine:
                         sop_name=sop_name,
                         sop_description=sop_description or "",
                         sop_mode=sop_mode,
+                        user_language=user_language,
                     )
 
                 # 校验

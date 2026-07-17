@@ -52,6 +52,8 @@ class PacketType(str, Enum):
     REQUIRE_APPROVAL = "require_approval"  # 需要人工审批（运维Agent高危操作门禁）
     WAIT_FOR_USER = "wait_for_user"  # HITL: Agent 需要用户输入（携带 request_id + 表单定义）
     ACTION_ITEMS = "action_items"  # 结构化自愈变更建议（含 SQL + 影响分析 + 回滚方案）
+    VERIFICATION_RESULTS = "verification_results"  # 自愈验证结果
+    CONFIRM_ACTION = "confirm_action"             # HITL: 逐条确认变更命令
 
 class AgentCategory(IntEnum):
     """Agent category enumeration."""

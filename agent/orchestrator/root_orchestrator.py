@@ -17,6 +17,7 @@ from skills import SkillRuntime
 from agent.common import ContextMemory
 from agent.common.skill_context import TaskStep
 from core.dictionary import IntentType, PacketType
+from utils.lang_detect import detect_user_language
 
 
 # 定义需要实时分发给前端的流包类型
@@ -72,6 +73,9 @@ class RootOrchestrator:
         # --- 2. 精细化意图路由（含 SOP 工作流匹配） ---
         analysis = await self.intent_router.route(llm_model, prepared['standalone_query'], agent_id=agent_id)
         
+        # 检测用户语言
+        user_language = detect_user_language(question)
+
         # --- 3. 初始化 ContextMemory 实例 (严格对齐规范) ---
         ctx: ContextMemory = {
             "user_id": user_id,
@@ -97,8 +101,11 @@ class RootOrchestrator:
             "graph_results": [],
             "session_state": prepared.get('new_state', {}),
             "blocks": [init_thought],  # 初始 thought 也需保存以支持历史重放
+            "user_language": user_language,
             "temp": {}
         }
+
+        logger.info(f"[LangTrace] RootOrchestrator user_language={user_language!r} question={question[:80]!r} intent={analysis.intent}")
 
         # --- 4. 分支任务规划阶段 ---
         if analysis.intent == IntentType.CHITCHAT:

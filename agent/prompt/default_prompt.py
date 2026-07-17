@@ -41,6 +41,9 @@ class DefaultPrompt(string.Formatter):
     def get_value(self, key: Any, args: Any, kwargs: Any) -> Any:
         """继承自 string.Formatter: 如果 key 缺失，返回原样 {key}"""
         if isinstance(key, str):
+            if key not in kwargs:
+                if key == "user_language":
+                    logger.warning(f"[LangTrace] CRITICAL: 'user_language' not in kwargs for a prompt that uses it! Available keys: {list(kwargs.keys())}")
             # 如果 kwargs 中没有该 key，返回 {key} 字符串
             return kwargs.get(key, "{" + key + "}")
         return super().get_value(key, args, kwargs)
@@ -82,7 +85,10 @@ class DefaultPrompt(string.Formatter):
 
         # 3. 使用 self (LazyFormatter) 进行格式化填充
         try:
-            return self.format(template, **kwargs)
+            rendered = self.format(template, **kwargs)
+            if "user_language" in kwargs:
+                logger.debug(f"[LangTrace] RENDERED prompt {prompt_name}: {rendered[:600]}")
+            return rendered
         except Exception as e:
             logger.error(f"Format prompt '{prompt_name}' failed: {e}")
             return template
@@ -133,10 +139,10 @@ REWRITE_PROMPT = """
 {chat_history}
 
 ### 语言自适应 (CRITICAL)
-- **检测用户输入 `{query}` 的语言类型**（中文、英文、日文、韩文等）
-- **所有输出内容必须使用与用户输入相同的语言**
+- 用户输入 `{query}` 的语言类型是: **{user_language}**
+- **所有输出内容必须使用 {user_language}**
 - 包括：`thought`、`standalone_query`、`search_keywords`、`active_topic`、`turn_entities` 中的值
-- 示例：用户用中文提问 → 所有字段用中文输出；用户用英文提问 → 所有字段用英文输出
+- 示例：{user_language} 为 Chinese → 所有字段用中文输出；{user_language} 为 English → 所有字段用英文输出
 
 ### 任务逻辑 (Reasoning Steps)
 1. **语境转折判定 (Context Turn Detection)**:
@@ -221,7 +227,7 @@ FINAL_RAG_PROMPT = """{prompt}
 
 ---
 任务：结合背景摘要与参考资料，回答用户。
-1. **语言自适应**：必须根据用户当前问题（{user_question}）所使用的语言进行回复（包括正文回答与末尾的引用说明）。
+1. **语言自适应**：用户语言为 **{user_language}**。必须使用 **{user_language}** 进行回复（包括正文回答与末尾的引用说明）。
 2. 如果【环境约束】与【参考资料】中的建议冲突，优先适配【环境约束】。
 3. 在回答末尾，根据执行路径简要说明引用了哪些资料。
 
@@ -365,9 +371,10 @@ TASK_PLANNER_PROMPT = """
 - 如果你直接回答了用户的问题而不是生成 JSON 计划，系统将彻底崩溃。
 
 ### 多语言支持:
-- `standalone_query` 可能是中文、英文、日文、韩文或其他任何语言。
+- 用户语言: **{user_language}**
+- `standalone_query` 可能是 {user_language}。
 - 你需要理解问题的**语义意图**（知识检索/数据分析/闲聊等），而不是被语言迷惑。
-- JSON 中的 `thought`、`final_goal`、`task_description` 字段应使用与 `standalone_query` **相同的语言**编写。
+- JSON 中的 `thought`、`final_goal`、`task_description` 字段必须使用 **{user_language}** 编写。
 
 ### 核心约束:
 1. **技能调用规范**: 你只能使用以下提供的 [可用技能库] 中的技能。严禁捏造技能名称。
@@ -527,8 +534,9 @@ REASONING_PROMPT = """
    - 数据结论标注"实时数据显示"
 
 5. **语言自适应**
-   - 严格使用用户提问的相同语言进行回答
-   - 用户用英文提问则英文回答，中文提问则中文回答，其他语言同理
+   - 用户语言: **{user_language}**
+   - 严格使用 **{user_language}** 进行回答
+   - 严禁使用其他语言输出
 
 6. **专业客观**
    - 保持专业、客观的语调

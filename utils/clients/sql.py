@@ -14,7 +14,7 @@ INTERNAL_TOKEN_HEADER = "X-KBot-Internal-Token"
 
 def _get_internal_token() -> str:
     """延迟读取内部通信令牌，确保 load_dotenv() 之后才获取"""
-    return os.getenv("KBOT_INTERNAL_SERVICE_TOKEN", "kbot-internal-dev-token-2026")
+    return os.getenv("KBOT_INTERNAL_SERVICE_TOKEN", "kbot_internal_service_token")
 
 class SQLClient:
     """数据库执行微服务调用类。"""

@@ -3,7 +3,7 @@
 from fastapi import APIRouter, Depends, status, Query, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from api.controllers.ops_controller import ops_controller
-from api.schemas.ops_schema import CreateInstanceRequest, UpdateInstanceRequest, OpsChatRequest, OpsResumeRequest, OpsApproveRequest
+from api.schemas.ops_schema import *
 from api.schemas.base_response import SuccessResponse
 from core.auth.shortcuts import UserAuth
 
@@ -103,6 +103,37 @@ async def cancel_pending_request(
 ):
     """取消挂起的 HITL 请求"""
     return await ops_controller.cancel_pending(request_id)
+
+
+@router.post(
+    "/chat/alert-webhook",
+    summary="【告警驱动】接收监控系统告警回调并自动触发 AIOps 诊断",
+    description="Prometheus AlertManager / Zabbix Action 回调入口。解析告警→自动诊断→流式输出。",
+    response_class=StreamingResponse,
+)
+async def ops_alert_webhook_chat(
+    request: AlertWebhookRequest,
+    background_tasks: BackgroundTasks,
+):
+    """告警 Webhook 接口"""
+    return await ops_controller.alert_webhook_chat(
+        request=request,
+        background_tasks=background_tasks,
+    )
+
+
+@router.post(
+    "/chat/confirm-action",
+    summary="【逐命令确认】用户确认/取消单条变更命令",
+    description="用户在收到 CONFIRM_ACTION 事件后，对 SQL 逐条确认或跳过。",
+    response_class=StreamingResponse,
+)
+async def confirm_ops_action(
+    request: OpsConfirmActionRequest,
+    background_tasks: BackgroundTasks,
+):
+    """逐命令确认接口"""
+    return await ops_controller.confirm_action(request, background_tasks)
 
 
 @router.post(

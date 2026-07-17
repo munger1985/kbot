@@ -14,6 +14,7 @@ from agent.prompt import default_prompt
 from agent.common import ContextMemory
 from services.kb import ModelParams
 from utils.clients.model import AIModelClient
+from utils.lang_detect import detect_user_language
 from utils.thread import safe_read_content
 
 
@@ -96,14 +97,18 @@ class MemoryService:
             context_hint += f"系统正在执行的任务计划: {current_plan.get('thought', '')}。"
 
         # 5. 调用 LLM 改写模块
+        user_language = detect_user_language(raw_question)
         rewrite_data = await self.manager.process_query_with_memory(
             query=raw_question,
             chat_history=chat_history,
             context_summary=f"{history_summary}\n{context_hint}", # 将 hint 注入 context_summary
             session_state=rewrite_context_state, 
             model_name=llm_model,
-            active_topic=active_topic 
+            active_topic=active_topic,
+            user_language=user_language
         )
+
+        logger.info(f"[LangTrace] prepare_context_and_rewrite detected user_language={user_language!r} for question={raw_question[:60]!r}")
 
         # 5. 合并状态 (逻辑保持不变)
         new_state = SessionStateManager.merge_state(
@@ -122,6 +127,7 @@ class MemoryService:
             "active_topic": active_topic,
             "context_summary": rewrite_data.get("context_summary", ""),
             "user_profile_updates": rewrite_data.get("user_profile_updates", {}),
+            "user_language": user_language,
         }
 
     # ========================== 长期画像刷新 (Reflection) ==========================

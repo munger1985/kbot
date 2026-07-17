@@ -39,6 +39,9 @@ class OpsPendingRequestEntity(BaseEntity):
     runtime_plan: Mapped[dict | None] = mapped_column(OracleJSON, comment="ctx['runtime_plan'] 快照 JSON")
 
     # 生命周期
+    suspend_type: Mapped[str | None] = mapped_column(String(32), default="wait_for_user",
+        comment="挂起类型: wait_for_user / require_approval / confirm_action")
+
     status: Mapped[str] = mapped_column(String(16), default="pending", comment="pending / answered / timeout / cancelled")
     requested_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now(timezone.utc))
     responded_at: Mapped[datetime | None] = mapped_column(DateTime, comment="用户回填时间")

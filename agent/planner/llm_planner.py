@@ -21,7 +21,8 @@ class LLMPlanner:
         standalone_query: str,
         model_name: str,
         intent_type: str | None = None,
-        variables: dict[str, Any] | None = None
+        variables: dict[str, Any] | None = None,
+        user_language: str = "English"
     ) -> ExecutionPlan:
         """根据意图、上下文变量和问题动态生成执行计划（无 SOP 约束）"""
         logger.info(f"正在生成动态执行计划. 意图: {intent_type}, 查询: {standalone_query}")
@@ -35,7 +36,8 @@ class LLMPlanner:
                 skills_list=skills_list_str,
                 standalone_query=standalone_query,
                 intent_type=intent_type or "general",
-                existing_variables=var_summary
+                existing_variables=var_summary,
+                user_language=user_language
             )
 
             plan_data = await self.model_client.get_llm_json(
@@ -44,7 +46,7 @@ class LLMPlanner:
             )
 
             plan = self._build_plan(plan_data, standalone_query, model_name, intent_type, variables)
-            logger.success(f"动态计划生成成功，意图驱动共 {len(plan['steps'])} 步")
+            logger.success(f"动态计划生成成功，user_language={user_language!r}, 意图驱动共 {len(plan['steps'])} 步")
             return plan
 
         except Exception as e:
@@ -61,6 +63,7 @@ class LLMPlanner:
         sop_name: str,
         sop_description: str,
         sop_mode: str,
+        user_language: str = "English",
     ) -> ExecutionPlan:
         """
         基于 SOP 约束生成增强执行计划。
@@ -87,7 +90,8 @@ class LLMPlanner:
                 skills_list=skills_list_str,
                 standalone_query=standalone_query,
                 intent_type=intent_type or "general",
-                existing_variables=var_summary
+                existing_variables=var_summary,
+                user_language=user_language
             )
 
             # 在 prompt 末尾注入 SOP 约束
@@ -119,6 +123,7 @@ class LLMPlanner:
         sop_name: str | None = None,
         sop_description: str | None = None,
         sop_mode: str | None = None,
+        user_language: str = "English",
     ) -> ExecutionPlan:
         """
         校验失败后重新生成计划。
@@ -136,7 +141,8 @@ class LLMPlanner:
                 skills_list=skills_list_str,
                 standalone_query=standalone_query,
                 intent_type=intent_type or "general",
-                existing_variables=var_summary
+                existing_variables=var_summary,
+                user_language=user_language
             )
 
             # 注入 SOP 约束（如果有）

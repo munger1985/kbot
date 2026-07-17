@@ -123,3 +123,25 @@ class OpsDbInstanceRepository(BaseRepository[OpsDbInstanceEntity]):
             if isinstance(e, (APIException, DataNotFoundException)):
                 raise
             raise DatabaseException(f"下线物理实例资产失败: {instance_id}", original_error=e)
+
+    async def find_by_prometheus_label(self, label: str) -> OpsDbInstanceEntity | None:
+        """通过 Prometheus instance label 查找实例 (用于告警 webhook 自动匹配)。"""
+        stmt = (
+            select(OpsDbInstanceEntity)
+            .where(OpsDbInstanceEntity.prometheus_instance_label == label)
+            .where(OpsDbInstanceEntity.status == "active")
+            .fetch(1)
+        )
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def find_by_zabbix_host(self, host_name: str) -> OpsDbInstanceEntity | None:
+        """通过 Zabbix host name 查找实例 (用于告警 webhook 自动匹配)。"""
+        stmt = (
+            select(OpsDbInstanceEntity)
+            .where(OpsDbInstanceEntity.zabbix_host_name == host_name)
+            .where(OpsDbInstanceEntity.status == "active")
+            .fetch(1)
+        )
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none()

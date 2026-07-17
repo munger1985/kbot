@@ -124,14 +124,47 @@ class OpsHealSkill(BaseSkill):
                 rollback = decision.get("rollback_sql", "")
 
                 logger.info(f"[{trace_id}] OpsHeal 执行变更: {sql[:150]}")
+
+                # 动态风险评分: 优先从 LLM 决策读取，不可用时基于 SQL/环境二次评估
+                risk_level = decision.get("risk_level", "")
+                if not self._is_valid_risk_level(risk_level):
+                    risk_level = self._assess_risk(sql, db_type, environment, db_role)
+
                 # 注入审批 UI 所需信息到 ctx
                 ctx_vars = context.get("variables", {})
                 ctx_vars["pending_action_sql"] = sql
                 ctx_vars["pending_action_impact"] = impact
                 ctx_vars["pending_action_rollback"] = rollback
-                ctx_vars["pending_action_risk_level"] = "medium"
+                ctx_vars["pending_action_risk_level"] = risk_level
+                ctx_vars["pending_action_context"] = reason
                 yield {"type": PacketType.CALL, "content": {"skill": "ops-heal-skill", "description": f"执行自愈变更 (第{rnd}/{max_rounds}轮): {reason}"}}
                 yield {"type": PacketType.THOUGHT, "content": f"📝 **待执行 SQL**:\n```sql\n{sql}\n```\n⚠️ 影响: {impact}\n🔄 回滚: {rollback}\n"}
+
+                # ──── 逐命令确认 ────
+                require_approval = ctx_vars.get("require_approval", True)
+                action_confirmed = ctx_vars.get("_action_confirmed")
+
+                if require_approval and action_confirmed is None:
+                    yield {
+                        "type": PacketType.CONFIRM_ACTION,
+                        "content": {
+                            "sql": sql, "impact": impact,
+                            "rollback_sql": rollback, "risk_level": risk_level,
+                            "reason": reason, "round": rnd, "max_rounds": max_rounds,
+                        }
+                    }
+                    return  # skill 结束，orchestrator 挂起
+
+                if action_confirmed is False:
+                    yield {"type": PacketType.ANSWER,
+                           "content": f"⏭️ **已跳过**: `{sql[:120]}...`\n"}
+                    ctx_vars["_action_confirmed"] = None
+                    ctx_vars.pop("pending_action_sql", None)
+                    results.append({"action": "execute", "sql": sql,
+                                    "status": "skipped"})
+                    continue  # 下一轮愈合循环
+                # _action_confirmed is True → fall through 执行
+                # ──── 逐命令确认结束 ────
 
                 success = False
                 error_msg = ""
@@ -174,10 +207,11 @@ class OpsHealSkill(BaseSkill):
 
                 if success:
                     yield {"type": PacketType.ANSWER, "content": f"✅ **执行成功**\n\n```sql\n{sql}\n```\n\n⚠️ **影响**: {impact}\n\n🔄 **回滚**: {rollback}\n"}
-                    # 清理 pending
+                    # 清理 pending 和确认状态，下一轮重新确认
                     ctx_vars.pop("pending_action_sql", None)
                     ctx_vars.pop("pending_action_impact", None)
                     ctx_vars.pop("pending_action_rollback", None)
+                    ctx_vars["_action_confirmed"] = None
                 else:
                     yield {"type": PacketType.ERROR, "content": f"❌ **执行失败**\n\n错误: {error_msg}\n\n回滚方案: {rollback}\n"}
                     if attempt < 3:
@@ -291,3 +325,50 @@ class OpsHealSkill(BaseSkill):
             f"- 已进行 {max_rounds} 轮，达到上限\n\n"
             f"> 💡 请根据以上信息手动完成剩余操作。\n"
         )
+
+    # ------------------------------------------------------------------
+    # 风险评分辅助
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _is_valid_risk_level(level: str) -> bool:
+        """验证风险等级是否有效。"""
+        return level in ("low", "medium", "high", "critical")
+
+    @staticmethod
+    def _assess_risk(sql: str, db_type: str, environment: str, db_role: str) -> str:
+        """基于 SQL 类型、数据库角色和环境的动态风险评估。
+
+        评估维度:
+        - SQL 危险度: SELECT=low, KILL=medium/high, ALTER=high, DROP/TRUNCATE=critical
+        - 环境: prod → 升一级
+        - 节点角色: standby → 降一级 (天然低风险)
+        - Oracle RAC primary + prod → 自动升级
+        """
+        sql_upper = sql.upper().strip() if sql else ""
+
+        # 备库操作天然低风险
+        if db_role in ("standby", "physical_standby", "replica"):
+            return "low"
+
+        # 基于 SQL 关键字的基础风险
+        base_risk = "medium"
+        if any(kw in sql_upper for kw in ("DROP", "TRUNCATE", "ALTER SYSTEM", "ALTER DATABASE")):
+            base_risk = "critical"
+        elif "KILL SESSION" in sql_upper or "ALTER SYSTEM KILL" in sql_upper:
+            base_risk = "high"
+        elif "ALTER" in sql_upper:
+            base_risk = "high"
+        elif any(kw in sql_upper for kw in ("DELETE", "UPDATE", "INSERT")):
+            base_risk = "medium"
+        elif "SELECT" in sql_upper:
+            base_risk = "low"
+
+        # 环境修正: prod 环境升一级
+        if environment == "prod" and base_risk in ("low", "medium", "high"):
+            risk_order = {"low": 0, "medium": 1, "high": 2, "critical": 3}
+            current = risk_order.get(base_risk, 1)
+            upgraded = min(current + 1, 3)
+            base_risk = {v: k for k, v in risk_order.items()}[upgraded]
+
+        return base_risk

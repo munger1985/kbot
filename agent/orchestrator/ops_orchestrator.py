@@ -18,9 +18,11 @@ from services.basic import AgentService
 from services.basic import OpsAgentConfService
 from agent.common.ops_context import OpsContextMemory
 from agent.common.skill_context import ExecutionPlan
+from agent.common.ops_verifier import OpsVerifier
+from agent.common.ops_reporter import OpsReporter
 from utils.clients import OpsDBExecutor
 from utils.monitor import PrometheusClient, ZabbixProvider, UnifiedMetricRegistry
-from dao.repositories import PendingRequestRepository
+from dao.repositories import PendingRequestRepository, OpsExecutionReportRepository
 
 
 DISPLAY_PACKET_TYPES = {
@@ -35,6 +37,8 @@ DISPLAY_PACKET_TYPES = {
     PacketType.ACTION_ITEMS,
     PacketType.CALL,
     PacketType.WAIT_FOR_USER,
+    PacketType.VERIFICATION_RESULTS,
+    PacketType.CONFIRM_ACTION,
     PacketType.DONE
 }
 
@@ -223,64 +227,13 @@ class OpsOrchestrator:
                 yield {"type": PacketType.ERROR, "content": f"⚠️ 关键自愈组件 [{skill_name}] 离线, 本步骤跳过。"}
                 continue
 
-            # --- 🔒 安全熔断门禁 (v2: 支持审批中断) ---
+            # --- 🔒 安全熔断门禁 (仅硬阻断，逐命令批准由 ops-heal-skill CONFIRM_ACTION 控制) ---
             gate_result = self._check_safety_gate(ctx, skill_instance, skill_name)
             if not gate_result["allowed"]:
-                if gate_result.get("needs_approval"):
-                    # ──── 审批中断 ────
-                    approval_request_id = str(uuid.uuid4())
-                    action_sql = ctx["variables"].get("pending_action_sql", "")
-                    action_impact = ctx["variables"].get("pending_action_impact", "")
-                    action_rollback = ctx["variables"].get("pending_action_rollback", "")
-                    action_risk = ctx["variables"].get("pending_action_risk_level", "medium")
-
-                    logger.info(
-                        f"[{ctx['trace_id']}] 🔴 审批中断触发 | "
-                        f"Skill: {skill_name} | Step: {idx} | "
-                        f"ApprovalID: {approval_request_id}"
-                    )
-
-                    yield {
-                        "type": PacketType.REQUIRE_APPROVAL,
-                        "content": {
-                            "request_id": approval_request_id,
-                            "skill_name": skill_name,
-                            "reason": gate_result["reason"],
-                            "action_sql": action_sql,
-                            "impact": action_impact,
-                            "rollback_sql": action_rollback,
-                            "risk_level": action_risk,
-                            "instance_id": ctx["instance_id"],
-                            "environment": ctx["environment"],
-                        }
-                    }
-
-                    await self._suspend_for_approval(
-                        ctx=ctx,
-                        approval_request_id=approval_request_id,
-                        current_step_index=idx,
-                        entry_id=entry_id,
-                        action_sql=action_sql,
-                        action_impact=action_impact,
-                        action_rollback=action_rollback,
-                        skill_name=skill_name,
-                    )
-
-                    yield {
-                        "type": PacketType.DONE,
-                        "content": {
-                            "entry_id": entry_id,
-                            "status": "awaiting_approval",
-                            "request_id": approval_request_id,
-                        }
-                    }
-                    return
-                else:
-                    # Hard block
-                    exec_info.update({"status": "blocked", "error": gate_result["reason"]})
-                    ctx["execution_history"].append(cast(Any, exec_info))
-                    yield {"type": PacketType.ERROR, "content": f"🚫 安全熔断: {gate_result['reason']}"}
-                    continue
+                exec_info.update({"status": "blocked", "error": gate_result["reason"]})
+                ctx["execution_history"].append(cast(Any, exec_info))
+                yield {"type": PacketType.ERROR, "content": f"🚫 安全熔断: {gate_result['reason']}"}
+                continue
 
             try:
                 _monitor_snapshot = len(ctx.get("monitor_results", []))
@@ -289,6 +242,37 @@ class OpsOrchestrator:
                 async for packet in runtime.execute_skill(skill_instance, exec_info):
                     p_type = packet.get("type")
                     content = packet.get("content")
+
+                    # ──── CONFIRM_ACTION: 逐命令确认截停 ────
+                    if p_type == PacketType.CONFIRM_ACTION:
+                        confirm_request_id = str(uuid.uuid4())
+
+                        yield {
+                            "type": PacketType.CONFIRM_ACTION,
+                            "content": {
+                                "request_id": confirm_request_id,
+                                **(content if isinstance(content, dict) else {}),
+                            }
+                        }
+
+                        await self._suspend_confirm_action(
+                            ctx=ctx,
+                            approval_request_id=confirm_request_id,
+                            current_step_index=idx,
+                            entry_id=entry_id,
+                            action_sql=content.get("sql", ""),
+                            action_impact=content.get("impact", ""),
+                            action_rollback=content.get("rollback_sql", ""),
+                            skill_name=skill_name,
+                            round_info=content.get("round", 1),
+                        )
+
+                        yield {"type": PacketType.DONE,
+                               "content": {"entry_id": entry_id,
+                                           "status": "awaiting_confirm",
+                                           "request_id": confirm_request_id}}
+                        return
+                    # ──── CONFIRM_ACTION 结束 ────
 
                     if p_type == PacketType.ANSWER:
                         final_answer_accumulator += (content or "")
@@ -379,14 +363,146 @@ class OpsOrchestrator:
                 ctx["current_execution"] = None
                 continue
 
-        # --- 4. 闭环落库 ---
-        action_result = ctx.get("variables", {}).get("action_result", {})
+        # --- 4. 验证阶段 (Verify) ---
+        var_center = ctx.get("variables", {})
+        pending_sql = var_center.get("pending_action_sql", "")
+        pending_rollback = var_center.get("pending_action_rollback", "")
+        pre_snapshot = var_center.get("_pre_snapshot", {})
+
+        # 收集已执行的动作
+        executed_actions: list[dict] = []
+        if pending_sql:
+            executed_actions.append({
+                "sql": pending_sql,
+                "impact": var_center.get("pending_action_impact", ""),
+                "risk_level": var_center.get("pending_action_risk_level", "medium"),
+                "context": var_center.get("pending_action_context", ""),
+            })
+
+        verify_result = None
+        rollback_info = None
+
+        if pending_sql and pre_snapshot:
+            yield {"type": PacketType.THOUGHT, "content": "🔍 开始验证自愈效果..."}
+
+            try:
+                verifier = OpsVerifier()
+                verify_result = await verifier.verify(
+                    instance_id=ctx["instance_id"],
+                    db_type=ctx.get("db_type", ""),
+                    monitor_type=var_center.get("monitor_type", "prometheus"),
+                    pre_snapshot=pre_snapshot,
+                    executed_sql=pending_sql,
+                    rollback_sql=pending_rollback,
+                )
+
+                yield {
+                    "type": PacketType.VERIFICATION_RESULTS,
+                    "content": {
+                        "status": verify_result.status.value,
+                        "pre_snapshot": verify_result.pre_snapshot,
+                        "post_snapshot": verify_result.post_snapshot,
+                        "health_check": verify_result.health_check_result,
+                        "summary": verify_result.summary,
+                    },
+                }
+
+                if verify_result.status.value == "failed":
+                    if pending_rollback:
+                        yield {"type": PacketType.WARNING,
+                               "content": "❌ 验证失败，执行自动回滚..."}
+                        try:
+                            rollback_result = await self.ops_db_executor.execute_rollback_ops_sql(
+                                instance_id=ctx["instance_id"],
+                                db_type=ctx.get("db_type", ""),
+                                rollback_sql=pending_rollback,
+                                reason=f"自愈验证失败: {verify_result.summary}",
+                            )
+                            rollback_info = {
+                                "rollback_sql": pending_rollback,
+                                "executed": True,
+                                "result": str(rollback_result)[:500],
+                            }
+                            final_answer_accumulator = (
+                                f"❌ 自愈失败，已自动回滚。\n{verify_result.summary}"
+                            )
+                        except Exception as rollback_err:
+                            rollback_info = {
+                                "rollback_sql": pending_rollback,
+                                "executed": True,
+                                "result": f"回滚执行异常: {rollback_err}",
+                            }
+                            final_answer_accumulator = (
+                                f"❌ 自愈失败，回滚执行异常: {rollback_err}"
+                            )
+                elif verify_result.status.value == "degraded":
+                    yield {"type": PacketType.WARNING,
+                           "content": "⚠️ 部分指标已恢复但未达预期，建议人工检查"}
+            except Exception as verify_err:
+                logger.error(f"[Orchestrator] 验证阶段异常: {verify_err}")
+                yield {"type": PacketType.WARNING,
+                       "content": f"⚠️ 验证过程异常: {verify_err}"}
+
+        # --- 4b. 生成执行报告 ---
+        llm_model = model_params.llm_model if model_params else ""
+        try:
+            reporter = OpsReporter()
+            report_md = await reporter.generate_report(
+                instance_name=ctx.get("instance_name", ""),
+                db_type=ctx.get("db_type", ""),
+                environment=ctx.get("environment", "prod"),
+                trigger_type=ctx.get("trigger_type", "manual"),
+                original_question=question,
+                diagnosis_summary=final_answer_accumulator or ctx.get("diagnosis_summary", ""),
+                executed_actions=executed_actions,
+                verify_result=verify_result,
+                rollback_info=rollback_info,
+                total_duration=(time.time() - start_time),
+                llm_model=llm_model,
+            )
+
+            # 持久化报告
+            async with db_instance().get_session() as report_session:
+                report_repo = OpsExecutionReportRepository(report_session)
+                await report_repo.create({
+                    "entry_id": entry_id,
+                    "session_id": session_id,
+                    "user_id": user_id,
+                    "agent_id": agent_id,
+                    "instance_id": ctx["instance_id"],
+                    "instance_name": ctx.get("instance_name", ""),
+                    "db_type": ctx.get("db_type", ""),
+                    "environment": ctx.get("environment", "prod"),
+                    "trigger_type": ctx.get("trigger_type", "manual"),
+                    "original_question": question,
+                    "diagnosis_summary": ctx.get("diagnosis_summary", ""),
+                    "actions_executed": executed_actions,
+                    "pre_snapshot": verify_result.pre_snapshot if verify_result else None,
+                    "post_snapshot": verify_result.post_snapshot if verify_result else None,
+                    "verification_status": verify_result.status.value if verify_result else "skipped",
+                    "health_check_result": verify_result.health_check_result if verify_result else None,
+                    "rollback_info": rollback_info,
+                    "report_content": report_md,
+                    "recommendations": "",
+                    "total_duration_seconds": (time.time() - start_time),
+                })
+                logger.info(f"[Orchestrator] 执行报告已持久化: entry={entry_id}")
+
+            # SSE 推送报告
+            final_answer_accumulator = report_md
+            yield {"type": PacketType.ANSWER, "content": report_md}
+        except Exception as report_err:
+            logger.error(f"[Orchestrator] 报告生成/持久化失败: {report_err}")
+
+        # --- 5. 闭环落库 ---
+        action_result = var_center.get("action_result", {})
         if isinstance(action_result, dict) and action_result.get("status") == "failed":
-            final_answer_accumulator = f"❌ 变更执行失败: {action_result.get('error', '未知错误')}"
-            yield {
-                "type": PacketType.ANSWER,
-                "content": final_answer_accumulator,
-            }
+            if "变更执行失败" not in final_answer_accumulator:
+                final_answer_accumulator = f"❌ 变更执行失败: {action_result.get('error', '未知错误')}"
+                yield {
+                    "type": PacketType.ANSWER,
+                    "content": final_answer_accumulator,
+                }
         response_time = datetime.now(timezone.utc)
         plan_skills_trace = [s.get("skill") for s in plan_steps] if plan_steps else []
 
@@ -395,7 +511,7 @@ class OpsOrchestrator:
                 json.loads(v) if isinstance(v, str) and len(v) > 0
                 and v[0] in ('{', '[') else v
             )
-            for k, v in ctx["variables"].items()
+            for k, v in var_center.items()
             if not k.startswith("_") and not hasattr(v, '__dict__')
         }
 
@@ -469,24 +585,7 @@ class OpsOrchestrator:
                 )
             }
 
-        # 2. 审批门禁检查 (软中断)
-        require_approval = variables.get("require_approval", True)
-        if require_approval:
-            approval_ctx = ctx.get("approval_context")
-            if not approval_ctx or not approval_ctx.get("approved"):
-                logger.warning(
-                    f"[SafetyGate] 需要审批 | Skill: {skill_name} | "
-                    f"实例: {instance_id} | 触发审批中断"
-                )
-                return {
-                    "allowed": False,
-                    "needs_approval": True,
-                    "reason": (
-                        f"自愈组件 [{skill_name}] 即将执行高危变更操作。\n"
-                        f"实例: `{instance_id}` | 环境: `{environment}`\n"
-                        f"请在前端确认风险后授权执行。"
-                    )
-                }
+        # 2. 逐命令批准 — 由 ops-heal-skill 通过 CONFIRM_ACTION 控制，不再此处全局拦截
 
         # 3. 生产环境警告
         if environment == "prod":
@@ -561,6 +660,71 @@ class OpsOrchestrator:
         logger.info(
             f"[HITL Suspend] request_id={request_id} | "
             f"step={current_step_index} | 快照已持久化"
+        )
+
+    async def _suspend_confirm_action(
+        self,
+        ctx: OpsContextMemory,
+        approval_request_id: str,
+        current_step_index: int,
+        entry_id: str,
+        action_sql: str,
+        action_impact: str,
+        action_rollback: str,
+        skill_name: str,
+        round_info: int = 1,
+    ) -> None:
+        """逐命令确认挂起 — 保存执行状态，等待用户确认/取消"""
+        timeout_at = datetime.now(timezone.utc) + timedelta(minutes=30)
+
+        pending_data = {
+            "request_id": approval_request_id,
+            "session_id": ctx["session_id"],
+            "user_id": ctx["user_id"],
+            "agent_id": ctx["agent_id"],
+            "instance_id": ctx["instance_id"],
+            "entry_id": entry_id,
+            "suspend_reason": f"等待确认: {skill_name} (第{round_info}轮)",
+            "suspend_type": "confirm_action",
+            "user_prompt": (
+                f"## 待确认的变更操作\n\n"
+                f"**SQL**:\n```sql\n{action_sql}\n```\n\n"
+                f"**影响**: {action_impact}\n\n**回滚**: {action_rollback}\n"
+            ),
+            "sql_to_run": action_sql,
+            "expected_fields": json.dumps({
+                "type": "confirm_action",
+                "action_sql": action_sql,
+                "impact": action_impact,
+                "rollback_sql": action_rollback,
+            }, ensure_ascii=False),
+            "suspended_by_skill": skill_name,
+            "current_step_index": current_step_index,
+            "completed_steps": json.dumps(
+                ctx.get("execution_history", []), default=str, ensure_ascii=False),
+            "accumulated_results": json.dumps({
+                "metric_results": ctx.get("metric_results", []),
+                "monitor_results": ctx.get("monitor_results", []),
+                "doc_results": ctx.get("doc_results", []),
+            }, default=str, ensure_ascii=False),
+            "pending_variables": json.dumps({
+                k: v for k, v in ctx["variables"].items() if not k.startswith("_")
+            }, default=str, ensure_ascii=False),
+            "hitl_history": json.dumps(
+                ctx.get("hitl_history", []), default=str, ensure_ascii=False),
+            "runtime_plan": json.dumps(
+                ctx.get("runtime_plan"), default=str, ensure_ascii=False),
+            "status": "pending",
+            "timeout_at": timeout_at,
+        }
+
+        async with db_instance().get_session() as session:
+            repo = PendingRequestRepository(session)
+            await repo.create(pending_data)
+
+        logger.info(
+            f"[ConfirmAction] request_id={approval_request_id} | "
+            f"skill={skill_name} | 确认挂起已持久化"
         )
 
     async def _suspend_for_approval(
@@ -894,6 +1058,188 @@ class OpsOrchestrator:
         )
 
         logger.success(f"[Orchestrator Resume] 运维自愈流水线圆满结束, Entry ID: {entry_id}")
+        yield {"type": PacketType.DONE, "content": {"entry_id": entry_id}}
+
+    async def resume_confirm_action(
+        self,
+        background_tasks: BackgroundTasks,
+        request_id: str,
+        confirmed: bool,
+    ) -> AsyncGenerator[dict[str, Any], None]:
+        """逐命令确认恢复 — 用户确认/取消后继续执行"""
+        async with db_instance().get_session() as session:
+            repo = PendingRequestRepository(session)
+            pending = await repo.get_by_request_id(request_id)
+
+        if not pending or pending.get("status") != "pending":
+            yield {"type": PacketType.ERROR, "content": "❌ 确认请求不存在或已处理"}
+            yield {"type": PacketType.DONE, "content": {"entry_id": "N/A", "status": "error"}}
+            return
+
+        async with db_instance().get_session() as session:
+            repo = PendingRequestRepository(session)
+            await repo.mark_answered(request_id)
+
+        logger.info(f"[ConfirmResume] request_id={request_id} | confirmed={confirmed}")
+
+        ctx = self._rebuild_context_from_pending(pending)
+        ctx["variables"]["_prometheus_client"] = self.prometheus_client
+        ctx["variables"]["_zabbix_client"] = self.zabbix_client
+        ctx["variables"]["_metric_registry"] = self.metric_registry
+        ctx["variables"]["_ops_db_executor"] = self.ops_db_executor
+
+        ctx["variables"]["_action_confirmed"] = confirmed
+        ctx["is_resuming"] = True
+
+        pre_snapshot: dict[str, dict] = {}
+        for item in ctx.get("monitor_results", []):
+            meta = item.get("meta", {})
+            promql = meta.get("promql", "")
+            metric_name = meta.get("metric_code") or item.get("task_description", "")
+            data = item.get("data", [])
+            if promql and metric_name and data:
+                val = self._extract_first_metric_value(data)
+                pre_snapshot[metric_name] = {"value": val, "promql": promql}
+        if pre_snapshot:
+            ctx["variables"]["_pre_snapshot"] = pre_snapshot
+
+        plan_steps = ctx["runtime_plan"]["steps"] if ctx["runtime_plan"] else []
+        current_step_index = pending.get("current_step_index", 0)
+        entry_id = pending.get("entry_id", "")
+        start_time_ts = pending.get("requested_at") or datetime.now(timezone.utc)
+        final_answer_accumulator = ""
+
+        for idx in range(current_step_index, len(plan_steps)):
+            ctx["current_step_index"] = idx
+            step = plan_steps[idx]
+            runtime = SkillRuntime(context=ctx)
+            exec_info = runtime.create_execution_context(step_config=step)
+            skill_name = exec_info["skill"]
+            ctx["current_execution"] = cast(Any, exec_info)
+
+            yield {"type": PacketType.CALL,
+                   "content": {"skill": skill_name, "description": (exec_info["resolved_input"] or "")[:120]}}
+
+            skill_instance = self.skill_manager.get_skill_instance(skill_name)
+            if not skill_instance:
+                exec_info.update({"status": "failed", "error": f"组件 {skill_name} 未激活"})
+                ctx["execution_history"].append(cast(Any, exec_info))
+                continue
+
+            gate_result = self._check_safety_gate(ctx, skill_instance, skill_name)
+            if not gate_result["allowed"]:
+                exec_info.update({"status": "blocked", "error": gate_result["reason"]})
+                ctx["execution_history"].append(cast(Any, exec_info))
+                yield {"type": PacketType.ERROR, "content": f"🚫 安全熔断: {gate_result['reason']}"}
+                continue
+
+            try:
+                async for packet in runtime.execute_skill(skill_instance, exec_info):
+                    p_type = packet.get("type")
+                    content = packet.get("content")
+
+                    if p_type == PacketType.CONFIRM_ACTION:
+                        new_request_id = str(uuid.uuid4())
+                        yield {"type": PacketType.CONFIRM_ACTION,
+                               "content": {"request_id": new_request_id, **(content if isinstance(content, dict) else {})}}
+                        await self._suspend_confirm_action(
+                            ctx=ctx, approval_request_id=new_request_id,
+                            current_step_index=idx, entry_id=entry_id,
+                            action_sql=content.get("sql", ""),
+                            action_impact=content.get("impact", ""),
+                            action_rollback=content.get("rollback_sql", ""),
+                            skill_name=skill_name,
+                            round_info=content.get("round", 1),
+                        )
+                        yield {"type": PacketType.DONE,
+                               "content": {"entry_id": entry_id, "status": "awaiting_confirm", "request_id": new_request_id}}
+                        return
+
+                    if p_type == PacketType.ANSWER:
+                        final_answer_accumulator += (content or "")
+
+                    if p_type in DISPLAY_PACKET_TYPES:
+                        yield packet
+
+                exec_info.update({"status": "success"})
+                ctx["execution_history"].append(cast(Any, exec_info))
+                ctx["current_execution"] = None
+
+            except Exception as e:
+                logger.error(f"[ConfirmResume] Skill [{skill_name}] 异常: {e}")
+                exec_info.update({"status": "failed", "error": str(e)})
+                ctx["execution_history"].append(cast(Any, exec_info))
+                ctx["current_execution"] = None
+                continue
+
+        ctx["variables"].pop("_action_confirmed", None)
+
+        var_center = ctx.get("variables", {})
+        pending_sql = var_center.get("pending_action_sql", "")
+        pending_rollback = var_center.get("pending_action_rollback", "")
+        pre_snap = var_center.get("_pre_snapshot", {})
+
+        executed_actions: list[dict] = []
+        if pending_sql:
+            executed_actions.append({
+                "sql": pending_sql,
+                "impact": var_center.get("pending_action_impact", ""),
+                "risk_level": var_center.get("pending_action_risk_level", "medium"),
+                "context": var_center.get("pending_action_context", ""),
+            })
+
+        verify_result = None
+        if pending_sql and pre_snap:
+            yield {"type": PacketType.THOUGHT, "content": "🔍 开始验证自愈效果..."}
+            try:
+                verifier = OpsVerifier()
+                verify_result = await verifier.verify(
+                    instance_id=ctx["instance_id"], db_type=ctx.get("db_type", ""),
+                    monitor_type=var_center.get("monitor_type", "prometheus"),
+                    pre_snapshot=pre_snap, executed_sql=pending_sql,
+                    rollback_sql=pending_rollback,
+                )
+                yield {"type": PacketType.VERIFICATION_RESULTS,
+                       "content": {"status": verify_result.status.value,
+                                   "pre_snapshot": verify_result.pre_snapshot,
+                                   "post_snapshot": verify_result.post_snapshot,
+                                   "health_check": verify_result.health_check_result,
+                                   "summary": verify_result.summary}}
+            except Exception as e:
+                logger.error(f"[ConfirmResume] 验证异常: {e}")
+
+        model_params = await self.agent_service.get_agent_model_params(ctx["agent_id"])
+        try:
+            reporter = OpsReporter()
+            report_md = await reporter.generate_report(
+                instance_name=ctx.get("instance_name", ""),
+                db_type=ctx.get("db_type", ""),
+                environment=ctx.get("environment", "prod"),
+                trigger_type=ctx.get("trigger_type", "manual"),
+                original_question=ctx["command_or_query"],
+                diagnosis_summary=ctx.get("diagnosis_summary", ""),
+                executed_actions=executed_actions,
+                verify_result=verify_result,
+                rollback_info=None,
+                total_duration=(datetime.now(timezone.utc) - start_time_ts).total_seconds(),
+                llm_model=model_params.llm_model if model_params else "",
+            )
+            final_answer_accumulator = report_md
+            yield {"type": PacketType.ANSWER, "content": report_md}
+        except Exception as e:
+            logger.error(f"[ConfirmResume] 报告生成失败: {e}")
+
+        response_time = datetime.now(timezone.utc)
+        background_tasks.add_task(
+            self.memory_service.persist_and_reflect_memory,
+            session_id=ctx["session_id"], user_id=ctx["user_id"],
+            entry_id=entry_id, raw_question=ctx["command_or_query"],
+            answer=final_answer_accumulator.strip() or "自愈链路执行完毕。",
+            model_params=model_params, prepared_data={},
+            context_memory=cast(Any, ctx),
+            request_time=start_time_ts, response_time=response_time,
+        )
+
         yield {"type": PacketType.DONE, "content": {"entry_id": entry_id}}
 
     async def resume_with_approval(
