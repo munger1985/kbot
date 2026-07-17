@@ -280,6 +280,7 @@ class MemoryRepository(BaseRepository[MemoryEntryEntity]):
 
             # 注意: 不使用 JSON_PARSE()——该函数仅 Oracle 23ai+ 支持。
             # Oracle JSON 列在接收到有效 JSON 字符串时会自动解析，直接传字符串即可。
+            # profile_summary 不在此处更新，由 update_user_profile_summary 单独负责。
             sql = text("""
                 MERGE INTO kbot_md_user_profile p
                 USING (SELECT :uid as user_id FROM dual) s
@@ -290,7 +291,6 @@ class MemoryRepository(BaseRepository[MemoryEntryEntity]):
                         frequent_entities  = :ents,
                         entity_relations   = :rels,
                         correction_history = :corrs,
-                        profile_summary    = COALESCE(p.profile_summary, ''),
                         last_update_time   = SYSTIMESTAMP
                 WHEN NOT MATCHED THEN
                     INSERT (user_id, global_preferences, frequent_entities, entity_relations, correction_history, last_update_time)

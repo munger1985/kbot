@@ -67,27 +67,18 @@ class DefaultPrompt(string.Formatter):
             db_prompt = await self._prompt_service.get_prompt_by_unique_name(unique_name=prompt_name)
             if db_prompt:
                 template = db_prompt
-            elif not fallback_content:
-                logger.error(f"Prompt '{prompt_name}' not found in DB or Memory.")
-                return "" # 或者抛出异常
             else:
                 logger.warning(f"Prompt '{prompt_name}' not found in DB, using fallback.")
-        except DataNotFoundException:
-            # DB 中没有该提示词是正常情况，使用内存中的默认值即可
-            if not fallback_content:
-                logger.error(f"Prompt '{prompt_name}' not found in DB or Memory.")
-                return ""
-            logger.info(f"Prompt '{prompt_name}' not in DB, using built-in fallback.")
         except Exception as e:
             logger.error(f"Failed to fetch prompt '{prompt_name}' from DB: {e}")
             if not fallback_content:
-                raise
+                raise e
 
         # 3. 使用 self (LazyFormatter) 进行格式化填充
         try:
             rendered = self.format(template, **kwargs)
-            if "user_language" in kwargs:
-                logger.debug(f"[LangTrace] RENDERED prompt {prompt_name}: {rendered[:600]}")
+            # if "user_language" in kwargs:
+            #     logger.debug(f"[LangTrace] RENDERED prompt {prompt_name}: {rendered[:600]}")
             return rendered
         except Exception as e:
             logger.error(f"Format prompt '{prompt_name}' failed: {e}")
