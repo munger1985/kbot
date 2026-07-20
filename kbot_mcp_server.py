@@ -1,4 +1,5 @@
 import asyncio
+import sys
 import uvicorn
 from loguru import logger
 from starlette.applications import Starlette
@@ -16,6 +17,7 @@ from anyio import BrokenResourceError, EndOfStream
 
 from core.config.settings import get_app_config
 from core.logger import LogConfig, LogManager
+from microservices.common.port_check import check_port_available
 
 # 1. 初始化 Server 实例
 server = Server("kbot-mcp-server")
@@ -127,4 +129,9 @@ if __name__ == "__main__":
     # 在这里设置 host 和 port
     host = app_config.service_host
     port = app_config.mcp_port
+
+    # 先检查端口可用性
+    if not check_port_available(host, port, "MCP"):
+        sys.exit(1)
+
     uvicorn.run(app, host=host, port=port)

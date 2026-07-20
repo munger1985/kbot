@@ -24,6 +24,7 @@ from core.middleware.log_middleware import log_requests
 from microservices.visual.visual_service import VisualService
 from microservices.visual.schema import VisualEmbeddingRequest, VisualEmbeddingResponse
 from microservices.common.security import create_internal_auth_middleware
+from microservices.common.port_check import check_port_available
 
 # 加载环境变量
 load_dotenv(Path(__file__).parent / ".env")
@@ -125,6 +126,10 @@ async def embed_image(req: VisualEmbeddingRequest):
 
 
 if __name__ == "__main__":
+    # 先检查端口可用性，避免 EADDRINUSE 错误被 stderr 吞掉
+    if not check_port_available(SERVICE_HOST, SERVICE_PORT, SERVICE_NAME):
+        sys.exit(1)
+
     logger.info(f"Service starting → {SERVICE_HOST}:{SERVICE_PORT}")
     uvicorn.run(
         app,

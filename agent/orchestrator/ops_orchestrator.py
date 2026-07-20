@@ -21,8 +21,9 @@ from agent.common.skill_context import ExecutionPlan, SkillExecutionContext, Tas
 from agent.common.ops_verifier import OpsVerifier
 from agent.common.ops_reporter import OpsReporter
 from utils.clients import OpsDBExecutor
-from utils.monitor import PrometheusClient, ZabbixProvider, UnifiedMetricRegistry
+from utils.monitor import PrometheusClient, ZabbixProvider, OEMProvider, UnifiedMetricRegistry
 from dao.repositories import PendingRequestRepository, OpsExecutionReportRepository
+from core.config.settings import get_oem_config
 
 
 DISPLAY_PACKET_TYPES = {
@@ -60,12 +61,39 @@ class OpsOrchestrator:
         self.prometheus_client = PrometheusClient()
         self.zabbix_client = ZabbixProvider()
         self.ops_db_executor = OpsDBExecutor()
+        self.oem_client: OEMProvider | None = None  # 懒初始化
 
         self.planner = OpsTaskPlanner(
             skill_manager=self.skill_manager,
             doc_orchestrator=self.doc_orchestrator,
             metric_registry=self.metric_registry,
         )
+
+    # ==================================================================
+    # OEM 客户端懒初始化
+    # ==================================================================
+
+    def _get_oem_client(self) -> OEMProvider | None:
+        """
+        按需创建 OEM 客户端实例。
+        仅在配置了 OEM 连接且 monitor_type == "oem" 时初始化，避免无谓连接。
+        """
+        if self.oem_client is not None:
+            return self.oem_client
+
+        oem_config = get_oem_config()
+        if not oem_config.base_url or "localhost" in oem_config.base_url:
+            # 未配置或使用默认值，跳过
+            logger.info("[Orchestrator] OEM 未配置，跳过 OEM 客户端初始化")
+            return None
+
+        try:
+            self.oem_client = OEMProvider()
+            logger.success(f"[Orchestrator] OEM 客户端初始化成功 | URL: {oem_config.base_url}")
+            return self.oem_client
+        except Exception as e:
+            logger.warning(f"[Orchestrator] OEM 客户端初始化失败: {e}")
+            return None
 
     # ==================================================================
     # 主入口: execute_ops_stream_pipeline
@@ -121,6 +149,8 @@ class OpsOrchestrator:
                 ctx["monitor_type"] = target_db.get("monitor_type", "prometheus")
                 ctx["prometheus_instance_label"] = target_db.get("prometheus_instance_label")
                 ctx["zabbix_host_name"] = target_db.get("zabbix_host_name")
+                ctx["oem_target_name"] = target_db.get("oem_target_name")
+                ctx["oem_target_type"] = target_db.get("oem_target_type", "oracle_database")
 
                 ctx["variables"]["is_mutation_allowed"] = target_db["is_mutation_allowed"]
                 ctx["variables"]["require_approval"] = target_db["require_approval"]
@@ -168,6 +198,7 @@ class OpsOrchestrator:
         ctx["variables"]["_zabbix_client"] = self.zabbix_client
         ctx["variables"]["_metric_registry"] = self.metric_registry
         ctx["variables"]["_ops_db_executor"] = self.ops_db_executor
+        ctx["variables"]["_oem_client"] = self._get_oem_client()
 
         # 采集修复前的指标快照
         self._collect_pre_snapshot(ctx)
@@ -386,6 +417,8 @@ class OpsOrchestrator:
             "monitor_type": "prometheus",
             "prometheus_instance_label": None,
             "zabbix_host_name": None,
+            "oem_target_name": None,
+            "oem_target_type": "oracle_database",
 
             "alert_context": None,
 

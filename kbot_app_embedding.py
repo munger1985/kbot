@@ -29,6 +29,7 @@ from microservices.embedding.schema import (
     EmbeddingRequest, SimilarityRequest, ToggleModelRequest
 )
 from microservices.embedding.model import EmbeddingResponse
+from microservices.common.port_check import check_port_available
 
 # Load environment variables
 load_dotenv(Path(__file__).parent / ".env")
@@ -273,6 +274,10 @@ if __name__ == "__main__":
     # Register signal listeners
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
+
+    # 先检查端口可用性，避免 EADDRINUSE 错误被 stderr 吞掉
+    if not check_port_available(SERVICE_HOST, SERVICE_PORT, "embedding"):
+        sys.exit(1)
 
     logger.info(f"Starting embedding microservice, listening on: {SERVICE_HOST}:{SERVICE_PORT}")
     uvicorn.run(

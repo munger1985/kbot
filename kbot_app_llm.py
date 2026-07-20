@@ -30,6 +30,7 @@ from core.middleware.log_middleware import log_requests
 from core.dictionary import LLMProvider
 from microservices.llm.llm_service import LLMService
 from microservices.llm.schema import *
+from microservices.common.port_check import check_port_available
 
 # Load environment variables
 load_dotenv(Path(__file__).parent / ".env")
@@ -385,6 +386,10 @@ if __name__ == "__main__":
     if os.environ.get("LLM_SERVICE_STANDALONE") == "1":
         signal.signal(signal.SIGINT, signal_handler)
         signal.signal(signal.SIGTERM, signal_handler)
+
+    # 先检查端口可用性，避免 EADDRINUSE 错误被 stderr 吞掉
+    if not check_port_available(SERVICE_HOST, SERVICE_PORT, "LLM"):
+        sys.exit(1)
 
     logger.info(f"LLM adaptation layer is ready -> {SERVICE_HOST}:{SERVICE_PORT}")
     uvicorn.run(

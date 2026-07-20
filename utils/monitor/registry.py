@@ -158,8 +158,37 @@ class UnifiedMetricRegistry:
                     f"渲染 Zabbix Key 模板失败，缺失参数: {missing_key}"
                 ) from e
 
-        else:
-            raise ValueError(f"不支持的监控工具类型: {monitor_type}")
+        elif monitor_type == "oem":
+            # OEM 查询字符串格式: "targetName|metricName|collectionName"
+            oem_map = info.get("oem")
+            if oem_map and isinstance(oem_map, dict):
+                template_map = oem_map.get(db_type)
+                if not template_map:
+                    supported = list(oem_map.keys())
+                    raise ValueError(
+                        f"指标 [{metric_code}] 不支持数据库类型 [{db_type}]。"
+                        f"支持的数据库: {supported}"
+                    )
+                # template_map 中存的是 OEM 风格的 "{target}|{metric_name}|{collection}"
+                if isinstance(template_map, str):
+                    template = template_map
+                else:
+                    # dict 结构: {metric_name, collection}
+                    target = params.get("instance") or params.get("target") or "{target}"
+                    metric = template_map.get("metric_name", metric_code)
+                    collection = template_map.get("collection", "response")
+                    template = f"{target}|{metric}|{collection}"
+            else:
+                raise NotImplementedError(
+                    f"指标 [{metric_code}] 未配置 OEM 查询"
+                )
+            try:
+                return template.format(**params)
+            except KeyError as e:
+                missing_key = str(e).strip("'")
+                raise ValueError(
+                    f"渲染 OEM 查询模板失败，缺失参数: {missing_key}"
+                ) from e
 
     def list_for_llm_prompt(
         self,
@@ -202,6 +231,13 @@ class UnifiedMetricRegistry:
                     zabbix_map and isinstance(zabbix_map, dict) and any(zabbix_map.values())
                 )
                 if not has_zabbix:
+                    continue
+            elif monitor_type == "oem":
+                oem_map = info.get("oem")
+                has_oem = bool(
+                    oem_map and isinstance(oem_map, dict) and any(oem_map.values())
+                )
+                if not has_oem:
                     continue
 
             name = info.get("name", code)

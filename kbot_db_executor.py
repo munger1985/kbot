@@ -1,6 +1,7 @@
 """数据库执行微服务应用程序。"""
 
 import os
+import sys
 import time
 from datetime import datetime
 from typing import Any
@@ -23,6 +24,7 @@ from core.middleware.log_middleware import log_requests
 from microservices.db_executor.factory import DriverFactory
 from microservices.db_executor.security.sql_validator import SQLValidator
 from microservices.db_executor.schemas.executor import ExecuteRequest, OpsExecuteRequest
+from microservices.common.port_check import check_port_available
 
 # 加载环境变量
 load_dotenv(Path(__file__).parent / ".env")
@@ -314,6 +316,10 @@ def _convert_named_params(sql: str, params: dict[str, Any], db_type: str) -> tup
 # --- 启动逻辑 ---
 
 if __name__ == "__main__":
+    # 先检查端口可用性，避免 EADDRINUSE 错误被 stderr 吞掉
+    if not check_port_available(SERVICE_HOST, SERVICE_PORT, SERVICE_NAME):
+        sys.exit(1)
+
     logger.info(f"服务启动中 -> {SERVICE_HOST}:{SERVICE_PORT}")
     uvicorn.run(
         app, 

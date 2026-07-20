@@ -11,7 +11,7 @@ DBMetricSkill v2 — Prometheus 优先 · 专家 SQL 兜底。
 设计原则:
   - 90% 常规指标走 Prometheus（安全、快速、无数据库负载）
   - 10% 深度诊断走预埋的 16 个专家 SQL（LLM Function Calling 精准路由）
-  - Zabbix 预留接口, 当前返回 NotImplementedError
+  - Zabbix 和 OEM 作为备选监控数据源，通过 monitor_type 切换
 """
 
 import json
@@ -26,7 +26,7 @@ from core.dictionary import PacketType
 from agent.prompt import default_prompt
 from core.config.settings import get_prompt_config
 from utils.clients import AIModelClient, OpsDBExecutor
-from utils.monitor import PrometheusClient, ZabbixProvider, UnifiedMetricRegistry
+from utils.monitor import PrometheusClient, ZabbixProvider, OEMProvider, UnifiedMetricRegistry
 
 
 class DBMetricSkill(BaseSkill):
@@ -64,6 +64,7 @@ class DBMetricSkill(BaseSkill):
         # 从 ctx.variables 中获取基础设施引用（由 OpsOrchestrator 注入）
         prometheus_client: PrometheusClient | None = context.get("variables", {}).get("_prometheus_client")
         zabbix_client: ZabbixProvider | None = context.get("variables", {}).get("_zabbix_client")
+        oem_client: OEMProvider | None = context.get("variables", {}).get("_oem_client")
         metric_registry: UnifiedMetricRegistry | None = context.get("variables", {}).get("_metric_registry")
         ops_db_executor: OpsDBExecutor | None = context.get("variables", {}).get("_ops_db_executor")
 
@@ -72,6 +73,7 @@ class DBMetricSkill(BaseSkill):
             prometheus_client = PrometheusClient()
         if zabbix_client is None:
             zabbix_client = ZabbixProvider()
+        # OEM 客户端由 OpsOrchestrator 按需注入，不在此 fallback（避免默认 localhost 连接浪费）
         if metric_registry is None:
             metric_registry = UnifiedMetricRegistry()
         if ops_db_executor is None:
@@ -82,6 +84,8 @@ class DBMetricSkill(BaseSkill):
         monitor_type = context.get("monitor_type", "prometheus")
         prometheus_label = context.get("prometheus_instance_label")
         zabbix_host_name = context.get("zabbix_host_name")
+        oem_target_name = context.get("oem_target_name")
+        oem_target_type = context.get("oem_target_type", "oracle_database")
         llm_model = context["llm_model"]
 
         logger.info(
@@ -282,6 +286,88 @@ class DBMetricSkill(BaseSkill):
             except Exception as e:
                 logger.error(f"[OpsTrack v2] Zabbix 查询异常: {e}")
                 yield {"type": PacketType.WARNING, "content": f"⚠️ Zabbix 查询异常: {e}, 尝试专家 SQL 工具箱..."}
+
+        elif metric_code and monitor_type == "oem":
+            yield {"type": PacketType.THOUGHT, "content": f"📊 正在通过 Oracle Enterprise Manager 查询指标: [{metric_code}]...\n"}
+
+            if not oem_client:
+                yield {"type": PacketType.WARNING, "content": "⚠️ OEM 客户端未配置或不可用，跳过 OEM 查询"}
+                return
+
+            try:
+                render_params = {"target": oem_target_name or instance_id}
+                if oem_target_name:
+                    logger.debug(
+                        f"[OpsTrack v2] 使用 CMDB 配置的 oem_target_name: {oem_target_name}"
+                    )
+                else:
+                    logger.warning(
+                        f"[OpsTrack v2] CMDB 未配置 oem_target_name, "
+                        f"降级使用 instance_id={instance_id} 作为 OEM target 名称. 如果 OEM 目标名称为其他值，查询将返回空。"
+                    )
+                if extracted_params:
+                    extracted_params.pop("instance", None)
+                    extracted_params.pop("target", None)
+                    render_params.update(extracted_params)
+
+                oem_query = metric_registry.render_query(metric_code, "oem", db_type, render_params)
+                logger.info(f"[OpsTrack v2] db_type={db_type} OEM Query: {oem_query}")
+
+                monitor_result = await oem_client.query_instant(oem_query)
+                monitor_result.metric_code = metric_code
+
+                logger.info(
+                    f"[OpsTrack v2] OEM 查询成功 | metric={metric_code} "
+                    f"| target={render_params.get('target')} "
+                    f"| series_count={len(monitor_result.series)}"
+                )
+
+                oem_has_data = len(monitor_result.series) > 0
+
+                summary_text = self._format_monitor_result(metric_code, monitor_result)
+                yield {
+                    "type": PacketType.MONITOR_RESULTS,
+                    "content": {
+                        "data": monitor_result.series,
+                        "meta": {
+                            "metric_code": metric_code,
+                            "source": "oem",
+                            "oem_query": oem_query,
+                            "summary": summary_text,
+                        },
+                    },
+                }
+
+                if oem_has_data:
+                    should_query_db = await self._should_supplement_with_db(
+                        metric_code=metric_code,
+                        series=monitor_result.series,
+                        task_desc=task_desc,
+                        db_type=db_type,
+                        llm_model=llm_model,
+                    )
+                    if should_query_db:
+                        logger.info(
+                            f"[OpsTrack v2] LLM 判定 OEM 数据不足，"
+                            f"继续尝试专家 SQL 工具箱补充深度诊断..."
+                        )
+                    else:
+                        logger.info(
+                            f"[OpsTrack v2] LLM 判定 OEM 数据已足够，跳过数据库查询"
+                        )
+                        return
+                else:
+                    return
+
+            except ValueError as e:
+                logger.warning(f"[OpsTrack v2] OEM 查询失败, 降级: {e}")
+                yield {"type": PacketType.WARNING, "content": f"⚠️ OEM 指标查询未命中: {e}, 尝试专家 SQL 工具箱..."}
+            except ConnectionError as e:
+                logger.error(f"[OpsTrack v2] OEM 连接失败: {e}")
+                yield {"type": PacketType.WARNING, "content": f"⚠️ OEM Server 不可达 ({e}), 降级到专家 SQL 工具箱..."}
+            except Exception as e:
+                logger.error(f"[OpsTrack v2] OEM 查询异常: {e}")
+                yield {"type": PacketType.WARNING, "content": f"⚠️ OEM 查询异常: {e}, 尝试专家 SQL 工具箱..."}
 
         # =====================================================================
         # 阶段二: 专家 SQL 工具箱（Prometheus 有数据时作为补充，无数据时作为兜底）

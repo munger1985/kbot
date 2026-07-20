@@ -30,9 +30,11 @@ class OpsContextMemory(TypedDict):
     # =========================================================================
     # --- 2.1 监控数据源配置 (Monitoring Source Config) ---
     # =========================================================================
-    monitor_type: str              # 监控数据源类型: "prometheus" | "zabbix" | "none"
+    monitor_type: str              # 监控数据源类型: "prometheus" | "zabbix" | "oem" | "none"
     prometheus_instance_label: str | None  # Prometheus 中该实例的 instance 标签值
     zabbix_host_name: str | None  # Zabbix 监控主机名称
+    oem_target_name: str | None   # Oracle Enterprise Manager 中的目标名称
+    oem_target_type: str | None   # OEM 目标类型（如 "oracle_database"）
 
     # =========================================================================
     # --- 3. 告警事件快照 (Alert Snapshot) ---

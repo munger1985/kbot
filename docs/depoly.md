@@ -506,15 +506,7 @@ python docs/install/models/download_colqwen_model.py
 adapter 的 `adapter_config.json` 需指向本地 base model：
 
 ```bash
-python3 -c "
-import json
-with open('/home/ubuntu/cached_models/colqwen2-v1.0/adapter_config.json') as f:
-    cfg = json.load(f)
-cfg['base_model_name_or_path'] = '/home/ubuntu/cached_models/colqwen2-base'
-with open('/home/ubuntu/cached_models/colqwen2-v1.0/adapter_config.json', 'w') as f:
-    json.dump(cfg, f, indent=2)
-print('Updated')
-"
+cp /home/ubuntu/cached_models/colqwen2-v1.0/adapter_config.json{,.backup} && sed -i 's|"base_model_name_or_path": "vidore/colqwen2-base"|"base_model_name_or_path": "/home/ubuntu/cached_models/colqwen2-base"|g' /home/ubuntu/cached_models/colqwen2-v1.0/adapter_config.json && echo "✅ 修改完成" && grep "base_model_name_or_path" /home/ubuntu/cached_models/colqwen2-v1.0/adapter_config.json
 ```
 
 ### 10.3 注册模型到数据库
@@ -526,9 +518,34 @@ print('Updated')
 ```bash
 python3 -c "
 import torch
-from colpali_engine.models import ColQwen2, ColQwen2Processor
-m = ColQwen2.from_pretrained('/home/ubuntu/cached_models/colqwen2-v1.0', torch_dtype=torch.bfloat16, device_map='cpu')
-print('ColQwen2 loaded OK')
+from transformers import AutoModel, AutoProcessor
+from peft import PeftModel
+import os
+
+os.environ['HF_HUB_OFFLINE'] = '1'
+
+print('📦 加载 Base Model...')
+base_model = AutoModel.from_pretrained(
+    '/home/ubuntu/cached_models/colqwen2-base',
+    torch_dtype=torch.bfloat16,
+    device_map='cpu',
+    trust_remote_code=True
+)
+print('✅ Base Model 加载完成')
+
+print('📦 加载 LoRA Adapter...')
+model = PeftModel.from_pretrained(
+    base_model,
+    '/home/ubuntu/cached_models/colqwen2-v1.0'
+)
+print('✅ Adapter 加载完成')
+
+# 合并
+model = model.merge_and_unload()
+model.eval()
+
+print('✅ 模型加载成功！')
+print(f'Model type: {type(model)}')
 "
 ```
 

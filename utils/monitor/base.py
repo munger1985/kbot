@@ -83,6 +83,84 @@ class MetricResult:
             series=series,
         )
 
+    @classmethod
+    def from_oem(cls, metric_code: str, raw_response: dict) -> "MetricResult":
+        """
+        从 Oracle Enterprise Manager REST API 指标响应解析为标准 MetricResult。
+
+        OEM GET /em/rest/{version}/targets/{name}/metrics/{metric}/{collection}
+        返回格式:
+        {
+          "metricData": [{
+            "targetName": "orcl", "targetType": "oracle_database",
+            "metricName": "sessions", "collectionName": "response",
+            "actualColumns": ["column1", "column2", ...],
+            "actualValues": [["VALUE1", "VALUE2"], ...],
+            "lastCollection": 1712345678
+          }]
+        }
+
+        单列指标 (如 sessions: RESPONSE): values[0] 为数值
+        多列指标 (如 tablespace_used_pct: per_tablespace): 每行展开为独立 series
+        """
+        metric_data_list = raw_response.get("metricData", [])
+        series: list[dict[str, Any]] = []
+
+        for entry in metric_data_list:
+            columns = entry.get("actualColumns", [])
+            rows = entry.get("actualValues", [])
+            last_collection = entry.get("lastCollection", 0)
+            labels: dict[str, Any] = {
+                "target_name": entry.get("targetName", ""),
+                "target_type": entry.get("targetType", ""),
+                "metric_name": entry.get("metricName", ""),
+                "collection": entry.get("collectionName", ""),
+            }
+
+            if not rows:
+                continue
+
+            if len(columns) == 1:
+                # 单列指标：每行一个值
+                for row in rows:
+                    val = row[0] if row else None
+                    if val is not None:
+                        try:
+                            series.append({
+                                "labels": dict(labels),
+                                "timestamp": last_collection,
+                                "value": float(val),
+                            })
+                        except (TypeError, ValueError):
+                            series.append({
+                                "labels": dict(labels),
+                                "timestamp": last_collection,
+                                "value": 0.0,
+                            })
+            else:
+                # 多列指标：每行展开，列名作为 key_label
+                for row in rows:
+                    for col_idx, col_name in enumerate(columns):
+                        if col_idx < len(row):
+                            val = row[col_idx]
+                            if val is not None:
+                                point_labels = dict(labels)
+                                point_labels["column"] = col_name
+                                try:
+                                    series.append({
+                                        "labels": point_labels,
+                                        "timestamp": last_collection,
+                                        "value": float(val),
+                                    })
+                                except (TypeError, ValueError):
+                                    pass
+
+        return cls(
+            metric_code=metric_code,
+            data_type="vector",
+            series=series,
+        )
+
     def __repr__(self) -> str:
         return f"<MetricResult(code={self.metric_code}, type={self.data_type}, series_count={len(self.series)})>"
 

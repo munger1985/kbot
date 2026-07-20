@@ -8,6 +8,7 @@
 from .base import BaseMonitorProvider, MetricResult
 from .prometheus import PrometheusClient
 from .zabbix import ZabbixProvider
+from .oem import OEMProvider
 from .registry import UnifiedMetricRegistry
 
 
@@ -15,13 +16,15 @@ def get_monitor_provider(monitor_type: str = "prometheus") -> BaseMonitorProvide
     """根据监控类型返回对应的 Provider 实例。
 
     Args:
-        monitor_type: "prometheus" | "zabbix"
+        monitor_type: "prometheus" | "zabbix" | "oem"
 
     Returns:
         实现了 BaseMonitorProvider 的客户端实例
     """
     if monitor_type == "zabbix":
         return ZabbixProvider()
+    if monitor_type == "oem":
+        return OEMProvider()
     return PrometheusClient()
 
 
@@ -30,6 +33,7 @@ __all__ = [
     "MetricResult",
     "PrometheusClient",
     "ZabbixProvider",
+    "OEMProvider",
     "UnifiedMetricRegistry",
     "get_monitor_provider",
 ]

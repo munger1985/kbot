@@ -19,6 +19,7 @@ from core.config.settings import get_parser_config, get_app_config
 from core.logger import LogConfig, LogManager
 from core.middleware.log_middleware import log_requests
 from microservices.file_processor.services import FileParseEngine
+from microservices.common.port_check import check_port_available
 
 # Load environment variables
 load_dotenv(Path(__file__).parent / ".env")
@@ -124,6 +125,10 @@ async def health() -> dict[str, Any]:
 # --- Startup Logic ---
 
 if __name__ == "__main__":
+    # 先检查端口可用性，避免 EADDRINUSE 错误被 stderr 吞掉
+    if not check_port_available(SERVICE_HOST, SERVICE_PORT, SERVICE_NAME):
+        sys.exit(1)
+
     logger.info(f"Service starting up -> {SERVICE_HOST}:{SERVICE_PORT}")
     uvicorn.run(
         app, 

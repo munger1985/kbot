@@ -213,6 +213,16 @@ class ZabbixConfig(BaseModel):
     password: str = Field(default="", description="Zabbix API 登录密码")
     timeout: int = Field(default=15, ge=5, le=120, description="HTTP 请求超时秒数")
 
+class OemConfig(BaseModel):
+    """Oracle Enterprise Manager 监控数据源配置"""
+    base_url: str = Field(default="https://localhost:7803/em", description="OEM 基础 URL（如 https://oem-server:7803/em）")
+    api_version: str = Field(default="v1", description="OEM REST API 版本路径段（如 v1）")
+    username: str = Field(default="sysman", description="OEM 登录用户名")
+    password: str = Field(default="", description="OEM 登录密码")
+    token: str = Field(default="", description="OEM 预生成的 API Token（可选，优先级高于 user/password）")
+    timeout: int = Field(default=30, ge=5, le=120, description="HTTP 请求超时秒数")
+    verify_ssl: bool = Field(default=False, description="是否验证 OEM SSL 证书（内网环境通常关闭）")
+
 class AskDataApiConfig(BaseModel):
     """问数外部 API 配置（SelectAI / AIReport）。
 
@@ -294,6 +304,7 @@ class Settings(BaseSettings):
     executor: ExecutorConfig = ExecutorConfig()
     prometheus: PrometheusConfig = PrometheusConfig()
     zabbix: ZabbixConfig = ZabbixConfig()
+    oem: OemConfig = OemConfig()
     ask_data_api: AskDataApiConfig = AskDataApiConfig()
     slack: SlackConfig = SlackConfig()
     prompt: PromptConfig = PromptConfig()
@@ -544,6 +555,10 @@ def get_prometheus_config() -> PrometheusConfig:
 def get_zabbix_config() -> ZabbixConfig:
     """获取 Zabbix 监控数据源配置"""
     return get_settings().zabbix
+
+def get_oem_config() -> OemConfig:
+    """获取 Oracle Enterprise Manager 监控数据源配置"""
+    return get_settings().oem
 
 def get_ask_data_api_config() -> AskDataApiConfig:
     """Get ask-data external API configuration.

@@ -33,6 +33,7 @@ from core.logger import LogConfig, LogManager
 from core.middleware.log_middleware import log_requests
 from microservices.vlm.vlm_service import VLMService
 from microservices.vlm.schema import VLMRequest, VLMResponse, ToggleModelRequest
+from microservices.common.port_check import check_port_available
 
 # --- Enhanced Pydantic Support for PIL.Image ---
 
@@ -324,5 +325,9 @@ if __name__ == "__main__":
         signal.signal(signal.SIGINT, handle_system_signal)
         signal.signal(signal.SIGTERM, handle_system_signal)
     
+    # 先检查端口可用性，避免 EADDRINUSE 错误被 stderr 吞掉
+    if not check_port_available(SERVICE_HOST, SERVICE_PORT, SERVICE_NAME):
+        sys.exit(1)
+
     logger.info(f"VLM service starting | Port: {SERVICE_PORT}")
     uvicorn.run(app, host=SERVICE_HOST, port=SERVICE_PORT, access_log=False)
