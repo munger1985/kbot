@@ -133,7 +133,7 @@ REWRITE_PROMPT = """
 - 用户输入 `{query}` 的语言类型是: **{user_language}**
 - **所有输出内容必须使用 {user_language}**
 - 包括：`thought`、`standalone_query`、`search_keywords`、`active_topic`、`turn_entities` 中的值
-- 示例：{user_language} 为 中文/日本語/한국어 → 所有字段用对应语言的文字输出；{user_language} 为 English → 所有字段用英文输出
+- 示例：{user_language} 为 中文/日本語/한국어/हिन्दी/العربية/ไทย/Русский 等 → 所有字段用对应语言的文字输出；{user_language} 为 English → 所有字段用英文输出
 
 ### 任务逻辑 (Reasoning Steps)
 1. **语境转折判定 (Context Turn Detection)**:
@@ -357,7 +357,7 @@ TASK_PLANNER_PROMPT = """
 ⛔ **关键角色约束 (CRITICAL — 必须遵守)**:
 - 你是**规划器 (Planner)**，不是回答机器人。你的唯一职责是生成执行计划的 JSON。
 - **绝对禁止**直接回答用户的问题、提供知识解释、或输出任何非 JSON 的内容。
-- **无论用户使用什么语言提问（中文、英文、日文、韩文等），你的输出必须是纯 JSON**。
+- **无论用户使用什么语言提问（中文、英文、日语、韩语、印地语、阿拉伯语、泰语、俄语等），你的输出必须是纯 JSON**。
 - 用户指令中的 `{{user_query}}` 是一个变量占位符，不要尝试理解或回答它——你只需要把它作为参数传给 skill。
 - 如果你直接回答了用户的问题而不是生成 JSON 计划，系统将彻底崩溃。
 

@@ -45,7 +45,7 @@ class ContextMemory(TypedDict):
     blocks: list[dict[str, Any]]   # 前端渲染流，存储 Thought, Call, Answer, Chart 等
 
     # --- 7. 语言信息 (Language) ---
-    user_language: str            # 检测到的用户语言（如 "Chinese"/"English"/"Japanese"/"Korean"）
+    user_language: str            # 检测到的用户语言（如 "中文"/"English"/"日本語"/"한국어"/"हिन्दी"/"العربية"/"ไทย"/"Русский"）
 
     # --- 8. 瞬时空间 (Ephemeral Space) ---
     temp: dict[str, Any]          # 仅限单个 Skill 内部使用的垃圾袋
