@@ -109,6 +109,12 @@ class OpenAIVLM(BaseVLM[OpenAIVLMConfig]):
         # 2. Clean up None values to prevent SDK errors
         api_params = {k: v for k, v in payload.items() if v is not None}
 
+        # Remove penalty parameters at neutral (0.0) values — some models
+        # reject them entirely, and 0.0 matches API default behavior.
+        for _key in ('frequency_penalty', 'presence_penalty'):
+            if _key in api_params and api_params[_key] == 0.0:
+                del api_params[_key]
+
         try:
             logger.debug(f"🚀 VLM inference started: {self.model_name} (Stream={stream})")
             response = await self._openai_client.chat.completions.create(**api_params)  # type: ignore

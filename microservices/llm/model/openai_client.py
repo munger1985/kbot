@@ -172,6 +172,13 @@ class OpenaiClient(BaseLLM[OpenaiLLMConfig]):
         
         # Filter out None values to use API defaults
         api_params = {k: v for k, v in base_params.items() if v is not None}
+        
+        # Remove penalty parameters at neutral (0.0) values — some models (e.g.
+        # Grok, Claude) reject these parameters entirely, and 0.0 means "no
+        # penalty applied" which matches the API default behavior.
+        for _key in ('frequency_penalty', 'presence_penalty'):
+            if _key in api_params and api_params[_key] == 0.0:
+                del api_params[_key]
 
         try:
             logger.debug(
