@@ -43,3 +43,4 @@ nacos-data/
 configuration/*.json
 *.toml
 CLAUDE.md
+AGENTS.md

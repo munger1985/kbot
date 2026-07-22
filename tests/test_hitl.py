@@ -37,7 +37,7 @@ from loguru import logger
 
 def test_packet_type():
     """验证 PacketType.WAIT_FOR_USER 已注册"""
-    from core.dictionary import PacketType
+    from platform_core.dictionary import PacketType
     assert hasattr(PacketType, "WAIT_FOR_USER")
     assert PacketType.WAIT_FOR_USER == "wait_for_user"
     logger.success("✅ PacketType.WAIT_FOR_USER 已注册")
@@ -303,7 +303,7 @@ def test_context_rebuild_with_string_json():
 
 def test_packet_type_action_items():
     """验证 PacketType.ACTION_ITEMS 已注册"""
-    from core.dictionary import PacketType
+    from platform_core.dictionary import PacketType
     assert hasattr(PacketType, "ACTION_ITEMS")
     assert PacketType.ACTION_ITEMS == "action_items"
     logger.success("✅ PacketType.ACTION_ITEMS 已注册")
@@ -566,7 +566,7 @@ def test_action_items_extraction_from_variables():
 
 async def test_pending_repo_crud():
     """测试 PendingRequestRepository 的 CRUD 操作 (需要数据库)"""
-    from core.database.oracle import get_session
+    from platform_core.database.oracle import get_session
     from dao.repositories import PendingRequestRepository
 
     request_id = f"req_test_{uuid.uuid4().hex[:12]}"
@@ -625,7 +625,7 @@ async def test_pending_repo_crud():
 
 async def test_timeout_detection():
     """测试超时检测逻辑 (需要数据库)"""
-    from core.database.oracle import get_session
+    from platform_core.database.oracle import get_session
     from dao.repositories import PendingRequestRepository
 
     request_id = f"req_timeout_{uuid.uuid4().hex[:12]}"

@@ -1,0 +1,1 @@
+"""VLM model serving process."""

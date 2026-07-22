@@ -33,18 +33,19 @@ Document Version 可以同时拥有不同用途的 View Type（例如 TEXT、VIS
   → 新 Parse View BUILDING
   → 新 Evidence / Discovery 投影写入不可见暂存状态
   → 质量门通过
-  → 原子切换：新 View/Evidence ACTIVE，旧结果撤销可见性
-  → 异步物理删除旧 View、Evidence、临时输出与旧派生索引
+  → 同一事务：新 View/Evidence ACTIVE，物理删除旧 View/Evidence
+  → 事务提交后删除旧不可变解析工件；失败时由存储巡检清除孤儿
 ```
 
-重解析期间，查询只读取旧 ACTIVE View 和对应 ACTIVE Evidence，因此不会出现检索空窗。切换时必须保证同一覆盖范围没有两个可见 Active View；清理任务失败不影响新结果可用，但需持续重试并告警。
+重解析期间，查询只读取旧 ACTIVE View 和对应 ACTIVE Evidence，因此不会出现检索空窗。切换事务保证同一范围不会存在两个 ACTIVE View；工件文件清理失败不影响数据库可见性，但需由存储巡检清除孤儿。
 
-新候选解析失败时：删除候选 View、候选 Evidence 和临时输出；旧 ACTIVE View 保持不变。若该 Document Version 从未有成功 View，则 Member 保持或进入 `FAILED`，不存在可检索旧结果。
+新候选解析最终失败时：同一事务删除候选 View/Evidence，提交后删除 Worker 已上传工件；旧 ACTIVE View 保持不变。若该 Document Version 从未有成功 View，则 Member 进入 `FAILED`，不存在可检索结果。可重试的 TRANSIENT 失败保留同一候选 View 和幂等 Evidence，等待租约重领。
 
 ## 触发条件与参数变更
 
 - 解析失败后的显式重试：沿用或显式指定新的解析策略。
-- Parser、OCR/VLM、Embedding、分块参数或质量门变更：创建新的 BUILDING View，不覆盖旧 View。
+- Parser、OCR/VLM、Evidence 规划参数或质量门变更：创建新的 BUILDING View，不覆盖旧 View。
+- Collection 的 Embedding 模型变化不创建 Parse View，而只重建该 Collection 的 Evidence/Discovery 向量；只有全局维度变化才需要全应用 DDL 与重建。
 - 内容变化：创建新的 Document Version，再为新 Version 创建 Parse View；不称为重解析。
 - 安全隔离/误解析需要立即撤回旧结果时，使用单独的紧急撤回操作，直接撤销旧 Evidence 可见性；它不走常规“成功后替换”流程。
 

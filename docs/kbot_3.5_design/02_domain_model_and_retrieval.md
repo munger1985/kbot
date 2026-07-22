@@ -39,11 +39,13 @@ Domain 是 APEX 的数据与权限边界，Collection 是其内部的知识边�
 
 Evidence 是精确回答和引用的事实投影，`retrieval_text` 只包含 Version 稳定的 MIME、类型、标题路径、结构标签和正文；Bundle 标题/Facet、Document Member 角色与声明名称属于 Revision 级上下文，写入 Discovery Object 并在排序、引用组装时动态附加。Discovery Object 是“找文件/找业务对象”的可重建投影，不能取代事实表。对两者建立 Oracle Text、Vector 和权限/状态/高频 Facet 索引。
 
+来源对象自身的标题、简介、solution briefing 等主信息若需要成为答案依据，Adapter 必须规范化为角色为 `PRIMARY` 的逻辑 Document/Version/Member，并由 Parser 生成 Evidence；不能仅放入 Bundle Profile。所以上传附件为零不等于 Document 为零，常见形态仍是一个 PRIMARY Document，偶发附件形成多个 Member。
+
 Relation 首期只写显式链接、相同编号、引用/派生等可扩展的确定性关系；Manifest 附件归属已由 Revision Member 表达，Evidence 章节父子已由 `parent_evidence_id` 表达，不重复写入 Relation。模型推理关系必须记录模型/规则版本及可回溯依据，允许失效重建。
 
 Collection 删除不是软删除：若存在 ACTIVE Binding，返回 `409 COLLECTION_IN_USE`；否则先置为 `DELETING` 并撤销可见性，再以 `COLLECTION_PURGE` 异步删除所有下游行和对象存储内容，最后删除 Collection。Binding 通过 KC API 管理，避免 KC 直接访问 Agent 表。
 
-首期 Binding 的消费者为 `AGENT`。一个 Agent 可绑定多个 Collection，一个 Collection 可被多个 Agent 使用；所有 ACTIVE Binding 默认平权。Binding 不复制 V1 的 Chunk Top-K、权重和 rerank 参数；V2 检索策略属于 Collection 与 `KnowledgeRetrievalSkillV2`。
+首期 Binding 的消费者为 `AGENT`。一个 Agent 可绑定多个 Collection，一个 Collection 可被多个 Agent 使用；所有 ACTIVE Binding 默认平权。Binding 不复制 V1 的 Chunk Top-K、权重和 rerank 参数；V2 检索策略属于 Collection 引用的 KC Retrieval Policy，Skill 只消费策略结果。
 
 ## 查询契约
 
@@ -54,7 +56,7 @@ Evidence 输出必须能回溯 `bundle_id → document_id → document_version_i
 
 ## 问文检索质量链路
 
-问文 Skill 采用“先 Discovery、后 Evidence”的两阶段流程，不能再以全库 Chunk Top-K 作为唯一检索策略：Discovery 先结合标题、Facet、Bundle/Document 画像与语义召回缩小候选；Evidence 再在该范围内进行混合检索、主视图去重、章节/页邻接扩展和有依据的 Relation 扩展。Skill 将结果组织为 Citation Pack，并校验回答所需主题、附件和页段覆盖情况。
+V2 问文采用“QueryPlan、Discovery、Evidence”的流程，不能再以全库 Chunk Top-K 作为唯一检索策略：KC 先编译检索计划，Discovery 结合标题、Facet、Bundle/Document 画像与语义召回缩小候选；Evidence 再在该范围内进行混合检索、主视图去重、章节/页邻接扩展和有依据的 Relation 扩展。Skill 将 KC 结果组织为 Citation Pack，并校验回答所需主题、附件和页段覆盖情况。
 
 这使 Bundle 级相关性、附件多样性、版本一致性和可定位引用成为检索目标，而不是仅提高单个文本片段的相似度。评测必须分别记录 Discovery Recall@K、Evidence Recall@K、引用定位准确率、跨附件覆盖率和最终答案的证据支撑率。
 

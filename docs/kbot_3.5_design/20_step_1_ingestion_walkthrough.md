@@ -55,23 +55,25 @@ Parser 回调的是版本化 Evidence DTO。KC 校验 Job 租约、`input_finger
 
 | 表 | 新增/更新内容 | 状态/可见性 |
 | --- | --- | --- |
-| `KBOT_KC_EVIDENCE` | 每个段落/表格/图片/Sheet 范围一行；写 content、定位、层级、来源、检索文本、hash、token、向量 | `STAGED`，不可查询 |
-| `KBOT_KC_PARSE_VIEW` | 输出 URI、质量报告、完成信息 | 仍为 `BUILDING` |
+| `KBOT_KC_EVIDENCE` | 每个段落/表格/图片/Sheet 范围一行；写 content、定位、层级、来源、检索文本、hash、token；不写向量 | `STAGED`，不可查询 |
+| `KBOT_KC_PARSE_VIEW` | 输出 URI、质量报告、完成信息 | 仍为 `PARSING` |
 | `KBOT_KC_INGESTION_JOB` | 批次统计、心跳或最终结果 | 仍为 `RUNNING` |
 
 此阶段允许分批回调，但任何 `STAGED` Evidence 都不参与检索；迟到回调、过期租约、被删除 Version 或已替换 View 的结果必须被 KC 拒绝。
 
-## 4. 单个文件解析完成：View 和 Member 就绪
+## 4. 单个文件解析完成：View 激活并投递 INDEX
 
 全部 Evidence 写完并通过 View 质量门后，KC 在一个事务中：
 
 1. 将该 View 及其 Evidence 切为 `ACTIVE`；若是重解析，先撤销旧 View/Evidence 的可见性，再异步清理。
-2. 将对应 Revision Member 置为 `READY`，记录 `completed_at`。
-3. 将 `PARSE` Job 置为 `SUCCEEDED`。
+2. 将对应 Revision Member 置为 `INDEXING`，不记录最终完成时间。
+3. 创建幂等的 `INDEX` Job（`PENDING`），将 `PARSE` Job 置为 `SUCCEEDED`。
 
-Manifest 与附件各自独立完成。附件永久解析失败时，附件 Member 为 `FAILED`，相关 View 为 `FAILED`、Job 为 `FAILED`；Manifest 或其他已成功附件不被回滚。此时 Evidence 虽已 ACTIVE，但 Bundle 还未切换为当前 Revision，外部检索通过 Revision 过滤仍不可见新快照。
+Manifest 与附件各自独立完成。附件永久解析失败时，附件 Member 为 `FAILED`，相关 View 为 `FAILED`、Job 为 `FAILED`；Manifest 或其他已成功附件不被回滚。此时 Parse Evidence 虽已 ACTIVE，但尚未有 Collection 模型向量，Bundle 还未切换为当前 Revision，外部检索不可见新快照。
 
-## 5. 建立检索画像、关系并切换当前 Revision
+## 5. INDEX 完成后建立检索画像并切换
+
+INDEX Worker 独立领取 `INDEX` Job，读取 Collection 唯一绑定的模型快照，对 `retrieval_text` 批量生成**唯一一份**文本向量，并校验模型身份、维度、数量和输入 hash。成功后将 Evidence 写入向量及模型身份快照，Member 才置为 `READY`。INDEX 失败不会影响旧的 ACTIVE View。
 
 KC 根据全部 Member 汇总 Revision：Manifest 解析成功且所有已接收的必需内容成功时为 `READY`；Manifest 成功但存在声明附件不可用/失败时为 `PARTIAL`；没有可用 Manifest/Evidence 时为 `FAILED`。因此没有附件的 Asset 可凭 Manifest 成为 `READY`，附件 URL 错误的 Asset 仍可凭 Manifest 成为 `PARTIAL` 并被检索。对于 READY/PARTIAL Revision：
 
@@ -81,9 +83,7 @@ KC 根据全部 Member 汇总 Revision：Manifest 解析成功且所有已接收
 | `KBOT_KC_DISCOVERY_OBJECT` | 一条 Bundle 画像，及每个 READY Member 的 Document 画像 | 先 `STAGED` |
 | `KBOT_KC_RELATION` | 有明确 Manifest/规则/Evidence 依据的关系（可选，不阻塞首期可检索） | 先 `STAGED` |
 
-PROFILE 完成后，KC 在切换事务中将 Bundle 的 `current_revision_id` 指向 Revision #1、将 `availability_status` 设为 `READY/PARTIAL`、激活合格 Discovery Object，并完成 Revision 状态更新。旧 Revision 若存在，仍保留审计记录但不再满足“current revision”查询条件。
-
-此刻 V2 Discovery 才能召回 Bundle/附件；V2 Evidence 再通过当前 Revision Member → Document Version → Active Parse View → Active Evidence 返回可引用内容。Relation 可稍后独立激活，只用于扩展候选，绝不替代 Evidence 引用。
+PROFILE 生成 `STAGED` 画像并投递 Discovery `INDEX`。Discovery INDEX 成功后，KC 才在切换事务中将 Bundle 的 `current_revision_id` 指向 Revision #1、将 `availability_status` 设为 `READY/PARTIAL`、激活合格 Discovery Object，并完成 Revision 状态更新。此刻 V2 Discovery 才能召回 Bundle/附件；V2 Evidence 再通过当前 Revision Member → Document Version → Active Parse View → Active Evidence 返回可引用内容。Relation 可稍后独立激活，只用于扩展候选，绝不替代 Evidence 引用。
 
 ## 6. 可恢复分支与幂等边界
 
@@ -91,5 +91,5 @@ PROFILE 完成后，KC 在切换事务中将 Bundle 的 `current_revision_id` �
 - **附件下载失败**：保留 `SOURCE_UNAVAILABLE` Member；补传成功后创建/复用 Version，重新走 Parse → Profile → 切换。
 - **解析临时失败**：Job 按租约和退避重试；Member 在终态失败前不丢失。
 - **解析永久失败**：保留失败 Member 和受限错误摘要；若满足部分可用规则，可切换 Revision，但 Discovery `coverage_json` 必须记录缺失附件。
-- **重解析同一内容**：新建候选 Parse View 与 PARSE Job，不创建 Document Version；新 View 成功后替换旧 View/Evidence。
+- **重解析同一内容**：新建候选 Parse View 与 PARSE Job，不创建 Document Version；新 View 解析成功后替换旧 View/Evidence，并重新进入 INDEX。
 - **来源内容更新**：新建 Bundle Revision 和需要变更的 Document Version；旧 Revision 继续被检索，直到新 Revision 的画像完成并原子切换。

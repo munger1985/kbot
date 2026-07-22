@@ -29,7 +29,9 @@
 | `profile_hash` | `VARCHAR2(64)` 非空 | 规范化输入的 hash；相同输入不重复构建 |
 | `profile_schema_version` | `VARCHAR2(32)` 非空 | 画像拼接/Facet 投影规则版本 |
 | `embedding` | Oracle `VECTOR` 可空 | 基于 `profile_text` 的语义召回向量 |
-| `embedding_model_key` | `VARCHAR2(128)` 可空 | 向量模型与配置标识 |
+| `embedding_model_id` | `NUMBER(38)` 可空 | 所属 Collection 绑定的向量模型 |
+| `embedding_model_key` | `VARCHAR2(128)` 可空 | 实际模型稳定 key/revision 快照 |
+| `embedding_config_fingerprint` | `VARCHAR2(64)` 可空 | 模型调用配置与输入规则指纹 |
 | `security_level` | `NUMBER(3)` 非空 | 从 Revision/Member/Version 的最严格有效等级派生 |
 | `quality_score` | `NUMBER(8,6)` 可空 | 覆盖度和画像质量，不表示原文真实性 |
 | `discovery_status` | `VARCHAR2(16)` 非空 | `STAGED/ACTIVE/DELETING/FAILED` |
@@ -48,6 +50,8 @@
 ## 构建、切换与失败
 
 `PROFILE` Job 在 Manifest、Member 和其 Active Parse View/Evidence 就绪后构建画像；`INDEX` Job 再生成全文/向量索引。输入为当前 Revision 快照与可用解析产物，`profile_hash` 相同则幂等跳过。
+
+同一 Collection 的 Discovery、Evidence 与 query embedding 必须使用其绑定的同一模型/revision；所有模型输出维度必须匹配 `base.toml`。不同 Collection 可绑定同维度的不同模型，但必须分组召回，详见[Embedding 一致性](48_step_5_embedding_space_invariant.md)。
 
 新 Revision 的对象先写 `STAGED`。当 Revision 达到 `READY` 或允许切换的 `PARTIAL` 时，在同一切换流程中：更新 Bundle `current_revision_id`，激活该 Revision 的全部合格画像，并撤销旧 Revision 画像可见性。新画像失败不能破坏旧 Revision 的 Discovery；若首次 Revision 无可用画像，则 Revision 不能以“可检索”为由标记 READY。
 

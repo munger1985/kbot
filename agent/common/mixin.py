@@ -5,7 +5,7 @@ import random
 from typing import Any, AsyncGenerator
 from datetime import datetime, timezone
 from loguru import logger
-from core.dictionary import PacketType
+from platform_core.dictionary import PacketType
 
 class AgentStreamMixin:
     """

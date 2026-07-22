@@ -1,4 +1,4 @@
-# core/config/base.toml
+# platform_core/config/base.toml
 [app]
 app_id = 1001
 service_name = "kbot-main-service"
@@ -83,6 +83,22 @@ local_artifacts_path = "/home/chris/models/docling_models"
 queue_workers = 2
 parser_parallel = 4
 db_check_interval = 120
+knowledge_core_url = "http://127.0.0.1:18090"
+worker_id = "kbot-parser-v2"
+claim_interval_seconds = 2.0
+lease_seconds = 600
+evidence_batch_size = 100
+
+[knowledge_core]
+service_name = "kbot-knowledge-core-service"
+service_version = "3.5.0"
+service_host = "0.0.0.0"
+service_port = 18090
+receipt_ttl_seconds = 86400
+local_object_storage_path = "./knowledge_core_storage"
+embedding_service_url = "http://127.0.0.1:18091"
+parser_vlm_model = ""
+parser_visual_description_prompt = "请客观描述图片中的可见事实、文字、对象及其关系；不要推测图片之外的信息。"
 
 [executor]
 service_name = "cube-sql-executor-service"

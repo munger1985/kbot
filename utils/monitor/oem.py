@@ -20,7 +20,7 @@ from loguru import logger
 
 import aiohttp
 
-from core.config.settings import get_oem_config
+from platform_core.config.settings import get_oem_config
 from .base import BaseMonitorProvider, MetricResult
 
 

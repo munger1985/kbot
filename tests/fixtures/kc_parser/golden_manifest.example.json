@@ -1,0 +1,18 @@
+{
+  "cases": [
+    {
+      "case_id": "pdf-native-example",
+      "path": "/absolute/path/to/native.pdf",
+      "do_ocr": false,
+      "expected_headings": ["1 Overview"],
+      "expected_content": ["deployment"],
+      "expected_locator_schemas": ["document/v1"]
+    },
+    {
+      "case_id": "excel-example",
+      "path": "/absolute/path/to/workbook.xlsx",
+      "expected_content": ["Revenue"],
+      "expected_locator_schemas": ["spreadsheet/v1"]
+    }
+  ]
+}

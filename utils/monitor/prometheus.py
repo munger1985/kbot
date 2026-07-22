@@ -10,7 +10,7 @@ import aiohttp
 from typing import Any
 from loguru import logger
 
-from core.config.settings import get_prometheus_config
+from platform_core.config.settings import get_prometheus_config
 from .base import BaseMonitorProvider, MetricResult
 
 

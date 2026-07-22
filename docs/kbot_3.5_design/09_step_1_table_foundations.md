@@ -31,12 +31,17 @@ KC 的数据几乎全部由后台服务写入，APEX 仅做受限读取。因此
 | `collection_key` | `VARCHAR2(64)` 非空、不可变 | API 路由与 Portal 配置键 |
 | `display_name` | `VARCHAR2(256)` 非空 | APEX 展示名称 |
 | `description` | `VARCHAR2(1000)` 可空 | 管理说明 |
+| `embedding_model_id` | `NUMBER(38)` 非空 | Collection 绑定的文本 Embedding 模型；索引与查询共同使用 |
 | `status` | `VARCHAR2(24)` 非空 | `ACTIVE/DISABLED/DELETING/DELETION_FAILED` |
 | `default_security_level` | `NUMBER(3)` 非空 | Bundle/Document 默认值，具体内容可收紧不可放宽 |
 | `metadata_json` | JSON CLOB 可空 | 低频扩展字段 |
 | `row_version` + 审计列 | 基础约定 | 管理面乐观锁与审计 |
 
-约束与索引：`UK(app_id, domain_id, collection_key)`；`CHECK status`；B-tree 索引 `(app_id, domain_id, status, display_name)` 供 APEX 列表与 Scope 查询。`collection_key` 不支持重命名；Collection 删除按既定 `COLLECTION_PURGE` 流程物理清除。
+约束与索引：`UK(app_id, domain_id, collection_key)`；`CHECK status`；B-tree 索引 `(app_id, domain_id, status, display_name)` 供 APEX 列表与 Scope 查询。`embedding_model_id` 指向平台模型目录；KC 创建/更新 Collection 时通过模型服务校验类别、状态和维度，不依赖跨边界数据库外键。`collection_key` 不支持重命名；Collection 删除按既定 `COLLECTION_PURGE` 流程物理清除。
+
+## `KBOT_MD_MODELS` 配套调整
+
+为模型目录增加 `embedding_dimension NUMBER(10)`。Embedding 类模型必须填写，且必须等于 `base.toml` 固化的 Oracle VECTOR 维度；非 Embedding 模型为空。该字段是模型能否被 Collection 绑定的准入条件，不表示全应用只能配置一个模型。
 
 ## `KBOT_KC_COLLECTION_BINDING`
 
@@ -55,6 +60,7 @@ KC 的数据几乎全部由后台服务写入，APEX 仅做受限读取。因此
 ## 读写不变量
 
 - 创建 Collection 时，`app_id` 仅从 `base.toml` 注入；Domain 从认证 Scope 校验。
+- 创建 Collection 时必须绑定已启用且维度合法的 Embedding 模型；模型身份不从 Agent 或上传请求临时覆盖。
 - 创建/更新 Bundle 等下游对象时，只写目标 `collection_id`；App/Domain Scope 由该 Collection 自动关联，不能由请求体覆盖。
 - Agent Binding 必须在同一 Domain 内；DISABLED Collection 保留 Binding 但 Skill 自动跳过。
 - APEX 直连读取通过 Collection join 使用 `app_id + domain_id` 条件，或使用封装该 join 的 `KBOT_KC_V_*` 视图；禁止直写 KC 表。

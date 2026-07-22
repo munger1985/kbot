@@ -17,7 +17,7 @@ sys.path.insert(0, str(project_root))
 # 导入底层的统一图检索服务
 from services.search.graph_search import GraphBaseSearch
 # 导入你项目中的规范定义
-from core.dictionary import PacketType
+from platform_core.dictionary import PacketType
 from agent.common import ContextMemory, SkillExecutionContext
 module_path = "skills.skill_libs.ask-graph-skill"
 ask_graph_module = importlib.import_module(module_path)

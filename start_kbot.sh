@@ -28,14 +28,13 @@ mkdir -p "$STARTUP_LOG_DIR"
 # 统一服务列表：格式 "服务名:脚本路径:启动目录"
 # 注意：脚本路径支持相对路径和绝对路径
 SERVICES=(
-    "主程序:kbot_main.py:."
-    "Embedding:kbot_app_embedding.py:."
-    "LLM:kbot_app_llm.py:."
-    "VLM:kbot_app_vlm.py:."
-    "Visual:kbot_app_visual.py:."
-    "Parser:kbot_app_parser.py:."
-    "MCP:kbot_mcp_server.py:."
-    "DB Executor:kbot_db_executor.py:."
+    "Embedding:apps/ai_models_embedding/main.py:."
+    "LLM:apps/ai_models_llm/main.py:."
+    "VLM:apps/ai_models_vlm/main.py:."
+    "Visual:apps/ai_models_visual/main.py:."
+    "Knowledge Core:apps/knowledge_core_api/main.py:."
+    "KC Index Worker:apps/knowledge_core_projection/main.py:."
+    "Parser:apps/knowledge_core_parser/main.py:."
 )
 
 # 启动服务函数
@@ -43,7 +42,8 @@ start_service() {
     local service_name="$1"
     local script="$2"
     local directory="$3"
-    local log_file="${STARTUP_LOG_DIR}/${script%.py}.log"
+    local safe_script="${script//\//_}"
+    local log_file="${STARTUP_LOG_DIR}/${safe_script%.py}.log"
     
     echo "🚀 Starting ${service_name}..."
 
@@ -54,6 +54,19 @@ start_service() {
     # stderr → 启动日志文件（捕获 EADDRINUSE 等错误）
     cd "$directory" && python "$script" >/dev/null 2>>"$log_file" &
     local pid=$!
+
+    # Background workers do not expose an HTTP port; verify the process stays
+    # alive briefly and then let the launcher continue.
+    if [ "$script" = "apps/knowledge_core_projection/main.py" ]; then
+        sleep 1
+        if ! kill -0 $pid 2>/dev/null; then
+            echo "  ❌ ${service_name} worker exited during startup"
+            [ -s "$log_file" ] && sed 's/^/    | /' "$log_file"
+            return 1
+        fi
+        echo "✅ ${service_name} worker started（PID: $pid）"
+        return 0
+    fi
 
     # 重试循环：最多等待 15 秒，每 2 秒检查一次 PID
     local waited=0
@@ -75,14 +88,12 @@ start_service() {
         # 额外检查：端口是否已在监听（对于已知端口的服务）
         local port=""
         case "$script" in
-            kbot_main.py)            port="18099" ;;
-            kbot_app_embedding.py)   port="18091" ;;
-            kbot_app_llm.py)         port="18092" ;;
-            kbot_app_vlm.py)         port="18094" ;;
-            kbot_app_visual.py)      port="18093" ;;
-            kbot_app_parser.py)      port="18095" ;;
-            kbot_mcp_server.py)      port="18098" ;;
-            kbot_db_executor.py)     port="18096" ;;
+            apps/ai_models_embedding/main.py)   port="18091" ;;
+            apps/ai_models_llm/main.py)         port="18092" ;;
+            apps/ai_models_vlm/main.py)         port="18094" ;;
+            apps/ai_models_visual/main.py)      port="18093" ;;
+            apps/knowledge_core_parser/main.py)      port="18095" ;;
+            apps/knowledge_core_api/main.py)   port="18090" ;;
         esac
 
         if [ -n "$port" ] && ss -tlnp 2>/dev/null | grep -q ":$port "; then

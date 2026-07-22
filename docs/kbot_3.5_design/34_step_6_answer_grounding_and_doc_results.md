@@ -17,29 +17,29 @@ Retrieval Trace（内部候选，允许噪音）
 
 ## 回答模型输出契约
 
-Citation Pack 为每条 Evidence 分配不可伪造的短标签，如 `E1`、`E2`，并包含稳定内部 identity。回答模型使用结构化输出：
+Citation Pack 为每个经过 Support Judge 验证的 Evidence Group 分配请求级短标签，如 `C1`、`C2`，并在内部保存其 PRIMARY 与上下文 Evidence identity。回答模型使用结构化输出：
 
 ```json
 {
-  "answer_markdown": "……[E1]……",
+  "answer_markdown": "……[C1]……",
   "claims": [
-    {"claim_id": "c1", "text": "……", "evidence_labels": ["E1"]}
+    {"claim_id": "c1", "text": "……", "citation_labels": ["C1"]}
   ],
-  "used_evidence_labels": ["E1", "E3"],
+  "used_citation_labels": ["C1", "C3"],
   "selected_bundle_ids": [101]
 }
 ```
 
-`used_evidence_labels` 必须是 Citation Pack 的子集；每个事实性 claim 至少引用一个 Evidence。对于纯澄清、拒答或无事实回答，允许无引用，但不得生成 `doc_results`。模型不得提交 Bundle/Document ID 或自造标签；KC/Skill 只接受预分配 label。
+`used_citation_labels` 必须是 Citation Pack 的子集；每个事实性 claim 至少引用一个 Verified Group。对于纯澄清、拒答或无事实回答，允许无引用，但不得生成 `doc_results`。模型不得提交 Bundle/Document/Evidence ID、Group item label 或自造标签；KC/Skill 只接受预分配 citation label。
 
 ## 回答后验证与投影
 
 `AnswerGroundingVerifier` 在发送 SSE 前执行：
 
-1. 校验所有 label 存在于本次 Citation Pack，去除未使用、无效或邻接-only 的伪引用。
-2. 校验每个被引用 Evidence 仍属于本请求的当前 Revision、授权 Collection 和可见 Parse View；切换期间失效则重新检索或降级为证据不足。
-3. 校验每个事实性 claim 有至少一个 PRIMARY Evidence。首期做结构/定位/范围校验；后续可加入轻量 NLI 或 LLM claim-evidence verifier，但不能仅依赖模型自报。
-4. 从有效 `used_evidence_labels` 向上投影为唯一的 Bundle/Revision/Document 卡片，生成前端 `doc_results_v2`。同一 Asset 多条 Evidence 只生成一张 Asset 卡片，附件命中作为其子项/定位摘要。
+1. 校验所有 citation label 存在于本次 Citation Pack，去除未使用、无效或 context-only 的伪引用。
+2. 校验 Group 内每个被采用 Evidence 仍属于本请求的当前 Revision、授权 Collection 和可见 Parse View，且 Group 不跨 Document Version/View；切换期间失效则重新检索或降级为证据不足。
+3. 校验每个事实性 claim 至少引用一个仍含 PRIMARY 的 Verified Group。首期做结构/定位/范围校验；后续可加入轻量 NLI 或 LLM claim-group verifier，但不能仅依赖模型自报。
+4. 从有效 `used_citation_labels` 的 PRIMARY Evidence 向上投影为唯一 Bundle/Revision/Document 卡片，生成前端 `doc_results_v2`。同一 Asset 多个 Group 只生成一张 Asset 卡片，附件命中作为其子项/定位摘要。
 
 `doc_results_v2` 卡片包括 Bundle 标题（Asset 标题）、Collection、当前 Revision、命中的 Manifest/附件名称、采用的 Evidence 数量和安全定位摘要。它不包含 Chunk 正文、向量得分、未采用候选、其他 Asset 的存在性或持久对象 URI。用户展开卡片时才请求授权的 Evidence 定位/预览。
 
@@ -49,8 +49,8 @@ Citation Pack 为每条 Evidence 分配不可伪造的短标签，如 `E1`、`E2
 
 1. Discovery 广召回候选 Asset；允许语义相关噪音，只作内部 candidate。
 2. Evidence 在每个候选 Asset 内寻找直接支持“XX”的 Manifest 或附件 Evidence。
-3. 回答模型只选择存在直接支持 Evidence 的 Asset，并为每个列出的 Asset 提供至少一个 PRIMARY Evidence label。
-4. Verifier 校验 `selected_bundle_ids` 与该 Asset 的有效使用 Evidence 一一对应；没有直接证据的 Asset 从答案列表和 `doc_results_v2` 同时移除。
+3. 回答模型只选择存在直接支持 Evidence 的 Asset，并为每个列出的 Asset 提供至少一个 Verified Citation Group label。
+4. Verifier 校验 `selected_bundle_ids` 与该 Asset 的有效使用 Citation Group 一一对应；没有直接证据的 Asset 从答案列表和 `doc_results_v2` 同时移除。
 
 因此，高分但仅语义相近、内容没有提到 XX 的 Chunk 最多停留在 Retrieval Trace，不能成为展示给用户的案例 Asset。对于附件不可用但 Manifest 明确支持的 Asset，可展示并标注“主信息命中，附件不可用”；没有任何支持 Evidence 的候选不能展示。
 
@@ -61,7 +61,7 @@ V2 SSE 的最终事件使用独立结构：
 ```json
 {
   "answer": "...",
-  "citations_v2": [{"label": "E1", "citation": {"...": "..."}}],
+  "citations_v2": [{"label": "C1", "citation_group": {"...": "..."}}],
   "doc_results_v2": [{"bundle_id": 101, "title": "...", "used_evidence_ids": [9001]}],
   "grounding_status": "VERIFIED"
 }
@@ -71,7 +71,7 @@ V2 SSE 的最终事件使用独立结构：
 
 ## 验收
 
-- 前端 `doc_results_v2` 是 `used_evidence_labels` 上卷后的去重集合，不是 Retrieval Top-K。
-- 每张列出的 Asset 卡都有至少一个当前、授权、PRIMARY Evidence；移除该 Evidence 后卡片消失。
+- 前端 `doc_results_v2` 是 `used_citation_labels` 中 PRIMARY Evidence 上卷后的去重集合，不是 Retrieval Top-K。
+- 每张列出的 Asset 卡都有至少一个当前、授权且仍含 PRIMARY 的 Citation Group；移除该 Group 的全部 PRIMARY 后卡片消失。
 - 对语义相似但内容不含目标词/事实的 Asset，允许 Discovery 命中，但不得出现在最终答案或 `doc_results_v2`。
 - 评测分别记录候选召回、答案 claim 支撑率、`doc_results_v2` Precision/Recall、错误展示率和引用定位准确率。

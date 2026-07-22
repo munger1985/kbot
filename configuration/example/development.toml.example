@@ -1,4 +1,4 @@
-# core/config/development.toml
+# platform_core/config/development.toml
 [app]
 debug = true
 # file_storage = "/home/chris/kbot3/knowledge_base"

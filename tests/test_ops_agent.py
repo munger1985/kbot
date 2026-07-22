@@ -31,7 +31,7 @@ load_dotenv()
 
 from fastapi import BackgroundTasks
 
-from core.dictionary import PacketType
+from platform_core.dictionary import PacketType
 from agent.orchestrator import OpsOrchestrator
 from utils.monitor import PrometheusClient, UnifiedMetricRegistry
 

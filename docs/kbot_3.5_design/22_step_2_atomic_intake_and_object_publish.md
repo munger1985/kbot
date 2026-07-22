@@ -2,7 +2,7 @@
 
 ## 目标与限制
 
-一次 Bundle multipart 接收必须做到：不把半份附件当作已入库、不让对象存储失败产生可检索 Version、网络重试不产生重复 Revision，并且在数据库事务与对象存储无法共享 ACID 事务时可恢复清理。
+一次 Bundle multipart 接收必须做到：不把半份附件当作已入库、不让对象存储失败产生可检索 Version、网络重试不产生重复 Revision，并且在数据库事务与对象存储无法共享 ACID 事务时可恢复清理。普通用户 `EACH_FILE` 批次先展开为多个独立 Bundle Receipt，本节的原子边界逐 Bundle 生效；`SINGLE_BUNDLE` 对全部文件整体生效。
 
 为此新增运行态辅助表 `KBOT_KC_INGESTION_RECEIPT`。它不参与检索、不承载业务知识事实，只保存一次 HTTP 接收的幂等与补偿信息。
 
@@ -46,7 +46,7 @@
 
 1. KC 以来源键锁定/定位 Bundle，并在短数据库事务中创建或定位 Bundle、不可变 Bundle Revision、Document、Member，分配 Document ID；同来源修订/fingerprint 已存在则跳过发布并返回该 Revision。
 2. 将暂存对象以条件复制/发布到不可变键 `kc/{collection_id}/{document_id}/{content_hash}`；对象必须禁止覆盖，并写入 hash、大小、MIME 元数据。发布成功前，不创建 `AVAILABLE` Version 或 Parse Job。
-3. 在同一最终数据库事务中创建/复用 `KBOT_KC_DOCUMENT_VERSION(storage_state=AVAILABLE)`，令 Member 指向 Version，创建 Manifest Version、候选 Parse View 和 `PARSE` Job；Revision 置 `PROCESSING`，Receipt 填入 Bundle/Revision 并置 `ACCEPTED`。
+3. 在同一最终数据库事务中创建/复用 `KBOT_KC_DOCUMENT_VERSION(storage_state=AVAILABLE)`，令 Member 指向 Version，为各 Member 创建候选 Parse View 和 `PARSE` Job；Adapter 声明需要可引用来源主信息时才创建 Manifest Version。Revision 置 `PROCESSING`，Receipt 填入 Bundle/Revision 并置 `ACCEPTED`。
 4. 只有该事务提交后才返回 `202 Accepted`。Parser 只能 claim 已提交 Job，因而永远不会读到未提交对象。
 
 若不可变对象已发布但最终数据库事务失败，Receipt 保留发布清单并置 `CLEANUP_PENDING`；Reaper 删除无任何 AVAILABLE Version 引用的对象。反之，数据库提交后不得删除已发布对象；Version/Member/Job 共同构成可恢复的事实锚点。

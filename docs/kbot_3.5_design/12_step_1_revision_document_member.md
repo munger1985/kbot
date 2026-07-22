@@ -24,7 +24,7 @@ Bundle Revision
 | `bundle_revision_id` | 非空 `NUMBER(38)` | 所属不可变快照 |
 | `document_id` | 非空 `NUMBER(38)` | 对应稳定逻辑文件 |
 | `document_version_id` | 可空 `NUMBER(38)` | 已收到内容时的具体版本 |
-| `document_role` | `VARCHAR2(24)` 非空 | `MANIFEST/ATTACHMENT/SUPPLEMENT/DERIVED` |
+| `document_role` | `VARCHAR2(24)` 非空 | `CONTENT/MANIFEST/ATTACHMENT/SUPPLEMENT/DERIVED` |
 | `ordinal` | `NUMBER(19)` 非空 | Bundle 内稳定展示和处理顺序，从 0 开始 |
 | `required_flag` | `NUMBER(1)` 非空 | `1/0`；MANIFEST 必须为 `1` |
 | `external_document_id` | `VARCHAR2(256)` 非空 | 来源文件稳定标识的快照，便于审计与补传定位 |
@@ -44,7 +44,7 @@ Bundle Revision
 - `UK(bundle_revision_id, document_id)`：同一 Revision 内一个逻辑文件只出现一次。
 - `UK(bundle_revision_id, external_document_id)`：防止来源重复声明相同文件。
 - `CHECK document_role`、`CHECK required_flag`、`CHECK member_status`。
-- `CHECK` 或服务校验：`document_role=MANIFEST` 时 `required_flag=1`，每个 Revision 恰有一个 MANIFEST Member。
+- 服务校验：`MANIFEST` 为 Adapter 可选角色、同一 Revision 至多一个且存在时 `required_flag=1`；通用 Revision 不要求 MANIFEST Member。
 - 索引 `(bundle_revision_id, ordinal)`：成员目录与状态汇总。
 - 索引 `(collection_id, member_status)`：管理端失败列表与巡检。
 - 索引 `(document_id)`、`(document_version_id)`：审计和 Evidence 回溯。
@@ -70,9 +70,11 @@ PARSING ──终态错误──► FAILED
 
 状态更新必须采用 `row_version` 或 Job lease 条件更新，防止迟到的 Parser 回调覆盖补传后的新状态。
 
-## MANIFEST 特例
+## CONTENT 与可选 MANIFEST
 
-每个 Bundle Revision 由 KC 根据规范化 `manifest_json` 创建一个固定 `external_document_id=__manifest__` 的 MANIFEST Member、Document 和 Document Version。它不由 Portal 上传 Markdown，也不与附件拼接；其内容可独立生成 Evidence、参与检索并提供 Bundle 主信息上下文。
+普通单文件和普通文件组使用平权 `CONTENT` Member，不要求 PRIMARY。每个 Bundle Revision 都有不可变 `manifest_json`，但它是来源快照，不等于可引用 Document。
+
+只有来源主信息本身需要成为答案依据时，Adapter 才创建固定 `external_document_id=__manifest__` 的 MANIFEST Member、Document 和 Version；同一 Revision 至多一个。KM Asset Adapter 使用该能力把 Asset 主信息确定性生成 Evidence，普通用户文件上传不自动创建。Bundle Discovery Profile 可以聚合 Manifest 与 Document 画像，但不能替代 Evidence。
 
 ## 与失败恢复的接口
 

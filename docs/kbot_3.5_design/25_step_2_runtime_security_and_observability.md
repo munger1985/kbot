@@ -4,9 +4,9 @@
 
 `kbot_app_knowledge.py` 是独立进程，但复用仓库统一配置加载、日志和 Oracle 连接池约定。KC 配置应使用独立命名空间，例如 `knowledge_core`，至少包含：监听地址/端口、Oracle 连接池、对象存储暂存/发布前缀、对象大小与 MIME 策略、暂存 TTL、Worker 租约/重试参数、服务认证材料、限流和审计开关。
 
-`app_id` 从 `base.toml` 固化读取；不得由环境请求、Portal payload 或 Worker payload 覆盖。密钥、私钥、对象存储凭据和服务令牌只来自部署 Secret，不写入 TOML、日志、Receipt、Job payload 或 API 响应。
+`app_id` 与文本向量维度从 `base.toml` 固化读取；Embedding 模型由 Collection 绑定并从平台模型目录解析，不得由 Agent、Portal payload 或单次检索请求覆盖。Job payload 保存 Collection 模型身份快照以保证异步执行一致性。密钥、私钥、对象存储凭据和服务令牌只来自部署 Secret，不写入 TOML、日志、Receipt、Job payload 或 API 响应。
 
-启动阶段依次校验：配置结构、Oracle 连通/DDL 版本、对象存储桶和最小读写权限、服务认证材料、必需索引/向量能力。任一硬依赖不满足则进程启动失败；不以“降级到 V1 File/Chunk”启动。
+启动阶段依次校验：配置结构、Oracle 连通/DDL 版本、对象存储桶和最小读写权限、服务认证材料、必需索引/向量能力，以及配置模型与 Embedding 服务实际模型/维度、Oracle VECTOR 维度、ACTIVE Evidence/Discovery fingerprint 的一致性。任一硬依赖不满足则进程启动失败或 `/readyz` 为非 ready；不静默跳过不一致数据，也不以“降级到 V1 File/Chunk”启动。
 
 ## 健康检查与优雅停止
 

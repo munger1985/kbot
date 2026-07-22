@@ -66,7 +66,7 @@ Revision 状态为：`ACCEPTED → PROCESSING → READY | PARTIAL | FAILED`；�
 
 ## 已确认
 
-- `PARTIAL` 可切换为 Bundle 当前 Revision，条件是 Manifest 与至少一个必需或可用 Document 已完成。
+- `PARTIAL` 可切换为 Bundle 当前 Revision，条件是不可变 `manifest_json` 有效，且至少一个必需或可用 Document 已完成；Adapter 声明了 MANIFEST Document 时，它必须 READY。
 - Bundle Revision 只保留规范化后的 Manifest JSON；原始上游 payload 如需保留，仅写入受控审计 URI，不进入 KC 事实表。
 
 ## 来源修订说明

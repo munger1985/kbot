@@ -16,7 +16,7 @@ from typing import Any
 import aiohttp
 from loguru import logger
 
-from core.config.settings import get_zabbix_config
+from platform_core.config.settings import get_zabbix_config
 from .base import BaseMonitorProvider, MetricResult
 
 

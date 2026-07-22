@@ -16,6 +16,8 @@
 
 ## 外部入库 API
 
+外部写入按 Adapter 语义分为 KM Asset 与普通用户文件上传，共用 KC Application Service，但不共用含混的“上传一批文件”契约。
+
 ```http
 POST /api/v2/knowledge/domains/{domain_id}/collections/{collection_key}/ingestions/km-assets
 Content-Type: multipart/form-data
@@ -46,6 +48,14 @@ Idempotency-Key: <client request UUID>
 ```
 
 `Idempotency-Key` 防止网络重试产生重复 HTTP 受理；来源幂等仍以 `source_revision + snapshot_fingerprint` 为准。相同来源修订但不同快照返回 `409 SOURCE_REVISION_CONFLICT`；非法 Domain/Collection 返回 `403/404`，格式或附件清单不一致返回 `422`，存储未能原子发布则返回可重试的 `503`，不得返回已接收。
+
+普通用户入口为：
+
+```http
+POST /api/v2/knowledge/domains/{domain_id}/collections/{collection_key}/ingestions/user-files
+```
+
+请求必须显式选择 `EACH_FILE`（N 个文件生成 N 个单文档 Bundle）或 `SINGLE_BUNDLE`（N 个文件生成一个含 N 个平权 CONTENT Member 的 Bundle）。前者允许逐项受理和 `PARTIAL_ACCEPTED`，后者在接收/发布阶段全有或全无；两者都不自动生成 MANIFEST Document。完整字段、幂等和响应见[普通用户文件上传 API](46_step_2_user_file_upload_api.md)。
 
 ## 状态与管理 API
 

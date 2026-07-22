@@ -7,8 +7,8 @@
 1. **基础服务与入库**：建立 `KBOT_KC_*` DDL、Entity/Repository、健康检查、Bundle 上传 API、版本与 Job 状态机；Portal 改为一次 Bundle 上传。
 2. **解析迁移**：从现有 `FileProcessor` 提取 Docling/OCR/VLM、切块与 embedding 逻辑为 Worker handler，通过 claim/result 协议回传，不访问旧 File/Chunk Repository。
 3. **检索与关系**：实现 Parse View、Evidence、Discovery、Profile、确定性 Relation，以及 Excel `SPREADSHEET` View 和结构化工件。
-4. **V2 问文链路重构**：以 KC Client 重写 `KnowledgeRetrievalSkillV2` 为 Discovery → Evidence → Citation Pack 流程；同步提供 V2 的 Doc Orchestrator、Root Agent 引用 DTO 与 SSE 输出，不适配 `TxtBaseSearchResult`。
-5. **双轨切流与评测**：将本期知识重新入库或迁移为 Bundle，并按来源/App/Agent 将流量切至 V2；V1 File/Chunk 读写链路与旧表继续保留、独立运行。稳定 KM Asset 后，再接普通 KB、项目、工单等 Bundle Adapter。File Dataset/NL2SQL、多 Agent 改造仍留给后续版本。
+4. **V2 问文链路重构**：同步实现 `DocumentAgentV2`、无状态 `KnowledgeRetrievalSkillV2` 和 KC Client，形成 Agent → Skill → QueryPlan → Discovery → Evidence → Citation Pack；提供 Root Agent 引用 DTO 与 SSE 输出，不适配 `TxtBaseSearchResult`。
+5. **评测与直接切换**：将本期知识重新入库为 Bundle，完成评测后直接把 Portal 与问文路由切至 V2；不做请求级切流或自动回退。V1 接口和旧表在开发/稳定观察期保留但不再被 V2 读取，最终按退役清单删除。稳定 KM Asset 后，再接普通 KB、项目、工单等 Bundle Adapter。File Dataset/NL2SQL 和完整多 Agent 编排仍留给后续版本，但知识任务从 3.5 起使用可委派的版本化 DTO。
 
 ## 迁移与运行规则
 
@@ -28,4 +28,4 @@
 
 ## 上线检查
 
-上线前完成来源修订与权限测试、错误重放测试、附件下载失败测试、不同解析视图去重测试、并发上传幂等测试，以及 V1/V2 路由隔离、Discovery → Evidence → Citation Pack 的端到端质量测试。每次解析器、Embedding 模型或分块策略升级均应以新 Parse View/Version 灰度验证，不覆盖既有可用结果。
+上线前完成来源修订与权限测试、错误重放测试、附件下载失败测试、不同解析视图去重测试、并发上传幂等测试，以及 V1/V2 路由隔离、Discovery → Evidence → Citation Pack 的端到端质量测试。解析器或 Evidence 规划升级以新 Parse View 验证；Collection 更换 Embedding 模型时必须重建本 Collection 的 Discovery/Evidence 向量并通过一致性与召回评测，禁止该 Collection 的新旧模型混用。只有全局向量维度变化才执行全应用重建。

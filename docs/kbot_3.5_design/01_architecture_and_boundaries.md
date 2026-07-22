@@ -6,7 +6,7 @@
 KM Portal / Main API
        │ HTTP
        ▼
-Knowledge Core ── claim/result ──► Parser Worker ──► Embedding / LLM / VLM
+Knowledge Core ── claim/result ──► Parser Worker ──► LLM / VLM
        │
        ├─ Discovery：找 Bundle / Document
        └─ Evidence：找可引用内容
@@ -22,8 +22,8 @@ Domain 是 APEX 的数据与权限隔离边界，Collection 只能在一个 Doma
 
 | 组件 | 负责 | 不负责 |
 | --- | --- | --- |
-| Knowledge Core | 入库编排、版本切换、任务状态、Discovery、Evidence、关系 | Agent/Skill、最终回答、SQL 执行 |
-| Parser Worker | Docling/OCR/VLM、分块、结构化提取、Embedding、结果回传 | 发现来源、修改 Bundle 状态、直写 KC 表 |
+| Knowledge Core | 入库编排、版本切换、任务状态、QueryPlan、Discovery、Evidence、LLM 候选/证据判断、关系 | Agent/Skill、最终回答、SQL 执行 |
+| Parser Worker | Docling/OCR/VLM、结构解析、质量评估、Evidence DTO 与结果回传 | 检索 Embedding、发现来源、修改 Bundle 状态、直写 KC 表 |
 | Portal | 来源增量、字段规范化、附件下载、一次 Bundle 投递 | KBot 数据库和解析状态机 |
 | Data Query | 数据源与语义模型、NL2SQL、权限、审计、表格结果 | 文档解析和 Evidence 生命周期 |
 | DB Executor | SQL 安全校验、限流、受控执行 | 数据语义、调用方权限决策 |
@@ -34,19 +34,19 @@ Collection 的消费者（首期为 V2 Agent）通过 KC 的多对多 Binding �
 
 ## 问文 Skill 与 Agent 的接缝
 
-3.5 将旧链路标记为 V1，将新 KC 链路标记为 V2。V1 的 `TxtBaseSearch` / `DocService`、旧问文 Skill 和旧 API 暂时保持不动；V2 问文 Skill 应重构为面向 KC 的检索编排器（建议命名 `KnowledgeRetrievalSkillV2`），直接消费 KC 的领域 DTO，而不是将 Evidence 压缩映射为旧 `TxtBaseSearchResult`。V2 不读旧 File/Chunk 表，也不设置请求内 V1 回退。
+3.5 将旧链路标记为 V1，将新 KC 链路标记为 V2。V1 的 `TxtBaseSearch` / `DocService`、旧问文 Skill 和旧 API 暂时保持不动；V2 同步重构 `DocumentAgentV2` 与 `KnowledgeRetrievalSkillV2`，直接消费 KC 的领域 DTO，而不是将 Evidence 压缩映射为旧 `TxtBaseSearchResult`。V2 不读旧 File/Chunk 表，也不设置请求内 V1 回退。
 
 ```text
-用户问题 + Collection/权限上下文
-  → Discovery：召回并排序 Bundle / Document
-  → 选择候选范围与检索计划
+Root/Agent Router → DocumentAgentV2 → KnowledgeRetrievalSkillV2
+  → KC QueryPlan：检索维度、Facet 与 Policy
+  → Discovery：召回并选择 Bundle / Document
   → Evidence：混合检索、主 View 去重、邻接扩展、关系扩展
   → Citation Pack：Evidence 内容 + 稳定定位 + 质量/覆盖信息
-  → 回答模型 / 上层 Agent
+  → KnowledgeTaskResult → 回答模型 / 上层 Agent
 ```
 
-V2 Skill 负责问题意图、候选范围策略、上下文预算和回答前的证据覆盖校验；KC 负责权限过滤后的召回、排序、版本/视图选择和引用定位。回答模型只能使用 Citation Pack 中的内容，不能绕过 KC 自行从文件或旧表取 Chunk。V2 Doc Orchestrator、Root Agent 与 SSE 输出使用 Bundle/Document/Evidence 引用结构；V1 的接口与 SSE 独立保留，调用方通过显式版本或路由选择，不能混合两种引用 DTO。
+`DocumentAgentV2` 负责知识任务状态、历史有效引用、澄清和有限重试；V2 Skill 负责受控调用 KC、Citation Pack 组装和回答前覆盖校验；KC 负责 QueryPlan、权限过滤后的召回、LLM Candidate/Evidence 判断、版本/视图选择和引用定位。Agent 调用 Skill，Skill 不得实例化 Agent。回答模型只能使用 Citation Pack 中的内容，不能绕过 KC 自行从文件或旧表取 Chunk。Root Agent 与 SSE 输出使用 Bundle/Document/Evidence 引用结构；V1 的接口与 SSE 独立保留，调用方通过显式版本或路由选择，不能混合两种引用 DTO。详细边界见[DocumentAgentV2 与多 Agent 边界](44_step_6_document_agent_v2_and_multi_agent_boundary.md)。
 
 V2 对外 API 统一使用 `/api/v2/knowledge/*` 前缀，内部 Worker 协议使用 `/internal/v2/knowledge/*`；V1 路径不改。版本选择应固定在 App/Agent/路由配置或明确请求字段上，并记录在审计日志中，不能根据请求失败自动降级。
 
-未来 Agent Router 可按意图调用 `retrieval`、`data_query` 或二者并行；混合回答必须分别保留 Evidence 引用或 `query_result_id`。
+未来 Agent Router 以版本化任务 DTO 委派 Document Agent、Data Agent 或二者并行；混合回答必须分别保留 Evidence 引用或 `query_result_id`，不共享可变检索上下文。

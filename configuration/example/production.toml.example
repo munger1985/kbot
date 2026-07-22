@@ -1,4 +1,4 @@
-# core/config/production.toml
+# platform_core/config/production.toml
 [app]
 debug = false
 # file_storage = "/app/knowledge_base"

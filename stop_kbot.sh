@@ -6,14 +6,13 @@ CURRENT_PID=$$
 
 # 统一服务列表（与启动脚本保持一致）
 SERVICES=(
-    "kbot_main.py"
-    "kbot_app_embedding.py"
-    "kbot_app_llm.py"
-    "kbot_app_vlm.py"
-    "kbot_app_visual.py"
-    "kbot_app_parser.py"
-    "kbot_mcp_server.py"
-    "kbot_db_executor.py"
+    "apps/ai_models_embedding/main.py"
+    "apps/ai_models_llm/main.py"
+    "apps/ai_models_vlm/main.py"
+    "apps/ai_models_visual/main.py"
+    "apps/knowledge_core_api/main.py"
+    "apps/knowledge_core_parser/main.py"
+    "apps/knowledge_core_projection/main.py"
 )
 
 # Function: Safely get PID of specific Python script running in specified directory

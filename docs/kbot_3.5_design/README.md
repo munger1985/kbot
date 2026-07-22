@@ -4,7 +4,7 @@
 
 3.5 建立独立的 Knowledge Core（KC）服务，并重构问文 Skill 的检索链路，完成来源对象及附件的版本化入库、解析、检索和可引用证据输出。首个来源是 KM Portal 的 Asset；其只是 Bundle Ingestion Adapter，不定义 KC 的领域边界。AIOps 与问数服务不在本期实现范围。
 
-本方案仍是单仓库、同一 Oracle Schema 的分布式单体：KC、Parser、模型服务均独立进程、通过 HTTP 契约协作；KC 是 V2 知识数据的唯一写入者。3.5 采用双轨隔离：V1 保持既有 `KB → File → TxtChunk`、旧 Skill 和旧 API；V2 使用 Collection/Bundle/Evidence、V2 Skill 和 V2 API。旧表暂不删除，但 V2 不读写旧表，也不在请求内回退到 V1；迁移通过路由切流和重新入库逐步完成。
+本方案仍是单仓库、同一 Oracle Schema 的分布式单体：KC、Parser、模型服务均独立进程、通过 HTTP 契约协作；KC 是知识数据的唯一写入者。项目仍处于开发阶段，3.5 直接以 Collection/Bundle/Evidence 和 KC Parser Worker 作为唯一实现基线，不保留 Parser/DTO/Schema 兼容分支，也不回退旧 `File/Chunk` 链路。
 
 ## 文档导航
 
@@ -47,8 +47,32 @@
 | [35 步骤 7：评测、直接上线与 V1 退役](35_step_7_evaluation_direct_release_and_retirement.md) | 样本标注、上线门槛、直接发布与旧模型清理 |
 | [36 步骤 7：V1 退役清单](36_step_7_v1_retirement_inventory.md) | V1 API/表/服务盘点、保留对象、删除门禁与执行顺序 |
 | [37 步骤 1：Schema 迁移计划](37_step_1_schema_migration_plan.md) | KC DDL 分组、索引、APEX 视图、回滚与验收 |
+| [38 步骤 4：Docling 后处理重构](38_step_4_docling_postprocessing_redesign.md) | Docling 边界、新解析流水线、不可变工件与 KC 完成契约 |
+| [39 步骤 4：Atom 与 Structure IR](39_step_4_atom_and_structure_ir.md) | 原子提取、阅读顺序、章节树、来源追踪与结构不变量 |
+| [40 步骤 4：质量与 Evidence 规划](40_step_4_quality_and_evidence_planner.md) | Evidence 边界、表格/Excel、质量门、benchmark 与实施顺序 |
+| [41 步骤 4：解析改造完成基线](41_step_4_parser_completion_baseline.md) | 已落地模块、运行闭环、支持格式、失败语义与后续评测输入 |
+| [42 步骤 5：LLM 候选选择与证据判断](42_step_5_llm_selection_and_evidence_judging.md) | Bundle/Document 级 Listwise 选择、Evidence Group 支持判断与显式降级 |
+| [43 步骤 5：Retrieval QueryPlan](43_step_5_retrieval_query_plan.md) | 检索多维意图、Facet 硬/软约束、Policy 选择与默认降级 |
+| [44 步骤 6：DocumentAgentV2 与多 Agent 边界](44_step_6_document_agent_v2_and_multi_agent_boundary.md) | Agent→Skill→KC 调用方向、任务 DTO 与 4.0 演进接缝 |
+| [45 步骤 5：Discovery 候选聚合](45_step_5_discovery_candidate_aggregation.md) | 单文档快速路径、Document 上卷 Bundle、Bundle 级 RRF 与 Collection 平权 |
+| [46 步骤 2：普通用户文件上传](46_step_2_user_file_upload_api.md) | 每文件独立/单 Bundle 两种分组、批次幂等与原子接收语义 |
+| [47 步骤 5：Evidence Group 与引用单位](47_step_5_evidence_group_and_citation_unit.md) | ANCHOR/上下文组装、Judge 后 PRIMARY、Group 级 citation 与预算 |
+| [48 步骤 5：Embedding 一致性](48_step_5_embedding_space_invariant.md) | 全局维度、Collection 模型绑定、多模型分组召回与变更策略 |
+| [49 步骤 5：INDEX 向量流水线](49_step_5_index_embedding_pipeline.md) | 解析与向量解耦、单一模型入口、向量身份校验与状态转换 |
+| [50 步骤 5：Discovery Profile 基础](50_step_5_discovery_profile_foundation.md) | Bundle/Document 画像、覆盖摘要、幂等 Profile 文本与当前版本边界 |
+| [51 步骤 5：Discovery 查询与候选聚合](51_step_5_discovery_query_and_candidates.md) | Oracle Text/Vector 初筛、Bundle 上卷、Collection 平权与 V2 查询契约 |
+| [52 步骤 5：Evidence 查询与 Citation Pack](52_step_5_evidence_query_and_citation_pack.md) | 候选范围校验、Evidence Group、结构上下文和引用标签 |
+| [53 步骤 6：Answer Grounding 与 doc_results_v2](53_step_6_answer_grounding_and_doc_results_v2.md) | 回答后引用校验、Claim 支撑状态与 Bundle 卡片投影 |
+| [54 步骤 6：DocumentAgentV2 与 Skill 接入](54_step_6_document_agent_v2_skill_integration.md) | 无状态问文 Skill、KC Client、任务 DTO 与 Agent 边界 |
+| [55 步骤 6：RootAgentV2 显式路由](55_step_6_root_agent_v2_route.md) | V2 Agent API、V2-only SSE 和 V1 隔离 |
+| [56 步骤 6：RootAgentV2 Grounded Answer](56_step_6_root_agent_v2_grounded_answer.md) | 回答模型、引用校验和最终 doc_results_v2 |
+| [57 服务打包与目录重组](57_service_packaging_and_directory_layout.md) | `knowledge_core` 文件职责、Parser 边界、独立服务打包和 4.0 演进 |
 
 `archive/` 保存本轮整理前的原始方案，供追溯，不作为实施依据。
+
+## 当前实施状态（开发分支）
+
+已落地 KC Schema 001–007、Collection/Agent Binding 管理、KM Asset 与普通 `user-files` 入库、Parser 租约 Worker、Docling 后处理与可选 Excel 结构化工件、单一 Collection Embedding INDEX/PROFILE/PURGE Worker、两阶段 V2 检索与 Citation Pack 基础，以及 QueryPlan/对象级选择接口。尚未完成真实 Oracle/APEX 迁移演练、LLM Selector/Judge 的模型托管接入、离线标注评测和 Portal 最终切换；这些仍是实施计划中的阻塞项。
 
 ## 关键决策
 
@@ -58,3 +82,7 @@
 - 文档内容不可变；新来源修订创建新的 Document Version，索引就绪后才切换当前版本。
 - 问数是并行的 Data Query 领域服务；KC 可检索数据字典，但不生成或执行 SQL。
 - Excel 同时保留检索证据与规范化表格工件；按问题意图路由问文或问数。
+- Docling 仅作为底层转换引擎；V2 重写其后的 Atom 规范化、结构解析、质量评估和 Evidence 规划，不沿用 V1 Chunk 结构。
+- RRF 负责高召回和稳定先验；KC 使用 `LLMDiscoverySelector` 比较知识对象、使用 `LLMEvidenceSupportJudge` 判断证据支持，不引入逐 Chunk 数值 reranker。
+- 3.5 同步重构 `DocumentAgentV2` 与问文 Skill：Agent 调用无状态 Skill，Skill 调用 KC；未来多 Agent 通过版本化任务 DTO 委派，不共享检索内部状态。
+- `base.toml` 只锁定向量维度；每个 Collection 绑定 Embedding 模型，索引和查询严格使用该模型。多 Collection 若模型不同则分组生成查询向量、分别召回后再融合。

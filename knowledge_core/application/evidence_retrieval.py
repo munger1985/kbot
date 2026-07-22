@@ -1,0 +1,188 @@
+"""Evidence-stage retrieval, context grouping and citation pack DTOs."""
+from collections import defaultdict
+from dataclasses import dataclass, field
+from typing import Any, Protocol, Sequence
+
+from knowledge_core.application.query_embeddings import QueryEmbeddingProvider
+
+
+@dataclass(frozen=True)
+class EvidenceScope:
+    collection_id: int
+    bundle_id: int
+    bundle_revision_id: int
+    document_version_ids: tuple[int, ...] = ()
+
+
+@dataclass(frozen=True)
+class EvidenceHit:
+    evidence_id: int
+    collection_id: int
+    bundle_id: int
+    bundle_revision_id: int
+    bundle_revision_document_id: int | None
+    document_id: int
+    document_version_id: int
+    parse_view_id: int
+    evidence_key: str
+    evidence_type: str
+    content_text: str
+    retrieval_text: str
+    heading_path: tuple[str, ...]
+    locator: dict[str, Any]
+    source_spans: tuple[dict[str, Any], ...]
+    provenance: dict[str, Any]
+    section_key: str | None
+    parent_evidence_key: str | None
+    ordinal: int
+    quality_score: float | None
+    local_rank: int
+    channel: str
+
+
+@dataclass
+class EvidenceGroupItem:
+    item_label: str
+    evidence: EvidenceHit
+    input_role: str
+    final_role: str
+    promoted_from_context: bool = False
+
+
+@dataclass
+class EvidenceGroup:
+    group_label: str
+    collection_id: int
+    bundle_id: int
+    bundle_revision_id: int
+    document_version_id: int
+    parse_view_id: int
+    items: list[EvidenceGroupItem]
+    anchor_evidence_ids: list[int]
+    token_count: int
+    support_grade: str | None = None
+    answerable_aspects: list[str] = field(default_factory=list)
+    unsupported_aspects: list[str] = field(default_factory=list)
+
+
+@dataclass
+class CitationGroup:
+    citation_label: str
+    collection_id: int
+    bundle_id: int
+    bundle_revision_id: int
+    document_version_id: int
+    parse_view_id: int
+    primary_evidence_ids: list[int]
+    structural_context_ids: list[int]
+    neighbor_evidence_ids: list[int]
+    items: list[EvidenceGroupItem]
+
+
+class EvidenceSearchPort(Protocol):
+    async def search_text(self, *, scope: EvidenceScope, query: str, limit: int, max_security_level: int) -> Sequence[EvidenceHit]: ...
+    async def search_vector(self, *, scope: EvidenceScope, vector: Sequence[float], limit: int, max_security_level: int) -> Sequence[EvidenceHit]: ...
+    async def expand_context(self, *, anchors: Sequence[EvidenceHit], limit: int) -> Sequence[EvidenceHit]: ...
+
+
+def assemble_groups(
+    anchors: Sequence[EvidenceHit], contexts: Sequence[EvidenceHit], *, max_groups: int = 12,
+    context_items_per_group: int = 4,
+) -> list[EvidenceGroup]:
+    """Group only same Document Version/Parse View; anchors become PRIMARY."""
+    grouped: dict[tuple[int, int, int], list[EvidenceHit]] = defaultdict(list)
+    for anchor in anchors:
+        grouped[(anchor.document_version_id, anchor.parse_view_id, anchor.bundle_id)].append(anchor)
+    context_by_scope: dict[tuple[int, int, int], list[EvidenceHit]] = defaultdict(list)
+    for context in contexts:
+        context_by_scope[(context.document_version_id, context.parse_view_id, context.bundle_id)].append(context)
+    groups: list[EvidenceGroup] = []
+    for group_index, (scope_key, scope_anchors) in enumerate(grouped.items(), 1):
+        scope_anchors = _dedupe(scope_anchors)
+        first = scope_anchors[0]
+        context_items = [
+            item for item in _dedupe(context_by_scope.get(scope_key, []))
+            if item.evidence_id not in {anchor.evidence_id for anchor in scope_anchors}
+        ][:context_items_per_group]
+        items = [
+            EvidenceGroupItem(
+                item_label=f"G{group_index}-A{index}", evidence=anchor,
+                input_role="ANCHOR", final_role="PRIMARY",
+            ) for index, anchor in enumerate(scope_anchors, 1)
+        ]
+        items.extend(
+            EvidenceGroupItem(
+                item_label=f"G{group_index}-C{index}", evidence=context,
+                input_role="STRUCTURAL_CONTEXT", final_role="STRUCTURAL_CONTEXT",
+            ) for index, context in enumerate(context_items, 1)
+        )
+        groups.append(EvidenceGroup(
+            group_label=f"G{group_index}", collection_id=first.collection_id,
+            bundle_id=first.bundle_id, bundle_revision_id=first.bundle_revision_id,
+            document_version_id=first.document_version_id, parse_view_id=first.parse_view_id,
+            items=items, anchor_evidence_ids=[anchor.evidence_id for anchor in scope_anchors],
+            token_count=sum(max(1, len(item.evidence.content_text) // 4) for item in items),
+        ))
+        if len(groups) >= max_groups:
+            break
+    return groups
+
+
+def build_citation_pack(groups: Sequence[EvidenceGroup]) -> list[CitationGroup]:
+    """Assign request-local labels only to groups containing PRIMARY items."""
+    citations: list[CitationGroup] = []
+    for index, group in enumerate(groups, 1):
+        primary = [item.evidence.evidence_id for item in group.items if item.final_role == "PRIMARY"]
+        if not primary:
+            continue
+        citations.append(CitationGroup(
+            citation_label=f"C{index}", collection_id=group.collection_id,
+            bundle_id=group.bundle_id, bundle_revision_id=group.bundle_revision_id,
+            document_version_id=group.document_version_id, parse_view_id=group.parse_view_id,
+            primary_evidence_ids=primary,
+            structural_context_ids=[item.evidence.evidence_id for item in group.items if item.final_role == "STRUCTURAL_CONTEXT"],
+            neighbor_evidence_ids=[item.evidence.evidence_id for item in group.items if item.final_role == "NEIGHBOR"],
+            items=group.items,
+        ))
+    return citations
+
+
+def _dedupe(items: Sequence[EvidenceHit]) -> list[EvidenceHit]:
+    seen: set[int] = set()
+    result: list[EvidenceHit] = []
+    for item in sorted(items, key=lambda value: (value.local_rank, -float(value.quality_score or 0), value.evidence_id)):
+        if item.evidence_id not in seen:
+            seen.add(item.evidence_id)
+            result.append(item)
+    return result
+
+
+class KnowledgeCoreEvidenceRetrievalService:
+    def __init__(self, *, search_port: EvidenceSearchPort, query_embedding_provider: QueryEmbeddingProvider | None = None):
+        self._search_port = search_port
+        self._query_embedding_provider = query_embedding_provider
+
+    async def retrieve(
+        self, *, scopes: Sequence[EvidenceScope], query: str,
+        query_vectors: dict[int, Sequence[float]] | None = None,
+        max_evidence: int = 12, context_limit: int = 4, max_security_level: int = 3,
+    ) -> list[CitationGroup]:
+        if not query.strip() or not scopes:
+            raise ValueError("query and scopes are required")
+        if self._query_embedding_provider is not None:
+            query_vectors = await self._query_embedding_provider.embed_for_collections(
+                query=query, collection_ids=[scope.collection_id for scope in scopes],
+            )
+        anchors: list[EvidenceHit] = []
+        for scope in scopes:
+            anchors.extend(await self._search_port.search_text(
+                scope=scope, query=query, limit=max_evidence, max_security_level=max_security_level,
+            ))
+            if query_vectors and scope.collection_id in query_vectors:
+                anchors.extend(await self._search_port.search_vector(
+                    scope=scope, vector=query_vectors[scope.collection_id],
+                    limit=max_evidence, max_security_level=max_security_level,
+                ))
+        anchors = _dedupe(anchors)[:max_evidence]
+        contexts = await self._search_port.expand_context(anchors=anchors, limit=context_limit)
+        return build_citation_pack(assemble_groups(anchors, contexts, max_groups=max_evidence, context_items_per_group=context_limit))

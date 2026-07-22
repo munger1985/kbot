@@ -20,11 +20,12 @@ Bundle 标题、Facet、Manifest 主信息等可变来源上下文不写入 Evid
 | `evidence_id` | `NUMBER(38)` PK identity | 证据标识 |
 | `collection_id`, `bundle_id`, `document_id`, `document_version_id`, `parse_view_id` | 非空 `NUMBER(38)` | 归属链与过滤加速 |
 | `evidence_key` | `VARCHAR2(256)` 非空 | Parser 在 View 内生成的稳定单元键 |
-| `source_item_ref` | `VARCHAR2(512)` 可空 | Docling `self_ref` 或其他解析器的源项引用；用于幂等、追溯和定位 |
+| `source_item_ref` | `VARCHAR2(512)` 可空 | 单 Atom Evidence 的便捷源引用；多 Atom 证据以 `source_spans_json` 为权威 |
+| `source_spans_json` | JSON CLOB 非空 | 有序 Atom ID、字符/单元格跨度和各自 locator；连接 Evidence 与 Atom IR |
 | `fragment_index` | `NUMBER(19)` 非空，默认 `0` | 同一源项拆分出的片段序号；与源项引用共同构成稳定键输入 |
 | `parent_evidence_key` | `VARCHAR2(256)` 可空 | Parser 输出的父单元键；KC 批量写入后解析为下列 ID |
 | `parent_evidence_id` | 可空 `NUMBER(38)` | 标题/表格/图文层级父节点，不强制外键 |
-| `evidence_type` | `VARCHAR2(24)` 非空 | `TEXT/TABLE/IMAGE/SLIDE/CAPTION/CELL_RANGE` |
+| `evidence_type` | `VARCHAR2(24)` 非空 | `DOCUMENT/SECTION/PARAGRAPH/TABLE/TABLE_ROW/IMAGE/SHEET/CELL_RANGE` |
 | `ordinal` | `NUMBER(19)` 非空 | View 内阅读顺序 |
 | `heading_path_json` | JSON CLOB 可空 | 标题路径与层级标识 |
 | `section_key` | `VARCHAR2(256)` 可空 | 解析器生成的稳定章节键，不采用 V1 的随机 UUID |
@@ -39,7 +40,9 @@ Bundle 标题、Facet、Manifest 主信息等可变来源上下文不写入 Evid
 | `provenance_json` | JSON CLOB 可空 | OCR/VLM/规则提取来源、模型与提示词/配置摘要；不混淆原文与生成补充 |
 | `language_code` | `VARCHAR2(16)` 可空 | 内容语言；由 KC/Worker 识别后写入，支持多语言检索观测 |
 | `embedding` | Oracle `VECTOR` 可空 | 与当前嵌入模型维度一致 |
-| `embedding_model_key` | `VARCHAR2(128)` 可空 | 向量生成模型/配置标识 |
+| `embedding_model_id` | `NUMBER(38)` 可空 | 向量生成时使用的 Collection 绑定模型 |
+| `embedding_model_key` | `VARCHAR2(128)` 可空 | 实际模型稳定 key/revision 快照 |
+| `embedding_config_fingerprint` | `VARCHAR2(64)` 可空 | 模型 revision、维度、归一化和距离度量的配置指纹 |
 | `quality_score` | `NUMBER(8,6)` 可空 | 单元质量或可信度 |
 | `security_level` | `NUMBER(3)` 非空 | 从 Document Version 派生的检索安全过滤字段 |
 | `evidence_status` | `VARCHAR2(16)` 非空 | `STAGED/ACTIVE/DELETING/FAILED` |
@@ -50,7 +53,7 @@ Bundle 标题、Facet、Manifest 主信息等可变来源上下文不写入 Evid
 
 ## 约束、索引与可见性
 
-- `UK(parse_view_id, evidence_key)`：同一 View 内稳定去重。`evidence_key` 必须由 `source_item_ref + fragment_index + evidence_type`（或无源项引用时的确定性结构定位）生成，不能使用 V1 的随机 `chunk_id`、随机 Spreadsheet `section_id` 或单纯可变的阅读序号。
+- `UK(parse_view_id, evidence_key)`：同一 View 内稳定去重。`evidence_key` 必须由规范化 `source_spans_json + fragment_index + evidence_type` 生成，不能使用 V1 的随机 `chunk_id`、随机 Spreadsheet `section_id` 或单纯可变的阅读序号。
 - 索引 `(collection_id, bundle_id, document_id, document_version_id, evidence_status)`：候选范围与回溯。
 - 索引 `(document_version_id, parse_view_id, evidence_status, ordinal)`：邻接扩展和重解析清理。
 - B-tree 索引 `(collection_id, security_level, evidence_status)`：检索预过滤。
@@ -58,13 +61,17 @@ Bundle 标题、Facet、Manifest 主信息等可变来源上下文不写入 Evid
 
 `STAGED` Evidence 是候选 Parse View 构建产物，不参与任何查询。Parse View 成功切换时，候选 Evidence 批量变为 ACTIVE，旧 View 的 Evidence 立即撤销可见性并由清理任务物理删除。`FAILED` 仅用于生成中止后的短暂诊断，不能长期作为历史保留。
 
+ACTIVE Evidence 的 `embedding_model_id/key` 必须与所属 Collection 的绑定及 INDEX Job 快照一致，向量长度必须等于 `base.toml` 的全局维度。相同维度的不同模型不能交叉检索；KC INDEX Job 与查询端按 Collection 解析同一模型。完整规则见[Embedding 一致性](48_step_5_embedding_space_invariant.md)。
+
 ## 生成规则
 
-Parser 根据候选 Parse View 输出章节、段落、表格、图片、幻灯片和 Excel 单元格范围等 Evidence；KC 仅在 View 切换成功后将其激活。每个单元必须具备可验证 `content` 和 `locator_json`；表格/图片可用 `payload_uri` 保存结构化数据或资源，但 `content` 仍需包含足以解释命中的文本摘要和列/标题信息。`locator_json` 至少包含 `pages[]`（页码、bbox、坐标系/页面尺寸）或 Spreadsheet 的 `sheet_name`、`cell_range`、行列边界；不能再把 Excel sheet 序号伪装成普通页码。
+Parser 根据 Structure IR 输出章节、段落、表格、图片和 Excel 单元格范围等 Evidence；KC 仅在 View 切换成功后将其激活。每个单元必须具备可验证 `content`、`source_spans_json` 和 `locator_json`；表格/图片可用 `payload_uri` 保存结构化数据或资源，但来源文字与派生视觉描述必须区分。`locator_json` 至少包含 `pages[]`（页码、bbox、坐标系/页面尺寸）或 Spreadsheet 的 `sheet_name`、`cell_range`、行列边界；不能再把 Excel sheet 序号伪装成普通页码。
 
 `retrieval_text` 只由 Document Version 实际 MIME、Evidence 类型、标题路径和 Evidence 内容确定性生成。当前 Parser 的 `search_helper` 混入 LLM 文档摘要，不能原样迁入；它只能作为重建策略的参考。Document Member 的角色/声明文件名、Bundle 标题、Facet 与 Manifest 主信息都可能随 Revision 变化，不能持久写入可复用 Evidence；它们在查询排序和 Citation Pack 组装时从当前 Member/Revision 动态附加。禁止在该字段写入 LLM 补充事实；OCR/VLM 的补充描述须在 `provenance_json` 中标明来源。
 
 V2 不支持直接编辑单个 Evidence 文本。用户发现解析错误时，触发 Document Version 重解析；新 Evidence 成功后替换旧 Evidence，确保内容、定位、向量和解析配置一致。
+
+`source_spans_json` 和 `KBOT_KC_PARSE_VIEW.artifact_manifest_json` 已直接纳入开发期基线迁移、Entity 和 Parser Worker 契约。KC 根据规范化来源跨度计算期望 `evidence_key`，并以正文、来源跨度和定位的联合指纹识别同键漂移。
 
 ## 查询与引用
 

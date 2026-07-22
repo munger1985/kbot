@@ -22,7 +22,7 @@ Collection 支持 `ACTIVE`、`DISABLED`、`DELETING`、`DELETION_FAILED` 状态�
 
 Agent 与 Collection 是多对多关系，与 V1 `kbot_md_agent_conf` 的 Agent–KB 关系一致，但 V2 不复用该表：一个 Agent 可绑定多个 Collection，一个 Collection 也可绑定多个 Agent。每个 `(consumer_type, consumer_id, collection_id)` 只允许一条当前 Binding。所有 ACTIVE Binding 默认平权：未显式选择 Collection 时，Skill 只能在该 Agent 绑定的全部 Collection 范围内检索，不能在整个 Domain 盲检索；用户显式选择 Collection 时才收窄范围。
 
-Binding 只表达“可检索范围”，不承载 V1 的 `tool_weight`、`reranker_flag`、`search_topk`、`search_score_threshold`、Primary 或优先级等检索策略字段；V2 的两阶段召回与上下文预算由 `KnowledgeRetrievalSkillV2` 和 Collection 检索策略决定。
+Binding 只表达“可检索范围”，不承载 V1 的 `tool_weight`、`reranker_flag`、`search_topk`、`search_score_threshold`、Primary 或优先级等检索策略字段；V2 的两阶段召回与预算由 Collection 引用的 KC Retrieval Policy 决定，Skill 不保存独立排序参数。
 
 Collection 停用不撤销 Binding；Skill 在构建检索范围时跳过 `DISABLED` Collection，重新启用后自动恢复。Agent 删除时应先解绑；重试耗尽后的孤儿 Binding 仅可由受限运维接口在验证 Agent 不存在后强制清理，并记录完整审计。
 
