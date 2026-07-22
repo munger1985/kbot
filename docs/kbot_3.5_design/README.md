@@ -35,6 +35,18 @@
 | [23 步骤 2：应用分层与事务](23_step_2_application_layer_and_transactions.md) | Application Service、UoW、Repository 与外部资源边界 |
 | [24 步骤 2：Parser Worker 协议](24_step_2_parser_worker_protocol.md) | claim、租约、Evidence 批次、完成/失败和协议幂等 |
 | [25 步骤 2：运行、安全与可观测性](25_step_2_runtime_security_and_observability.md) | 配置、健康检查、最小权限、审计、指标与限流 |
+| [26 步骤 3：KM Portal Bundle Adapter](26_step_3_km_portal_bundle_adapter.md) | Portal 现状差异、字段映射、单次投递、回写与验收 |
+| [27 步骤 3：Portal 代码改造清单](27_step_3_km_portal_code_change_plan.md) | 当前文件映射、职责拆分、配置、错误处理与测试 |
+| [28 步骤 4：Parser Worker 改造](28_step_4_parser_worker_refactor.md) | V1 轮询改为 KC 租约 Worker 的模块、产物和测试边界 |
+| [29 步骤 4：V2 Evidence DTO](29_step_4_v2_evidence_dto.md) | Parser 结果、稳定键、定位、来源与当前 Docling 字段映射 |
+| [30 步骤 5：Discovery 与 Evidence API](30_step_5_discovery_and_evidence_api.md) | 两阶段检索、Scope、候选验证、Citation Pack 与错误契约 |
+| [31 Docling 与检索待深化专题](31_open_decisions_docling_and_retrieval.md) | 解析、切块、召回、重排与评测的方案决策清单 |
+| [32 步骤 5：检索基线与投影](32_step_5_retrieval_baseline_and_projections.md) | 可评测的 Profile/Evidence 索引、RRF 基线与策略版本化 |
+| [33 步骤 6：KnowledgeRetrievalSkillV2](33_step_6_knowledge_retrieval_skill_v2.md) | V2 问文编排、Citation Pack、覆盖校验与 Agent/SSE 边界 |
+| [34 步骤 6：回答溯源与 doc_results](34_step_6_answer_grounding_and_doc_results.md) | 真实引用验证、Asset/Document 卡片投影与 V2 SSE 契约 |
+| [35 步骤 7：评测、直接上线与 V1 退役](35_step_7_evaluation_direct_release_and_retirement.md) | 样本标注、上线门槛、直接发布与旧模型清理 |
+| [36 步骤 7：V1 退役清单](36_step_7_v1_retirement_inventory.md) | V1 API/表/服务盘点、保留对象、删除门禁与执行顺序 |
+| [37 步骤 1：Schema 迁移计划](37_step_1_schema_migration_plan.md) | KC DDL 分组、索引、APEX 视图、回滚与验收 |
 
 `archive/` 保存本轮整理前的原始方案，供追溯，不作为实施依据。
 

@@ -6,7 +6,7 @@ KM Asset 是 KC 的首个来源 Profile：`source_system=metadb`、`source_type=
 
 当前 Portal 轮询 Metadb 的 `processed=N` 记录，按 `^^^` 拆分 `first_sp_url` 后逐个调用旧 `/api/kb/upload`，最后额外上传拼接 Markdown。这丢失了来源对象、附件清单、修订和原子接收边界。
 
-改造后，接入 V2 的 Portal 下载附件后只调用一次 `POST /api/v2/knowledge/domains/{domain_id}/collections/{collection_key}/ingestions/km-assets` multipart。该入口由 KM Asset Adapter 在服务端固定注入 `source_system=metadb` 与 `source_type=KM_ASSET`；KC 创建一个 Bundle、Core 生成的 `MANIFEST` Document，以及多个 `ATTACHMENT` Document/Version 和解析任务。Portal 不生成 Markdown，不直连 KBot 数据库；尚未切换的来源可继续走 V1。
+改造后，接入 V2 的 Portal 下载附件后只调用一次 `POST /api/v2/knowledge/domains/{domain_id}/collections/{collection_key}/ingestions/km-assets` multipart。该入口由 KM Asset Adapter 在服务端固定注入 `source_system=metadb` 与 `source_type=KM_ASSET`；KC 从结构化 Asset 主信息确定性生成 `MANIFEST` Document（可解析、可检索、可引用），并创建多个 `ATTACHMENT` Document/Version 和解析任务。Portal 不生成或上传手工 Markdown，不直连 KBot 数据库；尚未切换的来源可继续走 V1。
 
 ## 上传契约
 

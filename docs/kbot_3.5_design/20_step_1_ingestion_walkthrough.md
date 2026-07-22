@@ -73,7 +73,7 @@ Manifest 与附件各自独立完成。附件永久解析失败时，附件 Memb
 
 ## 5. 建立检索画像、关系并切换当前 Revision
 
-KC 根据全部 Member 汇总 Revision：Manifest 和所需内容均成功则 `READY`；符合部分可用规则则 `PARTIAL`；没有可用内容则 `FAILED`。对于 READY/PARTIAL Revision：
+KC 根据全部 Member 汇总 Revision：Manifest 解析成功且所有已接收的必需内容成功时为 `READY`；Manifest 成功但存在声明附件不可用/失败时为 `PARTIAL`；没有可用 Manifest/Evidence 时为 `FAILED`。因此没有附件的 Asset 可凭 Manifest 成为 `READY`，附件 URL 错误的 Asset 仍可凭 Manifest 成为 `PARTIAL` 并被检索。对于 READY/PARTIAL Revision：
 
 | 表 | 新增/更新内容 | 状态 |
 | --- | --- | --- |
