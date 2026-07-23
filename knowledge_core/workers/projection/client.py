@@ -4,8 +4,9 @@ from typing import Any
 
 import aiohttp
 
+from platform_core.config.settings import get_app_config, get_knowledge_core_config
 from platform_core.contracts import INTERNAL_API_V1
-from platform_core.platform.security import INTERNAL_TOKEN_HEADER, get_internal_token
+from platform_core.security import build_internal_auth_headers
 
 
 class KcIndexProfileProtocolError(RuntimeError):
@@ -15,16 +16,22 @@ class KcIndexProfileProtocolError(RuntimeError):
 
 
 class KcIndexProfileClient:
-    def __init__(self, *, base_url: str, timeout_seconds: int = 600):
+    def __init__(
+        self,
+        *,
+        base_url: str,
+        timeout_seconds: int = 600,
+        caller_service: str | None = None,
+        audience: str | None = None,
+    ):
         self._base_url = base_url.rstrip("/")
         self._timeout = aiohttp.ClientTimeout(total=timeout_seconds)
         self._session: aiohttp.ClientSession | None = None
+        self._caller_service = caller_service or get_app_config().service_name
+        self._audience = audience or get_knowledge_core_config().service_name
 
     async def __aenter__(self):
-        self._session = aiohttp.ClientSession(
-            timeout=self._timeout,
-            headers={INTERNAL_TOKEN_HEADER: get_internal_token()},
-        )
+        self._session = aiohttp.ClientSession(timeout=self._timeout)
         return self
 
     async def __aexit__(self, exc_type, exc, traceback):
@@ -109,7 +116,19 @@ class KcIndexProfileClient:
     async def _request(self, method: str, path: str, **kwargs) -> dict[str, Any]:
         if self._session is None:
             raise RuntimeError("KcIndexProfileClient must be used as an async context manager")
-        async with self._session.request(method, f"{self._base_url}{path}", **kwargs) as response:
+        headers = {
+            **build_internal_auth_headers(
+                audience=self._audience,
+                caller_service=self._caller_service,
+            ),
+            **kwargs.pop("headers", {}),
+        }
+        async with self._session.request(
+            method,
+            f"{self._base_url}{path}",
+            headers=headers,
+            **kwargs,
+        ) as response:
             if response.status >= 400:
                 try:
                     body = await response.json()

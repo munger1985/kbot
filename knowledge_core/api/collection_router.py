@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
 from platform_core.contracts import INTERNAL_API_V1
+from platform_core.security import get_actor_id, require_domain_match
 from knowledge_core.application.collections import (
     BindAgentCollectionCommand, ChangeCollectionStatusCommand, CollectionAlreadyExistsError,
     CollectionDeletionStateError, CollectionInUseError, CollectionNotFoundError, CreateCollectionCommand,
@@ -46,7 +47,8 @@ def _collection(entity) -> dict:
 
 @router.post("/collections", status_code=status.HTTP_201_CREATED)
 async def create_collection(domain_id: int, payload: CreateCollectionRequest, request: Request):
-    actor = request.headers.get("X-KBot-Actor-Id", "svc:apex")
+    require_domain_match(request, domain_id)
+    actor = get_actor_id(request)
     try:
         entity = await request.app.state.kc_collection_service.create(CreateCollectionCommand(
             domain_id=domain_id, collection_key=payload.collection_key,
@@ -63,12 +65,14 @@ async def create_collection(domain_id: int, payload: CreateCollectionRequest, re
 
 @router.get("/collections")
 async def list_collections(domain_id: int, request: Request):
+    require_domain_match(request, domain_id)
     entities = await request.app.state.kc_collection_service.list(domain_id=domain_id)
     return {"collections": [_collection(entity) for entity in entities]}
 
 
 @router.get("/collections/{collection_key}")
 async def get_collection(domain_id: int, collection_key: str, request: Request):
+    require_domain_match(request, domain_id)
     try:
         entity = await request.app.state.kc_collection_service.get(domain_id=domain_id, collection_key=collection_key)
     except CollectionNotFoundError as exc:
@@ -78,10 +82,11 @@ async def get_collection(domain_id: int, collection_key: str, request: Request):
 
 @router.patch("/collections/{collection_key}")
 async def change_collection_status(domain_id: int, collection_key: str, payload: CollectionStatusRequest, request: Request):
+    require_domain_match(request, domain_id)
     try:
         entity = await request.app.state.kc_collection_service.change_status(ChangeCollectionStatusCommand(
             domain_id=domain_id, collection_key=collection_key, status=payload.status,
-            actor_id=request.headers.get("X-KBot-Actor-Id", "svc:apex"),
+            actor_id=get_actor_id(request),
         ))
     except CollectionNotFoundError as exc:
         raise HTTPException(status_code=404, detail={"code": "COLLECTION_NOT_FOUND", "message": str(exc)}) from exc
@@ -92,10 +97,11 @@ async def change_collection_status(domain_id: int, collection_key: str, payload:
 
 @router.delete("/collections/{collection_key}", status_code=status.HTTP_202_ACCEPTED)
 async def delete_collection(domain_id: int, collection_key: str, request: Request):
+    require_domain_match(request, domain_id)
     try:
         job_id = await request.app.state.kc_collection_service.request_delete(
             domain_id=domain_id, collection_key=collection_key,
-            actor_id=request.headers.get("X-KBot-Actor-Id", "svc:apex"),
+            actor_id=get_actor_id(request),
         )
     except CollectionNotFoundError as exc:
         raise HTTPException(status_code=404, detail={"code": "COLLECTION_NOT_FOUND", "message": str(exc)}) from exc
@@ -108,13 +114,14 @@ async def delete_collection(domain_id: int, collection_key: str, request: Reques
 
 @router.put("/agents/{agent_id}/collections/{collection_key}/binding")
 async def bind_collection(domain_id: int, agent_id: int, collection_key: str, request: Request, payload: BindingRequest | None = None):
+    require_domain_match(request, domain_id)
     body = payload or BindingRequest(agent_id=agent_id)
     if body.agent_id != agent_id:
         raise HTTPException(status_code=422, detail={"code": "AGENT_ID_MISMATCH", "message": "path and body agent_id differ"})
     try:
         entity = await request.app.state.kc_binding_service.bind_agent(BindAgentCollectionCommand(
             domain_id=domain_id, collection_key=collection_key, agent_id=str(agent_id),
-            actor_id=request.headers.get("X-KBot-Actor-Id", "svc:agent-config"), note=body.note,
+            actor_id=get_actor_id(request), note=body.note,
         ))
     except CollectionNotFoundError as exc:
         raise HTTPException(status_code=404, detail={"code": "COLLECTION_NOT_FOUND", "message": str(exc)}) from exc
@@ -123,10 +130,11 @@ async def bind_collection(domain_id: int, agent_id: int, collection_key: str, re
 
 @router.delete("/agents/{agent_id}/collections/{collection_key}/binding", status_code=status.HTTP_204_NO_CONTENT)
 async def unbind_collection(domain_id: int, agent_id: int, collection_key: str, request: Request):
+    require_domain_match(request, domain_id)
     try:
         await request.app.state.kc_binding_service.unbind_agent(BindAgentCollectionCommand(
             domain_id=domain_id, collection_key=collection_key, agent_id=str(agent_id),
-            actor_id=request.headers.get("X-KBot-Actor-Id", "svc:agent-config"),
+            actor_id=get_actor_id(request),
         ))
     except CollectionNotFoundError as exc:
         raise HTTPException(status_code=404, detail={"code": "COLLECTION_NOT_FOUND", "message": str(exc)}) from exc
@@ -134,6 +142,7 @@ async def unbind_collection(domain_id: int, agent_id: int, collection_key: str, 
 
 @router.get("/agents/{agent_id}/collection-bindings")
 async def list_agent_bindings(domain_id: int, agent_id: int, request: Request):
+    require_domain_match(request, domain_id)
     bindings = await request.app.state.kc_binding_service.list_agent(domain_id=domain_id, agent_id=str(agent_id))
     return {"bindings": [{
         "binding_id": int(binding.binding_id), "collection_id": int(binding.collection_id),

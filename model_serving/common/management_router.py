@@ -1,10 +1,11 @@
-"""Authenticated model-definition CRUD shared by the four model processes."""
+"""四类模型进程共享的已认证模型配置 CRUD。"""
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
 from platform_core.contracts import INTERNAL_API_V1
+from platform_core.security import get_actor_id
 from .model_registry import ModelDefinitionNotFound, ModelRegistryService
 
 
@@ -57,20 +58,30 @@ def create_model_management_router(*, category: int) -> APIRouter:
     async def create_model(payload: ModelCreateRequest, request: Request):
         if payload.category != category:
             raise HTTPException(status_code=422, detail={"code": "MODEL_CATEGORY_MISMATCH", "message": "model category does not belong to this process"})
-        return await service(request).create(payload.model_dump(), actor_id=request.headers.get("X-KBot-Actor-Id", "svc:model-handler"))
+        return await service(request).create(
+            payload.model_dump(),
+            actor_id=get_actor_id(request),
+        )
 
     @router.patch("/{model_id}")
     async def update_model(model_id: int, payload: ModelUpdateRequest, request: Request):
         values = {key: value for key, value in payload.model_dump().items() if value is not None}
         try:
-            return await service(request).update(model_id, values, actor_id=request.headers.get("X-KBot-Actor-Id", "svc:model-handler"))
+            return await service(request).update(
+                model_id,
+                values,
+                actor_id=get_actor_id(request),
+            )
         except Exception as exc:
             raise HTTPException(status_code=404, detail={"code": "MODEL_NOT_FOUND", "message": str(exc)}) from exc
 
     @router.delete("/{model_id}", status_code=status.HTTP_204_NO_CONTENT)
     async def archive_model(model_id: int, request: Request):
         try:
-            await service(request).delete(model_id, actor_id=request.headers.get("X-KBot-Actor-Id", "svc:model-handler"))
+            await service(request).delete(
+                model_id,
+                actor_id=get_actor_id(request),
+            )
         except Exception as exc:
             raise HTTPException(status_code=404, detail={"code": "MODEL_NOT_FOUND", "message": str(exc)}) from exc
 

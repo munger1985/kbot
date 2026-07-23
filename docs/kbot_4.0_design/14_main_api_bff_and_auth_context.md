@@ -17,7 +17,7 @@ Main API 负责 API Key 认证、请求校验、内部身份上下文构建、Ru
 
 ## AuthContext
 
-KBot 不再提供用户密码登录或用户 JWT。门户完成用户认证后，由门户后端携带预配置 API Key、`domain_id` 和稳定的门户 `user_id` 调用 Main API。Main API 校验 Key、字段格式及 Domain 状态后构建不可由请求体覆盖的上下文：
+KBot 不再提供用户密码登录或用户 JWT。门户完成用户认证后，由门户后端携带 `Authorization: Bearer kbot_sk_...`、`X-KBot-Domain-ID` 和 `X-KBot-User-ID` 调用 Main API。Main API 校验 Key、字段格式及 Domain 状态后构建不可由请求体覆盖的上下文：
 
 ```text
 AuthContext {
@@ -25,6 +25,7 @@ AuthContext {
   trace_id
   api_key_id
   client_id
+  calling_service
   domain_id
   asserted_user_id
   issued_at
@@ -39,13 +40,13 @@ API Key 标识受信调用系统，`asserted_user_id` 标识其声明的实际�
 门户 API Key 不直接转发到 KC、Model Serving、Agent Runtime 或 AIOps。Main API 使用服务身份调用下游，并签发短期、限定 audience 的内部 AuthContext JWT：
 
 ```text
-Authorization: service credential
+X-KBot-Internal-Token: service credential
 X-Request-ID: original request id
 traceparent: distributed trace
 X-KBot-Auth-Context: signed short-lived JWT
 ```
 
-下游必须校验签名、过期时间、audience、调用服务和 Domain。边界层先删除客户端伪造的内部身份头，再生成可信上下文。内部接口不得出现在公网路由或公开 OpenAPI；未来部署 mTLS 时只替换服务身份验证方式，不改变 AuthContext DTO。
+下游必须同时校验服务凭证以及 JWT 的签名、过期时间、issuer、audience、调用服务和 Domain。JWT 默认有效期 60 秒，Client 必须为每次请求重新签发，不能缓存到长生命周期 HTTP Session。边界层先删除客户端伪造的内部身份头，再生成可信上下文。内部接口不得出现在公网路由或公开 OpenAPI；未来部署 mTLS 时只替换服务身份验证方式，不改变 AuthContext DTO。
 
 ## Client 边界
 

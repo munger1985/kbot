@@ -45,10 +45,10 @@ from knowledge_core.application.query_embeddings import CollectionQueryEmbedding
 from knowledge_core.application.status import KnowledgeCoreStatusService
 from knowledge_core.application.scope import KnowledgeCoreScopeService
 from knowledge_core.application.collection_purge import KnowledgeCoreCollectionPurgeService
-from platform_clients import AIModelConfigClient
+from platform_clients import AIModelClient, AIModelConfigClient
 from knowledge_core.persistence import create_kc_uow
 from platform_core.platform.port_check import check_port_available
-from platform_core.platform.security import create_internal_auth_middleware
+from platform_core.security import create_internal_auth_middleware
 
 
 config = get_knowledge_core_config()
@@ -93,20 +93,22 @@ async def lifespan(app: FastAPI):
     )
     model_config_client = AIModelConfigClient(
         base_url=config.embedding_service_url or get_embed_config().service_url,
+        caller_service=SERVICE_NAME,
     )
+    model_client = AIModelClient(caller_service=SERVICE_NAME)
 
     async def model_resolver(collection_model_id: int):
         return await resolve_embedding_model(model_config_client, collection_model_id)
 
     app.state.kc_index_service = KnowledgeCoreEvidenceIndexService(
         uow_factory=kc_uow_factory,
-        embedding_gateway=AIModelEmbeddingGateway(),
+        embedding_gateway=AIModelEmbeddingGateway(client=model_client),
         model_resolver=model_resolver,
     )
     app.state.kc_profile_service = KnowledgeCoreProfileService(uow_factory=kc_uow_factory)
     app.state.kc_query_embedding_provider = CollectionQueryEmbeddingProvider(
         uow_factory=kc_uow_factory,
-        embedding_gateway=AIModelEmbeddingGateway(),
+        embedding_gateway=AIModelEmbeddingGateway(client=model_client),
         model_resolver=model_resolver,
     )
 
@@ -171,7 +173,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.middleware("http")(log_requests)
-app.middleware("http")(create_internal_auth_middleware())
+app.middleware("http")(
+    create_internal_auth_middleware(audience=SERVICE_NAME)
+)
 app.include_router(intake_router)
 app.include_router(collection_router)
 app.include_router(index_task_router)

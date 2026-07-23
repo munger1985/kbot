@@ -1,5 +1,4 @@
 import aiohttp
-import os
 import re
 import json
 from PIL import Image
@@ -10,29 +9,40 @@ from loguru import logger
 from typing import Any
 from platform_core.contracts import EmbeddingDataItem, INTERNAL_API_V1
 from platform_core.codec.encoder import ImageEncoder
-from platform_core.config.settings import get_embed_config, get_llm_config, get_vlm_config, get_dsocr_config, get_prompt_config, get_visual_config
+from platform_core.config.settings import get_app_config, get_embed_config, get_llm_config, get_vlm_config, get_dsocr_config, get_prompt_config, get_visual_config
 from platform_core.exceptions import *
-
-# 内部服务通信令牌
-INTERNAL_TOKEN_HEADER = "X-KBot-Internal-Token"
+from platform_core.security import build_internal_auth_headers
 
 
 class AIModelConfigClient:
-    """Read model definitions from the owning model-management service."""
+    """从模型配置归属服务读取模型定义。"""
 
-    def __init__(self, base_url: str | None = None, timeout: int | None = None):
+    def __init__(
+        self,
+        base_url: str | None = None,
+        timeout: int | None = None,
+        caller_service: str | None = None,
+        audience: str | None = None,
+    ):
         config = get_embed_config()
         resolved = (base_url or config.service_url).rstrip("/")
-        # 0.0.0.0 is a bind address, not a valid client destination.
+        # 0.0.0.0 是监听地址，不能作为客户端目标地址。
         self.base_url = resolved.replace("://0.0.0.0", "://127.0.0.1")
         self.timeout = timeout or config.health_check_timeout
-        self.internal_token = _get_internal_token()
+        self.caller_service = caller_service or get_app_config().service_name
+        self.audience = audience or config.service_name
 
     async def get_model(self, model_id: int) -> dict[str, Any]:
         if int(model_id) <= 0:
             raise ValueError("model_id must be positive")
         url = f"{self.base_url}{INTERNAL_API_V1}/models/{int(model_id)}"
-        headers = {"Accept": "application/json", INTERNAL_TOKEN_HEADER: self.internal_token}
+        headers = {
+            "Accept": "application/json",
+            **build_internal_auth_headers(
+                audience=self.audience,
+                caller_service=self.caller_service,
+            ),
+        }
         try:
             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout)) as session:
                 async with session.get(url, headers=headers) as response:
@@ -51,13 +61,6 @@ class AIModelConfigClient:
             logger.error("读取模型配置失败: {}", exc)
             raise RuntimeError("model configuration service is unavailable") from exc
 
-def _get_internal_token() -> str:
-    """延迟读取内部通信令牌，确保 load_dotenv() 之后才获取"""
-    token = os.getenv("KBOT_INTERNAL_SERVICE_TOKEN", "kbot_internal_service_token")
-    logger.debug("[内部认证] 客户端内部令牌已加载")
-    return token
-
-
 @dataclass
 class LLMChunk:
     """标准化的 Chunk 对象，兼容原生推理字段"""
@@ -67,17 +70,23 @@ class LLMChunk:
 
 class AIModelClient():
     """模型微服务客户端"""
-    def __init__(self):
+    def __init__(self, *, caller_service: str | None = None):
         self.embedding_config = get_embed_config()
         self.llm_config = get_llm_config()
         self.vlm_config = get_vlm_config()
         self.dsocr_config = get_dsocr_config()
         self.prompt_config = get_prompt_config()
-        self.internal_token = _get_internal_token()
+        self.caller_service = caller_service or get_app_config().service_name
 
-    def _auth_headers(self, extra: dict | None = None) -> dict:
-        """构建带内部认证的请求头"""
-        headers = {"Content-Type": "application/json", INTERNAL_TOKEN_HEADER: self.internal_token}
+    def _auth_headers(self, *, audience: str, extra: dict | None = None) -> dict:
+        """为一次模型服务调用签发内部认证请求头。"""
+        headers = {
+            "Content-Type": "application/json",
+            **build_internal_auth_headers(
+                audience=audience,
+                caller_service=self.caller_service,
+            ),
+        }
         if extra:
             headers.update(extra)
         return headers
@@ -108,7 +117,9 @@ class AIModelClient():
         total = self.embedding_config.health_check_timeout if use_health_check_timeout else self.embedding_config.timeout
         timeout = aiohttp.ClientTimeout(total=total)
         url = f"http://{service_host}:{service_port}{INTERNAL_API_V1}/embeddings"
-        headers = self._auth_headers()
+        headers = self._auth_headers(
+            audience=self.embedding_config.service_name
+        )
         payload = {
             "model_name": model_name,
             "texts": texts,
@@ -208,7 +219,9 @@ class AIModelClient():
         total = self.embedding_config.timeout
         timeout = aiohttp.ClientTimeout(total=total)
         url = f"http://{service_host}:{service_port}{INTERNAL_API_V1}/similarity"
-        headers = self._auth_headers()
+        headers = self._auth_headers(
+            audience=self.embedding_config.service_name
+        )
         payload = {
             "model_name": model_name,
             "text1": text1,
@@ -254,7 +267,7 @@ class AIModelClient():
         total = self.llm_config.health_check_timeout if use_health_check_timeout else self.llm_config.timeout
         timeout = aiohttp.ClientTimeout(total=total)
         url = f"http://{service_host}:{service_port}{INTERNAL_API_V1}/chat/completions"
-        headers = self._auth_headers()
+        headers = self._auth_headers(audience=self.llm_config.service_name)
 
         # 构建请求体
         payload = {
@@ -327,7 +340,7 @@ class AIModelClient():
             timeout = aiohttp.ClientTimeout(total=total)
             
             url = f"http://{service_host}:{service_port}{INTERNAL_API_V1}/inference"
-            headers = self._auth_headers()
+            headers = self._auth_headers(audience=self.vlm_config.service_name)
 
             # 2. 图片编码（Base64）
             try:
@@ -987,7 +1000,7 @@ class AIModelClient():
         total = config.timeout
         timeout = aiohttp.ClientTimeout(total=total)
         url = f"http://{service_host}:{service_port}{INTERNAL_API_V1}/embed"
-        headers = self._auth_headers()
+        headers = self._auth_headers(audience=config.service_name)
 
         # 修复 base64 padding：长度必须为 4 的倍数
         import math

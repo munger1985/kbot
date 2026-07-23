@@ -131,8 +131,10 @@ app.add_middleware(
 app.middleware("http")(log_requests)
 
 # 5. Internal service authentication middleware
-from platform_core.platform.security import create_internal_auth_middleware
-app.middleware("http")(create_internal_auth_middleware())
+from platform_core.security import create_internal_auth_middleware
+app.middleware("http")(
+    create_internal_auth_middleware(audience=SERVICE_NAME)
+)
 app.include_router(create_model_management_router(category=ModelCategory.LLM.value))
 
 

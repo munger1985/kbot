@@ -165,8 +165,10 @@ app.add_middleware(
 app.middleware("http")(log_requests)
 
 # Internal service authentication middleware
-from platform_core.platform.security import create_internal_auth_middleware
-app.middleware("http")(create_internal_auth_middleware())
+from platform_core.security import create_internal_auth_middleware
+app.middleware("http")(
+    create_internal_auth_middleware(audience=SERVICE_NAME)
+)
 app.include_router(create_model_management_router(category=ModelCategory.VLM.value))
 
 def get_vlm_service() -> VLMService:

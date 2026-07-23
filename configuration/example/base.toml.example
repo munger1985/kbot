@@ -19,6 +19,24 @@ rotation = "100 MB"
 retention = "10 days"
 api_log_enabled = true
 
+[security]
+# 以下三个环境变量必须在生产环境通过 Secret 管理系统注入。
+api_key_pepper_env = "KBOT_API_KEY_PEPPER"
+internal_service_token_env = "KBOT_INTERNAL_SERVICE_TOKEN"
+internal_jwt_secret_env = "KBOT_INTERNAL_JWT_SECRET"
+internal_jwt_issuer = "kbot-platform"
+internal_jwt_ttl_seconds = 60
+internal_jwt_clock_skew_seconds = 5
+
+# 使用 python -m scripts.generate_portal_api_key 生成 Key 和摘要。
+# 门户只保存生成时显示一次的明文，KBot 配置只保存摘要。
+# [[security.portal_api_keys]]
+# key_id = "km-portal-primary"
+# client_id = "km_portal"
+# key_digest = "替换为 64 位十六进制摘要"
+# enabled = true
+# expires_at = 2027-01-01T00:00:00Z
+
 [oracle]
 username = "kbot"
 password = ""

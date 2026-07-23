@@ -29,6 +29,8 @@ KBot 4.0 is a clean-slate release. Do not add compatibility imports, V1 routes, 
 
 Product and API versions are independent. Public Main API routes start at `/api/v1`; service-only routes start at `/internal/v1` and must not be exposed externally. Add `v2` only when an incompatible version of the same contract must coexist. Unversioned health probes such as `/healthz` and `/readyz` are allowed.
 
+Public routes authenticate the Portal backend API Key and derive Domain/user context from trusted headers. Internal routes require both the service credential and an audience-bound short-lived AuthContext JWT. Never trust caller-supplied actor headers, forward the Portal API Key downstream, or cache an internal JWT in a long-lived HTTP session.
+
 ## Testing Guidelines
 
 Add or update a focused `tests/test_<feature>.py` script alongside behavior changes. Include a runnable `__main__` entry point when the test is intended for direct execution, and keep test data/environment assumptions explicit. Do not commit real OCI keys, database passwords, tokens, or `.env`/secret configuration.

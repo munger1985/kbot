@@ -49,7 +49,7 @@ Grounding 和 SSE 已删除，最终回答职责留给后续 Agent Runtime；旧
 ### 阶段 1：平台基础和服务边界
 
 - 完成 `platform_core` 的服务级配置、日志、认证、DB Session Factory 和观测上下文。
-- 删除 KBot 本地用户/密码登录；公开 `/api/v1` 只接受门户后端 API Key，Main API 为 `/internal/v1` 下游签发短期、限定 audience 的 AuthContext JWT。
+- **认证基础已完成（2026-07-23）：** 删除 KBot 本地用户/密码登录；公开 `/api/v1` 使用门户后端 API Key；内部 Client 为 `/internal/v1` 下游逐请求签发短期、限定 audience 的 AuthContext JWT，并与服务凭证双重校验。
 - 当前只实现调用方认证、Domain 强制隔离和操作人审计，不实现 Role、Scope 或资源 ACL；AIOps 审批和执行安全闸门仍按业务约束实现。
 - 跨服务客户端已迁移到 `platform_clients`；稳定 DTO 放入 `platform_core/contracts`，后续只补齐版本和契约测试。
 - 统一 UoW、Outbox、任务租约、重试、取消和幂等语义。

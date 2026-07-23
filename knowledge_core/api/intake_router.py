@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field, ValidationError
 from starlette.datastructures import UploadFile
 
 from platform_core.contracts import INTERNAL_API_V1
+from platform_core.security import get_actor_id, require_domain_match
 from knowledge_core.application.intake import IntakeCollectionError, IntakeConflictError
 from knowledge_core.application.multipart import IntakeInProgressError, MultipartIntakeCommand
 from knowledge_core.domain.intake import IntakeValidationError, KmAssetIntakeManifest
@@ -28,7 +29,8 @@ async def _copy_upload(upload: UploadFile, target: Path) -> None:
     status_code=status.HTTP_202_ACCEPTED,
 )
 async def ingest_km_asset(domain_id: int, collection_key: str, request: Request):
-    """Receive one complete Asset bundle; acceptance never means parsing completed."""
+    """接收一个完整 Asset Bundle；受理成功不代表解析已完成。"""
+    require_domain_match(request, domain_id)
     try:
         form = await request.form()
         bundle = json.loads(str(form["bundle"]))
@@ -56,7 +58,7 @@ async def ingest_km_asset(domain_id: int, collection_key: str, request: Request)
             orchestrator = request.app.state.kc_multipart_orchestrator
             accepted = await orchestrator.accept(MultipartIntakeCommand(
                 domain_id=domain_id, collection_key=collection_key,
-                actor_id=request.headers.get("X-KBot-Actor-Id", "svc:km-portal"),
+                actor_id=get_actor_id(request),
                 idempotency_key=request.headers.get("Idempotency-Key", ""),
                 manifest=manifest, file_paths=files,
             ))
@@ -136,7 +138,8 @@ def _user_manifest(bundle: UserBundleDeclaration, files: list[UserFileDeclaratio
     status_code=status.HTTP_202_ACCEPTED,
 )
 async def ingest_user_files(domain_id: int, collection_key: str, request: Request):
-    """Receive either independent files or one explicitly grouped Bundle."""
+    """接收多个独立文件或一个显式组合的 Bundle。"""
+    require_domain_match(request, domain_id)
     try:
         form = await request.form()
         grouping_mode = str(form.get("grouping_mode", "EACH_FILE")).upper()
@@ -169,7 +172,7 @@ async def ingest_user_files(domain_id: int, collection_key: str, request: Reques
                 target = root / item.part_name
                 await _copy_upload(upload, target)
                 file_paths[item.part_name] = target
-            actor = request.headers.get("X-KBot-Actor-Id", "user")
+            actor = get_actor_id(request)
             orchestrator = request.app.state.kc_multipart_orchestrator
             items = []
             if grouping_mode == "SINGLE_BUNDLE":

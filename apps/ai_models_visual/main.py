@@ -26,7 +26,7 @@ from platform_core.middleware.log_middleware import log_requests
 from platform_core.database.oracle import create_database_runtime
 from model_serving.visual.visual_service import VisualService
 from model_serving.visual.schema import VisualEmbeddingRequest, VisualEmbeddingResponse
-from platform_core.platform.security import create_internal_auth_middleware
+from platform_core.security import create_internal_auth_middleware
 from platform_core.platform.port_check import check_port_available
 from model_serving.common.management_router import create_model_management_router
 from model_serving.common.model_registry import ModelRegistryService
@@ -111,7 +111,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-app.middleware("http")(create_internal_auth_middleware())
+app.middleware("http")(
+    create_internal_auth_middleware(audience=SERVICE_NAME)
+)
 app.middleware("http")(log_requests)
 app.include_router(create_model_management_router(category=ModelCategory.IMG_EMBEDDING.value))
 

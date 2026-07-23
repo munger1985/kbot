@@ -4,6 +4,7 @@ from dataclasses import asdict
 from fastapi import APIRouter, HTTPException, Request
 
 from platform_core.contracts import INTERNAL_API_V1
+from platform_core.security import require_domain_match
 from knowledge_core.application.status import KnowledgeObjectNotFoundError
 
 
@@ -15,6 +16,7 @@ router = APIRouter(
 
 @router.get("/{bundle_id}")
 async def get_bundle_status(domain_id: int, bundle_id: int, request: Request):
+    require_domain_match(request, domain_id)
     try:
         result = await request.app.state.kc_status_service.get_bundle(domain_id=domain_id, bundle_id=bundle_id)
     except KnowledgeObjectNotFoundError as exc:
@@ -24,6 +26,7 @@ async def get_bundle_status(domain_id: int, bundle_id: int, request: Request):
 
 @router.get("/{bundle_id}/revisions/{bundle_revision_id}")
 async def get_revision_status(domain_id: int, bundle_id: int, bundle_revision_id: int, request: Request):
+    require_domain_match(request, domain_id)
     try:
         result = await request.app.state.kc_status_service.get_revision(
             domain_id=domain_id, bundle_id=bundle_id, bundle_revision_id=bundle_revision_id,
@@ -35,6 +38,7 @@ async def get_revision_status(domain_id: int, bundle_id: int, bundle_revision_id
 
 @router.get("/{bundle_id}/revisions/{bundle_revision_id}/members")
 async def get_revision_members(domain_id: int, bundle_id: int, bundle_revision_id: int, request: Request):
+    require_domain_match(request, domain_id)
     try:
         result = await request.app.state.kc_status_service.get_revision(
             domain_id=domain_id, bundle_id=bundle_id, bundle_revision_id=bundle_revision_id,

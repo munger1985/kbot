@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from platform_core.contracts import INTERNAL_API_V1
+from platform_core.security import require_domain_match
 from knowledge_core.application.evidence_retrieval import EvidenceScope
 
 router = APIRouter(
@@ -33,6 +34,7 @@ class EvidenceSearchRequest(BaseModel):
 
 @router.post("/evidence")
 async def search_evidence(payload: EvidenceSearchRequest, request: Request):
+    require_domain_match(request, payload.domain_id)
     try:
         requested_collections = sorted({item.collection_id for item in payload.candidates})
         scoped_collection_ids = await request.app.state.kc_scope_service.resolve_agent_collections(

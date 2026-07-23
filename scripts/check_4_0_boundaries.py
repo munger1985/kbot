@@ -61,7 +61,12 @@ def check_file(path: Path) -> list[str]:
                         f"{path}:{node.lineno}: 禁止使用旧 API 前缀 {prefix}"
                     )
         for imported in module_names(node):
-            if imported == "platform_core.auth" or imported.startswith("platform_core.auth."):
+            if (
+                imported == "platform_core.auth"
+                or imported.startswith("platform_core.auth.")
+                or imported == "platform_core.platform.security"
+                or imported.startswith("platform_core.platform.security.")
+            ):
                 violations.append(f"{path}:{node.lineno}: 禁止导入旧用户认证模块 {imported}")
                 continue
             if imported.split(".")[0] in FORBIDDEN_PREFIXES:

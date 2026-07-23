@@ -21,7 +21,11 @@ async def main() -> None:
     config = get_knowledge_core_config()
     worker_id = os.getenv("KBOT_KC_WORKER_ID", "kbot-kc-index-profile-v2")
     worker = KcIndexProfileWorker(
-        client=KcIndexProfileClient(base_url=f"http://127.0.0.1:{config.service_port}", timeout_seconds=600),
+        client=KcIndexProfileClient(
+            base_url=f"http://127.0.0.1:{config.service_port}",
+            timeout_seconds=600,
+            caller_service="kbot-knowledge-core-projection",
+        ),
         worker_id=worker_id,
         lease_seconds=int(os.getenv("KBOT_KC_WORKER_LEASE_SECONDS", "600")),
         poll_interval=float(os.getenv("KBOT_KC_WORKER_POLL_INTERVAL", "2")),

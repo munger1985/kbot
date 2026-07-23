@@ -17,13 +17,13 @@ KBot 4.0 不再维护用户、密码、登录、刷新令牌或退出登录接�
 
 ## API Key 生命周期
 
-API Key 标识调用 KBot 的受信门户或集成系统，不代表最终用户。Key 采用 `kbot_sk_` 前缀，明文仅在创建时返回一次，数据库只保存 Key ID、哈希、状态、创建时间、到期时间和最近使用时间。Key 必须支持轮换、吊销和到期告警，且不得写入浏览器代码、URL、配置样例、异常或日志。
+API Key 标识调用 KBot 的受信门户或集成系统，不代表最终用户。Key 格式为 `kbot_sk_{key_id}.{secret}`，明文仅在创建时返回一次。当前预配置方案使用部署级 Pepper 计算 HMAC-SHA256 摘要；KBot 配置只保存 Key ID、Client ID、摘要、启用状态和可选到期时间。Key 不得写入浏览器代码、URL、配置样例、异常或日志。
 
-当前阶段 API Key 通过离线管理或受控运维接口配置，不允许调用方使用同一 Key 自行增发 Key。不同环境和外部系统使用不同 Key，便于独立吊销与审计。
+使用 `python -m scripts.generate_portal_api_key --key-id <id>` 离线生成 Key 与摘要，Pepper 从 `KBOT_API_KEY_PEPPER` 环境变量读取。轮换时并行配置新旧两个摘要，门户切换后停用旧记录；不允许调用方使用同一 Key 自行增发 Key。不同环境和外部系统使用不同 Key，便于独立吊销与审计。
 
 ## Domain 与操作人声明
 
-门户在每次请求中传递 `domain_id`，并应传递稳定的门户 `user_id` 供聊天、AIOps 审批和审计使用。Main API 校验字段格式及 Domain 是否存在、启用，但当前阶段不重复验证用户与 Domain 的权限关系；该关系由已认证的门户保证。
+门户在每次请求中通过 `X-KBot-Domain-ID` 传递 `domain_id`，通过 `X-KBot-User-ID` 传递稳定的门户 `user_id`，供聊天、AIOps 审批和审计使用。Main API 校验字段格式及 Domain 是否存在、启用，但当前阶段不重复验证用户与 Domain 的权限关系；该关系由已认证的门户保证。
 
 `domain_id` 仍是强制数据隔离边界。Knowledge Core 只在 Collection 保存 `domain_id` 和 APEX 所需的 `app_id`，其他表通过 Collection 继承边界。Repository 的查询和写入必须显式限定 Domain，禁止仅凭资源 UUID 跨 Domain 访问。`app_id` 来自服务器配置，不接受客户端传入，也不参与业务路由。
 
@@ -38,7 +38,7 @@ api_key_id, client_id
 domain_id, asserted_user_id
 ```
 
-Main API 必须移除外部请求中伪造的内部身份头。Knowledge Core、Model Serving、Agent Runtime 和 AIOps 仅接受服务身份加内部 JWT，不接受门户 API Key、用户密码或外部 Bearer Token。内部接口不得挂载到公网入口或公开 OpenAPI；将来采用 mTLS 时只替换服务身份校验，不改变 AuthContext 契约。
+Main API 必须移除外部请求中伪造的内部身份头。当前同 Schema 部署中，服务身份使用 `X-KBot-Internal-Token`，身份上下文使用 `X-KBot-Auth-Context`；两者必须同时通过校验。JWT 默认有效期 60 秒，每次内部请求重新签发并限定下游 audience。Knowledge Core、Model Serving、Agent Runtime 和 AIOps 不接受门户 API Key、用户密码或外部 Bearer Token。内部接口不得挂载到公网入口或公开 OpenAPI；将来采用 mTLS 时只替换服务身份校验，不改变 AuthContext 契约。
 
 ## 当前不实现的权限能力
 

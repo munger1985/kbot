@@ -1,5 +1,6 @@
 # platform_core/config/settings.py
 from functools import lru_cache
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 import os
@@ -37,6 +38,29 @@ class AppConfig(BaseModel):
     file_storage: str = Field(default="./knowledge_base", description="Root directory for knowledge base file storage")
     upload_workers: int = Field(default=5, ge=1, le=50, description="Number of worker threads for file uploads (1-50)")
     log: LogConfig = LogConfig()
+
+
+class PortalApiKeyConfig(BaseModel):
+    """门户 API Key 的非敏感注册信息。"""
+
+    key_id: str = Field(min_length=3, max_length=64)
+    client_id: str = Field(min_length=1, max_length=128)
+    key_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    enabled: bool = True
+    expires_at: datetime | None = None
+
+
+class SecurityConfig(BaseModel):
+    """公开 API 与内部服务认证配置。"""
+
+    api_key_pepper_env: str = "KBOT_API_KEY_PEPPER"
+    internal_service_token_env: str = "KBOT_INTERNAL_SERVICE_TOKEN"
+    internal_jwt_secret_env: str = "KBOT_INTERNAL_JWT_SECRET"
+    internal_jwt_issuer: str = "kbot-platform"
+    internal_jwt_ttl_seconds: int = Field(default=60, ge=15, le=300)
+    internal_jwt_clock_skew_seconds: int = Field(default=5, ge=0, le=30)
+    portal_api_keys: list[PortalApiKeyConfig] = Field(default_factory=list)
+
 
 class OracleConfig(BaseModel):
     """Oracle database configuration.
@@ -261,6 +285,7 @@ class Settings(BaseSettings):
     
     # Module-specific configurations
     app: AppConfig = AppConfig()
+    security: SecurityConfig = SecurityConfig()
     oracle: OracleConfig = OracleConfig()
     sqlalchemy: SQLAlchemyConfig = SQLAlchemyConfig()
     embed: EmbedConfig = EmbedConfig()
@@ -436,6 +461,11 @@ def get_log_config() -> LogConfig:
         LogConfig: Logging configuration object
     """
     return get_settings().app.log
+
+
+def get_security_config() -> SecurityConfig:
+    """获取公开 API 与内部服务认证配置。"""
+    return get_settings().security
 
 def get_embed_config() -> EmbedConfig:
     """Get embedding service configuration.

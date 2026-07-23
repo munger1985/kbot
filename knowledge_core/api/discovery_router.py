@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from platform_core.contracts import INTERNAL_API_V1
+from platform_core.security import require_domain_match
 
 router = APIRouter(
     prefix=f"{INTERNAL_API_V1}/knowledge/discovery",
@@ -25,6 +26,7 @@ class DiscoverySearchRequest(BaseModel):
 
 @router.post("/search")
 async def search_discovery(payload: DiscoverySearchRequest, request: Request):
+    require_domain_match(request, payload.domain_id)
     try:
         scoped_collection_ids = await request.app.state.kc_scope_service.resolve_agent_collections(
             domain_id=payload.domain_id, agent_id=payload.agent_id,

@@ -5,8 +5,9 @@ from typing import Any
 
 import aiohttp
 
+from platform_core.config.settings import get_knowledge_core_config, get_parser_config
 from platform_core.contracts import INTERNAL_API_V1
-from platform_core.platform.security import INTERNAL_TOKEN_HEADER, get_internal_token
+from platform_core.security import build_internal_auth_headers
 
 
 class KcParserProtocolError(RuntimeError):
@@ -31,16 +32,22 @@ class ParseTask:
 
 
 class KcParseClient:
-    def __init__(self, *, base_url: str, timeout_seconds: int = 600):
+    def __init__(
+        self,
+        *,
+        base_url: str,
+        timeout_seconds: int = 600,
+        caller_service: str | None = None,
+        audience: str | None = None,
+    ):
         self._base_url = base_url.rstrip("/")
         self._timeout = aiohttp.ClientTimeout(total=timeout_seconds)
         self._session: aiohttp.ClientSession | None = None
+        self._caller_service = caller_service or get_parser_config().service_name
+        self._audience = audience or get_knowledge_core_config().service_name
 
     async def __aenter__(self):
-        self._session = aiohttp.ClientSession(
-            timeout=self._timeout,
-            headers={INTERNAL_TOKEN_HEADER: get_internal_token()},
-        )
+        self._session = aiohttp.ClientSession(timeout=self._timeout)
         return self
 
     async def __aexit__(self, exc_type, exc, traceback):
@@ -120,27 +127,33 @@ class KcParseClient:
             },
         )
 
-    async def download(self, uri: str) -> bytes:
-        session = self._require_session()
-        async with session.get(uri) as response:
-            if response.status >= 400:
-                raise KcParserProtocolError("SOURCE_READ_FAILED", await response.text(), response.status)
-            return await response.read()
-
     async def download_source(self, task: ParseTask) -> bytes:
         session = self._require_session()
         params = {
             "worker_id": task.lease_owner,
             "input_fingerprint": task.input_fingerprint,
         }
-        async with session.get(task.source_read_url, params=params) as response:
+        async with session.get(
+            task.source_read_url,
+            params=params,
+            headers=self._auth_headers(),
+        ) as response:
             if response.status >= 400:
                 raise KcParserProtocolError("SOURCE_READ_FAILED", await response.text(), response.status)
             return await response.read()
 
     async def _request(self, method: str, path: str, **kwargs) -> Any:
         session = self._require_session()
-        async with session.request(method, f"{self._base_url}{path}", **kwargs) as response:
+        headers = {
+            **self._auth_headers(),
+            **kwargs.pop("headers", {}),
+        }
+        async with session.request(
+            method,
+            f"{self._base_url}{path}",
+            headers=headers,
+            **kwargs,
+        ) as response:
             if response.status >= 400:
                 try:
                     body = await response.json()
@@ -156,3 +169,10 @@ class KcParseClient:
         if self._session is None:
             raise RuntimeError("KcParseClient must be used as an async context manager")
         return self._session
+
+    def _auth_headers(self) -> dict[str, str]:
+        """为每次请求签发新的短期内部身份令牌。"""
+        return build_internal_auth_headers(
+            audience=self._audience,
+            caller_service=self._caller_service,
+        )
