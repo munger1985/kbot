@@ -21,7 +21,20 @@ Schema。脚本不包含 `DROP`、旧表查询、旧数据导入、兼容视图�
 
 ```bash
 python3 scripts/check_oracle_schema.py
+python3 scripts/apply_oracle_schema.py --dry-run
 ```
+
+连接用户必须具备当前 Schema 的 `CREATE TABLE`、`CREATE VIEW` 权限，并在专用
+应用表空间拥有足够 `QUOTA`。应用表空间必须使用
+`SEGMENT SPACE MANAGEMENT AUTO`，Oracle VECTOR 不支持非 ASSM 表空间。不要把
+业务表默认创建在 `SYSTEM` 表空间。确认目标是空白 Schema 后执行：
+
+```bash
+python3 scripts/apply_oracle_schema.py
+```
+
+初始化工具会校验当前 PDB、Schema、已有 KBot 对象、DDL 权限和表空间额度；只要
+发现已有 `KBOT_%` 表或视图就会拒绝执行，避免误覆盖现有环境。
 
 数据库初始化完成后，由 Portal/APEX 创建新的 Domain 和业务数据，再通过 4.0
 API 入库；禁止从 3.x KBot Schema 复制数据。

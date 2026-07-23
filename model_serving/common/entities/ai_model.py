@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import DateTime, Numeric, String, UniqueConstraint, func
+from sqlalchemy import DateTime, Numeric, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from platform_core.identity import uuid7
@@ -41,7 +41,7 @@ class AIModelEntity(BaseEntity):
         String(1024), comment="上游推理端点",
     )
     api_key: Mapped[str | None] = mapped_column(
-        String(4096), comment="待迁移至 Secret Store 的上游凭据",
+        Text, comment="待迁移至 Secret Store 的上游凭据",
     )
     status: Mapped[int] = mapped_column(
         Numeric(1, 0), nullable=False, default=0, comment="0 禁用、1 启用、2 归档",
