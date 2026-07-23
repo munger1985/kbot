@@ -1,9 +1,23 @@
 """AIOps Internal API Bootstrap。"""
 
+import hashlib
+import os
 from contextlib import asynccontextmanager
 
+import aiohttp
+from fastapi import Request
+from fastapi.responses import JSONResponse
 from loguru import logger
 
+from aiops_agent.adapters.agent_runtime import AgentRuntimeValidator
+from aiops_agent.adapters.secret_store import ConfiguredSecretStore
+from aiops_agent.api.management import router as management_router
+from aiops_agent.application.configuration import AIOpsConfigurationService
+from aiops_agent.application.configuration.common import SignedCursorCodec
+from aiops_agent.application.configuration.schedule import (
+    InspectionTemplateRegistry,
+)
+from aiops_agent.application.errors import AIOpsApplicationError
 from aiops_agent.bootstrap.common import (
     AIOpsProcessRuntime,
     configure_process_logging,
@@ -12,6 +26,7 @@ from aiops_agent.bootstrap.common import (
 from aiops_agent.config import AIOpsSettings, get_aiops_settings
 from aiops_agent.persistence import create_aiops_uow_factory
 from platform_core.database.oracle import create_database_runtime
+from platform_clients.agent_runtime import AgentRuntimeClient
 from platform_core.security import (
     create_auth_context_codec,
     create_scoped_internal_auth_middleware,
@@ -45,11 +60,49 @@ def create_aiops_api(
         app.state.ready_check = runtime.check_aiops_schema
         app.state.auth_context_codec = create_auth_context_codec()
         app.state.service_identity_codec = create_service_identity_codec()
+        client_session = aiohttp.ClientSession()
+        agent_runtime_client = AgentRuntimeClient(
+            base_url=resolved.clients.agent_runtime.base_url,
+            caller_service=config.service_name,
+            audience=resolved.clients.agent_runtime.audience,
+            timeout_seconds=resolved.clients.agent_runtime.timeout_seconds,
+            session=client_session,
+        )
+        cursor_secret = os.getenv(resolved.management.cursor_secret_env)
+        if not cursor_secret:
+            if resolved.is_production():
+                raise RuntimeError(
+                    "生产环境缺少 AIOps Cursor 签名密钥"
+                )
+            cursor_secret = hashlib.sha256(
+                f"{config.service_name}:development:cursor".encode("utf-8")
+            ).hexdigest()
+            logger.warning("开发环境使用临时派生的 AIOps Cursor 签名密钥")
+        app.state.configuration_service = AIOpsConfigurationService(
+            uow_factory=runtime.uow_factory,
+            cursor_codec=SignedCursorCodec(
+                secret=cursor_secret,
+                ttl_seconds=resolved.management.cursor_ttl_seconds,
+            ),
+            secret_store=ConfiguredSecretStore(
+                provider=resolved.secret_store.provider,
+                allowed_schemes=resolved.secret_store.allowed_schemes,
+            ),
+            agent_runtime=AgentRuntimeValidator(agent_runtime_client),
+            template_registry=InspectionTemplateRegistry(
+                resolved.management.inspection_templates
+            ),
+            management=resolved.management,
+            max_inspection_targets=(
+                resolved.limits.max_targets_per_inspection_fire
+            ),
+        )
         await runtime.start()
-        logger.info("正在启动 AIOps API 步骤 0 骨架")
+        logger.info("正在启动 AIOps 配置管理 API")
         try:
             yield
         finally:
+            await client_session.close()
             await runtime.close()
             logger.info("AIOps API 资源已释放")
 
@@ -93,4 +146,30 @@ def create_aiops_api(
             },
         )
     )
+    app.include_router(management_router)
+
+    @app.exception_handler(AIOpsApplicationError)
+    async def application_error_handler(
+        request: Request,
+        exc: AIOpsApplicationError,
+    ) -> JSONResponse:
+        context = getattr(request.state, "auth_context", None)
+        request_id = (
+            getattr(context, "request_id", None)
+            or request.headers.get("X-Request-ID")
+            or "unknown"
+        )
+        return JSONResponse(
+            status_code=exc.status_code,
+            media_type="application/problem+json",
+            content={
+                "type": f"urn:kbot:error:{exc.code.lower()}",
+                "title": "AIOps 配置请求失败",
+                "status": exc.status_code,
+                "code": exc.code,
+                "detail": exc.message,
+                "request_id": request_id,
+                "retryable": exc.retryable,
+            },
+        )
     return app

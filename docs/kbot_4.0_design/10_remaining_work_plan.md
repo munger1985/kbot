@@ -97,10 +97,12 @@ Policy Gate/HITL/Mutation 和后续更多 Specialist，而不是重新实现问�
 - 保留现有 MCP 问数链路；Data Agent、Excel Dataset 和 NL2SQL 独立服务暂不进入本轮实现，仅保留未来扩展契约。
 - 按 `19_aiops_domain_model_workflow_and_executor.md` 至 `27_aiops_api_and_contracts.md` 的详细设计，以及 [28_aiops_implementation_plan.md](28_aiops_implementation_plan.md) 的施工顺序，完成独立 AIOps Agent、`KBOT_OPS_*` 表/DDL/APEX 视图、Public/Internal/Executor 契约、API/Worker/Scheduler/DB Executor 进程、监控/诊断/执行编排、假设/反证与根因分析、交互式诊断、Oracle/MySQL 诊断目录、DB Executor Policy、单命令审批、巡检报告、外部系统 Adapter 和失败补偿。
 
-  AIOps 步骤 0、步骤 1 和步骤 2 已完成：独立包边界、四进程 Bootstrap、Service
+  AIOps 步骤 0 至步骤 3 已完成：独立包边界、四进程 Bootstrap、Service
   Identity、Wire DTO、Management/Delegation Client、三份 OpenAPI，以及
   21 张领域表、10 个受控视图、Manifest、逐列 Entity、九个聚合 Repository、
-  AIOps UoW、租约和 Inbox/Outbox 并发原语。下一步按步骤 3 实现配置与权限 API。
+  AIOps UoW、租约和 Inbox/Outbox 并发原语，以及六类配置资源的 Public →
+  Client → Internal API、ETag、签名 Cursor、SecretRef、Policy/Binding 求交和
+  健康检查版本栅栏。下一步按步骤 4 实现确定性 Run 内核。
 
 ### 阶段 6：统一测试、重建和切换
 

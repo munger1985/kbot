@@ -55,8 +55,6 @@ class DatabaseType(StrEnum):
 
 
 class ExecutionMode(StrEnum):
-    MONITOR_ONLY = "MONITOR_ONLY"
-    READ_ONLY = "READ_ONLY"
     ADVISORY = "ADVISORY"
     AGENT_EXECUTE = "AGENT_EXECUTE"
 

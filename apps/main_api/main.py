@@ -14,10 +14,19 @@ from main_api.app import create_main_api_app
 from main_api.application import DomainValidationService
 from main_api.config import get_main_api_settings
 from main_api.persistence import create_main_api_uow
-from platform_clients import AgentRuntimeClient, KnowledgeCoreClient
+from platform_clients import (
+    AIOpsClientAuth,
+    AIOpsManagementClient,
+    AgentRuntimeClient,
+    KnowledgeCoreClient,
+)
 from platform_core.database.oracle import create_database_runtime
 from platform_core.logger import LogConfig, LogManager
 from platform_core.platform.port_check import check_port_available
+from platform_core.security import (
+    create_auth_context_codec,
+    create_service_identity_codec,
+)
 
 
 settings = get_main_api_settings()
@@ -59,6 +68,18 @@ async def lifespan(app: FastAPI):
         caller_service=config.service_name,
         audience=settings.agent_runtime.audience,
         timeout_seconds=settings.agent_runtime.timeout_seconds,
+        session=client_session,
+    )
+    app.state.aiops_client = AIOpsManagementClient(
+        base_url=settings.aiops.base_url,
+        auth=AIOpsClientAuth(
+            caller_service=config.service_name,
+            audience=settings.aiops.audience,
+            scopes=("aiops.manage",),
+            auth_context_codec=create_auth_context_codec(),
+            service_identity_codec=create_service_identity_codec(),
+        ),
+        timeout_seconds=settings.aiops.timeout_seconds,
         session=client_session,
     )
     logger.info("Main API 已启动，公开前缀=/api/v1")

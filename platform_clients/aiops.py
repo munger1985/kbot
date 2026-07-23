@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlencode
 from uuid import UUID
 
 import aiohttp
@@ -104,6 +105,7 @@ class _BaseAIOpsClient:
         auth_context: AuthContext,
         payload: dict[str, Any] | None = None,
         idempotency_key: str | None = None,
+        if_match: str | None = None,
     ) -> Any:
         headers = {
             "Accept": "application/json",
@@ -112,6 +114,8 @@ class _BaseAIOpsClient:
         }
         if idempotency_key:
             headers["Idempotency-Key"] = idempotency_key
+        if if_match:
+            headers["If-Match"] = if_match
         session = await self._get_session()
         try:
             async with session.request(
@@ -145,15 +149,26 @@ class _BaseAIOpsClient:
 
     @staticmethod
     def _raise_error(status_code: int, body: Any) -> None:
-        detail = body.get("detail", body) if isinstance(body, dict) else body
-        if isinstance(detail, dict):
-            code = str(detail.get("code", "OPS_UPSTREAM_UNAVAILABLE"))
-            message = str(detail.get("detail", detail.get("message", code)))
-            retryable = bool(detail.get("retryable", False))
+        if isinstance(body, dict) and "code" in body:
+            code = str(body.get("code", "OPS_UPSTREAM_UNAVAILABLE"))
+            message = str(body.get("detail", body.get("message", code)))
+            retryable = bool(body.get("retryable", False))
         else:
-            code = "OPS_UPSTREAM_UNAVAILABLE"
-            message = str(detail)
-            retryable = status_code in {429, 502, 503, 504}
+            detail = (
+                body.get("detail", body) if isinstance(body, dict) else body
+            )
+            if isinstance(detail, dict):
+                code = str(
+                    detail.get("code", "OPS_UPSTREAM_UNAVAILABLE")
+                )
+                message = str(
+                    detail.get("detail", detail.get("message", code))
+                )
+                retryable = bool(detail.get("retryable", False))
+            else:
+                code = "OPS_UPSTREAM_UNAVAILABLE"
+                message = str(detail)
+                retryable = status_code in {429, 502, 503, 504}
         raise AIOpsClientError(
             status_code=status_code,
             code=code,
@@ -164,6 +179,530 @@ class _BaseAIOpsClient:
 
 class AIOpsManagementClient(_BaseAIOpsClient):
     """Main API 的管理、用户命令和 Direct Run Client。"""
+
+    _CONFIG = f"{INTERNAL_API_V1}/aiops/config"
+
+    @staticmethod
+    def _list_path(
+        path: str,
+        *,
+        status: str | None,
+        cursor: str | None,
+        limit: int,
+    ) -> str:
+        query = {"limit": str(limit)}
+        if status:
+            query["status"] = status
+        if cursor:
+            query["cursor"] = cursor
+        return f"{path}?{urlencode(query)}"
+
+    async def create_target(
+        self,
+        payload: dict[str, Any],
+        *,
+        idempotency_key: str,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "POST",
+            f"{self._CONFIG}/targets",
+            payload=payload,
+            idempotency_key=idempotency_key,
+            auth_context=auth_context,
+        )
+
+    async def list_targets(
+        self,
+        *,
+        status: str | None,
+        cursor: str | None,
+        limit: int,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "GET",
+            self._list_path(
+                f"{self._CONFIG}/targets",
+                status=status,
+                cursor=cursor,
+                limit=limit,
+            ),
+            auth_context=auth_context,
+        )
+
+    async def get_target(
+        self, target_id: UUID, *, auth_context: AuthContext
+    ) -> dict[str, Any]:
+        return await self._json(
+            "GET",
+            f"{self._CONFIG}/targets/{target_id}",
+            auth_context=auth_context,
+        )
+
+    async def patch_target(
+        self,
+        target_id: UUID,
+        payload: dict[str, Any],
+        *,
+        if_match: str,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "PATCH",
+            f"{self._CONFIG}/targets/{target_id}",
+            payload=payload,
+            if_match=if_match,
+            auth_context=auth_context,
+        )
+
+    async def command_target(
+        self,
+        target_id: UUID,
+        command: str,
+        *,
+        if_match: str,
+        idempotency_key: str,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "POST",
+            f"{self._CONFIG}/targets/{target_id}/{command}",
+            payload={},
+            if_match=if_match,
+            idempotency_key=idempotency_key,
+            auth_context=auth_context,
+        )
+
+    async def list_agent_bindings(
+        self, target_id: UUID, *, auth_context: AuthContext
+    ) -> list[dict[str, Any]]:
+        return await self._json(
+            "GET",
+            f"{self._CONFIG}/targets/{target_id}/agent-bindings",
+            auth_context=auth_context,
+        )
+
+    async def create_agent_binding(
+        self,
+        target_id: UUID,
+        payload: dict[str, Any],
+        *,
+        idempotency_key: str,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "POST",
+            f"{self._CONFIG}/targets/{target_id}/agent-bindings",
+            payload=payload,
+            idempotency_key=idempotency_key,
+            auth_context=auth_context,
+        )
+
+    async def patch_agent_binding(
+        self,
+        target_id: UUID,
+        binding_id: UUID,
+        payload: dict[str, Any],
+        *,
+        if_match: str,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "PATCH",
+            (
+                f"{self._CONFIG}/targets/{target_id}"
+                f"/agent-bindings/{binding_id}"
+            ),
+            payload=payload,
+            if_match=if_match,
+            auth_context=auth_context,
+        )
+
+    async def command_agent_binding(
+        self,
+        target_id: UUID,
+        binding_id: UUID,
+        command: str,
+        *,
+        if_match: str,
+        idempotency_key: str,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "POST",
+            (
+                f"{self._CONFIG}/targets/{target_id}"
+                f"/agent-bindings/{binding_id}/{command}"
+            ),
+            payload={},
+            if_match=if_match,
+            idempotency_key=idempotency_key,
+            auth_context=auth_context,
+        )
+
+    async def create_monitor_source(
+        self,
+        payload: dict[str, Any],
+        *,
+        idempotency_key: str,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "POST",
+            f"{self._CONFIG}/monitor-sources",
+            payload=payload,
+            idempotency_key=idempotency_key,
+            auth_context=auth_context,
+        )
+
+    async def list_monitor_sources(
+        self,
+        *,
+        status: str | None,
+        cursor: str | None,
+        limit: int,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "GET",
+            self._list_path(
+                f"{self._CONFIG}/monitor-sources",
+                status=status,
+                cursor=cursor,
+                limit=limit,
+            ),
+            auth_context=auth_context,
+        )
+
+    async def get_monitor_source(
+        self, source_id: UUID, *, auth_context: AuthContext
+    ) -> dict[str, Any]:
+        return await self._json(
+            "GET",
+            f"{self._CONFIG}/monitor-sources/{source_id}",
+            auth_context=auth_context,
+        )
+
+    async def patch_monitor_source(
+        self,
+        source_id: UUID,
+        payload: dict[str, Any],
+        *,
+        if_match: str,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "PATCH",
+            f"{self._CONFIG}/monitor-sources/{source_id}",
+            payload=payload,
+            if_match=if_match,
+            auth_context=auth_context,
+        )
+
+    async def command_monitor_source(
+        self,
+        source_id: UUID,
+        command: str,
+        *,
+        if_match: str,
+        idempotency_key: str,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "POST",
+            f"{self._CONFIG}/monitor-sources/{source_id}/{command}",
+            payload={},
+            if_match=if_match,
+            idempotency_key=idempotency_key,
+            auth_context=auth_context,
+        )
+
+    async def request_monitor_health_check(
+        self,
+        source_id: UUID,
+        *,
+        if_match: str,
+        idempotency_key: str,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "POST",
+            f"{self._CONFIG}/monitor-sources/{source_id}/health-checks",
+            payload={},
+            if_match=if_match,
+            idempotency_key=idempotency_key,
+            auth_context=auth_context,
+        )
+
+    async def rotate_monitor_webhook_key(
+        self,
+        source_id: UUID,
+        *,
+        if_match: str,
+        idempotency_key: str,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "POST",
+            f"{self._CONFIG}/monitor-sources/{source_id}/webhook-key:rotate",
+            payload={},
+            if_match=if_match,
+            idempotency_key=idempotency_key,
+            auth_context=auth_context,
+        )
+
+    async def list_monitor_bindings(
+        self, target_id: UUID, *, auth_context: AuthContext
+    ) -> list[dict[str, Any]]:
+        return await self._json(
+            "GET",
+            f"{self._CONFIG}/targets/{target_id}/monitor-bindings",
+            auth_context=auth_context,
+        )
+
+    async def create_monitor_binding(
+        self,
+        target_id: UUID,
+        payload: dict[str, Any],
+        *,
+        idempotency_key: str,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "POST",
+            f"{self._CONFIG}/targets/{target_id}/monitor-bindings",
+            payload=payload,
+            idempotency_key=idempotency_key,
+            auth_context=auth_context,
+        )
+
+    async def patch_monitor_binding(
+        self,
+        target_id: UUID,
+        binding_id: UUID,
+        payload: dict[str, Any],
+        *,
+        if_match: str,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "PATCH",
+            (
+                f"{self._CONFIG}/targets/{target_id}"
+                f"/monitor-bindings/{binding_id}"
+            ),
+            payload=payload,
+            if_match=if_match,
+            auth_context=auth_context,
+        )
+
+    async def command_monitor_binding(
+        self,
+        target_id: UUID,
+        binding_id: UUID,
+        command: str,
+        *,
+        if_match: str,
+        idempotency_key: str,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "POST",
+            (
+                f"{self._CONFIG}/targets/{target_id}"
+                f"/monitor-bindings/{binding_id}/{command}"
+            ),
+            payload={},
+            if_match=if_match,
+            idempotency_key=idempotency_key,
+            auth_context=auth_context,
+        )
+
+    async def create_policy(
+        self,
+        payload: dict[str, Any],
+        *,
+        idempotency_key: str,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "POST",
+            f"{self._CONFIG}/policies",
+            payload=payload,
+            idempotency_key=idempotency_key,
+            auth_context=auth_context,
+        )
+
+    async def list_policies(
+        self,
+        *,
+        status: str | None,
+        cursor: str | None,
+        limit: int,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "GET",
+            self._list_path(
+                f"{self._CONFIG}/policies",
+                status=status,
+                cursor=cursor,
+                limit=limit,
+            ),
+            auth_context=auth_context,
+        )
+
+    async def get_policy(
+        self, policy_id: UUID, *, auth_context: AuthContext
+    ) -> dict[str, Any]:
+        return await self._json(
+            "GET",
+            f"{self._CONFIG}/policies/{policy_id}",
+            auth_context=auth_context,
+        )
+
+    async def command_policy(
+        self,
+        policy_id: UUID,
+        command: str,
+        *,
+        if_match: str,
+        idempotency_key: str,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "POST",
+            f"{self._CONFIG}/policies/{policy_id}/{command}",
+            payload={},
+            if_match=if_match,
+            idempotency_key=idempotency_key,
+            auth_context=auth_context,
+        )
+
+    async def create_inspection_plan(
+        self,
+        payload: dict[str, Any],
+        *,
+        idempotency_key: str,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "POST",
+            f"{self._CONFIG}/inspection-plans",
+            payload=payload,
+            idempotency_key=idempotency_key,
+            auth_context=auth_context,
+        )
+
+    async def list_inspection_plans(
+        self,
+        *,
+        status: str | None,
+        cursor: str | None,
+        limit: int,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "GET",
+            self._list_path(
+                f"{self._CONFIG}/inspection-plans",
+                status=status,
+                cursor=cursor,
+                limit=limit,
+            ),
+            auth_context=auth_context,
+        )
+
+    async def get_inspection_plan(
+        self, plan_id: UUID, *, auth_context: AuthContext
+    ) -> dict[str, Any]:
+        return await self._json(
+            "GET",
+            f"{self._CONFIG}/inspection-plans/{plan_id}",
+            auth_context=auth_context,
+        )
+
+    async def patch_inspection_plan(
+        self,
+        plan_id: UUID,
+        payload: dict[str, Any],
+        *,
+        if_match: str,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "PATCH",
+            f"{self._CONFIG}/inspection-plans/{plan_id}",
+            payload=payload,
+            if_match=if_match,
+            auth_context=auth_context,
+        )
+
+    async def command_inspection_plan(
+        self,
+        plan_id: UUID,
+        command: str,
+        *,
+        if_match: str,
+        idempotency_key: str,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "POST",
+            f"{self._CONFIG}/inspection-plans/{plan_id}/{command}",
+            payload={},
+            if_match=if_match,
+            idempotency_key=idempotency_key,
+            auth_context=auth_context,
+        )
+
+    async def list_inspection_targets(
+        self, plan_id: UUID, *, auth_context: AuthContext
+    ) -> list[dict[str, Any]]:
+        return await self._json(
+            "GET",
+            f"{self._CONFIG}/inspection-plans/{plan_id}/targets",
+            auth_context=auth_context,
+        )
+
+    async def add_inspection_target(
+        self,
+        plan_id: UUID,
+        payload: dict[str, Any],
+        *,
+        if_match: str,
+        idempotency_key: str,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "POST",
+            f"{self._CONFIG}/inspection-plans/{plan_id}/targets",
+            payload=payload,
+            if_match=if_match,
+            idempotency_key=idempotency_key,
+            auth_context=auth_context,
+        )
+
+    async def patch_inspection_target(
+        self,
+        plan_id: UUID,
+        plan_target_id: UUID,
+        payload: dict[str, Any],
+        *,
+        if_match: str,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "PATCH",
+            (
+                f"{self._CONFIG}/inspection-plans/{plan_id}"
+                f"/targets/{plan_target_id}"
+            ),
+            payload=payload,
+            if_match=if_match,
+            auth_context=auth_context,
+        )
 
     async def create_run(
         self,

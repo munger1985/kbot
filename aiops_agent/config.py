@@ -75,6 +75,13 @@ class AIOpsExecutorConfig(ServiceConfig):
 
 
 class AIOpsDependencyEndpoints(BaseModel):
+    agent_runtime: ServiceDependencyConfig = Field(
+        default_factory=lambda: ServiceDependencyConfig(
+            base_url="http://127.0.0.1:18100",
+            audience="kbot-agent-runtime-api",
+            timeout_seconds=120,
+        )
+    )
     model_serving: ServiceDependencyConfig = Field(
         default_factory=lambda: ServiceDependencyConfig(
             base_url="http://127.0.0.1:18092",
@@ -107,6 +114,11 @@ class AIOpsDependencyEndpoints(BaseModel):
 
 class SecretStoreConfig(BaseModel):
     provider: Literal["environment", "vault", "secret_manager"] = "environment"
+    allowed_schemes: tuple[str, ...] = (
+        "env",
+        "vault",
+        "secret-manager",
+    )
 
 
 class AIOpsLimitsConfig(BaseModel):
@@ -118,6 +130,36 @@ class AIOpsLimitsConfig(BaseModel):
     )
     max_tasks_per_run: int = Field(default=64, ge=1, le=512)
     run_timeout_seconds: int = Field(default=3600, ge=60, le=86400)
+    max_targets_per_inspection_fire: int = Field(default=100, ge=1, le=1000)
+
+
+class InspectionTemplateRegistration(BaseModel):
+    template_id: str = Field(min_length=1, max_length=128)
+    template_version: str = Field(min_length=1, max_length=64)
+    schedule_resolver_version: str = Field(min_length=1, max_length=64)
+    allowed_override_keys: tuple[str, ...] = ()
+
+
+class AIOpsManagementConfig(BaseModel):
+    cursor_secret_env: str = "KBOT_AIOPS_CURSOR_SECRET"
+    webhook_key_secret_env: str = "KBOT_AIOPS_WEBHOOK_KEY_SECRET"
+    cursor_ttl_seconds: int = Field(default=900, ge=60, le=86400)
+    webhook_key_overlap_seconds: int = Field(
+        default=3600, ge=0, le=86400
+    )
+    agent_execution_enabled: bool = False
+    inspection_templates: tuple[InspectionTemplateRegistration, ...] = (
+        InspectionTemplateRegistration(
+            template_id="database_daily",
+            template_version="1.0.0",
+            schedule_resolver_version="1.0.0",
+            allowed_override_keys=(
+                "thresholds",
+                "window",
+                "optional_checks",
+            ),
+        ),
+    )
 
 
 class AIOpsSettings(Settings):
@@ -133,6 +175,9 @@ class AIOpsSettings(Settings):
     )
     secret_store: SecretStoreConfig = Field(default_factory=SecretStoreConfig)
     limits: AIOpsLimitsConfig = Field(default_factory=AIOpsLimitsConfig)
+    management: AIOpsManagementConfig = Field(
+        default_factory=AIOpsManagementConfig
+    )
 
     @model_validator(mode="after")
     def validate_aiops_safety(self) -> "AIOpsSettings":
@@ -142,7 +187,10 @@ class AIOpsSettings(Settings):
             raise ValueError("AIOps API 与 DB Executor 必须使用不同服务身份")
         if self.is_production() and self.secret_store.provider == "environment":
             raise ValueError("生产环境禁止使用 environment Secret Provider")
+        if self.is_production() and not self.management.cursor_secret_env:
+            raise ValueError("生产环境必须配置 AIOps Cursor Secret 环境变量名")
         for dependency in (
+            self.clients.agent_runtime,
             self.clients.model_serving,
             self.clients.knowledge_core,
             self.clients.aiops_api,

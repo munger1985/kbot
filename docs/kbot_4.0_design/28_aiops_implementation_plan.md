@@ -120,6 +120,12 @@ Run Event 连续序列。下一步进入步骤 3 配置与权限 API。
 
 **完成物：** 配置 CRUD/停用 API、APEX 列表投影、权限审计和 Secret Provider Adapter。
 
+实施结果：六类配置资源已完成 Main API → AIOpsManagementClient → AIOps
+Internal API 闭环；Domain/Actor 只取可信 AuthContext，ETag、父 Plan 并发边界、
+签名 Cursor、Inbox 幂等、Outbox 配置事件、SecretRef 元数据校验、Webhook
+Key 安全轮换和异步健康检查版本栅栏均已实现。真实 Oracle 全配置 Smoke 与
+OpenAPI 快照通过。下一步进入步骤 4 确定性 Run 内核。
+
 ## 步骤 4：确定性 Run 内核
 
 详细设计见 [33_aiops_step4_deterministic_run_kernel.md](33_aiops_step4_deterministic_run_kernel.md)。

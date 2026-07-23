@@ -210,6 +210,11 @@ class _FakeAgentRuntimeClient:
         }
 
 
+class _FakeAIOpsClient:
+    async def is_ready(self):
+        return True
+
+
 class _FakeDomainRepository:
     async def exists_active(self, *, app_id: int, domain_id: int) -> bool:
         return app_id == 1001 and domain_id == 100
@@ -254,6 +259,7 @@ class MainApiTest(unittest.TestCase):
         )
         self.app.state.knowledge_core_client = self.kc
         self.app.state.agent_runtime_client = self.agent_runtime
+        self.app.state.aiops_client = _FakeAIOpsClient()
         self.app.state.main_api_settings = get_main_api_settings()
         self.client = TestClient(self.app)
 
@@ -406,6 +412,15 @@ class MainApiTest(unittest.TestCase):
             response.json()["code"],
         )
         self.assertTrue(response.json()["field_errors"])
+
+    def test_ops_patch_without_if_match_returns_428(self) -> None:
+        response = self.client.patch(
+            "/api/v1/ops/targets/019f8eae-2c25-7d48-b044-350ec3f5a111",
+            headers=self._headers(),
+            json={"display_name": "新名称"},
+        )
+        self.assertEqual(428, response.status_code)
+        self.assertEqual("PRECONDITION_REQUIRED", response.json()["code"])
 
     def test_health_is_public(self) -> None:
         response = self.client.get("/healthz")

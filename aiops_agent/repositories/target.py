@@ -4,7 +4,7 @@ from collections.abc import Callable, Collection
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import Select, select, update
+from sqlalchemy import Select, and_, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aiops_agent.entities import (
@@ -90,6 +90,70 @@ class TargetRepository(AIOpsRepository):
         )
         return list((await self._session.execute(statement)).scalars())
 
+    async def page_scoped(
+        self,
+        *,
+        app_id: int,
+        domain_id: int,
+        statuses: Collection[str] | None,
+        before_updated_at: datetime | None,
+        before_id: UUID | None,
+        limit: int,
+    ) -> list[TargetEntity]:
+        self._check_active()
+        statement = select(TargetEntity).where(
+            TargetEntity.app_id == app_id,
+            TargetEntity.domain_id == domain_id,
+        )
+        if statuses:
+            statement = statement.where(TargetEntity.status.in_(statuses))
+        if before_updated_at is not None and before_id is not None:
+            statement = statement.where(
+                or_(
+                    TargetEntity.updated_at < before_updated_at,
+                    and_(
+                        TargetEntity.updated_at == before_updated_at,
+                        TargetEntity.target_id < before_id,
+                    ),
+                )
+            )
+        statement = statement.order_by(
+            TargetEntity.updated_at.desc(),
+            TargetEntity.target_id.desc(),
+        ).limit(limit)
+        return list((await self._session.execute(statement)).scalars())
+
+    async def update_target(
+        self,
+        *,
+        target_id: UUID,
+        app_id: int,
+        domain_id: int,
+        expected_version: int,
+        values: dict,
+    ) -> bool:
+        self._check_active()
+        update_values = dict(values)
+        update_values.update(
+            {
+                "row_version": TargetEntity.row_version + 1,
+                "updated_at": datetime.now(UTC),
+            }
+        )
+        statement = (
+            update(TargetEntity)
+            .where(
+                TargetEntity.target_id == target_id,
+                TargetEntity.app_id == app_id,
+                TargetEntity.domain_id == domain_id,
+                TargetEntity.row_version == expected_version,
+            )
+            .values(**update_values)
+            .execution_options(synchronize_session=False)
+        )
+        result = await self._session.execute(statement)
+        return result.rowcount == 1
+
     async def get_agent_binding(
         self,
         *,
@@ -116,6 +180,88 @@ class TargetRepository(AIOpsRepository):
         if lock:
             statement = statement.with_for_update()
         return (await self._session.execute(statement)).scalar_one_or_none()
+
+    async def get_binding_scoped(
+        self,
+        *,
+        binding_id: UUID,
+        target_id: UUID,
+        app_id: int,
+        domain_id: int,
+        lock: bool = False,
+    ) -> TargetBindingEntity | None:
+        self._check_active()
+        statement: Select = (
+            select(TargetBindingEntity)
+            .join(
+                TargetEntity,
+                TargetEntity.target_id == TargetBindingEntity.target_id,
+            )
+            .where(
+                TargetBindingEntity.binding_id == binding_id,
+                TargetBindingEntity.target_id == target_id,
+                TargetEntity.app_id == app_id,
+                TargetEntity.domain_id == domain_id,
+            )
+        )
+        if lock:
+            statement = statement.with_for_update()
+        return (await self._session.execute(statement)).scalar_one_or_none()
+
+    async def list_agent_bindings(
+        self,
+        *,
+        target_id: UUID,
+        app_id: int,
+        domain_id: int,
+    ) -> list[TargetBindingEntity]:
+        self._check_active()
+        statement = (
+            select(TargetBindingEntity)
+            .join(
+                TargetEntity,
+                TargetEntity.target_id == TargetBindingEntity.target_id,
+            )
+            .where(
+                TargetBindingEntity.target_id == target_id,
+                TargetEntity.app_id == app_id,
+                TargetEntity.domain_id == domain_id,
+            )
+            .order_by(
+                TargetBindingEntity.created_at,
+                TargetBindingEntity.binding_id,
+            )
+        )
+        return list((await self._session.execute(statement)).scalars())
+
+    async def update_binding(
+        self,
+        *,
+        binding_id: UUID,
+        target_id: UUID,
+        expected_version: int,
+        values: dict,
+    ) -> bool:
+        self._check_active()
+        update_values = dict(values)
+        update_values.update(
+            {
+                "row_version": TargetBindingEntity.row_version + 1,
+                "updated_at": datetime.now(UTC),
+            }
+        )
+        statement = (
+            update(TargetBindingEntity)
+            .where(
+                TargetBindingEntity.binding_id == binding_id,
+                TargetBindingEntity.target_id == target_id,
+                TargetBindingEntity.row_version == expected_version,
+            )
+            .values(**update_values)
+            .execution_options(synchronize_session=False)
+        )
+        result = await self._session.execute(statement)
+        return result.rowcount == 1
 
     async def list_monitors(
         self,
@@ -145,6 +291,62 @@ class TargetRepository(AIOpsRepository):
             TargetMonitorEntity.target_monitor_id,
         )
         return list((await self._session.execute(statement)).scalars())
+
+    async def get_monitor_scoped(
+        self,
+        *,
+        target_monitor_id: UUID,
+        target_id: UUID,
+        app_id: int,
+        domain_id: int,
+        lock: bool = False,
+    ) -> TargetMonitorEntity | None:
+        self._check_active()
+        statement: Select = (
+            select(TargetMonitorEntity)
+            .join(
+                TargetEntity,
+                TargetEntity.target_id == TargetMonitorEntity.target_id,
+            )
+            .where(
+                TargetMonitorEntity.target_monitor_id == target_monitor_id,
+                TargetMonitorEntity.target_id == target_id,
+                TargetEntity.app_id == app_id,
+                TargetEntity.domain_id == domain_id,
+            )
+        )
+        if lock:
+            statement = statement.with_for_update()
+        return (await self._session.execute(statement)).scalar_one_or_none()
+
+    async def update_monitor(
+        self,
+        *,
+        target_monitor_id: UUID,
+        target_id: UUID,
+        expected_version: int,
+        values: dict,
+    ) -> bool:
+        self._check_active()
+        update_values = dict(values)
+        update_values.update(
+            {
+                "row_version": TargetMonitorEntity.row_version + 1,
+                "updated_at": datetime.now(UTC),
+            }
+        )
+        statement = (
+            update(TargetMonitorEntity)
+            .where(
+                TargetMonitorEntity.target_monitor_id == target_monitor_id,
+                TargetMonitorEntity.target_id == target_id,
+                TargetMonitorEntity.row_version == expected_version,
+            )
+            .values(**update_values)
+            .execution_options(synchronize_session=False)
+        )
+        result = await self._session.execute(statement)
+        return result.rowcount == 1
 
     async def update_state(
         self,
@@ -246,6 +448,59 @@ class PolicyRepository(AIOpsRepository):
         if lock:
             statement = statement.with_for_update()
         return (await self._session.execute(statement)).scalar_one_or_none()
+
+    async def lock_versions(
+        self,
+        *,
+        app_id: int,
+        domain_id: int,
+        policy_key: str,
+    ) -> list[PolicyEntity]:
+        self._check_active()
+        statement = (
+            select(PolicyEntity)
+            .where(
+                PolicyEntity.app_id == app_id,
+                PolicyEntity.domain_id == domain_id,
+                PolicyEntity.policy_key == policy_key,
+            )
+            .order_by(PolicyEntity.version_no)
+            .with_for_update()
+        )
+        return list((await self._session.execute(statement)).scalars())
+
+    async def page_scoped(
+        self,
+        *,
+        app_id: int,
+        domain_id: int,
+        statuses: Collection[str] | None,
+        before_updated_at: datetime | None,
+        before_id: UUID | None,
+        limit: int,
+    ) -> list[PolicyEntity]:
+        self._check_active()
+        statement = select(PolicyEntity).where(
+            PolicyEntity.app_id == app_id,
+            PolicyEntity.domain_id == domain_id,
+        )
+        if statuses:
+            statement = statement.where(PolicyEntity.status.in_(statuses))
+        if before_updated_at is not None and before_id is not None:
+            statement = statement.where(
+                or_(
+                    PolicyEntity.updated_at < before_updated_at,
+                    and_(
+                        PolicyEntity.updated_at == before_updated_at,
+                        PolicyEntity.policy_id < before_id,
+                    ),
+                )
+            )
+        statement = statement.order_by(
+            PolicyEntity.updated_at.desc(),
+            PolicyEntity.policy_id.desc(),
+        ).limit(limit)
+        return list((await self._session.execute(statement)).scalars())
 
     async def transition_status(
         self,

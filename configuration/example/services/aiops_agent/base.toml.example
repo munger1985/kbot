@@ -40,6 +40,11 @@ statement_timeout_seconds = 60
 max_result_rows = 5000
 max_result_bytes = 10485760
 
+[clients.agent_runtime]
+base_url = "http://agent-runtime-api:18100"
+audience = "kbot-agent-runtime-api"
+timeout_seconds = 120
+
 [clients.model_serving]
 base_url = "http://model-llm:18092"
 audience = "kbot-model-llm"
@@ -68,3 +73,17 @@ max_input_chars = 32000
 max_artifact_bytes = 20971520
 max_tasks_per_run = 64
 run_timeout_seconds = 3600
+max_targets_per_inspection_fire = 100
+
+[management]
+cursor_secret_env = "KBOT_AIOPS_CURSOR_SECRET"
+webhook_key_secret_env = "KBOT_AIOPS_WEBHOOK_KEY_SECRET"
+cursor_ttl_seconds = 900
+webhook_key_overlap_seconds = 3600
+agent_execution_enabled = false
+
+[[management.inspection_templates]]
+template_id = "database_daily"
+template_version = "1.0.0"
+schedule_resolver_version = "1.0.0"
+allowed_override_keys = ["thresholds", "window", "optional_checks"]

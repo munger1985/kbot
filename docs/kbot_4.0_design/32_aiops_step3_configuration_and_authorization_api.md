@@ -138,9 +138,13 @@ Agent–Target Binding Access Mode
 - Endpoint DTO 按 `db_type/source_type` 使用判别联合，不接受任意 URL 字符串；Host、Port、TLS、Service Name 等字段分别校验，并由部署 egress policy 再限制网络目标。
 - `*_secret_ref` 只接受配置中允许的 Provider/Scheme 和规范路径；写入前通过 Secret Provider 做元数据/访问性检查，不读取或回显 Secret Value。
 - Secret Store 不可用时不把未验证引用持久化；暂时性失败返回 `503`，请求可用相同 Idempotency Key 重试。
-- Webhook Key 使用 CSPRNG 生成，明文只在创建/轮换响应中显示一次，数据库只保存 Hash。
+- Webhook Key 使用密码学安全的随机源或部署密钥 KDF 生成，明文只在创建/轮换响应中显示一次，数据库只保存 Hash。
 - 轮换允许有限重叠窗口：保存 Current Hash 和 Previous Hash/Expiry；超过部署上限的宽限期拒绝。所有轮换写安全审计，日志只记录 Source ID 和 Key Fingerprint。
 - Webhook Key 只负责不可枚举路由，Provider 签名/Secret 验证仍是认证条件。
+
+当前实现使用部署级高熵密钥和 HMAC-SHA256 按 Scope、Source 与
+Idempotency-Key 派生不可预测 Key，以同时满足重试时返回相同结果。Inbox
+只保存去掉 `webhook_key` 的响应快照，数据库和日志均不保存明文。
 
 ## 状态与删除规则
 
@@ -155,6 +159,11 @@ Agent–Target Binding Access Mode
 | Plan Target | `ACTIVE ↔ DISABLED` | 不提供 |
 
 停用 Target 会阻止新 Run/Task 领取，但不删除历史，也不强制取消正在执行的 Mutation；紧急停止由步骤 9 的 Kill Switch/Execution Reconciler 处理。停用 Source 只停止新采集，历史 Event/Artifact 仍可读。
+
+Plan Target 不单独增加 `ROW_VERSION`。其 PATCH 和新增操作使用父 Plan 的
+`If-Match`，并在同一事务内递增 Plan Row Version；这样关联项修改与 Plan
+调度快照共享一个并发边界，避免第二套 ETag。Active Plan 不允许失去最后一个
+Active Target。
 
 ## APEX 与返回投影
 
@@ -188,20 +197,45 @@ UoW-B: 重读并校验 row_version → 写配置 + Audit/Outbox → commit
 ## 代码归属
 
 ```text
-aiops_agent/api/management/{targets,monitor_sources,policies,inspections}.py
+aiops_agent/api/management/routes.py
 aiops_agent/application/configuration/
+  base.py
+  common.py
   target_service.py
-  binding_service.py
   monitor_service.py
   policy_service.py
   inspection_service.py
-aiops_agent/application/dto/configuration.py
-aiops_agent/ports/{agent_runtime,secret_store,template_registry}.py
+  projections.py
+  schedule.py
+  service.py
+aiops_agent/ports/{agent_runtime,secret_store}.py
+aiops_agent/adapters/{agent_runtime,secret_store}.py
 platform_core/contracts/aiops/configuration.py
 platform_clients/aiops.py
+main_api/api/ops.py
 ```
 
 Main API Route 只把外部 AuthContext 映射为签名内部上下文并调用 Client；AIOps Application Service 执行最终授权和不变式。Controller、Client 和 Repository 都不能自行组合权限。
+
+## 实施结果
+
+步骤 3 已完成以下链路：
+
+- `platform_core/contracts/aiops/configuration.py` 冻结六类资源的严格 DTO；
+- Main API 发布 `/api/v1/ops/*`，通过限定 `aiops.manage` Scope 的
+  `AIOpsManagementClient` 调用配置 Internal API；
+- `AIOpsConfigurationService` 统一执行 Domain 隔离、状态机、Policy/Binding
+  求交、父 Plan ETag、幂等 Inbox 和配置事件 Outbox；
+- Signed Cursor 绑定 App、Domain、Principal、Filter 与过期时间；
+- Agent 和 SecretRef 外部校验均发生在写事务之外；Secret Value 不进入服务；
+- Endpoint 或诊断凭据变化会使 Target 回到 Maintenance、Monitor Source
+  回到 Disabled，并使旧健康检查版本失效；
+- Monitor 健康结果同时匹配 Request ID、Config Row Version 和 Health
+  Version，乱序或旧配置结果不能覆盖当前事实。
+
+全量配置 Oracle Smoke 已覆盖 Target、Policy、Agent Binding、Monitor
+Source/Binding、健康检查、Webhook 轮换、Inspection Plan/Target、激活与清理；
+公开/内部 OpenAPI 快照和配置基础设施测试已同步更新。
 
 ## 最小测试矩阵
 

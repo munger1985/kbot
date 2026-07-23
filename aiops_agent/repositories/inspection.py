@@ -1,10 +1,10 @@
 """巡检 Plan、Fire 和版本化 Report 聚合 Repository。"""
 
 from collections.abc import Callable, Collection
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import Select, select, update
+from sqlalchemy import Select, and_, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aiops_agent.application.errors import StateConflictError
@@ -62,6 +62,88 @@ class InspectionRepository(AIOpsRepository):
             statement = statement.with_for_update()
         return (await self._session.execute(statement)).scalar_one_or_none()
 
+    async def get_plan_by_key(
+        self,
+        *,
+        app_id: int,
+        domain_id: int,
+        plan_key: str,
+    ) -> InspectionPlanEntity | None:
+        self._check_active()
+        statement = select(InspectionPlanEntity).where(
+            InspectionPlanEntity.app_id == app_id,
+            InspectionPlanEntity.domain_id == domain_id,
+            InspectionPlanEntity.plan_key == plan_key,
+        )
+        return (await self._session.execute(statement)).scalar_one_or_none()
+
+    async def page_plans(
+        self,
+        *,
+        app_id: int,
+        domain_id: int,
+        statuses: Collection[str] | None,
+        before_updated_at: datetime | None,
+        before_id: UUID | None,
+        limit: int,
+    ) -> list[InspectionPlanEntity]:
+        self._check_active()
+        statement = select(InspectionPlanEntity).where(
+            InspectionPlanEntity.app_id == app_id,
+            InspectionPlanEntity.domain_id == domain_id,
+        )
+        if statuses:
+            statement = statement.where(
+                InspectionPlanEntity.status.in_(statuses)
+            )
+        if before_updated_at is not None and before_id is not None:
+            statement = statement.where(
+                or_(
+                    InspectionPlanEntity.updated_at < before_updated_at,
+                    and_(
+                        InspectionPlanEntity.updated_at == before_updated_at,
+                        InspectionPlanEntity.inspection_plan_id < before_id,
+                    ),
+                )
+            )
+        statement = statement.order_by(
+            InspectionPlanEntity.updated_at.desc(),
+            InspectionPlanEntity.inspection_plan_id.desc(),
+        ).limit(limit)
+        return list((await self._session.execute(statement)).scalars())
+
+    async def update_plan(
+        self,
+        *,
+        inspection_plan_id: UUID,
+        app_id: int,
+        domain_id: int,
+        expected_version: int,
+        values: dict,
+    ) -> bool:
+        self._check_active()
+        update_values = dict(values)
+        update_values.update(
+            {
+                "row_version": InspectionPlanEntity.row_version + 1,
+                "updated_at": datetime.now(UTC),
+            }
+        )
+        statement = (
+            update(InspectionPlanEntity)
+            .where(
+                InspectionPlanEntity.inspection_plan_id
+                == inspection_plan_id,
+                InspectionPlanEntity.app_id == app_id,
+                InspectionPlanEntity.domain_id == domain_id,
+                InspectionPlanEntity.row_version == expected_version,
+            )
+            .values(**update_values)
+            .execution_options(synchronize_session=False)
+        )
+        result = await self._session.execute(statement)
+        return result.rowcount == 1
+
     async def list_active_targets(
         self,
         *,
@@ -94,6 +176,85 @@ class InspectionRepository(AIOpsRepository):
             .order_by(InspectionTargetEntity.inspection_target_id)
         )
         return list((await self._session.execute(statement)).scalars())
+
+    async def list_targets(
+        self,
+        *,
+        inspection_plan_id: UUID,
+        app_id: int,
+        domain_id: int,
+    ) -> list[InspectionTargetEntity]:
+        self._check_active()
+        statement = (
+            select(InspectionTargetEntity)
+            .join(
+                InspectionPlanEntity,
+                InspectionPlanEntity.inspection_plan_id
+                == InspectionTargetEntity.inspection_plan_id,
+            )
+            .where(
+                InspectionTargetEntity.inspection_plan_id
+                == inspection_plan_id,
+                InspectionPlanEntity.app_id == app_id,
+                InspectionPlanEntity.domain_id == domain_id,
+            )
+            .order_by(InspectionTargetEntity.inspection_target_id)
+        )
+        return list((await self._session.execute(statement)).scalars())
+
+    async def get_target_scoped(
+        self,
+        *,
+        inspection_target_id: UUID,
+        inspection_plan_id: UUID,
+        app_id: int,
+        domain_id: int,
+        lock: bool = False,
+    ) -> InspectionTargetEntity | None:
+        self._check_active()
+        statement: Select = (
+            select(InspectionTargetEntity)
+            .join(
+                InspectionPlanEntity,
+                InspectionPlanEntity.inspection_plan_id
+                == InspectionTargetEntity.inspection_plan_id,
+            )
+            .where(
+                InspectionTargetEntity.inspection_target_id
+                == inspection_target_id,
+                InspectionTargetEntity.inspection_plan_id
+                == inspection_plan_id,
+                InspectionPlanEntity.app_id == app_id,
+                InspectionPlanEntity.domain_id == domain_id,
+            )
+        )
+        if lock:
+            statement = statement.with_for_update()
+        return (await self._session.execute(statement)).scalar_one_or_none()
+
+    async def update_target(
+        self,
+        *,
+        inspection_target_id: UUID,
+        inspection_plan_id: UUID,
+        values: dict,
+    ) -> bool:
+        self._check_active()
+        update_values = dict(values)
+        update_values["updated_at"] = datetime.now(UTC)
+        statement = (
+            update(InspectionTargetEntity)
+            .where(
+                InspectionTargetEntity.inspection_target_id
+                == inspection_target_id,
+                InspectionTargetEntity.inspection_plan_id
+                == inspection_plan_id,
+            )
+            .values(**update_values)
+            .execution_options(synchronize_session=False)
+        )
+        result = await self._session.execute(statement)
+        return result.rowcount == 1
 
     async def claim_due_plan(
         self,

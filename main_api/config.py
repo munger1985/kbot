@@ -35,6 +35,12 @@ class MainApiSettings(Settings):
             audience="kbot-agent-runtime-api",
         )
     )
+    aiops: ServiceDependencyConfig = Field(
+        default_factory=lambda: ServiceDependencyConfig(
+            base_url="http://127.0.0.1:18110",
+            audience="kbot-aiops-api",
+        )
+    )
 
 
 @lru_cache(maxsize=1)

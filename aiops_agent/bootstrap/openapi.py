@@ -4,6 +4,8 @@ from uuid import UUID
 
 from fastapi import FastAPI, HTTPException
 
+from aiops_agent.api.management import router as internal_config_router
+from main_api.api.ops import router as public_config_router
 from platform_core.contracts.aiops.executor import (
     ExecutionResultRef,
     ExecutionStatusEvent,
@@ -31,10 +33,6 @@ from platform_core.contracts.aiops.public import (
     OpsRunSummary,
     ProposalView,
     ReportView,
-    TargetCreate,
-    TargetPage,
-    TargetPatch,
-    TargetView,
 )
 
 
@@ -48,18 +46,7 @@ def _not_implemented() -> None:
 def create_public_contract_app() -> FastAPI:
     """创建 Main API 后续映射使用的公开契约快照 App。"""
     app = FastAPI(title="KBot AIOps Public Contract", version="1.0.0")
-
-    @app.post("/api/v1/ops/targets", response_model=TargetView)
-    async def create_target(payload: TargetCreate):
-        _not_implemented()
-
-    @app.get("/api/v1/ops/targets", response_model=TargetPage)
-    async def list_targets():
-        _not_implemented()
-
-    @app.patch("/api/v1/ops/targets/{target_id}", response_model=TargetView)
-    async def patch_target(target_id: UUID, payload: TargetPatch):
-        _not_implemented()
+    app.include_router(public_config_router)
 
     @app.post("/api/v1/ops/runs", response_model=OpsRunReceipt)
     async def create_run(payload: OpsRunCreate):
@@ -91,6 +78,7 @@ def create_public_contract_app() -> FastAPI:
 def create_internal_contract_app() -> FastAPI:
     """创建 AIOps API 内部调用契约快照 App。"""
     app = FastAPI(title="KBot AIOps Internal Contract", version="1.0.0")
+    app.include_router(internal_config_router)
 
     @app.post("/internal/v1/aiops/runs", response_model=InternalOpsRunReceipt)
     async def create_run(payload: CreateOpsRunCommand):

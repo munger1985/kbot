@@ -2,16 +2,45 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from pydantic import Field, model_validator
 
+from .configuration import (
+    AgentBindingCreate,
+    AgentBindingPatch,
+    AgentBindingView,
+    HealthCheckReceipt,
+    InspectionPlanCreate,
+    InspectionPlanDetail,
+    InspectionPlanPage,
+    InspectionPlanPatch,
+    InspectionPlanSummary,
+    InspectionTargetCreate,
+    InspectionTargetPatch,
+    InspectionTargetView,
+    MonitorBindingCreate,
+    MonitorBindingPatch,
+    MonitorBindingView,
+    MonitorSourceCreate,
+    MonitorSourceDetail,
+    MonitorSourcePage,
+    MonitorSourcePatch,
+    MonitorSourceSummary,
+    PolicyCreate,
+    PolicyDetail,
+    PolicyPage,
+    PolicySummary,
+    SecretRefStatus,
+    TargetCreate,
+    TargetDetail,
+    TargetEndpoint,
+    TargetPage,
+    TargetPatch,
+    TargetSummary,
+    WebhookKeyRotation,
+)
 from .types import (
     AIOpsContract,
     ArtifactRef,
-    CursorPage,
-    DatabaseType,
-    ExecutionMode,
     HitlStatus,
     HitlType,
     JsonObject,
@@ -20,206 +49,15 @@ from .types import (
     PUBLIC_SCHEMA_VERSION,
     ReportStatus,
     ReportType,
-    ResourceStatus,
     ResultFormat,
     ResultStatus,
     RootCauseGrade,
-    SecretRef,
     Sha256Digest,
     TriggerType,
     UUIDv7,
     UtcDatetime,
 )
 
-
-class TargetEndpoint(AIOpsContract):
-    host: str = Field(min_length=1, max_length=253)
-    port: int = Field(ge=1, le=65535)
-    service: str | None = Field(default=None, max_length=256)
-    database: str | None = Field(default=None, max_length=256)
-
-
-class TargetCreate(AIOpsContract):
-    schema_version: str = PUBLIC_SCHEMA_VERSION
-    target_key: str = Field(pattern=r"^[a-z][a-z0-9._-]{0,127}$")
-    display_name: str = Field(min_length=1, max_length=256)
-    db_type: DatabaseType
-    version_code: str = Field(min_length=1, max_length=64)
-    environment: str = Field(min_length=1, max_length=32)
-    db_role: str = Field(min_length=1, max_length=32)
-    endpoint: TargetEndpoint
-    diagnostic_secret_ref: SecretRef | None = None
-    execution_secret_ref: SecretRef | None = None
-    execution_mode: ExecutionMode = ExecutionMode.MONITOR_ONLY
-    security_level: int = Field(default=1, ge=0, le=99)
-    metadata: JsonObject = Field(default_factory=dict)
-
-
-class TargetPatch(AIOpsContract):
-    schema_version: str = PUBLIC_SCHEMA_VERSION
-    expected_row_version: int = Field(ge=1)
-    display_name: str | None = Field(default=None, min_length=1, max_length=256)
-    version_code: str | None = Field(default=None, min_length=1, max_length=64)
-    environment: str | None = Field(default=None, min_length=1, max_length=32)
-    db_role: str | None = Field(default=None, min_length=1, max_length=32)
-    endpoint: TargetEndpoint | None = None
-    diagnostic_secret_ref: SecretRef | None = None
-    execution_secret_ref: SecretRef | None = None
-    execution_mode: ExecutionMode | None = None
-    security_level: int | None = Field(default=None, ge=0, le=99)
-    metadata: JsonObject | None = None
-
-
-class TargetView(AIOpsContract):
-    schema_version: str = PUBLIC_SCHEMA_VERSION
-    target_id: UUIDv7
-    target_key: str
-    display_name: str
-    db_type: DatabaseType
-    version_code: str
-    environment: str
-    db_role: str
-    endpoint: TargetEndpoint
-    has_diagnostic_secret: bool
-    has_execution_secret: bool
-    execution_mode: ExecutionMode
-    security_level: int
-    status: ResourceStatus
-    row_version: int = Field(ge=1)
-    created_at: UtcDatetime
-    updated_at: UtcDatetime
-
-
-class TargetPage(CursorPage):
-    schema_version: str = PUBLIC_SCHEMA_VERSION
-    items: tuple[TargetView, ...] = ()
-
-
-class AgentBindingCreate(AIOpsContract):
-    schema_version: str = PUBLIC_SCHEMA_VERSION
-    agent_id: UUIDv7
-    capabilities: tuple[str, ...] = ()
-
-
-class AgentBindingPatch(AIOpsContract):
-    schema_version: str = PUBLIC_SCHEMA_VERSION
-    expected_row_version: int = Field(ge=1)
-    status: ResourceStatus
-    capabilities: tuple[str, ...] | None = None
-
-
-class AgentBindingView(AIOpsContract):
-    schema_version: str = PUBLIC_SCHEMA_VERSION
-    binding_id: UUIDv7
-    target_id: UUIDv7
-    agent_id: UUIDv7
-    capabilities: tuple[str, ...] = ()
-    status: ResourceStatus
-    row_version: int = Field(ge=1)
-    created_at: UtcDatetime
-    updated_at: UtcDatetime
-
-
-class MonitorSourceCreate(AIOpsContract):
-    schema_version: str = PUBLIC_SCHEMA_VERSION
-    source_key: str = Field(pattern=r"^[a-z][a-z0-9._-]{0,127}$")
-    display_name: str = Field(min_length=1, max_length=256)
-    provider_type: str = Field(pattern=r"^(PROMETHEUS|ZABBIX|OEM)$")
-    endpoint: str = Field(min_length=1, max_length=2048)
-    secret_ref: SecretRef
-    provider_config: JsonObject = Field(default_factory=dict)
-
-
-class MonitorSourcePatch(AIOpsContract):
-    schema_version: str = PUBLIC_SCHEMA_VERSION
-    expected_row_version: int = Field(ge=1)
-    display_name: str | None = Field(default=None, min_length=1, max_length=256)
-    endpoint: str | None = Field(default=None, min_length=1, max_length=2048)
-    secret_ref: SecretRef | None = None
-    provider_config: JsonObject | None = None
-    status: ResourceStatus | None = None
-
-
-class MonitorSourceView(AIOpsContract):
-    schema_version: str = PUBLIC_SCHEMA_VERSION
-    source_id: UUIDv7
-    source_key: str
-    display_name: str
-    provider_type: str
-    endpoint: str
-    has_secret: bool
-    status: ResourceStatus
-    row_version: int = Field(ge=1)
-    webhook_key_hint: str | None = None
-    created_at: UtcDatetime
-    updated_at: UtcDatetime
-
-
-class MonitorBindingCreate(AIOpsContract):
-    schema_version: str = PUBLIC_SCHEMA_VERSION
-    source_id: UUIDv7
-    provider_object_ref: str = Field(min_length=1, max_length=512)
-    priority: int = Field(default=100, ge=0, le=10000)
-    metric_scope: JsonObject = Field(default_factory=dict)
-
-
-class MonitorBindingPatch(AIOpsContract):
-    schema_version: str = PUBLIC_SCHEMA_VERSION
-    expected_row_version: int = Field(ge=1)
-    provider_object_ref: str | None = Field(
-        default=None, min_length=1, max_length=512
-    )
-    priority: int | None = Field(default=None, ge=0, le=10000)
-    metric_scope: JsonObject | None = None
-    status: ResourceStatus | None = None
-
-
-class MonitorBindingView(AIOpsContract):
-    schema_version: str = PUBLIC_SCHEMA_VERSION
-    binding_id: UUIDv7
-    target_id: UUIDv7
-    source_id: UUIDv7
-    provider_object_ref: str
-    priority: int
-    metric_scope: JsonObject
-    status: ResourceStatus
-    row_version: int = Field(ge=1)
-
-
-class InspectionPlanCreate(AIOpsContract):
-    schema_version: str = PUBLIC_SCHEMA_VERSION
-    plan_key: str = Field(pattern=r"^[a-z][a-z0-9._-]{0,127}$")
-    display_name: str = Field(min_length=1, max_length=256)
-    schedule_type: str = Field(pattern=r"^(DAILY|WEEKLY|CRON)$")
-    schedule_expression: str = Field(min_length=1, max_length=256)
-    timezone: str = Field(min_length=1, max_length=64)
-    target_ids: tuple[UUIDv7, ...] = Field(min_length=1)
-
-
-class InspectionPlanPatch(AIOpsContract):
-    schema_version: str = PUBLIC_SCHEMA_VERSION
-    expected_row_version: int = Field(ge=1)
-    display_name: str | None = Field(default=None, min_length=1, max_length=256)
-    schedule_expression: str | None = Field(
-        default=None, min_length=1, max_length=256
-    )
-    timezone: str | None = Field(default=None, min_length=1, max_length=64)
-    target_ids: tuple[UUIDv7, ...] | None = None
-    status: ResourceStatus | None = None
-
-
-class InspectionPlanView(AIOpsContract):
-    schema_version: str = PUBLIC_SCHEMA_VERSION
-    plan_id: UUIDv7
-    plan_key: str
-    display_name: str
-    schedule_type: str
-    schedule_expression: str
-    timezone: str
-    target_ids: tuple[UUIDv7, ...]
-    status: ResourceStatus
-    next_run_at: UtcDatetime | None = None
-    row_version: int = Field(ge=1)
 
 
 class InspectionFireSummary(AIOpsContract):
@@ -391,10 +229,3 @@ class UploadSession(AIOpsContract):
     expires_at: UtcDatetime
     expected_content_types: tuple[str, ...] = ()
     content_hash: Sha256Digest | None = None
-
-
-class WebhookKeyRotation(AIOpsContract):
-    schema_version: str = PUBLIC_SCHEMA_VERSION
-    source_id: UUIDv7
-    webhook_key: str = Field(min_length=32, max_length=256)
-    created_at: UtcDatetime

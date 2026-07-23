@@ -4,7 +4,7 @@ from collections.abc import Callable, Collection
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import Select, or_, select, update
+from sqlalchemy import Select, and_, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aiops_agent.entities import (
@@ -46,6 +46,110 @@ class MonitorSourceRepository(AIOpsRepository):
             statement = statement.with_for_update()
         return (await self._session.execute(statement)).scalar_one_or_none()
 
+    async def get_by_key(
+        self,
+        *,
+        app_id: int,
+        domain_id: int,
+        source_key: str,
+    ) -> MonitorSourceEntity | None:
+        self._check_active()
+        statement = select(MonitorSourceEntity).where(
+            MonitorSourceEntity.app_id == app_id,
+            MonitorSourceEntity.domain_id == domain_id,
+            MonitorSourceEntity.source_key == source_key,
+        )
+        return (await self._session.execute(statement)).scalar_one_or_none()
+
+    async def page_scoped(
+        self,
+        *,
+        app_id: int,
+        domain_id: int,
+        statuses: Collection[str] | None,
+        before_updated_at: datetime | None,
+        before_id: UUID | None,
+        limit: int,
+    ) -> list[MonitorSourceEntity]:
+        self._check_active()
+        statement = select(MonitorSourceEntity).where(
+            MonitorSourceEntity.app_id == app_id,
+            MonitorSourceEntity.domain_id == domain_id,
+        )
+        if statuses:
+            statement = statement.where(
+                MonitorSourceEntity.status.in_(statuses)
+            )
+        if before_updated_at is not None and before_id is not None:
+            statement = statement.where(
+                or_(
+                    MonitorSourceEntity.updated_at < before_updated_at,
+                    and_(
+                        MonitorSourceEntity.updated_at == before_updated_at,
+                        MonitorSourceEntity.monitor_source_id < before_id,
+                    ),
+                )
+            )
+        statement = statement.order_by(
+            MonitorSourceEntity.updated_at.desc(),
+            MonitorSourceEntity.monitor_source_id.desc(),
+        ).limit(limit)
+        return list((await self._session.execute(statement)).scalars())
+
+    async def update_config(
+        self,
+        *,
+        monitor_source_id: UUID,
+        app_id: int,
+        domain_id: int,
+        expected_version: int,
+        values: dict,
+    ) -> bool:
+        self._check_active()
+        update_values = dict(values)
+        update_values.update(
+            {
+                "row_version": MonitorSourceEntity.row_version + 1,
+                "updated_at": datetime.now(UTC),
+            }
+        )
+        statement = (
+            update(MonitorSourceEntity)
+            .where(
+                MonitorSourceEntity.monitor_source_id == monitor_source_id,
+                MonitorSourceEntity.app_id == app_id,
+                MonitorSourceEntity.domain_id == domain_id,
+                MonitorSourceEntity.row_version == expected_version,
+            )
+            .values(**update_values)
+            .execution_options(synchronize_session=False)
+        )
+        result = await self._session.execute(statement)
+        return result.rowcount == 1
+
+    async def request_health_check(
+        self,
+        *,
+        monitor_source_id: UUID,
+        app_id: int,
+        domain_id: int,
+        expected_version: int,
+        request_id: UUID,
+        requested_at: datetime,
+        updated_by: str,
+    ) -> bool:
+        return await self.update_config(
+            monitor_source_id=monitor_source_id,
+            app_id=app_id,
+            domain_id=domain_id,
+            expected_version=expected_version,
+            values={
+                "health_check_request_id": request_id,
+                "health_check_requested_at": requested_at,
+                "updated_by": updated_by,
+            },
+        )
+
     async def get_by_webhook_hash(
         self,
         *,
@@ -75,6 +179,8 @@ class MonitorSourceRepository(AIOpsRepository):
         self,
         *,
         monitor_source_id: UUID,
+        health_check_request_id: UUID,
+        expected_config_version: int,
         expected_health_version: int,
         health_status: str,
         checked_at: datetime,
@@ -85,6 +191,9 @@ class MonitorSourceRepository(AIOpsRepository):
             update(MonitorSourceEntity)
             .where(
                 MonitorSourceEntity.monitor_source_id == monitor_source_id,
+                MonitorSourceEntity.health_check_request_id
+                == health_check_request_id,
+                MonitorSourceEntity.row_version == expected_config_version,
                 MonitorSourceEntity.health_version
                 == expected_health_version,
             )

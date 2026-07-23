@@ -249,14 +249,20 @@ class AIOpsConfigAndBootstrapTest(unittest.TestCase):
                 secret_store={"provider": "environment"},
             )
 
-    def test_four_apps_only_expose_system_routes_in_step_zero(self) -> None:
+    def test_each_process_only_exposes_its_owned_routes(self) -> None:
         expected = {"/live", "/ready", "/metrics"}
-        for app in (
-            aiops_api_app,
-            worker_app,
-            scheduler_app,
-            executor_app,
-        ):
+        api_paths = {route.path for route in aiops_api_app.routes}
+        self.assertTrue(expected.issubset(api_paths))
+        self.assertTrue(
+            any(
+                path.startswith("/internal/v1/aiops/config/")
+                for path in api_paths
+            )
+        )
+        self.assertFalse(
+            any(path.startswith("/api/v1/") for path in api_paths)
+        )
+        for app in (worker_app, scheduler_app, executor_app):
             paths = {route.path for route in app.routes}
             self.assertTrue(expected.issubset(paths))
             self.assertFalse(
@@ -268,6 +274,8 @@ class AIOpsConfigAndBootstrapTest(unittest.TestCase):
             )
             with TestClient(app) as client:
                 self.assertEqual(200, client.get("/live").status_code)
+        with TestClient(aiops_api_app) as client:
+            self.assertEqual(200, client.get("/live").status_code)
 
     def test_executor_never_creates_kbot_database_runtime(self) -> None:
         with TestClient(executor_app) as client:
@@ -280,6 +288,7 @@ class AIOpsConfigAndBootstrapTest(unittest.TestCase):
     def test_management_and_delegation_clients_remain_narrow(self) -> None:
         self.assertTrue(hasattr(AIOpsManagementClient, "create_run"))
         self.assertTrue(hasattr(AIOpsManagementClient, "command"))
+        self.assertTrue(hasattr(AIOpsManagementClient, "create_target"))
         self.assertFalse(
             hasattr(AIOpsDelegationClient, "command")
         )

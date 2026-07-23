@@ -16,9 +16,10 @@ from fastapi_offline import FastAPIOffline
 from loguru import logger
 from sqlalchemy import text
 
-from main_api.api import agent_router, knowledge_router, run_router
+from main_api.api import agent_router, knowledge_router, ops_router, run_router
 from main_api.config import get_main_api_settings
 from platform_clients import (
+    AIOpsClientError,
     AgentRuntimeClientError,
     KnowledgeCoreClientError,
 )
@@ -125,6 +126,7 @@ def create_main_api_app(
     app.include_router(knowledge_router)
     app.include_router(agent_router)
     app.include_router(run_router)
+    app.include_router(ops_router)
 
     @app.exception_handler(KnowledgeCoreClientError)
     async def knowledge_core_error_handler(
@@ -181,6 +183,35 @@ def create_main_api_app(
             status_code=exc.status_code,
             code=exc.code,
             title="Agent Runtime 请求失败",
+            detail=str(exc),
+        )
+
+    @app.exception_handler(AIOpsClientError)
+    async def aiops_error_handler(
+        request: Request,
+        exc: AIOpsClientError,
+    ):
+        if exc.status_code in {401, 403}:
+            return _problem_response(
+                request=request,
+                status_code=502,
+                code="UPSTREAM_AUTH_FAILED",
+                title="下游服务认证失败",
+                detail="AIOps 内部认证失败",
+            )
+        if exc.status_code >= 500:
+            return _problem_response(
+                request=request,
+                status_code=503,
+                code="AIOPS_UNAVAILABLE",
+                title="AIOps 暂时不可用",
+                detail="AIOps 暂时无法完成请求",
+            )
+        return _problem_response(
+            request=request,
+            status_code=exc.status_code,
+            code=exc.code,
+            title="AIOps 请求失败",
             detail=str(exc),
         )
 
@@ -280,6 +311,13 @@ def create_main_api_app(
         else:
             checks["agent_runtime"] = (
                 "ok" if await agent_client.is_ready() else "unavailable"
+            )
+        aiops_client = getattr(request.app.state, "aiops_client", None)
+        if aiops_client is None:
+            checks["aiops"] = "not_configured"
+        else:
+            checks["aiops"] = (
+                "ok" if await aiops_client.is_ready() else "unavailable"
             )
         ready = all(value == "ok" for value in checks.values())
         if not ready:
