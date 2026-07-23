@@ -14,8 +14,10 @@ KBot 是面向知识检索与数据库运维分析的 Python/FastAPI 后端。4.
 - `platform_clients/`：跨服务客户端。
 - `apps/`：各独立进程入口。
 
-Agent Runtime 当前已建立领域契约、全量 Schema 和内部 API 进程骨架；Run
-命令、Repository/UoW 与 Worker 尚未启用，因此不会暴露占位成功接口。
+Agent Runtime 已启用持久化 Run/Task/Artifact/Event、固定 Document Plan、
+KC 两阶段检索 Skill、Grounded Response Composer、租约恢复和独立 Worker。
+Portal 可通过 Main API 的 `/api/v1/agents` 与 `/api/v1/runs` 使用该链路；
+内部 Plan、Task Claim 和 Artifact 写回不会公开。
 
 Portal 使用预配置 API Key 访问 Main API；Main API 校验 Domain 后，为内部调用签发
 短期 AuthContext JWT。`/internal/v1/*` 仅供服务间调用，不通过 Main API 暴露。
@@ -39,6 +41,8 @@ pip install -r requirements.txt
 
 ```bash
 python3 -m apps.main_api.main
+python3 -m apps.agent_runtime_api.main
+python3 -m apps.agent_runtime_worker.main
 python3 -m apps.knowledge_core_api.main
 python3 -m apps.knowledge_core_parser.main
 python3 -m apps.knowledge_core_projection.main

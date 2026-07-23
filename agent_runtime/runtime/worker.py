@@ -143,23 +143,30 @@ class AgentRuntimeWorker:
                 retryable,
                 type(exc).__name__,
             )
-            await self._runtime_service.fail_task(
-                FailTaskCommand(
-                    task_id=latest.task_id,
-                    expected_row_version=latest.row_version,
-                    worker_id=self._worker_id,
-                    lease_token=latest.lease_token,
-                    error_code=type(exc).__name__.upper(),
-                    error_message=str(exc)[:1000] or "Task 执行失败",
-                    retryable=retryable,
-                    retry_at=retry_at,
-                    actor_id=self._worker_id,
-                    trace_id=latest.trace_id,
-                    idempotency_key=(
-                        f"{latest.task_id}:{latest.attempt}:fail"
-                    ),
+            try:
+                await self._runtime_service.fail_task(
+                    FailTaskCommand(
+                        task_id=latest.task_id,
+                        expected_row_version=latest.row_version,
+                        worker_id=self._worker_id,
+                        lease_token=latest.lease_token,
+                        error_code=type(exc).__name__.upper(),
+                        error_message=str(exc)[:1000] or "Task 执行失败",
+                        retryable=retryable,
+                        retry_at=retry_at,
+                        actor_id=self._worker_id,
+                        trace_id=latest.trace_id,
+                        idempotency_key=(
+                            f"{latest.task_id}:{latest.attempt}:fail"
+                        ),
+                    )
                 )
-            )
+            except Exception as persist_exc:
+                logger.error(
+                    "Task 失败状态写回未成功：task_id={} error={}",
+                    latest.task_id,
+                    type(persist_exc).__name__,
+                )
 
     async def _execute_with_heartbeat(
         self,

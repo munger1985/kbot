@@ -23,6 +23,7 @@ from agent_runtime.domain.planning import PlanLimits, PlanValidator
 from agent_runtime.domain.skills import SkillRegistry
 from agent_runtime.persistence import create_agent_runtime_uow
 from agent_runtime.specialists import register_builtin_manifests
+from agent_runtime.specialists.root import RootAgentPlanner
 from platform_core.database.oracle import create_database_runtime
 from platform_core.logger import LogConfig, LogManager
 from platform_core.middleware.log_middleware import log_requests
@@ -79,6 +80,7 @@ async def lifespan(app: FastAPIOffline):
             ),
         ),
         skill_registry=skill_registry,
+        root_planner=RootAgentPlanner(),
     )
     logger.info("正在启动服务 [{}]，进程号={}", SERVICE_NAME, os.getpid())
     try:

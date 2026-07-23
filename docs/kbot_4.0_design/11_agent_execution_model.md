@@ -143,7 +143,18 @@ PENDING → READY → RUNNING → SUCCEEDED
 
 ## 调度和事务边界
 
-API 创建 Run、Root Task 和首个事件时使用同一事务，成功后返回 `run_id`。Scheduler 只领取 `READY` Task，使用有限 `lease_until` 防止多副本重复执行。Worker 完成 Task 时，在一个数据库事务内写入结果 Artifact、Task 状态和事件，再释放后继 Task；事务中不调用 HTTP 或 LLM。
+API 创建 Run、经过校验的初始 Task DAG 和首批事件时使用同一事务，成功后
+返回 `run_id`。确定性单路由不额外创建只做转发的 Root Task；只有未来需要
+LLM Router 或跨服务委派时才把 Root 决策持久化为可恢复 Task。Scheduler 只
+领取 `READY` Task，使用有限 `lease_until` 防止多副本重复执行。Worker 完成
+Task 时，在一个数据库事务内写入结果 Artifact、Task 状态和事件，再释放后继
+Task；事务中不调用 HTTP 或 LLM。
+
+当前 Document 首版把确定性 Root Plan 与 Run 创建放入同一事务：写
+`RUN_CREATED` 后立即校验并安装
+`knowledge_retrieval → response_compose`，设置 `FINAL_TASK_ID` 并写
+`RUN_STARTED`。生产公开 API 不需要、也不能由调用方拼装 Plan。内部
+`/{run_id}/plan` 仅保留给后续受控 Router/Planner，不是 Portal 接口。
 
 Task 之间只通过版本化 Artifact 传递数据，不共享可变 `dict` 或进程级 Context。Supervisor 负责生成和校验 DAG；Specialist 只能执行分配给自己的 Task。跨服务委派接受后进入 `WAITING_EXTERNAL` 并释放 Worker 租约，由 Delegation Reconciler 按持久化游标恢复。问文和问数可以并行，Answer Composer 必须等待对应 Artifact 完成：
 
@@ -171,6 +182,10 @@ Skill Manifest 声明输入/输出 schema、权限、运行模式、幂等性、
 `KBOT_AGENT_RUN_EVENT` 是唯一的执行事件源，事件至少包含 `run_id`、`task_id`、事件序号、类型、时间和 Artifact 引用。事件类型包括 `RUN_STARTED`、`TASK_STARTED`、`TASK_PROGRESS`、`ARTIFACT_CREATED`、`TASK_RETRYING`、`APPROVAL_REQUIRED`、`TASK_COMPLETED`、`RUN_FAILED` 和 `RUN_COMPLETED`。
 
 SSE 只读事件流：`GET /api/v1/runs/{run_id}/events`，通过 `Last-Event-ID` 续传。子 Agent 事件先幂等投影为父 Event，不做 SSE 套 SSE。取消使用协作式取消；租约过期后允许其他 Worker 接管。重试仅适用于幂等 Task，每个外部副作用必须使用 `run_id + task_id` 的幂等键。恢复时复用已成功的 Artifact，不重复执行已完成 Task。
+
+`RETRY_WAIT` 到期后由 Runtime 原子推进为 `READY` 并生成新的租约 Token；
+旧 Worker 仍不能写回。最终正文不进入 Event payload，前端在终态后通过
+`GET /api/v1/runs/{run_id}/result` 读取 `GROUNDED_ANSWER`。
 
 Mutation Skill 先产生 `ACTION_PLAN` Artifact，确定性 Catalog/Policy Builder 再创建不可变 `APPROVAL_PROPOSAL`；经过 Policy/HITL 后才能创建一次性 Execution Task。预算、截止时间、最大并行数和最大重试次数在 Run 创建时冻结，并由 Runtime 强制执行，而不是交给 Prompt 判断。
 

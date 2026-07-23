@@ -14,6 +14,7 @@ from agent_runtime.application import (
     CompleteTaskCommand,
     CreateAgentDefinitionCommand,
     CreateRunCommand,
+    FailTaskCommand,
     InstallPlanCommand,
     StaleTaskLease,
     UpdateAgentDefinitionCommand,
@@ -166,6 +167,30 @@ class _Tasks:
                 return task
         return None
 
+    async def claim_due_retry(self, *, now):
+        return next(
+            (
+                task
+                for task in self.store.tasks.values()
+                if task.status == "RETRY_WAIT"
+                and task.next_retry_at is not None
+                and task.next_retry_at <= now
+            ),
+            None,
+        )
+
+    async def claim_expired_lease(self, *, now):
+        return next(
+            (
+                task
+                for task in self.store.tasks.values()
+                if task.status == "RUNNING"
+                and task.lease_until is not None
+                and task.lease_until <= now
+            ),
+            None,
+        )
+
     async def get(self, *, task_id, lock=False):
         return self.store.tasks.get(task_id)
 
@@ -280,7 +305,7 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
             agent_key="document-assistant",
             display_name="文档助手",
             status="ACTIVE",
-            enabled_capabilities_json=["document", "conversation"],
+            enabled_capabilities_json=["document"],
             router_model_name="router-model",
             composer_model_name="composer-model",
             instruction="仅基于可验证证据回答。",
@@ -288,6 +313,7 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
             row_version=1,
         )
         registry = register_builtin_manifests(SkillRegistry())
+        self.registry = registry
         validator = PlanValidator(
             skill_exists=registry.contains,
             capability_exists=lambda service, capability: False,
@@ -321,6 +347,28 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
         )
         with self.assertRaises(AgentDefinitionNotFound):
             await self.service.create_run(unknown)
+
+    async def test_create_run_atomically_installs_document_plan(self):
+        service = AgentRuntimeService(
+            uow_factory=lambda: _Uow(self.store),
+            plan_validator=PlanValidator(
+                skill_exists=self.registry.contains,
+                capability_exists=lambda service, capability: False,
+                public_artifact_types={"GROUNDED_ANSWER"},
+            ),
+            skill_registry=self.registry,
+            root_planner=RootAgentPlanner(),
+        )
+        created = await service.create_run(self.create_command)
+
+        self.assertEqual(created.status, "RUNNING")
+        self.assertEqual(len(self.store.tasks), 2)
+        self.assertEqual(
+            [event.event_type for event in self.store.events],
+            ["RUN_CREATED", "RUN_STARTED"],
+        )
+        run = self.store.runs[created.run_id]
+        self.assertIsNotNone(run.final_task_id)
 
     async def test_agent_definition_create_and_update(self):
         created = await self.definition_service.create(
@@ -441,6 +489,12 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(completed.task_status, "SUCCEEDED")
         self.assertEqual(completed.run_status, "COMPLETED")
         self.assertIsNotNone(completed.artifact_id)
+        result = await self.service.get_result(
+            run_id=created.run_id,
+            app_id=1,
+            domain_id=20,
+        )
+        self.assertEqual(result.payload, {"answer": "完成"})
         self.assertEqual(
             [event.event_type for event in self.store.events],
             [
@@ -475,6 +529,93 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
                     idempotency_key="complete-stale",
                 )
             )
+
+    async def test_due_retry_returns_to_ready_and_gets_new_lease(self):
+        created = await self.service.create_run(self.create_command)
+        plan = PlanDraft(
+            plan_version="1.0",
+            objective="生成最终回答",
+            tasks=(
+                TaskSpec(
+                    task_key="compose",
+                    task_type="COMPOSE",
+                    execution_kind=ExecutionKind.LOCAL_SKILL,
+                    specialist="response_composer",
+                    skill_id="response-composer",
+                    skill_version="1.0.0",
+                    expected_outputs=("GROUNDED_ANSWER",),
+                    timeout_seconds=60,
+                    max_retries=1,
+                    execution_mode=ExecutionMode.READ_ONLY,
+                ),
+            ),
+            final_task_key="compose",
+            expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+        )
+        await self.service.install_plan(
+            InstallPlanCommand(
+                app_id=1,
+                domain_id=20,
+                run_id=created.run_id,
+                expected_row_version=1,
+                plan=plan,
+                actor_id="root-agent",
+                trace_id="trace-1",
+                idempotency_key="retry-plan",
+            )
+        )
+        first = await self.service.claim_task(
+            ClaimTaskCommand(
+                worker_id="worker-1",
+                lease_seconds=120,
+                trace_id="trace-1",
+            )
+        )
+        await self.service.fail_task(
+            FailTaskCommand(
+                task_id=first.task_id,
+                expected_row_version=first.row_version,
+                worker_id="worker-1",
+                lease_token=first.lease_token,
+                error_code="TEMPORARY_ERROR",
+                error_message="临时失败",
+                retryable=True,
+                retry_at=datetime.now(timezone.utc) - timedelta(seconds=1),
+                actor_id="worker-1",
+                trace_id="trace-1",
+                idempotency_key="retry-fail",
+            )
+        )
+
+        second = await self.service.claim_task(
+            ClaimTaskCommand(
+                worker_id="worker-2",
+                lease_seconds=120,
+                trace_id="trace-2",
+            )
+        )
+        self.assertEqual(second.task_id, first.task_id)
+        self.assertEqual(second.attempt, 2)
+        self.assertNotEqual(second.lease_token, first.lease_token)
+
+    async def test_expired_final_lease_fails_required_run(self):
+        await self.test_due_retry_returns_to_ready_and_gets_new_lease()
+        task = next(iter(self.store.tasks.values()))
+        task.lease_until = datetime.now(timezone.utc) - timedelta(seconds=1)
+
+        lease = await self.service.claim_task(
+            ClaimTaskCommand(
+                worker_id="worker-3",
+                lease_seconds=120,
+                trace_id="trace-3",
+            )
+        )
+
+        self.assertIsNone(lease)
+        self.assertEqual(task.status, "FAILED")
+        run = next(iter(self.store.runs.values()))
+        self.assertEqual(run.status, "FAILED")
+        self.assertEqual(run.error_code, "WORKER_LEASE_EXPIRED")
 
     async def test_dependency_artifact_is_in_successor_lease(self):
         created = await self.service.create_run(self.create_command)

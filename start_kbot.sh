@@ -35,6 +35,8 @@ SERVICES=(
     "Knowledge Core:apps/knowledge_core_api/main.py:."
     "KC Index Worker:apps/knowledge_core_projection/main.py:."
     "Parser:apps/knowledge_core_parser/main.py:."
+    "Agent Runtime API:apps/agent_runtime_api/main.py:."
+    "Agent Runtime Worker:apps/agent_runtime_worker/main.py:."
     "Main API:apps/main_api/main.py:."
 )
 
@@ -57,7 +59,8 @@ start_service() {
     local pid=$!
 
     # 后台 Worker 不监听 HTTP 端口，仅确认进程没有在启动后立即退出。
-    if [ "$script" = "apps/knowledge_core_projection/main.py" ]; then
+    if [ "$script" = "apps/knowledge_core_projection/main.py" ] \
+        || [ "$script" = "apps/agent_runtime_worker/main.py" ]; then
         sleep 1
         if ! kill -0 $pid 2>/dev/null; then
             echo "  ❌ ${service_name} Worker 在启动期间退出"
@@ -94,6 +97,7 @@ start_service() {
             apps/ai_models_visual/main.py)      port="18093" ;;
             apps/knowledge_core_parser/main.py)      port="18095" ;;
             apps/knowledge_core_api/main.py)   port="18090" ;;
+            apps/agent_runtime_api/main.py)   port="18100" ;;
             apps/main_api/main.py)             port="18099" ;;
         esac
 

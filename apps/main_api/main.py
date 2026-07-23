@@ -14,7 +14,7 @@ from main_api.app import create_main_api_app
 from main_api.application import DomainValidationService
 from main_api.config import get_main_api_settings
 from main_api.persistence import create_main_api_uow
-from platform_clients import KnowledgeCoreClient
+from platform_clients import AgentRuntimeClient, KnowledgeCoreClient
 from platform_core.database.oracle import create_database_runtime
 from platform_core.logger import LogConfig, LogManager
 from platform_core.platform.port_check import check_port_available
@@ -28,6 +28,7 @@ config = settings.api
 async def lifespan(app: FastAPI):
     """初始化 Main API 自有数据库和跨服务 Client。"""
     app.state.service_name = config.service_name
+    app.state.main_api_settings = settings
     LogManager(LogConfig(
         service_name=config.service_name,
         log_dir=settings.log.dir,
@@ -51,6 +52,13 @@ async def lifespan(app: FastAPI):
         caller_service=config.service_name,
         audience=settings.knowledge_core.audience,
         timeout_seconds=settings.knowledge_core.timeout_seconds,
+        session=client_session,
+    )
+    app.state.agent_runtime_client = AgentRuntimeClient(
+        base_url=settings.agent_runtime.base_url,
+        caller_service=config.service_name,
+        audience=settings.agent_runtime.audience,
+        timeout_seconds=settings.agent_runtime.timeout_seconds,
         session=client_session,
     )
     logger.info("Main API 已启动，公开前缀=/api/v1")

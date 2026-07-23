@@ -16,6 +16,9 @@ class MainApiProcessConfig(ServiceConfig):
     service_name: str = "kbot-main-api"
     service_port: int = 18099
     allowed_origins: list[str] = Field(default_factory=list)
+    sse_poll_interval_seconds: float = Field(default=0.5, ge=0.1, le=10)
+    sse_heartbeat_seconds: float = Field(default=15, ge=1, le=60)
+    sse_batch_size: int = Field(default=200, ge=1, le=500)
 
 
 class MainApiSettings(Settings):
@@ -24,6 +27,12 @@ class MainApiSettings(Settings):
         default_factory=lambda: ServiceDependencyConfig(
             base_url="http://127.0.0.1:18090",
             audience="kbot-knowledge-core-api",
+        )
+    )
+    agent_runtime: ServiceDependencyConfig = Field(
+        default_factory=lambda: ServiceDependencyConfig(
+            base_url="http://127.0.0.1:18100",
+            audience="kbot-agent-runtime-api",
         )
     )
 

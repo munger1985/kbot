@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import unittest
+from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 
@@ -10,6 +11,7 @@ from fastapi.testclient import TestClient
 
 from main_api.app import create_main_api_app
 from main_api.application import DomainValidationService
+from main_api.config import get_main_api_settings
 from platform_clients import (
     KnowledgeCoreClientError,
     KnowledgeCoreResponse,
@@ -90,6 +92,124 @@ class _FakeKnowledgeCoreClient:
         return {"bundle_id": str(bundle_id), "status": "PROCESSING"}
 
 
+class _FakeAgentRuntimeClient:
+    def __init__(self):
+        self.agent_id = UUID("019f8eae-2c25-7d48-b044-350ec3f5a001")
+        self.run_id = UUID("019f8eae-2c25-7d48-b044-350ec3f5a002")
+        self.last_context: AuthContext | None = None
+
+    async def is_ready(self):
+        return True
+
+    def _agent(self):
+        return {
+            "agent_id": str(self.agent_id),
+            "domain_id": 100,
+            "agent_key": "document-agent",
+            "display_name": "文档助手",
+            "description": None,
+            "status": "ACTIVE",
+            "enabled_capabilities": ["document"],
+            "router_model_name": None,
+            "composer_model_name": "chat-prod",
+            "instruction": None,
+            "config": {},
+            "row_version": 1,
+        }
+
+    async def create_agent(self, *, payload, auth_context):
+        self.last_context = auth_context
+        return self._agent()
+
+    async def list_agents(self, *, auth_context):
+        self.last_context = auth_context
+        return [self._agent()]
+
+    async def get_agent(self, *, agent_id, auth_context):
+        self.last_context = auth_context
+        return self._agent()
+
+    async def update_agent(self, *, agent_id, payload, auth_context):
+        self.last_context = auth_context
+        return {**self._agent(), **payload}
+
+    async def create_run(
+        self, *, payload, idempotency_key, auth_context
+    ):
+        self.last_context = auth_context
+        return {
+            "run_id": str(self.run_id),
+            "status": "RUNNING",
+            "event_cursor": 2,
+            "events_url": f"/api/v1/runs/{self.run_id}/events",
+        }
+
+    async def get_run(self, *, run_id, auth_context):
+        self.last_context = auth_context
+        return {
+            "run_id": str(self.run_id),
+            "agent_id": str(self.agent_id),
+            "status": "COMPLETED",
+            "row_version": 3,
+            "event_cursor": 8,
+            "result": None,
+            "error_code": None,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "completed_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+    async def get_result(self, *, run_id, auth_context):
+        self.last_context = auth_context
+        return {
+            "artifact_id": str(
+                UUID("019f8eae-2c25-7d48-b044-350ec3f5a003")
+            ),
+            "artifact_type": "GROUNDED_ANSWER",
+            "schema_version": "GroundedAnswer.v1",
+            "producer": "response-composer",
+            "producer_version": "1.0.0",
+            "payload": {"answer": "回答 [C1]"},
+            "storage_uri": None,
+            "content_hash": "hash",
+            "provenance": {},
+            "security_level": 0,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+    async def list_events(
+        self, *, run_id, after_sequence, limit, auth_context
+    ):
+        self.last_context = auth_context
+        if after_sequence >= 8:
+            return []
+        return [
+            {
+                "run_id": str(self.run_id),
+                "task_id": None,
+                "sequence_no": 8,
+                "event_type": "RUN_COMPLETED",
+                "payload": {"status": "COMPLETED"},
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }
+        ]
+
+    async def cancel_run(
+        self,
+        *,
+        run_id,
+        expected_row_version,
+        idempotency_key,
+        auth_context,
+    ):
+        self.last_context = auth_context
+        return {
+            "run_id": str(self.run_id),
+            "status": "CANCELLED",
+            "event_cursor": 9,
+            "events_url": f"/api/v1/runs/{self.run_id}/events",
+        }
+
+
 class _FakeDomainRepository:
     async def exists_active(self, *, app_id: int, domain_id: int) -> bool:
         return app_id == 1001 and domain_id == 100
@@ -126,12 +246,15 @@ class MainApiTest(unittest.TestCase):
             uow_factory=_FakeUow,
         )
         self.kc = _FakeKnowledgeCoreClient()
+        self.agent_runtime = _FakeAgentRuntimeClient()
         self.app = create_main_api_app(
             verifier=verifier,
             domain_validator=self.domain_service.is_active,
             enable_access_log=False,
         )
         self.app.state.knowledge_core_client = self.kc
+        self.app.state.agent_runtime_client = self.agent_runtime
+        self.app.state.main_api_settings = get_main_api_settings()
         self.client = TestClient(self.app)
 
     def _headers(self, *, domain_id: str = "100") -> dict[str, str]:
@@ -205,7 +328,52 @@ class MainApiTest(unittest.TestCase):
     def test_openapi_contains_no_internal_routes(self) -> None:
         paths = self.app.openapi()["paths"]
         self.assertIn("/api/v1/knowledge/collections", paths)
+        self.assertIn("/api/v1/agents", paths)
+        self.assertIn("/api/v1/runs", paths)
         self.assertFalse(any(path.startswith("/internal/") for path in paths))
+
+    def test_agent_and_run_public_contracts(self) -> None:
+        agent = self.client.post(
+            "/api/v1/agents",
+            headers=self._headers(),
+            json={
+                "agent_key": "document-agent",
+                "display_name": "文档助手",
+                "enabled_capabilities": ["document"],
+                "composer_model_name": "chat-prod",
+                "status": "ACTIVE",
+            },
+        )
+        self.assertEqual(201, agent.status_code)
+        run = self.client.post(
+            "/api/v1/runs",
+            headers={
+                **self._headers(),
+                "Idempotency-Key": "run-1",
+            },
+            json={
+                "agent_id": str(self.agent_runtime.agent_id),
+                "input": "总结文档",
+            },
+        )
+        self.assertEqual(202, run.status_code)
+        self.assertEqual("RUNNING", run.json()["status"])
+        self.assertEqual(
+            "portal-user-1",
+            self.agent_runtime.last_context.asserted_user_id,
+        )
+
+    def test_sse_uses_cursor_and_stops_on_terminal_event(self) -> None:
+        with self.client.stream(
+            "GET",
+            f"/api/v1/runs/{self.agent_runtime.run_id}/events",
+            headers={**self._headers(), "Last-Event-ID": "7"},
+        ) as response:
+            body = "".join(response.iter_text())
+
+        self.assertEqual(200, response.status_code)
+        self.assertIn("id: 8", body)
+        self.assertIn("event: RUN_COMPLETED", body)
 
     def test_public_resource_paths_require_uuid(self) -> None:
         bundle_id = UUID("019c03b5-4b88-7ab2-8c19-7b6ea34f2a31")

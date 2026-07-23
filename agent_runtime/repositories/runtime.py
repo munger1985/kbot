@@ -133,6 +133,53 @@ class AgentTaskRepository:
         )
         return (await self._session.execute(statement)).scalar_one_or_none()
 
+    async def claim_due_retry(
+        self, *, now: datetime
+    ) -> AgentTaskEntity | None:
+        statement: Select = (
+            select(AgentTaskEntity)
+            .join(
+                AgentRunEntity,
+                AgentRunEntity.run_id == AgentTaskEntity.run_id,
+            )
+            .where(
+                AgentTaskEntity.status == "RETRY_WAIT",
+                AgentTaskEntity.next_retry_at <= now,
+                AgentRunEntity.status == "RUNNING",
+            )
+            .order_by(
+                AgentTaskEntity.next_retry_at,
+                AgentTaskEntity.task_id,
+            )
+            .limit(1)
+            .with_for_update(skip_locked=True)
+        )
+        return (await self._session.execute(statement)).scalar_one_or_none()
+
+    async def claim_expired_lease(
+        self, *, now: datetime
+    ) -> AgentTaskEntity | None:
+        statement: Select = (
+            select(AgentTaskEntity)
+            .join(
+                AgentRunEntity,
+                AgentRunEntity.run_id == AgentTaskEntity.run_id,
+            )
+            .where(
+                AgentTaskEntity.status == "RUNNING",
+                AgentTaskEntity.lease_until.is_not(None),
+                AgentTaskEntity.lease_until <= now,
+                AgentRunEntity.status == "RUNNING",
+            )
+            .order_by(
+                AgentTaskEntity.lease_until,
+                AgentTaskEntity.task_id,
+            )
+            .limit(1)
+            .with_for_update(skip_locked=True)
+        )
+        return (await self._session.execute(statement)).scalar_one_or_none()
+
     async def list_by_run(
         self, *, run_id: UUID, lock: bool = False
     ) -> list[AgentTaskEntity]:

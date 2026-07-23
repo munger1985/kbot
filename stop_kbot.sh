@@ -13,6 +13,8 @@ SERVICES=(
     "apps/knowledge_core_api/main.py"
     "apps/knowledge_core_parser/main.py"
     "apps/knowledge_core_projection/main.py"
+    "apps/agent_runtime_api/main.py"
+    "apps/agent_runtime_worker/main.py"
     "apps/main_api/main.py"
 )
 

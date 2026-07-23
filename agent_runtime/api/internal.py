@@ -13,6 +13,7 @@ from agent_runtime.application import (
     AgentDefinitionView,
     AgentDefinitionNotFound,
     AgentRuntimeConflict,
+    AgentResultNotReady,
     AgentRuntimeNotFound,
     ArtifactInput,
     CancelRunCommand,
@@ -30,6 +31,7 @@ from agent_runtime.domain.planning import PlanDraft
 from agent_runtime.domain.planning import PlanValidationError
 from agent_runtime.domain.state_machine import InvalidStateTransition
 from platform_core.contracts import (
+    AgentArtifact,
     AgentRunEvent,
     AgentRunReceipt,
     AgentRunSummary,
@@ -176,8 +178,10 @@ def _raise_runtime_error(exc: Exception) -> None:
     elif isinstance(exc, AgentRuntimeConflict):
         if exc.code == "AGENT_NOT_FOUND_OR_DENIED":
             status = 404
-        elif exc.code.startswith("ARTIFACT_") or exc.code.endswith(
-            "_INVALID"
+        elif (
+            exc.code.startswith("ARTIFACT_")
+            or exc.code.endswith("_INVALID")
+            or exc.code == "ROUTE_CLARIFICATION_REQUIRED"
         ):
             status = 422
         else:
@@ -275,6 +279,21 @@ async def get_run(run_id: UUID, request: Request) -> AgentRunSummary:
             domain_id=domain_id,
         )
     except AgentRuntimeNotFound as exc:
+        _raise_runtime_error(exc)
+
+
+@router.get("/{run_id}/result", response_model=AgentArtifact)
+async def get_run_result(
+    run_id: UUID, request: Request
+) -> AgentArtifact:
+    domain_id, _, _, _ = _identity(request)
+    try:
+        return await _service(request).get_result(
+            run_id=run_id,
+            app_id=request.app.state.platform_app_id,
+            domain_id=domain_id,
+        )
+    except (AgentRuntimeNotFound, AgentResultNotReady) as exc:
         _raise_runtime_error(exc)
 
 

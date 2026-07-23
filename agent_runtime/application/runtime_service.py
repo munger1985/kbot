@@ -24,6 +24,7 @@ from agent_runtime.entities import (
     AgentTaskEntity,
 )
 from platform_core.contracts import (
+    AgentArtifact,
     AgentArtifactRef,
     AgentRunEvent,
     AgentRunReceipt,
@@ -85,6 +86,13 @@ class AgentRuntimeConflict(AgentRuntimeError):
     pass
 
 
+class AgentResultNotReady(AgentRuntimeConflict):
+    def __init__(self):
+        super().__init__(
+            "RESULT_NOT_READY", "Run 尚未生成最终结果 Artifact"
+        )
+
+
 class StaleTaskLease(AgentRuntimeConflict):
     def __init__(self):
         super().__init__("STALE_LEASE", "Task 租约无效或已经过期")
@@ -100,11 +108,13 @@ class AgentRuntimeService:
         plan_validator=None,
         plan_limits: PlanLimits | None = None,
         skill_registry=None,
+        root_planner=None,
     ):
         self._uow_factory = uow_factory
         self._plan_validator = plan_validator
         self._plan_limits = plan_limits or PlanLimits()
         self._skill_registry = skill_registry
+        self._root_planner = root_planner
 
     async def create_run(
         self, command: CreateRunCommand
@@ -158,6 +168,29 @@ class AgentRuntimeService:
                 "config": dict(agent.config_json or {}),
                 "row_version": int(agent.row_version),
             }
+            initial_plan = None
+            if self._root_planner is not None:
+                decision = self._root_planner.decide(
+                    agent_snapshot=agent_snapshot
+                )
+                if decision.route_type.value == "CLARIFY":
+                    raise AgentRuntimeConflict(
+                        "ROUTE_CLARIFICATION_REQUIRED",
+                        decision.clarification_question
+                        or "当前 Agent 无法确定唯一执行路由",
+                    )
+                initial_plan = self._root_planner.build_plan(
+                    objective=command.original_input,
+                    decision=decision,
+                )
+                if self._plan_validator is None:
+                    raise AgentRuntimeConflict(
+                        "PLAN_VALIDATOR_UNAVAILABLE",
+                        "计划校验器尚未初始化",
+                    )
+                self._plan_validator.validate(
+                    initial_plan, self._plan_limits
+                )
             try:
                 run = await uow.runs.add(
                     AgentRunEntity(
@@ -218,6 +251,32 @@ class AgentRuntimeService:
                 trace_id=command.trace_id,
                 payload={"status": run.status},
             )
+            if initial_plan is not None:
+                tasks, final_task = await self._persist_plan_tasks(
+                    uow, run=run, plan=initial_plan
+                )
+                plan_fingerprint = _canonical_hash(
+                    initial_plan.model_dump(mode="json")
+                )
+                run.final_task_id = final_task.task_id
+                run.status = RunStatus.RUNNING.value
+                run.started_at = _utc_now()
+                run.row_version = int(run.row_version) + 1
+                event = await self._append_event(
+                    uow,
+                    run=run,
+                    event_type="RUN_STARTED",
+                    event_key=f"initial-plan:{command.idempotency_key}",
+                    actor_type="SERVICE",
+                    actor_id="root-agent",
+                    trace_id=command.trace_id,
+                    payload={
+                        "plan_version": initial_plan.plan_version,
+                        "plan_fingerprint": plan_fingerprint,
+                        "final_task_key": initial_plan.final_task_key,
+                        "task_count": len(tasks),
+                    },
+                )
             await uow.commit()
             return self._run_receipt(run, int(event.sequence_no))
 
@@ -264,38 +323,8 @@ class AgentRuntimeService:
             ensure_run_transition(
                 RunStatus(run.status), RunStatus.RUNNING
             )
-            tasks = [
-                AgentTaskEntity(
-                    run_id=run.run_id,
-                    task_key=spec.task_key,
-                    task_type=spec.task_type,
-                    execution_kind=spec.execution_kind.value,
-                    specialist=spec.specialist,
-                    skill_id=spec.skill_id,
-                    skill_version=spec.skill_version,
-                    delegate_service=spec.delegate_service,
-                    delegate_capability=spec.delegate_capability,
-                    execution_mode=spec.execution_mode.value,
-                    completion_requirement=spec.completion_requirement.value,
-                    status=(
-                        TaskStatus.READY.value
-                        if not spec.depends_on
-                        else TaskStatus.PENDING.value
-                    ),
-                    depends_on_json=list(spec.depends_on),
-                    input_artifacts_json=list(spec.input_refs),
-                    expected_outputs_json=list(spec.expected_outputs),
-                    required_scopes_json=list(spec.required_scopes),
-                    max_attempts=spec.max_retries + 1,
-                    timeout_seconds=spec.timeout_seconds,
-                )
-                for spec in command.plan.tasks
-            ]
-            await uow.tasks.add_all(tasks)
-            final_task = next(
-                task
-                for task in tasks
-                if task.task_key == command.plan.final_task_key
+            tasks, final_task = await self._persist_plan_tasks(
+                uow, run=run, plan=command.plan
             )
             run.final_task_id = final_task.task_id
             run.status = RunStatus.RUNNING.value
@@ -319,18 +348,98 @@ class AgentRuntimeService:
             await uow.commit()
             return self._run_receipt(run, int(event.sequence_no))
 
+    @staticmethod
+    async def _persist_plan_tasks(uow, *, run, plan):
+        tasks = [
+            AgentTaskEntity(
+                run_id=run.run_id,
+                task_key=spec.task_key,
+                task_type=spec.task_type,
+                execution_kind=spec.execution_kind.value,
+                specialist=spec.specialist,
+                skill_id=spec.skill_id,
+                skill_version=spec.skill_version,
+                delegate_service=spec.delegate_service,
+                delegate_capability=spec.delegate_capability,
+                execution_mode=spec.execution_mode.value,
+                completion_requirement=spec.completion_requirement.value,
+                status=(
+                    TaskStatus.READY.value
+                    if not spec.depends_on
+                    else TaskStatus.PENDING.value
+                ),
+                depends_on_json=list(spec.depends_on),
+                input_artifacts_json=list(spec.input_refs),
+                expected_outputs_json=list(spec.expected_outputs),
+                required_scopes_json=list(spec.required_scopes),
+                max_attempts=spec.max_retries + 1,
+                timeout_seconds=spec.timeout_seconds,
+            )
+            for spec in plan.tasks
+        ]
+        await uow.tasks.add_all(tasks)
+        final_task = next(
+            task
+            for task in tasks
+            if task.task_key == plan.final_task_key
+        )
+        return tasks, final_task
+
     async def claim_task(
         self, command: ClaimTaskCommand
     ) -> TaskLease | None:
         now = _utc_now()
         async with self._uow_factory() as uow:
-            task = await uow.tasks.claim_candidate(
-                now=now,
-                max_parallel_tasks=self._plan_limits.max_parallel_tasks,
-            )
+            expired = await uow.tasks.claim_expired_lease(now=now)
+            if expired is not None:
+                await self._recover_expired_task(
+                    uow,
+                    task=expired,
+                    now=now,
+                    trace_id=command.trace_id,
+                )
+                await uow.commit()
+                return None
+            task = await uow.tasks.claim_due_retry(now=now)
+            run = None
+            if task is not None:
+                run = await uow.runs.get(
+                    run_id=task.run_id, lock=True
+                )
+                if run is None or run.status != RunStatus.RUNNING.value:
+                    raise AgentRuntimeConflict(
+                        "RUN_NOT_EXECUTABLE",
+                        "重试 Task 所属 Run 当前不可执行",
+                    )
+                ensure_task_transition(
+                    TaskStatus(task.status), TaskStatus.READY
+                )
+                task.status = TaskStatus.READY.value
+                task.next_retry_at = None
+                task.row_version = int(task.row_version) + 1
+                await self._append_event(
+                    uow,
+                    run=run,
+                    event_type="TASK_READY",
+                    event_key=f"retry-ready:{task.task_id}:{task.attempt}",
+                    actor_type="RUNTIME",
+                    actor_id="agent-runtime",
+                    trace_id=command.trace_id,
+                    task=task,
+                    payload={"task_key": task.task_key},
+                )
+            else:
+                task = await uow.tasks.claim_candidate(
+                    now=now,
+                    max_parallel_tasks=(
+                        self._plan_limits.max_parallel_tasks
+                    ),
+                )
             if task is None:
                 return None
-            run = await uow.runs.get(run_id=task.run_id, lock=True)
+            run = run or await uow.runs.get(
+                run_id=task.run_id, lock=True
+            )
             if run is None or run.status != RunStatus.RUNNING.value:
                 raise AgentRuntimeConflict(
                     "RUN_NOT_EXECUTABLE", "Task 所属 Run 当前不可执行"
@@ -364,6 +473,66 @@ class AgentRuntimeService:
             input_artifacts = await self._task_input_artifacts(uow, task)
             await uow.commit()
             return self._task_lease(task, run, input_artifacts)
+
+    @staticmethod
+    async def _recover_expired_task(
+        uow,
+        *,
+        task: AgentTaskEntity,
+        now: datetime,
+        trace_id: str,
+    ) -> None:
+        run = await uow.runs.get(run_id=task.run_id, lock=True)
+        if run is None or run.status != RunStatus.RUNNING.value:
+            raise AgentRuntimeConflict(
+                "RUN_NOT_EXECUTABLE",
+                "过期租约所属 Run 当前不可恢复",
+            )
+        retry = int(task.attempt) < int(task.max_attempts)
+        target = (
+            TaskStatus.RETRY_WAIT if retry else TaskStatus.FAILED
+        )
+        ensure_task_transition(TaskStatus(task.status), target)
+        task.status = target.value
+        task.next_retry_at = now if retry else None
+        task.error_code = "WORKER_LEASE_EXPIRED"
+        task.error_message = "Worker 未在租约期限内完成 Task"
+        task.completed_at = None if retry else now
+        task.lease_owner = None
+        task.lease_token = None
+        task.lease_until = None
+        task.row_version = int(task.row_version) + 1
+        await AgentRuntimeService._append_event(
+            uow,
+            run=run,
+            event_type="TASK_LEASE_EXPIRED",
+            event_key=f"lease-expired:{task.task_id}:{task.attempt}",
+            actor_type="RUNTIME",
+            actor_id="agent-runtime",
+            trace_id=trace_id,
+            task=task,
+            payload={"retryable": retry},
+        )
+        if not retry and task.completion_requirement == "REQUIRED":
+            ensure_run_transition(
+                RunStatus(run.status), RunStatus.FAILED
+            )
+            run.status = RunStatus.FAILED.value
+            run.error_code = "WORKER_LEASE_EXPIRED"
+            run.error_message = "Task 租约过期且已达到最大尝试次数"
+            run.completed_at = now
+            run.row_version = int(run.row_version) + 1
+            await AgentRuntimeService._append_event(
+                uow,
+                run=run,
+                event_type="RUN_FAILED",
+                event_key=f"run-fail:{run.run_id}",
+                actor_type="RUNTIME",
+                actor_id="agent-runtime",
+                trace_id=trace_id,
+                task=task,
+                payload={"error_code": "WORKER_LEASE_EXPIRED"},
+            )
 
     async def heartbeat_task(
         self, command: HeartbeatTaskCommand
@@ -759,6 +928,42 @@ class AgentRuntimeService:
                 )
                 for row in rows
             ]
+
+    async def get_result(
+        self,
+        *,
+        run_id: UUID,
+        app_id: int,
+        domain_id: int,
+    ) -> AgentArtifact:
+        async with self._uow_factory() as uow:
+            run = await uow.runs.get_scoped(
+                run_id=run_id,
+                app_id=app_id,
+                domain_id=domain_id,
+            )
+            if run is None:
+                raise AgentRuntimeNotFound()
+            if run.result_artifact_id is None:
+                raise AgentResultNotReady()
+            row = await uow.artifacts.get(
+                artifact_id=run.result_artifact_id
+            )
+            if row is None or row.run_id != run.run_id:
+                raise AgentRuntimeNotFound()
+            return AgentArtifact(
+                artifact_id=row.artifact_id,
+                artifact_type=row.artifact_type,
+                schema_version=row.schema_version,
+                producer=row.producer,
+                producer_version=row.producer_version,
+                payload=row.payload_json,
+                storage_uri=row.storage_uri,
+                content_hash=row.content_hash,
+                provenance=row.provenance_json,
+                security_level=int(row.security_level),
+                created_at=row.created_at,
+            )
 
     @staticmethod
     def _ensure_version(actual: int, expected: int) -> None:

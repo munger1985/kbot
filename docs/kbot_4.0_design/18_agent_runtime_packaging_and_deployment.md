@@ -73,6 +73,20 @@ Model Client、Skill Registry 和日志。API 进程只加载同一组 Manifest 
 - 接收取消、恢复和审批命令；
 - 不执行 LLM、KC、MCP 或 AIOps 调用。
 
+Main API 是唯一公开边界，当前发布：
+
+```text
+POST/PATCH/GET /api/v1/agents
+POST/GET        /api/v1/runs
+POST            /api/v1/runs/{run_id}/cancel
+GET             /api/v1/runs/{run_id}/events   # SSE
+GET             /api/v1/runs/{run_id}/result
+```
+
+它将可信 AuthContext 传播给 Runtime，不向 Portal 暴露 `/internal/v1`。
+SSE 以 Event 表序号作为 `id`，支持 `Last-Event-ID` 续传；终态回答通过
+Result 接口读取，避免把正文重复写入事件和日志。
+
 ### Agent Runtime Worker
 
 - 领取 `READY` Task 并维护租约；

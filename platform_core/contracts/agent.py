@@ -19,6 +19,55 @@ class CreateAgentRunRequest(BaseModel):
     client_metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class CreateAgentDefinitionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    agent_key: str = Field(pattern=r"^[a-z][a-z0-9._-]{0,127}$")
+    display_name: str = Field(min_length=1, max_length=256)
+    description: str | None = Field(default=None, max_length=1000)
+    enabled_capabilities: tuple[str, ...] = Field(min_length=1)
+    router_model_name: str | None = Field(default=None, max_length=128)
+    composer_model_name: str = Field(min_length=1, max_length=128)
+    instruction: str | None = Field(default=None, max_length=32000)
+    config: dict[str, Any] = Field(default_factory=dict)
+    status: str = Field(default="DRAFT", pattern=r"^(DRAFT|ACTIVE)$")
+
+
+class UpdateAgentDefinitionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_row_version: int = Field(ge=1)
+    display_name: str | None = Field(default=None, min_length=1, max_length=256)
+    description: str | None = Field(default=None, max_length=1000)
+    enabled_capabilities: tuple[str, ...] | None = None
+    router_model_name: str | None = Field(default=None, max_length=128)
+    composer_model_name: str | None = Field(
+        default=None, min_length=1, max_length=128
+    )
+    instruction: str | None = Field(default=None, max_length=32000)
+    config: dict[str, Any] | None = None
+    status: str | None = Field(
+        default=None, pattern=r"^(DRAFT|ACTIVE|INACTIVE)$"
+    )
+
+
+class AgentDefinition(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    agent_id: UUID
+    domain_id: int
+    agent_key: str
+    display_name: str
+    description: str | None = None
+    status: str
+    enabled_capabilities: tuple[str, ...]
+    router_model_name: str | None = None
+    composer_model_name: str
+    instruction: str | None = None
+    config: dict[str, Any]
+    row_version: int = Field(ge=1)
+
+
 class AgentRunReceipt(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -35,6 +84,22 @@ class AgentArtifactRef(BaseModel):
     artifact_type: str
     schema_version: str
     content_hash: str
+
+
+class AgentArtifact(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    artifact_id: UUID
+    artifact_type: str
+    schema_version: str
+    producer: str
+    producer_version: str
+    payload: dict[str, Any] | list[Any] | None = None
+    storage_uri: str | None = None
+    content_hash: str
+    provenance: dict[str, Any]
+    security_level: int
+    created_at: datetime
 
 
 class AgentRunSummary(BaseModel):
