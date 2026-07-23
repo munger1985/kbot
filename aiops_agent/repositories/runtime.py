@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from aiops_agent.application.errors import StateConflictError
 from aiops_agent.entities import (
+    OpsAlertEntity,
     OpsArtifactEntity,
     OpsRunEntity,
     OpsRunEventEntity,
@@ -124,6 +125,50 @@ class OpsRunRepository(AIOpsRepository):
         if lock:
             statement = statement.with_for_update(skip_locked=skip_locked)
         return (await self._session.execute(statement)).scalar_one_or_none()
+
+    async def get_active_by_alert(
+        self, *, alert_id: UUID
+    ) -> OpsRunEntity | None:
+        self._check_active()
+        statement = (
+            select(OpsRunEntity)
+            .where(
+                OpsRunEntity.trigger_alert_id == alert_id,
+                OpsRunEntity.status.notin_(
+                    (
+                        "COMPLETED",
+                        "DEGRADED",
+                        "REJECTED",
+                        "FAILED",
+                        "CANCELLED",
+                        "EXPIRED",
+                    )
+                ),
+            )
+            .order_by(OpsRunEntity.created_at.desc())
+        )
+        return (await self._session.execute(statement)).scalars().first()
+
+    async def get_latest_by_alert_fingerprint(
+        self, *, target_id: UUID, fingerprint: str
+    ) -> OpsRunEntity | None:
+        self._check_active()
+        statement = (
+            select(OpsRunEntity)
+            .join(
+                OpsAlertEntity,
+                OpsAlertEntity.alert_id == OpsRunEntity.trigger_alert_id,
+            )
+            .where(
+                OpsRunEntity.target_id == target_id,
+                OpsAlertEntity.fingerprint == fingerprint,
+            )
+            .order_by(
+                OpsRunEntity.created_at.desc(),
+                OpsRunEntity.ops_run_id.desc(),
+            )
+        )
+        return (await self._session.execute(statement)).scalars().first()
 
     async def list_tasks(
         self, *, ops_run_id: UUID, lock: bool = False

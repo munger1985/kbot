@@ -5,5 +5,17 @@ from .kernel import (
     ObservationSet,
     ScopeResult,
 )
+from .monitoring import (
+    MonitorObservationSet,
+    MonitorScopeResult,
+    ObserveReport,
+)
 
-__all__ = ["KernelReport", "ObservationSet", "ScopeResult"]
+__all__ = [
+    "KernelReport",
+    "MonitorObservationSet",
+    "MonitorScopeResult",
+    "ObservationSet",
+    "ObserveReport",
+    "ScopeResult",
+]

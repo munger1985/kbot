@@ -22,3 +22,7 @@ timeout_seconds = 120
 base_url = "http://127.0.0.1:18110"
 audience = "kbot-aiops-api"
 timeout_seconds = 120
+
+[integrations]
+monitoring_max_webhook_bytes = 1048576
+monitoring_requests_per_minute = 120

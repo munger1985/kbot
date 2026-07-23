@@ -110,6 +110,9 @@ async def log_requests(request: Request, call_next):
     url = str(request.url)
     client_host = request.client.host if request.client else "unknown"
     path = request.url.path
+    if path.startswith("/api/v1/integrations/monitoring/"):
+        # Webhook 路由 Key 是凭据的一部分，访问日志只能记录脱敏模板。
+        url = "/api/v1/integrations/monitoring/{redacted}/events"
 
     # Only record requests when API logging is enabled and not a documentation page
     if api_log_enabled and path not in ["/docs", "/redoc", "/openapi.json"]:

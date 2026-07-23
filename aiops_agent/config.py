@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 from urllib.parse import urlparse
 from uuid import UUID
@@ -133,6 +134,20 @@ class AIOpsLimitsConfig(BaseModel):
     max_targets_per_inspection_fire: int = Field(default=100, ge=1, le=1000)
 
 
+class AIOpsMonitoringConfig(BaseModel):
+    catalog_path: str | None = None
+    default_window_seconds: int = Field(default=3600, ge=60, le=604800)
+    provider_timeout_seconds: float = Field(default=30, ge=1, le=300)
+    webhook_replay_seconds: int = Field(default=300, ge=30, le=3600)
+    max_webhook_bytes: int = Field(
+        default=1024 * 1024, ge=1024, le=20 * 1024 * 1024
+    )
+    max_response_bytes: int = Field(
+        default=5 * 1024 * 1024, ge=1024, le=100 * 1024 * 1024
+    )
+    payload_store_root: str = "/tmp/kbot-aiops-monitor-payloads"
+
+
 class InspectionTemplateRegistration(BaseModel):
     template_id: str = Field(min_length=1, max_length=128)
     template_version: str = Field(min_length=1, max_length=64)
@@ -175,6 +190,9 @@ class AIOpsSettings(Settings):
     )
     secret_store: SecretStoreConfig = Field(default_factory=SecretStoreConfig)
     limits: AIOpsLimitsConfig = Field(default_factory=AIOpsLimitsConfig)
+    monitoring: AIOpsMonitoringConfig = Field(
+        default_factory=AIOpsMonitoringConfig
+    )
     management: AIOpsManagementConfig = Field(
         default_factory=AIOpsManagementConfig
     )
@@ -189,6 +207,10 @@ class AIOpsSettings(Settings):
             raise ValueError("生产环境禁止使用 environment Secret Provider")
         if self.is_production() and not self.management.cursor_secret_env:
             raise ValueError("生产环境必须配置 AIOps Cursor Secret 环境变量名")
+        if self.is_production() and Path(
+            self.monitoring.payload_store_root
+        ).resolve().is_relative_to(Path("/tmp")):
+            raise ValueError("生产环境监控正文存储不能位于 /tmp")
         for dependency in (
             self.clients.agent_runtime,
             self.clients.model_serving,

@@ -207,11 +207,13 @@ class AIOpsTaskWorker:
         return TaskExecutionContext(
             run_id=str(lease.run_id),
             task_id=str(lease.task_id),
+            task_key=lease.task_key,
             target_id=str(lease.target_id),
             agent_id=str(lease.agent_id),
             trigger_type=str(
                 lease.plan_snapshot.get("trigger", {}).get("type", "API")
             ),
+            trace_id=lease.trace_id,
             attempt=lease.attempt,
             deadline_at=(
                 lease.deadline_at.isoformat()

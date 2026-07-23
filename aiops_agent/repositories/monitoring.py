@@ -208,6 +208,39 @@ class MonitorSourceRepository(AIOpsRepository):
         result = await self._session.execute(statement)
         return result.rowcount == 1
 
+    async def reduce_health(
+        self,
+        *,
+        monitor_source_id: UUID,
+        expected_config_version: int,
+        expected_health_version: int,
+        health_status: str,
+        checked_at: datetime,
+        last_error_code: str | None,
+    ) -> bool:
+        """归并普通采集健康，不消费显式 Health Check Request。"""
+        self._check_active()
+        statement = (
+            update(MonitorSourceEntity)
+            .where(
+                MonitorSourceEntity.monitor_source_id
+                == monitor_source_id,
+                MonitorSourceEntity.row_version
+                == expected_config_version,
+                MonitorSourceEntity.health_version
+                == expected_health_version,
+            )
+            .values(
+                health_status=health_status,
+                last_health_check_at=checked_at,
+                last_error_code=last_error_code,
+                health_version=MonitorSourceEntity.health_version + 1,
+            )
+            .execution_options(synchronize_session=False)
+        )
+        result = await self._session.execute(statement)
+        return result.rowcount == 1
+
 
 class AlertRepository(AIOpsRepository):
     async def add_event(self, entity: OpsEventEntity) -> OpsEventEntity:
@@ -228,6 +261,17 @@ class AlertRepository(AIOpsRepository):
             OpsEventEntity.source_event_key == source_event_key,
         )
         return (await self._session.execute(statement)).scalar_one_or_none()
+
+    async def list_event_ids_by_inbox(
+        self, *, inbox_id: UUID
+    ) -> list[UUID]:
+        self._check_active()
+        statement = (
+            select(OpsEventEntity.event_id)
+            .where(OpsEventEntity.source_inbox_id == inbox_id)
+            .order_by(OpsEventEntity.created_at, OpsEventEntity.event_id)
+        )
+        return list((await self._session.execute(statement)).scalars())
 
     async def get_active_alert(
         self,

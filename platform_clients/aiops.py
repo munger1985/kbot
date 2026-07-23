@@ -12,6 +12,7 @@ import aiohttp
 from platform_core.contracts import AuthContext, INTERNAL_API_V1
 from platform_core.contracts.aiops import (
     CreateOpsRunCommand,
+    MonitorWebhookEnvelope,
     OpsCommand,
     RootDelegationRequest,
 )
@@ -716,6 +717,19 @@ class AIOpsManagementClient(_BaseAIOpsClient):
             auth_context=auth_context,
             payload=command.model_dump(mode="json"),
             idempotency_key=command.idempotency_key,
+        )
+
+    async def intake_monitor_event(
+        self,
+        envelope: MonitorWebhookEnvelope,
+        *,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "POST",
+            f"{INTERNAL_API_V1}/aiops/intake/monitor-events",
+            auth_context=auth_context,
+            payload=envelope.model_dump(mode="json"),
         )
 
     async def get_run(

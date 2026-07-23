@@ -75,6 +75,16 @@ max_tasks_per_run = 64
 run_timeout_seconds = 3600
 max_targets_per_inspection_fire = 100
 
+[monitoring]
+# catalog_path 留空时加载随服务发布的 baseline.v1.json。
+default_window_seconds = 3600
+provider_timeout_seconds = 30
+webhook_replay_seconds = 300
+max_webhook_bytes = 1048576
+max_response_bytes = 5242880
+# 生产环境应指向持久化加密卷，或替换为 OCI/S3 Adapter。
+payload_store_root = "/var/lib/kbot/aiops-monitor-payloads"
+
 [management]
 cursor_secret_env = "KBOT_AIOPS_CURSOR_SECRET"
 webhook_key_secret_env = "KBOT_AIOPS_WEBHOOK_KEY_SECRET"

@@ -75,6 +75,14 @@ max_tasks_per_run = 64
 run_timeout_seconds = 3600
 max_targets_per_inspection_fire = 100
 
+[monitoring]
+default_window_seconds = 3600
+provider_timeout_seconds = 30
+webhook_replay_seconds = 300
+max_webhook_bytes = 1048576
+max_response_bytes = 5242880
+payload_store_root = "/tmp/kbot-aiops-monitor-payloads"
+
 [management]
 cursor_secret_env = "KBOT_AIOPS_CURSOR_SECRET"
 webhook_key_secret_env = "KBOT_AIOPS_WEBHOOK_KEY_SECRET"

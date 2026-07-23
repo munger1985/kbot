@@ -117,9 +117,11 @@ class KernelHandlerTest(unittest.IsolatedAsyncioTestCase):
         base = {
             "run_id": "run-1",
             "task_id": "task-1",
+            "task_key": "scope",
             "target_id": "target-1",
             "agent_id": "agent-1",
             "trigger_type": "CHAT",
+            "trace_id": "trace-1",
             "attempt": 1,
             "deadline_at": None,
             "plan_snapshot": {

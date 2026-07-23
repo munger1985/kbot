@@ -2,9 +2,13 @@
 
 import asyncio
 from contextlib import asynccontextmanager
+from pathlib import Path
 
+import aiohttp
 from loguru import logger
 
+from aiops_agent.adapters.monitoring import MonitorProviderRegistry
+from aiops_agent.adapters.secret_store import ConfiguredSecretStore
 from aiops_agent.bootstrap.common import (
     AIOpsProcessRuntime,
     configure_process_logging,
@@ -13,13 +17,16 @@ from aiops_agent.bootstrap.common import (
 from aiops_agent.config import AIOpsSettings, get_aiops_settings
 from aiops_agent.persistence import create_aiops_uow_factory
 from aiops_agent.application.runtime import AIOpsRuntimeService
+from aiops_agent.application.monitoring import MonitorHealthCheckService
+from aiops_agent.adapters.monitoring.catalog import load_metric_catalog
 from aiops_agent.orchestration import create_kernel_blueprint_registry
 from aiops_agent.workers import (
     AIOpsOutboxDispatcher,
+    AIOpsDomainOutboxSink,
     AIOpsReconciler,
     AIOpsTaskWorker,
     LoggingOutboxSink,
-    create_kernel_handler_registry,
+    create_runtime_handler_registry,
 )
 from platform_core.database.oracle import create_database_runtime
 
@@ -27,7 +34,7 @@ from platform_core.database.oracle import create_database_runtime
 def create_aiops_worker_probe(
     settings: AIOpsSettings | None = None,
 ):
-    """创建可多副本运行的步骤 4 Worker 进程。"""
+    """创建可多副本运行的 Task、恢复、监控与 Outbox Worker。"""
     resolved = settings or get_aiops_settings()
     config = resolved.worker
 
@@ -48,7 +55,29 @@ def create_aiops_worker_probe(
         )
         app.state.runtime = runtime
         app.state.ready_check = runtime.check_aiops_schema
-        handler_registry = create_kernel_handler_registry()
+        client_session = aiohttp.ClientSession()
+        secret_store = ConfiguredSecretStore(
+            provider=resolved.secret_store.provider,
+            allowed_schemes=resolved.secret_store.allowed_schemes,
+        )
+        metric_catalog = load_metric_catalog(
+            Path(resolved.monitoring.catalog_path)
+            if resolved.monitoring.catalog_path
+            else None
+        )
+        provider_registry = MonitorProviderRegistry(
+            session=client_session,
+            request_timeout_seconds=(
+                resolved.monitoring.provider_timeout_seconds
+            ),
+            webhook_replay_seconds=(
+                resolved.monitoring.webhook_replay_seconds
+            ),
+        )
+        handler_registry = create_runtime_handler_registry(
+            monitor_provider_registry=provider_registry,
+            secret_store=secret_store,
+        )
         runtime_service = AIOpsRuntimeService(
             uow_factory=runtime.uow_factory,
             blueprint_registry=create_kernel_blueprint_registry(),
@@ -56,6 +85,13 @@ def create_aiops_worker_probe(
             max_tasks_per_run=resolved.limits.max_tasks_per_run,
             default_run_timeout_seconds=(
                 resolved.limits.run_timeout_seconds
+            ),
+            metric_catalog=metric_catalog,
+            default_observation_window_seconds=(
+                resolved.monitoring.default_window_seconds
+            ),
+            max_monitor_response_bytes=(
+                resolved.monitoring.max_response_bytes
             ),
         )
         workers = [
@@ -75,7 +111,15 @@ def create_aiops_worker_probe(
         )
         dispatcher = AIOpsOutboxDispatcher(
             uow_factory=runtime.uow_factory,
-            sink=LoggingOutboxSink(),
+            sink=AIOpsDomainOutboxSink(
+                runtime_service=runtime_service,
+                fallback=LoggingOutboxSink(),
+                monitor_health_service=MonitorHealthCheckService(
+                    uow_factory=runtime.uow_factory,
+                    provider_registry=provider_registry,
+                    secret_store=secret_store,
+                ),
+            ),
             dispatcher_id=f"{config.worker_id}-outbox",
             lease_seconds=config.lease_seconds,
             interval_seconds=config.claim_interval_seconds,
@@ -98,6 +142,7 @@ def create_aiops_worker_probe(
             await asyncio.gather(
                 *background_tasks, return_exceptions=True
             )
+            await client_session.close()
             await runtime.close()
             logger.info("AIOps Worker 资源已释放")
 

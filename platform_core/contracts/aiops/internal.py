@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated, Literal, Union
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from .events import SafeAIOpsEvent
 from .types import (
@@ -35,7 +35,15 @@ class CreateOpsRunCommand(AIOpsContract):
     session_id: str | None = Field(default=None, max_length=256)
     parent_agent_run_id: UUIDv7 | None = None
     parent_delegation_id: UUIDv7 | None = None
+    trigger_event_id: UUIDv7 | None = None
+    trigger_alert_id: UUIDv7 | None = None
     deadline: UtcDatetime | None = None
+    blueprint_id: str = Field(
+        default="kernel.observe-report", min_length=1, max_length=128
+    )
+    blueprint_version: str = Field(default="1", min_length=1, max_length=64)
+    observation_start: UtcDatetime | None = None
+    observation_end: UtcDatetime | None = None
     client_metadata: JsonObject = Field(default_factory=dict)
 
 
@@ -119,11 +127,18 @@ class MonitorWebhookEnvelope(AIOpsContract):
     schema_version: str = INTERNAL_SCHEMA_VERSION
     request_id: str = Field(min_length=1, max_length=128)
     webhook_key_hash: Sha256Digest
-    raw_body_uri: str
+    raw_body_base64: str | None = Field(default=None, max_length=30000000)
+    raw_body_uri: str | None = Field(default=None, max_length=2048)
     raw_body_hash: Sha256Digest
     content_type: str = Field(min_length=1, max_length=256)
     signature_headers: dict[str, str] = Field(default_factory=dict)
     received_at: UtcDatetime
+
+    @model_validator(mode="after")
+    def validate_raw_body(self) -> "MonitorWebhookEnvelope":
+        if bool(self.raw_body_base64) == bool(self.raw_body_uri):
+            raise ValueError("Webhook 正文必须且只能使用 inline 或 URI")
+        return self
 
 
 class EventReceipt(AIOpsContract):
@@ -131,6 +146,15 @@ class EventReceipt(AIOpsContract):
     event_id: UUIDv7
     accepted: bool
     duplicate: bool = False
+
+
+class MonitorWebhookReceipt(AIOpsContract):
+    schema_version: str = INTERNAL_SCHEMA_VERSION
+    inbox_id: UUIDv7
+    accepted: bool
+    duplicate: bool = False
+    event_ids: tuple[UUIDv7, ...] = ()
+    alert_ids: tuple[UUIDv7, ...] = ()
 
 
 class FinalDiagnosisRef(AIOpsContract):

@@ -4,7 +4,7 @@ from collections.abc import Callable, Collection
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import Select, and_, or_, select, update
+from sqlalchemy import Select, and_, case, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aiops_agent.entities import (
@@ -287,6 +287,10 @@ class TargetRepository(AIOpsRepository):
         if active_only:
             statement = statement.where(TargetMonitorEntity.status == "ACTIVE")
         statement = statement.order_by(
+            case(
+                (TargetMonitorEntity.role == "PRIMARY", 0),
+                else_=1,
+            ),
             TargetMonitorEntity.priority,
             TargetMonitorEntity.target_monitor_id,
         )
@@ -319,6 +323,24 @@ class TargetRepository(AIOpsRepository):
             statement = statement.with_for_update()
         return (await self._session.execute(statement)).scalar_one_or_none()
 
+    async def get_monitor_by_external(
+        self,
+        *,
+        monitor_source_id: UUID,
+        external_target_key: str,
+        lock: bool = False,
+    ) -> TargetMonitorEntity | None:
+        """同一 Source 下只允许精确外部目标映射。"""
+        self._check_active()
+        statement: Select = select(TargetMonitorEntity).where(
+            TargetMonitorEntity.monitor_source_id == monitor_source_id,
+            TargetMonitorEntity.external_target_key == external_target_key,
+            TargetMonitorEntity.status == "ACTIVE",
+        )
+        if lock:
+            statement = statement.with_for_update()
+        return (await self._session.execute(statement)).scalar_one_or_none()
+
     async def update_monitor(
         self,
         *,
@@ -343,6 +365,38 @@ class TargetRepository(AIOpsRepository):
                 TargetMonitorEntity.row_version == expected_version,
             )
             .values(**update_values)
+            .execution_options(synchronize_session=False)
+        )
+        result = await self._session.execute(statement)
+        return result.rowcount == 1
+
+    async def reduce_monitor_health(
+        self,
+        *,
+        target_monitor_id: UUID,
+        expected_config_version: int,
+        expected_health_version: int,
+        health_status: str,
+        checked_at: datetime,
+        last_error_code: str | None,
+    ) -> bool:
+        self._check_active()
+        statement = (
+            update(TargetMonitorEntity)
+            .where(
+                TargetMonitorEntity.target_monitor_id
+                == target_monitor_id,
+                TargetMonitorEntity.row_version
+                == expected_config_version,
+                TargetMonitorEntity.health_version
+                == expected_health_version,
+            )
+            .values(
+                health_status=health_status,
+                last_health_check_at=checked_at,
+                last_error_code=last_error_code,
+                health_version=TargetMonitorEntity.health_version + 1,
+            )
             .execution_options(synchronize_session=False)
         )
         result = await self._session.execute(statement)

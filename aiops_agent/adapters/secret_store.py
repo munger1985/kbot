@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 from urllib.parse import urlparse
 
 from aiops_agent.application.errors import dependency_unavailable, validation_failed
-from aiops_agent.ports.secret_store import SecretReferenceMetadata
+from aiops_agent.ports.secret_store import (
+    ResolvedSecret,
+    SecretReferenceMetadata,
+)
 
 
 class ConfiguredSecretStore:
@@ -50,4 +54,28 @@ class ConfiguredSecretStore:
             fingerprint=hashlib.sha256(
                 reference.encode("utf-8")
             ).hexdigest()[:16],
+        )
+
+    async def resolve(self, reference: str) -> ResolvedSecret:
+        """开发环境从 env:// 读取；值可为 JSON 对象或单一 token。"""
+        metadata = await self.validate_ref(reference)
+        parsed = urlparse(reference)
+        path = (parsed.netloc + parsed.path).strip("/")
+        if self._provider != "environment":
+            raise dependency_unavailable("Secret Provider 解析器尚未就绪")
+        raw = os.environ[path]
+        try:
+            decoded = json.loads(raw)
+        except json.JSONDecodeError:
+            decoded = {"value": raw}
+        if not isinstance(decoded, dict) or not all(
+            isinstance(key, str) and isinstance(value, str)
+            for key, value in decoded.items()
+        ):
+            raise validation_failed("监控 Secret 必须是字符串或字符串 JSON 对象")
+        if not decoded:
+            raise validation_failed("监控 Secret 不能为空")
+        return ResolvedSecret(
+            values=dict(decoded),
+            fingerprint=metadata.fingerprint,
         )

@@ -136,3 +136,56 @@ def create_kernel_blueprint_registry() -> BlueprintRegistry:
     registry = BlueprintRegistry((KERNEL_BLUEPRINT,))
     registry.validate(KERNEL_BLUEPRINT, max_tasks=64)
     return registry
+
+
+def build_monitor_observe_blueprint(
+    binding_ids: tuple[str, ...],
+) -> Blueprint:
+    """每个冻结的监控绑定一个 Observe Task，报告等待全部来源。"""
+    observe_tasks = tuple(
+        TaskSpec(
+            task_key=f"observe:{binding_id}",
+            task_type="OBSERVE",
+            handler_id="monitor.observe",
+            handler_version="1",
+            input_schema_version="MONITOR_SCOPE_RESULT.v1",
+            output_schema_version="OBSERVATION_SET.v1",
+            depends_on=("scope",),
+            input_artifact_keys=("scope",),
+            timeout_seconds=120,
+            max_attempts=3,
+            priority=50,
+        )
+        for binding_id in sorted(binding_ids)
+    )
+    dependencies = ("scope",) + tuple(
+        item.task_key for item in observe_tasks
+    )
+    return Blueprint(
+        blueprint_id="monitor.observe-report",
+        version="1",
+        final_task_key="report",
+        tasks=(
+            TaskSpec(
+                task_key="scope",
+                task_type="SCOPE",
+                handler_id="monitor.scope",
+                handler_version="1",
+                input_schema_version="RUN_INPUT.v1",
+                output_schema_version="MONITOR_SCOPE_RESULT.v1",
+                timeout_seconds=30,
+            ),
+            *observe_tasks,
+            TaskSpec(
+                task_key="report",
+                task_type="REPORT",
+                handler_id="monitor.report",
+                handler_version="1",
+                input_schema_version="OBSERVE_REPORT_INPUT.v1",
+                output_schema_version="OBSERVE_REPORT.v1",
+                depends_on=dependencies,
+                input_artifact_keys=dependencies,
+                timeout_seconds=30,
+            ),
+        ),
+    )

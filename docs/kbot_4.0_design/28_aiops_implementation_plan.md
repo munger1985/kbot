@@ -152,6 +152,8 @@ DDL 默认时间已统一为 UTC；真实 Oracle Smoke 已覆盖完整闭环、�
 
 ## 步骤 5：监控接入与只观测闭环
 
+**状态：已完成（2026-07-23）。**
+
 详细设计见 [34_aiops_step5_monitoring_observe_loop.md](34_aiops_step5_monitoring_observe_loop.md)。
 
 实现 `MonitorPort`、Provider Registry 和 Prometheus/Zabbix/OEM Adapter，将 Provider 数据标准化为 Metric、Alert 和 Availability Artifact。Webhook 流程固定为：请求限流与 Source 解析 → 对原始字节验签 → 经验证请求入 Inbox → 精确映射 Target → Event 去重 → Alert 聚合 → Policy 判断是否创建 Run。
@@ -159,6 +161,21 @@ DDL 默认时间已统一为 UTC；真实 Oracle Smoke 已覆盖完整闭环、�
 本阶段只执行 `SCOPE → OBSERVE → REPORT`，不查询目标数据库、不生成解决命令。Monitor Source 部分不可用时仍保存来源状态、缺失证据和 `PARTIAL` 报告。
 
 **完成物：** Chat 查询监控信息、Critical Alert 自动生成只观测 Run，以及来源可回溯的初步事件报告。
+
+实施结果：已建立 `baseline.v1` Metric Catalog、统一 MonitorPort、长期复用
+HTTP Session 的 Prometheus/Zabbix/OEM Adapter，以及版本化 Metric、
+Availability、Alert、Gap 和 Observe Report Artifact。Main API 的监控入口不使用
+Portal API Key，但只跳过门户认证；AIOps 仍使用 Route Key 定位、原始字节
+HMAC 验签、重放窗口、SecretRef 和精确 Target Mapping 建立信任。验签后的原始
+正文进入内容寻址的私有存储，Inbox/Event/Alert 幂等持久化。
+
+Critical Alert 在同一事务写入 Outbox，由领域 Sink 调用唯一的 Run Runtime
+创建动态 `monitor.observe-report@1`，从而不在 Intake 中复制 Run 状态机。
+多 Binding 各自形成 Observe Task；Provider 故障、无数据和不支持指标形成 Gap，
+最终仍可完成 `PARTIAL/INCONCLUSIVE` 报告。Source、Binding 和 Target Health
+使用冻结配置版本与 Health Version 条件归并。真实 Oracle Smoke 已覆盖签名
+Webhook、重复交付、Alert 聚合、Outbox、动态 Task、Artifact 和最终报告。
+下一步进入步骤 6 只读数据库诊断目录。
 
 ## 步骤 6：只读数据库诊断目录
 

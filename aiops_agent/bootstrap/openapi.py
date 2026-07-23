@@ -6,7 +6,9 @@ from fastapi import FastAPI, HTTPException
 
 from aiops_agent.api.management import router as internal_config_router
 from aiops_agent.api.runtime import router as internal_runtime_router
+from aiops_agent.api.intake import router as internal_intake_router
 from main_api.api.ops import router as public_config_router
+from main_api.api.integrations import router as public_integration_router
 from platform_core.contracts.aiops.executor import (
     ExecutionResultRef,
     ExecutionStatusEvent,
@@ -17,8 +19,6 @@ from platform_core.contracts.aiops.executor import (
 from platform_core.contracts.aiops.internal import (
     CreateOpsRunCommand,
     DelegationEventPage,
-    EventReceipt,
-    MonitorWebhookEnvelope,
     OpsCommand,
     OpsRunReceipt as InternalOpsRunReceipt,
     RootDelegationReceipt,
@@ -48,6 +48,7 @@ def create_public_contract_app() -> FastAPI:
     """创建 Main API 后续映射使用的公开契约快照 App。"""
     app = FastAPI(title="KBot AIOps Public Contract", version="1.0.0")
     app.include_router(public_config_router)
+    app.include_router(public_integration_router)
 
     @app.post("/api/v1/ops/hitl/{hitl_id}/responses", response_model=HitlResult)
     async def answer_hitl(hitl_id: UUID, payload: HitlResponse):
@@ -73,6 +74,7 @@ def create_internal_contract_app() -> FastAPI:
     app = FastAPI(title="KBot AIOps Internal Contract", version="1.0.0")
     app.include_router(internal_config_router)
     app.include_router(internal_runtime_router)
+    app.include_router(internal_intake_router)
 
     @app.post(
         "/internal/v1/aiops/delegations",
@@ -93,13 +95,6 @@ def create_internal_contract_app() -> FastAPI:
         response_model=RootDelegationResult,
     )
     async def delegation_result(delegation_id: UUID):
-        _not_implemented()
-
-    @app.post(
-        "/internal/v1/aiops/intake/monitor-events",
-        response_model=EventReceipt,
-    )
-    async def monitor_event(payload: MonitorWebhookEnvelope):
         _not_implemented()
 
     return app

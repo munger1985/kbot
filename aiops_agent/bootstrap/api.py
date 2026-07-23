@@ -3,6 +3,7 @@
 import hashlib
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import aiohttp
 from fastapi import Request
@@ -11,8 +12,14 @@ from loguru import logger
 
 from aiops_agent.adapters.agent_runtime import AgentRuntimeValidator
 from aiops_agent.adapters.secret_store import ConfiguredSecretStore
+from aiops_agent.adapters.monitoring import MonitorProviderRegistry
+from aiops_agent.adapters.monitoring.payload_store import (
+    LocalMonitorPayloadStore,
+)
 from aiops_agent.api.management import router as management_router
 from aiops_agent.api.runtime import router as runtime_router
+from aiops_agent.api.intake import router as intake_router
+from aiops_agent.application.monitoring import MonitorWebhookIntakeService
 from aiops_agent.application.configuration import AIOpsConfigurationService
 from aiops_agent.application.runtime import AIOpsRuntimeService
 from aiops_agent.application.configuration.common import SignedCursorCodec
@@ -28,7 +35,8 @@ from aiops_agent.bootstrap.common import (
 from aiops_agent.config import AIOpsSettings, get_aiops_settings
 from aiops_agent.persistence import create_aiops_uow_factory
 from aiops_agent.orchestration import create_kernel_blueprint_registry
-from aiops_agent.workers import create_kernel_handler_registry
+from aiops_agent.workers import create_runtime_handler_registry
+from aiops_agent.adapters.monitoring.catalog import load_metric_catalog
 from platform_core.database.oracle import create_database_runtime
 from platform_clients.agent_runtime import AgentRuntimeClient
 from platform_core.security import (
@@ -41,7 +49,7 @@ from platform_core.security import (
 def create_aiops_api(
     settings: AIOpsSettings | None = None,
 ):
-    """创建只含系统探针的步骤 0 Internal API。"""
+    """创建配置、运行内核与监控接入 Internal API。"""
     resolved = settings or get_aiops_settings()
     config = resolved.api
 
@@ -82,16 +90,17 @@ def create_aiops_api(
                 f"{config.service_name}:development:cursor".encode("utf-8")
             ).hexdigest()
             logger.warning("开发环境使用临时派生的 AIOps Cursor 签名密钥")
+        secret_store = ConfiguredSecretStore(
+            provider=resolved.secret_store.provider,
+            allowed_schemes=resolved.secret_store.allowed_schemes,
+        )
         app.state.configuration_service = AIOpsConfigurationService(
             uow_factory=runtime.uow_factory,
             cursor_codec=SignedCursorCodec(
                 secret=cursor_secret,
                 ttl_seconds=resolved.management.cursor_ttl_seconds,
             ),
-            secret_store=ConfiguredSecretStore(
-                provider=resolved.secret_store.provider,
-                allowed_schemes=resolved.secret_store.allowed_schemes,
-            ),
+            secret_store=secret_store,
             agent_runtime=AgentRuntimeValidator(agent_runtime_client),
             template_registry=InspectionTemplateRegistry(
                 resolved.management.inspection_templates
@@ -101,13 +110,51 @@ def create_aiops_api(
                 resolved.limits.max_targets_per_inspection_fire
             ),
         )
+        metric_catalog = load_metric_catalog(
+            Path(resolved.monitoring.catalog_path)
+            if resolved.monitoring.catalog_path
+            else None
+        )
+        provider_registry = MonitorProviderRegistry(
+            session=client_session,
+            request_timeout_seconds=(
+                resolved.monitoring.provider_timeout_seconds
+            ),
+            webhook_replay_seconds=(
+                resolved.monitoring.webhook_replay_seconds
+            ),
+        )
+        handler_registry = create_runtime_handler_registry(
+            monitor_provider_registry=provider_registry,
+            secret_store=secret_store,
+        )
+        app.state.monitor_provider_registry = provider_registry
+        app.state.monitor_secret_store = secret_store
+        app.state.metric_catalog = metric_catalog
         app.state.aiops_runtime_service = AIOpsRuntimeService(
             uow_factory=runtime.uow_factory,
             blueprint_registry=create_kernel_blueprint_registry(),
-            handler_registry=create_kernel_handler_registry(),
+            handler_registry=handler_registry,
             max_tasks_per_run=resolved.limits.max_tasks_per_run,
             default_run_timeout_seconds=(
                 resolved.limits.run_timeout_seconds
+            ),
+            metric_catalog=metric_catalog,
+            default_observation_window_seconds=(
+                resolved.monitoring.default_window_seconds
+            ),
+            max_monitor_response_bytes=(
+                resolved.monitoring.max_response_bytes
+            ),
+        )
+        app.state.monitor_intake_service = MonitorWebhookIntakeService(
+            uow_factory=runtime.uow_factory,
+            provider_registry=provider_registry,
+            secret_store=secret_store,
+            system_agent_id=resolved.runtime.system_aiops_agent_id,
+            max_webhook_bytes=resolved.monitoring.max_webhook_bytes,
+            payload_store=LocalMonitorPayloadStore(
+                Path(resolved.monitoring.payload_store_root)
             ),
         )
         await runtime.start()
@@ -161,6 +208,7 @@ def create_aiops_api(
     )
     app.include_router(management_router)
     app.include_router(runtime_router)
+    app.include_router(intake_router)
 
     @app.exception_handler(AIOpsApplicationError)
     async def application_error_handler(

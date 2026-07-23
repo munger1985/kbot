@@ -18,9 +18,11 @@ from aiops_agent.contracts.artifacts import (
 class TaskExecutionContext:
     run_id: str
     task_id: str
+    task_key: str
     target_id: str
     agent_id: str
     trigger_type: str
+    trace_id: str
     attempt: int
     deadline_at: str | None
     plan_snapshot: dict[str, Any]
@@ -56,6 +58,10 @@ class HandlerRegistry:
             raise LookupError(
                 f"Handler 不存在：{handler_id}@{version}"
             ) from exc
+
+    @property
+    def manifests(self) -> tuple[HandlerManifest, ...]:
+        return tuple(self._items.values())
 
 
 class ScopeHandler:
@@ -126,3 +132,49 @@ def create_kernel_handler_registry() -> HandlerRegistry:
             ),
         )
     )
+
+
+def create_runtime_handler_registry(
+    *,
+    monitor_provider_registry=None,
+    secret_store=None,
+) -> HandlerRegistry:
+    """组合运行内核与步骤 5 Handler，版本必须精确匹配。"""
+    kernel = create_kernel_handler_registry()
+    manifests = list(kernel.manifests)
+    if monitor_provider_registry is not None and secret_store is not None:
+        from .monitoring_handlers import (
+            MonitorObserveHandler,
+            MonitorReportHandler,
+            MonitorScopeHandler,
+        )
+
+        manifests.extend(
+            (
+                HandlerManifest(
+                    handler_id="monitor.scope",
+                    version="1",
+                    output_schema_version="MONITOR_SCOPE_RESULT.v1",
+                    idempotent=True,
+                    implementation=MonitorScopeHandler(),
+                ),
+                HandlerManifest(
+                    handler_id="monitor.observe",
+                    version="1",
+                    output_schema_version="OBSERVATION_SET.v1",
+                    idempotent=True,
+                    implementation=MonitorObserveHandler(
+                        provider_registry=monitor_provider_registry,
+                        secret_store=secret_store,
+                    ),
+                ),
+                HandlerManifest(
+                    handler_id="monitor.report",
+                    version="1",
+                    output_schema_version="OBSERVE_REPORT.v1",
+                    idempotent=True,
+                    implementation=MonitorReportHandler(),
+                ),
+            )
+        )
+    return HandlerRegistry(tuple(manifests))

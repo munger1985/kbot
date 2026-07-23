@@ -1,5 +1,4 @@
-"""可恢复 AIOps 编排状态机。"""
-"""AIOps 确定性编排定义。"""
+"""AIOps 可恢复、确定性的编排定义。"""
 
 from .blueprints import (
     Blueprint,
@@ -8,6 +7,7 @@ from .blueprints import (
     KERNEL_BLUEPRINT,
     TaskSpec,
     create_kernel_blueprint_registry,
+    build_monitor_observe_blueprint,
 )
 
 __all__ = [
@@ -17,4 +17,5 @@ __all__ = [
     "KERNEL_BLUEPRINT",
     "TaskSpec",
     "create_kernel_blueprint_registry",
+    "build_monitor_observe_blueprint",
 ]

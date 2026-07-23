@@ -8,6 +8,7 @@ from typing import Protocol
 
 from loguru import logger
 
+from platform_core.contracts.aiops import CreateOpsRunCommand
 from platform_core.identity import uuid7
 
 
@@ -26,6 +27,55 @@ class LoggingOutboxSink:
         )
 
 
+class AIOpsDomainOutboxSink:
+    """消费 AIOps 内部领域命令；其他事件仍投递到外部 Sink。"""
+
+    def __init__(
+        self,
+        *,
+        runtime_service,
+        fallback: OutboxSink,
+        monitor_health_service=None,
+    ):
+        self._runtime_service = runtime_service
+        self._fallback = fallback
+        self._monitor_health_service = monitor_health_service
+
+    async def publish(self, event_type: str, payload: dict) -> None:
+        if (
+            event_type == "MONITOR_HEALTH_CHECK_REQUESTED"
+            and self._monitor_health_service is not None
+        ):
+            await self._monitor_health_service.execute(payload)
+            return
+        if event_type != "OPS_ALERT_AUTO_RUN_REQUESTED":
+            await self._fallback.publish(event_type, payload)
+            return
+        alert_id = payload["alert_id"]
+        await self._runtime_service.create_run(
+            CreateOpsRunCommand(
+                command_id=uuid7(),
+                idempotency_key=f"alert:{alert_id}:observe",
+                app_id=payload["app_id"],
+                domain_id=payload["domain_id"],
+                actor_id="system:monitor-intake",
+                agent_id=payload["agent_id"],
+                target_id=payload["target_id"],
+                trigger_type="ALERT",
+                trigger_event_id=payload["event_id"],
+                trigger_alert_id=alert_id,
+                input="监控告警触发只观测报告",
+                blueprint_id="monitor.observe-report",
+                blueprint_version="1",
+                client_metadata={
+                    "trace_id": payload["trace_id"],
+                    "trigger": "verified_monitor_alert",
+                },
+            )
+        )
+        logger.info(
+            "严重告警只观测 Run 已创建：alert_id={}", alert_id
+        )
 class AIOpsOutboxDispatcher:
     def __init__(
         self,

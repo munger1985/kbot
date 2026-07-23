@@ -23,6 +23,11 @@ from aiops_agent.domain.operations import (
     ensure_run_transition,
     ensure_task_transition,
 )
+from aiops_agent.adapters.monitoring.catalog import (
+    MetricCatalog,
+    load_metric_catalog,
+)
+from aiops_agent.domain.monitoring import DEFAULT_BASELINE_METRICS
 from aiops_agent.domain.states import (
     DomainOpsRunStatus,
     DomainOpsTaskStatus,
@@ -33,7 +38,10 @@ from aiops_agent.entities import (
     OpsTaskEntity,
     OutboxEntity,
 )
-from aiops_agent.orchestration import BlueprintRegistry
+from aiops_agent.orchestration import (
+    BlueprintRegistry,
+    build_monitor_observe_blueprint,
+)
 from aiops_agent.workers.handlers import HandlerRegistry
 from platform_core.contracts.aiops import (
     ArtifactInput,
@@ -94,22 +102,24 @@ class AIOpsRuntimeService:
         handler_registry: HandlerRegistry,
         max_tasks_per_run: int = 64,
         default_run_timeout_seconds: int = 3600,
+        metric_catalog: MetricCatalog | None = None,
+        default_observation_window_seconds: int = 3600,
+        max_monitor_response_bytes: int = 5 * 1024 * 1024,
     ):
         self._uow_factory = uow_factory
         self._blueprints = blueprint_registry
         self._handlers = handler_registry
         self._max_tasks = max_tasks_per_run
         self._default_run_timeout = default_run_timeout_seconds
+        self._metric_catalog = metric_catalog or load_metric_catalog()
+        self._default_observation_window = (
+            default_observation_window_seconds
+        )
+        self._max_monitor_response_bytes = max_monitor_response_bytes
 
     async def create_run(
         self, command: CreateOpsRunCommand
     ) -> OpsRunReceipt:
-        blueprint = self._blueprints.resolve(
-            "kernel.observe-report", "1"
-        )
-        self._blueprints.validate(
-            blueprint, max_tasks=self._max_tasks
-        )
         trace_id = str(
             command.client_metadata.get("trace_id", command.command_id)
         )
@@ -170,6 +180,8 @@ class AIOpsRuntimeService:
 
             target_snapshot = {
                 "target_id": str(target.target_id),
+                "app_id": int(target.app_id),
+                "domain_id": int(target.domain_id),
                 "target_key": target.target_key,
                 "db_type": target.db_type,
                 "version_code": target.version_code,
@@ -201,6 +213,24 @@ class AIOpsRuntimeService:
                 if policy is not None
                 else {}
             )
+            monitoring_snapshot: dict[str, Any] | None = None
+            if command.blueprint_id == "monitor.observe-report":
+                (
+                    blueprint,
+                    monitoring_snapshot,
+                ) = await self._monitor_blueprint_snapshot(
+                    uow=uow,
+                    command=command,
+                    target=target,
+                    now=now,
+                )
+            else:
+                blueprint = self._blueprints.resolve(
+                    command.blueprint_id, command.blueprint_version
+                )
+            self._blueprints.validate(
+                blueprint, max_tasks=self._max_tasks
+            )
             run_id = uuid7()
             plan_snapshot = {
                 "blueprint": {
@@ -216,6 +246,8 @@ class AIOpsRuntimeService:
                 },
                 "client_metadata": dict(command.client_metadata),
             }
+            if monitoring_snapshot is not None:
+                plan_snapshot["monitoring"] = monitoring_snapshot
             try:
                 run = await uow.runs.add_run(
                     OpsRunEntity(
@@ -225,6 +257,8 @@ class AIOpsRuntimeService:
                         parent_agent_run_id=command.parent_agent_run_id,
                         parent_delegation_id=command.parent_delegation_id,
                         trigger_type=str(command.trigger_type),
+                        trigger_event_id=command.trigger_event_id,
+                        trigger_alert_id=command.trigger_alert_id,
                         actor_id=command.actor_id,
                         original_request=command.input,
                         idempotency_key=command.idempotency_key,
@@ -295,6 +329,127 @@ class AIOpsRuntimeService:
             )
             await uow.commit()
             return self._run_receipt(run, int(event.sequence_no))
+
+    async def _monitor_blueprint_snapshot(
+        self,
+        *,
+        uow,
+        command: CreateOpsRunCommand,
+        target,
+        now: datetime,
+    ):
+        """在 Run 创建事务内冻结监控绑定、目录与查询窗口。"""
+        if command.blueprint_version != "1":
+            raise validation_failed("监控 Blueprint 版本不受支持")
+        if (command.observation_start is None) != (
+            command.observation_end is None
+        ):
+            raise validation_failed("观测窗口起止时间必须同时提供")
+        window_end = command.observation_end or now
+        window_start = command.observation_start or (
+            window_end
+            - timedelta(seconds=self._default_observation_window)
+        )
+        if window_start >= window_end or window_end > now + timedelta(
+            seconds=5
+        ):
+            raise validation_failed("观测窗口无效或结束时间位于未来")
+        monitors = await uow.targets.list_monitors(
+            target_id=target.target_id,
+            app_id=command.app_id,
+            domain_id=command.domain_id,
+            active_only=True,
+        )
+        snapshots = []
+        initial_gaps = []
+        active_binding_ids = []
+        for monitor in monitors:
+            source = await uow.monitor_sources.get_scoped(
+                monitor_source_id=monitor.monitor_source_id,
+                app_id=command.app_id,
+                domain_id=command.domain_id,
+            )
+            if source is None or source.status != "ACTIVE":
+                initial_gaps.append(
+                    {
+                        "binding_id": str(monitor.target_monitor_id),
+                        "source_id": str(monitor.monitor_source_id),
+                        "code": "MONITOR_SOURCE_INACTIVE",
+                        "detail": "监控源不存在或未激活",
+                    }
+                )
+                continue
+            requested = (monitor.metric_scope_json or {}).get(
+                "metric_codes", DEFAULT_BASELINE_METRICS
+            )
+            if (
+                not isinstance(requested, (list, tuple))
+                or not requested
+                or len(requested) > 64
+                or not all(
+                    isinstance(item, str) and item for item in requested
+                )
+            ):
+                raise validation_failed("监控绑定的 metric_codes 格式无效")
+            requested_codes = tuple(dict.fromkeys(requested))
+            try:
+                selected = self._metric_catalog.select(
+                    requested_codes, db_type=target.db_type
+                )
+            except KeyError as exc:
+                raise validation_failed("监控绑定引用了未知标准指标") from exc
+            supported = tuple(
+                item
+                for item in selected
+                if source.source_type in item.providers
+            )
+            active_binding_ids.append(str(monitor.target_monitor_id))
+            snapshots.append(
+                {
+                    "binding_id": str(monitor.target_monitor_id),
+                    "binding_version": int(monitor.row_version),
+                    "role": monitor.role,
+                    "priority": int(monitor.priority),
+                    "external_target_key": monitor.external_target_key,
+                    "external_target_fingerprint": hashlib.sha256(
+                        monitor.external_target_key.encode("utf-8")
+                    ).hexdigest(),
+                    "mapping_overrides": dict(
+                        monitor.mapping_overrides_json or {}
+                    ),
+                    "source": {
+                        "source_id": str(source.monitor_source_id),
+                        "source_type": source.source_type,
+                        "source_version": int(source.row_version),
+                        "endpoint": source.endpoint,
+                        "secret_ref": source.secret_ref,
+                        "capabilities": dict(
+                            source.capabilities_json or {}
+                        ),
+                    },
+                    "metrics": [
+                        item.model_dump(mode="json") for item in supported
+                    ],
+                    "unsupported_metrics": sorted(
+                        set(requested_codes)
+                        - {item.metric_code for item in supported}
+                    ),
+                }
+            )
+        blueprint = build_monitor_observe_blueprint(
+            tuple(active_binding_ids)
+        )
+        return blueprint, {
+            "window": {
+                "start": window_start.isoformat(),
+                "end": window_end.isoformat(),
+            },
+            "catalog_version": self._metric_catalog.version,
+            "catalog_hash": self._metric_catalog.manifest_hash,
+            "max_response_bytes": self._max_monitor_response_bytes,
+            "bindings": snapshots,
+            "initial_gaps": initial_gaps,
+        }
 
     async def claim_task(
         self, command: ClaimOpsTaskCommand
@@ -483,6 +638,13 @@ class AIOpsRuntimeService:
                     security_level=command.artifact.security_level,
                 )
             )
+            if command.artifact.schema_version == "OBSERVATION_SET.v1":
+                await self._reduce_observation_health(
+                    uow=uow,
+                    run=run,
+                    payload=command.artifact.payload or {},
+                    now=now,
+                )
             ensure_task_transition(
                 DomainOpsTaskStatus(task.status),
                 DomainOpsTaskStatus.SUCCEEDED,
@@ -546,6 +708,8 @@ class AIOpsRuntimeService:
                 )
                 run.status = DomainOpsRunStatus.COMPLETED.value
                 run.final_artifact_id = artifact.artifact_id
+                if artifact.schema_version == "OBSERVE_REPORT.v1":
+                    run.root_cause_level = "INCONCLUSIVE"
                 run.completed_at = now
                 event = await uow.runs.append_event(
                     ops_run_id=run.ops_run_id,
@@ -576,6 +740,152 @@ class AIOpsRuntimeService:
             return self._mutation_receipt(
                 run, task, int(event.sequence_no), artifact.artifact_id
             )
+
+    @staticmethod
+    async def _reduce_observation_health(
+        *, uow, run, payload: dict[str, Any], now: datetime
+    ) -> None:
+        """迟到结果必须同时匹配冻结的配置版本与当前 Health Version。"""
+        monitoring = (run.plan_snapshot_json or {}).get("monitoring")
+        if not monitoring:
+            return
+        binding_id = str(payload.get("binding_id", ""))
+        snapshot = next(
+            (
+                item
+                for item in monitoring.get("bindings", [])
+                if item["binding_id"] == binding_id
+            ),
+            None,
+        )
+        if snapshot is None:
+            return
+        source_snapshot = snapshot["source"]
+        source = await uow.monitor_sources.get_scoped(
+            monitor_source_id=UUID(source_snapshot["source_id"]),
+            app_id=int(
+                (run.plan_snapshot_json or {})["target"]["app_id"]
+            ),
+            domain_id=int(
+                (run.plan_snapshot_json or {})["target"]["domain_id"]
+            ),
+        )
+        if source is None:
+            return
+        gaps = list(payload.get("gaps", []))
+        has_observations = bool(payload.get("observations"))
+        gap_codes = {str(item.get("code")) for item in gaps}
+        if "MONITOR_AUTH_FAILED" in gap_codes:
+            source_status, source_error = (
+                "DEGRADED",
+                "MONITOR_AUTH_FAILED",
+            )
+        elif "MONITOR_UNREACHABLE" in gap_codes:
+            source_status, source_error = (
+                "DEGRADED" if has_observations else "UNREACHABLE",
+                "MONITOR_UNREACHABLE",
+            )
+        else:
+            source_status, source_error = (
+                (
+                    "DEGRADED"
+                    if source.health_status == "UNREACHABLE"
+                    else "HEALTHY"
+                ),
+                None,
+            )
+        await uow.monitor_sources.reduce_health(
+            monitor_source_id=source.monitor_source_id,
+            expected_config_version=int(source_snapshot["source_version"]),
+            expected_health_version=int(source.health_version),
+            health_status=source_status,
+            checked_at=now,
+            last_error_code=source_error,
+        )
+        monitor = await uow.targets.get_monitor_scoped(
+            target_monitor_id=UUID(binding_id),
+            target_id=run.target_id,
+            app_id=int(source.app_id),
+            domain_id=int(source.domain_id),
+        )
+        if monitor is None:
+            return
+        binding_status = (
+            "HEALTHY"
+            if payload.get("observations") and not gaps
+            else "DEGRADED"
+            if payload.get("observations")
+            else "UNREACHABLE"
+        )
+        await uow.targets.reduce_monitor_health(
+            target_monitor_id=monitor.target_monitor_id,
+            expected_config_version=int(snapshot["binding_version"]),
+            expected_health_version=int(monitor.health_version),
+            health_status=binding_status,
+            checked_at=now,
+            last_error_code=(
+                None if not gaps else str(gaps[0].get("code"))
+            ),
+        )
+        artifacts = await uow.runs.list_artifacts(
+            ops_run_id=run.ops_run_id
+        )
+        observation_payloads = [
+            item.payload_json or {}
+            for item in artifacts
+            if item.schema_version == "OBSERVATION_SET.v1"
+        ]
+        availability_values = [
+            point.get("value")
+            for observation_payload in observation_payloads
+            for observation in observation_payload.get("observations", [])
+            if observation.get("metric_code") == "db.availability"
+            for series in observation.get("series", [])
+            for point in series.get("points", [])[-1:]
+            if point.get("quality") == "GOOD"
+        ]
+        if availability_values:
+            normalized = {
+                AIOpsRuntimeService._availability_bool(value)
+                for value in availability_values
+            }
+            normalized.discard(None)
+        else:
+            normalized = set()
+        if normalized:
+            target_status = (
+                "DEGRADED"
+                if len(normalized) > 1
+                else "HEALTHY"
+                if True in normalized
+                else "UNREACHABLE"
+            )
+            target = await uow.targets.get_scoped(
+                target_id=run.target_id,
+                app_id=int(source.app_id),
+                domain_id=int(source.domain_id),
+            )
+            if target is not None:
+                await uow.targets.update_health(
+                    target_id=target.target_id,
+                    expected_health_version=int(target.health_version),
+                    health_status=target_status,
+                    checked_at=now,
+                    last_error_code=None,
+                )
+
+    @staticmethod
+    def _availability_bool(value: Any) -> bool | None:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            return bool(float(value))
+        normalized = str(value).strip().upper()
+        if normalized in {"UP", "AVAILABLE", "ONLINE", "TRUE", "1"}:
+            return True
+        if normalized in {"DOWN", "UNAVAILABLE", "OFFLINE", "FALSE", "0"}:
+            return False
+        return None
 
     async def fail_task(
         self, command: FailOpsTaskCommand

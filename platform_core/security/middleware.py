@@ -129,13 +129,21 @@ def create_public_auth_middleware(
     domain_validator: DomainValidator,
     verifier: PortalApiKeyVerifier | None = None,
     public_paths: set[str] | None = None,
+    public_prefixes: set[str] | None = None,
 ):
     """创建 Main API 使用的 Portal API Key 认证中间件。"""
     resolved_verifier = verifier or create_portal_api_key_verifier()
     skip_paths = PUBLIC_PATHS if public_paths is None else public_paths
 
     async def middleware(request: Request, call_next):
-        if request.url.path in skip_paths or request.method == "OPTIONS":
+        if (
+            request.url.path in skip_paths
+            or any(
+                request.url.path.startswith(prefix)
+                for prefix in (public_prefixes or set())
+            )
+            or request.method == "OPTIONS"
+        ):
             return await call_next(request)
         try:
             principal = resolved_verifier.verify_authorization(

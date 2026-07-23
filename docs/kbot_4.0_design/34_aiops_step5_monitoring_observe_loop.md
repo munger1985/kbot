@@ -354,3 +354,37 @@ Provider Adapter 不 import Repository/UoW；Application 不 import `utils.monit
 - Provider/Secret/网络失败只影响相应 Artifact 与 Health，不破坏 Run 内核；
 - 所有自动 Run 都经过 System Agent Binding 和 Policy，Payload 不能扩大权限；
 - 只观测报告不声称根因，不生成 SQL 或操作建议。
+
+## 实施结果
+
+步骤 5 已于 2026-07-23 完成，代码按以下边界落地：
+
+```text
+main_api/api/integrations.py
+  → aiops_agent/api/intake
+  → application/monitoring/webhook_intake.py
+  → Inbox / Event / Alert / Outbox
+  → AIOpsDomainOutboxSink
+  → monitor.observe-report@1
+  → monitor.scope / monitor.observe / monitor.report
+```
+
+监控正文在 Main API 按流式大小上限读取，Route Key 在访问日志中脱敏；AIOps
+收到的只有 Route Key Hash、允许的签名 Header 和原始字节。验签成功后正文写入
+内容寻址的私有不可变存储，Inbox 只保存 URI、Hash 和安全摘要。开发与单机部署
+使用 `LocalMonitorPayloadStore`，生产配置必须指向持久化加密卷；OCI/S3
+实现只需替换同一 Port。
+
+Run 创建没有复制到 Intake 事务。Event/Alert 与
+`OPS_ALERT_AUTO_RUN_REQUESTED` 在同一事务提交，Outbox Dispatcher 再幂等调用
+唯一的 Runtime Service。这样在保持至少一次恢复的同时，Run/Task 状态机仍只有
+一个写入者。Alert ID 同时作为 Outbox 与 Run 幂等边界，同一 Active Alert 不会
+生成多个 Run。
+
+当前实现冻结每个 Active Binding 的 Source 版本、Catalog Hash、指标定义、窗口
+和调用预算。每个 Binding 一个 Observe Task，报告等待全部来源；无来源时仍生成
+可追溯的 `PARTIAL/INCONCLUSIVE` 报告。Source、Binding 和 Target Health 使用
+配置版本与 Health Version 栅栏归并，多来源 Availability 冲突时 Target 为
+`DEGRADED`。`scripts/smoke_aiops_monitoring.py` 已在真实 Oracle Schema 验证
+Webhook 重放、Alert、Outbox、动态 Run、三个 Task 和最终
+`OBSERVE_REPORT.v1`，并在结束后清理全部测试数据。

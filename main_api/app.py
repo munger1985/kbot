@@ -16,7 +16,13 @@ from fastapi_offline import FastAPIOffline
 from loguru import logger
 from sqlalchemy import text
 
-from main_api.api import agent_router, knowledge_router, ops_router, run_router
+from main_api.api import (
+    agent_router,
+    integration_router,
+    knowledge_router,
+    ops_router,
+    run_router,
+)
 from main_api.config import get_main_api_settings
 from platform_clients import (
     AIOpsClientError,
@@ -121,12 +127,16 @@ def create_main_api_app(
         create_public_auth_middleware(
             verifier=verifier,
             domain_validator=validate_domain,
+            public_prefixes={
+                "/api/v1/integrations/monitoring/",
+            },
         )
     )
     app.include_router(knowledge_router)
     app.include_router(agent_router)
     app.include_router(run_router)
     app.include_router(ops_router)
+    app.include_router(integration_router)
 
     @app.exception_handler(KnowledgeCoreClientError)
     async def knowledge_core_error_handler(

@@ -4,3 +4,5 @@ provider = "vault"
 [executor]
 mutation_enabled = false
 executor_instance_id = "aiops-executor-prod-01"
+[monitoring]
+payload_store_root = "/var/lib/kbot/aiops-monitor-payloads"

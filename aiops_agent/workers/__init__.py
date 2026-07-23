@@ -1,13 +1,14 @@
-"""Task、Outbox、Scheduler 与 Reconciler Worker。"""
-"""AIOps 后台 Worker。"""
+"""AIOps Task、Outbox 与 Reconciler 后台 Worker。"""
 
 from .handlers import (
     HandlerManifest,
     HandlerRegistry,
     TaskExecutionContext,
     create_kernel_handler_registry,
+    create_runtime_handler_registry,
 )
 from .outbox_dispatcher import (
+    AIOpsDomainOutboxSink,
     AIOpsOutboxDispatcher,
     LoggingOutboxSink,
 )
@@ -19,8 +20,10 @@ __all__ = [
     "HandlerRegistry",
     "TaskExecutionContext",
     "AIOpsOutboxDispatcher",
+    "AIOpsDomainOutboxSink",
     "AIOpsReconciler",
     "AIOpsTaskWorker",
     "LoggingOutboxSink",
     "create_kernel_handler_registry",
+    "create_runtime_handler_registry",
 ]

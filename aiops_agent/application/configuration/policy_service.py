@@ -114,6 +114,27 @@ class PolicyConfigurationMixin:
             isinstance(item, str) and item for item in actions
         ):
             raise validation_failed("Policy allowed_action_types 必须为字符串数组")
+        minimum_severity = rules.get(
+            "auto_observe_min_severity", "CRITICAL"
+        )
+        if minimum_severity not in {
+            "INFO",
+            "WARNING",
+            "HIGH",
+            "CRITICAL",
+        }:
+            raise validation_failed(
+                "Policy auto_observe_min_severity 无效"
+            )
+        cooldown = rules.get("alert_cooldown_seconds", 900)
+        if (
+            not isinstance(cooldown, int)
+            or isinstance(cooldown, bool)
+            or not 0 <= cooldown <= 86400
+        ):
+            raise validation_failed(
+                "Policy alert_cooldown_seconds 必须为 0 到 86400 的整数"
+            )
 
     async def create_policy(
         self,

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Literal
 
 from pydantic import Field, HttpUrl, model_validator
@@ -27,6 +28,18 @@ MonitorStatus = Literal["ACTIVE", "DISABLED"]
 PolicyStatus = Literal["DRAFT", "ACTIVE", "RETIRED"]
 InspectionPlanStatus = Literal["ACTIVE", "PAUSED", "DISABLED"]
 InspectionTargetStatus = Literal["ACTIVE", "DISABLED"]
+
+
+def _validate_monitor_capabilities(capabilities: JsonObject | None) -> None:
+    if capabilities is None:
+        return
+    label = capabilities.get("external_target_label")
+    if label is not None and (
+        not isinstance(label, str)
+        or re.fullmatch(r"[a-zA-Z_][a-zA-Z0-9_]{0,127}", label)
+        is None
+    ):
+        raise ValueError("external_target_label 不是合法的监控标签名")
 
 
 class SecretRefStatus(AIOpsContract):
@@ -178,6 +191,7 @@ class MonitorSourceCreate(AIOpsContract):
             or self.endpoint.fragment
         ):
             raise ValueError("Monitor Endpoint 不允许凭证、Query 或 Fragment")
+        _validate_monitor_capabilities(self.capabilities)
         return self
 
 
@@ -189,6 +203,18 @@ class MonitorSourcePatch(AIOpsContract):
     webhook_secret_ref: SecretRef | None = None
     tls_profile_ref: SecretRef | None = None
     capabilities: JsonObject | None = None
+
+    @model_validator(mode="after")
+    def validate_endpoint(self) -> "MonitorSourcePatch":
+        if self.endpoint is not None and (
+            self.endpoint.username
+            or self.endpoint.password
+            or self.endpoint.query
+            or self.endpoint.fragment
+        ):
+            raise ValueError("Monitor Endpoint 不允许凭证、Query 或 Fragment")
+        _validate_monitor_capabilities(self.capabilities)
+        return self
 
 
 class MonitorSourceSummary(AIOpsContract):

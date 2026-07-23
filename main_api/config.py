@@ -2,7 +2,7 @@
 
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import BaseModel, Field
 
 from platform_core.config import (
     ServiceConfig,
@@ -19,6 +19,15 @@ class MainApiProcessConfig(ServiceConfig):
     sse_poll_interval_seconds: float = Field(default=0.5, ge=0.1, le=10)
     sse_heartbeat_seconds: float = Field(default=15, ge=1, le=60)
     sse_batch_size: int = Field(default=200, ge=1, le=500)
+
+
+class MainApiIntegrationConfig(BaseModel):
+    monitoring_max_webhook_bytes: int = Field(
+        default=1024 * 1024, ge=1024, le=20 * 1024 * 1024
+    )
+    monitoring_requests_per_minute: int = Field(
+        default=120, ge=1, le=10000
+    )
 
 
 class MainApiSettings(Settings):
@@ -40,6 +49,9 @@ class MainApiSettings(Settings):
             base_url="http://127.0.0.1:18110",
             audience="kbot-aiops-api",
         )
+    )
+    integrations: MainApiIntegrationConfig = Field(
+        default_factory=MainApiIntegrationConfig
     )
 
 

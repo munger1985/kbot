@@ -1,0 +1,277 @@
+{
+  "catalog_version": "baseline.v1",
+  "metrics": [
+    {
+      "metric_code": "db.availability",
+      "semantic_version": "1.0.0",
+      "name": "数据库可用性",
+      "description": "由监控源确认的数据库目标可用状态。",
+      "unit": "state",
+      "value_kind": "STATE",
+      "expected_dimensions": [],
+      "supported_db_types": ["ORACLE", "MYSQL"],
+      "allowed_aggregations": ["LAST"],
+      "default_window_seconds": 3600,
+      "min_step_seconds": 60,
+      "max_points": 120,
+      "max_series": 8,
+      "providers": {
+        "PROMETHEUS": {
+          "template_id": "prom.db.up",
+          "template_version": "1",
+          "query_template": "up{instance=\"${external_target}\"}",
+          "required_labels": ["instance"]
+        },
+        "ZABBIX": {
+          "template_id": "zabbix.db.ping",
+          "template_version": "1",
+          "exact_item_key": "kbot.db.ping"
+        },
+        "OEM": {
+          "template_id": "oem.db.status",
+          "template_version": "1",
+          "target_type": "oracle_database",
+          "metric_name": "Status"
+        }
+      }
+    },
+    {
+      "metric_code": "db.cpu.utilization",
+      "semantic_version": "1.0.0",
+      "name": "CPU 使用率",
+      "description": "数据库目标或数据库实例进程的 CPU 使用百分比。",
+      "unit": "percent",
+      "value_kind": "GAUGE",
+      "expected_dimensions": [],
+      "supported_db_types": ["ORACLE", "MYSQL"],
+      "allowed_aggregations": ["AVG", "MAX", "LAST"],
+      "default_window_seconds": 3600,
+      "min_step_seconds": 60,
+      "max_points": 120,
+      "max_series": 16,
+      "providers": {
+        "PROMETHEUS": {
+          "template_id": "prom.db.cpu",
+          "template_version": "1",
+          "query_template": "kbot_db_cpu_utilization_percent{instance=\"${external_target}\"}",
+          "required_labels": ["instance"]
+        },
+        "ZABBIX": {
+          "template_id": "zabbix.db.cpu",
+          "template_version": "1",
+          "exact_item_key": "kbot.db.cpu.utilization"
+        },
+        "OEM": {
+          "template_id": "oem.db.cpu",
+          "template_version": "1",
+          "target_type": "oracle_database",
+          "metric_name": "CPUUtilization"
+        }
+      }
+    },
+    {
+      "metric_code": "db.connection.active",
+      "semantic_version": "1.0.0",
+      "name": "活动连接数",
+      "description": "当前活动数据库连接或会话数量。",
+      "unit": "count",
+      "value_kind": "GAUGE",
+      "expected_dimensions": [],
+      "supported_db_types": ["ORACLE", "MYSQL"],
+      "allowed_aggregations": ["AVG", "MAX", "LAST"],
+      "default_window_seconds": 3600,
+      "min_step_seconds": 60,
+      "max_points": 120,
+      "max_series": 16,
+      "providers": {
+        "PROMETHEUS": {
+          "template_id": "prom.db.connections.active",
+          "template_version": "1",
+          "query_template": "kbot_db_active_connections{instance=\"${external_target}\"}",
+          "required_labels": ["instance"]
+        },
+        "ZABBIX": {
+          "template_id": "zabbix.db.connections.active",
+          "template_version": "1",
+          "exact_item_key": "kbot.db.connection.active"
+        },
+        "OEM": {
+          "template_id": "oem.db.connections.active",
+          "template_version": "1",
+          "target_type": "oracle_database",
+          "metric_name": "ActiveSessions"
+        }
+      }
+    },
+    {
+      "metric_code": "db.connection.utilization",
+      "semantic_version": "1.0.0",
+      "name": "连接使用率",
+      "description": "活动连接相对配置上限的百分比。",
+      "unit": "percent",
+      "value_kind": "GAUGE",
+      "expected_dimensions": [],
+      "supported_db_types": ["ORACLE", "MYSQL"],
+      "allowed_aggregations": ["AVG", "MAX", "LAST"],
+      "default_window_seconds": 3600,
+      "min_step_seconds": 60,
+      "max_points": 120,
+      "max_series": 16,
+      "providers": {
+        "PROMETHEUS": {
+          "template_id": "prom.db.connections.utilization",
+          "template_version": "1",
+          "query_template": "kbot_db_connection_utilization_percent{instance=\"${external_target}\"}",
+          "required_labels": ["instance"]
+        },
+        "ZABBIX": {
+          "template_id": "zabbix.db.connections.utilization",
+          "template_version": "1",
+          "exact_item_key": "kbot.db.connection.utilization"
+        },
+        "OEM": {
+          "template_id": "oem.db.connections.utilization",
+          "template_version": "1",
+          "target_type": "oracle_database",
+          "metric_name": "SessionUtilization"
+        }
+      }
+    },
+    {
+      "metric_code": "db.transaction.throughput",
+      "semantic_version": "1.0.0",
+      "name": "事务吞吐",
+      "description": "每秒完成的数据库事务数量。",
+      "unit": "transactions_per_second",
+      "value_kind": "GAUGE",
+      "expected_dimensions": [],
+      "supported_db_types": ["ORACLE", "MYSQL"],
+      "allowed_aggregations": ["AVG", "MAX", "LAST"],
+      "default_window_seconds": 3600,
+      "min_step_seconds": 60,
+      "max_points": 120,
+      "max_series": 16,
+      "providers": {
+        "PROMETHEUS": {
+          "template_id": "prom.db.transactions",
+          "template_version": "1",
+          "query_template": "rate(kbot_db_transactions_total{instance=\"${external_target}\"}[5m])",
+          "required_labels": ["instance"]
+        },
+        "ZABBIX": {
+          "template_id": "zabbix.db.transactions",
+          "template_version": "1",
+          "exact_item_key": "kbot.db.transaction.throughput"
+        },
+        "OEM": {
+          "template_id": "oem.db.transactions",
+          "template_version": "1",
+          "target_type": "oracle_database",
+          "metric_name": "TransactionsPerSec"
+        }
+      }
+    },
+    {
+      "metric_code": "db.response.latency",
+      "semantic_version": "1.0.0",
+      "name": "响应延迟",
+      "description": "监控探针观测到的数据库响应延迟。",
+      "unit": "milliseconds",
+      "value_kind": "GAUGE",
+      "expected_dimensions": [],
+      "supported_db_types": ["ORACLE", "MYSQL"],
+      "allowed_aggregations": ["AVG", "MAX", "LAST"],
+      "default_window_seconds": 3600,
+      "min_step_seconds": 60,
+      "max_points": 120,
+      "max_series": 16,
+      "providers": {
+        "PROMETHEUS": {
+          "template_id": "prom.db.latency",
+          "template_version": "1",
+          "query_template": "kbot_db_response_latency_milliseconds{instance=\"${external_target}\"}",
+          "required_labels": ["instance"]
+        },
+        "ZABBIX": {
+          "template_id": "zabbix.db.latency",
+          "template_version": "1",
+          "exact_item_key": "kbot.db.response.latency"
+        },
+        "OEM": {
+          "template_id": "oem.db.latency",
+          "template_version": "1",
+          "target_type": "oracle_database",
+          "metric_name": "ResponseTime"
+        }
+      }
+    },
+    {
+      "metric_code": "db.storage.utilization",
+      "semantic_version": "1.0.0",
+      "name": "存储使用率",
+      "description": "数据库存储空间的使用百分比。",
+      "unit": "percent",
+      "value_kind": "GAUGE",
+      "expected_dimensions": ["storage"],
+      "supported_db_types": ["ORACLE", "MYSQL"],
+      "allowed_aggregations": ["AVG", "MAX", "LAST"],
+      "default_window_seconds": 3600,
+      "min_step_seconds": 300,
+      "max_points": 120,
+      "max_series": 64,
+      "providers": {
+        "PROMETHEUS": {
+          "template_id": "prom.db.storage",
+          "template_version": "1",
+          "query_template": "kbot_db_storage_utilization_percent{instance=\"${external_target}\"}",
+          "required_labels": ["instance"]
+        },
+        "ZABBIX": {
+          "template_id": "zabbix.db.storage",
+          "template_version": "1",
+          "exact_item_key": "kbot.db.storage.utilization"
+        },
+        "OEM": {
+          "template_id": "oem.db.storage",
+          "template_version": "1",
+          "target_type": "oracle_database",
+          "metric_name": "StorageUtilization"
+        }
+      }
+    },
+    {
+      "metric_code": "db.error.rate",
+      "semantic_version": "1.0.0",
+      "name": "错误率",
+      "description": "监控源观测到的数据库错误事件速率。",
+      "unit": "errors_per_second",
+      "value_kind": "GAUGE",
+      "expected_dimensions": [],
+      "supported_db_types": ["ORACLE", "MYSQL"],
+      "allowed_aggregations": ["AVG", "MAX", "LAST"],
+      "default_window_seconds": 3600,
+      "min_step_seconds": 60,
+      "max_points": 120,
+      "max_series": 16,
+      "providers": {
+        "PROMETHEUS": {
+          "template_id": "prom.db.errors",
+          "template_version": "1",
+          "query_template": "rate(kbot_db_errors_total{instance=\"${external_target}\"}[5m])",
+          "required_labels": ["instance"]
+        },
+        "ZABBIX": {
+          "template_id": "zabbix.db.errors",
+          "template_version": "1",
+          "exact_item_key": "kbot.db.error.rate"
+        },
+        "OEM": {
+          "template_id": "oem.db.errors",
+          "template_version": "1",
+          "target_type": "oracle_database",
+          "metric_name": "ErrorRate"
+        }
+      }
+    }
+  ]
+}

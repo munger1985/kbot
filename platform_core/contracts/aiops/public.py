@@ -83,7 +83,23 @@ class OpsRunCreate(AIOpsContract):
     target_id: UUIDv7
     input: str = Field(min_length=1, max_length=32000)
     session_id: str | None = Field(default=None, max_length=256)
+    observation_start: UtcDatetime | None = None
+    observation_end: UtcDatetime | None = None
     client_metadata: JsonObject = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def validate_observation_window(self) -> "OpsRunCreate":
+        if (self.observation_start is None) != (
+            self.observation_end is None
+        ):
+            raise ValueError("观测窗口起止时间必须同时提供")
+        if (
+            self.observation_start is not None
+            and self.observation_end is not None
+            and self.observation_start >= self.observation_end
+        ):
+            raise ValueError("观测窗口结束时间必须晚于开始时间")
+        return self
 
 
 class OpsRunReceipt(AIOpsContract):
@@ -107,6 +123,14 @@ class OpsRunSummary(AIOpsContract):
     row_version: int = Field(ge=1)
     created_at: UtcDatetime
     completed_at: UtcDatetime | None = None
+
+
+class MonitoringEventReceipt(AIOpsContract):
+    schema_version: str = PUBLIC_SCHEMA_VERSION
+    receipt_id: UUIDv7
+    accepted: bool
+    duplicate: bool = False
+    event_count: int = Field(ge=0)
 
 
 class PendingInputView(AIOpsContract):

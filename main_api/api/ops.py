@@ -116,6 +116,10 @@ async def create_ops_run(
         trigger_type="CHAT",
         input=body.input,
         session_id=body.session_id,
+        blueprint_id="monitor.observe-report",
+        blueprint_version="1",
+        observation_start=body.observation_start,
+        observation_end=body.observation_end,
         client_metadata={
             **body.client_metadata,
             "trace_id": context.trace_id,
