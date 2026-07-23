@@ -35,11 +35,15 @@
 | `POLICY_SNAPSHOT_JSON` | 创建时的身份、授权和策略快照 |
 | `CONFIG_SNAPSHOT_JSON` | Agent、模型和检索配置快照 |
 | `BUDGET_JSON` / `DEADLINE_AT` | token、调用次数、并行度预算和截止时间 |
+| `FINAL_TASK_ID` | 通过延迟外键冻结本次有效计划的最终 Task |
 | `RESULT_ARTIFACT_ID` | 最终回答或错误报告 Artifact |
 | `ERROR_CODE` / `ERROR_MESSAGE` | 可解释的终态错误 |
 | `CREATED_AT` / `STARTED_AT` / `COMPLETED_AT` | 生命周期时间 |
 
 Run 的 `DOMAIN_ID`、策略快照和幂等键不可修改；重新提交不同请求必须创建新的 Run。
+计划安装时写入 `FINAL_TASK_ID`。Validator 要求最终 Task 为 `REQUIRED`，并且
+其依赖闭包覆盖所有 `REQUIRED` Task；Runtime 只能使用该 Task 的输出推进
+`RUN_COMPLETED`，不能把并行分支中最后提交的任意 Artifact 当作最终结果。
 
 ### `KBOT_AGENT_TASK`
 

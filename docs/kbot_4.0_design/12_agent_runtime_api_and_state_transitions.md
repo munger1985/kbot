@@ -10,8 +10,7 @@
 | `GET` | `/api/v1/runs/{run_id}` | 查询 Run 汇总和最终 Artifact 摘要 | Run DTO |
 | `GET` | `/api/v1/runs/{run_id}/events` | 订阅事件流，支持 `Last-Event-ID` | SSE |
 | `POST` | `/api/v1/runs/{run_id}/cancel` | 请求协作式取消 | Run 状态 |
-| `POST` | `/api/v1/runs/{run_id}/approvals` | 处理 Agent Runtime 自有 Proposal | 审批结果和新事件游标 |
-| `POST` | `/api/v1/runs/{run_id}/resume` | 从可恢复状态继续执行 | Run 状态 |
+| `POST` | `/api/v1/runs/{run_id}/resume` | 从通用输入等待状态继续执行（后续阶段） | Run 状态 |
 
 `POST /api/v1/runs` 必须携带 `Idempotency-Key`。相同 `domain_id + asserted_user_id + key` 且请求指纹一致时返回原 Run；指纹不同返回 `409 IDEMPOTENCY_CONFLICT`。API 使用 `202 Accepted`，不等待 LLM、KC 或外部系统完成。
 
@@ -47,6 +46,9 @@ API 响应只暴露 DTO 和 Artifact 引用，不暴露 SQLAlchemy Entity、内�
 
 AIOps 子 Run 的补证、审批和人工结果不走通用 Run Approval/Resume API。Root SSE 只返回 AIOps 资源引用，用户必须调用 `/api/v1/ops/hitl/*` 或 `/api/v1/ops/proposals/*` 的权威 Command；详见 [40_aiops_step11_root_main_api_and_apex_integration.md](40_aiops_step11_root_main_api_and_apex_integration.md)。
 
+4.0 第一阶段不建立通用 Runtime Approval 表。审批是 AIOps 的领域事实，保存于
+`KBOT_OPS_*`，Runtime 只投影等待状态和受限结果引用，避免双写两套审批真相。
+
 ## 内部 Runtime 接口
 
 Runtime 以命令接口接收状态变化，禁止 Controller 或 Skill 直接更新状态：
@@ -54,14 +56,17 @@ Runtime 以命令接口接收状态变化，禁止 Controller 或 Skill 直接�
 ```python
 class AgentRuntime:
     async def create_run(self, command: CreateRunCommand) -> RunReceipt: ...
+    async def install_plan(self, command: InstallPlanCommand) -> RunReceipt: ...
     async def claim_task(self, command: ClaimTaskCommand) -> TaskLease | None: ...
-    async def record_progress(self, command: ProgressCommand) -> None: ...
+    async def heartbeat_task(self, command: HeartbeatTaskCommand) -> TaskLease: ...
     async def complete_task(self, command: CompleteTaskCommand) -> ArtifactReceipt: ...
     async def fail_task(self, command: FailTaskCommand) -> None: ...
     async def request_cancel(self, command: CancelRunCommand) -> None: ...
-    async def approve(self, command: ApprovalCommand) -> None: ...
-    async def resume(self, command: ResumeRunCommand) -> RunReceipt: ...
 ```
+
+当前实现的命令面位于 `/internal/v1/runs/*` 与
+`/internal/v1/tasks/*`。Main API 后续只组合公开 `/api/v1/runs/*`，
+不会将 Worker 租约接口暴露给 Portal。
 
 每个 Command 都包含 `run_id`/`task_id`、调用者身份、`expected_row_version`、幂等键和 Trace 信息。Worker 完成/失败命令还必须携带本次领取生成的 `lease_token`。返回值只包含新状态、版本号、事件序号和 Artifact ID。
 
@@ -116,7 +121,8 @@ PENDING/READY/RUNNING/RETRY_WAIT
 4. 将 Task 更新为 `SUCCEEDED`；
 5. 根据依赖条件把后继 Task 更新为 `READY`；
 6. 写入 `ARTIFACT_CREATED` 和 `TASK_COMPLETED` 事件；
-7. 若所有必要 Task 完成，推进 Run 并写入 `RUN_COMPLETED`。
+7. 若所有必要 Task 完成且 `FINAL_TASK_ID` 对应 Task 成功，使用其 Artifact
+   推进 Run 并写入 `RUN_COMPLETED`。
 
 任何一步失败都回滚，不发送成功事件。外部通知、SSE 推送和下一次 HTTP 调用在提交后异步执行。
 

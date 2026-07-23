@@ -97,6 +97,23 @@ class AgentPlanTest(unittest.TestCase):
             self._validator().validate(plan, PlanLimits())
         self.assertEqual("PLAN_CYCLE", context.exception.code)
 
+    def test_final_task_must_join_all_required_branches(self):
+        plan = PlanDraft(
+            plan_version="1",
+            objective="遗漏并行分支",
+            tasks=(
+                self._local_task("first"),
+                self._local_task("final"),
+            ),
+            final_task_key="final",
+            expires_at=datetime.now(UTC) + timedelta(minutes=5),
+        )
+        with self.assertRaises(PlanValidationError) as context:
+            self._validator().validate(plan, PlanLimits())
+        self.assertEqual(
+            "PLAN_FINAL_TASK_INCOMPLETE", context.exception.code
+        )
+
     def test_local_skill_cannot_declare_delegate(self):
         with self.assertRaises(ValidationError):
             TaskSpec(
@@ -173,14 +190,15 @@ class AgentContractAndSchemaTest(unittest.TestCase):
         self.assertNotIn("KBOT_MD_", sql)
         self.assertNotIn("INSERT INTO", sql.upper())
 
-    def test_runtime_api_does_not_expose_placeholder_run_route(self):
+    def test_runtime_api_exposes_only_internal_run_commands(self):
         from apps.agent_runtime_api.main import app
 
         paths = {route.path for route in app.routes}
         self.assertIn("/health", paths)
         self.assertIn("/readyz", paths)
         self.assertFalse(any(path.startswith("/api/") for path in paths))
-        self.assertFalse(any(path.startswith("/internal/v1/runs") for path in paths))
+        self.assertIn("/internal/v1/runs", paths)
+        self.assertIn("/internal/v1/tasks/claim", paths)
 
 
 if __name__ == "__main__":

@@ -157,7 +157,30 @@ class PlanValidator:
                     f"{task.delegate_capability}",
                 )
         self._validate_acyclic(tasks)
-        final_outputs = set(tasks[plan.final_task_key].expected_outputs)
+        final_task = tasks[plan.final_task_key]
+        if (
+            final_task.completion_requirement
+            != CompletionRequirement.REQUIRED
+        ):
+            raise PlanValidationError(
+                "PLAN_FINAL_TASK_OPTIONAL",
+                "最终任务必须是 REQUIRED",
+            )
+        reachable = self._dependency_closure(
+            plan.final_task_key, tasks
+        )
+        required_keys = {
+            task.task_key
+            for task in plan.tasks
+            if task.completion_requirement
+            == CompletionRequirement.REQUIRED
+        }
+        if not required_keys.issubset(reachable):
+            raise PlanValidationError(
+                "PLAN_FINAL_TASK_INCOMPLETE",
+                "最终任务必须依赖全部 REQUIRED 任务",
+            )
+        final_outputs = set(final_task.expected_outputs)
         if not final_outputs.intersection(self._public_artifact_types):
             raise PlanValidationError(
                 "SCHEMA_MISMATCH", "最终任务没有可公开的 Artifact 输出",
@@ -181,3 +204,19 @@ class PlanValidator:
 
         for task_key in tasks:
             visit(task_key)
+
+    @staticmethod
+    def _dependency_closure(
+        task_key: str, tasks: dict[str, TaskSpec]
+    ) -> set[str]:
+        reachable: set[str] = set()
+
+        def collect(current: str) -> None:
+            if current in reachable:
+                return
+            reachable.add(current)
+            for dependency in tasks[current].depends_on:
+                collect(dependency)
+
+        collect(task_key)
+        return reachable
