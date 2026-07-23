@@ -2,7 +2,7 @@
 
 ## API 契约与版本策略
 
-Knowledge Core、Agent Runtime、Ops Core 和 Platform API 使用显式 `/v4` 前缀或等价的版本协商方式。每个 API 定义请求/响应 DTO、分页、排序、错误码、幂等语义、超时行为和弃用策略；OpenAPI 是发布产物，并以消费者契约测试保护。
+Knowledge Core、Agent Runtime、AIOps Agent 和 Platform API 使用显式 `/v4` 前缀或等价的版本协商方式。每个 API 定义请求/响应 DTO、分页、排序、错误码、幂等语义、超时行为和弃用策略；OpenAPI 是发布产物，并以消费者契约测试保护。
 
 Core API 采用全新模型，不兼容旧 `/api/kb` 或任何 3.x Agent/Skill 契约。Main API 只发布 v4 路由，不提供旧接口 Adapter、双写、双读或协议转换；所有 Portal、APEX 页面、MCP 与外部调用方随 4.0 一起升级。
 
@@ -10,7 +10,7 @@ Core API 采用全新模型，不兼容旧 `/api/kb` 或任何 3.x Agent/Skill �
 
 ## 单一 APEX Schema 变更治理
 
-所有对象继续位于 APEX 所需的单一 Schema；领域表使用前缀（如 `KB4_*`、`AG4_*`、`OPS4_*`）和独立 migration 目录。每个 migration 有唯一版本、checksum、作者、执行时间、前置条件、回滚说明和 APEX 影响标记。
+所有对象继续位于 APEX 所需的单一 Schema；领域表使用 `KBOT_KC_*`、`KBOT_AGENT_*`、`KBOT_OPS_*` 前缀和独立 migration 目录。每个 migration 有唯一版本、checksum、作者、执行时间、前置条件、前向恢复说明和 APEX 影响标记。
 
 发布前建立 Schema Contract 清单：表、列、索引、视图、同义词、存储过程、触发器、APEX 页面/报表/LOV、后台脚本与 API 的依赖关系。禁止直接在生产库手工执行未登记 DDL。
 
@@ -21,6 +21,8 @@ Core API 采用全新模型，不兼容旧 `/api/kb` 或任何 3.x Agent/Skill �
 4.0 不把旧 KB/File/Chunk 表映射或同步到新模型。以原始来源（KM Portal/Metadb、受控文件存储和已批准外部系统）重新生成 Bundle、Document、Version、Parse View、Evidence 和索引；无法取得原始来源的内容只作为 3.x 归档，不进入 4.0 检索。
 
 重建前建立来源清单和验收集，记录来源 ID、content hash、权限、重建 job、parser/embedding/index version 与错误状态。验证比较的是 4.0 对业务来源的完整性、权限过滤、Discovery/Document/Evidence Recall、页码定位和延迟，而不是追求旧 Chunk 的逐行复刻。
+
+全量重建、Freeze Watermark、最终增量、来源对账和一次性入口切换的发布门禁见 [41_kbot4_step12_acceptance_release_and_cutover.md](41_kbot4_step12_acceptance_release_and_cutover.md)。
 
 ## 文件与对象存储生命周期
 

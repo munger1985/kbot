@@ -4,6 +4,12 @@
 
 4.0 将 Agent 体系从“一个大 Prompt 驱动的动态技能调用”演进为可控协作运行时。多 Agent 不等于每个请求都创建多个 LLM：默认走最短路径，只有任务跨领域、需要独立验证或包含高风险动作时才委派 Specialist。
 
+### Agent 不等于微服务
+
+Agent 是逻辑职责，Agent Runtime 是执行宿主，微服务是部署和数据边界。多个轻量 Agent 可以运行在同一个 Runtime 进程中；只有当某个 Agent 拥有独立领域数据、权限、生命周期、资源配额或故障隔离需求时，才拆成独立服务。拆分后仍通过版本化 Client/DTO 通信，不因同一 Schema 而直接共享 Repository。
+
+因此 4.0 采用两种形态并存：Root/Supervisor、Document Agent 等可先作为 Runtime 内的独立模块；AIOps Agent 因拥有 `KBOT_OPS_*` 表、数据库凭据策略、监控调度和高风险执行流程，作为独立服务部署。当前问数继续通过 MCP Adapter 调用，不实现 Data Agent；未来如果问数拥有独立数据权限、执行引擎和生命周期，再提取为 Data Agent 服务。
+
 - **Agent** 负责理解目标、选择协作路径、组合结果和对用户负责。
 - **Skill** 是窄而确定的能力单元：检索、查询、计算、外部 API 调用或受控变更；它不负责自由规划。
 - **Policy** 独立于 Planner/Prompt，决定谁可调用什么 Skill、是否需要审批、预算和数据范围。
@@ -15,20 +21,30 @@
 Request
   → Supervisor / Router
      ├─ Knowledge Specialist → Discovery/Evidence Skills
-     ├─ Data Specialist      → Ask-data / analysis Skills
-     ├─ Ops Specialist       → metric / diagnosis / change Skills
-     └─ Conversation Specialist
+     ├─ MCP Data Adapter（现有问数链路，暂不演进为 Agent）
+     ├─ AIOps Agent (独立服务) → metric / diagnosis / change Skills
+     └─ Conversation Skill → Response Composer
   → Verifier / Policy Gate
   → Response Composer
 ```
 
 Supervisor 维护会话级目标、委派、预算和最终编排；不得直接执行数据库变更或跨库检索。Specialist 接收最小化、类型化任务包，产出结构化 Artifact，而不是直接修改其他 Agent 的内存。Response Composer 只基于已验证的 Artifact 和 Evidence 组织回答。
 
-Knowledge Specialist 必须先调用 Discovery，再在候选范围内调用 Evidence；禁止由 LLM 直接挑选全库 Chunk。Ops Specialist 的变更请求必须经过 Policy Gate 与 HITL；Planner 声称“允许执行”不构成授权。
+Knowledge Specialist 必须先调用 Discovery，再在候选范围内调用 Evidence；禁止由 LLM 直接挑选全库 Chunk。AIOps Agent 的变更请求必须经过其领域 Policy Gate 与 HITL；Planner 声称“允许执行”不构成授权。
+
+问数请求当前通过受控 MCP Tool 执行，不进入 Knowledge Core 检索链路；本阶段不实现独立 Data Agent。
+
+AIOps Agent 不是通用数据库问数 Skill，也不是通用 Agent Runtime 中的一个普通 Specialist；它拥有独立 Ops 表和诊断/执行编排。具体边界见 [15_aiops_agent_scope_and_skills.md](15_aiops_agent_scope_and_skills.md)。
+
+Document Agent 的查询任务、KC 两阶段检索和 CitationPack 契约见
+[16_document_agent_boundary_and_retrieval_contract.md](16_document_agent_boundary_and_retrieval_contract.md)。当前先作为 Runtime 模块，后续按流量和消费者需要提取为独立服务。
+
+Root Agent 的 Document/AIOps/MCP Data 路由、并行调用和结果组合规则见
+[17_root_agent_routing_and_composition.md](17_root_agent_routing_and_composition.md)。
 
 ## 协作协议
 
-每次执行创建 `run_id`，每次委派创建 `task_id`。Agent 间使用版本化 Pydantic DTO/JSON Artifact：
+每次执行创建 `run_id`；Runtime 内委派创建 `task_id`，跨服务委派同时创建稳定 `delegation_id`。Agent 间使用版本化 Pydantic DTO/JSON Artifact：
 
 ```text
 TaskEnvelope { run_id, task_id, parent_task_id, goal, input, permissions,
@@ -40,6 +56,8 @@ Artifact     { type, schema_version, producer, payload, evidence_refs,
 Artifact 写入运行记录或短期状态存储；大文件和证据只保存 URI/稳定 ID。禁止跨 Agent 共享可任意写入的 `dict` 作为长期协议。现有 `ContextMemory`、`OpsContextMemory` 可在过渡期作为单个 Worker 的内部实现，但不能越过 Agent 边界。
 
 委派必须声明输入、预期产物、超时、最大重试和取消传播。Supervisor 实施最大深度、最大并行数、token/模型/工具预算；无进展循环、相同 Skill 重复调用和无依据自我反思必须终止并返回可解释失败。
+
+跨服务委派必须持久化 Child Run、状态和事件游标，不能依赖进程内 Future 或把子 SSE 直接转发给用户。AIOps 的首个完整协议见 [40_aiops_step11_root_main_api_and_apex_integration.md](40_aiops_step11_root_main_api_and_apex_integration.md)。
 
 ## Skill 标准
 
@@ -63,12 +81,19 @@ Manifest 必须声明稳定 `skill_id`、语义版本、领域、输入/输出 s
 
 Policy Engine 在规划前过滤可见 Skill，在执行前再次强制检查。规则至少覆盖身份/租户、角色、资源范围、目标数据库、数据密级、运行模式、时间窗口、并发/费用预算和审计要求。
 
-Mutation Skill 必须使用两阶段协议：先输出 `ChangeProposal`（影响范围、参数、回滚、依据和风险），经 Policy/HITL 批准后才获得一次性、带过期时间的执行令牌。执行结果必须包含目标、前后状态、操作者、批准记录和可追踪 `run_id`。禁止把“自动执行”规则仅写在 Prompt 中。
+Mutation 流程必须使用分阶段协议：Skill 先输出 `ActionPlan`，确定性 Catalog/Policy Builder 再创建不可变 `ChangeProposal`（精确模板、参数、影响、回滚、依据和风险）；经 Policy/HITL 批准后，Executor 通过一次性 Claim 获得短期 Mutation Grant。执行结果必须包含目标、前后状态、操作者、批准记录和可追踪 `run_id`。禁止把“自动执行”规则仅写在 Prompt 中。
 
 ## 运行时、评测与迁移
+
+Run、Task、Artifact、ExecutionContext 的字段、状态机、租约、事件流和恢复规则
+详见 [11_agent_execution_model.md](11_agent_execution_model.md)。本文件只保留
+Agent/Specialist/Skill 的协作和策略边界。
+
+Supervisor、Planner、Plan Validator 和 Manifest/Skill 的字段级契约详见
+[13_agent_planning_and_skill_contract.md](13_agent_planning_and_skill_contract.md)。
 
 新增 Agent Runtime，负责路由、委派、状态持久化、Skill 调用、超时/取消、预算、策略检查和事件流。Planner 仅生成受 schema 限制的候选计划；Plan Validator 校验 DAG、Skill 输入输出匹配、权限与预算后才能执行。简单请求可绕过 Planner，直接路由到单个 Specialist/Skill。
 
 所有事件包含 `run_id`、`task_id`、`agent_id`、`skill_id`、`skill_version`、模型、耗时、token、重试、策略决定和 Artifact 引用。持续评测路由准确率、计划有效率、Skill 成功率、重复调用率、端到端时延/成本、Evidence 引用覆盖率、变更拦截率与人工批准率。
 
-实施顺序：先定义 DTO、Run/Task 状态与新的 Agent Runtime；再用 Manifest、schema 和契约测试重写核心 Knowledge/Data/Ops Skill；随后实现 Specialist、Plan Validator 和 Policy Gate；最后接入 Portal/API。3.x SkillRuntime、动态反射适配器、Prompt 内授权规则和跨 Agent 可变全局上下文不迁入 4.0。
+实施顺序：先定义 DTO、Run/Task 状态与新的 Agent Runtime；再用 Manifest、schema 和契约测试重写 Knowledge Skill，并为独立 AIOps Agent 定义 Ops Skill/领域契约；问数暂时沿用受控 MCP Tool，不实现 Data Agent；随后实现 Plan Validator 和 Policy Gate，最后接入 Portal/API。3.x SkillRuntime、动态反射适配器、Prompt 内授权规则和跨 Agent 可变全局上下文不迁入 4.0。

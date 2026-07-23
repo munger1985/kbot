@@ -2,7 +2,9 @@
 
 ## 平台运行模型
 
-服务仍以独立进程部署：Main API/BFF、Knowledge Core、Parser Worker、LLM、Embedding、VLM、Visual、DB Executor、MCP，以及必要的 Scheduler/Outbox Dispatcher。开发环境可使用 `start_kbot.sh`；生产环境必须为每个服务单独声明副本数、资源规格、配置、密钥、Liveness、Readiness 和优雅终止时间。
+服务仍以独立进程部署：Main API/BFF、Knowledge Core、AIOps Agent、Parser Worker、LLM、Embedding、VLM、Visual、DB Executor、MCP，以及必要的 Scheduler/Outbox Dispatcher。开发环境可使用 `start_kbot.sh`；生产环境必须为每个服务单独声明副本数、资源规格、配置、密钥、Liveness、Readiness 和优雅终止时间。
+
+`start_kbot.sh/stop_kbot.sh` 仅用于本地开发，不是生产发布或回滚工具。生产采用一次构建、多环境晋级的不可变镜像/包，并保存 Migration、配置 Schema、镜像 Digest、SBOM、测试和签名组成的 Release Evidence；完整流程见 [41_kbot4_step12_acceptance_release_and_cutover.md](41_kbot4_step12_acceptance_release_and_cutover.md)。
 
 Readiness 不仅检查进程存活：需要验证关键配置已加载、数据库/对象存储可用、模型服务已接受请求、Worker 可领取任务。Liveness 只检查进程是否卡死，不能因为短暂下游故障不断重启服务。
 
@@ -16,13 +18,13 @@ Readiness 不仅检查进程存活：需要验证关键配置已加载、数据�
 
 ## AIOps 与 Scheduler
 
-AIOps 是独立领域，不应由定时脚本直接访问业务表或硬编码 BFF 地址。新增 Ops Event/Alert 模型：监控 Adapter 负责采集，Ops Core 负责去重、关联、抑制、路由、诊断任务和 HITL 状态机，Agent 只消费规范化事件。
+AIOps Agent 是独立领域服务，不应由定时脚本直接访问业务表或硬编码 BFF 地址。监控 Adapter 负责采集，AIOps Agent 负责 Ops Event/Alert、去重、关联、抑制、路由、资产绑定、诊断编排和 HITL 状态机；DB Executor 负责实际数据库操作。详见 [15_aiops_agent_scope_and_skills.md](15_aiops_agent_scope_and_skills.md)。
 
 ```text
 Prometheus / Zabbix / OEM
   → Monitor Adapter → Ops Event
   → dedup/correlation → diagnostic task
-  → Ops Specialist → ChangeProposal → Policy/HITL → DB Executor
+  → AIOps Agent → ChangeProposal → Policy/HITL → DB Executor
 ```
 
 Scheduler 使用配置化服务发现和内部 client，领取持久化巡检任务；同一规则在多副本下必须有租约或 leader 选举。告警、诊断、批准和执行均记录不可变审计链，禁止 Scheduler 直接绕过 Policy/HITL 写数据库或调用变更接口。

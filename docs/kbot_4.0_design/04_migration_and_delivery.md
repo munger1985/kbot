@@ -2,7 +2,7 @@
 
 ## Phase 0：边界冻结与代码清理
 
-建立架构测试和依赖规则：`knowledge_core` 不可 import `agent`、`skills`、旧 `services/kb`；其他领域不可直接 import Knowledge Core Repository。将旧接口、兼容导出、V1 Entity/Repository 和未使用的 3.x Agent/Skill 移入 `legacy/`，4.0 包中不保留兼容 import。暂不进行最终质量测试，测试统一安排在所有 4.0 能力完成后。
+建立架构测试和依赖规则：`knowledge_core` 不可 import `agent`、`skills`、旧 `services/kb`；其他领域不可直接 import Knowledge Core Repository。先确认 4.0 消费者，再直接删除旧接口、兼容导出、V1 Entity/Repository 和未使用的 3.x Agent/Skill；不建立 `legacy/` 代码保留区，也不保留兼容 import。所有新增或修改的注释、Docstring 和日志正文使用中文，机器契约保持英文。暂不进行最终质量测试，测试统一安排在所有 4.0 能力完成后。
 
 **退出条件：** 服务边界、Owner、表权限、API 命名、UoW/Outbox 模板和迁移 DDL 流程经评审通过。
 
@@ -14,33 +14,35 @@
 
 ## Phase 2：Knowledge Core 与解析检索闭环
 
-在同一 APEX Schema 创建 4.0 专属表前缀和 migration；完成 `knowledge_core` 包、独立进程入口、Bundle Ingestion API、版本状态机、Job/Outbox、Parser、Discovery/Evidence 和检索质量链路。此阶段不接入 Agent。
+以 3.5 已实现的 `knowledge_core`、`KBOT_KC_*` Migration、独立进程入口、Parser/Projection Worker 和两阶段检索为代码基线；不新建平行实现。补齐 Bundle Ingestion、版本状态机、Job/Outbox、Discovery/Evidence、检索质量、权限、观测和失败恢复闭环。此阶段不把 Agent 职责放入 KC。
 
 **验收：** 一个含 Manifest 和多附件的 Bundle 可创建、更新、删除、恢复；重复提交不产生重复 Version/Job。
 
 ## Phase 3：Main API 与领域客户端
 
-建立新的 Main API/BFF、Portal/APEX/MCP/Slack 客户端契约和服务身份上下文。所有跨服务调用使用版本化 DTO、HTTP 或 durable job；3.x Parser 轮询协议和旧上传接口不进入 4.0。
+按 [14_main_api_bff_and_auth_context.md](14_main_api_bff_and_auth_context.md) 建立新的 Main API/BFF、AuthContext、Portal/APEX/MCP/Slack 客户端契约和服务身份上下文。所有跨服务调用使用版本化 DTO、HTTP 或 durable job；3.x Parser 轮询协议和旧上传接口不进入 4.0。
 
 **验收：** 多副本 Worker 不重复领取任务；崩溃后租约可恢复；同一 PDF 可保留多视图并稳定定位页码。
 
-## Phase 4：Agent Runtime 与 Skill Runtime
+## Phase 4：Agent Runtime 与新 Skill Runtime
 
-建立 Run/Task/Artifact/ExecutionContext、Supervisor、Specialist、Plan Validator、Policy Gate、预算、取消、恢复和事件流。用 Manifest、Typed DTO 和契约测试重写 Knowledge/Data/Ops Skill，旧 SkillRuntime、动态反射和 Prompt 授权规则不迁入 4.0。
+先按 [11_agent_execution_model.md](11_agent_execution_model.md)、[12_agent_runtime_api_and_state_transitions.md](12_agent_runtime_api_and_state_transitions.md) 和 [13_agent_planning_and_skill_contract.md](13_agent_planning_and_skill_contract.md) 落地 Run/Task/Artifact/ExecutionContext、状态机、租约、命令接口、事件持久化、Planner 和 Skill Manifest，再按 [16_document_agent_boundary_and_retrieval_contract.md](16_document_agent_boundary_and_retrieval_contract.md) 重构 Document Agent 检索契约，按 [17_root_agent_routing_and_composition.md](17_root_agent_routing_and_composition.md) 和 [18_agent_runtime_packaging_and_deployment.md](18_agent_runtime_packaging_and_deployment.md) 完成 Root 路由、Runtime API/Worker 和多来源组合，最后实现 Supervisor、Plan Validator、Policy Gate、预算、取消和恢复。旧 SkillRuntime、动态反射和 Prompt 授权规则不迁入 4.0。
 
 **验收：** 建立人工标注集并达成 Bundle Recall@K、Document Recall@K、Evidence Recall@K、页码定位准确率和延迟目标；每个回答证据均可回链。
 
 ## Phase 5：身份、安全、运维与外部集成
 
-补齐 AuthContext、租户/资源授权、服务身份、审计、Ops Event、HITL、DB Executor Policy、SLO、Trace、告警和 Runbook。模型托管、Parser、KC、Main API、Data Query 和 Ops Core 均通过明确的服务 Client/DTO 通信。
+按 [19_aiops_domain_model_workflow_and_executor.md](19_aiops_domain_model_workflow_and_executor.md) 至 [27_aiops_api_and_contracts.md](27_aiops_api_and_contracts.md) 的设计，并依照 [28_aiops_implementation_plan.md](28_aiops_implementation_plan.md) 的风险递增顺序，补齐 AuthContext、租户/资源授权、服务身份、审计、AIOps Agent 的 Ops Event、HITL、DB Executor Policy、多监控源、巡检/对比报告、SLO、Trace、告警和 Runbook。模型托管、Parser、KC、Main API、MCP 问数 Adapter 和 AIOps Agent 均通过明确的 Client/DTO 通信；Data Agent 暂不实现。
 
 **验收：** 每次执行可追踪到 Agent、Skill 版本、输入范围、Artifact、策略决定和证据；不合规的计划或变更无法通过运行时执行。
 
 ## Phase 6：统一验收、重建与切换
 
-在所有 4.0 能力完成后统一进行 Oracle、Portal、APEX、Parser、检索、Agent、Skill、Ops 和安全测试。根据原始来源重建 4.0 数据，采用发布切换而非线上双写、双读或旧 API Adapter；测试成功后删除 `legacy/` 中确认无用的代码、旧接口和旧表。
+在所有 4.0 能力完成后统一进行 Oracle、Portal、APEX、Parser、检索、Agent、Skill、Ops 和安全测试。根据原始来源重建 4.0 数据，采用发布切换而非线上双写、双读或旧 API Adapter。旧代码在开发阶段已经退出工作树；生产 Soak 只用于确认没有旧入口或旧表访问。旧表经归档、撤销写权限与单独批准后再物理删除。
 
 **验收：** 所有已批准调用方均使用 v4 契约；生产运行中不存在旧表写入、旧 Worker 轮询、旧 Skill 动态适配或新旧数据同步任务。
+
+统一测试分层、质量阈值、Release Evidence、全量/增量重建、生产切换、前向修复和旧表退出门禁见 [41_kbot4_step12_acceptance_release_and_cutover.md](41_kbot4_step12_acceptance_release_and_cutover.md)。入口切换并产生 v4 写入后不自动退回 3.x；通过能力 Kill Switch、维护模式和幂等重放前向恢复。
 
 ## 测试与观测
 
@@ -53,4 +55,4 @@
 
 ## 发布原则
 
-DDL 先于 4.0 代码部署，并在 4.0 自身的后续小版本中保持前向兼容；不支持 3.x/4.0 的旧新读写并行。每次变更附带回滚方案、重建统计和验收记录。禁止使用无版本的“直接改生产表”方式交付 4.0。
+DDL 先于 4.0 代码部署，并在 4.0 自身的后续小版本中保持前向兼容；不支持 3.x/4.0 的旧新读写并行。每次变更附带前向恢复方案、重建统计和验收证据。禁止使用无版本的“直接改生产表”方式交付 4.0。

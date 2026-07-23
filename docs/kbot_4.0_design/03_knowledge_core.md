@@ -13,9 +13,11 @@ Knowledge Core 是 KBot 内唯一拥有知识资产生命周期和检索索引�
 
 API 必须携带权限上下文、`collection_id`、稳定 ID 和版本字段。Discovery 不能返回大段 Chunk；Evidence 必须返回 `bundle_id → document_id → document_version_id → unit_id → section/page/bbox`。
 
+4.0 的 `collection_id/bundle_id/document_id/document_version_id/evidence_id` 均是同一个 UUIDv7 领域主键：Oracle 表以 `RAW(16)` 保存 PK/FK，API 序列化为规范 UUID 字符串；不再并存数字 ID 和 `*_UID`。具体规则见 [31_aiops_step2_persistence_and_identity.md](31_aiops_step2_persistence_and_identity.md)。
+
 ## 数据模型与所有权
 
-Knowledge Core 独占 `KB_COLLECTION`、`KB_BUNDLE`、`KB_DOCUMENT`、`KB_DOCUMENT_VERSION`、`KB_PARSE_VIEW`、`KB_EVIDENCE_UNIT`、`KB_DISCOVERY_OBJECT`、`KB_BUNDLE_RELATION`、`KB_INGESTION_JOB` 和 Outbox 表。字段、约束和索引以[知识库核心历史方案](../kbot_3.5_design/archive/kbot_knowledge_core_redesign_source.md)为基线；4.0 实现时在本领域的 migration 目录维护 DDL。
+Knowledge Core 独占 `KBOT_KC_COLLECTION`、`KBOT_KC_COLLECTION_BINDING`、`KBOT_KC_INGESTION_RECEIPT`、`KBOT_KC_BUNDLE`、`KBOT_KC_BUNDLE_REVISION`、`KBOT_KC_DOCUMENT`、`KBOT_KC_DOCUMENT_VERSION`、`KBOT_KC_BUNDLE_REVISION_DOCUMENT`、`KBOT_KC_PARSE_VIEW`、`KBOT_KC_EVIDENCE`、`KBOT_KC_DISCOVERY_OBJECT`、`KBOT_KC_RELATION`、`KBOT_KC_INGESTION_JOB` 和本领域消息表。精确字段、约束和索引由 `migrations/kc/` 维护，历史方案只作为决策来源。
 
 Bundle 是业务对象，Document 是其成员，Version 是不可变物理版本。新版本索引完成前不得替换 current version。附件解析失败可将 Bundle 标记为 `PARTIAL`，但必须保留失败原因和已可用证据。
 
@@ -44,9 +46,9 @@ PDF 按页段生成 TEXT、VISUAL 或 HYBRID View。每个可检索范围只能�
 
 ## 检索链路
 
-Discovery 在 `KB_DISCOVERY_OBJECT` 上执行 Oracle Text + Vector 混合召回，先做权限、Collection、状态和 Facet 过滤，再进行融合、Document→Bundle 聚合、文件多样性和精确字段重排。
+Discovery 在 `KBOT_KC_DISCOVERY_OBJECT` 上执行 Oracle Text + Vector 混合召回，先做权限、Collection、状态和 Facet 过滤，再进行融合、Document→Bundle 聚合、文件多样性和精确字段重排。
 
-Evidence 只能在调用方给出的候选 Bundle/Document 范围内检索 `KB_EVIDENCE_UNIT`。它执行混合召回、视图去重、相邻章节扩展和有依据的关联扩展，再按上下文预算返回证据。Agent 只能消费 Evidence API 的结果，不能再次对全库自行选 Chunk。
+Evidence 只能在调用方给出的候选 Bundle/Document 范围内检索 `KBOT_KC_EVIDENCE`。它执行混合召回、视图去重、相邻章节扩展和有依据的关联扩展，再按上下文预算返回证据。Agent 只能消费 Evidence API 的结果，不能再次对全库自行选 Chunk。
 
 ## 与 3.x 的关系
 

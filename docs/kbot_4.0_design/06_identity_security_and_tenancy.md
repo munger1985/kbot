@@ -16,7 +16,7 @@ External token / API key
 
 ## 租户与资源授权
 
-4.0 保持单一 APEX Schema，但逻辑上所有业务实体必须有明确的 `tenant_id` / `app_id` 边界。Knowledge Core 的 Collection 归属租户，Bundle、Document、Evidence 和 Job 从 Collection 继承租户；跨租户引用一律拒绝。
+4.0 保持单一 APEX Schema，但所有访问路径必须有明确的 domain 边界。Knowledge Core 只在 Collection 上持久化 `domain_id`（以及 APEX 视图需要的 `app_id`）；Bundle、Document、Evidence 和 Job 通过 Collection 继承范围，不在每张 KC 表重复保存租户字段。跨 domain 引用一律拒绝。
 
 采用 RBAC + 资源属性策略：
 

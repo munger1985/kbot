@@ -16,10 +16,12 @@ Route / Worker
 ```
 
 - Route 只做鉴权、DTO 校验和错误映射；不得直接构造 Repository。
-- Application Service 组合领域操作，决定事务范围，但不执行 `commit()`。
-- Unit of Work（UoW）创建/管理 Session，成功时提交，异常时回滚并关闭。
+- Application Service 组合领域操作、决定事务范围，并在用例全部成功后显式调用 `uow.commit()`。
+- Unit of Work（UoW）创建/管理 Session、执行显式提交；异常或未提交退出时回滚并关闭。
 - Repository 只能接收 `AsyncSession`，不得创建 Session、不得 `commit()`/`rollback()`；需要数据库生成 ID 时可 `flush()`。
 - Entity 是持久化模型，不跨 API 返回；跨层传递 Command、Result 或领域对象。
+
+4.0 领域实体统一使用 UUIDv7：Oracle 以 `RAW(16)` 保存 PK/FK，未来 PostgreSQL 版本使用原生 `uuid`。API 和跨进程契约序列化为规范 UUID 字符串，不再维护数字 PK 与 Public UID 的双层映射。`APP_ID`、`DOMAIN_ID`、版本、序号和计数仍使用数值，详见 [31_aiops_step2_persistence_and_identity.md](31_aiops_step2_persistence_and_identity.md)。
 
 ## UoW 参考接口
 
@@ -34,20 +36,28 @@ class KnowledgeUnitOfWork:
 
 async with knowledge_uow_factory() as uow:
     await ingestion_service.ingest(command, uow)
-# factory 在此处统一 commit 或 rollback
+    await uow.commit()
+# 异常或漏掉显式 commit 时，UoW 回滚并关闭
 ```
 
 HTTP 请求、CLI 和 Worker 使用同一个 UoW factory；测试可以注入事务型测试 UoW 或 Fake Repository。不要把 FastAPI 的 `Depends` 对象渗透到 domain 层。
 
+采用显式提交是为了让“读完后提前返回”“策略拒绝”“状态冲突”等分支默认不写入。Repository 永远不能提交；Application Service 只能通过 UoW 提交，不能直接操作 Session。
+
+Agent Runtime 使用独立的 `AgentUnitOfWork` 管理 Run、Task、Artifact 和 Event
+Repository。Task 完成、Artifact 写入、状态迁移和后继 Task 就绪必须在同一短事务
+内完成；模型调用、KC HTTP 调用和外部副作用均在事务之外执行。事件写入与状态
+写入使用同一提交，避免 SSE 观察到不存在的 Artifact 或已经完成但没有事件的 Task。
+
 ## 事务与 Outbox
 
-一个事务只覆盖同一数据库内必须原子完成的状态变更。例如 Bundle 入库须在同一提交中写入 Bundle、Document、Document Version、`KB_INGESTION_JOB` 和 Outbox 事件。提交成功后，Dispatcher 才将任务交给 Parser/Indexer。
+一个事务只覆盖同一数据库内必须原子完成的状态变更。例如 Bundle 入库须在同一提交中写入 Bundle、Document、Document Version、`KBOT_KC_INGESTION_JOB` 和 Outbox 事件。提交成功后，Dispatcher 才将任务交给 Parser/Indexer。
 
 禁止在未提交事务内调用 Parser、Embedding、LLM 或任意 HTTP 服务：远端成功但本地回滚、或反向情况都会造成不可恢复的不一致。远端操作必须由可重试任务驱动，并以幂等键（`job_id`、`document_version_id`、`content_hash`）保护。
 
 ## Job 语义
 
-`KB_INGESTION_JOB` 是持久化队列，不是普通日志。它至少包含状态、尝试次数、租约持有者、租约到期、下一次执行时间、参数快照、错误摘要和幂等键。
+`KBOT_KC_INGESTION_JOB` 是持久化队列，不是普通日志。它至少包含状态、尝试次数、租约持有者、租约到期、下一次执行时间、参数快照、错误摘要和幂等键。
 
 - Worker 以条件更新领取租约，避免多个副本重复处理。
 - 成功时写结果并推进后续 Job；失败时按可恢复/不可恢复分类重试或终止。
