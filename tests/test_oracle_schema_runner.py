@@ -1,9 +1,12 @@
 """Oracle 全量建库工具的纯本地测试。"""
 
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from scripts.apply_oracle_schema import (
     load_schema_statements,
+    load_service_selection,
     split_oracle_statements,
 )
 
@@ -35,6 +38,61 @@ class OracleSchemaRunnerTest(unittest.TestCase):
             "CREATE INDEX IX_AGENT_DELEGATION_RUN",
             statements[-1].sql,
         )
+
+    def test_config_selects_services_and_keeps_platform_core(self) -> None:
+        with TemporaryDirectory() as directory:
+            config_path = Path(directory) / "init.ini"
+            config_path.write_text(
+                """
+                [services]
+                model_serving = false
+                knowledge_core = true
+                agent_runtime = false
+                """,
+                encoding="utf-8",
+            )
+
+            selection = load_service_selection(config_path)
+            statements = load_schema_statements(selection.ordered)
+
+        self.assertEqual(("platform_core",), selection.required)
+        self.assertEqual(("knowledge_core",), selection.enabled)
+        sql = "\n".join(statement.sql for statement in statements)
+        self.assertIn("CREATE TABLE KBOT_PLATFORM_DOMAIN", sql)
+        self.assertIn("CREATE TABLE KBOT_KC_COLLECTION", sql)
+        self.assertNotIn("CREATE TABLE KBOT_AI_MODEL", sql)
+        self.assertNotIn("CREATE TABLE KBOT_AGENT_DEFINITION", sql)
+
+    def test_config_rejects_required_service_selection(self) -> None:
+        with TemporaryDirectory() as directory:
+            config_path = Path(directory) / "init.ini"
+            config_path.write_text(
+                """
+                [services]
+                platform_core = false
+                """,
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "必建基础层不需要配置",
+            ):
+                load_service_selection(config_path)
+
+    def test_config_rejects_unknown_service(self) -> None:
+        with TemporaryDirectory() as directory:
+            config_path = Path(directory) / "init.ini"
+            config_path.write_text(
+                """
+                [services]
+                unknown_service = true
+                """,
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(RuntimeError, "未知服务"):
+                load_service_selection(config_path)
 
 
 if __name__ == "__main__":

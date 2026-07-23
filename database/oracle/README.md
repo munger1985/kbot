@@ -11,9 +11,11 @@
 4. `agent_runtime/`：Agent Definition、Run、Task、Artifact、Event 和 Delegation；
 5. 后续的 `aiops_agent/` 在对应服务实现时新增。
 
-先按上述服务顺序执行，再按每个目录中文件名前缀顺序执行。数字前缀仅表示
-空库建表依赖顺序，不是增量 Migration 版本。应用启动时不得自动执行 DDL，
-也不得读取其他服务目录中的表。
+`platform_core` 是每次初始化都必须创建的基础层，不需要配置。其余已实现服务在
+`init_services.ini` 的 `[services]` 中使用 `true`/`false` 选择。初始化工具先执行
+基础层，再按上述业务服务依赖顺序和目录内文件名前缀执行。数字前缀仅表示空库
+建表依赖顺序，不是增量 Migration 版本。应用启动时不得自动执行 DDL，也不得读取
+其他服务目录中的表。
 
 当前 4.0 开发阶段修改字段时直接更新所属服务的规范建库脚本，并重新创建测试
 Schema。脚本不包含 `DROP`、旧表查询、旧数据导入、兼容视图或回滚逻辑。
@@ -21,7 +23,9 @@ Schema。脚本不包含 `DROP`、旧表查询、旧数据导入、兼容视图�
 
 ```bash
 python3 scripts/check_oracle_schema.py
-python3 scripts/apply_oracle_schema.py --dry-run
+python3 scripts/apply_oracle_schema.py \
+  --config database/oracle/init_services.ini \
+  --dry-run
 ```
 
 连接用户必须具备当前 Schema 的 `CREATE TABLE`、`CREATE VIEW` 权限，并在专用
@@ -30,11 +34,14 @@ python3 scripts/apply_oracle_schema.py --dry-run
 业务表默认创建在 `SYSTEM` 表空间。确认目标是空白 Schema 后执行：
 
 ```bash
-python3 scripts/apply_oracle_schema.py
+python3 scripts/apply_oracle_schema.py \
+  --config database/oracle/init_services.ini
 ```
 
 初始化工具会校验当前 PDB、Schema、已有 KBot 对象、DDL 权限和表空间额度；只要
-发现已有 `KBOT_%` 表或视图就会拒绝执行，避免误覆盖现有环境。
+发现已有 `KBOT_%` 表或视图就会拒绝执行，避免误覆盖现有环境。服务选择用于一次
+性部署，不能先初始化部分服务，再对同一 Schema 补跑其他服务；需要变更范围时应
+准备新的空白 Schema 后重新执行。
 
 数据库初始化完成后，由 Portal/APEX 创建新的 Domain 和业务数据，再通过 4.0
 API 入库；禁止从 3.x KBot Schema 复制数据。

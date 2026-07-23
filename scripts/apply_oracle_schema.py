@@ -6,22 +6,27 @@ import argparse
 import asyncio
 import re
 import sys
+from configparser import ConfigParser, Error as ConfigParserError
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Sequence
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_ROOT = ROOT / "database" / "oracle"
+DEFAULT_CONFIG_PATH = SCHEMA_ROOT / "init_services.ini"
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from platform_core.database.oracle import create_database_runtime  # noqa: E402
 
 
-SERVICE_ORDER = (
+REQUIRED_SERVICES = (
     "platform_core",
+)
+OPTIONAL_SERVICE_ORDER = (
     "model_serving",
     "knowledge_core",
     "agent_runtime",
@@ -55,6 +60,68 @@ class SchemaStatement:
         if match:
             return f"{match.group(1).upper()} {match.group(2).upper()}"
         return normalized[:100]
+
+
+@dataclass(frozen=True)
+class ServiceSelection:
+    """一次空库初始化所包含的必选层和业务服务。"""
+
+    required: tuple[str, ...]
+    enabled: tuple[str, ...]
+
+    @property
+    def ordered(self) -> tuple[str, ...]:
+        return self.required + self.enabled
+
+
+def load_service_selection(config_path: Path) -> ServiceSelection:
+    """从 INI 读取业务服务，基础层始终自动加入。"""
+    if not config_path.is_file():
+        raise RuntimeError(f"初始化配置不存在：{config_path}")
+
+    parser = ConfigParser(interpolation=None)
+    try:
+        with config_path.open(encoding="utf-8") as config_file:
+            parser.read_file(config_file)
+    except (OSError, ConfigParserError) as exc:
+        raise RuntimeError(f"无法读取初始化配置 {config_path}：{exc}") from exc
+
+    if not parser.has_section("services"):
+        raise RuntimeError("初始化配置缺少 [services] 段")
+
+    configured = set(parser["services"])
+    required_in_config = configured.intersection(REQUIRED_SERVICES)
+    if required_in_config:
+        raise RuntimeError(
+            "必建基础层不需要配置："
+            f"{', '.join(sorted(required_in_config))}"
+        )
+
+    unknown = configured - set(OPTIONAL_SERVICE_ORDER)
+    if unknown:
+        raise RuntimeError(
+            f"初始化配置包含未知服务：{', '.join(sorted(unknown))}"
+        )
+
+    enabled: list[str] = []
+    for service in OPTIONAL_SERVICE_ORDER:
+        try:
+            selected = parser.getboolean(
+                "services",
+                service,
+                fallback=False,
+            )
+        except ValueError as exc:
+            raise RuntimeError(
+                f"服务 {service} 必须配置为 true 或 false"
+            ) from exc
+        if selected:
+            enabled.append(service)
+
+    return ServiceSelection(
+        required=REQUIRED_SERVICES,
+        enabled=tuple(enabled),
+    )
 
 
 def split_oracle_statements(sql: str) -> list[str]:
@@ -132,10 +199,30 @@ def split_oracle_statements(sql: str) -> list[str]:
     return statements
 
 
-def load_schema_statements() -> list[SchemaStatement]:
+def load_schema_statements(
+    services: Sequence[str] | None = None,
+) -> list[SchemaStatement]:
     """按服务依赖和文件名前缀读取全部规范 DDL。"""
+    selected = tuple(services) if services is not None else (
+        REQUIRED_SERVICES + OPTIONAL_SERVICE_ORDER
+    )
+    duplicates = {
+        service for service in selected if selected.count(service) > 1
+    }
+    if duplicates:
+        raise RuntimeError(f"服务重复：{', '.join(sorted(duplicates))}")
+
+    allowed = set(REQUIRED_SERVICES + OPTIONAL_SERVICE_ORDER)
+    unknown = set(selected) - allowed
+    if unknown:
+        raise RuntimeError(f"未知服务：{', '.join(sorted(unknown))}")
+
+    canonical_order = REQUIRED_SERVICES + OPTIONAL_SERVICE_ORDER
+    ordered_services = tuple(
+        service for service in canonical_order if service in selected
+    )
     result: list[SchemaStatement] = []
-    for service in SERVICE_ORDER:
+    for service in ordered_services:
         scripts = sorted((SCHEMA_ROOT / service).glob("[0-9][0-9][0-9]_*.sql"))
         if not scripts:
             raise RuntimeError(f"{service} 没有规范 DDL")
@@ -298,9 +385,10 @@ async def _validate_schema(
         raise RuntimeError(f"存在无效对象：{invalid}")
 
 
-async def apply_schema(dry_run: bool) -> None:
+async def apply_schema(*, dry_run: bool, config_path: Path) -> None:
     """执行空库检查、DDL 和对象完整性校验。"""
-    statements = load_schema_statements()
+    selection = load_service_selection(config_path)
+    statements = load_schema_statements(selection.ordered)
     expected_tables = {
         match.group(1).upper()
         for item in statements
@@ -324,6 +412,11 @@ async def apply_schema(dry_run: bool) -> None:
             )
         )
     }
+    enabled_label = ", ".join(selection.enabled) if selection.enabled else "无"
+    print(
+        f"初始化范围：必建={', '.join(selection.required)}；"
+        f"已选服务={enabled_label}"
+    )
     if dry_run:
         print(
             f"DDL 解析通过：{len(statements)} 条语句，"
@@ -372,13 +465,24 @@ def main() -> int:
         description="将 KBot 4.0 规范 DDL 应用到空白 Oracle Schema"
     )
     parser.add_argument(
+        "--config",
+        type=Path,
+        default=DEFAULT_CONFIG_PATH,
+        help=f"服务选择 INI，默认 {DEFAULT_CONFIG_PATH.relative_to(ROOT)}",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="只解析并统计 DDL，不连接或修改数据库",
     )
     args = parser.parse_args()
     try:
-        asyncio.run(apply_schema(dry_run=args.dry_run))
+        asyncio.run(
+            apply_schema(
+                dry_run=args.dry_run,
+                config_path=args.config.expanduser().resolve(),
+            )
+        )
     except RuntimeError as exc:
         print(f"Schema 初始化拒绝：{exc}")
         return 1
