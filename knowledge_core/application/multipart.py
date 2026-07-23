@@ -84,7 +84,8 @@ class KnowledgeCoreMultipartOrchestrator:
             published_by_part: dict[str, StoredObject] = {}
             for declaration in command.manifest.documents:
                 published_item = await self._objects.publish_staged(
-                    staged=staged_by_part[declaration.part_name], collection_id=preparation.bundle_id,
+                    staged=staged_by_part[declaration.part_name],
+                    collection_id=preparation.collection_id,
                     document_id=preparation.document_ids[declaration.external_document_id],
                 )
                 published.append(published_item)
@@ -92,7 +93,8 @@ class KnowledgeCoreMultipartOrchestrator:
             published_manifest = None
             if command.generate_manifest and staged_manifest is not None:
                 published_manifest = await self._objects.publish_staged(
-                    staged=staged_manifest, collection_id=preparation.bundle_id,
+                    staged=staged_manifest,
+                    collection_id=preparation.collection_id,
                     document_id=preparation.document_ids["__manifest__"],
                 )
                 published.append(published_manifest)

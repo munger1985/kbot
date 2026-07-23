@@ -1,23 +1,27 @@
-"""Discovery projections for Bundle/Document-level retrieval."""
+"""Bundle/Document 级检索的 Discovery 投影。"""
 from datetime import datetime
 from typing import Any
+from uuid import UUID
 
 from sqlalchemy import DateTime, Integer, Numeric, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
-from platform_core.persistence.orm import BaseEntity, OracleJSON, VectorField
+from platform_core.identity import uuid7
+from platform_core.persistence.orm import BaseEntity, OracleJSON, UUIDv7Type, VectorField
 
 
 class KcDiscoveryObjectEntity(BaseEntity):
     __tablename__ = "KBOT_KC_DISCOVERY_OBJECT"
 
-    discovery_object_id: Mapped[int] = mapped_column(Numeric(38, 0), primary_key=True)
-    collection_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False)
-    bundle_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False)
-    bundle_revision_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False)
-    bundle_revision_document_id: Mapped[int | None] = mapped_column(Numeric(38, 0))
-    document_id: Mapped[int | None] = mapped_column(Numeric(38, 0))
-    document_version_id: Mapped[int | None] = mapped_column(Numeric(38, 0))
+    discovery_object_id: Mapped[UUID] = mapped_column(
+        UUIDv7Type(), primary_key=True, default=uuid7,
+    )
+    collection_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
+    bundle_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
+    bundle_revision_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
+    bundle_revision_document_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
+    document_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
+    document_version_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
     object_type: Mapped[str] = mapped_column(String(16), nullable=False)
     profile_key: Mapped[str] = mapped_column(String(256), nullable=False)
     display_title: Mapped[str] = mapped_column(String(512), nullable=False)

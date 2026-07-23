@@ -1,6 +1,8 @@
 """HTTP client for the KC Parser Worker lease protocol."""
 
+from uuid import UUID
 from dataclasses import dataclass
+import json
 from typing import Any
 
 import aiohttp
@@ -8,6 +10,19 @@ import aiohttp
 from platform_core.config.settings import get_knowledge_core_config, get_parser_config
 from platform_core.contracts import INTERNAL_API_V1
 from platform_core.security import build_internal_auth_headers
+
+
+def _json_dumps(value: Any) -> str:
+    def encode(item: Any) -> str:
+        if isinstance(item, UUID):
+            return str(item)
+        raise TypeError(f"不支持 JSON 序列化的类型：{type(item).__name__}")
+
+    return json.dumps(
+        value,
+        default=encode,
+        ensure_ascii=False,
+    )
 
 
 class KcParserProtocolError(RuntimeError):
@@ -18,12 +33,12 @@ class KcParserProtocolError(RuntimeError):
 
 @dataclass(frozen=True)
 class ParseTask:
-    job_id: int
+    job_id: UUID
     lease_owner: str
     lease_until: str
     input_fingerprint: str
-    document_version_id: int
-    parse_view_id: int
+    document_version_id: UUID
+    parse_view_id: UUID
     source_read_url: str
     detected_mime_type: str
     view_kind: str
@@ -47,7 +62,10 @@ class KcParseClient:
         self._audience = audience or get_knowledge_core_config().service_name
 
     async def __aenter__(self):
-        self._session = aiohttp.ClientSession(timeout=self._timeout)
+        self._session = aiohttp.ClientSession(
+            timeout=self._timeout,
+            json_serialize=_json_dumps,
+        )
         return self
 
     async def __aexit__(self, exc_type, exc, traceback):
@@ -59,7 +77,19 @@ class KcParseClient:
         payload = await self._request("POST", f"{INTERNAL_API_V1}/knowledge/parse-tasks/claim", json={
             "worker_id": worker_id, "max_tasks": 1, "lease_seconds": lease_seconds,
         })
-        return [ParseTask(**task) for task in payload["tasks"]]
+        return [
+            ParseTask(
+                **{
+                    **task,
+                    "job_id": UUID(str(task["job_id"])),
+                    "document_version_id": UUID(
+                        str(task["document_version_id"])
+                    ),
+                    "parse_view_id": UUID(str(task["parse_view_id"])),
+                }
+            )
+            for task in payload["tasks"]
+        ]
 
     async def heartbeat(self, task: ParseTask, *, lease_seconds: int) -> None:
         await self._request("POST", f"{INTERNAL_API_V1}/knowledge/parse-tasks/{task.job_id}/heartbeat", json={

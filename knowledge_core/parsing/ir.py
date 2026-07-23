@@ -1,5 +1,6 @@
 """Immutable Atom and Structure intermediate representations."""
 
+from uuid import UUID
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
@@ -83,14 +84,14 @@ class Atom:
 
 @dataclass(frozen=True)
 class AtomIr:
-    document_version_id: int
+    document_version_id: UUID
     pages: tuple[PageGeometry, ...]
     atoms: tuple[Atom, ...]
     generator: dict[str, str]
     ir_version: str = "kc-atom/v1"
 
     def validate(self) -> None:
-        if self.document_version_id < 1 or self.ir_version != "kc-atom/v1":
+        if self.ir_version != "kc-atom/v1":
             raise IrValidationError("invalid Atom IR identity")
         if not self.generator.get("name") or not self.generator.get("version"):
             raise IrValidationError("Atom IR generator name and version are required")
@@ -141,7 +142,7 @@ class StructureNode:
 
 @dataclass(frozen=True)
 class StructureIr:
-    document_version_id: int
+    document_version_id: UUID
     atom_ir_sha256: str
     nodes: tuple[StructureNode, ...]
     generator: dict[str, str]

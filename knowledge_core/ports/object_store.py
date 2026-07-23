@@ -1,4 +1,5 @@
 """Object storage contract for isolated intake and parser workers."""
+from uuid import UUID
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -19,7 +20,7 @@ class KnowledgeObjectStore(Protocol):
     ) -> StoredObject: ...
 
     async def publish_staged(
-        self, *, staged: StoredObject, collection_id: int, document_id: int,
+        self, *, staged: StoredObject, collection_id: UUID, document_id: UUID,
     ) -> StoredObject: ...
 
     async def delete(self, uri: str) -> None: ...

@@ -1,4 +1,5 @@
 """Discovery-stage retrieval contracts and Bundle-level aggregation."""
+from uuid import UUID
 from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Any, Protocol, Sequence
@@ -8,10 +9,10 @@ from knowledge_core.application.query_embeddings import QueryEmbeddingProvider
 
 @dataclass(frozen=True)
 class DiscoveryHit:
-    collection_id: int
+    collection_id: UUID
     collection_key: str
-    bundle_id: int
-    bundle_revision_id: int
+    bundle_id: UUID
+    bundle_revision_id: UUID
     object_type: str
     profile_key: str
     display_title: str
@@ -25,10 +26,10 @@ class DiscoveryHit:
 
 @dataclass
 class BundleCandidate:
-    collection_id: int
+    collection_id: UUID
     collection_key: str
-    bundle_id: int
-    bundle_revision_id: int
+    bundle_id: UUID
+    bundle_revision_id: UUID
     display_title: str
     member_count: int
     matched_members: list[str]
@@ -39,8 +40,8 @@ class BundleCandidate:
 
 
 class DiscoverySearchPort(Protocol):
-    async def search_text(self, *, collection_id: int, query: str, limit: int, max_security_level: int) -> Sequence[DiscoveryHit]: ...
-    async def search_vector(self, *, collection_id: int, vector: Sequence[float], limit: int, max_security_level: int) -> Sequence[DiscoveryHit]: ...
+    async def search_text(self, *, collection_id: UUID, query: str, limit: int, max_security_level: int) -> Sequence[DiscoveryHit]: ...
+    async def search_vector(self, *, collection_id: UUID, vector: Sequence[float], limit: int, max_security_level: int) -> Sequence[DiscoveryHit]: ...
 
 
 def aggregate_candidates(
@@ -49,7 +50,7 @@ def aggregate_candidates(
     """Collapse Bundle/Document hits before applying RRF and fair pooling."""
     if per_collection_limit < 1:
         raise ValueError("per_collection_limit must be positive")
-    grouped: dict[tuple[int, int, int], list[DiscoveryHit]] = defaultdict(list)
+    grouped: dict[tuple[UUID, UUID, UUID], list[DiscoveryHit]] = defaultdict(list)
     for hit in hits:
         grouped[(hit.collection_id, hit.bundle_id, hit.bundle_revision_id)].append(hit)
     candidates: list[BundleCandidate] = []
@@ -75,7 +76,7 @@ def aggregate_candidates(
     candidates.sort(key=lambda item: (-item.rrf_score, item.collection_key, item.bundle_id))
     # Equal Collection priority: take the same local budget from each
     # collection and interleave by rank, then fill unused slots globally.
-    by_collection: dict[int, list[BundleCandidate]] = defaultdict(list)
+    by_collection: dict[UUID, list[BundleCandidate]] = defaultdict(list)
     for candidate in candidates:
         by_collection[candidate.collection_id].append(candidate)
     for local in by_collection.values():
@@ -95,8 +96,8 @@ class KnowledgeCoreDiscoveryService:
         self._query_embedding_provider = query_embedding_provider
 
     async def discover(
-        self, *, collection_ids: Sequence[int], query: str,
-        query_vectors: dict[int, Sequence[float]] | None = None,
+        self, *, collection_ids: Sequence[UUID], query: str,
+        query_vectors: dict[UUID, Sequence[float]] | None = None,
         per_channel_limit: int = 20, per_collection_limit: int = 20,
         max_security_level: int = 3,
     ) -> list[BundleCandidate]:

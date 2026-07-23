@@ -1,5 +1,6 @@
 """End-to-end pure KC parsing pipeline after file conversion."""
 
+from uuid import UUID
 from dataclasses import asdict, dataclass
 from typing import Any
 
@@ -37,7 +38,7 @@ class KcParsingPipeline:
         return self._parser_version
 
     def parse(
-        self, *, document_version_id: int, parse_view_id: int, document: DoclingDocument,
+        self, *, document_version_id: UUID, parse_view_id: UUID, document: DoclingDocument,
     ) -> ParserOutput:
         raw_docling = document.export_to_dict(mode="json", by_alias=True, exclude_none=True)
         atom_ir = self._normalizer.normalize(

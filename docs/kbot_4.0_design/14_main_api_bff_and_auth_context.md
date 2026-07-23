@@ -77,6 +77,9 @@ Agent Runtime 另用能力更窄的 `AIOpsDelegationClient`，只允许创建、
 - `/api/v1/knowledge/bundles/{bundle_id}`：入库、解析和索引状态查询；
 - `/healthz`、`/readyz`：不版本化，只返回服务健康摘要，不泄露数据库凭据或内部拓扑。
 
+上述 Collection、Binding、Bundle 和 Revision 资源 ID 均使用 UUIDv7 规范字符串；
+Main API 不公开 Oracle `RAW(16)`、数字兼容 ID 或双层 Public UID。
+
 随对应领域实现后再挂载：
 
 - `/api/v1/runs` 和 `/api/v1/runs/{run_id}/events`：Run 命令、查询与 SSE；

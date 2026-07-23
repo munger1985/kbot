@@ -1,4 +1,5 @@
 """解析 Worker 内部 HTTP 协议背后的应用用例。"""
+from uuid import UUID
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -25,12 +26,12 @@ from knowledge_core.ports.parser_artifact_store import ParserArtifactStore
 
 @dataclass(frozen=True)
 class ClaimedParseTask:
-    job_id: int
+    job_id: UUID
     lease_owner: str
     lease_until: datetime
     input_fingerprint: str
-    document_version_id: int
-    parse_view_id: int
+    document_version_id: UUID
+    parse_view_id: UUID
     detected_mime_type: str
     view_kind: str
     parse_config_fingerprint: str
@@ -102,7 +103,7 @@ class KnowledgeCoreParseTaskService:
             return tasks
 
     async def source_descriptor(
-        self, *, job_id: int, worker_id: str, input_fingerprint: str,
+        self, *, job_id: UUID, worker_id: str, input_fingerprint: str,
     ) -> tuple[str, str]:
         now = datetime.now(timezone.utc)
         async with self._uow_factory() as uow:
@@ -117,7 +118,7 @@ class KnowledgeCoreParseTaskService:
                 raise ParseLeaseError("JOB_STALE")
             return version.storage_uri, version.detected_mime_type
 
-    async def heartbeat(self, *, job_id: int, worker_id: str, input_fingerprint: str, lease_seconds: int = 120) -> datetime:
+    async def heartbeat(self, *, job_id: UUID, worker_id: str, input_fingerprint: str, lease_seconds: int = 120) -> datetime:
         now = datetime.now(timezone.utc)
         async with self._uow_factory() as uow:
             if uow.jobs is None or uow.session is None:
@@ -134,7 +135,7 @@ class KnowledgeCoreParseTaskService:
             return job.lease_until
 
     async def upload_artifact(
-        self, *, job_id: int, worker_id: str, input_fingerprint: str,
+        self, *, job_id: UUID, worker_id: str, input_fingerprint: str,
         artifact_name: str, payload: Any, expected_sha256: str,
         schema: str, generator: str,
     ) -> dict[str, str]:
@@ -151,7 +152,7 @@ class KnowledgeCoreParseTaskService:
             expected_sha256=expected_sha256, schema=schema, generator=generator,
         )
 
-    async def submit_evidence(self, *, job_id: int, worker_id: str, input_fingerprint: str, items: list[EvidenceInput]) -> int:
+    async def submit_evidence(self, *, job_id: UUID, worker_id: str, input_fingerprint: str, items: list[EvidenceInput]) -> int:
         if not items or len(items) > 500:
             raise ValueError("evidence batch must contain between 1 and 500 items")
         now = datetime.now(timezone.utc)
@@ -229,7 +230,7 @@ class KnowledgeCoreParseTaskService:
             return inserted
 
     async def complete(
-        self, *, job_id: int, worker_id: str, input_fingerprint: str,
+        self, *, job_id: UUID, worker_id: str, input_fingerprint: str,
         artifact_manifest: dict[str, Any], output_fingerprint: str,
         quality_score: float | None, quality_report: dict[str, Any],
     ) -> int:
@@ -324,7 +325,7 @@ class KnowledgeCoreParseTaskService:
         return count
 
     async def fail(
-        self, *, job_id: int, worker_id: str, input_fingerprint: str,
+        self, *, job_id: UUID, worker_id: str, input_fingerprint: str,
         failure_class: str, failure_code: str, failure_message: str | None = None,
         artifact_manifest: dict[str, Any] | None = None,
     ) -> str:
@@ -370,7 +371,7 @@ class KnowledgeCoreParseTaskService:
         return result_status
 
     @staticmethod
-    async def _reconcile_revision(uow, bundle_revision_id: int, now: datetime) -> str:
+    async def _reconcile_revision(uow, bundle_revision_id: UUID, now: datetime) -> str:
         revision = await uow.revisions.get_by_id(bundle_revision_id=bundle_revision_id, lock=True)
         if revision is None:
             raise ParseLeaseError("JOB_STALE")

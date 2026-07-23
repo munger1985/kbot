@@ -6,6 +6,7 @@ It deliberately receives a model snapshot from the caller (the Collection
 configuration service), so a worker cannot silently fall back to a process
 default model.
 """
+from uuid import UUID
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -42,11 +43,11 @@ class EmbeddingBatch:
 
 @dataclass(frozen=True)
 class ClaimedIndexTask:
-    job_id: int
+    job_id: UUID
     worker_id: str
     input_fingerprint: str
-    collection_id: int
-    parse_view_id: int | None
+    collection_id: UUID
+    parse_view_id: UUID | None
     lease_until: datetime
 
 
@@ -94,8 +95,8 @@ class KnowledgeCoreEvidenceIndexService:
         self._model_resolver = model_resolver
 
     async def index_parse_view(
-        self, *, parse_view_id: int, collection_id: int, batch_size: int = 64,
-        job_id: int | None = None,
+        self, *, parse_view_id: UUID, collection_id: UUID, batch_size: int = 64,
+        job_id: UUID | None = None,
     ) -> int:
         if batch_size < 1 or batch_size > 500:
             raise ValueError("batch_size must be between 1 and 500")
@@ -146,7 +147,7 @@ class KnowledgeCoreEvidenceIndexService:
                 await uow.commit()
                 indexed += len(pending)
 
-    async def snapshot_index_model(self, *, job_id: int, model: EmbeddingModelSnapshot) -> None:
+    async def snapshot_index_model(self, *, job_id: UUID, model: EmbeddingModelSnapshot) -> None:
         """Freeze the model identity on the INDEX job before provider I/O."""
         model.validate()
         async with self._uow_factory() as uow:
@@ -194,7 +195,7 @@ class KnowledgeCoreEvidenceIndexService:
                 await uow.commit()
             return tasks
 
-    async def run_job(self, *, job_id: int, worker_id: str, input_fingerprint: str, batch_size: int = 64) -> str:
+    async def run_job(self, *, job_id: UUID, worker_id: str, input_fingerprint: str, batch_size: int = 64) -> str:
         """Execute a leased INDEX job and promote its revision member."""
         async with self._uow_factory() as uow:
             if uow.jobs is None:
@@ -203,8 +204,8 @@ class KnowledgeCoreEvidenceIndexService:
             if job is None or job.job_type != "INDEX":
                 raise ValueError("invalid INDEX job")
             verify_lease(job, worker_id=worker_id, input_fingerprint=input_fingerprint)
-            collection_id = int(job.collection_id)
-            parse_view_id = int(job.parse_view_id) if job.parse_view_id is not None else None
+            collection_id = job.collection_id
+            parse_view_id = job.parse_view_id
             target = (job.payload_json or {}).get("target")
         model = await self._model_resolver(collection_id)
         if target == "DISCOVERY":
@@ -220,7 +221,7 @@ class KnowledgeCoreEvidenceIndexService:
         )
         return await self.finalize_index_job(job_id=job_id, indexed_count=count, model=model)
 
-    async def _run_discovery_job(self, *, job_id: int, worker_id: str, input_fingerprint: str, model: EmbeddingModelSnapshot) -> str:
+    async def _run_discovery_job(self, *, job_id: UUID, worker_id: str, input_fingerprint: str, model: EmbeddingModelSnapshot) -> str:
         model.validate()
         async with self._uow_factory() as uow:
             if not all((uow.jobs, uow.discovery, uow.collections, uow.revisions, uow.bundles, uow.session)):
@@ -230,7 +231,7 @@ class KnowledgeCoreEvidenceIndexService:
                 raise ValueError("invalid Discovery INDEX job")
             verify_lease(job, worker_id=worker_id, input_fingerprint=input_fingerprint)
             revision = await uow.revisions.get_by_id(bundle_revision_id=job.bundle_revision_id, lock=True)
-            if revision is None or int(revision.collection_id) != int(job.collection_id):
+            if revision is None or revision.collection_id != job.collection_id:
                 raise ValueError("Discovery INDEX revision is stale")
             collection = await uow.collections.get_by_id(collection_id=job.collection_id)
             if collection is None or int(collection.embedding_model_id) != model.model_id:
@@ -278,7 +279,7 @@ class KnowledgeCoreEvidenceIndexService:
             return str(revision.status)
 
     async def heartbeat(
-        self, *, job_id: int, worker_id: str, input_fingerprint: str, lease_seconds: int = 120,
+        self, *, job_id: UUID, worker_id: str, input_fingerprint: str, lease_seconds: int = 120,
     ) -> datetime:
         now = datetime.now(timezone.utc)
         async with self._uow_factory() as uow:
@@ -296,7 +297,7 @@ class KnowledgeCoreEvidenceIndexService:
             return job.lease_until
 
     async def fail(
-        self, *, job_id: int, worker_id: str, input_fingerprint: str,
+        self, *, job_id: UUID, worker_id: str, input_fingerprint: str,
         failure_class: str, failure_code: str, failure_message: str | None = None,
     ) -> str:
         now = datetime.now(timezone.utc)
@@ -338,7 +339,7 @@ class KnowledgeCoreEvidenceIndexService:
             return result
 
     async def finalize_index_job(
-        self, *, job_id: int, indexed_count: int, model: EmbeddingModelSnapshot,
+        self, *, job_id: UUID, indexed_count: int, model: EmbeddingModelSnapshot,
     ) -> str:
         """Mark INDEX successful only after every active Evidence has a vector."""
         now = datetime.now(timezone.utc)

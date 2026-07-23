@@ -1,5 +1,6 @@
 """Plan retrieval Evidence from validated Structure IR without mutating it."""
 
+from uuid import UUID
 from dataclasses import asdict, dataclass
 import re
 from typing import Any
@@ -76,10 +77,8 @@ class EvidencePlanner:
         return self._policy
 
     def plan(
-        self, *, parse_view_id: int, atom_ir: AtomIr, structure_ir: StructureIr
+        self, *, parse_view_id: UUID, atom_ir: AtomIr, structure_ir: StructureIr
     ) -> tuple[PlannedEvidence, ...]:
-        if parse_view_id < 1:
-            raise ValueError("parse_view_id must be positive")
         structure_ir.validate(atom_ir)
         atom_by_id = {atom.atom_id: atom for atom in atom_ir.atoms}
         node_by_id = {node.node_id: node for node in structure_ir.nodes}
@@ -189,7 +188,7 @@ class EvidencePlanner:
         return tuple(output)
 
     def _make_evidence(
-        self, *, parse_view_id: int, node: StructureNode,
+        self, *, parse_view_id: UUID, node: StructureNode,
         node_by_id: dict[str, StructureNode], node_primary_key: dict[str, str],
         fragment: _Fragment, evidence_type: str, fragment_index: int,
         ordinal: int, parent_override: str | None = None,

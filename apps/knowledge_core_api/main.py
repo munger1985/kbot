@@ -7,6 +7,7 @@ HTTP 访问，不能获取 KC 数据库会话或直接访问 KC 表。
 import os
 import sys
 from contextlib import asynccontextmanager
+from uuid import UUID
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -113,11 +114,11 @@ async def lifespan(app: FastAPI):
     )
 
     class UowDiscoverySearchPort:
-        async def search_text(self, *, collection_id: int, query: str, limit: int, max_security_level: int):
+        async def search_text(self, *, collection_id: UUID, query: str, limit: int, max_security_level: int):
             async with kc_uow_factory() as uow:
                 return await uow.discovery.search_text(collection_id=collection_id, query=query, limit=limit, max_security_level=max_security_level)
 
-        async def search_vector(self, *, collection_id: int, vector: list[float], limit: int, max_security_level: int):
+        async def search_vector(self, *, collection_id: UUID, vector: list[float], limit: int, max_security_level: int):
             async with kc_uow_factory() as uow:
                 return await uow.discovery.search_vector(collection_id=collection_id, vector=vector, limit=limit, max_security_level=max_security_level)
 

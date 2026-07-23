@@ -1,5 +1,6 @@
 """Validation and hashing rules shared by Parser Worker and KC."""
 
+from uuid import UUID
 import hashlib
 import json
 import re
@@ -16,8 +17,20 @@ REQUIRED_ARTIFACTS = frozenset({
 OPTIONAL_ARTIFACTS = frozenset({"spreadsheet_artifact"})
 
 
+def _canonical_json_default(item: Any) -> str:
+    if isinstance(item, UUID):
+        return str(item)
+    raise TypeError(f"不支持规范 JSON 序列化的类型：{type(item).__name__}")
+
+
 def canonical_json_hash(value: Any) -> str:
-    payload = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    payload = json.dumps(
+        value,
+        default=_canonical_json_default,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
@@ -119,11 +132,11 @@ def evidence_fingerprint(
 
 
 def build_evidence_key(
-    *, parse_view_id: int, source_spans: list[dict[str, Any]],
+    *, parse_view_id: UUID, source_spans: list[dict[str, Any]],
     fragment_index: int, evidence_type: str,
 ) -> str:
     validate_source_spans(source_spans)
-    if parse_view_id < 1 or fragment_index < 0 or evidence_type not in EVIDENCE_TYPES:
+    if fragment_index < 0 or evidence_type not in EVIDENCE_TYPES:
         raise ValueError("invalid Evidence key components")
     return f"ev1:{parse_view_id}:{canonical_json_hash(source_spans)}:{fragment_index}:{evidence_type}"
 

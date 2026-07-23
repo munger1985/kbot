@@ -1,4 +1,4 @@
--- KBot 3.5: one text embedding model per Collection, one physical vector dimension.
+-- KBot 4.0：每个 Collection 唯一文本 Embedding 模型和物理向量维度。
 -- KBOT_MD_MODELS is the shared platform model catalog and already exists.
 
 ALTER TABLE KBOT_MD_MODELS ADD (

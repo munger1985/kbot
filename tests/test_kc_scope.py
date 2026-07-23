@@ -1,6 +1,11 @@
 import unittest
+from uuid import UUID
 
 from knowledge_core.application.scope import KnowledgeCoreScopeService, KnowledgeScopeError
+
+
+COLLECTION_1 = UUID("019c03b5-4b88-7ab2-8c19-7b6ea34f2a21")
+COLLECTION_2 = UUID("019c03b5-4b88-7ab2-8c19-7b6ea34f2a22")
 
 
 class _Collection:
@@ -10,14 +15,22 @@ class _Collection:
 
 class _Collections:
     async def get_by_id_scope(self, *, app_id, domain_id, collection_id):
-        if app_id != 100 or domain_id != 7 or collection_id not in {1, 2}:
+        if (
+            app_id != 100
+            or domain_id != 7
+            or collection_id not in {COLLECTION_1, COLLECTION_2}
+        ):
             return None
-        return _Collection("DISABLED" if collection_id == 2 else "ACTIVE")
+        return _Collection(
+            "DISABLED" if collection_id == COLLECTION_2 else "ACTIVE"
+        )
 
 
 class _Bindings:
     async def get_by_consumer_collection(self, *, consumer_type, consumer_id, collection_id):
-        if consumer_type == "AGENT" and consumer_id == "019c03b5-4b88-7ab2-8c19-7b6ea34f2a11" and collection_id in {1, 2}:
+        if consumer_type == "AGENT" and consumer_id == UUID(
+            "019c03b5-4b88-7ab2-8c19-7b6ea34f2a11"
+        ) and collection_id in {COLLECTION_1, COLLECTION_2}:
             return type("Binding", (), {"status": "ACTIVE"})()
         return None
 
@@ -38,17 +51,17 @@ class ScopeTest(unittest.IsolatedAsyncioTestCase):
         service = KnowledgeCoreScopeService(app_id=100, uow_factory=_Uow)
         self.assertEqual(await service.resolve_agent_collections(
             domain_id=7,
-            agent_id="019c03b5-4b88-7ab2-8c19-7b6ea34f2a11",
-            collection_ids=(1, 2),
-        ), (1,))
+            agent_id=UUID("019c03b5-4b88-7ab2-8c19-7b6ea34f2a11"),
+            collection_ids=(COLLECTION_1, COLLECTION_2),
+        ), (COLLECTION_1,))
 
     async def test_unbound_collection_is_rejected(self):
         service = KnowledgeCoreScopeService(app_id=100, uow_factory=_Uow)
         with self.assertRaises(KnowledgeScopeError):
             await service.resolve_agent_collections(
                 domain_id=7,
-                agent_id="019c03b5-4b88-7ab2-8c19-7b6ea34f2a12",
-                collection_ids=(1,),
+                agent_id=UUID("019c03b5-4b88-7ab2-8c19-7b6ea34f2a12"),
+                collection_ids=(COLLECTION_1,),
             )
 
 

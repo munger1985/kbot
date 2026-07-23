@@ -1,4 +1,5 @@
 """Internal lease protocol for asynchronous Collection purge."""
+from uuid import UUID
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
@@ -36,7 +37,7 @@ async def claim(payload: ClaimRequest, request: Request):
 
 
 @router.post("/{job_id}/run")
-async def run(job_id: int, payload: RunRequest, request: Request):
+async def run(job_id: UUID, payload: RunRequest, request: Request):
     try:
         return await request.app.state.kc_purge_service.run(
             job_id=job_id, worker_id=payload.worker_id, input_fingerprint=payload.input_fingerprint,
@@ -48,7 +49,7 @@ async def run(job_id: int, payload: RunRequest, request: Request):
 
 
 @router.post("/{job_id}/heartbeat")
-async def heartbeat(job_id: int, payload: LeaseRequest, request: Request):
+async def heartbeat(job_id: UUID, payload: LeaseRequest, request: Request):
     try:
         lease_until = await request.app.state.kc_purge_service.heartbeat(
             job_id=job_id, worker_id=payload.worker_id, input_fingerprint=payload.input_fingerprint,
@@ -60,7 +61,7 @@ async def heartbeat(job_id: int, payload: LeaseRequest, request: Request):
 
 
 @router.post("/{job_id}/fail")
-async def fail(job_id: int, payload: RunRequest, request: Request):
+async def fail(job_id: UUID, payload: RunRequest, request: Request):
     try:
         result = await request.app.state.kc_purge_service.fail(
             job_id=job_id, worker_id=payload.worker_id, input_fingerprint=payload.input_fingerprint,

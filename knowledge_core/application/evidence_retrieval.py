@@ -1,4 +1,5 @@
 """Evidence-stage retrieval, context grouping and citation pack DTOs."""
+from uuid import UUID
 from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Any, Protocol, Sequence
@@ -8,22 +9,22 @@ from knowledge_core.application.query_embeddings import QueryEmbeddingProvider
 
 @dataclass(frozen=True)
 class EvidenceScope:
-    collection_id: int
-    bundle_id: int
-    bundle_revision_id: int
-    document_version_ids: tuple[int, ...] = ()
+    collection_id: UUID
+    bundle_id: UUID
+    bundle_revision_id: UUID
+    document_version_ids: tuple[UUID, ...] = ()
 
 
 @dataclass(frozen=True)
 class EvidenceHit:
-    evidence_id: int
-    collection_id: int
-    bundle_id: int
-    bundle_revision_id: int
-    bundle_revision_document_id: int | None
-    document_id: int
-    document_version_id: int
-    parse_view_id: int
+    evidence_id: UUID
+    collection_id: UUID
+    bundle_id: UUID
+    bundle_revision_id: UUID
+    bundle_revision_document_id: UUID | None
+    document_id: UUID
+    document_version_id: UUID
+    parse_view_id: UUID
     evidence_key: str
     evidence_type: str
     content_text: str
@@ -52,13 +53,13 @@ class EvidenceGroupItem:
 @dataclass
 class EvidenceGroup:
     group_label: str
-    collection_id: int
-    bundle_id: int
-    bundle_revision_id: int
-    document_version_id: int
-    parse_view_id: int
+    collection_id: UUID
+    bundle_id: UUID
+    bundle_revision_id: UUID
+    document_version_id: UUID
+    parse_view_id: UUID
     items: list[EvidenceGroupItem]
-    anchor_evidence_ids: list[int]
+    anchor_evidence_ids: list[UUID]
     token_count: int
     support_grade: str | None = None
     answerable_aspects: list[str] = field(default_factory=list)
@@ -68,14 +69,14 @@ class EvidenceGroup:
 @dataclass
 class CitationGroup:
     citation_label: str
-    collection_id: int
-    bundle_id: int
-    bundle_revision_id: int
-    document_version_id: int
-    parse_view_id: int
-    primary_evidence_ids: list[int]
-    structural_context_ids: list[int]
-    neighbor_evidence_ids: list[int]
+    collection_id: UUID
+    bundle_id: UUID
+    bundle_revision_id: UUID
+    document_version_id: UUID
+    parse_view_id: UUID
+    primary_evidence_ids: list[UUID]
+    structural_context_ids: list[UUID]
+    neighbor_evidence_ids: list[UUID]
     items: list[EvidenceGroupItem]
 
 
@@ -90,10 +91,10 @@ def assemble_groups(
     context_items_per_group: int = 4,
 ) -> list[EvidenceGroup]:
     """Group only same Document Version/Parse View; anchors become PRIMARY."""
-    grouped: dict[tuple[int, int, int], list[EvidenceHit]] = defaultdict(list)
+    grouped: dict[tuple[UUID, UUID, UUID], list[EvidenceHit]] = defaultdict(list)
     for anchor in anchors:
         grouped[(anchor.document_version_id, anchor.parse_view_id, anchor.bundle_id)].append(anchor)
-    context_by_scope: dict[tuple[int, int, int], list[EvidenceHit]] = defaultdict(list)
+    context_by_scope: dict[tuple[UUID, UUID, UUID], list[EvidenceHit]] = defaultdict(list)
     for context in contexts:
         context_by_scope[(context.document_version_id, context.parse_view_id, context.bundle_id)].append(context)
     groups: list[EvidenceGroup] = []
@@ -164,7 +165,7 @@ class KnowledgeCoreEvidenceRetrievalService:
 
     async def retrieve(
         self, *, scopes: Sequence[EvidenceScope], query: str,
-        query_vectors: dict[int, Sequence[float]] | None = None,
+        query_vectors: dict[UUID, Sequence[float]] | None = None,
         max_evidence: int = 12, context_limit: int = 4, max_security_level: int = 3,
     ) -> list[CitationGroup]:
         if not query.strip() or not scopes:

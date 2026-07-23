@@ -1,3 +1,4 @@
+from uuid import UUID
 from sqlalchemy import Select, bindparam, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -9,7 +10,7 @@ class DiscoveryRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def get_by_key(self, *, bundle_revision_id: int, profile_key: str, lock: bool = False) -> KcDiscoveryObjectEntity | None:
+    async def get_by_key(self, *, bundle_revision_id: UUID, profile_key: str, lock: bool = False) -> KcDiscoveryObjectEntity | None:
         statement: Select = select(KcDiscoveryObjectEntity).where(
             KcDiscoveryObjectEntity.bundle_revision_id == bundle_revision_id,
             KcDiscoveryObjectEntity.profile_key == profile_key,
@@ -23,7 +24,7 @@ class DiscoveryRepository:
         await self.session.flush()
         return entity
 
-    async def list_active(self, *, collection_id: int, bundle_revision_id: int, object_type: str | None = None) -> list[KcDiscoveryObjectEntity]:
+    async def list_active(self, *, collection_id: UUID, bundle_revision_id: UUID, object_type: str | None = None) -> list[KcDiscoveryObjectEntity]:
         statement = select(KcDiscoveryObjectEntity).where(
             KcDiscoveryObjectEntity.collection_id == collection_id,
             KcDiscoveryObjectEntity.bundle_revision_id == bundle_revision_id,
@@ -33,7 +34,7 @@ class DiscoveryRepository:
             statement = statement.where(KcDiscoveryObjectEntity.object_type == object_type)
         return list((await self.session.execute(statement)).scalars())
 
-    async def list_staged(self, *, bundle_revision_id: int, limit: int = 500, offset: int = 0) -> list[KcDiscoveryObjectEntity]:
+    async def list_staged(self, *, bundle_revision_id: UUID, limit: int = 500, offset: int = 0) -> list[KcDiscoveryObjectEntity]:
         statement = (
             select(KcDiscoveryObjectEntity)
             .where(
@@ -46,13 +47,18 @@ class DiscoveryRepository:
         )
         return list((await self.session.execute(statement)).scalars())
 
-    async def activate_revision(self, *, bundle_revision_id: int) -> None:
+    async def activate_revision(self, *, bundle_revision_id: UUID) -> None:
         await self.session.execute(update(KcDiscoveryObjectEntity).where(
             KcDiscoveryObjectEntity.bundle_revision_id == bundle_revision_id,
             KcDiscoveryObjectEntity.discovery_status == "STAGED",
         ).values(discovery_status="ACTIVE"))
 
-    async def retire_other_revisions(self, *, bundle_id: int, except_revision_id: int) -> None:
+    async def retire_other_revisions(
+        self,
+        *,
+        bundle_id: UUID,
+        except_revision_id: UUID,
+    ) -> None:
         # The caller must join Bundle/Revision scope when using this helper;
         # this repository only handles direct object state transitions.
         await self.session.execute(update(KcDiscoveryObjectEntity).where(
@@ -61,7 +67,7 @@ class DiscoveryRepository:
             KcDiscoveryObjectEntity.discovery_status == "ACTIVE",
         ).values(discovery_status="DELETING"))
 
-    async def search_text(self, *, collection_id: int, query: str, limit: int = 20, max_security_level: int = 3) -> list[DiscoveryHit]:
+    async def search_text(self, *, collection_id: UUID, query: str, limit: int = 20, max_security_level: int = 3) -> list[DiscoveryHit]:
         """Oracle Text candidate search scoped to current published revisions."""
         text_score = func.score(1)
         statement = (
@@ -85,7 +91,7 @@ class DiscoveryRepository:
         rows = (await self.session.execute(statement)).all()
         return [self._to_hit(entity, rank, "TEXT", float(score or 0), collection_key) for rank, (entity, score, collection_key) in enumerate(rows, 1)]
 
-    async def search_vector(self, *, collection_id: int, vector: list[float], limit: int = 20, max_security_level: int = 3) -> list[DiscoveryHit]:
+    async def search_vector(self, *, collection_id: UUID, vector: list[float], limit: int = 20, max_security_level: int = 3) -> list[DiscoveryHit]:
         """Oracle VECTOR distance search; query vectors are model-grouped upstream."""
         distance = KcDiscoveryObjectEntity.embedding.op("<=>")(bindparam("query_vector"))
         statement = (
@@ -112,8 +118,10 @@ class DiscoveryRepository:
     def _to_hit(entity: KcDiscoveryObjectEntity, rank: int, channel: str, score: float, collection_key: str) -> DiscoveryHit:
         coverage = entity.coverage_json or {}
         return DiscoveryHit(
-            collection_id=int(entity.collection_id), collection_key=collection_key,
-            bundle_id=int(entity.bundle_id), bundle_revision_id=int(entity.bundle_revision_id),
+            collection_id=entity.collection_id,
+            collection_key=collection_key,
+            bundle_id=entity.bundle_id,
+            bundle_revision_id=entity.bundle_revision_id,
             object_type=entity.object_type, profile_key=entity.profile_key,
             display_title=entity.display_title, local_rank=rank, channel=channel, score=score,
             matched_member_key=entity.profile_key if entity.object_type == "DOCUMENT" else None,

@@ -1,4 +1,5 @@
 """Deterministic Bundle/Document profile construction for Discovery."""
+from uuid import UUID
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
@@ -48,7 +49,7 @@ class DiscoveryProfile:
 
 @dataclass(frozen=True)
 class ClaimedProfileTask:
-    job_id: int
+    job_id: UUID
     worker_id: str
     input_fingerprint: str
     lease_until: datetime
@@ -134,7 +135,7 @@ class KnowledgeCoreProfileService:
                 await uow.commit()
             return tasks
 
-    async def run_job(self, *, job_id: int, worker_id: str, input_fingerprint: str) -> int:
+    async def run_job(self, *, job_id: UUID, worker_id: str, input_fingerprint: str) -> int:
         async with self._uow_factory() as uow:
             if not all((uow.jobs, uow.revisions, uow.bundles, uow.members, uow.evidence, uow.discovery, uow.session)):
                 raise RuntimeError("Knowledge Core Unit of Work is not initialized")
@@ -253,7 +254,7 @@ class KnowledgeCoreProfileService:
             return 1 + len(profile_members)
 
     async def heartbeat(
-        self, *, job_id: int, worker_id: str, input_fingerprint: str,
+        self, *, job_id: UUID, worker_id: str, input_fingerprint: str,
         lease_seconds: int = 120,
     ) -> datetime:
         now = datetime.now(timezone.utc)
@@ -272,7 +273,7 @@ class KnowledgeCoreProfileService:
             return job.lease_until
 
     async def fail(
-        self, *, job_id: int, worker_id: str, input_fingerprint: str,
+        self, *, job_id: UUID, worker_id: str, input_fingerprint: str,
         failure_class: str, failure_code: str, failure_message: str | None = None,
     ) -> str:
         now = datetime.now(timezone.utc)
@@ -314,7 +315,7 @@ def _build_document_profile(revision, member: MemberProfileInput, bundle_profile
     ])
     identity = {
         "profile_key": f"member:{member.external_document_id}",
-        "revision": int(revision.bundle_revision_id), "member": member.__dict__,
+        "revision": str(revision.bundle_revision_id), "member": member.__dict__,
         "schema": PROFILE_SCHEMA_VERSION,
     }
     return DiscoveryProfile(

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Sequence
 from typing import TYPE_CHECKING, Protocol
+from uuid import UUID
 
 if TYPE_CHECKING:
     from knowledge_core.application.indexing import EmbeddingGateway, EmbeddingModelSnapshot
@@ -17,8 +18,8 @@ if TYPE_CHECKING:
 
 class QueryEmbeddingProvider(Protocol):
     async def embed_for_collections(
-        self, *, query: str, collection_ids: Sequence[int],
-    ) -> dict[int, list[float]]: ...
+        self, *, query: str, collection_ids: Sequence[UUID],
+    ) -> dict[UUID, list[float]]: ...
 
 
 class CollectionQueryEmbeddingProvider:
@@ -35,15 +36,15 @@ class CollectionQueryEmbeddingProvider:
         self._model_resolver = model_resolver
 
     async def embed_for_collections(
-        self, *, query: str, collection_ids: Sequence[int],
-    ) -> dict[int, list[float]]:
+        self, *, query: str, collection_ids: Sequence[UUID],
+    ) -> dict[UUID, list[float]]:
         if not query.strip() or not collection_ids:
             return {}
-        model_ids: dict[int, int] = {}
+        model_ids: dict[UUID, int] = {}
         async with self._uow_factory() as uow:
             if uow.collections is None:
                 raise RuntimeError("Knowledge Core Unit of Work is not initialized")
-            for collection_id in sorted(set(int(value) for value in collection_ids)):
+            for collection_id in sorted(set(collection_ids)):
                 collection = await uow.collections.get_by_id(collection_id=collection_id)
                 if collection is None:
                     raise ValueError(f"collection not found: {collection_id}")
@@ -55,10 +56,10 @@ class CollectionQueryEmbeddingProvider:
             snapshot.validate()
             snapshots[model_id] = snapshot
 
-        by_model: dict[int, list[int]] = {}
+        by_model: dict[int, list[UUID]] = {}
         for collection_id, model_id in model_ids.items():
             by_model.setdefault(model_id, []).append(collection_id)
-        vectors: dict[int, list[float]] = {}
+        vectors: dict[UUID, list[float]] = {}
         from knowledge_core.application.indexing import validate_embedding_batch
         for model_id, scoped_collections in by_model.items():
             model = snapshots[model_id]

@@ -1,4 +1,5 @@
 """具备 Domain 边界的入库与解析状态内部端点。"""
+from uuid import UUID
 from dataclasses import asdict
 
 from fastapi import APIRouter, HTTPException, Request
@@ -15,7 +16,7 @@ router = APIRouter(
 
 
 @router.get("/{bundle_id}")
-async def get_bundle_status(domain_id: int, bundle_id: int, request: Request):
+async def get_bundle_status(domain_id: int, bundle_id: UUID, request: Request):
     require_domain_match(request, domain_id)
     try:
         result = await request.app.state.kc_status_service.get_bundle(domain_id=domain_id, bundle_id=bundle_id)
@@ -25,7 +26,7 @@ async def get_bundle_status(domain_id: int, bundle_id: int, request: Request):
 
 
 @router.get("/{bundle_id}/revisions/{bundle_revision_id}")
-async def get_revision_status(domain_id: int, bundle_id: int, bundle_revision_id: int, request: Request):
+async def get_revision_status(domain_id: int, bundle_id: UUID, bundle_revision_id: UUID, request: Request):
     require_domain_match(request, domain_id)
     try:
         result = await request.app.state.kc_status_service.get_revision(
@@ -37,7 +38,7 @@ async def get_revision_status(domain_id: int, bundle_id: int, bundle_revision_id
 
 
 @router.get("/{bundle_id}/revisions/{bundle_revision_id}/members")
-async def get_revision_members(domain_id: int, bundle_id: int, bundle_revision_id: int, request: Request):
+async def get_revision_members(domain_id: int, bundle_id: UUID, bundle_revision_id: UUID, request: Request):
     require_domain_match(request, domain_id)
     try:
         result = await request.app.state.kc_status_service.get_revision(

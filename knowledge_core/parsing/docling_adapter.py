@@ -1,5 +1,6 @@
 """Lossless adapter from DoclingDocument to the KC Atom IR."""
 
+from uuid import UUID
 import hashlib
 from typing import Any
 
@@ -52,7 +53,7 @@ class DoclingAtomNormalizer:
             raise ValueError("generator_version is required")
         self._generator_version = generator_version
 
-    def normalize(self, *, document_version_id: int, document: DoclingDocument) -> AtomIr:
+    def normalize(self, *, document_version_id: UUID, document: DoclingDocument) -> AtomIr:
         pages, page_items = self._pages(document)
         atoms: list[Atom] = []
         seen_refs: set[str] = set()
@@ -242,7 +243,7 @@ class DoclingAtomNormalizer:
         }
 
     @staticmethod
-    def _atom_id(document_version_id: int, source_ref: str, atom_type: str) -> str:
+    def _atom_id(document_version_id: UUID, source_ref: str, atom_type: str) -> str:
         digest = hashlib.sha256(f"{document_version_id}|{source_ref}|{atom_type}".encode("utf-8")).hexdigest()
         return f"atom:{digest[:32]}"
 

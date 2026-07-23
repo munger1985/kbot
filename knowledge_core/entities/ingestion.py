@@ -1,11 +1,18 @@
-"""Immutable Knowledge Core ingestion aggregate mappings."""
+"""Knowledge Core 不可变入库聚合映射。"""
 from datetime import datetime
 from typing import Any
+from uuid import UUID
 
 from sqlalchemy import DateTime, Integer, Numeric, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
-from platform_core.persistence.orm import BaseEntity, OracleJSON, VectorField
+from platform_core.identity import uuid7
+from platform_core.persistence.orm import (
+    BaseEntity,
+    OracleJSON,
+    UUIDv7Type,
+    VectorField,
+)
 
 
 class _AuditEntity(BaseEntity):
@@ -18,21 +25,25 @@ class _AuditEntity(BaseEntity):
 
 class KcBundleEntity(_AuditEntity):
     __tablename__ = "KBOT_KC_BUNDLE"
-    bundle_id: Mapped[int] = mapped_column(Numeric(38, 0), primary_key=True)
-    collection_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False)
+    bundle_id: Mapped[UUID] = mapped_column(
+        UUIDv7Type(), primary_key=True, default=uuid7,
+    )
+    collection_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
     source_system: Mapped[str] = mapped_column(String(64), nullable=False)
     source_type: Mapped[str] = mapped_column(String(64), nullable=False)
     source_id: Mapped[str] = mapped_column(String(256), nullable=False)
-    current_revision_id: Mapped[int | None] = mapped_column(Numeric(38, 0))
+    current_revision_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
     availability_status: Mapped[str] = mapped_column(String(16), nullable=False, default="EMPTY")
     row_version: Mapped[int] = mapped_column(Numeric(19, 0), nullable=False, default=1)
 
 
 class KcBundleRevisionEntity(_AuditEntity):
     __tablename__ = "KBOT_KC_BUNDLE_REVISION"
-    bundle_revision_id: Mapped[int] = mapped_column(Numeric(38, 0), primary_key=True)
-    collection_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False)
-    bundle_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False)
+    bundle_revision_id: Mapped[UUID] = mapped_column(
+        UUIDv7Type(), primary_key=True, default=uuid7,
+    )
+    collection_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
+    bundle_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
     revision_no: Mapped[int] = mapped_column(Numeric(19, 0), nullable=False)
     source_revision: Mapped[str] = mapped_column(String(256), nullable=False)
     snapshot_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -50,19 +61,23 @@ class KcBundleRevisionEntity(_AuditEntity):
 
 class KcDocumentEntity(_AuditEntity):
     __tablename__ = "KBOT_KC_DOCUMENT"
-    document_id: Mapped[int] = mapped_column(Numeric(38, 0), primary_key=True)
-    collection_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False)
-    bundle_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False)
+    document_id: Mapped[UUID] = mapped_column(
+        UUIDv7Type(), primary_key=True, default=uuid7,
+    )
+    collection_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
+    bundle_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
     external_document_id: Mapped[str] = mapped_column(String(256), nullable=False)
     document_status: Mapped[str] = mapped_column(String(16), nullable=False, default="ACTIVE")
 
 
 class KcDocumentVersionEntity(_AuditEntity):
     __tablename__ = "KBOT_KC_DOCUMENT_VERSION"
-    document_version_id: Mapped[int] = mapped_column(Numeric(38, 0), primary_key=True)
-    collection_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False)
-    bundle_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False)
-    document_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False)
+    document_version_id: Mapped[UUID] = mapped_column(
+        UUIDv7Type(), primary_key=True, default=uuid7,
+    )
+    collection_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
+    bundle_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
+    document_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
     version_no: Mapped[int] = mapped_column(Numeric(19, 0), nullable=False)
     content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     storage_uri: Mapped[str] = mapped_column(String(2048), nullable=False)
@@ -75,11 +90,13 @@ class KcDocumentVersionEntity(_AuditEntity):
 
 class KcBundleRevisionDocumentEntity(_AuditEntity):
     __tablename__ = "KBOT_KC_BUNDLE_REVISION_DOCUMENT"
-    bundle_revision_document_id: Mapped[int] = mapped_column(Numeric(38, 0), primary_key=True)
-    collection_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False)
-    bundle_revision_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False)
-    document_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False)
-    document_version_id: Mapped[int | None] = mapped_column(Numeric(38, 0))
+    bundle_revision_document_id: Mapped[UUID] = mapped_column(
+        UUIDv7Type(), primary_key=True, default=uuid7,
+    )
+    collection_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
+    bundle_revision_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
+    document_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
+    document_version_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
     document_role: Mapped[str] = mapped_column(String(24), nullable=False)
     ordinal: Mapped[int] = mapped_column(Numeric(19, 0), nullable=False)
     required_flag: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -98,11 +115,13 @@ class KcBundleRevisionDocumentEntity(_AuditEntity):
 
 class KcIngestionJobEntity(_AuditEntity):
     __tablename__ = "KBOT_KC_INGESTION_JOB"
-    ingestion_job_id: Mapped[int] = mapped_column(Numeric(38, 0), primary_key=True)
-    collection_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False)
-    bundle_revision_id: Mapped[int | None] = mapped_column(Numeric(38, 0))
-    document_version_id: Mapped[int | None] = mapped_column(Numeric(38, 0))
-    parse_view_id: Mapped[int | None] = mapped_column(Numeric(38, 0))
+    ingestion_job_id: Mapped[UUID] = mapped_column(
+        UUIDv7Type(), primary_key=True, default=uuid7,
+    )
+    collection_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
+    bundle_revision_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
+    document_version_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
+    parse_view_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
     job_type: Mapped[str] = mapped_column(String(24), nullable=False)
     idempotency_key: Mapped[str] = mapped_column(String(256), nullable=False)
     input_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -127,9 +146,11 @@ class KcIngestionJobEntity(_AuditEntity):
 
 class KcParseViewEntity(_AuditEntity):
     __tablename__ = "KBOT_KC_PARSE_VIEW"
-    parse_view_id: Mapped[int] = mapped_column(Numeric(38, 0), primary_key=True)
-    collection_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False)
-    document_version_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False)
+    parse_view_id: Mapped[UUID] = mapped_column(
+        UUIDv7Type(), primary_key=True, default=uuid7,
+    )
+    collection_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
+    document_version_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
     view_kind: Mapped[str] = mapped_column(String(16), nullable=False)
     parser_name: Mapped[str] = mapped_column(String(128), nullable=False)
     parser_version: Mapped[str | None] = mapped_column(String(128))
@@ -145,13 +166,15 @@ class KcParseViewEntity(_AuditEntity):
 
 class KcEvidenceEntity(_AuditEntity):
     __tablename__ = "KBOT_KC_EVIDENCE"
-    evidence_id: Mapped[int] = mapped_column(Numeric(38, 0), primary_key=True)
-    collection_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False)
-    bundle_revision_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False)
-    bundle_revision_document_id: Mapped[int | None] = mapped_column(Numeric(38, 0))
-    document_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False)
-    document_version_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False)
-    parse_view_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False)
+    evidence_id: Mapped[UUID] = mapped_column(
+        UUIDv7Type(), primary_key=True, default=uuid7,
+    )
+    collection_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
+    bundle_revision_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
+    bundle_revision_document_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
+    document_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
+    document_version_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
+    parse_view_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
     evidence_key: Mapped[str] = mapped_column(String(256), nullable=False)
     evidence_type: Mapped[str] = mapped_column(String(32), nullable=False)
     ordinal: Mapped[int] = mapped_column(Numeric(19, 0), nullable=False)

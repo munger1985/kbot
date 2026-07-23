@@ -1,11 +1,12 @@
 """Storage boundary for immutable Parser output artifacts."""
 
+from uuid import UUID
 from typing import Any, Protocol
 
 
 class ParserArtifactStore(Protocol):
     async def put_json(
-        self, *, job_id: int, artifact_name: str, payload: Any,
+        self, *, job_id: UUID, artifact_name: str, payload: Any,
         expected_sha256: str, schema: str, generator: str,
     ) -> dict[str, str]: ...
 

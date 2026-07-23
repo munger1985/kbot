@@ -1,5 +1,6 @@
 """Global outline resolution and semantic block construction."""
 
+from uuid import UUID
 from dataclasses import dataclass, field
 import hashlib
 import re
@@ -172,6 +173,6 @@ class OutlineResolver:
         )
 
     @staticmethod
-    def _node_id(document_version_id: int, node_type: str, atom_ids: tuple[str, ...]) -> str:
+    def _node_id(document_version_id: UUID, node_type: str, atom_ids: tuple[str, ...]) -> str:
         raw = f"{document_version_id}|{node_type}|{'|'.join(atom_ids)}"
         return f"node:{hashlib.sha256(raw.encode('utf-8')).hexdigest()[:32]}"

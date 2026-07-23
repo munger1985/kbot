@@ -16,10 +16,10 @@ router = APIRouter(
 
 
 class EvidenceCandidateRequest(BaseModel):
-    collection_id: int
-    bundle_id: int
-    bundle_revision_id: int
-    document_version_ids: list[int] = Field(default_factory=list, max_length=128)
+    collection_id: UUID
+    bundle_id: UUID
+    bundle_revision_id: UUID
+    document_version_ids: list[UUID] = Field(default_factory=list, max_length=128)
 
 
 class EvidenceSearchRequest(BaseModel):
@@ -27,7 +27,7 @@ class EvidenceSearchRequest(BaseModel):
     agent_id: UUID
     query: str = Field(min_length=1, max_length=8000)
     candidates: list[EvidenceCandidateRequest] = Field(min_length=1, max_length=128)
-    query_vectors: dict[int, list[float]] | None = None
+    query_vectors: dict[UUID, list[float]] | None = None
     max_evidence: int = Field(default=12, ge=1, le=100)
     context_limit: int = Field(default=4, ge=0, le=20)
     max_security_level: int = Field(default=3, ge=0, le=3)
@@ -39,7 +39,7 @@ async def search_evidence(payload: EvidenceSearchRequest, request: Request):
     try:
         requested_collections = sorted({item.collection_id for item in payload.candidates})
         scoped_collection_ids = await request.app.state.kc_scope_service.resolve_agent_collections(
-            domain_id=payload.domain_id, agent_id=str(payload.agent_id),
+            domain_id=payload.domain_id, agent_id=payload.agent_id,
             collection_ids=requested_collections,
         )
         if set(scoped_collection_ids) != set(requested_collections):

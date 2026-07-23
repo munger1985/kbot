@@ -54,18 +54,20 @@ Grounding 和 SSE 已删除，最终回答职责留给后续 Agent Runtime；旧
 - 跨服务客户端已迁移到 `platform_clients`；稳定 DTO 放入 `platform_core/contracts`，后续只补齐版本和契约测试。
 - 统一 UoW、Outbox、任务租约、重试、取消和幂等语义。
 - 确认所有 App 在同一 Schema 下也只能访问自己拥有的表和 API。
+- 将 Model Serving 当前数字 Model ID 迁移为 UUIDv7；KC 的
+  `EMBEDDING_MODEL_ID` 是跨领域引用，随该阶段同步改为 UUID，不由 KC 自行生成。
 
 ### 阶段 2：Knowledge Core 基线加固
 
 - 以现有 `knowledge_core` 和 `migrations/kc` 为唯一实现，审核表 Owner、DDL、Migration 和索引，不重复建模。
-- 将 3.5 基线遗留的 KC 数字领域主键统一迁移为 UUIDv7 `RAW(16)`；完成前，Main API 中涉及 Bundle 等资源 ID 的路由仅视为开发骨架，不构成 4.0 最终公开契约。
+- **KC 自有标识迁移已完成（2026-07-23）：** Collection、Binding、Receipt、Bundle、Revision、Document、Version、Member、Parse View、Job、Evidence、Discovery 和 Relation 使用应用生成的 UUIDv7；Oracle 映射为 `RAW(16)`，PostgreSQL 映射为原生 `uuid`。`APP_ID/DOMAIN_ID`、版本号、序号和计数保留数值；跨领域 `EMBEDDING_MODEL_ID` 在 Model Serving 标识迁移时联动处理。
 - 完成真实 Bundle 入库、Parser、PROFILE、INDEX、Discovery、Evidence、Relation 和 Excel 结构化工件。
 - 完成 KC→模型服务的配置和推理 Client，移除 KC 对模型 Entity/Repository 的直接依赖。
 - 完成 KM Portal、普通文件上传、APEX 读取视图和对象存储协议。
 
 ### 阶段 3：Main API 与领域集成
 
-- **Main API/KC 基础组合已完成（2026-07-23）：** 建立独立 `main_api` 包和 `apps/main_api` 入口，只发布 `/api/v1`；通过 `platform_clients` 组合 Collection、Binding、Bundle 状态和两类流式入库契约。待阶段 2 完成 KC UUIDv7 迁移后冻结资源 ID 契约。
+- **Main API/KC 基础组合已完成（2026-07-23）：** 建立独立 `main_api` 包和 `apps/main_api` 入口，只发布 `/api/v1`；通过 `platform_clients` 组合 Collection、Binding、Bundle 状态和两类流式入库契约，公开资源 ID 已统一为规范 UUID 字符串。
 - **入口身份边界已完成：** 建立 Portal API Key、AuthContext JWT、Service Identity、`KBOT_PLATFORM_DOMAIN` 校验和请求上下文传播；Main API 不读取 KC 表。
 - Agent Run、SSE、AIOps 和文件下载路由随所属领域实现后挂载，不提供假成功或旧接口占位实现。
 - 迁移 Portal、APEX 和 MCP Adapter；禁止继续调用旧 `/api/kb` 或直接访问 `/internal/v1`。

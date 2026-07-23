@@ -160,7 +160,7 @@ async def list_agent_bindings(agent_id: UUID, request: Request):
 
 
 @router.get("/bundles/{bundle_id}")
-async def get_bundle_status(bundle_id: int, request: Request):
+async def get_bundle_status(bundle_id: UUID, request: Request):
     context = get_auth_context(request)
     return await _client(request).get_bundle_status(
         domain_id=_domain_id(request),
@@ -171,8 +171,8 @@ async def get_bundle_status(bundle_id: int, request: Request):
 
 @router.get("/bundles/{bundle_id}/revisions/{bundle_revision_id}")
 async def get_revision_status(
-    bundle_id: int,
-    bundle_revision_id: int,
+    bundle_id: UUID,
+    bundle_revision_id: UUID,
     request: Request,
 ):
     context = get_auth_context(request)
@@ -189,8 +189,8 @@ async def get_revision_status(
     "/bundles/{bundle_id}/revisions/{bundle_revision_id}/members",
 )
 async def get_revision_members(
-    bundle_id: int,
-    bundle_revision_id: int,
+    bundle_id: UUID,
+    bundle_revision_id: UUID,
     request: Request,
 ):
     context = get_auth_context(request)

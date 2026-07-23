@@ -1,5 +1,6 @@
 """Content-addressed local Parser artifact store for development."""
 
+from uuid import UUID
 import asyncio
 import json
 from pathlib import Path
@@ -15,7 +16,7 @@ class LocalParserArtifactStore:
         self._root = root.resolve()
 
     async def put_json(
-        self, *, job_id: int, artifact_name: str, payload: Any,
+        self, *, job_id: UUID, artifact_name: str, payload: Any,
         expected_sha256: str, schema: str, generator: str,
     ) -> dict[str, str]:
         if artifact_name not in self._ALLOWED:

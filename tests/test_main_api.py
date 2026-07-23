@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import unittest
 from typing import Any
+from uuid import UUID
 
 from fastapi.testclient import TestClient
 
@@ -32,6 +33,7 @@ class _FakeKnowledgeCoreClient:
         self.last_domain_id: int | None = None
         self.multipart_body = b""
         self.raise_error = False
+        self.last_bundle_id: UUID | None = None
 
     async def list_collections(
         self,
@@ -76,6 +78,16 @@ class _FakeKnowledgeCoreClient:
 
     async def is_ready(self) -> bool:
         return True
+
+    async def get_bundle_status(
+        self,
+        *,
+        domain_id: int,
+        bundle_id: UUID,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        self.last_bundle_id = bundle_id
+        return {"bundle_id": str(bundle_id), "status": "PROCESSING"}
 
 
 class _FakeDomainRepository:
@@ -194,6 +206,25 @@ class MainApiTest(unittest.TestCase):
         paths = self.app.openapi()["paths"]
         self.assertIn("/api/v1/knowledge/collections", paths)
         self.assertFalse(any(path.startswith("/internal/") for path in paths))
+
+    def test_public_resource_paths_require_uuid(self) -> None:
+        bundle_id = UUID("019c03b5-4b88-7ab2-8c19-7b6ea34f2a31")
+        response = self.client.get(
+            f"/api/v1/knowledge/bundles/{bundle_id}",
+            headers=self._headers(),
+        )
+        self.assertEqual(200, response.status_code)
+        self.assertEqual(bundle_id, self.kc.last_bundle_id)
+
+        invalid = self.client.get(
+            "/api/v1/knowledge/bundles/88",
+            headers=self._headers(),
+        )
+        self.assertEqual(422, invalid.status_code)
+        self.assertEqual(
+            "REQUEST_VALIDATION_FAILED",
+            invalid.json()["code"],
+        )
 
     def test_validation_error_uses_problem_details(self) -> None:
         response = self.client.post(

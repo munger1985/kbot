@@ -1,4 +1,5 @@
 """Scope-safe status queries for intake and parsing progress."""
+from uuid import UUID
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
@@ -21,7 +22,7 @@ class MemberStatus:
 
 @dataclass(frozen=True)
 class RevisionStatus:
-    bundle_revision_id: int
+    bundle_revision_id: UUID
     revision_no: int
     source_revision: str
     status: str
@@ -32,11 +33,11 @@ class RevisionStatus:
 
 @dataclass(frozen=True)
 class BundleStatus:
-    bundle_id: int
-    collection_id: int
+    bundle_id: UUID
+    collection_id: UUID
     source_id: str
     availability_status: str
-    current_revision_id: int | None
+    current_revision_id: UUID | None
     revisions: list[RevisionStatus]
 
 
@@ -45,7 +46,7 @@ class KnowledgeCoreStatusService:
         self._app_id = app_id
         self._uow_factory = uow_factory
 
-    async def get_bundle(self, *, domain_id: int, bundle_id: int) -> BundleStatus:
+    async def get_bundle(self, *, domain_id: int, bundle_id: UUID) -> BundleStatus:
         async with self._uow_factory() as uow:
             if not all((uow.collections, uow.bundles, uow.revisions)):
                 raise RuntimeError("Knowledge Core Unit of Work is not initialized")
@@ -68,7 +69,7 @@ class KnowledgeCoreStatusService:
             )
 
     async def get_revision(
-        self, *, domain_id: int, bundle_id: int, bundle_revision_id: int, include_members: bool = False
+        self, *, domain_id: int, bundle_id: UUID, bundle_revision_id: UUID, include_members: bool = False
     ) -> RevisionStatus:
         async with self._uow_factory() as uow:
             if not all((uow.collections, uow.bundles, uow.revisions, uow.members)):

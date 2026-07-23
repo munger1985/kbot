@@ -4,6 +4,7 @@ Object staging/publishing happens before this use case.  The caller supplies
 only verified immutable objects; this transaction creates no externally visible
 Revision until all KC facts and parse jobs can be committed together.
 """
+from uuid import UUID
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -47,11 +48,11 @@ class ReserveIntakeCommand:
 
 @dataclass(frozen=True)
 class IntakeReservation:
-    receipt_id: int
+    receipt_id: UUID
     receipt_status: str
     newly_created: bool
-    bundle_id: int | None = None
-    bundle_revision_id: int | None = None
+    bundle_id: UUID | None = None
+    bundle_revision_id: UUID | None = None
 
 
 @dataclass(frozen=True)
@@ -61,7 +62,7 @@ class PreparePublishCommand:
     actor_id: str
     idempotency_key: str
     manifest: KmAssetIntakeManifest
-    receipt_id: int
+    receipt_id: UUID
     source_system: str = "metadb"
     source_type: str = "KM_ASSET"
     allowed_document_roles: tuple[str, ...] = ("ATTACHMENT",)
@@ -69,8 +70,9 @@ class PreparePublishCommand:
 
 @dataclass(frozen=True)
 class PublishPreparation:
-    bundle_id: int
-    document_ids: dict[str, int]
+    collection_id: UUID
+    bundle_id: UUID
+    document_ids: dict[str, UUID]
 
 
 @dataclass(frozen=True)
@@ -105,8 +107,8 @@ class AcceptKmAssetCommand:
 
 @dataclass(frozen=True)
 class IntakeAcceptance:
-    bundle_id: int
-    bundle_revision_id: int
+    bundle_id: UUID
+    bundle_revision_id: UUID
     source_revision: str
     acceptance_status: str = "ACCEPTED"
 
@@ -188,7 +190,7 @@ class KnowledgeCoreIntakeService:
             if receipt.request_fingerprint != fingerprint:
                 raise IntakeConflictError("IDEMPOTENCY_KEY_REUSED")
             if receipt.receipt_status == "ACCEPTED" and receipt.bundle_id is not None:
-                return PublishPreparation(receipt.bundle_id, {})
+                return PublishPreparation(collection.collection_id, receipt.bundle_id, {})
             if receipt.receipt_status not in {"RECEIVING", "STAGED"}:
                 raise IntakeConflictError("INGESTION_RECEIPT_NOT_STAGEABLE")
             bundle = await uow.bundles.get_by_source(
@@ -201,18 +203,23 @@ class KnowledgeCoreIntakeService:
                     source_id=command.manifest.bundle.source_id, availability_status="EMPTY",
                     created_by=command.actor_id, updated_by=command.actor_id,
                 ))
-            ids: dict[str, int] = {}
+            ids: dict[str, UUID] = {}
             for external_id in ["__manifest__", *[item.external_document_id for item in command.manifest.documents]]:
                 document = await self._document(uow, bundle, external_id, command.actor_id)
                 ids[external_id] = document.document_id
             receipt.receipt_status = "STAGED"
-            receipt.staging_manifest_json = {"bundle_id": bundle.bundle_id, "document_ids": ids}
+            receipt.staging_manifest_json = {
+                "bundle_id": str(bundle.bundle_id),
+                "document_ids": {
+                    key: str(value) for key, value in ids.items()
+                },
+            }
             receipt.updated_by = command.actor_id
             if uow.session is None:
                 raise RuntimeError("Knowledge Core Unit of Work session is not initialized")
             await uow.session.flush()
             await uow.commit()
-            return PublishPreparation(bundle.bundle_id, ids)
+            return PublishPreparation(collection.collection_id, bundle.bundle_id, ids)
 
     async def accept_published(self, command: AcceptKmAssetCommand) -> IntakeAcceptance:
         fingerprint = command.manifest.fingerprint()
@@ -255,7 +262,9 @@ class KnowledgeCoreIntakeService:
             )
             if bundle is None:
                 bundle = await uow.bundles.add(KcBundleEntity(
-                    collection_id=collection.collection_id, source_system="metadb", source_type="KM_ASSET",
+                    collection_id=collection.collection_id,
+                    source_system=command.source_system,
+                    source_type=command.source_type,
                     source_id=command.manifest.bundle.source_id, availability_status="EMPTY",
                     created_by=command.actor_id, updated_by=command.actor_id,
                 ))

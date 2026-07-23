@@ -3,6 +3,7 @@
 Repositories intentionally never commit or open sessions. The Knowledge Core
 application service will own the Unit of Work and transaction boundary.
 """
+from uuid import UUID
 from sqlalchemy import Select, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -37,7 +38,12 @@ class CollectionRepository:
         await self.session.flush()
         return collection
 
-    async def get_by_id(self, *, collection_id: int, lock: bool = False) -> KcCollectionEntity | None:
+    async def get_by_id(
+        self,
+        *,
+        collection_id: UUID,
+        lock: bool = False,
+    ) -> KcCollectionEntity | None:
         statement: Select = select(KcCollectionEntity).where(
             KcCollectionEntity.collection_id == collection_id,
         )
@@ -46,7 +52,7 @@ class CollectionRepository:
         return (await self.session.execute(statement)).scalar_one_or_none()
 
     async def get_by_id_scope(
-        self, *, app_id: int, domain_id: int, collection_id: int
+        self, *, app_id: int, domain_id: int, collection_id: UUID
     ) -> KcCollectionEntity | None:
         statement: Select = select(KcCollectionEntity).where(
             KcCollectionEntity.collection_id == collection_id,
@@ -60,7 +66,7 @@ class CollectionBindingRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def has_active_binding(self, *, collection_id: int) -> bool:
+    async def has_active_binding(self, *, collection_id: UUID) -> bool:
         statement: Select = select(KcCollectionBindingEntity.binding_id).where(
             KcCollectionBindingEntity.collection_id == collection_id,
             KcCollectionBindingEntity.status == "ACTIVE",
@@ -68,7 +74,7 @@ class CollectionBindingRepository:
         return (await self.session.execute(statement)).scalar_one_or_none() is not None
 
     async def get_by_consumer_collection(
-        self, *, consumer_type: str, consumer_id: str, collection_id: int
+        self, *, consumer_type: str, consumer_id: UUID, collection_id: UUID
     ) -> KcCollectionBindingEntity | None:
         statement: Select = select(KcCollectionBindingEntity).where(
             KcCollectionBindingEntity.consumer_type == consumer_type,
@@ -77,13 +83,18 @@ class CollectionBindingRepository:
         )
         return (await self.session.execute(statement)).scalar_one_or_none()
 
-    async def list_by_collection(self, *, collection_id: int) -> list[KcCollectionBindingEntity]:
+    async def list_by_collection(self, *, collection_id: UUID) -> list[KcCollectionBindingEntity]:
         statement = select(KcCollectionBindingEntity).where(
             KcCollectionBindingEntity.collection_id == collection_id,
         ).order_by(KcCollectionBindingEntity.consumer_type, KcCollectionBindingEntity.consumer_id)
         return list((await self.session.execute(statement)).scalars())
 
-    async def list_by_consumer(self, *, consumer_type: str, consumer_id: str) -> list[KcCollectionBindingEntity]:
+    async def list_by_consumer(
+        self,
+        *,
+        consumer_type: str,
+        consumer_id: UUID,
+    ) -> list[KcCollectionBindingEntity]:
         statement = select(KcCollectionBindingEntity).where(
             KcCollectionBindingEntity.consumer_type == consumer_type,
             KcCollectionBindingEntity.consumer_id == consumer_id,
@@ -102,7 +113,7 @@ class IngestionReceiptRepository:
         self.session = session
 
     async def get_by_idempotency_key(
-        self, *, collection_id: int, actor_id: str, idempotency_key: str
+        self, *, collection_id: UUID, actor_id: str, idempotency_key: str
     ) -> KcIngestionReceiptEntity | None:
         statement: Select = select(KcIngestionReceiptEntity).where(
             KcIngestionReceiptEntity.collection_id == collection_id,

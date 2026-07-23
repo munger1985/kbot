@@ -1,17 +1,21 @@
-"""Root Knowledge Core entity mappings."""
+"""Knowledge Core 根实体映射。"""
 from datetime import datetime
 from typing import Any
+from uuid import UUID
 
 from sqlalchemy import DateTime, Integer, Numeric, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
-from platform_core.persistence.orm import BaseEntity, OracleJSON
+from platform_core.identity import uuid7
+from platform_core.persistence.orm import BaseEntity, OracleJSON, UUIDv7Type
 
 
 class KcCollectionEntity(BaseEntity):
     __tablename__ = "KBOT_KC_COLLECTION"
 
-    collection_id: Mapped[int] = mapped_column(Numeric(38, 0), primary_key=True)
+    collection_id: Mapped[UUID] = mapped_column(
+        UUIDv7Type(), primary_key=True, default=uuid7,
+    )
     app_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False)
     domain_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False)
     collection_key: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -33,10 +37,12 @@ class KcCollectionEntity(BaseEntity):
 class KcCollectionBindingEntity(BaseEntity):
     __tablename__ = "KBOT_KC_COLLECTION_BINDING"
 
-    binding_id: Mapped[int] = mapped_column(Numeric(38, 0), primary_key=True)
-    collection_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False)
+    binding_id: Mapped[UUID] = mapped_column(
+        UUIDv7Type(), primary_key=True, default=uuid7,
+    )
+    collection_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
     consumer_type: Mapped[str] = mapped_column(String(32), nullable=False, default="AGENT")
-    consumer_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    consumer_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="ACTIVE")
     note: Mapped[str | None] = mapped_column(String(1000))
     created_by: Mapped[str | None] = mapped_column(String(256))
@@ -50,14 +56,16 @@ class KcCollectionBindingEntity(BaseEntity):
 class KcIngestionReceiptEntity(BaseEntity):
     __tablename__ = "KBOT_KC_INGESTION_RECEIPT"
 
-    ingestion_receipt_id: Mapped[int] = mapped_column(Numeric(38, 0), primary_key=True)
-    collection_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False)
+    ingestion_receipt_id: Mapped[UUID] = mapped_column(
+        UUIDv7Type(), primary_key=True, default=uuid7,
+    )
+    collection_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
     actor_id: Mapped[str] = mapped_column(String(256), nullable=False)
     idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
     request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
     receipt_status: Mapped[str] = mapped_column(String(24), nullable=False)
-    bundle_id: Mapped[int | None] = mapped_column(Numeric(38, 0))
-    bundle_revision_id: Mapped[int | None] = mapped_column(Numeric(38, 0))
+    bundle_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
+    bundle_revision_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
     staging_manifest_json: Mapped[dict[str, Any] | None] = mapped_column(OracleJSON)
     failure_code: Mapped[str | None] = mapped_column(String(128))
     failure_message: Mapped[str | None] = mapped_column(String(1000))

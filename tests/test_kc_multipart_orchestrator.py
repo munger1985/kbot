@@ -9,6 +9,15 @@ from knowledge_core.application.intake import IntakeAcceptance, IntakeReservatio
 from knowledge_core.application.multipart import KnowledgeCoreMultipartOrchestrator, MultipartIntakeCommand
 from knowledge_core.domain.intake import KmAssetIntakeManifest
 from knowledge_core.ports.object_store import StoredObject
+from platform_core.identity import uuid7
+
+
+COLLECTION_ID = uuid7()
+BUNDLE_ID = uuid7()
+MANIFEST_DOCUMENT_ID = uuid7()
+ATTACHMENT_DOCUMENT_ID = uuid7()
+REVISION_ID = uuid7()
+RECEIPT_ID = uuid7()
 
 
 class FakeStore:
@@ -27,13 +36,20 @@ class FakeIntake:
     def __init__(self): self.calls = []
     async def reserve(self, command):
         self.calls.append("reserve")
-        return IntakeReservation(7, "RECEIVING", True)
+        return IntakeReservation(RECEIPT_ID, "RECEIVING", True)
     async def prepare_publish(self, command):
         self.calls.append("prepare")
-        return PublishPreparation(10, {"__manifest__": 20, "doc-1": 21})
+        return PublishPreparation(
+            COLLECTION_ID,
+            BUNDLE_ID,
+            {
+                "__manifest__": MANIFEST_DOCUMENT_ID,
+                "doc-1": ATTACHMENT_DOCUMENT_ID,
+            },
+        )
     async def accept_published(self, command):
         self.calls.append("accept")
-        return IntakeAcceptance(10, 30, "r1")
+        return IntakeAcceptance(BUNDLE_ID, REVISION_ID, "r1")
 
 
 class MultipartOrchestratorTest(unittest.TestCase):
@@ -50,7 +66,7 @@ class MultipartOrchestratorTest(unittest.TestCase):
             result = asyncio.run(KnowledgeCoreMultipartOrchestrator(intake_service=intake, object_store=store).accept(
                 MultipartIntakeCommand(1, "assets", "svc:portal", "key", KmAssetIntakeManifest.model_validate(data), {"attachment_0": source})
             ))
-        self.assertEqual(30, result.bundle_revision_id)
+        self.assertEqual(REVISION_ID, result.bundle_revision_id)
         self.assertEqual(["reserve", "prepare", "accept"], intake.calls)
         self.assertEqual(["stage", "stage", "publish", "publish"], [call[0] for call in store.calls])
 

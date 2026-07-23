@@ -1,10 +1,11 @@
 """Lease-based physical cleanup for an unbound Collection."""
+from uuid import UUID
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 from typing import Callable
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 
 from knowledge_core.entities import (
     KcBundleEntity, KcBundleRevisionDocumentEntity, KcBundleRevisionEntity,
@@ -30,8 +31,10 @@ class KnowledgeCoreCollectionPurgeService:
             for job in jobs:
                 lease_until = claim_job(job, claim, now)
                 result.append({
-                    "job_id": int(job.ingestion_job_id), "worker_id": claim.worker_id,
-                    "input_fingerprint": job.input_fingerprint, "collection_id": int(job.collection_id),
+                    "job_id": job.ingestion_job_id,
+                    "worker_id": claim.worker_id,
+                    "input_fingerprint": job.input_fingerprint,
+                    "collection_id": job.collection_id,
                     "lease_until": lease_until.isoformat(),
                 })
             if result:
@@ -39,7 +42,7 @@ class KnowledgeCoreCollectionPurgeService:
                 await uow.commit()
             return result
 
-    async def run(self, *, job_id: int, worker_id: str, input_fingerprint: str) -> dict:
+    async def run(self, *, job_id: UUID, worker_id: str, input_fingerprint: str) -> dict:
         async with self._uow_factory() as uow:
             if uow.jobs is None or uow.session is None:
                 raise RuntimeError("Knowledge Core Unit of Work is not initialized")
@@ -47,29 +50,44 @@ class KnowledgeCoreCollectionPurgeService:
             if job is None or job.job_type != "COLLECTION_PURGE":
                 raise ValueError("invalid COLLECTION_PURGE job")
             verify_lease(job, worker_id=worker_id, input_fingerprint=input_fingerprint)
-            collection_id = int(job.collection_id)
-            # Preserve this job as an audit record; all content and other jobs go.
+            collection_id = job.collection_id
             versions = list((await uow.session.execute(select(KcDocumentVersionEntity.storage_uri).where(
                 KcDocumentVersionEntity.collection_id == collection_id,
             ))).scalars())
-            for entity in (
-                KcEvidenceEntity, KcDiscoveryObjectEntity, KcRelationEntity,
-                KcParseViewEntity, KcBundleRevisionDocumentEntity, KcDocumentVersionEntity,
-                KcDocumentEntity, KcBundleRevisionEntity, KcBundleEntity,
-                KcIngestionReceiptEntity, KcCollectionBindingEntity,
-            ):
-                await uow.session.execute(delete(entity).where(entity.collection_id == collection_id))
             await uow.session.execute(delete(KcIngestionJobEntity).where(
                 KcIngestionJobEntity.collection_id == collection_id,
                 KcIngestionJobEntity.ingestion_job_id != job_id,
             ))
+            for entity in (
+                KcIngestionReceiptEntity,
+                KcEvidenceEntity,
+                KcDiscoveryObjectEntity,
+                KcRelationEntity,
+                KcParseViewEntity,
+                KcBundleRevisionDocumentEntity,
+                KcDocumentVersionEntity,
+                KcDocumentEntity,
+            ):
+                await uow.session.execute(delete(entity).where(entity.collection_id == collection_id))
+            await uow.session.execute(
+                update(KcBundleEntity)
+                .where(KcBundleEntity.collection_id == collection_id)
+                .values(current_revision_id=None)
+            )
+            for entity in (
+                KcBundleRevisionEntity,
+                KcBundleEntity,
+                KcCollectionBindingEntity,
+            ):
+                await uow.session.execute(
+                    delete(entity).where(entity.collection_id == collection_id)
+                )
+            await uow.session.execute(delete(KcIngestionJobEntity).where(
+                KcIngestionJobEntity.ingestion_job_id == job_id,
+            ))
             await uow.session.execute(delete(KcCollectionEntity).where(
                 KcCollectionEntity.collection_id == collection_id,
             ))
-            job.job_status = "SUCCEEDED"
-            job.completed_at = datetime.now(timezone.utc)
-            job.result_json = {"purged_collection_id": collection_id, "storage_uri_count": len(versions)}
-            job.lease_owner = job.lease_until = None
             await uow.session.flush()
             await uow.commit()
         local_deleted = 0
@@ -82,7 +100,7 @@ class KnowledgeCoreCollectionPurgeService:
                     local_deleted += 1
         return {"job_id": job_id, "status": "SUCCEEDED", "local_objects_deleted": local_deleted}
 
-    async def heartbeat(self, *, job_id: int, worker_id: str, input_fingerprint: str, lease_seconds: int = 600) -> str:
+    async def heartbeat(self, *, job_id: UUID, worker_id: str, input_fingerprint: str, lease_seconds: int = 600) -> str:
         now = datetime.now(timezone.utc)
         async with self._uow_factory() as uow:
             if uow.jobs is None or uow.session is None:
@@ -97,7 +115,7 @@ class KnowledgeCoreCollectionPurgeService:
             await uow.commit()
             return job.lease_until.isoformat()
 
-    async def fail(self, *, job_id: int, worker_id: str, input_fingerprint: str, failure_code: str, message: str) -> str:
+    async def fail(self, *, job_id: UUID, worker_id: str, input_fingerprint: str, failure_code: str, message: str) -> str:
         async with self._uow_factory() as uow:
             if uow.jobs is None or uow.session is None or uow.collections is None:
                 raise RuntimeError("Knowledge Core Unit of Work is not initialized")

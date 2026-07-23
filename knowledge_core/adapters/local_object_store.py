@@ -4,6 +4,7 @@ Production deployment can replace this adapter with OCI Object Storage without
 changing an intake use case.  Objects first live under a private staging
 prefix, then move to an immutable content-addressed published key.
 """
+from uuid import UUID
 import asyncio
 import hashlib
 import shutil
@@ -53,11 +54,11 @@ class LocalKnowledgeObjectStore:
         return StoredObject(str(target), byte_size, actual_hash, detected_mime_type)
 
     async def publish_staged(
-        self, *, staged: StoredObject, collection_id: int, document_id: int,
+        self, *, staged: StoredObject, collection_id: UUID, document_id: UUID,
     ) -> StoredObject:
         return await asyncio.to_thread(self._publish_staged_sync, staged, collection_id, document_id)
 
-    def _publish_staged_sync(self, staged: StoredObject, collection_id: int, document_id: int) -> StoredObject:
+    def _publish_staged_sync(self, staged: StoredObject, collection_id: UUID, document_id: UUID) -> StoredObject:
         source = Path(staged.uri)
         target = self._root / "kc" / str(collection_id) / str(document_id) / staged.content_sha256.lower()
         target.parent.mkdir(parents=True, exist_ok=True)

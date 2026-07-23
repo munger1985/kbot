@@ -1,15 +1,47 @@
 import json
 from decimal import Decimal
-from sqlalchemy import TypeDecorator, Text, Dialect
+from uuid import UUID
+
+from sqlalchemy import Dialect, LargeBinary, Text, TypeDecorator
 import array as array_module
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.dialects.oracle import VECTOR as ORA_VECTOR  # Oracle 23ai+
+from sqlalchemy.dialects.oracle import RAW, VECTOR as ORA_VECTOR  # Oracle 23ai+
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from platform_core.config.settings import get_embed_config
 
 
 BaseEntity = declarative_base()
 
-        
+
+class UUIDv7Type(TypeDecorator):
+    """Oracle RAW(16) / PostgreSQL UUID 的统一映射。"""
+
+    impl = LargeBinary(16)
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect: Dialect):
+        if dialect.name == "oracle":
+            return dialect.type_descriptor(RAW(16))
+        if dialect.name == "postgresql":
+            return dialect.type_descriptor(PG_UUID(as_uuid=True))
+        return dialect.type_descriptor(LargeBinary(16))
+
+    def process_bind_param(self, value, dialect: Dialect):
+        if value is None:
+            return None
+        parsed = value if isinstance(value, UUID) else UUID(str(value))
+        if dialect.name == "postgresql":
+            return parsed
+        return parsed.bytes
+
+    def process_result_value(self, value, dialect: Dialect):
+        if value is None or isinstance(value, UUID):
+            return value
+        if isinstance(value, (bytes, bytearray, memoryview)):
+            return UUID(bytes=bytes(value))
+        return UUID(str(value))
+
+
 class UniversalVector(TypeDecorator):
     """
     支持动态维度的跨库向量适配器
@@ -78,6 +110,8 @@ class OracleJSON(TypeDecorator):
         def default_encoder(item):
             if isinstance(item, Decimal):
                 return float(item)
+            if isinstance(item, UUID):
+                return str(item)
             raise TypeError(f"Object of type {item.__class__.__name__} is not JSON serializable")
             
         # 即使底层是原生 JSON 类型，直接传纯净的 JSON 字符串也是最安全的写入方式

@@ -1,4 +1,5 @@
 """Internal INDEX worker protocol, separate from Parser callbacks."""
+from uuid import UUID
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
@@ -49,7 +50,7 @@ async def claim_index_tasks(payload: IndexClaimRequest, request: Request):
 
 
 @router.post("/{job_id}/run")
-async def run_index_task(job_id: int, payload: IndexRunRequest, request: Request):
+async def run_index_task(job_id: UUID, payload: IndexRunRequest, request: Request):
     try:
         status = await request.app.state.kc_index_service.run_job(
             job_id=job_id, worker_id=payload.worker_id,
@@ -63,7 +64,7 @@ async def run_index_task(job_id: int, payload: IndexRunRequest, request: Request
 
 
 @router.post("/{job_id}/heartbeat")
-async def heartbeat_index_task(job_id: int, payload: IndexHeartbeatRequest, request: Request):
+async def heartbeat_index_task(job_id: UUID, payload: IndexHeartbeatRequest, request: Request):
     try:
         lease_until = await request.app.state.kc_index_service.heartbeat(
             job_id=job_id, worker_id=payload.worker_id,
@@ -75,7 +76,7 @@ async def heartbeat_index_task(job_id: int, payload: IndexHeartbeatRequest, requ
 
 
 @router.post("/{job_id}/fail")
-async def fail_index_task(job_id: int, payload: IndexFailRequest, request: Request):
+async def fail_index_task(job_id: UUID, payload: IndexFailRequest, request: Request):
     try:
         status = await request.app.state.kc_index_service.fail(
             job_id=job_id, worker_id=payload.worker_id,

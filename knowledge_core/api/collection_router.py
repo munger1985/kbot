@@ -36,7 +36,7 @@ class CollectionStatusRequest(BaseModel):
 
 def _collection(entity) -> dict:
     return {
-        "collection_id": int(entity.collection_id), "app_id": int(entity.app_id),
+        "collection_id": entity.collection_id, "app_id": int(entity.app_id),
         "domain_id": int(entity.domain_id), "collection_key": entity.collection_key,
         "display_name": entity.display_name, "description": entity.description,
         "embedding_model_id": int(entity.embedding_model_id), "status": entity.status,
@@ -118,12 +118,17 @@ async def bind_collection(domain_id: int, agent_id: UUID, collection_key: str, r
     body = payload or BindingRequest()
     try:
         entity = await request.app.state.kc_binding_service.bind_agent(BindAgentCollectionCommand(
-            domain_id=domain_id, collection_key=collection_key, agent_id=str(agent_id),
+            domain_id=domain_id, collection_key=collection_key, agent_id=agent_id,
             actor_id=get_actor_id(request), note=body.note,
         ))
     except CollectionNotFoundError as exc:
         raise HTTPException(status_code=404, detail={"code": "COLLECTION_NOT_FOUND", "message": str(exc)}) from exc
-    return {"binding_id": int(entity.binding_id), "collection_id": int(entity.collection_id), "agent_id": str(agent_id), "status": entity.status}
+    return {
+        "binding_id": entity.binding_id,
+        "collection_id": entity.collection_id,
+        "agent_id": agent_id,
+        "status": entity.status,
+    }
 
 
 @router.delete("/agents/{agent_id}/collections/{collection_key}/binding", status_code=status.HTTP_204_NO_CONTENT)
@@ -131,7 +136,7 @@ async def unbind_collection(domain_id: int, agent_id: UUID, collection_key: str,
     require_domain_match(request, domain_id)
     try:
         await request.app.state.kc_binding_service.unbind_agent(BindAgentCollectionCommand(
-            domain_id=domain_id, collection_key=collection_key, agent_id=str(agent_id),
+            domain_id=domain_id, collection_key=collection_key, agent_id=agent_id,
             actor_id=get_actor_id(request),
         ))
     except CollectionNotFoundError as exc:
@@ -141,9 +146,12 @@ async def unbind_collection(domain_id: int, agent_id: UUID, collection_key: str,
 @router.get("/agents/{agent_id}/collection-bindings")
 async def list_agent_bindings(domain_id: int, agent_id: UUID, request: Request):
     require_domain_match(request, domain_id)
-    bindings = await request.app.state.kc_binding_service.list_agent(domain_id=domain_id, agent_id=str(agent_id))
+    bindings = await request.app.state.kc_binding_service.list_agent(
+        domain_id=domain_id,
+        agent_id=agent_id,
+    )
     return {"bindings": [{
-        "binding_id": int(binding.binding_id), "collection_id": int(binding.collection_id),
+        "binding_id": binding.binding_id, "collection_id": binding.collection_id,
         "consumer_type": binding.consumer_type, "consumer_id": binding.consumer_id,
         "status": binding.status, "note": binding.note,
     } for binding in bindings]}

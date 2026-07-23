@@ -1,6 +1,7 @@
 """KC 检索的 Domain、Agent 与 Collection 边界。"""
 
 from collections.abc import Callable, Sequence
+from uuid import UUID
 
 from knowledge_core.persistence import KnowledgeCoreUnitOfWork
 
@@ -15,16 +16,15 @@ class KnowledgeCoreScopeService:
         self._uow_factory = uow_factory
 
     async def resolve_agent_collections(
-        self, *, domain_id: int, agent_id: str, collection_ids: Sequence[int],
-    ) -> tuple[int, ...]:
-        requested = tuple(sorted(set(int(value) for value in collection_ids)))
-        normalized_agent_id = str(agent_id).strip()
-        if domain_id <= 0 or not normalized_agent_id or not requested:
+        self, *, domain_id: int, agent_id: UUID, collection_ids: Sequence[UUID],
+    ) -> tuple[UUID, ...]:
+        requested = tuple(sorted(set(collection_ids)))
+        if domain_id <= 0 or not requested:
             raise KnowledgeScopeError("domain_id, agent_id and collection_ids are required")
         async with self._uow_factory() as uow:
             if uow.collections is None or uow.bindings is None:
                 raise RuntimeError("Knowledge Core Unit of Work is not initialized")
-            active: list[int] = []
+            active: list[UUID] = []
             for collection_id in requested:
                 collection = await uow.collections.get_by_id_scope(
                     app_id=self._app_id, domain_id=domain_id, collection_id=collection_id,
@@ -32,7 +32,7 @@ class KnowledgeCoreScopeService:
                 if collection is None:
                     raise KnowledgeScopeError("collection is outside the Domain scope")
                 binding = await uow.bindings.get_by_consumer_collection(
-                    consumer_type="AGENT", consumer_id=normalized_agent_id, collection_id=collection_id,
+                    consumer_type="AGENT", consumer_id=agent_id, collection_id=collection_id,
                 )
                 if binding is None or binding.status != "ACTIVE":
                     raise KnowledgeScopeError("Agent is not authorized for Collection")

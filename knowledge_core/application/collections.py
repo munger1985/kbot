@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from hashlib import sha256
 from typing import Any
+from uuid import UUID
 
 from knowledge_core.entities import KcCollectionBindingEntity, KcCollectionEntity, KcIngestionJobEntity
 from knowledge_core.persistence import KnowledgeCoreUnitOfWork
@@ -41,7 +42,7 @@ class CreateCollectionCommand:
 class BindAgentCollectionCommand:
     domain_id: int
     collection_key: str
-    agent_id: str
+    agent_id: UUID
     actor_id: str = "svc:knowledge-core"
     note: str | None = None
 
@@ -146,7 +147,13 @@ class KnowledgeCoreCollectionService:
             await uow.commit()
             return collection
 
-    async def request_delete(self, *, domain_id: int, collection_key: str, actor_id: str) -> int:
+    async def request_delete(
+        self,
+        *,
+        domain_id: int,
+        collection_key: str,
+        actor_id: str,
+    ) -> UUID:
         """Mark an unused Collection for asynchronous, all-descendant purge."""
         async with self._uow_factory() as uow:
             if uow.collections is None or uow.bindings is None or uow.jobs is None or uow.session is None:
@@ -156,7 +163,9 @@ class KnowledgeCoreCollectionService:
             )
             if collection is None:
                 raise CollectionNotFoundError("Collection not found")
-            if await uow.bindings.has_active_binding(collection_id=int(collection.collection_id)):
+            if await uow.bindings.has_active_binding(
+                collection_id=collection.collection_id,
+            ):
                 raise CollectionInUseError("Collection has active Agent bindings")
             if collection.status == "DELETING":
                 raise CollectionDeletionStateError("Collection deletion is already queued")
@@ -167,14 +176,15 @@ class KnowledgeCoreCollectionService:
                 collection_id=collection.collection_id, bundle_revision_id=None,
                 document_version_id=None, parse_view_id=None,
                 job_type="COLLECTION_PURGE", idempotency_key=f"collection-purge:{collection.collection_id}",
-                input_fingerprint=fingerprint, payload_json={"collection_id": int(collection.collection_id)},
+                input_fingerprint=fingerprint,
+                payload_json={"collection_id": str(collection.collection_id)},
                 job_status="PENDING", priority=100, available_at=datetime.now(timezone.utc),
                 attempt_count=0, max_attempts=3, created_by=actor_id, updated_by=actor_id,
             )
             await uow.jobs.add(job)
             await uow.session.flush()
             await uow.commit()
-            return int(job.ingestion_job_id)
+            return job.ingestion_job_id
 
 
 class KnowledgeCoreBindingService:
@@ -186,8 +196,8 @@ class KnowledgeCoreBindingService:
 
     async def bind_agent(self, command: BindAgentCollectionCommand) -> KcCollectionBindingEntity:
         collection_key = command.collection_key.strip()
-        agent_id = str(command.agent_id).strip()
-        if command.domain_id <= 0 or not collection_key or not agent_id:
+        agent_id = command.agent_id
+        if command.domain_id <= 0 or not collection_key:
             raise ValueError("domain_id, collection_key and agent_id are required")
 
         async with self._uow_factory() as uow:
@@ -240,7 +250,9 @@ class KnowledgeCoreBindingService:
             if collection is None:
                 raise CollectionNotFoundError("Collection not found")
             binding = await uow.bindings.get_by_consumer_collection(
-                consumer_type="AGENT", consumer_id=str(command.agent_id), collection_id=collection.collection_id,
+                consumer_type="AGENT",
+                consumer_id=command.agent_id,
+                collection_id=collection.collection_id,
             )
             if binding is not None and binding.status == "ACTIVE":
                 binding.status = "REVOKED"
@@ -248,11 +260,19 @@ class KnowledgeCoreBindingService:
                 await uow.session.flush()
             await uow.commit()
 
-    async def list_agent(self, *, domain_id: int, agent_id: str) -> list[KcCollectionBindingEntity]:
+    async def list_agent(
+        self,
+        *,
+        domain_id: int,
+        agent_id: UUID,
+    ) -> list[KcCollectionBindingEntity]:
         async with self._uow_factory() as uow:
             if uow.bindings is None or uow.collections is None:
                 raise RuntimeError("Knowledge Core Unit of Work is not initialized")
-            bindings = await uow.bindings.list_by_consumer(consumer_type="AGENT", consumer_id=str(agent_id))
+            bindings = await uow.bindings.list_by_consumer(
+                consumer_type="AGENT",
+                consumer_id=agent_id,
+            )
             result = []
             for binding in bindings:
                 collection = await uow.collections.get_by_id_scope(

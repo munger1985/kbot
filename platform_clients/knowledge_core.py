@@ -34,6 +34,19 @@ class KnowledgeCoreResponse:
     payload: Any
 
 
+def _json_value(value: Any) -> Any:
+    if isinstance(value, UUID):
+        return str(value)
+    if isinstance(value, dict):
+        return {
+            str(_json_value(key)): _json_value(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, (list, tuple)):
+        return [_json_value(item) for item in value]
+    return value
+
+
 class KnowledgeCoreClient:
     def __init__(
         self,
@@ -196,7 +209,7 @@ class KnowledgeCoreClient:
         self,
         *,
         domain_id: int,
-        bundle_id: int,
+        bundle_id: UUID,
         auth_context: AuthContext,
     ) -> dict[str, Any]:
         return await self._json(
@@ -212,8 +225,8 @@ class KnowledgeCoreClient:
         self,
         *,
         domain_id: int,
-        bundle_id: int,
-        bundle_revision_id: int,
+        bundle_id: UUID,
+        bundle_revision_id: UUID,
         include_members: bool,
         auth_context: AuthContext,
     ) -> dict[str, Any]:
@@ -258,11 +271,11 @@ class KnowledgeCoreClient:
         self,
         *,
         query: str,
-        collection_ids: Sequence[int],
+        collection_ids: Sequence[UUID],
         domain_id: int,
         agent_id: str,
         auth_context: AuthContext,
-        query_vectors: dict[int, Sequence[float]] | None = None,
+        query_vectors: dict[UUID, Sequence[float]] | None = None,
         max_security_level: int = 3,
         per_collection_limit: int = 20,
     ) -> dict[str, Any]:
@@ -271,10 +284,17 @@ class KnowledgeCoreClient:
             f"{INTERNAL_API_V1}/knowledge/discovery/search",
             payload={
                 "query": query,
-                "collection_ids": list(collection_ids),
+                "collection_ids": [str(value) for value in collection_ids],
                 "domain_id": domain_id,
                 "agent_id": agent_id,
-                "query_vectors": query_vectors,
+                "query_vectors": (
+                    {
+                        str(key): list(value)
+                        for key, value in query_vectors.items()
+                    }
+                    if query_vectors
+                    else None
+                ),
                 "max_security_level": max_security_level,
                 "per_collection_limit": per_collection_limit,
             },
@@ -289,7 +309,7 @@ class KnowledgeCoreClient:
         domain_id: int,
         agent_id: str,
         auth_context: AuthContext,
-        query_vectors: dict[int, Sequence[float]] | None = None,
+        query_vectors: dict[UUID, Sequence[float]] | None = None,
         max_security_level: int = 3,
         max_evidence: int = 12,
         context_limit: int = 4,
@@ -302,7 +322,14 @@ class KnowledgeCoreClient:
                 "candidates": list(candidates),
                 "domain_id": domain_id,
                 "agent_id": agent_id,
-                "query_vectors": query_vectors,
+                "query_vectors": (
+                    {
+                        str(key): list(value)
+                        for key, value in query_vectors.items()
+                    }
+                    if query_vectors
+                    else None
+                ),
                 "max_security_level": max_security_level,
                 "max_evidence": max_evidence,
                 "context_limit": context_limit,
@@ -327,7 +354,7 @@ class KnowledgeCoreClient:
                 "Content-Type": "application/json",
                 **self._headers(auth_context),
             },
-            json=payload,
+            json=_json_value(payload),
         )
         if response.payload is None and allow_empty:
             return None

@@ -1,4 +1,5 @@
 """Internal Parser Worker task lease endpoints."""
+from uuid import UUID
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -115,7 +116,7 @@ async def claim_parse_tasks(payload: ClaimRequest, request: Request):
 
 @router.get("/{job_id}/source")
 async def read_parse_source(
-    job_id: int, request: Request,
+    job_id: UUID, request: Request,
     worker_id: str = Query(min_length=1, max_length=256),
     input_fingerprint: str = Query(min_length=64, max_length=64),
 ):
@@ -129,7 +130,7 @@ async def read_parse_source(
 
 
 @router.post("/{job_id}/heartbeat")
-async def heartbeat_parse_task(job_id: int, payload: HeartbeatRequest, request: Request):
+async def heartbeat_parse_task(job_id: UUID, payload: HeartbeatRequest, request: Request):
     try:
         lease_until = await request.app.state.kc_parse_task_service.heartbeat(
             job_id=job_id, worker_id=payload.worker_id,
@@ -141,7 +142,7 @@ async def heartbeat_parse_task(job_id: int, payload: HeartbeatRequest, request: 
 
 
 @router.post("/{job_id}/evidence-batches")
-async def submit_evidence(job_id: int, payload: EvidenceBatchRequest, request: Request):
+async def submit_evidence(job_id: UUID, payload: EvidenceBatchRequest, request: Request):
     try:
         inserted = await request.app.state.kc_parse_task_service.submit_evidence(
             job_id=job_id, worker_id=payload.worker_id, input_fingerprint=payload.input_fingerprint,
@@ -156,7 +157,7 @@ async def submit_evidence(job_id: int, payload: EvidenceBatchRequest, request: R
 
 @router.post("/{job_id}/artifacts/{artifact_name}")
 async def upload_parse_artifact(
-    job_id: int, artifact_name: str, payload: ArtifactUploadRequest, request: Request,
+    job_id: UUID, artifact_name: str, payload: ArtifactUploadRequest, request: Request,
 ):
     try:
         descriptor = await request.app.state.kc_parse_task_service.upload_artifact(
@@ -173,7 +174,7 @@ async def upload_parse_artifact(
 
 
 @router.post("/{job_id}/complete")
-async def complete_parse(job_id: int, payload: CompleteRequest, request: Request):
+async def complete_parse(job_id: UUID, payload: CompleteRequest, request: Request):
     try:
         count = await request.app.state.kc_parse_task_service.complete(
             job_id=job_id, worker_id=payload.worker_id, input_fingerprint=payload.input_fingerprint,
@@ -193,7 +194,7 @@ async def complete_parse(job_id: int, payload: CompleteRequest, request: Request
 
 
 @router.post("/{job_id}/fail")
-async def fail_parse(job_id: int, payload: FailRequest, request: Request):
+async def fail_parse(job_id: UUID, payload: FailRequest, request: Request):
     try:
         result = await request.app.state.kc_parse_task_service.fail(
             job_id=job_id, worker_id=payload.worker_id, input_fingerprint=payload.input_fingerprint,
