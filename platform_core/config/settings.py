@@ -75,6 +75,25 @@ class MainApiConfig(BaseModel):
     allowed_origins: list[str] = Field(default_factory=list)
 
 
+class AgentRuntimeConfig(BaseModel):
+    """Agent Runtime API 与 Worker 的独立运行配置。"""
+
+    api_service_name: str = "kbot-agent-runtime-api"
+    api_service_version: str = "4.0.0"
+    api_service_host: str = "0.0.0.0"
+    api_service_port: int = Field(default=18100, ge=1, le=65535)
+    worker_service_name: str = "kbot-agent-runtime-worker"
+    worker_id: str = Field(
+        default="agent-runtime-worker-local", min_length=1, max_length=256,
+    )
+    poll_interval_seconds: float = Field(default=1.0, ge=0.1, le=60)
+    lease_seconds: int = Field(default=120, ge=15, le=3600)
+    max_tasks_per_run: int = Field(default=16, ge=1, le=128)
+    max_parallel_tasks: int = Field(default=4, ge=1, le=32)
+    max_total_retries: int = Field(default=16, ge=0, le=128)
+    max_task_timeout_seconds: int = Field(default=600, ge=1, le=3600)
+
+
 class OracleConfig(BaseModel):
     """Oracle database configuration.
     
@@ -300,6 +319,7 @@ class Settings(BaseSettings):
     app: AppConfig = AppConfig()
     security: SecurityConfig = SecurityConfig()
     main_api: MainApiConfig = MainApiConfig()
+    agent_runtime: AgentRuntimeConfig = AgentRuntimeConfig()
     oracle: OracleConfig = OracleConfig()
     sqlalchemy: SQLAlchemyConfig = SQLAlchemyConfig()
     embed: EmbedConfig = EmbedConfig()
@@ -485,6 +505,11 @@ def get_security_config() -> SecurityConfig:
 def get_main_api_config() -> MainApiConfig:
     """获取 Main API/BFF 配置。"""
     return get_settings().main_api
+
+
+def get_agent_runtime_config() -> AgentRuntimeConfig:
+    """获取 Agent Runtime API 与 Worker 配置。"""
+    return get_settings().agent_runtime
 
 def get_embed_config() -> EmbedConfig:
     """Get embedding service configuration.

@@ -45,7 +45,7 @@ KBot 4.0 是一次**Clean-slate 重构**：保留单仓库、同一 Oracle/APEX 
 | [38_aiops_step9_advisory_approval_and_execution.md](38_aiops_step9_advisory_approval_and_execution.md) | Action Catalog、Advisory、单命令审批、Executor Claim、at-most-once 与执行验证 |
 | [39_aiops_step10_inspection_reporting_and_comparison.md](39_aiops_step10_inspection_reporting_and_comparison.md) | Inspection Fire、多副本调度、版本化报告和确定性处理前后对比 |
 | [40_aiops_step11_root_main_api_and_apex_integration.md](40_aiops_step11_root_main_api_and_apex_integration.md) | Root Delegation、父子事件投影、Composer、Main API/SSE 和 APEX 集成 |
-| [41_kbot4_step12_acceptance_release_and_cutover.md](41_kbot4_step12_acceptance_release_and_cutover.md) | 全系统测试矩阵、质量门禁、数据重建、生产切换、Mutation 启用与旧表退出 |
+| [41_kbot4_step12_acceptance_release_and_cutover.md](41_kbot4_step12_acceptance_release_and_cutover.md) | 全系统测试矩阵、质量门禁、空库建库、生产启用与 Mutation 门禁 |
 | [42_model_serving_identity_and_openai_compatibility.md](42_model_serving_identity_and_openai_compatibility.md) | UUIDv7 模型身份、服务名、Provider 名、模型池与 OpenAI 兼容接口 |
 | [06_identity_security_and_tenancy.md](06_identity_security_and_tenancy.md) | 身份、租户、权限、密钥与数据安全治理 |
 | [07_platform_operations_and_integrations.md](07_platform_operations_and_integrations.md) | 平台运行、可观测性、AIOps、MCP、Slack 与外部适配器 |

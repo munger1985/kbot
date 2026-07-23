@@ -26,6 +26,13 @@ SERVICE_TABLES = {
         "KBOT_KC_DISCOVERY_OBJECT",
         "KBOT_KC_RELATION",
     },
+    "agent_runtime": {
+        "KBOT_AGENT_RUN",
+        "KBOT_AGENT_TASK",
+        "KBOT_AGENT_ARTIFACT",
+        "KBOT_AGENT_RUN_EVENT",
+        "KBOT_AGENT_DELEGATION",
+    },
 }
 FORBIDDEN_TOKENS = (
     "KBOT_MD_",
@@ -53,6 +60,18 @@ KC_UUID_COLUMNS = (
     "RELATION_ID",
     "SUBJECT_ID",
     "OBJECT_ID",
+)
+AGENT_UUID_COLUMNS = (
+    "AGENT_ID",
+    "RUN_ID",
+    "PARENT_RUN_ID",
+    "TASK_ID",
+    "PARENT_TASK_ID",
+    "OUTPUT_ARTIFACT_ID",
+    "ARTIFACT_ID",
+    "DELEGATION_ID",
+    "CHILD_RUN_ID",
+    "RESULT_ARTIFACT_ID",
 )
 
 
@@ -129,6 +148,15 @@ def main() -> int:
     model_sql = service_sql.get("model_serving", "")
     if not re.search(r"\bMODEL_ID\s+RAW\s*\(\s*16\s*\)", model_sql):
         errors.append("Model Serving 的 MODEL_ID 必须为 UUIDv7 RAW(16)")
+
+    agent_sql = service_sql.get("agent_runtime", "")
+    for column in AGENT_UUID_COLUMNS:
+        if not re.search(rf"\b{column}\s+RAW\s*\(\s*16\s*\)", agent_sql):
+            errors.append(f"Agent Runtime 的 {column} 必须为 UUIDv7 RAW(16)")
+        if re.search(rf"\b{column}\s+NUMBER\s*\(", agent_sql):
+            errors.append(f"Agent Runtime 的 {column} 禁止声明为 NUMBER")
+    if not re.search(r"\bLEASE_TOKEN\s+RAW\s*\(\s*16\s*\)", agent_sql):
+        errors.append("Agent Runtime 的 LEASE_TOKEN 必须为 128-bit RAW(16)")
 
     if errors:
         print("Oracle 全量建库脚本检查失败：")

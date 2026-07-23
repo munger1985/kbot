@@ -9,9 +9,13 @@ KBot 是面向知识检索与数据库运维分析的 Python/FastAPI 后端。4.
 - `main_api/`：面向 Portal 的唯一公开 API/BFF，只暴露 `/api/v1/*`。
 - `knowledge_core/`：Collection、Bundle、Document、解析、索引与两阶段检索。
 - `model_serving/`：LLM、Embedding、VLM 和 Visual 模型托管。
+- `agent_runtime/`：Agent 状态机、计划、Skill 契约和持久化执行内核。
 - `platform_core/`：配置、日志、认证、数据库运行时和共享契约。
 - `platform_clients/`：跨服务客户端。
 - `apps/`：各独立进程入口。
+
+Agent Runtime 当前已建立领域契约、全量 Schema 和内部 API 进程骨架；Run
+命令、Repository/UoW 与 Worker 尚未启用，因此不会暴露占位成功接口。
 
 Portal 使用预配置 API Key 访问 Main API；Main API 校验 Domain 后，为内部调用签发
 短期 AuthContext JWT。`/internal/v1/*` 仅供服务间调用，不通过 Main API 暴露。

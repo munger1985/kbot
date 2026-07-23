@@ -55,6 +55,20 @@ upstream_timeout_seconds = 120
 # 生产环境填写 Portal 的明确 Origin，禁止使用 "*"。
 allowed_origins = ["http://127.0.0.1:8080"]
 
+[agent_runtime]
+api_service_name = "kbot-agent-runtime-api"
+api_service_version = "4.0.0"
+api_service_host = "0.0.0.0"
+api_service_port = 18100
+worker_service_name = "kbot-agent-runtime-worker"
+worker_id = "agent-runtime-worker-local"
+poll_interval_seconds = 1.0
+lease_seconds = 120
+max_tasks_per_run = 16
+max_parallel_tasks = 4
+max_total_retries = 16
+max_task_timeout_seconds = 600
+
 [oracle]
 username = "kbot"
 password = ""

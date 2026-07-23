@@ -45,6 +45,8 @@ def module_names(node: ast.AST) -> list[str]:
     if isinstance(node, ast.Import):
         return [alias.name for alias in node.names]
     if isinstance(node, ast.ImportFrom):
+        if node.level > 0:
+            return []
         return [node.module] if node.module else []
     return []
 

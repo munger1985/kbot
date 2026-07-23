@@ -53,7 +53,9 @@ apps/aiops_scheduler/main.py
 apps/aiops_db_executor/main.py
 ```
 
-当前 `agent/agent/document_agent_v2.py` 和 `skills/knowledge_retrieval_v2.py` 属于过渡实现；后续迁移到 `agent_runtime/specialists/document/`，实现 `DocumentQueryTask → DocumentRetrievalResult`，不再让 Root Agent 依赖具体旧类路径。
+4.0 不保留旧 Document Agent 或动态 Skill 实现。新的 Document Specialist
+将在 `agent_runtime/specialists/document/` 中基于固定 Manifest 和
+`DocumentQueryTask → DocumentRetrievalResult` 契约实现。
 
 ## API 与 Worker 边界
 

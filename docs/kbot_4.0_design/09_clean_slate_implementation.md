@@ -48,8 +48,8 @@ Portal / APEX / Slack / MCP / API clients
 
 ## 设计质量门槛
 
-每个新领域在实现前必须具备：Owner、边界图、API/Artifact schema、表与迁移、授权规则、UoW/任务语义、失败/重试策略、指标/SLO、测试集和发布/回滚说明。每个 Agent/Skill 在启用前必须具备：职责、输入输出、权限、模型/工具预算、风险等级、评测集和审计事件。
+每个新领域在实现前必须具备：Owner、边界图、API/Artifact schema、自有全量建库脚本、授权规则、UoW/任务语义、失败/重试策略、指标/SLO、测试集和发布/恢复说明。每个 Agent/Skill 在启用前必须具备：职责、输入输出、权限、模型/工具预算、风险等级、评测集和审计事件。
 
 任何缺失上述要素的功能不得通过“先写进 Root Orchestrator、Service 或 Prompt，后续再治理”的方式进入 4.0。
 
-最终验收不依赖人工演示。所有领域必须进入统一 Release Gate，提供版本化评测数据、Schema/OpenAPI Manifest、质量/安全报告、数据重建对账和可恢复切换证据；详见 [41_kbot4_step12_acceptance_release_and_cutover.md](41_kbot4_step12_acceptance_release_and_cutover.md)。
+最终验收不依赖人工演示。所有领域必须进入统一 Release Gate，提供版本化评测数据、Schema/OpenAPI Manifest、质量/安全报告、空库建库和新数据验证证据；详见 [41_kbot4_step12_acceptance_release_and_cutover.md](41_kbot4_step12_acceptance_release_and_cutover.md)。

@@ -8,7 +8,8 @@
 1. `platform_core/`：平台身份边界和 APEX 公共投影；
 2. `model_serving/`：模型目录；
 3. `knowledge_core/`：Collection、入库聚合、Evidence、Discovery 和 Relation；
-4. 后续的 `agent_runtime/`、`aiops_agent/` 在对应服务实现时新增。
+4. `agent_runtime/`：Run、Task、Artifact、Event 和 Delegation；
+5. 后续的 `aiops_agent/` 在对应服务实现时新增。
 
 先按上述服务顺序执行，再按每个目录中文件名前缀顺序执行。数字前缀仅表示
 空库建表依赖顺序，不是增量 Migration 版本。应用启动时不得自动执行 DDL，

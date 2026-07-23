@@ -58,6 +58,10 @@ Grounding 和 SSE 已删除，最终回答职责留给后续 Agent Runtime；旧
   `MODEL_ID`，并分离 `SERVED_MODEL_NAME`、`DISPLAY_NAME` 和
   `PROVIDER_MODEL_NAME`；KC 的 `EMBEDDING_MODEL_ID` 已同步改为 UUID，
   Evidence/Discovery/Job 冻结服务名和配置指纹。
+- **Agent Runtime 基础已完成（2026-07-23）：** 已建立 Run/Task/Delegation
+  状态机、结构化 Plan Validator、固定 Skill Manifest/Registry、共享 DTO、
+  `database/oracle/agent_runtime` 全量建库脚本和内部 API 进程骨架。尚未注册
+  Run 命令路由，也未实现 Entity/Repository/UoW、租约 Worker、SSE 和具体 Skill。
 
 ### 阶段 2：Knowledge Core 基线加固
 
