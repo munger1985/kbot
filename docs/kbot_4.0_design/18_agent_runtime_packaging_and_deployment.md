@@ -53,6 +53,11 @@ apps/aiops_scheduler/main.py
 apps/aiops_db_executor/main.py
 ```
 
+`agent_runtime_worker` 按独立进程装配自己的数据库 Runtime、KC Client、
+Model Client、Skill Registry 和日志。API 进程只加载同一组 Manifest 用于
+计划与 Artifact 校验，不初始化 KC/模型 Client；因此二者不会因为共享 Python
+包而共享连接池或运行时状态。
+
 4.0 不保留旧 Document Agent 或动态 Skill 实现。新的 Document Specialist
 将在 `agent_runtime/specialists/document/` 中基于固定 Manifest 和
 `DocumentQueryTask → DocumentRetrievalResult` 契约实现。

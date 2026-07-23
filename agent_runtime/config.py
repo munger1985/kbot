@@ -4,7 +4,12 @@ from functools import lru_cache
 
 from pydantic import BaseModel, Field
 
-from platform_core.config import ServiceConfig, Settings, load_settings
+from platform_core.config import (
+    ServiceConfig,
+    ServiceDependencyConfig,
+    Settings,
+    load_settings,
+)
 
 
 class AgentRuntimeApiConfig(ServiceConfig):
@@ -29,6 +34,20 @@ class AgentRuntimeSettings(Settings):
     api: AgentRuntimeApiConfig = Field(default_factory=AgentRuntimeApiConfig)
     worker: AgentRuntimeWorkerConfig = Field(
         default_factory=AgentRuntimeWorkerConfig
+    )
+    knowledge_core: ServiceDependencyConfig = Field(
+        default_factory=lambda: ServiceDependencyConfig(
+            base_url="http://127.0.0.1:18090",
+            audience="kbot-knowledge-core-api",
+            timeout_seconds=120,
+        )
+    )
+    llm: ServiceDependencyConfig = Field(
+        default_factory=lambda: ServiceDependencyConfig(
+            base_url="http://127.0.0.1:18092",
+            audience="kbot-model-llm",
+            timeout_seconds=300,
+        )
     )
 
 

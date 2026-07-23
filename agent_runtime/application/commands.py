@@ -125,9 +125,35 @@ class TaskLease(_FrozenCommand):
     skill_version: str | None = None
     delegate_service: str | None = None
     delegate_capability: str | None = None
-    input_artifact_ids: tuple[str, ...] = ()
+    app_id: int = Field(ge=1)
+    domain_id: int = Field(ge=1)
+    agent_id: UUID
+    actor_id: str
+    request_id: str
+    trace_id: str
+    original_input: str
+    policy_snapshot: dict[str, Any] = Field(default_factory=dict)
+    config_snapshot: dict[str, Any] = Field(default_factory=dict)
+    budget: dict[str, Any] = Field(default_factory=dict)
+    deadline_at: datetime | None = None
+    input_refs: tuple[str, ...] = ()
+    input_artifacts: tuple["LeasedArtifact", ...] = ()
     expected_outputs: tuple[str, ...] = ()
     required_scopes: tuple[str, ...] = ()
+
+
+class LeasedArtifact(_FrozenCommand):
+    artifact_id: UUID
+    task_id: UUID | None = None
+    artifact_type: str
+    schema_version: str
+    producer: str
+    producer_version: str
+    payload: dict[str, Any] | list[Any] | None = None
+    storage_uri: str | None = None
+    content_hash: str
+    provenance: dict[str, Any] = Field(default_factory=dict)
+    security_level: int = Field(ge=0, le=999)
 
 
 class TaskMutationReceipt(_FrozenCommand):

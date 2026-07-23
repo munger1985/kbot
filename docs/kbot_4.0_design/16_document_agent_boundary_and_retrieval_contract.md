@@ -72,6 +72,9 @@ DocumentRetrievalResult {
 }
 ```
 
+Runtime 将整个 `DocumentRetrievalResult.v1` 作为一个 `CITATION_PACK`
+Artifact 的 payload 原子提交，而不是分别写两个可能失配的 Artifact。
+
 `CITATION_PACK` 至少包含：
 
 ```text
@@ -174,6 +177,10 @@ Root Run
 - 候选为空、Evidence 为空、权限范围为空和引用定位缺失使用不同错误/覆盖度状态；
 - 每次 KC 调用记录 query hash、collection scope、request ID、延迟和候选数量，不记录未脱敏正文；
 - `RetrievalReport` 保存计划版本、KC API 版本、Embedding 模型版本和选择器版本，便于评测和复现。
+
+当前确定性实现先按 KC 的公平合并/RRF 结果选择 Bundle，再在这些候选范围内
+请求 Evidence Group；它不重新对裸 Chunk 做数值 rerank。LLM Candidate
+Judge 仍是后续检索质量阶段，接入时不得改变该 Artifact 契约。
 
 ## 服务化演进
 

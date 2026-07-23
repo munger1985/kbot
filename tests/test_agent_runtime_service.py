@@ -1,17 +1,22 @@
 """Agent Runtime 事务命令内核测试。"""
 
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 import unittest
 
 from agent_runtime.application import (
+    AgentDefinitionNotFound,
+    AgentDefinitionService,
     AgentRuntimeConflict,
     AgentRuntimeService,
     ArtifactInput,
     ClaimTaskCommand,
     CompleteTaskCommand,
+    CreateAgentDefinitionCommand,
     CreateRunCommand,
     InstallPlanCommand,
     StaleTaskLease,
+    UpdateAgentDefinitionCommand,
 )
 from agent_runtime.domain.planning import (
     ExecutionKind,
@@ -20,21 +25,73 @@ from agent_runtime.domain.planning import (
     PlanValidator,
     TaskSpec,
 )
-from agent_runtime.domain.skills import (
-    ArtifactDeclaration,
-    DataClassification,
-    SkillManifest,
-    SkillRegistry,
-)
+from agent_runtime.domain.skills import SkillRegistry
+from agent_runtime.specialists import register_builtin_manifests
+from agent_runtime.specialists.root import RootAgentPlanner
 from platform_core.identity import uuid7
 
 
 class _Store:
     def __init__(self):
+        self.agents = {}
         self.runs = {}
         self.tasks = {}
         self.artifacts = {}
         self.events = []
+
+
+class _Agents:
+    def __init__(self, store):
+        self.store = store
+
+    async def get_active(self, *, agent_id, app_id, domain_id):
+        agent = self.store.agents.get(agent_id)
+        if (
+            agent is None
+            or int(agent.app_id) != app_id
+            or int(agent.domain_id) != domain_id
+            or agent.status != "ACTIVE"
+        ):
+            return None
+        return agent
+
+    async def add(self, entity):
+        entity.agent_id = entity.agent_id or uuid7()
+        entity.row_version = entity.row_version or 1
+        self.store.agents[entity.agent_id] = entity
+        return entity
+
+    async def get_by_key(self, *, app_id, domain_id, agent_key):
+        return next(
+            (
+                agent
+                for agent in self.store.agents.values()
+                if int(agent.app_id) == app_id
+                and int(agent.domain_id) == domain_id
+                and agent.agent_key == agent_key
+            ),
+            None,
+        )
+
+    async def get_scoped(
+        self, *, agent_id, app_id, domain_id, lock=False
+    ):
+        agent = self.store.agents.get(agent_id)
+        if (
+            agent is None
+            or int(agent.app_id) != app_id
+            or int(agent.domain_id) != domain_id
+        ):
+            return None
+        return agent
+
+    async def list_scoped(self, *, app_id, domain_id):
+        return [
+            agent
+            for agent in self.store.agents.values()
+            if int(agent.app_id) == app_id
+            and int(agent.domain_id) == domain_id
+        ]
 
 
 class _Runs:
@@ -133,6 +190,14 @@ class _Artifacts:
     async def get(self, *, artifact_id):
         return self.store.artifacts.get(artifact_id)
 
+    async def list_by_task_ids(self, *, task_ids):
+        selected = set(task_ids)
+        return [
+            artifact
+            for artifact in self.store.artifacts.values()
+            if artifact.task_id in selected
+        ]
+
 
 class _Events:
     def __init__(self, store):
@@ -187,6 +252,7 @@ class _Events:
 
 class _Uow:
     def __init__(self, store):
+        self.agents = _Agents(store)
         self.runs = _Runs(store)
         self.tasks = _Tasks(store)
         self.artifacts = _Artifacts(store)
@@ -206,48 +272,94 @@ class _Uow:
 class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.store = _Store()
-        registry = SkillRegistry()
-        registry.register(
-            SkillManifest(
-                skill_id="response-composer",
-                version="1.0.0",
-                owner="agent-runtime",
-                specialist="response_composer",
-                description="组合最终回答",
-                input_schema="ComposeInput.v1",
-                output_artifacts=(
-                    ArtifactDeclaration(
-                        artifact_type="FINAL_RESPONSE",
-                        schema_version="1.0",
-                    ),
-                ),
-                execution_mode=ExecutionMode.READ_ONLY,
-                idempotent=True,
-                timeout_seconds=60,
-                data_classification=DataClassification.INTERNAL,
-            ),
-            lambda: None,
+        self.agent_id = uuid7()
+        self.store.agents[self.agent_id] = SimpleNamespace(
+            agent_id=self.agent_id,
+            app_id=1,
+            domain_id=20,
+            agent_key="document-assistant",
+            display_name="文档助手",
+            status="ACTIVE",
+            enabled_capabilities_json=["document", "conversation"],
+            router_model_name="router-model",
+            composer_model_name="composer-model",
+            instruction="仅基于可验证证据回答。",
+            config_json={"answer_language": "zh-CN"},
+            row_version=1,
         )
+        registry = register_builtin_manifests(SkillRegistry())
         validator = PlanValidator(
             skill_exists=registry.contains,
             capability_exists=lambda service, capability: False,
-            public_artifact_types={"FINAL_RESPONSE"},
+            public_artifact_types={"GROUNDED_ANSWER"},
         )
         self.service = AgentRuntimeService(
             uow_factory=lambda: _Uow(self.store),
             plan_validator=validator,
             skill_registry=registry,
         )
+        self.definition_service = AgentDefinitionService(
+            uow_factory=lambda: _Uow(self.store)
+        )
         self.create_command = CreateRunCommand(
             app_id=1,
             domain_id=20,
-            agent_id=uuid7(),
+            agent_id=self.agent_id,
             actor_id="user-1",
             request_id="request-1",
             trace_id="trace-1",
             idempotency_key="create-1",
             original_input="总结上传文档",
         )
+
+    async def test_create_run_rejects_unknown_or_inactive_agent(self):
+        unknown = self.create_command.model_copy(
+            update={
+                "agent_id": uuid7(),
+                "idempotency_key": "unknown-agent",
+            }
+        )
+        with self.assertRaises(AgentDefinitionNotFound):
+            await self.service.create_run(unknown)
+
+    async def test_agent_definition_create_and_update(self):
+        created = await self.definition_service.create(
+            CreateAgentDefinitionCommand(
+                app_id=1,
+                domain_id=20,
+                agent_key="case-agent",
+                display_name="案例助手",
+                enabled_capabilities=("document",),
+                composer_model_name="composer-model",
+                status="ACTIVE",
+                actor_id="admin-1",
+            )
+        )
+        updated = await self.definition_service.update(
+            UpdateAgentDefinitionCommand(
+                app_id=1,
+                domain_id=20,
+                agent_id=created.agent_id,
+                expected_row_version=1,
+                display_name="案例检索助手",
+                actor_id="admin-1",
+            )
+        )
+
+        self.assertEqual(updated.display_name, "案例检索助手")
+        self.assertEqual(updated.row_version, 2)
+
+    async def test_create_run_freezes_agent_configuration(self):
+        receipt = await self.service.create_run(self.create_command)
+        snapshot = self.store.runs[receipt.run_id].config_snapshot_json
+
+        self.assertEqual(
+            snapshot["agent"]["agent_key"], "document-assistant"
+        )
+        self.assertEqual(
+            snapshot["agent"]["composer_model_name"], "composer-model"
+        )
+        self.assertEqual(snapshot["retrieval"]["collection_ids"], [])
 
     async def test_create_run_is_idempotent_and_checks_fingerprint(self):
         first = await self.service.create_run(self.create_command)
@@ -277,7 +389,7 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
                     specialist="response_composer",
                     skill_id="response-composer",
                     skill_version="1.0.0",
-                    expected_outputs=("FINAL_RESPONSE",),
+                    expected_outputs=("GROUNDED_ANSWER",),
                     timeout_seconds=60,
                     execution_mode=ExecutionMode.READ_ONLY,
                 ),
@@ -314,8 +426,8 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
                 worker_id="worker-1",
                 lease_token=lease.lease_token,
                 artifact=ArtifactInput(
-                    artifact_type="FINAL_RESPONSE",
-                    schema_version="1.0",
+                    artifact_type="GROUNDED_ANSWER",
+                    schema_version="GroundedAnswer.v1",
                     producer="response-composer",
                     producer_version="1.0.0",
                     payload={"answer": "完成"},
@@ -352,8 +464,8 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
                     worker_id="old-worker",
                     lease_token=uuid7(),
                     artifact=ArtifactInput(
-                        artifact_type="FINAL_RESPONSE",
-                        schema_version="1.0",
+                        artifact_type="GROUNDED_ANSWER",
+                        schema_version="GroundedAnswer.v1",
                         producer="response-composer",
                         producer_version="1.0.0",
                         payload={"answer": "重复"},
@@ -363,6 +475,70 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
                     idempotency_key="complete-stale",
                 )
             )
+
+    async def test_dependency_artifact_is_in_successor_lease(self):
+        created = await self.service.create_run(self.create_command)
+        planner = RootAgentPlanner()
+        decision = planner.decide(
+            agent_snapshot={
+                "enabled_capabilities": ["document"],
+                "config": {},
+            }
+        )
+        await self.service.install_plan(
+            InstallPlanCommand(
+                app_id=1,
+                domain_id=20,
+                run_id=created.run_id,
+                expected_row_version=1,
+                plan=planner.build_plan(
+                    objective="总结上传文档",
+                    decision=decision,
+                ),
+                actor_id="root-agent",
+                trace_id="trace-1",
+                idempotency_key="document-plan-1",
+            )
+        )
+        retrieval_lease = await self.service.claim_task(
+            ClaimTaskCommand(
+                worker_id="worker-1",
+                lease_seconds=120,
+                trace_id="trace-1",
+            )
+        )
+        await self.service.complete_task(
+            CompleteTaskCommand(
+                task_id=retrieval_lease.task_id,
+                expected_row_version=retrieval_lease.row_version,
+                worker_id="worker-1",
+                lease_token=retrieval_lease.lease_token,
+                artifact=ArtifactInput(
+                    artifact_type="CITATION_PACK",
+                    schema_version="DocumentRetrievalResult.v1",
+                    producer="knowledge-retrieval",
+                    producer_version="1.0.0",
+                    payload={"citation_pack": {"citations": []}},
+                ),
+                actor_id="worker-1",
+                trace_id="trace-1",
+                idempotency_key="retrieval-complete",
+            )
+        )
+
+        compose_lease = await self.service.claim_task(
+            ClaimTaskCommand(
+                worker_id="worker-1",
+                lease_seconds=120,
+                trace_id="trace-1",
+            )
+        )
+        self.assertEqual(compose_lease.task_key, "response_compose")
+        self.assertEqual(len(compose_lease.input_artifacts), 1)
+        self.assertEqual(
+            compose_lease.input_artifacts[0].artifact_type,
+            "CITATION_PACK",
+        )
 
 
 if __name__ == "__main__":

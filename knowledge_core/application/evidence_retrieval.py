@@ -39,6 +39,11 @@ class EvidenceHit:
     quality_score: float | None
     local_rank: int
     channel: str
+    bundle_title: str | None = None
+    document_name: str | None = None
+    external_document_id: str | None = None
+    document_role: str | None = None
+    content_hash: str | None = None
 
 
 @dataclass

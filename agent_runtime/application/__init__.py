@@ -1,5 +1,11 @@
 """Agent Runtime 应用服务。"""
 
+from .agent_definitions import (
+    AgentDefinitionService,
+    AgentDefinitionView,
+    CreateAgentDefinitionCommand,
+    UpdateAgentDefinitionCommand,
+)
 from .commands import (
     ArtifactInput,
     CancelRunCommand,
@@ -9,10 +15,12 @@ from .commands import (
     FailTaskCommand,
     HeartbeatTaskCommand,
     InstallPlanCommand,
+    LeasedArtifact,
     TaskLease,
     TaskMutationReceipt,
 )
 from .runtime_service import (
+    AgentDefinitionNotFound,
     AgentRuntimeConflict,
     AgentRuntimeNotFound,
     AgentRuntimeService,
@@ -20,6 +28,9 @@ from .runtime_service import (
 )
 
 __all__ = [
+    "AgentDefinitionService",
+    "AgentDefinitionView",
+    "AgentDefinitionNotFound",
     "AgentRuntimeConflict",
     "AgentRuntimeNotFound",
     "AgentRuntimeService",
@@ -28,10 +39,13 @@ __all__ = [
     "ClaimTaskCommand",
     "CompleteTaskCommand",
     "CreateRunCommand",
+    "CreateAgentDefinitionCommand",
     "FailTaskCommand",
     "HeartbeatTaskCommand",
     "InstallPlanCommand",
+    "LeasedArtifact",
     "StaleTaskLease",
     "TaskLease",
     "TaskMutationReceipt",
+    "UpdateAgentDefinitionCommand",
 ]

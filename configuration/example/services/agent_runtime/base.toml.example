@@ -13,3 +13,13 @@ max_tasks_per_run = 16
 max_parallel_tasks = 4
 max_total_retries = 16
 max_task_timeout_seconds = 600
+
+[knowledge_core]
+base_url = "http://knowledge-core-api:18090"
+audience = "kbot-knowledge-core-api"
+timeout_seconds = 120
+
+[llm]
+base_url = "http://model-llm:18092"
+audience = "kbot-model-llm"
+timeout_seconds = 300

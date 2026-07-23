@@ -39,6 +39,7 @@ from .commands import (
     FailTaskCommand,
     HeartbeatTaskCommand,
     InstallPlanCommand,
+    LeasedArtifact,
     TaskLease,
     TaskMutationReceipt,
 )
@@ -69,6 +70,14 @@ class AgentRuntimeNotFound(AgentRuntimeError):
     def __init__(self):
         super().__init__(
             "RUN_NOT_FOUND_OR_DENIED", "Run 不存在或当前身份不可访问"
+        )
+
+
+class AgentDefinitionNotFound(AgentRuntimeError):
+    def __init__(self):
+        super().__init__(
+            "AGENT_NOT_ACTIVE_OR_DENIED",
+            "Agent 不存在、未启用或不属于当前 Domain",
         )
 
 
@@ -129,6 +138,26 @@ class AgentRuntimeService:
                 )
                 return self._run_receipt(existing, cursor)
 
+            agent = await uow.agents.get_active(
+                agent_id=command.agent_id,
+                app_id=command.app_id,
+                domain_id=command.domain_id,
+            )
+            if agent is None:
+                raise AgentDefinitionNotFound()
+            agent_snapshot = {
+                "agent_id": str(agent.agent_id),
+                "agent_key": agent.agent_key,
+                "display_name": agent.display_name,
+                "enabled_capabilities": list(
+                    agent.enabled_capabilities_json or []
+                ),
+                "router_model_name": agent.router_model_name,
+                "composer_model_name": agent.composer_model_name,
+                "instruction": agent.instruction,
+                "config": dict(agent.config_json or {}),
+                "row_version": int(agent.row_version),
+            }
             try:
                 run = await uow.runs.add(
                     AgentRunEntity(
@@ -138,17 +167,21 @@ class AgentRuntimeService:
                         parent_run_id=command.parent_run_id,
                         actor_id=command.actor_id,
                         request_id=command.request_id,
+                        trace_id=command.trace_id,
                         idempotency_key=command.idempotency_key,
                         request_fingerprint=fingerprint,
                         original_input=command.original_input,
                         status=RunStatus.CREATED.value,
                         policy_snapshot_json=command.policy_snapshot,
                         config_snapshot_json={
-                            "collection_ids": [
-                                str(item)
-                                for item in command.collection_ids
-                            ],
-                            "security_level": command.security_level,
+                            "agent": agent_snapshot,
+                            "retrieval": {
+                                "collection_ids": [
+                                    str(item)
+                                    for item in command.collection_ids
+                                ],
+                                "security_level": command.security_level,
+                            },
                             "client_metadata": command.client_metadata,
                         },
                         budget_json=command.budget,
@@ -328,8 +361,9 @@ class AgentRuntimeService:
                     "attempt": int(task.attempt),
                 },
             )
+            input_artifacts = await self._task_input_artifacts(uow, task)
             await uow.commit()
-            return self._task_lease(task)
+            return self._task_lease(task, run, input_artifacts)
 
     async def heartbeat_task(
         self, command: HeartbeatTaskCommand
@@ -338,6 +372,9 @@ class AgentRuntimeService:
         async with self._uow_factory() as uow:
             task = await uow.tasks.get(task_id=command.task_id, lock=True)
             if task is None:
+                raise StaleTaskLease()
+            run = await uow.runs.get(run_id=task.run_id)
+            if run is None:
                 raise StaleTaskLease()
             self._ensure_version(task.row_version, command.expected_row_version)
             self._ensure_lease(
@@ -350,8 +387,9 @@ class AgentRuntimeService:
                 seconds=command.lease_seconds
             )
             task.row_version = int(task.row_version) + 1
+            input_artifacts = await self._task_input_artifacts(uow, task)
             await uow.commit()
-            return self._task_lease(task)
+            return self._task_lease(task, run, input_artifacts)
 
     async def complete_task(
         self, command: CompleteTaskCommand
@@ -833,7 +871,43 @@ class AgentRuntimeService:
         )
 
     @staticmethod
-    def _task_lease(task: AgentTaskEntity) -> TaskLease:
+    async def _task_input_artifacts(
+        uow, task: AgentTaskEntity
+    ) -> tuple[LeasedArtifact, ...]:
+        tasks = await uow.tasks.list_by_run(run_id=task.run_id)
+        dependencies = set(task.depends_on_json or [])
+        dependency_task_ids = [
+            item.task_id
+            for item in tasks
+            if item.task_key in dependencies
+            and item.output_artifact_id is not None
+        ]
+        rows = await uow.artifacts.list_by_task_ids(
+            task_ids=dependency_task_ids
+        )
+        return tuple(
+            LeasedArtifact(
+                artifact_id=row.artifact_id,
+                task_id=row.task_id,
+                artifact_type=row.artifact_type,
+                schema_version=row.schema_version,
+                producer=row.producer,
+                producer_version=row.producer_version,
+                payload=row.payload_json,
+                storage_uri=row.storage_uri,
+                content_hash=row.content_hash,
+                provenance=row.provenance_json,
+                security_level=int(row.security_level),
+            )
+            for row in rows
+        )
+
+    @staticmethod
+    def _task_lease(
+        task: AgentTaskEntity,
+        run: AgentRunEntity,
+        input_artifacts: tuple[LeasedArtifact, ...],
+    ) -> TaskLease:
         if task.lease_token is None or task.lease_until is None:
             raise RuntimeError("已领取 Task 缺少租约字段")
         return TaskLease(
@@ -852,7 +926,19 @@ class AgentRuntimeService:
             skill_version=task.skill_version,
             delegate_service=task.delegate_service,
             delegate_capability=task.delegate_capability,
-            input_artifact_ids=tuple(task.input_artifacts_json or []),
+            app_id=int(run.app_id),
+            domain_id=int(run.domain_id),
+            agent_id=run.agent_id,
+            actor_id=run.actor_id,
+            request_id=run.request_id,
+            trace_id=run.trace_id,
+            original_input=run.original_input,
+            policy_snapshot=run.policy_snapshot_json,
+            config_snapshot=run.config_snapshot_json,
+            budget=run.budget_json,
+            deadline_at=run.deadline_at,
+            input_refs=tuple(task.input_artifacts_json or []),
+            input_artifacts=input_artifacts,
             expected_outputs=tuple(task.expected_outputs_json or []),
             required_scopes=tuple(task.required_scopes_json or []),
         )

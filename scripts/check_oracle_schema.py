@@ -27,6 +27,7 @@ SERVICE_TABLES = {
         "KBOT_KC_RELATION",
     },
     "agent_runtime": {
+        "KBOT_AGENT_DEFINITION",
         "KBOT_AGENT_RUN",
         "KBOT_AGENT_TASK",
         "KBOT_AGENT_ARTIFACT",

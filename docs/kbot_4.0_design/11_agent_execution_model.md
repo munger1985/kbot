@@ -13,7 +13,16 @@
 | ExecutionContext | 单次 Task 的运行时上下文 | 身份、资源范围、预算、截止时间、模型策略和 Trace；不作为全局单例 |
 | Event | Run/Task 的追加式状态变化 | 顺序号、事件类型、操作者、时间、Artifact 引用 |
 
-建议新增五张表：`KBOT_AGENT_RUN`、`KBOT_AGENT_TASK`、`KBOT_AGENT_ARTIFACT`、`KBOT_AGENT_DELEGATION`、`KBOT_AGENT_RUN_EVENT`。Task 的 `depends_on` 第一版保存为结构化 JSON；只有需要复杂 DAG 查询时才拆出依赖表。Task、Artifact、Delegation 和 Event 通过 `run_id` 继承 Run 的 domain 授权，不重复维护跨域权限。
+另由 Agent Runtime 拥有 `KBOT_AGENT_DEFINITION`。它是用户可选择的 Root
+Agent 权威配置，保存 Domain、能力集合、Router/Composer 模型名、指令和配置；
+Document Specialist、Response Composer 与 Skill 是代码级固定能力，不创建伪
+Agent 记录。KC Binding 使用同一个 `agent_id`，但不反向拥有 Agent。
+
+共使用六张表：`KBOT_AGENT_DEFINITION`、`KBOT_AGENT_RUN`、
+`KBOT_AGENT_TASK`、`KBOT_AGENT_ARTIFACT`、`KBOT_AGENT_DELEGATION`、
+`KBOT_AGENT_RUN_EVENT`。Task 的 `depends_on` 第一版保存为结构化 JSON；
+只有需要复杂 DAG 查询时才拆出依赖表。Task、Artifact、Delegation 和 Event
+通过 `run_id` 继承 Run 的 domain 授权，不重复维护跨域权限。
 
 4.0 的 `agent_id`、`run_id`、`task_id` 和 `artifact_id` 均直接使用 UUIDv7 领域主键。Oracle 以 `RAW(16)` 保存 PK/FK，API 使用规范字符串；高频表也不维护数字 PK 与 `*_UID` 双层标识。统一规则见 [31_aiops_step2_persistence_and_identity.md](31_aiops_step2_persistence_and_identity.md)。
 
@@ -27,7 +36,7 @@
 | `PARENT_RUN_ID` | 子 Run 或恢复 Run 的父标识，可为空 |
 | `DOMAIN_ID` / `AGENT_ID` | 权限和 Agent 配置范围；创建后不可变 |
 | `ACTOR_ID` | 用户、服务或系统触发者 |
-| `REQUEST_ID` | API 请求链路标识，用于 Trace 关联 |
+| `REQUEST_ID` / `TRACE_ID` | API 请求标识和跨服务 Trace；创建后不可变 |
 | `IDEMPOTENCY_KEY` | 调用方幂等键；与 `DOMAIN_ID`、`ACTOR_ID` 组成唯一约束 |
 | `ORIGINAL_INPUT` | 用户原始输入，必要时按数据分类加密或脱敏 |
 | `STATUS` | Run 状态机当前状态 |
@@ -146,6 +155,10 @@ Root
 ```
 
 `CITATION_PACK` 只引用 KC Evidence，`QUERY_RESULT` 独立保存查询结果；混合回答不得把两者合并成旧式 `doc_results`。
+
+Worker 领取 Task 时，Runtime 同时返回冻结的 Agent/检索配置、原始输入、身份
+范围和所有前置 Task 的不可变 Artifact。Worker 不凭 Task 中的字符串引用自行
+查询业务表，也不在进程内保存跨 Task Context。
 
 ## Artifact 和 Skill 契约
 

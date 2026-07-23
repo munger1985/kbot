@@ -1,5 +1,6 @@
 """Agent Runtime Repository 公开接口。"""
 
+from .agent_definition import AgentDefinitionRepository
 from .runtime import (
     AgentArtifactRepository,
     AgentDelegationRepository,
@@ -9,6 +10,7 @@ from .runtime import (
 )
 
 __all__ = [
+    "AgentDefinitionRepository",
     "AgentArtifactRepository",
     "AgentDelegationRepository",
     "AgentRunEventRepository",

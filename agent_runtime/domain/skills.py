@@ -1,6 +1,5 @@
 """版本化 Skill Manifest 与固定实现注册表。"""
 
-from collections.abc import Callable
 from enum import StrEnum
 from typing import Any
 
@@ -51,13 +50,13 @@ class SkillRegistry:
 
     def __init__(self):
         self._entries: dict[
-            tuple[str, str], tuple[SkillManifest, Callable[..., Any]]
+            tuple[str, str], tuple[SkillManifest, Any]
         ] = {}
 
     def register(
         self,
         manifest: SkillManifest,
-        implementation: Callable[..., Any],
+        implementation: Any,
     ) -> None:
         key = (manifest.skill_id, manifest.version)
         if key in self._entries:
@@ -73,7 +72,7 @@ class SkillRegistry:
 
     def resolve(
         self, skill_id: str, version: str,
-    ) -> tuple[SkillManifest, Callable[..., Any]]:
+    ) -> tuple[SkillManifest, Any]:
         try:
             return self._entries[(skill_id, version)]
         except KeyError as exc:

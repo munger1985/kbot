@@ -260,11 +260,23 @@ class EvidenceRepository:
     async def search_text(self, *, scope: EvidenceScope, query: str, limit: int = 20, max_security_level: int = 3) -> list[EvidenceHit]:
         score = func.score(1)
         statement = (
-            select(KcEvidenceEntity, score.label("text_score"))
+            select(
+                KcEvidenceEntity,
+                KcBundleRevisionEntity.title,
+                KcBundleRevisionDocumentEntity.declared_name,
+                KcBundleRevisionDocumentEntity.external_document_id,
+                KcBundleRevisionDocumentEntity.document_role,
+                score.label("text_score"),
+            )
             .join(KcCollectionEntity, KcCollectionEntity.collection_id == KcEvidenceEntity.collection_id)
             .join(KcBundleRevisionEntity, KcBundleRevisionEntity.bundle_revision_id == KcEvidenceEntity.bundle_revision_id)
             .join(KcBundleEntity, KcBundleEntity.bundle_id == KcBundleRevisionEntity.bundle_id)
             .join(KcDocumentVersionEntity, KcDocumentVersionEntity.document_version_id == KcEvidenceEntity.document_version_id)
+            .outerjoin(
+                KcBundleRevisionDocumentEntity,
+                KcBundleRevisionDocumentEntity.bundle_revision_document_id
+                == KcEvidenceEntity.bundle_revision_document_id,
+            )
             .where(
                 KcEvidenceEntity.collection_id == scope.collection_id,
                 KcCollectionEntity.status == "ACTIVE",
@@ -284,16 +296,38 @@ class EvidenceRepository:
         if scope.document_version_ids:
             statement = statement.where(KcEvidenceEntity.document_version_id.in_(scope.document_version_ids))
         rows = (await self.session.execute(statement.params(evidence_query=query))).all()
-        return [self._to_hit(entity, scope.bundle_id, rank, "TEXT", float(hit_score or 0)) for rank, (entity, hit_score) in enumerate(rows, 1)]
+        return [
+            self._to_hit(
+                entity, scope.bundle_id, rank, "TEXT",
+                float(hit_score or 0), bundle_title, document_name,
+                external_document_id, document_role,
+            )
+            for rank, (
+                entity, bundle_title, document_name,
+                external_document_id, document_role, hit_score,
+            ) in enumerate(rows, 1)
+        ]
 
     async def search_vector(self, *, scope: EvidenceScope, vector: list[float], limit: int = 20, max_security_level: int = 3) -> list[EvidenceHit]:
         distance = KcEvidenceEntity.embedding.op("<=>")(bindparam("evidence_vector"))
         statement = (
-            select(KcEvidenceEntity, distance.label("distance"))
+            select(
+                KcEvidenceEntity,
+                KcBundleRevisionEntity.title,
+                KcBundleRevisionDocumentEntity.declared_name,
+                KcBundleRevisionDocumentEntity.external_document_id,
+                KcBundleRevisionDocumentEntity.document_role,
+                distance.label("distance"),
+            )
             .join(KcCollectionEntity, KcCollectionEntity.collection_id == KcEvidenceEntity.collection_id)
             .join(KcBundleRevisionEntity, KcBundleRevisionEntity.bundle_revision_id == KcEvidenceEntity.bundle_revision_id)
             .join(KcBundleEntity, KcBundleEntity.bundle_id == KcBundleRevisionEntity.bundle_id)
             .join(KcDocumentVersionEntity, KcDocumentVersionEntity.document_version_id == KcEvidenceEntity.document_version_id)
+            .outerjoin(
+                KcBundleRevisionDocumentEntity,
+                KcBundleRevisionDocumentEntity.bundle_revision_document_id
+                == KcEvidenceEntity.bundle_revision_document_id,
+            )
             .where(
                 KcEvidenceEntity.collection_id == scope.collection_id,
                 KcCollectionEntity.status == "ACTIVE",
@@ -312,7 +346,17 @@ class EvidenceRepository:
         if scope.document_version_ids:
             statement = statement.where(KcEvidenceEntity.document_version_id.in_(scope.document_version_ids))
         rows = (await self.session.execute(statement.params(evidence_vector=vector))).all()
-        return [self._to_hit(entity, scope.bundle_id, rank, "VECTOR", 1.0 - float(distance_value or 1.0)) for rank, (entity, distance_value) in enumerate(rows, 1)]
+        return [
+            self._to_hit(
+                entity, scope.bundle_id, rank, "VECTOR",
+                1.0 - float(distance_value or 1.0), bundle_title,
+                document_name, external_document_id, document_role,
+            )
+            for rank, (
+                entity, bundle_title, document_name,
+                external_document_id, document_role, distance_value,
+            ) in enumerate(rows, 1)
+        ]
 
     async def expand_context(self, *, anchors: list[EvidenceHit], limit: int = 4) -> list[EvidenceHit]:
         if not anchors:
@@ -326,7 +370,14 @@ class EvidenceRepository:
             return []
         collection_ids = {anchor.collection_id for anchor in anchors}
         statement = (
-            select(KcEvidenceEntity, KcBundleRevisionEntity.bundle_id)
+            select(
+                KcEvidenceEntity,
+                KcBundleRevisionEntity.bundle_id,
+                KcBundleRevisionEntity.title,
+                KcBundleRevisionDocumentEntity.declared_name,
+                KcBundleRevisionDocumentEntity.external_document_id,
+                KcBundleRevisionDocumentEntity.document_role,
+            )
             .join(
                 KcCollectionEntity,
                 KcCollectionEntity.collection_id == KcEvidenceEntity.collection_id,
@@ -335,6 +386,11 @@ class EvidenceRepository:
                 KcBundleRevisionEntity,
                 KcBundleRevisionEntity.bundle_revision_id
                 == KcEvidenceEntity.bundle_revision_id,
+            )
+            .outerjoin(
+                KcBundleRevisionDocumentEntity,
+                KcBundleRevisionDocumentEntity.bundle_revision_document_id
+                == KcEvidenceEntity.bundle_revision_document_id,
             )
             .where(
             KcEvidenceEntity.status == "ACTIVE",
@@ -348,8 +404,15 @@ class EvidenceRepository:
         rows = (await self.session.execute(statement)).all()
         anchor_ids = {item.evidence_id for item in anchors}
         return [
-            self._to_hit(entity, bundle_id, index, "CONTEXT", 0.0)
-            for index, (entity, bundle_id) in enumerate(rows, 1)
+            self._to_hit(
+                entity, bundle_id, index, "CONTEXT", 0.0,
+                bundle_title, document_name, external_document_id,
+                document_role,
+            )
+            for index, (
+                entity, bundle_id, bundle_title, document_name,
+                external_document_id, document_role,
+            ) in enumerate(rows, 1)
             if entity.evidence_id not in anchor_ids
         ]
 
@@ -360,6 +423,10 @@ class EvidenceRepository:
         rank: int,
         channel: str,
         score: float,
+        bundle_title: str | None = None,
+        document_name: str | None = None,
+        external_document_id: str | None = None,
+        document_role: str | None = None,
     ) -> EvidenceHit:
         return EvidenceHit(
             evidence_id=entity.evidence_id,
@@ -378,4 +445,9 @@ class EvidenceRepository:
             parent_evidence_key=entity.parent_evidence_key, ordinal=int(entity.ordinal),
             quality_score=float(entity.quality_score) if entity.quality_score is not None else None,
             local_rank=rank, channel=channel,
+            bundle_title=bundle_title,
+            document_name=document_name,
+            external_document_id=external_document_id,
+            document_role=document_role,
+            content_hash=entity.content_hash,
         )

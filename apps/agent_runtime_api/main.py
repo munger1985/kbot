@@ -16,12 +16,13 @@ from fastapi_offline import FastAPIOffline
 from loguru import logger
 from sqlalchemy import text
 
-from agent_runtime.api import internal_router, task_router
-from agent_runtime.application import AgentRuntimeService
+from agent_runtime.api import agent_router, internal_router, task_router
+from agent_runtime.application import AgentDefinitionService, AgentRuntimeService
 from agent_runtime.config import get_agent_runtime_settings
 from agent_runtime.domain.planning import PlanLimits, PlanValidator
 from agent_runtime.domain.skills import SkillRegistry
 from agent_runtime.persistence import create_agent_runtime_uow
+from agent_runtime.specialists import register_builtin_manifests
 from platform_core.database.oracle import create_database_runtime
 from platform_core.logger import LogConfig, LogManager
 from platform_core.middleware.log_middleware import log_requests
@@ -56,17 +57,18 @@ async def lifespan(app: FastAPIOffline):
             settings.worker.max_task_timeout_seconds
         ),
     }
-    skill_registry = SkillRegistry()
+    skill_registry = register_builtin_manifests(SkillRegistry())
     app.state.agent_runtime_skill_registry = skill_registry
+    uow_factory = create_agent_runtime_uow(db_runtime.session_factory)
+    app.state.agent_definition_service = AgentDefinitionService(
+        uow_factory=uow_factory
+    )
     app.state.agent_runtime_service = AgentRuntimeService(
-        uow_factory=create_agent_runtime_uow(db_runtime.session_factory),
+        uow_factory=uow_factory,
         plan_validator=PlanValidator(
             skill_exists=skill_registry.contains,
             capability_exists=lambda service, capability: False,
-            public_artifact_types={
-                "FINAL_RESPONSE",
-                "GROUNDED_ANSWER",
-            },
+            public_artifact_types={"GROUNDED_ANSWER"},
         ),
         plan_limits=PlanLimits(
             max_tasks=settings.worker.max_tasks_per_run,
@@ -100,6 +102,7 @@ app.middleware("http")(
 )
 app.include_router(internal_router)
 app.include_router(task_router)
+app.include_router(agent_router)
 
 
 @app.get("/health", tags=["System"])

@@ -185,6 +185,21 @@ class AgentArtifactRepository:
         )
         return (await self._session.execute(statement)).scalar_one_or_none()
 
+    async def list_by_task_ids(
+        self, *, task_ids: list[UUID]
+    ) -> list[AgentArtifactEntity]:
+        if not task_ids:
+            return []
+        statement = (
+            select(AgentArtifactEntity)
+            .where(AgentArtifactEntity.task_id.in_(task_ids))
+            .order_by(
+                AgentArtifactEntity.created_at,
+                AgentArtifactEntity.artifact_id,
+            )
+        )
+        return list((await self._session.execute(statement)).scalars())
+
 
 class AgentRunEventRepository:
     def __init__(self, session: AsyncSession):

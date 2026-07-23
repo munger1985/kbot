@@ -23,6 +23,7 @@ class AgentRunEntity(BaseEntity):
     parent_run_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
     actor_id: Mapped[str] = mapped_column(String(256), nullable=False)
     request_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    trace_id: Mapped[str] = mapped_column(String(128), nullable=False)
     idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
     request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
     original_input: Mapped[str] = mapped_column(Text, nullable=False)

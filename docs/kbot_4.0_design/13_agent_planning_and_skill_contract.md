@@ -153,3 +153,14 @@ Planner 产生的计划不是授权。每次重试、恢复或审批后重新执
 | AIOps Agent（独立服务能力，不注册为 Runtime Skill） | `aiops-diagnosis` | `DELEGATED_AIOPS_RESULT` |
 
 Knowledge Retrieval 不直接生成最终答案；MCP 问数结果不返回文档引用；Grounding 只接受明确的 CitationPack、QueryResult、Delegated AIOps Result 和 AnswerDraft，保证混合回答的来源可追踪。
+
+当前实现中 `CITATION_PACK` 使用 `DocumentRetrievalResult.v1` Envelope：其中
+包含 CitationPack、Retrieval Report、覆盖缺口和警告。这样一个 Task 仍只
+提交一个不可变主 Artifact，同时保留检索可复现信息。最终
+`GROUNDED_ANSWER` 使用 `GroundedAnswer.v1`，Reference Card 只从回答正文
+实际出现且模型声明一致的 `[C<n>]` 标签生成。
+
+首个可执行版本只启用确定性的 Document Plan：
+`knowledge-retrieval → response-composer`。当 Agent 仅启用 `document`，
+或显式配置 `default_route=DOCUMENT` 时，Root Planner 可生成该 DAG；
+多领域请求在 LLM Router 完成前返回 `CLARIFY`，不能默认误路由。

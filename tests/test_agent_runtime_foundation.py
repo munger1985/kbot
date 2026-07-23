@@ -180,6 +180,7 @@ class AgentContractAndSchemaTest(unittest.TestCase):
             for path in sorted(schema_dir.glob("*.sql"))
         )
         for table in (
+            "KBOT_AGENT_DEFINITION",
             "KBOT_AGENT_RUN",
             "KBOT_AGENT_TASK",
             "KBOT_AGENT_ARTIFACT",
@@ -198,6 +199,7 @@ class AgentContractAndSchemaTest(unittest.TestCase):
         self.assertIn("/readyz", paths)
         self.assertFalse(any(path.startswith("/api/") for path in paths))
         self.assertIn("/internal/v1/runs", paths)
+        self.assertIn("/internal/v1/agents", paths)
         self.assertIn("/internal/v1/tasks/claim", paths)
 
 
