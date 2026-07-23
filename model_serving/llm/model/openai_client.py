@@ -227,7 +227,7 @@ class OpenaiClient(BaseLLM[OpenaiLLMConfig]):
             
             # Validate and correct non-standard roles
             if role not in ["system", "user", "assistant", "tool"]:
-                logger.warning(f"Detected non-standard role: {role}, auto-corrected to 'user'")
+                logger.warning(f"检测到非标准角色：{role}，已自动修正为 'user'")
                 role = "user"
                 
             # Create standardized message with empty content fallback

@@ -27,18 +27,24 @@
 其中 Knowledge Core 是 3.5 已完成并正式晋级的 4.0 基线，不再另建或重写一套；
 其剩余工作是质量加固、契约收敛和生产闭环。DocumentAgentV2、旧 Main API、V1
 Agent/Skill、旧业务 Service、旧模型兼容层和旧 SkillRuntime 不因 KC 晋级而自动
-成为 4.0 组成部分。当前仍保留的 `agent/common`、`utils/` 及 `legacy/` 必须逐项
-确认消费者：迁入明确 Owner 后删除原实现，或直接删除。
+成为 4.0 组成部分。2026-07-23 已完成消费者审计并删除 `agent/`、`skills/`、
+`utils/`、`microservices/` 和 `legacy/`；需要回溯的 3.x 实现只从 Git 历史读取。
 
 ## 实施阶段
 
 ### 阶段 0：架构护栏和旧代码删除
+
+**状态：已完成（2026-07-23）。**
 
 - 建立 import 依赖检查：新领域不得依赖旧 `dao`、`services/kb`、`TxtBaseSearch`、`DocService` 或旧 Agent 编排。
 - 删除不再使用的兼容导出；仍被 4.0 使用的算法先迁移到有明确 Owner 的新包并补充接口和测试，再删除原实现。
 - 删除 `legacy/`、旧 API（含 schemas）、V1 Controller、旧 Skill/SkillRuntime、旧 Parser、旧 Entity/Repository、DB Executor 和入口脚本；不把它们保留到最终验收。
 - 将 `apps/` 收敛为按服务命名空间组织的入口，明确 `knowledge_core`、`model_serving` 和 Main API 的归属。
 - 把新增或修改代码中的注释、Docstring 和日志正文统一为中文；API 字段、错误码、枚举及可观测性键保持英文。
+
+实施结果：边界检查会拒绝重新创建旧目录或导入旧模块；KC 中过渡的回答生成、
+Grounding 和 SSE 已删除，最终回答职责留给后续 Agent Runtime；旧监控、Executor、
+问数和 Slack 全局配置已退出 `platform_core`，由后续领域包按 Owner 重新建立。
 
 ### 阶段 1：平台基础和服务边界
 

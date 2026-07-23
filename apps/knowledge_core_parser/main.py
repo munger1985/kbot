@@ -73,27 +73,27 @@ async def lifespan(app: FastAPI):
     LogManager(log_conf).setup()
     
     start_time = time.time()
-    logger.info(f"Starting [{SERVICE_NAME}] | PID: {os.getpid()} | Time: {datetime.now()}")
+    logger.info(f"正在启动 [{SERVICE_NAME}] | 进程号: {os.getpid()} | 时间: {datetime.now()}")
 
     try:
-        logger.info("Starting KC V2 parser worker...")
+        logger.info("正在启动 KC 解析 Worker...")
         await parse_worker.start()
         logger.success(f"KC V2 parser worker loaded | Elapsed time: {time.time() - start_time:.2f}s")
     except Exception as e:
-        logger.error(f"Failed to start file parsing engine: {e}")
+        logger.error(f"文件解析引擎启动失败：{e}")
         if not DEBUG:
             sys.exit(1)
     
     yield  # --- At this point, both Web service and background polling tasks are running in the main process ---
     
     # 3. Cleanup phase
-    logger.info("Application is shutting down, executing cleanup tasks...")
+    logger.info("应用正在停止，开始清理资源...")
     try:
         await parse_worker.stop()
-        logger.info("KC V2 parser worker has been stopped")
+        logger.info("KC 解析 Worker 已停止")
 
     except Exception as e:
-        logger.error(f"Exception occurred while cleaning up resources: {e}")
+        logger.error(f"清理资源时发生异常：{e}")
     
 
 # Create application instance
@@ -138,7 +138,7 @@ if __name__ == "__main__":
     if not check_port_available(SERVICE_HOST, SERVICE_PORT, SERVICE_NAME):
         sys.exit(1)
 
-    logger.info(f"Service starting up -> {SERVICE_HOST}:{SERVICE_PORT}")
+    logger.info(f"服务开始监听 -> {SERVICE_HOST}:{SERVICE_PORT}")
     uvicorn.run(
         app, 
         host=SERVICE_HOST, 

@@ -21,14 +21,14 @@ class EmbeddingService:
         if not self._initialized:
             await self._model_pool.initialize()
             self._initialized = True
-            logger.info("Embedding service initialized successfully")
+            logger.info("Embedding 服务初始化成功")
         
     async def shutdown(self):
         """Shutdown embedding service and release all model resources."""
         if self._initialized:
             await self._model_pool.shutdown()
             self._initialized = False
-            logger.info("Embedding service has been shut down")
+            logger.info("Embedding 服务已停止")
     
     async def get_embedding_model(self, model_name: str) -> BaseEmbedding:
         """Get embedding model instance by its unique name."""
@@ -122,7 +122,7 @@ class EmbeddingService:
         
         # Check if response data is empty
         if not response.data or len(response.data) < 2:
-            logger.error(f"Invalid embedding response data - expected 2 vectors, got {len(response.data) if response.data else 0}")
+            logger.error(f"Embedding 响应无效：预期 2 个向量，实际为 {len(response.data) if response.data else 0}")
             raise ValueError(f"Failed to get text embedding vectors, possibly due to model error or CUDA issues")
         
         # Extract embedding vectors

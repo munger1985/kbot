@@ -114,7 +114,7 @@ async def log_requests(request: Request, call_next):
     # Only record requests when API logging is enabled and not a documentation page
     if api_log_enabled and path not in ["/docs", "/redoc", "/openapi.json"]:
         # Console output (with colors)
-        logger.info(f"API Request | {method} {url} | Client: {client_host}")
+        logger.info(f"API 请求 | {method} {url} | 客户端: {client_host}")
         # File output (clean format, independent file)
         logger.bind(service_name=f"api_access_{current_service_name}").info(
             f"API Request | {method} {url} | Client: {client_host}"
@@ -146,5 +146,5 @@ async def log_requests(request: Request, call_next):
         # Record exception (always record exceptions, regardless of configuration)
         process_time = (time.time() - start_time) * 1000
         if path not in ["/docs", "/redoc", "/openapi.json"]:
-            logger.error(f"API Exception | {method} {url} | Error: {str(e)} | Processing Time: {process_time:.2f}ms")
+            logger.error(f"API 异常 | {method} {url} | 错误: {str(e)} | 处理耗时: {process_time:.2f}ms")
         raise

@@ -73,7 +73,7 @@ async def lifespan(app: FastAPI):
     LogManager(log_conf).setup()
 
     start_time = time.time()
-    logger.info(f"Starting [{SERVICE_NAME}] | PID: {os.getpid()} | {datetime.now()}")
+    logger.info(f"正在启动 [{SERVICE_NAME}] | 进程号：{os.getpid()} | {datetime.now()}")
 
     try:
         await visual_service.initialize()
@@ -144,7 +144,7 @@ if __name__ == "__main__":
     if not check_port_available(SERVICE_HOST, SERVICE_PORT, SERVICE_NAME):
         sys.exit(1)
 
-    logger.info(f"Service starting → {SERVICE_HOST}:{SERVICE_PORT}")
+    logger.info(f"服务开始监听 → {SERVICE_HOST}:{SERVICE_PORT}")
     uvicorn.run(
         app,
         host=SERVICE_HOST,

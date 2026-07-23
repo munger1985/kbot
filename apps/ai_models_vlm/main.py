@@ -117,26 +117,26 @@ async def lifespan(app: FastAPI):
     
     # 2. Start initialization
     start_time = time.time()
-    logger.info(f"Starting VLM service | PID: {os.getpid()} | Time: {datetime.now()}")
+    logger.info(f"正在启动 VLM 服务 | 进程号：{os.getpid()} | 时间：{datetime.now()}")
     
     try:
         await vlm_service.initialize()
         await vlm_service.warmup()
-        logger.info(f"VLM service ready | Elapsed time: {time.time() - start_time:.2f}s")
+        logger.info(f"VLM 服务已就绪 | 耗时：{time.time() - start_time:.2f}s")
     except Exception as e:
-        logger.error(f"VLM service initialization failed: {e}")
+        logger.error(f"VLM 服务初始化失败：{e}")
         if not app_config.debug:
             sys.exit(1)
     
     yield  # --- Running state ---
     
     # 3. Resource cleanup
-    logger.info("Shutting down VLM service and releasing resources...")
+    logger.info("正在停止 VLM 服务并释放资源...")
     try:
         await vlm_service.shutdown()
         logger.success("VLM service exited safely")
     except Exception as e:
-        logger.error(f"Exception occurred while cleaning up resources: {e}")
+        logger.error(f"清理资源时发生异常：{e}")
     finally:
         await db_runtime.close()
 
@@ -227,7 +227,7 @@ async def run_vlm_inference(
     resp_id = f"vlm-chat-{uuid.uuid4()}"
     created_ts = int(time.time())
     model = await service.get_vlm_model(request.model_name)
-    logger.info(f"Received inference request | Model: {request.model_name} | Stream mode: {request.stream}")
+    logger.info(f"收到推理请求 | 模型：{request.model_name} | 流式模式：{request.stream}")
 
     try:
         if request.stream:
@@ -272,7 +272,7 @@ async def run_vlm_inference(
                     yield "data: [DONE]\n\n"
 
                 except Exception as stream_err:
-                    logger.error(f"Stream generation interrupted: {stream_err}")
+                    logger.error(f"流式生成中断：{stream_err}")
                     yield f"data: {json.dumps({'error': str(stream_err)})}\n\n"
                     yield "data: [DONE]\n\n"
 
@@ -316,7 +316,7 @@ def stop_standalone_vlm():
     """Clean up and shut down standalone VLM process."""
     global vlm_process
     if vlm_process:
-        logger.info(f"Terminating standalone VLM process [PID: {vlm_process.pid}]...")
+        logger.info(f"正在停止独立 VLM 进程 [进程号：{vlm_process.pid}]...")
         vlm_process.terminate()
         try:
             vlm_process.wait(timeout=5)
@@ -326,7 +326,7 @@ def stop_standalone_vlm():
 
 def handle_system_signal(sig: int, frame: Any):
     """Handle termination signals sent by the operating system."""
-    logger.warning(f"Received system signal: {sig}, triggering safe exit...")
+    logger.warning(f"收到系统信号：{sig}，正在触发安全退出...")
     stop_standalone_vlm()
     sys.exit(0)
 
@@ -342,5 +342,5 @@ if __name__ == "__main__":
     if not check_port_available(SERVICE_HOST, SERVICE_PORT, SERVICE_NAME):
         sys.exit(1)
 
-    logger.info(f"VLM service starting | Port: {SERVICE_PORT}")
+    logger.info(f"正在启动 VLM 服务 | 端口：{SERVICE_PORT}")
     uvicorn.run(app, host=SERVICE_HOST, port=SERVICE_PORT, access_log=False)

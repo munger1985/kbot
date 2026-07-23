@@ -34,7 +34,7 @@ class VLMService:
         if not self._initialized:
             await self._model_pool.initialize()
             self._initialized = True
-            logger.info("VLM service initialized successfully")
+            logger.info("VLM 服务初始化成功")
         
     async def shutdown(self):
         """Shut down VLM service and all managed models
@@ -45,7 +45,7 @@ class VLMService:
         if self._initialized:
             await self._model_pool.shutdown()
             self._initialized = False
-            logger.info("VLM service shut down successfully")
+            logger.info("VLM 服务已正常停止")
     
     async def get_vlm_model(self, model_name: str) -> BaseVLM:
         """Retrieve VLM model instance by unique model name
@@ -116,11 +116,11 @@ class VLMService:
             
             # Execute inference with the model
             try:
-                logger.debug(f"Sending messages to model: {model_name}")
+                logger.debug(f"正在向模型发送消息：{model_name}")
                 response = await model.inference(messages, stream=stream, **kwargs)
-                logger.debug(f"Received response type: {type(response)}")
+                logger.debug(f"收到响应类型：{type(response)}")
             except Exception as e:
-                logger.error(f"Error generating response: {e}")
+                logger.error(f"生成响应失败：{e}")
                 raise RuntimeError(f"Failed to generate chat response: {e}")
 
             if stream:
@@ -131,19 +131,19 @@ class VLMService:
                         last_chunk = None
                         
                         async for chunk in response: # type: ignore
-                            logger.debug(f"Received chunk type: {type(chunk)}")
+                            logger.debug(f"收到响应块类型：{type(chunk)}")
                             last_chunk = chunk
                             
                             if not hasattr(chunk, 'choices'):
-                                logger.warning("Received invalid chunk format - missing 'choices' attribute")
+                                logger.warning("收到无效响应块：缺少 'choices' 属性")
                                 continue
                             
                             if not chunk.choices:
-                                logger.warning("Received chunk with empty choices list")
+                                logger.warning("收到 choices 为空的响应块")
                                 continue
                             
                             if not hasattr(chunk.choices[0], 'delta'):
-                                logger.warning("Received invalid choice format - missing 'delta' attribute")
+                                logger.warning("收到无效 choice：缺少 'delta' 属性")
                                 continue
                             
                             delta = chunk.choices[0].delta
@@ -153,9 +153,9 @@ class VLMService:
                                     content_parts.append(str(content))
                                     yield str(content)
                                 else:
-                                    logger.debug("Received delta with empty content")
+                                    logger.debug("收到 content 为空的 delta")
                             else:
-                                logger.debug("Received delta without content field")
+                                logger.debug("收到不含 content 字段的 delta")
                         
                         # Append token usage statistics after stream completion
                         if hasattr(last_chunk, 'usage'):
@@ -193,13 +193,13 @@ class VLMService:
                             })
                             
                     except Exception as e:
-                        logger.error(f"Error processing streaming response: {e}")
+                        logger.error(f"处理流式响应失败：{e}")
                         raise
                         
                 return generate_stream()
             else:
                 # Handle non-streaming response
-                logger.debug(f"Received response type: {type(response)}")
+                logger.debug(f"收到响应类型：{type(response)}")
                 
                 if not hasattr(response, 'choices'):
                     raise ValueError("Invalid response format - missing 'choices' attribute")
@@ -253,7 +253,7 @@ class VLMService:
                 }
                 
         except Exception as e:
-            logger.error(f"Error generating chat response: {e}")
+            logger.error(f"生成对话响应失败：{e}")
             raise RuntimeError(f"Failed to generate chat response: {e}")
         
     async def warmup(self):

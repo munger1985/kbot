@@ -45,7 +45,7 @@ class ColQwen2Embedding(BaseVisualEmbedding):
             try:
                 await self.startup()
             except Exception as e:
-                logger.error(f"ColQwen2 model startup failed: {e}")
+                logger.error(f"ColQwen2 模型启动失败：{e}")
                 raise e
 
         # 去除 data URI 前缀

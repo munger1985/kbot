@@ -40,7 +40,7 @@ class LLMService:
         if not self._initialized:
             await self._model_pool.initialize()
             self._initialized = True
-            logger.info("LLM service initialized successfully.")
+            logger.info("LLM 服务初始化成功。")
         
     async def shutdown(self):
         """Shut down LLM service and clean up all model resources.
@@ -51,7 +51,7 @@ class LLMService:
         if self._initialized:
             await self._model_pool.shutdown()
             self._initialized = False
-            logger.info("LLM service shut down successfully.")
+            logger.info("LLM 服务已正常停止。")
 
     async def get_llm_model(self, model_name: str) -> BaseLLM:
         """Get llm model instance by its unique name."""
@@ -149,9 +149,9 @@ class LLMService:
                         })
             
             # Log request details for debugging
-            logger.debug(f"Sending messages to model {model_name}: {processed_messages}")
+            logger.debug(f"正在向模型 {model_name} 发送消息：{processed_messages}")
             if tools:
-                logger.debug(f"Tool call config - Tool count: {len(tools)}, Tool choice: {tool_choice}")
+                logger.debug(f"工具调用配置 - 工具数量：{len(tools)}，工具选择：{tool_choice}")
 
             # Step 4: Handle streaming responses (provider-specific implementation)
             if stream:
@@ -164,7 +164,7 @@ class LLMService:
 
                 if current_provider in openai_compatible_providers:
                     response = await model.chat(processed_messages, stream=True,** kwargs)
-                    logger.debug(f"Received OpenAI-compatible stream response ({current_provider})")
+                    logger.debug(f"收到 OpenAI 兼容流式响应（{current_provider}）")
                     
                     async def generate_openai_stream():
                         """Wrapper for OpenAI-compatible streaming responses with error handling."""
@@ -179,7 +179,7 @@ class LLMService:
                 # OCI provider (native streaming implementation)
                 elif current_provider == LLMProvider.OCI.value:
                     response = await model.chat(processed_messages, stream=True,** kwargs)
-                    logger.debug("Received OCI native stream response")
+                    logger.debug("收到 OCI 原生流式响应")
                     
                     async def generate_oci_stream():
                         """Wrapper for OCI streaming responses with JSON parsing."""
@@ -196,7 +196,7 @@ class LLMService:
             # Step 5: Handle non-streaming responses
             else:
                 response = await model.chat(processed_messages, stream=False, **kwargs)
-                logger.debug(f"Received non-stream response ({current_provider})")
+                logger.debug(f"收到非流式响应（{current_provider}）")
                 return response
                 
         # General error handling with context

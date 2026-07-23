@@ -85,12 +85,12 @@ async def lifespan(app: FastAPI):
     LogManager(log_conf).setup()
 
     start_time = time.time()
-    logger.info(f"Starting LLM service | PID: {os.getpid()} | Time: {datetime.now()}")
+    logger.info(f"正在启动 LLM 服务 | 进程号：{os.getpid()} | 时间：{datetime.now()}")
 
     try:
         await llm_service.initialize()
         await llm_service.warmup()
-        logger.info(f"LLM service initialization completed | Elapsed time: {time.time() - start_time:.2f}s")
+        logger.info(f"LLM 服务初始化完成 | 耗时：{time.time() - start_time:.2f}s")
     except Exception as e:
         logger.exception(f"Failed to start LLM service: {e}")
         if not DEBUG_MODE:
@@ -98,12 +98,12 @@ async def lifespan(app: FastAPI):
 
     yield  # --- Runtime phase ---
 
-    logger.info("Performing shutdown cleanup...")
+    logger.info("正在执行停止前清理...")
     try:
         await llm_service.shutdown()
-        logger.info("LLM service has been shut down safely")
+        logger.info("LLM 服务已安全停止")
     except Exception as e:
-        logger.error(f"Exception occurred while shutting down service: {e}")
+        logger.error(f"停止服务时发生异常：{e}")
     finally:
         await db_runtime.close()
 
@@ -170,7 +170,7 @@ async def health_check() -> dict[str, Any]:
 #     """
 #     try:
 #         method = llm_service.load_model if request.operation == "load" else llm_service.unload_model
-#         logger.info(f"Executing model operation: {request.operation} -> {request.model_name}")
+#         logger.info(f"正在执行模型操作：{request.operation} -> {request.model_name}")
         
 #         success = await method(request.model_name)
 #         if not success:
@@ -303,7 +303,7 @@ async def handle_chat_completions(
         )
 
         proc_time = time.time() - start_time
-        logger.info(f"Request processing completed | Model: {request.model_name} | Elapsed time: {proc_time:.2f}s")
+        logger.info(f"请求处理完成 | 模型：{request.model_name} | 耗时：{proc_time:.2f}s")
 
         # Parse results from different Providers
         content: str | None = None
@@ -317,13 +317,13 @@ async def handle_chat_completions(
             LLMProvider.API_QWEN.value
         ]
 
-        logger.debug(f"Starting response parsing | Provider: {provider} | Raw Response Type: {type(raw_resp)}")
+        logger.debug(f"开始解析响应 | Provider：{provider} | 原始响应类型：{type(raw_resp)}")
 
         if provider in openai_family:
             try:
                 msg = raw_resp.choices[0].message # type: ignore
                 content = msg.content
-                logger.debug(f"OpenAI response content length: {len(content) if content else 0}")
+                logger.debug(f"OpenAI 响应内容长度：{len(content) if content else 0}")
                 usage = raw_resp.usage if isinstance(raw_resp.usage, dict) else raw_resp.usage.model_dump() # type: ignore
 
                 if hasattr(msg, 'tool_calls') and msg.tool_calls:
@@ -333,14 +333,14 @@ async def handle_chat_completions(
                             function={"name": tc.function.name, "arguments": tc.function.arguments} # type: ignore
                         ))
             except Exception as e:
-                logger.error(f"Failed to parse OpenAI response: {e}")
-                logger.error(f"Raw Response: {raw_resp}")
+                logger.error(f"解析 OpenAI 响应失败：{e}")
+                logger.error(f"原始响应：{raw_resp}")
                 content = ""
 
         elif provider == LLMProvider.OCI.value:
             # 1. Get internal response object
             oci_resp = raw_resp.data.chat_response # type: ignore
-            logger.debug(f"OCI response object: {type(oci_resp)}")
+            logger.debug(f"OCI 响应对象：{type(oci_resp)}")
 
             # 2. Extract Content (distinguish between Generic format and Cohere format)
             if hasattr(oci_resp, 'choices'): # Generic format (Llama, Grok, etc.)
@@ -348,10 +348,10 @@ async def handle_chat_completions(
             elif hasattr(oci_resp, 'text'): # Cohere format
                 content = getattr(oci_resp, 'text', "")
             else:
-                logger.warning(f"Unknown OCI response format: {dir(oci_resp)}")
+                logger.warning(f"无法识别的 OCI 响应格式：{dir(oci_resp)}")
                 content = ""
 
-            logger.debug(f"OCI response content length: {len(content) if content else 0}")
+            logger.debug(f"OCI 响应内容长度：{len(content) if content else 0}")
 
             # 3. Extract Usage (core fix point)
             # Convert SDK object to dictionary using oci.util.to_dict to safely get usage field
@@ -369,7 +369,7 @@ async def handle_chat_completions(
                 usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 
         else:
-            logger.warning(f"Unknown Provider: {provider}")
+            logger.warning(f"无法识别的 Provider：{provider}")
             content = ""
 
         return ChatResponse(
@@ -390,7 +390,7 @@ async def handle_chat_completions(
 
 def signal_handler(sig: int, frame: Any):
     """Catch system signals to implement graceful shutdown."""
-    logger.warning(f"Received signal {sig}, exiting...")
+    logger.warning(f"收到系统信号 {sig}，正在退出...")
     sys.exit(0)
 
 
@@ -404,7 +404,7 @@ if __name__ == "__main__":
     if not check_port_available(SERVICE_HOST, SERVICE_PORT, "LLM"):
         sys.exit(1)
 
-    logger.info(f"LLM adaptation layer is ready -> {SERVICE_HOST}:{SERVICE_PORT}")
+    logger.info(f"LLM 适配层已就绪 -> {SERVICE_HOST}:{SERVICE_PORT}")
     uvicorn.run(
         app,
         host=SERVICE_HOST,

@@ -17,7 +17,7 @@ def get_optimal_attn_implementation() -> str:
         # is_flash_attn_2_available internally checks both flash_attn package and hardware compatibility
         from transformers.utils import is_flash_attn_2_available # type: ignore
         if is_flash_attn_2_available():
-            logger.debug("Environment supports Flash Attention 2.0")
+            logger.debug("当前环境支持 Flash Attention 2.0")
             return "flash_attention_2"
     except Exception:
         pass
@@ -25,8 +25,8 @@ def get_optimal_attn_implementation() -> str:
     # 2. Check for PyTorch SDPA (Scaled Dot Product Attention)
     # SDPA is generally supported in CUDA environments with PyTorch 2.0+
     if hasattr(torch.nn.functional, "scaled_dot_product_attention"):
-        logger.debug("Environment supports SDPA (PyTorch 2.0+ Built-in)")
+        logger.debug("当前环境支持 SDPA（PyTorch 2.0+ 内置）")
         return "sdpa"
 
-    logger.debug("No hardware acceleration available, using standard Eager mode")
+    logger.debug("当前环境不支持硬件加速，将使用标准 Eager 模式")
     return "eager"

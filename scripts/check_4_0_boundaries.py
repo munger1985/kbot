@@ -1,10 +1,4 @@
-"""Static dependency guard for the active 4.0 service packages.
-
-This intentionally does not inspect ``legacy/``.  Legacy code may still refer
-to the 3.x repository/controller graph while it is being retired, but active
-Knowledge Core, model-serving and platform packages must remain independently
-deployable.
-"""
+"""KBot 4.0 活跃服务包的静态依赖边界检查。"""
 
 from __future__ import annotations
 
@@ -18,13 +12,16 @@ ACTIVE_ROOTS = (
     ROOT / "platform_clients",
     ROOT / "knowledge_core",
     ROOT / "model_serving",
-    ROOT / "apps" / "knowledge_core_api",
-    ROOT / "apps" / "knowledge_core_parser",
-    ROOT / "apps" / "knowledge_core_projection",
-    ROOT / "apps" / "ai_models_embedding",
-    ROOT / "apps" / "ai_models_llm",
-    ROOT / "apps" / "ai_models_vlm",
-    ROOT / "apps" / "ai_models_visual",
+    ROOT / "agent_runtime",
+    ROOT / "aiops",
+    ROOT / "apps",
+)
+OBSOLETE_PATHS = (
+    ROOT / "legacy",
+    ROOT / "agent",
+    ROOT / "skills",
+    ROOT / "microservices",
+    ROOT / "utils",
 )
 FORBIDDEN_PREFIXES = (
     "dao",
@@ -32,15 +29,17 @@ FORBIDDEN_PREFIXES = (
     "agent",
     "skills",
     "microservices",
+    "utils",
+    "legacy",
 )
 
 
-def module_name(node: ast.AST) -> str | None:
+def module_names(node: ast.AST) -> list[str]:
     if isinstance(node, ast.Import):
-        return node.names[0].name
+        return [alias.name for alias in node.names]
     if isinstance(node, ast.ImportFrom):
-        return node.module
-    return None
+        return [node.module] if node.module else []
+    return []
 
 
 def check_file(path: Path) -> list[str]:
@@ -50,25 +49,20 @@ def check_file(path: Path) -> list[str]:
         return [f"{path}:{exc.lineno}: syntax error: {exc.msg}"]
     violations: list[str] = []
     for node in ast.walk(tree):
-        imported = module_name(node)
-        if not imported:
-            continue
-        if imported == "platform_core.auth" or imported.startswith("platform_core.auth."):
-            violations.append(f"{path}:{node.lineno}: legacy user-auth import {imported}")
-        if imported == "utils" or imported.startswith("utils."):
-            violations.append(f"{path}:{node.lineno}: legacy utility import {imported}")
-            continue
-        if imported == "legacy" or imported.startswith("legacy."):
-            violations.append(f"{path}:{node.lineno}: legacy package import {imported}")
-            continue
-        if imported == "" or not imported.split(".")[0] in FORBIDDEN_PREFIXES:
-            continue
-        violations.append(f"{path}:{node.lineno}: forbidden cross-domain import {imported}")
+        for imported in module_names(node):
+            if imported == "platform_core.auth" or imported.startswith("platform_core.auth."):
+                violations.append(f"{path}:{node.lineno}: 禁止导入旧用户认证模块 {imported}")
+                continue
+            if imported.split(".")[0] in FORBIDDEN_PREFIXES:
+                violations.append(f"{path}:{node.lineno}: 禁止导入旧模块或跨领域模块 {imported}")
     return violations
 
 
 def main() -> int:
     violations: list[str] = []
+    for path in OBSOLETE_PATHS:
+        if path.exists():
+            violations.append(f"{path}: 4.0 工作树中禁止保留旧代码目录")
     for root in ACTIVE_ROOTS:
         if not root.exists():
             continue
@@ -76,10 +70,10 @@ def main() -> int:
             if "__pycache__" not in path.parts:
                 violations.extend(check_file(path))
     if violations:
-        print("4.0 boundary violations:")
+        print("发现 KBot 4.0 架构边界违规：")
         print("\n".join(violations))
         return 1
-    print("4.0 boundary check passed")
+    print("KBot 4.0 架构边界检查通过")
     return 0
 
 

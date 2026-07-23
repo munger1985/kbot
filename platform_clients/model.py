@@ -51,17 +51,10 @@ class AIModelConfigClient:
             logger.error("读取模型配置失败: {}", exc)
             raise RuntimeError("model configuration service is unavailable") from exc
 
-def _mask_token(token: str) -> str:
-    """对令牌进行脱敏显示（仅显示前 8 位）"""
-    if len(token) <= 8:
-        return token[:4] + "****"
-    return token[:8] + "****"
-
-
 def _get_internal_token() -> str:
     """延迟读取内部通信令牌，确保 load_dotenv() 之后才获取"""
     token = os.getenv("KBOT_INTERNAL_SERVICE_TOKEN", "kbot_internal_service_token")
-    logger.debug(f"[InternalAuth] 客户端使用令牌: {_mask_token(token)}")
+    logger.debug("[内部认证] 客户端内部令牌已加载")
     return token
 
 
@@ -519,7 +512,7 @@ class AIModelClient():
             return "".join(full_content).strip()
 
         except Exception as e:
-            logger.error(f"get_dsocr_answer 失败: {e}")
+            logger.error(f"获取 DeepSeek OCR 回答失败：{e}")
             return ""
 
     async def get_llm_json(self, model_name: str, prompt:  list[dict[str, str]] | str, **kwargs) -> dict:
@@ -578,7 +571,7 @@ class AIModelClient():
                 raise ValueError("LLM returned an empty response")
 
             # 输出原始响应用于调试
-            # logger.debug(f"LLM raw response ({len(full_text)} chars): {full_text[:500]}...")
+            # logger.debug(f"LLM 原始响应（{len(full_text)} 字符）：{full_text[:500]}...")
 
             # 鲁棒性 JSON 提取逻辑
             return self._extract_json_from_text(full_text)
@@ -647,10 +640,10 @@ class AIModelClient():
                     full_text += line
 
             if not full_text:
-                logger.error(f"VLM 返回了空响应。model={model_name}")
+                logger.error(f"VLM 返回了空响应。模型={model_name}")
                 raise ValueError("VLM returned an empty response")
 
-            logger.debug(f"VLM raw response ({len(full_text)} chars): {full_text[:300]}...")
+            logger.debug(f"VLM 原始响应（{len(full_text)} 字符）：{full_text[:300]}...")
             return self._extract_json_from_text(full_text)
 
         except Exception as e:
@@ -884,7 +877,7 @@ class AIModelClient():
             return "".join(full_content).strip()
             
         except Exception as e:
-            logger.error(f"get_llm_answer 失败: {e}")
+            logger.error(f"获取 LLM 回答失败：{e}")
             return ""
         
     async def get_vlm_answer(self, model_name: str, image: str | Image.Image, prompt: str, **kwargs) -> str:
@@ -927,7 +920,7 @@ class AIModelClient():
             return "".join(full_content).strip()
             
         except Exception as e:
-            logger.error(f"get_vlm_answer 失败: {e}")
+            logger.error(f"获取 VLM 回答失败：{e}")
             return ""
         
 
@@ -1015,7 +1008,7 @@ class AIModelClient():
                 ) as response:
                     if response.status != 200:
                         if response.status == 403:
-                            logger.error(f"[InternalAuth] 视觉服务拒绝令牌: 客户端token={_mask_token(self.internal_token)}, 服务={service_host}:{service_port}")
+                            logger.error(f"[内部认证] 视觉服务拒绝了内部令牌，服务={service_host}:{service_port}")
                         error_text = await response.text()
                         msg = f"视觉嵌入服务 HTTP {response.status}: {error_text}"
                         logger.error(msg)

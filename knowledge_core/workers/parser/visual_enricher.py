@@ -46,5 +46,5 @@ class KcVisualEnricher:
             return_exceptions=True,
         )
         for failure in (result for result in results if isinstance(result, Exception)):
-            logger.warning("KC visual description failed: {}", failure)
+            logger.warning("KC 视觉描述生成失败：{}", failure)
         return sum(result is True for result in results)

@@ -88,12 +88,12 @@ async def lifespan(app: FastAPI):
 
     # 2. Start initialization process
     start_time = time.time()
-    logger.info(f"Initializing embedding service | Process ID: {os.getpid()} | Time: {datetime.now()}")
+    logger.info(f"正在初始化 Embedding 服务 | 进程号：{os.getpid()} | 时间：{datetime.now()}")
 
     try:
         await embedding_service.initialize()
         await embedding_service.warmup()
-        logger.info(f"Embedding service started successfully | Elapsed time: {time.time() - start_time:.2f}s")
+        logger.info(f"Embedding 服务启动成功 | 耗时：{time.time() - start_time:.2f}s")
     except Exception as e:
         logger.exception(f"Failed to initialize embedding service: {e}")
         # In production environment, core service initialization failure should force exit
@@ -103,13 +103,13 @@ async def lifespan(app: FastAPI):
     yield  # --- Service running ---
 
     # 3. Shutdown cleanup process
-    logger.info("Shutting down embedding service and releasing resources...")
+    logger.info("正在停止 Embedding 服务并释放资源...")
     shutdown_start = time.time()
     try:
         await embedding_service.shutdown()
-        logger.info(f"Resource release completed | Shutdown elapsed time: {time.time() - shutdown_start:.2f}s")
+        logger.info(f"资源释放完成 | 停止耗时：{time.time() - shutdown_start:.2f}s")
     except Exception as e:
-        logger.error(f"Exception occurred while releasing resources: {e}")
+        logger.error(f"释放资源时发生异常：{e}")
     finally:
         await db_runtime.close()
 
@@ -188,10 +188,10 @@ async def health_check() -> dict[str, Any]:
 #     """
 #     try:
 #         if request.operation == "load":
-#             logger.info(f"Executing model load task: {request.model_name}")
+#             logger.info(f"正在执行模型加载任务：{request.model_name}")
 #             success = await embedding_service.load_model(request.model_name)
 #         else:
-#             logger.info(f"Executing model unload task: {request.model_name}")
+#             logger.info(f"正在执行模型卸载任务：{request.model_name}")
 #             success = await embedding_service.unload_model(request.model_name)
 
 #         if not success:
@@ -200,7 +200,7 @@ async def health_check() -> dict[str, Any]:
 #         return {"status": "success", "model_name": request.model_name, "operation": request.operation}
 
 #     except Exception as e:
-#         logger.error(f"Model management operation exception: {e}")
+#         logger.error(f"模型管理操作发生异常：{e}")
 #         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -222,7 +222,7 @@ async def handle_embed_texts(
         HTTPException: 500 error when any logical error occurs during processing.
     """
     try:
-        logger.info(f"Processing embedding request | Model: {request.model_name} | Text count: {len(request.texts)}")
+        logger.info(f"正在处理 Embedding 请求 | 模型：{request.model_name} | 文本数量：{len(request.texts)}")
         return await embed_service.embed_texts(
             model_name=request.model_name,
             texts=request.texts,
@@ -252,7 +252,7 @@ async def handle_compute_similarity(
         HTTPException: 500 error when exception occurs during calculation.
     """
     try:
-        logger.info(f"Processing similarity request | Model: {request.model_name} | Method: {request.method}")
+        logger.info(f"正在处理相似度请求 | 模型：{request.model_name} | 方法：{request.method}")
         model = await embed_service.get_embedding_model(request.model_name)
         score = await embed_service.compute_similarity(
             model_name=request.model_name,
@@ -275,13 +275,13 @@ def signal_handler(sig: int, frame: Any):
         sig: Signal number.
         frame: Current stack frame.
     """
-    logger.warning(f"Received system signal: {sig}, preparing to shutdown service...")
+    logger.warning(f"收到系统信号：{sig}，准备停止服务...")
     # sys.exit(0) triggers cleanup logic in atexit and lifespan
     sys.exit(0)
 
 
 # Register exit hook
-atexit.register(lambda: logger.info("Microservice process exited safely"))
+atexit.register(lambda: logger.info("微服务进程已安全退出"))
 
 if __name__ == "__main__":
     # Register signal listeners
@@ -292,7 +292,7 @@ if __name__ == "__main__":
     if not check_port_available(SERVICE_HOST, SERVICE_PORT, "embedding"):
         sys.exit(1)
 
-    logger.info(f"Starting embedding microservice, listening on: {SERVICE_HOST}:{SERVICE_PORT}")
+    logger.info(f"正在启动 Embedding 微服务，监听地址：{SERVICE_HOST}:{SERVICE_PORT}")
     uvicorn.run(
         app,
         host=SERVICE_HOST,

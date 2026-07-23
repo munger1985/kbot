@@ -70,7 +70,7 @@ class BaseModelPool(ABC, Generic[T]):
             except asyncio.CancelledError:
                 pass
             except Exception as e:
-                logger.error(f"Error stopping health check task: {e}")
+                logger.error(f"停止健康检查任务失败：{e}")
 
         # 2. Shutdown all loaded models in parallel
         if self._models:
@@ -88,9 +88,9 @@ class BaseModelPool(ABC, Generic[T]):
         """Safely shutdown a single model with error handling"""
         try:
             await self._shutdown_model_instance(model)
-            logger.info(f"Model {model_name} resources released")
+            logger.info(f"模型 {model_name} 的资源已释放")
         except Exception as e:
-            logger.error(f"Failed to release model {model_name} resources: {e}")
+            logger.error(f"释放模型 {model_name} 的资源失败：{e}")
 
     # --- Abstract Methods ---
 
@@ -151,7 +151,7 @@ class BaseModelPool(ABC, Generic[T]):
             await self.load_model(model_name)
             return True
         except Exception as e:
-            logger.error(f"Failed to restart model {model_name}: {e}")
+            logger.error(f"重启模型 {model_name} 失败：{e}")
             return False
 
     # --- Internal Logic ---
@@ -231,7 +231,7 @@ class BaseModelPool(ABC, Generic[T]):
             try:
                 await self.load_model(data["model_name"])
             except Exception as e:
-                logger.error(f"Failed to warmup model {data['model_name']}: {e}")
+                logger.error(f"预热模型 {data['model_name']} 失败：{e}")
 
     def get_pool_status(self) -> dict[str, Any]:
         """Get pool status overview"""

@@ -13,7 +13,7 @@ if [ -z "$CONDA_BIN_PATH" ]; then
 fi
 
 if [ -z "$CONDA_BIN_PATH" ]; then
-    echo "❌ Error: Conda command not found. Please ensure conda is installed."
+    echo "❌ 未找到 Conda 命令，请先安装并配置 Conda。"
     exit 1
 fi
 
@@ -45,7 +45,7 @@ start_service() {
     local safe_script="${script//\//_}"
     local log_file="${STARTUP_LOG_DIR}/${safe_script%.py}.log"
     
-    echo "🚀 Starting ${service_name}..."
+    echo "🚀 正在启动 ${service_name}..."
 
     # 清空上次的启动日志，便于阅读
     : > "$log_file"
@@ -55,16 +55,15 @@ start_service() {
     cd "$directory" && python "$script" >/dev/null 2>>"$log_file" &
     local pid=$!
 
-    # Background workers do not expose an HTTP port; verify the process stays
-    # alive briefly and then let the launcher continue.
+    # 后台 Worker 不监听 HTTP 端口，仅确认进程没有在启动后立即退出。
     if [ "$script" = "apps/knowledge_core_projection/main.py" ]; then
         sleep 1
         if ! kill -0 $pid 2>/dev/null; then
-            echo "  ❌ ${service_name} worker exited during startup"
+            echo "  ❌ ${service_name} Worker 在启动期间退出"
             [ -s "$log_file" ] && sed 's/^/    | /' "$log_file"
             return 1
         fi
-        echo "✅ ${service_name} worker started（PID: $pid）"
+        echo "✅ ${service_name} Worker 已启动（PID: $pid）"
         return 0
     fi
 
@@ -110,7 +109,7 @@ start_service() {
 }
 
 # 启动所有服务
-echo "Starting all KBot services..."
+echo "正在启动全部 KBot 服务..."
 echo "  启动日志目录: $(pwd)/${STARTUP_LOG_DIR}/"
 echo
 for service in "${SERVICES[@]}"; do
@@ -119,4 +118,4 @@ for service in "${SERVICES[@]}"; do
 done
 
 echo
-echo "🎉 All KBot services started successfully!"
+echo "🎉 全部 KBot 服务启动完成！"

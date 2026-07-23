@@ -26,17 +26,10 @@ INTERNAL_TOKEN_HEADER = "X-KBot-Internal-Token"
 PUBLIC_PATHS = {"/health", "/healthz", "/readyz", "/docs", "/redoc", "/openapi.json"}
 
 
-def _mask_token(token: str) -> str:
-    """对令牌进行脱敏显示（仅显示前 8 位）"""
-    if len(token) <= 8:
-        return token[:4] + "****"
-    return token[:8] + "****"
-
-
 def get_internal_token() -> str:
     """获取配置的内部通信令牌"""
     token = os.getenv(INTERNAL_TOKEN_ENV, DEFAULT_DEV_TOKEN)
-    logger.debug(f"[InternalAuth] 服务端期望令牌: {_mask_token(token)}")
+    logger.debug("[内部认证] 服务端内部令牌已加载")
     return token
 
 
@@ -66,7 +59,7 @@ def create_internal_auth_middleware(
     # 开发环境下打印令牌提示
     if expected_token == DEFAULT_DEV_TOKEN:
         logger.warning(
-            f"[Security] 使用默认开发令牌。生产环境请设置 {INTERNAL_TOKEN_ENV} 环境变量!"
+            f"[安全] 当前使用默认开发令牌，生产环境必须设置 {INTERNAL_TOKEN_ENV} 环境变量！"
         )
 
     async def middleware(request: Request, call_next):
@@ -81,7 +74,7 @@ def create_internal_auth_middleware(
         # 校验令牌
         provided_token = request.headers.get(INTERNAL_TOKEN_HEADER)
         if not provided_token:
-            logger.warning(f"[Security] 拒绝无令牌请求: {request.method} {request.url.path} from {request.client}")
+            logger.warning(f"[安全] 拒绝无令牌请求：{request.method} {request.url.path}，客户端={request.client}")
             return JSONResponse(
                 status_code=403,
                 content={
@@ -90,10 +83,7 @@ def create_internal_auth_middleware(
             )
 
         if provided_token != expected_token:
-            logger.warning(
-                f"[InternalAuth] 令牌不匹配: 期望={_mask_token(expected_token)}, 收到={_mask_token(provided_token)}, "
-                f"请求={request.method} {request.url.path}"
-            )
+            logger.warning(f"[内部认证] 令牌不匹配，请求={request.method} {request.url.path}")
             return JSONResponse(
                 status_code=403,
                 content={

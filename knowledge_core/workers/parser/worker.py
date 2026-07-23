@@ -130,10 +130,10 @@ class KcParserWorker:
                     output_fingerprint=output.output_fingerprint,
                     quality_report=output.quality_report.as_dict(), quality_score=1.0,
                 )
-                logger.info("KC parse job {} completed with {} Evidence rows", task.job_id, len(evidence_dicts))
+                logger.info("KC 解析任务 {} 已完成，共生成 {} 条 Evidence", task.job_id, len(evidence_dicts))
         except KcParserProtocolError as exc:
             if exc.code in {"JOB_LEASE_INVALID", "JOB_STALE"}:
-                logger.warning("KC parse job {} became stale", task.job_id)
+                logger.warning("KC 解析任务 {} 的租约已失效", task.job_id)
                 return
             await self._safe_fail(task, "TRANSIENT", exc.code, str(exc))
         except (ValueError, FileNotFoundError) as exc:

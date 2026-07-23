@@ -60,7 +60,7 @@ class KcIndexProfileWorker:
                 result = await self._client.run_profile(task)
             else:
                 result = await self._client.run_purge(task)
-            logger.info("KC {} job {} completed: {}", kind.upper(), task["job_id"], result)
+            logger.info("KC {} 任务 {} 已完成：{}", kind.upper(), task["job_id"], result)
         except asyncio.CancelledError:
             raise
         except Exception as exc:

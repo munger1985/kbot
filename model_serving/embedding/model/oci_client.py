@@ -88,7 +88,7 @@ class OCIEmbedding(BaseEmbedding[OCIEmbeddingConfig]):
             except Exception as e:
                 logger.error(f"❌ OCI Embedding Request Failed: {e}")
                 # Log partial payload for debugging (first text only to avoid clutter)
-                logger.debug(f"Request Payload Sample: {texts[:1]}... Total in batch: {len(texts)}")
+                logger.debug(f"请求载荷样例：{texts[:1]}... 当前批次数量：{len(texts)}")
                 raise
 
     async def embed(self, texts: list[str], is_query: bool = True, **kwargs) -> EmbeddingResponse:

@@ -1,203 +1,55 @@
-# kbot (aka Knowledge Based Chatbot)
+# KBot 4.0
 
-## Acknowledgement 
-Thanks to projects of https://github.com/chatchat-space/Langchain-Chatchat and https://github.com/infiniflow/ragflow
-Inspired me a lot, so I designed this project to integrate OCI AI Services into this project. Our whole OCI Sehub AI team contributed to this project.
-66
+KBot 是面向知识检索与数据库运维分析的 Python/FastAPI 后端。4.0 采用单仓库、
+同一 Oracle/APEX Schema 下的独立服务架构，不兼容 3.x API、表模型或 Agent
+运行时。
 
-## Goal
+## 当前服务
 
-To help customers leverage services in OCI easier.
+- `knowledge_core/`：Collection、Bundle、Document、解析、索引与两阶段检索。
+- `model_serving/`：LLM、Embedding、VLM 和 Visual 模型托管。
+- `platform_core/`：配置、日志、认证、数据库运行时和共享契约。
+- `platform_clients/`：跨服务客户端。
+- `apps/`：各独立进程入口。
 
-## High level
+Knowledge Core 来源于 3.5 已完成的实现，是 4.0 的正式基线，不存在平行的旧
+知识库运行链路。
 
-![image](/readmeIMG/highlevel.png)
+## 本地环境
 
-## Features
+使用 Python 3.10 创建环境并安装依赖：
 
-
-
-### llm management and openai format compatible API 
-
-### text embedding and openai format compatible API 
-
-### RAG or QA bot
-
-### prompt management
-
-### Knowledge base management
-
-### graphrag feature
-
-### lightrag with oracle db 
-
-### support Langsmith tracing
-
-## Workflow
-
-![image](/readmeIMG/workflow.png)
-
-## Operating System
-
-os should be linux with g++, gcc, cmake
-with or without GPU
-
-## Download the code
-
-
-git clone https://github.com/munger1985/kbot.git
-
-cd kbot/
-
-## OS prerequisites
-
-### ubuntu 22.04
-
-```commandline
-sudo apt update -y
-sudo apt install libgl1 -y
-sudo apt-get install poppler-utils -y
-sudo apt install tesseract-ocr -y 
+```bash
+pip install -r requirements.txt
 ```
 
-### Oracle Linux 8
+准备 `configuration/base.toml`、环境配置和 `.env`，不要把密码、Token 或私钥
+提交到仓库。配置模板位于 `configuration/example/`。
 
-```commandline
-sudo yum install mesa-libGL -y
-sudo yum install poppler-utils -y
-sudo yum install tesseract  -y 
+可单独启动服务：
+
+```bash
+python3 -m apps.knowledge_core_api.main
+python3 -m apps.knowledge_core_parser.main
+python3 -m apps.knowledge_core_projection.main
+python3 -m apps.ai_models_embedding.main
 ```
 
+本地同时启动或停止当前服务：
 
-
-## Install python env
-
-```commandline
-conda create -n kbot python=3.10 -y
-conda activate kbot
+```bash
+bash start_kbot.sh
+bash stop_kbot.sh
 ```
 
-## Install deps
+## 开发检查
 
-```commandline
-pip install -r req*.txt
+```bash
+python3 scripts/check_4_0_boundaries.py
+python3 scripts/check_kc_migrations.py
+python3 -m unittest discover -s tests -p 'test_kc_*.py'
 ```
 
-## Configurations
-
-config oci api key, and **config.py**
-make sure your home directory, e.g. KB_ROOT_PATH should make it right.
-or auth using instance principal without api key
-need to add policy below
-
-```commandline
-allow dynamic-group <xxxx> to manage generative-ai-family in tenancy
-xxxx is your dynamic-group that indicated your vm or other resources
-```
-
-### your secrets
-
-rename the .secrets.toml.example to .secrets.toml, follow the format and 
-configure your secrets such as vectordb and llms in .secrets.toml
-
-## Python API Server Start 
-
-```commandline
-python main.py  --port 8899 
-python main.py  --port 8899 --hf_token xxx
-python main.py  --port 8899 --ssl_keyfile tls.key --ssl_certfile tls.crt
-python main.py  --port 443 --ssl_keyfile /home/ubuntu/qq/dev.oracle.k8scloud.site.key  --ssl_certfile /home/ubuntu/qq/dev.oracle.k8scloud.site.pem
-```
-
-## Daemon Service File
-
-```commandline
-[Unit]
-Description=Kbot Service
-After=network.target
-
-[Service]
-# User and group under which the script should run
-User=ubuntu
-
-# The working directory, the directory where main.py locates.
-WorkingDirectory=/home/ubuntu/kbot
-# the path should be kbot conda environment path, use 'which pip' to get prefix url before /pip
-Environment="PATH=/home/ubuntu/.conda/envs/kbot/bin:$PATH"
-# The command to execute
-ExecStart=/home/ubuntu/anaconda3/envs/kbot/bin/python /home/ubuntu/kbot/main.py
-# Restart policy
-#Restart=always
-#RestartSec=5
-
-# Environment variables (if needed)
-
-[Install]
-WantedBy=multi-user.target
-```
-
-You can create a file called kbot.service, put it in /etc/systemd/system
-
-Then you can systemctl start kbot or systemctl stop kbot to control this service up and down.
-
-## FrontEnd web site
-
-We have an Apex built frontend, will be released in another repo. you can refer to the swagger document once you started the API server.
-
-http://localhost:8093/docs
-
-## Docker approach
-
-
-### Build
-
-```commandline
-docker build -t kbot .
-```
-
-### Docker start
-
-if you don't need oss llm, ignore --hf_token xxx
-if you dont have gpu, ignore --gpus all
-
-#### Docker with gpu
-
-```commandline
-docker run --gpus all  -e port=8899  -p 8899:8899  kbot  --hf_token <your huggingface token> --port 8899
-```
-
-#### Docker with cpu
-
-```commandline
-docker run  -e port=8899    -p 8899:8899  kbot  --hf_token <your huggingface token> --port 8899
-```
-
-#### OCI prebuilt docker
-
-```commandline
-docker run  -e port=8899   -p 8899:8899  sin.ocir.io/sehubjapacprod/munger:kbot   --port 8899
-```
-
-
-
-#### Auto Start
-##### remember open port in linux, for instance 443
-
-* -A INPUT -p tcp -m state --state NEW -m tcp --dport 443 -j ACCEPT
-
-```commandline
-the script is in autoStart.sh 
-crontab -e
-@reboot /bin/bash /home/ubuntu/kbot/autoStart.sh
-```
-
-#### proxy prefix
-cd kbot
-export PYTHONPATH=.:$PYTHONPATH
-fastapi run main.py --root-path   /api/v1  --port 8093
-
-
-## Contact 
-
-contact me or any other oracle staffs
-jingsong.liu@oracle.com
+完整架构和实施计划见
+[`docs/kbot_4.0_design/README.md`](docs/kbot_4.0_design/README.md)。贡献规则见
+[`AGENTS.md`](AGENTS.md)。

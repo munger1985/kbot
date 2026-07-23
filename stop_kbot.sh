@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Define service root directory
+# 服务根目录
 SERVICE_ROOT="$(cd "$(dirname "$0")" && pwd)"
 CURRENT_PID=$$
 
@@ -15,12 +15,12 @@ SERVICES=(
     "apps/knowledge_core_projection/main.py"
 )
 
-# Function: Safely get PID of specific Python script running in specified directory
+# 安全查找在指定目录运行的 Python 服务进程
 get_service_pid() {
     local script_dir="$1"
     local script_name="$2"
     
-    # Use pgrep to find processes and pwdx to check working directory
+    # 先按脚本名查找，再通过工作目录限制进程范围
     pgrep -f "python.*${script_name}" | grep -v "$CURRENT_PID" | while read pid; do
         if [ -d "/proc/$pid" ]; then
             if pwdx "$pid" 2>/dev/null | grep -q "${script_dir}"; then
@@ -30,7 +30,7 @@ get_service_pid() {
     done
 }
 
-# Collect PIDs of processes to be terminated
+# 收集待停止的进程号
 declare -A PID_MAP
 
 # 遍历所有服务获取PID
@@ -40,42 +40,42 @@ for service_script in "${SERVICES[@]}"; do
         while read pid; do
             if [ -n "$pid" ]; then
                 PID_MAP["$pid"]=1
-                echo "Found ${service_script} process: $pid"
+                echo "发现 ${service_script} 进程：$pid"
             fi
         done <<< "$SERVICE_PIDS"
     fi
 done
 
-# Check if there are processes to terminate
+# 没有可停止的进程时直接退出
 if [ ${#PID_MAP[@]} -eq 0 ]; then
-    echo "No running KBot services found."
+    echo "未发现正在运行的 KBot 服务。"
     exit 0
 fi
 
-# Convert deduplicated PIDs to space-separated string
+# 将去重后的进程号转换为空格分隔列表
 PIDS="${!PID_MAP[@]}"
 
-echo "About to terminate the following processes: $PIDS"
+echo "即将停止以下进程：$PIDS"
 
 # 如果需要确认，取消注释下面的代码
-# read -p "Confirm termination of these services? (y/n): " -n 1 -r
+# read -p "确认停止这些服务吗？(y/n): " -n 1 -r
 # echo
 # if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-#     echo "Operation cancelled."
+#     echo "操作已取消。"
 #     exit 0
 # fi
 
-# Send SIGTERM signal for graceful shutdown
+# 发送 SIGTERM 以触发优雅退出
 for PID in $PIDS; do
     if kill -0 $PID 2>/dev/null; then
         kill -SIGTERM $PID
-        echo "Sent graceful shutdown signal (SIGTERM) to process $PID."
+        echo "已向进程 $PID 发送优雅退出信号（SIGTERM）。"
     else
-        echo "Process $PID no longer exists, skipping."
+        echo "进程 $PID 已不存在，跳过。"
     fi
 done
 
-# Wait for processes to exit gracefully (max 10 seconds)
+# 最多等待 10 秒让进程完成优雅退出
 TIMEOUT=10
 for PID in $PIDS; do
     COUNT=0
@@ -84,13 +84,13 @@ for PID in $PIDS; do
         COUNT=$((COUNT + 1))
     done
     
-    # Check if process is still running
+    # 超时后再次检查进程状态
     if kill -0 $PID 2>/dev/null; then
-        echo "Process $PID did not exit within ${TIMEOUT} seconds, will force terminate (SIGKILL)."
-        kill -SIGKILL $PID 2>/dev/null || echo "Failed to force terminate process $PID."
+        echo "进程 $PID 在 ${TIMEOUT} 秒内未退出，将发送 SIGKILL。"
+        kill -SIGKILL $PID 2>/dev/null || echo "无法强制停止进程 $PID。"
     else
-        echo "Process $PID exited normally."
+        echo "进程 $PID 已正常退出。"
     fi
 done
 
-echo "All KBot services have been shut down completely."
+echo "全部 KBot 服务已停止。"

@@ -19,7 +19,7 @@ class CryptoToolkit:
             raise ValueError("KBOT_AUTH_ENCRYPTION_KEY 环境变量未设置")
         
         # 2. 确保密钥长度为 32 字节(256位)
-        logger.info(f"[Crypto] 正在初始化凭证加解密安全套件，密钥长度: {len(self.secret_key_str)}")
+        logger.info(f"[加密] 正在初始化凭证加解密安全套件，密钥长度：{len(self.secret_key_str)}")
         # 补齐或截断至标准的 32 字节
         self.key_bytes = self.secret_key_str.encode("utf-8").ljust(32, b"\0")[:32]
         self.aesgcm = AESGCM(self.key_bytes)
@@ -68,5 +68,5 @@ class CryptoToolkit:
             return decrypted_bytes.decode("utf-8")
             
         except Exception as e:
-            logger.critical(f"[Crypto] 凭证完整性校验失败或密钥不匹配！密文可能遭到非法篡改！")
+            logger.critical("[加密] 凭证完整性校验失败或密钥不匹配！密文可能遭到非法篡改！")
             raise InternalServerError("资产安全防线拒绝解密: 凭证完整性受损")

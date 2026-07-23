@@ -10,7 +10,7 @@ class KnowledgeCoreConfigTest(unittest.TestCase):
         config = KnowledgeCoreConfig()
 
         self.assertEqual(config.service_port, 18090)
-        self.assertEqual(config.service_version, "3.5.0")
+        self.assertEqual(config.service_version, "4.0.0")
 
 
 if __name__ == "__main__":

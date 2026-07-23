@@ -50,7 +50,7 @@ class Qwen3Embedding(BaseEmbedding[Qwen3EmbeddingConfig]):
                 model_path = str(Path(model_path).resolve())
             else:
                 model_path = f"./{model_path}"
-            logger.info(f"Corrected model path: {self.config.model_path} -> {model_path}")
+            logger.info(f"已修正模型路径：{self.config.model_path} -> {model_path}")
 
         logger.info(f"🚀 Initializing Qwen Embedding: {model_path} (Attention impl: {attn_impl})")
 

@@ -27,7 +27,7 @@ class AppConfig(BaseModel):
     """
     app_id: int = Field(default=1, description="Unique application identifier")
     service_name: str = Field(default="main_service", description="Name of the service instance")
-    service_version: str = Field(default="3.0.0", description="Service version number")
+    service_version: str = Field(default="4.0.0", description="Service version number")
     service_host: str = Field(default="0.0.0.0", description="Service binding host address")
     service_port: int = Field(default=18099, ge=1, le=65535, description="Service listening port (1-65535)")
     mcp_port: int = Field(default=18098, ge=1, le=65535, description="MCP Service listening port (1-65535)")
@@ -190,7 +190,7 @@ class ParserConfig(BaseModel):
     parser_parallel: int = Field(default=4, ge=1, le=100, description="Number of parallel parser processes (1-100)")
     db_check_interval: int = Field(default=60, ge=10, le=3600, description="Database check interval in seconds (10-3600)")
     knowledge_core_url: str = Field(default="http://127.0.0.1:18090", description="Knowledge Core internal base URL")
-    worker_id: str = Field(default="kbot-parser-v2", min_length=1, max_length=256)
+    worker_id: str = Field(default="kbot-parser-v4", min_length=1, max_length=256)
     claim_interval_seconds: float = Field(default=2.0, ge=0.2, le=60)
     lease_seconds: int = Field(default=600, ge=30, le=3600)
     evidence_batch_size: int = Field(default=100, ge=1, le=500)
@@ -203,7 +203,7 @@ class KnowledgeCoreConfig(BaseModel):
     directly without propagating the field to every KC table.
     """
     service_name: str = Field(default="knowledge-core-service", description="Name of the Knowledge Core service")
-    service_version: str = Field(default="3.5.0", description="Knowledge Core service version")
+    service_version: str = Field(default="4.0.0", description="Knowledge Core service version")
     service_host: str = Field(default="0.0.0.0", description="Knowledge Core service host")
     service_port: int = Field(default=18090, ge=1, le=65535, description="Knowledge Core service port")
     receipt_ttl_seconds: int = Field(default=86400, ge=60, le=604800, description="Idempotency receipt retention period")
@@ -214,63 +214,6 @@ class KnowledgeCoreConfig(BaseModel):
         default="请客观描述图片中的可见事实、文字、对象及其关系；不要推测图片之外的信息。",
         description="Prompt frozen into Parse View policy for visual descriptions",
     )
-
-class ExecutorConfig(BaseModel):
-    """SQL 执行器配置"""
-    service_name: str = Field(default="sql-executor-service")
-    service_version: str = Field(default="1.0.0")
-    service_host: str = Field(default="0.0.0.0")
-    service_port: int = Field(default=18096, ge=1, le=65535)
-    timeout: int = Field(default=300, ge=10, le=3600)
-
-class PrometheusConfig(BaseModel):
-    """Prometheus 监控配置（运维Agent使用）"""
-    base_url: str = Field(default="http://localhost:9090", description="Prometheus Server 地址")
-    token: str = Field(default="", description="Bearer Token (可选)")
-    timeout: int = Field(default=30, ge=5, le=300, description="HTTP 请求超时 (秒)")
-    default_step: str = Field(default="15s", description="范围查询默认采样步长")
-
-class ZabbixConfig(BaseModel):
-    """Zabbix 监控数据源配置"""
-    api_url: str = Field(default="http://localhost/zabbix/api_jsonrpc.php", description="Zabbix JSON-RPC API 地址")
-    token: str = Field(default="", description="Zabbix API Token（可选，优先级高于 user/password）")
-    user: str = Field(default="Admin", description="Zabbix API 登录用户")
-    password: str = Field(default="", description="Zabbix API 登录密码")
-    timeout: int = Field(default=15, ge=5, le=120, description="HTTP 请求超时秒数")
-
-class OemConfig(BaseModel):
-    """Oracle Enterprise Manager 监控数据源配置"""
-    base_url: str = Field(default="https://localhost:7803/em", description="OEM 基础 URL（如 https://oem-server:7803/em）")
-    api_version: str = Field(default="v1", description="OEM REST API 版本路径段（如 v1）")
-    username: str = Field(default="sysman", description="OEM 登录用户名")
-    password: str = Field(default="", description="OEM 登录密码")
-    token: str = Field(default="", description="OEM 预生成的 API Token（可选，优先级高于 user/password）")
-    timeout: int = Field(default=30, ge=5, le=120, description="HTTP 请求超时秒数")
-    verify_ssl: bool = Field(default=False, description="是否验证 OEM SSL 证书（内网环境通常关闭）")
-
-class AskDataApiConfig(BaseModel):
-    """问数外部 API 配置（SelectAI / AIReport）。
-
-    对接外部问数接口，将自然语言查询转发至 SelectAI API 并获取结构化数据结果。
-    """
-    api_endpoint: str = Field(default="http://132.145.80.161:10090/aireport/chat/with_selectai_api", description="SelectAI 问数 API 端点")
-    profiles_endpoint: str = Field(default="http://132.145.80.161:10090/aireport/admin/list_profiles", description="SelectAI Profile 列表 API 端点")
-    api_key: str = Field(default="airpt-8f4e8d5abeffbc5b793eb78d666b580f", description="SelectAI API 认证密钥")
-    timeout: int = Field(default=120, ge=10, le=600, description="HTTP 请求超时 (秒)")
-
-
-class SlackConfig(BaseModel):
-    """Slack integration configuration.
-
-    Configuration parameters for Slack Events API integration, including
-    authentication credentials and agent routing settings.
-    """
-    signing_secret: str = Field(default="", description="Slack App Signing Secret for request verification")
-    bot_token: str = Field(default="", description="Slack Bot User OAuth Token (xoxb-...)")
-    agent_id: int = Field(default=1, ge=1, description="KBOT Agent ID to use for answering Slack messages")
-    api_timeout: int = Field(default=10, ge=5, le=60, description="Timeout in seconds for Slack API HTTP calls")
-    debug_save_sse: bool = Field(default=False, description="Save raw SSE responses to /tmp/slackmess/ for debugging")
-    external_callback_url: str = Field(default="", description="External callback URL for user question forwarding")
 
 class PromptConfig(BaseModel):
     """Prompt template configuration.
@@ -327,12 +270,6 @@ class Settings(BaseSettings):
     visual: VisualConfig = VisualConfig()
     parser: ParserConfig = ParserConfig()
     knowledge_core: KnowledgeCoreConfig = KnowledgeCoreConfig()
-    executor: ExecutorConfig = ExecutorConfig()
-    prometheus: PrometheusConfig = PrometheusConfig()
-    zabbix: ZabbixConfig = ZabbixConfig()
-    oem: OemConfig = OemConfig()
-    ask_data_api: AskDataApiConfig = AskDataApiConfig()
-    slack: SlackConfig = SlackConfig()
     prompt: PromptConfig = PromptConfig()
     
     model_config = {
@@ -367,12 +304,12 @@ class Settings(BaseSettings):
         environment = env_from_env or temp_settings.environment
         config_dir = Path(config_dir_from_env or temp_settings.config_dir)
         
-        print(f"Loading configuration for environment: {environment}")
-        print(f"Config directory: {config_dir}")
+        print(f"正在加载环境配置：{environment}")
+        print(f"配置目录：{config_dir}")
         
         if toml_path is None:
             toml_path = config_dir / f"{environment}.toml"
-            print(f"Loading TOML from: {toml_path}")
+            print(f"正在加载 TOML：{toml_path}")
         
         # Ensure config directory exists
         config_dir.mkdir(parents=True, exist_ok=True)
@@ -409,16 +346,16 @@ class Settings(BaseSettings):
             dict[str, Any]: Parsed configuration dictionary (empty if file not found/error)
         """
         if not file_path.exists():
-            print(f"Warning: Config file {file_path} not found, using defaults")
+            print(f"警告：配置文件 {file_path} 不存在，将使用默认值")
             return {}
         
         try:
             with open(file_path, "rb") as f:
                 config = tomli.load(f)
-                print(f"Loaded TOML config from: {file_path}")
+                print(f"已加载 TOML 配置：{file_path}")
                 return config
         except Exception as e:
-            print(f"Error loading TOML config {file_path}: {e}, using defaults")
+            print(f"加载 TOML 配置 {file_path} 失败：{e}，将使用默认值")
             return {}
     
     @staticmethod
@@ -573,39 +510,6 @@ def get_parser_config() -> ParserConfig:
 def get_knowledge_core_config() -> KnowledgeCoreConfig:
     """Get Knowledge Core service configuration."""
     return get_settings().knowledge_core
-
-def get_executor_config() -> ExecutorConfig:
-    """Get executor configuration."""
-    return get_settings().executor
-
-def get_prometheus_config() -> PrometheusConfig:
-    """Get Prometheus configuration (运维Agent使用)."""
-    return get_settings().prometheus
-
-def get_zabbix_config() -> ZabbixConfig:
-    """获取 Zabbix 监控数据源配置"""
-    return get_settings().zabbix
-
-def get_oem_config() -> OemConfig:
-    """获取 Oracle Enterprise Manager 监控数据源配置"""
-    return get_settings().oem
-
-def get_ask_data_api_config() -> AskDataApiConfig:
-    """Get ask-data external API configuration.
-
-    Returns:
-        AskDataApiConfig: Ask-data API configuration object
-    """
-    return get_settings().ask_data_api
-
-
-def get_slack_config() -> SlackConfig:
-    """Get Slack integration configuration.
-
-    Returns:
-        SlackConfig: Slack configuration object
-    """
-    return get_settings().slack
 
 def detect_builtin_ocr_engines() -> dict[str, bool]:
     """检测本机已安装的内置 OCR 引擎。

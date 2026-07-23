@@ -1,8 +1,7 @@
-"""Knowledge Core microservice entry point.
+"""Knowledge Core 微服务入口。
 
-The service owns KC persistence and exposes only internal contracts.  Parser,
-Portal, and later retrieval clients communicate through HTTP; none receives a
-KC database session or accesses KC tables directly.
+服务独占 KC 持久化能力，只暴露内部契约。Parser、Portal 和检索客户端通过
+HTTP 访问，不能获取 KC 数据库会话或直接访问 KC 表。
 """
 
 import os
@@ -43,7 +42,6 @@ from knowledge_core.application.discovery import KnowledgeCoreProfileService
 from knowledge_core.application.retrieval import KnowledgeCoreDiscoveryService
 from knowledge_core.application.evidence_retrieval import KnowledgeCoreEvidenceRetrievalService
 from knowledge_core.application.query_embeddings import CollectionQueryEmbeddingProvider
-from knowledge_core.application.grounding import AnswerGroundingVerifier
 from knowledge_core.application.status import KnowledgeCoreStatusService
 from knowledge_core.application.scope import KnowledgeCoreScopeService
 from knowledge_core.application.collection_purge import KnowledgeCoreCollectionPurgeService
@@ -64,7 +62,7 @@ SERVICE_PORT = config.service_port
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Initialize the isolated service runtime without starting KC workers yet."""
+    """初始化独立服务运行时，不在 API 进程内启动 KC Worker。"""
     app.state.service_name = SERVICE_NAME
     LogManager(LogConfig(
         service_name=SERVICE_NAME,
@@ -143,24 +141,23 @@ async def lifespan(app: FastAPI):
         search_port=UowEvidenceSearchPort(),
         query_embedding_provider=app.state.kc_query_embedding_provider,
     )
-    app.state.kc_grounding_verifier = AnswerGroundingVerifier()
     app.state.kc_status_service = KnowledgeCoreStatusService(app_id=app_config.app_id, uow_factory=kc_uow_factory)
     app.state.kc_scope_service = KnowledgeCoreScopeService(app_id=app_config.app_id, uow_factory=kc_uow_factory)
     from knowledge_core.application.collections import KnowledgeCoreBindingService, KnowledgeCoreCollectionService
     app.state.kc_collection_service = KnowledgeCoreCollectionService(app_id=app_config.app_id, uow_factory=kc_uow_factory)
     app.state.kc_binding_service = KnowledgeCoreBindingService(app_id=app_config.app_id, uow_factory=kc_uow_factory)
     app.state.kc_purge_service = KnowledgeCoreCollectionPurgeService(uow_factory=kc_uow_factory)
-    logger.info("Starting [{}] | pid={}", SERVICE_NAME, os.getpid())
+    logger.info("正在启动服务 [{}]，进程号={}", SERVICE_NAME, os.getpid())
     try:
         yield
     finally:
         await db_runtime.close()
-        logger.info("Stopping [{}]", SERVICE_NAME)
+        logger.info("正在停止服务 [{}]", SERVICE_NAME)
 
 
 app = FastAPIOffline(
     title=f"{SERVICE_NAME} API",
-    description="Internal ingestion, parsing, and retrieval boundary for Knowledge Core.",
+    description="Knowledge Core 的内部入库、解析与检索服务边界。",
     version=SERVICE_VERSION,
     lifespan=lifespan,
     docs_url="/docs" if app_config.debug else None,
@@ -186,9 +183,9 @@ app.include_router(status_router)
 app.include_router(purge_task_router)
 
 
-@app.get("/health", tags=["System"], summary="Health Check")
+@app.get("/health", tags=["System"], summary="存活检查")
 async def health() -> dict[str, Any]:
-    """Liveness endpoint; it intentionally avoids a database dependency."""
+    """存活检查不访问数据库。"""
     return {
         "status": "ok",
         "service": SERVICE_NAME,
@@ -197,12 +194,12 @@ async def health() -> dict[str, Any]:
     }
 
 
-@app.get("/healthz", tags=["System"], summary="Liveness Check")
+@app.get("/healthz", tags=["System"], summary="存活检查")
 async def healthz() -> dict[str, Any]:
     return await health()
 
 
-@app.get("/readyz", tags=["System"], summary="Readiness Check")
+@app.get("/readyz", tags=["System"], summary="就绪检查")
 async def readyz(request: Request) -> dict[str, Any]:
     checks: dict[str, str] = {}
     try:
