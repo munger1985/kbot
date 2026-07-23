@@ -75,7 +75,7 @@ async def lifespan(app: FastAPI):
         auth=AIOpsClientAuth(
             caller_service=config.service_name,
             audience=settings.aiops.audience,
-            scopes=("aiops.manage",),
+            scopes=("aiops.manage", "aiops.run"),
             auth_context_codec=create_auth_context_codec(),
             service_identity_codec=create_service_identity_codec(),
         ),

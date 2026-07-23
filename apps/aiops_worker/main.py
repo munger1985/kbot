@@ -1,4 +1,4 @@
-"""AIOps Worker 步骤 0 探针进程入口。"""
+"""AIOps Worker 进程入口。"""
 
 import sys
 

@@ -1,4 +1,5 @@
 import json
+from datetime import timezone
 from decimal import Decimal
 from uuid import UUID
 
@@ -61,6 +62,25 @@ class UniversalTimestamp(TypeDecorator):
                 ORA_TIMESTAMP(timezone=self.timezone)
             )
         return dialect.type_descriptor(DateTime(timezone=self.timezone))
+
+    def process_bind_param(self, value, dialect: Dialect):
+        if value is None or not self.timezone:
+            return value
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("带时区时间字段必须传入 aware datetime")
+        normalized = value.astimezone(timezone.utc)
+        if dialect.name == "oracle":
+            # Oracle Thin 以 Session 时区解释 naive datetime。
+            return normalized.replace(tzinfo=None)
+        return normalized
+
+    def process_result_value(self, value, dialect: Dialect):
+        if value is None or not self.timezone:
+            return value
+        if value.tzinfo is None or value.utcoffset() is None:
+            # Oracle Session 已由 DatabaseRuntime 固定为 +00:00。
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
 
 
 class UniversalVector(TypeDecorator):

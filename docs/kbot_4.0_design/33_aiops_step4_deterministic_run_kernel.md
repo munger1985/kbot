@@ -1,5 +1,27 @@
 # 4.0 AIOps 步骤 4：确定性 Run 执行内核
 
+## 实施结果
+
+步骤 4 已完成。当前生产 Registry 固定
+`kernel.observe-report@1`，按 `SCOPE → OBSERVE → REPORT` 生成
+`SCOPE_RESULT.v1`、`OBSERVATION_SET.v1` 和
+`KERNEL_TEST_REPORT.v1`。Handler 只接收不可变 `TaskLease` 与 Artifact DTO，
+不持有 Session，也不调用 LLM、监控、Knowledge Core、Secret Store 或目标数据库。
+
+运行内核已接入 AIOps Internal API、Main API
+`/api/v1/ops/runs`、取消命令和支持 `Last-Event-ID` 的 SSE。AIOps Worker
+实际启动多并发 Task Worker、Reconciler 和 Outbox Dispatcher，不再是探针骨架。
+真实 Oracle Smoke 已验证三任务完成、双 Worker 单租约、运行中取消收敛、租约过期
+接管、旧 Token 回写拒绝、并发幂等创建、连续事件和测试数据清理。
+
+实现时额外修正了两个数据库边界：
+
+- 所有 Oracle Session 固定为 `+00:00`，`UniversalTimestamp` 只接受 aware
+  datetime 并统一按 UTC 绑定和读取；DDL 默认时间使用
+  `CURRENT_TIMESTAMP`，避免数据库主机时区改变 Deadline 与租约语义。
+- `(INSPECTION_FIRE_ID, TARGET_ID)` 改为仅在 Fire ID 非空时生效的函数唯一
+  索引，普通 Chat/API Run 可在同一 Target 上并存。
+
 ## 目标与非目标
 
 本步骤实现可多副本运行、可崩溃恢复的 `OpsRun → OpsTask → Artifact → RunEvent` 内核。只使用确定性 Blueprint 和测试 Handler，不调用 LLM、Monitor、Knowledge Core、Secret Store 或目标数据库；步骤 5 以后只新增 Handler/编排，不允许绕过本内核自行维护状态。
@@ -263,19 +285,18 @@ aiops_agent/domain/operations/
   transitions.py
   errors.py
 aiops_agent/application/runtime/
-  create_run.py
-  claim_task.py
-  complete_task.py
-  fail_task.py
-  cancel_run.py
-  reconcile.py
+  service.py
 aiops_agent/orchestration/blueprints.py
 aiops_agent/workers/{task_worker,reconciliation,outbox_dispatcher}.py
 aiops_agent/contracts/artifacts/kernel.py
-aiops_agent/tests/runtime/
+tests/test_aiops_runtime_kernel.py
+scripts/smoke_aiops_runtime.py
 ```
 
-状态迁移表由 Domain 单点定义；API Schema、Worker 和 Repository 不复制允许迁移集合。Fake Handler/Clock/Outbox Sink 只放测试或开发 Adapter，不进入生产 Registry。
+状态迁移表由 Domain 单点定义；API Schema、Worker 和 Repository 不复制允许迁移
+集合。Application Service 作为事务 Facade 保持统一入口，后续业务 Handler 增加时
+不扩张其状态迁移职责。Logging Outbox Sink 仅用于当前开发部署；步骤 5 接入的业务
+Adapter 仍通过同一 Outbox Port 交付。
 
 ## 故障注入与验收矩阵
 

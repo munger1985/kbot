@@ -1950,10 +1950,19 @@
       "OpsRunStatus": {
         "enum": [
           "CREATED",
-          "RUNNING",
+          "SCOPING",
+          "OBSERVING",
+          "DIAGNOSING",
           "WAITING_INPUT",
+          "DIAGNOSED",
+          "PROPOSING",
           "WAITING_APPROVAL",
+          "EXECUTING",
+          "VERIFYING",
+          "ROLLBACK_PENDING",
           "COMPLETED",
+          "DEGRADED",
+          "REJECTED",
           "FAILED",
           "CANCELLED",
           "EXPIRED"
@@ -3389,7 +3398,7 @@
         },
         "summary": "List Inspection Plans",
         "tags": [
-          "AIOps Config"
+          "AIOps"
         ]
       },
       "post": {
@@ -3439,7 +3448,7 @@
         },
         "summary": "Create Inspection Plan",
         "tags": [
-          "AIOps Config"
+          "AIOps"
         ]
       }
     },
@@ -3482,7 +3491,7 @@
         },
         "summary": "Get Inspection Plan",
         "tags": [
-          "AIOps Config"
+          "AIOps"
         ]
       },
       "patch": {
@@ -3549,7 +3558,7 @@
         },
         "summary": "Patch Inspection Plan",
         "tags": [
-          "AIOps Config"
+          "AIOps"
         ]
       }
     },
@@ -3617,7 +3626,7 @@
         },
         "summary": "Activate Inspection Plan",
         "tags": [
-          "AIOps Config"
+          "AIOps"
         ]
       }
     },
@@ -3685,7 +3694,7 @@
         },
         "summary": "Disable Inspection Plan",
         "tags": [
-          "AIOps Config"
+          "AIOps"
         ]
       }
     },
@@ -3753,7 +3762,7 @@
         },
         "summary": "Pause Inspection Plan",
         "tags": [
-          "AIOps Config"
+          "AIOps"
         ]
       }
     },
@@ -3800,7 +3809,7 @@
         },
         "summary": "List Inspection Targets",
         "tags": [
-          "AIOps Config"
+          "AIOps"
         ]
       },
       "post": {
@@ -3876,7 +3885,7 @@
         },
         "summary": "Add Inspection Target",
         "tags": [
-          "AIOps Config"
+          "AIOps"
         ]
       }
     },
@@ -3955,7 +3964,7 @@
         },
         "summary": "Patch Inspection Target",
         "tags": [
-          "AIOps Config"
+          "AIOps"
         ]
       }
     },
@@ -4033,7 +4042,7 @@
         },
         "summary": "List Monitor Sources",
         "tags": [
-          "AIOps Config"
+          "AIOps"
         ]
       },
       "post": {
@@ -4083,7 +4092,7 @@
         },
         "summary": "Create Monitor Source",
         "tags": [
-          "AIOps Config"
+          "AIOps"
         ]
       }
     },
@@ -4126,7 +4135,7 @@
         },
         "summary": "Get Monitor Source",
         "tags": [
-          "AIOps Config"
+          "AIOps"
         ]
       },
       "patch": {
@@ -4193,7 +4202,7 @@
         },
         "summary": "Patch Monitor Source",
         "tags": [
-          "AIOps Config"
+          "AIOps"
         ]
       }
     },
@@ -4261,7 +4270,7 @@
         },
         "summary": "Request Monitor Health Check",
         "tags": [
-          "AIOps Config"
+          "AIOps"
         ]
       }
     },
@@ -4329,7 +4338,7 @@
         },
         "summary": "Rotate Monitor Webhook Key",
         "tags": [
-          "AIOps Config"
+          "AIOps"
         ]
       }
     },
@@ -4410,7 +4419,7 @@
         },
         "summary": "Command Monitor Source",
         "tags": [
-          "AIOps Config"
+          "AIOps"
         ]
       }
     },
@@ -4488,7 +4497,7 @@
         },
         "summary": "List Policies",
         "tags": [
-          "AIOps Config"
+          "AIOps"
         ]
       },
       "post": {
@@ -4538,7 +4547,7 @@
         },
         "summary": "Create Policy",
         "tags": [
-          "AIOps Config"
+          "AIOps"
         ]
       }
     },
@@ -4581,7 +4590,7 @@
         },
         "summary": "Get Policy",
         "tags": [
-          "AIOps Config"
+          "AIOps"
         ]
       }
     },
@@ -4662,7 +4671,7 @@
         },
         "summary": "Command Policy",
         "tags": [
-          "AIOps Config"
+          "AIOps"
         ]
       }
     },
@@ -4796,7 +4805,18 @@
     },
     "/api/v1/ops/runs": {
       "post": {
-        "operationId": "create_run_api_v1_ops_runs_post",
+        "operationId": "create_ops_run_api_v1_ops_runs_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -4808,7 +4828,7 @@
           "required": true
         },
         "responses": {
-          "200": {
+          "201": {
             "content": {
               "application/json": {
                 "schema": {
@@ -4829,12 +4849,15 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Create Run"
+        "summary": "Create Ops Run",
+        "tags": [
+          "AIOps"
+        ]
       }
     },
     "/api/v1/ops/runs/{run_id}": {
       "get": {
-        "operationId": "get_run_api_v1_ops_runs__run_id__get",
+        "operationId": "get_ops_run_api_v1_ops_runs__run_id__get",
         "parameters": [
           {
             "in": "path",
@@ -4869,7 +4892,135 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Get Run"
+        "summary": "Get Ops Run",
+        "tags": [
+          "AIOps"
+        ]
+      }
+    },
+    "/api/v1/ops/runs/{run_id}/cancel": {
+      "post": {
+        "operationId": "cancel_ops_run_api_v1_ops_runs__run_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsRunReceipt"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel Ops Run",
+        "tags": [
+          "AIOps"
+        ]
+      }
+    },
+    "/api/v1/ops/runs/{run_id}/events": {
+      "get": {
+        "operationId": "stream_ops_run_events_api_v1_ops_runs__run_id__events_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Last-Event-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Last-Event-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stream Ops Run Events",
+        "tags": [
+          "AIOps"
+        ]
       }
     },
     "/api/v1/ops/targets": {
@@ -4946,7 +5097,7 @@
         },
         "summary": "List Targets",
         "tags": [
-          "AIOps Config"
+          "AIOps"
         ]
       },
       "post": {
@@ -4996,7 +5147,7 @@
         },
         "summary": "Create Target",
         "tags": [
-          "AIOps Config"
+          "AIOps"
         ]
       }
     },
@@ -5039,7 +5190,7 @@
         },
         "summary": "Get Target",
         "tags": [
-          "AIOps Config"
+          "AIOps"
         ]
       },
       "patch": {
@@ -5106,7 +5257,7 @@
         },
         "summary": "Patch Target",
         "tags": [
-          "AIOps Config"
+          "AIOps"
         ]
       }
     },
@@ -5174,7 +5325,7 @@
         },
         "summary": "Activate Target",
         "tags": [
-          "AIOps Config"
+          "AIOps"
         ]
       }
     },
@@ -5221,7 +5372,7 @@
         },
         "summary": "List Agent Bindings",
         "tags": [
-          "AIOps Config"
+          "AIOps"
         ]
       },
       "post": {
@@ -5281,7 +5432,7 @@
         },
         "summary": "Create Agent Binding",
         "tags": [
-          "AIOps Config"
+          "AIOps"
         ]
       }
     },
@@ -5360,7 +5511,7 @@
         },
         "summary": "Patch Agent Binding",
         "tags": [
-          "AIOps Config"
+          "AIOps"
         ]
       }
     },
@@ -5451,7 +5602,7 @@
         },
         "summary": "Command Agent Binding",
         "tags": [
-          "AIOps Config"
+          "AIOps"
         ]
       }
     },
@@ -5519,7 +5670,7 @@
         },
         "summary": "Disable Target",
         "tags": [
-          "AIOps Config"
+          "AIOps"
         ]
       }
     },
@@ -5587,7 +5738,7 @@
         },
         "summary": "Maintain Target",
         "tags": [
-          "AIOps Config"
+          "AIOps"
         ]
       }
     },
@@ -5634,7 +5785,7 @@
         },
         "summary": "List Monitor Bindings",
         "tags": [
-          "AIOps Config"
+          "AIOps"
         ]
       },
       "post": {
@@ -5694,7 +5845,7 @@
         },
         "summary": "Create Monitor Binding",
         "tags": [
-          "AIOps Config"
+          "AIOps"
         ]
       }
     },
@@ -5773,7 +5924,7 @@
         },
         "summary": "Patch Monitor Binding",
         "tags": [
-          "AIOps Config"
+          "AIOps"
         ]
       }
     },
@@ -5864,7 +6015,7 @@
         },
         "summary": "Command Monitor Binding",
         "tags": [
-          "AIOps Config"
+          "AIOps"
         ]
       }
     }

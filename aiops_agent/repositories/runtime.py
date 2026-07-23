@@ -4,7 +4,7 @@ from collections.abc import Callable, Collection
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import Select, func, select, update
+from sqlalchemy import Select, func, literal_column, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aiops_agent.application.errors import StateConflictError
@@ -28,6 +28,18 @@ class OpsRunRepository(AIOpsRepository):
 
     async def add_run(self, entity: OpsRunEntity) -> OpsRunEntity:
         return await self._add(entity)
+
+    async def database_now(self) -> datetime:
+        """读取 Oracle Session 的 UTC 数据库时间。"""
+        self._check_active()
+        value = (
+            await self._session.execute(
+                select(literal_column("CURRENT_TIMESTAMP"))
+            )
+        ).scalar_one()
+        if value.tzinfo is None or value.utcoffset() is None:
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)
 
     async def add_task(self, entity: OpsTaskEntity) -> OpsTaskEntity:
         return await self._add(entity)
@@ -98,12 +110,42 @@ class OpsRunRepository(AIOpsRepository):
             statement = statement.with_for_update()
         return (await self._session.execute(statement)).scalar_one_or_none()
 
-    async def list_tasks(self, *, ops_run_id: UUID) -> list[OpsTaskEntity]:
+    async def get_run(
+        self,
+        *,
+        ops_run_id: UUID,
+        lock: bool = False,
+        skip_locked: bool = False,
+    ) -> OpsRunEntity | None:
+        self._check_active()
+        statement: Select = select(OpsRunEntity).where(
+            OpsRunEntity.ops_run_id == ops_run_id
+        )
+        if lock:
+            statement = statement.with_for_update(skip_locked=skip_locked)
+        return (await self._session.execute(statement)).scalar_one_or_none()
+
+    async def list_tasks(
+        self, *, ops_run_id: UUID, lock: bool = False
+    ) -> list[OpsTaskEntity]:
         self._check_active()
         statement = (
             select(OpsTaskEntity)
             .where(OpsTaskEntity.ops_run_id == ops_run_id)
-            .order_by(OpsTaskEntity.created_at, OpsTaskEntity.ops_task_id)
+            .order_by(OpsTaskEntity.ops_task_id)
+        )
+        if lock:
+            statement = statement.with_for_update()
+        return list((await self._session.execute(statement)).scalars())
+
+    async def list_artifacts(
+        self, *, ops_run_id: UUID
+    ) -> list[OpsArtifactEntity]:
+        self._check_active()
+        statement = (
+            select(OpsArtifactEntity)
+            .where(OpsArtifactEntity.ops_run_id == ops_run_id)
+            .order_by(OpsArtifactEntity.artifact_key)
         )
         return list((await self._session.execute(statement)).scalars())
 
@@ -119,6 +161,27 @@ class OpsRunRepository(AIOpsRepository):
             OpsArtifactEntity.artifact_key == artifact_key,
         )
         return (await self._session.execute(statement)).scalar_one_or_none()
+
+    async def get_event_by_key(
+        self, *, ops_run_id: UUID, event_key: str
+    ) -> OpsRunEventEntity | None:
+        self._check_active()
+        statement = select(OpsRunEventEntity).where(
+            OpsRunEventEntity.ops_run_id == ops_run_id,
+            OpsRunEventEntity.event_key == event_key,
+        )
+        return (await self._session.execute(statement)).scalar_one_or_none()
+
+    async def latest_event_sequence(self, *, ops_run_id: UUID) -> int:
+        self._check_active()
+        value = (
+            await self._session.execute(
+                select(
+                    func.coalesce(func.max(OpsRunEventEntity.sequence_no), 0)
+                ).where(OpsRunEventEntity.ops_run_id == ops_run_id)
+            )
+        ).scalar_one()
+        return int(value)
 
     async def transition_run(
         self,
@@ -159,83 +222,249 @@ class OpsRunRepository(AIOpsRepository):
         lease_token: UUID,
         lease_until: datetime,
     ) -> OpsTaskEntity | None:
-        """锁定一个 READY Task 并写入本次唯一租约。"""
-        claimed_id = await self._claim_oracle_uuid(
-            plsql="""
-                DECLARE
-                    CURSOR c_claim IS
-                        SELECT t.OPS_TASK_ID
-                        FROM KBOT_OPS_TASK t
-                        JOIN KBOT_OPS_RUN r
-                          ON r.OPS_RUN_ID = t.OPS_RUN_ID
-                        WHERE t.STATUS = 'READY'
-                          AND t.AVAILABLE_AT <= SYSTIMESTAMP
-                          AND t.ATTEMPT_COUNT < t.MAX_ATTEMPTS
-                          AND r.STATUS NOT IN (
-                              'COMPLETED', 'DEGRADED', 'REJECTED',
-                              'FAILED', 'CANCELLED', 'EXPIRED'
-                          )
-                          AND r.CANCEL_REQUESTED_AT IS NULL
-                          AND (
-                              r.DEADLINE_AT IS NULL
-                              OR r.DEADLINE_AT > SYSTIMESTAMP
-                          )
-                        ORDER BY
-                            t.AVAILABLE_AT,
-                            t.PRIORITY,
-                            t.OPS_TASK_ID
-                        FOR UPDATE OF t.OPS_TASK_ID SKIP LOCKED;
-                BEGIN
-                    :claimed_id := NULL;
-                    OPEN c_claim;
-                    FETCH c_claim INTO :claimed_id;
-                    CLOSE c_claim;
-                END;
-            """,
-            parameters={},
+        """候选查询不持锁，真正领取严格按 Run → Task 加锁。"""
+        self._check_active()
+        candidates = list(
+            (
+                await self._session.execute(
+                    select(
+                        OpsTaskEntity.ops_task_id,
+                        OpsTaskEntity.ops_run_id,
+                    )
+                    .join(
+                        OpsRunEntity,
+                        OpsRunEntity.ops_run_id
+                        == OpsTaskEntity.ops_run_id,
+                    )
+                    .where(
+                        OpsTaskEntity.status == "READY",
+                        OpsTaskEntity.available_at
+                        <= literal_column("SYSTIMESTAMP"),
+                        OpsTaskEntity.attempt_count
+                        < OpsTaskEntity.max_attempts,
+                        OpsRunEntity.status.not_in(
+                            (
+                                "COMPLETED",
+                                "DEGRADED",
+                                "REJECTED",
+                                "FAILED",
+                                "CANCELLED",
+                                "EXPIRED",
+                            )
+                        ),
+                        OpsRunEntity.cancel_requested_at.is_(None),
+                        or_(
+                            OpsRunEntity.deadline_at.is_(None),
+                            OpsRunEntity.deadline_at
+                            > literal_column("SYSTIMESTAMP"),
+                        ),
+                    )
+                    .order_by(
+                        OpsTaskEntity.available_at,
+                        OpsTaskEntity.priority,
+                        OpsTaskEntity.ops_task_id,
+                    )
+                    .limit(16)
+                )
+            ).all()
         )
-        if claimed_id is None:
-            return None
-        entity = await self.get_task(ops_task_id=claimed_id)
-        if entity is None:
-            raise StateConflictError(f"领取后的 Ops Task 不存在：{claimed_id}")
-        entity.status = "RUNNING"
-        entity.lease_owner = lease_owner
-        entity.lease_token = lease_token
-        entity.lease_until = lease_until
-        entity.heartbeat_at = now
-        entity.started_at = entity.started_at or now
-        entity.attempt_count = int(entity.attempt_count) + 1
-        await self._session.flush()
-        return entity
+        for task_id, run_id in candidates:
+            run = await self.get_run(
+                ops_run_id=run_id, lock=True, skip_locked=True
+            )
+            if (
+                run is None
+                or run.cancel_requested_at is not None
+                or run.status
+                in {
+                    "COMPLETED",
+                    "DEGRADED",
+                    "REJECTED",
+                    "FAILED",
+                    "CANCELLED",
+                    "EXPIRED",
+                }
+                or (
+                    run.deadline_at is not None
+                    and run.deadline_at <= now
+                )
+            ):
+                continue
+            entity = (
+                await self._session.execute(
+                    select(OpsTaskEntity)
+                    .where(OpsTaskEntity.ops_task_id == task_id)
+                    .with_for_update(skip_locked=True)
+                )
+            ).scalar_one_or_none()
+            if (
+                entity is None
+                or entity.status != "READY"
+                or entity.available_at > now
+                or int(entity.attempt_count) >= int(entity.max_attempts)
+            ):
+                continue
+            entity.status = "RUNNING"
+            entity.lease_owner = lease_owner
+            entity.lease_token = lease_token
+            entity.lease_until = lease_until
+            entity.heartbeat_at = now
+            entity.started_at = entity.started_at or now
+            entity.attempt_count = int(entity.attempt_count) + 1
+            entity.error_code = None
+            entity.error_message = None
+            await self._session.flush()
+            return entity
+        return None
 
     async def lock_expired_task(
         self, *, now: datetime
     ) -> OpsTaskEntity | None:
-        """供 Reconciler 锁定过期任务；本方法不直接重新领取。"""
-        claimed_id = await self._claim_oracle_uuid(
-            plsql="""
-                DECLARE
-                    CURSOR c_claim IS
-                        SELECT OPS_TASK_ID
-                        FROM KBOT_OPS_TASK
-                        WHERE STATUS = 'RUNNING'
-                          AND LEASE_UNTIL IS NOT NULL
-                          AND LEASE_UNTIL <= SYSTIMESTAMP
-                        ORDER BY LEASE_UNTIL, OPS_TASK_ID
-                        FOR UPDATE OF OPS_TASK_ID SKIP LOCKED;
-                BEGIN
-                    :claimed_id := NULL;
-                    OPEN c_claim;
-                    FETCH c_claim INTO :claimed_id;
-                    CLOSE c_claim;
-                END;
-            """,
-            parameters={},
-        )
-        if claimed_id is None:
-            return None
-        return await self.get_task(ops_task_id=claimed_id)
+        """供 Reconciler 按 Run → Task 锁定一个过期租约。"""
+        self._check_active()
+        candidates = (
+            await self._session.execute(
+                select(
+                    OpsTaskEntity.ops_task_id,
+                    OpsTaskEntity.ops_run_id,
+                )
+                .where(
+                    OpsTaskEntity.status == "RUNNING",
+                    OpsTaskEntity.lease_until.is_not(None),
+                    OpsTaskEntity.lease_until
+                    <= literal_column("SYSTIMESTAMP"),
+                )
+                .order_by(
+                    OpsTaskEntity.lease_until,
+                    OpsTaskEntity.ops_task_id,
+                )
+                .limit(16)
+            )
+        ).all()
+        for task_id, run_id in candidates:
+            run = await self.get_run(
+                ops_run_id=run_id, lock=True, skip_locked=True
+            )
+            if run is None:
+                continue
+            locked_tasks = await self.list_tasks(
+                ops_run_id=run_id, lock=True
+            )
+            task = next(
+                (
+                    item
+                    for item in locked_tasks
+                    if item.ops_task_id == task_id
+                ),
+                None,
+            )
+            if (
+                task is not None
+                and task.status == "RUNNING"
+                and task.lease_until is not None
+                and task.lease_until <= now
+            ):
+                return task
+        return None
+
+    async def lock_due_retry_task(
+        self, *, now: datetime
+    ) -> OpsTaskEntity | None:
+        """按 Run → Task 锁定到期的 RETRY_WAIT Task。"""
+        self._check_active()
+        candidates = (
+            await self._session.execute(
+                select(
+                    OpsTaskEntity.ops_task_id,
+                    OpsTaskEntity.ops_run_id,
+                )
+                .where(
+                    OpsTaskEntity.status == "RETRY_WAIT",
+                    OpsTaskEntity.available_at
+                    <= literal_column("SYSTIMESTAMP"),
+                )
+                .order_by(
+                    OpsTaskEntity.available_at,
+                    OpsTaskEntity.ops_task_id,
+                )
+                .limit(16)
+            )
+        ).all()
+        for task_id, run_id in candidates:
+            run = await self.get_run(
+                ops_run_id=run_id, lock=True, skip_locked=True
+            )
+            if run is None:
+                continue
+            locked_tasks = await self.list_tasks(
+                ops_run_id=run_id, lock=True
+            )
+            task = next(
+                (
+                    item
+                    for item in locked_tasks
+                    if item.ops_task_id == task_id
+                ),
+                None,
+            )
+            if (
+                task is not None
+                and task.status == "RETRY_WAIT"
+                and task.available_at <= now
+            ):
+                return task
+        return None
+
+    async def lock_due_run(
+        self, *, now: datetime
+    ) -> OpsRunEntity | None:
+        """锁定一个已到 Deadline 的非终态 Run。"""
+        self._check_active()
+        candidates = (
+            await self._session.execute(
+                select(OpsRunEntity.ops_run_id)
+                .where(
+                    OpsRunEntity.status.not_in(
+                        (
+                            "COMPLETED",
+                            "DEGRADED",
+                            "REJECTED",
+                            "FAILED",
+                            "CANCELLED",
+                            "EXPIRED",
+                        )
+                    ),
+                    OpsRunEntity.deadline_at.is_not(None),
+                    OpsRunEntity.deadline_at
+                    <= literal_column("SYSTIMESTAMP"),
+                )
+                .order_by(
+                    OpsRunEntity.deadline_at,
+                    OpsRunEntity.ops_run_id,
+                )
+                .limit(16)
+            )
+        ).scalars()
+        for run_id in candidates:
+            run = await self.get_run(
+                ops_run_id=run_id, lock=True, skip_locked=True
+            )
+            if (
+                run is not None
+                and run.deadline_at is not None
+                and run.deadline_at <= now
+                and run.status
+                not in {
+                    "COMPLETED",
+                    "DEGRADED",
+                    "REJECTED",
+                    "FAILED",
+                    "CANCELLED",
+                    "EXPIRED",
+                }
+            ):
+                return run
+        return None
 
     async def heartbeat_task(
         self,

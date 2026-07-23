@@ -135,15 +135,14 @@ class AIOpsEntityContractTest(unittest.TestCase):
             inspect.getsource(repository)
             for repository in claim_repositories
         )
-        self.assertGreaterEqual(
-            source.count("FOR UPDATE OF"),
-            4,
-        )
+        self.assertGreaterEqual(source.count("FOR UPDATE OF"), 2)
         self.assertGreaterEqual(
             source.count("FETCH c_claim INTO :claimed_id"),
-            4,
+            2,
         )
-        self.assertNotIn(".limit(1)", source)
+        runtime_source = inspect.getsource(OpsRunRepository)
+        self.assertIn("with_for_update(skip_locked=True)", runtime_source)
+        self.assertIn("候选查询不持锁", runtime_source)
 
 
 class AIOpsUnitOfWorkTest(unittest.IsolatedAsyncioTestCase):

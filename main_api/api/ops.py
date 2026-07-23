@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
 from typing import Annotated, Literal, TypeVar, cast
 from uuid import UUID
 
@@ -16,6 +18,7 @@ from fastapi import (
     status,
 )
 from pydantic import BaseModel
+from starlette.responses import StreamingResponse
 
 from platform_clients.aiops import AIOpsManagementClient
 from platform_core.contracts import PUBLIC_API_V1
@@ -23,6 +26,7 @@ from platform_core.contracts.aiops import (
     AgentBindingCreate,
     AgentBindingPatch,
     AgentBindingView,
+    CancelRunCommand,
     HealthCheckReceipt,
     InspectionPlanCreate,
     InspectionPlanDetail,
@@ -38,6 +42,10 @@ from platform_core.contracts.aiops import (
     MonitorSourceDetail,
     MonitorSourcePage,
     MonitorSourcePatch,
+    OpsCommand,
+    OpsRunCreate,
+    OpsRunReceipt,
+    OpsRunSummary,
     PolicyCreate,
     PolicyDetail,
     PolicyPage,
@@ -47,9 +55,11 @@ from platform_core.contracts.aiops import (
     TargetPatch,
     WebhookKeyRotation,
 )
+from platform_core.contracts.aiops.internal import CreateOpsRunCommand
+from platform_core.identity import uuid7
 
 
-router = APIRouter(prefix=f"{PUBLIC_API_V1}/ops", tags=["AIOps Config"])
+router = APIRouter(prefix=f"{PUBLIC_API_V1}/ops", tags=["AIOps"])
 IdempotencyKey = Annotated[str, Header(alias="Idempotency-Key")]
 ModelT = TypeVar("ModelT", bound=BaseModel)
 
@@ -85,6 +95,155 @@ def _validated(
     if response is not None and row_version is not None:
         response.headers["ETag"] = f'"rv-{int(row_version)}"'
     return result
+
+
+@router.post("/runs", response_model=OpsRunReceipt, status_code=201)
+async def create_ops_run(
+    body: OpsRunCreate,
+    request: Request,
+    response: Response,
+    idempotency_key: IdempotencyKey,
+) -> OpsRunReceipt:
+    context = request.state.auth_context
+    command = CreateOpsRunCommand(
+        command_id=uuid7(),
+        idempotency_key=idempotency_key,
+        app_id=request.app.state.main_api_settings.platform.app_id,
+        domain_id=int(context.domain_id),
+        actor_id=context.asserted_user_id or context.client_id,
+        agent_id=body.agent_id,
+        target_id=body.target_id,
+        trigger_type="CHAT",
+        input=body.input,
+        session_id=body.session_id,
+        client_metadata={
+            **body.client_metadata,
+            "trace_id": context.trace_id,
+        },
+    )
+    payload = await _client(request).create_run(
+        command, auth_context=context
+    )
+    result = OpsRunReceipt(
+        **payload,
+        events_url=(
+            f"{PUBLIC_API_V1}/ops/runs/{payload['ops_run_id']}/events"
+        ),
+    )
+    response.headers["ETag"] = f'"rv-{result.row_version}"'
+    return result
+
+
+@router.get("/runs/{run_id}", response_model=OpsRunSummary)
+async def get_ops_run(
+    run_id: UUID, request: Request, response: Response
+) -> OpsRunSummary:
+    payload = await _client(request).get_run(
+        run_id, auth_context=request.state.auth_context
+    )
+    result = OpsRunSummary.model_validate(payload)
+    response.headers["ETag"] = f'"rv-{result.row_version}"'
+    return result
+
+
+@router.post("/runs/{run_id}/cancel", response_model=OpsRunReceipt)
+async def cancel_ops_run(
+    run_id: UUID,
+    request: Request,
+    response: Response,
+    idempotency_key: IdempotencyKey,
+    if_match: IfMatch,
+) -> OpsRunReceipt:
+    try:
+        expected = int(
+            if_match.removeprefix('"rv-').removesuffix('"')
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "OPS_ETAG_INVALID",
+                "message": "If-Match 格式必须为 \"rv-<version>\"",
+            },
+        ) from exc
+    command = OpsCommand(
+        command_id=uuid7(),
+        idempotency_key=idempotency_key,
+        ops_run_id=run_id,
+        command=CancelRunCommand(expected_row_version=expected),
+    )
+    payload = await _client(request).command(
+        command, auth_context=request.state.auth_context
+    )
+    result = OpsRunReceipt(
+        **payload,
+        events_url=f"{PUBLIC_API_V1}/ops/runs/{run_id}/events",
+    )
+    response.headers["ETag"] = f'"rv-{result.row_version}"'
+    return result
+
+
+@router.get("/runs/{run_id}/events")
+async def stream_ops_run_events(
+    run_id: UUID,
+    request: Request,
+    last_event_id: str | None = Header(
+        default=None, alias="Last-Event-ID"
+    ),
+) -> StreamingResponse:
+    try:
+        cursor = int(last_event_id or "0")
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "OPS_EVENT_CURSOR_INVALID",
+                "message": "Last-Event-ID 必须是非负整数",
+            },
+        ) from exc
+    if cursor < 0:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "OPS_EVENT_CURSOR_INVALID",
+                "message": "Last-Event-ID 不能为负数",
+            },
+        )
+    context = request.state.auth_context
+    client = _client(request)
+
+    async def generate():
+        nonlocal cursor
+        while not await request.is_disconnected():
+            page = await client.list_run_events(
+                run_id,
+                after_sequence=cursor,
+                limit=200,
+                auth_context=context,
+            )
+            for event in page["events"]:
+                cursor = int(event["sequence_no"])
+                yield (
+                    f"id: {cursor}\n"
+                    f"event: {event['event_type']}\n"
+                    f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+                )
+            if page.get("terminal"):
+                yield (
+                    "event: done\n"
+                    f"data: {json.dumps({'sequence_no': cursor})}\n\n"
+                )
+                return
+            await asyncio.sleep(1)
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.post("/targets", response_model=TargetDetail, status_code=201)

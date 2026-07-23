@@ -211,3 +211,54 @@ class OutboxRepository(AIOpsRepository):
         )
         result = await self._session.execute(statement)
         return result.rowcount == 1
+
+    async def recover_expired(
+        self,
+        *,
+        now: datetime,
+        available_at: datetime,
+    ) -> bool:
+        """回收崩溃 Dispatcher 遗留的过期发布租约。"""
+        self._check_active()
+        claimed_id = await self._claim_oracle_uuid(
+            plsql="""
+                DECLARE
+                    CURSOR c_claim IS
+                        SELECT OUTBOX_ID
+                        FROM KBOT_OPS_OUTBOX
+                        WHERE STATUS = 'PUBLISHING'
+                          AND LEASE_UNTIL <= SYSTIMESTAMP
+                        ORDER BY LEASE_UNTIL, OUTBOX_ID
+                        FOR UPDATE OF OUTBOX_ID SKIP LOCKED;
+                BEGIN
+                    :claimed_id := NULL;
+                    OPEN c_claim;
+                    FETCH c_claim INTO :claimed_id;
+                    CLOSE c_claim;
+                END;
+            """,
+            parameters={},
+        )
+        if claimed_id is None:
+            return False
+        entity = (
+            await self._session.execute(
+                select(OutboxEntity).where(
+                    OutboxEntity.outbox_id == claimed_id
+                )
+            )
+        ).scalar_one()
+        entity.status = (
+            "RETRY_WAIT"
+            if int(entity.attempt_count) < int(entity.max_attempts)
+            else "FAILED"
+        )
+        entity.available_at = available_at
+        entity.lease_owner = None
+        entity.lease_token = None
+        entity.lease_until = None
+        entity.error_code = "OUTBOX_LEASE_EXPIRED"
+        entity.error_message = "Dispatcher 发布租约过期"
+        entity.updated_at = now
+        await self._session.flush()
+        return True

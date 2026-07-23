@@ -406,6 +406,83 @@
         "title": "ApproveProposalCommand",
         "type": "object"
       },
+      "ArtifactInput": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact_type": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Artifact Type",
+            "type": "string"
+          },
+          "payload": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payload"
+          },
+          "payload_uri": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payload Uri"
+          },
+          "producer": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Producer",
+            "type": "string"
+          },
+          "producer_version": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Producer Version",
+            "type": "string"
+          },
+          "provenance": {
+            "additionalProperties": true,
+            "title": "Provenance",
+            "type": "object"
+          },
+          "schema_version": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "security_level": {
+            "default": 1,
+            "maximum": 999.0,
+            "minimum": 0.0,
+            "title": "Security Level",
+            "type": "integer"
+          },
+          "trust_level": {
+            "default": "SOURCE_VERIFIED",
+            "maxLength": 24,
+            "minLength": 1,
+            "title": "Trust Level",
+            "type": "string"
+          }
+        },
+        "required": [
+          "artifact_type",
+          "schema_version",
+          "producer",
+          "producer_version"
+        ],
+        "title": "ArtifactInput",
+        "type": "object"
+      },
       "ArtifactRef": {
         "additionalProperties": false,
         "properties": {
@@ -501,6 +578,92 @@
         "title": "CancelRunCommand",
         "type": "object"
       },
+      "ClaimOpsTaskCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "lease_seconds": {
+            "maximum": 3600.0,
+            "minimum": 15.0,
+            "title": "Lease Seconds",
+            "type": "integer"
+          },
+          "schema_version": {
+            "default": "aiops.internal.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "trace_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Trace Id",
+            "type": "string"
+          },
+          "worker_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Worker Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "worker_id",
+          "lease_seconds",
+          "trace_id"
+        ],
+        "title": "ClaimOpsTaskCommand",
+        "type": "object"
+      },
+      "CompleteOpsTaskCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact": {
+            "$ref": "#/components/schemas/ArtifactInput"
+          },
+          "idempotency_key": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Idempotency Key",
+            "type": "string"
+          },
+          "lease_token": {
+            "format": "uuid",
+            "title": "Lease Token",
+            "type": "string"
+          },
+          "schema_version": {
+            "default": "aiops.internal.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "task_id": {
+            "format": "uuid",
+            "title": "Task Id",
+            "type": "string"
+          },
+          "trace_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Trace Id",
+            "type": "string"
+          },
+          "worker_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Worker Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id",
+          "worker_id",
+          "lease_token",
+          "idempotency_key",
+          "trace_id",
+          "artifact"
+        ],
+        "title": "CompleteOpsTaskCommand",
+        "type": "object"
+      },
       "CreateOpsRunCommand": {
         "additionalProperties": false,
         "properties": {
@@ -543,13 +706,12 @@
             "title": "Deadline"
           },
           "domain_id": {
-            "maxLength": 128,
-            "minLength": 1,
+            "minimum": 1.0,
             "title": "Domain Id",
-            "type": "string"
+            "type": "integer"
           },
           "idempotency_key": {
-            "maxLength": 256,
+            "maxLength": 128,
             "minLength": 1,
             "title": "Idempotency Key",
             "type": "string"
@@ -894,6 +1056,60 @@
         "title": "ExecutionStatusEvent",
         "type": "object"
       },
+      "FailOpsTaskCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "error_code": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Error Code",
+            "type": "string"
+          },
+          "idempotency_key": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Idempotency Key",
+            "type": "string"
+          },
+          "lease_token": {
+            "format": "uuid",
+            "title": "Lease Token",
+            "type": "string"
+          },
+          "schema_version": {
+            "default": "aiops.internal.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "task_id": {
+            "format": "uuid",
+            "title": "Task Id",
+            "type": "string"
+          },
+          "trace_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Trace Id",
+            "type": "string"
+          },
+          "worker_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Worker Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id",
+          "worker_id",
+          "lease_token",
+          "idempotency_key",
+          "trace_id",
+          "error_code"
+        ],
+        "title": "FailOpsTaskCommand",
+        "type": "object"
+      },
       "FinalDiagnosisRef": {
         "additionalProperties": false,
         "properties": {
@@ -979,6 +1195,46 @@
           "health_version"
         ],
         "title": "HealthCheckReceipt",
+        "type": "object"
+      },
+      "HeartbeatOpsTaskCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "lease_seconds": {
+            "maximum": 3600.0,
+            "minimum": 15.0,
+            "title": "Lease Seconds",
+            "type": "integer"
+          },
+          "lease_token": {
+            "format": "uuid",
+            "title": "Lease Token",
+            "type": "string"
+          },
+          "schema_version": {
+            "default": "aiops.internal.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "task_id": {
+            "format": "uuid",
+            "title": "Task Id",
+            "type": "string"
+          },
+          "worker_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Worker Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id",
+          "worker_id",
+          "lease_token",
+          "lease_seconds"
+        ],
+        "title": "HeartbeatOpsTaskCommand",
         "type": "object"
       },
       "HitlType": {
@@ -1667,6 +1923,79 @@
           "updated_at"
         ],
         "title": "InspectionTargetView",
+        "type": "object"
+      },
+      "LeasedArtifact": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact_id": {
+            "format": "uuid",
+            "title": "Artifact Id",
+            "type": "string"
+          },
+          "artifact_key": {
+            "title": "Artifact Key",
+            "type": "string"
+          },
+          "artifact_type": {
+            "title": "Artifact Type",
+            "type": "string"
+          },
+          "content_hash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Content Hash",
+            "type": "string"
+          },
+          "payload": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payload"
+          },
+          "payload_uri": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payload Uri"
+          },
+          "provenance": {
+            "additionalProperties": true,
+            "title": "Provenance",
+            "type": "object"
+          },
+          "schema_version": {
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "security_level": {
+            "maximum": 999.0,
+            "minimum": 0.0,
+            "title": "Security Level",
+            "type": "integer"
+          },
+          "trust_level": {
+            "title": "Trust Level",
+            "type": "string"
+          }
+        },
+        "required": [
+          "artifact_id",
+          "artifact_key",
+          "artifact_type",
+          "schema_version",
+          "content_hash",
+          "trust_level",
+          "security_level"
+        ],
+        "title": "LeasedArtifact",
         "type": "object"
       },
       "MonitorBindingCreate": {
@@ -2485,6 +2814,87 @@
         "title": "OpsCommand",
         "type": "object"
       },
+      "OpsRunEventPage": {
+        "additionalProperties": false,
+        "properties": {
+          "events": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/OpsRunEventView"
+            },
+            "title": "Events",
+            "type": "array"
+          },
+          "next_sequence": {
+            "minimum": 0.0,
+            "title": "Next Sequence",
+            "type": "integer"
+          },
+          "schema_version": {
+            "default": "aiops.internal.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "terminal": {
+            "default": false,
+            "title": "Terminal",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "next_sequence"
+        ],
+        "title": "OpsRunEventPage",
+        "type": "object"
+      },
+      "OpsRunEventView": {
+        "additionalProperties": false,
+        "properties": {
+          "event_type": {
+            "title": "Event Type",
+            "type": "string"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "ops_run_id": {
+            "format": "uuid",
+            "title": "Ops Run Id",
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          },
+          "schema_version": {
+            "default": "aiops.internal.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "sequence_no": {
+            "minimum": 1.0,
+            "title": "Sequence No",
+            "type": "integer"
+          },
+          "visibility": {
+            "title": "Visibility",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ops_run_id",
+          "sequence_no",
+          "event_type",
+          "visibility",
+          "payload",
+          "occurred_at"
+        ],
+        "title": "OpsRunEventView",
+        "type": "object"
+      },
       "OpsRunReceipt": {
         "additionalProperties": false,
         "properties": {
@@ -2524,16 +2934,109 @@
       "OpsRunStatus": {
         "enum": [
           "CREATED",
-          "RUNNING",
+          "SCOPING",
+          "OBSERVING",
+          "DIAGNOSING",
           "WAITING_INPUT",
+          "DIAGNOSED",
+          "PROPOSING",
           "WAITING_APPROVAL",
+          "EXECUTING",
+          "VERIFYING",
+          "ROLLBACK_PENDING",
           "COMPLETED",
+          "DEGRADED",
+          "REJECTED",
           "FAILED",
           "CANCELLED",
           "EXPIRED"
         ],
         "title": "OpsRunStatus",
         "type": "string"
+      },
+      "OpsRunSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "agent_id": {
+            "format": "uuid",
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "final_artifact": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ArtifactRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ops_run_id": {
+            "format": "uuid",
+            "title": "Ops Run Id",
+            "type": "string"
+          },
+          "root_cause_grade": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RootCauseGrade"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "row_version": {
+            "minimum": 1.0,
+            "title": "Row Version",
+            "type": "integer"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/OpsRunStatus"
+          },
+          "target_id": {
+            "format": "uuid",
+            "title": "Target Id",
+            "type": "string"
+          },
+          "trigger_type": {
+            "$ref": "#/components/schemas/TriggerType"
+          }
+        },
+        "required": [
+          "ops_run_id",
+          "agent_id",
+          "target_id",
+          "trigger_type",
+          "status",
+          "row_version",
+          "created_at"
+        ],
+        "title": "OpsRunSummary",
+        "type": "object"
       },
       "PolicyCreate": {
         "additionalProperties": false,
@@ -2974,6 +3477,16 @@
         ],
         "title": "ResourceRef",
         "type": "object"
+      },
+      "RootCauseGrade": {
+        "enum": [
+          "CONFIRMED",
+          "PROBABLE",
+          "POSSIBLE",
+          "INCONCLUSIVE"
+        ],
+        "title": "RootCauseGrade",
+        "type": "string"
       },
       "RootDelegationReceipt": {
         "additionalProperties": false,
@@ -3888,6 +4401,214 @@
           "updated_at"
         ],
         "title": "TargetSummary",
+        "type": "object"
+      },
+      "TaskLease": {
+        "additionalProperties": false,
+        "properties": {
+          "actor_id": {
+            "title": "Actor Id",
+            "type": "string"
+          },
+          "agent_id": {
+            "format": "uuid",
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "attempt": {
+            "minimum": 1.0,
+            "title": "Attempt",
+            "type": "integer"
+          },
+          "deadline_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deadline At"
+          },
+          "handler_id": {
+            "title": "Handler Id",
+            "type": "string"
+          },
+          "handler_version": {
+            "title": "Handler Version",
+            "type": "string"
+          },
+          "input_artifacts": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/LeasedArtifact"
+            },
+            "title": "Input Artifacts",
+            "type": "array"
+          },
+          "input_schema_version": {
+            "title": "Input Schema Version",
+            "type": "string"
+          },
+          "lease_token": {
+            "format": "uuid",
+            "title": "Lease Token",
+            "type": "string"
+          },
+          "lease_until": {
+            "format": "date-time",
+            "title": "Lease Until",
+            "type": "string"
+          },
+          "original_request": {
+            "title": "Original Request",
+            "type": "string"
+          },
+          "output_schema_version": {
+            "title": "Output Schema Version",
+            "type": "string"
+          },
+          "plan_snapshot": {
+            "additionalProperties": true,
+            "title": "Plan Snapshot",
+            "type": "object"
+          },
+          "policy_snapshot": {
+            "additionalProperties": true,
+            "title": "Policy Snapshot",
+            "type": "object"
+          },
+          "row_version": {
+            "minimum": 1.0,
+            "title": "Row Version",
+            "type": "integer"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "schema_version": {
+            "default": "aiops.internal.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "target_id": {
+            "format": "uuid",
+            "title": "Target Id",
+            "type": "string"
+          },
+          "task_id": {
+            "format": "uuid",
+            "title": "Task Id",
+            "type": "string"
+          },
+          "task_key": {
+            "title": "Task Key",
+            "type": "string"
+          },
+          "task_type": {
+            "title": "Task Type",
+            "type": "string"
+          },
+          "timeout_seconds": {
+            "minimum": 1.0,
+            "title": "Timeout Seconds",
+            "type": "integer"
+          },
+          "trace_id": {
+            "title": "Trace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id",
+          "run_id",
+          "task_key",
+          "task_type",
+          "handler_id",
+          "handler_version",
+          "input_schema_version",
+          "output_schema_version",
+          "lease_token",
+          "lease_until",
+          "attempt",
+          "timeout_seconds",
+          "row_version",
+          "target_id",
+          "agent_id",
+          "actor_id",
+          "trace_id",
+          "original_request"
+        ],
+        "title": "TaskLease",
+        "type": "object"
+      },
+      "TaskMutationReceipt": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artifact Id"
+          },
+          "event_cursor": {
+            "minimum": 1.0,
+            "title": "Event Cursor",
+            "type": "integer"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "run_row_version": {
+            "minimum": 1.0,
+            "title": "Run Row Version",
+            "type": "integer"
+          },
+          "run_status": {
+            "$ref": "#/components/schemas/OpsRunStatus"
+          },
+          "schema_version": {
+            "default": "aiops.internal.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "task_id": {
+            "format": "uuid",
+            "title": "Task Id",
+            "type": "string"
+          },
+          "task_row_version": {
+            "minimum": 1.0,
+            "title": "Task Row Version",
+            "type": "integer"
+          },
+          "task_status": {
+            "title": "Task Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id",
+          "run_id",
+          "task_status",
+          "run_status",
+          "task_row_version",
+          "run_row_version",
+          "event_cursor"
+        ],
+        "title": "TaskMutationReceipt",
         "type": "object"
       },
       "TaskStatusEvent": {
@@ -6605,7 +7326,7 @@
           "required": true
         },
         "responses": {
-          "200": {
+          "201": {
             "content": {
               "application/json": {
                 "schema": {
@@ -6626,12 +7347,58 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Create Run"
+        "summary": "Create Run",
+        "tags": [
+          "AIOps Runtime"
+        ]
+      }
+    },
+    "/internal/v1/aiops/runs/{run_id}": {
+      "get": {
+        "operationId": "get_run_internal_v1_aiops_runs__run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsRunSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Run",
+        "tags": [
+          "AIOps Runtime"
+        ]
       }
     },
     "/internal/v1/aiops/runs/{run_id}/commands": {
       "post": {
-        "operationId": "run_command_internal_v1_aiops_runs__run_id__commands_post",
+        "operationId": "command_run_internal_v1_aiops_runs__run_id__commands_post",
         "parameters": [
           {
             "in": "path",
@@ -6658,7 +7425,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/OpsRunReceipt"
+                }
               }
             },
             "description": "Successful Response"
@@ -6674,7 +7443,248 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Run Command"
+        "summary": "Command Run",
+        "tags": [
+          "AIOps Runtime"
+        ]
+      }
+    },
+    "/internal/v1/aiops/runs/{run_id}/events": {
+      "get": {
+        "operationId": "list_events_internal_v1_aiops_runs__run_id__events_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "after",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "After",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsRunEventPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Events",
+        "tags": [
+          "AIOps Runtime"
+        ]
+      }
+    },
+    "/internal/v1/aiops/tasks/claim": {
+      "post": {
+        "operationId": "claim_task_internal_v1_aiops_tasks_claim_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClaimOpsTaskCommand"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/TaskLease"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Claim Task Internal V1 Aiops Tasks Claim Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Claim Task",
+        "tags": [
+          "AIOps Runtime"
+        ]
+      }
+    },
+    "/internal/v1/aiops/tasks/complete": {
+      "post": {
+        "operationId": "complete_task_internal_v1_aiops_tasks_complete_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompleteOpsTaskCommand"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskMutationReceipt"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Complete Task",
+        "tags": [
+          "AIOps Runtime"
+        ]
+      }
+    },
+    "/internal/v1/aiops/tasks/fail": {
+      "post": {
+        "operationId": "fail_task_internal_v1_aiops_tasks_fail_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FailOpsTaskCommand"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskMutationReceipt"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Fail Task",
+        "tags": [
+          "AIOps Runtime"
+        ]
+      }
+    },
+    "/internal/v1/aiops/tasks/heartbeat": {
+      "post": {
+        "operationId": "heartbeat_task_internal_v1_aiops_tasks_heartbeat_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HeartbeatOpsTaskCommand"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskLease"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Heartbeat Task",
+        "tags": [
+          "AIOps Runtime"
+        ]
       }
     }
   }

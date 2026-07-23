@@ -142,6 +142,14 @@ OpenAPI 快照通过。下一步进入步骤 4 确定性 Run 内核。
 
 **完成物：** AIOps API/Worker 可多副本运行的持久化执行内核。
 
+实施结果：固定 `kernel.observe-report@1` Blueprint、版本化 Handler Registry、
+Run/Task 单点状态机、`Run → Task` 锁序、Lease Token fencing、确定性 Retry、
+Deadline/取消 Reconciler、不可变 Artifact、严格序号 Event、Outbox Dispatcher、
+Internal API、Public Run/SSE 和 Worker 多循环均已完成。Oracle Session 与所有
+DDL 默认时间已统一为 UTC；真实 Oracle Smoke 已覆盖完整闭环、并发 Claim、取消
+收敛、过期接管、旧 Token 拒绝和并发幂等创建。下一步进入步骤 5
+监控接入与只观测闭环。
+
 ## 步骤 5：监控接入与只观测闭环
 
 详细设计见 [34_aiops_step5_monitoring_observe_loop.md](34_aiops_step5_monitoring_observe_loop.md)。

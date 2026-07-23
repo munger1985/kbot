@@ -5,6 +5,7 @@ from uuid import UUID
 from fastapi import FastAPI, HTTPException
 
 from aiops_agent.api.management import router as internal_config_router
+from aiops_agent.api.runtime import router as internal_runtime_router
 from main_api.api.ops import router as public_config_router
 from platform_core.contracts.aiops.executor import (
     ExecutionResultRef,
@@ -48,14 +49,6 @@ def create_public_contract_app() -> FastAPI:
     app = FastAPI(title="KBot AIOps Public Contract", version="1.0.0")
     app.include_router(public_config_router)
 
-    @app.post("/api/v1/ops/runs", response_model=OpsRunReceipt)
-    async def create_run(payload: OpsRunCreate):
-        _not_implemented()
-
-    @app.get("/api/v1/ops/runs/{run_id}", response_model=OpsRunSummary)
-    async def get_run(run_id: UUID):
-        _not_implemented()
-
     @app.post("/api/v1/ops/hitl/{hitl_id}/responses", response_model=HitlResult)
     async def answer_hitl(hitl_id: UUID, payload: HitlResponse):
         _not_implemented()
@@ -79,14 +72,7 @@ def create_internal_contract_app() -> FastAPI:
     """创建 AIOps API 内部调用契约快照 App。"""
     app = FastAPI(title="KBot AIOps Internal Contract", version="1.0.0")
     app.include_router(internal_config_router)
-
-    @app.post("/internal/v1/aiops/runs", response_model=InternalOpsRunReceipt)
-    async def create_run(payload: CreateOpsRunCommand):
-        _not_implemented()
-
-    @app.post("/internal/v1/aiops/runs/{run_id}/commands")
-    async def run_command(run_id: UUID, payload: OpsCommand):
-        _not_implemented()
+    app.include_router(internal_runtime_router)
 
     @app.post(
         "/internal/v1/aiops/delegations",

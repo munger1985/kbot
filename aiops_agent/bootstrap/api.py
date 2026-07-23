@@ -12,7 +12,9 @@ from loguru import logger
 from aiops_agent.adapters.agent_runtime import AgentRuntimeValidator
 from aiops_agent.adapters.secret_store import ConfiguredSecretStore
 from aiops_agent.api.management import router as management_router
+from aiops_agent.api.runtime import router as runtime_router
 from aiops_agent.application.configuration import AIOpsConfigurationService
+from aiops_agent.application.runtime import AIOpsRuntimeService
 from aiops_agent.application.configuration.common import SignedCursorCodec
 from aiops_agent.application.configuration.schedule import (
     InspectionTemplateRegistry,
@@ -25,6 +27,8 @@ from aiops_agent.bootstrap.common import (
 )
 from aiops_agent.config import AIOpsSettings, get_aiops_settings
 from aiops_agent.persistence import create_aiops_uow_factory
+from aiops_agent.orchestration import create_kernel_blueprint_registry
+from aiops_agent.workers import create_kernel_handler_registry
 from platform_core.database.oracle import create_database_runtime
 from platform_clients.agent_runtime import AgentRuntimeClient
 from platform_core.security import (
@@ -97,6 +101,15 @@ def create_aiops_api(
                 resolved.limits.max_targets_per_inspection_fire
             ),
         )
+        app.state.aiops_runtime_service = AIOpsRuntimeService(
+            uow_factory=runtime.uow_factory,
+            blueprint_registry=create_kernel_blueprint_registry(),
+            handler_registry=create_kernel_handler_registry(),
+            max_tasks_per_run=resolved.limits.max_tasks_per_run,
+            default_run_timeout_seconds=(
+                resolved.limits.run_timeout_seconds
+            ),
+        )
         await runtime.start()
         logger.info("正在启动 AIOps 配置管理 API")
         try:
@@ -147,6 +160,7 @@ def create_aiops_api(
         )
     )
     app.include_router(management_router)
+    app.include_router(runtime_router)
 
     @app.exception_handler(AIOpsApplicationError)
     async def application_error_handler(
@@ -164,7 +178,7 @@ def create_aiops_api(
             media_type="application/problem+json",
             content={
                 "type": f"urn:kbot:error:{exc.code.lower()}",
-                "title": "AIOps 配置请求失败",
+                "title": "AIOps 请求失败",
                 "status": exc.status_code,
                 "code": exc.code,
                 "detail": exc.message,

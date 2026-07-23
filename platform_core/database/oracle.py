@@ -7,6 +7,7 @@ does not create a process-global engine or expose a global session helper.
 
 from dataclasses import dataclass
 
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -57,6 +58,20 @@ def create_database_runtime(settings: Settings | None = None) -> DatabaseRuntime
         pool_use_lifo=sqlalchemy_config.pool_use_lifo,
         future=True,
     )
+
+    @event.listens_for(engine.sync_engine, "connect")
+    def configure_oracle_session(
+        dbapi_connection, connection_record
+    ) -> None:
+        """固定 Oracle Session 时区，保证租约与 Deadline 使用 UTC。"""
+        del connection_record
+        cursor = dbapi_connection.cursor()
+        try:
+            # Thin 驱动不支持返回命名时区，必须使用数字偏移。
+            cursor.execute("ALTER SESSION SET TIME_ZONE = '+00:00'")
+        finally:
+            cursor.close()
+
     return DatabaseRuntime(
         engine=engine,
         session_factory=async_sessionmaker(

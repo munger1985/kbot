@@ -1,5 +1,6 @@
-"""AIOps Worker 探针 Bootstrap。"""
+"""AIOps Task Worker、Reconciler 与 Outbox Bootstrap。"""
 
+import asyncio
 from contextlib import asynccontextmanager
 
 from loguru import logger
@@ -11,13 +12,22 @@ from aiops_agent.bootstrap.common import (
 )
 from aiops_agent.config import AIOpsSettings, get_aiops_settings
 from aiops_agent.persistence import create_aiops_uow_factory
+from aiops_agent.application.runtime import AIOpsRuntimeService
+from aiops_agent.orchestration import create_kernel_blueprint_registry
+from aiops_agent.workers import (
+    AIOpsOutboxDispatcher,
+    AIOpsReconciler,
+    AIOpsTaskWorker,
+    LoggingOutboxSink,
+    create_kernel_handler_registry,
+)
 from platform_core.database.oracle import create_database_runtime
 
 
 def create_aiops_worker_probe(
     settings: AIOpsSettings | None = None,
 ):
-    """创建尚不领取 Task 的 Worker 步骤 0 探针。"""
+    """创建可多副本运行的步骤 4 Worker 进程。"""
     resolved = settings or get_aiops_settings()
     config = resolved.worker
 
@@ -38,17 +48,62 @@ def create_aiops_worker_probe(
         )
         app.state.runtime = runtime
         app.state.ready_check = runtime.check_aiops_schema
+        handler_registry = create_kernel_handler_registry()
+        runtime_service = AIOpsRuntimeService(
+            uow_factory=runtime.uow_factory,
+            blueprint_registry=create_kernel_blueprint_registry(),
+            handler_registry=handler_registry,
+            max_tasks_per_run=resolved.limits.max_tasks_per_run,
+            default_run_timeout_seconds=(
+                resolved.limits.run_timeout_seconds
+            ),
+        )
+        workers = [
+            AIOpsTaskWorker(
+                runtime_service=runtime_service,
+                handler_registry=handler_registry,
+                worker_id=f"{config.worker_id}-{index + 1}",
+                lease_seconds=config.lease_seconds,
+                heartbeat_seconds=config.heartbeat_seconds,
+                poll_interval_seconds=config.claim_interval_seconds,
+            )
+            for index in range(config.concurrency)
+        ]
+        reconciler = AIOpsReconciler(
+            runtime_service=runtime_service,
+            interval_seconds=config.claim_interval_seconds,
+        )
+        dispatcher = AIOpsOutboxDispatcher(
+            uow_factory=runtime.uow_factory,
+            sink=LoggingOutboxSink(),
+            dispatcher_id=f"{config.worker_id}-outbox",
+            lease_seconds=config.lease_seconds,
+            interval_seconds=config.claim_interval_seconds,
+        )
+        components = [*workers, reconciler, dispatcher]
+        background_tasks = [
+            asyncio.create_task(component.run_forever())
+            for component in components
+        ]
         await runtime.start()
-        logger.info("正在启动 AIOps Worker 步骤 0 探针")
+        logger.info(
+            "正在启动 AIOps Worker：concurrency={}",
+            config.concurrency,
+        )
         try:
             yield
         finally:
+            for component in components:
+                component.stop()
+            await asyncio.gather(
+                *background_tasks, return_exceptions=True
+            )
             await runtime.close()
-            logger.info("AIOps Worker 探针资源已释放")
+            logger.info("AIOps Worker 资源已释放")
 
     return create_process_app(
-        title="KBot AIOps Worker Probe",
-        description="AIOps Worker 的内部存活与就绪探针。",
+        title="KBot AIOps Worker",
+        description="AIOps Task、恢复和 Outbox 后台进程。",
         service_name=config.service_name,
         service_version=config.service_version,
         debug=False,
