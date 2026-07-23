@@ -1,5 +1,6 @@
 """Discovery 阶段的内部查询端点。"""
 from dataclasses import asdict
+from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
@@ -15,7 +16,7 @@ router = APIRouter(
 
 class DiscoverySearchRequest(BaseModel):
     domain_id: int = Field(gt=0)
-    agent_id: int = Field(gt=0)
+    agent_id: UUID
     query: str = Field(min_length=1, max_length=8000)
     collection_ids: list[int] = Field(min_length=1, max_length=128)
     query_vectors: dict[int, list[float]] | None = None
@@ -29,7 +30,7 @@ async def search_discovery(payload: DiscoverySearchRequest, request: Request):
     require_domain_match(request, payload.domain_id)
     try:
         scoped_collection_ids = await request.app.state.kc_scope_service.resolve_agent_collections(
-            domain_id=payload.domain_id, agent_id=payload.agent_id,
+            domain_id=payload.domain_id, agent_id=str(payload.agent_id),
             collection_ids=payload.collection_ids,
         )
         candidates = await request.app.state.kc_discovery_service.discover(

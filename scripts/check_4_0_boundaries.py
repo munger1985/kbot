@@ -12,6 +12,7 @@ ACTIVE_ROOTS = (
     ROOT / "platform_clients",
     ROOT / "knowledge_core",
     ROOT / "model_serving",
+    ROOT / "main_api",
     ROOT / "agent_runtime",
     ROOT / "aiops",
     ROOT / "apps",
@@ -53,6 +54,11 @@ def check_file(path: Path) -> list[str]:
     except SyntaxError as exc:
         return [f"{path}:{exc.lineno}: syntax error: {exc.msg}"]
     violations: list[str] = []
+    relative_path = path.relative_to(ROOT)
+    is_main_api = (
+        relative_path.parts[0] == "main_api"
+        or relative_path.parts[:2] == ("apps", "main_api")
+    )
     for node in ast.walk(tree):
         if isinstance(node, ast.Constant) and isinstance(node.value, str):
             for prefix in OBSOLETE_API_PREFIXES:
@@ -61,6 +67,15 @@ def check_file(path: Path) -> list[str]:
                         f"{path}:{node.lineno}: 禁止使用旧 API 前缀 {prefix}"
                     )
         for imported in module_names(node):
+            if is_main_api and imported.split(".")[0] in {
+                "knowledge_core",
+                "model_serving",
+            }:
+                violations.append(
+                    f"{path}:{node.lineno}: Main API 必须通过 platform_clients 调用内部服务，"
+                    f"禁止直接导入 {imported}"
+                )
+                continue
             if (
                 imported == "platform_core.auth"
                 or imported.startswith("platform_core.auth.")

@@ -126,11 +126,27 @@ def create_public_auth_middleware(
                 required=True,
                 max_length=256,
             )
-            if domain_id and not await domain_validator(domain_id):
-                raise PortalApiKeyError(
-                    "INVALID_DOMAIN",
-                    "Domain 不存在或已停用",
-                )
+            if domain_id:
+                try:
+                    domain_is_active = await domain_validator(domain_id)
+                except Exception as exc:
+                    logger.error(
+                        "Domain 校验依赖不可用：method={} path={} type={}",
+                        request.method,
+                        request.url.path,
+                        type(exc).__name__,
+                    )
+                    return _problem(
+                        request=request,
+                        status_code=503,
+                        code="IDENTITY_SERVICE_UNAVAILABLE",
+                        detail="身份上下文暂时无法校验",
+                    )
+                if not domain_is_active:
+                    raise PortalApiKeyError(
+                        "INVALID_DOMAIN",
+                        "Domain 不存在或已停用",
+                    )
             request_id, trace_id = _request_ids(request)
             request.state.auth_context = AuthContext(
                 principal_kind=PrincipalKind.PORTAL,

@@ -62,6 +62,18 @@ class SecurityConfig(BaseModel):
     portal_api_keys: list[PortalApiKeyConfig] = Field(default_factory=list)
 
 
+class MainApiConfig(BaseModel):
+    """Main API/BFF 的独立运行配置。"""
+
+    service_name: str = "kbot-main-api"
+    service_version: str = "4.0.0"
+    service_host: str = "0.0.0.0"
+    service_port: int = Field(default=18099, ge=1, le=65535)
+    knowledge_core_url: str = "http://127.0.0.1:18090"
+    upstream_timeout_seconds: int = Field(default=120, ge=5, le=1800)
+    allowed_origins: list[str] = Field(default_factory=list)
+
+
 class OracleConfig(BaseModel):
     """Oracle database configuration.
     
@@ -286,6 +298,7 @@ class Settings(BaseSettings):
     # Module-specific configurations
     app: AppConfig = AppConfig()
     security: SecurityConfig = SecurityConfig()
+    main_api: MainApiConfig = MainApiConfig()
     oracle: OracleConfig = OracleConfig()
     sqlalchemy: SQLAlchemyConfig = SQLAlchemyConfig()
     embed: EmbedConfig = EmbedConfig()
@@ -466,6 +479,11 @@ def get_log_config() -> LogConfig:
 def get_security_config() -> SecurityConfig:
     """获取公开 API 与内部服务认证配置。"""
     return get_settings().security
+
+
+def get_main_api_config() -> MainApiConfig:
+    """获取 Main API/BFF 配置。"""
+    return get_settings().main_api
 
 def get_embed_config() -> EmbedConfig:
     """Get embedding service configuration.

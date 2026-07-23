@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-KBot is a Python/FastAPI knowledge-base and AIOps backend. Deployable entry points live in `apps/`; service-owned code belongs in bounded packages such as `knowledge_core/` and `model_serving/`. Shared configuration, authentication, logging, database primitives, and contracts live in `platform_core/`; cross-service clients live in `platform_clients/`. Keep each service’s API, application, domain, persistence, and worker code inside that service. Configuration examples are under `configuration/example/`, migrations under `migrations/`, SQL/APEX artifacts under `apex/`, documentation under `docs/`, and tests under `tests/`.
+KBot is a Python/FastAPI knowledge-base and AIOps backend. Deployable entry points live in `apps/`; service-owned code belongs in bounded packages such as `main_api/`, `knowledge_core/`, and `model_serving/`. Shared configuration, authentication, logging, database primitives, and contracts live in `platform_core/`; cross-service clients live in `platform_clients/`. Keep each service’s API, application, domain, persistence, and worker code inside that service. Configuration examples are under `configuration/example/`, migrations under `migrations/`, SQL/APEX artifacts under `apex/`, documentation under `docs/`, and tests under `tests/`.
 
 ## Build, Test, and Development Commands
 

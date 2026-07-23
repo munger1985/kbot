@@ -10,11 +10,11 @@ Core API 采用全新模型，不兼容旧 `/api/kb` 或任何 3.x Agent/Skill �
 
 ## 单一 APEX Schema 变更治理
 
-所有对象继续位于 APEX 所需的单一 Schema；领域表使用 `KBOT_KC_*`、`KBOT_AGENT_*`、`KBOT_OPS_*` 前缀和独立 migration 目录。每个 migration 有唯一版本、checksum、作者、执行时间、前置条件、前向恢复说明和 APEX 影响标记。
+所有对象继续位于 APEX 所需的单一 Schema；平台身份边界使用 `KBOT_PLATFORM_*`，领域表使用 `KBOT_KC_*`、`KBOT_AGENT_*`、`KBOT_OPS_*` 前缀和独立 migration 目录。Main API 只拥有 API Key 配置、Domain Registry 等入口边界数据，不读取 KC/Ops 表。每个 migration 有唯一版本、checksum、作者、执行时间、前置条件、前向恢复说明和 APEX 影响标记。
 
 发布前建立 Schema Contract 清单：表、列、索引、视图、同义词、存储过程、触发器、APEX 页面/报表/LOV、后台脚本与 API 的依赖关系。禁止直接在生产库手工执行未登记 DDL。
 
-4.0 初始发布在隔离环境中创建完整新对象并一次启用，不与 3.x 对象进行兼容读写。`expand → migrate → contract` 仅适用于 4.0 发布后的自身演进：先新增可选结构，再回填/校验/切换，最后在弃用窗口结束后删除旧的 **v4** 对象。破坏性操作需备份、演练、维护窗口和明确回滚/前滚策略；Oracle Text/Vector 索引重建必须与业务写入和查询可见性协调。
+4.0 初始发布在隔离环境中创建完整新对象并一次启用，不与 3.x 对象进行兼容读写。旧 `KBOT_MD_DOMAIN` 仅作为一次性迁移来源，运行时认证只读取 `KBOT_PLATFORM_DOMAIN`；迁移保留数值 `APP_ID/DOMAIN_ID` 以满足 APEX。`expand → migrate → contract` 仅适用于 4.0 发布后的自身演进：先新增可选结构，再回填/校验/切换，最后在弃用窗口结束后删除旧的 4.0 对象。破坏性操作需备份、演练、维护窗口和明确回滚/前滚策略；Oracle Text/Vector 索引重建必须与业务写入和查询可见性协调。
 
 ## 知识资产重建
 

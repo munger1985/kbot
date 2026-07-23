@@ -12,7 +12,7 @@ KBot 4.0 是新系统发布，不是 3.x 的渐进替换。它不加载 3.x 的�
 Portal / APEX / Slack / MCP / API clients
                   │
                   ▼
-          Main API / BFF (v4)
+       Main API / BFF (`/api/v1`)
    identity · API composition · Agent Runtime API
        │              │                 │
        ▼              ▼                 ▼

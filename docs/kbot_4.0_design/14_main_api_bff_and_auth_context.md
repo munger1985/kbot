@@ -68,16 +68,21 @@ Agent Runtime 另用能力更窄的 `AIOpsDelegationClient`，只允许创建、
 
 产品版本与 API 契约版本独立。KBot 4.0 的首个公开契约统一使用 `/api/v1`；服务间接口统一使用 `/internal/v1`。只有同一接口发生不兼容变化且需要并行分流时才新增 `v2`，不能按产品大版本机械升级 URL。
 
-Main API 对外发布：
+当前已实现的 Knowledge Core 公开组合：
 
-- `/api/v1/runs`：Run 创建、查询、取消、审批和恢复；
-- `/api/v1/runs/{run_id}/events`：带 `Last-Event-ID` 的 SSE；
-- `/api/v1/knowledge/intake`：普通文件和 Bundle 入库的统一入口，转发到 KC；
-- `/api/v1/knowledge/collections`：Collection 管理和 Agent Binding 管理；
+- `/api/v1/knowledge/collections`：Collection 管理；
+- `/api/v1/knowledge/collections/{collection_key}/ingestions/km-assets`：Asset Bundle 流式入库；
+- `/api/v1/knowledge/collections/{collection_key}/ingestions/user-files`：普通文件或显式 Bundle 流式入库；
+- `/api/v1/knowledge/agents/{agent_id}/collection-bindings`：Agent 与 Collection 绑定管理；
+- `/api/v1/knowledge/bundles/{bundle_id}`：入库、解析和索引状态查询；
+- `/healthz`、`/readyz`：不版本化，只返回服务健康摘要，不泄露数据库凭据或内部拓扑。
+
+随对应领域实现后再挂载：
+
+- `/api/v1/runs` 和 `/api/v1/runs/{run_id}/events`：Run 命令、查询与 SSE；
 - `/api/v1/ops/*`：AIOps Target、Run、HITL、审批、巡检和报告；
 - `/api/v1/integrations/monitoring/*`：经限流和来源验证的监控事件接入；
-- `/api/v1/files/{document_version_id}`：权限校验后签发短时下载地址；
-- `/healthz`、`/readyz`：不版本化，只返回服务健康摘要，不泄露数据库凭据或内部拓扑。
+- `/api/v1/files/{document_version_id}`：校验 Domain 后签发短时下载地址。
 
 耗时操作统一返回 `202` 和资源标识；同步接口只用于轻量查询。请求/响应使用 Pydantic DTO，禁止直接返回 SQLAlchemy Entity。旧 `/api/kb`、旧 Agent SSE 和旧 `doc_results` 不提供兼容路由。
 
@@ -102,3 +107,5 @@ BFF 将下游错误映射为稳定错误码，例如 `AUTH_REQUIRED`、`INVALID_
 ## 后续拆库
 
 Main API 与下游只依赖 Client/DTO，不依赖同库 Session。未来为 KC、Agent Runtime、AIOps Agent 或 Model Serving 配置独立数据库、账号和连接池时，BFF 契约、AuthContext 和外部 API 不需要变化。角色、Scope 和资源 ACL 留待后续权限阶段加入；AIOps 审批与执行安全闸门不因此削弱。Data Agent 暂不属于当前部署拓扑，问数继续通过 MCP Adapter 接入。
+
+Main API 对共享 Schema 的唯一业务查询是其自有 `KBOT_PLATFORM_DOMAIN`，用于确认 Portal 声明的 Domain 存在且启用。KC 公开请求必须经 `platform_clients.KnowledgeCoreClient` 转发；Main API 不 import KC Entity、Repository 或 Application Service。旧 `KBOT_MD_DOMAIN` 只在切换 Migration 中读取，不属于运行时回退路径。

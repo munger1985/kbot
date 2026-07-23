@@ -1,5 +1,6 @@
 """Evidence 查询与 Citation Pack 内部端点。"""
 from dataclasses import asdict
+from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
@@ -23,7 +24,7 @@ class EvidenceCandidateRequest(BaseModel):
 
 class EvidenceSearchRequest(BaseModel):
     domain_id: int = Field(gt=0)
-    agent_id: int = Field(gt=0)
+    agent_id: UUID
     query: str = Field(min_length=1, max_length=8000)
     candidates: list[EvidenceCandidateRequest] = Field(min_length=1, max_length=128)
     query_vectors: dict[int, list[float]] | None = None
@@ -38,7 +39,7 @@ async def search_evidence(payload: EvidenceSearchRequest, request: Request):
     try:
         requested_collections = sorted({item.collection_id for item in payload.candidates})
         scoped_collection_ids = await request.app.state.kc_scope_service.resolve_agent_collections(
-            domain_id=payload.domain_id, agent_id=payload.agent_id,
+            domain_id=payload.domain_id, agent_id=str(payload.agent_id),
             collection_ids=requested_collections,
         )
         if set(scoped_collection_ids) != set(requested_collections):

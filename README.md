@@ -6,11 +6,15 @@ KBot 是面向知识检索与数据库运维分析的 Python/FastAPI 后端。4.
 
 ## 当前服务
 
+- `main_api/`：面向 Portal 的唯一公开 API/BFF，只暴露 `/api/v1/*`。
 - `knowledge_core/`：Collection、Bundle、Document、解析、索引与两阶段检索。
 - `model_serving/`：LLM、Embedding、VLM 和 Visual 模型托管。
 - `platform_core/`：配置、日志、认证、数据库运行时和共享契约。
 - `platform_clients/`：跨服务客户端。
 - `apps/`：各独立进程入口。
+
+Portal 使用预配置 API Key 访问 Main API；Main API 校验 Domain 后，为内部调用签发
+短期 AuthContext JWT。`/internal/v1/*` 仅供服务间调用，不通过 Main API 暴露。
 
 Knowledge Core 来源于 3.5 已完成的实现，是 4.0 的正式基线，不存在平行的旧
 知识库运行链路。
@@ -29,6 +33,7 @@ pip install -r requirements.txt
 可单独启动服务：
 
 ```bash
+python3 -m apps.main_api.main
 python3 -m apps.knowledge_core_api.main
 python3 -m apps.knowledge_core_parser.main
 python3 -m apps.knowledge_core_projection.main
@@ -46,8 +51,9 @@ bash stop_kbot.sh
 
 ```bash
 python3 scripts/check_4_0_boundaries.py
+python3 scripts/check_platform_migrations.py
 python3 scripts/check_kc_migrations.py
-python3 -m unittest discover -s tests -p 'test_kc_*.py'
+python3 -m unittest discover -s tests
 ```
 
 完整架构和实施计划见

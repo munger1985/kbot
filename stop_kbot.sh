@@ -13,6 +13,7 @@ SERVICES=(
     "apps/knowledge_core_api/main.py"
     "apps/knowledge_core_parser/main.py"
     "apps/knowledge_core_projection/main.py"
+    "apps/main_api/main.py"
 )
 
 # 安全查找在指定目录运行的 Python 服务进程

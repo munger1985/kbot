@@ -1,5 +1,6 @@
-"""Collection and Agent binding management APIs."""
+"""Collection 与 Agent 绑定管理 API。"""
 
+from uuid import UUID
 from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
@@ -26,7 +27,6 @@ class CreateCollectionRequest(BaseModel):
 
 
 class BindingRequest(BaseModel):
-    agent_id: int = Field(gt=0)
     note: str | None = Field(default=None, max_length=1000)
 
 
@@ -113,11 +113,9 @@ async def delete_collection(domain_id: int, collection_key: str, request: Reques
 
 
 @router.put("/agents/{agent_id}/collections/{collection_key}/binding")
-async def bind_collection(domain_id: int, agent_id: int, collection_key: str, request: Request, payload: BindingRequest | None = None):
+async def bind_collection(domain_id: int, agent_id: UUID, collection_key: str, request: Request, payload: BindingRequest | None = None):
     require_domain_match(request, domain_id)
-    body = payload or BindingRequest(agent_id=agent_id)
-    if body.agent_id != agent_id:
-        raise HTTPException(status_code=422, detail={"code": "AGENT_ID_MISMATCH", "message": "path and body agent_id differ"})
+    body = payload or BindingRequest()
     try:
         entity = await request.app.state.kc_binding_service.bind_agent(BindAgentCollectionCommand(
             domain_id=domain_id, collection_key=collection_key, agent_id=str(agent_id),
@@ -125,11 +123,11 @@ async def bind_collection(domain_id: int, agent_id: int, collection_key: str, re
         ))
     except CollectionNotFoundError as exc:
         raise HTTPException(status_code=404, detail={"code": "COLLECTION_NOT_FOUND", "message": str(exc)}) from exc
-    return {"binding_id": int(entity.binding_id), "collection_id": int(entity.collection_id), "agent_id": agent_id, "status": entity.status}
+    return {"binding_id": int(entity.binding_id), "collection_id": int(entity.collection_id), "agent_id": str(agent_id), "status": entity.status}
 
 
 @router.delete("/agents/{agent_id}/collections/{collection_key}/binding", status_code=status.HTTP_204_NO_CONTENT)
-async def unbind_collection(domain_id: int, agent_id: int, collection_key: str, request: Request):
+async def unbind_collection(domain_id: int, agent_id: UUID, collection_key: str, request: Request):
     require_domain_match(request, domain_id)
     try:
         await request.app.state.kc_binding_service.unbind_agent(BindAgentCollectionCommand(
@@ -141,7 +139,7 @@ async def unbind_collection(domain_id: int, agent_id: int, collection_key: str, 
 
 
 @router.get("/agents/{agent_id}/collection-bindings")
-async def list_agent_bindings(domain_id: int, agent_id: int, request: Request):
+async def list_agent_bindings(domain_id: int, agent_id: UUID, request: Request):
     require_domain_match(request, domain_id)
     bindings = await request.app.state.kc_binding_service.list_agent(domain_id=domain_id, agent_id=str(agent_id))
     return {"bindings": [{

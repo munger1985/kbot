@@ -62,6 +62,8 @@ knowledge_core/
   indexing/ retrieval/ parsing/
   tests/
 apps/knowledge_core_api/main.py  # Knowledge Core 进程入口
+main_api/                        # 公开 DTO、Domain Registry、BFF 路由
+apps/main_api/main.py            # 唯一公开 `/api/v1` 入口
 apps/aiops_api/main.py           # AIOps 对外/内部 API
 apps/aiops_worker/main.py        # AIOps 诊断与流程 Worker
 apps/aiops_scheduler/main.py     # 巡检调度与超时扫描

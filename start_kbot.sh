@@ -35,6 +35,7 @@ SERVICES=(
     "Knowledge Core:apps/knowledge_core_api/main.py:."
     "KC Index Worker:apps/knowledge_core_projection/main.py:."
     "Parser:apps/knowledge_core_parser/main.py:."
+    "Main API:apps/main_api/main.py:."
 )
 
 # 启动服务函数
@@ -93,6 +94,7 @@ start_service() {
             apps/ai_models_visual/main.py)      port="18093" ;;
             apps/knowledge_core_parser/main.py)      port="18095" ;;
             apps/knowledge_core_api/main.py)   port="18090" ;;
+            apps/main_api/main.py)             port="18099" ;;
         esac
 
         if [ -n "$port" ] && ss -tlnp 2>/dev/null | grep -q ":$port "; then
