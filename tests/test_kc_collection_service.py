@@ -3,6 +3,8 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
+from platform_core.identity import uuid7
+
 from knowledge_core.application.collections import (
     BindAgentCollectionCommand,
     CollectionAlreadyExistsError,
@@ -70,13 +72,14 @@ class KnowledgeCoreCollectionServiceTest(unittest.IsolatedAsyncioTestCase):
     async def test_creates_collection_with_server_injected_app_id(self):
         repository = FakeCollectionRepository()
         service, uow = self._service(repository)
+        embedding_model_id = uuid7()
 
         collection = await service.create(
             CreateCollectionCommand(
                 domain_id=8,
                 collection_key="assets",
                 display_name="Asset Knowledge",
-                embedding_model_id=17,
+                embedding_model_id=embedding_model_id,
                 metadata={"source": "km"},
                 actor_id="user:7",
             )
@@ -85,7 +88,7 @@ class KnowledgeCoreCollectionServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(101, collection.collection_id)
         self.assertEqual(112, repository.added.app_id)
         self.assertEqual(8, repository.added.domain_id)
-        self.assertEqual(17, repository.added.embedding_model_id)
+        self.assertEqual(embedding_model_id, repository.added.embedding_model_id)
         self.assertEqual("ACTIVE", repository.added.status)
         uow.commit.assert_awaited_once()
 
@@ -99,7 +102,7 @@ class KnowledgeCoreCollectionServiceTest(unittest.IsolatedAsyncioTestCase):
                     domain_id=8,
                     collection_key="assets",
                     display_name="Asset Knowledge",
-                    embedding_model_id=17,
+                    embedding_model_id=uuid7(),
                 )
             )
 
@@ -116,7 +119,7 @@ class KnowledgeCoreCollectionServiceTest(unittest.IsolatedAsyncioTestCase):
                 domain_id=8,
                 collection_key="assets",
                 display_name="Asset Knowledge",
-                embedding_model_id=0,
+                embedding_model_id="not-a-uuid",
             ))
 
         self.assertIsNone(repository.added)

@@ -37,8 +37,8 @@ All processes ──► Oracle 26ai（单一 APEX Schema；表所有权受契约
 | Main API / BFF | 认证、用户/API Key、Agent Runtime API、AIOps API 组合 | 直接查询或写入 Knowledge Core/Ops 表；实现检索算法或旧 API 适配 |
 | Knowledge Core | Collection、Bundle、Document、Version、Evidence、Discovery、任务状态 | Agent 最终回答、Skill 路由、模型实例生命周期 |
 | Parser Worker | 领取 `PARSE` 任务、生成 Parse View/Evidence 候选、报告结果 | 决定 Bundle READY、直接管理上传和版本切换 |
-| Model Runtime | LLM/Embedding/VLM/Visual 推理与模型内存池 | 修改模型配置、写知识库业务表 |
-| Platform Config | 模型配置、公共服务配置、身份和权限策略 | 业务领域数据的跨域写入 |
+| Model Serving | 模型目录、LLM/Embedding/VLM/Visual Provider、推理与模型内存池 | 写知识库业务表、参与 Agent 决策 |
+| Platform Config | 公共服务配置、身份和权限策略 | 持有模型目录或业务领域数据 |
 | AIOps Agent | Ops Event/Alert、目标资产、诊断 Run/Task、HITL、ChangeProposal、验证报告 | 知识库内容、业务数据查询、绕过 Policy 直接执行变更 |
 | DB Executor | 经授权的目标数据库查询/运维执行 | 作为业务数据 Repository 或通用 SQL 后门 |
 

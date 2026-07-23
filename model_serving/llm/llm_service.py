@@ -53,17 +53,22 @@ class LLMService:
             self._initialized = False
             logger.info("LLM 服务已正常停止。")
 
-    async def get_llm_model(self, model_name: str) -> BaseLLM:
+    async def invalidate_model(self, served_model_name: str) -> None:
+        """配置变更后立即移除旧实例，不触发模型服务初始化。"""
+        if self._initialized:
+            await self._model_pool.unload_model(served_model_name)
+
+    async def get_llm_model(self, served_model_name: str) -> BaseLLM:
         """Get llm model instance by its unique name."""
         if not self._initialized:
             await self.initialize()
 
-        return await self._model_pool.load_model(model_name)
+        return await self._model_pool.load_model(served_model_name)
     
     async def chat(
         self,
-        model_name: str,
-        messages: list[dict[str, str]] | str,
+        served_model_name: str,
+        messages: list[dict[str, Any]] | str,
         stream: bool = False,
         timeout: int | None = None,
         max_tokens: int | None = None,
@@ -72,8 +77,8 @@ class LLMService:
         frequency_penalty: float | None = None,
         presence_penalty: float | None = None,
         tools: list[dict[str, Any]] | None = None,
-        tool_choice: str | None = None,
-        response_format: str | dict[str, str] | None = None,
+        tool_choice: str | dict[str, Any] | None = None,
+        response_format: str | dict[str, Any] | None = None,
     ):
         """Generate chat completion responses with MCP tool call support.
         
@@ -82,7 +87,7 @@ class LLMService:
         streaming logic, and error handling.
         
         Args:
-            model_name: Technical name of the model to use
+            served_model_name: Technical name of the model to use
             messages: Input messages - either a list of role/content dictionaries
                 or a single string (interpreted as user message)
             stream: If True, returns async generator of response chunks;
@@ -107,10 +112,10 @@ class LLMService:
         """
         try:
             # Step 1: Get model instance (ensures model is loaded and initialized)
-            model = await self.get_llm_model(model_name)
+            model = await self.get_llm_model(served_model_name)
             current_provider = model.config.provider  # Unified provider access
         except Exception as e:
-            raise RuntimeError(f"从模型池中获取模型 {model_name} 失败: {e}")
+            raise RuntimeError(f"从模型池中获取模型 {served_model_name} 失败: {e}")
         
         # Step 2: Prepare and filter generation parameters (remove None values)
         kwargs = {
@@ -149,7 +154,7 @@ class LLMService:
                         })
             
             # Log request details for debugging
-            logger.debug(f"正在向模型 {model_name} 发送消息：{processed_messages}")
+            logger.debug(f"正在向模型 {served_model_name} 发送消息：{processed_messages}")
             if tools:
                 logger.debug(f"工具调用配置 - 工具数量：{len(tools)}，工具选择：{tool_choice}")
 
@@ -202,10 +207,10 @@ class LLMService:
         # General error handling with context
         except Exception as e:
             error_context = (
-                f"Model: {model_name}, Messages: {messages}, "
-                f"Stream: {stream}, Tools: {len(tools) if tools else 0}"
+                f"模型：{served_model_name}，消息：{messages}，"
+                f"流式：{stream}，工具数：{len(tools) if tools else 0}"
             )
-            logger.exception(f"Error generating chat response - {error_context}: {e}")
+            logger.exception(f"生成对话响应失败，{error_context}，错误：{e}")
             raise RuntimeError(f"Failed to generate chat response: {e}. Context: {error_context}")
 
 
@@ -221,13 +226,13 @@ class LLMService:
         
         await self._model_pool.warmup()
 
-    async def load_model(self, model_name: str) -> bool:
+    async def load_model(self, served_model_name: str) -> bool:
         """Load a specific model into memory by its technical name.
         
         Explicitly loads a model into the pool if not already present.
         
         Args:
-            model_name: Technical name of the model to load
+            served_model_name: Technical name of the model to load
             
         Returns:
             bool: True if model loaded successfully, False otherwise
@@ -235,16 +240,16 @@ class LLMService:
         if not self._initialized:
             await self.initialize()
         
-        return await self._model_pool.reload_model(model_name)
+        return await self._model_pool.reload_model(served_model_name)
 
         
-    async def unload_model(self, model_name: str) -> bool:
+    async def unload_model(self, served_model_name: str) -> bool:
         """Unload a specific model from memory to free resources.
         
         Gracefully shuts down the model client and removes it from the pool.
         
         Args:
-            model_name: Technical name of the model to unload
+            served_model_name: Technical name of the model to unload
             
         Returns:
             bool: True if model unloaded successfully, False otherwise
@@ -252,6 +257,6 @@ class LLMService:
         if not self._initialized:
             await self.initialize()
         
-        return await self._model_pool.unload_model(model_name)
+        return await self._model_pool.unload_model(served_model_name)
     
     

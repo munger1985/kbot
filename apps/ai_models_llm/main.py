@@ -25,7 +25,7 @@ from fastapi_offline import FastAPIOffline
 from loguru import logger
 
 from platform_core.config.settings import get_llm_config, get_app_config
-from platform_core.contracts import INTERNAL_API_V1
+from platform_core.contracts import INTERNAL_API_V1, PUBLIC_API_V1
 from platform_core.dictionary import ModelCategory
 from platform_core.logger import LogConfig, LogManager
 from platform_core.middleware.log_middleware import log_requests
@@ -35,6 +35,8 @@ from model_serving.llm.llm_service import LLMService
 from model_serving.llm.schema import *
 from platform_core.platform.port_check import check_port_available
 from model_serving.common.management_router import create_model_management_router
+from model_serving.common.openai_router import create_openai_models_router
+from model_serving.common.openai_contracts import openai_error_response
 from model_serving.common.model_registry import ModelRegistryService
 
 # Load environment variables
@@ -72,7 +74,9 @@ async def lifespan(app: FastAPI):
     app.state.db_runtime = db_runtime
     llm_service.bind_session_factory(db_runtime.session_factory)
     app.state.model_registry = ModelRegistryService(
-        app_id=app_config.app_id, session_factory=db_runtime.session_factory,
+        app_id=app_config.app_id,
+        session_factory=db_runtime.session_factory,
+        on_model_changed=llm_service.invalidate_model,
     )
 
     # Initialize logging system
@@ -131,11 +135,18 @@ app.add_middleware(
 app.middleware("http")(log_requests)
 
 # 5. Internal service authentication middleware
-from platform_core.security import create_internal_auth_middleware
-app.middleware("http")(
-    create_internal_auth_middleware(audience=SERVICE_NAME)
+from platform_core.security import (
+    create_api_client_auth_middleware,
+    create_internal_auth_middleware,
 )
+app.middleware("http")(
+    create_internal_auth_middleware(
+        audience=SERVICE_NAME, skip_prefixes=(PUBLIC_API_V1,),
+    )
+)
+app.middleware("http")(create_api_client_auth_middleware())
 app.include_router(create_model_management_router(category=ModelCategory.LLM.value))
+app.include_router(create_openai_models_router(category=ModelCategory.LLM.value))
 
 
 def get_llm_service() -> LLMService:
@@ -161,30 +172,6 @@ async def health_check() -> dict[str, Any]:
     }
 
 
-# @app.post("/load", response_model=dict, tags=["Management"], summary="Load/Unload Model")
-# async def handle_toggle_model(request: ToggleModelRequest) -> dict[str, Any]:
-#     """Dynamically manage models in memory.
-
-#     Args:
-#         request: Model operation request.
-
-#     Returns:
-#         Operation result.
-#     """
-#     try:
-#         method = llm_service.load_model if request.operation == "load" else llm_service.unload_model
-#         logger.info(f"正在执行模型操作：{request.operation} -> {request.model_name}")
-        
-#         success = await method(request.model_name)
-#         if not success:
-#             raise HTTPException(status_code=500, detail=f"Failed to {request.operation} model {request.model_name}")
-            
-#         return {"status": "success", "model_name": request.model_name}
-#     except Exception as e:
-#         logger.exception(f"Model management exception: {e}")
-#         raise HTTPException(status_code=500, detail=str(e))
-
-
 @app.post(f"{INTERNAL_API_V1}/chat/completions", response_model=None, tags=["LLM"], summary="对话补全")
 async def handle_chat_completions(
     request: ChatRequest,
@@ -207,7 +194,7 @@ async def handle_chat_completions(
     created_ts = int(time.time())
 
     # Load model first (triggers async loading if model is not loaded)
-    model = await service.get_llm_model(request.model_name)
+    model = await service.get_llm_model(request.served_model_name)
     provider = model.config.provider
 
     # Get max token limit (use model config default if not provided by user)
@@ -220,7 +207,7 @@ async def handle_chat_completions(
             async def sse_generator():
                 try:
                     stream_iter = await service.chat(
-                        model_name=request.model_name,
+                        served_model_name=request.served_model_name,
                         messages=request.messages,
                         stream=True,
                         max_tokens=current_max_tokens,
@@ -236,9 +223,10 @@ async def handle_chat_completions(
                             break
 
                         # Unified serialization for different Provider Chunks
-                        if hasattr(chunk, 'model_dump_json'):
-                            # OpenAI-compatible format Chunk
-                            data = chunk.model_dump_json()
+                        if hasattr(chunk, "model_dump"):
+                            payload = chunk.model_dump()
+                            payload["model"] = request.served_model_name
+                            data = json.dumps(payload, ensure_ascii=False)
                         elif isinstance(chunk, dict):
                             # Check if it's OCI native format and convert to OpenAI format
                             text = None
@@ -263,7 +251,7 @@ async def handle_chat_completions(
                                     "id": resp_id,
                                     "object": "chat.completion.chunk",
                                     "created": created_ts,
-                                    "model": model.model_name,
+                                    "model": request.served_model_name,
                                     "choices": [
                                         {
                                             "index": 0,
@@ -274,7 +262,12 @@ async def handle_chat_completions(
                                 }
                                 data = json.dumps(openai_chunk, ensure_ascii=False)
                             else:
-                                data = json.dumps(chunk)
+                                payload = dict(chunk)
+                                if str(payload.get("object", "")).startswith(
+                                    "chat.completion"
+                                ):
+                                    payload["model"] = request.served_model_name
+                                data = json.dumps(payload, ensure_ascii=False)
                         else:
                             data = str(chunk)
 
@@ -294,7 +287,7 @@ async def handle_chat_completions(
 
         # --- Non-streaming response logic ---
         raw_resp = await service.chat(
-            model_name=request.model_name,
+            served_model_name=request.served_model_name,
             messages=request.messages,
             stream=False,
             max_tokens=current_max_tokens,
@@ -306,7 +299,7 @@ async def handle_chat_completions(
         )
 
         proc_time = time.time() - start_time
-        logger.info(f"请求处理完成 | 模型：{request.model_name} | 耗时：{proc_time:.2f}s")
+        logger.info(f"请求处理完成 | 模型：{request.served_model_name} | 耗时：{proc_time:.2f}s")
 
         # Parse results from different Providers
         content: str | None = None
@@ -375,20 +368,61 @@ async def handle_chat_completions(
             logger.warning(f"无法识别的 Provider：{provider}")
             content = ""
 
+        response_message: dict[str, Any] = {
+            "role": "assistant",
+            "content": content or "",
+        }
+        if tool_calls:
+            response_message["tool_calls"] = [
+                tool_call.model_dump() for tool_call in tool_calls
+            ]
         return ChatResponse(
             id=resp_id,
             object="chat.completion",
             created=created_ts,
-            model=model.model_name,
-            choices=[{"message": {"role": "assistant", "content": content or ""}, "finish_reason": "stop", "index": 0}],
+            model=request.served_model_name,
+            choices=[{
+                "message": response_message,
+                "finish_reason": "tool_calls" if tool_calls else "stop",
+                "index": 0,
+            }],
             usage=UsageInfo(**usage),
-            processing_time=proc_time,
-            tool_calls=tool_calls if tool_calls else None
         )
 
     except Exception as e:
         logger.exception("Error occurred while generating chat response")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post(
+    f"{PUBLIC_API_V1}/chat/completions",
+    response_model=None,
+    tags=["OpenAI Compatible"],
+)
+async def openai_chat_completions(
+    request: OpenAIChatRequest,
+    service: LLMService = Depends(get_llm_service),
+):
+    """把 OpenAI 的 model 字段解析为 served_model_name。"""
+    try:
+        result = await handle_chat_completions(request.to_internal(), service)
+    except HTTPException as exc:
+        return openai_error_response(
+            status_code=exc.status_code,
+            message=str(exc.detail),
+            code="model_request_failed",
+        )
+    except Exception as exc:
+        logger.error(f"OpenAI Chat 调用失败：{exc}")
+        return openai_error_response(
+            status_code=500,
+            message="模型推理失败",
+            code="model_inference_failed",
+            error_type="server_error",
+        )
+    if isinstance(result, StreamingResponse):
+        return result
+    return result.model_dump(exclude_none=True)
 
 
 def signal_handler(sig: int, frame: Any):

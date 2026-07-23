@@ -1,6 +1,7 @@
-"""Model definition CRUD and lifecycle management for all model processes."""
-from collections.abc import Callable
+"""所有模型进程共享的模型定义与生命周期管理。"""
+from collections.abc import Awaitable, Callable
 from typing import Any
+from uuid import UUID
 
 from platform_core.config.settings import get_app_config, get_embed_config
 from .entities.ai_model import AIModelEntity
@@ -12,15 +13,23 @@ class ModelDefinitionNotFound(LookupError):
 
 
 class ModelRegistryService:
-    def __init__(self, *, app_id: int | None = None, session_factory: Callable):
+    def __init__(
+        self, *,
+        app_id: int | None = None,
+        session_factory: Callable,
+        on_model_changed: Callable[[str], Awaitable[None]] | None = None,
+    ):
         self._app_id = int(app_id if app_id is not None else get_app_config().app_id)
         self._session_factory = session_factory
+        self._on_model_changed = on_model_changed
 
     @staticmethod
     def _safe(entity: AIModelEntity) -> dict[str, Any]:
         return {
-            "model_id": int(entity.model_id), "app_id": int(entity.app_id),
-            "display_name": entity.display_name, "model_name": entity.model_name,
+            "model_id": str(entity.model_id), "app_id": int(entity.app_id),
+            "served_model_name": entity.served_model_name,
+            "display_name": entity.display_name,
+            "provider_model_name": entity.provider_model_name,
             "category": int(entity.category) if entity.category is not None else None,
             "provider": entity.provider, "api_endpoint": entity.api_endpoint,
             "status": int(entity.status) if entity.status is not None else None,
@@ -34,7 +43,7 @@ class ModelRegistryService:
             rows = await AIModelRepository(session).list_by_scope(app_id=self._app_id, category=category)
             return [self._safe(row) for row in rows]
 
-    async def get(self, model_id: int, *, category: int | None = None) -> dict[str, Any]:
+    async def get(self, model_id: UUID, *, category: int | None = None) -> dict[str, Any]:
         async with self._session_factory() as session:
             row = await AIModelRepository(session).get_by_id(model_id)
             if int(row.app_id) != self._app_id or (category is not None and int(row.category or 0) != int(category)):
@@ -45,7 +54,10 @@ class ModelRegistryService:
         self._validate_embedding_dimension(values)
         async with self._session_factory() as session:
             row = await AIModelRepository(session).add(AIModelEntity(
-                app_id=self._app_id, display_name=values["display_name"], model_name=values["model_name"],
+                app_id=self._app_id,
+                served_model_name=values["served_model_name"],
+                display_name=values["display_name"],
+                provider_model_name=values["provider_model_name"],
                 category=values["category"], provider=values["provider"], api_endpoint=values.get("api_endpoint"),
                 api_key=values.get("api_key"), status=values.get("status", 0),
                 embedding_dimension=values.get("embedding_dimension"), model_params=values.get("model_params") or {},
@@ -54,31 +66,52 @@ class ModelRegistryService:
             await session.commit()
             return self._safe(row)
 
-    async def update(self, model_id: int, values: dict[str, Any], *, actor_id: str) -> dict[str, Any]:
+    async def update(self, model_id: UUID, values: dict[str, Any], *, actor_id: str) -> dict[str, Any]:
         async with self._session_factory() as session:
             repo = AIModelRepository(session)
             current = await repo.get_by_id(model_id)
             if int(current.app_id) != self._app_id:
                 raise ModelDefinitionNotFound(model_id)
-            check_values = {"category": current.category, **values}
+            check_values = {
+                "category": current.category,
+                "embedding_dimension": current.embedding_dimension,
+                **values,
+            }
             self._validate_embedding_dimension(check_values)
             row = await repo.update_fields(model_id, app_id=self._app_id, values={**values, "updated_by": actor_id})
             await session.commit()
-            return self._safe(row)
+            result = self._safe(row)
+        await self._notify_changed(result["served_model_name"])
+        return result
 
     @staticmethod
     def _validate_embedding_dimension(values: dict[str, Any]) -> None:
-        # The application-wide vector dimension is a hard invariant.  A model
-        # definition may omit it only for non-embedding categories.
-        if int(values.get("category", 0) or 0) != 2 or values.get("embedding_dimension") is None:
+        """强制模型目录与物理向量列使用同一维度。"""
+        category = int(values.get("category", 0) or 0)
+        dimension = values.get("embedding_dimension")
+        if category != 2:
+            if dimension is not None:
+                raise ValueError("非文本 Embedding 模型不能设置 embedding_dimension")
             return
+        if dimension is None:
+            raise ValueError("文本 Embedding 模型必须设置 embedding_dimension")
         configured = get_embed_config().dimensions
-        if configured is not None and int(values["embedding_dimension"]) != int(configured):
+        if configured is not None and int(dimension) != int(configured):
             raise ValueError(
-                f"embedding_dimension must equal the configured vector dimension {configured}"
+                f"embedding_dimension 必须等于配置维度 {configured}"
             )
 
-    async def delete(self, model_id: int, *, actor_id: str) -> None:
+    async def delete(self, model_id: UUID, *, actor_id: str) -> None:
         async with self._session_factory() as session:
-            await AIModelRepository(session).update_fields(model_id, app_id=self._app_id, values={"status": 2, "updated_by": actor_id})
+            row = await AIModelRepository(session).update_fields(
+                model_id,
+                app_id=self._app_id,
+                values={"status": 2, "updated_by": actor_id},
+            )
             await session.commit()
+            served_model_name = row.served_model_name
+        await self._notify_changed(served_model_name)
+
+    async def _notify_changed(self, served_model_name: str) -> None:
+        if self._on_model_changed is not None:
+            await self._on_model_changed(served_model_name)

@@ -38,7 +38,7 @@ api_key_id, client_id
 domain_id, asserted_user_id
 ```
 
-Main API 必须移除外部请求中伪造的内部身份头。当前同 Schema 部署中，服务身份使用 `X-KBot-Internal-Token`，身份上下文使用 `X-KBot-Auth-Context`；两者必须同时通过校验。JWT 默认有效期 60 秒，每次内部请求重新签发并限定下游 audience。Knowledge Core、Model Serving、Agent Runtime 和 AIOps 不接受门户 API Key、用户密码或外部 Bearer Token。内部接口不得挂载到公网入口或公开 OpenAPI；将来采用 mTLS 时只替换服务身份校验，不改变 AuthContext 契约。
+Main API 必须移除外部请求中伪造的内部身份头。当前同 Schema 部署中，服务身份使用 `X-KBot-Internal-Token`，身份上下文使用 `X-KBot-Auth-Context`；两者必须同时通过校验。JWT 默认有效期 60 秒，每次内部请求重新签发并限定下游 audience。Knowledge Core、Agent Runtime、AIOps 以及 Model Serving 的 `/internal/v1` 不接受门户 API Key、用户密码或外部 Bearer Token。Model Serving 仅在明确的 `/api/v1` OpenAI 兼容推理入口接受独立 Model API Key，不复用 Portal Key，也不公开模型配置管理。内部接口不得挂载到公网入口或公开 OpenAPI；将来采用 mTLS 时只替换服务身份校验，不改变 AuthContext 契约。
 
 ## 当前不实现的权限能力
 

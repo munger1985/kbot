@@ -21,7 +21,8 @@ from knowledge_core.persistence import KnowledgeCoreUnitOfWork
 
 
 _FORBIDDEN_PARSE_POLICY_KEYS = frozenset({
-    "embedding", "embedding_model", "embedding_model_id", "embedding_model_key",
+    "embedding", "embedding_model", "embedding_model_id",
+    "embedding_served_model_name",
     "txt_embed_model", "txt_embedding_model", "query_vector",
 })
 

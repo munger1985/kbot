@@ -29,7 +29,7 @@ class CollectionQueryEmbeddingProvider:
         self, *,
         uow_factory: Callable[[], KnowledgeCoreUnitOfWork],
         embedding_gateway: EmbeddingGateway,
-        model_resolver: Callable[[int], Awaitable[EmbeddingModelSnapshot]],
+        model_resolver: Callable[[UUID], Awaitable[EmbeddingModelSnapshot]],
     ):
         self._uow_factory = uow_factory
         self._embedding_gateway = embedding_gateway
@@ -40,7 +40,7 @@ class CollectionQueryEmbeddingProvider:
     ) -> dict[UUID, list[float]]:
         if not query.strip() or not collection_ids:
             return {}
-        model_ids: dict[UUID, int] = {}
+        model_ids: dict[UUID, UUID] = {}
         async with self._uow_factory() as uow:
             if uow.collections is None:
                 raise RuntimeError("Knowledge Core Unit of Work is not initialized")
@@ -48,15 +48,15 @@ class CollectionQueryEmbeddingProvider:
                 collection = await uow.collections.get_by_id(collection_id=collection_id)
                 if collection is None:
                     raise ValueError(f"collection not found: {collection_id}")
-                model_ids[collection_id] = int(collection.embedding_model_id)
+                model_ids[collection_id] = collection.embedding_model_id
 
-        snapshots: dict[int, EmbeddingModelSnapshot] = {}
-        for model_id in sorted(set(model_ids.values())):
+        snapshots: dict[UUID, EmbeddingModelSnapshot] = {}
+        for model_id in sorted(set(model_ids.values()), key=str):
             snapshot = await self._model_resolver(model_id)
             snapshot.validate()
             snapshots[model_id] = snapshot
 
-        by_model: dict[int, list[UUID]] = {}
+        by_model: dict[UUID, list[UUID]] = {}
         for collection_id, model_id in model_ids.items():
             by_model.setdefault(model_id, []).append(collection_id)
         vectors: dict[UUID, list[float]] = {}
@@ -64,7 +64,7 @@ class CollectionQueryEmbeddingProvider:
         for model_id, scoped_collections in by_model.items():
             model = snapshots[model_id]
             batch = await self._embedding_gateway.embed_texts(
-                model_key=model.model_key, texts=[query], is_query=True,
+                served_model_name=model.served_model_name, texts=[query], is_query=True,
             )
             validate_embedding_batch(batch=batch, model=model, expected_count=1)
             for collection_id in scoped_collections:

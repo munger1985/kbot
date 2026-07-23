@@ -21,29 +21,29 @@ class EmbeddingModelPool(BaseModelPool[BaseEmbedding[Any]]):
         """Invoke specific model's shutdown logic"""
         await model.shutdown()
 
-    async def _perform_model_health_check(self, model_name: str, model: BaseEmbedding[Any]) -> None:
+    async def _perform_model_health_check(self, served_model_name: str, model: BaseEmbedding[Any]) -> None:
         """
         Perform lightweight inference health check.
         Note: Wrapped with try-except in parent class, only focus on check action here.
         """
         # Use an extremely short text for health check
         await model.embed(["ping"], batch_size=1)
-        logger.debug(f"🔍 Model {model_name} health check passed")
+        logger.debug(f"Embedding 模型 {served_model_name} 健康检查通过")
 
-    async def _start_model(self, model_name: str, model_data: dict[str, Any]) -> BaseEmbedding[Any]:
+    async def _start_model(self, served_model_name: str, model_data: dict[str, Any]) -> BaseEmbedding[Any]:
         """
         Construct configuration and start model instance.
         Improvement: Extract configuration construction logic to ensure single responsibility principle.
         """
         provider = model_data.get("provider")
         if not provider:
-            raise ValueError(f"Model {model_name} missing required parameter: provider")
+            raise ValueError(f"模型 {served_model_name} 缺少 provider")
 
         # 1. Get base global configuration (as fallback)
         global_config = get_embed_config()
         
         # 2. Construct Provider-specific Config object
-        model_config = self._build_config(model_name, provider, model_data, global_config)
+        model_config = self._build_config(served_model_name, provider, model_data, global_config)
 
         # 3. Create model via factory function
         model = create_embedding_model(model_config)
@@ -51,11 +51,13 @@ class EmbeddingModelPool(BaseModelPool[BaseEmbedding[Any]]):
         # 4. Initialize model resources
         try:
             await model.startup()
-            # Note: No need to manually set self._models[model_name] = model - parent class load_model handles this uniformly
-            logger.success(f"🚀 Embedding model {model_name} ({provider}) started successfully")
+            # 父类在启动成功后统一登记实例，子类只负责构建模型。
+            logger.success(
+                f"Embedding 模型 {served_model_name}（{provider}）启动成功"
+            )
             return model
         except Exception as e:
-            logger.error(f"❌ Failed to start model {model_name}: {str(e)}")
+            logger.error(f"Embedding 模型 {served_model_name} 启动失败：{e}")
             raise
 
     def _build_config(self, name: str, provider: str, data: dict[str, Any], global_cfg: Any) -> EmbeddingConfig:
@@ -63,14 +65,14 @@ class EmbeddingModelPool(BaseModelPool[BaseEmbedding[Any]]):
         Map database data to specific Pydantic Config objects.
         """
         params = data.get("model_params", {})
-        model_tech_name = data.get("model_tech_name", name)
+        provider_model_name = data["provider_model_name"]
         path = data.get("model_path", None)
         api_key = data.get("api_key", None)
         api_endpoint = data.get("api_endpoint", None)
         
         # Extract common parameters (high reuse frequency)
         common_kwargs = {
-            "model_name": model_tech_name,
+            "model_name": provider_model_name,
             "provider": provider,
             "max_tokens": params.get("max_tokens", global_cfg.max_tokens),
             "batch_size": params.get("batch_size", 2),

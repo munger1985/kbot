@@ -66,7 +66,7 @@ async def test_call_embedding_model():
     topk = 4
     kwargs = {}
     kwargs['batch_size'] = 1
-    kwargs['model_name'] = embed_model_name
+    kwargs["served_model_name"] = embed_model_name
     kwargs['texts'] = embed_input_texts
     kwargs['is_query'] = False
     emb = await model_client.call_embedding_model(**kwargs)

@@ -67,10 +67,7 @@ class ChatResponse(BaseModel):
     created: int = Field(default_factory=lambda: int(time.time()))
     model: str
     choices: list[dict[str, Any]]
-    # Replaced dict[str, int] with UsageInfo object for type safety
     usage: UsageInfo = Field(..., description="Token usage statistics")
-    processing_time: float
-    tool_calls: list[ToolCall] | None = None
 
 
 class ChatRequest(BaseModel):
@@ -80,8 +77,10 @@ class ChatRequest(BaseModel):
     text generation and advanced features like tool calling, streaming, and
     fine-grained generation parameter control.
     """
-    model_name: str = Field(..., description="Name of the LLM model to use")
-    messages: list[dict[str, str]] | str = Field(..., description="List of chat messages or single prompt string")
+    served_model_name: str = Field(..., description="Name of the LLM model to use")
+    messages: list[dict[str, Any]] | str = Field(
+        ..., description="List of chat messages or single prompt string",
+    )
     max_tokens: int | None = Field(None, description="Maximum number of tokens to generate")
     temperature: float | None = Field(None, description="Sampling temperature (0.0-1.0, lower=more deterministic)")
     stream: bool = Field(False, description="Whether to stream response incrementally")
@@ -90,15 +89,31 @@ class ChatRequest(BaseModel):
     frequency_penalty: float | None = Field(None, description="Penalty for repetitive text (-2 to 2)")
     presence_penalty: float | None = Field(None, description="Penalty for introducing new topics (-2 to 2)")
     tools: list[dict[str, Any]] | None = Field(None, description="List of tools for MCP tool calling")
-    tool_choice: str | None = Field(None, description="Tool selection strategy ('auto', 'none', or specific tool name)")
+    tool_choice: str | dict[str, Any] | None = Field(
+        None, description="Tool selection strategy",
+    )
     enable_tool_calls: bool = Field(False, description="Whether to enable tool calling functionality")
-    response_format: str | dict[str, str] | None = Field(None, description="Response format specification (e.g., 'json_object' for JSON mode)")
+    response_format: str | dict[str, Any] | None = Field(
+        None, description="Response format specification",
+    )
 
-class ToggleModelRequest(BaseModel):
-    """Request model for loading/unloading models from the model pool.
-    
-    Used to dynamically manage model lifecycle in the pool without restarting
-    the application.
-    """
-    model_name: str = Field(..., description="Name of the model to operate on")
-    operation: str = Field(..., description="Operation type: 'load' to load model, 'unload' to unload model")
+
+class OpenAIChatRequest(BaseModel):
+    """OpenAI 兼容的对话补全请求。"""
+
+    model: str = Field(min_length=1, max_length=128)
+    messages: list[dict[str, Any]]
+    max_tokens: int | None = None
+    temperature: float | None = None
+    stream: bool = False
+    timeout: int | None = None
+    top_p: float | None = None
+    frequency_penalty: float | None = None
+    presence_penalty: float | None = None
+    tools: list[dict[str, Any]] | None = None
+    tool_choice: str | dict[str, Any] | None = None
+    response_format: dict[str, Any] | None = None
+
+    def to_internal(self) -> ChatRequest:
+        payload = self.model_dump(exclude={"model"})
+        return ChatRequest(served_model_name=self.model, **payload)

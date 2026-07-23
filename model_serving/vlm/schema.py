@@ -12,7 +12,7 @@ class VLMRequest(BaseModel):
     streaming and non-streaming responses with configurable sampling parameters.
     """
 
-    model_name: str = Field(..., description="Name of the model to use for inference")
+    served_model_name: str = Field(..., description="Name of the model to use for inference")
     messages: list[dict[str, Any]] = Field(..., description="List of messages containing text/image content")
     max_tokens: int | None = Field(None, description="Maximum number of tokens to generate")
     temperature: float | None = Field(None, description="Sampling temperature (0.0-1.0, lower = more deterministic)")
@@ -22,11 +22,24 @@ class VLMRequest(BaseModel):
     frequency_penalty: float | None = Field(None, description="Frequency penalty (reduces repetition)")
     presence_penalty: float | None = Field(None, description="Presence penalty (reduces topic repetition)")
 
-class ToggleModelRequest(BaseModel):
-    """Request schema for model load/unload operations."""
-    model_name: str = Field(..., description="Name of the model to operate on")
-    operation: str = Field(..., description="Operation type: 'load' or 'unload'")
-    
+
+class OpenAIVLMRequest(BaseModel):
+    """OpenAI 兼容的多模态对话请求。"""
+
+    model: str = Field(min_length=1, max_length=128)
+    messages: list[dict[str, Any]]
+    max_tokens: int | None = None
+    temperature: float | None = None
+    stream: bool = False
+    timeout: int | None = None
+    top_p: float | None = None
+    frequency_penalty: float | None = None
+    presence_penalty: float | None = None
+
+    def to_internal(self) -> VLMRequest:
+        payload = self.model_dump(exclude={"model"})
+        return VLMRequest(served_model_name=self.model, **payload)
+
 # Define response models
 class VLMResponse(BaseModel):
     """VLM inference response model (OpenAI-compatible)
@@ -41,4 +54,3 @@ class VLMResponse(BaseModel):
     model: str = Field(..., description="Name of the model that generated the response")
     choices: list[dict[str, Any]] = Field(..., description="List containing the response message(s)")
     usage: dict[str, int] = Field(..., description="Token usage statistics including prompt_tokens, completion_tokens, and total_tokens")
-    processing_time: float = Field(..., description="Processing time in seconds (custom field)")

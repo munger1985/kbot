@@ -98,7 +98,7 @@ async def lifespan(app: FastAPI):
     )
     model_client = AIModelClient(caller_service=SERVICE_NAME)
 
-    async def model_resolver(collection_model_id: int):
+    async def model_resolver(collection_model_id: UUID):
         return await resolve_embedding_model(model_config_client, collection_model_id)
 
     app.state.kc_index_service = KnowledgeCoreEvidenceIndexService(

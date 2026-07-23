@@ -2,7 +2,7 @@
 
 ## API 契约与版本策略
 
-Main API 的公开契约使用 `/api/v1`；Knowledge Core、Agent Runtime、AIOps、Model Serving 等服务间契约使用 `/internal/v1`。产品版本与接口版本独立，只有同一契约发生不兼容变化并需并行分流时才新增 `v2`。每个 API 定义请求/响应 DTO、分页、排序、错误码、幂等语义、超时行为和弃用策略；OpenAPI 是发布产物，并以消费者契约测试保护。
+Main API 的公开契约使用 `/api/v1`；Knowledge Core、Agent Runtime、AIOps、Model Serving 等服务间契约使用 `/internal/v1`。Model Serving 可额外发布受独立 API Key 保护的 `/api/v1/models`、`chat/completions` 和 `embeddings`，但模型管理始终属于内部契约。产品版本与接口版本独立，只有同一契约发生不兼容变化并需并行分流时才新增 `v2`。每个 API 定义请求/响应 DTO、分页、排序、错误码、幂等语义、超时行为和弃用策略；OpenAPI 是发布产物，并以消费者契约测试保护。
 
 Core API 采用全新模型，不兼容旧 `/api/kb` 或任何 3.x Agent/Skill 契约。Main API 只发布 `/api/v1` 新路由，不提供旧接口 Adapter、双写、双读或协议转换；所有 Portal、APEX 页面、MCP 与外部调用方随 4.0 一起升级。
 

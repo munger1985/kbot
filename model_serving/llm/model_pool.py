@@ -35,7 +35,7 @@ class LLMModelPool(BaseModelPool[BaseLLM[Any]]):
         """
         await model.shutdown()
 
-    async def _perform_model_health_check(self, model_name: str, model: BaseLLM[Any]):
+    async def _perform_model_health_check(self, served_model_name: str, model: BaseLLM[Any]):
         """
         Perform health check on LLM instance using minimal chat completion.
         
@@ -44,7 +44,7 @@ class LLMModelPool(BaseModelPool[BaseLLM[Any]]):
         latency while ensuring the model is operational.
         
         Args:
-            model_name: Name of the model to check
+            served_model_name: Name of the model to check
             model: LLM instance to perform health check on
             
         Raises:
@@ -56,9 +56,9 @@ class LLMModelPool(BaseModelPool[BaseLLM[Any]]):
             stream=False,
             max_tokens=2
         )
-        logger.debug(f"🔍 LLM model {model_name} health check passed")
+        logger.debug(f"LLM 模型 {served_model_name} 健康检查通过")
 
-    async def _start_model(self, model_name: str, model_data: dict[str, Any]) -> BaseLLM[Any]:
+    async def _start_model(self, served_model_name: str, model_data: dict[str, Any]) -> BaseLLM[Any]:
         """
         Create and initialize an LLM instance from configuration data.
         
@@ -70,7 +70,7 @@ class LLMModelPool(BaseModelPool[BaseLLM[Any]]):
         5. Returns ready-to-use model instance
         
         Args:
-            model_name: Unique technical name of the model
+            served_model_name: Unique technical name of the model
             model_data: Dictionary containing model configuration from database/storage
             
         Returns:
@@ -83,13 +83,13 @@ class LLMModelPool(BaseModelPool[BaseLLM[Any]]):
         # Extract required provider identifier
         provider = model_data.get("provider")
         if not provider:
-            raise ValueError(f"Missing required parameter 'provider' for model {model_name}")
+            raise ValueError(f"模型 {served_model_name} 缺少 provider")
 
         # Step 1: Get global default LLM configuration
         global_config = get_llm_config()
         
         # Step 2: Build provider-specific configuration object
-        model_config = self._build_config(model_name, provider, model_data, global_config)
+        model_config = self._build_config(served_model_name, provider, model_data, global_config)
 
         # Step 3: Create model instance via factory pattern
         model = create_llm_model(model_config)
@@ -99,10 +99,10 @@ class LLMModelPool(BaseModelPool[BaseLLM[Any]]):
             await model.startup()
             
             # Instance state managed by parent class load_model method
-            logger.success(f"🚀 LLM model {model_name} ({provider}) loaded into pool successfully")
+            logger.success(f"LLM 模型 {served_model_name}（{provider}）启动成功")
             return model
         except Exception as e:
-            logger.error(f"❌ Failed to start LLM model {model_name}: {e}")
+            logger.error(f"LLM 模型 {served_model_name} 启动失败：{e}")
             raise
 
     def _build_config(self, name: str, provider: str, data: dict[str, Any], global_cfg: Any) -> LLMConfig:
@@ -127,14 +127,14 @@ class LLMModelPool(BaseModelPool[BaseLLM[Any]]):
         """
         # Extract model parameters with fallback to empty dict
         params = data.get("model_params", {})
-        model_tech_name = data.get("model_tech_name", name)
+        provider_model_name = data["provider_model_name"]
         # Extract common connection parameters
         api_key = data.get("api_key")
         api_endpoint = data.get("api_endpoint")
 
         # Common LLM parameters with global defaults fallback
         common_kwargs = {
-            "model_name": model_tech_name,
+            "model_name": provider_model_name,
             "provider": provider,
             "temperature": params.get("temperature", global_cfg.temperature),
             "max_tokens": params.get("max_tokens", global_cfg.max_tokens),

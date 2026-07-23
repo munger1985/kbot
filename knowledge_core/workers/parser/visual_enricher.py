@@ -13,10 +13,10 @@ class KcVisualEnricher:
         self._client_factory = client_factory
 
     async def enrich(
-        self, document, *, model_name: str | None, prompt: str,
+        self, document, *, served_model_name: str | None, prompt: str,
         max_concurrency: int = 2,
     ) -> int:
-        if not model_name:
+        if not served_model_name:
             return 0
         client = self._client_factory()
         semaphore = asyncio.Semaphore(max_concurrency)
@@ -33,11 +33,14 @@ class KcVisualEnricher:
             if existing or image is None:
                 return False
             async with semaphore:
-                description = await client.get_vlm_answer(model_name, image, prompt=prompt)
+                description = await client.get_vlm_answer(
+                    served_model_name, image, prompt=prompt,
+                )
             if not description.strip():
                 return False
             picture.annotations.append(DescriptionAnnotation(
-                text=description.strip(), provenance=f"vlm_kc_v2:{model_name}",
+                text=description.strip(),
+                provenance=f"vlm_kc_v2:{served_model_name}",
             ))
             return True
 

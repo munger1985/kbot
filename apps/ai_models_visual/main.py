@@ -61,7 +61,9 @@ async def lifespan(app: FastAPI):
     app.state.db_runtime = db_runtime
     visual_service.bind_session_factory(db_runtime.session_factory)
     app.state.model_registry = ModelRegistryService(
-        app_id=app_config.app_id, session_factory=db_runtime.session_factory,
+        app_id=app_config.app_id,
+        session_factory=db_runtime.session_factory,
+        on_model_changed=visual_service.invalidate_model,
     )
 
     log_conf = LogConfig(
@@ -131,11 +133,11 @@ async def health() -> dict[str, Any]:
 async def embed_image(req: VisualEmbeddingRequest):
     """图片 → 视觉 embedding"""
     try:
-        emb = await visual_service.embed(req.model_name, req.image_base64)
+        emb = await visual_service.embed(req.served_model_name, req.image_base64)
         return VisualEmbeddingResponse(
             embedding=emb,
             dimension=len(emb),
-            model_name=req.model_name or "default",
+            served_model_name=req.served_model_name,
         )
     except Exception as e:
         logger.error(f"[VisualService] embed failed: {e}")

@@ -39,7 +39,7 @@ class VLMModelPool(BaseModelPool[BaseVLM[Any]]):
         """
         await model.shutdown()
 
-    async def _perform_model_health_check(self, model_name: str, model: BaseVLM[Any]):
+    async def _perform_model_health_check(self, served_model_name: str, model: BaseVLM[Any]):
         """
         Perform model health check
         
@@ -47,7 +47,7 @@ class VLMModelPool(BaseModelPool[BaseVLM[Any]]):
         health_check interface implementation across all subclasses.
         
         Args:
-            model_name: Name of the model to check
+            served_model_name: Name of the model to check
             model: VLM model instance to perform health check on
             
         Raises:
@@ -70,15 +70,15 @@ class VLMModelPool(BaseModelPool[BaseVLM[Any]]):
                 is_ready = getattr(status, 'initialized', False)
 
             if not is_ready:
-                raise RuntimeError(f"Model {model_name} not ready (initialized=False)")
+                raise RuntimeError(f"模型 {served_model_name} 尚未就绪")
                 
-            logger.debug(f"🔍 VLM model {model_name} health check passed")
+            logger.debug(f"VLM 模型 {served_model_name} 健康检查通过")
             
         except Exception as e:
-            logger.warning(f"❌ Model {model_name} health check failed: {e}")
+            logger.warning(f"VLM 模型 {served_model_name} 健康检查失败：{e}")
             raise  # Raise exception to trigger reload_model in base class
 
-    async def _start_model(self, model_name: str, model_data: dict[str, Any]) -> BaseVLM[Any]:
+    async def _start_model(self, served_model_name: str, model_data: dict[str, Any]) -> BaseVLM[Any]:
         """
         Create and start VLM instance
         
@@ -86,7 +86,7 @@ class VLMModelPool(BaseModelPool[BaseVLM[Any]]):
         with provider-specific settings, and starts it up.
         
         Args:
-            model_name: Name of the model to create
+            served_model_name: Name of the model to create
             model_data: Dictionary containing model configuration parameters
             
         Returns:
@@ -98,23 +98,23 @@ class VLMModelPool(BaseModelPool[BaseVLM[Any]]):
         """
         provider = model_data.get("provider")
         if not provider:
-            raise ValueError(f"Model {model_name} missing required parameter: provider")
+            raise ValueError(f"模型 {served_model_name} 缺少 provider")
 
         # 1. Get global VLM default configuration
         global_vlm_config = get_vlm_config()
 
         # 2. Build provider-specific configuration object
-        model_config = self._build_config(model_name, provider, model_data, global_vlm_config)
+        model_config = self._build_config(served_model_name, provider, model_data, global_vlm_config)
 
         # 3. Create and start model
         model = create_vlm_model(model_config)
         try:
             await model.startup()
             # State management handled by base class BaseModelPool
-            logger.success(f"🚀 VLM model {model_name} ({provider}) started successfully")
+            logger.success(f"VLM 模型 {served_model_name}（{provider}）启动成功")
             return model
         except Exception as e:
-            logger.error(f"❌ VLM model {model_name} startup failed: {e}")
+            logger.error(f"VLM 模型 {served_model_name} 启动失败：{e}")
             raise
 
     def _build_config(self, name: str, provider: str, data: dict[str, Any], global_cfg: Any) -> VLMConfig:
@@ -139,13 +139,13 @@ class VLMModelPool(BaseModelPool[BaseVLM[Any]]):
         """
         # Extract model parameters with fallback to empty dict
         params = data.get("model_params", {})
-        model_tech_name = data.get("model_tech_name", name)
+        provider_model_name = data["provider_model_name"]
         api_endpoint = data.get("api_endpoint")
         api_key = data.get("api_key")
 
         # Extract common parameters
         common_kwargs = {
-            "model_name": model_tech_name,
+            "model_name": provider_model_name,
             "provider": provider,
             "max_tokens": params.get("max_tokens", 512),
             "temperature": params.get("temperature", 0.1),

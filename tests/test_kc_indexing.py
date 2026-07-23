@@ -6,24 +6,25 @@ from knowledge_core.application.indexing import (
     retrieval_input_hash,
     validate_embedding_batch,
 )
+from platform_core.identity import uuid7
 
 
 class KcIndexingContractTest(unittest.TestCase):
     def setUp(self):
         self.model = EmbeddingModelSnapshot(
-            model_id=7, model_key="embed-v2", dimension=3,
+            model_id=uuid7(), served_model_name="embed-v2", dimension=3,
             config_fingerprint="a" * 64,
         )
 
     def test_provider_identity_and_dimension_must_match(self):
         with self.assertRaises(ValueError):
             validate_embedding_batch(
-                batch=EmbeddingBatch(vectors=[[1.0, 2.0, 3.0]], model_key="other", dimension=3),
+                batch=EmbeddingBatch(vectors=[[1.0, 2.0, 3.0]], served_model_name="other", dimension=3),
                 model=self.model, expected_count=1,
             )
         with self.assertRaises(ValueError):
             validate_embedding_batch(
-                batch=EmbeddingBatch(vectors=[[1.0, 2.0]], model_key="embed-v2", dimension=2),
+                batch=EmbeddingBatch(vectors=[[1.0, 2.0]], served_model_name="embed-v2", dimension=2),
                 model=self.model, expected_count=1,
             )
 

@@ -20,7 +20,7 @@ router = APIRouter(
 class CreateCollectionRequest(BaseModel):
     collection_key: str = Field(pattern=r"^[a-z][a-z0-9_-]{1,63}$")
     display_name: str = Field(min_length=1, max_length=256)
-    embedding_model_id: int = Field(gt=0)
+    embedding_model_id: UUID
     description: str | None = Field(default=None, max_length=1000)
     default_security_level: int = Field(default=1, ge=0, le=999)
     metadata: dict = Field(default_factory=dict)
@@ -39,7 +39,7 @@ def _collection(entity) -> dict:
         "collection_id": entity.collection_id, "app_id": int(entity.app_id),
         "domain_id": int(entity.domain_id), "collection_key": entity.collection_key,
         "display_name": entity.display_name, "description": entity.description,
-        "embedding_model_id": int(entity.embedding_model_id), "status": entity.status,
+        "embedding_model_id": entity.embedding_model_id, "status": entity.status,
         "default_security_level": int(entity.default_security_level),
         "metadata": entity.metadata_json or {},
     }

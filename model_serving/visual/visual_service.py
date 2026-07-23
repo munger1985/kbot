@@ -34,10 +34,15 @@ class VisualService:
             self._initialized = False
             logger.info("[VisualService] shutdown complete")
 
-    async def embed(self, model_name: str, image_base64: str) -> list[float]:
+    async def invalidate_model(self, served_model_name: str) -> None:
+        """配置变更后立即移除旧实例，不触发模型服务初始化。"""
+        if self._initialized:
+            await self._pool.unload_model(served_model_name)
+
+    async def embed(self, served_model_name: str, image_base64: str) -> list[float]:
         """图片 → 视觉 embedding"""
         if not self._initialized:
             await self.initialize()
 
-        model = await self._pool.load_model(model_name)
+        model = await self._pool.load_model(served_model_name)
         return await model.embed(image_base64)

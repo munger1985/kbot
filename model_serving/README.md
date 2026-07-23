@@ -1,15 +1,13 @@
 # Model Serving
 
-`model_serving` is the shared model-serving package. It owns model provider
-adapters, pools, model configuration CRUD and category-specific inference
-services. It does not own Agent/Skill or Knowledge Core business data.
+`model_serving` 是模型托管服务包，拥有 Provider Adapter、模型池、
+`KBOT_AI_MODEL` 配置目录和分类推理服务，不拥有 Agent/Skill 或
+Knowledge Core 业务数据。
 
-`common/entities/ai_model.py` and `common/model_repository.py` are the sole
-owners of the `AIModelEntity` catalog. Other services read a sanitized model
-definition through `platform_clients.AIModelConfigClient`; they must not import
-this entity or repository. In the current single-schema deployment the
-service still uses the shared Oracle connection, while the HTTP boundary keeps
-the later move to a service-owned database mechanical.
+`common/entities/ai_model.py` 和 `common/model_repository.py` 是模型目录的
+唯一 Owner。其他服务只能通过 `platform_clients.AIModelConfigClient`
+读取脱敏 DTO，不能导入 Entity 或 Repository。当前仍连接同一 Oracle
+Schema，后续拆库只需替换 Model Serving 的数据库配置。
 
 Deployable processes are under `apps/ai_models_*`:
 
@@ -18,7 +16,14 @@ Deployable processes are under `apps/ai_models_*`:
 - `ai_models_vlm`: vision-language inference
 - `ai_models_visual`: image embeddings
 
-All processes expose `/internal/v1/models` management endpoints restricted to their
-model category. `DELETE` archives a definition instead of physically deleting
-it, so Collection bindings and audit history remain safe. API keys are accepted
-for writes but never returned by the management DTO.
+四个进程都提供按类别隔离的 `/internal/v1/models` 管理接口。`DELETE`
+只归档模型，保留 Collection 引用和审计历史。外部 LLM、VLM 和文本
+Embedding 进程还提供 `/api/v1` OpenAI 兼容接口，使用独立 Model API
+Key；数据库 UUID 和上游凭据不会进入公开推理契约。
+
+模型字段语义：
+
+- `model_id`：UUIDv7 内部身份；
+- `served_model_name`：公开 `model` 参数和模型池缓存键；
+- `display_name`：可修改显示名称；
+- `provider_model_name`：上游厂商或本地引擎名称。

@@ -21,7 +21,7 @@ class KcCollectionEntity(BaseEntity):
     collection_key: Mapped[str] = mapped_column(String(64), nullable=False)
     display_name: Mapped[str] = mapped_column(String(256), nullable=False)
     description: Mapped[str | None] = mapped_column(String(1000))
-    embedding_model_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False)
+    embedding_model_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
     status: Mapped[str] = mapped_column(String(24), nullable=False, default="ACTIVE")
     default_security_level: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     metadata_json: Mapped[dict[str, Any] | None] = mapped_column(OracleJSON)

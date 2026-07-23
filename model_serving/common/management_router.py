@@ -1,5 +1,6 @@
 """四类模型进程共享的已认证模型配置 CRUD。"""
 from typing import Any
+from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, Field
@@ -10,11 +11,15 @@ from .model_registry import ModelDefinitionNotFound, ModelRegistryService
 
 
 class ModelCreateRequest(BaseModel):
+    served_model_name: str = Field(
+        min_length=1, max_length=128,
+        pattern=r"^[a-z0-9][a-z0-9._-]{0,127}$",
+    )
     display_name: str = Field(min_length=1, max_length=256)
-    model_name: str = Field(min_length=1, max_length=256)
+    provider_model_name: str = Field(min_length=1, max_length=256)
     category: int = Field(gt=0)
-    provider: str = Field(min_length=1, max_length=256)
-    api_endpoint: str | None = Field(default=None, max_length=256)
+    provider: str = Field(min_length=1, max_length=64)
+    api_endpoint: str | None = Field(default=None, max_length=1024)
     api_key: str | None = Field(default=None, max_length=4096)
     status: int = Field(default=0, ge=0, le=2)
     embedding_dimension: int | None = Field(default=None, gt=0)
@@ -24,13 +29,9 @@ class ModelCreateRequest(BaseModel):
 
 class ModelUpdateRequest(BaseModel):
     display_name: str | None = Field(default=None, min_length=1, max_length=256)
-    model_name: str | None = Field(default=None, min_length=1, max_length=256)
-    provider: str | None = Field(default=None, min_length=1, max_length=256)
-    api_endpoint: str | None = Field(default=None, max_length=256)
+    api_endpoint: str | None = Field(default=None, max_length=1024)
     api_key: str | None = Field(default=None, max_length=4096)
     status: int | None = Field(default=None, ge=0, le=2)
-    embedding_dimension: int | None = Field(default=None, gt=0)
-    model_params: dict[str, Any] | None = None
     descs: str | None = Field(default=None, max_length=512)
 
 
@@ -48,7 +49,7 @@ def create_model_management_router(*, category: int) -> APIRouter:
         return {"models": await service(request).list(category=category)}
 
     @router.get("/{model_id}")
-    async def get_model(model_id: int, request: Request):
+    async def get_model(model_id: UUID, request: Request):
         try:
             return await service(request).get(model_id, category=category)
         except Exception as exc:
@@ -64,7 +65,7 @@ def create_model_management_router(*, category: int) -> APIRouter:
         )
 
     @router.patch("/{model_id}")
-    async def update_model(model_id: int, payload: ModelUpdateRequest, request: Request):
+    async def update_model(model_id: UUID, payload: ModelUpdateRequest, request: Request):
         values = {key: value for key, value in payload.model_dump().items() if value is not None}
         try:
             return await service(request).update(
@@ -76,7 +77,7 @@ def create_model_management_router(*, category: int) -> APIRouter:
             raise HTTPException(status_code=404, detail={"code": "MODEL_NOT_FOUND", "message": str(exc)}) from exc
 
     @router.delete("/{model_id}", status_code=status.HTTP_204_NO_CONTENT)
-    async def archive_model(model_id: int, request: Request):
+    async def archive_model(model_id: UUID, request: Request):
         try:
             await service(request).delete(
                 model_id,

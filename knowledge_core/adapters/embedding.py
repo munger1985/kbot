@@ -7,6 +7,7 @@ move to its own database without changing KC persistence.
 import json
 from hashlib import sha256
 from typing import Sequence
+from uuid import UUID
 
 from platform_core.dictionary import ModelCategory, Status
 from platform_core.config.settings import get_embed_config
@@ -21,17 +22,23 @@ class AIModelEmbeddingGateway:
         self._client = client or AIModelClient()
 
     async def embed_texts(
-        self, *, model_key: str, texts: Sequence[str], is_query: bool = False,
+        self, *, served_model_name: str, texts: Sequence[str],
+        is_query: bool = False,
     ) -> EmbeddingBatch:
         items = await self._client.call_embedding_model(
-            model_name=model_key, texts=list(texts), is_query=is_query,
+            served_model_name=served_model_name, texts=list(texts), is_query=is_query,
         )
         vectors = [list(item.embedding) for item in items]
         dimension = len(vectors[0]) if vectors else 0
-        return EmbeddingBatch(vectors=vectors, model_key=model_key, dimension=dimension)
+        return EmbeddingBatch(
+            vectors=vectors, served_model_name=served_model_name,
+            dimension=dimension,
+        )
 
 
-async def resolve_embedding_model(client: AIModelConfigClient, model_id: int) -> EmbeddingModelSnapshot:
+async def resolve_embedding_model(
+    client: AIModelConfigClient, model_id: UUID,
+) -> EmbeddingModelSnapshot:
     """Resolve and validate the Collection-bound model at INDEX start."""
     model = await client.get_model(model_id)
     if int(model.get("category") or 0) != int(ModelCategory.TXT_EMBEDDING):
@@ -44,15 +51,19 @@ async def resolve_embedding_model(client: AIModelConfigClient, model_id: int) ->
         raise ValueError("embedding dimension is not configured")
     if int(model_dimension) != int(configured_dimension):
         raise ValueError("model embedding dimension does not match base.toml")
-    model_key = str(model.get("model_name") or model.get("display_name") or "").strip()
-    if not model_key:
-        raise ValueError("embedding model has no technical name")
+    served_model_name = str(model.get("served_model_name") or "").strip()
+    if not served_model_name:
+        raise ValueError("embedding model has no served_model_name")
+    resolved_model_id = UUID(str(model.get("model_id") or model_id))
     fingerprint = sha256(json.dumps({
-        "model_id": int(model.get("model_id") or model_id), "model_key": model_key,
+        "model_id": str(resolved_model_id),
+        "served_model_name": served_model_name,
+        "provider_model_name": model.get("provider_model_name"),
         "provider": model.get("provider"), "dimension": int(model_dimension),
         "params": model.get("model_params") or {},
     }, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")).hexdigest()
     return EmbeddingModelSnapshot(
-        model_id=int(model.get("model_id") or model_id), model_key=model_key,
-        dimension=int(model_dimension), config_fingerprint=fingerprint,
+        model_id=resolved_model_id,
+        served_model_name=served_model_name, dimension=int(model_dimension),
+        config_fingerprint=fingerprint,
     )

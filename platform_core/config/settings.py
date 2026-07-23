@@ -60,6 +60,7 @@ class SecurityConfig(BaseModel):
     internal_jwt_ttl_seconds: int = Field(default=60, ge=15, le=300)
     internal_jwt_clock_skew_seconds: int = Field(default=5, ge=0, le=30)
     portal_api_keys: list[PortalApiKeyConfig] = Field(default_factory=list)
+    model_api_keys: list[PortalApiKeyConfig] = Field(default_factory=list)
 
 
 class MainApiConfig(BaseModel):

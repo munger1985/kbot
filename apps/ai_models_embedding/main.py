@@ -22,18 +22,20 @@ from fastapi_offline import FastAPIOffline
 from loguru import logger
 
 from platform_core.config.settings import get_embed_config, get_app_config
-from platform_core.contracts import INTERNAL_API_V1
+from platform_core.contracts import INTERNAL_API_V1, PUBLIC_API_V1
 from platform_core.dictionary import ModelCategory
 from platform_core.logger import LogConfig, LogManager
 from platform_core.middleware.log_middleware import log_requests
 from platform_core.database.oracle import create_database_runtime
 from model_serving.embedding.embed_service import EmbeddingService
 from model_serving.embedding.schema import (
-    EmbeddingRequest, SimilarityRequest, ToggleModelRequest
+    EmbeddingRequest, OpenAIEmbeddingRequest, SimilarityRequest,
 )
 from model_serving.embedding.model import EmbeddingResponse
 from platform_core.platform.port_check import check_port_available
 from model_serving.common.management_router import create_model_management_router
+from model_serving.common.openai_router import create_openai_models_router
+from model_serving.common.openai_contracts import openai_error_response
 from model_serving.common.model_registry import ModelRegistryService
 
 # Load environment variables
@@ -74,7 +76,9 @@ async def lifespan(app: FastAPI):
     app.state.db_runtime = db_runtime
     embedding_service.bind_session_factory(db_runtime.session_factory)
     app.state.model_registry = ModelRegistryService(
-        app_id=app_config.app_id, session_factory=db_runtime.session_factory,
+        app_id=app_config.app_id,
+        session_factory=db_runtime.session_factory,
+        on_model_changed=embedding_service.invalidate_model,
     )
 
     # 1. Initialize logging system
@@ -138,11 +142,18 @@ app.add_middleware(
 app.middleware("http")(log_requests)
 
 # Internal service authentication middleware
-from platform_core.security import create_internal_auth_middleware
-app.middleware("http")(
-    create_internal_auth_middleware(audience=SERVICE_NAME)
+from platform_core.security import (
+    create_api_client_auth_middleware,
+    create_internal_auth_middleware,
 )
+app.middleware("http")(
+    create_internal_auth_middleware(
+        audience=SERVICE_NAME, skip_prefixes=(PUBLIC_API_V1,),
+    )
+)
+app.middleware("http")(create_api_client_auth_middleware())
 app.include_router(create_model_management_router(category=ModelCategory.TXT_EMBEDDING.value))
+app.include_router(create_openai_models_router(category=ModelCategory.TXT_EMBEDDING.value))
 
 # --- Dependency Injection ---
 
@@ -176,37 +187,6 @@ async def health_check() -> dict[str, Any]:
     }
 
 
-# @app.post("/load", response_model=dict[str, Any], tags=["Management"], summary="Dynamically manage model status")
-# async def handle_toggle_model(request: ToggleModelRequest) -> dict[str, Any]:
-#     """Load or unload a specific embedding model according to the instruction.
-
-#     Args:
-#         request: Request object containing model name and operation type (load/unload).
-
-#     Returns:
-#         Operation result status.
-
-#     Raises:
-#         HTTPException: 500 error when operation fails or model does not exist.
-#     """
-#     try:
-#         if request.operation == "load":
-#             logger.info(f"正在执行模型加载任务：{request.model_name}")
-#             success = await embedding_service.load_model(request.model_name)
-#         else:
-#             logger.info(f"正在执行模型卸载任务：{request.model_name}")
-#             success = await embedding_service.unload_model(request.model_name)
-
-#         if not success:
-#             raise ValueError(f"Failed to {request.operation} model {request.model_name}")
-
-#         return {"status": "success", "model_name": request.model_name, "operation": request.operation}
-
-#     except Exception as e:
-#         logger.error(f"模型管理操作发生异常：{e}")
-#         raise HTTPException(status_code=500, detail=str(e))
-
-
 @app.post(f"{INTERNAL_API_V1}/embeddings", response_model=EmbeddingResponse, tags=["AI Service"], summary="文本向量化")
 async def handle_embed_texts(
     request: EmbeddingRequest,
@@ -225,9 +205,9 @@ async def handle_embed_texts(
         HTTPException: 500 error when any logical error occurs during processing.
     """
     try:
-        logger.info(f"正在处理 Embedding 请求 | 模型：{request.model_name} | 文本数量：{len(request.texts)}")
+        logger.info(f"正在处理 Embedding 请求 | 模型：{request.served_model_name} | 文本数量：{len(request.texts)}")
         return await embed_service.embed_texts(
-            model_name=request.model_name,
+            served_model_name=request.served_model_name,
             texts=request.texts,
             batch_size=request.batch_size,
             is_query=request.is_query
@@ -235,6 +215,50 @@ async def handle_embed_texts(
     except Exception as e:
         logger.exception(f"Text vectorization failed: {e}")
         raise HTTPException(status_code=500, detail=f"Embedding processing exception: {str(e)}")
+
+
+@app.post(
+    f"{PUBLIC_API_V1}/embeddings",
+    response_model=EmbeddingResponse,
+    tags=["OpenAI Compatible"],
+)
+async def openai_embeddings(
+    request: OpenAIEmbeddingRequest,
+    embed_service: EmbeddingService = Depends(get_embed_service),
+) -> Any:
+    """按 OpenAI 请求格式生成向量。"""
+    texts = [request.input] if isinstance(request.input, str) else request.input
+    if not texts:
+        return openai_error_response(
+            status_code=400,
+            message="input 不能为空",
+            code="invalid_input",
+        )
+    configured_dimension = get_embed_config().dimensions
+    if (
+        request.dimensions is not None
+        and configured_dimension is not None
+        and request.dimensions != configured_dimension
+    ):
+        return openai_error_response(
+            status_code=400,
+            message=f"dimensions 必须为 {configured_dimension}",
+            code="invalid_dimensions",
+        )
+    try:
+        return await embed_service.embed_texts(
+            served_model_name=request.model,
+            texts=texts,
+            is_query=True,
+        )
+    except Exception as exc:
+        logger.error(f"OpenAI Embedding 调用失败：{exc}")
+        return openai_error_response(
+            status_code=500,
+            message="模型推理失败",
+            code="model_inference_failed",
+            error_type="server_error",
+        )
 
 
 @app.post(f"{INTERNAL_API_V1}/similarity", response_model=dict[str, Any], tags=["AI Service"], summary="计算文本相似度")
@@ -255,10 +279,10 @@ async def handle_compute_similarity(
         HTTPException: 500 error when exception occurs during calculation.
     """
     try:
-        logger.info(f"正在处理相似度请求 | 模型：{request.model_name} | 方法：{request.method}")
-        model = await embed_service.get_embedding_model(request.model_name)
+        logger.info(f"正在处理相似度请求 | 模型：{request.served_model_name} | 方法：{request.method}")
+        model = await embed_service.get_embedding_model(request.served_model_name)
         score = await embed_service.compute_similarity(
-            model_name=request.model_name,
+            served_model_name=request.served_model_name,
             text1=request.text1,
             text2=request.text2,
             method=request.method

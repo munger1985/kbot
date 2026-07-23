@@ -5,7 +5,7 @@ from knowledge_core.workers.parser.visual_enricher import KcVisualEnricher
 
 
 class FakeModelClient:
-    async def get_vlm_answer(self, model_name, image, prompt):
+    async def get_vlm_answer(self, served_model_name, image, prompt):
         return "A server topology diagram"
 
 
@@ -18,7 +18,9 @@ class VisualEnricherTest(unittest.IsolatedAsyncioTestCase):
         enricher = KcVisualEnricher(client_factory=FakeModelClient)
 
         count = await enricher.enrich(
-            document, model_name="vlm-a", prompt="Describe visible facts",
+            document,
+            served_model_name="vlm-a",
+            prompt="Describe visible facts",
         )
 
         self.assertEqual(count, 1)
@@ -28,7 +30,7 @@ class VisualEnricherTest(unittest.IsolatedAsyncioTestCase):
     async def test_does_nothing_without_policy_model(self):
         document = SimpleNamespace(pictures=[])
         count = await KcVisualEnricher(client_factory=FakeModelClient).enrich(
-            document, model_name=None, prompt="Describe",
+            document, served_model_name=None, prompt="Describe",
         )
         self.assertEqual(count, 0)
 

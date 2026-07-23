@@ -12,12 +12,12 @@ work is deployed.
 `003_kc_evidence.sql` creates parser-produced Evidence. It must be applied
 before enabling V2 Parser evidence callbacks.
 
-`004_embedding_model_dimension.sql` adds the explicit vector dimension to the
-shared model catalog. Every text embedding model bound by a Collection must be
-populated with the dimension fixed by `base.toml`.
+`004_embedding_model_dimension.sql` records the deployment-order boundary:
+Model Serving owns the dimension and UUIDv7 model identity, so KC migrations
+must not alter its catalog.
 
-`005_kc_retrieval_index.sql` adds the single text vector and model identity
-snapshot used by the KC `INDEX` job.
+`005_kc_retrieval_index.sql` adds the single text vector, UUIDv7 model identity
+and served-model-name snapshot used by the KC `INDEX` job.
 
 `006_kc_discovery_object.sql` adds Bundle/Document profile projections used by
 the first retrieval stage. Profile text is a discovery signal, not citation

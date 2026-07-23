@@ -31,7 +31,7 @@ class CreateCollectionCommand:
     domain_id: int
     collection_key: str
     display_name: str
-    embedding_model_id: int
+    embedding_model_id: UUID
     default_security_level: int = 1
     description: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
@@ -75,8 +75,8 @@ class KnowledgeCoreCollectionService:
             raise ValueError("collection_key is required")
         if not display_name:
             raise ValueError("display_name is required")
-        if command.embedding_model_id <= 0:
-            raise ValueError("embedding_model_id must be positive")
+        if not isinstance(command.embedding_model_id, UUID):
+            raise ValueError("embedding_model_id must be a UUID")
         if command.default_security_level < 0:
             raise ValueError("default_security_level must be non-negative")
 

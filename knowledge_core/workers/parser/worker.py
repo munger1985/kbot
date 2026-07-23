@@ -97,7 +97,8 @@ class KcParserWorker:
                 )
                 if self._visual_enricher is not None:
                     await self._visual_enricher.enrich(
-                        document, model_name=policy.get("vlm_model"),
+                        document,
+                        served_model_name=policy.get("vlm_model"),
                         prompt=str(policy.get("visual_description_prompt", "")),
                     )
                 output = self._pipeline.parse(

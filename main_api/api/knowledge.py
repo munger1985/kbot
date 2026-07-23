@@ -23,7 +23,7 @@ router = APIRouter(
 class CollectionCreateRequest(BaseModel):
     collection_key: str = Field(pattern=r"^[a-z][a-z0-9_-]{1,63}$")
     display_name: str = Field(min_length=1, max_length=256)
-    embedding_model_id: int = Field(gt=0)
+    embedding_model_id: UUID
     description: str | None = Field(default=None, max_length=1000)
     default_security_level: int = Field(default=1, ge=0, le=999)
     metadata: dict[str, Any] = Field(default_factory=dict)

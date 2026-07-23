@@ -203,8 +203,8 @@ class KcEvidenceEntity(_AuditEntity):
     # vector so equal dimensions can never be mistaken for interchangeable
     # embedding spaces.
     embedding: Mapped[list[float] | None] = mapped_column(VectorField())
-    embedding_model_id: Mapped[int | None] = mapped_column(Numeric(38, 0))
-    embedding_model_key: Mapped[str | None] = mapped_column(String(256))
+    embedding_model_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
+    embedding_served_model_name: Mapped[str | None] = mapped_column(String(128))
     embedding_config_fingerprint: Mapped[str | None] = mapped_column(String(64))
     embedding_input_hash: Mapped[str | None] = mapped_column(String(64))
     indexed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

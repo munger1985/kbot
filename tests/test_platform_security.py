@@ -20,6 +20,7 @@ from platform_core.security import (
     PortalApiKeyError,
     PortalApiKeyVerifier,
     build_internal_auth_headers,
+    create_api_client_auth_middleware,
     create_internal_auth_middleware,
     create_public_auth_middleware,
     digest_portal_api_key,
@@ -149,6 +150,37 @@ class PlatformSecurityTest(unittest.TestCase):
             "IDENTITY_CONTEXT_REQUIRED",
             response.json()["code"],
         )
+
+    def test_api_client_middleware_requires_key_but_not_domain(self) -> None:
+        app = FastAPI()
+        app.middleware("http")(
+            create_internal_auth_middleware(
+                audience="model-serving",
+                codec=self.codec,
+                service_token=TEST_SERVICE_TOKEN,
+                skip_prefixes=("/api/v1",),
+            )
+        )
+        app.middleware("http")(
+            create_api_client_auth_middleware(verifier=self.verifier)
+        )
+
+        @app.get("/api/v1/models")
+        async def models(request: Request):
+            return get_auth_context(request).model_dump(mode="json")
+
+        client = TestClient(app)
+        response = client.get(
+            "/api/v1/models",
+            headers={"Authorization": f"Bearer {self.raw_api_key}"},
+        )
+        self.assertEqual(200, response.status_code)
+        self.assertEqual("API_CLIENT", response.json()["principal_kind"])
+        self.assertIsNone(response.json()["domain_id"])
+
+        rejected = client.get("/api/v1/models")
+        self.assertEqual(401, rejected.status_code)
+        self.assertEqual("AUTH_REQUIRED", rejected.json()["error"]["code"])
 
     def test_internal_middleware_checks_service_and_audience(self) -> None:
         app = FastAPI()

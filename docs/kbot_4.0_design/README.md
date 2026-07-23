@@ -46,6 +46,7 @@ KBot 4.0 是一次**Clean-slate 重构**：保留单仓库、同一 Oracle/APEX 
 | [39_aiops_step10_inspection_reporting_and_comparison.md](39_aiops_step10_inspection_reporting_and_comparison.md) | Inspection Fire、多副本调度、版本化报告和确定性处理前后对比 |
 | [40_aiops_step11_root_main_api_and_apex_integration.md](40_aiops_step11_root_main_api_and_apex_integration.md) | Root Delegation、父子事件投影、Composer、Main API/SSE 和 APEX 集成 |
 | [41_kbot4_step12_acceptance_release_and_cutover.md](41_kbot4_step12_acceptance_release_and_cutover.md) | 全系统测试矩阵、质量门禁、数据重建、生产切换、Mutation 启用与旧表退出 |
+| [42_model_serving_identity_and_openai_compatibility.md](42_model_serving_identity_and_openai_compatibility.md) | UUIDv7 模型身份、服务名、Provider 名、模型池与 OpenAI 兼容接口 |
 | [06_identity_security_and_tenancy.md](06_identity_security_and_tenancy.md) | 身份、租户、权限、密钥与数据安全治理 |
 | [07_platform_operations_and_integrations.md](07_platform_operations_and_integrations.md) | 平台运行、可观测性、AIOps、MCP、Slack 与外部适配器 |
 | [08_api_data_migration_and_lifecycle.md](08_api_data_migration_and_lifecycle.md) | API 契约、APEX Schema 变更、数据迁移与文件生命周期 |
@@ -55,7 +56,7 @@ KBot 4.0 是一次**Clean-slate 重构**：保留单仓库、同一 Oracle/APEX 
 
 1. 新增 `knowledge-core` 进程，拥有知识库新表、任务状态机和对外检索契约。
 2. Parser 保留为独立 Worker，但变为 Knowledge Core 的任务执行者，不再拥有文件生命周期。
-3. LLM、Embedding、VLM、Visual 保留为模型运行时服务；模型配置由 Platform 领域拥有，运行时只读。
+3. LLM、Embedding、VLM、Visual 保留为模型运行时服务；Model Serving 拥有模型目录、Provider、模型池和推理接口。
 4. 所有新领域采用“Repository 注入 Session、UoW 控制事务”；Repository 内禁止 `commit()`。
 5. 跨进程可靠协作使用数据库任务/Outbox，不在数据库事务中调用 HTTP，也不以轮询旧业务表作为协议。
 6. Agent 负责协作与决策，Skill 负责受限能力执行；高风险动作由独立策略/HITL 决定，不能仅依赖 Planner 提示词。

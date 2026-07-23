@@ -11,7 +11,7 @@ from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
 from loguru import logger
 
-from platform_core.contracts import AuthContext, PrincipalKind
+from platform_core.contracts import AuthContext, PrincipalKind, PUBLIC_API_V1
 
 from .api_key import PortalApiKeyError, PortalApiKeyVerifier
 from .auth_context import (
@@ -22,6 +22,7 @@ from .auth_context import (
 from .runtime import (
     INTERNAL_TOKEN_HEADER,
     create_auth_context_codec,
+    create_model_api_key_verifier,
     create_portal_api_key_verifier,
     get_internal_service_token,
 )
@@ -62,6 +63,24 @@ def _problem(
             "code": code,
             "detail": detail,
             "request_id": request_id,
+        },
+    )
+
+
+def _api_client_problem(
+    *, status_code: int, code: str, detail: str,
+) -> JSONResponse:
+    """返回 OpenAI SDK 可识别的认证错误结构。"""
+    return JSONResponse(
+        status_code=status_code,
+        headers={"WWW-Authenticate": "Bearer"},
+        content={
+            "error": {
+                "message": detail,
+                "type": "authentication_error",
+                "param": None,
+                "code": code,
+            }
         },
     )
 
@@ -183,12 +202,59 @@ def create_public_auth_middleware(
     return middleware
 
 
+def create_api_client_auth_middleware(
+    *,
+    verifier: PortalApiKeyVerifier | None = None,
+    api_prefix: str = PUBLIC_API_V1,
+):
+    """认证不携带 Domain 的标准 API Client，例如模型推理调用方。"""
+    resolved_verifier = verifier or create_model_api_key_verifier()
+
+    async def middleware(request: Request, call_next):
+        if (
+            request.method == "OPTIONS"
+            or request.url.path in PUBLIC_PATHS
+            or not request.url.path.startswith(api_prefix)
+        ):
+            return await call_next(request)
+        try:
+            principal = resolved_verifier.verify_authorization(
+                request.headers.get("Authorization")
+            )
+            request_id, trace_id = _request_ids(request)
+            request.state.auth_context = AuthContext(
+                principal_kind=PrincipalKind.API_CLIENT,
+                client_id=principal.client_id,
+                api_key_id=principal.key_id,
+                request_id=request_id,
+                trace_id=trace_id,
+            )
+            response = await call_next(request)
+            response.headers.setdefault("X-Request-ID", request_id)
+            return response
+        except PortalApiKeyError as exc:
+            logger.warning(
+                "拒绝 API Client 请求：code={} method={} path={}",
+                exc.code,
+                request.method,
+                request.url.path,
+            )
+            return _api_client_problem(
+                status_code=401,
+                code=exc.code,
+                detail=str(exc),
+            )
+
+    return middleware
+
+
 def create_internal_auth_middleware(
     *,
     audience: str,
     codec: AuthContextJWTCodec | None = None,
     service_token: str | None = None,
     public_paths: set[str] | None = None,
+    skip_prefixes: tuple[str, ...] = (),
 ):
     """创建内部服务使用的服务凭证与 AuthContext JWT 双重认证。"""
     if not audience:
@@ -198,7 +264,11 @@ def create_internal_auth_middleware(
     skip_paths = PUBLIC_PATHS if public_paths is None else public_paths
 
     async def middleware(request: Request, call_next):
-        if request.url.path in skip_paths or request.method == "OPTIONS":
+        if (
+            request.url.path in skip_paths
+            or request.method == "OPTIONS"
+            or request.url.path.startswith(skip_prefixes)
+        ):
             return await call_next(request)
         provided_service_token = request.headers.get(INTERNAL_TOKEN_HEADER)
         if (

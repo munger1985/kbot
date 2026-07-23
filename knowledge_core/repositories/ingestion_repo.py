@@ -203,7 +203,8 @@ class EvidenceRepository:
             await self.session.execute(delete(KcEvidenceEntity).where(KcEvidenceEntity.parse_view_id.in_(parse_view_ids)))
 
     async def list_needing_index(
-        self, *, parse_view_id: UUID, model_id: int, model_key: str, limit: int = 500,
+        self, *, parse_view_id: UUID, model_id: UUID,
+        served_model_name: str, limit: int = 500,
     ) -> list[KcEvidenceEntity]:
         statement = (
             select(KcEvidenceEntity)
@@ -212,7 +213,10 @@ class EvidenceRepository:
                 KcEvidenceEntity.status == "ACTIVE",
                 (KcEvidenceEntity.embedding_input_hash.is_(None)
                  | (KcEvidenceEntity.embedding_model_id != model_id)
-                 | (KcEvidenceEntity.embedding_model_key != model_key)),
+                 | (
+                     KcEvidenceEntity.embedding_served_model_name
+                     != served_model_name
+                 )),
             )
             .order_by(KcEvidenceEntity.ordinal, KcEvidenceEntity.fragment_index)
             .limit(limit)

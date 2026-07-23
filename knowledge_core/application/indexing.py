@@ -20,13 +20,15 @@ from knowledge_core.domain.parse_tasks import ParseLeaseError, ParseTaskClaim, c
 
 @dataclass(frozen=True)
 class EmbeddingModelSnapshot:
-    model_id: int
-    model_key: str
+    model_id: UUID
+    served_model_name: str
     dimension: int
     config_fingerprint: str
 
     def validate(self) -> None:
-        if self.model_id <= 0 or not self.model_key.strip():
+        if not isinstance(self.model_id, UUID) or self.model_id.version != 7:
+            raise ValueError("embedding model_id must be UUIDv7")
+        if not self.served_model_name.strip():
             raise ValueError("embedding model identity is required")
         if self.dimension <= 0:
             raise ValueError("embedding dimension must be positive")
@@ -37,7 +39,7 @@ class EmbeddingModelSnapshot:
 @dataclass(frozen=True)
 class EmbeddingBatch:
     vectors: list[list[float]]
-    model_key: str
+    served_model_name: str
     dimension: int
 
 
@@ -53,9 +55,9 @@ class ClaimedIndexTask:
 
 class EmbeddingGateway(Protocol):
     async def embed_texts(
-        self, *, model_key: str, texts: Sequence[str], is_query: bool = False,
+        self, *, served_model_name: str, texts: Sequence[str], is_query: bool = False,
     ) -> EmbeddingBatch:
-        """Generate vectors using exactly ``model_key``."""
+        """Generate vectors using exactly ``served_model_name``."""
 
 
 def retrieval_input_hash(text: str) -> str:
@@ -66,7 +68,7 @@ def validate_embedding_batch(
     *, batch: EmbeddingBatch, model: EmbeddingModelSnapshot, expected_count: int,
 ) -> None:
     """Reject a provider response before any vector is persisted."""
-    if batch.model_key != model.model_key:
+    if batch.served_model_name != model.served_model_name:
         raise ValueError("embedding provider returned an unexpected model")
     if batch.dimension != model.dimension:
         raise ValueError("embedding provider returned an unexpected dimension")
@@ -88,7 +90,7 @@ class KnowledgeCoreEvidenceIndexService:
         self, *,
         uow_factory: Callable[[], KnowledgeCoreUnitOfWork],
         embedding_gateway: EmbeddingGateway,
-        model_resolver: Callable[[int], Awaitable[EmbeddingModelSnapshot]],
+        model_resolver: Callable[[UUID], Awaitable[EmbeddingModelSnapshot]],
     ):
         self._uow_factory = uow_factory
         self._embedding_gateway = embedding_gateway
@@ -100,7 +102,7 @@ class KnowledgeCoreEvidenceIndexService:
     ) -> int:
         if batch_size < 1 or batch_size > 500:
             raise ValueError("batch_size must be between 1 and 500")
-        model = await self._model_resolver(collection_id)
+        model = await self._resolve_collection_model(collection_id)
         model.validate()
         if job_id is not None:
             await self.snapshot_index_model(job_id=job_id, model=model)
@@ -112,11 +114,11 @@ class KnowledgeCoreEvidenceIndexService:
                 collection = await uow.collections.get_by_id(collection_id=collection_id)
                 if collection is None:
                     raise ValueError("collection not found")
-                if int(collection.embedding_model_id) != model.model_id:
+                if collection.embedding_model_id != model.model_id:
                     raise ValueError("model snapshot is not the Collection-bound model")
                 pending = await uow.evidence.list_needing_index(
                     parse_view_id=parse_view_id, model_id=model.model_id,
-                    model_key=model.model_key, limit=batch_size,
+                    served_model_name=model.served_model_name, limit=batch_size,
                 )
                 # A changed retrieval_text has a new input hash even when
                 # the model identity is unchanged.  It is checked after the
@@ -132,14 +134,14 @@ class KnowledgeCoreEvidenceIndexService:
                     return indexed
                 texts = [row.retrieval_text for row in pending]
                 batch = await self._embedding_gateway.embed_texts(
-                    model_key=model.model_key, texts=texts, is_query=False,
+                    served_model_name=model.served_model_name, texts=texts, is_query=False,
                 )
                 validate_embedding_batch(batch=batch, model=model, expected_count=len(pending))
                 now = datetime.now(timezone.utc)
                 for row, vector in zip(pending, batch.vectors):
                     row.embedding = vector
                     row.embedding_model_id = model.model_id
-                    row.embedding_model_key = model.model_key
+                    row.embedding_served_model_name = model.served_model_name
                     row.embedding_config_fingerprint = model.config_fingerprint
                     row.embedding_input_hash = retrieval_input_hash(row.retrieval_text)
                     row.indexed_at = now
@@ -159,8 +161,8 @@ class KnowledgeCoreEvidenceIndexService:
             payload = dict(job.payload_json or {})
             existing = payload.get("embedding_model_snapshot")
             snapshot = {
-                "model_id": model.model_id,
-                "model_key": model.model_key,
+                "model_id": str(model.model_id),
+                "served_model_name": model.served_model_name,
                 "dimension": model.dimension,
                 "config_fingerprint": model.config_fingerprint,
             }
@@ -207,7 +209,7 @@ class KnowledgeCoreEvidenceIndexService:
             collection_id = job.collection_id
             parse_view_id = job.parse_view_id
             target = (job.payload_json or {}).get("target")
-        model = await self._model_resolver(collection_id)
+        model = await self._resolve_collection_model(collection_id)
         if target == "DISCOVERY":
             return await self._run_discovery_job(
                 job_id=job_id, worker_id=worker_id, input_fingerprint=input_fingerprint,
@@ -219,7 +221,13 @@ class KnowledgeCoreEvidenceIndexService:
             parse_view_id=parse_view_id, collection_id=collection_id,
             batch_size=batch_size, job_id=job_id,
         )
-        return await self.finalize_index_job(job_id=job_id, indexed_count=count, model=model)
+        return await self.finalize_index_job(
+            job_id=job_id,
+            indexed_count=count,
+            model=model,
+            worker_id=worker_id,
+            input_fingerprint=input_fingerprint,
+        )
 
     async def _run_discovery_job(self, *, job_id: UUID, worker_id: str, input_fingerprint: str, model: EmbeddingModelSnapshot) -> str:
         model.validate()
@@ -234,12 +242,13 @@ class KnowledgeCoreEvidenceIndexService:
             if revision is None or revision.collection_id != job.collection_id:
                 raise ValueError("Discovery INDEX revision is stale")
             collection = await uow.collections.get_by_id(collection_id=job.collection_id)
-            if collection is None or int(collection.embedding_model_id) != model.model_id:
+            if collection is None or collection.embedding_model_id != model.model_id:
                 raise ValueError("Discovery INDEX model is not Collection-bound")
             payload = dict(job.payload_json or {})
             snapshot = payload.get("embedding_model_snapshot")
             expected_snapshot = {
-                "model_id": model.model_id, "model_key": model.model_key,
+                "model_id": str(model.model_id),
+                "served_model_name": model.served_model_name,
                 "dimension": model.dimension, "config_fingerprint": model.config_fingerprint,
             }
             if snapshot is not None and snapshot != expected_snapshot:
@@ -247,20 +256,31 @@ class KnowledgeCoreEvidenceIndexService:
             payload["embedding_model_snapshot"] = expected_snapshot
             job.payload_json = payload
             objects = await uow.discovery.list_staged(bundle_revision_id=revision.bundle_revision_id)
-            pending = [obj for obj in objects if obj.embedding is None or obj.embedding_input_hash != retrieval_input_hash(obj.profile_text) or int(obj.embedding_model_id or 0) != model.model_id or obj.embedding_model_key != model.model_key]
+            pending = [
+                obj for obj in objects
+                if obj.embedding is None
+                or obj.embedding_input_hash != retrieval_input_hash(obj.profile_text)
+                or obj.embedding_model_id != model.model_id
+                or obj.embedding_served_model_name != model.served_model_name
+            ]
             if pending:
                 texts = [obj.profile_text for obj in pending]
-                batch = await self._embedding_gateway.embed_texts(model_key=model.model_key, texts=texts, is_query=False)
+                batch = await self._embedding_gateway.embed_texts(served_model_name=model.served_model_name, texts=texts, is_query=False)
                 validate_embedding_batch(batch=batch, model=model, expected_count=len(pending))
                 now = datetime.now(timezone.utc)
                 for obj, vector in zip(pending, batch.vectors):
                     obj.embedding = vector
                     obj.embedding_model_id = model.model_id
-                    obj.embedding_model_key = model.model_key
+                    obj.embedding_served_model_name = model.served_model_name
                     obj.embedding_config_fingerprint = model.config_fingerprint
                     obj.embedding_input_hash = retrieval_input_hash(obj.profile_text)
                     obj.indexed_at = now
-            if any(obj.embedding is None or int(obj.embedding_model_id or 0) != model.model_id or obj.embedding_model_key != model.model_key for obj in objects):
+            if any(
+                obj.embedding is None
+                or obj.embedding_model_id != model.model_id
+                or obj.embedding_served_model_name != model.served_model_name
+                for obj in objects
+            ):
                 raise ValueError("Discovery INDEX has unindexed profiles")
             now = datetime.now(timezone.utc)
             for obj in objects:
@@ -340,6 +360,7 @@ class KnowledgeCoreEvidenceIndexService:
 
     async def finalize_index_job(
         self, *, job_id: UUID, indexed_count: int, model: EmbeddingModelSnapshot,
+        worker_id: str, input_fingerprint: str,
     ) -> str:
         """Mark INDEX successful only after every active Evidence has a vector."""
         now = datetime.now(timezone.utc)
@@ -349,11 +370,17 @@ class KnowledgeCoreEvidenceIndexService:
             job = await uow.jobs.get_by_id(ingestion_job_id=job_id, lock=True)
             if job is None or job.job_type != "INDEX" or job.parse_view_id is None:
                 raise ValueError("invalid INDEX job")
+            verify_lease(
+                job,
+                worker_id=worker_id,
+                input_fingerprint=input_fingerprint,
+                now=now,
+            )
             model.validate()
             snapshot = (job.payload_json or {}).get("embedding_model_snapshot")
             expected_snapshot = {
-                "model_id": model.model_id,
-                "model_key": model.model_key,
+                "model_id": str(model.model_id),
+                "served_model_name": model.served_model_name,
                 "dimension": model.dimension,
                 "config_fingerprint": model.config_fingerprint,
             }
@@ -368,8 +395,8 @@ class KnowledgeCoreEvidenceIndexService:
                     break
                 if any(
                     row.embedding is None
-                    or int(row.embedding_model_id or 0) != model.model_id
-                    or row.embedding_model_key != model.model_key
+                    or row.embedding_model_id != model.model_id
+                    or row.embedding_served_model_name != model.served_model_name
                     or row.embedding_input_hash != retrieval_input_hash(row.retrieval_text)
                     for row in rows
                 ):
@@ -422,3 +449,19 @@ class KnowledgeCoreEvidenceIndexService:
                     ))
             await uow.commit()
             return status
+
+    async def _resolve_collection_model(
+        self, collection_id: UUID,
+    ) -> EmbeddingModelSnapshot:
+        """只从 Collection 绑定解析具体模型，不接受 Job 或调用方覆盖。"""
+        async with self._uow_factory() as uow:
+            if uow.collections is None:
+                raise RuntimeError("Knowledge Core Unit of Work is not initialized")
+            collection = await uow.collections.get_by_id(collection_id=collection_id)
+            if collection is None:
+                raise ValueError("collection not found")
+            model_id = collection.embedding_model_id
+        model = await self._model_resolver(model_id)
+        if model.model_id != model_id:
+            raise ValueError("模型服务返回的模型身份与 Collection 绑定不一致")
+        return model

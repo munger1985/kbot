@@ -29,15 +29,21 @@ from pydantic import ValidationError
 from pydantic_core import core_schema
 
 from platform_core.config.settings import get_vlm_config, get_app_config
-from platform_core.contracts import INTERNAL_API_V1
+from platform_core.contracts import INTERNAL_API_V1, PUBLIC_API_V1
 from platform_core.dictionary import ModelCategory
 from platform_core.logger import LogConfig, LogManager
 from platform_core.middleware.log_middleware import log_requests
 from platform_core.database.oracle import create_database_runtime
 from model_serving.vlm.vlm_service import VLMService
-from model_serving.vlm.schema import VLMRequest, VLMResponse, ToggleModelRequest
+from model_serving.vlm.schema import (
+    OpenAIVLMRequest,
+    VLMRequest,
+    VLMResponse,
+)
 from platform_core.platform.port_check import check_port_available
 from model_serving.common.management_router import create_model_management_router
+from model_serving.common.openai_router import create_openai_models_router
+from model_serving.common.openai_contracts import openai_error_response
 from model_serving.common.model_registry import ModelRegistryService
 
 # --- Enhanced Pydantic Support for PIL.Image ---
@@ -103,7 +109,9 @@ async def lifespan(app: FastAPI):
     app.state.db_runtime = db_runtime
     vlm_service.bind_session_factory(db_runtime.session_factory)
     app.state.model_registry = ModelRegistryService(
-        app_id=app_config.app_id, session_factory=db_runtime.session_factory,
+        app_id=app_config.app_id,
+        session_factory=db_runtime.session_factory,
+        on_model_changed=vlm_service.invalidate_model,
     )
 
     # 1. Initialize logging configuration
@@ -165,11 +173,18 @@ app.add_middleware(
 app.middleware("http")(log_requests)
 
 # Internal service authentication middleware
-from platform_core.security import create_internal_auth_middleware
-app.middleware("http")(
-    create_internal_auth_middleware(audience=SERVICE_NAME)
+from platform_core.security import (
+    create_api_client_auth_middleware,
+    create_internal_auth_middleware,
 )
+app.middleware("http")(
+    create_internal_auth_middleware(
+        audience=SERVICE_NAME, skip_prefixes=(PUBLIC_API_V1,),
+    )
+)
+app.middleware("http")(create_api_client_auth_middleware())
 app.include_router(create_model_management_router(category=ModelCategory.VLM.value))
+app.include_router(create_openai_models_router(category=ModelCategory.VLM.value))
 
 def get_vlm_service() -> VLMService:
     """Get VLM service instance dependency."""
@@ -192,24 +207,6 @@ async def health_check() -> dict[str, Any]:
     }
 
 
-@app.post("/load", response_model=dict, tags=["Management"])
-async def toggle_vlm_model(request: ToggleModelRequest) -> dict[str, str]:
-    """Dynamically load or unload VLM models."""
-    model_name = request.model_name
-    try:
-        if request.operation == "load":
-            success = await vlm_service.load_model(model_name)
-        else:
-            success = await vlm_service.unload_model(model_name)
-            
-        if not success:
-            raise HTTPException(status_code=500, detail=f"Failed to operate on model {model_name}")
-        return {"status": "success", "model_name": model_name}
-    except Exception as e:
-        logger.exception(f"Model management exception: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
 @app.post(f"{INTERNAL_API_V1}/inference", response_model=VLMResponse, tags=["Inference"])
 async def run_vlm_inference(
     request: VLMRequest,
@@ -226,11 +223,10 @@ async def run_vlm_inference(
     Returns:
         JSON response or SSE text stream.
     """
-    start_time = time.time()
     resp_id = f"vlm-chat-{uuid.uuid4()}"
     created_ts = int(time.time())
-    model = await service.get_vlm_model(request.model_name)
-    logger.info(f"收到推理请求 | 模型：{request.model_name} | 流式模式：{request.stream}")
+    model = await service.get_vlm_model(request.served_model_name)
+    logger.info(f"收到推理请求 | 模型：{request.served_model_name} | 流式模式：{request.stream}")
 
     try:
         if request.stream:
@@ -239,7 +235,7 @@ async def run_vlm_inference(
                 
                 try:
                     stream_raw = await service.inference(
-                        **request.model_dump(exclude={"stream", "model_name"}), stream=True, model_name=request.model_name
+                        **request.model_dump(exclude={"stream", "served_model_name"}), stream=True, served_model_name=request.served_model_name
                     )
                     
                     async for content in stream_raw:  # type: ignore
@@ -251,13 +247,17 @@ async def run_vlm_inference(
                             except (json.JSONDecodeError, ValueError):
                                 pass
                             continue
+                        if isinstance(content, str) and content.startswith(
+                            "\n\n=== FULL RESPONSE ==="
+                        ):
+                            continue
 
                         # Construct standard OpenAI-style Chunk
                         chunk = {
                             "id": resp_id,
                             "object": "chat.completion.chunk",
                             "created": created_ts,
-                            "model": model.model_name,
+                            "model": request.served_model_name,
                             "choices": [{"delta": {"content": content}, "index": 0, "finish_reason": None}]
                         }
                         yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
@@ -267,7 +267,7 @@ async def run_vlm_inference(
                         "id": resp_id,
                         "object": "chat.completion.chunk",
                         "created": created_ts,
-                        "model": model.model_name,
+                        "model": request.served_model_name,
                         "choices": [{"delta": {}, "index": 0, "finish_reason": "stop"}],
                         "usage": usage_stats
                     }
@@ -283,7 +283,6 @@ async def run_vlm_inference(
 
         # --- Non-streaming logic ---
         raw_resp = await service.inference(**request.model_dump(exclude={"stream"}), stream=False)
-        duration = time.time() - start_time
         
         usage = raw_resp.get("usage", {}) # type: ignore
         content = raw_resp["choices"][0]["message"]["content"] # type: ignore
@@ -292,14 +291,13 @@ async def run_vlm_inference(
             id=resp_id,
             object="chat.completion",
             created=created_ts,
-            model=model.model_name,
+            model=request.served_model_name,
             choices=[{
                 "message": {"role": "assistant", "content": content},
                 "finish_reason": "stop",
                 "index": 0
             }],
             usage=usage,
-            processing_time=duration
         )
 
     except ValidationError as ve:
@@ -309,6 +307,37 @@ async def run_vlm_inference(
     except Exception as e:
         logger.exception("Inference execution failed")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post(
+    f"{PUBLIC_API_V1}/chat/completions",
+    response_model=None,
+    tags=["OpenAI Compatible"],
+)
+async def openai_vlm_chat_completions(
+    request: OpenAIVLMRequest,
+    service: VLMService = Depends(get_vlm_service),
+):
+    """把 OpenAI 多模态请求映射为内部 VLM 契约。"""
+    try:
+        result = await run_vlm_inference(request.to_internal(), service)
+    except HTTPException as exc:
+        return openai_error_response(
+            status_code=exc.status_code,
+            message=str(exc.detail),
+            code="model_request_failed",
+        )
+    except Exception as exc:
+        logger.error(f"OpenAI VLM 调用失败：{exc}")
+        return openai_error_response(
+            status_code=500,
+            message="模型推理失败",
+            code="model_inference_failed",
+            error_type="server_error",
+        )
+    if isinstance(result, StreamingResponse):
+        return result
+    return result.model_dump(exclude_none=True)
 
 
 # --- Process Management and Signal Monitoring ---

@@ -19,37 +19,37 @@ class VisualModelPool(BaseModelPool[BaseVisualEmbedding]):
     async def _shutdown_model_instance(self, model: BaseVisualEmbedding) -> None:
         await model.shutdown()
 
-    async def _perform_model_health_check(self, model_name: str, model: BaseVisualEmbedding) -> None:
+    async def _perform_model_health_check(self, served_model_name: str, model: BaseVisualEmbedding) -> None:
         # 用一个小 blank 图片做健康检查
         blank_b64 = (
             "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk"
             "+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
         )
         await model.embed(blank_b64)
-        logger.debug(f"[VisualModel] {model_name} health check OK")
+        logger.debug(f"视觉模型 {served_model_name} 健康检查通过")
 
-    async def _start_model(self, model_name: str, model_data: dict[str, Any]) -> BaseVisualEmbedding:
+    async def _start_model(self, served_model_name: str, model_data: dict[str, Any]) -> BaseVisualEmbedding:
         provider = model_data.get("provider")
         if not provider:
-            raise ValueError(f"视觉模型 {model_name} 缺少 provider")
+            raise ValueError(f"视觉模型 {served_model_name} 缺少 provider")
 
         global_config = get_visual_config()
-        model_config = self._build_config(model_name, provider, model_data, global_config)
+        model_config = self._build_config(served_model_name, provider, model_data, global_config)
 
         model = create_visual_model(model_config)
         await model.startup()
-        logger.success(f"Visual model {model_name} ({provider}) started")
+        logger.success(f"视觉模型 {served_model_name}（{provider}）启动成功")
         return model
 
     def _build_config(self, name: str, provider: str, data: dict[str, Any], global_cfg: Any) -> VisualModelConfig:
         """将数据库数据映射为特定 provider 的 Pydantic Config"""
         params = data.get("model_params", {})
-        model_tech_name = data.get("model_tech_name", name)
+        provider_model_name = data["provider_model_name"]
         path = data.get("model_path") or ""
         path = str(Path(path).expanduser()) if path else None
 
         common_kwargs = {
-            "model_name": model_tech_name,
+            "model_name": provider_model_name,
             "provider": provider,
             "model_path": path,
             "device": params.get("device", "cuda"),

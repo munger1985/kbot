@@ -17,6 +17,7 @@ from knowledge_core.api.purge_task_router import router as purge_task_router
 from knowledge_core.api.status_router import router as status_router
 from main_api.api import knowledge_router
 from model_serving.common.management_router import create_model_management_router
+from model_serving.common.openai_router import create_openai_models_router
 from platform_core.contracts import INTERNAL_API_V1, PUBLIC_API_V1
 
 
@@ -68,6 +69,22 @@ class ApiRouteVersionsTest(unittest.TestCase):
         self.assertFalse(
             any(path.startswith(f"{INTERNAL_API_V1}/") for path in paths)
         )
+
+    def test_model_catalog_has_separate_public_and_internal_routes(self) -> None:
+        internal_paths = {
+            route.path
+            for route in create_model_management_router(category=1).routes
+            if isinstance(route, APIRoute)
+        }
+        public_paths = {
+            route.path
+            for route in create_openai_models_router(category=1).routes
+            if isinstance(route, APIRoute)
+        }
+        self.assertTrue(
+            all(path.startswith(INTERNAL_API_V1) for path in internal_paths)
+        )
+        self.assertEqual({f"{PUBLIC_API_V1}/models"}, public_paths)
 
 
 if __name__ == "__main__":
