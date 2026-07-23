@@ -10,7 +10,6 @@ from typing import Sequence
 from uuid import UUID
 
 from platform_core.dictionary import ModelCategory, Status
-from platform_core.config.settings import get_embed_config
 from knowledge_core.application.indexing import EmbeddingBatch, EmbeddingModelSnapshot
 from platform_clients import AIModelClient, AIModelConfigClient
 
@@ -18,8 +17,8 @@ from platform_clients import AIModelClient, AIModelConfigClient
 class AIModelEmbeddingGateway:
     """Use the shared embedding service without exposing it to Parser."""
 
-    def __init__(self, client: AIModelClient | None = None):
-        self._client = client or AIModelClient()
+    def __init__(self, client: AIModelClient):
+        self._client = client
 
     async def embed_texts(
         self, *, served_model_name: str, texts: Sequence[str],
@@ -37,7 +36,10 @@ class AIModelEmbeddingGateway:
 
 
 async def resolve_embedding_model(
-    client: AIModelConfigClient, model_id: UUID,
+    client: AIModelConfigClient,
+    model_id: UUID,
+    *,
+    expected_dimension: int,
 ) -> EmbeddingModelSnapshot:
     """Resolve and validate the Collection-bound model at INDEX start."""
     model = await client.get_model(model_id)
@@ -45,12 +47,13 @@ async def resolve_embedding_model(
         raise ValueError("Collection model is not a text embedding model")
     if int(model.get("status") or 0) != int(Status.ENABLED):
         raise ValueError("Collection embedding model is disabled")
-    configured_dimension = get_embed_config().dimensions
     model_dimension = model.get("embedding_dimension")
-    if model_dimension is None or configured_dimension is None:
+    if model_dimension is None:
         raise ValueError("embedding dimension is not configured")
-    if int(model_dimension) != int(configured_dimension):
-        raise ValueError("model embedding dimension does not match base.toml")
+    if int(model_dimension) != int(expected_dimension):
+        raise ValueError(
+            "模型维度与 Knowledge Core 配置的向量维度不一致"
+        )
     served_model_name = str(model.get("served_model_name") or "").strip()
     if not served_model_name:
         raise ValueError("embedding model has no served_model_name")

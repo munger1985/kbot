@@ -1,4 +1,4 @@
-from platform_core.config.settings import get_embed_config
+from model_serving.config import get_embedding_config
 from platform_core.dictionary import ModelCategory, EmbeddingProvider
 from loguru import logger
 from typing import Any
@@ -40,7 +40,7 @@ class EmbeddingModelPool(BaseModelPool[BaseEmbedding[Any]]):
             raise ValueError(f"模型 {served_model_name} 缺少 provider")
 
         # 1. Get base global configuration (as fallback)
-        global_config = get_embed_config()
+        global_config = get_embedding_config()
         
         # 2. Construct Provider-specific Config object
         model_config = self._build_config(served_model_name, provider, model_data, global_config)

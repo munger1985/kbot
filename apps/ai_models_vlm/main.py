@@ -18,8 +18,6 @@ from contextlib import asynccontextmanager
 
 import uvicorn
 from PIL import Image
-from pathlib import Path
-from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -28,7 +26,7 @@ from loguru import logger
 from pydantic import ValidationError
 from pydantic_core import core_schema
 
-from platform_core.config.settings import get_vlm_config, get_app_config
+from model_serving.config import get_model_serving_settings
 from platform_core.contracts import INTERNAL_API_V1, PUBLIC_API_V1
 from platform_core.dictionary import ModelCategory
 from platform_core.logger import LogConfig, LogManager
@@ -75,23 +73,20 @@ def get_pydantic_core_schema(
 Image.Image.__get_pydantic_core_schema__ = get_pydantic_core_schema  # type: ignore
 
 
-# Load environment variables
-load_dotenv(Path(__file__).resolve().parents[2] / ".env")
-
 # Get service configuration from config center
-config = get_vlm_config()
+settings = get_model_serving_settings()
+config = settings.vlm
 SERVICE_NAME: str = config.service_name
 SERVICE_VERSION: str = config.service_version
 SERVICE_HOST: str = config.service_host
 SERVICE_PORT: int = config.service_port
 
 # Get general application configuration
-app_config = get_app_config()
-DEBUG: bool = app_config.debug
-LOG_DIR: str = app_config.log.dir
-LOG_LEVEL: str = app_config.log.level
-LOG_ROTATION: str = app_config.log.rotation
-LOG_RETENTION: str = app_config.log.retention
+DEBUG: bool = settings.platform.debug
+LOG_DIR: str = settings.log.dir
+LOG_LEVEL: str = settings.log.level
+LOG_ROTATION: str = settings.log.rotation
+LOG_RETENTION: str = settings.log.retention
 
 # Initialize VLM business service
 vlm_service = VLMService()
@@ -109,7 +104,7 @@ async def lifespan(app: FastAPI):
     app.state.db_runtime = db_runtime
     vlm_service.bind_session_factory(db_runtime.session_factory)
     app.state.model_registry = ModelRegistryService(
-        app_id=app_config.app_id,
+        app_id=settings.platform.app_id,
         session_factory=db_runtime.session_factory,
         on_model_changed=vlm_service.invalidate_model,
     )
@@ -134,7 +129,7 @@ async def lifespan(app: FastAPI):
         logger.info(f"VLM 服务已就绪 | 耗时：{time.time() - start_time:.2f}s")
     except Exception as e:
         logger.error(f"VLM 服务初始化失败：{e}")
-        if not app_config.debug:
+        if not settings.platform.debug:
             sys.exit(1)
     
     yield  # --- Running state ---
@@ -157,8 +152,8 @@ app = FastAPIOffline(
     description="Provides multimodal vision-language model inference service",
     version=SERVICE_VERSION,
     lifespan=lifespan,
-    docs_url="/docs" if app_config.debug else None,
-    redoc_url="/redoc" if app_config.debug else None
+    docs_url="/docs" if settings.platform.debug else None,
+    redoc_url="/redoc" if settings.platform.debug else None
 )
 
 app.add_middleware(

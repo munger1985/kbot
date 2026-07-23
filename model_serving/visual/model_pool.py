@@ -1,7 +1,7 @@
 """视觉嵌入模型池。"""
 
 from pathlib import Path
-from platform_core.config.settings import get_visual_config
+from model_serving.config import get_visual_config
 from platform_core.dictionary import ModelCategory, EmbeddingProvider
 from loguru import logger
 from typing import Any

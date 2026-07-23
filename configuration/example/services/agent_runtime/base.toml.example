@@ -1,0 +1,15 @@
+[api]
+service_name = "kbot-agent-runtime-api"
+service_version = "4.0.0"
+service_host = "0.0.0.0"
+service_port = 18100
+
+[worker]
+service_name = "kbot-agent-runtime-worker"
+worker_id = "agent-runtime-worker-01"
+poll_interval_seconds = 1.0
+lease_seconds = 120
+max_tasks_per_run = 16
+max_parallel_tasks = 4
+max_total_retries = 16
+max_task_timeout_seconds = 600

@@ -10,7 +10,6 @@ from typing import Any
 from uuid import UUID
 from platform_core.contracts import EmbeddingDataItem, INTERNAL_API_V1
 from platform_core.codec.encoder import ImageEncoder
-from platform_core.config.settings import get_app_config, get_embed_config, get_llm_config, get_vlm_config, get_dsocr_config, get_prompt_config, get_visual_config
 from platform_core.exceptions import *
 from platform_core.security import build_internal_auth_headers
 
@@ -20,18 +19,18 @@ class AIModelConfigClient:
 
     def __init__(
         self,
-        base_url: str | None = None,
-        timeout: int | None = None,
-        caller_service: str | None = None,
-        audience: str | None = None,
+        *,
+        base_url: str,
+        timeout: int = 10,
+        caller_service: str,
+        audience: str,
     ):
-        config = get_embed_config()
-        resolved = (base_url or config.service_url).rstrip("/")
+        resolved = base_url.rstrip("/")
         # 0.0.0.0 是监听地址，不能作为客户端目标地址。
         self.base_url = resolved.replace("://0.0.0.0", "://127.0.0.1")
-        self.timeout = timeout or config.health_check_timeout
-        self.caller_service = caller_service or get_app_config().service_name
-        self.audience = audience or config.service_name
+        self.timeout = timeout
+        self.caller_service = caller_service
+        self.audience = audience
 
     async def get_model(self, model_id: UUID) -> dict[str, Any]:
         parsed_model_id = model_id if isinstance(model_id, UUID) else UUID(str(model_id))
@@ -70,13 +69,37 @@ class LLMChunk:
 
 class AIModelClient():
     """模型微服务客户端"""
-    def __init__(self, *, caller_service: str | None = None):
-        self.embedding_config = get_embed_config()
-        self.llm_config = get_llm_config()
-        self.vlm_config = get_vlm_config()
-        self.dsocr_config = get_dsocr_config()
-        self.prompt_config = get_prompt_config()
-        self.caller_service = caller_service or get_app_config().service_name
+    def __init__(
+        self,
+        *,
+        caller_service: str,
+        embedding_config: Any | None = None,
+        llm_config: Any | None = None,
+        vlm_config: Any | None = None,
+        visual_config: Any | None = None,
+    ):
+        self.embedding_config = embedding_config
+        self.llm_config = llm_config
+        self.vlm_config = vlm_config
+        self.visual_config = visual_config
+        self.caller_service = caller_service
+
+    @staticmethod
+    def _endpoint(config: Any, kind: str) -> tuple[str, str, int, int]:
+        """把服务端监听配置或客户端依赖配置归一为调用参数。"""
+        if config is None:
+            raise RuntimeError(f"未配置 {kind} 模型服务")
+        base_url = getattr(config, "base_url", None) or config.service_url
+        audience = getattr(config, "audience", None) or config.service_name
+        timeout = getattr(
+            config, "timeout_seconds", getattr(config, "timeout", 300)
+        )
+        health_timeout = getattr(
+            config,
+            "health_check_timeout_seconds",
+            getattr(config, "health_check_timeout", 10),
+        )
+        return base_url.rstrip("/"), audience, timeout, health_timeout
 
     def _auth_headers(self, *, audience: str, extra: dict | None = None) -> dict:
         """为一次模型服务调用签发内部认证请求头。"""
@@ -112,14 +135,13 @@ class AIModelClient():
             嵌入数据项列表
         """
 
-        service_host = self.embedding_config.service_host
-        service_port = self.embedding_config.service_port
-        total = self.embedding_config.health_check_timeout if use_health_check_timeout else self.embedding_config.timeout
-        timeout = aiohttp.ClientTimeout(total=total)
-        url = f"http://{service_host}:{service_port}{INTERNAL_API_V1}/embeddings"
-        headers = self._auth_headers(
-            audience=self.embedding_config.service_name
+        base_url, audience, normal_timeout, health_timeout = self._endpoint(
+            self.embedding_config, "Embedding"
         )
+        total = health_timeout if use_health_check_timeout else normal_timeout
+        timeout = aiohttp.ClientTimeout(total=total)
+        url = f"{base_url}{INTERNAL_API_V1}/embeddings"
+        headers = self._auth_headers(audience=audience)
         payload = {
             "served_model_name": served_model_name,
             "texts": texts,
@@ -165,7 +187,7 @@ class AIModelClient():
                     return embeddings
 
         except aiohttp.ClientConnectorError as e:
-            msg = f"无法连接到嵌入服务 {service_host}:{service_port}，请检查服务是否启动"
+            msg = f"无法连接到嵌入服务 {base_url}，请检查服务是否启动"
             logger.error(msg)
             raise InternalServerError(msg)
         except aiohttp.ServerTimeoutError:
@@ -214,14 +236,12 @@ class AIModelClient():
         Returns:
             相似度分数
         """
-        service_host = self.embedding_config.service_host
-        service_port = self.embedding_config.service_port
-        total = self.embedding_config.timeout
-        timeout = aiohttp.ClientTimeout(total=total)
-        url = f"http://{service_host}:{service_port}{INTERNAL_API_V1}/similarity"
-        headers = self._auth_headers(
-            audience=self.embedding_config.service_name
+        base_url, audience, total, _ = self._endpoint(
+            self.embedding_config, "Embedding"
         )
+        timeout = aiohttp.ClientTimeout(total=total)
+        url = f"{base_url}{INTERNAL_API_V1}/similarity"
+        headers = self._auth_headers(audience=audience)
         payload = {
             "served_model_name": served_model_name,
             "text1": text1,
@@ -261,13 +281,14 @@ class AIModelClient():
             异步生成器，逐块产生LLM的响应
         """
 
-        service_host = self.llm_config.service_host
-        service_port = self.llm_config.service_port
+        base_url, audience, normal_timeout, health_timeout = self._endpoint(
+            self.llm_config, "LLM"
+        )
         use_health_check_timeout = kwargs.pop("use_health_check_timeout", False)
-        total = self.llm_config.health_check_timeout if use_health_check_timeout else self.llm_config.timeout
+        total = health_timeout if use_health_check_timeout else normal_timeout
         timeout = aiohttp.ClientTimeout(total=total)
-        url = f"http://{service_host}:{service_port}{INTERNAL_API_V1}/chat/completions"
-        headers = self._auth_headers(audience=self.llm_config.service_name)
+        url = f"{base_url}{INTERNAL_API_V1}/chat/completions"
+        headers = self._auth_headers(audience=audience)
 
         # 构建请求体
         payload = {
@@ -301,7 +322,7 @@ class AIModelClient():
                     async for raw_chunk in response.content:
                         yield raw_chunk.decode('utf-8')
         except aiohttp.ClientConnectorError as e:
-            msg = f"无法连接到LLM服务 {service_host}:{service_port}，请检查服务是否启动"
+            msg = f"无法连接到 LLM 服务 {base_url}，请检查服务是否启动"
             logger.error(msg)
             raise InternalServerError(msg)
         except aiohttp.ServerTimeoutError:
@@ -331,16 +352,17 @@ class AIModelClient():
             Returns:
                 str: 模型生成的输出文本。
             """
-            service_host = self.vlm_config.service_host
-            service_port = self.vlm_config.service_port
+            base_url, audience, normal_timeout, health_timeout = self._endpoint(
+                self.vlm_config, "VLM"
+            )
 
             # 1. 超时配置
             use_health_check_timeout = kwargs.pop("use_health_check_timeout", False)
-            total = self.vlm_config.health_check_timeout if use_health_check_timeout else self.vlm_config.timeout
+            total = health_timeout if use_health_check_timeout else normal_timeout
             timeout = aiohttp.ClientTimeout(total=total)
 
-            url = f"http://{service_host}:{service_port}{INTERNAL_API_V1}/inference"
-            headers = self._auth_headers(audience=self.vlm_config.service_name)
+            url = f"{base_url}{INTERNAL_API_V1}/inference"
+            headers = self._auth_headers(audience=audience)
 
             # 2. 图片编码（Base64）
             try:
@@ -383,12 +405,11 @@ class AIModelClient():
                             async for line in response.content:
                                 yield line.decode('utf-8')
                         else:
-                            # 如果非流式，直接返回整个 JSON（为了兼容老代码）
                             yield await response.text()
 
             # 6. 异常分类捕获
             except aiohttp.ClientConnectorError:
-                msg = f"无法连接到 VLM 服务 {service_host}:{service_port}"
+                msg = f"无法连接到 VLM 服务 {base_url}"
                 logger.error(msg)
                 raise InternalServerError(msg)
 
@@ -401,132 +422,6 @@ class AIModelClient():
                 msg = f"VLM 调用过程中发生异常: {str(e)}"
                 logger.exception(msg)
                 raise InternalServerError(msg)
-
-    async def call_dsocr_model(
-            self,
-            served_model_name: str,
-            image: str | Image.Image,
-            prompt: str,
-            **kwargs
-        ) -> AsyncGenerator:
-            """调用 DeepSeek OCR 模型进行图片文字识别。
-
-            直接调用内部 LLM 对话补全端点，
-            支持 Docker vLLM 部署和本地微服务两种模式（通过 api_endpoint 配置切换）。
-
-            Args:
-                served_model_name: 模型技术名称。
-                image: 输入图片（文件路径或 PIL.Image 对象）。
-                prompt: OCR 指令文本。
-                **kwargs: 推理的额外参数（如 temperature, max_tokens 等）。
-
-            Returns:
-                AsyncGenerator: 流式或非流式响应生成器。
-            """
-            url = self.dsocr_config.api_endpoint
-
-            use_health_check_timeout = kwargs.pop("use_health_check_timeout", False)
-            total = self.dsocr_config.timeout
-            timeout = aiohttp.ClientTimeout(total=total)
-
-            # 图片编码（Base64）
-            try:
-                image_base64 = await ImageEncoder.encode(image)
-            except Exception as e:
-                msg = f"DSOCR 图片编码失败: {e}"
-                logger.error(msg)
-                raise InternalServerError(msg)
-
-            # 构建标准 OpenAI Chat Completions 消息体
-            messages = [{
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": prompt},
-                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"}}
-                ]
-            }]
-
-            # 构建请求体（标准 OpenAI 格式：model + messages + stream）
-            payload = {
-                "model": served_model_name,
-                "messages": messages,
-                "stream": kwargs.get("stream", False),
-            }
-            if "max_tokens" in kwargs:
-                payload["max_tokens"] = kwargs["max_tokens"]
-            if "temperature" in kwargs:
-                payload["temperature"] = kwargs["temperature"]
-
-            headers = {"Content-Type": "application/json"}
-
-            # 执行请求
-            try:
-                async with aiohttp.ClientSession(timeout=timeout) as session:
-                    async with session.post(url, headers=headers, json=payload) as response:
-                        if response.status != 200:
-                            error_text = await response.text()
-                            msg = f"DSOCR 服务 HTTP {response.status} 错误: {error_text}"
-                            logger.error(msg)
-                            raise InternalServerError(msg)
-
-                        if kwargs.get("stream"):
-                            async for line in response.content:
-                                yield line.decode('utf-8')
-                        else:
-                            yield await response.text()
-
-            except aiohttp.ClientConnectorError:
-                msg = f"无法连接到 DSOCR 服务 ({url})"
-                logger.error(msg)
-                raise InternalServerError(msg)
-
-            except aiohttp.ServerTimeoutError:
-                msg = f"DSOCR 服务响应超时 ({total}s)"
-                logger.error(msg)
-                raise InternalServerError(msg)
-
-            except Exception as e:
-                msg = f"DSOCR 调用过程中发生异常: {str(e)}"
-                logger.exception(msg)
-                raise InternalServerError(msg)
-
-    async def get_dsocr_answer(self, served_model_name: str, image: str | Image.Image, prompt: str, **kwargs) -> str:
-        """高层封装：直接获取 DeepSeek OCR 聚合后的纯文本字符串。"""
-        full_content = []
-        try:
-            kwargs["stream"] = True
-
-            async for raw_line in self.call_dsocr_model(served_model_name, image, prompt, **kwargs):
-                line = raw_line.strip()
-
-                if not line or line == "data: [DONE]" or not line.startswith("data: "):
-                    continue
-
-                try:
-                    json_str = line[6:]
-                    resp = json.loads(json_str)
-                    choices = resp.get("choices", [])
-                    if not choices:
-                        continue
-
-                    choice = choices[0]
-                    content = ""
-                    if "delta" in choice:
-                        content = choice["delta"].get("content", "")
-                    elif "message" in choice:
-                        content = choice["message"].get("content", "")
-
-                    if content:
-                        full_content.append(content)
-
-                except (json.JSONDecodeError, KeyError, IndexError):
-                    continue
-
-            return "".join(full_content).strip()
-
-        except Exception as e:
-            logger.error(f"获取 DeepSeek OCR 回答失败：{e}")
-            return ""
 
     async def get_llm_json(self, served_model_name: str, prompt:  list[dict[str, str]] | str, **kwargs) -> dict:
         """
@@ -996,13 +891,12 @@ class AIModelClient():
         """
         import aiohttp
 
-        config = get_visual_config()
-        service_host = config.service_host
-        service_port = config.service_port
-        total = config.timeout
+        base_url, audience, total, _ = self._endpoint(
+            self.visual_config, "Visual"
+        )
         timeout = aiohttp.ClientTimeout(total=total)
-        url = f"http://{service_host}:{service_port}{INTERNAL_API_V1}/embed"
-        headers = self._auth_headers(audience=config.service_name)
+        url = f"{base_url}{INTERNAL_API_V1}/embed"
+        headers = self._auth_headers(audience=audience)
 
         # 修复 base64 padding：长度必须为 4 的倍数
         import math
@@ -1023,7 +917,7 @@ class AIModelClient():
                 ) as response:
                     if response.status != 200:
                         if response.status == 403:
-                            logger.error(f"[内部认证] 视觉服务拒绝了内部令牌，服务={service_host}:{service_port}")
+                            logger.error(f"[内部认证] 视觉服务拒绝了内部令牌，服务={base_url}")
                         error_text = await response.text()
                         msg = f"视觉嵌入服务 HTTP {response.status}: {error_text}"
                         logger.error(msg)
@@ -1033,7 +927,7 @@ class AIModelClient():
                     return data.get("embedding", [])
 
         except aiohttp.ClientConnectorError:
-            msg = f"无法连接到视觉嵌入服务 {service_host}:{service_port}"
+            msg = f"无法连接到视觉嵌入服务 {base_url}"
             logger.error(msg)
             raise InternalServerError(msg)
         except aiohttp.ServerTimeoutError:

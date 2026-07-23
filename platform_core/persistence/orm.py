@@ -7,7 +7,6 @@ import array as array_module
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.dialects.oracle import RAW, VECTOR as ORA_VECTOR  # Oracle 23ai+
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
-from platform_core.config.settings import get_embed_config
 
 
 BaseEntity = declarative_base()
@@ -49,10 +48,6 @@ class UniversalVector(TypeDecorator):
     impl = Text # 默认降级实现
     cache_ok = True
 
-    def __init__(self):
-        super().__init__()
-        self.dims = get_embed_config().dimensions
-
     def load_dialect_impl(self, dialect: Dialect):
         # if dialect.name == 'postgresql':
         #     if PG_VECTOR is not None:
@@ -62,7 +57,7 @@ class UniversalVector(TypeDecorator):
         if dialect.name == 'oracle':
             if ORA_VECTOR is not None:
                 # Oracle 23ai+ 也支持不指定维度的向量定义
-                return dialect.type_descriptor(ORA_VECTOR(self.dims) if self.dims else ORA_VECTOR())
+                return dialect.type_descriptor(ORA_VECTOR())
             return dialect.type_descriptor(Text())
         return dialect.type_descriptor(Text())
 

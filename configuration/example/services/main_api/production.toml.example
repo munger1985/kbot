@@ -1,0 +1,2 @@
+[api]
+allowed_origins = ["https://portal.example.com"]

@@ -1,11 +1,12 @@
-# platform_core/config/production.toml
-[app]
+[platform]
 debug = false
-# file_storage = "/app/knowledge_base"
 
-[app.log]
+[log]
 level = "INFO"
-# dir = "/app/logs/"
+dir = "/app/logs"
+api_log_enabled = false
 
-[llm]
-temperature = 0.3
+[database.oracle]
+username = "kbot"
+host = "oracle"
+service_name = "kbot4"

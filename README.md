@@ -31,8 +31,9 @@ Knowledge Core 来源于 3.5 已完成的实现，是 4.0 的正式基线，不�
 pip install -r requirements.txt
 ```
 
-准备 `configuration/base.toml`、环境配置和 `.env`，不要把密码、Token 或私钥
-提交到仓库。配置模板位于 `configuration/example/`。
+按 [configuration/README.md](configuration/README.md) 准备共享配置和
+对应服务配置。TOML 可以提交，但密码、Token、模型厂商 Key 和私钥只能由
+环境变量或 Secret 管理系统注入；部署模板位于 `configuration/example/`。
 
 可单独启动服务：
 

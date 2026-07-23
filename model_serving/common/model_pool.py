@@ -7,7 +7,7 @@ from typing import Any, Callable, TypeVar, Generic
 from time import monotonic
 
 from platform_core.dictionary import Status
-from platform_core.config.settings import get_app_config
+from model_serving.config import get_model_serving_settings
 
 from .model_repository import AIModelRepository as ModelRepository
 from .entities.ai_model import AIModelEntity as Model
@@ -198,7 +198,7 @@ class BaseModelPool(ABC, Generic[T]):
         async with self.oracle_session as session:
             repo = ModelRepository(session)
             model = await repo.get_by_served_name(
-                app_id=get_app_config().app_id,
+                app_id=get_model_serving_settings().platform.app_id,
                 served_model_name=served_model_name,
             )
             if int(model.category) != int(self._get_model_category()):
@@ -214,7 +214,7 @@ class BaseModelPool(ABC, Generic[T]):
         async with self.oracle_session as session:
             repo = ModelRepository(session=session)
             entities = await repo.list_by_scope(
-                app_id=get_app_config().app_id,
+                app_id=get_model_serving_settings().platform.app_id,
                 category=self._get_model_category(),
             )
             entities = [

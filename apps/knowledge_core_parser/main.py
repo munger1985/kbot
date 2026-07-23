@@ -9,13 +9,11 @@ from typing import Any
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 import uvicorn
-from pathlib import Path
-from dotenv import load_dotenv
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi_offline import FastAPIOffline
 from loguru import logger
 
-from platform_core.config.settings import get_parser_config, get_app_config
+from knowledge_core.config import get_knowledge_core_settings
 from platform_core.logger import LogConfig, LogManager
 from platform_core.middleware.log_middleware import log_requests
 from knowledge_core.parsing.converter import KcDoclingConverter
@@ -25,27 +23,29 @@ from knowledge_core.workers.parser.worker import KcParserWorker
 from knowledge_core.workers.parser.visual_enricher import KcVisualEnricher
 from platform_core.platform.port_check import check_port_available
 
-# Load environment variables
-load_dotenv(Path(__file__).resolve().parents[2] / ".env")
-
 # Get service configuration from config center
-config = get_parser_config()
+settings = get_knowledge_core_settings()
+config = settings.parser
 SERVICE_NAME = config.service_name
 SERVICE_VERSION = config.service_version
 SERVICE_HOST = config.service_host
 SERVICE_PORT = config.service_port
 
 # Get general application configuration
-app_config = get_app_config()
-DEBUG: bool = app_config.debug
-LOG_DIR: str = app_config.log.dir
-LOG_LEVEL: str = app_config.log.level
-LOG_ROTATION: str = app_config.log.rotation
-LOG_RETENTION: str = app_config.log.retention
+DEBUG: bool = settings.platform.debug
+LOG_DIR: str = settings.log.dir
+LOG_LEVEL: str = settings.log.level
+LOG_ROTATION: str = settings.log.rotation
+LOG_RETENTION: str = settings.log.retention
 
 # 初始化租约 Worker；它不会轮询或写入旧 File/Chunk 表。
 parse_worker = KcParserWorker(
-    client=KcParseClient(base_url=config.knowledge_core_url, timeout_seconds=config.timeout),
+    client=KcParseClient(
+        base_url=settings.knowledge_core.base_url,
+        timeout_seconds=settings.knowledge_core.timeout_seconds,
+        caller_service=config.service_name,
+        audience=settings.knowledge_core.audience,
+    ),
     converter=KcDoclingConverter(artifacts_path=config.local_artifacts_path),
     pipeline=KcParsingPipeline(parser_version=SERVICE_VERSION),
     worker_id=config.worker_id,

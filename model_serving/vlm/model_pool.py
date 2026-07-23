@@ -1,7 +1,7 @@
 import asyncio
 from typing import Any
 from loguru import logger
-from platform_core.config.settings import get_vlm_config
+from model_serving.config import get_vlm_config
 from platform_core.dictionary import ModelCategory, VLMProvider
 from model_serving.common.model_pool import BaseModelPool
 from .model import *

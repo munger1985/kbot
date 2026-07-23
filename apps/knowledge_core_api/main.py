@@ -19,7 +19,7 @@ from fastapi_offline import FastAPIOffline
 from loguru import logger
 from sqlalchemy import text
 
-from platform_core.config.settings import get_app_config, get_embed_config, get_knowledge_core_config
+from knowledge_core.config import get_knowledge_core_settings
 from platform_core.database.oracle import create_database_runtime
 from platform_core.logger import LogConfig, LogManager
 from platform_core.middleware.log_middleware import log_requests
@@ -52,8 +52,8 @@ from platform_core.platform.port_check import check_port_available
 from platform_core.security import create_internal_auth_middleware
 
 
-config = get_knowledge_core_config()
-app_config = get_app_config()
+settings = get_knowledge_core_settings()
+config = settings.api
 
 SERVICE_NAME = config.service_name
 SERVICE_VERSION = config.service_version
@@ -67,39 +67,54 @@ async def lifespan(app: FastAPI):
     app.state.service_name = SERVICE_NAME
     LogManager(LogConfig(
         service_name=SERVICE_NAME,
-        log_dir=app_config.log.dir,
-        level=app_config.log.level,
-        rotation=app_config.log.rotation,
-        retention=app_config.log.retention,
+        log_dir=settings.log.dir,
+        level=settings.log.level,
+        rotation=settings.log.rotation,
+        retention=settings.log.retention,
     )).setup()
     db_runtime = create_database_runtime()
     app.state.db_runtime = db_runtime
     kc_uow_factory = lambda: create_kc_uow(db_runtime.session_factory)
     intake_service = KnowledgeCoreIntakeService(
-        app_id=app_config.app_id,
+        app_id=settings.platform.app_id,
         receipt_ttl_seconds=config.receipt_ttl_seconds,
         uow_factory=kc_uow_factory,
         parse_policy_overrides={
-            "vlm_model": config.parser_vlm_model or None,
-            "visual_description_prompt": config.parser_visual_description_prompt,
+            "vlm_model": settings.parse_policy.vlm_model or None,
+            "visual_description_prompt": (
+                settings.parse_policy.visual_description_prompt
+            ),
         },
     )
     app.state.kc_multipart_orchestrator = KnowledgeCoreMultipartOrchestrator(
         intake_service=intake_service,
-        object_store=LocalKnowledgeObjectStore(Path(config.local_object_storage_path)),
+        object_store=LocalKnowledgeObjectStore(
+            Path(settings.storage.local_object_storage_path)
+        ),
     )
     app.state.kc_parse_task_service = KnowledgeCoreParseTaskService(
         uow_factory=kc_uow_factory,
-        artifact_store=LocalParserArtifactStore(Path(config.local_object_storage_path)),
+        artifact_store=LocalParserArtifactStore(
+            Path(settings.storage.local_object_storage_path)
+        ),
     )
     model_config_client = AIModelConfigClient(
-        base_url=config.embedding_service_url or get_embed_config().service_url,
+        base_url=settings.embedding.base_url,
+        timeout=settings.embedding.health_check_timeout_seconds,
         caller_service=SERVICE_NAME,
+        audience=settings.embedding.audience,
     )
-    model_client = AIModelClient(caller_service=SERVICE_NAME)
+    model_client = AIModelClient(
+        caller_service=SERVICE_NAME,
+        embedding_config=settings.embedding,
+    )
 
     async def model_resolver(collection_model_id: UUID):
-        return await resolve_embedding_model(model_config_client, collection_model_id)
+        return await resolve_embedding_model(
+            model_config_client,
+            collection_model_id,
+            expected_dimension=settings.vector.dimensions,
+        )
 
     app.state.kc_index_service = KnowledgeCoreEvidenceIndexService(
         uow_factory=kc_uow_factory,
@@ -144,11 +159,19 @@ async def lifespan(app: FastAPI):
         search_port=UowEvidenceSearchPort(),
         query_embedding_provider=app.state.kc_query_embedding_provider,
     )
-    app.state.kc_status_service = KnowledgeCoreStatusService(app_id=app_config.app_id, uow_factory=kc_uow_factory)
-    app.state.kc_scope_service = KnowledgeCoreScopeService(app_id=app_config.app_id, uow_factory=kc_uow_factory)
+    app.state.kc_status_service = KnowledgeCoreStatusService(
+        app_id=settings.platform.app_id, uow_factory=kc_uow_factory
+    )
+    app.state.kc_scope_service = KnowledgeCoreScopeService(
+        app_id=settings.platform.app_id, uow_factory=kc_uow_factory
+    )
     from knowledge_core.application.collections import KnowledgeCoreBindingService, KnowledgeCoreCollectionService
-    app.state.kc_collection_service = KnowledgeCoreCollectionService(app_id=app_config.app_id, uow_factory=kc_uow_factory)
-    app.state.kc_binding_service = KnowledgeCoreBindingService(app_id=app_config.app_id, uow_factory=kc_uow_factory)
+    app.state.kc_collection_service = KnowledgeCoreCollectionService(
+        app_id=settings.platform.app_id, uow_factory=kc_uow_factory
+    )
+    app.state.kc_binding_service = KnowledgeCoreBindingService(
+        app_id=settings.platform.app_id, uow_factory=kc_uow_factory
+    )
     app.state.kc_purge_service = KnowledgeCoreCollectionPurgeService(uow_factory=kc_uow_factory)
     logger.info("正在启动服务 [{}]，进程号={}", SERVICE_NAME, os.getpid())
     try:
@@ -163,8 +186,8 @@ app = FastAPIOffline(
     description="Knowledge Core 的内部入库、解析与检索服务边界。",
     version=SERVICE_VERSION,
     lifespan=lifespan,
-    docs_url="/docs" if app_config.debug else None,
-    redoc_url="/redoc" if app_config.debug else None,
+    docs_url="/docs" if settings.platform.debug else None,
+    redoc_url="/redoc" if settings.platform.debug else None,
 )
 app.add_middleware(
     CORSMiddleware,

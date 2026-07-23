@@ -1,26 +1,14 @@
-# platform_core/config/base.toml
-[app]
+# 复制到 configuration/base.toml；不要在此保存任何明文密钥。
+[platform]
 app_id = 1001
-service_name = "kbot-main-service"
-service_version = "4.0.0"
-service_host = "0.0.0.0"
-service_port = 18099
-mcp_port = 18098
-title = "KBOT"
-description = "KBot API Service"
-debug = true
-file_storage = "/home/chris/kbot3/knowledge_base"
-upload_workers = 10
+version = "4.0.0"
 
-[app.log]
-level = "DEBUG"
-dir = "/home/chris/kbot3/logs/"
+[log]
 rotation = "100 MB"
 retention = "10 days"
 api_log_enabled = true
 
 [security]
-# 以下三个环境变量必须在生产环境通过 Secret 管理系统注入。
 api_key_pepper_env = "KBOT_API_KEY_PEPPER"
 internal_service_token_env = "KBOT_INTERNAL_SERVICE_TOKEN"
 internal_jwt_secret_env = "KBOT_INTERNAL_JWT_SECRET"
@@ -28,55 +16,24 @@ internal_jwt_issuer = "kbot-platform"
 internal_jwt_ttl_seconds = 60
 internal_jwt_clock_skew_seconds = 5
 
-# 使用 python -m scripts.generate_portal_api_key 生成 Key 和摘要。
-# 门户只保存生成时显示一次的明文，KBot 配置只保存摘要。
+# 用 scripts.generate_portal_api_key 生成明文 Key 与摘要。
 # [[security.portal_api_keys]]
-# key_id = "km-portal-primary"
+# key_id = "portal-primary"
 # client_id = "km_portal"
 # key_digest = "替换为 64 位十六进制摘要"
 # enabled = true
-# expires_at = 2027-01-01T00:00:00Z
 
-# Model Serving 对外 OpenAI 兼容接口使用独立 Key，不复用 Portal Key。
 # [[security.model_api_keys]]
-# key_id = "external-model-client"
-# client_id = "external_ai_application"
+# key_id = "model-client"
+# client_id = "external_application"
 # key_digest = "替换为 64 位十六进制摘要"
 # enabled = true
-# expires_at = 2027-01-01T00:00:00Z
 
-[main_api]
-service_name = "kbot-main-api"
-service_version = "4.0.0"
-service_host = "0.0.0.0"
-service_port = 18099
-knowledge_core_url = "http://127.0.0.1:18090"
-upstream_timeout_seconds = 120
-# 生产环境填写 Portal 的明确 Origin，禁止使用 "*"。
-allowed_origins = ["http://127.0.0.1:8080"]
-
-[agent_runtime]
-api_service_name = "kbot-agent-runtime-api"
-api_service_version = "4.0.0"
-api_service_host = "0.0.0.0"
-api_service_port = 18100
-worker_service_name = "kbot-agent-runtime-worker"
-worker_id = "agent-runtime-worker-local"
-poll_interval_seconds = 1.0
-lease_seconds = 120
-max_tasks_per_run = 16
-max_parallel_tasks = 4
-max_total_retries = 16
-max_task_timeout_seconds = 600
-
-[oracle]
-username = "kbot"
-password = ""
-host = "localhost"
+[database.oracle]
+password_env = "KBOT_ORACLE_PASSWORD"
 port = 1521
-service_name = "kbotdev"
 
-[sqlalchemy]
+[database.sqlalchemy]
 echo = false
 pool_size = 10
 pool_timeout = 60
@@ -85,75 +42,6 @@ pool_pre_ping = true
 pool_use_lifo = true
 pool_recycle = 1800
 
-[embed]
-service_name = "kbot-embedding-service"
-service_version = "1.0.0"
-service_host = "0.0.0.0"
-service_port = 18091
+[vector]
+# KC 向量列、模型注册校验和 Embedding 进程必须使用同一维度。
 dimensions = 1536
-max_tokens = 1024
-timeout = 300
-max_retries = 3
-cache_dir = "/home/chris/cached_models/"
-
-[llm]
-service_name = "kbot-llm-service"
-service_version = "1.0.0"
-service_host = "0.0.0.0"
-service_port = 18092
-max_tokens = 8192
-temperature = 0.7
-top_p = 1.0
-top_k = 0
-timeout = 300
-frequency_penalty = 0.0
-presence_penalty = 0.0
-
-[visual]
-service_name = "cube-visual-service"
-service_host = "0.0.0.0"
-service_port = 18093
-timeout = 300
-max_retries = 3
-
-[vlm]
-service_name = "kbot-vlm-service"
-service_version = "1.0.0"
-service_host = "0.0.0.0"
-service_port = 18094
-timeout = 600
-
-[parser]
-service_name = "kbot-parser-service"
-service_version = "1.0.0"
-service_host = "0.0.0.0"
-service_port = 18095
-timeout = 600
-local_artifacts_path = "/home/chris/models/docling_models"
-queue_workers = 2
-parser_parallel = 4
-db_check_interval = 120
-knowledge_core_url = "http://127.0.0.1:18090"
-worker_id = "kbot-parser-v4"
-claim_interval_seconds = 2.0
-lease_seconds = 600
-evidence_batch_size = 100
-
-[knowledge_core]
-service_name = "kbot-knowledge-core-service"
-service_version = "4.0.0"
-service_host = "0.0.0.0"
-service_port = 18090
-receipt_ttl_seconds = 86400
-local_object_storage_path = "./knowledge_core_storage"
-embedding_service_url = "http://127.0.0.1:18091"
-parser_vlm_model = ""
-parser_visual_description_prompt = "请客观描述图片中的可见事实、文字、对象及其关系；不要推测图片之外的信息。"
-
-[dsocr]
-enabled = false
-api_endpoint = "http://localhost:18097/v1/chat/completions"
-timeout = 600
-crop_mode = true
-max_tokens = 8192
-temperature = 0.0

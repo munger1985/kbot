@@ -1,0 +1,13 @@
+# 生产环境的地址和密钥由部署系统覆盖或注入。
+[platform]
+debug = false
+
+[log]
+level = "INFO"
+dir = "/app/logs"
+api_log_enabled = false
+
+[database.oracle]
+username = "kbot"
+host = "oracle"
+service_name = "kbot4"

@@ -2,15 +2,15 @@
 
 import unittest
 
-from platform_core.config.settings import KnowledgeCoreConfig
+from knowledge_core.config import KnowledgeCoreSettings
 
 
 class KnowledgeCoreConfigTest(unittest.TestCase):
     def test_defaults_use_dedicated_service_port(self):
-        config = KnowledgeCoreConfig()
+        config = KnowledgeCoreSettings()
 
-        self.assertEqual(config.service_port, 18090)
-        self.assertEqual(config.service_version, "4.0.0")
+        self.assertEqual(config.api.service_port, 18090)
+        self.assertEqual(config.api.service_version, "4.0.0")
 
 
 if __name__ == "__main__":

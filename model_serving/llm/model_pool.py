@@ -1,4 +1,4 @@
-from platform_core.config.settings import get_llm_config
+from model_serving.config import get_llm_config
 from platform_core.dictionary import ModelCategory, LLMProvider
 from loguru import logger
 from typing import Any

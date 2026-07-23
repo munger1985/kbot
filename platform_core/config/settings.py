@@ -1,47 +1,64 @@
-# platform_core/config/settings.py
-from functools import lru_cache
-from datetime import datetime
-from pathlib import Path
-from typing import Any
+"""KBot 4.0 共享平台配置与分层 TOML 加载器。"""
+
+from __future__ import annotations
+
 import os
+from datetime import datetime
+from functools import lru_cache
+from pathlib import Path
+from typing import Any, TypeVar
+
 import tomli
-from pydantic import BaseModel, Field, field_validator
-from pydantic_settings import BaseSettings
+from dotenv import load_dotenv
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class PlatformConfig(BaseModel):
+    """所有服务共享的平台标识。"""
+
+    app_id: int = Field(default=1, ge=1)
+    version: str = "4.0.0"
+    debug: bool = False
+
+
+class ServiceConfig(BaseModel):
+    """独立进程的通用监听配置。"""
+
+    service_name: str
+    service_version: str = "4.0.0"
+    service_host: str = "0.0.0.0"
+    service_port: int = Field(ge=1, le=65535)
+
+    @property
+    def service_url(self) -> str:
+        host = (
+            "127.0.0.1"
+            if self.service_host in {"0.0.0.0", "::"}
+            else self.service_host
+        )
+        return f"http://{host}:{self.service_port}"
+
+
+class ServiceDependencyConfig(BaseModel):
+    """跨服务 HTTP 依赖。"""
+
+    base_url: str
+    audience: str
+    timeout_seconds: int = Field(default=120, ge=1, le=3600)
+
 
 class LogConfig(BaseModel):
-    """Log configuration settings.
-    
-    Configuration parameters for logging system, including log level, storage path,
-    rotation policy, and retention rules.
-    """
-    level: str = Field(default="INFO", description="Log severity level (DEBUG/INFO/WARN/ERROR/FATAL)")
-    dir: str = Field(default="./logs", description="Directory to store log files")
-    rotation: str = Field(default="100 MB", description="Log file rotation threshold (size/time)")
-    retention: str = Field(default="10 days", description="Log file retention period")
-    api_log_enabled: bool = Field(default=True, description="Whether to enable API request logging")
+    """所有进程共享的日志策略。"""
 
-class AppConfig(BaseModel):
-    """Main application configuration.
-    
-    Core configuration parameters for the KBOT application, including service metadata,
-    network settings, and file storage configuration.
-    """
-    app_id: int = Field(default=1, description="Unique application identifier")
-    service_name: str = Field(default="main_service", description="Name of the service instance")
-    service_version: str = Field(default="4.0.0", description="Service version number")
-    service_host: str = Field(default="0.0.0.0", description="Service binding host address")
-    service_port: int = Field(default=18099, ge=1, le=65535, description="Service listening port (1-65535)")
-    mcp_port: int = Field(default=18098, ge=1, le=65535, description="MCP Service listening port (1-65535)")
-    title: str = Field(default="KBOT", description="Application display title")
-    description: str = Field(default="KBot API Service", description="Application description")
-    debug: bool = Field(default=False, description="Debug mode flag (True/False)")
-    file_storage: str = Field(default="./knowledge_base", description="Root directory for knowledge base file storage")
-    upload_workers: int = Field(default=5, ge=1, le=50, description="Number of worker threads for file uploads (1-50)")
-    log: LogConfig = LogConfig()
+    level: str = "INFO"
+    dir: str = "./logs"
+    rotation: str = "100 MB"
+    retention: str = "10 days"
+    api_log_enabled: bool = True
 
 
 class PortalApiKeyConfig(BaseModel):
-    """门户 API Key 的非敏感注册信息。"""
+    """API Key 的非敏感注册信息；明文 Key 不得进入配置文件。"""
 
     key_id: str = Field(min_length=3, max_length=64)
     client_id: str = Field(min_length=1, max_length=128)
@@ -63,554 +80,149 @@ class SecurityConfig(BaseModel):
     model_api_keys: list[PortalApiKeyConfig] = Field(default_factory=list)
 
 
-class MainApiConfig(BaseModel):
-    """Main API/BFF 的独立运行配置。"""
-
-    service_name: str = "kbot-main-api"
-    service_version: str = "4.0.0"
-    service_host: str = "0.0.0.0"
-    service_port: int = Field(default=18099, ge=1, le=65535)
-    knowledge_core_url: str = "http://127.0.0.1:18090"
-    upstream_timeout_seconds: int = Field(default=120, ge=5, le=1800)
-    allowed_origins: list[str] = Field(default_factory=list)
-
-
-class AgentRuntimeConfig(BaseModel):
-    """Agent Runtime API 与 Worker 的独立运行配置。"""
-
-    api_service_name: str = "kbot-agent-runtime-api"
-    api_service_version: str = "4.0.0"
-    api_service_host: str = "0.0.0.0"
-    api_service_port: int = Field(default=18100, ge=1, le=65535)
-    worker_service_name: str = "kbot-agent-runtime-worker"
-    worker_id: str = Field(
-        default="agent-runtime-worker-local", min_length=1, max_length=256,
-    )
-    poll_interval_seconds: float = Field(default=1.0, ge=0.1, le=60)
-    lease_seconds: int = Field(default=120, ge=15, le=3600)
-    max_tasks_per_run: int = Field(default=16, ge=1, le=128)
-    max_parallel_tasks: int = Field(default=4, ge=1, le=32)
-    max_total_retries: int = Field(default=16, ge=0, le=128)
-    max_task_timeout_seconds: int = Field(default=600, ge=1, le=3600)
-
-
 class OracleConfig(BaseModel):
-    """Oracle database configuration.
-    
-    Connection parameters for Oracle database, including authentication and network settings.
-    """
-    username: str = Field(default="kbot", description="Oracle database username")
-    password: str = Field(default="", description="Oracle database password")
-    host: str = Field(default="localhost", description="Oracle database host address")
-    port: int = Field(default=1521, ge=1, le=65535, description="Oracle database port (1-65535)")
-    service_name: str = Field(default="kbotdev", description="Oracle service name/SID")
-    
-    @property
-    def dsn(self) -> str:
-        """Generate Oracle DSN (Data Source Name) string.
-        
-        Returns:
-            str: Formatted Oracle DSN string for database connection.
-        """
-        return f"{self.username}/{self.password}@{self.host}:{self.port}/{self.service_name}"
+    """Oracle 连接配置；密码只允许通过指定环境变量注入。"""
+
+    username: str = "kbot"
+    password_env: str = "KBOT_ORACLE_PASSWORD"
+    host: str = "localhost"
+    port: int = Field(default=1521, ge=1, le=65535)
+    service_name: str = "kbot4"
+
+    def require_password(self) -> str:
+        value = os.getenv(self.password_env)
+        if not value:
+            raise RuntimeError(f"数据库密码环境变量 {self.password_env} 未设置")
+        return value
+
 
 class SQLAlchemyConfig(BaseModel):
-    """SQLAlchemy ORM configuration.
-    
-    Connection pool and runtime settings for SQLAlchemy database ORM.
-    """
-    echo: bool = Field(default=False, description="Enable SQL statement logging (echo mode)")
-    pool_size: int = Field(default=10, ge=1, le=50, description="Database connection pool size (1-50)")
-    pool_timeout: int = Field(default=60, ge=10, le=300, description="Connection pool timeout in seconds (10-300)")
-    max_overflow: int = Field(default=20, ge=0, le=50, description="Maximum overflow connections (0-50)")
-    pool_pre_ping: bool = Field(default=True, description="Enable connection health check before use")
-    pool_use_lifo: bool = Field(default=True, description="Use LIFO strategy for connection pool")
-    pool_recycle: int = Field(default=1800, ge=60, le=3600, description="Connection recycle time in seconds (60-3600)")
+    """SQLAlchemy 连接池配置。"""
 
-class EmbedConfig(BaseModel):
-    """Embedding service configuration.
-    
-    Configuration parameters for the text embedding service, including network settings,
-    token limits, and retry policies.
-    """
-    service_name: str = Field(default="embedding-service", description="Name of the embedding service")
-    service_version: str = Field(default="1.0.0", description="Embedding service version")
-    service_host: str = Field(default="0.0.0.0", description="Embedding service host address")
-    service_port: int = Field(default=18091, ge=1, le=65535, description="Embedding service port (1-65535)")
-    dimensions: int | None = Field(default=None, ge=512, le=32768, description="Embedding dimensions (512-32768)")
-    max_tokens: int = Field(default=1024, ge=512, le=32768, description="Maximum tokens per embedding request (512-32768)")
-    timeout: int = Field(default=300, ge=10, le=65535, description="Request timeout in seconds (10-65535)")
-    health_check_timeout: int = Field(default=10, ge=5, le=60, description="Health check timeout in seconds (5-60)")
-    max_retries: int = Field(default=3, ge=0, le=10, description="Maximum retry attempts for failed requests (0-10)")
-    cache_dir: str = Field(default="./cached_models", description="Directory for cached embedding models")
-    
-    @property
-    def service_url(self) -> str:
-        """Generate full service URL for embedding service.
-        
-        Returns:
-            str: Complete URL for accessing the embedding service.
-        """
-        return f"http://{self.service_host}:{self.service_port}"
-
-class LLMConfig(BaseModel):
-    """LLM (Large Language Model) service configuration.
-    
-    Configuration parameters for the LLM service, including network settings,
-    generation parameters, and timeout settings.
-    """
-    service_name: str = Field(default="llm-service", description="Name of the LLM service")
-    service_version: str = Field(default="1.0.0", description="LLM service version")
-    service_host: str = Field(default="0.0.0.0", description="LLM service host address")
-    service_port: int = Field(default=18092, ge=1, le=65535, description="LLM service port (1-65535)")
-    max_tokens: int = Field(default=8192, ge=512, le=32768, description="Maximum output tokens (512-32768)")
-    temperature: float = Field(default=0.7, ge=0.0, le=2.0, description="Generation temperature (0.0-2.0)")
-    top_p: float = Field(default=1.0, ge=0.0, le=1.0, description="Nucleus sampling parameter (0.0-1.0)")
-    top_k: int = Field(default=0, ge=0, le=100, description="Top-k sampling parameter (0-100)")
-    timeout: int = Field(default=300, ge=10, le=65535, description="Request timeout in seconds (10-65535)")
-    health_check_timeout: int = Field(default=10, ge=5, le=60, description="Health check timeout in seconds (5-60)")
-    frequency_penalty: float = Field(default=0.0, ge=0.0, le=2.0, description="Frequency penalty (0.0-2.0)")
-    presence_penalty: float = Field(default=0.0, ge=0.0, le=2.0, description="Presence penalty (0.0-2.0)")
-    
-    @property
-    def service_url(self) -> str:
-        """Generate full service URL for LLM service.
-        
-        Returns:
-            str: Complete URL for accessing the LLM service.
-        """
-        return f"http://{self.service_host}:{self.service_port}"
-
-class VisualConfig(BaseModel):
-    """视觉嵌入服务配置（Phase 2 多模态检索）"""
-    service_name: str = Field(default="cube-visual-service")
-    service_version: str = Field(default="1.0.0")
-    service_host: str = Field(default="0.0.0.0")
-    service_port: int = Field(default=18093, ge=1, le=65535)
-    timeout: int = Field(default=300, ge=10, le=1800)
-    max_retries: int = Field(default=3, ge=0, le=10)
-    # 模型参数（dimension, device, model_path）从数据库 ai_model 表读取
-
-    @property
-    def service_url(self) -> str:
-        return f"http://{self.service_host}:{self.service_port}"
-
-class VLMConfig(BaseModel):
-    """VLM (Vision-Language Model) service configuration.
-    
-    Configuration parameters for the vision-language model service, including
-    network settings and timeout configurations.
-    """
-    service_name: str = Field(default="vlm-service", description="Name of the VLM service")
-    service_version: str = Field(default="1.0.0", description="VLM service version")
-    service_host: str = Field(default="0.0.0.0", description="VLM service host address")
-    service_port: int = Field(default=18094, ge=1, le=65535, description="VLM service port (1-65535)")
-    timeout: int = Field(default=300, ge=10, le=65535, description="Request timeout in seconds (10-65535)")
-    health_check_timeout: int = Field(default=10, ge=5, le=60, description="Health check timeout in seconds (5-60)")
-    
-    @property
-    def service_url(self) -> str:
-        """Generate full service URL for VLM service.
-        
-        Returns:
-            str: Complete URL for accessing the VLM service.
-        """
-        return f"http://{self.service_host}:{self.service_port}"
-
-class DsocrConfig(BaseModel):
-    """DeepSeek OCR service configuration.
-
-    Configuration parameters for the DeepSeek OCR service, supporting both
-    Docker vLLM deployment and local microservice modes (via api_endpoint).
-    """
-    enabled: bool = Field(default=False, description="Whether DeepSeek OCR service is deployed")
-    api_endpoint: str = Field(default="http://localhost:18097/v1/chat/completions", description="OpenAI-compatible API endpoint")
-    timeout: int = Field(default=600, ge=10, le=3600, description="Request timeout in seconds (10-3600)")
-    crop_mode: bool = Field(default=True, description="Enable crop mode for OCR preprocessing")
-    max_tokens: int = Field(default=8192, ge=512, le=32768, description="Maximum output tokens (512-32768)")
-    temperature: float = Field(default=0.0, ge=0.0, le=2.0, description="Generation temperature (0.0-2.0)")
-
-class ParserConfig(BaseModel):
-    """Document parser service configuration.
-
-    Configuration parameters for the document parsing service, including network settings,
-    parallel processing limits, and artifact storage.
-    """
-    service_name: str = Field(default="parser-service", description="Name of the parser service")
-    service_version: str = Field(default="1.0.0", description="Parser service version")
-    service_host: str = Field(default="0.0.0.0", description="Parser service host address")
-    service_port: int = Field(default=18095, ge=1, le=65535, description="Parser service port (1-65535)")
-    timeout: int = Field(default=300, ge=10, le=65535, description="Request timeout in seconds (10-65535)")
-    local_artifacts_path: str = Field(default="./cached_models", description="Path for local parser artifacts/models")
-    queue_workers: int = Field(default=2, ge=1, le=20, description="Number of queue worker threads (1-20)")
-    parser_parallel: int = Field(default=4, ge=1, le=100, description="Number of parallel parser processes (1-100)")
-    db_check_interval: int = Field(default=60, ge=10, le=3600, description="Database check interval in seconds (10-3600)")
-    knowledge_core_url: str = Field(default="http://127.0.0.1:18090", description="Knowledge Core internal base URL")
-    worker_id: str = Field(default="kbot-parser-v4", min_length=1, max_length=256)
-    claim_interval_seconds: float = Field(default=2.0, ge=0.2, le=60)
-    lease_seconds: int = Field(default=600, ge=30, le=3600)
-    evidence_batch_size: int = Field(default=100, ge=1, le=500)
-
-class KnowledgeCoreConfig(BaseModel):
-    """Knowledge Core service configuration.
-
-    The application id remains an ``[app]`` setting.  Knowledge Core reads it
-    when creating Collections so APEX can continue to filter Collections
-    directly without propagating the field to every KC table.
-    """
-    service_name: str = Field(default="knowledge-core-service", description="Name of the Knowledge Core service")
-    service_version: str = Field(default="4.0.0", description="Knowledge Core service version")
-    service_host: str = Field(default="0.0.0.0", description="Knowledge Core service host")
-    service_port: int = Field(default=18090, ge=1, le=65535, description="Knowledge Core service port")
-    receipt_ttl_seconds: int = Field(default=86400, ge=60, le=604800, description="Idempotency receipt retention period")
-    local_object_storage_path: str = Field(default="./knowledge_core_storage", description="Local KC object storage path for development")
-    embedding_service_url: str | None = Field(default=None, description="Embedding/model configuration service URL used by KC")
-    parser_vlm_model: str | None = Field(default=None, description="Optional VLM model key frozen into new Parse Views")
-    parser_visual_description_prompt: str = Field(
-        default="请客观描述图片中的可见事实、文字、对象及其关系；不要推测图片之外的信息。",
-        description="Prompt frozen into Parse View policy for visual descriptions",
-    )
-
-class PromptConfig(BaseModel):
-    """Prompt template configuration.
-    
-    Configuration for system prompt templates used in various NLP tasks.
-    """
-    image2text: str = Field(default="SYSTEM/image2text", description="Prompt template for image-to-text conversion")
-    rewrite_question: str = Field(default="SYSTEM/rewrite_question", description="Prompt template for rewriting questions")
-    refresh_summary: str = Field(default="SYSTEM/refresh_summary", description="Prompt template for refreshing summaries")
-    rag_final_render: str = Field(default="SYSTEM/rag_final_render", description="Prompt template for RAG final render")
-    user_profile: str = Field(default="SYSTEM/user_profile", description="Prompt template for user profile")
-    sql_gen: str = Field(default="SYSTEM/sql_gen", description="SQL generation prompt template")
-    sql_repair: str = Field(default="SYSTEM/sql_repair", description="SQL repair prompt template")
-    task_planner: str = Field(default="SYSTEM/task_planner", description="Task planner prompt template")
-    intent_router: str = Field(default="SYSTEM/intent_router", description="Intent router prompt template")
-    reasoning: str = Field(default="SYSTEM/reasoning", description="Model reasoning prompt template")
-    generate_chart: str = Field(default="SYSTEM/generate_chart", description="Generate chart prompt template")
-    db_router: str = Field(default="SYSTEM/db_router", description="Database router prompt template")
-    graph_vertex_fusion: str = Field(default="SYSTEM/graph_vertex_fusion", description="Graph vertex fusion prompt template")
-    graph_extractor: str = Field(default="SYSTEM/graph_extractor", description="Graph extractor prompt template")
-    # 运维Agent (AIOps) prompt templates
-    ops_rewrite: str = Field(default="SYSTEM/ops_rewrite", description="Ops query rewrite prompt template")
-    ops_diagnosis: str = Field(default="SYSTEM/ops_diagnosis", description="Ops RCA diagnosis prompt template")
-    ops_planner: str = Field(default="SYSTEM/ops_planner", description="Ops task planner prompt template")
-    ops_metric_supplement: str = Field(default="SYSTEM/ops_metric_supplement", description="Ops metric supplement decision prompt")
-    ops_metric_matching: str = Field(default="SYSTEM/ops_metric_matching", description="Ops metric matching prompt")
-    ops_diagnostic_tool: str = Field(default="SYSTEM/ops_diagnostic_tool", description="Ops diagnostic tool selection prompt")
-    ops_sufficiency_check: str = Field(default="SYSTEM/ops_sufficiency_check", description="Ops HITL data sufficiency check prompt")
-    ops_execute_action: str = Field(default="SYSTEM/ops_execute_action", description="Ops mutation action execution prompt")
-    ops_action_plan: str = Field(default="SYSTEM/ops_action_plan", description="Ops post-diagnosis action planning prompt")
-    ops_heal_decision: str = Field(default="SYSTEM/ops_heal_decision", description="Ops heal loop decision prompt")
-    rerank_judge: str = Field(default="SYSTEM/rerank_judge", description="Rerank relevance judgment prompt")
+    echo: bool = False
+    pool_size: int = Field(default=10, ge=1, le=100)
+    pool_timeout: int = Field(default=60, ge=1, le=300)
+    max_overflow: int = Field(default=20, ge=0, le=100)
+    pool_pre_ping: bool = True
+    pool_use_lifo: bool = True
+    pool_recycle: int = Field(default=1800, ge=60, le=86400)
 
 
-class Settings(BaseSettings):
-    """Global application settings.
-    
-    Centralized configuration management for the entire KBOT application, supporting
-    environment-specific configuration files (TOML) and environment variable overrides.
-    """
-    
-    # Environment configuration - override via environment variables
+class DatabaseConfig(BaseModel):
+    oracle: OracleConfig = Field(default_factory=OracleConfig)
+    sqlalchemy: SQLAlchemyConfig = Field(default_factory=SQLAlchemyConfig)
+
+
+class VectorConfig(BaseModel):
+    """跨 KC 与模型服务锁定的唯一向量维度。"""
+
+    dimensions: int = Field(default=1536, ge=1, le=65536)
+
+
+class Settings(BaseModel):
+    """仅包含可被所有独立服务复用的配置。"""
+
+    model_config = ConfigDict(extra="forbid")
+
     environment: str = "development"
-    config_dir: str = "../configuration"
-    
-    # Module-specific configurations
-    app: AppConfig = AppConfig()
-    security: SecurityConfig = SecurityConfig()
-    main_api: MainApiConfig = MainApiConfig()
-    agent_runtime: AgentRuntimeConfig = AgentRuntimeConfig()
-    oracle: OracleConfig = OracleConfig()
-    sqlalchemy: SQLAlchemyConfig = SQLAlchemyConfig()
-    embed: EmbedConfig = EmbedConfig()
-    llm: LLMConfig = LLMConfig()
-    vlm: VLMConfig = VLMConfig()
-    dsocr: DsocrConfig = DsocrConfig()
-    visual: VisualConfig = VisualConfig()
-    parser: ParserConfig = ParserConfig()
-    knowledge_core: KnowledgeCoreConfig = KnowledgeCoreConfig()
-    prompt: PromptConfig = PromptConfig()
-    
-    model_config = {
-        "env_file": ".env",
-        "env_file_encoding": "utf-8", 
-        "case_sensitive": False,
-        "extra": "ignore",
-        "env_prefix": "",  # No prefix for environment variables
-    }
-    
-    @classmethod
-    def create(cls, toml_path: Path | None = None) -> "Settings":
-        """Create configuration instance with environment-specific overrides.
-        
-        Loads base configuration and merges with environment-specific configuration,
-        with environment variables taking highest priority.
-        
-        Args:
-            toml_path: Optional path to custom TOML config file
-            
-        Returns:
-            Settings: Fully initialized configuration instance
-        """
-        # Check environment variables first
-        env_from_env = os.getenv("ENVIRONMENT")
-        config_dir_from_env = os.getenv("CONFIG_DIR")
-        
-        # Create temporary instance to get base config values
-        temp_settings = cls()
-        
-        # Determine environment: env var first, then config file
-        environment = env_from_env or temp_settings.environment
-        config_dir = Path(config_dir_from_env or temp_settings.config_dir)
-        
-        print(f"正在加载环境配置：{environment}")
-        print(f"配置目录：{config_dir}")
-        
-        if toml_path is None:
-            toml_path = config_dir / f"{environment}.toml"
-            print(f"正在加载 TOML：{toml_path}")
-        
-        # Ensure config directory exists
-        config_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Load base configuration
-        base_config_path = config_dir / "base.toml"
-        base_config = cls._load_toml(base_config_path)
-        
-        # Load environment-specific configuration
-        env_config = cls._load_toml(toml_path)
-        
-        # Merge configurations (env config overrides base config)
-        merged_config = cls._deep_merge(base_config, env_config)
-        
-        # Create final configuration instance
-        final_settings = cls(**merged_config)
-        
-        # Ensure environment settings are correct (env vars may override config files)
-        if env_from_env:
-            final_settings.environment = env_from_env
-        if config_dir_from_env:
-            final_settings.config_dir = config_dir_from_env
-            
-        return final_settings
-    
-    @staticmethod
-    def _load_toml(file_path: Path) -> dict[str, Any]:
-        """Load TOML configuration file, return empty dict if file not found.
-        
-        Args:
-            file_path: Path to TOML configuration file
-            
-        Returns:
-            dict[str, Any]: Parsed configuration dictionary (empty if file not found/error)
-        """
-        if not file_path.exists():
-            print(f"警告：配置文件 {file_path} 不存在，将使用默认值")
-            return {}
-        
-        try:
-            with open(file_path, "rb") as f:
-                config = tomli.load(f)
-                print(f"已加载 TOML 配置：{file_path}")
-                return config
-        except Exception as e:
-            print(f"加载 TOML 配置 {file_path} 失败：{e}，将使用默认值")
-            return {}
-    
-    @staticmethod
-    def _deep_merge(base: dict, update: dict) -> dict:
-        """Deep merge two dictionaries (update overrides base).
-        
-        Recursively merges nested dictionaries, with update dict values taking
-        precedence over base dict values.
-        
-        Args:
-            base: Base configuration dictionary
-            update: Update configuration dictionary (higher priority)
-            
-        Returns:
-            dict: Merged configuration dictionary
-        """
-        result = base.copy()
-        
-        for key, value in update.items():
-            if (key in result and isinstance(result[key], dict) 
-                and isinstance(value, dict)):
-                result[key] = Settings._deep_merge(result[key], value)
-            else:
-                result[key] = value
-                
-        return result
+    config_dir: str = "configuration"
+    platform: PlatformConfig = Field(default_factory=PlatformConfig)
+    log: LogConfig = Field(default_factory=LogConfig)
+    security: SecurityConfig = Field(default_factory=SecurityConfig)
+    database: DatabaseConfig = Field(default_factory=DatabaseConfig)
+    vector: VectorConfig = Field(default_factory=VectorConfig)
 
     def is_development(self) -> bool:
-        """Check if current environment is development.
-        
-        Returns:
-            bool: True if development environment, False otherwise
-        """
-        return self.environment.lower() in ["dev", "development", "debug"]
-    
+        return self.environment.lower() in {"dev", "development", "debug"}
+
     def is_production(self) -> bool:
-        """Check if current environment is production.
-        
-        Returns:
-            bool: True if production environment, False otherwise
-        """
-        return self.environment.lower() in ["prod", "production", "live"]
-    
+        return self.environment.lower() in {"prod", "production", "live"}
+
     def is_testing(self) -> bool:
-        """Check if current environment is testing/staging.
-        
-        Returns:
-            bool: True if testing/staging environment, False otherwise
-        """
-        return self.environment.lower() in ["test", "testing", "staging"]
+        return self.environment.lower() in {"test", "testing", "staging"}
 
 
-# Global configuration instance
-@lru_cache()
+SettingsT = TypeVar("SettingsT", bound=Settings)
+
+
+def _load_toml(path: Path, *, required: bool = False) -> dict[str, Any]:
+    if not path.exists():
+        if required:
+            raise FileNotFoundError(f"配置文件不存在：{path}")
+        return {}
+    with path.open("rb") as stream:
+        return tomli.load(stream)
+
+
+def _deep_merge(base: dict[str, Any], update: dict[str, Any]) -> dict[str, Any]:
+    result = base.copy()
+    for key, value in update.items():
+        if isinstance(result.get(key), dict) and isinstance(value, dict):
+            result[key] = _deep_merge(result[key], value)
+        else:
+            result[key] = value
+    return result
+
+
+def load_settings(
+    model: type[SettingsT],
+    *,
+    service: str | None = None,
+    config_dir: str | Path | None = None,
+    environment: str | None = None,
+) -> SettingsT:
+    """按共享基座、共享环境、服务基座、服务环境的顺序加载配置。"""
+
+    # 进程环境始终优先；.env 只为本地开发或显式 EnvironmentFile 补值。
+    env_file = Path(os.getenv("ENV_FILE", ".env"))
+    if env_file.exists():
+        load_dotenv(env_file, override=False)
+
+    resolved_dir = Path(
+        config_dir or os.getenv("CONFIG_DIR") or "configuration"
+    ).resolve()
+    resolved_environment = environment or os.getenv(
+        "ENVIRONMENT", "development"
+    )
+    merged = _deep_merge(
+        _load_toml(resolved_dir / "base.toml", required=True),
+        _load_toml(resolved_dir / f"{resolved_environment}.toml"),
+    )
+    if service:
+        service_dir = resolved_dir / "services" / service
+        merged = _deep_merge(
+            merged,
+            _load_toml(service_dir / "base.toml", required=True),
+        )
+        merged = _deep_merge(
+            merged,
+            _load_toml(service_dir / f"{resolved_environment}.toml"),
+        )
+    merged["environment"] = resolved_environment
+    merged["config_dir"] = str(resolved_dir)
+    return model.model_validate(merged)
+
+
+@lru_cache(maxsize=1)
 def get_settings() -> Settings:
-    """Get cached global configuration instance.
-    
-    Uses LRU cache to ensure singleton configuration instance.
-    
-    Returns:
-        Settings: Cached global configuration instance
-    """
-    return Settings.create()
+    return load_settings(Settings)
 
-# Convenience accessor functions
-def get_app_config() -> AppConfig:
-    """Get main application configuration.
-    
-    Returns:
-        AppConfig: Application configuration object
-    """
-    return get_settings().app
+
+def get_platform_config() -> PlatformConfig:
+    return get_settings().platform
+
 
 def get_log_config() -> LogConfig:
-    """Get logging configuration.
-    
-    Returns:
-        LogConfig: Logging configuration object
-    """
-    return get_settings().app.log
+    return get_settings().log
 
 
 def get_security_config() -> SecurityConfig:
-    """获取公开 API 与内部服务认证配置。"""
     return get_settings().security
 
 
-def get_main_api_config() -> MainApiConfig:
-    """获取 Main API/BFF 配置。"""
-    return get_settings().main_api
-
-
-def get_agent_runtime_config() -> AgentRuntimeConfig:
-    """获取 Agent Runtime API 与 Worker 配置。"""
-    return get_settings().agent_runtime
-
-def get_embed_config() -> EmbedConfig:
-    """Get embedding service configuration.
-    
-    Returns:
-        EmbedConfig: Embedding service configuration object
-    """
-    return get_settings().embed
-
-
-def get_visual_config() -> VisualConfig:
-    """获取视觉嵌入服务配置"""
-    return get_settings().visual
-
-
-def get_llm_config() -> LLMConfig:
-    """Get LLM service configuration.
-    
-    Returns:
-        LLMConfig: LLM service configuration object
-    """
-    return get_settings().llm
-
 def get_oracle_config() -> OracleConfig:
-    """Get Oracle database configuration.
-    
-    Returns:
-        OracleConfig: Oracle database configuration object
-    """
-    return get_settings().oracle
+    return get_settings().database.oracle
+
 
 def get_sqlalchemy_config() -> SQLAlchemyConfig:
-    """Get SQLAlchemy configuration.
-    
-    Returns:
-        SQLAlchemyConfig: SQLAlchemy ORM configuration object
-    """
-    return get_settings().sqlalchemy
-
-def get_prompt_config() -> PromptConfig:
-    """Get prompt template configuration.
-    
-    Returns:
-        PromptConfig: Prompt template configuration object
-    """
-    return get_settings().prompt
-
-def get_vlm_config() -> VLMConfig:
-    """Get VLM service configuration.
-
-    Returns:
-        VLMConfig: VLM service configuration object
-    """
-    return get_settings().vlm
-
-def get_dsocr_config() -> DsocrConfig:
-    """Get DeepSeek OCR configuration.
-
-    Returns:
-        DsocrConfig: DeepSeek OCR service configuration object
-    """
-    return get_settings().dsocr
-
-def get_parser_config() -> ParserConfig:
-    """Get document parser configuration.
-    
-    Returns:
-        ParserConfig: Document parser service configuration object
-    """
-    return get_settings().parser
-
-def get_knowledge_core_config() -> KnowledgeCoreConfig:
-    """Get Knowledge Core service configuration."""
-    return get_settings().knowledge_core
-
-def detect_builtin_ocr_engines() -> dict[str, bool]:
-    """检测本机已安装的内置 OCR 引擎。
-
-    Returns:
-        dict[str, bool]: 引擎名 → 是否可用
-    """
-    import shutil
-    import importlib
-
-    engines: dict[str, bool] = {}
-
-    # EasyOCR
-    try:
-        importlib.import_module("easyocr")
-        engines["easyocr"] = True
-    except ImportError:
-        engines["easyocr"] = False
-
-    # Tesseract
-    engines["tesseract"] = shutil.which("tesseract") is not None
-
-    # RapidOCR
-    try:
-        importlib.import_module("rapidocr_onnxruntime")
-        engines["rapidocr"] = True
-    except ImportError:
-        engines["rapidocr"] = False
-
-    return engines
+    return get_settings().database.sqlalchemy

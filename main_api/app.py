@@ -17,8 +17,8 @@ from loguru import logger
 from sqlalchemy import text
 
 from main_api.api import knowledge_router
+from main_api.config import get_main_api_settings
 from platform_clients import KnowledgeCoreClientError
-from platform_core.config.settings import get_app_config, get_main_api_config
 from platform_core.middleware.log_middleware import log_requests
 from platform_core.security import (
     PortalApiKeyVerifier,
@@ -70,7 +70,8 @@ def create_main_api_app(
     enable_access_log: bool = True,
 ) -> FastAPI:
     """构造只发布公开契约的 Main API 应用。"""
-    config = get_main_api_config()
+    settings = get_main_api_settings()
+    config = settings.api
     app_kwargs: dict[str, Any] = {}
     if lifespan is not None:
         app_kwargs["lifespan"] = lifespan
@@ -78,8 +79,8 @@ def create_main_api_app(
         title="KBot Main API",
         description="KBot 4.0 的唯一公开 API/BFF 入口。",
         version=config.service_version,
-        docs_url="/docs" if get_app_config().debug else None,
-        redoc_url="/redoc" if get_app_config().debug else None,
+        docs_url="/docs" if settings.platform.debug else None,
+        redoc_url="/redoc" if settings.platform.debug else None,
         **app_kwargs,
     )
     app.state.service_name = config.service_name

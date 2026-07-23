@@ -1,0 +1,11 @@
+[api]
+service_name = "kbot-main-api"
+service_version = "4.0.0"
+service_host = "0.0.0.0"
+service_port = 18099
+allowed_origins = ["http://127.0.0.1:8080"]
+
+[knowledge_core]
+base_url = "http://127.0.0.1:18090"
+audience = "kbot-knowledge-core-api"
+timeout_seconds = 120

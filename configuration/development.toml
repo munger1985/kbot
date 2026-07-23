@@ -1,0 +1,12 @@
+# 本地开发环境只覆盖共享平台配置。
+[platform]
+debug = true
+
+[log]
+level = "DEBUG"
+dir = "./logs"
+
+[database.oracle]
+username = "kbotdev"
+host = "127.0.0.1"
+service_name = "kbot4"

@@ -1,0 +1,42 @@
+[api]
+service_name = "kbot-knowledge-core-api"
+service_version = "4.0.0"
+service_host = "0.0.0.0"
+service_port = 18090
+receipt_ttl_seconds = 86400
+
+[storage]
+local_object_storage_path = "./knowledge_core_storage"
+
+[parser]
+service_name = "kbot-knowledge-core-parser"
+service_version = "4.0.0"
+service_host = "0.0.0.0"
+service_port = 18095
+worker_id = "kc-parser-local"
+local_artifacts_path = "./cached_models/docling"
+claim_interval_seconds = 2.0
+lease_seconds = 600
+evidence_batch_size = 100
+
+[projection]
+service_name = "kbot-knowledge-core-projection"
+worker_id = "kc-projection-local"
+poll_interval_seconds = 2.0
+lease_seconds = 600
+index_batch_size = 64
+
+[parse_policy]
+vlm_model = ""
+visual_description_prompt = "请客观描述图片中的可见事实、文字、对象及其关系；不要推测图片之外的信息。"
+
+[embedding]
+base_url = "http://127.0.0.1:18091"
+audience = "kbot-model-embedding"
+timeout_seconds = 300
+health_check_timeout_seconds = 10
+
+[knowledge_core]
+base_url = "http://127.0.0.1:18090"
+audience = "kbot-knowledge-core-api"
+timeout_seconds = 600

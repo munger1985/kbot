@@ -12,20 +12,16 @@ from loguru import logger
 
 from main_api.app import create_main_api_app
 from main_api.application import DomainValidationService
+from main_api.config import get_main_api_settings
 from main_api.persistence import create_main_api_uow
 from platform_clients import KnowledgeCoreClient
-from platform_core.config.settings import (
-    get_app_config,
-    get_knowledge_core_config,
-    get_main_api_config,
-)
 from platform_core.database.oracle import create_database_runtime
 from platform_core.logger import LogConfig, LogManager
 from platform_core.platform.port_check import check_port_available
 
 
-config = get_main_api_config()
-app_config = get_app_config()
+settings = get_main_api_settings()
+config = settings.api
 
 
 @asynccontextmanager
@@ -34,27 +30,27 @@ async def lifespan(app: FastAPI):
     app.state.service_name = config.service_name
     LogManager(LogConfig(
         service_name=config.service_name,
-        log_dir=app_config.log.dir,
-        level=app_config.log.level,
-        rotation=app_config.log.rotation,
-        retention=app_config.log.retention,
+        log_dir=settings.log.dir,
+        level=settings.log.level,
+        rotation=settings.log.rotation,
+        retention=settings.log.retention,
     )).setup()
     db_runtime = create_database_runtime()
     app.state.db_runtime = db_runtime
     app.state.domain_validation_service = DomainValidationService(
-        app_id=app_config.app_id,
+        app_id=settings.platform.app_id,
         uow_factory=create_main_api_uow(db_runtime.session_factory),
     )
     client_session = aiohttp.ClientSession(
         timeout=aiohttp.ClientTimeout(
-            total=config.upstream_timeout_seconds,
+            total=settings.knowledge_core.timeout_seconds,
         )
     )
     app.state.knowledge_core_client = KnowledgeCoreClient(
-        base_url=config.knowledge_core_url,
+        base_url=settings.knowledge_core.base_url,
         caller_service=config.service_name,
-        audience=get_knowledge_core_config().service_name,
-        timeout_seconds=config.upstream_timeout_seconds,
+        audience=settings.knowledge_core.audience,
+        timeout_seconds=settings.knowledge_core.timeout_seconds,
         session=client_session,
     )
     logger.info("Main API 已启动，公开前缀=/api/v1")

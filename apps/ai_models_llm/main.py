@@ -16,15 +16,13 @@ from typing import Any
 from contextlib import asynccontextmanager
 
 import uvicorn
-from pathlib import Path
-from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi_offline import FastAPIOffline
 from loguru import logger
 
-from platform_core.config.settings import get_llm_config, get_app_config
+from model_serving.config import get_model_serving_settings
 from platform_core.contracts import INTERNAL_API_V1, PUBLIC_API_V1
 from platform_core.dictionary import ModelCategory
 from platform_core.logger import LogConfig, LogManager
@@ -39,23 +37,20 @@ from model_serving.common.openai_router import create_openai_models_router
 from model_serving.common.openai_contracts import openai_error_response
 from model_serving.common.model_registry import ModelRegistryService
 
-# Load environment variables
-load_dotenv(Path(__file__).resolve().parents[2] / ".env")
-
 # Service basic information
-config = get_llm_config()
+settings = get_model_serving_settings()
+config = settings.llm
 SERVICE_NAME = config.service_name
 SERVICE_VERSION = config.service_version
 SERVICE_HOST = config.service_host
 SERVICE_PORT = config.service_port
 
 # Log and debug configuration
-app_config = get_app_config()
-DEBUG_MODE = app_config.debug
-LOG_DIR = app_config.log.dir
-LOG_LEVEL = app_config.log.level
-LOG_ROTATION = app_config.log.rotation
-LOG_RETENTION = app_config.log.retention
+DEBUG_MODE = settings.platform.debug
+LOG_DIR = settings.log.dir
+LOG_LEVEL = settings.log.level
+LOG_ROTATION = settings.log.rotation
+LOG_RETENTION = settings.log.retention
 
 # Initialize LLM logic service singleton
 llm_service = LLMService()
@@ -74,7 +69,7 @@ async def lifespan(app: FastAPI):
     app.state.db_runtime = db_runtime
     llm_service.bind_session_factory(db_runtime.session_factory)
     app.state.model_registry = ModelRegistryService(
-        app_id=app_config.app_id,
+        app_id=settings.platform.app_id,
         session_factory=db_runtime.session_factory,
         on_model_changed=llm_service.invalidate_model,
     )

@@ -4,7 +4,6 @@ from typing import Any
 
 import aiohttp
 
-from platform_core.config.settings import get_app_config, get_knowledge_core_config
 from platform_core.contracts import INTERNAL_API_V1
 from platform_core.security import build_internal_auth_headers
 
@@ -21,14 +20,14 @@ class KcIndexProfileClient:
         *,
         base_url: str,
         timeout_seconds: int = 600,
-        caller_service: str | None = None,
-        audience: str | None = None,
+        caller_service: str,
+        audience: str,
     ):
         self._base_url = base_url.rstrip("/")
         self._timeout = aiohttp.ClientTimeout(total=timeout_seconds)
         self._session: aiohttp.ClientSession | None = None
-        self._caller_service = caller_service or get_app_config().service_name
-        self._audience = audience or get_knowledge_core_config().service_name
+        self._caller_service = caller_service
+        self._audience = audience
 
     async def __aenter__(self):
         self._session = aiohttp.ClientSession(timeout=self._timeout)

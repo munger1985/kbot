@@ -30,9 +30,9 @@ class DatabaseRuntime:
 
 
 def _database_url(settings: Settings) -> str:
-    oracle = settings.oracle
+    oracle = settings.database.oracle
     return (
-        f"oracle+oracledb://{oracle.username}:{oracle.password}"
+        f"oracle+oracledb://{oracle.username}:{oracle.require_password()}"
         f"@{oracle.host}:{oracle.port}/?service_name={oracle.service_name}"
     )
 
@@ -45,7 +45,7 @@ def create_database_runtime(settings: Settings | None = None) -> DatabaseRuntime
     different database or schema.
     """
     config = settings or get_settings()
-    sqlalchemy_config = config.sqlalchemy
+    sqlalchemy_config = config.database.sqlalchemy
     engine = create_async_engine(
         _database_url(config),
         echo=sqlalchemy_config.echo,

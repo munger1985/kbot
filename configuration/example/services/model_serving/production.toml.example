@@ -1,0 +1,5 @@
+[embedding]
+cache_dir = "/app/models"
+
+[llm]
+temperature = 0.3

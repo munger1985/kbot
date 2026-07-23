@@ -3,7 +3,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 from uuid import UUID
 
-from platform_core.config.settings import get_app_config, get_embed_config
+from model_serving.config import get_model_serving_settings
 from .entities.ai_model import AIModelEntity
 from .model_repository import AIModelRepository
 
@@ -19,7 +19,11 @@ class ModelRegistryService:
         session_factory: Callable,
         on_model_changed: Callable[[str], Awaitable[None]] | None = None,
     ):
-        self._app_id = int(app_id if app_id is not None else get_app_config().app_id)
+        self._app_id = int(
+            app_id
+            if app_id is not None
+            else get_model_serving_settings().platform.app_id
+        )
         self._session_factory = session_factory
         self._on_model_changed = on_model_changed
 
@@ -95,7 +99,7 @@ class ModelRegistryService:
             return
         if dimension is None:
             raise ValueError("文本 Embedding 模型必须设置 embedding_dimension")
-        configured = get_embed_config().dimensions
+        configured = get_model_serving_settings().vector.dimensions
         if configured is not None and int(dimension) != int(configured):
             raise ValueError(
                 f"embedding_dimension 必须等于配置维度 {configured}"

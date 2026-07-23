@@ -16,10 +16,7 @@ from fastapi_offline import FastAPIOffline
 from loguru import logger
 from sqlalchemy import text
 
-from platform_core.config.settings import (
-    get_agent_runtime_config,
-    get_app_config,
-)
+from agent_runtime.config import get_agent_runtime_settings
 from platform_core.database.oracle import create_database_runtime
 from platform_core.logger import LogConfig, LogManager
 from platform_core.middleware.log_middleware import log_requests
@@ -27,10 +24,10 @@ from platform_core.platform.port_check import check_port_available
 from platform_core.security import create_internal_auth_middleware
 
 
-config = get_agent_runtime_config()
-app_config = get_app_config()
-SERVICE_NAME = config.api_service_name
-SERVICE_VERSION = config.api_service_version
+settings = get_agent_runtime_settings()
+config = settings.api
+SERVICE_NAME = config.service_name
+SERVICE_VERSION = config.service_version
 
 
 @asynccontextmanager
@@ -38,10 +35,10 @@ async def lifespan(app: FastAPIOffline):
     """创建本进程独占的日志和数据库运行时。"""
     LogManager(LogConfig(
         service_name=SERVICE_NAME,
-        log_dir=app_config.log.dir,
-        level=app_config.log.level,
-        rotation=app_config.log.rotation,
-        retention=app_config.log.retention,
+        log_dir=settings.log.dir,
+        level=settings.log.level,
+        rotation=settings.log.rotation,
+        retention=settings.log.retention,
     )).setup()
     db_runtime = create_database_runtime()
     app.state.db_runtime = db_runtime
@@ -58,8 +55,8 @@ app = FastAPIOffline(
     description="Agent Run、Task、Artifact 和 Event 的内部命令边界。",
     version=SERVICE_VERSION,
     lifespan=lifespan,
-    docs_url="/docs" if app_config.debug else None,
-    redoc_url="/redoc" if app_config.debug else None,
+    docs_url="/docs" if settings.platform.debug else None,
+    redoc_url="/redoc" if settings.platform.debug else None,
 )
 app.middleware("http")(log_requests)
 app.middleware("http")(
@@ -108,15 +105,15 @@ async def readyz(request: Request) -> dict[str, Any]:
 
 if __name__ == "__main__":
     if not check_port_available(
-        config.api_service_host,
-        config.api_service_port,
+        config.service_host,
+        config.service_port,
         SERVICE_NAME,
     ):
         sys.exit(1)
     uvicorn.run(
         app,
-        host=config.api_service_host,
-        port=config.api_service_port,
+        host=config.service_host,
+        port=config.service_port,
         log_config=None,
         loop="asyncio",
     )

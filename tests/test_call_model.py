@@ -12,8 +12,16 @@ load_dotenv(env_path)
 project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(project_root))
 from platform_clients.model import AIModelClient
+from model_serving.config import get_model_serving_settings
 
-model_client = AIModelClient()
+settings = get_model_serving_settings()
+model_client = AIModelClient(
+    caller_service="model-client-integration-test",
+    embedding_config=settings.embedding,
+    llm_config=settings.llm,
+    vlm_config=settings.vlm,
+    visual_config=settings.visual,
+)
 
 def create_basic_shapes_image() -> Image.Image: # 类型注解可以更精确为 Image.Image
     """

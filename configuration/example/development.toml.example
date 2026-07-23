@@ -1,11 +1,11 @@
-# platform_core/config/development.toml
-[app]
+[platform]
 debug = true
-# file_storage = "/home/chris/kbot3/knowledge_base"
 
-[app.log]
+[log]
 level = "DEBUG"
-# dir = "/home/chris/kbot3/logs/"
+dir = "./logs"
 
-[llm]
-temperature = 0.8
+[database.oracle]
+username = "kbotdev"
+host = "127.0.0.1"
+service_name = "kbot4"

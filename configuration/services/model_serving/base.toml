@@ -1,0 +1,41 @@
+[embedding]
+service_name = "kbot-model-embedding"
+service_version = "4.0.0"
+service_host = "0.0.0.0"
+service_port = 18091
+max_tokens = 1024
+timeout = 300
+health_check_timeout = 10
+max_retries = 3
+cache_dir = "./cached_models"
+
+[llm]
+service_name = "kbot-model-llm"
+service_version = "4.0.0"
+service_host = "0.0.0.0"
+service_port = 18092
+max_tokens = 8192
+temperature = 0.7
+top_p = 1.0
+top_k = 0
+timeout = 300
+health_check_timeout = 10
+frequency_penalty = 0.0
+presence_penalty = 0.0
+
+[vlm]
+service_name = "kbot-model-vlm"
+service_version = "4.0.0"
+service_host = "0.0.0.0"
+service_port = 18094
+timeout = 600
+health_check_timeout = 10
+
+[visual]
+service_name = "kbot-model-visual"
+service_version = "4.0.0"
+service_host = "0.0.0.0"
+service_port = 18093
+timeout = 300
+health_check_timeout = 10
+max_retries = 3

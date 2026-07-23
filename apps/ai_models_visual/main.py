@@ -11,14 +11,12 @@ from typing import Any
 from contextlib import asynccontextmanager
 
 import uvicorn
-from pathlib import Path
-from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi_offline import FastAPIOffline
 from loguru import logger
 
-from platform_core.config.settings import get_visual_config, get_app_config
+from model_serving.config import get_model_serving_settings
 from platform_core.contracts import INTERNAL_API_V1
 from platform_core.dictionary import ModelCategory
 from platform_core.logger import LogConfig, LogManager
@@ -31,23 +29,20 @@ from platform_core.platform.port_check import check_port_available
 from model_serving.common.management_router import create_model_management_router
 from model_serving.common.model_registry import ModelRegistryService
 
-# 加载环境变量
-load_dotenv(Path(__file__).resolve().parents[2] / ".env")
-
 # 从 VisualConfig 读取视觉嵌入参数
-config = get_visual_config()
+settings = get_model_serving_settings()
+config = settings.visual
 SERVICE_NAME = config.service_name
 SERVICE_VERSION = config.service_version
 SERVICE_HOST = config.service_host
 SERVICE_PORT = config.service_port
 
 # 日志参数
-app_config = get_app_config()
-LOG_DIR = app_config.log.dir
-LOG_LEVEL = app_config.log.level
-LOG_ROTATION = app_config.log.rotation
-LOG_RETENTION = app_config.log.retention
-DEBUG_MODE = app_config.debug
+LOG_DIR = settings.log.dir
+LOG_LEVEL = settings.log.level
+LOG_ROTATION = settings.log.rotation
+LOG_RETENTION = settings.log.retention
+DEBUG_MODE = settings.platform.debug
 
 # 全局服务实例
 visual_service = VisualService()
@@ -61,7 +56,7 @@ async def lifespan(app: FastAPI):
     app.state.db_runtime = db_runtime
     visual_service.bind_session_factory(db_runtime.session_factory)
     app.state.model_registry = ModelRegistryService(
-        app_id=app_config.app_id,
+        app_id=settings.platform.app_id,
         session_factory=db_runtime.session_factory,
         on_model_changed=visual_service.invalidate_model,
     )

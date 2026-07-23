@@ -1,6 +1,6 @@
 from fastapi import Request
 from loguru import logger
-from platform_core.config.settings import get_app_config
+from platform_core.config.settings import get_log_config
 from pathlib import Path
 import time
 
@@ -88,8 +88,8 @@ async def log_requests(request: Request, call_next):
         Response: Processed response object
     """
     # Get configuration
-    settings = get_app_config()
-    api_log_enabled = settings.log.api_log_enabled
+    settings = get_log_config()
+    api_log_enabled = settings.api_log_enabled
 
     # Get current service name from app (needs to be set during app startup)
     app = request.app
@@ -98,9 +98,9 @@ async def log_requests(request: Request, call_next):
     # Initialize API access log file for current service
     setup_api_access_logger(
         current_service_name,
-        settings.log.dir,
-        settings.log.rotation,
-        settings.log.retention
+        settings.dir,
+        settings.rotation,
+        settings.retention
     )
 
     start_time = time.time()
