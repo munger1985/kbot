@@ -465,7 +465,7 @@ EXECUTION.RESULT_ARTIFACT_ID    → ARTIFACT
 REPORT.CONTENT_ARTIFACT_ID      → ARTIFACT
 ```
 
-五个 Artifact 当前指针外键使用 `DEFERRABLE INITIALLY DEFERRED`；Event→Alert 和 Run→Fire 使用普通约束。DDL 还要核对并创建四个函数唯一索引：Active Policy、Active Alert、Pending HITL、Current Report；Approval Token 使用 `PROPOSAL_ID` 普通唯一约束。普通 FK 索引必须覆盖所有高频父子查询；Oracle 不自动为外键创建索引。
+五个 Artifact 当前指针外键使用 `DEFERRABLE INITIALLY DEFERRED`；Event→Alert 和 Run→Fire 使用普通约束。DDL 还要核对并创建五个函数唯一索引：Active Policy、Active Alert、Pending HITL、Current Report，以及仅在 `EVENT_KEY` 非空时约束 `(OPS_RUN_ID, EVENT_KEY)` 的 Run Event 幂等索引；Approval Token 使用 `PROPOSAL_ID` 普通唯一约束。普通 FK 索引必须覆盖所有高频父子查询；Oracle 不自动为外键创建索引。
 
 ### APEX 视图
 
@@ -540,7 +540,7 @@ Schema 漂移检查失败时步骤 2 不得继续，不能用 Entity 的 `create
 
 当前机器可读基线为
 `database/oracle/aiops_agent/schema_manifest.json`，固定 6 个脚本的执行顺序、
-SHA-256、21 张表、10 个视图、5 个延后外键和 4 个函数唯一索引。实际 Oracle
+SHA-256、21 张表、10 个视图、5 个延后外键和 5 个函数唯一索引。实际 Oracle
 Catalog 校验结果为：全部约束 `ENABLED/VALIDATED`、全部索引和视图 `VALID`，
 49 个 AIOps 外键均有覆盖其前导列的索引，
 `KBOT_V_OPS_SCHEMA_VERSION` 返回 `AIOPS / 6 / aiops-oracle-v1`。事务 Smoke

@@ -10,6 +10,7 @@ from aiops_agent.bootstrap.common import (
     create_process_app,
 )
 from aiops_agent.config import AIOpsSettings, get_aiops_settings
+from aiops_agent.persistence import create_aiops_uow_factory
 from platform_core.database.oracle import create_database_runtime
 
 
@@ -26,10 +27,14 @@ def create_aiops_worker_probe(
             resolved,
             service_name=config.service_name,
         )
+        database_runtime = create_database_runtime(resolved)
         runtime = AIOpsProcessRuntime(
             settings=resolved,
             service_name=config.service_name,
-            database_runtime=create_database_runtime(resolved),
+            database_runtime=database_runtime,
+            uow_factory=create_aiops_uow_factory(
+                database_runtime.session_factory
+            ),
         )
         app.state.runtime = runtime
         app.state.ready_check = runtime.check_aiops_schema

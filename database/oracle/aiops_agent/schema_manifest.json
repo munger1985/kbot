@@ -11,8 +11,8 @@
     },
     {
       "name": "002_ops_runtime.sql",
-      "statements": 29,
-      "sha256": "ed136efb48a62a4abaabf67d185f86f1324322829c8f00373b5d7ae6129821b0"
+      "statements": 30,
+      "sha256": "918e3263c12d37a59e956d19b61b74ec0601b24832d3047d96f96f6e1c9b314e"
     },
     {
       "name": "003_ops_change.sql",
@@ -81,7 +81,8 @@
     "UX_OPS_POLICY_ACTIVE",
     "UX_OPS_ALERT_ACTIVE",
     "UX_OPS_HITL_PENDING",
-    "UX_OPS_REPORT_CURRENT"
+    "UX_OPS_REPORT_CURRENT",
+    "UX_OPS_RUN_EVENT_KEY"
   ],
   "invariants": {
     "resource_id_type": "RAW(16)",

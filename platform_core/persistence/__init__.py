@@ -3,6 +3,7 @@
 from .orm import (
     BaseEntity,
     OracleJSON,
+    UniversalTimestamp,
     UniversalVector,
     UUIDv7Type,
     VectorField,
@@ -11,6 +12,7 @@ from .orm import (
 __all__ = [
     "BaseEntity",
     "OracleJSON",
+    "UniversalTimestamp",
     "UniversalVector",
     "UUIDv7Type",
     "VectorField",

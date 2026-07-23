@@ -260,6 +260,7 @@ def main() -> int:
         "UX_OPS_ALERT_ACTIVE",
         "UX_OPS_HITL_PENDING",
         "UX_OPS_REPORT_CURRENT",
+        "UX_OPS_RUN_EVENT_KEY",
     ):
         if not re.search(
             rf"\bCREATE\s+UNIQUE\s+INDEX\s+{index_name}\b",

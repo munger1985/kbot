@@ -84,7 +84,7 @@ DDL 必须包含 UUIDv7 `RAW(16)` 主键、JSON Check、外键、函数唯一索
 **完成物：** 可在空 Schema 顺序执行的六段规范建库脚本、Schema manifest 和受控视图。
 
 实施结果：21 张 `KBOT_OPS_*` 表和 10 个 `KBOT_V_OPS_*` 视图已加入统一空库
-初始化器；Manifest 固定脚本 Hash、对象清单、5 个延后 Artifact 外键和 4 个
+初始化器；Manifest 固定脚本 Hash、对象清单、5 个延后 Artifact 外键和 5 个
 函数唯一索引。Oracle 26ai 的 `MODE` 保留字和带时区时间唯一键限制已分别通过
 `EXECUTION_KIND` 与 `SCHEDULED_FOR_UTC` 虚拟列显式适配，完整空库重放及
 事务 Smoke 已通过。下一步进入步骤 2 Persistence 与事务内核。
@@ -103,6 +103,12 @@ DDL 必须包含 UUIDv7 `RAW(16)` 主键、JSON Check、外键、函数唯一索
 Repository 接受 Session，不创建 Session、不提交事务、不调用外部服务。Application Service 通过 UoW 完成条件更新和乐观锁；租约领取使用数据库原子更新。实现 Outbox Dispatcher、Inbox 去重器和 Run Event 序号分配器，禁止 Python 全局计数。
 
 **完成物：** 完整字段映射、聚合查询、UoW Factory、事务命令和并发/幂等测试夹具。
+
+实施结果：21 张表的 Entity、九个聚合 Repository、显式单次提交 UoW 和
+API/Worker/Scheduler 注入均已完成。Oracle Catalog 逐列校验通过；服务端游标
+解决了 `FETCH FIRST ... FOR UPDATE` 的 `ORA-02014` 与驱动预取扩大锁范围问题。
+真实双 Worker Smoke 已验证 Task/Outbox `SKIP LOCKED`、租约栅栏、自动回滚和
+Run Event 连续序列。下一步进入步骤 3 配置与权限 API。
 
 ## 步骤 3：配置与权限 API
 

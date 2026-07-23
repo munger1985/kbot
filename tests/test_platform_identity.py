@@ -6,7 +6,7 @@ from uuid import UUID
 from sqlalchemy.dialects import oracle, postgresql, sqlite
 
 from platform_core.identity import uuid7
-from platform_core.persistence import UUIDv7Type
+from platform_core.persistence import UniversalTimestamp, UUIDv7Type
 
 
 class UUIDv7Test(unittest.TestCase):
@@ -32,6 +32,17 @@ class UUIDv7Test(unittest.TestCase):
     def test_generated_value_is_canonical_uuid(self) -> None:
         value = uuid7()
         self.assertEqual(value, UUID(str(value)))
+
+    def test_timestamp_uses_exact_database_timezone_types(self) -> None:
+        field = UniversalTimestamp(timezone=True)
+        self.assertEqual(
+            "TIMESTAMP WITH TIME ZONE",
+            field.compile(dialect=oracle.dialect()),
+        )
+        self.assertEqual(
+            "TIMESTAMP WITH TIME ZONE",
+            field.compile(dialect=postgresql.dialect()),
+        )
 
 
 if __name__ == "__main__":

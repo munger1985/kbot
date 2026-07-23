@@ -12,6 +12,7 @@ from fastapi_offline import FastAPIOffline
 from sqlalchemy import text
 
 from aiops_agent.config import AIOpsSettings
+from aiops_agent.persistence import AIOpsUnitOfWork
 from platform_core.database.oracle import DatabaseRuntime
 from platform_core.logger import LogConfig, LogManager
 
@@ -26,6 +27,7 @@ class AIOpsProcessRuntime:
     settings: AIOpsSettings
     service_name: str
     database_runtime: DatabaseRuntime | None = None
+    uow_factory: Callable[[], AIOpsUnitOfWork] | None = None
     components: dict[str, bool] = field(default_factory=dict)
 
     async def start(self) -> None:
@@ -40,9 +42,21 @@ class AIOpsProcessRuntime:
             return {"aiops_schema": "database_not_configured"}
         try:
             async with self.database_runtime.session_factory() as session:
-                await session.execute(
-                    text("SELECT 1 FROM KBOT_OPS_TARGET WHERE 1 = 0")
-                )
+                version_ready = (
+                    await session.execute(
+                        text(
+                            """
+                            SELECT 1
+                            FROM KBOT_V_OPS_SCHEMA_VERSION
+                            WHERE component = 'AIOPS'
+                              AND schema_version = 6
+                              AND contract_version = 'aiops-oracle-v1'
+                            """
+                        )
+                    )
+                ).scalar_one_or_none()
+                if version_ready != 1:
+                    raise RuntimeError("AIOps Schema 版本不匹配")
             return {"aiops_schema": "ok"}
         except Exception as exc:
             return {"aiops_schema": type(exc).__name__}

@@ -1,8 +1,8 @@
 # 4.0 资源标识与 AIOps Persistence 设计
 
-## 当前现状
+## 重构前现状与当前落地
 
-当前 3.5 Knowledge Core 的 `COLLECTION_ID/BUNDLE_ID/DOCUMENT_ID/DOCUMENT_VERSION_ID/EVIDENCE_ID` 等均为 Oracle `NUMBER(38) IDENTITY`，Python Entity 和 API 也使用 `int`。旧 Agent 表和过渡 `agent/common` 同样使用整数 Agent ID。
+设计启动时，3.5 Knowledge Core 的 `COLLECTION_ID/BUNDLE_ID/DOCUMENT_ID/DOCUMENT_VERSION_ID/EVIDENCE_ID` 等仍为 Oracle `NUMBER(38) IDENTITY`，旧 Agent 表和过渡 `agent/common` 同样使用整数 Agent ID。4.0 当前已按本章完成 UUIDv7 断代重构，不再存在上述整数资源 ID。
 
 这对单库内部连接有效，但不适合作为 4.0 跨服务、外部系统和未来 PostgreSQL 版本的稳定身份：整数拆库后不再全局唯一，也会把数据库分配策略泄漏为长期契约。4.0 不承担兼容包袱，因此直接统一身份，避免长期维护“数字 PK + Public UID”的映射层。
 
@@ -90,7 +90,7 @@ NUMBER(38)       → Mapped[int] + Numeric(38, 0)
 NUMBER(19)       → Mapped[int] + Numeric(19, 0)
 UUID RAW(16)     → Mapped[uuid.UUID] + UUIDv7Raw
 JSON CLOB        → OracleJSON
-TIMESTAMP TZ     → DateTime(timezone=True)
+TIMESTAMP TZ     → UniversalTimestamp(timezone=True)
 ```
 
 Entity 不继承 Domain Aggregate，不实现状态迁移，不使用跨表 lazy relationship。Application Mapper 显式构建 Domain Snapshot/Command；状态值进入 Domain Enum 后再持久化。ID 使用专用 `ResourceId` Value Object 校验并规范化，不能在业务代码散落 `str(uuid)`。
@@ -152,7 +152,7 @@ UPDATE ...
 
 领取使用 Oracle `FOR UPDATE SKIP LOCKED`，事务只完成选取和写租约：
 
-1. 按 `STATUS/AVAILABLE_AT/PRIORITY` 选择一小批 Ready 行；
+1. 按 `STATUS/AVAILABLE_AT/PRIORITY` 由 Oracle 服务端游标选择一条 Ready 行；
 2. 锁定并写 `RUNNING/PUBLISHING`、Lease Owner/Until、Attempt 和 Row Version；
 3. Commit 后执行外部调用；
 4. 完成时校验 PK、Lease Owner、每次领取生成的 Lease Token 和 Lease 未过期；
@@ -160,11 +160,15 @@ UPDATE ...
 
 过期 `RUNNING` 不由普通 Claim 偷取。Reconciler 单独把它转换为 `RETRY_WAIT/FAILED/UNKNOWN`，清除旧 Lease Token 并写 Run Event 后才可再次领取。Task、Plan 和 Outbox 每次领取都生成新的 `LEASE_TOKEN RAW(16)`；迟到写回必须同时匹配 Owner、Token 和有效期。Scheduler 对 Plan 使用同样原则，领取 Plan 后在一个事务内创建 Run/Initial Task/Outbox 并推进 `NEXT_RUN_AT`。
 
+Oracle 不能组合 `FETCH FIRST 1 ROWS ONLY FOR UPDATE SKIP LOCKED`，否则产生 `ORA-02014`；客户端流式查询也可能因驱动预取锁住多行。因此 Oracle Repository 使用 PL/SQL 服务端 Cursor 执行 `FOR UPDATE SKIP LOCKED` 并只 `FETCH` 一个 ID，候选时间以 `SYSTIMESTAMP` 为准。该方言差异只存在于 Persistence Adapter；未来 PostgreSQL Adapter 使用原生 `LIMIT 1 FOR UPDATE SKIP LOCKED`。
+
 ## Run Event 序号
 
 写 Run Event 时先 `SELECT Run FOR UPDATE`，再通过 `(OPS_RUN_ID, SEQUENCE_NO)` 索引读取当前最大序号并插入 `max + 1`。Run 锁使同一 Run 序号严格单调；不同 Run 可并行。序号从 1 开始，只用于该 Run 的 SSE Cursor，不作为全局资源 ID。
 
 如果压测证明 Run 行竞争明显，再单独增加 Sequence Allocator 表；首版不为假设性吞吐增加第 21 张领域表。
+
+`EVENT_KEY` 只用于有业务幂等语义的事件，普通进度事件允许为空。Oracle 26ai 对复合唯一约束中的空值也会产生冲突，因此 DDL 使用仅在 `EVENT_KEY IS NOT NULL` 时生效的函数唯一索引，不能退回普通 `UNIQUE (OPS_RUN_ID, EVENT_KEY)`。
 
 ## Inbox/Outbox 事务语义
 
@@ -212,6 +216,16 @@ aiops_agent/
 ```
 
 Repository Protocol 放在 Application Port，Oracle 实现放在 `repositories`。测试 Fake 实现同一 Protocol，不允许为测试向生产 Repository 添加绕过 Scope/Lock 的方法。
+
+## 实施结果
+
+步骤 2 已于 2026-07-23 完成：
+
+- 21 张 `KBOT_OPS_*` 表均有逐列 Entity，UUID、NUMBER、CLOB、带时区时间和可空性已与真实 Oracle Catalog 对齐；
+- 九个聚合 Repository、Application Port 和显式单次提交 `AIOpsUnitOfWork` 已接入 API、Worker 与 Scheduler Bootstrap；
+- Task、过期 Task、Inspection Plan、Outbox 使用服务端单行 `SKIP LOCKED`，完成写回校验 Owner、Token、有效期，以及适用实体的 Row Version；
+- Run Event 严格递增、Inbox 去重、Outbox 至少一次投递和 Execution 单调状态版本已实现；
+- 离线契约测试、Catalog 漂移检查和自动清理的 Oracle Smoke 已覆盖显式提交、漏提交回滚、双 Worker 领取、陈旧令牌拒绝和连续空 Event Key。
 
 ## 完成定义
 

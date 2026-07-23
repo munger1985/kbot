@@ -2,10 +2,14 @@ import json
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import Dialect, LargeBinary, Text, TypeDecorator
+from sqlalchemy import DateTime, Dialect, LargeBinary, Text, TypeDecorator
 import array as array_module
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.dialects.oracle import RAW, VECTOR as ORA_VECTOR  # Oracle 23ai+
+from sqlalchemy.dialects.oracle import (
+    RAW,
+    TIMESTAMP as ORA_TIMESTAMP,
+    VECTOR as ORA_VECTOR,
+)
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 
 
@@ -39,6 +43,24 @@ class UUIDv7Type(TypeDecorator):
         if isinstance(value, (bytes, bytearray, memoryview)):
             return UUID(bytes=bytes(value))
         return UUID(str(value))
+
+
+class UniversalTimestamp(TypeDecorator):
+    """Oracle TIMESTAMP / PostgreSQL TIMESTAMP 的统一映射。"""
+
+    impl = DateTime
+    cache_ok = True
+
+    def __init__(self, *, timezone: bool = True):
+        super().__init__(timezone=timezone)
+        self.timezone = timezone
+
+    def load_dialect_impl(self, dialect: Dialect):
+        if dialect.name == "oracle":
+            return dialect.type_descriptor(
+                ORA_TIMESTAMP(timezone=self.timezone)
+            )
+        return dialect.type_descriptor(DateTime(timezone=self.timezone))
 
 
 class UniversalVector(TypeDecorator):
