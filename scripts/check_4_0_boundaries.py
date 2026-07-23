@@ -14,7 +14,7 @@ ACTIVE_ROOTS = (
     ROOT / "model_serving",
     ROOT / "main_api",
     ROOT / "agent_runtime",
-    ROOT / "aiops",
+    ROOT / "aiops_agent",
     ROOT / "apps",
 )
 OBSOLETE_PATHS = (
@@ -62,6 +62,11 @@ def check_file(path: Path) -> list[str]:
         relative_path.parts[0] == "main_api"
         or relative_path.parts[:2] == ("apps", "main_api")
     )
+    is_aiops = relative_path.parts[0] == "aiops_agent"
+    is_aiops_domain = relative_path.parts[:2] == (
+        "aiops_agent",
+        "domain",
+    )
     for node in ast.walk(tree):
         if isinstance(node, ast.Constant) and isinstance(node.value, str):
             for prefix in OBSOLETE_API_PREFIXES:
@@ -70,6 +75,35 @@ def check_file(path: Path) -> list[str]:
                         f"{path}:{node.lineno}: 禁止使用旧 API 前缀 {prefix}"
                     )
         for imported in module_names(node):
+            if is_aiops_domain and imported.split(".")[0] in {
+                "aiohttp",
+                "fastapi",
+                "loguru",
+                "platform_clients",
+                "platform_core",
+                "pydantic",
+                "sqlalchemy",
+            }:
+                violations.append(
+                    f"{path}:{node.lineno}: AIOps Domain 只能依赖标准库，"
+                    f"禁止导入 {imported}"
+                )
+                continue
+            if is_aiops and (
+                imported.startswith("knowledge_core.entities")
+                or imported.startswith("knowledge_core.repositories")
+                or imported.startswith("knowledge_core.persistence")
+                or imported.startswith("model_serving.common.entities")
+                or imported.startswith("model_serving.common.model_repository")
+                or imported.startswith("agent_runtime.entities")
+                or imported.startswith("agent_runtime.repositories")
+                or imported.startswith("agent_runtime.persistence")
+            ):
+                violations.append(
+                    f"{path}:{node.lineno}: AIOps 禁止导入其他领域持久化模块 "
+                    f"{imported}"
+                )
+                continue
             if is_main_api and imported.split(".")[0] in {
                 "knowledge_core",
                 "model_serving",

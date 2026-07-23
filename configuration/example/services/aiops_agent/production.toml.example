@@ -1,0 +1,6 @@
+[secret_store]
+provider = "vault"
+
+[executor]
+mutation_enabled = false
+executor_instance_id = "aiops-executor-prod-01"

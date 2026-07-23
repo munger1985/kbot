@@ -1,0 +1,1806 @@
+{
+  "components": {
+    "schemas": {
+      "AnswerHitlCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "command_type": {
+            "const": "ANSWER_HITL",
+            "default": "ANSWER_HITL",
+            "title": "Command Type",
+            "type": "string"
+          },
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          },
+          "hitl_id": {
+            "format": "uuid",
+            "title": "Hitl Id",
+            "type": "string"
+          },
+          "response": {
+            "additionalProperties": true,
+            "title": "Response",
+            "type": "object"
+          }
+        },
+        "required": [
+          "hitl_id",
+          "expected_row_version",
+          "response"
+        ],
+        "title": "AnswerHitlCommand",
+        "type": "object"
+      },
+      "ApprovalRequiredEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "event_type": {
+            "const": "proposal.pending_approval",
+            "default": "proposal.pending_approval",
+            "title": "Event Type",
+            "type": "string"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "ops_run_id": {
+            "format": "uuid",
+            "title": "Ops Run Id",
+            "type": "string"
+          },
+          "proposal_hash": {
+            "title": "Proposal Hash",
+            "type": "string"
+          },
+          "proposal_id": {
+            "format": "uuid",
+            "title": "Proposal Id",
+            "type": "string"
+          },
+          "schema_version": {
+            "default": "aiops.event.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "sequence_no": {
+            "minimum": 1.0,
+            "title": "Sequence No",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ProposalStatus"
+          },
+          "trace_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Trace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ops_run_id",
+          "sequence_no",
+          "occurred_at",
+          "trace_id",
+          "status",
+          "proposal_id",
+          "proposal_hash"
+        ],
+        "title": "ApprovalRequiredEvent",
+        "type": "object"
+      },
+      "ApproveProposalCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "command_type": {
+            "const": "APPROVE_PROPOSAL",
+            "default": "APPROVE_PROPOSAL",
+            "title": "Command Type",
+            "type": "string"
+          },
+          "expected_proposal_hash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Expected Proposal Hash",
+            "type": "string"
+          },
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "proposal_id": {
+            "format": "uuid",
+            "title": "Proposal Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "proposal_id",
+          "expected_row_version",
+          "expected_proposal_hash"
+        ],
+        "title": "ApproveProposalCommand",
+        "type": "object"
+      },
+      "ArtifactRef": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact_id": {
+            "format": "uuid",
+            "title": "Artifact Id",
+            "type": "string"
+          },
+          "artifact_type": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Artifact Type",
+            "type": "string"
+          },
+          "content_hash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Content Hash",
+            "type": "string"
+          },
+          "schema_version": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "artifact_id",
+          "artifact_type",
+          "schema_version",
+          "content_hash"
+        ],
+        "title": "ArtifactRef",
+        "type": "object"
+      },
+      "CancelHitlCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "command_type": {
+            "const": "CANCEL_HITL",
+            "default": "CANCEL_HITL",
+            "title": "Command Type",
+            "type": "string"
+          },
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          },
+          "hitl_id": {
+            "format": "uuid",
+            "title": "Hitl Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "hitl_id",
+          "expected_row_version"
+        ],
+        "title": "CancelHitlCommand",
+        "type": "object"
+      },
+      "CancelRunCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "command_type": {
+            "const": "CANCEL_RUN",
+            "default": "CANCEL_RUN",
+            "title": "Command Type",
+            "type": "string"
+          },
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "expected_row_version"
+        ],
+        "title": "CancelRunCommand",
+        "type": "object"
+      },
+      "CreateOpsRunCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "actor_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Actor Id",
+            "type": "string"
+          },
+          "agent_id": {
+            "format": "uuid",
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "app_id": {
+            "minimum": 1.0,
+            "title": "App Id",
+            "type": "integer"
+          },
+          "client_metadata": {
+            "additionalProperties": true,
+            "title": "Client Metadata",
+            "type": "object"
+          },
+          "command_id": {
+            "format": "uuid",
+            "title": "Command Id",
+            "type": "string"
+          },
+          "deadline": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deadline"
+          },
+          "domain_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Domain Id",
+            "type": "string"
+          },
+          "idempotency_key": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Idempotency Key",
+            "type": "string"
+          },
+          "input": {
+            "maxLength": 32000,
+            "minLength": 1,
+            "title": "Input",
+            "type": "string"
+          },
+          "parent_agent_run_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Agent Run Id"
+          },
+          "parent_delegation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Delegation Id"
+          },
+          "schema_version": {
+            "default": "aiops.internal.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          },
+          "target_id": {
+            "format": "uuid",
+            "title": "Target Id",
+            "type": "string"
+          },
+          "trigger_type": {
+            "$ref": "#/components/schemas/TriggerType"
+          }
+        },
+        "required": [
+          "command_id",
+          "idempotency_key",
+          "app_id",
+          "domain_id",
+          "actor_id",
+          "agent_id",
+          "target_id",
+          "trigger_type",
+          "input"
+        ],
+        "title": "CreateOpsRunCommand",
+        "type": "object"
+      },
+      "DelegationEventPage": {
+        "additionalProperties": false,
+        "properties": {
+          "delegation_id": {
+            "format": "uuid",
+            "title": "Delegation Id",
+            "type": "string"
+          },
+          "events": {
+            "default": [],
+            "items": {
+              "anyOf": [
+                {
+                  "discriminator": {
+                    "mapping": {
+                      "diagnostic.input_required": "#/components/schemas/InputRequiredEvent",
+                      "diagnostic.progress": "#/components/schemas/DiagnosticProgressEvent",
+                      "execution.status": "#/components/schemas/ExecutionStatusEvent",
+                      "proposal.pending_approval": "#/components/schemas/ApprovalRequiredEvent",
+                      "report.ready": "#/components/schemas/ReportReadyEvent",
+                      "run.cancelled": "#/components/schemas/RunTerminalEvent",
+                      "run.completed": "#/components/schemas/RunTerminalEvent",
+                      "run.expired": "#/components/schemas/RunTerminalEvent",
+                      "run.failed": "#/components/schemas/RunTerminalEvent",
+                      "run.status": "#/components/schemas/RunStatusEvent",
+                      "task.status": "#/components/schemas/TaskStatusEvent"
+                    },
+                    "propertyName": "event_type"
+                  },
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/RunStatusEvent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/TaskStatusEvent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/DiagnosticProgressEvent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InputRequiredEvent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApprovalRequiredEvent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ExecutionStatusEvent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ReportReadyEvent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RunTerminalEvent"
+                    }
+                  ]
+                },
+                {
+                  "$ref": "#/components/schemas/UnknownEvent"
+                }
+              ]
+            },
+            "title": "Events",
+            "type": "array"
+          },
+          "next_sequence": {
+            "minimum": 0.0,
+            "title": "Next Sequence",
+            "type": "integer"
+          },
+          "schema_version": {
+            "default": "aiops.internal.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "terminal": {
+            "default": false,
+            "title": "Terminal",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "delegation_id",
+          "next_sequence"
+        ],
+        "title": "DelegationEventPage",
+        "type": "object"
+      },
+      "DiagnosticProgressEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "event_type": {
+            "const": "diagnostic.progress",
+            "default": "diagnostic.progress",
+            "title": "Event Type",
+            "type": "string"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "ops_run_id": {
+            "format": "uuid",
+            "title": "Ops Run Id",
+            "type": "string"
+          },
+          "progress_percent": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Progress Percent"
+          },
+          "schema_version": {
+            "default": "aiops.event.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "sequence_no": {
+            "minimum": 1.0,
+            "title": "Sequence No",
+            "type": "integer"
+          },
+          "stage": {
+            "title": "Stage",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "trace_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Trace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ops_run_id",
+          "sequence_no",
+          "occurred_at",
+          "trace_id",
+          "status",
+          "stage"
+        ],
+        "title": "DiagnosticProgressEvent",
+        "type": "object"
+      },
+      "EventReceipt": {
+        "additionalProperties": false,
+        "properties": {
+          "accepted": {
+            "title": "Accepted",
+            "type": "boolean"
+          },
+          "duplicate": {
+            "default": false,
+            "title": "Duplicate",
+            "type": "boolean"
+          },
+          "event_id": {
+            "format": "uuid",
+            "title": "Event Id",
+            "type": "string"
+          },
+          "schema_version": {
+            "default": "aiops.internal.v1",
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "event_id",
+          "accepted"
+        ],
+        "title": "EventReceipt",
+        "type": "object"
+      },
+      "ExecutionStatus": {
+        "enum": [
+          "CREATED",
+          "CLAIMED",
+          "RUNNING",
+          "SUCCEEDED",
+          "FAILED",
+          "UNKNOWN"
+        ],
+        "title": "ExecutionStatus",
+        "type": "string"
+      },
+      "ExecutionStatusEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "event_type": {
+            "const": "execution.status",
+            "default": "execution.status",
+            "title": "Event Type",
+            "type": "string"
+          },
+          "execution_id": {
+            "format": "uuid",
+            "title": "Execution Id",
+            "type": "string"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "ops_run_id": {
+            "format": "uuid",
+            "title": "Ops Run Id",
+            "type": "string"
+          },
+          "result_ref": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResourceRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "schema_version": {
+            "default": "aiops.event.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "sequence_no": {
+            "minimum": 1.0,
+            "title": "Sequence No",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ExecutionStatus"
+          },
+          "trace_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Trace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ops_run_id",
+          "sequence_no",
+          "occurred_at",
+          "trace_id",
+          "status",
+          "execution_id"
+        ],
+        "title": "ExecutionStatusEvent",
+        "type": "object"
+      },
+      "FinalDiagnosisRef": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact": {
+            "$ref": "#/components/schemas/ArtifactRef"
+          },
+          "report_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report Id"
+          },
+          "root_cause_grade": {
+            "title": "Root Cause Grade",
+            "type": "string"
+          }
+        },
+        "required": [
+          "artifact",
+          "root_cause_grade"
+        ],
+        "title": "FinalDiagnosisRef",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "HitlType": {
+        "enum": [
+          "DATA_REQUIRED",
+          "MANUAL_DIAGNOSTIC_SQL",
+          "CHANGE_APPROVAL"
+        ],
+        "title": "HitlType",
+        "type": "string"
+      },
+      "InputRequiredEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "event_type": {
+            "const": "diagnostic.input_required",
+            "default": "diagnostic.input_required",
+            "title": "Event Type",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "hitl_id": {
+            "format": "uuid",
+            "title": "Hitl Id",
+            "type": "string"
+          },
+          "hitl_type": {
+            "$ref": "#/components/schemas/HitlType"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "ops_run_id": {
+            "format": "uuid",
+            "title": "Ops Run Id",
+            "type": "string"
+          },
+          "request_artifact": {
+            "$ref": "#/components/schemas/ArtifactRef"
+          },
+          "schema_version": {
+            "default": "aiops.event.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "sequence_no": {
+            "minimum": 1.0,
+            "title": "Sequence No",
+            "type": "integer"
+          },
+          "status": {
+            "const": "PENDING",
+            "default": "PENDING",
+            "title": "Status",
+            "type": "string"
+          },
+          "trace_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Trace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ops_run_id",
+          "sequence_no",
+          "occurred_at",
+          "trace_id",
+          "hitl_id",
+          "hitl_type",
+          "request_artifact",
+          "expires_at"
+        ],
+        "title": "InputRequiredEvent",
+        "type": "object"
+      },
+      "MonitorWebhookEnvelope": {
+        "additionalProperties": false,
+        "properties": {
+          "content_type": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Content Type",
+            "type": "string"
+          },
+          "raw_body_hash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Raw Body Hash",
+            "type": "string"
+          },
+          "raw_body_uri": {
+            "title": "Raw Body Uri",
+            "type": "string"
+          },
+          "received_at": {
+            "format": "date-time",
+            "title": "Received At",
+            "type": "string"
+          },
+          "request_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Request Id",
+            "type": "string"
+          },
+          "schema_version": {
+            "default": "aiops.internal.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "signature_headers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Signature Headers",
+            "type": "object"
+          },
+          "webhook_key_hash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Webhook Key Hash",
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "webhook_key_hash",
+          "raw_body_uri",
+          "raw_body_hash",
+          "content_type",
+          "received_at"
+        ],
+        "title": "MonitorWebhookEnvelope",
+        "type": "object"
+      },
+      "OpsCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "command": {
+            "discriminator": {
+              "mapping": {
+                "ANSWER_HITL": "#/components/schemas/AnswerHitlCommand",
+                "APPROVE_PROPOSAL": "#/components/schemas/ApproveProposalCommand",
+                "CANCEL_HITL": "#/components/schemas/CancelHitlCommand",
+                "CANCEL_RUN": "#/components/schemas/CancelRunCommand",
+                "RECORD_MANUAL_RESULT": "#/components/schemas/RecordManualResultCommand",
+                "REJECT_PROPOSAL": "#/components/schemas/RejectProposalCommand"
+              },
+              "propertyName": "command_type"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/CancelRunCommand"
+              },
+              {
+                "$ref": "#/components/schemas/AnswerHitlCommand"
+              },
+              {
+                "$ref": "#/components/schemas/CancelHitlCommand"
+              },
+              {
+                "$ref": "#/components/schemas/ApproveProposalCommand"
+              },
+              {
+                "$ref": "#/components/schemas/RejectProposalCommand"
+              },
+              {
+                "$ref": "#/components/schemas/RecordManualResultCommand"
+              }
+            ],
+            "title": "Command"
+          },
+          "command_id": {
+            "format": "uuid",
+            "title": "Command Id",
+            "type": "string"
+          },
+          "idempotency_key": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Idempotency Key",
+            "type": "string"
+          },
+          "ops_run_id": {
+            "format": "uuid",
+            "title": "Ops Run Id",
+            "type": "string"
+          },
+          "schema_version": {
+            "default": "aiops.internal.v1",
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "command_id",
+          "idempotency_key",
+          "ops_run_id",
+          "command"
+        ],
+        "title": "OpsCommand",
+        "type": "object"
+      },
+      "OpsRunReceipt": {
+        "additionalProperties": false,
+        "properties": {
+          "event_cursor": {
+            "minimum": 0.0,
+            "title": "Event Cursor",
+            "type": "integer"
+          },
+          "ops_run_id": {
+            "format": "uuid",
+            "title": "Ops Run Id",
+            "type": "string"
+          },
+          "row_version": {
+            "minimum": 1.0,
+            "title": "Row Version",
+            "type": "integer"
+          },
+          "schema_version": {
+            "default": "aiops.internal.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/OpsRunStatus"
+          }
+        },
+        "required": [
+          "ops_run_id",
+          "status",
+          "row_version",
+          "event_cursor"
+        ],
+        "title": "OpsRunReceipt",
+        "type": "object"
+      },
+      "OpsRunStatus": {
+        "enum": [
+          "CREATED",
+          "RUNNING",
+          "WAITING_INPUT",
+          "WAITING_APPROVAL",
+          "COMPLETED",
+          "FAILED",
+          "CANCELLED",
+          "EXPIRED"
+        ],
+        "title": "OpsRunStatus",
+        "type": "string"
+      },
+      "ProposalStatus": {
+        "enum": [
+          "PENDING",
+          "APPROVED",
+          "REJECTED",
+          "EXECUTING",
+          "COMPLETED",
+          "FAILED"
+        ],
+        "title": "ProposalStatus",
+        "type": "string"
+      },
+      "RecordManualResultCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "command_type": {
+            "const": "RECORD_MANUAL_RESULT",
+            "default": "RECORD_MANUAL_RESULT",
+            "title": "Command Type",
+            "type": "string"
+          },
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          },
+          "proposal_id": {
+            "format": "uuid",
+            "title": "Proposal Id",
+            "type": "string"
+          },
+          "result": {
+            "additionalProperties": true,
+            "title": "Result",
+            "type": "object"
+          }
+        },
+        "required": [
+          "proposal_id",
+          "expected_row_version",
+          "result"
+        ],
+        "title": "RecordManualResultCommand",
+        "type": "object"
+      },
+      "RejectProposalCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "command_type": {
+            "const": "REJECT_PROPOSAL",
+            "default": "REJECT_PROPOSAL",
+            "title": "Command Type",
+            "type": "string"
+          },
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          },
+          "proposal_id": {
+            "format": "uuid",
+            "title": "Proposal Id",
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "proposal_id",
+          "expected_row_version",
+          "reason"
+        ],
+        "title": "RejectProposalCommand",
+        "type": "object"
+      },
+      "ReportReadyEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "event_type": {
+            "const": "report.ready",
+            "default": "report.ready",
+            "title": "Event Type",
+            "type": "string"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "ops_run_id": {
+            "format": "uuid",
+            "title": "Ops Run Id",
+            "type": "string"
+          },
+          "report_id": {
+            "format": "uuid",
+            "title": "Report Id",
+            "type": "string"
+          },
+          "report_key": {
+            "title": "Report Key",
+            "type": "string"
+          },
+          "report_type": {
+            "$ref": "#/components/schemas/ReportType"
+          },
+          "report_version": {
+            "minimum": 1.0,
+            "title": "Report Version",
+            "type": "integer"
+          },
+          "schema_version": {
+            "default": "aiops.event.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "sequence_no": {
+            "minimum": 1.0,
+            "title": "Sequence No",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ReportStatus"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          },
+          "trace_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Trace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ops_run_id",
+          "sequence_no",
+          "occurred_at",
+          "trace_id",
+          "status",
+          "report_id",
+          "report_key",
+          "report_type",
+          "report_version",
+          "summary"
+        ],
+        "title": "ReportReadyEvent",
+        "type": "object"
+      },
+      "ReportStatus": {
+        "enum": [
+          "DRAFT",
+          "PUBLISHED",
+          "SUPERSEDED"
+        ],
+        "title": "ReportStatus",
+        "type": "string"
+      },
+      "ReportType": {
+        "enum": [
+          "INCIDENT",
+          "PERFORMANCE",
+          "INSPECTION_DAILY",
+          "INSPECTION_WEEKLY",
+          "COMPARISON"
+        ],
+        "title": "ReportType",
+        "type": "string"
+      },
+      "ResourceRef": {
+        "additionalProperties": false,
+        "properties": {
+          "resource_id": {
+            "format": "uuid",
+            "title": "Resource Id",
+            "type": "string"
+          },
+          "resource_type": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Resource Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "resource_type",
+          "resource_id"
+        ],
+        "title": "ResourceRef",
+        "type": "object"
+      },
+      "RootDelegationReceipt": {
+        "additionalProperties": false,
+        "properties": {
+          "child_event_cursor": {
+            "minimum": 0.0,
+            "title": "Child Event Cursor",
+            "type": "integer"
+          },
+          "delegation_id": {
+            "format": "uuid",
+            "title": "Delegation Id",
+            "type": "string"
+          },
+          "ops_run_id": {
+            "format": "uuid",
+            "title": "Ops Run Id",
+            "type": "string"
+          },
+          "schema_version": {
+            "default": "aiops.internal.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/OpsRunStatus"
+          }
+        },
+        "required": [
+          "delegation_id",
+          "ops_run_id",
+          "status",
+          "child_event_cursor"
+        ],
+        "title": "RootDelegationReceipt",
+        "type": "object"
+      },
+      "RootDelegationRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "agent_id": {
+            "format": "uuid",
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "deadline": {
+            "format": "date-time",
+            "title": "Deadline",
+            "type": "string"
+          },
+          "delegation_id": {
+            "format": "uuid",
+            "title": "Delegation Id",
+            "type": "string"
+          },
+          "domain_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Domain Id",
+            "type": "string"
+          },
+          "parent_agent_run_id": {
+            "format": "uuid",
+            "title": "Parent Agent Run Id",
+            "type": "string"
+          },
+          "schema_version": {
+            "default": "aiops.internal.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "target_id": {
+            "format": "uuid",
+            "title": "Target Id",
+            "type": "string"
+          },
+          "user_intent": {
+            "maxLength": 32000,
+            "minLength": 1,
+            "title": "User Intent",
+            "type": "string"
+          }
+        },
+        "required": [
+          "delegation_id",
+          "parent_agent_run_id",
+          "agent_id",
+          "target_id",
+          "domain_id",
+          "user_intent",
+          "deadline"
+        ],
+        "title": "RootDelegationRequest",
+        "type": "object"
+      },
+      "RootDelegationResult": {
+        "additionalProperties": false,
+        "properties": {
+          "delegation_id": {
+            "format": "uuid",
+            "title": "Delegation Id",
+            "type": "string"
+          },
+          "diagnosis": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FinalDiagnosisRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ops_run_id": {
+            "format": "uuid",
+            "title": "Ops Run Id",
+            "type": "string"
+          },
+          "safe_summary": {
+            "anyOf": [
+              {
+                "maxLength": 8000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Safe Summary"
+          },
+          "schema_version": {
+            "default": "aiops.internal.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/OpsRunStatus"
+          }
+        },
+        "required": [
+          "delegation_id",
+          "ops_run_id",
+          "status"
+        ],
+        "title": "RootDelegationResult",
+        "type": "object"
+      },
+      "RunStatusEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "event_type": {
+            "const": "run.status",
+            "default": "run.status",
+            "title": "Event Type",
+            "type": "string"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "ops_run_id": {
+            "format": "uuid",
+            "title": "Ops Run Id",
+            "type": "string"
+          },
+          "schema_version": {
+            "default": "aiops.event.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "sequence_no": {
+            "minimum": 1.0,
+            "title": "Sequence No",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/OpsRunStatus"
+          },
+          "trace_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Trace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ops_run_id",
+          "sequence_no",
+          "occurred_at",
+          "trace_id",
+          "status"
+        ],
+        "title": "RunStatusEvent",
+        "type": "object"
+      },
+      "RunTerminalEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "event_type": {
+            "enum": [
+              "run.completed",
+              "run.failed",
+              "run.cancelled",
+              "run.expired"
+            ],
+            "title": "Event Type",
+            "type": "string"
+          },
+          "final_artifact": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ArtifactRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "ops_run_id": {
+            "format": "uuid",
+            "title": "Ops Run Id",
+            "type": "string"
+          },
+          "schema_version": {
+            "default": "aiops.event.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "sequence_no": {
+            "minimum": 1.0,
+            "title": "Sequence No",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "COMPLETED",
+              "FAILED",
+              "CANCELLED",
+              "EXPIRED"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "trace_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Trace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ops_run_id",
+          "sequence_no",
+          "occurred_at",
+          "trace_id",
+          "event_type",
+          "status"
+        ],
+        "title": "RunTerminalEvent",
+        "type": "object"
+      },
+      "TaskStatusEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "event_type": {
+            "const": "task.status",
+            "default": "task.status",
+            "title": "Event Type",
+            "type": "string"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "ops_run_id": {
+            "format": "uuid",
+            "title": "Ops Run Id",
+            "type": "string"
+          },
+          "schema_version": {
+            "default": "aiops.event.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "sequence_no": {
+            "minimum": 1.0,
+            "title": "Sequence No",
+            "type": "integer"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "task_id": {
+            "format": "uuid",
+            "title": "Task Id",
+            "type": "string"
+          },
+          "task_type": {
+            "title": "Task Type",
+            "type": "string"
+          },
+          "trace_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Trace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ops_run_id",
+          "sequence_no",
+          "occurred_at",
+          "trace_id",
+          "status",
+          "task_id",
+          "task_type"
+        ],
+        "title": "TaskStatusEvent",
+        "type": "object"
+      },
+      "TriggerType": {
+        "enum": [
+          "CHAT",
+          "API",
+          "ROOT",
+          "ALERT",
+          "SCHEDULE"
+        ],
+        "title": "TriggerType",
+        "type": "string"
+      },
+      "UnknownEvent": {
+        "additionalProperties": true,
+        "description": "客户端可记录并跳过的前向兼容事件。",
+        "properties": {
+          "event_type": {
+            "title": "Event Type",
+            "type": "string"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "ops_run_id": {
+            "format": "uuid",
+            "title": "Ops Run Id",
+            "type": "string"
+          },
+          "schema_version": {
+            "default": "aiops.event.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "sequence_no": {
+            "minimum": 1.0,
+            "title": "Sequence No",
+            "type": "integer"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "trace_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Trace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ops_run_id",
+          "sequence_no",
+          "occurred_at",
+          "trace_id",
+          "event_type"
+        ],
+        "title": "UnknownEvent",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "KBot AIOps Internal Contract",
+    "version": "1.0.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/internal/v1/aiops/delegations": {
+      "post": {
+        "operationId": "create_delegation_internal_v1_aiops_delegations_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RootDelegationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RootDelegationReceipt"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Delegation"
+      }
+    },
+    "/internal/v1/aiops/delegations/{delegation_id}/events": {
+      "get": {
+        "operationId": "delegation_events_internal_v1_aiops_delegations__delegation_id__events_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "delegation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Delegation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DelegationEventPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delegation Events"
+      }
+    },
+    "/internal/v1/aiops/delegations/{delegation_id}/result": {
+      "get": {
+        "operationId": "delegation_result_internal_v1_aiops_delegations__delegation_id__result_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "delegation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Delegation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RootDelegationResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delegation Result"
+      }
+    },
+    "/internal/v1/aiops/intake/monitor-events": {
+      "post": {
+        "operationId": "monitor_event_internal_v1_aiops_intake_monitor_events_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MonitorWebhookEnvelope"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventReceipt"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Monitor Event"
+      }
+    },
+    "/internal/v1/aiops/runs": {
+      "post": {
+        "operationId": "create_run_internal_v1_aiops_runs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateOpsRunCommand"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsRunReceipt"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Run"
+      }
+    },
+    "/internal/v1/aiops/runs/{run_id}/commands": {
+      "post": {
+        "operationId": "run_command_internal_v1_aiops_runs__run_id__commands_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OpsCommand"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Run Command"
+      }
+    }
+  }
+}

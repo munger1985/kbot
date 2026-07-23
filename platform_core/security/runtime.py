@@ -13,11 +13,18 @@ from platform_core.contracts import AuthContext, PrincipalKind
 
 from .api_key import PortalApiKeyRecord, PortalApiKeyVerifier
 from .auth_context import AUTH_CONTEXT_HEADER, AuthContextJWTCodec
+from .service_identity import (
+    SERVICE_IDENTITY_HEADER,
+    ServiceIdentityJWTCodec,
+)
 
 
 INTERNAL_TOKEN_HEADER = "X-KBot-Internal-Token"
 DEFAULT_DEV_SERVICE_TOKEN = "kbot_internal_service_token"
 DEFAULT_DEV_JWT_SECRET = "kbot-development-auth-context-secret-change-me"
+DEFAULT_DEV_SERVICE_IDENTITY_SECRET = (
+    "kbot-development-service-identity-secret-change-me"
+)
 DEFAULT_DEV_API_KEY_PEPPER = "kbot-development-api-key-pepper-change-me"
 
 
@@ -56,6 +63,29 @@ def create_auth_context_codec() -> AuthContextJWTCodec:
         secret=secret,
         issuer=config.internal_jwt_issuer,
         ttl_seconds=config.internal_jwt_ttl_seconds,
+        clock_skew_seconds=config.internal_jwt_clock_skew_seconds,
+    )
+
+
+@lru_cache(maxsize=1)
+def create_service_identity_codec() -> ServiceIdentityJWTCodec:
+    """根据平台配置创建 AIOps Service Identity 编解码器。"""
+    config = get_security_config()
+    secret = os.getenv(config.service_identity_jwt_secret_env)
+    if not secret:
+        if get_settings().is_production():
+            raise RuntimeError(
+                f"生产环境必须设置 {config.service_identity_jwt_secret_env}"
+            )
+        logger.warning(
+            "当前使用默认开发 Service Identity JWT 密钥，"
+            "生产环境必须通过环境变量注入"
+        )
+        secret = DEFAULT_DEV_SERVICE_IDENTITY_SECRET
+    return ServiceIdentityJWTCodec(
+        secret=secret,
+        issuer=config.internal_jwt_issuer,
+        ttl_seconds=config.service_identity_jwt_ttl_seconds,
         clock_skew_seconds=config.internal_jwt_clock_skew_seconds,
     )
 
@@ -147,6 +177,38 @@ def build_internal_auth_headers(
     return {
         INTERNAL_TOKEN_HEADER: service_token or get_internal_service_token(),
         AUTH_CONTEXT_HEADER: resolved_codec.issue(
+            resolved_context,
+            audience=audience,
+            caller_service=caller_service,
+        ),
+        "X-Request-ID": resolved_context.request_id,
+    }
+
+
+def build_scoped_internal_auth_headers(
+    *,
+    audience: str,
+    caller_service: str,
+    scopes: tuple[str, ...],
+    context: AuthContext | None = None,
+    auth_context_codec: AuthContextJWTCodec | None = None,
+    service_identity_codec: ServiceIdentityJWTCodec | None = None,
+) -> dict[str, str]:
+    """创建不依赖静态 Service Token 的 AIOps 内部认证 Header。"""
+    resolved_auth_codec = auth_context_codec or create_auth_context_codec()
+    resolved_identity_codec = (
+        service_identity_codec or create_service_identity_codec()
+    )
+    resolved_context = context or create_service_auth_context(
+        caller_service=caller_service
+    )
+    return {
+        SERVICE_IDENTITY_HEADER: resolved_identity_codec.issue(
+            subject=caller_service,
+            audience=audience,
+            scopes=scopes,
+        ),
+        AUTH_CONTEXT_HEADER: resolved_auth_codec.issue(
             resolved_context,
             audience=audience,
             caller_service=caller_service,

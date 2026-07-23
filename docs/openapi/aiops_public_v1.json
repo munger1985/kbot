@@ -1,0 +1,1537 @@
+{
+  "components": {
+    "schemas": {
+      "ApprovalCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_proposal_hash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Expected Proposal Hash",
+            "type": "string"
+          },
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "expected_row_version",
+          "expected_proposal_hash"
+        ],
+        "title": "ApprovalCommand",
+        "type": "object"
+      },
+      "ArtifactRef": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact_id": {
+            "format": "uuid",
+            "title": "Artifact Id",
+            "type": "string"
+          },
+          "artifact_type": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Artifact Type",
+            "type": "string"
+          },
+          "content_hash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Content Hash",
+            "type": "string"
+          },
+          "schema_version": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "artifact_id",
+          "artifact_type",
+          "schema_version",
+          "content_hash"
+        ],
+        "title": "ArtifactRef",
+        "type": "object"
+      },
+      "DatabaseType": {
+        "enum": [
+          "ORACLE",
+          "MYSQL"
+        ],
+        "title": "DatabaseType",
+        "type": "string"
+      },
+      "ExecutionMode": {
+        "enum": [
+          "MONITOR_ONLY",
+          "READ_ONLY",
+          "ADVISORY",
+          "AGENT_EXECUTE"
+        ],
+        "title": "ExecutionMode",
+        "type": "string"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "HitlResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "responses": {
+            "items": {
+              "$ref": "#/components/schemas/HitlResponseItem"
+            },
+            "minItems": 1,
+            "title": "Responses",
+            "type": "array"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "expected_row_version",
+          "responses"
+        ],
+        "title": "HitlResponse",
+        "type": "object"
+      },
+      "HitlResponseItem": {
+        "additionalProperties": false,
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "format": {
+            "$ref": "#/components/schemas/ResultFormat"
+          },
+          "inline_data": {
+            "anyOf": [
+              {
+                "maxLength": 65536,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inline Data"
+          },
+          "query_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Query Id",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ResultStatus"
+          },
+          "upload_id": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Upload Id"
+          }
+        },
+        "required": [
+          "query_id",
+          "status",
+          "format"
+        ],
+        "title": "HitlResponseItem",
+        "type": "object"
+      },
+      "HitlResult": {
+        "additionalProperties": false,
+        "properties": {
+          "accepted_artifact": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ArtifactRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "hitl_id": {
+            "format": "uuid",
+            "title": "Hitl Id",
+            "type": "string"
+          },
+          "row_version": {
+            "minimum": 1.0,
+            "title": "Row Version",
+            "type": "integer"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/HitlStatus"
+          }
+        },
+        "required": [
+          "hitl_id",
+          "status",
+          "row_version"
+        ],
+        "title": "HitlResult",
+        "type": "object"
+      },
+      "HitlStatus": {
+        "enum": [
+          "PENDING",
+          "ANSWERED",
+          "SKIPPED",
+          "EXPIRED",
+          "CANCELLED"
+        ],
+        "title": "HitlStatus",
+        "type": "string"
+      },
+      "OpsRunCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "agent_id": {
+            "format": "uuid",
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "client_metadata": {
+            "additionalProperties": true,
+            "title": "Client Metadata",
+            "type": "object"
+          },
+          "input": {
+            "maxLength": 32000,
+            "minLength": 1,
+            "title": "Input",
+            "type": "string"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          },
+          "target_id": {
+            "format": "uuid",
+            "title": "Target Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "agent_id",
+          "target_id",
+          "input"
+        ],
+        "title": "OpsRunCreate",
+        "type": "object"
+      },
+      "OpsRunReceipt": {
+        "additionalProperties": false,
+        "properties": {
+          "event_cursor": {
+            "minimum": 0.0,
+            "title": "Event Cursor",
+            "type": "integer"
+          },
+          "events_url": {
+            "title": "Events Url",
+            "type": "string"
+          },
+          "ops_run_id": {
+            "format": "uuid",
+            "title": "Ops Run Id",
+            "type": "string"
+          },
+          "row_version": {
+            "minimum": 1.0,
+            "title": "Row Version",
+            "type": "integer"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/OpsRunStatus"
+          }
+        },
+        "required": [
+          "ops_run_id",
+          "status",
+          "row_version",
+          "event_cursor",
+          "events_url"
+        ],
+        "title": "OpsRunReceipt",
+        "type": "object"
+      },
+      "OpsRunStatus": {
+        "enum": [
+          "CREATED",
+          "RUNNING",
+          "WAITING_INPUT",
+          "WAITING_APPROVAL",
+          "COMPLETED",
+          "FAILED",
+          "CANCELLED",
+          "EXPIRED"
+        ],
+        "title": "OpsRunStatus",
+        "type": "string"
+      },
+      "OpsRunSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "agent_id": {
+            "format": "uuid",
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "final_artifact": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ArtifactRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ops_run_id": {
+            "format": "uuid",
+            "title": "Ops Run Id",
+            "type": "string"
+          },
+          "root_cause_grade": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RootCauseGrade"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "row_version": {
+            "minimum": 1.0,
+            "title": "Row Version",
+            "type": "integer"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/OpsRunStatus"
+          },
+          "target_id": {
+            "format": "uuid",
+            "title": "Target Id",
+            "type": "string"
+          },
+          "trigger_type": {
+            "$ref": "#/components/schemas/TriggerType"
+          }
+        },
+        "required": [
+          "ops_run_id",
+          "agent_id",
+          "target_id",
+          "trigger_type",
+          "status",
+          "row_version",
+          "created_at"
+        ],
+        "title": "OpsRunSummary",
+        "type": "object"
+      },
+      "ProposalStatus": {
+        "enum": [
+          "PENDING",
+          "APPROVED",
+          "REJECTED",
+          "EXECUTING",
+          "COMPLETED",
+          "FAILED"
+        ],
+        "title": "ProposalStatus",
+        "type": "string"
+      },
+      "ProposalView": {
+        "additionalProperties": false,
+        "properties": {
+          "action_template_id": {
+            "title": "Action Template Id",
+            "type": "string"
+          },
+          "action_template_version": {
+            "title": "Action Template Version",
+            "type": "string"
+          },
+          "command_preview": {
+            "title": "Command Preview",
+            "type": "string"
+          },
+          "impact": {
+            "title": "Impact",
+            "type": "string"
+          },
+          "ops_run_id": {
+            "format": "uuid",
+            "title": "Ops Run Id",
+            "type": "string"
+          },
+          "prerequisites": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Prerequisites",
+            "type": "array"
+          },
+          "proposal_hash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Proposal Hash",
+            "type": "string"
+          },
+          "proposal_id": {
+            "format": "uuid",
+            "title": "Proposal Id",
+            "type": "string"
+          },
+          "risk": {
+            "title": "Risk",
+            "type": "string"
+          },
+          "rollback_plan": {
+            "title": "Rollback Plan",
+            "type": "string"
+          },
+          "row_version": {
+            "minimum": 1.0,
+            "title": "Row Version",
+            "type": "integer"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ProposalStatus"
+          },
+          "target_id": {
+            "format": "uuid",
+            "title": "Target Id",
+            "type": "string"
+          },
+          "verification_plan": {
+            "title": "Verification Plan",
+            "type": "string"
+          }
+        },
+        "required": [
+          "proposal_id",
+          "ops_run_id",
+          "target_id",
+          "action_template_id",
+          "action_template_version",
+          "command_preview",
+          "impact",
+          "risk",
+          "prerequisites",
+          "rollback_plan",
+          "verification_plan",
+          "proposal_hash",
+          "status",
+          "row_version"
+        ],
+        "title": "ProposalView",
+        "type": "object"
+      },
+      "ReportStatus": {
+        "enum": [
+          "DRAFT",
+          "PUBLISHED",
+          "SUPERSEDED"
+        ],
+        "title": "ReportStatus",
+        "type": "string"
+      },
+      "ReportType": {
+        "enum": [
+          "INCIDENT",
+          "PERFORMANCE",
+          "INSPECTION_DAILY",
+          "INSPECTION_WEEKLY",
+          "COMPARISON"
+        ],
+        "title": "ReportType",
+        "type": "string"
+      },
+      "ReportView": {
+        "additionalProperties": false,
+        "properties": {
+          "content_artifact": {
+            "$ref": "#/components/schemas/ArtifactRef"
+          },
+          "corrected_from_report_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Corrected From Report Id"
+          },
+          "period_end": {
+            "format": "date-time",
+            "title": "Period End",
+            "type": "string"
+          },
+          "period_start": {
+            "format": "date-time",
+            "title": "Period Start",
+            "type": "string"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published At"
+          },
+          "report_id": {
+            "format": "uuid",
+            "title": "Report Id",
+            "type": "string"
+          },
+          "report_key": {
+            "title": "Report Key",
+            "type": "string"
+          },
+          "report_type": {
+            "$ref": "#/components/schemas/ReportType"
+          },
+          "report_version": {
+            "minimum": 1.0,
+            "title": "Report Version",
+            "type": "integer"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ReportStatus"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          },
+          "target_id": {
+            "format": "uuid",
+            "title": "Target Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "report_id",
+          "report_key",
+          "report_type",
+          "report_version",
+          "status",
+          "target_id",
+          "period_start",
+          "period_end",
+          "summary",
+          "content_artifact"
+        ],
+        "title": "ReportView",
+        "type": "object"
+      },
+      "ResourceStatus": {
+        "enum": [
+          "ACTIVE",
+          "DISABLED",
+          "REVOKED",
+          "PAUSED",
+          "RETIRED"
+        ],
+        "title": "ResourceStatus",
+        "type": "string"
+      },
+      "ResultFormat": {
+        "enum": [
+          "JSON",
+          "CSV",
+          "TEXT"
+        ],
+        "title": "ResultFormat",
+        "type": "string"
+      },
+      "ResultStatus": {
+        "enum": [
+          "SUCCEEDED",
+          "FAILED",
+          "SKIPPED"
+        ],
+        "title": "ResultStatus",
+        "type": "string"
+      },
+      "RootCauseGrade": {
+        "enum": [
+          "CONFIRMED",
+          "PROBABLE",
+          "POSSIBLE",
+          "INCONCLUSIVE"
+        ],
+        "title": "RootCauseGrade",
+        "type": "string"
+      },
+      "TargetCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "db_role": {
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Db Role",
+            "type": "string"
+          },
+          "db_type": {
+            "$ref": "#/components/schemas/DatabaseType"
+          },
+          "diagnostic_secret_ref": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "minLength": 8,
+                "pattern": "^[a-z][a-z0-9+.-]*://.+",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Diagnostic Secret Ref"
+          },
+          "display_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "endpoint": {
+            "$ref": "#/components/schemas/TargetEndpoint"
+          },
+          "environment": {
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Environment",
+            "type": "string"
+          },
+          "execution_mode": {
+            "$ref": "#/components/schemas/ExecutionMode",
+            "default": "MONITOR_ONLY"
+          },
+          "execution_secret_ref": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "minLength": 8,
+                "pattern": "^[a-z][a-z0-9+.-]*://.+",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Execution Secret Ref"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "title": "Metadata",
+            "type": "object"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "security_level": {
+            "default": 1,
+            "maximum": 99.0,
+            "minimum": 0.0,
+            "title": "Security Level",
+            "type": "integer"
+          },
+          "target_key": {
+            "pattern": "^[a-z][a-z0-9._-]{0,127}$",
+            "title": "Target Key",
+            "type": "string"
+          },
+          "version_code": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Version Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target_key",
+          "display_name",
+          "db_type",
+          "version_code",
+          "environment",
+          "db_role",
+          "endpoint"
+        ],
+        "title": "TargetCreate",
+        "type": "object"
+      },
+      "TargetEndpoint": {
+        "additionalProperties": false,
+        "properties": {
+          "database": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Database"
+          },
+          "host": {
+            "maxLength": 253,
+            "minLength": 1,
+            "title": "Host",
+            "type": "string"
+          },
+          "port": {
+            "maximum": 65535.0,
+            "minimum": 1.0,
+            "title": "Port",
+            "type": "integer"
+          },
+          "service": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Service"
+          }
+        },
+        "required": [
+          "host",
+          "port"
+        ],
+        "title": "TargetEndpoint",
+        "type": "object"
+      },
+      "TargetPage": {
+        "additionalProperties": false,
+        "properties": {
+          "has_more": {
+            "default": false,
+            "title": "Has More",
+            "type": "boolean"
+          },
+          "items": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/TargetView"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "title": "TargetPage",
+        "type": "object"
+      },
+      "TargetPatch": {
+        "additionalProperties": false,
+        "properties": {
+          "db_role": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Db Role"
+          },
+          "diagnostic_secret_ref": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "minLength": 8,
+                "pattern": "^[a-z][a-z0-9+.-]*://.+",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Diagnostic Secret Ref"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "endpoint": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TargetEndpoint"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "environment": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment"
+          },
+          "execution_mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExecutionMode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "execution_secret_ref": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "minLength": 8,
+                "pattern": "^[a-z][a-z0-9+.-]*://.+",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Execution Secret Ref"
+          },
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          },
+          "metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "security_level": {
+            "anyOf": [
+              {
+                "maximum": 99.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Security Level"
+          },
+          "version_code": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version Code"
+          }
+        },
+        "required": [
+          "expected_row_version"
+        ],
+        "title": "TargetPatch",
+        "type": "object"
+      },
+      "TargetView": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "db_role": {
+            "title": "Db Role",
+            "type": "string"
+          },
+          "db_type": {
+            "$ref": "#/components/schemas/DatabaseType"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "endpoint": {
+            "$ref": "#/components/schemas/TargetEndpoint"
+          },
+          "environment": {
+            "title": "Environment",
+            "type": "string"
+          },
+          "execution_mode": {
+            "$ref": "#/components/schemas/ExecutionMode"
+          },
+          "has_diagnostic_secret": {
+            "title": "Has Diagnostic Secret",
+            "type": "boolean"
+          },
+          "has_execution_secret": {
+            "title": "Has Execution Secret",
+            "type": "boolean"
+          },
+          "row_version": {
+            "minimum": 1.0,
+            "title": "Row Version",
+            "type": "integer"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "security_level": {
+            "title": "Security Level",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ResourceStatus"
+          },
+          "target_id": {
+            "format": "uuid",
+            "title": "Target Id",
+            "type": "string"
+          },
+          "target_key": {
+            "title": "Target Key",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "version_code": {
+            "title": "Version Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target_id",
+          "target_key",
+          "display_name",
+          "db_type",
+          "version_code",
+          "environment",
+          "db_role",
+          "endpoint",
+          "has_diagnostic_secret",
+          "has_execution_secret",
+          "execution_mode",
+          "security_level",
+          "status",
+          "row_version",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "TargetView",
+        "type": "object"
+      },
+      "TriggerType": {
+        "enum": [
+          "CHAT",
+          "API",
+          "ROOT",
+          "ALERT",
+          "SCHEDULE"
+        ],
+        "title": "TriggerType",
+        "type": "string"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "KBot AIOps Public Contract",
+    "version": "1.0.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v1/ops/hitl/{hitl_id}/responses": {
+      "post": {
+        "operationId": "answer_hitl_api_v1_ops_hitl__hitl_id__responses_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "hitl_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Hitl Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HitlResponse"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HitlResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Answer Hitl"
+      }
+    },
+    "/api/v1/ops/proposals/{proposal_id}": {
+      "get": {
+        "operationId": "get_proposal_api_v1_ops_proposals__proposal_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "proposal_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Proposal Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProposalView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Proposal"
+      }
+    },
+    "/api/v1/ops/proposals/{proposal_id}/approve": {
+      "post": {
+        "operationId": "approve_proposal_api_v1_ops_proposals__proposal_id__approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "proposal_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Proposal Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApprovalCommand"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Approve Proposal"
+      }
+    },
+    "/api/v1/ops/reports/{report_id}": {
+      "get": {
+        "operationId": "get_report_api_v1_ops_reports__report_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "report_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Report Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Report"
+      }
+    },
+    "/api/v1/ops/runs": {
+      "post": {
+        "operationId": "create_run_api_v1_ops_runs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OpsRunCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsRunReceipt"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Run"
+      }
+    },
+    "/api/v1/ops/runs/{run_id}": {
+      "get": {
+        "operationId": "get_run_api_v1_ops_runs__run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsRunSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Run"
+      }
+    },
+    "/api/v1/ops/targets": {
+      "get": {
+        "operationId": "list_targets_api_v1_ops_targets_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TargetPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Targets"
+      },
+      "post": {
+        "operationId": "create_target_api_v1_ops_targets_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TargetCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TargetView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Target"
+      }
+    },
+    "/api/v1/ops/targets/{target_id}": {
+      "patch": {
+        "operationId": "patch_target_api_v1_ops_targets__target_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "target_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Target Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TargetPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TargetView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Patch Target"
+      }
+    }
+  }
+}

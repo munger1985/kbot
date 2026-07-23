@@ -7,9 +7,9 @@
 3. `services/<service>/base.toml`
 4. `services/<service>/${ENVIRONMENT}.toml`
 
-目前 `<service>` 可取 `main_api`、`knowledge_core`、`model_serving` 和
-`agent_runtime`。服务代码只能读取自己的配置模型；`platform_core` 不导入
-任何服务配置。
+目前 `<service>` 可取 `main_api`、`knowledge_core`、`model_serving`、
+`agent_runtime` 和 `aiops_agent`。服务代码只能读取自己的配置模型；
+`platform_core` 不导入任何服务配置。
 
 通过 `CONFIG_DIR` 指定配置根目录，通过 `ENVIRONMENT` 选择环境。例如：
 
@@ -37,3 +37,8 @@ python -m apps.knowledge_core_api.main
 `example/` 与实际目录一一对应，用于服务器部署时对照。明文数据库密码、
 API Key、Token、模型厂商 Key 和私钥不得写入任何 TOML；TOML 中只保存
 环境变量名、Key 摘要或 Secret 引用。
+
+AIOps 内部调用额外使用短期 Service Identity JWT。签名密钥通过
+`KBOT_SERVICE_IDENTITY_JWT_SECRET` 注入，不写入 TOML；生产环境的 Target、
+Monitor 和数据库凭据只保存 SecretRef，且禁止使用 `environment` Secret
+Provider。

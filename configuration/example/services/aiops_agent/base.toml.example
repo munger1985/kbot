@@ -1,0 +1,70 @@
+[api]
+service_name = "kbot-aiops-api"
+service_version = "4.0.0"
+service_host = "0.0.0.0"
+service_port = 18110
+
+[runtime]
+system_aiops_agent_id = "替换为后台专用 Agent 的 UUIDv7"
+
+[worker]
+service_name = "kbot-aiops-worker"
+service_version = "4.0.0"
+service_host = "0.0.0.0"
+service_port = 18112
+worker_id = "aiops-worker-01"
+concurrency = 4
+claim_interval_seconds = 2.0
+lease_seconds = 120
+heartbeat_seconds = 30
+
+[scheduler]
+service_name = "kbot-aiops-scheduler"
+service_version = "4.0.0"
+service_host = "0.0.0.0"
+service_port = 18113
+scheduler_id = "aiops-scheduler-01"
+scan_interval_seconds = 30
+lease_seconds = 120
+
+[executor]
+service_name = "kbot-aiops-db-executor"
+service_version = "4.0.0"
+service_host = "0.0.0.0"
+service_port = 18111
+executor_instance_id = "aiops-executor-01"
+mutation_enabled = false
+readonly_concurrency = 8
+mutation_concurrency = 1
+statement_timeout_seconds = 60
+max_result_rows = 5000
+max_result_bytes = 10485760
+
+[clients.model_serving]
+base_url = "http://model-llm:18092"
+audience = "kbot-model-llm"
+timeout_seconds = 300
+
+[clients.knowledge_core]
+base_url = "http://knowledge-core:18090"
+audience = "kbot-knowledge-core-api"
+timeout_seconds = 120
+
+[clients.aiops_api]
+base_url = "http://aiops-api:18110"
+audience = "kbot-aiops-api"
+timeout_seconds = 120
+
+[clients.db_executor]
+base_url = "http://aiops-db-executor:18111"
+audience = "kbot-aiops-db-executor"
+timeout_seconds = 120
+
+[secret_store]
+provider = "environment"
+
+[limits]
+max_input_chars = 32000
+max_artifact_bytes = 20971520
+max_tasks_per_run = 64
+run_timeout_seconds = 3600

@@ -37,6 +37,10 @@ SERVICES=(
     "Parser:apps/knowledge_core_parser/main.py:."
     "Agent Runtime API:apps/agent_runtime_api/main.py:."
     "Agent Runtime Worker:apps/agent_runtime_worker/main.py:."
+    "AIOps API:apps/aiops_api/main.py:."
+    "AIOps Worker:apps/aiops_worker/main.py:."
+    "AIOps Scheduler:apps/aiops_scheduler/main.py:."
+    "AIOps DB Executor:apps/aiops_db_executor/main.py:."
     "Main API:apps/main_api/main.py:."
 )
 
@@ -98,6 +102,10 @@ start_service() {
             apps/knowledge_core_parser/main.py)      port="18095" ;;
             apps/knowledge_core_api/main.py)   port="18090" ;;
             apps/agent_runtime_api/main.py)   port="18100" ;;
+            apps/aiops_api/main.py)            port="18110" ;;
+            apps/aiops_db_executor/main.py)    port="18111" ;;
+            apps/aiops_worker/main.py)         port="18112" ;;
+            apps/aiops_scheduler/main.py)      port="18113" ;;
             apps/main_api/main.py)             port="18099" ;;
         esac
 

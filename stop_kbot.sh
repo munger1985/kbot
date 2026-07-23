@@ -15,6 +15,10 @@ SERVICES=(
     "apps/knowledge_core_projection/main.py"
     "apps/agent_runtime_api/main.py"
     "apps/agent_runtime_worker/main.py"
+    "apps/aiops_api/main.py"
+    "apps/aiops_worker/main.py"
+    "apps/aiops_scheduler/main.py"
+    "apps/aiops_db_executor/main.py"
     "apps/main_api/main.py"
 )
 

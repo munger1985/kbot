@@ -73,8 +73,14 @@ class SecurityConfig(BaseModel):
     api_key_pepper_env: str = "KBOT_API_KEY_PEPPER"
     internal_service_token_env: str = "KBOT_INTERNAL_SERVICE_TOKEN"
     internal_jwt_secret_env: str = "KBOT_INTERNAL_JWT_SECRET"
+    service_identity_jwt_secret_env: str = (
+        "KBOT_SERVICE_IDENTITY_JWT_SECRET"
+    )
     internal_jwt_issuer: str = "kbot-platform"
     internal_jwt_ttl_seconds: int = Field(default=60, ge=15, le=300)
+    service_identity_jwt_ttl_seconds: int = Field(
+        default=60, ge=15, le=300
+    )
     internal_jwt_clock_skew_seconds: int = Field(default=5, ge=0, le=30)
     portal_api_keys: list[PortalApiKeyConfig] = Field(default_factory=list)
     model_api_keys: list[PortalApiKeyConfig] = Field(default_factory=list)

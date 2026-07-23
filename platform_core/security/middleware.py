@@ -26,6 +26,11 @@ from .runtime import (
     create_portal_api_key_verifier,
     get_internal_service_token,
 )
+from .service_identity import (
+    SERVICE_IDENTITY_HEADER,
+    ServiceIdentityJWTCodec,
+    ServiceIdentityTokenError,
+)
 
 
 DOMAIN_ID_HEADER = "X-KBot-Domain-ID"
@@ -34,6 +39,9 @@ PUBLIC_PATHS = {
     "/health",
     "/healthz",
     "/readyz",
+    "/live",
+    "/ready",
+    "/metrics",
     "/docs",
     "/redoc",
     "/openapi.json",
@@ -307,6 +315,86 @@ def create_internal_auth_middleware(
                 code=exc.code,
                 detail=str(exc),
             )
+        request.state.auth_context = context
+        response = await call_next(request)
+        response.headers.setdefault("X-Request-ID", context.request_id)
+        return response
+
+    return middleware
+
+
+def create_scoped_internal_auth_middleware(
+    *,
+    audience: str,
+    allowed_callers: dict[str, frozenset[str]],
+    service_identity_codec: ServiceIdentityJWTCodec | None = None,
+    auth_context_codec: AuthContextJWTCodec | None = None,
+    public_paths: set[str] | None = None,
+):
+    """创建 AIOps 使用的双 JWT、调用方和 scope 认证中间件。"""
+    if not audience:
+        raise ValueError("内部认证 audience 不能为空")
+    skip_paths = PUBLIC_PATHS if public_paths is None else public_paths
+
+    async def middleware(request: Request, call_next):
+        if request.url.path in skip_paths or request.method == "OPTIONS":
+            return await call_next(request)
+        try:
+            resolved_identity_codec = service_identity_codec or getattr(
+                request.app.state,
+                "service_identity_codec",
+                None,
+            )
+            resolved_auth_codec = auth_context_codec or getattr(
+                request.app.state,
+                "auth_context_codec",
+                None,
+            )
+            if resolved_identity_codec is None or resolved_auth_codec is None:
+                raise ServiceIdentityTokenError(
+                    "SERVICE_IDENTITY_NOT_CONFIGURED",
+                    "内部身份验证器尚未初始化",
+                )
+            identity = resolved_identity_codec.verify(
+                request.headers.get(SERVICE_IDENTITY_HEADER, ""),
+                audience=audience,
+            )
+            allowed_scopes = allowed_callers.get(identity.subject)
+            if allowed_scopes is None:
+                raise ServiceIdentityTokenError(
+                    "SERVICE_CALLER_DENIED",
+                    "内部调用方未获准访问当前服务",
+                )
+            presented_scopes = frozenset(identity.scopes)
+            if not presented_scopes.issubset(allowed_scopes):
+                raise ServiceIdentityTokenError(
+                    "SERVICE_SCOPE_DENIED",
+                    "Service Identity 包含未授权 scope",
+                )
+            context = resolved_auth_codec.verify(
+                request.headers.get(AUTH_CONTEXT_HEADER, ""),
+                audience=audience,
+            )
+            if context.calling_service != identity.subject:
+                raise ServiceIdentityTokenError(
+                    "SERVICE_CONTEXT_MISMATCH",
+                    "Service Identity 与 AuthContext 调用方不一致",
+                )
+        except (ServiceIdentityTokenError, AuthContextTokenError) as exc:
+            logger.warning(
+                "拒绝 AIOps 内部请求：code={} method={} path={}",
+                exc.code,
+                request.method,
+                request.url.path,
+            )
+            return _problem(
+                request=request,
+                status_code=403,
+                code=exc.code,
+                detail=str(exc),
+            )
+
+        request.state.service_identity = identity
         request.state.auth_context = context
         response = await call_next(request)
         response.headers.setdefault("X-Request-ID", context.request_id)

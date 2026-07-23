@@ -1,5 +1,10 @@
 # 4.0 AIOps 步骤 0：契约、配置与启动骨架
 
+> 实施状态：已于 2026-07-23 完成。实现位于 `aiops_agent/`、
+> `platform_core/contracts/aiops/`、`platform_clients/aiops.py` 和四个
+> `apps/aiops_*` 入口；三份冻结 OpenAPI 位于 `docs/openapi/`。步骤 0 没有
+> 创建任何 `KBOT_OPS_*` 表或业务路由。
+
 ## 目标与约束
 
 步骤 0 只建立可编译、可启动、无业务行为的骨架，为后续 DDL 和运行时提供稳定边界。不得提前创建 `KBOT_OPS_*` Entity、访问旧 Ops 表、调用 LLM/Monitor/目标数据库或实现临时内存状态机。
@@ -238,7 +243,9 @@ SignedAuthContext {
 
 ## 配置模型
 
-在 `platform_core.config.settings` 新增组合配置，而不是继续扩展旧 `ExecutorConfig/PrometheusConfig/ZabbixConfig/OemConfig`：
+组合配置沿用当前已经统一的“平台共享配置 + 服务自有配置模型”结构，定义在
+`aiops_agent/config.py`，由 `platform_core.config.load_settings` 分层加载，而
+不是继续扩展旧 `ExecutorConfig/PrometheusConfig/ZabbixConfig/OemConfig`：
 
 ```text
 AIOpsConfig

@@ -12,7 +12,7 @@ from .agent import (
     CreateAgentDefinitionRequest,
     UpdateAgentDefinitionRequest,
 )
-from .identity import AuthContext, PrincipalKind
+from .identity import AuthContext, PrincipalKind, ServiceIdentity
 from .model import EmbeddingDataItem
 
 __all__ = [
@@ -27,6 +27,7 @@ __all__ = [
     "CreateAgentDefinitionRequest",
     "EmbeddingDataItem",
     "PrincipalKind",
+    "ServiceIdentity",
     "UpdateAgentDefinitionRequest",
     "PUBLIC_API_V1",
     "INTERNAL_API_V1",

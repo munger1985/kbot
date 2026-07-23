@@ -30,6 +30,8 @@ Monitor Intake/Observe ──→ 只读 DB Diagnostic
 
 ## 步骤 0：冻结契约与目录骨架
 
+**状态：已完成（2026-07-23）。**
+
 详细设计见 [29_aiops_step0_contracts_and_bootstrap.md](29_aiops_step0_contracts_and_bootstrap.md)。
 
 新增以下空包和 App 入口，但此阶段不实现业务：
@@ -50,6 +52,13 @@ platform_clients/aiops.py
 先固化 Public、Internal、Executor、SSE 和 Error DTO；枚举和状态迁移由 `aiops_agent/domain` 定义，HTTP Schema 与 Entity 只能映射，不能复制业务规则。增加 import 架构检查，禁止 `aiops_agent` 引用 `legacy`、旧 `agent/services/skills`、KC Repository 或模型 Entity。
 
 **完成物：** 四个可独立启动的最小 App、三份独立 OpenAPI、配置样例、依赖规则和契约版本说明。
+
+实施结果：Public/Internal/Executor/Event DTO 已冻结为严格 Pydantic 契约；
+AIOps 使用独立的短期 Service Identity JWT 与 AuthContext JWT，不复用静态
+Service Token；Management/Delegation Client 权限面已分离；API、Worker、
+Scheduler 和 DB Executor 均可独立启动并只暴露系统探针。DB Executor 不创建
+KBot Schema 连接，另外三个进程在步骤 1 Schema 尚未部署时保持 Live 但返回
+Not Ready。
 
 ## 步骤 1：Oracle DDL 与 APEX 投影
 

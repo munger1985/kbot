@@ -1,0 +1,163 @@
+"""生成三套彼此隔离的 AIOps 契约 OpenAPI。"""
+
+from uuid import UUID
+
+from fastapi import FastAPI, HTTPException
+
+from platform_core.contracts.aiops.executor import (
+    ExecutionResultRef,
+    ExecutionStatusEvent,
+    MutationExecutionRequest,
+    ReadDiagnosticRequest,
+    ReadDiagnosticResult,
+)
+from platform_core.contracts.aiops.internal import (
+    CreateOpsRunCommand,
+    DelegationEventPage,
+    EventReceipt,
+    MonitorWebhookEnvelope,
+    OpsCommand,
+    OpsRunReceipt as InternalOpsRunReceipt,
+    RootDelegationReceipt,
+    RootDelegationRequest,
+    RootDelegationResult,
+)
+from platform_core.contracts.aiops.public import (
+    ApprovalCommand,
+    HitlResponse,
+    HitlResult,
+    OpsRunCreate,
+    OpsRunReceipt,
+    OpsRunSummary,
+    ProposalView,
+    ReportView,
+    TargetCreate,
+    TargetPage,
+    TargetPatch,
+    TargetView,
+)
+
+
+def _not_implemented() -> None:
+    raise HTTPException(
+        status_code=501,
+        detail={"code": "CONTRACT_ONLY", "message": "仅用于冻结 OpenAPI 契约"},
+    )
+
+
+def create_public_contract_app() -> FastAPI:
+    """创建 Main API 后续映射使用的公开契约快照 App。"""
+    app = FastAPI(title="KBot AIOps Public Contract", version="1.0.0")
+
+    @app.post("/api/v1/ops/targets", response_model=TargetView)
+    async def create_target(payload: TargetCreate):
+        _not_implemented()
+
+    @app.get("/api/v1/ops/targets", response_model=TargetPage)
+    async def list_targets():
+        _not_implemented()
+
+    @app.patch("/api/v1/ops/targets/{target_id}", response_model=TargetView)
+    async def patch_target(target_id: UUID, payload: TargetPatch):
+        _not_implemented()
+
+    @app.post("/api/v1/ops/runs", response_model=OpsRunReceipt)
+    async def create_run(payload: OpsRunCreate):
+        _not_implemented()
+
+    @app.get("/api/v1/ops/runs/{run_id}", response_model=OpsRunSummary)
+    async def get_run(run_id: UUID):
+        _not_implemented()
+
+    @app.post("/api/v1/ops/hitl/{hitl_id}/responses", response_model=HitlResult)
+    async def answer_hitl(hitl_id: UUID, payload: HitlResponse):
+        _not_implemented()
+
+    @app.get("/api/v1/ops/proposals/{proposal_id}", response_model=ProposalView)
+    async def get_proposal(proposal_id: UUID):
+        _not_implemented()
+
+    @app.post("/api/v1/ops/proposals/{proposal_id}/approve")
+    async def approve_proposal(proposal_id: UUID, payload: ApprovalCommand):
+        _not_implemented()
+
+    @app.get("/api/v1/ops/reports/{report_id}", response_model=ReportView)
+    async def get_report(report_id: UUID):
+        _not_implemented()
+
+    return app
+
+
+def create_internal_contract_app() -> FastAPI:
+    """创建 AIOps API 内部调用契约快照 App。"""
+    app = FastAPI(title="KBot AIOps Internal Contract", version="1.0.0")
+
+    @app.post("/internal/v1/aiops/runs", response_model=InternalOpsRunReceipt)
+    async def create_run(payload: CreateOpsRunCommand):
+        _not_implemented()
+
+    @app.post("/internal/v1/aiops/runs/{run_id}/commands")
+    async def run_command(run_id: UUID, payload: OpsCommand):
+        _not_implemented()
+
+    @app.post(
+        "/internal/v1/aiops/delegations",
+        response_model=RootDelegationReceipt,
+    )
+    async def create_delegation(payload: RootDelegationRequest):
+        _not_implemented()
+
+    @app.get(
+        "/internal/v1/aiops/delegations/{delegation_id}/events",
+        response_model=DelegationEventPage,
+    )
+    async def delegation_events(delegation_id: UUID):
+        _not_implemented()
+
+    @app.get(
+        "/internal/v1/aiops/delegations/{delegation_id}/result",
+        response_model=RootDelegationResult,
+    )
+    async def delegation_result(delegation_id: UUID):
+        _not_implemented()
+
+    @app.post(
+        "/internal/v1/aiops/intake/monitor-events",
+        response_model=EventReceipt,
+    )
+    async def monitor_event(payload: MonitorWebhookEnvelope):
+        _not_implemented()
+
+    return app
+
+
+def create_executor_contract_app() -> FastAPI:
+    """创建 AIOps DB Executor 隔离契约快照 App。"""
+    app = FastAPI(title="KBot AIOps DB Executor Contract", version="1.0.0")
+
+    @app.post(
+        "/internal/v1/db-executor/diagnostics",
+        response_model=ReadDiagnosticResult,
+    )
+    async def execute_diagnostic(payload: ReadDiagnosticRequest):
+        _not_implemented()
+
+    @app.post(
+        "/internal/v1/db-executor/executions",
+        response_model=ExecutionResultRef,
+    )
+    async def execute_mutation(payload: MutationExecutionRequest):
+        _not_implemented()
+
+    @app.get(
+        "/internal/v1/db-executor/executions/{executor_request_id}",
+        response_model=ExecutionResultRef,
+    )
+    async def execution_status(executor_request_id: UUID):
+        _not_implemented()
+
+    @app.post("/internal/v1/aiops/executor-events")
+    async def executor_event(payload: ExecutionStatusEvent):
+        _not_implemented()
+
+    return app

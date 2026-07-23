@@ -10,6 +10,7 @@ KBot 是面向知识检索与数据库运维分析的 Python/FastAPI 后端。4.
 - `knowledge_core/`：Collection、Bundle、Document、解析、索引与两阶段检索。
 - `model_serving/`：LLM、Embedding、VLM 和 Visual 模型托管。
 - `agent_runtime/`：Agent 状态机、计划、Skill 契约和持久化执行内核。
+- `aiops_agent/`：独立 AIOps 契约、四进程运行边界和后续运维领域实现。
 - `platform_core/`：配置、日志、认证、数据库运行时和共享契约。
 - `platform_clients/`：跨服务客户端。
 - `apps/`：各独立进程入口。
@@ -43,6 +44,10 @@ pip install -r requirements.txt
 python3 -m apps.main_api.main
 python3 -m apps.agent_runtime_api.main
 python3 -m apps.agent_runtime_worker.main
+python3 -m apps.aiops_api.main
+python3 -m apps.aiops_worker.main
+python3 -m apps.aiops_scheduler.main
+python3 -m apps.aiops_db_executor.main
 python3 -m apps.knowledge_core_api.main
 python3 -m apps.knowledge_core_parser.main
 python3 -m apps.knowledge_core_projection.main

@@ -86,11 +86,20 @@ Grounding 和 SSE 已删除，最终回答职责留给后续 Agent Runtime；旧
 - 实现 Policy Gate、HITL 和 Mutation Skill 的 ChangeProposal 两阶段执行。
 - 将问文能力重构为 Document Agent 契约；问数继续通过受控 MCP Adapter；运维能力由独立 AIOps Agent 管理其 Ops Skill 和流程，禁止任何 Skill 直接实例化 Agent 或访问跨域数据库。
 
+当前 Agent Runtime 的 Run/Task/Artifact/Event/Delegation 持久化、租约 Worker、
+Root 确定性 Document Plan、Document Specialist、Grounded Response Composer、
+公开 Run/SSE/Result BFF 已完成。剩余 Agent 工作主要是 AIOps Delegation、
+Policy Gate/HITL/Mutation 和后续更多 Specialist，而不是重新实现问文链路。
+
 ### 阶段 5：平台治理和业务扩展
 
 - 完成统一审计、SLO、Trace、告警、成本统计和 Runbook。
 - 保留现有 MCP 问数链路；Data Agent、Excel Dataset 和 NL2SQL 独立服务暂不进入本轮实现，仅保留未来扩展契约。
 - 按 `19_aiops_domain_model_workflow_and_executor.md` 至 `27_aiops_api_and_contracts.md` 的详细设计，以及 [28_aiops_implementation_plan.md](28_aiops_implementation_plan.md) 的施工顺序，完成独立 AIOps Agent、`KBOT_OPS_*` 表/DDL/APEX 视图、Public/Internal/Executor 契约、API/Worker/Scheduler/DB Executor 进程、监控/诊断/执行编排、假设/反证与根因分析、交互式诊断、Oracle/MySQL 诊断目录、DB Executor Policy、单命令审批、巡检报告、外部系统 Adapter 和失败补偿。
+
+  AIOps 步骤 0 已完成：独立包边界、四进程 Bootstrap、Service Identity、
+  Wire DTO、Management/Delegation Client、配置安全校验和三份 OpenAPI 已落地；
+  下一步从步骤 1 的 `KBOT_OPS_*` 全量 DDL 与 APEX 投影开始。
 
 ### 阶段 6：统一测试、重建和切换
 

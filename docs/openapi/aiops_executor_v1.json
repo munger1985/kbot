@@ -1,0 +1,622 @@
+{
+  "components": {
+    "schemas": {
+      "DiagnosticExecutionGrant": {
+        "additionalProperties": false,
+        "properties": {
+          "connection_profile": {
+            "additionalProperties": true,
+            "title": "Connection Profile",
+            "type": "object"
+          },
+          "diagnostic_tool_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Diagnostic Tool Id",
+            "type": "string"
+          },
+          "diagnostic_tool_version": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Diagnostic Tool Version",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "grant_id": {
+            "format": "uuid",
+            "title": "Grant Id",
+            "type": "string"
+          },
+          "lease_token_hash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Lease Token Hash",
+            "type": "string"
+          },
+          "max_result_rows": {
+            "exclusiveMinimum": 0.0,
+            "title": "Max Result Rows",
+            "type": "integer"
+          },
+          "schema_version": {
+            "default": "aiops.executor.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "secret_ref": {
+            "maxLength": 2048,
+            "minLength": 8,
+            "pattern": "^[a-z][a-z0-9+.-]*://.+",
+            "title": "Secret Ref",
+            "type": "string"
+          },
+          "statement_timeout_seconds": {
+            "exclusiveMinimum": 0.0,
+            "title": "Statement Timeout Seconds",
+            "type": "integer"
+          },
+          "target_id": {
+            "format": "uuid",
+            "title": "Target Id",
+            "type": "string"
+          },
+          "target_row_version": {
+            "minimum": 1.0,
+            "title": "Target Row Version",
+            "type": "integer"
+          },
+          "task_id": {
+            "format": "uuid",
+            "title": "Task Id",
+            "type": "string"
+          },
+          "template_hash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Template Hash",
+            "type": "string"
+          }
+        },
+        "required": [
+          "grant_id",
+          "task_id",
+          "lease_token_hash",
+          "target_id",
+          "target_row_version",
+          "connection_profile",
+          "secret_ref",
+          "diagnostic_tool_id",
+          "diagnostic_tool_version",
+          "template_hash",
+          "max_result_rows",
+          "statement_timeout_seconds",
+          "expires_at"
+        ],
+        "title": "DiagnosticExecutionGrant",
+        "type": "object"
+      },
+      "ExecutionResultRef": {
+        "additionalProperties": false,
+        "properties": {
+          "executor_request_id": {
+            "format": "uuid",
+            "title": "Executor Request Id",
+            "type": "string"
+          },
+          "result_hash": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result Hash"
+          },
+          "result_ref": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResourceRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "schema_version": {
+            "default": "aiops.executor.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ExecutionStatus"
+          }
+        },
+        "required": [
+          "executor_request_id",
+          "status"
+        ],
+        "title": "ExecutionResultRef",
+        "type": "object"
+      },
+      "ExecutionStatus": {
+        "enum": [
+          "CREATED",
+          "CLAIMED",
+          "RUNNING",
+          "SUCCEEDED",
+          "FAILED",
+          "UNKNOWN"
+        ],
+        "title": "ExecutionStatus",
+        "type": "string"
+      },
+      "ExecutionStatusEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "error_code": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "event_id": {
+            "format": "uuid",
+            "title": "Event Id",
+            "type": "string"
+          },
+          "execution_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Execution Id"
+          },
+          "executor_request_id": {
+            "format": "uuid",
+            "title": "Executor Request Id",
+            "type": "string"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "result_ref": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResourceRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "schema_version": {
+            "default": "aiops.executor.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ExecutionStatus"
+          },
+          "status_version": {
+            "minimum": 1.0,
+            "title": "Status Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "event_id",
+          "executor_request_id",
+          "status_version",
+          "status",
+          "occurred_at"
+        ],
+        "title": "ExecutionStatusEvent",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "MutationExecutionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "execution_id": {
+            "format": "uuid",
+            "title": "Execution Id",
+            "type": "string"
+          },
+          "executor_request_id": {
+            "format": "uuid",
+            "title": "Executor Request Id",
+            "type": "string"
+          },
+          "idempotency_key": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Idempotency Key",
+            "type": "string"
+          },
+          "schema_version": {
+            "default": "aiops.executor.v1",
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "execution_id",
+          "executor_request_id",
+          "idempotency_key"
+        ],
+        "title": "MutationExecutionRequest",
+        "type": "object"
+      },
+      "ReadDiagnosticRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "diagnostic_tool_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Diagnostic Tool Id",
+            "type": "string"
+          },
+          "diagnostic_tool_version": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Diagnostic Tool Version",
+            "type": "string"
+          },
+          "executor_request_id": {
+            "format": "uuid",
+            "title": "Executor Request Id",
+            "type": "string"
+          },
+          "grant": {
+            "$ref": "#/components/schemas/DiagnosticExecutionGrant"
+          },
+          "idempotency_key": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Idempotency Key",
+            "type": "string"
+          },
+          "schema_version": {
+            "default": "aiops.executor.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "typed_parameters": {
+            "additionalProperties": true,
+            "title": "Typed Parameters",
+            "type": "object"
+          }
+        },
+        "required": [
+          "executor_request_id",
+          "idempotency_key",
+          "diagnostic_tool_id",
+          "diagnostic_tool_version",
+          "typed_parameters",
+          "grant"
+        ],
+        "title": "ReadDiagnosticRequest",
+        "type": "object"
+      },
+      "ReadDiagnosticResult": {
+        "additionalProperties": false,
+        "properties": {
+          "error_code": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "executor_request_id": {
+            "format": "uuid",
+            "title": "Executor Request Id",
+            "type": "string"
+          },
+          "result_hash": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result Hash"
+          },
+          "result_ref": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResourceRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "row_count": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Row Count"
+          },
+          "schema_version": {
+            "default": "aiops.executor.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ExecutionStatus"
+          },
+          "truncated": {
+            "default": false,
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "executor_request_id",
+          "status"
+        ],
+        "title": "ReadDiagnosticResult",
+        "type": "object"
+      },
+      "ResourceRef": {
+        "additionalProperties": false,
+        "properties": {
+          "resource_id": {
+            "format": "uuid",
+            "title": "Resource Id",
+            "type": "string"
+          },
+          "resource_type": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Resource Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "resource_type",
+          "resource_id"
+        ],
+        "title": "ResourceRef",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "KBot AIOps DB Executor Contract",
+    "version": "1.0.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/internal/v1/aiops/executor-events": {
+      "post": {
+        "operationId": "executor_event_internal_v1_aiops_executor_events_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExecutionStatusEvent"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Executor Event"
+      }
+    },
+    "/internal/v1/db-executor/diagnostics": {
+      "post": {
+        "operationId": "execute_diagnostic_internal_v1_db_executor_diagnostics_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReadDiagnosticRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadDiagnosticResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Execute Diagnostic"
+      }
+    },
+    "/internal/v1/db-executor/executions": {
+      "post": {
+        "operationId": "execute_mutation_internal_v1_db_executor_executions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MutationExecutionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecutionResultRef"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Execute Mutation"
+      }
+    },
+    "/internal/v1/db-executor/executions/{executor_request_id}": {
+      "get": {
+        "operationId": "execution_status_internal_v1_db_executor_executions__executor_request_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "executor_request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Executor Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecutionResultRef"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Execution Status"
+      }
+    }
+  }
+}

@@ -12,8 +12,10 @@ api_log_enabled = true
 api_key_pepper_env = "KBOT_API_KEY_PEPPER"
 internal_service_token_env = "KBOT_INTERNAL_SERVICE_TOKEN"
 internal_jwt_secret_env = "KBOT_INTERNAL_JWT_SECRET"
+service_identity_jwt_secret_env = "KBOT_SERVICE_IDENTITY_JWT_SECRET"
 internal_jwt_issuer = "kbot-platform"
 internal_jwt_ttl_seconds = 60
+service_identity_jwt_ttl_seconds = 60
 internal_jwt_clock_skew_seconds = 5
 
 # 用 scripts.generate_portal_api_key 生成明文 Key 与摘要。
