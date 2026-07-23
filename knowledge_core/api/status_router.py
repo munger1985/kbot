@@ -1,12 +1,16 @@
-"""Scope-safe V2 ingestion and parsing status endpoints."""
+"""具备 Domain 边界的入库与解析状态内部端点。"""
 from dataclasses import asdict
 
 from fastapi import APIRouter, HTTPException, Request
 
+from platform_core.contracts import INTERNAL_API_V1
 from knowledge_core.application.status import KnowledgeObjectNotFoundError
 
 
-router = APIRouter(prefix="/api/v2/knowledge/domains/{domain_id}/bundles", tags=["Knowledge Core Status V2"])
+router = APIRouter(
+    prefix=f"{INTERNAL_API_V1}/knowledge/domains/{{domain_id}}/bundles",
+    tags=["Knowledge Core Status"],
+)
 
 
 @router.get("/{bundle_id}")

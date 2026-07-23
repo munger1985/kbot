@@ -2,9 +2,13 @@
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from platform_core.contracts import INTERNAL_API_V1
 from knowledge_core.domain.parse_tasks import ParseLeaseError, ParseTaskClaim
 
-router = APIRouter(prefix="/internal/v2/knowledge/profile-tasks", tags=["Knowledge Core Profile V2"])
+router = APIRouter(
+    prefix=f"{INTERNAL_API_V1}/knowledge/profile-tasks",
+    tags=["Knowledge Core Profile"],
+)
 
 
 class ProfileClaimRequest(BaseModel):

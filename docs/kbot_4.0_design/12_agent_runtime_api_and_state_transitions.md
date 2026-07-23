@@ -2,22 +2,22 @@
 
 本文定义 Run/Task 执行模型的命令接口和状态迁移边界。外部 API 只提交用户意图、查询结果或发出取消/审批命令；Task 状态和 Artifact 只能由 Agent Runtime、Scheduler 和 Worker 通过内部接口修改。
 
-## v4 外部 API
+## 公开 API
 
 | 方法 | 路径 | 作用 | 返回 |
 | --- | --- | --- | --- |
-| `POST` | `/v4/runs` | 创建一次 Agent Run | `202` + `run_id`、当前状态和事件游标 |
-| `GET` | `/v4/runs/{run_id}` | 查询 Run 汇总和最终 Artifact 摘要 | Run DTO |
-| `GET` | `/v4/runs/{run_id}/events` | 订阅事件流，支持 `Last-Event-ID` | SSE |
-| `POST` | `/v4/runs/{run_id}/cancel` | 请求协作式取消 | Run 状态 |
-| `POST` | `/v4/runs/{run_id}/approvals` | 处理 Agent Runtime 自有 Proposal | 审批结果和新事件游标 |
-| `POST` | `/v4/runs/{run_id}/resume` | 从可恢复状态继续执行 | Run 状态 |
+| `POST` | `/api/v1/runs` | 创建一次 Agent Run | `202` + `run_id`、当前状态和事件游标 |
+| `GET` | `/api/v1/runs/{run_id}` | 查询 Run 汇总和最终 Artifact 摘要 | Run DTO |
+| `GET` | `/api/v1/runs/{run_id}/events` | 订阅事件流，支持 `Last-Event-ID` | SSE |
+| `POST` | `/api/v1/runs/{run_id}/cancel` | 请求协作式取消 | Run 状态 |
+| `POST` | `/api/v1/runs/{run_id}/approvals` | 处理 Agent Runtime 自有 Proposal | 审批结果和新事件游标 |
+| `POST` | `/api/v1/runs/{run_id}/resume` | 从可恢复状态继续执行 | Run 状态 |
 
-`POST /v4/runs` 必须携带 `Idempotency-Key`。相同 `domain_id + actor_id + key` 且请求指纹一致时返回原 Run；指纹不同返回 `409 IDEMPOTENCY_CONFLICT`。API 使用 `202 Accepted`，不等待 LLM、KC 或外部系统完成。
+`POST /api/v1/runs` 必须携带 `Idempotency-Key`。相同 `domain_id + asserted_user_id + key` 且请求指纹一致时返回原 Run；指纹不同返回 `409 IDEMPOTENCY_CONFLICT`。API 使用 `202 Accepted`，不等待 LLM、KC 或外部系统完成。
 
 API 响应只暴露 DTO 和 Artifact 引用，不暴露 SQLAlchemy Entity、内部租约、Worker 标识或完整策略快照。所有资源查询先由 `AuthContext` 限定 domain，再应用 Agent 与 Collection Binding；停用 Collection 不得被新 Run 使用。
 
-创建请求只允许提交用户意图和资源提示，`domain_id`、`actor_id`、权限和策略由服务端 `AuthContext` 派生：
+创建请求体只提交用户意图和资源提示。门户通过受信请求头声明 `domain_id` 和 `user_id`，Main API 在 API Key 校验后将其写入 `AuthContext`；权限系统当前不实现，运行策略由服务端配置派生：
 
 ```json
 {
@@ -39,13 +39,13 @@ API 响应只暴露 DTO 和 Artifact 引用，不暴露 SQLAlchemy Entity、内�
   "run_id": "…",
   "status": "CREATED",
   "event_cursor": 0,
-  "events_url": "/v4/runs/…/events"
+  "events_url": "/api/v1/runs/…/events"
 }
 ```
 
 客户端提供的 `collection_ids` 只是候选范围，最终范围必须与 Agent Binding、Collection 状态和用户授权求交集；不能通过请求体扩大权限。
 
-AIOps 子 Run 的补证、审批和人工结果不走通用 Run Approval/Resume API。Root SSE 只返回 AIOps 资源引用，用户必须调用 `/v4/ops/hitl/*` 或 `/v4/ops/proposals/*` 的权威 Command；详见 [40_aiops_step11_root_main_api_and_apex_integration.md](40_aiops_step11_root_main_api_and_apex_integration.md)。
+AIOps 子 Run 的补证、审批和人工结果不走通用 Run Approval/Resume API。Root SSE 只返回 AIOps 资源引用，用户必须调用 `/api/v1/ops/hitl/*` 或 `/api/v1/ops/proposals/*` 的权威 Command；详见 [40_aiops_step11_root_main_api_and_apex_integration.md](40_aiops_step11_root_main_api_and_apex_integration.md)。
 
 ## 内部 Runtime 接口
 

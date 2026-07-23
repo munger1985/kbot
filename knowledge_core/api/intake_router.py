@@ -1,4 +1,4 @@
-"""Internal V2 Bundle intake route.  It deliberately exposes no ORM/session."""
+"""Bundle 内部入库路由，不向调用方暴露 ORM 或数据库会话。"""
 import json
 import tempfile
 from pathlib import Path
@@ -8,12 +8,13 @@ from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, Field, ValidationError
 from starlette.datastructures import UploadFile
 
+from platform_core.contracts import INTERNAL_API_V1
 from knowledge_core.application.intake import IntakeCollectionError, IntakeConflictError
 from knowledge_core.application.multipart import IntakeInProgressError, MultipartIntakeCommand
 from knowledge_core.domain.intake import IntakeValidationError, KmAssetIntakeManifest
 
 
-router = APIRouter(tags=["Knowledge Core V2"])
+router = APIRouter(tags=["Knowledge Core"])
 
 
 async def _copy_upload(upload: UploadFile, target: Path) -> None:
@@ -23,7 +24,7 @@ async def _copy_upload(upload: UploadFile, target: Path) -> None:
 
 
 @router.post(
-    "/api/v2/knowledge/domains/{domain_id}/collections/{collection_key}/ingestions/km-assets",
+    f"{INTERNAL_API_V1}/knowledge/domains/{{domain_id}}/collections/{{collection_key}}/ingestions/km-assets",
     status_code=status.HTTP_202_ACCEPTED,
 )
 async def ingest_km_asset(domain_id: int, collection_key: str, request: Request):
@@ -74,7 +75,9 @@ async def ingest_km_asset(domain_id: int, collection_key: str, request: Request)
         "bundle_revision_id": accepted.bundle_revision_id,
         "source_revision": accepted.source_revision,
         "acceptance_status": accepted.acceptance_status,
-        "status_url": f"/api/v2/knowledge/domains/{domain_id}/bundles/{accepted.bundle_id}",
+        "status_url": (
+            f"{INTERNAL_API_V1}/knowledge/domains/{domain_id}/bundles/{accepted.bundle_id}"
+        ),
         "request_id": request.headers.get("X-Request-ID", str(uuid4())),
     }
 
@@ -129,7 +132,7 @@ def _user_manifest(bundle: UserBundleDeclaration, files: list[UserFileDeclaratio
 
 
 @router.post(
-    "/api/v2/knowledge/domains/{domain_id}/collections/{collection_key}/ingestions/user-files",
+    f"{INTERNAL_API_V1}/knowledge/domains/{{domain_id}}/collections/{{collection_key}}/ingestions/user-files",
     status_code=status.HTTP_202_ACCEPTED,
 )
 async def ingest_user_files(domain_id: int, collection_key: str, request: Request):

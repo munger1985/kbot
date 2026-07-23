@@ -49,6 +49,8 @@ Grounding 和 SSE 已删除，最终回答职责留给后续 Agent Runtime；旧
 ### 阶段 1：平台基础和服务边界
 
 - 完成 `platform_core` 的服务级配置、日志、认证、DB Session Factory 和观测上下文。
+- 删除 KBot 本地用户/密码登录；公开 `/api/v1` 只接受门户后端 API Key，Main API 为 `/internal/v1` 下游签发短期、限定 audience 的 AuthContext JWT。
+- 当前只实现调用方认证、Domain 强制隔离和操作人审计，不实现 Role、Scope 或资源 ACL；AIOps 审批和执行安全闸门仍按业务约束实现。
 - 跨服务客户端已迁移到 `platform_clients`；稳定 DTO 放入 `platform_core/contracts`，后续只补齐版本和契约测试。
 - 统一 UoW、Outbox、任务租约、重试、取消和幂等语义。
 - 确认所有 App 在同一 Schema 下也只能访问自己拥有的表和 API。
@@ -62,9 +64,9 @@ Grounding 和 SSE 已删除，最终回答职责留给后续 Agent Runtime；旧
 
 ### 阶段 3：Main API 与领域集成
 
-- 按 `14_main_api_bff_and_auth_context.md` 重建 v4 Main API/BFF，只提供新契约。
-- 建立 AuthContext、Service Identity、Domain/Collection 授权和请求上下文传播。
-- 迁移 Portal、APEX、MCP、Slack 等 Adapter；禁止继续调用旧 `/api/kb` 和 V1 Agent 接口。
+- 按 `14_main_api_bff_and_auth_context.md` 重建 Main API/BFF，只发布 `/api/v1` 新契约。
+- 建立 Portal API Key、AuthContext JWT、Service Identity、Domain 隔离和请求上下文传播。
+- 迁移 Portal、APEX 和 MCP Adapter；禁止继续调用旧 `/api/kb` 或直接访问 `/internal/v1`。
 
 ### 阶段 4：多 Agent 与 Skill Runtime
 

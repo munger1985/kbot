@@ -1,5 +1,4 @@
-"""Knowledge Core V2 application package.
+"""Knowledge Core 4.0 应用包。
 
-This package owns V2 use cases and persistence boundaries. It must not import
-V1 KB/File/Chunk services as implementation dependencies.
+本包拥有 KC 用例和持久化边界，禁止依赖旧 KB/File/Chunk 服务。
 """

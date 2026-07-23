@@ -2,7 +2,7 @@
 
 ## 目标与边界
 
-本步骤只交付 Target、Agent Binding、Monitor Source/Binding、Policy 和 Inspection Plan 配置闭环，不创建 Ops Run，不调用 LLM，不查询监控指标或目标数据库。外部 `/v4/ops/*` 由 Main API/BFF 发布；AIOps API 仅暴露 `/internal/v1/aiops/config/*`，两者通过 `AIOpsManagementClient` 和版本化 DTO 映射，不能透传 HTTP 请求。
+本步骤只交付 Target、Agent Binding、Monitor Source/Binding、Policy 和 Inspection Plan 配置闭环，不创建 Ops Run，不调用 LLM，不查询监控指标或目标数据库。外部 `/api/v1/ops/*` 由 Main API/BFF 发布；AIOps API 仅暴露 `/internal/v1/aiops/config/*`，两者通过 `AIOpsManagementClient` 和版本化 DTO 映射，不能透传 HTTP 请求。
 
 所有资源 ID 是 UUIDv7。Oracle Entity 使用 `RAW(16)`，DTO 使用 `uuid.UUID` 并序列化为规范字符串。`app_id/domain_id/actor` 只从已验证 `AuthContext` 与平台配置派生，请求体不得提交。
 
@@ -11,13 +11,13 @@
 ### Target
 
 ```text
-POST   /v4/ops/targets
-GET    /v4/ops/targets
-GET    /v4/ops/targets/{target_id}
-PATCH  /v4/ops/targets/{target_id}
-POST   /v4/ops/targets/{target_id}/activate
-POST   /v4/ops/targets/{target_id}/maintenance
-POST   /v4/ops/targets/{target_id}/disable
+POST   /api/v1/ops/targets
+GET    /api/v1/ops/targets
+GET    /api/v1/ops/targets/{target_id}
+PATCH  /api/v1/ops/targets/{target_id}
+POST   /api/v1/ops/targets/{target_id}/activate
+POST   /api/v1/ops/targets/{target_id}/maintenance
+POST   /api/v1/ops/targets/{target_id}/disable
 ```
 
 创建后默认 `MAINTENANCE`、`HEALTH_STATUS=UNKNOWN`，避免未验证 Target 立即被自动流程使用。管理状态限定为 `ACTIVE/MAINTENANCE/DISABLED`；连通性单独使用 `UNKNOWN/HEALTHY/DEGRADED/UNREACHABLE`，不能用 `OFFLINE` 混合表达配置与运行事实。
@@ -27,11 +27,11 @@ Target 不提供在线 `DELETE`。从未产生 Run 的误配置也通过 `DISABL
 ### Agent Binding
 
 ```text
-GET    /v4/ops/targets/{target_id}/agent-bindings
-POST   /v4/ops/targets/{target_id}/agent-bindings
-PATCH  /v4/ops/targets/{target_id}/agent-bindings/{binding_id}
-POST   /v4/ops/targets/{target_id}/agent-bindings/{binding_id}/revoke
-POST   /v4/ops/targets/{target_id}/agent-bindings/{binding_id}/restore
+GET    /api/v1/ops/targets/{target_id}/agent-bindings
+POST   /api/v1/ops/targets/{target_id}/agent-bindings
+PATCH  /api/v1/ops/targets/{target_id}/agent-bindings/{binding_id}
+POST   /api/v1/ops/targets/{target_id}/agent-bindings/{binding_id}/revoke
+POST   /api/v1/ops/targets/{target_id}/agent-bindings/{binding_id}/restore
 ```
 
 Binding 是带 Access Mode、Policy、Change Window、额度、状态和审计的关联实体，因此有自己的 UUIDv7 `binding_id`，但没有第二套数字 ID。唯一 `(target_id, agent_id)`；重复创建返回现有资源或 `409`，不能产生两条当前 Binding。
@@ -41,20 +41,20 @@ Binding 是带 Access Mode、Policy、Change Window、额度、状态和审计�
 ### Monitor Source 与 Binding
 
 ```text
-POST   /v4/ops/monitor-sources
-GET    /v4/ops/monitor-sources
-GET    /v4/ops/monitor-sources/{source_id}
-PATCH  /v4/ops/monitor-sources/{source_id}
-POST   /v4/ops/monitor-sources/{source_id}/enable
-POST   /v4/ops/monitor-sources/{source_id}/disable
-POST   /v4/ops/monitor-sources/{source_id}/health-checks
-POST   /v4/ops/monitor-sources/{source_id}/webhook-key:rotate
+POST   /api/v1/ops/monitor-sources
+GET    /api/v1/ops/monitor-sources
+GET    /api/v1/ops/monitor-sources/{source_id}
+PATCH  /api/v1/ops/monitor-sources/{source_id}
+POST   /api/v1/ops/monitor-sources/{source_id}/enable
+POST   /api/v1/ops/monitor-sources/{source_id}/disable
+POST   /api/v1/ops/monitor-sources/{source_id}/health-checks
+POST   /api/v1/ops/monitor-sources/{source_id}/webhook-key:rotate
 
-GET    /v4/ops/targets/{target_id}/monitor-bindings
-POST   /v4/ops/targets/{target_id}/monitor-bindings
-PATCH  /v4/ops/targets/{target_id}/monitor-bindings/{binding_id}
-POST   /v4/ops/targets/{target_id}/monitor-bindings/{binding_id}/disable
-POST   /v4/ops/targets/{target_id}/monitor-bindings/{binding_id}/enable
+GET    /api/v1/ops/targets/{target_id}/monitor-bindings
+POST   /api/v1/ops/targets/{target_id}/monitor-bindings
+PATCH  /api/v1/ops/targets/{target_id}/monitor-bindings/{binding_id}
+POST   /api/v1/ops/targets/{target_id}/monitor-bindings/{binding_id}/disable
+POST   /api/v1/ops/targets/{target_id}/monitor-bindings/{binding_id}/enable
 ```
 
 Monitor Binding 有外部对象映射、优先级、指标覆盖、健康状态和审计，是独立配置实体，使用 UUIDv7 `binding_id`；唯一 `(source_id, external_target_key)`，避免同一外部对象映射多个 Target。一个 Target 仍可绑定该 Source 下多个不同对象。绑定时 Target 与 Source 必须属于同一 Domain。
@@ -66,11 +66,11 @@ Monitor Binding 有外部对象映射、优先级、指标覆盖、健康状态�
 ### Policy
 
 ```text
-POST   /v4/ops/policies
-GET    /v4/ops/policies
-GET    /v4/ops/policies/{policy_id}
-POST   /v4/ops/policies/{policy_id}/activate
-POST   /v4/ops/policies/{policy_id}/retire
+POST   /api/v1/ops/policies
+GET    /api/v1/ops/policies
+GET    /api/v1/ops/policies/{policy_id}
+POST   /api/v1/ops/policies/{policy_id}/activate
+POST   /api/v1/ops/policies/{policy_id}/retire
 ```
 
 Policy 内容不可 PATCH。创建相同 `policy_key` 的新版本时，服务端在锁定该 Key 后分配下一个 `version_no`，初始状态为 `DRAFT`。激活事务必须校验规则 Schema/Hash、将原 Active 版本设为 `RETIRED`、激活候选版本并写 Audit/Outbox；同一 Scope/Key 始终只有一个 Active。
@@ -80,15 +80,15 @@ Policy 增加 `ROW_VERSION` 和生命周期更新时间，用于激活/退役的
 ### Inspection Plan
 
 ```text
-POST   /v4/ops/inspection-plans
-GET    /v4/ops/inspection-plans
-GET    /v4/ops/inspection-plans/{plan_id}
-PATCH  /v4/ops/inspection-plans/{plan_id}
-POST   /v4/ops/inspection-plans/{plan_id}/activate
-POST   /v4/ops/inspection-plans/{plan_id}/pause
-POST   /v4/ops/inspection-plans/{plan_id}/disable
-POST   /v4/ops/inspection-plans/{plan_id}/targets
-PATCH  /v4/ops/inspection-plans/{plan_id}/targets/{plan_target_id}
+POST   /api/v1/ops/inspection-plans
+GET    /api/v1/ops/inspection-plans
+GET    /api/v1/ops/inspection-plans/{plan_id}
+PATCH  /api/v1/ops/inspection-plans/{plan_id}
+POST   /api/v1/ops/inspection-plans/{plan_id}/activate
+POST   /api/v1/ops/inspection-plans/{plan_id}/pause
+POST   /api/v1/ops/inspection-plans/{plan_id}/disable
+POST   /api/v1/ops/inspection-plans/{plan_id}/targets
+PATCH  /api/v1/ops/inspection-plans/{plan_id}/targets/{plan_target_id}
 ```
 
 新 Plan 默认 `PAUSED`。激活前必须至少有一个 Active Target、合法 IANA 时区与规范五段 Cron、已登记模板/Resolver 版本、合法 `MISFIRE_POLICY/OVERLAP_POLICY` 和可计算的 `next_run_at`。有效 Target 数不得超过部署级 `max_targets_per_inspection_fire`；模板覆盖只能修改白名单阈值、窗口或可选 Check。Plan Target 是带覆盖配置、状态和审计的关联实体，使用独立 UUIDv7 ID；Plan/Target 必须同 Domain。步骤 3 只维护配置，直到步骤 10 才由 Scheduler 领取。
@@ -106,26 +106,24 @@ If-Match: "rv-7"
 
 所有 POST Create、状态 Command、Key Rotation 和 Health Check 要求 `Idempotency-Key`。作用域为 `principal + domain + operation + parent_resource`；保存规范请求指纹和结果引用。相同 Key/同指纹返回原结果，不同指纹返回 `409 IDEMPOTENCY_CONFLICT`。
 
-列表采用稳定 Keyset Cursor，默认排序为 `(updated_at DESC, id DESC)`。Cursor 是带签名的不透明值，包含最后排序键、过滤器 Hash、Domain/Principal Scope Hash、契约版本和短期过期时间；改变过滤器或授权范围后不得复用。
+列表采用稳定 Keyset Cursor，默认排序为 `(updated_at DESC, id DESC)`。Cursor 是带签名的不透明值，包含最后排序键、过滤器 Hash、Domain/调用方 Hash、契约版本和短期过期时间；改变过滤器、Domain 或调用方后不得复用。
 
-## 权限求交
+## 当前身份边界与执行能力
 
-Scope 只授予操作类别，资源授权仍须求交：
+4.0 当前阶段不实现 Scope、角色或 Target ACL。Main API 校验门户 API Key，并把门户声明的 Domain 和操作人写入内部 AuthContext；AIOps 的所有配置读写必须限定在该 Domain。以下能力矩阵是业务与执行安全约束，不是用户权限模型：
 
-| 操作 | 必需 Scope | 附加校验 |
+| 操作 | 当前身份要求 | 附加校验 |
 | --- | --- | --- |
-| Target/Binding 读取 | `ops:target:read` | Domain + 用户可见 Target |
-| Target/Binding 管理 | `ops:target:manage` | Domain 运维管理员 |
-| 启用 `AGENT_EXECUTE` | `ops:target:enable-execution` | Execution SecretRef + Policy + 部署 Kill Switch |
-| Monitor 管理/轮换 | `ops:monitor:manage` | Domain + Provider 类型允许 |
-| Policy 读取/激活 | `ops:policy:read/manage` | Domain + 规则 Schema/风险上限 |
-| Inspection 管理 | `ops:inspection:manage` | Domain + 所有 Target 可管理 |
+| Target/Binding 读取和管理 | 已认证 Portal Client | AuthContext Domain |
+| 启用 `AGENT_EXECUTE` | 已认证 Portal Client + 操作人留痕 | Execution SecretRef + Policy + 部署 Kill Switch |
+| Monitor 管理/轮换 | 已认证 Portal Client + 操作人留痕 | Domain + Provider 类型允许 |
+| Policy 读取/激活 | 已认证 Portal Client + 操作人留痕 | Domain + 规则 Schema/风险上限 |
+| Inspection 管理 | 已认证 Portal Client + 操作人留痕 | Domain + Target 状态 |
 
 Agent 的有效运行能力不是 Binding 单值，而是：
 
 ```text
-用户/调用方 Scope
-∩ Agent–Target Binding Access Mode
+Agent–Target Binding Access Mode
 ∩ Target Execution Mode
 ∩ Active Policy Decision
 ∩ 部署级 Capability/Kill Switch
@@ -133,7 +131,7 @@ Agent 的有效运行能力不是 Binding 单值，而是：
 
 `OBSERVE < DIAGNOSE < PROPOSE < EXECUTE` 是能力上限，不代表自动获批。即使结果为 `EXECUTE`，每条 Mutation 仍须独立 Proposal 和一次审批。客户端提交的 Access Mode 只能缩小管理者有权授予的能力。
 
-跨 Domain、无权读取和不存在统一返回 `404 OPS_RESOURCE_NOT_FOUND_OR_DENIED`。`403` 仅用于资源已经在当前 Scope 中可见、但当前动作所需 Scope 不足的情况。
+跨 Domain 和不存在统一返回 `404 OPS_RESOURCE_NOT_FOUND`。审批还必须匹配待审记录中的 `asserted_user_id`。未来增加细粒度权限时，在 AuthContext 中扩展版本化 Scope，并重新启用操作类别与资源 ACL 求交，不改变当前 API 路径。
 
 ## Endpoint、SecretRef 与 Webhook Key
 
@@ -180,7 +178,7 @@ Summary 不含 SecretRef 与大 JSON；Detail 只返回 SecretRef 的 provider�
 所有跨服务/Secret/Provider 检查使用三段式用例：
 
 ```text
-UoW-A: 读取 Scope 内资源与 row_version → rollback/close
+UoW-A: 读取 Domain 内资源与 row_version → rollback/close
 外部: Agent Runtime / Secret Provider / Template Registry 校验
 UoW-B: 重读并校验 row_version → 写配置 + Audit/Outbox → commit
 ```
@@ -208,10 +206,10 @@ Main API Route 只把外部 AuthContext 映射为签名内部上下文并调用 
 ## 最小测试矩阵
 
 - UUIDv7 Oracle `RAW(16)` 往返、API 规范字符串和跨 Domain 隐藏；
-- Create 幂等、自然键冲突、Cursor Scope/Filter 变化拒绝；
+- Create 幂等、自然键冲突、Cursor Domain/Filter 变化拒绝；
 - 缺失/过期 ETag、并发 PATCH、并发 Policy 激活只成功一个；
 - Agent 不存在、跨 Domain、停用或不具备 AIOps 能力时 Binding 失败；
-- `AGENT_EXECUTE` 缺 Scope、Secret、Policy 或 Kill Switch 时失败；
+- `AGENT_EXECUTE` 缺操作人、Secret、Policy 或 Kill Switch 时失败；
 - SecretRef 不回显，Provider 失败不写半配置，Webhook 旧 Key 按宽限期失效；
 - Health Check 乱序完成不覆盖新结果；
 - Target/Source/Plan 停用后历史仍可读且不能创建新自动任务；

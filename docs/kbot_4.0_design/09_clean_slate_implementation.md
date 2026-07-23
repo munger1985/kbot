@@ -34,9 +34,9 @@ Portal / APEX / Slack / MCP / API clients
 | 知识库 | 继承并完善现有 `knowledge_core`、`KBOT_KC_*` 模型、UoW、Outbox、Parse/Index Job 和 Discovery/Evidence API |
 | Agent | `AgentRuntime`、持久化 Run/Task/Artifact、Supervisor + Specialist、预算/取消/恢复 |
 | Skill | Manifest、typed DTO、Policy Gate、固定入口、契约/安全测试、隔离第三方执行 |
-| 身份 | AuthContext、租户/资源范围、服务身份、集中授权与不可变审计 |
+| 身份 | Portal API Key、AuthContext JWT、Domain 隔离、服务身份与不可变审计 |
 | 运维 | 独立 AIOps Agent、Ops Event/Alert、诊断 Run/Task、HITL/ChangeProposal、Scheduler lease、DB Executor policy |
-| 平台 | v4 API 契约、Schema Contract、对象存储 port、配置/密钥、观测/SLO |
+| 平台 | `/api/v1` 与 `/internal/v1` 契约、Schema Contract、对象存储 port、配置/密钥、观测/SLO |
 
 ## 可复用但必须重新封装的能力
 

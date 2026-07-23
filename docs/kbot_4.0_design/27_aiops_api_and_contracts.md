@@ -6,7 +6,7 @@ AIOps 使用三套明确分离的契约，不能共用 Controller 或信任模�
 
 ```text
 Browser / APEX / Client
-        │ /v4/ops/*
+        │ /api/v1/ops/*
         ▼
 Main API / BFF ── Management Client ──► /internal/v1/aiops/*
         │                               │
@@ -16,12 +16,12 @@ Main API / BFF ── Management Client ──► /internal/v1/aiops/*
                               AIOps DB Executor
 ```
 
-- `/v4/ops/*` 是唯一面向用户的 v4 API，由 Main API 发布；
-- `/v4/integrations/monitoring/*` 是唯一面向监控系统的接入 API；
+- `/api/v1/ops/*` 是唯一面向用户的 AIOps API，由 Main API 发布；
+- `/api/v1/integrations/monitoring/*` 是唯一面向监控系统的接入 API；
 - `/internal/v1/aiops/*` 只接受 Main API、Root Agent 和受信 Worker 的 Service Identity；
 - `/internal/v1/db-executor/*` 只接受 AIOps Worker，不对用户、APEX 或 Root Agent 开放。
 
-内部 `v1` 是独立服务契约版本，不代表 KBot 1.x。未来 AIOps 单独发布时可以独立升级，不改变外部 `/v4`。
+公开与内部 `v1` 都是接口契约的首个版本，不代表 KBot 1.x，也不随产品 4.0 使用 `v4`。未来 AIOps 内部契约可以独立升级，不改变外部 `/api/v1`。
 
 ## 外部资源 API
 
@@ -29,23 +29,23 @@ Main API / BFF ── Management Client ──► /internal/v1/aiops/*
 
 | 方法与路径 | 用途 |
 | --- | --- |
-| `POST/GET /v4/ops/targets` | 创建 Target、按授权范围分页查询 |
-| `GET/PATCH /v4/ops/targets/{target_id}` | 查询或修改 Target 配置 |
-| `POST /v4/ops/targets/{target_id}/disable` | 停用 Target；已产生的历史 Run 不删除 |
-| `POST /v4/ops/targets/{target_id}/agent-bindings` | 创建 Agent Binding |
-| `PATCH /v4/ops/targets/{target_id}/agent-bindings/{binding_id}` | 修改 Agent Binding；撤权使用 `status=REVOKED` |
-| `POST/GET /v4/ops/monitor-sources` | 创建或查询 Monitor Source |
-| `GET/PATCH /v4/ops/monitor-sources/{source_id}` | 查询或修改 Monitor Source |
-| `POST /v4/ops/monitor-sources/{source_id}/webhook-key:rotate` | 轮换只显示一次的 Webhook 路由 Key |
-| `POST /v4/ops/targets/{target_id}/monitor-bindings` | 绑定监控对象、优先级和指标范围 |
-| `PATCH /v4/ops/targets/{target_id}/monitor-bindings/{binding_id}` | 修改或停用 Monitor Binding |
-| `POST /v4/ops/monitor-sources/{source_id}/health-checks` | 异步触发连接检查 |
-| `POST/GET /v4/ops/policies` | 创建不可变 Policy 版本、分页查询 |
-| `GET /v4/ops/policies/{policy_id}` | 查询 Policy 版本 |
-| `POST /v4/ops/policies/{policy_id}/activate` | 原子替换同 Key 的 Active Policy |
-| `POST /v4/ops/policies/{policy_id}/retire` | 退役 Policy 版本 |
-| `POST/GET /v4/ops/inspection-plans` | 创建或查询巡检计划 |
-| `GET/PATCH /v4/ops/inspection-plans/{plan_id}` | 查询、暂停、恢复或修改巡检计划 |
+| `POST/GET /api/v1/ops/targets` | 创建 Target、按授权范围分页查询 |
+| `GET/PATCH /api/v1/ops/targets/{target_id}` | 查询或修改 Target 配置 |
+| `POST /api/v1/ops/targets/{target_id}/disable` | 停用 Target；已产生的历史 Run 不删除 |
+| `POST /api/v1/ops/targets/{target_id}/agent-bindings` | 创建 Agent Binding |
+| `PATCH /api/v1/ops/targets/{target_id}/agent-bindings/{binding_id}` | 修改 Agent Binding；撤权使用 `status=REVOKED` |
+| `POST/GET /api/v1/ops/monitor-sources` | 创建或查询 Monitor Source |
+| `GET/PATCH /api/v1/ops/monitor-sources/{source_id}` | 查询或修改 Monitor Source |
+| `POST /api/v1/ops/monitor-sources/{source_id}/webhook-key:rotate` | 轮换只显示一次的 Webhook 路由 Key |
+| `POST /api/v1/ops/targets/{target_id}/monitor-bindings` | 绑定监控对象、优先级和指标范围 |
+| `PATCH /api/v1/ops/targets/{target_id}/monitor-bindings/{binding_id}` | 修改或停用 Monitor Binding |
+| `POST /api/v1/ops/monitor-sources/{source_id}/health-checks` | 异步触发连接检查 |
+| `POST/GET /api/v1/ops/policies` | 创建不可变 Policy 版本、分页查询 |
+| `GET /api/v1/ops/policies/{policy_id}` | 查询 Policy 版本 |
+| `POST /api/v1/ops/policies/{policy_id}/activate` | 原子替换同 Key 的 Active Policy |
+| `POST /api/v1/ops/policies/{policy_id}/retire` | 退役 Policy 版本 |
+| `POST/GET /api/v1/ops/inspection-plans` | 创建或查询巡检计划 |
+| `GET/PATCH /api/v1/ops/inspection-plans/{plan_id}` | 查询、暂停、恢复或修改巡检计划 |
 
 Target、Source、Binding、Policy 和 Plan 均不提供在线物理删除 API。`PATCH`、激活、停用、撤权、暂停和恢复必须携带 `If-Match: "rv-{row_version}"`；版本过期返回 `412 PRECONDITION_FAILED`。列表使用不透明 Cursor，不使用会在并发写入下漂移的页码。
 
@@ -75,24 +75,24 @@ Target、Source、Binding、Policy 和 Plan 均不提供在线物理删除 API�
 
 | 方法与路径 | 用途 |
 | --- | --- |
-| `POST /v4/ops/runs` | 直接发起 AIOps Chat/API Run |
-| `GET /v4/ops/runs/{ops_run_id}` | 查询状态、根因等级和最终 ArtifactRef |
-| `GET /v4/ops/runs/{ops_run_id}/events` | SSE 订阅，支持 `Last-Event-ID` |
-| `POST /v4/ops/runs/{ops_run_id}/cancel` | 协作式取消未终止 Run |
-| `GET /v4/ops/runs/{ops_run_id}/pending-input` | 恢复当前待回复的 Chat HITL |
-| `GET /v4/ops/hitl/{hitl_id}` | 授权读取完整人工输入请求 |
-| `POST /v4/ops/hitl/{hitl_id}/responses` | 回贴人工诊断结果或补充数据 |
-| `POST /v4/ops/hitl/{hitl_id}/skip` | 放弃当前补证并基于现有证据收敛 |
-| `POST /v4/ops/hitl/{hitl_id}/uploads` | 创建绑定 Query 的受限上传会话 |
-| `POST /v4/ops/hitl/{hitl_id}/uploads/{upload_id}/complete` | 完成上传、内容检查和 Hash 固化 |
-| `GET /v4/ops/proposals/{proposal_id}` | 查询命令、影响、证据、回滚和验证方案 |
-| `POST /v4/ops/proposals/{proposal_id}/approve` | 显式批准一条命令 |
-| `POST /v4/ops/proposals/{proposal_id}/reject` | 拒绝一条命令 |
-| `POST /v4/ops/proposals/{proposal_id}/manual-result` | 回填 Advisory 人工执行结果 |
-| `GET /v4/ops/approvals?status=PENDING` | 查询当前用户有权处理的待审项 |
-| `GET /v4/ops/inspection-fires`、`GET /v4/ops/inspection-fires/{fire_id}` | 查询计划时点、Target 展开计数和终态 |
-| `GET /v4/ops/reports`、`GET /v4/ops/reports/{report_id}` | 查询当前报告列表、摘要和内容引用 |
-| `GET /v4/ops/reports/{report_id}/versions` | 查询同一 Run/Report Key 的更正历史 |
+| `POST /api/v1/ops/runs` | 直接发起 AIOps Chat/API Run |
+| `GET /api/v1/ops/runs/{ops_run_id}` | 查询状态、根因等级和最终 ArtifactRef |
+| `GET /api/v1/ops/runs/{ops_run_id}/events` | SSE 订阅，支持 `Last-Event-ID` |
+| `POST /api/v1/ops/runs/{ops_run_id}/cancel` | 协作式取消未终止 Run |
+| `GET /api/v1/ops/runs/{ops_run_id}/pending-input` | 恢复当前待回复的 Chat HITL |
+| `GET /api/v1/ops/hitl/{hitl_id}` | 授权读取完整人工输入请求 |
+| `POST /api/v1/ops/hitl/{hitl_id}/responses` | 回贴人工诊断结果或补充数据 |
+| `POST /api/v1/ops/hitl/{hitl_id}/skip` | 放弃当前补证并基于现有证据收敛 |
+| `POST /api/v1/ops/hitl/{hitl_id}/uploads` | 创建绑定 Query 的受限上传会话 |
+| `POST /api/v1/ops/hitl/{hitl_id}/uploads/{upload_id}/complete` | 完成上传、内容检查和 Hash 固化 |
+| `GET /api/v1/ops/proposals/{proposal_id}` | 查询命令、影响、证据、回滚和验证方案 |
+| `POST /api/v1/ops/proposals/{proposal_id}/approve` | 显式批准一条命令 |
+| `POST /api/v1/ops/proposals/{proposal_id}/reject` | 拒绝一条命令 |
+| `POST /api/v1/ops/proposals/{proposal_id}/manual-result` | 回填 Advisory 人工执行结果 |
+| `GET /api/v1/ops/approvals?status=PENDING` | 查询当前用户有权处理的待审项 |
+| `GET /api/v1/ops/inspection-fires`、`GET /api/v1/ops/inspection-fires/{fire_id}` | 查询计划时点、Target 展开计数和终态 |
+| `GET /api/v1/ops/reports`、`GET /api/v1/ops/reports/{report_id}` | 查询当前报告列表、摘要和内容引用 |
+| `GET /api/v1/ops/reports/{report_id}/versions` | 查询同一 Run/Report Key 的更正历史 |
 
 创建 Run 和所有 Command API 必须携带 `Idempotency-Key`。直接创建 AIOps Run 的最小请求为：
 
@@ -114,7 +114,7 @@ Target、Source、Binding、Policy 和 Plan 均不提供在线物理删除 API�
   "status": "CREATED",
   "row_version": 1,
   "event_cursor": 0,
-  "events_url": "/v4/ops/runs/019c03b7-2e18-78a1-b07c-a12c84e93f44/events"
+  "events_url": "/api/v1/ops/runs/019c03b7-2e18-78a1-b07c-a12c84e93f44/events"
 }
 ```
 
@@ -153,7 +153,7 @@ HITL SSE 事件只携带 ID、类型、过期时间和请求 ArtifactRef，不�
 监控系统调用：
 
 ```text
-POST /v4/integrations/monitoring/{webhook_key}/events
+POST /api/v1/integrations/monitoring/{webhook_key}/events
 ```
 
 `webhook_key` 是随机、不透明的路由标识，不是 `source_key` 或凭据。Main API 只进行请求大小、速率、Content-Type 和 Trace 检查；AIOps Provider Adapter 使用原始请求字节、时间戳、签名头和 `SECRET_REF` 验证来源，再解析 Provider Payload。请求体中的 domain、Target ID、严重等级和用户字段都不可信，Target 只能由已验证的 Monitor Source 与 `TARGET_MONITOR` Mapping 解析。
@@ -211,18 +211,9 @@ run.completed | run.failed | run.cancelled | run.expired
 
 ## 身份与授权
 
-请求体永远不能覆盖 `AuthContext`。建议最小 Scope：
+请求体永远不能覆盖 `AuthContext`。当前阶段由 Main API 校验门户 API Key，将 Portal 声明的 `domain_id` 和 `user_id` 写入短期内部 JWT；AIOps 只接受该内部身份，不接受门户 Key。KBot 4.0 暂不实现 Scope、角色或 Target ACL，但所有读取和写入仍必须限制在 AuthContext 的 Domain 内。
 
-- `ops:target:read`、`ops:target:manage`；
-- `ops:target:enable-execution`；
-- `ops:monitor:read`、`ops:monitor:manage`；
-- `ops:policy:read`、`ops:policy:manage`；
-- `ops:run:create`、`ops:run:read`、`ops:run:cancel`；
-- `ops:diagnostic:respond`；
-- `ops:proposal:read`、`ops:proposal:approve`、`ops:proposal:record-result`；
-- `ops:inspection:read`、`ops:inspection:manage`、`ops:report:read`。
-
-Scope 只是第一层；每次操作还要校验 Domain、Agent/Target Binding、Assignee、Target 状态与 Policy。跨 Domain 或无 Target 权限的读取统一返回 `404 OPS_RESOURCE_NOT_FOUND_OR_DENIED`，避免泄露资源存在性。审批人还必须是当前待审用户或具备 Domain 级运维审批角色。
+Agent/Target Binding、Target 状态、Policy、单命令审批、Assignee 和一次性执行授权属于业务及执行安全约束，不是可省略的 RBAC。审批操作必须由当前待审的 `asserted_user_id` 完成并留痕。未来加入细粒度权限时，可在 AuthContext 中增加版本化 Scope，不因产品版本升级改变现有 URL。
 
 ## HTTP、幂等与错误
 
@@ -250,6 +241,6 @@ platform_clients/aiops_management.py
 platform_clients/aiops_delegation.py
 ```
 
-FastAPI Schema 只能映射这些 DTO，不能直接返回 Entity。OpenAPI 分别生成 Public、AIOps Internal 和 Executor 三份文档；Internal 文档不发布到外网。契约测试至少覆盖权限求交、ETag、幂等冲突、SSE 断点续传、Webhook 重放、HITL 非 Chat 拒绝、重复审批、过期 Token、Executor 回调乱序和跨 Domain 隐藏。
+FastAPI Schema 只能映射这些 DTO，不能直接返回 Entity。OpenAPI 分别生成 Public、AIOps Internal 和 Executor 三份文档；Internal 文档不发布到外网。契约测试至少覆盖 API Key 与内部 JWT、Domain 隔离、ETag、幂等冲突、SSE 断点续传、Webhook 重放、HITL 非 Chat 拒绝、重复审批、过期 Token、Executor 回调乱序和跨 Domain 隐藏。
 
 4.0 不复用 3.x Ops Controller 中的请求体用户/Domain 字段、请求内 Agent 实例、明文数据库密码或长连接内执行逻辑，也不提供对应兼容路由。

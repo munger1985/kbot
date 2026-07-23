@@ -25,6 +25,7 @@ from fastapi_offline import FastAPIOffline
 from loguru import logger
 
 from platform_core.config.settings import get_llm_config, get_app_config
+from platform_core.contracts import INTERNAL_API_V1
 from platform_core.dictionary import ModelCategory
 from platform_core.logger import LogConfig, LogManager
 from platform_core.middleware.log_middleware import log_requests
@@ -182,7 +183,7 @@ async def health_check() -> dict[str, Any]:
 #         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/v1/chat/completions", response_model=None, tags=["LLM"], summary="Chat Completion Endpoint")
+@app.post(f"{INTERNAL_API_V1}/chat/completions", response_model=None, tags=["LLM"], summary="对话补全")
 async def handle_chat_completions(
     request: ChatRequest,
     service: LLMService = Depends(get_llm_service)

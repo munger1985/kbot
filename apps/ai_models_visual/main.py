@@ -19,6 +19,7 @@ from fastapi_offline import FastAPIOffline
 from loguru import logger
 
 from platform_core.config.settings import get_visual_config, get_app_config
+from platform_core.contracts import INTERNAL_API_V1
 from platform_core.dictionary import ModelCategory
 from platform_core.logger import LogConfig, LogManager
 from platform_core.middleware.log_middleware import log_requests
@@ -124,7 +125,7 @@ async def health() -> dict[str, Any]:
     }
 
 
-@app.post("/v1/embed", response_model=VisualEmbeddingResponse, tags=["AI Service"])
+@app.post(f"{INTERNAL_API_V1}/embed", response_model=VisualEmbeddingResponse, tags=["AI Service"])
 async def embed_image(req: VisualEmbeddingRequest):
     """图片 → 视觉 embedding"""
     try:

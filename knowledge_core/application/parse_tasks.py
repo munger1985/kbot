@@ -1,4 +1,4 @@
-"""Application use cases behind the V2 Parser HTTP protocol."""
+"""解析 Worker 内部 HTTP 协议背后的应用用例。"""
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone

@@ -40,9 +40,9 @@
 
 在所有 4.0 能力完成后统一进行 Oracle、Portal、APEX、Parser、检索、Agent、Skill、Ops 和安全测试。根据原始来源重建 4.0 数据，采用发布切换而非线上双写、双读或旧 API Adapter。旧代码在开发阶段已经退出工作树；生产 Soak 只用于确认没有旧入口或旧表访问。旧表经归档、撤销写权限与单独批准后再物理删除。
 
-**验收：** 所有已批准调用方均使用 v4 契约；生产运行中不存在旧表写入、旧 Worker 轮询、旧 Skill 动态适配或新旧数据同步任务。
+**验收：** 所有已批准调用方均使用 `/api/v1` 契约；生产运行中不存在旧表写入、旧 Worker 轮询、旧 Skill 动态适配或新旧数据同步任务。
 
-统一测试分层、质量阈值、Release Evidence、全量/增量重建、生产切换、前向修复和旧表退出门禁见 [41_kbot4_step12_acceptance_release_and_cutover.md](41_kbot4_step12_acceptance_release_and_cutover.md)。入口切换并产生 v4 写入后不自动退回 3.x；通过能力 Kill Switch、维护模式和幂等重放前向恢复。
+统一测试分层、质量阈值、Release Evidence、全量/增量重建、生产切换、前向修复和旧表退出门禁见 [41_kbot4_step12_acceptance_release_and_cutover.md](41_kbot4_step12_acceptance_release_and_cutover.md)。入口切换并产生 4.0 新模型写入后不自动退回 3.x；通过能力 Kill Switch、维护模式和幂等重放前向恢复。
 
 ## 测试与观测
 

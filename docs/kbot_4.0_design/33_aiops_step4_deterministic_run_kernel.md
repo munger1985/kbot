@@ -211,7 +211,7 @@ SSE 接口：
 
 ```text
 GET /internal/v1/aiops/runs/{run_id}/events?after={sequence}
-GET /v4/ops/runs/{run_id}/events
+GET /api/v1/ops/runs/{run_id}/events
 Last-Event-ID: <sequence>
 ```
 

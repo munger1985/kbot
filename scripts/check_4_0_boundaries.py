@@ -32,6 +32,11 @@ FORBIDDEN_PREFIXES = (
     "utils",
     "legacy",
 )
+OBSOLETE_API_PREFIXES = (
+    "/v4",
+    "/api/v2",
+    "/internal/v2",
+)
 
 
 def module_names(node: ast.AST) -> list[str]:
@@ -49,6 +54,12 @@ def check_file(path: Path) -> list[str]:
         return [f"{path}:{exc.lineno}: syntax error: {exc.msg}"]
     violations: list[str] = []
     for node in ast.walk(tree):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            for prefix in OBSOLETE_API_PREFIXES:
+                if node.value == prefix or node.value.startswith(f"{prefix}/"):
+                    violations.append(
+                        f"{path}:{node.lineno}: 禁止使用旧 API 前缀 {prefix}"
+                    )
         for imported in module_names(node):
             if imported == "platform_core.auth" or imported.startswith("platform_core.auth."):
                 violations.append(f"{path}:{node.lineno}: 禁止导入旧用户认证模块 {imported}")

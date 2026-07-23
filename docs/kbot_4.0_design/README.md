@@ -16,9 +16,9 @@ KBot 4.0 是一次**Clean-slate 重构**：保留单仓库、同一 Oracle/APEX 
 | [04_migration_and_delivery.md](04_migration_and_delivery.md) | 分阶段重建、测试、观测、全量切换与验收门槛 |
 | [05_multi_agent_and_skills.md](05_multi_agent_and_skills.md) | 多 Agent 协作、Skill 契约、策略与执行运行时 |
 | [11_agent_execution_model.md](11_agent_execution_model.md) | Run/Task/Artifact、状态机、租约、事件流与恢复 |
-| [12_agent_runtime_api_and_state_transitions.md](12_agent_runtime_api_and_state_transitions.md) | v4 Run API、内部命令、并发控制与状态迁移 |
+| [12_agent_runtime_api_and_state_transitions.md](12_agent_runtime_api_and_state_transitions.md) | Run API、内部命令、并发控制与状态迁移 |
 | [13_agent_planning_and_skill_contract.md](13_agent_planning_and_skill_contract.md) | Supervisor、Planner、Specialist、Skill Manifest 与执行契约 |
-| [14_main_api_bff_and_auth_context.md](14_main_api_bff_and_auth_context.md) | Main API/BFF、AuthContext、服务间传播与 v4 外部契约 |
+| [14_main_api_bff_and_auth_context.md](14_main_api_bff_and_auth_context.md) | Main API/BFF、Portal API Key、AuthContext 与 API 版本边界 |
 | [15_aiops_agent_scope_and_skills.md](15_aiops_agent_scope_and_skills.md) | 独立 AIOps Agent、Ops 表、诊断与受控变更边界 |
 | [16_document_agent_boundary_and_retrieval_contract.md](16_document_agent_boundary_and_retrieval_contract.md) | Document Agent、KC 检索编排与 CitationPack 契约 |
 | [17_root_agent_routing_and_composition.md](17_root_agent_routing_and_composition.md) | Root Agent 路由、并行调用与多来源结果组合 |
@@ -36,7 +36,7 @@ KBot 4.0 是一次**Clean-slate 重构**：保留单仓库、同一 Oracle/APEX 
 | [29_aiops_step0_contracts_and_bootstrap.md](29_aiops_step0_contracts_and_bootstrap.md) | AIOps 包结构、四进程入口、DTO、Service Identity、配置与启动骨架 |
 | [30_aiops_step1_oracle_schema.md](30_aiops_step1_oracle_schema.md) | 21 张 AIOps 表的 Oracle 类型、约束、索引、外键、APEX 视图与 Migration 顺序 |
 | [31_aiops_step2_persistence_and_identity.md](31_aiops_step2_persistence_and_identity.md) | 单一 UUIDv7 主键策略、Oracle/PG 映射，以及 Entity、Repository、UoW、租约和 Inbox/Outbox |
-| [32_aiops_step3_configuration_and_authorization_api.md](32_aiops_step3_configuration_and_authorization_api.md) | Target、Binding、Monitor、Policy、Inspection 配置 API、权限求交、ETag 与 Secret 生命周期 |
+| [32_aiops_step3_configuration_and_authorization_api.md](32_aiops_step3_configuration_and_authorization_api.md) | Target、Binding、Monitor、Policy、Inspection 配置 API、Domain 边界、ETag 与 Secret 生命周期 |
 | [33_aiops_step4_deterministic_run_kernel.md](33_aiops_step4_deterministic_run_kernel.md) | 确定性 Run/Task/Artifact/Event 内核、租约 fencing、取消、重试与 SSE 恢复 |
 | [34_aiops_step5_monitoring_observe_loop.md](34_aiops_step5_monitoring_observe_loop.md) | Prometheus/Zabbix/OEM Adapter、Metric Catalog、Webhook、Alert 与只观测报告闭环 |
 | [35_aiops_step6_readonly_database_diagnostics.md](35_aiops_step6_readonly_database_diagnostics.md) | Oracle/MySQL 诊断目录、签名 Grant、只读 DB Executor、结果限界与 Artifact 集成 |
@@ -59,6 +59,8 @@ KBot 4.0 是一次**Clean-slate 重构**：保留单仓库、同一 Oracle/APEX 
 4. 所有新领域采用“Repository 注入 Session、UoW 控制事务”；Repository 内禁止 `commit()`。
 5. 跨进程可靠协作使用数据库任务/Outbox，不在数据库事务中调用 HTTP，也不以轮询旧业务表作为协议。
 6. Agent 负责协作与决策，Skill 负责受限能力执行；高风险动作由独立策略/HITL 决定，不能仅依赖 Planner 提示词。
+7. 产品版本与 API 版本独立：公开接口从 `/api/v1` 开始，内部接口从 `/internal/v1` 开始；只有不兼容契约需要并行分流时才新增 `v2`。
+8. 门户负责用户登录，KBot 只认证门户后端 API Key，并将门户声明的 Domain 和操作人转换为短期内部 AuthContext JWT；4.0 当前阶段不实现本地用户认证和细粒度权限。
 
 ## 非目标
 

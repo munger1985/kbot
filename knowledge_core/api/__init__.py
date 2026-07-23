@@ -1,1 +1,1 @@
-"""V2 HTTP controllers and request DTO mapping for Knowledge Core."""
+"""Knowledge Core 内部 HTTP 控制器与请求 DTO 映射。"""

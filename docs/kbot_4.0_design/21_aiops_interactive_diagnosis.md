@@ -86,10 +86,10 @@ Alert、Schedule、Webhook 和其他自动 Run 不创建 `MANUAL_DIAGNOSTIC_SQL`
 ## API 与前端交互
 
 - Chat SSE 只返回 `diagnostic.input_required`、`hitl_id`、过期时间和请求 ArtifactRef，不携带 SQL 正文；
-- `GET /v4/ops/runs/{run_id}/pending-input` 在对话重连后恢复待回复请求；
-- `GET /v4/ops/hitl/{hitl_id}` 经授权读取完整请求；
-- `POST /v4/ops/hitl/{hitl_id}/responses` 提交表格、文本、CSV/文件或执行错误；
-- `POST /v4/ops/hitl/{hitl_id}/skip` 放弃等待并生成当前证据下的结论。
+- `GET /api/v1/ops/runs/{run_id}/pending-input` 在对话重连后恢复待回复请求；
+- `GET /api/v1/ops/hitl/{hitl_id}` 经授权读取完整请求；
+- `POST /api/v1/ops/hitl/{hitl_id}/responses` 提交表格、文本、CSV/文件或执行错误；
+- `POST /api/v1/ops/hitl/{hitl_id}/skip` 放弃等待并生成当前证据下的结论。
 
 只有当前 Chat Run 的授权对话用户可提交结果。响应接口使用乐观锁和幂等键；过期 Request 不能恢复旧 Task，需要时由 Agent 重新生成并校验新 SQL。
 完整请求 DTO、上传和错误契约见 [27_aiops_api_and_contracts.md](27_aiops_api_and_contracts.md)。

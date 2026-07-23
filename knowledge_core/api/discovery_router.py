@@ -1,10 +1,15 @@
-"""V2 Discovery-stage query endpoint."""
+"""Discovery 阶段的内部查询端点。"""
 from dataclasses import asdict
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
-router = APIRouter(prefix="/api/v2/knowledge/discovery", tags=["Knowledge Core Discovery V2"])
+from platform_core.contracts import INTERNAL_API_V1
+
+router = APIRouter(
+    prefix=f"{INTERNAL_API_V1}/knowledge/discovery",
+    tags=["Knowledge Core Discovery"],
+)
 
 
 class DiscoverySearchRequest(BaseModel):

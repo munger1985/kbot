@@ -27,6 +27,8 @@ Use four-space Python indentation, `snake_case` for functions, variables, and mo
 
 KBot 4.0 is a clean-slate release. Do not add compatibility imports, V1 routes, dual-read/write paths, or adapters for 3.x. Obsolete code is deleted and recovered from Git history when needed, not retained in active packages or `legacy/`. The Knowledge Core implemented during 3.5 is the 4.0 KC baseline; extend and harden it instead of creating a parallel implementation.
 
+Product and API versions are independent. Public Main API routes start at `/api/v1`; service-only routes start at `/internal/v1` and must not be exposed externally. Add `v2` only when an incompatible version of the same contract must coexist. Unversioned health probes such as `/healthz` and `/readyz` are allowed.
+
 ## Testing Guidelines
 
 Add or update a focused `tests/test_<feature>.py` script alongside behavior changes. Include a runnable `__main__` entry point when the test is intended for direct execution, and keep test data/environment assumptions explicit. Do not commit real OCI keys, database passwords, tokens, or `.env`/secret configuration.

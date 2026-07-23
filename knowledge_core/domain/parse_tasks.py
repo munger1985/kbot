@@ -1,4 +1,4 @@
-"""Pure V2 Parser task lease rules shared by the HTTP protocol and workers."""
+"""由内部 HTTP 协议和 Worker 共享的纯解析任务租约规则。"""
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 

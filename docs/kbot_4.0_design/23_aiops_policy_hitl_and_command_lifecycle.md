@@ -88,7 +88,7 @@ Action Draft → Policy DENY（不创建 Proposal）
 
 ## 审批权限与令牌
 
-最小权限建议为 `ops:run:read`、`ops:run:create`、`ops:diagnostic:respond`、`ops:proposal:read`、`ops:proposal:approve` 和 `ops:proposal:record-result`。批准人必须同时拥有 `ops:proposal:approve` 和 Target 访问权限。首期不强制发起人与批准人分离；同一用户可批准自己发起的 Proposal，但仍必须进行一次显式批准并留痕。
+当前阶段不实现 Scope 或 Target ACL。批准请求必须来自已认证门户 API Key，AuthContext Domain 必须与 Proposal 一致，`asserted_user_id` 必须匹配当前待审操作人。首期不强制发起人与批准人分离；同一用户可批准自己发起的 Proposal，但仍必须进行一次显式批准并留痕。
 
 一次性 Approval Authorization 绑定：
 
@@ -108,11 +108,11 @@ approver_id, policy_decision_hash, issued_at, expires_at, nonce
 
 ## API 与审计
 
-- `GET /v4/ops/approvals?status=PENDING` 查询当前用户有权审批的命令；
-- `GET /v4/ops/proposals/{proposal_id}` 返回完整命令、参数、影响、证据、回滚和验证方案；
-- `POST /v4/ops/proposals/{proposal_id}/approve` 显式批准一条命令；
-- `POST /v4/ops/proposals/{proposal_id}/reject` 拒绝并记录可选原因；
-- `POST /v4/ops/proposals/{proposal_id}/manual-result` 回填 Advisory 执行结果。
+- `GET /api/v1/ops/approvals?status=PENDING` 查询当前用户有权审批的命令；
+- `GET /api/v1/ops/proposals/{proposal_id}` 返回完整命令、参数、影响、证据、回滚和验证方案；
+- `POST /api/v1/ops/proposals/{proposal_id}/approve` 显式批准一条命令；
+- `POST /api/v1/ops/proposals/{proposal_id}/reject` 拒绝并记录可选原因；
+- `POST /api/v1/ops/proposals/{proposal_id}/manual-result` 回填 Advisory 执行结果。
 
 审计事件包含 actor/service identity、AuthContext、Target、Proposal/Policy/Template Hash、前后状态、时间、IP/Client 和 trace ID。审批 API 是独立 Command，不使用聊天自然语言中的“同意”作为批准信号。
 完整 API、DTO 和幂等规则见 [27_aiops_api_and_contracts.md](27_aiops_api_and_contracts.md)。

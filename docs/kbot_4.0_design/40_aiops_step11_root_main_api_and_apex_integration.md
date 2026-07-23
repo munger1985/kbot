@@ -5,19 +5,19 @@
 本步骤将 AIOps 接入 Root Agent、Main API/BFF 和 APEX，同时保持 AIOps 对诊断、HITL、审批、执行和报告的完整所有权。
 
 ```text
-Root 对话：POST /v4/runs
+Root 对话：POST /api/v1/runs
   Main API → Agent Runtime → AIOps Delegation → Root Composer
 
-直接运维：POST /v4/ops/runs
+直接运维：POST /api/v1/ops/runs
   Main API → AIOps API
 
-自动触发：POST /v4/integrations/monitoring/{webhook_key}/events
+自动触发：POST /api/v1/integrations/monitoring/{webhook_key}/events
   Main API → AIOps Intake
 
 定时巡检：AIOps Scheduler → Inspection Fire → Ops Run
 ```
 
-Root 对话只订阅 `/v4/runs/{run_id}/events`；直接运维只订阅 `/v4/ops/runs/{ops_run_id}/events`。前端不需要同时拼接两条 SSE。
+Root 对话只订阅 `/api/v1/runs/{run_id}/events`；直接运维只订阅 `/api/v1/ops/runs/{ops_run_id}/events`。前端不需要同时拼接两条 SSE。
 
 ## 对 3.5 过渡实现的处理
 
@@ -148,11 +148,11 @@ Route Target 增加 `completion_requirement: REQUIRED | OPTIONAL`。唯一必要
 
 Root 投影事件只通知“存在待处理资源”，不承接命令：
 
-- SQL 补证：先 `GET /v4/ops/hitl/{hitl_id}` 获取完整 SQL/Schema，再调用 Responses/Skip API；
-- 变更审批：先 `GET /v4/ops/proposals/{proposal_id}` 查看精确命令、风险和 Hash，再调用 Approve/Reject；
+- SQL 补证：先 `GET /api/v1/ops/hitl/{hitl_id}` 获取完整 SQL/Schema，再调用 Responses/Skip API；
+- 变更审批：先 `GET /api/v1/ops/proposals/{proposal_id}` 查看精确命令、风险和 Hash，再调用 Approve/Reject；
 - Advisory 人工结果：调用 Proposal 的 `manual-result` API。
 
-Root 的普通聊天文本、`POST /v4/runs/{id}/resume` 或通用 Runtime Approval API 都不能替代这些 AIOps Command。Root Agent、Composer 和 LLM 没有批准权限。用户提交后由 AIOps 继续子 Run，Reconciler 再把恢复状态投影到父 Run。
+Root 的普通聊天文本、`POST /api/v1/runs/{id}/resume` 或通用 Runtime Approval API 都不能替代这些 AIOps Command。Root Agent、Composer 和 LLM 没有批准权限。用户提交后由 AIOps 继续子 Run，Reconciler 再把恢复状态投影到父 Run。
 
 这也意味着 SSE 中必须让用户知道待执行 SQL/命令存在，但正文只通过授权 GET 返回，不能进入 SSE、APEX View 或日志。
 
@@ -222,10 +222,10 @@ Composer 可以改善表达，但不能改变 AIOps 的根因等级、Target/环
 
 Main API 是外部唯一入口，但不是透传代理：
 
-- 从 JWT、APEX Session 或 API Key 构建 AuthContext，删除客户端伪造的 Scope Header；
+- 校验门户后端 API Key，并把门户声明的 Domain 和操作人写入短期内部 AuthContext JWT；
 - 根据路径调用 Agent Runtime、AIOps Management 或 Monitoring Intake Client；
 - 将 Public DTO 映射为 Internal DTO，重新生成授权资源 URL；
-- 对 Cookie 认证的所有写操作执行 CSRF 校验；
+- 删除客户端伪造的内部身份头，且不把门户 API Key 转发到下游；
 - 统一限流、请求大小、Idempotency Key、ETag、Trace 和 Problem Details；
 - 不读取下游 Repository，不在请求线程执行 LLM、监控查询或 SQL。
 

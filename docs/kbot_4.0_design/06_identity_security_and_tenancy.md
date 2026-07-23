@@ -1,49 +1,55 @@
 # 4.0 身份、安全与租户设计
 
-## 信任边界
+## 当前认证决策
 
-4.0 的所有外部请求先进入 Main API / BFF 的认证层；Knowledge Core、Model Runtime、Parser、DB Executor 和 MCP 不信任客户端直接提交的 `user_id`、`app_id`、`domain_id`、`security_level` 或资源 ID。它们只接受由 BFF 签发或转发的、已验证的内部身份上下文。
+KBot 4.0 不再维护用户、密码、登录、刷新令牌或退出登录接口。用户身份认证完全由门户负责；门户后端使用预配置的 KBot API Key 调用公开 `/api/v1/*`。浏览器不得直接持有该 Key。
 
 ```text
-External token / API key
-  → BFF authentication
-  → AuthContext (signed / internal token)
-  → service authorization
-  → domain policy enforcement
+用户登录门户
+  → 门户后端校验会话
+  → Authorization: Bearer kbot_sk_***
+  → Main API 校验 API Key 和请求上下文
+  → 签发短期内部 AuthContext JWT
+  → /internal/v1/* 下游服务
 ```
 
-`AuthContext` 至少包含 `request_id`、主体类型、`subject_id`、租户、角色、权限集、数据安全等级、允许的 Collection/资源范围、令牌过期时间和委托链。服务端根据 Claim 派生访问范围；请求中的筛选字段只能进一步缩小范围，不能扩大权限。
+产品版本与接口版本独立：KBot 4.0 的首个公开契约使用 `/api/v1`，内部契约使用 `/internal/v1`；只有同一接口出现不兼容变更并需并行运行时才新增 `v2`。
 
-## 租户与资源授权
+## API Key 生命周期
 
-4.0 保持单一 APEX Schema，但所有访问路径必须有明确的 domain 边界。Knowledge Core 只在 Collection 上持久化 `domain_id`（以及 APEX 视图需要的 `app_id`）；Bundle、Document、Evidence 和 Job 通过 Collection 继承范围，不在每张 KC 表重复保存租户字段。跨 domain 引用一律拒绝。
+API Key 标识调用 KBot 的受信门户或集成系统，不代表最终用户。Key 采用 `kbot_sk_` 前缀，明文仅在创建时返回一次，数据库只保存 Key ID、哈希、状态、创建时间、到期时间和最近使用时间。Key 必须支持轮换、吊销和到期告警，且不得写入浏览器代码、URL、配置样例、异常或日志。
 
-采用 RBAC + 资源属性策略：
+当前阶段 API Key 通过离线管理或受控运维接口配置，不允许调用方使用同一 Key 自行增发 Key。不同环境和外部系统使用不同 Key，便于独立吊销与审计。
 
-| 场景 | 强制策略 |
-| --- | --- |
-| Discovery/Evidence | `tenant_id`、Collection ACL、安全等级、文档状态和调用者角色同时过滤 |
-| 文件下载 | 检查 Document Version 权限后才签发短时下载 URL；不暴露服务器物理路径 |
-| Agent/Skill | Policy Engine 用 AuthContext 限定可见 Skill、数据范围、模型和预算 |
-| DB Executor | 目标实例、SQL 类型、环境、变更窗口和操作者权限均须校验 |
-| 管理操作 | 采用最小角色、审计和必要时四眼审批 |
+## Domain 与操作人声明
 
-Repository 必须接收已解析的 `AccessScope` 或由 Application Service 注入的强制过滤条件；禁止依赖调用者“记得加 where tenant_id”的约定。所有按 ID 查询也必须校验租户与授权范围。
+门户在每次请求中传递 `domain_id`，并应传递稳定的门户 `user_id` 供聊天、AIOps 审批和审计使用。Main API 校验字段格式及 Domain 是否存在、启用，但当前阶段不重复验证用户与 Domain 的权限关系；该关系由已认证的门户保证。
 
-## 服务身份与密钥
+`domain_id` 仍是强制数据隔离边界。Knowledge Core 只在 Collection 保存 `domain_id` 和 APEX 所需的 `app_id`，其他表通过 Collection 继承边界。Repository 的查询和写入必须显式限定 Domain，禁止仅凭资源 UUID 跨 Domain 访问。`app_id` 来自服务器配置，不接受客户端传入，也不参与业务路由。
 
-外部用户令牌、服务间令牌和数据库凭据必须区分。服务间调用使用短期内部令牌或 mTLS 身份，包含调用服务名与目标 audience；不得复用用户 Bearer Token 或把固定共享 token 写入代码、Skill 或日志。
+## 内部 AuthContext JWT
 
-密钥只从受控环境变量或 Secret Manager 加载，配置文件仅保存 Secret 引用。定义轮换、吊销、过期告警和紧急替换流程。模型 API Key、Oracle 凭据、Slack Signing Secret、MCP 令牌和外部监控凭据均纳入同一密钥清单。
+Main API 校验外部 API Key 后，为单次调用签发短期、限定 audience 的内部 JWT。最小 Claim 包含：
 
-## 防护与审计
+```text
+issuer, audience, issued_at, expires_at, jwt_id
+request_id, trace_id
+api_key_id, client_id
+domain_id, asserted_user_id
+```
 
-- CORS 使用环境化 Origin 白名单；不得在携带凭据时使用通配 Origin。
-- 上传文件先执行大小/MIME/扩展名一致性检查、恶意内容扫描和配额检查，再进入持久化任务。
-- 所有 HTTP client 设置连接/读取/总超时、重试边界与目标 allowlist；禁止 Skill 根据用户输入拼接任意 URL。
-- Agent 输入实施注入、越权、敏感数据和不相关请求拦截；输出实施 PII/凭据泄露扫描。
-- 审计事件不可由业务日志替代，至少记录认证主体、租户、资源、动作、结果、来源 IP、`request_id`、`run_id`、审批和变更前后摘要。
+Main API 必须移除外部请求中伪造的内部身份头。Knowledge Core、Model Serving、Agent Runtime 和 AIOps 仅接受服务身份加内部 JWT，不接受门户 API Key、用户密码或外部 Bearer Token。内部接口不得挂载到公网入口或公开 OpenAPI；将来采用 mTLS 时只替换服务身份校验，不改变 AuthContext 契约。
 
-## 数据分类与保留
+## 当前不实现的权限能力
 
-为附件、Evidence、会话、用户画像、运行 Artifact 和日志定义分类（公开、内部、敏感、受限）及允许处理位置。Memory 只保存实现产品目标所必需的结构化摘要和用户显式确认的偏好；不持久化原始内部推理文本。删除请求需级联覆盖数据库记录、对象存储、索引、缓存和异步任务，并保留最小化的合规审计记录。
+本阶段只做调用方认证、Domain 隔离、操作人留痕和内部服务信任，不实现角色、Scope、Collection ACL 或细粒度 RBAC。AIOps 的命令审批、目标策略、只读限制和安全闸门属于执行安全控制，仍必须实现，不能因暂缓权限系统而取消。
+
+未来引入权限时，在 AuthContext 中增加版本化权限声明并由各资源 Owner 执行校验；公开 `/api/v1` 只有在请求或响应发生不兼容变化时才升级。
+
+## 安全与审计
+
+- CORS 使用环境化 Origin 白名单；API Key 调用应来自门户服务端。
+- 上传文件执行大小、MIME、扩展名、恶意内容和配额检查。
+- HTTP Client 设置目标 allowlist、超时与有限重试，禁止根据用户输入访问任意 URL。
+- 审计至少记录 Key ID、门户用户、Domain、资源、动作、结果、来源 IP、`request_id`、`run_id` 和审批前后摘要。
+- 日志、SSE 和错误响应不得包含 API Key、JWT、数据库凭据、原始 SQL 结果或内部推理文本。

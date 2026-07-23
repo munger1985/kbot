@@ -5,64 +5,47 @@
 Main API/BFF 是所有外部请求的唯一入口和协议组合层，不是业务数据 Owner。
 
 ```text
-KM Portal / APEX / MCP / Slack / Client
+KM Portal / APEX / Integration Client
                  ↓
              Main API / BFF
-       Auth · Rate limit · DTO · SSE
+     API Key · Domain · DTO · SSE
        ↙          ↓          ↓          ↘
  Agent Runtime  AIOps  Knowledge Core  Model Serving
 ```
 
-Main API 负责认证、请求校验、授权上下文构建、Run API、SSE 代理、错误映射和审计入口；不直接读取 Knowledge Core、Agent 或 Model Repository，不实现检索、解析、规划或模型调用。即使 4.0 共用同一 Schema，调用规则也不改变。
+Main API 负责 API Key 认证、请求校验、内部身份上下文构建、Run API、SSE 代理、错误映射和审计入口；不直接读取 Knowledge Core、Agent 或 Model Repository，不实现检索、解析、规划或模型调用。即使 4.0 共用同一 Schema，调用规则也不改变。
 
 ## AuthContext
 
-Main API 验证外部 JWT、API Key 或 APEX 会话后，构建不可由请求体覆盖的上下文：
+KBot 不再提供用户密码登录或用户 JWT。门户完成用户认证后，由门户后端携带预配置 API Key、`domain_id` 和稳定的门户 `user_id` 调用 Main API。Main API 校验 Key、字段格式及 Domain 状态后构建不可由请求体覆盖的上下文：
 
 ```text
 AuthContext {
   request_id
   trace_id
-  principal_type       # USER / SERVICE / SYSTEM
-  principal_id
+  api_key_id
+  client_id
   domain_id
-  roles
-  scopes
-  authorized_agent_ids
-  authorized_collection_ids
-  max_security_level
-  delegated_by
+  asserted_user_id
   issued_at
   expires_at
 }
 ```
 
-`domain_id` 是强制隔离边界，来自已验证身份或 APEX 会话；客户端提交的 domain、user、security level 和资源 ID 只能作为更窄的筛选条件。`app_id` 仅在需要 APEX 直连视图过滤时作为平台上下文保留，不参与 Agent 路由、Collection 选择或业务授权决策。
-
-资源范围必须按以下顺序求交集：
-
-```text
-身份声明
- ∩ Domain 授权
- ∩ Agent Binding
- ∩ Collection 状态与 ACL
- ∩ 请求体候选资源
-```
-
-结果为空时拒绝请求；不能因为客户端指定了 Collection ID 就扩大范围。下游服务再次执行资源校验，BFF 的检查不是唯一安全边界。
+API Key 标识受信调用系统，`asserted_user_id` 标识其声明的实际操作人。当前阶段信任门户已完成用户与 Domain 校验，不实现 Role、Scope、资源 ACL 或 KBot 本地用户目录。`domain_id` 仍是强制数据隔离边界，下游按 Domain 限定全部资源查询；`app_id` 从服务器配置读取，只用于 APEX 直连视图过滤，不接受请求参数，也不参与 Agent 路由。
 
 ## 服务间传播
 
-外部 Bearer Token 不直接转发到 KC、Model Serving 或 Agent Runtime。Main API 使用服务身份调用下游，并附带短期、限定 audience 的签名上下文令牌或等价的内部 DTO：
+门户 API Key 不直接转发到 KC、Model Serving、Agent Runtime 或 AIOps。Main API 使用服务身份调用下游，并签发短期、限定 audience 的内部 AuthContext JWT：
 
 ```text
 Authorization: service credential
 X-Request-ID: original request id
 traceparent: distributed trace
-Internal-Auth-Context: signed short-lived context
+X-KBot-Auth-Context: signed short-lived JWT
 ```
 
-下游必须校验签名、过期时间、audience、调用服务和 domain。客户端伪造的 `X-Domain-ID`、`X-Agent-ID` 或 `X-Collection-ID` 不可信；边界层应删除这些外部转发头。未来部署 mTLS 时只替换服务身份验证方式，不改变 AuthContext DTO。
+下游必须校验签名、过期时间、audience、调用服务和 Domain。边界层先删除客户端伪造的内部身份头，再生成可信上下文。内部接口不得出现在公网路由或公开 OpenAPI；未来部署 mTLS 时只替换服务身份验证方式，不改变 AuthContext DTO。
 
 ## Client 边界
 
@@ -78,20 +61,22 @@ Main API 只通过版本化 Client 调用下游：
 
 Client 统一处理 URL allowlist、连接/读取/总超时、重试边界、错误 DTO、Trace 和服务身份。Main API 不 import 下游 Repository，也不复用旧 `services` 或旧 Agent 类。
 
-Agent Runtime 另用能力更窄的 `AIOpsDelegationClient`，只允许创建/查询/取消其自身委派的子 Run。Management 与 Delegation Client 使用不同接口和 Service Scope，Root 代码中不存在审批或配置方法。
+Agent Runtime 另用能力更窄的 `AIOpsDelegationClient`，只允许创建、查询和取消其自身委派的子 Run。Management 与 Delegation Client 使用不同接口集合，Root 代码中不存在审批或配置方法。
 
-## v4 API 组合
+## API 版本与公开组合
 
-Main API 对外只发布 v4 契约：
+产品版本与 API 契约版本独立。KBot 4.0 的首个公开契约统一使用 `/api/v1`；服务间接口统一使用 `/internal/v1`。只有同一接口发生不兼容变化且需要并行分流时才新增 `v2`，不能按产品大版本机械升级 URL。
 
-- `/v4/runs`：Run 创建、查询、取消、审批和恢复；
-- `/v4/runs/{run_id}/events`：带 `Last-Event-ID` 的 SSE；
-- `/v4/knowledge/intake`：普通文件和 Bundle 入库的统一入口，转发到 KC；
-- `/v4/knowledge/collections`：Collection 管理和 Agent Binding 管理；
-- `/v4/ops/*`：AIOps Target、Run、HITL、审批、巡检和报告；
-- `/v4/integrations/monitoring/*`：经限流和来源验证的监控事件接入；
-- `/v4/files/{document_version_id}`：权限校验后签发短时下载地址；
-- `/v4/health`、`/v4/ready`：只返回服务健康摘要，不泄露数据库凭据或内部拓扑。
+Main API 对外发布：
+
+- `/api/v1/runs`：Run 创建、查询、取消、审批和恢复；
+- `/api/v1/runs/{run_id}/events`：带 `Last-Event-ID` 的 SSE；
+- `/api/v1/knowledge/intake`：普通文件和 Bundle 入库的统一入口，转发到 KC；
+- `/api/v1/knowledge/collections`：Collection 管理和 Agent Binding 管理；
+- `/api/v1/ops/*`：AIOps Target、Run、HITL、审批、巡检和报告；
+- `/api/v1/integrations/monitoring/*`：经限流和来源验证的监控事件接入；
+- `/api/v1/files/{document_version_id}`：权限校验后签发短时下载地址；
+- `/healthz`、`/readyz`：不版本化，只返回服务健康摘要，不泄露数据库凭据或内部拓扑。
 
 耗时操作统一返回 `202` 和资源标识；同步接口只用于轻量查询。请求/响应使用 Pydantic DTO，禁止直接返回 SQLAlchemy Entity。旧 `/api/kb`、旧 Agent SSE 和旧 `doc_results` 不提供兼容路由。
 
@@ -107,12 +92,12 @@ Root 委派的 AIOps 子事件先由 Agent Runtime 按 Child Cursor 幂等投影
 
 ## APEX 与外部适配器
 
-APEX 可继续通过受控视图直读 Collection、Run 摘要和投影结果，但写操作和文件上传统一经过 Main API/KC API。视图使用 `app_id`、`domain_id` 过滤，业务代码不把 `app_id` 当作路由参数。Cookie 认证的写操作还必须经过 CSRF、Idempotency Key 和必要的 ETag 校验。完整 SQL、命令、Evidence 和 Report 正文不进入视图。KM Portal、MCP、Slack 都实现为调用 v4 Client/HTTP 契约的 Adapter，不直接访问数据库或旧 Controller。
+APEX 可继续通过受控视图直读 Collection、Run 摘要和投影结果，但写操作和文件上传统一由门户后端使用 API Key 调用 Main API。视图使用 `app_id`、`domain_id` 过滤，业务代码不把 `app_id` 当作路由参数。完整 SQL、命令、Evidence 和 Report 正文不进入视图。KM Portal 及后续 MCP、IM、Email Adapter 均调用 `/api/v1` 契约，不直接访问业务表或内部接口。
 
 ## 错误、审计与观测
 
-BFF 将下游错误映射为稳定错误码，例如 `AUTH_REQUIRED`、`SCOPE_DENIED`、`RESOURCE_NOT_FOUND`、`RUN_CONFLICT`、`UPSTREAM_UNAVAILABLE`、`RATE_LIMITED`；不把内部 SQL、模型供应商错误或堆栈返回给客户端。每个请求至少记录 `request_id`、`trace_id`、主体、domain、动作、下游服务、状态码和 `run_id`，正文、Token 和密钥不得写入日志。
+BFF 将下游错误映射为稳定错误码，例如 `AUTH_REQUIRED`、`INVALID_DOMAIN`、`RESOURCE_NOT_FOUND`、`RUN_CONFLICT`、`UPSTREAM_UNAVAILABLE`、`RATE_LIMITED`；不把内部 SQL、模型供应商错误或堆栈返回给客户端。每个请求至少记录 `request_id`、`trace_id`、API Key ID、门户用户、Domain、动作、下游服务、状态码和 `run_id`，正文、Token 和密钥不得写入日志。
 
 ## 后续拆库
 
-Main API 与下游只依赖 Client/DTO，不依赖同库 Session。未来为 KC、Agent Runtime、AIOps Agent 或 Model Serving 配置独立数据库、账号和连接池时，BFF 契约、AuthContext 和外部 API 不需要变化。Data Agent 暂不属于当前部署拓扑，问数继续通过 MCP Adapter 接入。
+Main API 与下游只依赖 Client/DTO，不依赖同库 Session。未来为 KC、Agent Runtime、AIOps Agent 或 Model Serving 配置独立数据库、账号和连接池时，BFF 契约、AuthContext 和外部 API 不需要变化。角色、Scope 和资源 ACL 留待后续权限阶段加入；AIOps 审批与执行安全闸门不因此削弱。Data Agent 暂不属于当前部署拓扑，问数继续通过 MCP Adapter 接入。

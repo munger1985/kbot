@@ -1,4 +1,4 @@
-"""V2 KM Asset intake contract independent of FastAPI and storage adapters."""
+"""独立于 FastAPI 和存储适配器的 KM Asset 入库契约。"""
 import hashlib
 import json
 from typing import Any
@@ -57,7 +57,7 @@ class DocumentFailureDeclaration(BaseModel):
 
 
 class KmAssetIntakeManifest(BaseModel):
-    """Validated V2 request metadata; file bytes remain outside this object."""
+    """已校验的请求元数据；文件字节不进入该对象。"""
     bundle: BundleDeclaration
     documents: list[DocumentDeclaration] = Field(default_factory=list)
     document_failures: list[DocumentFailureDeclaration] = Field(default_factory=list)

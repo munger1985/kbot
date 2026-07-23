@@ -19,8 +19,8 @@ class AiModelsHandlerTest(unittest.TestCase):
     def test_each_process_gets_category_scoped_management_routes(self):
         router = create_model_management_router(category=2)
         paths = {route.path for route in router.routes}
-        self.assertIn("/v1/models", paths)
-        self.assertIn("/v1/models/{model_id}", paths)
+        self.assertIn("/internal/v1/models", paths)
+        self.assertIn("/internal/v1/models/{model_id}", paths)
 
 
 if __name__ == "__main__":

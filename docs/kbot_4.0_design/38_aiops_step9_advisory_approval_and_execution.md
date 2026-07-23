@@ -166,7 +166,7 @@ proposal.pending_approval {
 完整命令必须通过授权 GET 获取：
 
 ```text
-GET /v4/ops/proposals/{proposal_id}
+GET /api/v1/ops/proposals/{proposal_id}
 ```
 
 前端必须展示精确命令、Target/环境、参数来源、影响、风险、前置条件、Evidence、回滚和验证计划，以及 Proposal Hash/版本。SQL/命令不写入 SSE、日志或 APEX 待审视图。
@@ -181,7 +181,7 @@ GET /v4/ops/proposals/{proposal_id}
 }
 ```
 
-批准人需要 `ops:proposal:approve`、Target 访问权限和当前 Policy 允许。首期只需一位批准人，不强制发起人与批准人分离。普通聊天中的“同意”、批量勾选、Root Agent、LLM 或监控系统均不能构成审批。
+批准请求必须来自已认证门户 API Key，AuthContext Domain 与 Proposal 一致，`asserted_user_id` 匹配待审记录，并通过当前 Policy。首期只需一位批准人，不强制发起人与批准人分离。普通聊天中的“同意”、批量勾选、Root Agent、LLM 或监控系统均不能构成审批；细粒度审批 Scope 留待后续权限阶段实现。
 
 ## Approval Authorization
 
@@ -324,10 +324,10 @@ Run → Proposal → HITL → Approval Token → Execution → Target concurrenc
 ## API 契约
 
 ```text
-GET  /v4/ops/proposals/{proposal_id}
-POST /v4/ops/proposals/{proposal_id}/approve
-POST /v4/ops/proposals/{proposal_id}/reject
-POST /v4/ops/proposals/{proposal_id}/manual-result
+GET  /api/v1/ops/proposals/{proposal_id}
+POST /api/v1/ops/proposals/{proposal_id}/approve
+POST /api/v1/ops/proposals/{proposal_id}/reject
+POST /api/v1/ops/proposals/{proposal_id}/manual-result
 
 POST /internal/v1/aiops/executions/{execution_id}/claim
 POST /internal/v1/aiops/executor-events

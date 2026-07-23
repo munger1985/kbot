@@ -5,6 +5,7 @@ from typing import Any
 
 import aiohttp
 
+from platform_core.contracts import INTERNAL_API_V1
 from platform_core.platform.security import INTERNAL_TOKEN_HEADER, get_internal_token
 
 
@@ -48,13 +49,13 @@ class KcParseClient:
             self._session = None
 
     async def claim(self, *, worker_id: str, lease_seconds: int) -> list[ParseTask]:
-        payload = await self._request("POST", "/internal/v2/knowledge/parse-tasks/claim", json={
+        payload = await self._request("POST", f"{INTERNAL_API_V1}/knowledge/parse-tasks/claim", json={
             "worker_id": worker_id, "max_tasks": 1, "lease_seconds": lease_seconds,
         })
         return [ParseTask(**task) for task in payload["tasks"]]
 
     async def heartbeat(self, task: ParseTask, *, lease_seconds: int) -> None:
-        await self._request("POST", f"/internal/v2/knowledge/parse-tasks/{task.job_id}/heartbeat", json={
+        await self._request("POST", f"{INTERNAL_API_V1}/knowledge/parse-tasks/{task.job_id}/heartbeat", json={
             "worker_id": task.lease_owner,
             "input_fingerprint": task.input_fingerprint,
             "lease_seconds": lease_seconds,
@@ -65,7 +66,7 @@ class KcParseClient:
         sha256: str, schema: str, generator: str,
     ) -> dict[str, str]:
         return await self._request(
-            "POST", f"/internal/v2/knowledge/parse-tasks/{task.job_id}/artifacts/{name}",
+            "POST", f"{INTERNAL_API_V1}/knowledge/parse-tasks/{task.job_id}/artifacts/{name}",
             json={
                 "worker_id": task.lease_owner,
                 "input_fingerprint": task.input_fingerprint,
@@ -76,7 +77,7 @@ class KcParseClient:
 
     async def submit_evidence(self, task: ParseTask, items: list[dict[str, Any]]) -> int:
         payload = await self._request(
-            "POST", f"/internal/v2/knowledge/parse-tasks/{task.job_id}/evidence-batches",
+            "POST", f"{INTERNAL_API_V1}/knowledge/parse-tasks/{task.job_id}/evidence-batches",
             json={
                 "worker_id": task.lease_owner,
                 "input_fingerprint": task.input_fingerprint,
@@ -90,7 +91,7 @@ class KcParseClient:
         output_fingerprint: str, quality_report: dict[str, Any], quality_score: float,
     ) -> int:
         payload = await self._request(
-            "POST", f"/internal/v2/knowledge/parse-tasks/{task.job_id}/complete",
+            "POST", f"{INTERNAL_API_V1}/knowledge/parse-tasks/{task.job_id}/complete",
             json={
                 "worker_id": task.lease_owner,
                 "input_fingerprint": task.input_fingerprint,
@@ -108,7 +109,7 @@ class KcParseClient:
         artifact_manifest: dict[str, Any] | None = None,
     ) -> None:
         await self._request(
-            "POST", f"/internal/v2/knowledge/parse-tasks/{task.job_id}/fail",
+            "POST", f"{INTERNAL_API_V1}/knowledge/parse-tasks/{task.job_id}/fail",
             json={
                 "worker_id": task.lease_owner,
                 "input_fingerprint": task.input_fingerprint,

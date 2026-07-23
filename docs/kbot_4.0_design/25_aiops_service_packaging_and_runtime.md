@@ -172,8 +172,8 @@ Main API 通过 `AIOpsManagementClient` 调用管理与用户资源；Agent Runt
 详细 DTO、鉴权、幂等、SSE 和错误规范见 [27_aiops_api_and_contracts.md](27_aiops_api_and_contracts.md)。外部 API 由 Main API/BFF 发布，AIOps 进程只接受内部 Client 契约：
 
 ```text
-/v4/ops/...                              # 浏览器/APEX 看到的 Main API
-/v4/integrations/monitoring/...          # 监控系统看到的 Main API
+/api/v1/ops/...                              # 浏览器/APEX 看到的 Main API
+/api/v1/integrations/monitoring/...          # 监控系统看到的 Main API
 /internal/v1/aiops/...                   # Main API/Agent Runtime 按 Service Scope 调用
 /internal/v1/db-executor/executions      # AIOps Worker 调用 Executor
 ```

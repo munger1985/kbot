@@ -2,9 +2,13 @@
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from platform_core.contracts import INTERNAL_API_V1
 from knowledge_core.domain.parse_tasks import ParseLeaseError, ParseTaskClaim
 
-router = APIRouter(prefix="/internal/v2/knowledge/index-tasks", tags=["Knowledge Core Index V2"])
+router = APIRouter(
+    prefix=f"{INTERNAL_API_V1}/knowledge/index-tasks",
+    tags=["Knowledge Core Index"],
+)
 
 
 class IndexClaimRequest(BaseModel):

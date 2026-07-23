@@ -276,7 +276,7 @@ M4  按 Target/Policy 扩大 AGENT_EXECUTE
 
 在入口切换前，任何 Gate 失败都中止发布；已部署的前向 DDL保留，修复后继续，不 Drop 半成品表。
 
-入口切换并产生 v4 写入后：
+入口切换并产生 4.0 新模型写入后：
 
 - 先关闭 Mutation、Scheduler、Webhook 或受影响写入口；
 - 保留 Run/Artifact/Inbox/Outbox 和来源 Freeze Watermark；

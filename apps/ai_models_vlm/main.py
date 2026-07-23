@@ -29,6 +29,7 @@ from pydantic import ValidationError
 from pydantic_core import core_schema
 
 from platform_core.config.settings import get_vlm_config, get_app_config
+from platform_core.contracts import INTERNAL_API_V1
 from platform_core.dictionary import ModelCategory
 from platform_core.logger import LogConfig, LogManager
 from platform_core.middleware.log_middleware import log_requests
@@ -207,7 +208,7 @@ async def toggle_vlm_model(request: ToggleModelRequest) -> dict[str, str]:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/v1/inference", response_model=VLMResponse, tags=["Inference"])
+@app.post(f"{INTERNAL_API_V1}/inference", response_model=VLMResponse, tags=["Inference"])
 async def run_vlm_inference(
     request: VLMRequest,
     service: VLMService = Depends(get_vlm_service)

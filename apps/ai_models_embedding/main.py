@@ -22,6 +22,7 @@ from fastapi_offline import FastAPIOffline
 from loguru import logger
 
 from platform_core.config.settings import get_embed_config, get_app_config
+from platform_core.contracts import INTERNAL_API_V1
 from platform_core.dictionary import ModelCategory
 from platform_core.logger import LogConfig, LogManager
 from platform_core.middleware.log_middleware import log_requests
@@ -204,7 +205,7 @@ async def health_check() -> dict[str, Any]:
 #         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/v1/embeddings", response_model=EmbeddingResponse, tags=["AI Service"], summary="Text vectorization endpoint")
+@app.post(f"{INTERNAL_API_V1}/embeddings", response_model=EmbeddingResponse, tags=["AI Service"], summary="文本向量化")
 async def handle_embed_texts(
     request: EmbeddingRequest,
     embed_service: EmbeddingService = Depends(get_embed_service)
@@ -234,7 +235,7 @@ async def handle_embed_texts(
         raise HTTPException(status_code=500, detail=f"Embedding processing exception: {str(e)}")
 
 
-@app.post("/v1/similarity", response_model=dict[str, Any], tags=["AI Service"], summary="Calculate text similarity endpoint")
+@app.post(f"{INTERNAL_API_V1}/similarity", response_model=dict[str, Any], tags=["AI Service"], summary="计算文本相似度")
 async def handle_compute_similarity(
     request: SimilarityRequest,
     embed_service: EmbeddingService = Depends(get_embed_service)

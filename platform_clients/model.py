@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from loguru import logger
 from typing import Any
-from platform_core.contracts import EmbeddingDataItem
+from platform_core.contracts import EmbeddingDataItem, INTERNAL_API_V1
 from platform_core.codec.encoder import ImageEncoder
 from platform_core.config.settings import get_embed_config, get_llm_config, get_vlm_config, get_dsocr_config, get_prompt_config, get_visual_config
 from platform_core.exceptions import *
@@ -31,7 +31,7 @@ class AIModelConfigClient:
     async def get_model(self, model_id: int) -> dict[str, Any]:
         if int(model_id) <= 0:
             raise ValueError("model_id must be positive")
-        url = f"{self.base_url}/v1/models/{int(model_id)}"
+        url = f"{self.base_url}{INTERNAL_API_V1}/models/{int(model_id)}"
         headers = {"Accept": "application/json", INTERNAL_TOKEN_HEADER: self.internal_token}
         try:
             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout)) as session:
@@ -107,7 +107,7 @@ class AIModelClient():
         service_port = self.embedding_config.service_port
         total = self.embedding_config.health_check_timeout if use_health_check_timeout else self.embedding_config.timeout
         timeout = aiohttp.ClientTimeout(total=total)
-        url = f"http://{service_host}:{service_port}/v1/embeddings"
+        url = f"http://{service_host}:{service_port}{INTERNAL_API_V1}/embeddings"
         headers = self._auth_headers()
         payload = {
             "model_name": model_name,
@@ -207,7 +207,7 @@ class AIModelClient():
         service_port = self.embedding_config.service_port
         total = self.embedding_config.timeout
         timeout = aiohttp.ClientTimeout(total=total)
-        url = f"http://{service_host}:{service_port}/v1/similarity"
+        url = f"http://{service_host}:{service_port}{INTERNAL_API_V1}/similarity"
         headers = self._auth_headers()
         payload = {
             "model_name": model_name,
@@ -253,7 +253,7 @@ class AIModelClient():
         use_health_check_timeout = kwargs.pop("use_health_check_timeout", False)
         total = self.llm_config.health_check_timeout if use_health_check_timeout else self.llm_config.timeout
         timeout = aiohttp.ClientTimeout(total=total)
-        url = f"http://{service_host}:{service_port}/v1/chat/completions"
+        url = f"http://{service_host}:{service_port}{INTERNAL_API_V1}/chat/completions"
         headers = self._auth_headers()
 
         # 构建请求体
@@ -326,7 +326,7 @@ class AIModelClient():
             total = self.vlm_config.health_check_timeout if use_health_check_timeout else self.vlm_config.timeout
             timeout = aiohttp.ClientTimeout(total=total)
             
-            url = f"http://{service_host}:{service_port}/v1/inference"
+            url = f"http://{service_host}:{service_port}{INTERNAL_API_V1}/inference"
             headers = self._auth_headers()
 
             # 2. 图片编码（Base64）
@@ -398,7 +398,7 @@ class AIModelClient():
         ) -> AsyncGenerator:
             """调用 DeepSeek OCR 模型进行图片文字识别。
 
-            直接调用标准 OpenAI 兼容的 /v1/chat/completions 端点，
+            直接调用内部 LLM 对话补全端点，
             支持 Docker vLLM 部署和本地微服务两种模式（通过 api_endpoint 配置切换）。
 
             Args:
@@ -986,7 +986,7 @@ class AIModelClient():
         service_port = config.service_port
         total = config.timeout
         timeout = aiohttp.ClientTimeout(total=total)
-        url = f"http://{service_host}:{service_port}/v1/embed"
+        url = f"http://{service_host}:{service_port}{INTERNAL_API_V1}/embed"
         headers = self._auth_headers()
 
         # 修复 base64 padding：长度必须为 4 的倍数

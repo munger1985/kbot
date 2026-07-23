@@ -153,7 +153,7 @@ Skill Manifest 声明输入/输出 schema、权限、运行模式、幂等性、
 
 `KBOT_AGENT_RUN_EVENT` 是唯一的执行事件源，事件至少包含 `run_id`、`task_id`、事件序号、类型、时间和 Artifact 引用。事件类型包括 `RUN_STARTED`、`TASK_STARTED`、`TASK_PROGRESS`、`ARTIFACT_CREATED`、`TASK_RETRYING`、`APPROVAL_REQUIRED`、`TASK_COMPLETED`、`RUN_FAILED` 和 `RUN_COMPLETED`。
 
-SSE 只读事件流：`GET /v4/runs/{run_id}/events`，通过 `Last-Event-ID` 续传。子 Agent 事件先幂等投影为父 Event，不做 SSE 套 SSE。取消使用协作式取消；租约过期后允许其他 Worker 接管。重试仅适用于幂等 Task，每个外部副作用必须使用 `run_id + task_id` 的幂等键。恢复时复用已成功的 Artifact，不重复执行已完成 Task。
+SSE 只读事件流：`GET /api/v1/runs/{run_id}/events`，通过 `Last-Event-ID` 续传。子 Agent 事件先幂等投影为父 Event，不做 SSE 套 SSE。取消使用协作式取消；租约过期后允许其他 Worker 接管。重试仅适用于幂等 Task，每个外部副作用必须使用 `run_id + task_id` 的幂等键。恢复时复用已成功的 Artifact，不重复执行已完成 Task。
 
 Mutation Skill 先产生 `ACTION_PLAN` Artifact，确定性 Catalog/Policy Builder 再创建不可变 `APPROVAL_PROPOSAL`；经过 Policy/HITL 后才能创建一次性 Execution Task。预算、截止时间、最大并行数和最大重试次数在 Run 创建时冻结，并由 Runtime 强制执行，而不是交给 Prompt 判断。
 

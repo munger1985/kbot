@@ -175,10 +175,10 @@ LLM 只能解释结果，不能重新判级。每个已执行动作生成动作�
 
 ## API、APEX 与投递边界
 
-- `GET /v4/ops/reports` 默认只返回当前版本，可按类型、Target、周期筛选；
-- `GET /v4/ops/reports/{report_id}` 返回授权后的结构化内容引用和派生渲染；
-- `GET /v4/ops/reports/{report_id}/versions` 返回同一 Report Key 的历史；
-- `GET /v4/ops/inspection-fires` 和单 Fire 查询用于调度审计；
+- `GET /api/v1/ops/reports` 默认只返回当前版本，可按类型、Target、周期筛选；
+- `GET /api/v1/ops/reports/{report_id}` 返回授权后的结构化内容引用和派生渲染；
+- `GET /api/v1/ops/reports/{report_id}/versions` 返回同一 Report Key 的历史；
+- `GET /api/v1/ops/inspection-fires` 和单 Fire 查询用于调度审计；
 - SSE `report.ready` 只携带 Report ID、Key、Type、Version、Status 和摘要，不推送完整正文。
 
 新增 `KBOT_V_OPS_INSPECTION_FIRE`；`KBOT_V_OPS_REPORT` 只投影 `IS_CURRENT=1`，历史版本通过 API 查询。`ReportDeliveryPort` 的 4.0 实现只允许 `SystemStoreDelivery`；Email/IM 配置即使误传也返回稳定 `OPS_DELIVERY_CHANNEL_UNSUPPORTED`，不能静默丢弃。

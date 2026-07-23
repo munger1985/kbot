@@ -3,12 +3,16 @@
 from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
+from platform_core.contracts import INTERNAL_API_V1
 from knowledge_core.application.collections import (
     BindAgentCollectionCommand, ChangeCollectionStatusCommand, CollectionAlreadyExistsError,
     CollectionDeletionStateError, CollectionInUseError, CollectionNotFoundError, CreateCollectionCommand,
 )
 
-router = APIRouter(prefix="/api/v2/knowledge/domains/{domain_id}", tags=["Knowledge Core Collections V2"])
+router = APIRouter(
+    prefix=f"{INTERNAL_API_V1}/knowledge/domains/{{domain_id}}",
+    tags=["Knowledge Core Collections"],
+)
 
 
 class CreateCollectionRequest(BaseModel):

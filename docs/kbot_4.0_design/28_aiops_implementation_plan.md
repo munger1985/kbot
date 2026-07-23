@@ -91,7 +91,7 @@ Repository 接受 Session，不创建 Session、不提交事务、不调用外�
 
 详细设计见 [32_aiops_step3_configuration_and_authorization_api.md](32_aiops_step3_configuration_and_authorization_api.md)。
 
-先实现 Target、Agent Binding、Monitor Source/Binding、Policy 和 Inspection Plan 管理，不创建诊断 Run。Main API 通过 `AIOpsManagementClient` 映射 `/v4/ops/*` 到内部契约。
+先实现 Target、Agent Binding、Monitor Source/Binding、Policy 和 Inspection Plan 管理，不创建诊断 Run。Main API 通过 `AIOpsManagementClient` 映射 `/api/v1/ops/*` 到内部契约。
 
 本步骤完成 AuthContext 求交、ETag、Cursor、SecretRef 校验、Webhook Key 轮换、健康检查 Command 和不可硬删除规则。Target 与 Agent 属于同 Domain 的验证通过 Agent Runtime Client 完成，不直接查 Agent 表。
 
@@ -184,7 +184,7 @@ Incident/Performance 处理前冻结 Comparison Plan 和基线，处理后使用
 
 详细设计见 [40_aiops_step11_root_main_api_and_apex_integration.md](40_aiops_step11_root_main_api_and_apex_integration.md)。
 
-- Main API 发布完整 `/v4/ops/*` 和 Monitoring Integration API；
+- Main API 发布完整 `/api/v1/ops/*` 和 Monitoring Integration API；
 - Agent Runtime 使用 `KBOT_AGENT_DELEGATION`、Child Event Cursor 和有限租约管理跨服务子 Run；
 - Root Agent 通过窄 `AIOpsDelegationClient` 创建带 `PARENT_AGENT_RUN_ID/PARENT_DELEGATION_ID` 的委派 Run；
 - Root 只投影必要进度、交互资源和受限 Result Envelope，不接管 Ops Task 或转发子 SSE；

@@ -4,6 +4,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
+from platform_core.contracts import INTERNAL_API_V1
 from .model_registry import ModelDefinitionNotFound, ModelRegistryService
 
 
@@ -33,7 +34,10 @@ class ModelUpdateRequest(BaseModel):
 
 
 def create_model_management_router(*, category: int) -> APIRouter:
-    router = APIRouter(prefix="/v1/models", tags=["Model Configuration"])
+    router = APIRouter(
+        prefix=f"{INTERNAL_API_V1}/models",
+        tags=["Model Configuration"],
+    )
 
     def service(request: Request) -> ModelRegistryService:
         return request.app.state.model_registry

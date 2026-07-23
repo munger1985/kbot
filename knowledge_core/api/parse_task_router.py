@@ -5,11 +5,15 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field
 
+from platform_core.contracts import INTERNAL_API_V1
 from knowledge_core.domain.parse_tasks import ParseLeaseError, ParseTaskClaim
 from knowledge_core.application.parse_tasks import EvidenceInput
 
 
-router = APIRouter(prefix="/internal/v2/knowledge/parse-tasks", tags=["Knowledge Core Parser V2"])
+router = APIRouter(
+    prefix=f"{INTERNAL_API_V1}/knowledge/parse-tasks",
+    tags=["Knowledge Core Parser"],
+)
 
 
 class ClaimRequest(BaseModel):
@@ -98,7 +102,10 @@ async def claim_parse_tasks(payload: ClaimRequest, request: Request):
         "input_fingerprint": task.input_fingerprint,
         "document_version_id": task.document_version_id,
         "parse_view_id": task.parse_view_id,
-        "source_read_url": str(request.base_url).rstrip("/") + f"/internal/v2/knowledge/parse-tasks/{task.job_id}/source",
+        "source_read_url": (
+            str(request.base_url).rstrip("/")
+            + f"{INTERNAL_API_V1}/knowledge/parse-tasks/{task.job_id}/source"
+        ),
         "detected_mime_type": task.detected_mime_type,
         "view_kind": task.view_kind,
         "parse_config_fingerprint": task.parse_config_fingerprint,

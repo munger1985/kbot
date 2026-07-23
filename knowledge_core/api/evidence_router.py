@@ -1,12 +1,16 @@
-"""V2 Evidence query and Citation Pack endpoint."""
+"""Evidence 查询与 Citation Pack 内部端点。"""
 from dataclasses import asdict
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from platform_core.contracts import INTERNAL_API_V1
 from knowledge_core.application.evidence_retrieval import EvidenceScope
 
-router = APIRouter(prefix="/api/v2/knowledge/retrieval", tags=["Knowledge Core Evidence V2"])
+router = APIRouter(
+    prefix=f"{INTERNAL_API_V1}/knowledge/retrieval",
+    tags=["Knowledge Core Evidence"],
+)
 
 
 class EvidenceCandidateRequest(BaseModel):

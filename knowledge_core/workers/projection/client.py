@@ -4,6 +4,7 @@ from typing import Any
 
 import aiohttp
 
+from platform_core.contracts import INTERNAL_API_V1
 from platform_core.platform.security import INTERNAL_TOKEN_HEADER, get_internal_token
 
 
@@ -70,7 +71,7 @@ class KcIndexProfileClient:
         await self._fail("purge-tasks", task, failure_code=failure_code, message=message)
 
     async def _claim(self, kind: str, *, worker_id: str, lease_seconds: int) -> list[dict[str, Any]]:
-        payload = await self._request("POST", f"/internal/v2/knowledge/{kind}/claim", json={
+        payload = await self._request("POST", f"{INTERNAL_API_V1}/knowledge/{kind}/claim", json={
             "worker_id": worker_id, "max_tasks": 1, "lease_seconds": lease_seconds,
         })
         return list(payload.get("tasks") or [])
@@ -82,12 +83,12 @@ class KcIndexProfileClient:
             **extra,
         }
         return await self._request(
-            "POST", f"/internal/v2/knowledge/{kind}/{task['job_id']}/run", json=payload,
+            "POST", f"{INTERNAL_API_V1}/knowledge/{kind}/{task['job_id']}/run", json=payload,
         )
 
     async def _heartbeat(self, kind: str, task: dict[str, Any], *, lease_seconds: int) -> None:
         await self._request(
-            "POST", f"/internal/v2/knowledge/{kind}/{task['job_id']}/heartbeat", json={
+            "POST", f"{INTERNAL_API_V1}/knowledge/{kind}/{task['job_id']}/heartbeat", json={
                 "worker_id": task["worker_id"],
                 "input_fingerprint": task["input_fingerprint"],
                 "lease_seconds": lease_seconds,
@@ -96,7 +97,7 @@ class KcIndexProfileClient:
 
     async def _fail(self, kind: str, task: dict[str, Any], *, failure_code: str, message: str) -> None:
         await self._request(
-            "POST", f"/internal/v2/knowledge/{kind}/{task['job_id']}/fail", json={
+            "POST", f"{INTERNAL_API_V1}/knowledge/{kind}/{task['job_id']}/fail", json={
                 "worker_id": task["worker_id"],
                 "input_fingerprint": task["input_fingerprint"],
                 "failure_class": "TRANSIENT",

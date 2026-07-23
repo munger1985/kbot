@@ -131,10 +131,10 @@ Catalog SQL 通过专用 `ManualSqlRenderer` 生成可复制语句，值使用�
 推荐接口：
 
 ```text
-POST /v4/ops/hitl/{hitl_id}/uploads
-POST /v4/ops/hitl/{hitl_id}/uploads/{upload_id}/complete
-POST /v4/ops/hitl/{hitl_id}/responses
-POST /v4/ops/hitl/{hitl_id}/skip
+POST /api/v1/ops/hitl/{hitl_id}/uploads
+POST /api/v1/ops/hitl/{hitl_id}/uploads/{upload_id}/complete
+POST /api/v1/ops/hitl/{hitl_id}/responses
+POST /api/v1/ops/hitl/{hitl_id}/skip
 ```
 
 上传会话绑定 `actor/domain/run/hitl/query_id/format/max_size/security_level/expiry`，使用一次性签名 Upload Grant。AIOps 通过 `UploadPort` 管理暂存对象，不在 `KBOT_OPS_*` 增加通用文件表。对象先进入隔离区，完成 MIME/Magic、Hash、编码、病毒/内容检查后才能被回复命令引用。
@@ -207,15 +207,15 @@ Reconciler 对过期请求使用同一锁顺序，原子将 HITL/Task 标记 `EX
 ## API 与 SSE
 
 ```text
-GET  /v4/ops/runs/{run_id}/pending-input
-GET  /v4/ops/hitl/{hitl_id}
-POST /v4/ops/hitl/{hitl_id}/uploads
-POST /v4/ops/hitl/{hitl_id}/uploads/{upload_id}/complete
-POST /v4/ops/hitl/{hitl_id}/responses
-POST /v4/ops/hitl/{hitl_id}/skip
+GET  /api/v1/ops/runs/{run_id}/pending-input
+GET  /api/v1/ops/hitl/{hitl_id}
+POST /api/v1/ops/hitl/{hitl_id}/uploads
+POST /api/v1/ops/hitl/{hitl_id}/uploads/{upload_id}/complete
+POST /api/v1/ops/hitl/{hitl_id}/responses
+POST /api/v1/ops/hitl/{hitl_id}/skip
 ```
 
-SSE `diagnostic.input_required` 只包含 `hitl_id/request_type/expires_at/request_artifact_ref`，不含 SQL、结果 Schema 或敏感正文。授权用户通过 GET 获取完整请求；重连后 `pending-input` 恢复 UI。所有写接口需要 `ops:diagnostic:respond`、Assignee、Domain、Agent/Target Binding、ETag/Row Version 和 Idempotency Key。
+SSE `diagnostic.input_required` 只包含 `hitl_id/request_type/expires_at/request_artifact_ref`，不含 SQL、结果 Schema 或敏感正文。待回复的 `asserted_user_id` 通过 GET 获取完整请求；重连后 `pending-input` 恢复 UI。所有写接口校验 Assignee、Domain、Agent/Target Binding、ETag/Row Version 和 Idempotency Key；Scope 留待后续权限阶段实现。
 
 APEX 可以通过受控视图展示待输入计数，但 SQL、回贴和上传都必须调用 API，不能直接更新 `KBOT_OPS_HITL`。
 

@@ -43,7 +43,7 @@ LOG_LEVEL: str = app_config.log.level
 LOG_ROTATION: str = app_config.log.rotation
 LOG_RETENTION: str = app_config.log.retention
 
-# Initialize the V2 lease worker. It never polls or writes V1 File/Chunk tables.
+# 初始化租约 Worker；它不会轮询或写入旧 File/Chunk 表。
 parse_worker = KcParserWorker(
     client=KcParseClient(base_url=config.knowledge_core_url, timeout_seconds=config.timeout),
     converter=KcDoclingConverter(artifacts_path=config.local_artifacts_path),
@@ -78,7 +78,7 @@ async def lifespan(app: FastAPI):
     try:
         logger.info("正在启动 KC 解析 Worker...")
         await parse_worker.start()
-        logger.success(f"KC V2 parser worker loaded | Elapsed time: {time.time() - start_time:.2f}s")
+        logger.success(f"KC 解析 Worker 加载完成 | 耗时：{time.time() - start_time:.2f}s")
     except Exception as e:
         logger.error(f"文件解析引擎启动失败：{e}")
         if not DEBUG:

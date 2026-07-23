@@ -18,7 +18,7 @@ Deployable processes are under `apps/ai_models_*`:
 - `ai_models_vlm`: vision-language inference
 - `ai_models_visual`: image embeddings
 
-All processes expose `/v1/models` management endpoints restricted to their
+All processes expose `/internal/v1/models` management endpoints restricted to their
 model category. `DELETE` archives a definition instead of physically deleting
 it, so Collection bindings and audit history remain safe. API keys are accepted
 for writes but never returned by the management DTO.
