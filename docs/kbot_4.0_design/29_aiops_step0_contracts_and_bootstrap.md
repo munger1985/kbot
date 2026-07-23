@@ -64,7 +64,7 @@ platform_core/contracts/
     errors.py
 
 platform_clients/aiops.py
-migrations/ops/
+database/oracle/aiops_agent/
 ```
 
 `apps/*/main.py` 只加载对应配置、调用 Bootstrap Factory、运行进程并处理退出信号。对象组装、Router 注册、Client/UoW Factory 创建和生命周期清理都属于 `aiops_agent/bootstrap`，不能继续堆入入口文件。
@@ -334,4 +334,4 @@ AIOps API、Executor、Worker Probe 和 Scheduler Probe 都不安装 CORS Middle
 - 所有 JSON ID、时间、ETag、幂等和错误表示一致；
 - 生产配置不接受默认 Token、明文 Monitor/目标数据库凭据或宽松 CORS；
 - 架构检查能阻止新 AIOps 代码依赖 Legacy 或其他领域 Persistence；
-- 下一步可以只通过新增 Migration、Entity 和 Repository 实现步骤 1/2，而无需修改上述边界。
+- 下一步可以只通过新增规范建库脚本、Entity 和 Repository 实现步骤 1/2，而无需修改上述边界。

@@ -51,8 +51,7 @@ bash stop_kbot.sh
 
 ```bash
 python3 scripts/check_4_0_boundaries.py
-python3 scripts/check_platform_migrations.py
-python3 scripts/check_kc_migrations.py
+python3 scripts/check_oracle_schema.py
 python3 -m unittest discover -s tests
 ```
 

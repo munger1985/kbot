@@ -382,7 +382,7 @@ TRACE_ID, CREATED_AT, UPDATED_AT
 
 ## 外键与循环引用
 
-所有子表对 Target/Run/Task/Proposal/Plan/Fire 建立真实外键。`RUN.FINAL_ARTIFACT_ID`、`TASK.OUTPUT_ARTIFACT_ID`、`PROPOSAL.SNAPSHOT_ARTIFACT_ID`、`REPORT.CONTENT_ARTIFACT_ID` 和 `EXECUTION.RESULT_ARTIFACT_ID` 是父对已产生 Artifact 的当前指针：在 Artifact 表创建后通过后续 migration 增加 `DEFERRABLE INITIALLY DEFERRED` 外键，并在同一事务内写入。
+所有子表对 Target/Run/Task/Proposal/Plan/Fire 建立真实外键。`RUN.FINAL_ARTIFACT_ID`、`TASK.OUTPUT_ARTIFACT_ID`、`PROPOSAL.SNAPSHOT_ARTIFACT_ID`、`REPORT.CONTENT_ARTIFACT_ID` 和 `EXECUTION.RESULT_ARTIFACT_ID` 是父对已产生 Artifact 的当前指针：在 Artifact 表创建后由建库脚本的最后一段增加 `DEFERRABLE INITIALLY DEFERRED` 外键，并在同一事务内写入。
 
 不对 `PARENT_AGENT_RUN_ID/PARENT_DELEGATION_ID/AGENT_ID` 创建跨服务表外键，这些是版本化契约引用。Monitor Source/Target、Plan/Target 和 Binding/Agent 的 Domain 一致性在 Application Service + 集成测试中强制。
 
@@ -410,7 +410,7 @@ APEX 不直接更新状态机表。提供至少以下只读视图：
 
 清理 Worker 必须按 Target/Run 分页、限流并记录审计结果，不使用无边界单事务删除。Oracle 分区是可选优化，不作为 4.0 必需能力，避免强制依赖特定许可。
 
-## Migration 分段
+## 全量建库脚本分段
 
 ```text
 001_ops_roots.sql       Target/Binding/Monitor/Policy
@@ -421,5 +421,5 @@ APEX 不直接更新状态机表。提供至少以下只读视图：
 006_ops_fks_views.sql   延后外键、function indexes、APEX Views
 ```
 
-每份 migration 只前向执行，不在 App 启动时自动建表。DDL 实现前先为每张表生成 Entity/Repository 契约测试清单，避免 Entity 和 Oracle 脚本字段漂移。
+六段脚本只用于空 Schema 的首次创建，数字仅表示依赖顺序，不是版本迁移。App 启动时不得自动建表。DDL 实现前先为每张表生成 Entity/Repository 契约测试清单，避免 Entity 和 Oracle 脚本字段漂移。
 精确 Oracle 类型、约束命名、完整外键、APEX 投影和脚本校验规则见 [30_aiops_step1_oracle_schema.md](30_aiops_step1_oracle_schema.md)。

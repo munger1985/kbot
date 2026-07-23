@@ -18,7 +18,7 @@ Tests are currently integration-style scripts that may require configured databa
 
 ```bash
 python3 scripts/check_4_0_boundaries.py
-python3 scripts/check_kc_migrations.py
+python3 scripts/check_oracle_schema.py
 ```
 
 ## Coding Style & Naming Conventions

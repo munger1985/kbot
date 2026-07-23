@@ -133,7 +133,7 @@ Mutation Dispatcher 只发送 Execution ID；Executor 通过绑定进程实例�
 
 ## Repository 与 UoW
 
-完整表字段、约束、索引、保留策略和 migration 分段见 [26_aiops_physical_data_model.md](26_aiops_physical_data_model.md)。
+完整表字段、约束、索引、保留策略和全量建库分段见 [26_aiops_physical_data_model.md](26_aiops_physical_data_model.md)。
 
 `AIOpsUnitOfWork` 只组合 AIOps Repository：
 
@@ -212,7 +212,7 @@ Monitor/Target 凭据是领域数据中的 `SECRET_REF`，不写入 `base.toml`�
 
 Scheduler、Inspection Fire、版本化 Report 和 Comparison 的具体事务及代码布局见 [39_aiops_step10_inspection_reporting_and_comparison.md](39_aiops_step10_inspection_reporting_and_comparison.md)。
 
-## 迁移与验收
+## 实施与验收
 
 具体施工顺序、阶段完成物和启用次序见 [28_aiops_implementation_plan.md](28_aiops_implementation_plan.md)。
 

@@ -4,7 +4,7 @@
 
 KBot 4.0 是一次**Clean-slate 重构**：保留单仓库、同一 Oracle/APEX Schema 和统一发布节奏，同时按稳定业务边界拆分可独立运行的进程与 API。4.0 先完成逻辑上的独立微服务边界，数据库仍共享同一个 Schema；未来真正微服务化时，主要变化是为每个服务提供独立数据库连接和存储，不重新设计服务边界。
 
-3.5 已实现的 `knowledge_core`、KC Migration、Parser/Projection Worker 与两阶段检索骨架直接构成 4.0 的 KC 基线；4.0 在这套实现上补齐质量、边界和生产能力，不再平行重建第二套 KC。本次重构同时建立适用于全系统的数据访问、事务、任务和服务边界规范。4.0 不保留旧 `kbot_md_*`、`KBOT_BIZ_*` 表模型、旧 `/api/kb` 契约、动态 Skill 适配器或旧 Agent 编排兼容层。旧系统仅作为原始数据和评测样本来源，代码历史由 Git 保存，不参与 4.0 工作树或运行时。
+3.5 已实现的 `knowledge_core`、Parser/Projection Worker 与两阶段检索骨架直接构成 4.0 的 KC 基线；4.0 在这套实现上补齐质量、边界和生产能力，不再平行重建第二套 KC。本次重构同时建立适用于全系统的数据访问、事务、任务和服务边界规范。4.0 不保留旧 `kbot_md_*`、`KBOT_BIZ_*` 表模型、旧 `/api/kb` 契约、动态 Skill 适配器或旧 Agent 编排兼容层。旧系统代码只由 Git 保存；3.x 表和数据不进入 4.0 Schema。
 
 ## 文档导航
 
@@ -13,7 +13,7 @@ KBot 4.0 是一次**Clean-slate 重构**：保留单仓库、同一 Oracle/APEX 
 | [01_architecture.md](01_architecture.md) | 目标运行架构、服务边界、调用规则和代码布局 |
 | [02_data_and_transactions.md](02_data_and_transactions.md) | 数据所有权、Repository、Unit of Work、Outbox 与任务规范 |
 | [03_knowledge_core.md](03_knowledge_core.md) | Bundle 入库、Parser Worker、Discovery 与 Evidence 的完整设计 |
-| [04_migration_and_delivery.md](04_migration_and_delivery.md) | 分阶段重建、测试、观测、全量切换与验收门槛 |
+| [04_build_and_delivery.md](04_build_and_delivery.md) | 分阶段建设、测试、观测、空库发布与验收门槛 |
 | [05_multi_agent_and_skills.md](05_multi_agent_and_skills.md) | 多 Agent 协作、Skill 契约、策略与执行运行时 |
 | [11_agent_execution_model.md](11_agent_execution_model.md) | Run/Task/Artifact、状态机、租约、事件流与恢复 |
 | [12_agent_runtime_api_and_state_transitions.md](12_agent_runtime_api_and_state_transitions.md) | Run API、内部命令、并发控制与状态迁移 |
@@ -34,7 +34,7 @@ KBot 4.0 是一次**Clean-slate 重构**：保留单仓库、同一 Oracle/APEX 
 | [27_aiops_api_and_contracts.md](27_aiops_api_and_contracts.md) | AIOps 外部/内部/Executor API、DTO、SSE、鉴权、幂等与错误契约 |
 | [28_aiops_implementation_plan.md](28_aiops_implementation_plan.md) | AIOps DDL、运行内核、监控、诊断、HITL、执行、报告与集成的实施顺序 |
 | [29_aiops_step0_contracts_and_bootstrap.md](29_aiops_step0_contracts_and_bootstrap.md) | AIOps 包结构、四进程入口、DTO、Service Identity、配置与启动骨架 |
-| [30_aiops_step1_oracle_schema.md](30_aiops_step1_oracle_schema.md) | 21 张 AIOps 表的 Oracle 类型、约束、索引、外键、APEX 视图与 Migration 顺序 |
+| [30_aiops_step1_oracle_schema.md](30_aiops_step1_oracle_schema.md) | 21 张 AIOps 表的 Oracle 类型、约束、索引、外键、APEX 视图与全量建库顺序 |
 | [31_aiops_step2_persistence_and_identity.md](31_aiops_step2_persistence_and_identity.md) | 单一 UUIDv7 主键策略、Oracle/PG 映射，以及 Entity、Repository、UoW、租约和 Inbox/Outbox |
 | [32_aiops_step3_configuration_and_authorization_api.md](32_aiops_step3_configuration_and_authorization_api.md) | Target、Binding、Monitor、Policy、Inspection 配置 API、Domain 边界、ETag 与 Secret 生命周期 |
 | [33_aiops_step4_deterministic_run_kernel.md](33_aiops_step4_deterministic_run_kernel.md) | 确定性 Run/Task/Artifact/Event 内核、租约 fencing、取消、重试与 SSE 恢复 |
@@ -49,7 +49,7 @@ KBot 4.0 是一次**Clean-slate 重构**：保留单仓库、同一 Oracle/APEX 
 | [42_model_serving_identity_and_openai_compatibility.md](42_model_serving_identity_and_openai_compatibility.md) | UUIDv7 模型身份、服务名、Provider 名、模型池与 OpenAI 兼容接口 |
 | [06_identity_security_and_tenancy.md](06_identity_security_and_tenancy.md) | 身份、租户、权限、密钥与数据安全治理 |
 | [07_platform_operations_and_integrations.md](07_platform_operations_and_integrations.md) | 平台运行、可观测性、AIOps、MCP、Slack 与外部适配器 |
-| [08_api_data_migration_and_lifecycle.md](08_api_data_migration_and_lifecycle.md) | API 契约、APEX Schema 变更、数据迁移与文件生命周期 |
+| [08_api_schema_and_lifecycle.md](08_api_schema_and_lifecycle.md) | API 契约、APEX Schema 建设与文件生命周期 |
 | [09_clean_slate_implementation.md](09_clean_slate_implementation.md) | 4.0 最终目标蓝图、重写边界与实施原则 |
 
 ## 架构决策
@@ -76,4 +76,4 @@ KBot 4.0 是一次**Clean-slate 重构**：保留单仓库、同一 Oracle/APEX 
 
 - 新增或修改的代码注释、Docstring 和面向运维人员的日志正文统一使用中文。
 - API 字段、错误码、枚举值、Trace/Metric 名称、Skill ID 等机器契约保持稳定英文，不做本地化。
-- 旧表可以在数据归档和破坏性 Migration 获批前物理保留，但 4.0 不读、不写、不轮询；这属于数据安全措施，不是向下兼容。
+- 4.0 部署目标必须是空的或已完成外部清理的 Schema；规范建库脚本不包含 3.x 表删除、读取、复制或兼容逻辑。

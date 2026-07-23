@@ -1,5 +1,5 @@
 -- KBot 4.0 Model Serving：模型目录。
--- UUIDv7 由应用生成并以 RAW(16) 保存；旧 KBOT_MD_MODELS 不参与 4.0 运行时。
+-- UUIDv7 由应用生成并以 RAW(16) 保存；本脚本不读取或转换任何 3.x 数据。
 
 CREATE TABLE KBOT_AI_MODEL (
     MODEL_ID RAW(16) PRIMARY KEY,

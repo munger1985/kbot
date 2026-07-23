@@ -51,12 +51,12 @@ AIOps 的 Target、Policy、Monitor Source、Event、Alert、Run、Task、Artifa
 
 API 中的 `target_id/ops_run_id/proposal_id/hitl_id/report_id` 等字段是同一主键的规范 UUID 字符串表示；无需先解析 UID 再查询内部数字 PK。
 
-## 迁移与兼容边界
+## 4.0 身份边界
 
-- 4.0 不接受旧整数 Agent ID；旧 Agent 配置重建时生成新 UUID，并输出一次性映射报告；
+- 4.0 不接受旧整数 Agent ID；Agent 配置在 4.0 中重新创建并生成新 UUID，不输出旧 ID 映射；
 - 4.0 KC API 不接受数值 Collection/Bundle/Document ID；Portal/APEX/Agent Client 同步改用 UUID；
-- 开发库通过重建或一次性迁移生成 UUID，不做长期双写，也不把旧数字嵌入 UUID；
-- UUID 不允许调用方在 Create 时指定，除非是受信离线导入且携带专用 Scope；
+- 所有 UUID 由 4.0 新建资源时生成，不从旧数字转换，也不做双写；
+- UUID 不允许调用方在 Create 时指定；
 - 外部来源自己的 ID 保存在 `SOURCE_ID/EXTERNAL_DOCUMENT_ID`，不能直接作为 KC 主键；
 - APEX 查询视图使用 `RAW_TO_UUID(<ID>)` 输出规范字符串；写入与筛选优先经 API，确需直连时使用受控转换函数，不在页面复制转换规则；
 - PG 适配版只替换数据库类型和 SQL 方言，API、领域对象、ID 值及跨服务契约保持不变。

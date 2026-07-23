@@ -42,7 +42,7 @@ apps/aiops_api/
 apps/aiops_worker/
 apps/aiops_scheduler/
 apps/aiops_db_executor/
-migrations/ops/
+database/oracle/aiops_agent/
 platform_core/contracts/aiops/
 platform_clients/aiops.py
 ```
@@ -66,11 +66,11 @@ platform_clients/aiops.py
 006_ops_fks_views.sql
 ```
 
-DDL 必须包含 UUIDv7 `RAW(16)` 主键、JSON Check、外键、函数唯一索引、领取索引和延后 Artifact 外键。同步创建 `KBOT_V_OPS_*` 只读视图，但不授予 APEX 对状态机表的 DML 权限。Migration 只由发布流程执行，App 启动时不得建表或自动修复 Schema。
+DDL 必须包含 UUIDv7 `RAW(16)` 主键、JSON Check、外键、函数唯一索引、领取索引和延后 Artifact 外键。同步创建 `KBOT_V_OPS_*` 只读视图，但不授予 APEX 对状态机表的 DML 权限。脚本只用于创建空的 4.0 Schema，App 启动时不得建表或自动修复 Schema。
 
-4.0 不迁移旧 Run/Chat/审批历史。需要保留的 Target/Monitor 配置通过一次性离线导入生成新 ID；旧密码不得复制，必须人工映射为新的 `SECRET_REF`。
+4.0 不迁移旧 Run、Chat、审批、Target 或 Monitor 配置。Target、Monitor 和 `SECRET_REF` 全部通过 4.0 配置 API 重新创建，旧密码和旧标识不得复制。
 
-**完成物：** 可在空 Schema 前向执行的六段 Migration、Schema manifest、受控视图及导入模板。
+**完成物：** 可在空 Schema 顺序执行的六段规范建库脚本、Schema manifest 和受控视图。
 
 ## 步骤 2：Persistence 与事务内核
 
@@ -201,7 +201,7 @@ Incident/Performance 处理前冻结 Comparison Plan 和基线，处理后使用
 
 完整测试按 4.0 总计划统一执行，但每个前置步骤必须保留最小安全回归，不能将状态机、Policy 或 Executor 的错误留到最终阶段才发现。最终至少覆盖：
 
-- Oracle Migration、约束、UoW 回滚、租约接管和 Outbox/Inbox 重放；
+- Oracle 全量建库脚本、约束、UoW 回滚、租约接管和 Outbox/Inbox 重放；
 - Domain/Target 权限、Webhook 伪造、SSE 恢复和跨 Domain 隐藏；
 - Oracle/MySQL 诊断目录版本矩阵、只读验证、超时和脱敏；
 - LLM 输出污染、Prompt Injection、证据不足和错误根因降级；
@@ -213,7 +213,7 @@ DDL 先部署，随后暗部署 API/Worker、Monitor Adapter、只读 Executor�
 
 ## 建议提交边界
 
-每个步骤至少一个独立提交，Migration 与对应 Entity 放在同一提交或连续不可分割提交中。建议 Conventional Commit Scope：
+每个步骤至少一个独立提交，规范建库脚本与对应 Entity 放在同一提交或连续不可分割提交中。建议 Conventional Commit Scope：
 
 ```text
 feat(aiops-contracts): ...

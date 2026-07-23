@@ -1,10 +1,10 @@
-# 4.0 迁移、质量与交付计划
+# 4.0 建设、质量与交付计划
 
 ## Phase 0：边界冻结与代码清理
 
 建立架构测试和依赖规则：`knowledge_core` 不可 import `agent`、`skills`、旧 `services/kb`；其他领域不可直接 import Knowledge Core Repository。先确认 4.0 消费者，再直接删除旧接口、兼容导出、V1 Entity/Repository 和未使用的 3.x Agent/Skill；不建立 `legacy/` 代码保留区，也不保留兼容 import。所有新增或修改的注释、Docstring 和日志正文使用中文，机器契约保持英文。暂不进行最终质量测试，测试统一安排在所有 4.0 能力完成后。
 
-**退出条件：** 服务边界、Owner、表权限、API 命名、UoW/Outbox 模板和迁移 DDL 流程经评审通过。
+**退出条件：** 服务边界、Owner、表权限、API 命名、UoW/Outbox 模板和全量建库 DDL 流程经评审通过。
 
 ## Phase 1：平台基础与独立 App 边界
 
@@ -14,7 +14,7 @@
 
 ## Phase 2：Knowledge Core 与解析检索闭环
 
-以 3.5 已实现的 `knowledge_core`、`KBOT_KC_*` Migration、独立进程入口、Parser/Projection Worker 和两阶段检索为代码基线；不新建平行实现。补齐 Bundle Ingestion、版本状态机、Job/Outbox、Discovery/Evidence、检索质量、权限、观测和失败恢复闭环。此阶段不把 Agent 职责放入 KC。
+以 3.5 已实现的 `knowledge_core`、独立进程入口、Parser/Projection Worker 和两阶段检索为代码基线；不新建平行实现。`KBOT_KC_*` 由 Knowledge Core 自有全量建库脚本定义。补齐 Bundle Ingestion、版本状态机、Job/Outbox、Discovery/Evidence、检索质量、权限、观测和失败恢复闭环。此阶段不把 Agent 职责放入 KC。
 
 **验收：** 一个含 Manifest 和多附件的 Bundle 可创建、更新、删除、恢复；重复提交不产生重复 Version/Job。
 
@@ -36,18 +36,18 @@
 
 **验收：** 每次执行可追踪到 Agent、Skill 版本、输入范围、Artifact、策略决定和证据；不合规的计划或变更无法通过运行时执行。
 
-## Phase 6：统一验收、重建与切换
+## Phase 6：统一验收、空库发布与启用
 
-在所有 4.0 能力完成后统一进行 Oracle、Portal、APEX、Parser、检索、Agent、Skill、Ops 和安全测试。根据原始来源重建 4.0 数据，采用发布切换而非线上双写、双读或旧 API Adapter。旧代码在开发阶段已经退出工作树；生产 Soak 只用于确认没有旧入口或旧表访问。旧表经归档、撤销写权限与单独批准后再物理删除。
+在所有 4.0 能力完成后统一进行 Oracle、Portal、APEX、Parser、检索、Agent、Skill、Ops 和安全测试。目标环境从空 Schema 执行按服务拆分的规范建库脚本，不复制 3.x Domain、模型、知识、Agent 或 Ops 数据。Portal/APEX 在 4.0 中创建新 Domain 和配置，业务来源在入口启用后通过 4.0 API 重新入库，采用一次启用而非线上双写、双读或旧 API Adapter。
 
-**验收：** 所有已批准调用方均使用 `/api/v1` 契约；生产运行中不存在旧表写入、旧 Worker 轮询、旧 Skill 动态适配或新旧数据同步任务。
+**验收：** 所有已批准调用方均使用 `/api/v1` 契约；Schema 中不存在 3.x KBot 表或数据，生产运行中不存在旧 Worker、旧 Skill 动态适配或新旧数据同步任务。
 
-统一测试分层、质量阈值、Release Evidence、全量/增量重建、生产切换、前向修复和旧表退出门禁见 [41_kbot4_step12_acceptance_release_and_cutover.md](41_kbot4_step12_acceptance_release_and_cutover.md)。入口切换并产生 4.0 新模型写入后不自动退回 3.x；通过能力 Kill Switch、维护模式和幂等重放前向恢复。
+统一测试分层、质量阈值、Release Evidence、空库建库、生产启用和前向修复门禁见 [41_kbot4_step12_acceptance_release_and_cutover.md](41_kbot4_step12_acceptance_release_and_cutover.md)。入口启用并产生 4.0 写入后，通过能力 Kill Switch、维护模式和幂等重放前向恢复。
 
 ## 测试与观测
 
 - 单元测试：领域状态机、检索融合、幂等、权限、UoW 回滚、Skill schema 与策略规则。
-- 集成测试：Oracle Text/Vector、真实迁移 DDL、对象存储、HTTP client 契约。
+- 集成测试：Oracle Text/Vector、真实全量建库 DDL、对象存储、HTTP client 契约。
 - 契约测试：Portal→Ingestion、Main/Agent→Discovery/Evidence、Parser Result。
 - 端到端测试：Bundle 入库到引用证据的完整链路、Agent→Skill 委派、审批拒绝，以及重试、取消、Worker 崩溃恢复。
 - 指标：Job 队列延迟、领取冲突、解析/索引耗时、失败率、Embedding 调用量、Discovery/Evidence 延迟、召回质量、PARTIAL 比例、Skill 成功率、路由准确率和变更拦截率。
@@ -55,4 +55,4 @@
 
 ## 发布原则
 
-DDL 先于 4.0 代码部署，并在 4.0 自身的后续小版本中保持前向兼容；不支持 3.x/4.0 的旧新读写并行。每次变更附带前向恢复方案、重建统计和验收证据。禁止使用无版本的“直接改生产表”方式交付 4.0。
+DDL 先于 4.0 代码部署；当前开发阶段只维护 `database/oracle/<service>/` 下的规范全量脚本，并通过重建测试 Schema 验证。脚本与发布物一起冻结校验和，不支持 3.x/4.0 旧新读写并行，也禁止 App 启动时自动改表。

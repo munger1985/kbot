@@ -1,4 +1,0 @@
--- 模型维度已由 Model Serving 的 KBOT_AI_MODEL 拥有。
--- 此步骤只声明部署顺序，不允许 KC Migration 修改其他服务的表。
--- 发布器必须先应用 migrations/model_serving/001_model_registry.sql，
--- 再继续执行后续 KC Migration。

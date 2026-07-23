@@ -9,8 +9,8 @@
 拆库时只替换数据库配置、账号和连接池。
 
 4.0 不保留旧接口、兼容导入、V1 Adapter、旧 SkillRuntime 或无用的 3.x 代码。
-旧代码确认没有 4.0 消费者后直接从工作树删除，只由 Git 历史留档。旧表可为归档和
-回退取证暂时物理保留，但 4.0 不读、不写、不轮询。
+旧代码确认没有 4.0 消费者后直接从工作树删除，只由 Git 历史留档。4.0 从空
+Schema 全量建库，不读取、迁移或保留 3.x 表和数据。
 
 ## 当前基线
 
@@ -61,7 +61,7 @@ Grounding 和 SSE 已删除，最终回答职责留给后续 Agent Runtime；旧
 
 ### 阶段 2：Knowledge Core 基线加固
 
-- 以现有 `knowledge_core` 和 `migrations/kc` 为唯一实现，审核表 Owner、DDL、Migration 和索引，不重复建模。
+- 以现有 `knowledge_core` 和 `database/oracle/knowledge_core` 为唯一实现，审核表 Owner、全量 DDL 和索引，不重复建模。
 - **KC 自有标识迁移已完成（2026-07-23）：** Collection、Binding、Receipt、Bundle、Revision、Document、Version、Member、Parse View、Job、Evidence、Discovery 和 Relation 使用应用生成的 UUIDv7；Oracle 映射为 `RAW(16)`，PostgreSQL 映射为原生 `uuid`。`APP_ID/DOMAIN_ID`、版本号、序号和计数保留数值；跨领域 `EMBEDDING_MODEL_ID` 已随 Model Serving 迁移完成。
 - 完成真实 Bundle 入库、Parser、PROFILE、INDEX、Discovery、Evidence、Relation 和 Excel 结构化工件。
 - 完成 KC→模型服务的配置和推理 Client，移除 KC 对模型 Entity/Repository 的直接依赖。
@@ -100,7 +100,7 @@ Grounding 和 SSE 已删除，最终回答职责留给后续 Agent Runtime；旧
 - Agent 路由、Skill 契约、权限、预算、HITL、取消和恢复测试；
 - 压测、安全测试、观测验证和发布回滚演练。
 
-测试成功并完成生产 Soak 后，确认工作树和部署物中不存在旧代码、旧接口、旧配置或兼容 Adapter；旧表先归档、撤销写权限，再通过单独批准的破坏性 Migration 删除。不保留线上双读、双写或兼容 Adapter。
+测试成功并完成生产 Soak 后，确认工作树和部署物中不存在旧代码、旧接口、旧配置或兼容 Adapter；部署环境不保留 3.x KBot 表和数据，也不保留线上双读、双写或兼容 Adapter。
 
 ## 完成定义
 

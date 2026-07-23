@@ -4,7 +4,7 @@
 
 服务仍以独立进程部署：Main API/BFF、Knowledge Core、AIOps Agent、Parser Worker、LLM、Embedding、VLM、Visual、DB Executor、MCP，以及必要的 Scheduler/Outbox Dispatcher。开发环境可使用 `start_kbot.sh`；生产环境必须为每个服务单独声明副本数、资源规格、配置、密钥、Liveness、Readiness 和优雅终止时间。
 
-`start_kbot.sh/stop_kbot.sh` 仅用于本地开发，不是生产发布或回滚工具。生产采用一次构建、多环境晋级的不可变镜像/包，并保存 Migration、配置 Schema、镜像 Digest、SBOM、测试和签名组成的 Release Evidence；完整流程见 [41_kbot4_step12_acceptance_release_and_cutover.md](41_kbot4_step12_acceptance_release_and_cutover.md)。
+`start_kbot.sh/stop_kbot.sh` 仅用于本地开发，不是生产发布或回滚工具。生产采用一次构建、多环境晋级的不可变镜像/包，并保存规范建库脚本校验和、配置 Schema、镜像 Digest、SBOM、测试和签名组成的 Release Evidence；完整流程见 [41_kbot4_step12_acceptance_release_and_cutover.md](41_kbot4_step12_acceptance_release_and_cutover.md)。
 
 Readiness 不仅检查进程存活：需要验证关键配置已加载、数据库/对象存储可用、模型服务已接受请求、Worker 可领取任务。Liveness 只检查进程是否卡死，不能因为短暂下游故障不断重启服务。
 

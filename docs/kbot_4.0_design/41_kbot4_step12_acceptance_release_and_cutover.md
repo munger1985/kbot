@@ -4,19 +4,19 @@
 
 本步骤是 KBot 4.0 的统一发布门禁，覆盖 Platform、Model Serving、Knowledge Core、Parser、Agent Runtime、Main API/APEX、MCP Adapter 和 AIOps。测试通过必须能由版本化数据集、不可变构建物和机器可读报告证明，不能以一次人工演示替代。
 
-4.0 不兼容 3.x，不做双写、双读、旧 DTO 适配或百分比切流。4.0 可以在独立新表上暗部署和重建数据；正式入口在维护窗口一次切换。Oracle DDL 只前向执行，生产故障优先关闭能力并前向修复，不删除已写 Run、Artifact、审批或执行事实。
+4.0 不兼容 3.x，不做双写、双读、旧 DTO 适配、旧数据导入或百分比切流。发布目标是空的或已由环境管理员清理完成的 Schema；维护窗口内全量建库、部署并一次启用。生产故障优先关闭能力并前向修复，不删除已写 Run、Artifact、审批或执行事实。
 
 ## 当前基线与缺口
 
 当前已有：
 
-- `scripts/check_4_0_boundaries.py` 和 `scripts/check_kc_migrations.py`；
+- `scripts/check_4_0_boundaries.py` 和 `scripts/check_oracle_schema.py`；
 - KC/Parser/检索的大量 `unittest` 组件测试；
 - Parser Golden Manifest 评测脚本和示例；
-- KC 001–007 Migration；
+- Platform、Model Serving 和 KC 的按服务全量建库脚本；
 - 本地 `start_kbot.sh/stop_kbot.sh`。
 
-这些不是完整发布系统：现有 Golden Corpus 只是示例；旧 `test_ops_agent.py/test_hitl.py` 只提供场景，不证明新 AIOps 状态机；当前边界脚本尚未覆盖未来 `agent_runtime/aiops_agent/main_api`，Migration 检查也仅覆盖 KC；生产配置示例和本地启动脚本还未包含完整 4.0 拓扑。尚无统一 Test Dependency Lock、真实 Oracle Schema Manifest 校验、Agent/AIOps E2E、质量 Gate、OpenAPI 兼容检查、负载/故障演练和 Release Evidence Bundle。本地启动脚本不用于生产部署。
+这些不是完整发布系统：现有 Golden Corpus 只是示例；当前边界脚本尚未覆盖未来 `agent_runtime/aiops_agent`，生产配置示例和本地启动脚本还未包含完整 4.0 拓扑。尚无统一 Test Dependency Lock、真实 Oracle Schema Manifest 校验、Agent/AIOps E2E、质量 Gate、OpenAPI 兼容检查、负载/故障演练和 Release Evidence Bundle。本地启动脚本不用于生产部署。
 
 ## 环境与测试数据
 
@@ -25,7 +25,7 @@
 | 环境 | 用途 | 数据与外部依赖 |
 | --- | --- | --- |
 | Unit/CI | 每次提交的确定性测试 | Fake Clock、Fake Model、内存/Stub Adapter，不访问共享数据库 |
-| Integration | Migration、Repository、Client、对象存储 | 每个 Run 独立 Oracle Test Schema；可选 Oracle Free CI 实例 |
+| Integration | 全量建库 DDL、Repository、Client、对象存储 | 每个 Run 独立 Oracle Test Schema；可选 Oracle Free CI 实例 |
 | Staging | 完整拓扑、真实模型与 APEX | 生产同版本 Oracle/代理配置，脱敏或合成数据 |
 | Production | 单次切换与观测 | 只使用已签名 Release Artifact 和受控配置 |
 
@@ -58,12 +58,12 @@ quality, security, load, chaos, mutation
 
 ```bash
 python3 scripts/check_4_0_boundaries.py
-python3 scripts/check_kc_migrations.py
+python3 scripts/check_oracle_schema.py
 python3 -m unittest discover -s tests -p 'test_*.py'
 python3 scripts/verify_release.py --profile rc --manifest release-manifest.json
 ```
 
-Runner 启动时必须记录 Python 版本、解释器路径和 Dependency Lock Hash，不依赖开发机的 `python` 别名。`verify_release.py` 最终统一调用迁移、Schema、OpenAPI、测试、评测、安全和构建物校验，并生成机器可读 JSON/JUnit 报告。开发者可以运行子集；Release Candidate 必须运行完整 Profile，禁止只重跑失败用例后拼接旧报告。
+Runner 启动时必须记录 Python 版本、解释器路径和 Dependency Lock Hash，不依赖开发机的 `python` 别名。`verify_release.py` 最终统一调用建库脚本、Schema、OpenAPI、测试、评测、安全和构建物校验，并生成机器可读 JSON/JUnit 报告。开发者可以运行子集；Release Candidate 必须运行完整 Profile，禁止只重跑失败用例后拼接旧报告。
 
 ## 测试分层
 
@@ -71,7 +71,7 @@ Runner 启动时必须记录 Python 版本、解释器路径和 Dependency Lock 
 
 - 编译/导入所有 Active 包，运行跨领域依赖守卫；
 - 将边界守卫扩展到 Main API、Agent Runtime、AIOps 及其全部 App；
-- 校验 Migration 连续性、Checksum、对象命名和禁止旧表引用；
+- 校验各服务建库脚本顺序、Checksum、对象命名和禁止 3.x/数据导入语句；
 - 比较 SQLAlchemy Entity、Oracle Catalog 与 Schema Manifest；
 - 校验 Public/Internal/Executor OpenAPI Snapshot 和 Artifact JSON Schema；
 - 校验 `base.toml.example` 覆盖所有必填生产配置且不含 Secret；
@@ -93,14 +93,14 @@ Runner 启动时必须记录 Python 版本、解释器路径和 Dependency Lock 
 
 ### T2：Component 与真实 Oracle
 
-- 在空 Schema 顺序应用所有 Platform/KC/Agent/Ops Migration；
+- 在空 Schema 顺序执行所有 Platform/Model/KC/Agent/Ops 规范建库脚本；
 - 验证列类型、Nullability、PK/UK/FK/Check、函数索引、Vector/Text 索引和 APEX View；
-- 再次执行 Migration 必须按 Runner 规则明确拒绝，不能静默跳过；
+- 再次执行建库脚本必须因对象已存在明确失败，不能静默跳过；
 - Repository/UoW 使用真实 Oracle，验证锁竞争、事务回滚和分页；
 - Object Store、Model Client、Monitor Adapter、DB Executor 使用协议级 Test Double 或隔离实例；
 - 从备份恢复 Test Schema 后再次运行只读一致性检查。
 
-Migration Principal 与 Runtime Credential 分离。若受 APEX 限制必须共用 Schema Owner，必须记录该风险，并以 Repository 边界检查、数据库审计和禁止 App 自动 DDL 作为补偿；DB Executor 始终不得拥有 KBot Schema 权限。
+Schema Deployment Principal 与 Runtime Credential 分离。若受 APEX 限制必须共用 Schema Owner，必须记录该风险，并以 Repository 边界检查、数据库审计和禁止 App 自动 DDL 作为补偿；DB Executor 始终不得拥有 KBot Schema 权限。
 
 ### T3：契约与消费者验证
 
@@ -202,12 +202,12 @@ Mutation 测试只允许隔离 Oracle/MySQL Target、白名单模板和测试凭
 commit SHA and signed tag
 source/archive/image digest
 dependency lock, SBOM and signatures
-migration manifest and SHA-256
+service schema manifest and SQL SHA-256
 Oracle schema manifest
 OpenAPI/Artifact schema hashes
 configuration schema/example hash
 unit/integration/e2e/quality/security/load reports
-data rebuild and reconciliation report
+empty-schema build and fixture verification report
 known limitations and accepted risks
 approvers, timestamps and environment
 ```
@@ -223,14 +223,14 @@ approvers, timestamps and environment
 | G2 Correctness | T1/T2/T3 全通过，零 Critical Invariant 失败 |
 | G3 Quality/Security | Parser/Retrieval/Agent/AIOps Gate 与安全扫描通过 |
 | G4 Staging | T4、负载、Chaos、备份恢复和 APEX 验收通过 |
-| G5 Cutover Rehearsal | 在生产等价副本完成全量重建、最终增量和切换演练 |
+| G5 Activation Rehearsal | 在生产等价空 Schema 完成全量建库、Fixture 和入口启用演练 |
 | G6 Production | Smoke、指标、审计和业务验收通过，进入 Soak |
 
-Waiver 必须包含指标、影响、Owner、到期时间和补救计划；跨 Domain、未审批执行、数据丢失、无效 Citation、Critical 漏洞和不可恢复 Migration 不允许豁免。
+Waiver 必须包含指标、影响、Owner、到期时间和补救计划；跨 Domain、未审批执行、数据丢失、无效 Citation、Critical 漏洞和不可恢复 Schema 错误不允许豁免。
 
-## 数据重建与对账
+## 初始数据与验证
 
-KC 从原始业务来源和原始文件重建，不能把旧 TxtChunk、旧向量或旧 Parser 结果迁入新 Evidence。对每个 Source 记录：
+4.0 不读取或导入任何 3.x KBot 数据。建库后先由 Portal/APEX 创建新的 Domain、模型和 Collection 配置，再使用专门的 Fixture/Golden Corpus 验证 KC。入口启用后，KM Portal、普通上传和批准外部来源通过 4.0 API 创建新业务数据。对每个新 Source 记录：
 
 ```text
 source system/type/id
@@ -239,22 +239,22 @@ expected/accepted/failed Bundle count
 Document/Version count
 Parse/Profile/Index terminal count
 current Discovery/Evidence count
-failure category and replay status
+failure category and retry status
 ```
 
-失败项可重放，但发布前必须分类为已恢复、明确不支持或经业务确认缺失。AIOps 不迁移旧运行内存、旧审批或执行状态；Target、Monitor、Policy、Inspection Plan 通过审查后的配置导入重新创建。Agent Run 历史不迁移。
+失败项可重试，但发布前 Fixture 必须分类为已恢复、明确不支持或经业务确认缺失。AIOps Target、Monitor、Policy、Inspection Plan 和 Agent 配置均通过 4.0 API 新建，不提供离线旧数据导入。
 
 ## 生产切换顺序
 
-1. 冻结 RC、Migration、配置 Schema、APEX Export 和 Release Evidence；
-2. 验证备份可恢复，执行生产 Preflight；
-3. 由 Migration Principal 前向部署 Platform/Model/KC/Agent/Ops DDL 和 APEX View；
-4. 暗部署 Model Serving、KC API/Parser/Projection、AIOps API/Worker、只读 Executor、Agent Runtime 和 Main API；外部路由仍指向旧入口；
-5. 保持 Mutation Kill Switch 关闭、Inspection Plan 暂停、Monitoring 新入口关闭；
-6. 从原始来源全量重建 KC，运行对账和只读 Smoke；
-7. 暂停旧上传/配置写入口，记录 Freeze Watermark，处理最终来源增量；
-8. 原子切换 Portal/APEX/反向代理到 v4；旧 API 不再路由；
-9. 验证上传、检索、Root SSE、Direct AIOps、HITL、Report 和 APEX；
+1. 冻结 RC、各服务规范建库脚本、配置 Schema、APEX Export 和 Release Evidence；
+2. 确认目标 Schema 为空或已由环境管理员完成清理，执行生产 Preflight；
+3. 由 Schema Deployment Principal 顺序创建 Platform/Model/KC/Agent/Ops 对象和 APEX View；
+4. 由 Portal/APEX 创建新的 Domain、模型、Collection、Agent 和 AIOps 配置；
+5. 部署 Model Serving、KC API/Parser/Projection、AIOps API/Worker、只读 Executor、Agent Runtime 和 Main API；
+6. 保持 Mutation Kill Switch 关闭、Inspection Plan 暂停、Monitoring 入口关闭；
+7. 使用 Fixture/Golden Corpus 完成上传、解析、检索、Agent 和只读 AIOps Smoke；
+8. 一次启用 Portal/APEX/反向代理的 `/api/v1` 入口；
+9. 验证真实新上传、Root SSE、Direct AIOps、HITL、Report 和 APEX；
 10. 启用 Monitoring Intake，再启用已审核 Inspection Plan；
 11. Production 初期保持 AIOps `ADVISORY`；Mutation 作为独立 Gate 启用。
 
@@ -274,30 +274,30 @@ M4  按 Target/Policy 扩大 AGENT_EXECUTE
 
 ## 失败处理与回退
 
-在入口切换前，任何 Gate 失败都中止发布；已部署的前向 DDL保留，修复后继续，不 Drop 半成品表。
+在入口启用前，任何 Gate 失败都中止发布。当前 4.0 首次发布修正规范脚本并重新准备空 Schema 后重放，不由 App Drop 或自动修复半成品对象。
 
 入口切换并产生 4.0 新模型写入后：
 
 - 先关闭 Mutation、Scheduler、Webhook 或受影响写入口；
-- 保留 Run/Artifact/Inbox/Outbox 和来源 Freeze Watermark；
+- 保留 Run/Artifact/Inbox/Outbox；
 - 使用相同版本契约前向修复并重放幂等任务；
 - 不让 3.x 接管同一请求，不把 v4 数据反写旧表；
 - 无法保证写安全时进入只读/维护模式。
 
 因此初始 4.0 切换没有自动“一键回滚到 3.x”。真正的风险控制来自切换前演练、写入 Freeze、可恢复任务和能力级 Kill Switch。
 
-## Soak 与旧表退出
+## Soak
 
 生产 Soak 至少覆盖配置规定的完整日报/周报周期，默认建议 14 天。期间要求：
 
-- 所有预期调用方已迁移，旧 API 无成功响应；任何残留尝试均被监控和定位；
-- 无旧表写入、旧 Worker 轮询或兼容 Import；
+- 所有预期调用方只使用 `/api/v1`，不存在 3.x API 路由；
+- Schema 中不存在 3.x KBot 表、数据或兼容 Import；
 - 无未解释数据差异、越权事件、重复副作用或持续 SLO 超限；
 - 所有 Failed/UNKNOWN/Partial 项已分类并有 Owner；
 - 备份、审计、报告和 Runbook 可用。
 
-旧代码、入口、配置和部署资源必须在开发阶段完成删除，不能把 Soak 当作代码清理阶段。Soak 通过后，旧表先导出归档并撤销写权限。物理 Drop 是单独的破坏性 Migration，必须列出精确对象、依赖和恢复介质，并在执行时再次获得明确批准，不能作为应用启动或普通发布脚本的一部分。
+旧代码、入口、配置和部署资源必须在开发阶段完成删除，不能把 Soak 当作代码或旧 Schema 清理阶段。
 
 ## 完成定义
 
-4.0 只有在 G0–G6 全部通过、生产入口只使用 v4、数据重建对账完成、所有关键安全不变量为零失败、四类 AIOps 入口和 Root/Document 链路可恢复、Mutation 默认关闭且可独立受控启用时，才算发布完成。
+4.0 只有在 G0–G6 全部通过、生产入口只使用 `/api/v1`、空库建库和新数据验证完成、所有关键安全不变量为零失败、四类 AIOps 入口和 Root/Document 链路可恢复、Mutation 默认关闭且可独立受控启用时，才算发布完成。

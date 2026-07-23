@@ -23,6 +23,7 @@ OBSOLETE_PATHS = (
     ROOT / "skills",
     ROOT / "microservices",
     ROOT / "utils",
+    ROOT / "migrations",
 )
 FORBIDDEN_PREFIXES = (
     "dao",

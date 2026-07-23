@@ -111,4 +111,4 @@ BFF 将下游错误映射为稳定错误码，例如 `AUTH_REQUIRED`、`INVALID_
 
 Main API 与下游只依赖 Client/DTO，不依赖同库 Session。未来为 KC、Agent Runtime、AIOps Agent 或 Model Serving 配置独立数据库、账号和连接池时，BFF 契约、AuthContext 和外部 API 不需要变化。角色、Scope 和资源 ACL 留待后续权限阶段加入；AIOps 审批与执行安全闸门不因此削弱。Data Agent 暂不属于当前部署拓扑，问数继续通过 MCP Adapter 接入。
 
-Main API 对共享 Schema 的唯一业务查询是其自有 `KBOT_PLATFORM_DOMAIN`，用于确认 Portal 声明的 Domain 存在且启用。KC 公开请求必须经 `platform_clients.KnowledgeCoreClient` 转发；Main API 不 import KC Entity、Repository 或 Application Service。旧 `KBOT_MD_DOMAIN` 只在切换 Migration 中读取，不属于运行时回退路径。
+Main API 对共享 Schema 的唯一业务查询是其自有 `KBOT_PLATFORM_DOMAIN`，用于确认 Portal 声明的 Domain 存在且启用。KC 公开请求必须经 `platform_clients.KnowledgeCoreClient` 转发；Main API 不 import KC Entity、Repository 或 Application Service。Domain 由 4.0 Portal/APEX 重新创建，不读取旧 `KBOT_MD_DOMAIN`。

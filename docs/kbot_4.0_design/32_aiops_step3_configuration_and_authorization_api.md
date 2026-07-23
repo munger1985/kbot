@@ -22,7 +22,7 @@ POST   /api/v1/ops/targets/{target_id}/disable
 
 创建后默认 `MAINTENANCE`、`HEALTH_STATUS=UNKNOWN`，避免未验证 Target 立即被自动流程使用。管理状态限定为 `ACTIVE/MAINTENANCE/DISABLED`；连通性单独使用 `UNKNOWN/HEALTHY/DEGRADED/UNREACHABLE`，不能用 `OFFLINE` 混合表达配置与运行事实。
 
-Target 不提供在线 `DELETE`。从未产生 Run 的误配置也通过 `DISABLED` 保留审计；开发空库清理仅由离线 migration/reset 工具完成。`target_key` 创建后不可改，Display、Endpoint、SecretRef、能力和执行模式可以带版本修改。
+Target 不提供在线 `DELETE`。从未产生 Run 的误配置也通过 `DISABLED` 保留审计；开发环境需要清空时直接重建测试 Schema。`target_key` 创建后不可改，Display、Endpoint、SecretRef、能力和执行模式可以带版本修改。
 
 ### Agent Binding
 

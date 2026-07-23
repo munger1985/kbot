@@ -1,5 +1,5 @@
--- KBot 4.0 Knowledge Core：根聚合与入库回执。
--- UUIDv7 由应用生成并以 RAW(16) 保存；Migration 只由发布流程执行。
+-- KBot 4.0 Knowledge Core：Collection、绑定与入库回执。
+-- UUIDv7 由应用生成并以 RAW(16) 保存；本脚本只创建全新的 4.0 Schema。
 
 CREATE TABLE KBOT_KC_COLLECTION (
     COLLECTION_ID RAW(16) PRIMARY KEY,
