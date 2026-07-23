@@ -9,7 +9,7 @@
 2. `model_serving/`：模型目录；
 3. `knowledge_core/`：Collection、入库聚合、Evidence、Discovery 和 Relation；
 4. `agent_runtime/`：Agent Definition、Run、Task、Artifact、Event 和 Delegation；
-5. 后续的 `aiops_agent/` 在对应服务实现时新增。
+5. `aiops_agent/`：目标、监控、运维 Run、HITL、执行、巡检和可靠消息。
 
 `platform_core` 是每次初始化都必须创建的基础层，不需要配置。其余已实现服务在
 `init_services.ini` 的 `[services]` 中使用 `true`/`false` 选择。初始化工具先执行
@@ -17,8 +17,8 @@
 建表依赖顺序，不是增量 Migration 版本。应用启动时不得自动执行 DDL，也不得读取
 其他服务目录中的表。
 
-`aiops_agent` 当前处于步骤 0，只包含契约和进程骨架，因此尚未出现在初始化选择
-项中；步骤 1 的六段 `KBOT_OPS_*` DDL 完成后再加入，禁止用空目录伪装初始化成功。
+`aiops_agent` 已提供六段规范 DDL 和受控 APEX 投影，可像其他业务服务一样在
+初始化配置中选择。其脚本必须整体启用或禁用，不能跳过中间依赖段。
 
 当前 4.0 开发阶段修改字段时直接更新所属服务的规范建库脚本，并重新创建测试
 Schema。脚本不包含 `DROP`、旧表查询、旧数据导入、兼容视图或回滚逻辑。

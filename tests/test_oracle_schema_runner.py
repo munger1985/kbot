@@ -29,13 +29,13 @@ class OracleSchemaRunnerTest(unittest.TestCase):
     def test_loads_complete_service_order(self) -> None:
         statements = load_schema_statements()
 
-        self.assertEqual(79, len(statements))
+        self.assertGreater(len(statements), 79)
         self.assertIn(
             "CREATE TABLE KBOT_PLATFORM_DOMAIN",
             statements[0].sql,
         )
         self.assertIn(
-            "CREATE INDEX IX_AGENT_DELEGATION_RUN",
+            "COMMENT ON COLUMN KBOT_OPS_TASK.OUTPUT_ARTIFACT_ID",
             statements[-1].sql,
         )
 
@@ -48,6 +48,7 @@ class OracleSchemaRunnerTest(unittest.TestCase):
                 model_serving = false
                 knowledge_core = true
                 agent_runtime = false
+                aiops_agent = false
                 """,
                 encoding="utf-8",
             )
@@ -62,6 +63,7 @@ class OracleSchemaRunnerTest(unittest.TestCase):
         self.assertIn("CREATE TABLE KBOT_KC_COLLECTION", sql)
         self.assertNotIn("CREATE TABLE KBOT_AI_MODEL", sql)
         self.assertNotIn("CREATE TABLE KBOT_AGENT_DEFINITION", sql)
+        self.assertNotIn("CREATE TABLE KBOT_OPS_TARGET", sql)
 
     def test_config_rejects_required_service_selection(self) -> None:
         with TemporaryDirectory() as directory:

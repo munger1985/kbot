@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 from pathlib import Path
 
@@ -33,6 +35,47 @@ SERVICE_TABLES = {
         "KBOT_AGENT_ARTIFACT",
         "KBOT_AGENT_RUN_EVENT",
         "KBOT_AGENT_DELEGATION",
+    },
+    "aiops_agent": {
+        "KBOT_OPS_TARGET",
+        "KBOT_OPS_POLICY",
+        "KBOT_OPS_TARGET_BINDING",
+        "KBOT_OPS_MONITOR_SOURCE",
+        "KBOT_OPS_TARGET_MONITOR",
+        "KBOT_OPS_EVENT",
+        "KBOT_OPS_ALERT",
+        "KBOT_OPS_RUN",
+        "KBOT_OPS_TASK",
+        "KBOT_OPS_ARTIFACT",
+        "KBOT_OPS_RUN_EVENT",
+        "KBOT_OPS_CHANGE_PROPOSAL",
+        "KBOT_OPS_HITL",
+        "KBOT_OPS_APPROVAL_TOKEN",
+        "KBOT_OPS_EXECUTION",
+        "KBOT_OPS_INSPECTION_PLAN",
+        "KBOT_OPS_INSPECTION_TARGET",
+        "KBOT_OPS_INSPECTION_FIRE",
+        "KBOT_OPS_REPORT",
+        "KBOT_OPS_INBOX",
+        "KBOT_OPS_OUTBOX",
+    },
+}
+SERVICE_VIEWS = {
+    "platform_core": {"KBOT_V_PLATFORM_DOMAIN"},
+    "model_serving": set(),
+    "knowledge_core": set(),
+    "agent_runtime": set(),
+    "aiops_agent": {
+        "KBOT_V_OPS_TARGET",
+        "KBOT_V_OPS_MONITOR_SOURCE",
+        "KBOT_V_OPS_POLICY",
+        "KBOT_V_OPS_INSPECTION_PLAN",
+        "KBOT_V_OPS_INSPECTION_FIRE",
+        "KBOT_V_OPS_RUN",
+        "KBOT_V_OPS_PENDING_APPROVAL",
+        "KBOT_V_OPS_REPORT",
+        "KBOT_V_OPS_CHAT_PENDING",
+        "KBOT_V_OPS_SCHEMA_VERSION",
     },
 }
 FORBIDDEN_TOKENS = (
@@ -74,6 +117,29 @@ AGENT_UUID_COLUMNS = (
     "CHILD_RUN_ID",
     "RESULT_ARTIFACT_ID",
 )
+AIOPS_UUID_COLUMNS = (
+    "TARGET_ID",
+    "POLICY_ID",
+    "BINDING_ID",
+    "AGENT_ID",
+    "MONITOR_SOURCE_ID",
+    "TARGET_MONITOR_ID",
+    "EVENT_ID",
+    "ALERT_ID",
+    "OPS_RUN_ID",
+    "OPS_TASK_ID",
+    "ARTIFACT_ID",
+    "PROPOSAL_ID",
+    "HITL_ID",
+    "APPROVAL_TOKEN_ID",
+    "EXECUTION_ID",
+    "INSPECTION_PLAN_ID",
+    "INSPECTION_TARGET_ID",
+    "INSPECTION_FIRE_ID",
+    "REPORT_ID",
+    "INBOX_ID",
+    "OUTBOX_ID",
+)
 
 
 def _ordered_scripts(service_dir: Path, errors: list[str]) -> list[Path]:
@@ -98,6 +164,7 @@ def main() -> int:
         errors.append("4.0 禁止保留 migrations/；请维护规范全量建库脚本")
 
     all_tables: dict[str, str] = {}
+    all_views: dict[str, str] = {}
     service_sql: dict[str, str] = {}
     for service, expected_tables in SERVICE_TABLES.items():
         service_dir = SCHEMA_ROOT / service
@@ -126,6 +193,24 @@ def main() -> int:
             owner = all_tables.setdefault(table, service)
             if owner != service:
                 errors.append(f"{table} 被 {owner} 和 {service} 重复拥有")
+
+        created_views = set(
+            re.findall(
+                r"\bCREATE\s+OR\s+REPLACE\s+VIEW\s+([A-Z][A-Z0-9_]*)",
+                combined,
+            )
+        )
+        expected_views = SERVICE_VIEWS[service]
+        missing_views = expected_views - created_views
+        unexpected_views = created_views - expected_views
+        if missing_views:
+            errors.append(f"{service} 缺少视图：{sorted(missing_views)}")
+        if unexpected_views:
+            errors.append(f"{service} 出现未登记视图：{sorted(unexpected_views)}")
+        for view in created_views:
+            owner = all_views.setdefault(view, service)
+            if owner != service:
+                errors.append(f"{view} 被 {owner} 和 {service} 重复拥有")
 
         constraints = re.findall(
             r"\bCONSTRAINT\s+([A-Z][A-Z0-9_]*)",
@@ -163,6 +248,66 @@ def main() -> int:
             errors.append(f"Agent Runtime 的 {column} 禁止声明为 NUMBER")
     if not re.search(r"\bLEASE_TOKEN\s+RAW\s*\(\s*16\s*\)", agent_sql):
         errors.append("Agent Runtime 的 LEASE_TOKEN 必须为 128-bit RAW(16)")
+
+    aiops_sql = service_sql.get("aiops_agent", "")
+    for column in AIOPS_UUID_COLUMNS:
+        if not re.search(rf"\b{column}\s+RAW\s*\(\s*16\s*\)", aiops_sql):
+            errors.append(f"AIOps 的 {column} 必须至少声明一次为 UUIDv7 RAW(16)")
+        if re.search(rf"\b{column}\s+NUMBER\s*\(", aiops_sql):
+            errors.append(f"AIOps 的 {column} 禁止声明为 NUMBER")
+    for index_name in (
+        "UX_OPS_POLICY_ACTIVE",
+        "UX_OPS_ALERT_ACTIVE",
+        "UX_OPS_HITL_PENDING",
+        "UX_OPS_REPORT_CURRENT",
+    ):
+        if not re.search(
+            rf"\bCREATE\s+UNIQUE\s+INDEX\s+{index_name}\b",
+            aiops_sql,
+        ):
+            errors.append(f"AIOps 缺少函数唯一索引：{index_name}")
+    if aiops_sql.count("DEFERRABLE INITIALLY DEFERRED") != 5:
+        errors.append("AIOps 必须包含 5 个延后 Artifact 当前指针外键")
+    if re.search(r"\bMODE\s+VARCHAR2\b", aiops_sql):
+        errors.append("AIOps 禁止使用 Oracle 26ai 保留字 MODE 作为列名")
+    if not re.search(
+        r"\bSCHEDULED_FOR_UTC\s+TIMESTAMP\s*\(\s*6\s*\)"
+        r"\s+GENERATED\s+ALWAYS\s+AS\s*"
+        r"\(\s*SYS_EXTRACT_UTC\s*\(\s*SCHEDULED_FOR\s*\)\s*\)\s+VIRTUAL",
+        aiops_sql,
+    ):
+        errors.append("AIOps 缺少巡检时点 UTC 唯一键虚拟列")
+    for forbidden_projection in (
+        "KBOT_V_OPS_TARGET AS\nSELECT\n    T.ENDPOINT_JSON",
+        "KBOT_V_OPS_MONITOR_SOURCE AS\nSELECT\n    M.ENDPOINT",
+        "KBOT_V_OPS_PENDING_APPROVAL AS\nSELECT\n    P.PARAMETERS_JSON",
+    ):
+        if forbidden_projection in aiops_sql:
+            errors.append("AIOps APEX 视图暴露了受保护字段")
+
+    manifest_path = SCHEMA_ROOT / "aiops_agent" / "schema_manifest.json"
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        errors.append(f"AIOps Schema Manifest 无法读取：{exc}")
+    else:
+        if set(manifest.get("tables", ())) != SERVICE_TABLES["aiops_agent"]:
+            errors.append("AIOps Schema Manifest 表清单与 DDL 登记不一致")
+        if set(manifest.get("views", ())) != SERVICE_VIEWS["aiops_agent"]:
+            errors.append("AIOps Schema Manifest 视图清单与 DDL 登记不一致")
+        manifest_scripts = manifest.get("scripts", ())
+        actual_scripts = sorted(
+            (SCHEMA_ROOT / "aiops_agent").glob("[0-9][0-9][0-9]_*.sql")
+        )
+        if [item.get("name") for item in manifest_scripts] != [
+            path.name for path in actual_scripts
+        ]:
+            errors.append("AIOps Schema Manifest 脚本顺序不一致")
+        else:
+            for item, path in zip(manifest_scripts, actual_scripts):
+                digest = hashlib.sha256(path.read_bytes()).hexdigest()
+                if item.get("sha256") != digest:
+                    errors.append(f"AIOps Schema Manifest Hash 失配：{path.name}")
 
     if errors:
         print("Oracle 全量建库脚本检查失败：")

@@ -30,6 +30,7 @@ OPTIONAL_SERVICE_ORDER = (
     "model_serving",
     "knowledge_core",
     "agent_runtime",
+    "aiops_agent",
 )
 
 
@@ -383,6 +384,153 @@ async def _validate_schema(
         )
     if invalid:
         raise RuntimeError(f"存在无效对象：{invalid}")
+
+    bad_constraints = (
+        await connection.execute(
+            text(
+                """
+                SELECT constraint_name, status, validated
+                FROM user_constraints
+                WHERE table_name LIKE 'KBOT\\_%' ESCAPE '\\'
+                  AND (status <> 'ENABLED' OR validated <> 'VALIDATED')
+                ORDER BY constraint_name
+                """
+            )
+        )
+    ).all()
+    if bad_constraints:
+        raise RuntimeError(f"存在未启用或未验证约束：{bad_constraints}")
+
+    bad_indexes = (
+        await connection.execute(
+            text(
+                """
+                SELECT index_name, status
+                FROM user_indexes
+                WHERE table_name LIKE 'KBOT\\_%' ESCAPE '\\'
+                  AND status <> 'VALID'
+                ORDER BY index_name
+                """
+            )
+        )
+    ).all()
+    if bad_indexes:
+        raise RuntimeError(f"存在无效索引：{bad_indexes}")
+
+    if "KBOT_OPS_TARGET" not in expected_tables:
+        return
+
+    deferred_artifact_fks = (
+        await connection.execute(
+            text(
+                """
+                SELECT COUNT(*)
+                FROM user_constraints
+                WHERE table_name LIKE 'KBOT_OPS\\_%' ESCAPE '\\'
+                  AND constraint_type = 'R'
+                  AND deferrable = 'DEFERRABLE'
+                  AND deferred = 'DEFERRED'
+                """
+            )
+        )
+    ).scalar_one()
+    if deferred_artifact_fks != 5:
+        raise RuntimeError(
+            "AIOps 延后 Artifact 外键数量错误："
+            f"{deferred_artifact_fks}，预期 5"
+        )
+
+    function_indexes = set(
+        (
+            await connection.execute(
+                text(
+                    """
+                    SELECT index_name
+                    FROM user_indexes
+                    WHERE index_name IN (
+                        'UX_OPS_POLICY_ACTIVE',
+                        'UX_OPS_ALERT_ACTIVE',
+                        'UX_OPS_HITL_PENDING',
+                        'UX_OPS_REPORT_CURRENT'
+                    )
+                    """
+                )
+            )
+        ).scalars()
+    )
+    expected_function_indexes = {
+        "UX_OPS_POLICY_ACTIVE",
+        "UX_OPS_ALERT_ACTIVE",
+        "UX_OPS_HITL_PENDING",
+        "UX_OPS_REPORT_CURRENT",
+    }
+    if function_indexes != expected_function_indexes:
+        raise RuntimeError(
+            "AIOps 函数唯一索引不完整："
+            f"{sorted(expected_function_indexes - function_indexes)}"
+        )
+
+    unindexed_foreign_keys = (
+        await connection.execute(
+            text(
+                """
+                WITH fk_cols AS (
+                    SELECT
+                        c.constraint_name,
+                        c.table_name,
+                        LISTAGG(cc.column_name, ',')
+                            WITHIN GROUP (ORDER BY cc.position) AS columns_csv
+                    FROM user_constraints c
+                    JOIN user_cons_columns cc
+                      ON cc.constraint_name = c.constraint_name
+                    WHERE c.constraint_type = 'R'
+                      AND c.table_name LIKE 'KBOT_OPS\\_%' ESCAPE '\\'
+                    GROUP BY c.constraint_name, c.table_name
+                ),
+                index_cols AS (
+                    SELECT
+                        table_name,
+                        index_name,
+                        LISTAGG(column_name, ',')
+                            WITHIN GROUP (ORDER BY column_position)
+                            AS columns_csv
+                    FROM user_ind_columns
+                    GROUP BY table_name, index_name
+                )
+                SELECT fk.constraint_name
+                FROM fk_cols fk
+                WHERE NOT EXISTS (
+                    SELECT 1
+                    FROM index_cols ix
+                    WHERE ix.table_name = fk.table_name
+                      AND (
+                          ix.columns_csv = fk.columns_csv
+                          OR ix.columns_csv LIKE fk.columns_csv || ',%'
+                      )
+                )
+                ORDER BY fk.constraint_name
+                """
+            )
+        )
+    ).scalars().all()
+    if unindexed_foreign_keys:
+        raise RuntimeError(
+            "AIOps 存在未覆盖前导列的外键："
+            f"{unindexed_foreign_keys}"
+        )
+
+    schema_version = (
+        await connection.execute(
+            text(
+                """
+                SELECT component, schema_version, contract_version
+                FROM KBOT_V_OPS_SCHEMA_VERSION
+                """
+            )
+        )
+    ).one()
+    if tuple(schema_version) != ("AIOPS", 6, "aiops-oracle-v1"):
+        raise RuntimeError(f"AIOps Schema 版本错误：{tuple(schema_version)}")
 
 
 async def apply_schema(*, dry_run: bool, config_path: Path) -> None:

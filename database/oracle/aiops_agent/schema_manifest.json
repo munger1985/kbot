@@ -1,0 +1,94 @@
+{
+  "component": "aiops_agent",
+  "schema_version": 6,
+  "contract_version": "aiops-oracle-v1",
+  "oracle_baseline": "26ai",
+  "scripts": [
+    {
+      "name": "001_ops_roots.sql",
+      "statements": 23,
+      "sha256": "164b01740e7fcc4720b41b2ae5f8f6ac7c0c7fe0ae11ca30877f22f8cbd5eea7"
+    },
+    {
+      "name": "002_ops_runtime.sql",
+      "statements": 29,
+      "sha256": "ed136efb48a62a4abaabf67d185f86f1324322829c8f00373b5d7ae6129821b0"
+    },
+    {
+      "name": "003_ops_change.sql",
+      "statements": 26,
+      "sha256": "09ca146aba43f8ceaf86993f52fd5cf716b9c62ec66fe083f4b5a88b25148f45"
+    },
+    {
+      "name": "004_ops_inspection.sql",
+      "statements": 19,
+      "sha256": "018b87cb506f2b39d68f1ecec2a55c68cfefcf6bc4454e191253ed682b9272fb"
+    },
+    {
+      "name": "005_ops_messaging.sql",
+      "statements": 8,
+      "sha256": "866eb81162a756e7a7701d712664a01b75c0a53361ec83e76336bf415f6c046a"
+    },
+    {
+      "name": "006_ops_fks_views.sql",
+      "statements": 26,
+      "sha256": "1b28015a5adf12b5d168ea9d40267eedad1b65245d0a307a23ccd18f2a247816"
+    }
+  ],
+  "tables": [
+    "KBOT_OPS_TARGET",
+    "KBOT_OPS_POLICY",
+    "KBOT_OPS_TARGET_BINDING",
+    "KBOT_OPS_MONITOR_SOURCE",
+    "KBOT_OPS_TARGET_MONITOR",
+    "KBOT_OPS_EVENT",
+    "KBOT_OPS_ALERT",
+    "KBOT_OPS_RUN",
+    "KBOT_OPS_TASK",
+    "KBOT_OPS_ARTIFACT",
+    "KBOT_OPS_RUN_EVENT",
+    "KBOT_OPS_CHANGE_PROPOSAL",
+    "KBOT_OPS_HITL",
+    "KBOT_OPS_APPROVAL_TOKEN",
+    "KBOT_OPS_EXECUTION",
+    "KBOT_OPS_INSPECTION_PLAN",
+    "KBOT_OPS_INSPECTION_TARGET",
+    "KBOT_OPS_INSPECTION_FIRE",
+    "KBOT_OPS_REPORT",
+    "KBOT_OPS_INBOX",
+    "KBOT_OPS_OUTBOX"
+  ],
+  "views": [
+    "KBOT_V_OPS_TARGET",
+    "KBOT_V_OPS_MONITOR_SOURCE",
+    "KBOT_V_OPS_POLICY",
+    "KBOT_V_OPS_INSPECTION_PLAN",
+    "KBOT_V_OPS_INSPECTION_FIRE",
+    "KBOT_V_OPS_RUN",
+    "KBOT_V_OPS_PENDING_APPROVAL",
+    "KBOT_V_OPS_REPORT",
+    "KBOT_V_OPS_CHAT_PENDING",
+    "KBOT_V_OPS_SCHEMA_VERSION"
+  ],
+  "deferred_foreign_keys": [
+    "FK_OPS_RUN_FINAL_ART",
+    "FK_OPS_TASK_OUTPUT_ART",
+    "FK_OPS_PROP_SNAPSHOT_ART",
+    "FK_OPS_EXEC_RESULT_ART",
+    "FK_OPS_REPORT_CONTENT_ART"
+  ],
+  "function_unique_indexes": [
+    "UX_OPS_POLICY_ACTIVE",
+    "UX_OPS_ALERT_ACTIVE",
+    "UX_OPS_HITL_PENDING",
+    "UX_OPS_REPORT_CURRENT"
+  ],
+  "invariants": {
+    "resource_id_type": "RAW(16)",
+    "resource_id_generation": "application_uuidv7",
+    "timestamp_type": "TIMESTAMP(6) WITH TIME ZONE",
+    "scheduled_fire_unique_helper": "SCHEDULED_FOR_UTC",
+    "apex_dml": false,
+    "runtime_ddl": false
+  }
+}

@@ -287,12 +287,22 @@ class AIOpsConfigAndBootstrapTest(unittest.TestCase):
             hasattr(AIOpsDelegationClient, "create_delegation")
         )
 
-    def test_step_zero_does_not_create_ops_ddl(self) -> None:
+    def test_step_one_owns_six_ordered_ddl_scripts(self) -> None:
         root = Path(__file__).resolve().parents[1]
-        sql_files = list(
+        sql_files = sorted(
             (root / "database" / "oracle" / "aiops_agent").glob("*.sql")
         )
-        self.assertEqual([], sql_files)
+        self.assertEqual(
+            [
+                "001_ops_roots.sql",
+                "002_ops_runtime.sql",
+                "003_ops_change.sql",
+                "004_ops_inspection.sql",
+                "005_ops_messaging.sql",
+                "006_ops_fks_views.sql",
+            ],
+            [path.name for path in sql_files],
+        )
 
     def test_openapi_snapshots_match_frozen_contracts(self) -> None:
         root = Path(__file__).resolve().parents[1]

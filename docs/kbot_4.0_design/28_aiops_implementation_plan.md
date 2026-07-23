@@ -62,6 +62,8 @@ Not Ready。
 
 ## 步骤 1：Oracle DDL 与 APEX 投影
 
+**状态：已完成（2026-07-23）。**
+
 详细 Oracle 契约见 [30_aiops_step1_oracle_schema.md](30_aiops_step1_oracle_schema.md)。
 
 按固定顺序实现：
@@ -80,6 +82,12 @@ DDL 必须包含 UUIDv7 `RAW(16)` 主键、JSON Check、外键、函数唯一索
 4.0 不迁移旧 Run、Chat、审批、Target 或 Monitor 配置。Target、Monitor 和 `SECRET_REF` 全部通过 4.0 配置 API 重新创建，旧密码和旧标识不得复制。
 
 **完成物：** 可在空 Schema 顺序执行的六段规范建库脚本、Schema manifest 和受控视图。
+
+实施结果：21 张 `KBOT_OPS_*` 表和 10 个 `KBOT_V_OPS_*` 视图已加入统一空库
+初始化器；Manifest 固定脚本 Hash、对象清单、5 个延后 Artifact 外键和 4 个
+函数唯一索引。Oracle 26ai 的 `MODE` 保留字和带时区时间唯一键限制已分别通过
+`EXECUTION_KIND` 与 `SCHEDULED_FOR_UTC` 虚拟列显式适配，完整空库重放及
+事务 Smoke 已通过。下一步进入步骤 2 Persistence 与事务内核。
 
 ## 步骤 2：Persistence 与事务内核
 

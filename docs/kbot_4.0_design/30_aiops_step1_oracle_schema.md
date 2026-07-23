@@ -1,5 +1,9 @@
 # 4.0 AIOps 步骤 1：Oracle 全量建库 Schema
 
+> 实施状态：已于 2026-07-23 完成。六段 DDL、Schema Manifest、初始化选择、
+> 静态漂移检查和 APEX 投影均已落地，并在 `KBOT4/KBOTDEV` 空 Schema
+> 从第 1 条全量重放通过。
+
 ## 设计目标
 
 本文把 [26_aiops_physical_data_model.md](26_aiops_physical_data_model.md) 落成 Oracle DDL 契约。步骤 1 只创建表、约束、索引、注释和 APEX 视图，不创建 Entity/Repository、不写种子 Target/凭据、不读取任何 3.x 表或数据，也不允许 App 启动时执行 DDL。
@@ -27,7 +31,7 @@ Oracle 部署基线为 26ai；AIOps 表不依赖 Oracle Vector。未来 PostgreS
 
 Oracle DDL 中不写 `ON DELETE RESTRICT`：省略 `ON DELETE` 即为限制删除。历史表不使用 `CASCADE` 或 `SET NULL`。跨领域 `AGENT_ID/PARENT_AGENT_RUN_ID/PARENT_DELEGATION_ID` 不建外键。
 
-可独立寻址实体只保留一个 `*_ID RAW(16)` UUIDv7 主键，同领域外键使用相同类型，不增加同义 `*_UID`。纯关联表和无独立生命周期子项使用复合主键。应用负责生成 UUIDv7；API 序列化为规范字符串，APEX 视图使用 `RAW_TO_UUID` 展示。完整约定见 [31_aiops_step2_persistence_and_identity.md](31_aiops_step2_persistence_and_identity.md)。
+可独立寻址实体只保留一个 `*_ID RAW(16)` UUIDv7 主键，同领域外键使用相同类型，不增加同义 `*_UID`。纯关联表和无独立生命周期子项使用复合主键。应用负责生成 UUIDv7；API 序列化为规范字符串。APEX 视图使用 `RAWTOHEX + SUBSTR` 显式生成规范 UUID 字符串，避免 APEX 和 Python Driver 依赖 Oracle UUID 类型映射。完整约定见 [31_aiops_step2_persistence_and_identity.md](31_aiops_step2_persistence_and_identity.md)。
 
 ## 命名与公共字段
 
@@ -373,7 +377,7 @@ Token Hash、Nonce Hash、Proposal ID 各自唯一，从数据库层保证一个
 
 ### `KBOT_OPS_EXECUTION`
 
-`EXECUTION_ID`、Proposal/Run/Task/Target/Approval Token、Rollback Of 和 Result Artifact 均使用 `RAW(16)` UUIDv7 ID/FK。Idempotency Key 128、Executor Request/Instance ID 128、Hash 64、Action Type 32、Template ID 128、Template Version 64。增加 Template/Parameters/Command/Grant JTI Hash、`CLAIMED_AT` 和 `STATUS_VERSION NUMBER(19)`。Mode 为 `MUTATION/ROLLBACK`；Status 为 `CREATED/SUBMITTED/RUNNING/SUCCEEDED/FAILED/TIMED_OUT/CANCELLED/UNKNOWN`。Result Hash、错误和未到达阶段的时间可空；Row/Status Version 与创建更新时间必填。
+`EXECUTION_ID`、Proposal/Run/Task/Target/Approval Token、Rollback Of 和 Result Artifact 均使用 `RAW(16)` UUIDv7 ID/FK。Idempotency Key 128、Executor Request/Instance ID 128、Hash 64、Action Type 32、Template ID 128、Template Version 64。增加 Template/Parameters/Command/Grant JTI Hash、`CLAIMED_AT` 和 `STATUS_VERSION NUMBER(19)`。`EXECUTION_KIND` 为 `MUTATION/ROLLBACK`；`MODE` 在 Oracle 26ai 中是保留字，不用作列名。Status 为 `CREATED/SUBMITTED/RUNNING/SUCCEEDED/FAILED/TIMED_OUT/CANCELLED/UNKNOWN`。Result Hash、错误和未到达阶段的时间可空；Row/Status Version 与创建更新时间必填。
 
 `IDEMPOTENCY_KEY`、`EXECUTOR_REQUEST_ID`、`PROPOSAL_ID` 分别唯一。`STATUS_VERSION` 初始为 1 且正数；状态从 `SUBMITTED` 起 Executor Instance/Claimed At/Grant Hash 必填。外键指向 Proposal/Run/Task/Target/Approval Token/Self Rollback；Result Artifact 延后。索引 `(TARGET_ID, STATUS, CREATED_AT)`、`(OPS_RUN_ID, STATUS)`、`(EXECUTOR_INSTANCE_ID, STATUS)`。
 
@@ -402,7 +406,14 @@ CREATE UNIQUE INDEX UX_OPS_HITL_PENDING ON KBOT_OPS_HITL (
 
 `INSPECTION_FIRE_ID RAW(16)` 为主键；Plan 为 `RAW(16)` 外键；Scheduled/Started/Completed/Created/Updated 为 TZ Timestamp；Status 16；Plan Row Version `NUMBER(19)`；Template ID 128、Version 64、Schedule Resolver Version 64；Plan Snapshot/Resolution 为 JSON CLOB；Target/Run/Completed/Failed Count 为 `NUMBER(10)` 默认 0；Skip Reason 256；标准错误字段和 Row Version。
 
-唯一 `(INSPECTION_PLAN_ID, SCHEDULED_FOR)`；Status 为 `QUEUED/RUNNING/COMPLETED/PARTIAL/FAILED/SKIPPED/CANCELLED`；版本大于零、计数非负且 Completed/Failed 不大于 Run Count；两个 JSON Check。索引 `(INSPECTION_PLAN_ID, STATUS, SCHEDULED_FOR)` 和 `(STATUS, UPDATED_AT)`。
+逻辑唯一键为 `(INSPECTION_PLAN_ID, SCHEDULED_FOR)`。由于 Oracle 不允许
+`TIMESTAMP WITH TIME ZONE` 直接进入唯一约束，DDL 增加
+`SCHEDULED_FOR_UTC TIMESTAMP(6) GENERATED ALWAYS AS
+(SYS_EXTRACT_UTC(SCHEDULED_FOR)) VIRTUAL`，物理唯一约束落在
+`(INSPECTION_PLAN_ID, SCHEDULED_FOR_UTC)`。Status 为
+`QUEUED/RUNNING/COMPLETED/PARTIAL/FAILED/SKIPPED/CANCELLED`；版本大于零、
+计数非负且 Completed/Failed 不大于 Run Count；两个 JSON Check。索引
+`(INSPECTION_PLAN_ID, STATUS, SCHEDULED_FOR)` 和 `(STATUS, UPDATED_AT)`。
 
 ### `KBOT_OPS_REPORT`
 
@@ -526,6 +537,14 @@ Oracle DDL 会隐式提交，六段脚本不是一个可回滚事务。发布流
 - CLOB 不参与普通唯一索引，幂等和内容判定使用 Hash/Key。
 
 Schema 漂移检查失败时步骤 2 不得继续，不能用 Entity 的 `create_all()` 修复数据库。
+
+当前机器可读基线为
+`database/oracle/aiops_agent/schema_manifest.json`，固定 6 个脚本的执行顺序、
+SHA-256、21 张表、10 个视图、5 个延后外键和 4 个函数唯一索引。实际 Oracle
+Catalog 校验结果为：全部约束 `ENABLED/VALIDATED`、全部索引和视图 `VALID`，
+49 个 AIOps 外键均有覆盖其前导列的索引，
+`KBOT_V_OPS_SCHEMA_VERSION` 返回 `AIOPS / 6 / aiops-oracle-v1`。事务 Smoke
+同时验证了 Domain Scope 外键、UUID 投影、Active Policy 唯一性和回滚不留数据。
 
 ## 步骤 1 完成定义
 
