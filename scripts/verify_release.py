@@ -50,6 +50,7 @@ def _tracked_inputs() -> list[Path]:
     for name in (
         "requirements.txt",
         "configuration/process_topology.toml",
+        "release/sbom/python-direct.cdx.json",
     ):
         path = ROOT / name
         if path.is_file():
@@ -109,6 +110,11 @@ def _checks(
         (
             "configuration_contract",
             [python, "scripts/check_configuration_contract.py"],
+            120,
+        ),
+        (
+            "supply_chain_baseline",
+            [python, "scripts/check_supply_chain.py"],
             120,
         ),
         (

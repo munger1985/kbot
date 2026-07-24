@@ -1,0 +1,201 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.5",
+  "serialNumber": "urn:uuid:29b7caf2-420d-5885-bf7d-249e93632810",
+  "version": 1,
+  "metadata": {
+    "component": {
+      "type": "application",
+      "bom-ref": "pkg:generic/kbot@4.0.0",
+      "name": "kbot",
+      "version": "4.0.0"
+    },
+    "properties": [
+      {
+        "name": "kbot:requirements:sha256",
+        "value": "65520f5bd7d296c16671214a10596679088607cdd5c75dfd916c351409fdb2d5"
+      },
+      {
+        "name": "kbot:sbom:scope",
+        "value": "python-direct-dependencies"
+      }
+    ]
+  },
+  "components": [
+    {
+      "type": "library",
+      "bom-ref": "pkg:pypi/aiohttp@3.13.3",
+      "name": "aiohttp",
+      "version": "3.13.3",
+      "purl": "pkg:pypi/aiohttp@3.13.3"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:pypi/aiomysql@0.3.2",
+      "name": "aiomysql",
+      "version": "0.3.2",
+      "purl": "pkg:pypi/aiomysql@0.3.2"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:pypi/asyncpg@0.31.0",
+      "name": "asyncpg",
+      "version": "0.31.0",
+      "purl": "pkg:pypi/asyncpg@0.31.0"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:pypi/bcrypt@5.0.0",
+      "name": "bcrypt",
+      "version": "5.0.0",
+      "purl": "pkg:pypi/bcrypt@5.0.0"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:pypi/cohere@5.20.2",
+      "name": "cohere",
+      "version": "5.20.2",
+      "purl": "pkg:pypi/cohere@5.20.2"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:pypi/colpali-engine@0.3.17",
+      "name": "colpali-engine",
+      "version": "0.3.17",
+      "purl": "pkg:pypi/colpali-engine@0.3.17"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:pypi/docling@2.70.0",
+      "name": "docling",
+      "version": "2.70.0",
+      "purl": "pkg:pypi/docling@2.70.0"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:pypi/dynaconf@3.2.11",
+      "name": "dynaconf",
+      "version": "3.2.11",
+      "purl": "pkg:pypi/dynaconf@3.2.11"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:pypi/elasticsearch@9.2.1",
+      "name": "elasticsearch",
+      "version": "9.2.1",
+      "purl": "pkg:pypi/elasticsearch@9.2.1"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:pypi/fastapi@0.128.0",
+      "name": "fastapi",
+      "version": "0.128.0",
+      "purl": "pkg:pypi/fastapi@0.128.0"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:pypi/fastapi-mcp@0.4.0",
+      "name": "fastapi-mcp",
+      "version": "0.4.0",
+      "purl": "pkg:pypi/fastapi-mcp@0.4.0"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:pypi/fastapi-offline@1.7.6",
+      "name": "fastapi-offline",
+      "version": "1.7.6",
+      "purl": "pkg:pypi/fastapi-offline@1.7.6"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:pypi/imagehash@4.3.2",
+      "name": "imagehash",
+      "version": "4.3.2",
+      "purl": "pkg:pypi/imagehash@4.3.2"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:pypi/jieba@0.42.1",
+      "name": "jieba",
+      "version": "0.42.1",
+      "purl": "pkg:pypi/jieba@0.42.1"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:pypi/loguru@0.7.3",
+      "name": "loguru",
+      "version": "0.7.3",
+      "purl": "pkg:pypi/loguru@0.7.3"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:pypi/oci@2.166.0",
+      "name": "oci",
+      "version": "2.166.0",
+      "purl": "pkg:pypi/oci@2.166.0"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:pypi/openai@2.16.0",
+      "name": "openai",
+      "version": "2.16.0",
+      "purl": "pkg:pypi/openai@2.16.0"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:pypi/oracledb@3.4.2",
+      "name": "oracledb",
+      "version": "3.4.2",
+      "purl": "pkg:pypi/oracledb@3.4.2"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:pypi/pydantic@2.12.5",
+      "name": "pydantic",
+      "version": "2.12.5",
+      "purl": "pkg:pypi/pydantic@2.12.5"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:pypi/pydantic-settings@2.12.0",
+      "name": "pydantic-settings",
+      "version": "2.12.0",
+      "purl": "pkg:pypi/pydantic-settings@2.12.0"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:pypi/python-dotenv@1.2.2",
+      "name": "python-dotenv",
+      "version": "1.2.2",
+      "purl": "pkg:pypi/python-dotenv@1.2.2"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:pypi/python-jose@3.5.0",
+      "name": "python-jose",
+      "version": "3.5.0",
+      "purl": "pkg:pypi/python-jose@3.5.0"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:pypi/sqlalchemy@2.0.46",
+      "name": "sqlalchemy",
+      "version": "2.0.46",
+      "purl": "pkg:pypi/sqlalchemy@2.0.46"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:pypi/starlette@0.50.0",
+      "name": "starlette",
+      "version": "0.50.0",
+      "purl": "pkg:pypi/starlette@0.50.0"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:pypi/tomli@2.4.0",
+      "name": "tomli",
+      "version": "2.4.0",
+      "purl": "pkg:pypi/tomli@2.4.0"
+    }
+  ]
+}

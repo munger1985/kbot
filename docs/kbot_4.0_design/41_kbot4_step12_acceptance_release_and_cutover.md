@@ -21,13 +21,17 @@
   Entity 表所有权、14 进程拓扑、配置/Example/Secret 契约、AIOps Catalog 和
   全量测试，并输出
   `KBotReleaseEvidence.v1` JSON；
+- `requirements.txt` 直接依赖精确锁定、受跟踪文件 Secret Scan 和直接依赖
+  CycloneDX SBOM；
 - 本地 `start_kbot.sh/stop_kbot.sh`。
 
 这些仍不是完整发布系统：现有 Golden Corpus 只是示例，生产配置样例和本地启动
-脚本尚未完成生产拓扑验证。仍缺统一 Test Dependency Lock、全部服务的
+脚本尚未完成生产拓扑验证。当前 SBOM 只覆盖直接 Python 依赖，不等同于完成
+解析后的全传递依赖或镜像 SBOM。仍缺统一 Test Dependency Lock、全部服务的
 Entity/Catalog 实库一致性检查、Agent/AIOps 跨进程 E2E、正式质量 Gate、安全/
-依赖扫描、负载/故障演练、SBOM/签名和不可变构建物。当前 JSON 是发布证据骨架，
-不能替代 Staging 与生产等价验收；本地启动脚本不用于生产部署。
+依赖漏洞库扫描、许可证策略、负载/故障演练、完整 SBOM/签名和不可变构建物。
+当前 JSON 是发布证据骨架，不能替代 Staging 与生产等价验收；本地启动脚本不
+用于生产部署。
 
 ## 环境与测试数据
 

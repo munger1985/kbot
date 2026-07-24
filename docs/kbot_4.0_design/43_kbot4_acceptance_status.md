@@ -14,9 +14,11 @@ conda run -n cube python scripts/verify_release.py \
 契约、Entity 表所有权、14 个进程的 App/配置/端口/启停覆盖、AIOps 诊断目录和
 全量 Unit/Component/Contract 测试。配置门禁还会逐一核对 18 组实际 TOML 与
 Example、开发/生产合并结果、五个服务配置模型和 `.env.example` Secret 声明。
+供应链基线要求直接依赖精确锁定且无重复，核对直接依赖 CycloneDX SBOM，并扫描
+全部受 Git 跟踪文件中的常见 Secret 与敏感文件类型。
 证据文件记录 Commit、Branch、解释器、Dirty Path、检查结果，以及 DDL、配置
-样例、进程拓扑、OpenAPI 和依赖声明 Hash。它不读取或记录环境变量、数据库密码
-和 Provider Secret。
+样例、进程拓扑、OpenAPI、依赖声明和直接依赖 SBOM Hash。它不读取或记录环境
+变量、数据库密码和 Provider Secret。
 
 ## Oracle 集成状态
 

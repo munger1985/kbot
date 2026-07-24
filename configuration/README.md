@@ -62,3 +62,8 @@ python scripts/check_configuration_contract.py
 
 该检查确保实际配置与 Example 字段严格对应，开发和生产配置可通过各服务的
 Pydantic 模型，并且配置声明的 Secret 环境变量均已收录于 `.env.example`。
+
+发布前还应执行 `python scripts/check_supply_chain.py`。该检查要求
+`requirements.txt` 中的直接依赖全部精确锁定且不重复，验证直接依赖 CycloneDX
+SBOM，并扫描受 Git 跟踪文件中的常见 Secret 与敏感文件类型。依赖变化后使用
+`python scripts/check_supply_chain.py --write-sbom` 更新直接依赖 SBOM。
