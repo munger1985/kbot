@@ -12,6 +12,7 @@ from aiops_agent.api.dependencies import (
     require_service_scope,
 )
 from aiops_agent.application.runtime import AIOpsRuntimeService
+from aiops_agent.application.configuration.common import ConfigurationScope
 from platform_core.contracts import AuthContext
 from platform_core.contracts.aiops import (
     ClaimOpsTaskCommand,
@@ -29,7 +30,14 @@ from platform_core.contracts.aiops import (
     TaskMutationReceipt,
 )
 from platform_core.contracts.aiops.internal import OpsRunReceipt
-from platform_core.contracts.aiops.public import OpsRunSummary, ReportView
+from platform_core.contracts.aiops.public import (
+    InspectionFirePage,
+    InspectionFireView,
+    OpsRunSummary,
+    ReportPage,
+    ReportVersionPage,
+    ReportView,
+)
 
 
 router = APIRouter(prefix="/internal/v1/aiops", tags=["AIOps Runtime"])
@@ -51,6 +59,15 @@ def _scope(request: Request, context: AuthContext) -> tuple[int, int]:
     except ValueError as exc:
         raise RuntimeError("AIOps Domain 必须是数字标识") from exc
     return request.app.state.runtime.settings.platform.app_id, domain_id
+
+
+def _query_scope(
+    request: Request, context: AuthContext
+) -> ConfigurationScope:
+    return ConfigurationScope.from_auth(
+        app_id=request.app.state.runtime.settings.platform.app_id,
+        auth_context=context,
+    )
 
 
 def _ensure_agent_authorized(
@@ -116,6 +133,86 @@ async def get_report(
     app_id, domain_id = _scope(request, context)
     return await service.get_report(
         report_id=report_id,
+        app_id=app_id,
+        domain_id=domain_id,
+    )
+
+
+@router.get("/reports", response_model=ReportPage)
+async def list_reports(
+    request: Request,
+    service: Service,
+    context: Auth,
+    target_id: UUID | None = None,
+    report_type: str | None = None,
+    cursor: str | None = Query(default=None, max_length=2048),
+    limit: int = Query(default=50, ge=1, le=200),
+) -> ReportPage:
+    require_service_scope(request, "aiops.run")
+    return await service.list_reports(
+        scope=_query_scope(request, context),
+        target_id=target_id,
+        report_type=report_type,
+        cursor=cursor,
+        limit=limit,
+    )
+
+
+@router.get(
+    "/reports/{report_id}/versions",
+    response_model=ReportVersionPage,
+)
+async def list_report_versions(
+    report_id: UUID,
+    request: Request,
+    service: Service,
+    context: Auth,
+    cursor: str | None = Query(default=None, max_length=2048),
+    limit: int = Query(default=50, ge=1, le=200),
+) -> ReportVersionPage:
+    require_service_scope(request, "aiops.run")
+    return await service.list_report_versions(
+        scope=_query_scope(request, context),
+        report_id=report_id,
+        cursor=cursor,
+        limit=limit,
+    )
+
+
+@router.get("/inspection-fires", response_model=InspectionFirePage)
+async def list_inspection_fires(
+    request: Request,
+    service: Service,
+    context: Auth,
+    plan_id: UUID | None = None,
+    status: str | None = None,
+    cursor: str | None = Query(default=None, max_length=2048),
+    limit: int = Query(default=50, ge=1, le=200),
+) -> InspectionFirePage:
+    require_service_scope(request, "aiops.run")
+    return await service.list_inspection_fires(
+        scope=_query_scope(request, context),
+        plan_id=plan_id,
+        status=status,
+        cursor=cursor,
+        limit=limit,
+    )
+
+
+@router.get(
+    "/inspection-fires/{fire_id}",
+    response_model=InspectionFireView,
+)
+async def get_inspection_fire(
+    fire_id: UUID,
+    request: Request,
+    service: Service,
+    context: Auth,
+) -> InspectionFireView:
+    require_service_scope(request, "aiops.run")
+    app_id, domain_id = _scope(request, context)
+    return await service.get_inspection_fire(
+        inspection_fire_id=fire_id,
         app_id=app_id,
         domain_id=domain_id,
     )

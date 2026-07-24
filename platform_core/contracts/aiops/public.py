@@ -43,6 +43,7 @@ from .configuration import (
 from .types import (
     AIOpsContract,
     ArtifactRef,
+    CursorPage,
     HitlStatus,
     HitlType,
     JsonObject,
@@ -77,6 +78,11 @@ class InspectionFireView(InspectionFireSummary):
     run_ids: tuple[UUIDv7, ...] = ()
     created_at: UtcDatetime
     completed_at: UtcDatetime | None = None
+
+
+class InspectionFirePage(CursorPage):
+    schema_version: str = PUBLIC_SCHEMA_VERSION
+    items: tuple[InspectionFireSummary, ...] = ()
 
 
 class OpsRunCreate(AIOpsContract):
@@ -272,12 +278,22 @@ class ReportView(ReportSummary):
     published_at: UtcDatetime | None = None
 
 
+class ReportPage(CursorPage):
+    schema_version: str = PUBLIC_SCHEMA_VERSION
+    items: tuple[ReportSummary, ...] = ()
+
+
 class ReportVersionSummary(AIOpsContract):
     schema_version: str = PUBLIC_SCHEMA_VERSION
     report_id: UUIDv7
     report_version: int = Field(ge=1)
     status: ReportStatus
     published_at: UtcDatetime | None = None
+
+
+class ReportVersionPage(CursorPage):
+    schema_version: str = PUBLIC_SCHEMA_VERSION
+    items: tuple[ReportVersionSummary, ...] = ()
 
 
 class UploadSession(AIOpsContract):

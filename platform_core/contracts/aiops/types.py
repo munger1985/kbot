@@ -147,9 +147,10 @@ class ReportType(StrEnum):
 
 
 class ReportStatus(StrEnum):
-    DRAFT = "DRAFT"
-    PUBLISHED = "PUBLISHED"
-    SUPERSEDED = "SUPERSEDED"
+    GENERATING = "GENERATING"
+    READY = "READY"
+    PARTIAL = "PARTIAL"
+    FAILED = "FAILED"
 
 
 class CommandType(StrEnum):

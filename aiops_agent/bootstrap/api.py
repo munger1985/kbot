@@ -112,12 +112,13 @@ def create_aiops_api(
             provider=resolved.secret_store.provider,
             allowed_schemes=resolved.secret_store.allowed_schemes,
         )
+        cursor_codec = SignedCursorCodec(
+            secret=cursor_secret,
+            ttl_seconds=resolved.management.cursor_ttl_seconds,
+        )
         app.state.configuration_service = AIOpsConfigurationService(
             uow_factory=runtime.uow_factory,
-            cursor_codec=SignedCursorCodec(
-                secret=cursor_secret,
-                ttl_seconds=resolved.management.cursor_ttl_seconds,
-            ),
+            cursor_codec=cursor_codec,
             secret_store=secret_store,
             agent_runtime=AgentRuntimeValidator(agent_runtime_client),
             template_registry=InspectionTemplateRegistry(
@@ -235,6 +236,7 @@ def create_aiops_api(
             diagnostic_registry=diagnostic_registry,
             diagnosis_config=resolved.diagnosis,
             diagnosis_prompt_registry=diagnosis_prompts,
+            cursor_codec=cursor_codec,
         )
         app.state.monitor_intake_service = MonitorWebhookIntakeService(
             uow_factory=runtime.uow_factory,

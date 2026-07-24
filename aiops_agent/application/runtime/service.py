@@ -17,6 +17,10 @@ from aiops_agent.application.errors import (
     state_conflict,
     validation_failed,
 )
+from aiops_agent.application.configuration.common import (
+    ConfigurationScope,
+    SignedCursorCodec,
+)
 from aiops_agent.domain.operations import (
     ERROR_CATALOG,
     TASK_TYPE_TO_RUN_PHASE,
@@ -86,8 +90,15 @@ from platform_core.contracts.aiops.internal import OpsRunReceipt
 from platform_core.contracts.aiops.public import (
     HitlResponse,
     HitlResult,
+    InspectionFirePage,
+    InspectionFireSummary,
+    InspectionFireView,
     OpsRunSummary,
     PendingInputView,
+    ReportPage,
+    ReportSummary,
+    ReportVersionPage,
+    ReportVersionSummary,
     ReportView,
 )
 from platform_core.contracts.aiops.types import ArtifactRef
@@ -140,6 +151,7 @@ class AIOpsRuntimeService:
         diagnostic_registry: DiagnosticRegistry | None = None,
         diagnosis_config=None,
         diagnosis_prompt_registry: DiagnosisPromptRegistry | None = None,
+        cursor_codec: SignedCursorCodec | None = None,
     ):
         self._uow_factory = uow_factory
         self._blueprints = blueprint_registry
@@ -154,6 +166,7 @@ class AIOpsRuntimeService:
         self._diagnostic_registry = diagnostic_registry
         self._diagnosis_config = diagnosis_config
         self._diagnosis_prompts = diagnosis_prompt_registry
+        self._cursor_codec = cursor_codec
 
     async def create_run(
         self, command: CreateOpsRunCommand
@@ -3043,6 +3056,206 @@ class AIOpsRuntimeService:
                 completed_at=run.completed_at,
             )
 
+    async def list_inspection_fires(
+        self,
+        *,
+        scope: ConfigurationScope,
+        plan_id: UUID | None,
+        status: str | None,
+        cursor: str | None,
+        limit: int,
+    ) -> InspectionFirePage:
+        allowed = {
+            "QUEUED",
+            "RUNNING",
+            "COMPLETED",
+            "PARTIAL",
+            "FAILED",
+            "SKIPPED",
+            "CANCELLED",
+        }
+        if status is not None and status not in allowed:
+            raise validation_failed("Inspection Fire status 过滤条件无效")
+        filters = {
+            "plan_id": str(plan_id) if plan_id is not None else None,
+            "status": status,
+        }
+        before_at = before_id = None
+        if cursor:
+            before_at, before_id = self._decode_cursor(
+                token=cursor,
+                scope=scope,
+                filters=filters,
+            )
+        async with self._uow_factory() as uow:
+            assert uow.inspections is not None
+            entities = await uow.inspections.page_fires(
+                app_id=scope.app_id,
+                domain_id=scope.domain_id,
+                plan_id=plan_id,
+                statuses=(status,) if status else None,
+                before_created_at=before_at,
+                before_id=before_id,
+                limit=limit + 1,
+            )
+            page_entities = entities[:limit]
+            next_cursor = self._next_cursor(
+                scope=scope,
+                filters=filters,
+                entities=entities,
+                page_entities=page_entities,
+                limit=limit,
+                id_attribute="inspection_fire_id",
+            )
+            return InspectionFirePage(
+                items=tuple(
+                    self._fire_summary(item) for item in page_entities
+                ),
+                next_cursor=next_cursor,
+                has_more=len(entities) > limit,
+            )
+
+    async def get_inspection_fire(
+        self,
+        *,
+        inspection_fire_id: UUID,
+        app_id: int,
+        domain_id: int,
+    ) -> InspectionFireView:
+        async with self._uow_factory() as uow:
+            assert uow.inspections is not None
+            fire = await uow.inspections.get_fire_scoped(
+                inspection_fire_id=inspection_fire_id,
+                app_id=app_id,
+                domain_id=domain_id,
+            )
+            if fire is None:
+                raise resource_not_found("Inspection Fire")
+            runs = await uow.inspections.list_runs_for_fire(
+                inspection_fire_id=inspection_fire_id
+            )
+            summary = self._fire_summary(fire)
+            return InspectionFireView(
+                **summary.model_dump(),
+                run_ids=tuple(item.ops_run_id for item in runs),
+                created_at=fire.created_at,
+                completed_at=fire.completed_at,
+            )
+
+    async def list_reports(
+        self,
+        *,
+        scope: ConfigurationScope,
+        target_id: UUID | None,
+        report_type: str | None,
+        cursor: str | None,
+        limit: int,
+    ) -> ReportPage:
+        allowed = {
+            "INCIDENT",
+            "PERFORMANCE",
+            "INSPECTION_DAILY",
+            "INSPECTION_WEEKLY",
+            "COMPARISON",
+        }
+        if report_type is not None and report_type not in allowed:
+            raise validation_failed("Report type 过滤条件无效")
+        filters = {
+            "target_id": (
+                str(target_id) if target_id is not None else None
+            ),
+            "report_type": report_type,
+        }
+        before_at = before_id = None
+        if cursor:
+            before_at, before_id = self._decode_cursor(
+                token=cursor,
+                scope=scope,
+                filters=filters,
+            )
+        async with self._uow_factory() as uow:
+            assert uow.inspections is not None
+            entities = await uow.inspections.page_current_reports(
+                app_id=scope.app_id,
+                domain_id=scope.domain_id,
+                target_id=target_id,
+                report_type=report_type,
+                before_created_at=before_at,
+                before_id=before_id,
+                limit=limit + 1,
+            )
+            page_entities = entities[:limit]
+            next_cursor = self._next_cursor(
+                scope=scope,
+                filters=filters,
+                entities=entities,
+                page_entities=page_entities,
+                limit=limit,
+                id_attribute="report_id",
+            )
+            return ReportPage(
+                items=tuple(
+                    self._report_summary(item) for item in page_entities
+                ),
+                next_cursor=next_cursor,
+                has_more=len(entities) > limit,
+            )
+
+    async def list_report_versions(
+        self,
+        *,
+        scope: ConfigurationScope,
+        report_id: UUID,
+        cursor: str | None,
+        limit: int,
+    ) -> ReportVersionPage:
+        filters = {"report_id": str(report_id)}
+        before_at = before_id = None
+        if cursor:
+            before_at, before_id = self._decode_cursor(
+                token=cursor,
+                scope=scope,
+                filters=filters,
+            )
+        async with self._uow_factory() as uow:
+            assert uow.inspections is not None
+            anchor = await uow.inspections.get_report_scoped(
+                report_id=report_id,
+                app_id=scope.app_id,
+                domain_id=scope.domain_id,
+            )
+            if anchor is None:
+                raise resource_not_found("Report")
+            entities = await uow.inspections.page_report_versions(
+                ops_run_id=anchor.ops_run_id,
+                report_key=anchor.report_key,
+                before_created_at=before_at,
+                before_id=before_id,
+                limit=limit + 1,
+            )
+            page_entities = entities[:limit]
+            next_cursor = self._next_cursor(
+                scope=scope,
+                filters=filters,
+                entities=entities,
+                page_entities=page_entities,
+                limit=limit,
+                id_attribute="report_id",
+            )
+            return ReportVersionPage(
+                items=tuple(
+                    ReportVersionSummary(
+                        report_id=item.report_id,
+                        report_version=int(item.report_version),
+                        status=item.status,
+                        published_at=item.created_at,
+                    )
+                    for item in page_entities
+                ),
+                next_cursor=next_cursor,
+                has_more=len(entities) > limit,
+            )
+
     async def get_report(
         self,
         *,
@@ -3087,6 +3300,75 @@ class AIOpsRuntimeService:
                 corrected_from_report_id=report.supersedes_report_id,
                 published_at=report.created_at,
             )
+
+    def _decode_cursor(
+        self,
+        *,
+        token: str,
+        scope: ConfigurationScope,
+        filters: dict[str, Any],
+    ) -> tuple[datetime, UUID]:
+        if self._cursor_codec is None:
+            raise RuntimeError("AIOps 查询 Cursor Codec 尚未配置")
+        return self._cursor_codec.decode(
+            token=token,
+            scope=scope,
+            filters=filters,
+        )
+
+    def _next_cursor(
+        self,
+        *,
+        scope: ConfigurationScope,
+        filters: dict[str, Any],
+        entities: list,
+        page_entities: list,
+        limit: int,
+        id_attribute: str,
+    ) -> str | None:
+        if len(entities) <= limit or not page_entities:
+            return None
+        if self._cursor_codec is None:
+            raise RuntimeError("AIOps 查询 Cursor Codec 尚未配置")
+        last = page_entities[-1]
+        return self._cursor_codec.encode(
+            scope=scope,
+            updated_at=last.created_at,
+            resource_id=getattr(last, id_attribute),
+            filters=filters,
+        )
+
+    @staticmethod
+    def _fire_summary(fire) -> InspectionFireSummary:
+        return InspectionFireSummary(
+            fire_id=fire.inspection_fire_id,
+            plan_id=fire.inspection_plan_id,
+            scheduled_at=fire.scheduled_for,
+            status=fire.status,
+            target_count=int(fire.target_count),
+            completed_count=int(fire.completed_count),
+            failed_count=int(fire.failed_count),
+        )
+
+    @staticmethod
+    def _report_summary(report) -> ReportSummary:
+        if (
+            report.period_start is None
+            or report.period_end is None
+            or report.summary is None
+        ):
+            raise state_conflict("当前 Report 投影字段不完整")
+        return ReportSummary(
+            report_id=report.report_id,
+            report_key=report.report_key,
+            report_type=report.report_type,
+            report_version=int(report.report_version),
+            status=report.status,
+            target_id=report.target_id,
+            period_start=report.period_start,
+            period_end=report.period_end,
+            summary=report.summary,
+        )
 
     async def get_pending_input(
         self,

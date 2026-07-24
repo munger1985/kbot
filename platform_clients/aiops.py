@@ -756,6 +756,88 @@ class AIOpsManagementClient(_BaseAIOpsClient):
             auth_context=auth_context,
         )
 
+    async def list_reports(
+        self,
+        *,
+        target_id: UUID | None,
+        report_type: str | None,
+        cursor: str | None,
+        limit: int,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        query = {"limit": str(limit)}
+        if target_id is not None:
+            query["target_id"] = str(target_id)
+        if report_type is not None:
+            query["report_type"] = report_type
+        if cursor is not None:
+            query["cursor"] = cursor
+        return await self._json(
+            "GET",
+            (
+                f"{INTERNAL_API_V1}/aiops/reports?"
+                f"{urlencode(query)}"
+            ),
+            auth_context=auth_context,
+        )
+
+    async def list_report_versions(
+        self,
+        report_id: UUID,
+        *,
+        cursor: str | None,
+        limit: int,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        query = {"limit": str(limit)}
+        if cursor is not None:
+            query["cursor"] = cursor
+        return await self._json(
+            "GET",
+            (
+                f"{INTERNAL_API_V1}/aiops/reports/{report_id}/versions?"
+                f"{urlencode(query)}"
+            ),
+            auth_context=auth_context,
+        )
+
+    async def list_inspection_fires(
+        self,
+        *,
+        plan_id: UUID | None,
+        status: str | None,
+        cursor: str | None,
+        limit: int,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        query = {"limit": str(limit)}
+        if plan_id is not None:
+            query["plan_id"] = str(plan_id)
+        if status is not None:
+            query["status"] = status
+        if cursor is not None:
+            query["cursor"] = cursor
+        return await self._json(
+            "GET",
+            (
+                f"{INTERNAL_API_V1}/aiops/inspection-fires?"
+                f"{urlencode(query)}"
+            ),
+            auth_context=auth_context,
+        )
+
+    async def get_inspection_fire(
+        self,
+        fire_id: UUID,
+        *,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "GET",
+            f"{INTERNAL_API_V1}/aiops/inspection-fires/{fire_id}",
+            auth_context=auth_context,
+        )
+
     async def list_run_events(
         self,
         run_id: UUID,

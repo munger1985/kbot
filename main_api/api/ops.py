@@ -33,6 +33,8 @@ from platform_core.contracts.aiops import (
     HitlResponse,
     HitlResult,
     HitlSkipCommand,
+    InspectionFirePage,
+    InspectionFireView,
     InspectionPlanCreate,
     InspectionPlanDetail,
     InspectionPlanPage,
@@ -59,6 +61,8 @@ from platform_core.contracts.aiops import (
     PolicyPage,
     ProposalView,
     RejectionCommand,
+    ReportPage,
+    ReportVersionPage,
     ReportView,
     TargetCreate,
     TargetDetail,
@@ -118,6 +122,76 @@ async def get_report(
         auth_context=request.state.auth_context,
     )
     return ReportView.model_validate(payload)
+
+
+@router.get("/reports", response_model=ReportPage)
+async def list_reports(
+    request: Request,
+    target_id: UUID | None = None,
+    report_type: str | None = None,
+    cursor: str | None = Query(default=None, max_length=2048),
+    limit: int = Query(default=50, ge=1, le=200),
+) -> ReportPage:
+    payload = await _client(request).list_reports(
+        target_id=target_id,
+        report_type=report_type,
+        cursor=cursor,
+        limit=limit,
+        auth_context=request.state.auth_context,
+    )
+    return ReportPage.model_validate(payload)
+
+
+@router.get(
+    "/reports/{report_id}/versions",
+    response_model=ReportVersionPage,
+)
+async def list_report_versions(
+    report_id: UUID,
+    request: Request,
+    cursor: str | None = Query(default=None, max_length=2048),
+    limit: int = Query(default=50, ge=1, le=200),
+) -> ReportVersionPage:
+    payload = await _client(request).list_report_versions(
+        report_id,
+        cursor=cursor,
+        limit=limit,
+        auth_context=request.state.auth_context,
+    )
+    return ReportVersionPage.model_validate(payload)
+
+
+@router.get("/inspection-fires", response_model=InspectionFirePage)
+async def list_inspection_fires(
+    request: Request,
+    plan_id: UUID | None = None,
+    status: str | None = None,
+    cursor: str | None = Query(default=None, max_length=2048),
+    limit: int = Query(default=50, ge=1, le=200),
+) -> InspectionFirePage:
+    payload = await _client(request).list_inspection_fires(
+        plan_id=plan_id,
+        status=status,
+        cursor=cursor,
+        limit=limit,
+        auth_context=request.state.auth_context,
+    )
+    return InspectionFirePage.model_validate(payload)
+
+
+@router.get(
+    "/inspection-fires/{fire_id}",
+    response_model=InspectionFireView,
+)
+async def get_inspection_fire(
+    fire_id: UUID,
+    request: Request,
+) -> InspectionFireView:
+    payload = await _client(request).get_inspection_fire(
+        fire_id,
+        auth_context=request.state.auth_context,
+    )
+    return InspectionFireView.model_validate(payload)
 
 
 @router.post("/runs", response_model=OpsRunReceipt, status_code=201)

@@ -23,8 +23,11 @@
   `action-effect.v1` 只比较目标会话和阻塞关系是否消失；证据缺口一律降级为
   `INCONCLUSIVE`，LLM 不参与数值或结论判定。
 
-Solution Group 汇总对比、历史版本查询、Fire 列表 API 和监控指标型巡检仍属于
-后续 10D；当前实现不把数据库诊断覆盖率或命令执行成功冒充为性能改善结论。
+历史版本查询、Fire/Report 查询 API 已在 10D 完成。监控指标型巡检仍属于后续
+扩展；当前实现不把数据库诊断覆盖率或命令执行成功冒充为性能改善结论。
+现有 Action Planner 的权威契约最多产生一个动作，因此不发布内容重复的
+Solution Group 报告；待 Planner 支持多 Proposal 后，仅在冻结的预期动作全部
+进入 Verification 终态时启用组级汇总。
 
 ## 目标与边界
 
@@ -225,6 +228,19 @@ ACTION_VERIFICATION.v1
 `UNCHANGED`，`ADVERSE` 映射为 `DEGRADED`；任一必需证据缺失、信号为空或状态
 不可解释均为 `INCONCLUSIVE`。这些是“直接效果”结论，不宣称已证明动作与系统
 整体健康变化之间存在因果关系。
+
+## 10D 查询面
+
+Fire 与 Report 列表使用按 `CREATED_AT + UUIDv7` 排序的 Keyset Cursor。Cursor
+签名绑定 `APP_ID/DOMAIN_ID`、可信调用身份和全部过滤条件，不能跨 Domain、跨
+用户或替换过滤器重放：
+
+- Fire 列表支持 `plan_id/status`，详情返回该 Fire 实际创建的 Run ID；
+- Report 列表只返回 `IS_CURRENT=1`，支持 `target_id/report_type`；
+- Version 列表先用任意版本 Report ID 做 Domain 范围内的逻辑报告锚定，再按
+  `(OPS_RUN_ID, REPORT_KEY)` 查询历史，不能借旧 ID 越权；
+- Report 内容状态统一为 `GENERATING/READY/PARTIAL/FAILED`；版本是否已被替代
+  由 `IS_CURRENT` 表达，不再使用旧的 `PUBLISHED/SUPERSEDED` 混合状态。
 
 ## API、APEX 与投递边界
 

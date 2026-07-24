@@ -363,6 +363,79 @@ class InspectionRepository(AIOpsRepository):
             statement = statement.with_for_update()
         return (await self._session.execute(statement)).scalar_one_or_none()
 
+    async def get_fire_scoped(
+        self,
+        *,
+        inspection_fire_id: UUID,
+        app_id: int,
+        domain_id: int,
+    ) -> InspectionFireEntity | None:
+        self._check_active()
+        statement = (
+            select(InspectionFireEntity)
+            .join(
+                InspectionPlanEntity,
+                InspectionPlanEntity.inspection_plan_id
+                == InspectionFireEntity.inspection_plan_id,
+            )
+            .where(
+                InspectionFireEntity.inspection_fire_id
+                == inspection_fire_id,
+                InspectionPlanEntity.app_id == app_id,
+                InspectionPlanEntity.domain_id == domain_id,
+            )
+        )
+        return (await self._session.execute(statement)).scalar_one_or_none()
+
+    async def page_fires(
+        self,
+        *,
+        app_id: int,
+        domain_id: int,
+        plan_id: UUID | None,
+        statuses: Collection[str] | None,
+        before_created_at: datetime | None,
+        before_id: UUID | None,
+        limit: int,
+    ) -> list[InspectionFireEntity]:
+        self._check_active()
+        statement = (
+            select(InspectionFireEntity)
+            .join(
+                InspectionPlanEntity,
+                InspectionPlanEntity.inspection_plan_id
+                == InspectionFireEntity.inspection_plan_id,
+            )
+            .where(
+                InspectionPlanEntity.app_id == app_id,
+                InspectionPlanEntity.domain_id == domain_id,
+            )
+        )
+        if plan_id is not None:
+            statement = statement.where(
+                InspectionFireEntity.inspection_plan_id == plan_id
+            )
+        if statuses:
+            statement = statement.where(
+                InspectionFireEntity.status.in_(statuses)
+            )
+        if before_created_at is not None and before_id is not None:
+            statement = statement.where(
+                or_(
+                    InspectionFireEntity.created_at < before_created_at,
+                    and_(
+                        InspectionFireEntity.created_at
+                        == before_created_at,
+                        InspectionFireEntity.inspection_fire_id < before_id,
+                    ),
+                )
+            )
+        statement = statement.order_by(
+            InspectionFireEntity.created_at.desc(),
+            InspectionFireEntity.inspection_fire_id.desc(),
+        ).limit(limit)
+        return list((await self._session.execute(statement)).scalars())
+
     async def list_open_fires(
         self, *, inspection_plan_id: UUID, lock: bool = False
     ) -> list[InspectionFireEntity]:
@@ -507,3 +580,103 @@ class InspectionRepository(AIOpsRepository):
             )
         )
         return (await self._session.execute(statement)).scalar_one_or_none()
+
+    async def get_report_scoped(
+        self,
+        *,
+        report_id: UUID,
+        app_id: int,
+        domain_id: int,
+    ) -> ReportEntity | None:
+        self._check_active()
+        statement = (
+            select(ReportEntity)
+            .join(
+                TargetEntity,
+                TargetEntity.target_id == ReportEntity.target_id,
+            )
+            .where(
+                ReportEntity.report_id == report_id,
+                TargetEntity.app_id == app_id,
+                TargetEntity.domain_id == domain_id,
+            )
+        )
+        return (await self._session.execute(statement)).scalar_one_or_none()
+
+    async def page_current_reports(
+        self,
+        *,
+        app_id: int,
+        domain_id: int,
+        target_id: UUID | None,
+        report_type: str | None,
+        before_created_at: datetime | None,
+        before_id: UUID | None,
+        limit: int,
+    ) -> list[ReportEntity]:
+        self._check_active()
+        statement = (
+            select(ReportEntity)
+            .join(
+                TargetEntity,
+                TargetEntity.target_id == ReportEntity.target_id,
+            )
+            .where(
+                ReportEntity.is_current == 1,
+                TargetEntity.app_id == app_id,
+                TargetEntity.domain_id == domain_id,
+            )
+        )
+        if target_id is not None:
+            statement = statement.where(
+                ReportEntity.target_id == target_id
+            )
+        if report_type is not None:
+            statement = statement.where(
+                ReportEntity.report_type == report_type
+            )
+        if before_created_at is not None and before_id is not None:
+            statement = statement.where(
+                or_(
+                    ReportEntity.created_at < before_created_at,
+                    and_(
+                        ReportEntity.created_at == before_created_at,
+                        ReportEntity.report_id < before_id,
+                    ),
+                )
+            )
+        statement = statement.order_by(
+            ReportEntity.created_at.desc(),
+            ReportEntity.report_id.desc(),
+        ).limit(limit)
+        return list((await self._session.execute(statement)).scalars())
+
+    async def page_report_versions(
+        self,
+        *,
+        ops_run_id: UUID,
+        report_key: str,
+        before_created_at: datetime | None,
+        before_id: UUID | None,
+        limit: int,
+    ) -> list[ReportEntity]:
+        self._check_active()
+        statement = select(ReportEntity).where(
+            ReportEntity.ops_run_id == ops_run_id,
+            ReportEntity.report_key == report_key,
+        )
+        if before_created_at is not None and before_id is not None:
+            statement = statement.where(
+                or_(
+                    ReportEntity.created_at < before_created_at,
+                    and_(
+                        ReportEntity.created_at == before_created_at,
+                        ReportEntity.report_id < before_id,
+                    ),
+                )
+            )
+        statement = statement.order_by(
+            ReportEntity.created_at.desc(),
+            ReportEntity.report_id.desc(),
+        ).limit(limit)
+        return list((await self._session.execute(statement)).scalars())
