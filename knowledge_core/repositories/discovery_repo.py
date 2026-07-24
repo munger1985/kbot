@@ -126,4 +126,5 @@ class DiscoveryRepository:
             display_title=entity.display_title, local_rank=rank, channel=channel, score=score,
             matched_member_key=entity.profile_key if entity.object_type == "DOCUMENT" else None,
             member_count=int(coverage.get("member_count", 0)), coverage=coverage,
+            profile_text=entity.profile_text,
         )

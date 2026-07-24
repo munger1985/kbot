@@ -10,7 +10,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from platform_core.identity import uuid7
 from platform_core.persistence.orm import (
     BaseEntity,
-    OracleJSON,
+    OracleNativeJSON,
     UniversalTimestamp,
     UUIDv7Type,
 )
@@ -41,10 +41,10 @@ class OpsRunEntity(BaseEntity):
         String(24), nullable=False, default="CREATED"
     )
     plan_snapshot_json: Mapped[dict[str, Any] | None] = mapped_column(
-        OracleJSON
+        OracleNativeJSON
     )
     policy_snapshot_json: Mapped[dict[str, Any] | None] = mapped_column(
-        OracleJSON
+        OracleNativeJSON
     )
     root_cause_level: Mapped[str | None] = mapped_column(String(16))
     final_artifact_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
@@ -97,8 +97,8 @@ class OpsTaskEntity(BaseEntity):
     output_schema_version: Mapped[str] = mapped_column(
         String(64), nullable=False
     )
-    depends_on_json: Mapped[list[str] | None] = mapped_column(OracleJSON)
-    input_artifacts_json: Mapped[list[str] | None] = mapped_column(OracleJSON)
+    depends_on_json: Mapped[list[str] | None] = mapped_column(OracleNativeJSON)
+    input_artifacts_json: Mapped[list[str] | None] = mapped_column(OracleNativeJSON)
     output_artifact_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
     status: Mapped[str] = mapped_column(String(24), nullable=False)
     priority: Mapped[int] = mapped_column(
@@ -158,12 +158,12 @@ class OpsArtifactEntity(BaseEntity):
     artifact_key: Mapped[str] = mapped_column(String(256), nullable=False)
     artifact_type: Mapped[str] = mapped_column(String(64), nullable=False)
     schema_version: Mapped[str] = mapped_column(String(64), nullable=False)
-    payload_json: Mapped[Any | None] = mapped_column(OracleJSON)
+    payload_json: Mapped[Any | None] = mapped_column(OracleNativeJSON)
     payload_uri: Mapped[str | None] = mapped_column(String(2048))
     content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     byte_size: Mapped[int] = mapped_column(Numeric(19, 0), nullable=False)
     provenance_json: Mapped[dict[str, Any]] = mapped_column(
-        OracleJSON, nullable=False
+        OracleNativeJSON, nullable=False
     )
     trust_level: Mapped[str] = mapped_column(String(24), nullable=False)
     security_level: Mapped[int] = mapped_column(Numeric(3, 0), nullable=False)
@@ -186,7 +186,7 @@ class OpsRunEventEntity(BaseEntity):
     event_key: Mapped[str | None] = mapped_column(String(128))
     visibility: Mapped[str] = mapped_column(String(16), nullable=False)
     payload_json: Mapped[dict[str, Any]] = mapped_column(
-        OracleJSON, nullable=False
+        OracleNativeJSON, nullable=False
     )
     created_at: Mapped[datetime] = mapped_column(
         UniversalTimestamp(timezone=True), server_default=func.now(), nullable=False

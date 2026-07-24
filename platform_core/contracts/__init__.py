@@ -12,6 +12,19 @@ from .agent import (
     CreateAgentDefinitionRequest,
     UpdateAgentDefinitionRequest,
 )
+from .conversation import (
+    ConversationItemView,
+    ConversationTurnPage,
+    ConversationTurnReceipt,
+    ConversationTurnView,
+    ConversationView,
+    CreateConversationRequest,
+    CreateConversationTurnRequest,
+    ConversationQueryImage,
+    MemoryItemView,
+    PublicTraceEvent,
+    UpdateConversationRequest,
+)
 from .identity import AuthContext, PrincipalKind, ServiceIdentity
 from .model import EmbeddingDataItem
 
@@ -24,6 +37,17 @@ __all__ = [
     "AgentRunReceipt",
     "AgentRunSummary",
     "CreateAgentRunRequest",
+    "ConversationItemView",
+    "ConversationTurnPage",
+    "ConversationTurnReceipt",
+    "ConversationTurnView",
+    "ConversationView",
+    "CreateConversationRequest",
+    "CreateConversationTurnRequest",
+    "ConversationQueryImage",
+    "MemoryItemView",
+    "PublicTraceEvent",
+    "UpdateConversationRequest",
     "CreateAgentDefinitionRequest",
     "EmbeddingDataItem",
     "PrincipalKind",

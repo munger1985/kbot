@@ -7,7 +7,7 @@ from sqlalchemy import DateTime, Integer, Numeric, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from platform_core.identity import uuid7
-from platform_core.persistence.orm import BaseEntity, OracleJSON, UUIDv7Type, VectorField
+from platform_core.persistence.orm import BaseEntity, OracleNativeJSON, UUIDv7Type, VectorField
 
 
 class KcDiscoveryObjectEntity(BaseEntity):
@@ -26,8 +26,8 @@ class KcDiscoveryObjectEntity(BaseEntity):
     profile_key: Mapped[str] = mapped_column(String(256), nullable=False)
     display_title: Mapped[str] = mapped_column(String(512), nullable=False)
     profile_text: Mapped[str] = mapped_column(Text, nullable=False)
-    facet_json: Mapped[dict[str, Any] | None] = mapped_column(OracleJSON)
-    coverage_json: Mapped[dict[str, Any]] = mapped_column(OracleJSON, nullable=False)
+    facet_json: Mapped[dict[str, Any] | None] = mapped_column(OracleNativeJSON)
+    coverage_json: Mapped[dict[str, Any]] = mapped_column(OracleNativeJSON, nullable=False)
     profile_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     profile_schema_version: Mapped[str] = mapped_column(String(32), nullable=False)
     embedding: Mapped[list[float] | None] = mapped_column(VectorField())

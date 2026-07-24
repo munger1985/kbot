@@ -14,10 +14,14 @@ class KnowledgeObjectNotFoundError(Exception):
 @dataclass(frozen=True)
 class MemberStatus:
     external_document_id: str
+    declared_name: str | None
     document_role: str
     member_status: str
     failure_stage: str | None
     failure_code: str | None
+    failure_message: str | None
+    received_at: datetime | None
+    completed_at: datetime | None
 
 
 @dataclass(frozen=True)
@@ -26,6 +30,10 @@ class RevisionStatus:
     revision_no: int
     source_revision: str
     status: str
+    approval_status: str
+    reviewed_by: str | None
+    reviewed_at: datetime | None
+    review_comment: str | None
     accepted_at: datetime | None
     completed_at: datetime | None
     members: list[MemberStatus] | None = None
@@ -87,10 +95,14 @@ class KnowledgeCoreStatusService:
                 entities = await uow.members.list_by_revision(bundle_revision_id=bundle_revision_id)
                 members = [MemberStatus(
                     external_document_id=item.external_document_id,
+                    declared_name=item.declared_name,
                     document_role=item.document_role,
                     member_status=item.member_status,
                     failure_stage=item.failure_stage,
                     failure_code=item.failure_code,
+                    failure_message=item.failure_message,
+                    received_at=item.received_at,
+                    completed_at=item.completed_at,
                 ) for item in entities]
             result = self._revision(revision)
             return RevisionStatus(**{**result.__dict__, "members": members})
@@ -102,6 +114,10 @@ class KnowledgeCoreStatusService:
             revision_no=entity.revision_no,
             source_revision=entity.source_revision,
             status=entity.status,
+            approval_status=entity.approval_status,
+            reviewed_by=entity.reviewed_by,
+            reviewed_at=entity.reviewed_at,
+            review_comment=entity.review_comment,
             accepted_at=entity.accepted_at,
             completed_at=entity.completed_at,
         )

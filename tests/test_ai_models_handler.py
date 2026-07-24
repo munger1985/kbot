@@ -1,5 +1,9 @@
 import unittest
+from decimal import Decimal
 from types import SimpleNamespace
+
+from sqlalchemy.dialects import oracle
+from sqlalchemy.schema import CreateTable
 
 from model_serving.common.management_router import (
     ModelUpdateRequest,
@@ -8,7 +12,7 @@ from model_serving.common.management_router import (
 from model_serving.common.entities.ai_model import AIModelEntity
 from model_serving.common.model_registry import ModelRegistryService
 from platform_core.identity import uuid7
-from platform_core.persistence import UUIDv7Type
+from platform_core.persistence import OracleNativeJSON, UUIDv7Type
 
 
 class AiModelsHandlerTest(unittest.TestCase):
@@ -36,11 +40,36 @@ class AiModelsHandlerTest(unittest.TestCase):
         self.assertIn("provider_model_name", AIModelEntity.__table__.c)
         self.assertNotIn("model_name", AIModelEntity.__table__.c)
 
+    def test_model_params_uses_oracle_native_json(self):
+        column_type = AIModelEntity.__table__.c.model_params.type
+        self.assertIsInstance(column_type, OracleNativeJSON)
+        ddl = str(
+            CreateTable(AIModelEntity.__table__).compile(
+                dialect=oracle.dialect()
+            )
+        )
+        self.assertIn("model_params JSON", ddl)
+        restored = column_type.result_processor(
+            oracle.dialect(),
+            None,
+        )(
+            {
+                "ratio": Decimal("0.2"),
+                "count": Decimal("2"),
+                "nested": [Decimal("1.5")],
+            }
+        )
+        self.assertEqual(
+            {"ratio": 0.2, "count": 2, "nested": [1.5]},
+            restored,
+        )
+
     def test_identity_fields_are_not_patchable(self):
         fields = set(ModelUpdateRequest.model_fields)
         self.assertNotIn("served_model_name", fields)
         self.assertNotIn("provider_model_name", fields)
         self.assertNotIn("embedding_dimension", fields)
+        self.assertIn("model_params", fields)
 
 
 if __name__ == "__main__":

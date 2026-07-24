@@ -21,6 +21,11 @@ from knowledge_core.parsing.pipeline import KcParsingPipeline
 from knowledge_core.workers.parser.client import KcParseClient
 from knowledge_core.workers.parser.worker import KcParserWorker
 from knowledge_core.workers.parser.visual_enricher import KcVisualEnricher
+from knowledge_core.workers.parser.deepseek_ocr import (
+    DeepSeekOcrClient,
+    KcDeepSeekOcrEnricher,
+)
+from platform_clients import AIModelClient, AIModelConfigClient
 from platform_core.platform.port_check import check_port_available
 
 # Get service configuration from config center
@@ -52,7 +57,27 @@ parse_worker = KcParserWorker(
     lease_seconds=config.lease_seconds,
     poll_interval=config.claim_interval_seconds,
     evidence_batch_size=config.evidence_batch_size,
-    visual_enricher=KcVisualEnricher(),
+    visual_enricher=KcVisualEnricher(
+        client_factory=lambda: AIModelClient(
+            caller_service=SERVICE_NAME,
+            vlm_config=settings.vlm,
+        )
+    ),
+    model_config_client=AIModelConfigClient(
+        base_url=settings.vlm.base_url,
+        timeout=settings.vlm.timeout_seconds,
+        caller_service=SERVICE_NAME,
+        audience=settings.vlm.audience,
+    ),
+    deepseek_ocr_enricher=KcDeepSeekOcrEnricher(
+        client=DeepSeekOcrClient(
+            api_endpoint=settings.dsocr.api_endpoint,
+            timeout=settings.dsocr.timeout,
+            crop_mode=settings.dsocr.crop_mode,
+            max_tokens=settings.dsocr.max_tokens,
+            temperature=settings.dsocr.temperature,
+        )
+    ) if settings.dsocr.enabled else None,
 )
 
 @asynccontextmanager

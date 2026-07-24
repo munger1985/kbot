@@ -14,7 +14,11 @@ EVIDENCE_TYPES = frozenset({
 REQUIRED_ARTIFACTS = frozenset({
     "raw_docling", "atom_ir", "structure_ir", "evidence_manifest",
 })
-OPTIONAL_ARTIFACTS = frozenset({"spreadsheet_artifact"})
+OPTIONAL_ARTIFACTS = frozenset({
+    "deepseek_ocr_analysis",
+    "spreadsheet_artifact",
+    "visual_analysis",
+})
 
 
 def _canonical_json_default(item: Any) -> str:

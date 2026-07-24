@@ -44,9 +44,9 @@ Oracle Profile 先以 3 秒 TCP Preflight 检查配置的 Listener，再核对�
 `KBOT_OPS_RUN.SOURCE_PROPOSAL_ID` 和
 `KBOT_OPS_RUN.SOURCE_RESULT_ARTIFACT_ID`，同时补齐关联约束、索引并重建 10 个
 AIOps 投影视图。修复后 21 张 AIOps 表逐列与 Entity 一致。
-全服务检查进一步核对 Platform、Model、KC、Agent Runtime 与 AIOps 共 42 张表、
-838 列；唯一额外漂移是 KC Document Version 的 `RECEIVED_AT` 已存在于规范 DDL
-和数据库但 Entity 遗漏，现已补齐映射。
+全服务检查进一步核对 Platform、Model、KC、Agent Runtime 与 AIOps 共 53 张表、
+1001 列；KC Document Version 的 `RECEIVED_AT` 已补齐 Entity 映射，Agent
+Definition 的 `DO_RERANK` 也已按规范 DDL 补入开发库并通过列级核对。
 
 Oracle Profile 现在还执行跨服务 UoW、AIOps Persistence 和完整 Run 内核 Smoke，
 覆盖显式提交、漏提交回滚、跨 Run 双 Worker `SKIP LOCKED`、租约栅栏、事件序列、
@@ -55,7 +55,7 @@ Oracle Profile 现在还执行跨服务 UoW、AIOps Persistence 和完整 Run �
 
 ## 尚未达到 RC 的项目
 
-- 在空白 Test Schema 重放 17 份 DDL并验证所有服务的 Repository/UoW；
+- 在空白 Test Schema 重放 21 份 DDL 并验证所有服务的 Repository/UoW；
 - KC 上传、解析、检索、Grounding 的跨进程 E2E 与质量数据集；
 - Root Document/AIOps、Direct Ops、HITL、审批、报告和 SSE 的完整 E2E；
 - Oracle/MySQL 隔离 Target 上的只读诊断与受控 Mutation 演练；

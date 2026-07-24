@@ -62,6 +62,38 @@
         "title": "BindingRequest",
         "type": "object"
       },
+      "CollectionGenerationModelsRequest": {
+        "properties": {
+          "parser_llm_model_id": {
+            "format": "uuid",
+            "title": "Parser Llm Model Id",
+            "type": "string"
+          },
+          "parser_vlm_model_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parser Vlm Model Id"
+          },
+          "retrieval_llm_model_id": {
+            "format": "uuid",
+            "title": "Retrieval Llm Model Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "parser_llm_model_id",
+          "retrieval_llm_model_id"
+        ],
+        "title": "CollectionGenerationModelsRequest",
+        "type": "object"
+      },
       "CollectionStatusRequest": {
         "properties": {
           "status": {
@@ -165,11 +197,47 @@
             "additionalProperties": true,
             "title": "Metadata",
             "type": "object"
+          },
+          "parser_llm_model_id": {
+            "format": "uuid",
+            "title": "Parser Llm Model Id",
+            "type": "string"
+          },
+          "parser_vlm_model_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parser Vlm Model Id"
+          },
+          "retrieval_llm_model_id": {
+            "format": "uuid",
+            "title": "Retrieval Llm Model Id",
+            "type": "string"
+          },
+          "visual_embedding_model_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Visual Embedding Model Id"
           }
         },
         "required": [
           "collection_key",
           "display_name",
+          "parser_llm_model_id",
+          "retrieval_llm_model_id",
           "embedding_model_id"
         ],
         "title": "CreateCollectionRequest",
@@ -191,6 +259,11 @@
             "minItems": 1,
             "title": "Collection Ids",
             "type": "array"
+          },
+          "do_rerank": {
+            "default": false,
+            "title": "Do Rerank",
+            "type": "boolean"
           },
           "domain_id": {
             "exclusiveMinimum": 0.0,
@@ -538,6 +611,11 @@
             "title": "Context Limit",
             "type": "integer"
           },
+          "do_rerank": {
+            "default": false,
+            "title": "Do Rerank",
+            "type": "boolean"
+          },
           "domain_id": {
             "exclusiveMinimum": 0.0,
             "title": "Domain Id",
@@ -820,6 +898,32 @@
         "title": "IndexRunRequest",
         "type": "object"
       },
+      "IntakeReviewRequest": {
+        "properties": {
+          "comment": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          },
+          "decision": {
+            "pattern": "^(APPROVE|REJECT)$",
+            "title": "Decision",
+            "type": "string"
+          }
+        },
+        "required": [
+          "decision"
+        ],
+        "title": "IntakeReviewRequest",
+        "type": "object"
+      },
       "LeaseRequest": {
         "properties": {
           "input_fingerprint": {
@@ -1079,6 +1183,178 @@
           "type"
         ],
         "title": "ValidationError",
+        "type": "object"
+      },
+      "VisualAssetBatchRequest": {
+        "properties": {
+          "input_fingerprint": {
+            "title": "Input Fingerprint",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/VisualAssetItemRequest"
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "title": "Items",
+            "type": "array"
+          },
+          "worker_id": {
+            "title": "Worker Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "worker_id",
+          "input_fingerprint",
+          "items"
+        ],
+        "title": "VisualAssetBatchRequest",
+        "type": "object"
+      },
+      "VisualAssetItemRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "asset_key": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Asset Key",
+            "type": "string"
+          },
+          "asset_type": {
+            "pattern": "^(PAGE|FIGURE)$",
+            "title": "Asset Type",
+            "type": "string"
+          },
+          "bbox": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bbox"
+          },
+          "content_base64": {
+            "minLength": 1,
+            "title": "Content Base64",
+            "type": "string"
+          },
+          "content_sha256": {
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Content Sha256",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 16000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "mime_type": {
+            "pattern": "^image/(png|jpeg|webp)$",
+            "title": "Mime Type",
+            "type": "string"
+          },
+          "page_no": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page No"
+          },
+          "source_item_ref": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Item Ref"
+          }
+        },
+        "required": [
+          "asset_key",
+          "asset_type",
+          "mime_type",
+          "content_base64",
+          "content_sha256"
+        ],
+        "title": "VisualAssetItemRequest",
+        "type": "object"
+      },
+      "VisualSearchRequest": {
+        "properties": {
+          "agent_id": {
+            "format": "uuid",
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "collection_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 32,
+            "minItems": 1,
+            "title": "Collection Ids",
+            "type": "array"
+          },
+          "domain_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Domain Id",
+            "type": "integer"
+          },
+          "images_base64": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 8,
+            "minItems": 1,
+            "title": "Images Base64",
+            "type": "array"
+          },
+          "per_image_limit": {
+            "default": 10,
+            "maximum": 50.0,
+            "minimum": 1.0,
+            "title": "Per Image Limit",
+            "type": "integer"
+          },
+          "result_limit": {
+            "default": 20,
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Result Limit",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "domain_id",
+          "agent_id",
+          "collection_ids",
+          "images_base64"
+        ],
+        "title": "VisualSearchRequest",
         "type": "object"
       }
     }
@@ -1765,6 +2041,183 @@
         ]
       }
     },
+    "/internal/v1/knowledge/domains/{domain_id}/collections/{collection_key}/approvals": {
+      "get": {
+        "operationId": "list_pending_approvals_internal_v1_knowledge_domains__domain_id__collections__collection_key__approvals_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "title": "Domain Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "collection_key",
+            "required": true,
+            "schema": {
+              "title": "Collection Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Pending Approvals",
+        "tags": [
+          "Knowledge Core"
+        ]
+      }
+    },
+    "/internal/v1/knowledge/domains/{domain_id}/collections/{collection_key}/bundle-revisions/{bundle_revision_id}/approval": {
+      "post": {
+        "operationId": "review_user_intake_internal_v1_knowledge_domains__domain_id__collections__collection_key__bundle_revisions__bundle_revision_id__approval_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "title": "Domain Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "collection_key",
+            "required": true,
+            "schema": {
+              "title": "Collection Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "bundle_revision_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Bundle Revision Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IntakeReviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Review User Intake",
+        "tags": [
+          "Knowledge Core"
+        ]
+      }
+    },
+    "/internal/v1/knowledge/domains/{domain_id}/collections/{collection_key}/generation-models": {
+      "put": {
+        "operationId": "update_collection_generation_models_internal_v1_knowledge_domains__domain_id__collections__collection_key__generation_models_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "title": "Domain Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "collection_key",
+            "required": true,
+            "schema": {
+              "title": "Collection Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CollectionGenerationModelsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Collection Generation Models",
+        "tags": [
+          "Knowledge Core Collections"
+        ]
+      }
+    },
     "/internal/v1/knowledge/domains/{domain_id}/collections/{collection_key}/ingestions/km-assets": {
       "post": {
         "description": "接收一个完整 Asset Bundle；受理成功不代表解析已完成。",
@@ -2423,6 +2876,57 @@
         ]
       }
     },
+    "/internal/v1/knowledge/parse-tasks/{job_id}/visual-asset-batches": {
+      "post": {
+        "operationId": "submit_visual_assets_internal_v1_knowledge_parse_tasks__job_id__visual_asset_batches_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VisualAssetBatchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Submit Visual Assets",
+        "tags": [
+          "Knowledge Core Parser"
+        ]
+      }
+    },
     "/internal/v1/knowledge/profile-tasks/claim": {
       "post": {
         "operationId": "claim_profile_tasks_internal_v1_knowledge_profile_tasks_claim_post",
@@ -2843,6 +3347,49 @@
         "summary": "Search Evidence",
         "tags": [
           "Knowledge Core Evidence"
+        ]
+      }
+    },
+    "/internal/v1/knowledge/retrieval/visual": {
+      "post": {
+        "operationId": "search_visual_internal_v1_knowledge_retrieval_visual_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VisualSearchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Search Visual Internal V1 Knowledge Retrieval Visual Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Search Visual",
+        "tags": [
+          "Knowledge Core Visual Retrieval"
         ]
       }
     },

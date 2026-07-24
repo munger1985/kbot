@@ -39,6 +39,14 @@ class OracleSchemaRunnerTest(unittest.TestCase):
             statements[-1].sql,
         )
 
+    def test_json_fields_use_oracle_native_json(self) -> None:
+        sql = "\n".join(
+            statement.sql for statement in load_schema_statements()
+        )
+        self.assertEqual(69, sql.count(" JSON"))
+        self.assertNotRegex(sql, r"\b[A-Z0-9_]+_JSON\s+CLOB\b")
+        self.assertNotIn(" IS JSON", sql)
+
     def test_config_selects_services_and_keeps_platform_core(self) -> None:
         with TemporaryDirectory() as directory:
             config_path = Path(directory) / "init.ini"

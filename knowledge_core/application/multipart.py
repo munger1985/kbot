@@ -28,6 +28,7 @@ class MultipartIntakeCommand:
     source_type: str = "KM_ASSET"
     generate_manifest: bool = True
     allowed_document_roles: tuple[str, ...] = ("ATTACHMENT",)
+    approval_required: bool = False
 
 
 class KnowledgeCoreMultipartOrchestrator:
@@ -46,7 +47,12 @@ class KnowledgeCoreMultipartOrchestrator:
         ))
         if not reservation.newly_created:
             if reservation.bundle_id is not None and reservation.bundle_revision_id is not None:
-                return IntakeAcceptance(reservation.bundle_id, reservation.bundle_revision_id, command.manifest.bundle.source_revision)
+                return IntakeAcceptance(
+                    reservation.bundle_id,
+                    reservation.bundle_revision_id,
+                    command.manifest.bundle.source_revision,
+                    reservation.receipt_status,
+                )
             raise IntakeInProgressError("INGESTION_IN_PROGRESS")
 
         staged: list[StoredObject] = []
@@ -103,7 +109,8 @@ class KnowledgeCoreMultipartOrchestrator:
                 command.manifest,
                 {item.part_name: PublishedAttachment(item.external_document_id, published_by_part[item.part_name].uri, published_by_part[item.part_name].detected_mime_type) for item in command.manifest.documents},
                 PublishedManifest(published_manifest.uri, len(rendered_manifest.content), rendered_manifest.content_sha256) if published_manifest is not None and rendered_manifest is not None else None,
-                command.source_system, command.source_type, command.generate_manifest, command.allowed_document_roles,
+                command.source_system, command.source_type, command.generate_manifest,
+                command.allowed_document_roles, command.approval_required,
             ))
         except Exception:
             for item in [*published, *staged]:

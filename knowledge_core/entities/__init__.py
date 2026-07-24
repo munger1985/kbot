@@ -7,7 +7,8 @@ entities. They are exposed through this subpackage to keep the two models isolat
 from .collection import KcCollectionEntity, KcCollectionBindingEntity, KcIngestionReceiptEntity
 from .ingestion import (
     KcBundleEntity, KcBundleRevisionDocumentEntity, KcBundleRevisionEntity,
-    KcDocumentEntity, KcDocumentVersionEntity, KcEvidenceEntity, KcIngestionJobEntity, KcParseViewEntity,
+    KcDocumentEntity, KcDocumentVersionEntity, KcEvidenceEntity,
+    KcIngestionJobEntity, KcParseViewEntity, KcVisualAssetEntity,
 )
 from .discovery import KcDiscoveryObjectEntity
 from .relation import KcRelationEntity
@@ -24,6 +25,7 @@ __all__ = [
     "KcIngestionJobEntity",
     "KcParseViewEntity",
     "KcEvidenceEntity",
+    "KcVisualAssetEntity",
     "KcDiscoveryObjectEntity",
     "KcRelationEntity",
 ]

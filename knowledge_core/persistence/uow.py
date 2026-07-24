@@ -3,7 +3,7 @@ from collections.abc import Callable
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from knowledge_core.repositories import BundleRepository, BundleRevisionDocumentRepository, BundleRevisionRepository, CollectionBindingRepository, CollectionRepository, DiscoveryRepository, DocumentRepository, DocumentVersionRepository, EvidenceRepository, IngestionJobRepository, IngestionReceiptRepository, ParseViewRepository, RelationRepository
+from knowledge_core.repositories import BundleRepository, BundleRevisionDocumentRepository, BundleRevisionRepository, CollectionBindingRepository, CollectionRepository, DiscoveryRepository, DocumentRepository, DocumentVersionRepository, EvidenceRepository, IngestionJobRepository, IngestionReceiptRepository, ParseViewRepository, RelationRepository, VisualAssetRepository
 
 
 class KnowledgeCoreUnitOfWork:
@@ -29,6 +29,7 @@ class KnowledgeCoreUnitOfWork:
         self.evidence: EvidenceRepository | None = None
         self.discovery: DiscoveryRepository | None = None
         self.relations: RelationRepository | None = None
+        self.visual_assets: VisualAssetRepository | None = None
         self._committed = False
 
     async def __aenter__(self) -> "KnowledgeCoreUnitOfWork":
@@ -46,6 +47,7 @@ class KnowledgeCoreUnitOfWork:
         self.evidence = EvidenceRepository(self.session)
         self.discovery = DiscoveryRepository(self.session)
         self.relations = RelationRepository(self.session)
+        self.visual_assets = VisualAssetRepository(self.session)
         return self
 
     async def commit(self) -> None:
@@ -80,6 +82,7 @@ class KnowledgeCoreUnitOfWork:
             self.evidence = None
             self.discovery = None
             self.relations = None
+            self.visual_assets = None
 
 
 def create_kc_uow(

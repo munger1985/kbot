@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 from platform_core.contracts import INTERNAL_API_V1
 from platform_core.security import require_domain_match
+from knowledge_core.application.llm_reranking import public_candidate
 
 router = APIRouter(
     prefix=f"{INTERNAL_API_V1}/knowledge/discovery",
@@ -23,6 +24,7 @@ class DiscoverySearchRequest(BaseModel):
     per_channel_limit: int = Field(default=20, ge=1, le=100)
     per_collection_limit: int = Field(default=20, ge=1, le=100)
     max_security_level: int = Field(default=3, ge=0, le=3)
+    do_rerank: bool = False
 
 
 @router.post("/search")
@@ -41,6 +43,23 @@ async def search_discovery(payload: DiscoverySearchRequest, request: Request):
             per_collection_limit=payload.per_collection_limit,
             max_security_level=payload.max_security_level,
         )
+        rerank_report = {
+            "enabled": False,
+            "stage": "DISCOVERY_OBJECT",
+            "status": "DISABLED",
+        }
+        warnings: list[str] = []
+        if payload.do_rerank and candidates:
+            candidates, rerank_report, warnings = (
+                await request.app.state.kc_llm_reranker.rerank_candidates(
+                    query=payload.query,
+                    candidates=candidates,
+                )
+            )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail={"code": "INVALID_DISCOVERY_QUERY", "message": str(exc)}) from exc
-    return {"candidates": [asdict(candidate) for candidate in candidates]}
+    return {
+        "candidates": [public_candidate(candidate) for candidate in candidates],
+        "rerank": rerank_report,
+        "warnings": warnings,
+    }

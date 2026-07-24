@@ -90,8 +90,23 @@ class CreateAgentDefinitionRequest(_RequestModel):
     display_name: str = Field(min_length=1, max_length=256)
     description: str | None = Field(default=None, max_length=1000)
     enabled_capabilities: tuple[str, ...] = Field(min_length=1)
-    router_model_name: str | None = Field(default=None, max_length=128)
-    composer_model_name: str = Field(min_length=1, max_length=128)
+    router_llm_model_name: str | None = Field(default=None, max_length=128)
+    context_llm_model_name: str = Field(min_length=1, max_length=128)
+    composer_llm_model_name: str = Field(min_length=1, max_length=128)
+    memory_llm_model_name: str = Field(min_length=1, max_length=128)
+    query_vlm_model_name: str | None = Field(
+        default=None, min_length=1, max_length=128
+    )
+    chart_llm_model_name: str | None = Field(
+        default=None, min_length=1, max_length=128
+    )
+    memory_embedding_model_name: str = Field(
+        min_length=1, max_length=128
+    )
+    do_rerank: bool = False
+    data_profile_name: str | None = Field(
+        default=None, min_length=1, max_length=256
+    )
     instruction: str | None = Field(default=None, max_length=32000)
     config: dict = Field(default_factory=dict)
     status: str = Field(default="DRAFT", pattern=r"^(DRAFT|ACTIVE)$")
@@ -102,9 +117,28 @@ class UpdateAgentDefinitionRequest(_RequestModel):
     display_name: str | None = Field(default=None, min_length=1, max_length=256)
     description: str | None = Field(default=None, max_length=1000)
     enabled_capabilities: tuple[str, ...] | None = None
-    router_model_name: str | None = Field(default=None, max_length=128)
-    composer_model_name: str | None = Field(
+    router_llm_model_name: str | None = Field(default=None, max_length=128)
+    context_llm_model_name: str | None = Field(
         default=None, min_length=1, max_length=128
+    )
+    composer_llm_model_name: str | None = Field(
+        default=None, min_length=1, max_length=128
+    )
+    memory_llm_model_name: str | None = Field(
+        default=None, min_length=1, max_length=128
+    )
+    query_vlm_model_name: str | None = Field(
+        default=None, min_length=1, max_length=128
+    )
+    chart_llm_model_name: str | None = Field(
+        default=None, min_length=1, max_length=128
+    )
+    memory_embedding_model_name: str | None = Field(
+        default=None, min_length=1, max_length=128
+    )
+    do_rerank: bool | None = None
+    data_profile_name: str | None = Field(
+        default=None, min_length=1, max_length=256
     )
     instruction: str | None = Field(default=None, max_length=32000)
     config: dict | None = None
@@ -181,6 +215,7 @@ def _raise_runtime_error(exc: Exception) -> None:
         elif (
             exc.code.startswith("ARTIFACT_")
             or exc.code.endswith("_INVALID")
+            or exc.code.endswith("_REQUIRED")
             or exc.code == "ROUTE_CLARIFICATION_REQUIRED"
         ):
             status = 422
@@ -358,6 +393,34 @@ agent_router = APIRouter(
     prefix=f"{INTERNAL_API_V1}/agents",
     tags=["Agent Definition"],
 )
+
+data_router = APIRouter(
+    prefix=f"{INTERNAL_API_V1}/data",
+    tags=["MCP Data"],
+)
+
+
+@data_router.get("/profiles")
+async def list_data_profiles(request: Request):
+    client = getattr(request.app.state, "mcp_data_client", None)
+    if client is None:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "MCP_DATA_UNAVAILABLE",
+                "message": "问数服务未配置或暂不可用",
+            },
+        )
+    try:
+        return await client.list_profiles()
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "MCP_DATA_UNAVAILABLE",
+                "message": str(exc),
+            },
+        ) from exc
 
 
 @agent_router.post("", status_code=201, response_model=AgentDefinitionView)

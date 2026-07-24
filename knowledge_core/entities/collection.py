@@ -7,7 +7,7 @@ from sqlalchemy import DateTime, Integer, Numeric, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from platform_core.identity import uuid7
-from platform_core.persistence.orm import BaseEntity, OracleJSON, UUIDv7Type
+from platform_core.persistence.orm import BaseEntity, OracleNativeJSON, UUIDv7Type
 
 
 class KcCollectionEntity(BaseEntity):
@@ -21,10 +21,20 @@ class KcCollectionEntity(BaseEntity):
     collection_key: Mapped[str] = mapped_column(String(64), nullable=False)
     display_name: Mapped[str] = mapped_column(String(256), nullable=False)
     description: Mapped[str | None] = mapped_column(String(1000))
+    parser_llm_model_id: Mapped[UUID] = mapped_column(
+        UUIDv7Type(), nullable=False
+    )
+    parser_vlm_model_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
+    retrieval_llm_model_id: Mapped[UUID] = mapped_column(
+        UUIDv7Type(), nullable=False
+    )
     embedding_model_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
+    visual_embedding_model_id: Mapped[UUID | None] = mapped_column(
+        UUIDv7Type()
+    )
     status: Mapped[str] = mapped_column(String(24), nullable=False, default="ACTIVE")
     default_security_level: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-    metadata_json: Mapped[dict[str, Any] | None] = mapped_column(OracleJSON)
+    metadata_json: Mapped[dict[str, Any] | None] = mapped_column(OracleNativeJSON)
     row_version: Mapped[int] = mapped_column(Numeric(19, 0), nullable=False, default=1)
     created_by: Mapped[str | None] = mapped_column(String(256))
     updated_by: Mapped[str | None] = mapped_column(String(256))
@@ -66,7 +76,7 @@ class KcIngestionReceiptEntity(BaseEntity):
     receipt_status: Mapped[str] = mapped_column(String(24), nullable=False)
     bundle_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
     bundle_revision_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
-    staging_manifest_json: Mapped[dict[str, Any] | None] = mapped_column(OracleJSON)
+    staging_manifest_json: Mapped[dict[str, Any] | None] = mapped_column(OracleNativeJSON)
     failure_code: Mapped[str | None] = mapped_column(String(128))
     failure_message: Mapped[str | None] = mapped_column(String(1000))
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

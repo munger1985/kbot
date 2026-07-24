@@ -33,9 +33,21 @@ class AIOpsReferenceCard(_Contract):
     content_hash: str | None = None
 
 
+class QueryResultReferenceCard(_Contract):
+    reference_type: Literal["QUERY_RESULT"] = "QUERY_RESULT"
+    citation_label: str
+    query_result_id: UUID
+    profile: str
+    row_count: int = Field(ge=0)
+
+
 class GroundedAnswer(_Contract):
     answer: str
     status: str
     used_citation_labels: tuple[str, ...] = ()
-    references: tuple[ReferenceCard | AIOpsReferenceCard, ...] = ()
+    references: tuple[
+        ReferenceCard | AIOpsReferenceCard | QueryResultReferenceCard, ...
+    ] = ()
+    query_results: tuple[dict[str, Any], ...] = ()
+    visualizations: tuple[dict[str, Any], ...] = ()
     warnings: tuple[str, ...] = ()

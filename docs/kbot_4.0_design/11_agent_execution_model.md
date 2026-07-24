@@ -183,6 +183,13 @@ Skill Manifest 声明输入/输出 schema、权限、运行模式、幂等性、
 
 SSE 只读事件流：`GET /api/v1/runs/{run_id}/events`，通过 `Last-Event-ID` 续传。子 Agent 事件先幂等投影为父 Event，不做 SSE 套 SSE。取消使用协作式取消；租约过期后允许其他 Worker 接管。重试仅适用于幂等 Task，每个外部副作用必须使用 `run_id + task_id` 的幂等键。恢复时复用已成功的 Artifact，不重复执行已完成 Task。
 
+普通聊天由 Conversation Turn 创建 Root Run。用户可见的查询改写、路由、
+计划、Skill、检索和回答增量先持久化为版本化 Public Trace Event，再由同一
+Run SSE 输出；不能只向当前 HTTP 连接发送临时 `thought`。Public Trace 是
+受限的执行说明，不包含模型隐藏思维链、Prompt、Secret 或未授权候选正文。
+Conversation 历史、Trace Summary 和流式事件的完整契约见
+[45_agent_conversation_memory_and_trace.md](45_agent_conversation_memory_and_trace.md)。
+
 `RETRY_WAIT` 到期后由 Runtime 原子推进为 `READY` 并生成新的租约 Token；
 旧 Worker 仍不能写回。最终正文不进入 Event payload，前端在终态后通过
 `GET /api/v1/runs/{run_id}/result` 读取 `GROUNDED_ANSWER`。

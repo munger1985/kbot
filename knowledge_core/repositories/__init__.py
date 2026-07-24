@@ -4,6 +4,7 @@ from .collection_repo import CollectionBindingRepository, CollectionRepository, 
 from .ingestion_repo import BundleRepository, BundleRevisionDocumentRepository, BundleRevisionRepository, DocumentRepository, DocumentVersionRepository, EvidenceRepository, IngestionJobRepository, ParseViewRepository
 from .discovery_repo import DiscoveryRepository
 from .relation_repo import RelationRepository
+from .visual_asset_repo import VisualAssetRepository
 
 __all__ = [
     "CollectionRepository",
@@ -19,4 +20,5 @@ __all__ = [
     "EvidenceRepository",
     "DiscoveryRepository",
     "RelationRepository",
+    "VisualAssetRepository",
 ]

@@ -10,7 +10,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from platform_core.identity import uuid7
 from platform_core.persistence.orm import (
     BaseEntity,
-    OracleJSON,
+    OracleNativeJSON,
     UniversalTimestamp,
     UUIDv7Type,
 )
@@ -25,7 +25,7 @@ class InboxEntity(BaseEntity):
     source_system: Mapped[str] = mapped_column(String(64), nullable=False)
     message_key: Mapped[str] = mapped_column(String(256), nullable=False)
     message_type: Mapped[str] = mapped_column(String(64), nullable=False)
-    payload_json: Mapped[dict[str, Any] | None] = mapped_column(OracleJSON)
+    payload_json: Mapped[dict[str, Any] | None] = mapped_column(OracleNativeJSON)
     payload_uri: Mapped[str | None] = mapped_column(String(2048))
     payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     status: Mapped[str] = mapped_column(
@@ -55,7 +55,7 @@ class OutboxEntity(BaseEntity):
     aggregate_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
     event_type: Mapped[str] = mapped_column(String(64), nullable=False)
     idempotency_key: Mapped[str] = mapped_column(String(256), nullable=False)
-    payload_json: Mapped[dict[str, Any] | None] = mapped_column(OracleJSON)
+    payload_json: Mapped[dict[str, Any] | None] = mapped_column(OracleNativeJSON)
     payload_uri: Mapped[str | None] = mapped_column(String(2048))
     payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     status: Mapped[str] = mapped_column(

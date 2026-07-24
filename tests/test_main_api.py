@@ -19,6 +19,7 @@ from platform_clients import (
 from platform_core.contracts import AuthContext
 from platform_core.security import (
     DOMAIN_ID_HEADER,
+    TEST_AUTH_BYPASS_HEADER,
     USER_ID_HEADER,
     PortalApiKeyRecord,
     PortalApiKeyVerifier,
@@ -110,8 +111,13 @@ class _FakeAgentRuntimeClient:
             "description": None,
             "status": "ACTIVE",
             "enabled_capabilities": ["document"],
-            "router_model_name": None,
-            "composer_model_name": "chat-prod",
+            "router_llm_model_name": None,
+            "context_llm_model_name": "chat-small",
+            "composer_llm_model_name": "chat-prod",
+            "memory_llm_model_name": "chat-distilled",
+            "query_vlm_model_name": None,
+            "memory_embedding_model_name": "embed-prod",
+            "do_rerank": False,
             "instruction": None,
             "config": {},
             "row_version": 1,
@@ -215,6 +221,22 @@ class _FakeAIOpsClient:
         return True
 
 
+class _FakeDomainManagementService:
+    def __init__(self):
+        self.last_actor_id: str | None = None
+
+    async def create(self, *, name, description, actor_id):
+        self.last_actor_id = actor_id
+        return {
+            "domain_id": 101,
+            "app_id": 1001,
+            "name": name,
+            "status": "ACTIVE",
+            "description": description,
+            "row_version": 1,
+        }
+
+
 class _FakeDomainRepository:
     async def exists_active(self, *, app_id: int, domain_id: int) -> bool:
         return app_id == 1001 and domain_id == 100
@@ -260,6 +282,8 @@ class MainApiTest(unittest.TestCase):
         self.app.state.knowledge_core_client = self.kc
         self.app.state.agent_runtime_client = self.agent_runtime
         self.app.state.aiops_client = _FakeAIOpsClient()
+        self.domain_management = _FakeDomainManagementService()
+        self.app.state.domain_management_service = self.domain_management
         self.app.state.main_api_settings = get_main_api_settings()
         self.client = TestClient(self.app)
 
@@ -281,6 +305,25 @@ class MainApiTest(unittest.TestCase):
         self.assertEqual(100, self.kc.last_domain_id)
         self.assertEqual("km_portal", self.kc.last_context.client_id)
         self.assertEqual("portal-user-1", self.kc.last_context.asserted_user_id)
+
+    def test_create_domain_does_not_require_existing_domain(self) -> None:
+        response = self.client.post(
+            "/api/v1/domains",
+            headers={
+                TEST_AUTH_BYPASS_HEADER: "true",
+                USER_ID_HEADER: "portal-user-1",
+            },
+            json={
+                "name": "研发知识域",
+                "description": "用于本地验收",
+            },
+        )
+        self.assertEqual(201, response.status_code)
+        self.assertEqual(101, response.json()["domain_id"])
+        self.assertEqual(
+            "portal-user-1",
+            self.domain_management.last_actor_id,
+        )
 
     def test_invalid_domain_is_rejected_before_kc_call(self) -> None:
         response = self.client.get(
@@ -346,7 +389,10 @@ class MainApiTest(unittest.TestCase):
                 "agent_key": "document-agent",
                 "display_name": "文档助手",
                 "enabled_capabilities": ["document"],
-                "composer_model_name": "chat-prod",
+                "context_llm_model_name": "chat-small",
+                "composer_llm_model_name": "chat-prod",
+                "memory_llm_model_name": "chat-distilled",
+                "memory_embedding_model_name": "embed-prod",
                 "status": "ACTIVE",
             },
         )

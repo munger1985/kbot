@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from platform_core.contracts import INTERNAL_API_V1
 from knowledge_core.domain.parse_tasks import ParseLeaseError, ParseTaskClaim
-from knowledge_core.application.parse_tasks import EvidenceInput
+from knowledge_core.application.parse_tasks import EvidenceInput, VisualAssetInput
 
 
 router = APIRouter(
@@ -59,6 +59,25 @@ class EvidenceBatchRequest(BaseModel):
     worker_id: str
     input_fingerprint: str
     items: list[EvidenceItemRequest]
+
+
+class VisualAssetItemRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    asset_key: str = Field(min_length=1, max_length=256)
+    asset_type: str = Field(pattern=r"^(PAGE|FIGURE)$")
+    page_no: int | None = Field(default=None, ge=1)
+    source_item_ref: str | None = Field(default=None, max_length=512)
+    bbox: dict[str, Any] | None = None
+    mime_type: str = Field(pattern=r"^image/(png|jpeg|webp)$")
+    content_base64: str = Field(min_length=1)
+    content_sha256: str = Field(min_length=64, max_length=64)
+    description: str | None = Field(default=None, max_length=16000)
+
+
+class VisualAssetBatchRequest(BaseModel):
+    worker_id: str
+    input_fingerprint: str
+    items: list[VisualAssetItemRequest] = Field(min_length=1, max_length=500)
 
 
 class ArtifactUploadRequest(BaseModel):
@@ -171,6 +190,35 @@ async def upload_parse_artifact(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail={"code": "INVALID_ARTIFACT", "message": str(exc)}) from exc
     return descriptor
+
+
+@router.post("/{job_id}/visual-asset-batches")
+async def submit_visual_assets(
+    job_id: UUID, payload: VisualAssetBatchRequest, request: Request
+):
+    try:
+        inserted = (
+            await request.app.state.kc_parse_task_service.submit_visual_assets(
+                job_id=job_id,
+                worker_id=payload.worker_id,
+                input_fingerprint=payload.input_fingerprint,
+                items=[
+                    VisualAssetInput(**item.model_dump())
+                    for item in payload.items
+                ],
+            )
+        )
+    except ParseLeaseError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": str(exc), "message": "Parser 视觉结果已过期"},
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "INVALID_VISUAL_ASSET", "message": str(exc)},
+        ) from exc
+    return {"job_id": job_id, "inserted": inserted}
 
 
 @router.post("/{job_id}/complete")

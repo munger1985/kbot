@@ -1,15 +1,17 @@
 """State-machine checks for the final KC intake database transaction."""
 import unittest
+from dataclasses import replace
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 from knowledge_core.application.intake import (
     AcceptKmAssetCommand, IntakeConflictError, KnowledgeCoreIntakeService, PublishedAttachment, PublishedManifest,
-    ReserveIntakeCommand,
+    ReserveIntakeCommand, ReviewIntakeCommand,
     PreparePublishCommand,
 )
 from knowledge_core.domain.intake import KmAssetIntakeManifest
 from knowledge_core.domain.manifest import render_bundle_manifest
+from platform_core.identity import uuid7
 
 
 def manifest():
@@ -22,6 +24,7 @@ def manifest():
 class Repository:
     def __init__(self, values=None): self.values, self.added = values or {}, []
     async def get_by_scope_key(self, **kwargs): return self.values.get("collection")
+    async def get_by_id(self, **kwargs): return self.values.get("collection")
     async def get_by_idempotency_key(self, **kwargs): return self.values.get("receipt")
     async def get_by_source(self, **kwargs): return self.values.get("bundle")
     async def get_by_source_revision(self, **kwargs): return self.values.get("revision")
@@ -48,6 +51,16 @@ class Uow:
 
 
 class IntakeServiceTest(unittest.IsolatedAsyncioTestCase):
+    @staticmethod
+    def _collection(*, parser_vlm_model_id=None):
+        return SimpleNamespace(
+            collection_id=1,
+            status="ACTIVE",
+            parser_llm_model_id=uuid7(),
+            parser_vlm_model_id=parser_vlm_model_id,
+            retrieval_llm_model_id=uuid7(),
+        )
+
     def test_parser_policy_cannot_override_collection_embedding_model(self):
         with self.assertRaisesRegex(ValueError, "retrieval embeddings"):
             KnowledgeCoreIntakeService(
@@ -65,7 +78,7 @@ class IntakeServiceTest(unittest.IsolatedAsyncioTestCase):
         }, PublishedManifest("memory://manifest", len(rendered.content), rendered.content_sha256))
 
     async def test_creates_processing_revision_members_and_parse_job(self):
-        values = {"collection": SimpleNamespace(collection_id=1, status="ACTIVE")}
+        values = {"collection": self._collection()}
         uow = Uow(values)
         service = KnowledgeCoreIntakeService(app_id=1, receipt_ttl_seconds=60, uow_factory=lambda: uow)
 
@@ -80,9 +93,169 @@ class IntakeServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("ACCEPTED", uow.receipts.added[0].receipt_status)
         uow.commit.assert_awaited_once()
 
+    async def test_user_upload_waits_for_review_without_parse_job(self):
+        values = {"collection": self._collection()}
+        uow = Uow(values)
+        service = KnowledgeCoreIntakeService(
+            app_id=1,
+            receipt_ttl_seconds=60,
+            uow_factory=lambda: uow,
+        )
+
+        accepted = await service.accept_published(
+            replace(self._command(), approval_required=True)
+        )
+
+        self.assertEqual("PENDING_REVIEW", accepted.acceptance_status)
+        self.assertEqual("PENDING_REVIEW", uow.revisions.added[0].status)
+        self.assertEqual("PENDING", uow.revisions.added[0].approval_status)
+        self.assertEqual([], uow.jobs.added)
+        self.assertEqual([], uow.parse_views.added)
+        self.assertEqual(
+            "PENDING_REVIEW",
+            uow.receipts.added[0].receipt_status,
+        )
+
+    async def test_approval_atomically_creates_parse_job(self):
+        revision_id = uuid7()
+        collection = self._collection()
+        collection.collection_key = "assets"
+        revision = SimpleNamespace(
+            collection_id=collection.collection_id,
+            bundle_id=uuid7(),
+            bundle_revision_id=revision_id,
+            source_revision="r1",
+            title="User Upload",
+            approval_status="PENDING",
+            status="PENDING_REVIEW",
+            reviewed_by=None,
+            reviewed_at=None,
+            review_comment=None,
+            updated_by=None,
+            completed_at=None,
+        )
+        version = SimpleNamespace(
+            document_version_id=uuid7(),
+            detected_mime_type="text/plain",
+            content_hash="a" * 64,
+        )
+        member = SimpleNamespace(
+            member_status="RECEIVED",
+            document_version_id=version.document_version_id,
+            document_role="CONTENT",
+            declared_name="guide.txt",
+            external_document_id="doc-1",
+        )
+        receipt = SimpleNamespace(
+            receipt_status="PENDING_REVIEW",
+            updated_by=None,
+        )
+        values = {"collection": collection}
+        uow = Uow(values)
+        uow.session = SimpleNamespace(flush=AsyncMock())
+        uow.revisions.get_by_id = AsyncMock(return_value=revision)
+        uow.collections.get_by_id_scope = AsyncMock(
+            return_value=collection
+        )
+        uow.members.list_by_revision = AsyncMock(return_value=[member])
+        uow.versions.get_by_id = AsyncMock(return_value=version)
+        uow.receipts.list_by_revision = AsyncMock(
+            return_value=[receipt]
+        )
+        service = KnowledgeCoreIntakeService(
+            app_id=1,
+            receipt_ttl_seconds=60,
+            uow_factory=lambda: uow,
+        )
+
+        result = await service.review(
+            ReviewIntakeCommand(
+                domain_id=1,
+                collection_key="assets",
+                bundle_revision_id=revision_id,
+                decision="APPROVE",
+                actor_id="user:reviewer",
+                comment="内容有效",
+            )
+        )
+
+        self.assertEqual("APPROVED", result.approval_status)
+        self.assertEqual("PROCESSING", result.revision_status)
+        self.assertEqual(1, len(uow.jobs.added))
+        self.assertEqual("PENDING", uow.jobs.added[0].job_status)
+        self.assertEqual("ACCEPTED", receipt.receipt_status)
+        self.assertEqual("user:reviewer", revision.reviewed_by)
+        uow.commit.assert_awaited_once()
+
+    async def test_pdf_with_auto_vlm_uses_hybrid_parse_view(self):
+        values = {
+            "collection": self._collection(
+                parser_vlm_model_id=uuid7()
+            )
+        }
+        uow = Uow(values)
+        service = KnowledgeCoreIntakeService(
+            app_id=1,
+            receipt_ttl_seconds=60,
+            uow_factory=lambda: uow,
+            parse_policy_overrides={"parse_strategy": "AUTO"},
+        )
+        version = SimpleNamespace(
+            document_version_id=40,
+            detected_mime_type="application/pdf",
+            content_hash="a" * 64,
+        )
+
+        await service._enqueue_parse(
+            uow,
+            collection_id=1,
+            bundle_revision_id=20,
+            version=version,
+            actor_id="svc:test",
+        )
+
+        self.assertEqual("HYBRID", uow.parse_views.added[0].view_kind)
+        self.assertEqual(
+            "kc-adaptive-visual-pipeline",
+            uow.parse_views.added[0].parser_name,
+        )
+
+    async def test_deepseek_ocr_disables_docling_builtin_ocr(self):
+        values = {"collection": self._collection()}
+        uow = Uow(values)
+        service = KnowledgeCoreIntakeService(
+            app_id=1,
+            receipt_ttl_seconds=60,
+            uow_factory=lambda: uow,
+            parse_policy_overrides={
+                "ocr_model": "deepseek-ocr-2",
+            },
+        )
+        version = SimpleNamespace(
+            document_version_id=40,
+            detected_mime_type="application/pdf",
+            content_hash="a" * 64,
+        )
+
+        await service._enqueue_parse(
+            uow,
+            collection_id=1,
+            bundle_revision_id=20,
+            version=version,
+            actor_id="svc:test",
+        )
+
+        policy = uow.parse_views.added[0].parse_config_json
+        self.assertFalse(policy["do_ocr"])
+        self.assertEqual("DEEPSEEK_OCR", policy["ocr_provider"])
+        self.assertEqual(
+            "kc-deepseek-ocr-pipeline",
+            uow.parse_views.added[0].parser_name,
+        )
+
     async def test_rejects_changed_snapshot_for_same_source_revision(self):
         values = {
-            "collection": SimpleNamespace(collection_id=1, status="ACTIVE"),
+            "collection": self._collection(),
             "bundle": SimpleNamespace(bundle_id=10, collection_id=1),
             "revision": SimpleNamespace(snapshot_fingerprint="different", bundle_revision_id=20, source_revision="r1"),
         }
@@ -94,7 +267,7 @@ class IntakeServiceTest(unittest.IsolatedAsyncioTestCase):
         uow.commit.assert_not_awaited()
 
     async def test_reserves_receipt_before_staging_files(self):
-        values = {"collection": SimpleNamespace(collection_id=1, status="ACTIVE")}
+        values = {"collection": self._collection()}
         uow = Uow(values)
         original_add = uow.receipts.add
 
@@ -113,7 +286,7 @@ class IntakeServiceTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_preparation_allocates_stable_document_ids_without_revision(self):
         receipt = SimpleNamespace(ingestion_receipt_id=77, request_fingerprint=manifest().fingerprint(), receipt_status="RECEIVING", bundle_id=None)
-        values = {"collection": SimpleNamespace(collection_id=1, status="ACTIVE"), "receipt": receipt}
+        values = {"collection": self._collection(), "receipt": receipt}
         uow = Uow(values)
         uow.session = SimpleNamespace(flush=AsyncMock())
         original_bundle_add, original_document_add = uow.bundles.add, uow.documents.add

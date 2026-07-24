@@ -135,21 +135,24 @@ Citation 的最小稳定单位是 Document/Evidence 组合，而不是裸 Chunk�
 
 ### LLM 选择器
 
-当候选 Bundle/Document 较多时，可以用 LLM 对候选对象或 Evidence Group 做结构化判断：
+Agent 的 `do_rerank` 是显式布尔开关，并随 Run 冻结。关闭时使用 RRF 与确定性
+Evidence 分组；开启时 KC 按 Collection 自身的 `RETRIEVAL_LLM`，先对
+Bundle/Document 候选做类别判断，再验证 Evidence Group 对问题的支持关系：
 
 ```text
 CandidateJudge {
   candidate_id
-  supports_question: true | false
-  support_aspects[]
-  contradiction: true | false
-  evidence_labels[]
-  confidence
-  reason
+  relevance: DIRECT | STRONG | POSSIBLE | SEMANTIC_ONLY | IRRELEVANT
+  matched_requirements[]
+  reason_refs[]
 }
 ```
 
 LLM 只能在已授权、已召回的候选集合内选择，不能扩展检索范围；判断结果必须通过 schema 校验，并保留原始 Evidence 引用。
+Evidence 判断只允许选择输入 Group 内已有的 PRIMARY 和
+STRUCTURAL_CONTEXT Label。任一 Collection 调用失败、超时或返回非法 Label
+时，仅该 Collection 回退到原 RRF/确定性分组，并在 `RetrievalReport` 和
+`retrieval.completed` SSE 中报告 `DEGRADED`，不阻断其他 Collection。
 
 ## 与 Root Agent 的协作
 
@@ -178,9 +181,9 @@ Root Run
 - 每次 KC 调用记录 query hash、collection scope、request ID、延迟和候选数量，不记录未脱敏正文；
 - `RetrievalReport` 保存计划版本、KC API 版本、Embedding 模型版本和选择器版本，便于评测和复现。
 
-当前确定性实现先按 KC 的公平合并/RRF 结果选择 Bundle，再在这些候选范围内
-请求 Evidence Group；它不重新对裸 Chunk 做数值 rerank。LLM Candidate
-Judge 仍是后续检索质量阶段，接入时不得改变该 Artifact 契约。
+当前实现已把对象级 LLM 判断和 Evidence Group 支持判断接入主链，但默认关闭。
+它不对裸 Chunk 生成数值分数；开关只决定是否执行两个受约束判断阶段，不改变
+CitationPack 契约或安全范围。
 
 ## 服务化演进
 

@@ -9,7 +9,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from platform_core.identity import uuid7
 from platform_core.persistence.orm import (
     BaseEntity,
-    OracleJSON,
+    OracleNativeJSON,
     UniversalTimestamp,
     UUIDv7Type,
 )
@@ -82,7 +82,7 @@ class InspectionTargetEntity(BaseEntity):
         UUIDv7Type(), nullable=False
     )
     target_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
-    template_overrides_json: Mapped[dict | None] = mapped_column(OracleJSON)
+    template_overrides_json: Mapped[dict | None] = mapped_column(OracleNativeJSON)
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     created_by: Mapped[str] = mapped_column(String(256), nullable=False)
     updated_by: Mapped[str] = mapped_column(String(256), nullable=False)
@@ -124,9 +124,9 @@ class InspectionFireEntity(BaseEntity):
         String(64), nullable=False
     )
     plan_snapshot_json: Mapped[dict] = mapped_column(
-        OracleJSON, nullable=False
+        OracleNativeJSON, nullable=False
     )
-    resolution_json: Mapped[dict | None] = mapped_column(OracleJSON)
+    resolution_json: Mapped[dict | None] = mapped_column(OracleNativeJSON)
     target_count: Mapped[int] = mapped_column(
         Numeric(10, 0), nullable=False, default=0
     )

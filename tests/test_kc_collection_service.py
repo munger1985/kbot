@@ -12,6 +12,7 @@ from knowledge_core.application.collections import (
     CreateCollectionCommand,
     KnowledgeCoreBindingService,
     KnowledgeCoreCollectionService,
+    UpdateCollectionGenerationModelsCommand,
 )
 
 
@@ -27,6 +28,10 @@ class FakeCollectionRepository:
         collection.collection_id = 101
         self.added = collection
         return collection
+
+    async def list_by_scope(self, **kwargs):
+        del kwargs
+        return [] if self._existing is None else [self._existing]
 
 
 class FakeBindingRepository:
@@ -79,6 +84,9 @@ class KnowledgeCoreCollectionServiceTest(unittest.IsolatedAsyncioTestCase):
                 domain_id=8,
                 collection_key="assets",
                 display_name="Asset Knowledge",
+                parser_llm_model_id=uuid7(),
+                parser_vlm_model_id=uuid7(),
+                retrieval_llm_model_id=uuid7(),
                 embedding_model_id=embedding_model_id,
                 metadata={"source": "km"},
                 actor_id="user:7",
@@ -102,12 +110,43 @@ class KnowledgeCoreCollectionServiceTest(unittest.IsolatedAsyncioTestCase):
                     domain_id=8,
                     collection_key="assets",
                     display_name="Asset Knowledge",
+                    parser_llm_model_id=uuid7(),
+                    parser_vlm_model_id=None,
+                    retrieval_llm_model_id=uuid7(),
                     embedding_model_id=uuid7(),
                 )
             )
 
         self.assertIsNone(repository.added)
         uow.commit.assert_not_awaited()
+
+    async def test_list_returns_session_independent_snapshots(self):
+        collection = SimpleNamespace(
+            collection_id=uuid7(),
+            app_id=112,
+            domain_id=8,
+            collection_key="assets",
+            display_name="Asset Knowledge",
+            description=None,
+            parser_llm_model_id=uuid7(),
+            parser_vlm_model_id=None,
+            retrieval_llm_model_id=uuid7(),
+            embedding_model_id=uuid7(),
+            visual_embedding_model_id=None,
+            status="ACTIVE",
+            default_security_level=1,
+            metadata_json={"source": "test"},
+        )
+        service, _ = self._service(
+            FakeCollectionRepository(existing=collection)
+        )
+
+        result = await service.list(domain_id=8)
+        collection.display_name = "数据库实体已变化"
+
+        self.assertEqual(1, len(result))
+        self.assertEqual("Asset Knowledge", result[0].display_name)
+        self.assertEqual({"source": "test"}, result[0].metadata_json)
 
 
     async def test_rejects_collection_without_a_valid_embedding_model(self):
@@ -119,11 +158,48 @@ class KnowledgeCoreCollectionServiceTest(unittest.IsolatedAsyncioTestCase):
                 domain_id=8,
                 collection_key="assets",
                 display_name="Asset Knowledge",
+                parser_llm_model_id=uuid7(),
+                parser_vlm_model_id=None,
+                retrieval_llm_model_id=uuid7(),
                 embedding_model_id="not-a-uuid",
             ))
 
         self.assertIsNone(repository.added)
         uow.commit.assert_not_awaited()
+
+    async def test_updates_only_generation_models(self):
+        original_embedding = uuid7()
+        collection = SimpleNamespace(
+            parser_llm_model_id=uuid7(),
+            parser_vlm_model_id=None,
+            retrieval_llm_model_id=uuid7(),
+            embedding_model_id=original_embedding,
+            visual_embedding_model_id=uuid7(),
+            updated_by=None,
+        )
+        service, uow = self._service(
+            FakeCollectionRepository(existing=collection)
+        )
+        parser_llm = uuid7()
+        parser_vlm = uuid7()
+        retrieval_llm = uuid7()
+
+        updated = await service.update_generation_models(
+            UpdateCollectionGenerationModelsCommand(
+                domain_id=8,
+                collection_key="assets",
+                parser_llm_model_id=parser_llm,
+                parser_vlm_model_id=parser_vlm,
+                retrieval_llm_model_id=retrieval_llm,
+                actor_id="user:7",
+            )
+        )
+
+        self.assertEqual(parser_llm, updated.parser_llm_model_id)
+        self.assertEqual(parser_vlm, updated.parser_vlm_model_id)
+        self.assertEqual(retrieval_llm, updated.retrieval_llm_model_id)
+        self.assertEqual(original_embedding, updated.embedding_model_id)
+        uow.commit.assert_awaited_once()
 
     async def test_binds_agent_to_collection_without_retrieval_weights(self):
         collection = SimpleNamespace(collection_id=101)

@@ -2,7 +2,7 @@
 import json
 import tempfile
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, Field, ValidationError
@@ -10,7 +10,13 @@ from starlette.datastructures import UploadFile
 
 from platform_core.contracts import INTERNAL_API_V1
 from platform_core.security import get_actor_id, require_domain_match
-from knowledge_core.application.intake import IntakeCollectionError, IntakeConflictError
+from knowledge_core.application.intake import (
+    IntakeCollectionError,
+    IntakeConflictError,
+    IntakeReviewConflictError,
+    IntakeReviewNotFoundError,
+    ReviewIntakeCommand,
+)
 from knowledge_core.application.multipart import IntakeInProgressError, MultipartIntakeCommand
 from knowledge_core.domain.intake import IntakeValidationError, KmAssetIntakeManifest
 
@@ -105,6 +111,11 @@ class UserBundleDeclaration(BaseModel):
     metadata: dict = Field(default_factory=dict)
 
 
+class IntakeReviewRequest(BaseModel):
+    decision: str = Field(pattern=r"^(APPROVE|REJECT)$")
+    comment: str | None = Field(default=None, max_length=1000)
+
+
 def _user_manifest(bundle: UserBundleDeclaration, files: list[UserFileDeclaration], *, source_revision: str):
     documents = []
     for item in files:
@@ -182,9 +193,14 @@ async def ingest_user_files(domain_id: int, collection_key: str, request: Reques
                 )
                 accepted = await orchestrator.accept(MultipartIntakeCommand(
                     domain_id, collection_key, actor, idempotency_key, manifest, file_paths,
-                    "kbot", "USER_UPLOAD", False, ("CONTENT", "SUPPLEMENT"),
+                    "kbot", "USER_UPLOAD", False,
+                    ("CONTENT", "SUPPLEMENT"), True,
                 ))
-                items.append({"status": "ACCEPTED", "bundle_id": accepted.bundle_id, "bundle_revision_id": accepted.bundle_revision_id})
+                items.append({
+                    "status": accepted.acceptance_status,
+                    "bundle_id": accepted.bundle_id,
+                    "bundle_revision_id": accepted.bundle_revision_id,
+                })
             else:
                 for item in declarations:
                     manifest = _user_manifest(
@@ -196,9 +212,15 @@ async def ingest_user_files(domain_id: int, collection_key: str, request: Reques
                         accepted = await orchestrator.accept(MultipartIntakeCommand(
                             domain_id, collection_key, actor, child_key, manifest,
                             {item.part_name: file_paths[item.part_name]},
-                            "kbot", "USER_UPLOAD", False, ("CONTENT", "SUPPLEMENT"),
+                            "kbot", "USER_UPLOAD", False,
+                            ("CONTENT", "SUPPLEMENT"), True,
                         ))
-                        items.append({"status": "ACCEPTED", "client_file_id": item.client_file_id, "bundle_id": accepted.bundle_id, "bundle_revision_id": accepted.bundle_revision_id})
+                        items.append({
+                            "status": accepted.acceptance_status,
+                            "client_file_id": item.client_file_id,
+                            "bundle_id": accepted.bundle_id,
+                            "bundle_revision_id": accepted.bundle_revision_id,
+                        })
                     except IntakeCollectionError:
                         raise
                     except Exception as exc:
@@ -212,3 +234,78 @@ async def ingest_user_files(domain_id: int, collection_key: str, request: Reques
         except Exception as exc:
             raise HTTPException(status_code=503, detail={"code": "USER_INTAKE_UNAVAILABLE", "message": type(exc).__name__}) from exc
     return {"grouping_mode": grouping_mode, "items": items, "request_id": request.headers.get("X-Request-ID", str(uuid4()))}
+
+
+def _review_payload(review) -> dict:
+    return {
+        "bundle_id": review.bundle_id,
+        "bundle_revision_id": review.bundle_revision_id,
+        "source_revision": review.source_revision,
+        "title": review.title,
+        "approval_status": review.approval_status,
+        "revision_status": review.revision_status,
+        "document_names": list(review.document_names),
+        "reviewed_by": review.reviewed_by,
+        "reviewed_at": review.reviewed_at,
+        "review_comment": review.review_comment,
+    }
+
+
+@router.get(
+    f"{INTERNAL_API_V1}/knowledge/domains/{{domain_id}}"
+    "/collections/{collection_key}/approvals",
+)
+async def list_pending_approvals(
+    domain_id: int,
+    collection_key: str,
+    request: Request,
+):
+    require_domain_match(request, domain_id)
+    try:
+        rows = await request.app.state.kc_intake_service.list_pending_reviews(
+            domain_id=domain_id,
+            collection_key=collection_key,
+        )
+    except IntakeReviewNotFoundError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "COLLECTION_NOT_FOUND", "message": str(exc)},
+        ) from exc
+    return {"items": [_review_payload(row) for row in rows]}
+
+
+@router.post(
+    f"{INTERNAL_API_V1}/knowledge/domains/{{domain_id}}"
+    "/collections/{collection_key}/bundle-revisions/"
+    "{bundle_revision_id}/approval",
+)
+async def review_user_intake(
+    domain_id: int,
+    collection_key: str,
+    bundle_revision_id: UUID,
+    payload: IntakeReviewRequest,
+    request: Request,
+):
+    require_domain_match(request, domain_id)
+    try:
+        review = await request.app.state.kc_intake_service.review(
+            ReviewIntakeCommand(
+                domain_id=domain_id,
+                collection_key=collection_key,
+                bundle_revision_id=bundle_revision_id,
+                decision=payload.decision,
+                actor_id=get_actor_id(request),
+                comment=payload.comment,
+            )
+        )
+    except IntakeReviewNotFoundError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "INGESTION_REVIEW_NOT_FOUND", "message": str(exc)},
+        ) from exc
+    except IntakeReviewConflictError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "INGESTION_REVIEW_CONFLICT", "message": str(exc)},
+        ) from exc
+    return _review_payload(review)

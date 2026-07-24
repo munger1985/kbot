@@ -29,6 +29,26 @@ class CreateRunCommand(_FrozenCommand):
     policy_snapshot: dict[str, Any] = Field(default_factory=dict)
     budget: dict[str, Any] = Field(default_factory=dict)
     deadline_at: datetime | None = None
+    conversation_id: UUID | None = None
+    turn_id: UUID | None = None
+    conversation_context: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def validate_conversation_scope(self) -> "CreateRunCommand":
+        if (self.conversation_id is None) != (self.turn_id is None):
+            raise ValueError(
+                "conversation_id 与 turn_id 必须同时提供或同时为空"
+            )
+        if self.conversation_id is None and self.conversation_context:
+            raise ValueError("无 Conversation 的 Run 不能携带会话上下文")
+        if (
+            self.conversation_id is None
+            and "query_images" in self.client_metadata
+        ):
+            raise ValueError(
+                "无 Conversation 的 Run 不能携带查询图片存储描述"
+            )
+        return self
 
 
 class InstallPlanCommand(_FrozenCommand):
@@ -74,6 +94,17 @@ class CompleteTaskCommand(_FrozenCommand):
     worker_id: str = Field(min_length=1, max_length=256)
     lease_token: UUID
     artifact: ArtifactInput
+    actor_id: str = Field(min_length=1, max_length=256)
+    trace_id: str = Field(min_length=1, max_length=128)
+    idempotency_key: str = Field(min_length=1, max_length=128)
+
+
+class AppendTaskProgressCommand(_FrozenCommand):
+    task_id: UUID
+    worker_id: str = Field(min_length=1, max_length=256)
+    lease_token: UUID
+    event_type: str = Field(min_length=1, max_length=64)
+    payload: dict[str, Any] = Field(default_factory=dict)
     actor_id: str = Field(min_length=1, max_length=256)
     trace_id: str = Field(min_length=1, max_length=128)
     idempotency_key: str = Field(min_length=1, max_length=128)

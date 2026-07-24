@@ -35,6 +35,7 @@ from .service_identity import (
 
 DOMAIN_ID_HEADER = "X-KBot-Domain-ID"
 USER_ID_HEADER = "X-KBot-User-ID"
+TEST_AUTH_BYPASS_HEADER = "X-KBot-Test-Auth"
 PUBLIC_PATHS = {
     "/health",
     "/healthz",
@@ -130,12 +131,15 @@ def create_public_auth_middleware(
     verifier: PortalApiKeyVerifier | None = None,
     public_paths: set[str] | None = None,
     public_prefixes: set[str] | None = None,
+    domainless_paths: set[str] | None = None,
+    allow_test_bypass: bool = False,
 ):
     """创建 Main API 使用的 Portal API Key 认证中间件。"""
-    resolved_verifier = verifier or create_portal_api_key_verifier()
+    resolved_verifier = verifier
     skip_paths = PUBLIC_PATHS if public_paths is None else public_paths
 
     async def middleware(request: Request, call_next):
+        nonlocal resolved_verifier
         if (
             request.url.path in skip_paths
             or any(
@@ -146,15 +150,31 @@ def create_public_auth_middleware(
         ):
             return await call_next(request)
         try:
-            principal = resolved_verifier.verify_authorization(
-                request.headers.get("Authorization")
+            domainless_request = request.url.path in (domainless_paths or set())
+            test_bypass = (
+                allow_test_bypass
+                and request.headers.get(TEST_AUTH_BYPASS_HEADER, "").lower()
+                == "true"
             )
-            domain_id = _validated_header(
-                request,
-                name=DOMAIN_ID_HEADER,
-                required=True,
-                max_length=128,
-            )
+            if test_bypass:
+                principal_client_id = "kbot-development-test"
+                principal_key_id = "development-test-bypass"
+            else:
+                if resolved_verifier is None:
+                    resolved_verifier = create_portal_api_key_verifier()
+                principal = resolved_verifier.verify_authorization(
+                    request.headers.get("Authorization")
+                )
+                principal_client_id = principal.client_id
+                principal_key_id = principal.key_id
+            domain_id = None
+            if not domainless_request:
+                domain_id = _validated_header(
+                    request,
+                    name=DOMAIN_ID_HEADER,
+                    required=True,
+                    max_length=128,
+                )
             user_id = _validated_header(
                 request,
                 name=USER_ID_HEADER,
@@ -184,9 +204,13 @@ def create_public_auth_middleware(
                     )
             request_id, trace_id = _request_ids(request)
             request.state.auth_context = AuthContext(
-                principal_kind=PrincipalKind.PORTAL,
-                client_id=principal.client_id,
-                api_key_id=principal.key_id,
+                principal_kind=(
+                    PrincipalKind.API_CLIENT
+                    if domainless_request
+                    else PrincipalKind.PORTAL
+                ),
+                client_id=principal_client_id,
+                api_key_id=principal_key_id,
                 domain_id=domain_id,
                 asserted_user_id=user_id,
                 request_id=request_id,

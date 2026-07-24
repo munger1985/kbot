@@ -40,6 +40,21 @@ class BundleRevisionRepository:
     async def list_by_bundle(self, *, bundle_id: UUID) -> list[KcBundleRevisionEntity]:
         statement: Select = select(KcBundleRevisionEntity).where(KcBundleRevisionEntity.bundle_id == bundle_id).order_by(KcBundleRevisionEntity.revision_no.desc())
         return list((await self.session.execute(statement)).scalars())
+    async def list_by_approval(
+        self, *, collection_id: UUID, approval_status: str,
+    ) -> list[KcBundleRevisionEntity]:
+        statement: Select = (
+            select(KcBundleRevisionEntity)
+            .where(
+                KcBundleRevisionEntity.collection_id == collection_id,
+                KcBundleRevisionEntity.approval_status == approval_status,
+            )
+            .order_by(
+                KcBundleRevisionEntity.accepted_at,
+                KcBundleRevisionEntity.bundle_revision_id,
+            )
+        )
+        return list((await self.session.execute(statement)).scalars())
 
 
 class DocumentRepository:
@@ -80,63 +95,94 @@ class BundleRevisionDocumentRepository:
 
 
 class IngestionJobRepository:
+    _MIN_CLAIM_SCAN_LIMIT = 16
+    _CLAIM_SCAN_FACTOR = 4
+
     def __init__(self, session: AsyncSession): self.session = session
+
+    async def _claim_by_type(
+        self,
+        *,
+        job_type: str,
+        now: datetime,
+        limit: int,
+    ) -> list[KcIngestionJobEntity]:
+        """先筛选候选主键，再逐行加锁，规避 Oracle ORA-02014。"""
+        if limit <= 0:
+            return []
+
+        eligibility = (
+            KcIngestionJobEntity.job_type == job_type,
+            KcIngestionJobEntity.job_status.in_(("PENDING", "RETRY_WAIT")),
+            KcIngestionJobEntity.available_at <= now,
+        )
+        scan_limit = max(
+            self._MIN_CLAIM_SCAN_LIMIT,
+            limit * self._CLAIM_SCAN_FACTOR,
+        )
+        candidate_statement: Select = (
+            select(KcIngestionJobEntity.ingestion_job_id)
+            .where(*eligibility)
+            .order_by(
+                KcIngestionJobEntity.priority.desc(),
+                KcIngestionJobEntity.available_at,
+                KcIngestionJobEntity.ingestion_job_id,
+            )
+            .limit(scan_limit)
+        )
+        candidate_ids = list(
+            (await self.session.execute(candidate_statement)).scalars()
+        )
+
+        claimed: list[KcIngestionJobEntity] = []
+        for ingestion_job_id in candidate_ids:
+            lock_statement: Select = (
+                select(KcIngestionJobEntity)
+                .where(
+                    KcIngestionJobEntity.ingestion_job_id == ingestion_job_id,
+                    *eligibility,
+                )
+                .with_for_update(skip_locked=True)
+            )
+            job = (
+                await self.session.execute(lock_statement)
+            ).scalar_one_or_none()
+            if job is None:
+                continue
+            claimed.append(job)
+            if len(claimed) >= limit:
+                break
+        return claimed
+
     async def claim_candidates(self, *, now: datetime, limit: int) -> list[KcIngestionJobEntity]:
-        statement: Select = (
-            select(KcIngestionJobEntity)
-            .where(KcIngestionJobEntity.job_type == "PARSE", KcIngestionJobEntity.job_status.in_(("PENDING", "RETRY_WAIT")), KcIngestionJobEntity.available_at <= now)
-            .order_by(KcIngestionJobEntity.priority.desc(), KcIngestionJobEntity.available_at, KcIngestionJobEntity.ingestion_job_id)
-            .limit(limit)
-            .with_for_update(skip_locked=True)
+        return await self._claim_by_type(
+            job_type="PARSE",
+            now=now,
+            limit=limit,
         )
-        return list((await self.session.execute(statement)).scalars())
+
     async def claim_index_candidates(self, *, now: datetime, limit: int) -> list[KcIngestionJobEntity]:
-        """Claim only INDEX jobs; PARSE workers must never consume them."""
-        statement: Select = (
-            select(KcIngestionJobEntity)
-            .where(
-                KcIngestionJobEntity.job_type == "INDEX",
-                KcIngestionJobEntity.job_status.in_(("PENDING", "RETRY_WAIT")),
-                KcIngestionJobEntity.available_at <= now,
-            )
-            .order_by(
-                KcIngestionJobEntity.priority.desc(),
-                KcIngestionJobEntity.available_at,
-                KcIngestionJobEntity.ingestion_job_id,
-            )
-            .limit(limit)
-            .with_for_update(skip_locked=True)
+        """仅抢占 INDEX 任务，PARSE Worker 不得消费此类任务。"""
+        return await self._claim_by_type(
+            job_type="INDEX",
+            now=now,
+            limit=limit,
         )
-        return list((await self.session.execute(statement)).scalars())
+
     async def claim_profile_candidates(self, *, now: datetime, limit: int) -> list[KcIngestionJobEntity]:
-        statement: Select = (
-            select(KcIngestionJobEntity)
-            .where(
-                KcIngestionJobEntity.job_type == "PROFILE",
-                KcIngestionJobEntity.job_status.in_(("PENDING", "RETRY_WAIT")),
-                KcIngestionJobEntity.available_at <= now,
-            )
-            .order_by(
-                KcIngestionJobEntity.priority.desc(),
-                KcIngestionJobEntity.available_at,
-                KcIngestionJobEntity.ingestion_job_id,
-            )
-            .limit(limit)
-            .with_for_update(skip_locked=True)
+        return await self._claim_by_type(
+            job_type="PROFILE",
+            now=now,
+            limit=limit,
         )
-        return list((await self.session.execute(statement)).scalars())
+
     async def claim_purge_candidates(self, *, now: datetime, limit: int) -> list[KcIngestionJobEntity]:
-        statement: Select = (
-            select(KcIngestionJobEntity)
-            .where(
-                KcIngestionJobEntity.job_type == "COLLECTION_PURGE",
-                KcIngestionJobEntity.job_status.in_(("PENDING", "RETRY_WAIT")),
-                KcIngestionJobEntity.available_at <= now,
-            )
-            .order_by(KcIngestionJobEntity.priority.desc(), KcIngestionJobEntity.available_at)
-            .limit(limit).with_for_update(skip_locked=True)
+        return await self._claim_by_type(
+            job_type="COLLECTION_PURGE",
+            now=now,
+            limit=limit,
         )
-        return list((await self.session.execute(statement)).scalars())
+
     async def get_by_id(self, *, ingestion_job_id: UUID, lock: bool = False) -> KcIngestionJobEntity | None:
         statement: Select = select(KcIngestionJobEntity).where(KcIngestionJobEntity.ingestion_job_id == ingestion_job_id)
         if lock: statement = statement.with_for_update()
@@ -187,6 +233,19 @@ class EvidenceRepository:
         return (await self.session.execute(statement)).scalar_one_or_none()
     async def add(self, entity: KcEvidenceEntity) -> KcEvidenceEntity:
         self.session.add(entity); await self.session.flush(); return entity
+    async def get_by_source_ref(
+        self, *, parse_view_id: UUID, source_item_ref: str
+    ) -> KcEvidenceEntity | None:
+        statement = (
+            select(KcEvidenceEntity)
+            .where(
+                KcEvidenceEntity.parse_view_id == parse_view_id,
+                KcEvidenceEntity.source_item_ref == source_item_ref,
+            )
+            .order_by(KcEvidenceEntity.ordinal)
+            .limit(1)
+        )
+        return (await self.session.execute(statement)).scalar_one_or_none()
     async def count_staged(self, *, parse_view_id: UUID) -> int:
         statement = select(func.count()).select_from(KcEvidenceEntity).where(KcEvidenceEntity.parse_view_id == parse_view_id, KcEvidenceEntity.status == "STAGED")
         return int((await self.session.execute(statement)).scalar_one())

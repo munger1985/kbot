@@ -122,6 +122,23 @@ class KcParseClient:
         )
         return int(payload["inserted"])
 
+    async def submit_visual_assets(
+        self, task: ParseTask, items: list[dict[str, Any]]
+    ) -> int:
+        payload = await self._request(
+            "POST",
+            (
+                f"{INTERNAL_API_V1}/knowledge/parse-tasks/"
+                f"{task.job_id}/visual-asset-batches"
+            ),
+            json={
+                "worker_id": task.lease_owner,
+                "input_fingerprint": task.input_fingerprint,
+                "items": items,
+            },
+        )
+        return int(payload["inserted"])
+
     async def complete(
         self, task: ParseTask, *, artifact_manifest: dict[str, Any],
         output_fingerprint: str, quality_report: dict[str, Any], quality_score: float,

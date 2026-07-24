@@ -1,5 +1,11 @@
 # KBot 4.0 架构设计
 
+## 展示与 PPT 素材
+
+- [Agent 完整聊天流程](../kbot_4.0_showcase/01_agent_chat_end_to_end.md)
+- [文档入库、解析与二阶段检索](../kbot_4.0_showcase/02_knowledge_ingestion_parsing_and_retrieval.md)
+- [AIOps Agent 产品能力与完整流程](../kbot_4.0_showcase/03_aiops_agent_product_and_flow.md)
+
 ## 目标
 
 KBot 4.0 是一次**Clean-slate 重构**：保留单仓库、同一 Oracle/APEX Schema 和统一发布节奏，同时按稳定业务边界拆分可独立运行的进程与 API。4.0 先完成逻辑上的独立微服务边界，数据库仍共享同一个 Schema；未来真正微服务化时，主要变化是为每个服务提供独立数据库连接和存储，不重新设计服务边界。
@@ -48,6 +54,12 @@ KBot 4.0 是一次**Clean-slate 重构**：保留单仓库、同一 Oracle/APEX 
 | [41_kbot4_step12_acceptance_release_and_cutover.md](41_kbot4_step12_acceptance_release_and_cutover.md) | 全系统测试矩阵、质量门禁、空库建库、生产启用与 Mutation 门禁 |
 | [42_model_serving_identity_and_openai_compatibility.md](42_model_serving_identity_and_openai_compatibility.md) | UUIDv7 模型身份、服务名、Provider 名、模型池与 OpenAI 兼容接口 |
 | [43_kbot4_acceptance_status.md](43_kbot4_acceptance_status.md) | 当前离线门禁、Oracle 集成结果、RC 缺口与重跑方式 |
+| [44_adaptive_hybrid_document_parsing.md](44_adaptive_hybrid_document_parsing.md) | Docling、整页 VLM、页面质量路由、Atom 融合与解析验收 |
+| [45_agent_conversation_memory_and_trace.md](45_agent_conversation_memory_and_trace.md) | Conversation/Turn、分层记忆、上下文改写、历史恢复与可追溯 SSE |
+| [46_versioned_prompt_registry.md](46_versioned_prompt_registry.md) | 单文件 Prompt Catalog、数据库版本、初始化、文件兜底与调用快照 |
+| [47_function_scoped_model_bindings.md](47_function_scoped_model_bindings.md) | Agent/KC 按功能角色绑定模型、成本分层与 Embedding 不可变边界 |
+| [48_visual_embedding_and_multi_image_search.md](48_visual_embedding_and_multi_image_search.md) | Collection 视觉索引、整页/Figure 资产、聊天多图上传与融合引用 |
+| [49_general_chat_mcp_data_echarts_and_dify.md](49_general_chat_mcp_data_echarts_and_dify.md) | 通用对话、单 Agent 自然语言路由、MCP 问数、ECharts 与 Dify Retrieval Adapter |
 | [06_identity_security_and_tenancy.md](06_identity_security_and_tenancy.md) | 身份、租户、权限、密钥与数据安全治理 |
 | [07_platform_operations_and_integrations.md](07_platform_operations_and_integrations.md) | 平台运行、可观测性、AIOps、MCP、Slack 与外部适配器 |
 | [08_api_schema_and_lifecycle.md](08_api_schema_and_lifecycle.md) | API 契约、APEX Schema 建设与文件生命周期 |

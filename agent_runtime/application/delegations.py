@@ -217,6 +217,32 @@ class AgentDelegationReconciler:
             deadline = run.deadline_at or (
                 now + timedelta(seconds=int(task.timeout_seconds))
             )
+            delegated_input = run.original_input
+            dependency_keys = set(
+                getattr(task, "depends_on_json", None) or []
+            )
+            if "context_rewrite" in dependency_keys:
+                run_tasks = await uow.tasks.list_by_run(run_id=run.run_id)
+                rewrite_task = next(
+                    (
+                        item
+                        for item in run_tasks
+                        if item.task_key == "context_rewrite"
+                        and item.output_artifact_id is not None
+                    ),
+                    None,
+                )
+                if rewrite_task is not None:
+                    rewrite = await uow.artifacts.get(
+                        artifact_id=rewrite_task.output_artifact_id
+                    )
+                    if rewrite is not None and isinstance(
+                        rewrite.payload_json, dict
+                    ):
+                        delegated_input = str(
+                            rewrite.payload_json.get("standalone_query")
+                            or delegated_input
+                        )
             lease = _Lease(
                 delegation_id=delegation.delegation_id,
                 lease_token=lease_token,
@@ -229,7 +255,7 @@ class AgentDelegationReconciler:
                 domain_id=int(run.domain_id),
                 agent_id=run.agent_id,
                 actor_id=run.actor_id,
-                original_input=run.original_input,
+                original_input=delegated_input,
                 deadline_at=deadline,
                 trace_id=run.trace_id,
                 auth_context=auth_context,

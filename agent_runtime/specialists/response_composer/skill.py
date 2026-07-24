@@ -1,50 +1,91 @@
 """仅消费已验证 Artifact 的最终回答组合器。"""
 
-import json
 import re
 from typing import Any
 
-from agent_runtime.runtime import ExecutionContext, SkillArtifact, SkillResult
+from agent_runtime.runtime import (
+    ExecutionContext,
+    SkillArtifact,
+    SkillProgress,
+    SkillResult,
+)
 from agent_runtime.specialists.document.contracts import (
     DocumentRetrievalResult,
 )
+from agent_runtime.specialists.mcp_data.contracts import (
+    EChartsResult,
+    QueryResult,
+)
+from platform_core.prompts import StrictPromptRenderer
 
-from .contracts import AIOpsReferenceCard, GroundedAnswer, ReferenceCard
+from .contracts import (
+    AIOpsReferenceCard,
+    GroundedAnswer,
+    QueryResultReferenceCard,
+    ReferenceCard,
+)
 
 
 _CITATION_PATTERN = re.compile(r"\[([A-Z]\d+)\]")
 
 
 class ResponseComposerSkill:
-    def __init__(self, *, model_client):
+    def __init__(self, *, model_client, prompt_resolver):
         self._model_client = model_client
+        self._prompt_resolver = prompt_resolver
 
     async def execute(self, context: ExecutionContext) -> SkillResult:
+        clarification = self._clarification(context)
+        if clarification is not None:
+            return self._result(
+                context,
+                GroundedAnswer(
+                    answer=clarification,
+                    status="CLARIFICATION_REQUIRED",
+                    warnings=("当前问题存在无法安全消解的上下文歧义",),
+                ),
+            )
         aiops_result = self._aiops_result(context)
         if aiops_result is not None:
             return self._compose_aiops(context, aiops_result)
+        query_result = self._query_result(context)
+        if query_result is not None:
+            return await self._compose_query_result(context, query_result)
         retrieval = self._document_result(context)
         if retrieval is None or not retrieval.citation_pack.citations:
+            retrieval_warnings = (
+                retrieval.warnings if retrieval is not None else ()
+            )
             answer = GroundedAnswer(
                 answer="当前授权知识范围内没有找到足够的可引用证据。",
                 status="INSUFFICIENT_EVIDENCE",
-                warnings=("回答未调用模型补写无来源内容",),
+                warnings=(
+                    *retrieval_warnings,
+                    "回答未调用模型补写无来源内容",
+                ),
             )
             return self._result(context, answer)
 
         model_name = str(
             context.config_snapshot.get("agent", {}).get(
-                "composer_model_name", ""
+                "composer_llm_model_name", ""
             )
         ).strip()
         if not model_name:
-            raise ValueError("Agent 未配置 composer_model_name")
+            raise ValueError("Agent 未配置 composer_llm_model_name")
 
         allowed = {
             item.citation_label: item
             for item in retrieval.citation_pack.citations
         }
-        prompt = self._prompt(context, retrieval)
+        prompt_definition = await self._prompt_resolver.resolve(
+            "agent_runtime.response_compose"
+        )
+        prompt = self._prompt(
+            context,
+            retrieval,
+            prompt_definition=prompt_definition,
+        )
         response = await self._model_client.get_llm_json(
             served_model_name=model_name,
             prompt=prompt,
@@ -74,6 +115,188 @@ class ResponseComposerSkill:
         )
         return self._result(context, grounded)
 
+    async def execute_stream(self, context: ExecutionContext):
+        """流式生成回答；最终 Artifact 仍执行完整引用校验。"""
+        clarification = self._clarification(context)
+        if clarification is not None:
+            grounded = GroundedAnswer(
+                answer=clarification,
+                status="CLARIFICATION_REQUIRED",
+                warnings=("当前问题存在无法安全消解的上下文歧义",),
+            )
+            yield SkillProgress(
+                event_type="answer.delta",
+                payload={"chunk_index": 1, "delta": clarification},
+            )
+            yield self._result(context, grounded)
+            return
+        aiops_result = self._aiops_result(context)
+        if aiops_result is not None:
+            result = self._compose_aiops(context, aiops_result)
+            answer = str(result.artifact.payload.get("answer") or "")
+            yield SkillProgress(
+                event_type="answer.delta",
+                payload={"chunk_index": 1, "delta": answer},
+            )
+            yield result
+            return
+        query_result = self._query_result(context)
+        if query_result is not None:
+            async for item in self._stream_query_result(
+                context, query_result
+            ):
+                yield item
+            return
+        retrieval = self._document_result(context)
+        if retrieval is None or not retrieval.citation_pack.citations:
+            retrieval_warnings = (
+                retrieval.warnings if retrieval is not None else ()
+            )
+            grounded = GroundedAnswer(
+                answer="当前授权知识范围内没有找到足够的可引用证据。",
+                status="INSUFFICIENT_EVIDENCE",
+                warnings=(
+                    *retrieval_warnings,
+                    "回答未调用模型补写无来源内容",
+                ),
+            )
+            yield SkillProgress(
+                event_type="answer.delta",
+                payload={"chunk_index": 1, "delta": grounded.answer},
+            )
+            yield self._result(context, grounded)
+            return
+
+        model_name = str(
+            context.config_snapshot.get("agent", {}).get(
+                "composer_llm_model_name", ""
+            )
+        ).strip()
+        if not model_name:
+            raise ValueError("Agent 未配置 composer_llm_model_name")
+        allowed = {
+            item.citation_label: item
+            for item in retrieval.citation_pack.citations
+        }
+        prompt_definition = await self._prompt_resolver.resolve(
+            "agent_runtime.response_compose"
+        )
+        prompt = self._prompt(
+            context,
+            retrieval,
+            prompt_definition=prompt_definition,
+        )
+        prompt.append(
+            {
+                "role": "system",
+                "content": (
+                    "当前为流式回答模式。只输出最终 Markdown 回答正文，"
+                    "不要输出 JSON、字段名或隐藏思维过程；引用规则保持不变。"
+                ),
+            }
+        )
+        yield SkillProgress(
+            event_type="thinking.delta",
+            payload={
+                "delta": (
+                    f"正在基于 {len(allowed)} 组已验证证据组织回答"
+                ),
+                "public_summary": "正在组织带引用的最终回答",
+            },
+        )
+        answer_parts: list[str] = []
+        pending = ""
+        chunk_index = 0
+        async for chunk in self._model_client.stream_llm_chunks(
+            served_model_name=model_name,
+            prompt=prompt,
+            max_tokens=4096,
+            temperature=0,
+        ):
+            if not chunk.content:
+                continue
+            answer_parts.append(chunk.content)
+            pending += chunk.content
+            if len(pending) < 80 and not re.search(
+                r"[。！？；\n.!?;]$", pending
+            ):
+                continue
+            self._validate_partial_citations(pending, allowed)
+            chunk_index += 1
+            yield SkillProgress(
+                event_type="answer.delta",
+                payload={"chunk_index": chunk_index, "delta": pending},
+            )
+            pending = ""
+        if pending:
+            self._validate_partial_citations(pending, allowed)
+            chunk_index += 1
+            yield SkillProgress(
+                event_type="answer.delta",
+                payload={"chunk_index": chunk_index, "delta": pending},
+            )
+        answer_text = "".join(answer_parts).strip()
+        used_labels = self._validate_streamed_answer(answer_text, allowed)
+        references = tuple(
+            ReferenceCard(
+                citation_label=label,
+                collection_id=allowed[label].collection_id,
+                bundle_id=allowed[label].bundle_id,
+                document_id=allowed[label].document_id,
+                document_version_id=allowed[label].document_version_id,
+                title=allowed[label].title,
+                locator=allowed[label].locator,
+            )
+            for label in used_labels
+        )
+        yield self._result(
+            context,
+            GroundedAnswer(
+                answer=answer_text,
+                status="READY",
+                used_citation_labels=used_labels,
+                references=references,
+                warnings=retrieval.warnings,
+            ),
+        )
+
+    @staticmethod
+    def _validate_partial_citations(
+        value: str, allowed: dict[str, Any]
+    ) -> None:
+        unknown = set(_CITATION_PATTERN.findall(value)) - allowed.keys()
+        if unknown:
+            raise ValueError(f"模型使用了未知引用标签：{sorted(unknown)}")
+
+    @staticmethod
+    def _validate_streamed_answer(
+        answer: str, allowed: dict[str, Any]
+    ) -> tuple[str, ...]:
+        if not answer:
+            raise ValueError("模型返回的 answer 为空")
+        labels = tuple(dict.fromkeys(_CITATION_PATTERN.findall(answer)))
+        unknown = set(labels) - allowed.keys()
+        if unknown:
+            raise ValueError(f"模型使用了未知引用标签：{sorted(unknown)}")
+        if not labels:
+            raise ValueError("有文档事实的回答必须实际包含引用标签")
+        return labels
+
+    @staticmethod
+    def _clarification(context: ExecutionContext) -> str | None:
+        artifacts = [
+            item
+            for item in context.input_artifacts
+            if item.artifact_type == "CONTEXT_REWRITE"
+        ]
+        if not artifacts:
+            return None
+        payload = artifacts[-1].payload or {}
+        if not bool(payload.get("ambiguity", False)):
+            return None
+        value = str(payload.get("clarification_question") or "").strip()
+        return value or "请补充说明当前问题所指的对象。"
+
     @staticmethod
     def _aiops_result(
         context: ExecutionContext,
@@ -84,6 +307,140 @@ class ResponseComposerSkill:
             if item.artifact_type == "DELEGATED_AIOPS_RESULT"
         ]
         return dict(artifacts[-1].payload) if artifacts else None
+
+    @staticmethod
+    def _query_result(
+        context: ExecutionContext,
+    ) -> QueryResult | None:
+        for artifact in reversed(context.input_artifacts):
+            if artifact.artifact_type == "QUERY_RESULT":
+                return QueryResult.model_validate(artifact.payload)
+        return None
+
+    async def _compose_query_result(
+        self, context: ExecutionContext, query: QueryResult
+    ) -> SkillResult:
+        response = await self._query_response(context, query)
+        answer = str(response.get("answer") or "").strip()
+        if not answer:
+            raise ValueError("问数回答模型返回空 answer")
+        return self._query_result_artifact(context, query, answer)
+
+    async def _stream_query_result(
+        self, context: ExecutionContext, query: QueryResult
+    ):
+        model_name, messages = await self._query_prompt(context, query)
+        yield SkillProgress(
+            event_type="thinking.delta",
+            payload={
+                "delta": f"正在分析 {query.row_count} 行结构化查询结果",
+                "public_summary": "正在分析结构化查询结果",
+            },
+        )
+        parts: list[str] = []
+        index = 0
+        async for chunk in self._model_client.stream_llm_chunks(
+            served_model_name=model_name,
+            prompt=[
+                *messages,
+                {
+                    "role": "system",
+                    "content": "只输出最终回答正文，不要输出 JSON。",
+                },
+            ],
+            max_tokens=4096,
+            temperature=0,
+        ):
+            if not chunk.content:
+                continue
+            parts.append(chunk.content)
+            index += 1
+            yield SkillProgress(
+                event_type="answer.delta",
+                payload={"chunk_index": index, "delta": chunk.content},
+            )
+        answer = "".join(parts).strip()
+        if not answer:
+            raise ValueError("问数回答模型返回空回答")
+        yield self._query_result_artifact(context, query, answer)
+
+    async def _query_response(
+        self, context: ExecutionContext, query: QueryResult
+    ) -> dict[str, Any]:
+        model_name, messages = await self._query_prompt(context, query)
+        return await self._model_client.get_llm_json(
+            served_model_name=model_name,
+            prompt=messages,
+            max_tokens=4096,
+        )
+
+    async def _query_prompt(
+        self, context: ExecutionContext, query: QueryResult
+    ) -> tuple[str, list[dict[str, str]]]:
+        agent = context.config_snapshot.get("agent", {})
+        model_name = str(
+            agent.get("composer_llm_model_name") or ""
+        ).strip()
+        if not model_name:
+            raise ValueError("Agent 未配置 composer_llm_model_name")
+        definition = await self._prompt_resolver.resolve(
+            "agent_runtime.data_response_compose"
+        )
+        return model_name, [
+            {
+                "role": "system",
+                "content": (
+                    f"{definition.content}\n\nAgent 指令：\n"
+                    f"{agent.get('instruction') or ''}"
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"用户问题：{context.original_input}\n"
+                    f"QueryResult：{query.model_dump_json()}"
+                ),
+            },
+        ]
+
+    def _query_result_artifact(
+        self,
+        context: ExecutionContext,
+        query: QueryResult,
+        answer: str,
+    ) -> SkillResult:
+        label = "Q1"
+        charts = [
+            EChartsResult.model_validate(item.payload).model_dump(
+                mode="json"
+            )
+            for item in context.input_artifacts
+            if item.artifact_type == "ECHARTS_CONFIG"
+        ]
+        warning = (
+            ("问数结果已按服务端上限截断",)
+            if query.truncated
+            else ()
+        )
+        return self._result(
+            context,
+            GroundedAnswer(
+                answer=f"{answer} [{label}]",
+                status="READY",
+                used_citation_labels=(label,),
+                references=(
+                    QueryResultReferenceCard(
+                        citation_label=label,
+                        query_result_id=query.query_result_id,
+                        profile=query.profile,
+                        row_count=query.row_count,
+                    ),
+                ),
+                query_results=(query.model_dump(mode="json"),),
+                visualizations=tuple(charts),
+                warnings=warning,
+            ),
+        )
 
     @staticmethod
     def _compose_aiops(
@@ -139,6 +496,8 @@ class ResponseComposerSkill:
     def _prompt(
         context: ExecutionContext,
         retrieval: DocumentRetrievalResult,
+        *,
+        prompt_definition,
     ) -> list[dict[str, str]]:
         instruction = (
             context.config_snapshot.get("agent", {}).get("instruction")
@@ -154,28 +513,27 @@ class ResponseComposerSkill:
             }
             for item in retrieval.citation_pack.citations
         ]
-        return [
-            {
-                "role": "system",
-                "content": (
-                    f"{instruction}\n"
-                    "只能使用给定证据陈述文档事实。每个事实后必须使用"
-                    "[C1] 形式标注真实使用的证据。不得创建不存在的标签。"
-                    "输出 JSON："
-                    '{"answer":"...","used_citation_labels":["C1"]}。'
-                ),
-            },
-            {
-                "role": "user",
-                "content": json.dumps(
-                    {
-                        "question": context.original_input,
-                        "evidence": evidence,
-                    },
-                    ensure_ascii=False,
-                ),
-            },
+        standalone_query = context.original_input
+        rewrites = [
+            item
+            for item in context.input_artifacts
+            if item.artifact_type == "CONTEXT_REWRITE"
         ]
+        if rewrites:
+            standalone_query = str(
+                (rewrites[-1].payload or {}).get("standalone_query")
+                or standalone_query
+            )
+        rendered = StrictPromptRenderer.render(
+            prompt_definition,
+            {
+                "agent_instruction": instruction,
+                "raw_input": context.original_input,
+                "standalone_query": standalone_query,
+                "evidence": evidence,
+            },
+        )
+        return [{"role": "system", "content": rendered}]
 
     @staticmethod
     def _validate_model_answer(

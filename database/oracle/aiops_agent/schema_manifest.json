@@ -7,27 +7,27 @@
     {
       "name": "001_ops_roots.sql",
       "statements": 23,
-      "sha256": "3ab30a6464e66ccca65c8352061c5a1759f17951a671eec69e45f893c482062e"
+      "sha256": "e30046c62c1d3e67078987f95e00a64371aab95a795fc129781eb1381f8bb62b"
     },
     {
       "name": "002_ops_runtime.sql",
       "statements": 32,
-      "sha256": "6935074a92b29d440950fbce6b3fa53dac7da1fb53cd2106cf1d72ee32439475"
+      "sha256": "9fa714850ec3d0a84d8ae48ae9f4808841eb28463e66ed4cdc6e5d78c55ff89c"
     },
     {
       "name": "003_ops_change.sql",
       "statements": 27,
-      "sha256": "550801ea4116c16102809a5b2a54eb105a689ab6b3431d53bbbf500ba69811b0"
+      "sha256": "25962d2750e822561ce4fa1ed842030c1c7136ed9b037c814c85aafd2e5e5d7e"
     },
     {
       "name": "004_ops_inspection.sql",
       "statements": 19,
-      "sha256": "595a255a059ce48697ebdedb88387d2d33793e6ecda8a441698ea882398c1f46"
+      "sha256": "b4026ce9b3cd1df84489d5e4183f8c3ce3421121b897dcb4b920069d0928e47b"
     },
     {
       "name": "005_ops_messaging.sql",
       "statements": 8,
-      "sha256": "bd10f9cace9852077e61ec809bd9ec3fa5e42b842c02057668f915933e07dc56"
+      "sha256": "569aab11f6aaa0727327e0bb2e809587e9a5f72f12934d773ce86d31e8ba590d"
     },
     {
       "name": "006_ops_fks_views.sql",

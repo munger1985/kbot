@@ -18,3 +18,24 @@ class PlatformDomainRepository:
         )
         result = await self._session.execute(statement)
         return result.scalar_one_or_none() is not None
+
+    async def get_by_name(
+        self,
+        *,
+        app_id: int,
+        name: str,
+    ) -> PlatformDomainEntity | None:
+        statement = select(PlatformDomainEntity).where(
+            PlatformDomainEntity.app_id == app_id,
+            PlatformDomainEntity.name == name,
+        )
+        result = await self._session.execute(statement)
+        return result.scalar_one_or_none()
+
+    async def add(
+        self,
+        entity: PlatformDomainEntity,
+    ) -> PlatformDomainEntity:
+        self._session.add(entity)
+        await self._session.flush()
+        return entity

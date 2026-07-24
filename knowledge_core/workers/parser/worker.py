@@ -3,10 +3,13 @@
 import asyncio
 from contextlib import suppress
 import hashlib
+import base64
+from io import BytesIO
 from pathlib import Path
 import shutil
 import tempfile
 from urllib.parse import urlparse
+from uuid import UUID
 
 from loguru import logger
 
@@ -40,6 +43,7 @@ class KcParserWorker:
         self, *, client: KcParseClient, converter: KcDoclingConverter,
         pipeline: KcParsingPipeline, worker_id: str, lease_seconds: int,
         poll_interval: float, evidence_batch_size: int, visual_enricher=None,
+        deepseek_ocr_enricher=None, model_config_client=None,
     ):
         self._client = client
         self._converter = converter
@@ -49,6 +53,8 @@ class KcParserWorker:
         self._poll_interval = poll_interval
         self._evidence_batch_size = evidence_batch_size
         self._visual_enricher = visual_enricher
+        self._deepseek_ocr_enricher = deepseek_ocr_enricher
+        self._model_config_client = model_config_client
         self._stop = asyncio.Event()
         self._run_task: asyncio.Task | None = None
 
@@ -95,16 +101,47 @@ class KcParserWorker:
                     ocr_engine=str(policy.get("ocr_engine", "tesseract")),
                     image_scale=float(policy.get("image_scale", 2.0)),
                 )
+                ocr_enrichment = None
+                if self._deepseek_ocr_enricher is not None:
+                    ocr_enrichment = (
+                        await self._deepseek_ocr_enricher.enrich(
+                            document,
+                            served_model_name=policy.get("ocr_model"),
+                        )
+                    )
+                visual_enrichment = None
                 if self._visual_enricher is not None:
-                    await self._visual_enricher.enrich(
+                    vlm_model_name = await self._resolve_vlm_model(policy)
+                    visual_enrichment = await self._visual_enricher.enrich(
                         document,
-                        served_model_name=policy.get("vlm_model"),
+                        served_model_name=vlm_model_name,
                         prompt=str(policy.get("visual_description_prompt", "")),
+                        full_page_prompt=str(
+                            policy.get("full_page_visual_prompt", "")
+                        ),
+                        strategy=str(policy.get("parse_strategy", "AUTO")),
+                        min_text_characters=int(
+                            policy.get("visual_min_text_characters", 80)
+                        ),
+                        min_mean_confidence=float(
+                            policy.get("visual_min_mean_confidence", 0.65)
+                        ),
+                        max_gibberish_ratio=float(
+                            policy.get("visual_max_gibberish_ratio", 0.08)
+                        ),
+                        max_concurrency=int(
+                            policy.get("visual_max_concurrency", 2)
+                        ),
                     )
                 output = self._pipeline.parse(
                     document_version_id=task.document_version_id,
                     parse_view_id=task.parse_view_id,
                     document=document,
+                    ocr_enrichment=ocr_enrichment,
+                    visual_enrichment=visual_enrichment,
+                    visual_embedding_enabled=bool(
+                        policy.get("visual_embedding_model_id")
+                    ),
                 )
                 artifact_manifest = {}
                 for name, payload in output.artifacts.items():
@@ -126,6 +163,19 @@ class KcParserWorker:
                     await self._client.submit_evidence(
                         task, evidence_dicts[offset:offset + self._evidence_batch_size],
                     )
+                if policy.get("visual_embedding_model_id"):
+                    visual_assets = self._visual_assets(
+                        document, visual_enrichment
+                    )
+                    for offset in range(
+                        0, len(visual_assets), self._evidence_batch_size
+                    ):
+                        await self._client.submit_visual_assets(
+                            task,
+                            visual_assets[
+                                offset : offset + self._evidence_batch_size
+                            ],
+                        )
                 await self._client.complete(
                     task, artifact_manifest=artifact_manifest,
                     output_fingerprint=output.output_fingerprint,
@@ -146,6 +196,23 @@ class KcParserWorker:
             heartbeat.cancel()
             with suppress(asyncio.CancelledError, Exception):
                 await heartbeat
+
+    async def _resolve_vlm_model(self, policy: dict) -> str | None:
+        """从 Collection 冻结的模型 ID 解析 VLM 调用名称。"""
+        model_id = policy.get("parser_vlm_model_id")
+        if not model_id:
+            return None
+        if self._model_config_client is None:
+            raise RuntimeError("KC Parser 未配置模型目录客户端")
+        model = await self._model_config_client.get_model(UUID(str(model_id)))
+        if int(model.get("category") or 0) != 5:
+            raise RuntimeError("Collection parser_vlm_model_id 不是 VLM")
+        if int(model.get("status") or 0) != 1:
+            raise RuntimeError("Collection 绑定的 Parser VLM 不可用")
+        served_name = str(model.get("served_model_name") or "").strip()
+        if not served_name:
+            raise RuntimeError("Collection Parser VLM 缺少 served_model_name")
+        return served_name
 
     async def _heartbeat(self, task: ParseTask) -> None:
         while True:
@@ -177,3 +244,81 @@ class KcParserWorker:
                 task, failure_class=failure_class,
                 failure_code=failure_code, failure_message=message,
             )
+
+    @staticmethod
+    def _visual_assets(document, enrichment) -> list[dict]:
+        """导出整页和 Figure 原图；视觉向量由后续 INDEX 阶段生成。"""
+        page_descriptions = {
+            int(item.page_no): item.markdown
+            for item in getattr(enrichment, "page_results", ())
+        }
+        assets: list[dict] = []
+
+        def encode(image) -> tuple[str, str]:
+            stream = BytesIO()
+            image.convert("RGB").save(stream, format="PNG")
+            payload = stream.getvalue()
+            return (
+                base64.b64encode(payload).decode("ascii"),
+                hashlib.sha256(payload).hexdigest(),
+            )
+
+        for page_key, page in sorted(document.pages.items()):
+            image = getattr(getattr(page, "image", None), "pil_image", None)
+            if image is None:
+                continue
+            page_no = int(getattr(page, "page_no", page_key))
+            content, digest = encode(image)
+            assets.append(
+                {
+                    "asset_key": f"page:{page_no}:{digest[:24]}",
+                    "asset_type": "PAGE",
+                    "page_no": page_no,
+                    "source_item_ref": None,
+                    "bbox": None,
+                    "mime_type": "image/png",
+                    "content_base64": content,
+                    "content_sha256": digest,
+                    "description": page_descriptions.get(page_no),
+                }
+            )
+        for picture in getattr(document, "pictures", ()):
+            image = getattr(getattr(picture, "image", None), "pil_image", None)
+            source_ref = str(getattr(picture, "self_ref", "") or "")
+            provenance = list(getattr(picture, "prov", ()) or ())
+            if image is None or not source_ref:
+                continue
+            content, digest = encode(image)
+            first = provenance[0] if provenance else None
+            bbox = None
+            if first is not None and getattr(first, "bbox", None) is not None:
+                raw_bbox = first.bbox
+                bbox = {
+                    "l": float(raw_bbox.l),
+                    "t": float(raw_bbox.t),
+                    "r": float(raw_bbox.r),
+                    "b": float(raw_bbox.b),
+                }
+            descriptions = [
+                str(getattr(item, "text", "") or "").strip()
+                for item in getattr(picture, "annotations", ())
+                if str(getattr(item, "text", "") or "").strip()
+            ]
+            assets.append(
+                {
+                    "asset_key": (
+                        f"figure:{hashlib.sha256(source_ref.encode()).hexdigest()[:24]}"
+                    ),
+                    "asset_type": "FIGURE",
+                    "page_no": (
+                        int(first.page_no) if first is not None else None
+                    ),
+                    "source_item_ref": source_ref,
+                    "bbox": bbox,
+                    "mime_type": "image/png",
+                    "content_base64": content,
+                    "content_sha256": digest,
+                    "description": "\n".join(descriptions) or None,
+                }
+            )
+        return assets

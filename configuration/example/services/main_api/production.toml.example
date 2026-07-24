@@ -1,2 +1,3 @@
 [api]
 allowed_origins = ["https://portal.example.com"]
+test_auth_bypass_enabled = false

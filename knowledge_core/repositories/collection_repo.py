@@ -126,3 +126,17 @@ class IngestionReceiptRepository:
         self.session.add(receipt)
         await self.session.flush()
         return receipt
+
+    async def list_by_revision(
+        self,
+        *,
+        bundle_revision_id: UUID,
+        lock: bool = False,
+    ) -> list[KcIngestionReceiptEntity]:
+        statement: Select = select(KcIngestionReceiptEntity).where(
+            KcIngestionReceiptEntity.bundle_revision_id
+            == bundle_revision_id,
+        )
+        if lock:
+            statement = statement.with_for_update()
+        return list((await self.session.execute(statement)).scalars())

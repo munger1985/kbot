@@ -39,7 +39,7 @@ from aiops_agent.entities import (
 from platform_core.config import get_settings
 from platform_core.database.oracle import create_database_runtime
 from platform_core.persistence.orm import (
-    OracleJSON,
+    OracleNativeJSON,
     UniversalTimestamp,
     UniversalVector,
     UUIDv7Type,
@@ -101,7 +101,11 @@ def entity_column_contract(column) -> ColumnContract:
         return ColumnContract(
             "VECTOR", None, None, None, None, column.nullable
         )
-    if isinstance(column_type, OracleJSON) or isinstance(column_type, Text):
+    if isinstance(column_type, OracleNativeJSON):
+        return ColumnContract(
+            "JSON", None, None, None, None, column.nullable
+        )
+    if isinstance(column_type, Text):
         return ColumnContract("CLOB", None, None, None, None, column.nullable)
     if isinstance(column_type, DateTime):
         return ColumnContract(
@@ -164,6 +168,10 @@ def catalog_column_contract(row) -> ColumnContract:
         timezone = None
     elif data_type == "VECTOR":
         family = "VECTOR"
+        length = None
+        timezone = None
+    elif data_type == "JSON":
+        family = "JSON"
         length = None
         timezone = None
     else:

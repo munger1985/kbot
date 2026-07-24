@@ -27,7 +27,10 @@ from scripts.oracle_preflight import require_oracle_listener  # noqa: E402
 def _entity_classes() -> tuple[type, ...]:
     return tuple(
         entity
-        for module in ENTITY_MODULES.values()
+        for modules in ENTITY_MODULES.values()
+        for module in (
+            modules if isinstance(modules, tuple) else (modules,)
+        )
         for name in module.__all__
         if hasattr((entity := getattr(module, name)), "__table__")
     )

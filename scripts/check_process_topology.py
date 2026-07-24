@@ -38,6 +38,10 @@ def check_process_topology() -> list[str]:
     ports: dict[int, str] = {}
     start_script = (ROOT / "start_kbot.sh").read_text(encoding="utf-8")
     stop_script = (ROOT / "stop_kbot.sh").read_text(encoding="utf-8")
+    if 'exec python -m "$module"' not in start_script:
+        errors.append("start_kbot.sh 必须通过 python -m 启动 App 模块")
+    if 'module_name="${service_script%.py}"' not in stop_script:
+        errors.append("stop_kbot.sh 必须支持按模块入口识别进程")
     for item in processes:
         key = str(item.get("process_key"))
         module = str(item.get("module"))

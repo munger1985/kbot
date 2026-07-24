@@ -9,6 +9,9 @@ from loguru import logger
 from agent_runtime.application import (
     AgentDelegationReconciler,
     AgentRuntimeService,
+    ConversationRetentionWorker,
+    ConversationService,
+    MemoryConsolidationWorker,
 )
 from agent_runtime.config import get_agent_runtime_settings
 from agent_runtime.domain.planning import PlanLimits, PlanValidator
@@ -21,9 +24,11 @@ from platform_clients import (
     AIOpsClientAuth,
     AIOpsDelegationClient,
     KnowledgeCoreClient,
+    MCPDataClient,
 )
 from platform_core.database.oracle import create_database_runtime
 from platform_core.logger import LogConfig, LogManager
+from platform_core.prompts import PromptResolver, load_prompt_catalog
 from platform_core.security import (
     create_auth_context_codec,
     create_service_identity_codec,
@@ -60,6 +65,29 @@ async def main() -> None:
         model_client = AIModelClient(
             caller_service=config.service_name,
             llm_config=settings.llm,
+            embedding_config=settings.embedding,
+            vlm_config=settings.vlm,
+        )
+        try:
+            mcp_api_key = settings.ask_data_api.require_api_key()
+        except RuntimeError:
+            mcp_data_client = None
+            logger.warning("未配置问数 API Key，MCP 问数 Skill 暂不可用")
+        else:
+            mcp_data_client = MCPDataClient(
+                api_endpoint=settings.ask_data_api.api_endpoint,
+                profiles_endpoint=settings.ask_data_api.profiles_endpoint,
+                api_key=mcp_api_key,
+                timeout_seconds=settings.ask_data_api.timeout,
+                max_rows=settings.ask_data_api.max_rows,
+                max_response_bytes=(
+                    settings.ask_data_api.max_response_bytes
+                ),
+                session=client_session,
+            )
+        prompt_resolver = PromptResolver(
+            session_factory=db_runtime.session_factory,
+            catalog=load_prompt_catalog(),
         )
         aiops_client = AIOpsDelegationClient(
             base_url=settings.aiops.base_url,
@@ -77,7 +105,9 @@ async def main() -> None:
             SkillRegistry(),
             knowledge_core_client=knowledge_core_client,
             model_client=model_client,
+            prompt_resolver=prompt_resolver,
             service_name=config.service_name,
+            mcp_data_client=mcp_data_client,
         )
         limits = PlanLimits(
             max_tasks=config.max_tasks_per_run,
@@ -116,10 +146,34 @@ async def main() -> None:
             lease_seconds=config.lease_seconds,
             poll_interval_seconds=config.poll_interval_seconds,
         )
+        memory_worker = MemoryConsolidationWorker(
+            uow_factory=create_agent_runtime_uow(
+                db_runtime.session_factory
+            ),
+            model_client=model_client,
+            prompt_resolver=prompt_resolver,
+            worker_id=f"{config.worker_id}:memory",
+            poll_interval_seconds=config.poll_interval_seconds,
+            lease_seconds=config.memory_lease_seconds,
+            embedding_dimension=settings.vector.dimensions,
+        )
+        retention_worker = ConversationRetentionWorker(
+            conversation_service=ConversationService(
+                uow_factory=create_agent_runtime_uow(
+                    db_runtime.session_factory
+                ),
+                runtime_service=runtime_service,
+            ),
+            poll_interval_seconds=(
+                config.retention_poll_interval_seconds
+            ),
+        )
 
         def stop_services() -> None:
             worker.stop()
             reconciler.stop()
+            memory_worker.stop()
+            retention_worker.stop()
 
         loop = asyncio.get_running_loop()
         for signum in (signal.SIGINT, signal.SIGTERM):
@@ -131,6 +185,8 @@ async def main() -> None:
         await asyncio.gather(
             worker.run_forever(),
             reconciler.run_forever(),
+            memory_worker.run_forever(),
+            retention_worker.run_forever(),
         )
     finally:
         await client_session.close()

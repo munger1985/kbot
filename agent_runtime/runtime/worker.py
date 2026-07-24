@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 from loguru import logger
 
 from agent_runtime.application import (
+    AppendTaskProgressCommand,
     ArtifactInput,
     ClaimTaskCommand,
     CompleteTaskCommand,
@@ -19,7 +20,7 @@ from agent_runtime.application import (
 from agent_runtime.domain.skills import SkillRegistry
 from platform_core.identity import uuid7
 
-from .contracts import ExecutionContext, SkillResult
+from .contracts import ExecutionContext, SkillProgress, SkillResult
 
 
 class AgentRuntimeWorker:
@@ -196,7 +197,18 @@ class AgentRuntimeWorker:
         timeout_seconds: float,
         current: dict[str, TaskLease],
     ) -> SkillResult:
-        execution = asyncio.create_task(implementation.execute(context))
+        if hasattr(implementation, "execute_stream"):
+            execution = asyncio.create_task(
+                self._consume_skill_stream(
+                    implementation=implementation,
+                    context=context,
+                    current=current,
+                )
+            )
+        else:
+            execution = asyncio.create_task(
+                implementation.execute(context)
+            )
         heartbeat = asyncio.create_task(self._heartbeat_loop(current))
         try:
             done, _ = await asyncio.wait(
@@ -221,6 +233,44 @@ class AgentRuntimeWorker:
                 await heartbeat
             except asyncio.CancelledError:
                 pass
+
+    async def _consume_skill_stream(
+        self, *, implementation, context, current
+    ) -> SkillResult:
+        result = None
+        index = 0
+        async for item in implementation.execute_stream(context):
+            if isinstance(item, SkillResult):
+                if result is not None:
+                    raise RuntimeError("流式 Skill 返回了多个最终结果")
+                result = item
+                continue
+            progress = (
+                item
+                if isinstance(item, SkillProgress)
+                else SkillProgress.model_validate(item)
+            )
+            if result is not None:
+                raise RuntimeError("最终结果之后不能继续输出增量事件")
+            index += 1
+            lease = current["lease"]
+            await self._runtime_service.append_task_progress(
+                AppendTaskProgressCommand(
+                    task_id=lease.task_id,
+                    worker_id=self._worker_id,
+                    lease_token=lease.lease_token,
+                    event_type=progress.event_type,
+                    payload=progress.payload,
+                    actor_id=self._worker_id,
+                    trace_id=lease.trace_id,
+                    idempotency_key=(
+                        f"{lease.attempt}:{progress.event_type}:{index}"
+                    ),
+                )
+            )
+        if result is None:
+            raise RuntimeError("流式 Skill 未返回最终结果")
+        return result
 
     async def _heartbeat_loop(
         self, current: dict[str, TaskLease]

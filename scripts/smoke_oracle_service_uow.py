@@ -108,13 +108,25 @@ async def smoke() -> None:
                 "provider": "smoke",
                 "status": 1,
                 "embedding_dimension": settings.vector.dimensions,
-                "model_params": {},
+                "model_params": {
+                    "temperature": 0.2,
+                    "runtime": {"device": "cpu"},
+                    "features": ["json", "中文"],
+                },
             },
             actor_id="oracle-smoke",
         )
         model_id = UUID(model["model_id"])
         loaded_model = await model_service.get(model_id, category=2)
         assert loaded_model["served_model_name"] == model["served_model_name"]
+        expected_model_params = {
+            "temperature": 0.2,
+            "runtime": {"device": "cpu"},
+            "features": ["json", "中文"],
+        }
+        assert (
+            loaded_model["model_params"] == expected_model_params
+        ), repr(loaded_model["model_params"])
 
         async with create_kc_uow(runtime.session_factory) as uow:
             await uow.collections.add(
@@ -124,7 +136,11 @@ async def smoke() -> None:
                     domain_id=domain_id,
                     collection_key=f"smoke-{marker}"[:64],
                     display_name="Oracle Smoke Collection",
+                    parser_llm_model_id=model_id,
+                    parser_vlm_model_id=None,
+                    retrieval_llm_model_id=model_id,
                     embedding_model_id=model_id,
+                    visual_embedding_model_id=None,
                     status="ACTIVE",
                     default_security_level=1,
                     metadata_json={"source": "oracle-smoke"},
@@ -144,7 +160,11 @@ async def smoke() -> None:
                     domain_id=domain_id,
                     collection_key=f"rollback-{marker}"[:64],
                     display_name="Oracle Smoke Rollback Collection",
+                    parser_llm_model_id=model_id,
+                    parser_vlm_model_id=None,
+                    retrieval_llm_model_id=model_id,
                     embedding_model_id=model_id,
+                    visual_embedding_model_id=None,
                     status="ACTIVE",
                     default_security_level=1,
                     metadata_json={},
@@ -173,7 +193,11 @@ async def smoke() -> None:
                     display_name="Oracle Smoke Agent",
                     status="ACTIVE",
                     enabled_capabilities_json=["document"],
-                    composer_model_name=model["served_model_name"],
+                    composer_llm_model_name=model["served_model_name"],
+                    context_llm_model_name=model["served_model_name"],
+                    memory_llm_model_name=model["served_model_name"],
+                    query_vlm_model_name=None,
+                    memory_embedding_model_name=model["served_model_name"],
                     config_json={},
                     created_by="oracle-smoke",
                     updated_by="oracle-smoke",
@@ -195,7 +219,11 @@ async def smoke() -> None:
                     display_name="Oracle Smoke Rollback Agent",
                     status="DRAFT",
                     enabled_capabilities_json=[],
-                    composer_model_name=model["served_model_name"],
+                    composer_llm_model_name=model["served_model_name"],
+                    context_llm_model_name=model["served_model_name"],
+                    memory_llm_model_name=model["served_model_name"],
+                    query_vlm_model_name=None,
+                    memory_embedding_model_name=model["served_model_name"],
                     config_json={},
                     created_by="oracle-smoke",
                     updated_by="oracle-smoke",

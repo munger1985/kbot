@@ -12,6 +12,7 @@ from knowledge_core.entities import (
     KcCollectionBindingEntity, KcCollectionEntity, KcDiscoveryObjectEntity,
     KcDocumentEntity, KcDocumentVersionEntity, KcEvidenceEntity,
     KcIngestionJobEntity, KcIngestionReceiptEntity, KcParseViewEntity, KcRelationEntity,
+    KcVisualAssetEntity,
 )
 from knowledge_core.domain.parse_tasks import ParseLeaseError, ParseTaskClaim, claim_job, verify_lease
 from knowledge_core.persistence import KnowledgeCoreUnitOfWork
@@ -54,12 +55,22 @@ class KnowledgeCoreCollectionPurgeService:
             versions = list((await uow.session.execute(select(KcDocumentVersionEntity.storage_uri).where(
                 KcDocumentVersionEntity.collection_id == collection_id,
             ))).scalars())
+            visual_assets = list(
+                (
+                    await uow.session.execute(
+                        select(KcVisualAssetEntity.payload_uri).where(
+                            KcVisualAssetEntity.collection_id == collection_id
+                        )
+                    )
+                ).scalars()
+            )
             await uow.session.execute(delete(KcIngestionJobEntity).where(
                 KcIngestionJobEntity.collection_id == collection_id,
                 KcIngestionJobEntity.ingestion_job_id != job_id,
             ))
             for entity in (
                 KcIngestionReceiptEntity,
+                KcVisualAssetEntity,
                 KcEvidenceEntity,
                 KcDiscoveryObjectEntity,
                 KcRelationEntity,
@@ -91,7 +102,7 @@ class KnowledgeCoreCollectionPurgeService:
             await uow.session.flush()
             await uow.commit()
         local_deleted = 0
-        for uri in versions:
+        for uri in [*versions, *visual_assets]:
             parsed = urlparse(str(uri))
             if parsed.scheme in {"", "file"} and (parsed.path or parsed.scheme == ""):
                 path = Path(parsed.path if parsed.scheme == "file" else str(uri))

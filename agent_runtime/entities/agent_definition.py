@@ -8,7 +8,7 @@ from sqlalchemy import DateTime, Numeric, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from platform_core.identity import uuid7
-from platform_core.persistence.orm import BaseEntity, OracleJSON, UUIDv7Type
+from platform_core.persistence.orm import BaseEntity, OracleNativeJSON, UUIDv7Type
 
 
 class AgentDefinitionEntity(BaseEntity):
@@ -28,15 +28,30 @@ class AgentDefinitionEntity(BaseEntity):
         String(16), nullable=False, default="DRAFT"
     )
     enabled_capabilities_json: Mapped[list[str]] = mapped_column(
-        OracleJSON, nullable=False
+        OracleNativeJSON, nullable=False
     )
-    router_model_name: Mapped[str | None] = mapped_column(String(128))
-    composer_model_name: Mapped[str] = mapped_column(
+    router_llm_model_name: Mapped[str | None] = mapped_column(String(128))
+    context_llm_model_name: Mapped[str] = mapped_column(
         String(128), nullable=False
     )
+    composer_llm_model_name: Mapped[str] = mapped_column(
+        String(128), nullable=False
+    )
+    memory_llm_model_name: Mapped[str] = mapped_column(
+        String(128), nullable=False
+    )
+    query_vlm_model_name: Mapped[str | None] = mapped_column(String(128))
+    chart_llm_model_name: Mapped[str | None] = mapped_column(String(128))
+    memory_embedding_model_name: Mapped[str] = mapped_column(
+        String(128), nullable=False
+    )
+    do_rerank: Mapped[int] = mapped_column(
+        Numeric(1, 0), nullable=False, default=0
+    )
+    data_profile_name: Mapped[str | None] = mapped_column(String(256))
     instruction: Mapped[str | None] = mapped_column(Text)
     config_json: Mapped[dict[str, Any]] = mapped_column(
-        OracleJSON, nullable=False
+        OracleNativeJSON, nullable=False
     )
     row_version: Mapped[int] = mapped_column(
         Numeric(19, 0), nullable=False, default=1

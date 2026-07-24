@@ -18,8 +18,14 @@ from sqlalchemy import text
 
 from main_api.api import (
     agent_router,
+    conversation_router,
+    data_router,
+    dify_router,
+    domain_router,
     integration_router,
     knowledge_router,
+    memory_router,
+    model_catalog_router,
     ops_router,
     run_router,
 )
@@ -82,6 +88,12 @@ def create_main_api_app(
     """构造只发布公开契约的 Main API 应用。"""
     settings = get_main_api_settings()
     config = settings.api
+    if config.test_auth_bypass_enabled and not settings.is_development():
+        raise RuntimeError("测试认证绕过只允许在 development 环境启用")
+    if config.test_auth_bypass_enabled:
+        logger.warning(
+            "Main API 测试认证绕过已启用；仅供本地测试页面使用"
+        )
     app_kwargs: dict[str, Any] = {}
     if lifespan is not None:
         app_kwargs["lifespan"] = lifespan
@@ -116,6 +128,7 @@ def create_main_api_app(
                 "If-Match",
                 "Last-Event-ID",
                 "X-KBot-Domain-ID",
+                "X-KBot-Test-Auth",
                 "X-KBot-User-ID",
                 "X-Request-ID",
                 "traceparent",
@@ -127,14 +140,25 @@ def create_main_api_app(
         create_public_auth_middleware(
             verifier=verifier,
             domain_validator=validate_domain,
+            allow_test_bypass=config.test_auth_bypass_enabled,
+            domainless_paths={
+                "/api/v1/domains",
+                "/api/v1/model-catalog",
+            },
             public_prefixes={
                 "/api/v1/integrations/monitoring/",
             },
         )
     )
     app.include_router(knowledge_router)
+    app.include_router(model_catalog_router)
+    app.include_router(domain_router)
     app.include_router(agent_router)
     app.include_router(run_router)
+    app.include_router(conversation_router)
+    app.include_router(data_router)
+    app.include_router(dify_router)
+    app.include_router(memory_router)
     app.include_router(ops_router)
     app.include_router(integration_router)
 

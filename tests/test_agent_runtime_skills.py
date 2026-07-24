@@ -1,14 +1,20 @@
 """Agent Runtime 内置 Skill 的契约测试。"""
 
 from datetime import datetime, timezone
+from io import BytesIO
+from pathlib import Path
+import tempfile
 import unittest
 
+from PIL import Image
 from agent_runtime.application import LeasedArtifact
 from agent_runtime.runtime import ExecutionContext
+from agent_runtime.specialists.conversation import ContextRewriteSkill
 from agent_runtime.specialists.document import KnowledgeRetrievalSkill
 from agent_runtime.specialists.response_composer import ResponseComposerSkill
 from agent_runtime.specialists.root import RouteType, RootAgentPlanner
 from platform_core.identity import uuid7
+from platform_core.prompts import ResolvedPrompt
 
 
 class _KnowledgeCoreClient:
@@ -20,6 +26,10 @@ class _KnowledgeCoreClient:
         self.document_version_id = uuid7()
         self.parse_view_id = uuid7()
         self.evidence_id = uuid7()
+        self.last_discovery_query = ""
+        self.last_discovery_request = {}
+        self.last_evidence_request = {}
+        self.visual_configured = False
 
     async def list_agent_bindings(self, **kwargs):
         return {
@@ -32,6 +42,8 @@ class _KnowledgeCoreClient:
         }
 
     async def discover(self, **kwargs):
+        self.last_discovery_request = kwargs
+        self.last_discovery_query = kwargs["query"]
         return {
             "candidates": [
                 {
@@ -50,7 +62,23 @@ class _KnowledgeCoreClient:
             ]
         }
 
+    async def search_visual(self, **kwargs):
+        return {
+            "results": [],
+            "searched_collection_ids": (
+                [str(self.collection_id)]
+                if self.visual_configured
+                else []
+            ),
+            "skipped_collection_ids": (
+                []
+                if self.visual_configured
+                else [str(self.collection_id)]
+            ),
+        }
+
     async def retrieve_evidence(self, **kwargs):
+        self.last_evidence_request = kwargs
         evidence = {
             "evidence_id": str(self.evidence_id),
             "document_id": str(self.document_id),
@@ -92,6 +120,60 @@ class _ModelClient:
             "used_citation_labels": ["C1"],
         }
 
+    async def stream_llm_chunks(self, **kwargs):
+        from platform_clients.model import LLMChunk
+
+        yield LLMChunk(content="该案例通过调整索引")
+        yield LLMChunk(content="降低了查询延迟。[C1]")
+
+    async def get_vlm_answer(self, *args, **kwargs):
+        return "图片中是数据库性能监控面板，显示查询延迟升高"
+
+
+class _RewriteModelClient:
+    async def get_llm_json(self, **kwargs):
+        return {
+            "raw_input": "它有什么优势？",
+            "standalone_query": "数据库优化案例有什么优势？",
+            "retrieval_queries": ["数据库优化案例有什么优势？"],
+            "resolved_references": ["它=数据库优化案例"],
+            "active_topic": "数据库优化案例",
+            "ambiguity": False,
+            "clarification_question": None,
+            "memory_refs": [],
+        }
+
+
+class _PromptResolver:
+    async def resolve(self, prompt_key):
+        variables = {
+            "agent_runtime.context_rewrite": (
+                "raw_input",
+                "conversation_summary",
+                "recent_items",
+                "recalled_memories",
+            ),
+            "agent_runtime.response_compose": (
+                "agent_instruction",
+                "raw_input",
+                "standalone_query",
+                "evidence",
+            ),
+            "agent_runtime.query_image_description": (),
+        }[prompt_key]
+        content = "\n".join(
+            f"{name}=${{{name}}}" for name in variables
+        )
+        return ResolvedPrompt(
+            prompt_key=prompt_key,
+            version="1.0.0",
+            sha256="a" * 64,
+            content=content,
+            input_variables=variables,
+            output_schema=None,
+            source="TEST",
+        )
+
 
 def _context(*, input_artifacts=()):
     run_id = uuid7()
@@ -108,7 +190,10 @@ def _context(*, input_artifacts=()):
         original_input="这个案例如何降低查询延迟？",
         config_snapshot={
             "agent": {
-                "composer_model_name": "composer-model",
+                "context_llm_model_name": "context-model",
+                "composer_llm_model_name": "composer-model",
+                "memory_llm_model_name": "memory-model",
+                "memory_embedding_model_name": "embedding-model",
                 "instruction": "准确回答。",
                 "config": {},
             },
@@ -123,6 +208,30 @@ def _context(*, input_artifacts=()):
 
 
 class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
+    @staticmethod
+    def _image_context(
+        path: Path, *, query_vlm_model_name: str | None
+    ) -> ExecutionContext:
+        context = _context()
+        agent = dict(context.config_snapshot["agent"])
+        agent["query_vlm_model_name"] = query_vlm_model_name
+        return context.model_copy(
+            update={
+                "config_snapshot": {
+                    **context.config_snapshot,
+                    "agent": agent,
+                    "client_metadata": {
+                        "query_images": [
+                            {
+                                "storage_uri": str(path),
+                                "mime_type": "image/png",
+                            }
+                        ]
+                    },
+                }
+            }
+        )
+
     def test_root_planner_builds_fixed_document_dag(self):
         planner = RootAgentPlanner()
         decision = planner.decide(
@@ -138,7 +247,11 @@ class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(decision.route_type, RouteType.DOCUMENT)
         self.assertEqual(plan.final_task_key, "response_compose")
         self.assertEqual(
-            plan.tasks[1].depends_on, ("knowledge_retrieval",)
+            plan.tasks[1].depends_on, ("context_rewrite",)
+        )
+        self.assertEqual(
+            plan.tasks[2].depends_on,
+            ("context_rewrite", "knowledge_retrieval"),
         )
 
     def test_root_planner_builds_aiops_delegation_dag(self):
@@ -158,11 +271,43 @@ class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(decision.route_type, RouteType.AIOPS)
-        self.assertEqual(plan.tasks[0].execution_kind, "DELEGATION")
-        self.assertEqual(plan.tasks[0].delegate_service, "aiops_agent")
+        self.assertEqual(plan.tasks[1].execution_kind, "DELEGATION")
+        self.assertEqual(plan.tasks[1].delegate_service, "aiops_agent")
         self.assertEqual(
-            plan.tasks[1].input_refs,
-            ("task_output:aiops_diagnosis",),
+            plan.tasks[2].input_refs,
+            (
+                "task_output:context_rewrite",
+                "task_output:aiops_diagnosis",
+            ),
+        )
+
+    async def test_context_rewrite_uses_frozen_conversation_context(self):
+        context = _context()
+        context = context.model_copy(
+            update={
+                "original_input": "它有什么优势？",
+                "config_snapshot": {
+                    **context.config_snapshot,
+                    "conversation": {
+                        "context": {
+                            "summary": {
+                                "active_topic": "数据库优化案例"
+                            },
+                            "recent_items": [],
+                            "memories": [],
+                        }
+                    },
+                },
+            }
+        )
+        result = await ContextRewriteSkill(
+            model_client=_RewriteModelClient(),
+            prompt_resolver=_PromptResolver(),
+        ).execute(context)
+
+        self.assertEqual(
+            result.artifact.payload["standalone_query"],
+            "数据库优化案例有什么优势？",
         )
 
     def test_root_planner_rejects_aiops_without_frozen_target(self):
@@ -189,6 +334,121 @@ class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(citation["document_id"], str(client.document_id))
         self.assertEqual(citation["locator"], {"page": 3})
 
+    async def test_document_skill_propagates_agent_rerank_switch(self):
+        client = _KnowledgeCoreClient()
+        context = _context()
+        snapshot = dict(context.config_snapshot)
+        snapshot["agent"] = {
+            **snapshot["agent"],
+            "do_rerank": True,
+        }
+
+        result = await KnowledgeRetrievalSkill(
+            knowledge_core_client=client,
+            service_name="agent-worker",
+        ).execute(
+            context.model_copy(update={"config_snapshot": snapshot})
+        )
+
+        self.assertTrue(client.last_discovery_request["do_rerank"])
+        self.assertTrue(client.last_evidence_request["do_rerank"])
+        self.assertEqual(
+            result.artifact.payload["retrieval_report"]["selector"],
+            "llm-object-and-evidence-group-v1",
+        )
+
+    async def test_document_skill_runs_visual_and_vlm_paths(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "query.png"
+            Image.new("RGB", (8, 8), "red").save(path)
+            client = _KnowledgeCoreClient()
+            client.visual_configured = True
+            result = await KnowledgeRetrievalSkill(
+                knowledge_core_client=client,
+                model_client=_ModelClient(),
+                prompt_resolver=_PromptResolver(),
+                service_name="agent-worker",
+            ).execute(
+                self._image_context(
+                    path, query_vlm_model_name="query-vlm"
+                )
+            )
+        processing = result.artifact.payload["citation_pack"][
+            "query_plan"
+        ]["image_processing"]
+        self.assertEqual(processing["visual_search"], "EXECUTED")
+        self.assertEqual(processing["vlm_text_search"], "EXECUTED")
+        self.assertIn("数据库性能监控面板", client.last_discovery_query)
+        self.assertEqual(result.artifact.payload["warnings"], [])
+
+    async def test_document_skill_skips_unconfigured_image_paths(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "query.png"
+            Image.new("RGB", (8, 8), "blue").save(path)
+            client = _KnowledgeCoreClient()
+            result = await KnowledgeRetrievalSkill(
+                knowledge_core_client=client,
+                service_name="agent-worker",
+            ).execute(
+                self._image_context(path, query_vlm_model_name=None)
+            )
+        processing = result.artifact.payload["citation_pack"][
+            "query_plan"
+        ]["image_processing"]
+        self.assertEqual(
+            processing["visual_search"], "SKIPPED_NOT_CONFIGURED"
+        )
+        self.assertEqual(
+            processing["vlm_text_search"], "SKIPPED_NOT_CONFIGURED"
+        )
+        self.assertTrue(
+            any(
+                "已忽略上传图片" in warning
+                for warning in result.artifact.payload["warnings"]
+            )
+        )
+
+    async def test_document_skill_degrades_each_image_path_independently(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "query.png"
+            Image.new("RGB", (8, 8), "green").save(path)
+
+            visual_client = _KnowledgeCoreClient()
+            visual_client.visual_configured = True
+            visual_only = await KnowledgeRetrievalSkill(
+                knowledge_core_client=visual_client,
+                service_name="agent-worker",
+            ).execute(
+                self._image_context(path, query_vlm_model_name=None)
+            )
+
+            vlm_client = _KnowledgeCoreClient()
+            vlm_only = await KnowledgeRetrievalSkill(
+                knowledge_core_client=vlm_client,
+                model_client=_ModelClient(),
+                prompt_resolver=_PromptResolver(),
+                service_name="agent-worker",
+            ).execute(
+                self._image_context(
+                    path, query_vlm_model_name="query-vlm"
+                )
+            )
+
+        visual_status = visual_only.artifact.payload["citation_pack"][
+            "query_plan"
+        ]["image_processing"]
+        self.assertEqual(visual_status["visual_search"], "EXECUTED")
+        self.assertEqual(
+            visual_status["vlm_text_search"], "SKIPPED_NOT_CONFIGURED"
+        )
+        vlm_status = vlm_only.artifact.payload["citation_pack"][
+            "query_plan"
+        ]["image_processing"]
+        self.assertEqual(
+            vlm_status["visual_search"], "SKIPPED_NOT_CONFIGURED"
+        )
+        self.assertEqual(vlm_status["vlm_text_search"], "EXECUTED")
+
     async def test_composer_returns_only_actually_used_references(self):
         client = _KnowledgeCoreClient()
         retrieval = await KnowledgeRetrievalSkill(
@@ -208,7 +468,8 @@ class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
             security_level=2,
         )
         result = await ResponseComposerSkill(
-            model_client=_ModelClient()
+            model_client=_ModelClient(),
+            prompt_resolver=_PromptResolver(),
         ).execute(_context(input_artifacts=(artifact,)))
 
         payload = result.artifact.payload
@@ -217,6 +478,42 @@ class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             payload["references"][0]["document_id"],
             str(client.document_id),
+        )
+
+    async def test_composer_streams_real_answer_deltas(self):
+        client = _KnowledgeCoreClient()
+        retrieval = await KnowledgeRetrievalSkill(
+            knowledge_core_client=client,
+            service_name="agent-worker",
+        ).execute(_context())
+        artifact = LeasedArtifact(
+            artifact_id=uuid7(),
+            task_id=uuid7(),
+            artifact_type=retrieval.artifact.artifact_type,
+            schema_version=retrieval.artifact.schema_version,
+            producer="knowledge-retrieval",
+            producer_version="1.0.0",
+            payload=retrieval.artifact.payload,
+            content_hash="hash",
+            provenance={},
+            security_level=2,
+        )
+        outputs = [
+            item
+            async for item in ResponseComposerSkill(
+                model_client=_ModelClient(),
+                prompt_resolver=_PromptResolver(),
+            ).execute_stream(_context(input_artifacts=(artifact,)))
+        ]
+
+        deltas = [
+            item.payload["delta"]
+            for item in outputs
+            if getattr(item, "event_type", None) == "answer.delta"
+        ]
+        self.assertEqual("".join(deltas), "该案例通过调整索引降低了查询延迟。[C1]")
+        self.assertEqual(
+            outputs[-1].artifact.payload["used_citation_labels"], ["C1"]
         )
 
     async def test_composer_projects_safe_aiops_result(self):
@@ -249,7 +546,8 @@ class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
         )
 
         result = await ResponseComposerSkill(
-            model_client=_ModelClient()
+            model_client=_ModelClient(),
+            prompt_resolver=_PromptResolver(),
         ).execute(_context(input_artifacts=(artifact,)))
 
         payload = result.artifact.payload

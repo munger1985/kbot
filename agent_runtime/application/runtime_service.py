@@ -21,7 +21,9 @@ from agent_runtime.domain.state_machine import (
 from agent_runtime.domain.planning import PlanLimits
 from agent_runtime.entities import (
     AgentArtifactEntity,
+    AgentConversationItemEntity,
     AgentDelegationEntity,
+    AgentMemoryJobEntity,
     AgentRunEntity,
     AgentRunEventEntity,
     AgentTaskEntity,
@@ -36,6 +38,7 @@ from platform_core.contracts import (
 from platform_core.identity import uuid7
 
 from .commands import (
+    AppendTaskProgressCommand,
     CancelRunCommand,
     ClaimTaskCommand,
     CompleteTaskCommand,
@@ -131,8 +134,12 @@ class AgentRuntimeService:
                 "security_level": command.security_level,
                 "client_metadata": command.client_metadata,
                 "parent_run_id": command.parent_run_id,
+                "conversation_id": command.conversation_id,
+                "turn_id": command.turn_id,
+                "conversation_context": command.conversation_context,
             }
         )
+        # 先读取冻结配置并释放数据库会话，避免 Router 模型调用占用连接。
         async with self._uow_factory() as uow:
             existing = await uow.runs.get_by_idempotency(
                 app_id=command.app_id,
@@ -166,34 +173,80 @@ class AgentRuntimeService:
                 "enabled_capabilities": list(
                     agent.enabled_capabilities_json or []
                 ),
-                "router_model_name": agent.router_model_name,
-                "composer_model_name": agent.composer_model_name,
+                "router_llm_model_name": agent.router_llm_model_name,
+                "context_llm_model_name": agent.context_llm_model_name,
+                "composer_llm_model_name": agent.composer_llm_model_name,
+                "memory_llm_model_name": agent.memory_llm_model_name,
+                "query_vlm_model_name": agent.query_vlm_model_name,
+                "chart_llm_model_name": getattr(
+                    agent, "chart_llm_model_name", None
+                ),
+                "memory_embedding_model_name": (
+                    agent.memory_embedding_model_name
+                ),
+                "do_rerank": bool(getattr(agent, "do_rerank", False)),
+                "data_profile_name": getattr(
+                    agent, "data_profile_name", None
+                ),
                 "instruction": agent.instruction,
                 "config": dict(agent.config_json or {}),
                 "row_version": int(agent.row_version),
             }
-            initial_plan = None
-            if self._root_planner is not None:
-                decision = self._root_planner.decide(
-                    agent_snapshot=agent_snapshot
+
+        initial_plan = None
+        route_snapshot = None
+        if self._root_planner is not None:
+            decision = await self._root_planner.decide_for_input(
+                agent_snapshot=agent_snapshot,
+                objective=command.original_input,
+                conversation_context=command.conversation_context,
+                client_metadata=command.client_metadata,
+            )
+            initial_plan = self._root_planner.build_plan(
+                objective=command.original_input,
+                decision=decision,
+            )
+            if self._plan_validator is None:
+                raise AgentRuntimeConflict(
+                    "PLAN_VALIDATOR_UNAVAILABLE",
+                    "计划校验器尚未初始化",
                 )
-                if decision.route_type.value == "CLARIFY":
+            self._plan_validator.validate(
+                initial_plan, self._plan_limits
+            )
+            route_snapshot = decision.model_dump(mode="json")
+
+        async with self._uow_factory() as uow:
+            existing = await uow.runs.get_by_idempotency(
+                app_id=command.app_id,
+                domain_id=command.domain_id,
+                actor_id=command.actor_id,
+                idempotency_key=command.idempotency_key,
+                lock=True,
+            )
+            if existing is not None:
+                if existing.request_fingerprint != fingerprint:
                     raise AgentRuntimeConflict(
-                        "ROUTE_CLARIFICATION_REQUIRED",
-                        decision.clarification_question
-                        or "当前 Agent 无法确定唯一执行路由",
+                        "IDEMPOTENCY_CONFLICT",
+                        "相同 Idempotency-Key 对应的请求内容不同",
                     )
-                initial_plan = self._root_planner.build_plan(
-                    objective=command.original_input,
-                    decision=decision,
+                cursor = await uow.events.latest_sequence(
+                    run_id=existing.run_id
                 )
-                if self._plan_validator is None:
-                    raise AgentRuntimeConflict(
-                        "PLAN_VALIDATOR_UNAVAILABLE",
-                        "计划校验器尚未初始化",
-                    )
-                self._plan_validator.validate(
-                    initial_plan, self._plan_limits
+                return self._run_receipt(existing, cursor)
+            current_agent = await uow.agents.get_active(
+                agent_id=command.agent_id,
+                app_id=command.app_id,
+                domain_id=command.domain_id,
+            )
+            if current_agent is None:
+                raise AgentDefinitionNotFound()
+            if int(current_agent.row_version) != int(
+                agent_snapshot["row_version"]
+            ):
+                raise AgentRuntimeConflict(
+                    "AGENT_CONFIG_CHANGED",
+                    "Agent 配置在路由期间发生变化，请重试本轮请求",
                 )
             try:
                 run = await uow.runs.add(
@@ -220,6 +273,20 @@ class AgentRuntimeService:
                                 "security_level": command.security_level,
                             },
                             "client_metadata": command.client_metadata,
+                            "route": route_snapshot,
+                            "conversation": {
+                                "conversation_id": (
+                                    str(command.conversation_id)
+                                    if command.conversation_id
+                                    else None
+                                ),
+                                "turn_id": (
+                                    str(command.turn_id)
+                                    if command.turn_id
+                                    else None
+                                ),
+                                "context": command.conversation_context,
+                            },
                         },
                         budget_json=command.budget,
                         deadline_at=command.deadline_at,
@@ -255,6 +322,34 @@ class AgentRuntimeService:
                 trace_id=command.trace_id,
                 payload={"status": run.status},
             )
+            if command.conversation_id is not None:
+                context = command.conversation_context or {}
+                event = await self._append_event(
+                    uow,
+                    run=run,
+                    event_type="memory.context_loaded",
+                    event_key=(
+                        f"memory-context:{command.conversation_id}:"
+                        f"{command.turn_id}"
+                    ),
+                    actor_type="RUNTIME",
+                    actor_id="agent-runtime",
+                    trace_id=command.trace_id,
+                    payload={
+                        "has_snapshot": bool(context.get("summary_ref")),
+                        "recent_item_count": len(
+                            context.get("recent_items") or []
+                        ),
+                        "memory_count": len(
+                            context.get("memories") or []
+                        ),
+                        "public_summary": (
+                            "已加载会话摘要、"
+                            f"{len(context.get('recent_items') or [])} 条近期消息和 "
+                            f"{len(context.get('memories') or [])} 条相关记忆"
+                        ),
+                    },
+                )
             if initial_plan is not None:
                 tasks, final_task = await self._persist_plan_tasks(
                     uow, run=run, plan=initial_plan
@@ -279,6 +374,12 @@ class AgentRuntimeService:
                         "plan_fingerprint": plan_fingerprint,
                         "final_task_key": initial_plan.final_task_key,
                         "task_count": len(tasks),
+                        "route": route_snapshot,
+                        "public_summary": (
+                            "已选择 "
+                            f"{(route_snapshot or {}).get('route_type', 'FIXED')} "
+                            "执行路由"
+                        ),
                     },
                 )
             await uow.commit()
@@ -474,6 +575,25 @@ class AgentRuntimeService:
                     "attempt": int(task.attempt),
                 },
             )
+            if task.execution_kind == "LOCAL_SKILL":
+                await self._append_event(
+                    uow,
+                    run=run,
+                    event_type="skill.started",
+                    event_key=(
+                        f"skill-started:{task.task_id}:{task.attempt}"
+                    ),
+                    actor_type="WORKER",
+                    actor_id=command.worker_id,
+                    trace_id=command.trace_id,
+                    task=task,
+                    payload={
+                        "task_key": task.task_key,
+                        "skill_id": task.skill_id,
+                        "specialist": task.specialist,
+                        "public_summary": f"正在执行 {task.task_key}",
+                    },
+                )
             input_artifacts = await self._task_input_artifacts(uow, task)
             await uow.commit()
             return self._task_lease(task, run, input_artifacts)
@@ -650,6 +770,67 @@ class AgentRuntimeService:
             await uow.commit()
             return delegation.delegation_id
 
+    async def append_task_progress(
+        self, command: AppendTaskProgressCommand
+    ) -> TaskMutationReceipt:
+        """在租约有效期内原子追加流式事件，不改变 Task 版本。"""
+        if command.event_type not in {
+            "answer.delta",
+            "thinking.delta",
+            "skill.progress",
+        }:
+            raise AgentRuntimeConflict(
+                "TASK_PROGRESS_EVENT_INVALID",
+                "不允许写入该类型的 Task 增量事件",
+            )
+        if len(
+            json.dumps(command.payload, ensure_ascii=False, default=str)
+        ) > 16000:
+            raise AgentRuntimeConflict(
+                "TASK_PROGRESS_PAYLOAD_TOO_LARGE",
+                "Task 增量事件内容超过限制",
+            )
+        now = _utc_now()
+        async with self._uow_factory() as uow:
+            task = await uow.tasks.get(
+                task_id=command.task_id, lock=True
+            )
+            if task is None:
+                raise StaleTaskLease()
+            run = await uow.runs.get(run_id=task.run_id, lock=True)
+            if run is None:
+                raise AgentRuntimeNotFound()
+            self._ensure_lease(
+                task,
+                worker_id=command.worker_id,
+                lease_token=command.lease_token,
+                now=now,
+            )
+            event_key = (
+                f"progress:{task.task_id}:{command.idempotency_key}"
+            )
+            prior = await uow.events.get_by_key(
+                run_id=run.run_id, event_key=event_key
+            )
+            if prior is None:
+                event = await self._append_event(
+                    uow,
+                    run=run,
+                    event_type=command.event_type,
+                    event_key=event_key,
+                    actor_type="WORKER",
+                    actor_id=command.actor_id,
+                    trace_id=command.trace_id,
+                    task=task,
+                    payload=command.payload,
+                )
+                await uow.commit()
+            else:
+                event = prior
+            return self._mutation_receipt(
+                task, run, int(event.sequence_no)
+            )
+
     async def complete_task(
         self, command: CompleteTaskCommand
     ) -> TaskMutationReceipt:
@@ -727,6 +908,195 @@ class AgentRuntimeService:
                     "content_hash": artifact.content_hash,
                 },
             )
+            if artifact.artifact_type == "CONTEXT_REWRITE":
+                rewrite_payload = (
+                    artifact.payload_json
+                    if isinstance(artifact.payload_json, dict)
+                    else {}
+                )
+                await self._append_event(
+                    uow,
+                    run=run,
+                    event_type="query.rewritten",
+                    event_key=(
+                        f"query-rewritten:{task.task_id}:"
+                        f"{command.idempotency_key}"
+                    ),
+                    actor_type="WORKER",
+                    actor_id=command.actor_id,
+                    trace_id=command.trace_id,
+                    task=task,
+                    artifact=artifact,
+                    payload={
+                        "standalone_query": str(
+                            rewrite_payload.get("standalone_query") or ""
+                        )[:32000],
+                        "ambiguity": bool(
+                            rewrite_payload.get("ambiguity", False)
+                        ),
+                        "public_summary": (
+                            "已将本轮问题理解为："
+                            f"{str(rewrite_payload.get('standalone_query') or '')[:500]}"
+                        ),
+                    },
+                )
+            elif artifact.artifact_type == "CITATION_PACK":
+                retrieval_payload = (
+                    artifact.payload_json
+                    if isinstance(artifact.payload_json, dict)
+                    else {}
+                )
+                report = dict(
+                    retrieval_payload.get("retrieval_report") or {}
+                )
+                query_plan = dict(
+                    (
+                        retrieval_payload.get("citation_pack") or {}
+                    ).get("query_plan")
+                    or {}
+                )
+                image_processing = dict(
+                    query_plan.get("image_processing") or {}
+                )
+                await self._append_event(
+                    uow,
+                    run=run,
+                    event_type="retrieval.completed",
+                    event_key=(
+                        f"retrieval-completed:{task.task_id}:"
+                        f"{command.idempotency_key}"
+                    ),
+                    actor_type="WORKER",
+                    actor_id=command.actor_id,
+                    trace_id=command.trace_id,
+                    task=task,
+                    artifact=artifact,
+                    payload={
+                        "candidate_count": int(
+                            report.get("discovery_candidate_count", 0)
+                        ),
+                        "citation_count": int(
+                            report.get("citation_count", 0)
+                        ),
+                        "image_processing": image_processing,
+                        "rerank": dict(report.get("rerank") or {}),
+                        "warnings": list(
+                            retrieval_payload.get("warnings") or []
+                        ),
+                        "public_summary": (
+                            "知识检索发现 "
+                            f"{int(report.get('discovery_candidate_count', 0))} "
+                            "个候选，并形成 "
+                            f"{int(report.get('citation_count', 0))} "
+                            "组可引用证据"
+                        ),
+                    },
+                )
+            elif artifact.artifact_type == "QUERY_RESULT":
+                query_payload = (
+                    artifact.payload_json
+                    if isinstance(artifact.payload_json, dict)
+                    else {}
+                )
+                query_rows = [
+                    item
+                    for item in (query_payload.get("rows") or [])
+                    if isinstance(item, dict)
+                ]
+                query_columns = list(
+                    dict.fromkeys(
+                        str(column)
+                        for item in query_rows[:20]
+                        for column in item
+                    )
+                )
+                await self._append_event(
+                    uow,
+                    run=run,
+                    event_type="data.query.completed",
+                    event_key=(
+                        f"data-query-completed:{task.task_id}:"
+                        f"{command.idempotency_key}"
+                    ),
+                    actor_type="WORKER",
+                    actor_id=command.actor_id,
+                    trace_id=command.trace_id,
+                    task=task,
+                    artifact=artifact,
+                    payload={
+                        "query_result_id": query_payload.get(
+                            "query_result_id"
+                        ),
+                        "profile": query_payload.get("profile"),
+                        "row_count": int(
+                            query_payload.get("row_count", 0)
+                        ),
+                        "truncated": bool(
+                            query_payload.get("truncated", False)
+                        ),
+                        "columns": query_columns,
+                        "preview_rows": query_rows[:20],
+                        "public_summary": (
+                            "结构化数据查询完成，共返回 "
+                            f"{int(query_payload.get('row_count', 0))} 行"
+                        ),
+                    },
+                )
+            elif artifact.artifact_type == "ECHARTS_CONFIG":
+                chart_payload = (
+                    artifact.payload_json
+                    if isinstance(artifact.payload_json, dict)
+                    else {}
+                )
+                await self._append_event(
+                    uow,
+                    run=run,
+                    event_type="chart.completed",
+                    event_key=(
+                        f"chart-completed:{task.task_id}:"
+                        f"{command.idempotency_key}"
+                    ),
+                    actor_type="WORKER",
+                    actor_id=command.actor_id,
+                    trace_id=command.trace_id,
+                    task=task,
+                    artifact=artifact,
+                    payload={
+                        "chart_type": chart_payload.get("chart_type"),
+                        "query_result_id": chart_payload.get(
+                            "query_result_id"
+                        ),
+                        "visualization": chart_payload,
+                        "public_summary": "ECharts 图表配置已生成",
+                    },
+                )
+            elif artifact.artifact_type == "GROUNDED_ANSWER":
+                answer_payload = (
+                    artifact.payload_json
+                    if isinstance(artifact.payload_json, dict)
+                    else {}
+                )
+                await self._append_event(
+                    uow,
+                    run=run,
+                    event_type="answer.completed",
+                    event_key=(
+                        f"answer-completed:{task.task_id}:"
+                        f"{command.idempotency_key}"
+                    ),
+                    actor_type="WORKER",
+                    actor_id=command.actor_id,
+                    trace_id=command.trace_id,
+                    task=task,
+                    artifact=artifact,
+                    payload={
+                        "status": answer_payload.get("status"),
+                        "reference_count": len(
+                            answer_payload.get("references") or []
+                        ),
+                        "public_summary": "最终回答与引用已生成",
+                    },
+                )
             ensure_task_transition(
                 TaskStatus(task.status), TaskStatus.SUCCEEDED
             )
@@ -797,6 +1167,9 @@ class AgentRuntimeService:
                     trace_id=command.trace_id,
                     artifact=artifact,
                     payload={"status": run.status},
+                )
+                await self._complete_conversation_turn(
+                    uow, run=run, artifact=artifact, now=now
                 )
             await uow.commit()
             return self._mutation_receipt(
@@ -884,6 +1257,9 @@ class AgentRuntimeService:
                     task=task,
                     payload={"error_code": command.error_code},
                 )
+                await self._finish_conversation_turn(
+                    uow, run=run, status="FAILED", now=now
+                )
             await uow.commit()
             return self._mutation_receipt(
                 task, run, int(event.sequence_no)
@@ -966,6 +1342,9 @@ class AgentRuntimeService:
                 actor_id=command.actor_id,
                 trace_id=command.trace_id,
                 payload={"status": run.status},
+            )
+            await self._finish_conversation_turn(
+                uow, run=run, status="CANCELLED", now=now
             )
             await uow.commit()
             return self._run_receipt(run, int(event.sequence_no))
@@ -1217,6 +1596,114 @@ class AgentRuntimeService:
             )
             for row in rows
         )
+
+    @staticmethod
+    async def _complete_conversation_turn(
+        uow,
+        *,
+        run: AgentRunEntity,
+        artifact: AgentArtifactEntity,
+        now: datetime,
+    ) -> None:
+        turns = getattr(uow, "turns", None)
+        conversations = getattr(uow, "conversations", None)
+        items = getattr(uow, "conversation_items", None)
+        if turns is None or conversations is None or items is None:
+            return
+        turn = await turns.get_by_run(run_id=run.run_id, lock=True)
+        if turn is None or turn.assistant_item_id is not None:
+            return
+        conversation = await conversations.get_scoped(
+            conversation_id=turn.conversation_id,
+            app_id=int(run.app_id),
+            domain_id=int(run.domain_id),
+            actor_id=run.actor_id,
+            lock=True,
+        )
+        if conversation is None:
+            return
+        payload = artifact.payload_json
+        if isinstance(payload, dict):
+            content = {
+                "text": str(payload.get("answer") or ""),
+                "status": str(payload.get("status") or "READY"),
+                "references": list(payload.get("references") or []),
+                "used_citation_labels": list(
+                    payload.get("used_citation_labels") or []
+                ),
+                "warnings": list(payload.get("warnings") or []),
+                "query_results": list(
+                    payload.get("query_results") or []
+                ),
+                "visualizations": list(
+                    payload.get("visualizations") or []
+                ),
+            }
+        else:
+            content = {"text": "", "status": "READY", "references": []}
+        sequence = int(conversation.last_item_sequence) + 1
+        item = await items.add(
+            AgentConversationItemEntity(
+                item_id=uuid7(),
+                conversation_id=turn.conversation_id,
+                item_sequence=sequence,
+                turn_id=turn.turn_id,
+                item_type="MESSAGE",
+                role="ASSISTANT",
+                content_json=content,
+                content_hash=_canonical_hash(content),
+                run_id=run.run_id,
+                artifact_id=artifact.artifact_id,
+                visibility="USER",
+            )
+        )
+        turn.assistant_item_id = item.item_id
+        turn.status = "COMPLETED"
+        turn.completed_at = now
+        conversation.last_item_sequence = sequence
+        conversation.last_active_at = now
+        conversation.row_version = int(conversation.row_version) + 1
+        memory_jobs = getattr(uow, "memory_jobs", None)
+        if memory_jobs is not None:
+            await memory_jobs.add(
+                AgentMemoryJobEntity(
+                    memory_job_id=uuid7(),
+                    conversation_id=turn.conversation_id,
+                    turn_id=turn.turn_id,
+                    status="PENDING",
+                    attempt_count=0,
+                    max_attempts=3,
+                    next_attempt_at=now,
+                )
+            )
+
+    @staticmethod
+    async def _finish_conversation_turn(
+        uow,
+        *,
+        run: AgentRunEntity,
+        status: str,
+        now: datetime,
+    ) -> None:
+        turns = getattr(uow, "turns", None)
+        conversations = getattr(uow, "conversations", None)
+        if turns is None or conversations is None:
+            return
+        turn = await turns.get_by_run(run_id=run.run_id, lock=True)
+        if turn is None:
+            return
+        turn.status = status
+        turn.completed_at = now
+        conversation = await conversations.get_scoped(
+            conversation_id=turn.conversation_id,
+            app_id=int(run.app_id),
+            domain_id=int(run.domain_id),
+            actor_id=run.actor_id,
+            lock=True,
+        )
+        if conversation is not None:
+            conversation.last_active_at = now
+            conversation.row_version = int(conversation.row_version) + 1
 
     @staticmethod
     def _task_lease(

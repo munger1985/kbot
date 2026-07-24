@@ -32,6 +32,7 @@ from knowledge_core.api.index_task_router import router as index_task_router
 from knowledge_core.api.profile_task_router import router as profile_task_router
 from knowledge_core.api.discovery_router import router as discovery_router
 from knowledge_core.api.evidence_router import router as evidence_router
+from knowledge_core.api.visual_router import router as visual_router
 from knowledge_core.api.parse_task_router import router as parse_task_router
 from knowledge_core.api.status_router import router as status_router
 from knowledge_core.api.purge_task_router import router as purge_task_router
@@ -42,13 +43,19 @@ from knowledge_core.application.indexing import KnowledgeCoreEvidenceIndexServic
 from knowledge_core.application.discovery import KnowledgeCoreProfileService
 from knowledge_core.application.retrieval import KnowledgeCoreDiscoveryService
 from knowledge_core.application.evidence_retrieval import KnowledgeCoreEvidenceRetrievalService
+from knowledge_core.application.llm_reranking import (
+    CollectionRetrievalModelResolver,
+    KnowledgeCoreLlmReranker,
+)
 from knowledge_core.application.query_embeddings import CollectionQueryEmbeddingProvider
 from knowledge_core.application.status import KnowledgeCoreStatusService
 from knowledge_core.application.scope import KnowledgeCoreScopeService
 from knowledge_core.application.collection_purge import KnowledgeCoreCollectionPurgeService
+from knowledge_core.application.visual_search import KnowledgeCoreVisualService
 from platform_clients import AIModelClient, AIModelConfigClient
 from knowledge_core.persistence import create_kc_uow
 from platform_core.platform.port_check import check_port_available
+from platform_core.prompts import PromptResolver, load_prompt_catalog
 from platform_core.security import create_internal_auth_middleware
 
 
@@ -80,12 +87,29 @@ async def lifespan(app: FastAPI):
         receipt_ttl_seconds=config.receipt_ttl_seconds,
         uow_factory=kc_uow_factory,
         parse_policy_overrides={
-            "vlm_model": settings.parse_policy.vlm_model or None,
+            "ocr_model": settings.parse_policy.ocr_model or None,
+            "parse_strategy": settings.parse_policy.parse_strategy,
             "visual_description_prompt": (
                 settings.parse_policy.visual_description_prompt
             ),
+            "full_page_visual_prompt": (
+                settings.parse_policy.full_page_visual_prompt
+            ),
+            "visual_min_text_characters": (
+                settings.parse_policy.visual_min_text_characters
+            ),
+            "visual_min_mean_confidence": (
+                settings.parse_policy.visual_min_mean_confidence
+            ),
+            "visual_max_gibberish_ratio": (
+                settings.parse_policy.visual_max_gibberish_ratio
+            ),
+            "visual_max_concurrency": (
+                settings.parse_policy.visual_max_concurrency
+            ),
         },
     )
+    app.state.kc_intake_service = intake_service
     app.state.kc_multipart_orchestrator = KnowledgeCoreMultipartOrchestrator(
         intake_service=intake_service,
         object_store=LocalKnowledgeObjectStore(
@@ -104,9 +128,34 @@ async def lifespan(app: FastAPI):
         caller_service=SERVICE_NAME,
         audience=settings.embedding.audience,
     )
+    visual_model_config_client = AIModelConfigClient(
+        base_url=settings.visual.base_url,
+        timeout=settings.visual.timeout_seconds,
+        caller_service=SERVICE_NAME,
+        audience=settings.visual.audience,
+    )
+    retrieval_model_config_client = AIModelConfigClient(
+        base_url=settings.llm.base_url,
+        timeout=settings.llm.timeout_seconds,
+        caller_service=SERVICE_NAME,
+        audience=settings.llm.audience,
+    )
     model_client = AIModelClient(
         caller_service=SERVICE_NAME,
         embedding_config=settings.embedding,
+        llm_config=settings.llm,
+        visual_config=settings.visual,
+    )
+    app.state.kc_llm_reranker = KnowledgeCoreLlmReranker(
+        model_resolver=CollectionRetrievalModelResolver(
+            uow_factory=kc_uow_factory,
+            model_config_client=retrieval_model_config_client,
+        ),
+        model_client=model_client,
+        prompt_resolver=PromptResolver(
+            session_factory=db_runtime.session_factory,
+            catalog=load_prompt_catalog(),
+        ),
     )
 
     async def model_resolver(collection_model_id: UUID):
@@ -127,6 +176,12 @@ async def lifespan(app: FastAPI):
         embedding_gateway=AIModelEmbeddingGateway(client=model_client),
         model_resolver=model_resolver,
     )
+    app.state.kc_visual_service = KnowledgeCoreVisualService(
+        uow_factory=kc_uow_factory,
+        model_config_client=visual_model_config_client,
+        model_client=model_client,
+    )
+    app.state.kc_index_service.visual_service = app.state.kc_visual_service
 
     class UowDiscoverySearchPort:
         async def search_text(self, *, collection_id: UUID, query: str, limit: int, max_security_level: int):
@@ -206,6 +261,7 @@ app.include_router(index_task_router)
 app.include_router(profile_task_router)
 app.include_router(discovery_router)
 app.include_router(evidence_router)
+app.include_router(visual_router)
 app.include_router(parse_task_router)
 app.include_router(status_router)
 app.include_router(purge_task_router)
@@ -237,7 +293,7 @@ async def readyz(request: Request) -> dict[str, Any]:
     except Exception as exc:
         checks["database"] = type(exc).__name__
     try:
-        object_root = Path(config.local_object_storage_path)
+        object_root = Path(settings.storage.local_object_storage_path)
         object_root.mkdir(parents=True, exist_ok=True)
         checks["object_store"] = "ok" if object_root.is_dir() else "unavailable"
     except Exception as exc:

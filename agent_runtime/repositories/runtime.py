@@ -73,6 +73,8 @@ class AgentRunRepository:
 
 
 class AgentTaskRepository:
+    _CLAIM_SCAN_LIMIT = 16
+
     def __init__(self, session: AsyncSession):
         self._session = session
 
@@ -101,7 +103,7 @@ class AgentTaskRepository:
     async def claim_candidate(
         self, *, now: datetime, max_parallel_tasks: int
     ) -> AgentTaskEntity | None:
-        """领取一个 READY Task；SKIP LOCKED 支持多 Worker 并发。"""
+        """先选候选 ID，再按主键加锁，规避 Oracle ORA-02014。"""
         running_task = aliased(AgentTaskEntity)
         running_count = (
             select(func.count())
@@ -112,8 +114,8 @@ class AgentTaskRepository:
             )
             .scalar_subquery()
         )
-        statement: Select = (
-            select(AgentTaskEntity)
+        candidate_statement: Select = (
+            select(AgentTaskEntity.task_id)
             .join(
                 AgentRunEntity,
                 AgentRunEntity.run_id == AgentTaskEntity.run_id,
@@ -128,16 +130,52 @@ class AgentTaskRepository:
             )
             .where(running_count < max_parallel_tasks)
             .order_by(AgentTaskEntity.created_at, AgentTaskEntity.task_id)
-            .limit(1)
-            .with_for_update(skip_locked=True)
+            .limit(self._CLAIM_SCAN_LIMIT)
         )
-        return (await self._session.execute(statement)).scalar_one_or_none()
+        task_ids = list(
+            (await self._session.execute(candidate_statement)).scalars()
+        )
+        for task_id in task_ids:
+            task = await self._lock_task(task_id)
+            if task is None or task.status != "READY":
+                continue
+            run_state = (
+                await self._session.execute(
+                    select(
+                        AgentRunEntity.status,
+                        AgentRunEntity.deadline_at,
+                    ).where(AgentRunEntity.run_id == task.run_id)
+                )
+            ).one_or_none()
+            if run_state is None or run_state.status != "RUNNING":
+                continue
+            if (
+                run_state.deadline_at is not None
+                and run_state.deadline_at <= now
+            ):
+                continue
+            active_count = int(
+                (
+                    await self._session.execute(
+                        select(func.count())
+                        .select_from(AgentTaskEntity)
+                        .where(
+                            AgentTaskEntity.run_id == task.run_id,
+                            AgentTaskEntity.status == "RUNNING",
+                        )
+                    )
+                ).scalar_one()
+            )
+            if active_count >= max_parallel_tasks:
+                continue
+            return task
+        return None
 
     async def claim_due_retry(
         self, *, now: datetime
     ) -> AgentTaskEntity | None:
-        statement: Select = (
-            select(AgentTaskEntity)
+        candidate_statement: Select = (
+            select(AgentTaskEntity.task_id)
             .join(
                 AgentRunEntity,
                 AgentRunEntity.run_id == AgentTaskEntity.run_id,
@@ -151,16 +189,28 @@ class AgentTaskRepository:
                 AgentTaskEntity.next_retry_at,
                 AgentTaskEntity.task_id,
             )
-            .limit(1)
-            .with_for_update(skip_locked=True)
+            .limit(self._CLAIM_SCAN_LIMIT)
         )
-        return (await self._session.execute(statement)).scalar_one_or_none()
+        task_ids = list(
+            (await self._session.execute(candidate_statement)).scalars()
+        )
+        for task_id in task_ids:
+            task = await self._lock_task(task_id)
+            if (
+                task is not None
+                and task.status == "RETRY_WAIT"
+                and task.next_retry_at is not None
+                and task.next_retry_at <= now
+                and await self._run_is_active(task.run_id, now)
+            ):
+                return task
+        return None
 
     async def claim_expired_lease(
         self, *, now: datetime
     ) -> AgentTaskEntity | None:
-        statement: Select = (
-            select(AgentTaskEntity)
+        candidate_statement: Select = (
+            select(AgentTaskEntity.task_id)
             .join(
                 AgentRunEntity,
                 AgentRunEntity.run_id == AgentTaskEntity.run_id,
@@ -175,10 +225,50 @@ class AgentTaskRepository:
                 AgentTaskEntity.lease_until,
                 AgentTaskEntity.task_id,
             )
-            .limit(1)
+            .limit(self._CLAIM_SCAN_LIMIT)
+        )
+        task_ids = list(
+            (await self._session.execute(candidate_statement)).scalars()
+        )
+        for task_id in task_ids:
+            task = await self._lock_task(task_id)
+            if (
+                task is not None
+                and task.status == "RUNNING"
+                and task.lease_until is not None
+                and task.lease_until <= now
+                and await self._run_is_active(task.run_id, now)
+            ):
+                return task
+        return None
+
+    async def _lock_task(
+        self, task_id: UUID
+    ) -> AgentTaskEntity | None:
+        """只对单表主键查询使用 SKIP LOCKED，保持 Oracle 可更新。"""
+        statement = (
+            select(AgentTaskEntity)
+            .where(AgentTaskEntity.task_id == task_id)
             .with_for_update(skip_locked=True)
         )
         return (await self._session.execute(statement)).scalar_one_or_none()
+
+    async def _run_is_active(
+        self, run_id: UUID, now: datetime
+    ) -> bool:
+        row = (
+            await self._session.execute(
+                select(
+                    AgentRunEntity.status,
+                    AgentRunEntity.deadline_at,
+                ).where(AgentRunEntity.run_id == run_id)
+            )
+        ).one_or_none()
+        return bool(
+            row is not None
+            and row.status == "RUNNING"
+            and (row.deadline_at is None or row.deadline_at > now)
+        )
 
     async def list_by_run(
         self, *, run_id: UUID, lock: bool = False
@@ -297,6 +387,8 @@ class AgentRunEventRepository:
 
 
 class AgentDelegationRepository:
+    _POLL_SCAN_LIMIT = 16
+
     def __init__(self, session: AsyncSession):
         self._session = session
 
@@ -350,33 +442,52 @@ class AgentDelegationRepository:
     async def claim_poll_candidate(
         self, *, now: datetime
     ) -> AgentDelegationEntity | None:
-        statement = (
-            select(AgentDelegationEntity)
-            .where(
-                AgentDelegationEntity.status.in_(
-                    (
-                        "CREATED",
-                        "SUBMITTING",
-                        "RUNNING",
-                        "WAITING_INPUT",
-                        "WAITING_APPROVAL",
-                        "CANCEL_REQUESTED",
-                    )
-                ),
-                or_(
-                    AgentDelegationEntity.next_poll_at.is_(None),
-                    AgentDelegationEntity.next_poll_at <= now,
-                ),
-                or_(
-                    AgentDelegationEntity.lease_until.is_(None),
-                    AgentDelegationEntity.lease_until <= now,
-                ),
-            )
+        """先筛选候选主键，再逐行加锁，规避 Oracle ORA-02014。"""
+        eligibility = (
+            AgentDelegationEntity.status.in_(
+                (
+                    "CREATED",
+                    "SUBMITTING",
+                    "RUNNING",
+                    "WAITING_INPUT",
+                    "WAITING_APPROVAL",
+                    "CANCEL_REQUESTED",
+                )
+            ),
+            or_(
+                AgentDelegationEntity.next_poll_at.is_(None),
+                AgentDelegationEntity.next_poll_at <= now,
+            ),
+            or_(
+                AgentDelegationEntity.lease_until.is_(None),
+                AgentDelegationEntity.lease_until <= now,
+            ),
+        )
+        candidate_statement = (
+            select(AgentDelegationEntity.delegation_id)
+            .where(*eligibility)
             .order_by(
                 AgentDelegationEntity.next_poll_at,
                 AgentDelegationEntity.created_at,
+                AgentDelegationEntity.delegation_id,
             )
-            .limit(1)
-            .with_for_update(skip_locked=True)
+            .limit(self._POLL_SCAN_LIMIT)
         )
-        return (await self._session.execute(statement)).scalar_one_or_none()
+        candidate_ids = list(
+            (await self._session.execute(candidate_statement)).scalars()
+        )
+        for delegation_id in candidate_ids:
+            lock_statement = (
+                select(AgentDelegationEntity)
+                .where(
+                    AgentDelegationEntity.delegation_id == delegation_id,
+                    *eligibility,
+                )
+                .with_for_update(skip_locked=True)
+            )
+            delegation = (
+                await self._session.execute(lock_statement)
+            ).scalar_one_or_none()
+            if delegation is not None:
+                return delegation
+        return None

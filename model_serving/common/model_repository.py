@@ -81,6 +81,7 @@ class AIModelRepository(ModelRepositoryBase[AIModelEntity]):
             "api_endpoint",
             "api_key",
             "status",
+            "model_params",
             "descs",
             "updated_by",
         }

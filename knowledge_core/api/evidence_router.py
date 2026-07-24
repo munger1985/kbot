@@ -31,6 +31,7 @@ class EvidenceSearchRequest(BaseModel):
     max_evidence: int = Field(default=12, ge=1, le=100)
     context_limit: int = Field(default=4, ge=0, le=20)
     max_security_level: int = Field(default=3, ge=0, le=3)
+    do_rerank: bool = False
 
 
 @router.post("/evidence")
@@ -54,6 +55,23 @@ async def search_evidence(payload: EvidenceSearchRequest, request: Request):
             max_evidence=payload.max_evidence, context_limit=payload.context_limit,
             max_security_level=payload.max_security_level,
         )
+        rerank_report = {
+            "enabled": False,
+            "stage": "EVIDENCE_GROUP",
+            "status": "DISABLED",
+        }
+        warnings: list[str] = []
+        if payload.do_rerank and citations:
+            citations, rerank_report, warnings = (
+                await request.app.state.kc_llm_reranker.rerank_evidence(
+                    query=payload.query,
+                    citations=citations,
+                )
+            )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail={"code": "INVALID_EVIDENCE_QUERY", "message": str(exc)}) from exc
-    return {"citations": [asdict(citation) for citation in citations]}
+    return {
+        "citations": [asdict(citation) for citation in citations],
+        "rerank": rerank_report,
+        "warnings": warnings,
+    }

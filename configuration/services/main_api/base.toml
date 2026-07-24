@@ -4,6 +4,7 @@ service_version = "4.0.0"
 service_host = "0.0.0.0"
 service_port = 18099
 allowed_origins = ["http://127.0.0.1:8080"]
+test_auth_bypass_enabled = false
 sse_poll_interval_seconds = 0.5
 sse_heartbeat_seconds = 15
 sse_batch_size = 200
@@ -21,6 +22,26 @@ timeout_seconds = 120
 [aiops]
 base_url = "http://127.0.0.1:18110"
 audience = "kbot-aiops-api"
+timeout_seconds = 120
+
+[model_embedding]
+base_url = "http://127.0.0.1:18091"
+audience = "kbot-model-embedding"
+timeout_seconds = 120
+
+[model_llm]
+base_url = "http://127.0.0.1:18092"
+audience = "kbot-model-llm"
+timeout_seconds = 120
+
+[model_visual]
+base_url = "http://127.0.0.1:18093"
+audience = "kbot-model-visual"
+timeout_seconds = 120
+
+[model_vlm]
+base_url = "http://127.0.0.1:18094"
+audience = "kbot-model-vlm"
 timeout_seconds = 120
 
 [integrations]

@@ -9,6 +9,7 @@ from platform_core.security import get_actor_id, require_domain_match
 from knowledge_core.application.collections import (
     BindAgentCollectionCommand, ChangeCollectionStatusCommand, CollectionAlreadyExistsError,
     CollectionDeletionStateError, CollectionInUseError, CollectionNotFoundError, CreateCollectionCommand,
+    UpdateCollectionGenerationModelsCommand,
 )
 
 router = APIRouter(
@@ -20,7 +21,11 @@ router = APIRouter(
 class CreateCollectionRequest(BaseModel):
     collection_key: str = Field(pattern=r"^[a-z][a-z0-9_-]{1,63}$")
     display_name: str = Field(min_length=1, max_length=256)
+    parser_llm_model_id: UUID
+    parser_vlm_model_id: UUID | None = None
+    retrieval_llm_model_id: UUID
     embedding_model_id: UUID
+    visual_embedding_model_id: UUID | None = None
     description: str | None = Field(default=None, max_length=1000)
     default_security_level: int = Field(default=1, ge=0, le=999)
     metadata: dict = Field(default_factory=dict)
@@ -34,12 +39,22 @@ class CollectionStatusRequest(BaseModel):
     status: str = Field(pattern=r"^(ACTIVE|DISABLED)$")
 
 
+class CollectionGenerationModelsRequest(BaseModel):
+    parser_llm_model_id: UUID
+    parser_vlm_model_id: UUID | None = None
+    retrieval_llm_model_id: UUID
+
+
 def _collection(entity) -> dict:
     return {
         "collection_id": entity.collection_id, "app_id": int(entity.app_id),
         "domain_id": int(entity.domain_id), "collection_key": entity.collection_key,
         "display_name": entity.display_name, "description": entity.description,
+        "parser_llm_model_id": entity.parser_llm_model_id,
+        "parser_vlm_model_id": entity.parser_vlm_model_id,
+        "retrieval_llm_model_id": entity.retrieval_llm_model_id,
         "embedding_model_id": entity.embedding_model_id, "status": entity.status,
+        "visual_embedding_model_id": entity.visual_embedding_model_id,
         "default_security_level": int(entity.default_security_level),
         "metadata": entity.metadata_json or {},
     }
@@ -52,7 +67,12 @@ async def create_collection(domain_id: int, payload: CreateCollectionRequest, re
     try:
         entity = await request.app.state.kc_collection_service.create(CreateCollectionCommand(
             domain_id=domain_id, collection_key=payload.collection_key,
-            display_name=payload.display_name, embedding_model_id=payload.embedding_model_id,
+            display_name=payload.display_name,
+            parser_llm_model_id=payload.parser_llm_model_id,
+            parser_vlm_model_id=payload.parser_vlm_model_id,
+            retrieval_llm_model_id=payload.retrieval_llm_model_id,
+            embedding_model_id=payload.embedding_model_id,
+            visual_embedding_model_id=payload.visual_embedding_model_id,
             description=payload.description, default_security_level=payload.default_security_level,
             metadata=payload.metadata, actor_id=actor,
         ))
@@ -92,6 +112,33 @@ async def change_collection_status(domain_id: int, collection_key: str, payload:
         raise HTTPException(status_code=404, detail={"code": "COLLECTION_NOT_FOUND", "message": str(exc)}) from exc
     except CollectionDeletionStateError as exc:
         raise HTTPException(status_code=409, detail={"code": "COLLECTION_DELETING", "message": str(exc)}) from exc
+    return _collection(entity)
+
+
+@router.put("/collections/{collection_key}/generation-models")
+async def update_collection_generation_models(
+    domain_id: int,
+    collection_key: str,
+    payload: CollectionGenerationModelsRequest,
+    request: Request,
+):
+    require_domain_match(request, domain_id)
+    try:
+        entity = await request.app.state.kc_collection_service.update_generation_models(
+            UpdateCollectionGenerationModelsCommand(
+                domain_id=domain_id,
+                collection_key=collection_key,
+                parser_llm_model_id=payload.parser_llm_model_id,
+                parser_vlm_model_id=payload.parser_vlm_model_id,
+                retrieval_llm_model_id=payload.retrieval_llm_model_id,
+                actor_id=get_actor_id(request),
+            )
+        )
+    except CollectionNotFoundError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "COLLECTION_NOT_FOUND", "message": str(exc)},
+        ) from exc
     return _collection(entity)
 
 

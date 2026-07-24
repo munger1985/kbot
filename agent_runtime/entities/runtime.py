@@ -8,7 +8,7 @@ from sqlalchemy import DateTime, Integer, Numeric, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from platform_core.identity import uuid7
-from platform_core.persistence.orm import BaseEntity, OracleJSON, UUIDv7Type
+from platform_core.persistence.orm import BaseEntity, OracleNativeJSON, UUIDv7Type
 
 
 class AgentRunEntity(BaseEntity):
@@ -34,13 +34,13 @@ class AgentRunEntity(BaseEntity):
         Numeric(19, 0), nullable=False, default=1
     )
     policy_snapshot_json: Mapped[dict[str, Any]] = mapped_column(
-        OracleJSON, nullable=False
+        OracleNativeJSON, nullable=False
     )
     config_snapshot_json: Mapped[dict[str, Any]] = mapped_column(
-        OracleJSON, nullable=False
+        OracleNativeJSON, nullable=False
     )
     budget_json: Mapped[dict[str, Any]] = mapped_column(
-        OracleJSON, nullable=False
+        OracleNativeJSON, nullable=False
     )
     deadline_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True)
@@ -93,16 +93,16 @@ class AgentTaskEntity(BaseEntity):
         Numeric(19, 0), nullable=False, default=1
     )
     depends_on_json: Mapped[list[str]] = mapped_column(
-        OracleJSON, nullable=False
+        OracleNativeJSON, nullable=False
     )
     input_artifacts_json: Mapped[list[str]] = mapped_column(
-        OracleJSON, nullable=False
+        OracleNativeJSON, nullable=False
     )
     expected_outputs_json: Mapped[list[str]] = mapped_column(
-        OracleJSON, nullable=False
+        OracleNativeJSON, nullable=False
     )
     required_scopes_json: Mapped[list[str]] = mapped_column(
-        OracleJSON, nullable=False
+        OracleNativeJSON, nullable=False
     )
     output_artifact_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
     attempt: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -153,12 +153,12 @@ class AgentArtifactEntity(BaseEntity):
     producer: Mapped[str] = mapped_column(String(128), nullable=False)
     producer_version: Mapped[str] = mapped_column(String(64), nullable=False)
     payload_json: Mapped[dict[str, Any] | list[Any] | None] = mapped_column(
-        OracleJSON
+        OracleNativeJSON
     )
     storage_uri: Mapped[str | None] = mapped_column(String(2048))
     content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     provenance_json: Mapped[dict[str, Any]] = mapped_column(
-        OracleJSON, nullable=False
+        OracleNativeJSON, nullable=False
     )
     security_level: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0
@@ -185,7 +185,7 @@ class AgentRunEventEntity(BaseEntity):
     event_key: Mapped[str | None] = mapped_column(String(256))
     artifact_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
     event_payload_json: Mapped[dict[str, Any]] = mapped_column(
-        OracleJSON, nullable=False
+        OracleNativeJSON, nullable=False
     )
     actor_type: Mapped[str] = mapped_column(String(32), nullable=False)
     actor_id: Mapped[str] = mapped_column(String(256), nullable=False)

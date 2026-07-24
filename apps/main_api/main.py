@@ -11,10 +11,14 @@ from fastapi import FastAPI
 from loguru import logger
 
 from main_api.app import create_main_api_app
-from main_api.application import DomainValidationService
+from main_api.application import (
+    DomainManagementService,
+    DomainValidationService,
+)
 from main_api.config import get_main_api_settings
 from main_api.persistence import create_main_api_uow
 from platform_clients import (
+    AIModelConfigClient,
     AIOpsClientAuth,
     AIOpsManagementClient,
     AgentRuntimeClient,
@@ -47,9 +51,14 @@ async def lifespan(app: FastAPI):
     )).setup()
     db_runtime = create_database_runtime()
     app.state.db_runtime = db_runtime
+    uow_factory = create_main_api_uow(db_runtime.session_factory)
     app.state.domain_validation_service = DomainValidationService(
         app_id=settings.platform.app_id,
-        uow_factory=create_main_api_uow(db_runtime.session_factory),
+        uow_factory=uow_factory,
+    )
+    app.state.domain_management_service = DomainManagementService(
+        app_id=settings.platform.app_id,
+        uow_factory=uow_factory,
     )
     client_session = aiohttp.ClientSession(
         timeout=aiohttp.ClientTimeout(
@@ -85,6 +94,20 @@ async def lifespan(app: FastAPI):
         ),
         timeout_seconds=settings.aiops.timeout_seconds,
         session=client_session,
+    )
+    app.state.model_config_clients = tuple(
+        AIModelConfigClient(
+            base_url=dependency.base_url,
+            timeout=min(dependency.timeout_seconds, 10),
+            caller_service=config.service_name,
+            audience=dependency.audience,
+        )
+        for dependency in (
+            settings.model_embedding,
+            settings.model_llm,
+            settings.model_visual,
+            settings.model_vlm,
+        )
     )
     logger.info("Main API 已启动，公开前缀=/api/v1")
     try:

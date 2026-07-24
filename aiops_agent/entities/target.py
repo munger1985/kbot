@@ -10,7 +10,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from platform_core.identity import uuid7
 from platform_core.persistence.orm import (
     BaseEntity,
-    OracleJSON,
+    OracleNativeJSON,
     UniversalTimestamp,
     UUIDv7Type,
 )
@@ -32,7 +32,7 @@ class TargetEntity(BaseEntity):
     db_role: Mapped[str] = mapped_column(
         String(16), nullable=False, default="UNKNOWN"
     )
-    endpoint_json: Mapped[dict[str, Any] | None] = mapped_column(OracleJSON)
+    endpoint_json: Mapped[dict[str, Any] | None] = mapped_column(OracleNativeJSON)
     diagnostic_secret_ref: Mapped[str | None] = mapped_column(String(1024))
     execution_secret_ref: Mapped[str | None] = mapped_column(String(1024))
     execution_mode: Mapped[str] = mapped_column(
@@ -42,7 +42,7 @@ class TargetEntity(BaseEntity):
         Numeric(3, 0), nullable=False, default=1
     )
     capabilities_json: Mapped[dict[str, Any] | None] = mapped_column(
-        OracleJSON
+        OracleNativeJSON
     )
     status: Mapped[str] = mapped_column(
         String(16), nullable=False, default="MAINTENANCE"
@@ -86,7 +86,7 @@ class PolicyEntity(BaseEntity):
     version_no: Mapped[int] = mapped_column(Numeric(19, 0), nullable=False)
     display_name: Mapped[str] = mapped_column(String(256), nullable=False)
     rules_json: Mapped[dict[str, Any]] = mapped_column(
-        OracleJSON, nullable=False
+        OracleNativeJSON, nullable=False
     )
     policy_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False)
@@ -123,9 +123,9 @@ class TargetBindingEntity(BaseEntity):
     agent_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
     access_mode: Mapped[str] = mapped_column(String(16), nullable=False)
     policy_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
-    allowed_actions_json: Mapped[list[str] | None] = mapped_column(OracleJSON)
+    allowed_actions_json: Mapped[list[str] | None] = mapped_column(OracleNativeJSON)
     change_window_json: Mapped[dict[str, Any] | None] = mapped_column(
-        OracleJSON
+        OracleNativeJSON
     )
     max_daily_executions: Mapped[int | None] = mapped_column(Numeric(10, 0))
     status: Mapped[str] = mapped_column(

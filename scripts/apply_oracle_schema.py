@@ -21,6 +21,8 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from platform_core.database.oracle import create_database_runtime  # noqa: E402
+from platform_core.identity import uuid7  # noqa: E402
+from platform_core.prompts import load_prompt_catalog  # noqa: E402
 
 
 REQUIRED_SERVICES = (
@@ -533,6 +535,141 @@ async def _validate_schema(
         raise RuntimeError(f"AIOps Schema 版本错误：{tuple(schema_version)}")
 
 
+async def _seed_prompt_catalog(
+    connection: AsyncConnection,
+    *,
+    selected_services: set[str],
+) -> int:
+    """幂等写入统一 Prompt Catalog，并保持数据库较新 Active 版本。"""
+    catalog = load_prompt_catalog()
+    entries = catalog.for_services(selected_services)
+    for entry in entries:
+        row = (
+            await connection.execute(
+                text(
+                    """
+                    SELECT prompt_id, active_version_id
+                    FROM KBOT_PLATFORM_PROMPT
+                    WHERE prompt_key = :prompt_key
+                    FOR UPDATE
+                    """
+                ),
+                {"prompt_key": entry.prompt_key},
+            )
+        ).one_or_none()
+        if row is None:
+            prompt_id = uuid7().bytes
+            await connection.execute(
+                text(
+                    """
+                    INSERT INTO KBOT_PLATFORM_PROMPT (
+                        prompt_id, prompt_key, owner_service, purpose,
+                        active_version_id, row_version, created_by, updated_by
+                    ) VALUES (
+                        :prompt_id, :prompt_key, :owner_service, :purpose,
+                        NULL, 1, 'schema-initializer', 'schema-initializer'
+                    )
+                    """
+                ),
+                {
+                    "prompt_id": prompt_id,
+                    "prompt_key": entry.prompt_key,
+                    "owner_service": entry.owner_service,
+                    "purpose": entry.purpose,
+                },
+            )
+            active_version_id = None
+        else:
+            prompt_id, active_version_id = row
+
+        version_row = (
+            await connection.execute(
+                text(
+                    """
+                    SELECT prompt_version_id, content_sha256
+                    FROM KBOT_PLATFORM_PROMPT_VERSION
+                    WHERE prompt_id = :prompt_id
+                      AND version = :version
+                    """
+                ),
+                {"prompt_id": prompt_id, "version": entry.version},
+            )
+        ).one_or_none()
+        if version_row is not None:
+            prompt_version_id, existing_hash = version_row
+            if str(existing_hash) != entry.sha256:
+                raise RuntimeError(
+                    "Prompt 相同版本正文 Hash 冲突："
+                    f"{entry.prompt_key}@{entry.version}"
+                )
+            await connection.execute(
+                text(
+                    """
+                    UPDATE KBOT_PLATFORM_PROMPT_VERSION
+                    SET status = :status
+                    WHERE prompt_version_id = :prompt_version_id
+                    """
+                ),
+                {
+                    "status": "ACTIVE" if entry.active else "RETIRED",
+                    "prompt_version_id": prompt_version_id,
+                },
+            )
+        else:
+            prompt_version_id = uuid7().bytes
+            await connection.execute(
+                text(
+                    """
+                    INSERT INTO KBOT_PLATFORM_PROMPT_VERSION (
+                        prompt_version_id, prompt_id, version, content,
+                        content_sha256, input_variables_json,
+                        output_schema_ref, status, source, created_by
+                    ) VALUES (
+                        :prompt_version_id, :prompt_id, :version, :content,
+                        :content_sha256, :input_variables_json,
+                        :output_schema_ref, :status, 'FILE_SEED',
+                        'schema-initializer'
+                    )
+                    """
+                ),
+                {
+                    "prompt_version_id": prompt_version_id,
+                    "prompt_id": prompt_id,
+                    "version": entry.version,
+                    "content": entry.content,
+                    "content_sha256": entry.sha256,
+                    "input_variables_json": (
+                        "["
+                        + ",".join(
+                            f'"{value}"' for value in entry.input_variables
+                        )
+                        + "]"
+                    ),
+                    "output_schema_ref": entry.output_schema,
+                    "status": "ACTIVE" if entry.active else "RETIRED",
+                },
+            )
+        if entry.active:
+            await connection.execute(
+                text(
+                    """
+                    UPDATE KBOT_PLATFORM_PROMPT
+                    SET active_version_id = :prompt_version_id,
+                        row_version = row_version + 1,
+                        updated_by = 'schema-initializer',
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE prompt_id = :prompt_id
+                    """
+                ),
+                {
+                    "prompt_version_id": prompt_version_id,
+                    "prompt_id": prompt_id,
+                },
+            )
+    await connection.commit()
+    return len(entries)
+
+
 async def apply_schema(*, dry_run: bool, config_path: Path) -> None:
     """执行空库检查、DDL 和对象完整性校验。"""
     selection = load_service_selection(config_path)
@@ -561,6 +698,10 @@ async def apply_schema(*, dry_run: bool, config_path: Path) -> None:
         )
     }
     enabled_label = ", ".join(selection.enabled) if selection.enabled else "无"
+    prompt_catalog = load_prompt_catalog()
+    selected_prompt_entries = prompt_catalog.for_services(
+        set(selection.ordered)
+    )
     print(
         f"初始化范围：必建={', '.join(selection.required)}；"
         f"已选服务={enabled_label}"
@@ -568,7 +709,9 @@ async def apply_schema(*, dry_run: bool, config_path: Path) -> None:
     if dry_run:
         print(
             f"DDL 解析通过：{len(statements)} 条语句，"
-            f"{len(expected_tables)} 张表，{len(expected_views)} 个视图"
+            f"{len(expected_tables)} 张表，{len(expected_views)} 个视图；"
+            f"Prompt={len(selected_prompt_entries)}，"
+            f"Catalog Hash={prompt_catalog.catalog_sha256}"
         )
         return
 
@@ -600,9 +743,14 @@ async def apply_schema(*, dry_run: bool, config_path: Path) -> None:
                 expected_tables=expected_tables,
                 expected_views=expected_views,
             )
+            prompt_count = await _seed_prompt_catalog(
+                connection,
+                selected_services=set(selection.ordered),
+            )
             print(
                 f"Schema 初始化完成：{len(expected_tables)} 张表，"
-                f"{len(expected_views)} 个视图"
+                f"{len(expected_views)} 个视图，"
+                f"{prompt_count} 个 Prompt"
             )
     finally:
         await runtime.close()

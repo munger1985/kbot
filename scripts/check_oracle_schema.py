@@ -11,7 +11,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_ROOT = ROOT / "database" / "oracle"
 SERVICE_TABLES = {
-    "platform_core": {"KBOT_PLATFORM_DOMAIN"},
+    "platform_core": {
+        "KBOT_PLATFORM_DOMAIN",
+        "KBOT_PLATFORM_PROMPT",
+        "KBOT_PLATFORM_PROMPT_VERSION",
+    },
     "model_serving": {"KBOT_AI_MODEL"},
     "knowledge_core": {
         "KBOT_KC_COLLECTION",
@@ -27,6 +31,7 @@ SERVICE_TABLES = {
         "KBOT_KC_EVIDENCE",
         "KBOT_KC_DISCOVERY_OBJECT",
         "KBOT_KC_RELATION",
+        "KBOT_KC_VISUAL_ASSET",
     },
     "agent_runtime": {
         "KBOT_AGENT_DEFINITION",
@@ -35,6 +40,14 @@ SERVICE_TABLES = {
         "KBOT_AGENT_ARTIFACT",
         "KBOT_AGENT_RUN_EVENT",
         "KBOT_AGENT_DELEGATION",
+        "KBOT_AGENT_CONVERSATION",
+        "KBOT_AGENT_CONVERSATION_TURN",
+        "KBOT_AGENT_CONVERSATION_ITEM",
+        "KBOT_AGENT_MEMORY_SNAPSHOT",
+        "KBOT_AGENT_MEMORY_INDEX_PROFILE",
+        "KBOT_AGENT_MEMORY_ITEM",
+        "KBOT_AGENT_MEMORY_SOURCE",
+        "KBOT_AGENT_MEMORY_JOB",
     },
     "aiops_agent": {
         "KBOT_OPS_TARGET",
@@ -116,6 +129,15 @@ AGENT_UUID_COLUMNS = (
     "DELEGATION_ID",
     "CHILD_RUN_ID",
     "RESULT_ARTIFACT_ID",
+    "CONVERSATION_ID",
+    "TURN_ID",
+    "USER_ITEM_ID",
+    "ASSISTANT_ITEM_ID",
+    "ITEM_ID",
+    "SNAPSHOT_ID",
+    "MEMORY_ID",
+    "MEMORY_SOURCE_ID",
+    "MEMORY_JOB_ID",
 )
 AIOPS_UUID_COLUMNS = (
     "TARGET_ID",

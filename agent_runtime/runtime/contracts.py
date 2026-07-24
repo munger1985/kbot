@@ -50,5 +50,14 @@ class SkillResult(BaseModel):
     warnings: tuple[str, ...] = ()
 
 
+class SkillProgress(BaseModel):
+    """Skill 在最终 Artifact 前持久化的可恢复增量事件。"""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    event_type: str = Field(min_length=1, max_length=64)
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
 class RuntimeSkill(Protocol):
     async def execute(self, context: ExecutionContext) -> SkillResult: ...

@@ -9,7 +9,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from platform_core.identity import uuid7
 from platform_core.persistence.orm import (
     BaseEntity,
-    OracleJSON,
+    OracleNativeJSON,
     UUIDv7Type,
     VectorField,
 )
@@ -47,12 +47,18 @@ class KcBundleRevisionEntity(_AuditEntity):
     revision_no: Mapped[int] = mapped_column(Numeric(19, 0), nullable=False)
     source_revision: Mapped[str] = mapped_column(String(256), nullable=False)
     snapshot_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
-    manifest_json: Mapped[dict[str, Any]] = mapped_column(OracleJSON, nullable=False)
+    manifest_json: Mapped[dict[str, Any]] = mapped_column(OracleNativeJSON, nullable=False)
     title: Mapped[str] = mapped_column(String(512), nullable=False)
     canonical_url: Mapped[str | None] = mapped_column(String(2048))
     security_level: Mapped[int] = mapped_column(Integer, nullable=False)
-    facet_json: Mapped[dict[str, Any] | None] = mapped_column(OracleJSON)
+    facet_json: Mapped[dict[str, Any] | None] = mapped_column(OracleNativeJSON)
     status: Mapped[str] = mapped_column(String(16), nullable=False)
+    approval_status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="NOT_REQUIRED",
+    )
+    reviewed_by: Mapped[str | None] = mapped_column(String(256))
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    review_comment: Mapped[str | None] = mapped_column(String(1000))
     accepted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     failure_code: Mapped[str | None] = mapped_column(String(128))
@@ -85,7 +91,7 @@ class KcDocumentVersionEntity(_AuditEntity):
     byte_size: Mapped[int] = mapped_column(Numeric(19, 0), nullable=False)
     detected_mime_type: Mapped[str] = mapped_column(String(255), nullable=False)
     security_level: Mapped[int] = mapped_column(Integer, nullable=False)
-    content_metadata_json: Mapped[dict[str, Any] | None] = mapped_column(OracleJSON)
+    content_metadata_json: Mapped[dict[str, Any] | None] = mapped_column(OracleNativeJSON)
     received_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -130,7 +136,7 @@ class KcIngestionJobEntity(_AuditEntity):
     job_type: Mapped[str] = mapped_column(String(24), nullable=False)
     idempotency_key: Mapped[str] = mapped_column(String(256), nullable=False)
     input_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
-    payload_json: Mapped[dict[str, Any] | None] = mapped_column(OracleJSON)
+    payload_json: Mapped[dict[str, Any] | None] = mapped_column(OracleNativeJSON)
     job_status: Mapped[str] = mapped_column(String(16), nullable=False)
     priority: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -141,7 +147,7 @@ class KcIngestionJobEntity(_AuditEntity):
     heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    result_json: Mapped[dict[str, Any] | None] = mapped_column(OracleJSON)
+    result_json: Mapped[dict[str, Any] | None] = mapped_column(OracleNativeJSON)
     failure_class: Mapped[str | None] = mapped_column(String(16))
     failure_code: Mapped[str | None] = mapped_column(String(128))
     failure_message: Mapped[str | None] = mapped_column(String(1000))
@@ -160,11 +166,11 @@ class KcParseViewEntity(_AuditEntity):
     parser_name: Mapped[str] = mapped_column(String(128), nullable=False)
     parser_version: Mapped[str | None] = mapped_column(String(128))
     parse_config_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
-    parse_config_json: Mapped[dict[str, Any] | None] = mapped_column(OracleJSON)
+    parse_config_json: Mapped[dict[str, Any] | None] = mapped_column(OracleNativeJSON)
     view_status: Mapped[str] = mapped_column(String(16), nullable=False)
     quality_score: Mapped[float | None] = mapped_column(Numeric(8, 5))
-    quality_report_json: Mapped[dict[str, Any] | None] = mapped_column(OracleJSON)
-    artifact_manifest_json: Mapped[dict[str, Any] | None] = mapped_column(OracleJSON)
+    quality_report_json: Mapped[dict[str, Any] | None] = mapped_column(OracleNativeJSON)
+    artifact_manifest_json: Mapped[dict[str, Any] | None] = mapped_column(OracleNativeJSON)
     activated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     retired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
@@ -186,15 +192,15 @@ class KcEvidenceEntity(_AuditEntity):
     fragment_index: Mapped[int] = mapped_column(Numeric(19, 0), nullable=False, default=0)
     parent_evidence_key: Mapped[str | None] = mapped_column(String(256))
     source_item_ref: Mapped[str | None] = mapped_column(String(512))
-    source_spans_json: Mapped[list[dict[str, Any]]] = mapped_column(OracleJSON, nullable=False)
-    heading_path_json: Mapped[list[Any] | None] = mapped_column(OracleJSON)
+    source_spans_json: Mapped[list[dict[str, Any]]] = mapped_column(OracleNativeJSON, nullable=False)
+    heading_path_json: Mapped[list[Any] | None] = mapped_column(OracleNativeJSON)
     section_key: Mapped[str | None] = mapped_column(String(256))
     hierarchy_depth: Mapped[int | None] = mapped_column(Integer)
     heading_level: Mapped[int | None] = mapped_column(Integer)
     locator_schema_version: Mapped[str] = mapped_column(String(32), nullable=False)
-    locator_json: Mapped[dict[str, Any]] = mapped_column(OracleJSON, nullable=False)
+    locator_json: Mapped[dict[str, Any]] = mapped_column(OracleNativeJSON, nullable=False)
     payload_uri: Mapped[str | None] = mapped_column(String(2048))
-    provenance_json: Mapped[dict[str, Any]] = mapped_column(OracleJSON, nullable=False)
+    provenance_json: Mapped[dict[str, Any]] = mapped_column(OracleNativeJSON, nullable=False)
     content_text: Mapped[str] = mapped_column(Text, nullable=False)
     retrieval_text: Mapped[str] = mapped_column(Text, nullable=False)
     content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -213,4 +219,44 @@ class KcEvidenceEntity(_AuditEntity):
     embedding_config_fingerprint: Mapped[str | None] = mapped_column(String(64))
     embedding_input_hash: Mapped[str | None] = mapped_column(String(64))
     indexed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+
+
+class KcVisualAssetEntity(_AuditEntity):
+    """Parse View 内可独立进行以图搜图的页面或局部图片。"""
+
+    __tablename__ = "KBOT_KC_VISUAL_ASSET"
+    visual_asset_id: Mapped[UUID] = mapped_column(
+        UUIDv7Type(), primary_key=True, default=uuid7
+    )
+    collection_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
+    bundle_revision_id: Mapped[UUID] = mapped_column(
+        UUIDv7Type(), nullable=False
+    )
+    document_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
+    document_version_id: Mapped[UUID] = mapped_column(
+        UUIDv7Type(), nullable=False
+    )
+    parse_view_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
+    evidence_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
+    asset_key: Mapped[str] = mapped_column(String(256), nullable=False)
+    asset_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    page_no: Mapped[int | None] = mapped_column(Numeric(19, 0))
+    source_item_ref: Mapped[str | None] = mapped_column(String(512))
+    bbox_json: Mapped[dict[str, Any] | None] = mapped_column(OracleNativeJSON)
+    mime_type: Mapped[str] = mapped_column(String(128), nullable=False)
+    payload_uri: Mapped[str] = mapped_column(String(2048), nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    description_text: Mapped[str | None] = mapped_column(Text)
+    visual_embedding: Mapped[list[float] | None] = mapped_column(VectorField())
+    visual_embedding_model_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
+    visual_embedding_served_model_name: Mapped[str | None] = mapped_column(
+        String(128)
+    )
+    visual_embedding_config_fingerprint: Mapped[str | None] = mapped_column(
+        String(64)
+    )
+    indexed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
     status: Mapped[str] = mapped_column(String(16), nullable=False)

@@ -13,6 +13,7 @@ from platform_core.security import (
     AUTH_CONTEXT_HEADER,
     DOMAIN_ID_HEADER,
     INTERNAL_TOKEN_HEADER,
+    TEST_AUTH_BYPASS_HEADER,
     USER_ID_HEADER,
     AuthContextJWTCodec,
     AuthContextTokenError,
@@ -150,6 +151,75 @@ class PlatformSecurityTest(unittest.TestCase):
             "IDENTITY_CONTEXT_REQUIRED",
             response.json()["code"],
         )
+
+    def test_development_bypass_skips_key_but_keeps_domain_validation(
+        self,
+    ) -> None:
+        app = FastAPI()
+        app.middleware("http")(
+            create_public_auth_middleware(
+                domain_validator=self._valid_domain,
+                allow_test_bypass=True,
+            )
+        )
+
+        @app.get("/api/v1/context")
+        async def context(request: Request):
+            return get_auth_context(request).model_dump(mode="json")
+
+        client = TestClient(app)
+        response = client.get(
+            "/api/v1/context",
+            headers={
+                TEST_AUTH_BYPASS_HEADER: "true",
+                DOMAIN_ID_HEADER: "100",
+                USER_ID_HEADER: "ui-tester",
+            },
+        )
+        self.assertEqual(200, response.status_code)
+        payload = response.json()
+        self.assertEqual("kbot-development-test", payload["client_id"])
+        self.assertEqual(
+            "development-test-bypass",
+            payload["api_key_id"],
+        )
+        self.assertEqual("100", payload["domain_id"])
+
+        invalid_domain = client.get(
+            "/api/v1/context",
+            headers={
+                TEST_AUTH_BYPASS_HEADER: "true",
+                DOMAIN_ID_HEADER: "999",
+                USER_ID_HEADER: "ui-tester",
+            },
+        )
+        self.assertEqual(400, invalid_domain.status_code)
+        self.assertEqual("INVALID_DOMAIN", invalid_domain.json()["code"])
+
+    def test_bypass_header_is_ignored_when_disabled(self) -> None:
+        app = FastAPI()
+        app.middleware("http")(
+            create_public_auth_middleware(
+                verifier=self.verifier,
+                domain_validator=self._valid_domain,
+                allow_test_bypass=False,
+            )
+        )
+
+        @app.get("/api/v1/protected")
+        async def protected():
+            return {"ok": True}
+
+        response = TestClient(app).get(
+            "/api/v1/protected",
+            headers={
+                TEST_AUTH_BYPASS_HEADER: "true",
+                DOMAIN_ID_HEADER: "100",
+                USER_ID_HEADER: "ui-tester",
+            },
+        )
+        self.assertEqual(401, response.status_code)
+        self.assertEqual("AUTH_REQUIRED", response.json()["code"])
 
     def test_api_client_middleware_requires_key_but_not_domain(self) -> None:
         app = FastAPI()

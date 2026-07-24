@@ -2,6 +2,7 @@
 
 from datetime import datetime, timedelta, timezone
 from enum import StrEnum
+import json
 from typing import Any
 from uuid import UUID
 
@@ -16,7 +17,9 @@ from agent_runtime.domain.planning import (
 
 
 class RouteType(StrEnum):
+    CONVERSATION = "CONVERSATION"
     DOCUMENT = "DOCUMENT"
+    MCP_DATA = "MCP_DATA"
     AIOPS = "AIOPS"
     CLARIFY = "CLARIFY"
 
@@ -28,11 +31,16 @@ class RouteDecision(BaseModel):
     confidence: float = Field(ge=0, le=1)
     reason: str
     clarification_question: str | None = None
+    requires_chart: bool = False
     classifier_version: str = "deterministic-document-v1"
 
 
 class RootAgentPlanner:
     """按冻结 Agent 配置确定单一领域路由并生成可校验计划。"""
+
+    def __init__(self, *, model_client=None, prompt_resolver=None):
+        self._model_client = model_client
+        self._prompt_resolver = prompt_resolver
 
     def decide(
         self,
@@ -47,6 +55,13 @@ class RootAgentPlanner:
                 "default_route", ""
             )
         ).upper()
+        if capabilities == {"conversation"}:
+            return RouteDecision(
+                route_type=RouteType.CONVERSATION,
+                confidence=1.0,
+                reason="Agent 配置明确限定为 Conversation 路由",
+                classifier_version="deterministic-conversation-v1",
+            )
         if capabilities == {"document"} or (
             "document" in capabilities and default_route == "DOCUMENT"
         ):
@@ -80,15 +95,169 @@ class RootAgentPlanner:
                 reason="Agent 配置明确限定为 AIOps 路由",
                 classifier_version="deterministic-aiops-v1",
             )
+        if capabilities == {"mcp_data"}:
+            return RouteDecision(
+                route_type=RouteType.MCP_DATA,
+                confidence=1.0,
+                reason="Agent 配置明确限定为 MCP Data 路由",
+                classifier_version="deterministic-mcp-data-v1",
+            )
         return RouteDecision(
             route_type=RouteType.CLARIFY,
             confidence=0.0,
             reason="当前首版不能确定唯一执行路由",
             clarification_question=(
-                "该 Agent 需要在配置中指定 default_route=DOCUMENT "
-                "或 default_route=AIOPS；"
-                "多领域自然语言 Router 将在后续阶段启用。"
+                "当前 Agent 启用了多个聊天能力，但尚未完成本轮意图分类。"
             ),
+        )
+
+    async def decide_for_input(
+        self,
+        *,
+        agent_snapshot: dict[str, Any],
+        objective: str,
+        conversation_context: dict[str, Any] | None = None,
+        client_metadata: dict[str, Any] | None = None,
+    ) -> RouteDecision:
+        """单能力确定性路由；多能力使用冻结 Router 模型选择唯一分支。"""
+        capabilities = set(
+            agent_snapshot.get("enabled_capabilities") or []
+        )
+        if (
+            "document" in capabilities
+            and (client_metadata or {}).get("query_images")
+        ):
+            return RouteDecision(
+                route_type=RouteType.DOCUMENT,
+                confidence=1,
+                reason="请求包含查询图片，进入 Document 多模态检索",
+                classifier_version="deterministic-query-image-v1",
+            )
+        if capabilities == {"mcp_data"}:
+            decision = self.decide(agent_snapshot=agent_snapshot)
+            return decision.model_copy(
+                update={"requires_chart": self._requests_chart(objective)}
+            )
+        if len(capabilities) == 1 or "aiops" in capabilities:
+            return self.decide(agent_snapshot=agent_snapshot)
+        enabled_routes = [
+            route
+            for capability, route in (
+                ("conversation", "CONVERSATION"),
+                ("document", "DOCUMENT"),
+                ("mcp_data", "MCP_DATA"),
+            )
+            if capability in capabilities
+        ]
+        if not enabled_routes:
+            return self.decide(agent_snapshot=agent_snapshot)
+        model_name = str(
+            agent_snapshot.get("router_llm_model_name") or ""
+        ).strip()
+        if (
+            not model_name
+            or self._model_client is None
+            or self._prompt_resolver is None
+        ):
+            return RouteDecision(
+                route_type=RouteType.CLARIFY,
+                confidence=0,
+                reason="多能力 Agent 未配置可用的 Router 模型",
+                clarification_question=(
+                    "请先为该 Agent 配置 router_llm_model_name。"
+                ),
+                classifier_version="router-unavailable-v1",
+            )
+        prompt = await self._prompt_resolver.resolve(
+            "agent_runtime.intent_route"
+        )
+        context = conversation_context or {}
+        response = await self._model_client.get_llm_json(
+            served_model_name=model_name,
+            prompt=[
+                {"role": "system", "content": prompt.content},
+                {
+                    "role": "user",
+                    "content": json.dumps(
+                        {
+                            "enabled_routes": enabled_routes,
+                            "current_input": objective,
+                            "conversation_summary": (
+                                context.get("summary") or {}
+                            ),
+                            "recent_items": (
+                                context.get("recent_items") or []
+                            ),
+                        },
+                        ensure_ascii=False,
+                        default=str,
+                    ),
+                },
+            ],
+            max_tokens=1024,
+        )
+        route_value = str(
+            response.get("route_type") or "CLARIFY"
+        ).upper()
+        if route_value not in {*enabled_routes, "CLARIFY"}:
+            route_value = "CLARIFY"
+            response["reason"] = "模型选择了未启用的路由"
+            response["clarification_question"] = (
+                "请说明这是通用问题、文档查询还是业务数据查询。"
+            )
+        confidence = max(
+            0.0, min(float(response.get("confidence", 0)), 1.0)
+        )
+        threshold = max(
+            0.0,
+            min(
+                float(
+                    (agent_snapshot.get("config") or {}).get(
+                        "router_confidence_threshold", 0.6
+                    )
+                ),
+                1.0,
+            ),
+        )
+        if route_value != "CLARIFY" and confidence < threshold:
+            route_value = "CLARIFY"
+            response["reason"] = "自然语言路由置信度低于执行阈值"
+            response["clarification_question"] = (
+                "请说明这是通用问题、文档查询还是业务数据查询。"
+            )
+        requires_chart = bool(response.get("requires_chart", False))
+        if route_value != "MCP_DATA":
+            requires_chart = False
+        return RouteDecision(
+            route_type=RouteType(route_value),
+            confidence=confidence,
+            reason=str(response.get("reason") or "自然语言意图分类"),
+            clarification_question=(
+                str(response.get("clarification_question") or "").strip()
+                or None
+            ),
+            requires_chart=requires_chart,
+            classifier_version="llm-single-route-v1",
+        )
+
+    @staticmethod
+    def _requests_chart(value: str) -> bool:
+        normalized = value.casefold()
+        return any(
+            keyword in normalized
+            for keyword in (
+                "图表",
+                "可视化",
+                "趋势图",
+                "折线图",
+                "柱状图",
+                "饼图",
+                "散点图",
+                "echarts",
+                " chart",
+                "plot ",
+                "visualize",
+            )
         )
 
     def build_plan(
@@ -102,12 +271,39 @@ class RootAgentPlanner:
             return self._build_aiops_plan(
                 objective=objective, ttl_seconds=ttl_seconds
             )
+        if decision.route_type == RouteType.CONVERSATION:
+            return self._build_conversation_plan(
+                objective=objective, ttl_seconds=ttl_seconds
+            )
+        if decision.route_type == RouteType.CLARIFY:
+            return self._build_conversation_plan(
+                objective=objective, ttl_seconds=ttl_seconds
+            )
+        if decision.route_type == RouteType.MCP_DATA:
+            return self._build_mcp_data_plan(
+                objective=objective,
+                requires_chart=decision.requires_chart,
+                ttl_seconds=ttl_seconds,
+            )
         if decision.route_type != RouteType.DOCUMENT:
-            raise ValueError("CLARIFY 决策不能生成执行计划")
+            raise ValueError("不支持的路由不能生成执行计划")
         return PlanDraft(
             plan_version="document-plan-v1",
             objective=objective,
             tasks=(
+                TaskSpec(
+                    task_key="context_rewrite",
+                    task_type="CONTEXT_REWRITE",
+                    execution_kind=ExecutionKind.LOCAL_SKILL,
+                    specialist="conversation",
+                    skill_id="context-rewrite",
+                    skill_version="1.0.0",
+                    input_refs=("RUN_INPUT", "CONVERSATION_CONTEXT"),
+                    expected_outputs=("CONTEXT_REWRITE",),
+                    timeout_seconds=60,
+                    max_retries=1,
+                    execution_mode=ExecutionMode.READ_ONLY,
+                ),
                 TaskSpec(
                     task_key="knowledge_retrieval",
                     task_type="RETRIEVE",
@@ -115,7 +311,8 @@ class RootAgentPlanner:
                     specialist="document",
                     skill_id="knowledge-retrieval",
                     skill_version="1.0.0",
-                    input_refs=("RUN_INPUT",),
+                    depends_on=("context_rewrite",),
+                    input_refs=("task_output:context_rewrite",),
                     expected_outputs=("CITATION_PACK",),
                     required_scopes=(
                         "knowledge.discovery.read",
@@ -132,8 +329,12 @@ class RootAgentPlanner:
                     specialist="response_composer",
                     skill_id="response-composer",
                     skill_version="1.0.0",
-                    depends_on=("knowledge_retrieval",),
+                    depends_on=(
+                        "context_rewrite",
+                        "knowledge_retrieval",
+                    ),
                     input_refs=(
+                        "task_output:context_rewrite",
                         "task_output:knowledge_retrieval",
                     ),
                     expected_outputs=("GROUNDED_ANSWER",),
@@ -150,6 +351,136 @@ class RootAgentPlanner:
         )
 
     @staticmethod
+    def _build_conversation_plan(
+        *, objective: str, ttl_seconds: int
+    ) -> PlanDraft:
+        return PlanDraft(
+            plan_version="conversation-plan-v1",
+            objective=objective,
+            tasks=(
+                TaskSpec(
+                    task_key="context_rewrite",
+                    task_type="CONTEXT_REWRITE",
+                    execution_kind=ExecutionKind.LOCAL_SKILL,
+                    specialist="conversation",
+                    skill_id="context-rewrite",
+                    skill_version="1.0.0",
+                    input_refs=("RUN_INPUT", "CONVERSATION_CONTEXT"),
+                    expected_outputs=("CONTEXT_REWRITE",),
+                    timeout_seconds=60,
+                    max_retries=1,
+                    execution_mode=ExecutionMode.READ_ONLY,
+                ),
+                TaskSpec(
+                    task_key="conversation_response",
+                    task_type="COMPOSE",
+                    execution_kind=ExecutionKind.LOCAL_SKILL,
+                    specialist="conversation",
+                    skill_id="conversation-response",
+                    skill_version="1.0.0",
+                    depends_on=("context_rewrite",),
+                    input_refs=("task_output:context_rewrite",),
+                    expected_outputs=("GROUNDED_ANSWER",),
+                    timeout_seconds=120,
+                    max_retries=1,
+                    execution_mode=ExecutionMode.READ_ONLY,
+                ),
+            ),
+            final_task_key="conversation_response",
+            expires_at=(
+                datetime.now(timezone.utc)
+                + timedelta(seconds=ttl_seconds)
+            ),
+        )
+
+    @staticmethod
+    def _build_mcp_data_plan(
+        *,
+        objective: str,
+        requires_chart: bool,
+        ttl_seconds: int,
+    ) -> PlanDraft:
+        tasks = [
+            TaskSpec(
+                task_key="context_rewrite",
+                task_type="CONTEXT_REWRITE",
+                execution_kind=ExecutionKind.LOCAL_SKILL,
+                specialist="conversation",
+                skill_id="context-rewrite",
+                skill_version="1.0.0",
+                input_refs=("RUN_INPUT", "CONVERSATION_CONTEXT"),
+                expected_outputs=("CONTEXT_REWRITE",),
+                timeout_seconds=60,
+                max_retries=1,
+                execution_mode=ExecutionMode.READ_ONLY,
+            ),
+            TaskSpec(
+                task_key="mcp_data_query",
+                task_type="DATA_QUERY",
+                execution_kind=ExecutionKind.LOCAL_SKILL,
+                specialist="mcp_data",
+                skill_id="mcp-data-query",
+                skill_version="1.0.0",
+                depends_on=("context_rewrite",),
+                input_refs=("task_output:context_rewrite",),
+                expected_outputs=("QUERY_RESULT",),
+                timeout_seconds=180,
+                max_retries=2,
+                execution_mode=ExecutionMode.READ_ONLY,
+            ),
+        ]
+        compose_dependencies = ["context_rewrite", "mcp_data_query"]
+        compose_inputs = [
+            "task_output:context_rewrite",
+            "task_output:mcp_data_query",
+        ]
+        if requires_chart:
+            tasks.append(
+                TaskSpec(
+                    task_key="echarts",
+                    task_type="VISUALIZE",
+                    execution_kind=ExecutionKind.LOCAL_SKILL,
+                    specialist="mcp_data",
+                    skill_id="echarts",
+                    skill_version="1.0.0",
+                    depends_on=("mcp_data_query",),
+                    input_refs=("task_output:mcp_data_query",),
+                    expected_outputs=("ECHARTS_CONFIG",),
+                    timeout_seconds=120,
+                    max_retries=1,
+                    execution_mode=ExecutionMode.READ_ONLY,
+                )
+            )
+            compose_dependencies.append("echarts")
+            compose_inputs.append("task_output:echarts")
+        tasks.append(
+            TaskSpec(
+                task_key="response_compose",
+                task_type="COMPOSE",
+                execution_kind=ExecutionKind.LOCAL_SKILL,
+                specialist="response_composer",
+                skill_id="response-composer",
+                skill_version="1.0.0",
+                depends_on=tuple(compose_dependencies),
+                input_refs=tuple(compose_inputs),
+                expected_outputs=("GROUNDED_ANSWER",),
+                timeout_seconds=120,
+                max_retries=1,
+                execution_mode=ExecutionMode.READ_ONLY,
+            )
+        )
+        return PlanDraft(
+            plan_version="mcp-data-plan-v1",
+            objective=objective,
+            tasks=tuple(tasks),
+            final_task_key="response_compose",
+            expires_at=(
+                datetime.now(timezone.utc)
+                + timedelta(seconds=ttl_seconds)
+            ),
+        )
+
+    @staticmethod
     def _build_aiops_plan(
         *, objective: str, ttl_seconds: int
     ) -> PlanDraft:
@@ -158,13 +489,27 @@ class RootAgentPlanner:
             objective=objective,
             tasks=(
                 TaskSpec(
+                    task_key="context_rewrite",
+                    task_type="CONTEXT_REWRITE",
+                    execution_kind=ExecutionKind.LOCAL_SKILL,
+                    specialist="conversation",
+                    skill_id="context-rewrite",
+                    skill_version="1.0.0",
+                    input_refs=("RUN_INPUT", "CONVERSATION_CONTEXT"),
+                    expected_outputs=("CONTEXT_REWRITE",),
+                    timeout_seconds=60,
+                    max_retries=1,
+                    execution_mode=ExecutionMode.READ_ONLY,
+                ),
+                TaskSpec(
                     task_key="aiops_diagnosis",
                     task_type="DELEGATE",
                     execution_kind=ExecutionKind.DELEGATION,
                     specialist="aiops",
                     delegate_service="aiops_agent",
                     delegate_capability="diagnosis",
-                    input_refs=("RUN_INPUT",),
+                    depends_on=("context_rewrite",),
+                    input_refs=("task_output:context_rewrite",),
                     expected_outputs=("DELEGATED_AIOPS_RESULT",),
                     required_scopes=("aiops.delegate",),
                     timeout_seconds=600,
@@ -178,8 +523,11 @@ class RootAgentPlanner:
                     specialist="response_composer",
                     skill_id="response-composer",
                     skill_version="1.0.0",
-                    depends_on=("aiops_diagnosis",),
-                    input_refs=("task_output:aiops_diagnosis",),
+                    depends_on=("context_rewrite", "aiops_diagnosis"),
+                    input_refs=(
+                        "task_output:context_rewrite",
+                        "task_output:aiops_diagnosis",
+                    ),
                     expected_outputs=("GROUNDED_ANSWER",),
                     timeout_seconds=120,
                     max_retries=1,

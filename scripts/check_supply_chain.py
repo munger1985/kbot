@@ -117,7 +117,7 @@ def _tracked_files() -> tuple[Path, ...]:
     return tuple(
         ROOT / value.decode("utf-8")
         for value in output.split(b"\0")
-        if value
+        if value and (ROOT / value.decode("utf-8")).is_file()
     )
 
 

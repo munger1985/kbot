@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import unittest
 
 from agent_runtime.application import (
+    AppendTaskProgressCommand,
     AgentDefinitionNotFound,
     AgentDefinitionService,
     AgentRuntimeConflict,
@@ -329,8 +330,12 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
             display_name="文档助手",
             status="ACTIVE",
             enabled_capabilities_json=["document"],
-            router_model_name="router-model",
-            composer_model_name="composer-model",
+            router_llm_model_name="router-model",
+            context_llm_model_name="context-model",
+            composer_llm_model_name="composer-model",
+            memory_llm_model_name="memory-model",
+            query_vlm_model_name="query-vlm-model",
+            memory_embedding_model_name="memory-embedding-model",
             instruction="仅基于可验证证据回答。",
             config_json={"answer_language": "zh-CN"},
             row_version=1,
@@ -385,7 +390,7 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
         created = await service.create_run(self.create_command)
 
         self.assertEqual(created.status, "RUNNING")
-        self.assertEqual(len(self.store.tasks), 2)
+        self.assertEqual(len(self.store.tasks), 3)
         self.assertEqual(
             [event.event_type for event in self.store.events],
             ["RUN_CREATED", "RUN_STARTED"],
@@ -429,6 +434,40 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
                 trace_id="trace-aiops",
             )
         )
+        await service.complete_task(
+            CompleteTaskCommand(
+                task_id=lease.task_id,
+                expected_row_version=lease.row_version,
+                worker_id="worker-1",
+                lease_token=lease.lease_token,
+                artifact=ArtifactInput(
+                    artifact_type="CONTEXT_REWRITE",
+                    schema_version="ContextRewriteOutput.v1",
+                    producer="context-rewrite",
+                    producer_version="1.0.0",
+                    payload={
+                        "raw_input": "分析数据库性能问题",
+                        "standalone_query": "分析数据库性能问题",
+                        "retrieval_queries": ["分析数据库性能问题"],
+                        "resolved_references": [],
+                        "active_topic": None,
+                        "ambiguity": False,
+                        "clarification_question": None,
+                        "memory_refs": [],
+                    },
+                ),
+                actor_id="worker-1",
+                trace_id="trace-aiops",
+                idempotency_key="rewrite-complete",
+            )
+        )
+        lease = await service.claim_task(
+            ClaimTaskCommand(
+                worker_id="worker-1",
+                lease_seconds=120,
+                trace_id="trace-aiops",
+            )
+        )
 
         delegation_id = await service.start_delegation(
             StartDelegationCommand(
@@ -459,7 +498,10 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
                 agent_key="case-agent",
                 display_name="案例助手",
                 enabled_capabilities=("document",),
-                composer_model_name="composer-model",
+                context_llm_model_name="context-model",
+                composer_llm_model_name="composer-model",
+                memory_llm_model_name="memory-model",
+                memory_embedding_model_name="memory-embedding-model",
                 status="ACTIVE",
                 actor_id="admin-1",
             )
@@ -486,9 +528,30 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
             snapshot["agent"]["agent_key"], "document-assistant"
         )
         self.assertEqual(
-            snapshot["agent"]["composer_model_name"], "composer-model"
+            snapshot["agent"]["composer_llm_model_name"], "composer-model"
+        )
+        self.assertEqual(
+            snapshot["agent"]["memory_llm_model_name"], "memory-model"
         )
         self.assertEqual(snapshot["retrieval"]["collection_ids"], [])
+
+    async def test_memory_embedding_model_is_immutable_once_set(self):
+        with self.assertRaises(AgentRuntimeConflict) as raised:
+            await self.definition_service.update(
+                UpdateAgentDefinitionCommand(
+                    app_id=1,
+                    domain_id=20,
+                    agent_id=self.agent_id,
+                    expected_row_version=1,
+                    memory_embedding_model_name="another-embedding",
+                    actor_id="admin-1",
+                )
+            )
+
+        self.assertEqual(
+            raised.exception.code,
+            "MEMORY_EMBEDDING_MODEL_IMMUTABLE",
+        )
 
     async def test_create_run_is_idempotent_and_checks_fingerprint(self):
         first = await self.service.create_run(self.create_command)
@@ -548,6 +611,18 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
             )
         )
         self.assertIsNotNone(lease)
+        await self.service.append_task_progress(
+            AppendTaskProgressCommand(
+                task_id=lease.task_id,
+                worker_id="worker-1",
+                lease_token=lease.lease_token,
+                event_type="answer.delta",
+                payload={"chunk_index": 1, "delta": "完成"},
+                actor_id="worker-1",
+                trace_id="trace-1",
+                idempotency_key="delta-1",
+            )
+        )
         completed = await self.service.complete_task(
             CompleteTaskCommand(
                 task_id=lease.task_id,
@@ -582,7 +657,10 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
                 "RUN_CREATED",
                 "RUN_STARTED",
                 "TASK_STARTED",
+                "skill.started",
+                "answer.delta",
                 "ARTIFACT_CREATED",
+                "answer.completed",
                 "TASK_COMPLETED",
                 "RUN_COMPLETED",
             ],
@@ -722,6 +800,40 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
                 idempotency_key="document-plan-1",
             )
         )
+        rewrite_lease = await self.service.claim_task(
+            ClaimTaskCommand(
+                worker_id="worker-1",
+                lease_seconds=120,
+                trace_id="trace-1",
+            )
+        )
+        await self.service.complete_task(
+            CompleteTaskCommand(
+                task_id=rewrite_lease.task_id,
+                expected_row_version=rewrite_lease.row_version,
+                worker_id="worker-1",
+                lease_token=rewrite_lease.lease_token,
+                artifact=ArtifactInput(
+                    artifact_type="CONTEXT_REWRITE",
+                    schema_version="ContextRewriteOutput.v1",
+                    producer="context-rewrite",
+                    producer_version="1.0.0",
+                    payload={
+                        "raw_input": "总结上传文档",
+                        "standalone_query": "总结上传文档",
+                        "retrieval_queries": ["总结上传文档"],
+                        "resolved_references": [],
+                        "active_topic": None,
+                        "ambiguity": False,
+                        "clarification_question": None,
+                        "memory_refs": [],
+                    },
+                ),
+                actor_id="worker-1",
+                trace_id="trace-1",
+                idempotency_key="rewrite-complete",
+            )
+        )
         retrieval_lease = await self.service.claim_task(
             ClaimTaskCommand(
                 worker_id="worker-1",
@@ -756,10 +868,13 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
             )
         )
         self.assertEqual(compose_lease.task_key, "response_compose")
-        self.assertEqual(len(compose_lease.input_artifacts), 1)
+        self.assertEqual(len(compose_lease.input_artifacts), 2)
         self.assertEqual(
-            compose_lease.input_artifacts[0].artifact_type,
-            "CITATION_PACK",
+            {
+                item.artifact_type
+                for item in compose_lease.input_artifacts
+            },
+            {"CONTEXT_REWRITE", "CITATION_PACK"},
         )
 
 

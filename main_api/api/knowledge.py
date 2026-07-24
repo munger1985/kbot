@@ -23,7 +23,11 @@ router = APIRouter(
 class CollectionCreateRequest(BaseModel):
     collection_key: str = Field(pattern=r"^[a-z][a-z0-9_-]{1,63}$")
     display_name: str = Field(min_length=1, max_length=256)
+    parser_llm_model_id: UUID
+    parser_vlm_model_id: UUID | None = None
+    retrieval_llm_model_id: UUID
     embedding_model_id: UUID
+    visual_embedding_model_id: UUID | None = None
     description: str | None = Field(default=None, max_length=1000)
     default_security_level: int = Field(default=1, ge=0, le=999)
     metadata: dict[str, Any] = Field(default_factory=dict)
@@ -33,8 +37,19 @@ class CollectionStatusRequest(BaseModel):
     status: str = Field(pattern=r"^(ACTIVE|DISABLED)$")
 
 
+class CollectionGenerationModelsRequest(BaseModel):
+    parser_llm_model_id: UUID
+    parser_vlm_model_id: UUID | None = None
+    retrieval_llm_model_id: UUID
+
+
 class CollectionBindingRequest(BaseModel):
     note: str | None = Field(default=None, max_length=1000)
+
+
+class IntakeReviewRequest(BaseModel):
+    decision: str = Field(pattern=r"^(APPROVE|REJECT)$")
+    comment: str | None = Field(default=None, max_length=1000)
 
 
 def _domain_id(request: Request) -> int:
@@ -94,6 +109,21 @@ async def change_collection_status(
         domain_id=_domain_id(request),
         collection_key=collection_key,
         status=payload.status,
+        auth_context=context,
+    )
+
+
+@router.put("/collections/{collection_key}/generation-models")
+async def update_collection_generation_models(
+    collection_key: str,
+    payload: CollectionGenerationModelsRequest,
+    request: Request,
+):
+    context = get_auth_context(request)
+    return await _client(request).update_collection_generation_models(
+        domain_id=_domain_id(request),
+        collection_key=collection_key,
+        payload=payload.model_dump(mode="json"),
         auth_context=context,
     )
 
@@ -199,6 +229,40 @@ async def get_revision_members(
         bundle_id=bundle_id,
         bundle_revision_id=bundle_revision_id,
         include_members=True,
+        auth_context=context,
+    )
+
+
+@router.get("/collections/{collection_key}/approvals")
+async def list_pending_approvals(
+    collection_key: str,
+    request: Request,
+):
+    context = get_auth_context(request)
+    return await _client(request).list_pending_approvals(
+        domain_id=_domain_id(request),
+        collection_key=collection_key,
+        auth_context=context,
+    )
+
+
+@router.post(
+    "/collections/{collection_key}/bundle-revisions/"
+    "{bundle_revision_id}/approval",
+)
+async def review_user_intake(
+    collection_key: str,
+    bundle_revision_id: UUID,
+    payload: IntakeReviewRequest,
+    request: Request,
+):
+    context = get_auth_context(request)
+    return await _client(request).review_user_intake(
+        domain_id=_domain_id(request),
+        collection_key=collection_key,
+        bundle_revision_id=bundle_revision_id,
+        decision=payload.decision,
+        comment=payload.comment,
         auth_context=context,
     )
 

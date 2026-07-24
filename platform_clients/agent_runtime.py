@@ -90,6 +90,15 @@ class AgentRuntimeClient:
             auth_context=auth_context,
         )
 
+    async def list_data_profiles(
+        self, *, auth_context: AuthContext
+    ) -> Any:
+        return await self._json(
+            "GET",
+            f"{INTERNAL_API_V1}/data/profiles",
+            auth_context=auth_context,
+        )
+
     async def create_run(
         self,
         *,
@@ -103,6 +112,143 @@ class AgentRuntimeClient:
             payload=payload,
             auth_context=auth_context,
             extra_headers={"Idempotency-Key": idempotency_key},
+        )
+
+    async def create_conversation(
+        self, *, payload: dict[str, Any], auth_context: AuthContext
+    ) -> dict[str, Any]:
+        return await self._json(
+            "POST",
+            f"{INTERNAL_API_V1}/conversations",
+            payload=payload,
+            auth_context=auth_context,
+        )
+
+    async def list_conversations(
+        self, *, limit: int, auth_context: AuthContext
+    ) -> list[dict[str, Any]]:
+        return await self._json(
+            "GET",
+            f"{INTERNAL_API_V1}/conversations?limit={limit}",
+            auth_context=auth_context,
+        )
+
+    async def get_conversation(
+        self, *, conversation_id: UUID, auth_context: AuthContext
+    ) -> dict[str, Any]:
+        return await self._json(
+            "GET",
+            f"{INTERNAL_API_V1}/conversations/{conversation_id}",
+            auth_context=auth_context,
+        )
+
+    async def update_conversation(
+        self,
+        *,
+        conversation_id: UUID,
+        payload: dict[str, Any],
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "PATCH",
+            f"{INTERNAL_API_V1}/conversations/{conversation_id}",
+            payload=payload,
+            auth_context=auth_context,
+        )
+
+    async def delete_conversation(
+        self,
+        *,
+        conversation_id: UUID,
+        expected_row_version: int,
+        auth_context: AuthContext,
+    ) -> None:
+        await self._json(
+            "DELETE",
+            (
+                f"{INTERNAL_API_V1}/conversations/{conversation_id}"
+                f"?expected_row_version={expected_row_version}"
+            ),
+            auth_context=auth_context,
+        )
+
+    async def create_conversation_turn(
+        self,
+        *,
+        conversation_id: UUID,
+        payload: dict[str, Any],
+        idempotency_key: str,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "POST",
+            (
+                f"{INTERNAL_API_V1}/conversations/"
+                f"{conversation_id}/turns"
+            ),
+            payload=payload,
+            auth_context=auth_context,
+            extra_headers={"Idempotency-Key": idempotency_key},
+        )
+
+    async def list_conversation_turns(
+        self,
+        *,
+        conversation_id: UUID,
+        after: int,
+        limit: int,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "GET",
+            (
+                f"{INTERNAL_API_V1}/conversations/{conversation_id}/turns"
+                f"?after={after}&limit={limit}"
+            ),
+            auth_context=auth_context,
+        )
+
+    async def list_turn_trace(
+        self,
+        *,
+        conversation_id: UUID,
+        turn_id: UUID,
+        after: int,
+        limit: int,
+        auth_context: AuthContext,
+    ) -> list[dict[str, Any]]:
+        return await self._json(
+            "GET",
+            (
+                f"{INTERNAL_API_V1}/conversations/{conversation_id}/turns/"
+                f"{turn_id}/trace?after={after}&limit={limit}"
+            ),
+            auth_context=auth_context,
+        )
+
+    async def list_memories(
+        self,
+        *,
+        agent_id: UUID,
+        limit: int,
+        auth_context: AuthContext,
+    ) -> list[dict[str, Any]]:
+        return await self._json(
+            "GET",
+            (
+                f"{INTERNAL_API_V1}/memories"
+                f"?agent_id={agent_id}&limit={limit}"
+            ),
+            auth_context=auth_context,
+        )
+
+    async def forget_memory(
+        self, *, memory_id: UUID, auth_context: AuthContext
+    ) -> None:
+        await self._json(
+            "DELETE",
+            f"{INTERNAL_API_V1}/memories/{memory_id}",
+            auth_context=auth_context,
         )
 
     async def get_run(

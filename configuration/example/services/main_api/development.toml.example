@@ -1,1 +1,3 @@
-# 仅填写 Main API 在开发环境需要覆盖的字段。
+[api]
+# 仅供 ui/ 下的本地测试页面使用；生产环境禁止开启。
+test_auth_bypass_enabled = true

@@ -32,6 +32,7 @@ class ModelUpdateRequest(BaseModel):
     api_endpoint: str | None = Field(default=None, max_length=1024)
     api_key: str | None = Field(default=None, max_length=4096)
     status: int | None = Field(default=None, ge=0, le=2)
+    model_params: dict[str, Any] | None = None
     descs: str | None = Field(default=None, max_length=512)
 
 

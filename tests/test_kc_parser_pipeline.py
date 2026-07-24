@@ -8,6 +8,11 @@ from knowledge_core.adapters.local_parser_artifact_store import LocalParserArtif
 from knowledge_core.parsing import canonical_json_hash
 from knowledge_core.parsing.evidence_planner import EvidencePolicy
 from knowledge_core.parsing.pipeline import KcParsingPipeline
+from knowledge_core.workers.parser.visual_enricher import (
+    PageQualityAssessment,
+    VisualEnrichmentResult,
+    VisualPageResult,
+)
 from tests.test_kc_docling_atom_normalizer import FakeDocument, item
 
 
@@ -70,6 +75,17 @@ class ParserPipelineTest(unittest.TestCase):
         })
         self.assertTrue(output.evidences)
         self.assertTrue(all(value.evidence_key.startswith("ev1:20:") for value in output.evidences))
+        self.assertFalse(
+            output.quality_report.metrics["image_processing"][
+                "visual_embedding"
+            ]["enabled"]
+        )
+        self.assertEqual(
+            output.quality_report.metrics["image_processing"]["vlm"][
+                "skip_reason"
+            ],
+            "COMPONENT_NOT_AVAILABLE",
+        )
 
     def test_local_artifact_store_is_content_addressed_and_idempotent(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -148,6 +164,141 @@ class ParserPipelineTest(unittest.TestCase):
         image = next(value for value in output.evidences if value.evidence_type == "IMAGE")
         self.assertIn("three service nodes", image.content_text)
         self.assertIn("VLM", image.provenance["extractors"])
+
+    def test_low_quality_page_is_replaced_by_visual_markdown(self):
+        document = FakeDocument([
+            item(
+                source_ref="#/texts/0",
+                label="text",
+                text="乱码",
+            ),
+            item(
+                source_ref="#/texts/1",
+                label="text",
+                text="设备序列号 SN-001",
+            ),
+        ])
+        enrichment = VisualEnrichmentResult(
+            strategy="AUTO",
+            picture_description_count=0,
+            page_assessments=(
+                PageQualityAssessment(
+                    page_no=1,
+                    text_characters=2,
+                    mean_confidence=0.4,
+                    gibberish_ratio=0,
+                    image_available=True,
+                    requires_visual=True,
+                    reasons=("LOW_TEXT_COVERAGE",),
+                ),
+            ),
+            page_results=(
+                VisualPageResult(
+                    page_no=1,
+                    markdown=(
+                        "# 设备巡检\n\n"
+                        "数据库实例运行正常。\n\n"
+                        "| 指标 | 数值 |\n| --- | --- |\n| CPU | 20% |"
+                    ),
+                    served_model_name="vlm-a",
+                    confidence=0.82,
+                    replace_docling=True,
+                    selection_reasons=("LOW_TEXT_COVERAGE",),
+                ),
+            ),
+            failed_page_numbers=(),
+        )
+
+        output = KcParsingPipeline(parser_version="4.0-test").parse(
+            document_version_id=10,
+            parse_view_id=20,
+            document=document,
+            visual_enrichment=enrichment,
+            visual_embedding_enabled=True,
+        )
+
+        contents = [evidence.content_text for evidence in output.evidences]
+        self.assertNotIn("乱码", contents)
+        self.assertTrue(
+            any("数据库实例运行正常" in content for content in contents)
+        )
+        self.assertTrue(
+            any("SN-001" in content for content in contents)
+        )
+        self.assertTrue(
+            any(
+                evidence.evidence_type == "TABLE"
+                for evidence in output.evidences
+            )
+        )
+        self.assertIn("visual_analysis", output.artifacts)
+        self.assertEqual(
+            1,
+            output.quality_report.metrics[
+                "visual_enrichment"
+            ]["replaced_page_count"],
+        )
+        self.assertTrue(
+            output.quality_report.metrics["image_processing"]["vlm"][
+                "enabled"
+            ]
+        )
+        self.assertEqual(
+            output.quality_report.metrics["image_processing"][
+                "visual_embedding"
+            ]["status"],
+            "DEFERRED_TO_INDEX",
+        )
+
+    def test_hybrid_visual_result_corrects_matching_heading(self):
+        document = FakeDocument([
+            item(
+                source_ref="#/texts/0",
+                label="text",
+                text="2 部署步骤",
+            ),
+            item(
+                source_ref="#/texts/1",
+                label="text",
+                text="先安装数据库，再启动服务。",
+            ),
+        ])
+        enrichment = VisualEnrichmentResult(
+            strategy="HYBRID",
+            picture_description_count=0,
+            page_assessments=(),
+            page_results=(
+                VisualPageResult(
+                    page_no=1,
+                    markdown="# 2 部署步骤\n\n> 服务依赖关系图",
+                    served_model_name="vlm-a",
+                    confidence=0.82,
+                    replace_docling=False,
+                    selection_reasons=(),
+                ),
+            ),
+            failed_page_numbers=(),
+        )
+
+        output = KcParsingPipeline(parser_version="4.0-test").parse(
+            document_version_id=10,
+            parse_view_id=20,
+            document=document,
+            visual_enrichment=enrichment,
+        )
+
+        headings = [
+            evidence
+            for evidence in output.evidences
+            if evidence.evidence_type == "SECTION"
+        ]
+        images = [
+            evidence
+            for evidence in output.evidences
+            if evidence.evidence_type == "IMAGE"
+        ]
+        self.assertEqual(headings[0].heading_level, 1)
+        self.assertIn("服务依赖关系图", images[0].content_text)
 
 
 if __name__ == "__main__":

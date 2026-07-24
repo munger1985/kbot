@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class CreateAgentRunRequest(BaseModel):
@@ -18,6 +18,14 @@ class CreateAgentRunRequest(BaseModel):
     security_level: int = Field(default=0, ge=0, le=999)
     client_metadata: dict[str, Any] = Field(default_factory=dict)
 
+    @model_validator(mode="after")
+    def reject_internal_attachment_metadata(self) -> "CreateAgentRunRequest":
+        if "query_images" in self.client_metadata:
+            raise ValueError(
+                "查询图片只能通过 Conversation multipart 接口上传"
+            )
+        return self
+
 
 class CreateAgentDefinitionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -26,8 +34,23 @@ class CreateAgentDefinitionRequest(BaseModel):
     display_name: str = Field(min_length=1, max_length=256)
     description: str | None = Field(default=None, max_length=1000)
     enabled_capabilities: tuple[str, ...] = Field(min_length=1)
-    router_model_name: str | None = Field(default=None, max_length=128)
-    composer_model_name: str = Field(min_length=1, max_length=128)
+    router_llm_model_name: str | None = Field(default=None, max_length=128)
+    context_llm_model_name: str = Field(min_length=1, max_length=128)
+    composer_llm_model_name: str = Field(min_length=1, max_length=128)
+    memory_llm_model_name: str = Field(min_length=1, max_length=128)
+    query_vlm_model_name: str | None = Field(
+        default=None, min_length=1, max_length=128
+    )
+    chart_llm_model_name: str | None = Field(
+        default=None, min_length=1, max_length=128
+    )
+    memory_embedding_model_name: str = Field(
+        min_length=1, max_length=128
+    )
+    do_rerank: bool = False
+    data_profile_name: str | None = Field(
+        default=None, min_length=1, max_length=256
+    )
     instruction: str | None = Field(default=None, max_length=32000)
     config: dict[str, Any] = Field(default_factory=dict)
     status: str = Field(default="DRAFT", pattern=r"^(DRAFT|ACTIVE)$")
@@ -40,9 +63,28 @@ class UpdateAgentDefinitionRequest(BaseModel):
     display_name: str | None = Field(default=None, min_length=1, max_length=256)
     description: str | None = Field(default=None, max_length=1000)
     enabled_capabilities: tuple[str, ...] | None = None
-    router_model_name: str | None = Field(default=None, max_length=128)
-    composer_model_name: str | None = Field(
+    router_llm_model_name: str | None = Field(default=None, max_length=128)
+    context_llm_model_name: str | None = Field(
         default=None, min_length=1, max_length=128
+    )
+    composer_llm_model_name: str | None = Field(
+        default=None, min_length=1, max_length=128
+    )
+    memory_llm_model_name: str | None = Field(
+        default=None, min_length=1, max_length=128
+    )
+    query_vlm_model_name: str | None = Field(
+        default=None, min_length=1, max_length=128
+    )
+    chart_llm_model_name: str | None = Field(
+        default=None, min_length=1, max_length=128
+    )
+    memory_embedding_model_name: str | None = Field(
+        default=None, min_length=1, max_length=128
+    )
+    do_rerank: bool | None = None
+    data_profile_name: str | None = Field(
+        default=None, min_length=1, max_length=256
     )
     instruction: str | None = Field(default=None, max_length=32000)
     config: dict[str, Any] | None = None
@@ -61,8 +103,15 @@ class AgentDefinition(BaseModel):
     description: str | None = None
     status: str
     enabled_capabilities: tuple[str, ...]
-    router_model_name: str | None = None
-    composer_model_name: str
+    router_llm_model_name: str | None = None
+    context_llm_model_name: str
+    composer_llm_model_name: str
+    memory_llm_model_name: str
+    query_vlm_model_name: str | None = None
+    chart_llm_model_name: str | None = None
+    memory_embedding_model_name: str
+    do_rerank: bool
+    data_profile_name: str | None = None
     instruction: str | None = None
     config: dict[str, Any]
     row_version: int = Field(ge=1)

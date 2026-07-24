@@ -60,6 +60,39 @@ class AIModelConfigClient:
             logger.error("读取模型配置失败: {}", exc)
             raise RuntimeError("model configuration service is unavailable") from exc
 
+    async def list_models(self) -> list[dict[str, Any]]:
+        """读取当前模型进程所管理的模型定义。"""
+        url = f"{self.base_url}{INTERNAL_API_V1}/models"
+        headers = {
+            "Accept": "application/json",
+            **build_internal_auth_headers(
+                audience=self.audience,
+                caller_service=self.caller_service,
+            ),
+        }
+        try:
+            timeout = aiohttp.ClientTimeout(total=self.timeout)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(url, headers=headers) as response:
+                    if response.status != 200:
+                        detail = await response.text()
+                        raise RuntimeError(
+                            "模型服务返回异常状态 HTTP "
+                            f"{response.status}: {detail}"
+                        )
+                    payload = await response.json()
+                    rows = payload.get("models")
+                    if not isinstance(rows, list):
+                        raise RuntimeError(
+                            "模型服务返回了无效的模型目录"
+                        )
+                    return [
+                        row for row in rows if isinstance(row, dict)
+                    ]
+        except Exception as exc:
+            logger.error("读取模型目录失败: {}", exc)
+            raise RuntimeError("模型配置服务暂时不可用") from exc
+
 @dataclass
 class LLMChunk:
     """标准化的 Chunk 对象，兼容原生推理字段"""
@@ -333,6 +366,66 @@ class AIModelClient():
             msg = f"LLM服务发生错误: {e}"
             logger.error(msg)
             raise InternalServerError(msg)
+
+    async def stream_llm_chunks(
+        self,
+        *,
+        served_model_name: str,
+        prompt: list[dict[str, str]] | str,
+        **kwargs,
+    ) -> AsyncGenerator[LLMChunk, None]:
+        """把模型服务的 SSE 响应归一为正文与推理摘要增量。"""
+        pending = ""
+        async for raw in self.call_llm_model(
+            served_model_name=served_model_name,
+            prompt=prompt,
+            stream=True,
+            **kwargs,
+        ):
+            pending += raw
+            lines = pending.splitlines(keepends=True)
+            pending = ""
+            if lines and not lines[-1].endswith(("\n", "\r")):
+                pending = lines.pop()
+            for line in lines:
+                chunk = self._decode_llm_stream_line(line)
+                if chunk is not None:
+                    yield chunk
+        if pending.strip():
+            chunk = self._decode_llm_stream_line(pending)
+            if chunk is not None:
+                yield chunk
+
+    @staticmethod
+    def _decode_llm_stream_line(line: str) -> LLMChunk | None:
+        value = line.strip()
+        if not value or value in {"data: [DONE]", "[DONE]"}:
+            return None
+        if value.startswith("data:"):
+            value = value[5:].strip()
+        try:
+            payload = json.loads(value)
+        except json.JSONDecodeError:
+            return LLMChunk(content=value)
+        choices = payload.get("choices") or []
+        if not choices:
+            return None
+        choice = choices[0]
+        delta = choice.get("delta") or choice.get("message") or {}
+        content = delta.get("content") or ""
+        reasoning = (
+            delta.get("reasoning_content")
+            or delta.get("reasoning")
+            or None
+        )
+        if not content and not reasoning:
+            return None
+        return LLMChunk(
+            content=str(content),
+            reasoning_content=(
+                str(reasoning) if reasoning is not None else None
+            ),
+        )
 
     async def call_vlm_model(
             self,
@@ -924,7 +1017,23 @@ class AIModelClient():
                         raise InternalServerError(msg)
 
                     data = await response.json()
-                    return data.get("embedding", [])
+                    returned_model = str(
+                        data.get("served_model_name") or ""
+                    )
+                    embedding = data.get("embedding", [])
+                    if returned_model != served_model_name:
+                        raise InternalServerError(
+                            "视觉嵌入服务返回了错误的模型身份"
+                        )
+                    if (
+                        not isinstance(embedding, list)
+                        or int(data.get("dimension") or 0)
+                        != len(embedding)
+                    ):
+                        raise InternalServerError(
+                            "视觉嵌入服务返回了无效向量"
+                        )
+                    return embedding
 
         except aiohttp.ClientConnectorError:
             msg = f"无法连接到视觉嵌入服务 {base_url}"

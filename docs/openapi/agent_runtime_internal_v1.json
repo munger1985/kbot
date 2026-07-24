@@ -127,14 +127,40 @@
             "title": "Agent Key",
             "type": "string"
           },
-          "composer_model_name": {
-            "title": "Composer Model Name",
+          "chart_llm_model_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chart Llm Model Name"
+          },
+          "composer_llm_model_name": {
+            "title": "Composer Llm Model Name",
             "type": "string"
           },
           "config": {
             "additionalProperties": true,
             "title": "Config",
             "type": "object"
+          },
+          "context_llm_model_name": {
+            "title": "Context Llm Model Name",
+            "type": "string"
+          },
+          "data_profile_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Profile Name"
           },
           "description": {
             "anyOf": [
@@ -150,6 +176,10 @@
           "display_name": {
             "title": "Display Name",
             "type": "string"
+          },
+          "do_rerank": {
+            "title": "Do Rerank",
+            "type": "boolean"
           },
           "domain_id": {
             "title": "Domain Id",
@@ -173,7 +203,15 @@
             ],
             "title": "Instruction"
           },
-          "router_model_name": {
+          "memory_embedding_model_name": {
+            "title": "Memory Embedding Model Name",
+            "type": "string"
+          },
+          "memory_llm_model_name": {
+            "title": "Memory Llm Model Name",
+            "type": "string"
+          },
+          "query_vlm_model_name": {
             "anyOf": [
               {
                 "type": "string"
@@ -182,7 +220,18 @@
                 "type": "null"
               }
             ],
-            "title": "Router Model Name"
+            "title": "Query Vlm Model Name"
+          },
+          "router_llm_model_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Router Llm Model Name"
           },
           "row_version": {
             "title": "Row Version",
@@ -201,8 +250,15 @@
           "description",
           "status",
           "enabled_capabilities",
-          "router_model_name",
-          "composer_model_name",
+          "router_llm_model_name",
+          "context_llm_model_name",
+          "composer_llm_model_name",
+          "memory_llm_model_name",
+          "query_vlm_model_name",
+          "chart_llm_model_name",
+          "memory_embedding_model_name",
+          "do_rerank",
+          "data_profile_name",
           "instruction",
           "config",
           "row_version"
@@ -535,6 +591,382 @@
         "title": "CompletionRequirement",
         "type": "string"
       },
+      "ConversationItemView": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artifact Id"
+          },
+          "content": {
+            "additionalProperties": true,
+            "title": "Content",
+            "type": "object"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "item_id": {
+            "format": "uuid",
+            "title": "Item Id",
+            "type": "string"
+          },
+          "item_sequence": {
+            "minimum": 1.0,
+            "title": "Item Sequence",
+            "type": "integer"
+          },
+          "item_type": {
+            "title": "Item Type",
+            "type": "string"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          }
+        },
+        "required": [
+          "item_id",
+          "item_sequence",
+          "item_type",
+          "role",
+          "content",
+          "created_at"
+        ],
+        "title": "ConversationItemView",
+        "type": "object"
+      },
+      "ConversationQueryImage": {
+        "additionalProperties": false,
+        "properties": {
+          "content_base64": {
+            "maxLength": 25165824,
+            "minLength": 1,
+            "title": "Content Base64",
+            "type": "string"
+          },
+          "file_name": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "File Name",
+            "type": "string"
+          },
+          "mime_type": {
+            "pattern": "^image/(png|jpeg|webp)$",
+            "title": "Mime Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file_name",
+          "mime_type",
+          "content_base64"
+        ],
+        "title": "ConversationQueryImage",
+        "type": "object"
+      },
+      "ConversationTurnPage": {
+        "additionalProperties": false,
+        "properties": {
+          "conversation_id": {
+            "format": "uuid",
+            "title": "Conversation Id",
+            "type": "string"
+          },
+          "next_sequence": {
+            "minimum": 0.0,
+            "title": "Next Sequence",
+            "type": "integer"
+          },
+          "turns": {
+            "items": {
+              "$ref": "#/components/schemas/ConversationTurnView"
+            },
+            "title": "Turns",
+            "type": "array"
+          }
+        },
+        "required": [
+          "conversation_id",
+          "turns",
+          "next_sequence"
+        ],
+        "title": "ConversationTurnPage",
+        "type": "object"
+      },
+      "ConversationTurnReceipt": {
+        "additionalProperties": false,
+        "properties": {
+          "conversation_id": {
+            "format": "uuid",
+            "title": "Conversation Id",
+            "type": "string"
+          },
+          "event_cursor": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Event Cursor",
+            "type": "integer"
+          },
+          "events_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Events Url"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "run_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Status"
+          },
+          "turn_id": {
+            "format": "uuid",
+            "title": "Turn Id",
+            "type": "string"
+          },
+          "turn_sequence": {
+            "minimum": 1.0,
+            "title": "Turn Sequence",
+            "type": "integer"
+          },
+          "turn_status": {
+            "title": "Turn Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "conversation_id",
+          "turn_id",
+          "turn_sequence",
+          "turn_status"
+        ],
+        "title": "ConversationTurnReceipt",
+        "type": "object"
+      },
+      "ConversationTurnView": {
+        "additionalProperties": false,
+        "properties": {
+          "assistant_item": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConversationItemView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "conversation_id": {
+            "format": "uuid",
+            "title": "Conversation Id",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "memory_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Status"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "trace_summary": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/PublicTraceEvent"
+            },
+            "title": "Trace Summary",
+            "type": "array"
+          },
+          "turn_id": {
+            "format": "uuid",
+            "title": "Turn Id",
+            "type": "string"
+          },
+          "turn_sequence": {
+            "minimum": 1.0,
+            "title": "Turn Sequence",
+            "type": "integer"
+          },
+          "user_item": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConversationItemView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "conversation_id",
+          "turn_id",
+          "turn_sequence",
+          "status",
+          "created_at"
+        ],
+        "title": "ConversationTurnView",
+        "type": "object"
+      },
+      "ConversationView": {
+        "additionalProperties": false,
+        "properties": {
+          "agent_id": {
+            "format": "uuid",
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "conversation_id": {
+            "format": "uuid",
+            "title": "Conversation Id",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "last_active_at": {
+            "format": "date-time",
+            "title": "Last Active At",
+            "type": "string"
+          },
+          "last_turn_sequence": {
+            "minimum": 0.0,
+            "title": "Last Turn Sequence",
+            "type": "integer"
+          },
+          "purge_after": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Purge After"
+          },
+          "retention_policy": {
+            "title": "Retention Policy",
+            "type": "string"
+          },
+          "row_version": {
+            "minimum": 1.0,
+            "title": "Row Version",
+            "type": "integer"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": [
+          "conversation_id",
+          "agent_id",
+          "status",
+          "row_version",
+          "last_turn_sequence",
+          "last_active_at",
+          "created_at",
+          "retention_policy"
+        ],
+        "title": "ConversationView",
+        "type": "object"
+      },
       "CreateAgentDefinitionRequest": {
         "additionalProperties": false,
         "properties": {
@@ -543,16 +975,48 @@
             "title": "Agent Key",
             "type": "string"
           },
-          "composer_model_name": {
+          "chart_llm_model_name": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chart Llm Model Name"
+          },
+          "composer_llm_model_name": {
             "maxLength": 128,
             "minLength": 1,
-            "title": "Composer Model Name",
+            "title": "Composer Llm Model Name",
             "type": "string"
           },
           "config": {
             "additionalProperties": true,
             "title": "Config",
             "type": "object"
+          },
+          "context_llm_model_name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Context Llm Model Name",
+            "type": "string"
+          },
+          "data_profile_name": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Profile Name"
           },
           "description": {
             "anyOf": [
@@ -571,6 +1035,11 @@
             "minLength": 1,
             "title": "Display Name",
             "type": "string"
+          },
+          "do_rerank": {
+            "default": false,
+            "title": "Do Rerank",
+            "type": "boolean"
           },
           "enabled_capabilities": {
             "items": {
@@ -592,7 +1061,32 @@
             ],
             "title": "Instruction"
           },
-          "router_model_name": {
+          "memory_embedding_model_name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Memory Embedding Model Name",
+            "type": "string"
+          },
+          "memory_llm_model_name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Memory Llm Model Name",
+            "type": "string"
+          },
+          "query_vlm_model_name": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Query Vlm Model Name"
+          },
+          "router_llm_model_name": {
             "anyOf": [
               {
                 "maxLength": 128,
@@ -602,7 +1096,7 @@
                 "type": "null"
               }
             ],
-            "title": "Router Model Name"
+            "title": "Router Llm Model Name"
           },
           "status": {
             "default": "DRAFT",
@@ -615,7 +1109,10 @@
           "agent_key",
           "display_name",
           "enabled_capabilities",
-          "composer_model_name"
+          "context_llm_model_name",
+          "composer_llm_model_name",
+          "memory_llm_model_name",
+          "memory_embedding_model_name"
         ],
         "title": "CreateAgentDefinitionRequest",
         "type": "object"
@@ -662,6 +1159,92 @@
           "input"
         ],
         "title": "CreateAgentRunRequest",
+        "type": "object"
+      },
+      "CreateConversationRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "agent_id": {
+            "format": "uuid",
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "retention_policy": {
+            "default": "DEFAULT",
+            "pattern": "^(DEFAULT|KEEP_FOREVER|DAYS_30|DAYS_90|DAYS_365)$",
+            "title": "Retention Policy",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": [
+          "agent_id"
+        ],
+        "title": "CreateConversationRequest",
+        "type": "object"
+      },
+      "CreateConversationTurnRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "client_metadata": {
+            "additionalProperties": true,
+            "title": "Client Metadata",
+            "type": "object"
+          },
+          "collection_ids": {
+            "default": [],
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Collection Ids",
+            "type": "array"
+          },
+          "expected_conversation_version": {
+            "minimum": 1.0,
+            "title": "Expected Conversation Version",
+            "type": "integer"
+          },
+          "images": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ConversationQueryImage"
+            },
+            "maxItems": 8,
+            "title": "Images",
+            "type": "array"
+          },
+          "input": {
+            "maxLength": 32000,
+            "minLength": 1,
+            "title": "Input",
+            "type": "string"
+          },
+          "security_level": {
+            "default": 0,
+            "maximum": 999.0,
+            "minimum": 0.0,
+            "title": "Security Level",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "input",
+          "expected_conversation_version"
+        ],
+        "title": "CreateConversationTurnRequest",
         "type": "object"
       },
       "ExecutionKind": {
@@ -807,6 +1390,103 @@
         "title": "InstallPlanRequest",
         "type": "object"
       },
+      "MemoryItemView": {
+        "additionalProperties": false,
+        "properties": {
+          "agent_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Id"
+          },
+          "canonical_key": {
+            "title": "Canonical Key",
+            "type": "string"
+          },
+          "confidence": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Confidence",
+            "type": "number"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "memory_id": {
+            "format": "uuid",
+            "title": "Memory Id",
+            "type": "string"
+          },
+          "memory_type": {
+            "title": "Memory Type",
+            "type": "string"
+          },
+          "salience": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Salience",
+            "type": "number"
+          },
+          "scope_type": {
+            "title": "Scope Type",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "valid_from": {
+            "format": "date-time",
+            "title": "Valid From",
+            "type": "string"
+          },
+          "valid_to": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Valid To"
+          },
+          "value": {
+            "additionalProperties": true,
+            "title": "Value",
+            "type": "object"
+          }
+        },
+        "required": [
+          "memory_id",
+          "memory_type",
+          "scope_type",
+          "canonical_key",
+          "value",
+          "confidence",
+          "salience",
+          "valid_from",
+          "status",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "MemoryItemView",
+        "type": "object"
+      },
       "PlanDraft": {
         "additionalProperties": false,
         "description": "Planner 输出的不可执行计划草案。",
@@ -850,6 +1530,85 @@
           "expires_at"
         ],
         "title": "PlanDraft",
+        "type": "object"
+      },
+      "PublicTraceEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "resource_refs": {
+            "default": [],
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Resource Refs",
+            "type": "array"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "schema_version": {
+            "default": "AgentTraceEvent.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "sequence_no": {
+            "minimum": 1.0,
+            "title": "Sequence No",
+            "type": "integer"
+          },
+          "stage": {
+            "title": "Stage",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "turn_id": {
+            "format": "uuid",
+            "title": "Turn Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "turn_id",
+          "sequence_no",
+          "stage",
+          "title",
+          "summary",
+          "status",
+          "occurred_at"
+        ],
+        "title": "PublicTraceEvent",
         "type": "object"
       },
       "TaskSpec": {
@@ -996,7 +1755,7 @@
       "UpdateAgentDefinitionRequest": {
         "additionalProperties": false,
         "properties": {
-          "composer_model_name": {
+          "chart_llm_model_name": {
             "anyOf": [
               {
                 "maxLength": 128,
@@ -1007,7 +1766,20 @@
                 "type": "null"
               }
             ],
-            "title": "Composer Model Name"
+            "title": "Chart Llm Model Name"
+          },
+          "composer_llm_model_name": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Composer Llm Model Name"
           },
           "config": {
             "anyOf": [
@@ -1020,6 +1792,32 @@
               }
             ],
             "title": "Config"
+          },
+          "context_llm_model_name": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Llm Model Name"
+          },
+          "data_profile_name": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Profile Name"
           },
           "description": {
             "anyOf": [
@@ -1045,6 +1843,17 @@
               }
             ],
             "title": "Display Name"
+          },
+          "do_rerank": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Do Rerank"
           },
           "enabled_capabilities": {
             "anyOf": [
@@ -1077,7 +1886,46 @@
             ],
             "title": "Instruction"
           },
-          "router_model_name": {
+          "memory_embedding_model_name": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Embedding Model Name"
+          },
+          "memory_llm_model_name": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Llm Model Name"
+          },
+          "query_vlm_model_name": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Query Vlm Model Name"
+          },
+          "router_llm_model_name": {
             "anyOf": [
               {
                 "maxLength": 128,
@@ -1087,7 +1935,7 @@
                 "type": "null"
               }
             ],
-            "title": "Router Model Name"
+            "title": "Router Llm Model Name"
           },
           "status": {
             "anyOf": [
@@ -1106,6 +1954,58 @@
           "expected_row_version"
         ],
         "title": "UpdateAgentDefinitionRequest",
+        "type": "object"
+      },
+      "UpdateConversationRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          },
+          "retention_policy": {
+            "anyOf": [
+              {
+                "pattern": "^(DEFAULT|KEEP_FOREVER|DAYS_30|DAYS_90|DAYS_365)$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retention Policy"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "pattern": "^(ACTIVE|ARCHIVED)$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": [
+          "expected_row_version"
+        ],
+        "title": "UpdateConversationRequest",
         "type": "object"
       },
       "ValidationError": {
@@ -1352,6 +2252,552 @@
         "summary": "Update Agent Definition",
         "tags": [
           "Agent Definition"
+        ]
+      }
+    },
+    "/internal/v1/conversations": {
+      "get": {
+        "operationId": "list_conversations_internal_v1_conversations_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ConversationView"
+                  },
+                  "title": "Response List Conversations Internal V1 Conversations Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Conversations",
+        "tags": [
+          "Agent Conversations"
+        ]
+      },
+      "post": {
+        "operationId": "create_conversation_internal_v1_conversations_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateConversationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Conversation",
+        "tags": [
+          "Agent Conversations"
+        ]
+      }
+    },
+    "/internal/v1/conversations/{conversation_id}": {
+      "delete": {
+        "operationId": "delete_conversation_internal_v1_conversations__conversation_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "expected_row_version",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "title": "Expected Row Version",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Conversation",
+        "tags": [
+          "Agent Conversations"
+        ]
+      },
+      "get": {
+        "operationId": "get_conversation_internal_v1_conversations__conversation_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Conversation",
+        "tags": [
+          "Agent Conversations"
+        ]
+      },
+      "patch": {
+        "operationId": "update_conversation_internal_v1_conversations__conversation_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateConversationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Conversation",
+        "tags": [
+          "Agent Conversations"
+        ]
+      }
+    },
+    "/internal/v1/conversations/{conversation_id}/turns": {
+      "get": {
+        "operationId": "list_turns_internal_v1_conversations__conversation_id__turns_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "after",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "After",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationTurnPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Turns",
+        "tags": [
+          "Agent Conversations"
+        ]
+      },
+      "post": {
+        "operationId": "create_turn_internal_v1_conversations__conversation_id__turns_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateConversationTurnRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationTurnReceipt"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Turn",
+        "tags": [
+          "Agent Conversations"
+        ]
+      }
+    },
+    "/internal/v1/conversations/{conversation_id}/turns/{turn_id}/trace": {
+      "get": {
+        "operationId": "list_turn_trace_internal_v1_conversations__conversation_id__turns__turn_id__trace_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "turn_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Turn Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "after",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "After",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PublicTraceEvent"
+                  },
+                  "title": "Response List Turn Trace Internal V1 Conversations  Conversation Id  Turns  Turn Id  Trace Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Turn Trace",
+        "tags": [
+          "Agent Conversations"
+        ]
+      }
+    },
+    "/internal/v1/data/profiles": {
+      "get": {
+        "operationId": "list_data_profiles_internal_v1_data_profiles_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Data Profiles",
+        "tags": [
+          "MCP Data"
+        ]
+      }
+    },
+    "/internal/v1/memories": {
+      "get": {
+        "operationId": "list_memories_internal_v1_memories_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Agent Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MemoryItemView"
+                  },
+                  "title": "Response List Memories Internal V1 Memories Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Memories",
+        "tags": [
+          "Agent Memories"
+        ]
+      }
+    },
+    "/internal/v1/memories/{memory_id}": {
+      "delete": {
+        "operationId": "forget_memory_internal_v1_memories__memory_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "memory_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Memory Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Forget Memory",
+        "tags": [
+          "Agent Memories"
         ]
       }
     },

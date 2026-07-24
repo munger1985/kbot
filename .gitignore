@@ -31,15 +31,21 @@ logs/
 .idea/
 .vscode/
 .claude/
+.reasonix/
+.agents/
+.codex/
 
 # Project-generated files
-knowledge_base/
-kbot_files/
-settings.toml
-local_model_cache/
-nacos-data/
+knowledge_core_storage/
 
 # configuration files
 configuration/*.json
 *.toml
+!configuration/base.toml
+!configuration/development.toml
+!configuration/production.toml
+!configuration/services/**/base.toml
+!configuration/services/**/development.toml
+!configuration/services/**/production.toml
 CLAUDE.md
+AGENTS.md

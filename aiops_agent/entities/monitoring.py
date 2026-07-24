@@ -10,7 +10,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from platform_core.identity import uuid7
 from platform_core.persistence.orm import (
     BaseEntity,
-    OracleJSON,
+    OracleNativeJSON,
     UniversalTimestamp,
     UUIDv7Type,
 )
@@ -37,7 +37,7 @@ class MonitorSourceEntity(BaseEntity):
         UniversalTimestamp(timezone=True)
     )
     capabilities_json: Mapped[dict[str, Any] | None] = mapped_column(
-        OracleJSON
+        OracleNativeJSON
     )
     status: Mapped[str] = mapped_column(
         String(16), nullable=False, default="DISABLED"
@@ -93,10 +93,10 @@ class TargetMonitorEntity(BaseEntity):
         Numeric(8, 0), nullable=False, default=100
     )
     metric_scope_json: Mapped[dict[str, Any] | None] = mapped_column(
-        OracleJSON
+        OracleNativeJSON
     )
     mapping_overrides_json: Mapped[dict[str, Any] | None] = mapped_column(
-        OracleJSON
+        OracleNativeJSON
     )
     status: Mapped[str] = mapped_column(
         String(16), nullable=False, default="ACTIVE"
@@ -151,7 +151,7 @@ class OpsEventEntity(BaseEntity):
         UniversalTimestamp(timezone=True), nullable=False
     )
     fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
-    payload_json: Mapped[dict[str, Any] | None] = mapped_column(OracleJSON)
+    payload_json: Mapped[dict[str, Any] | None] = mapped_column(OracleNativeJSON)
     payload_uri: Mapped[str | None] = mapped_column(String(2048))
     payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     normalizer_version: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -175,7 +175,7 @@ class OpsAlertEntity(BaseEntity):
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     severity: Mapped[str] = mapped_column(String(16), nullable=False)
     summary: Mapped[str] = mapped_column(String(1000), nullable=False)
-    correlation_json: Mapped[dict[str, Any] | None] = mapped_column(OracleJSON)
+    correlation_json: Mapped[dict[str, Any] | None] = mapped_column(OracleNativeJSON)
     first_seen_at: Mapped[datetime] = mapped_column(
         UniversalTimestamp(timezone=True), nullable=False
     )

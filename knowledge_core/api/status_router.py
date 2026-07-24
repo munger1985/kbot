@@ -47,4 +47,4 @@ async def get_revision_members(domain_id: int, bundle_id: UUID, bundle_revision_
         )
     except KnowledgeObjectNotFoundError as exc:
         raise HTTPException(status_code=404, detail={"code": "REVISION_NOT_FOUND", "message": str(exc)}) from exc
-    return {"bundle_revision_id": bundle_revision_id, "members": [asdict(item) for item in result.members or []]}
+    return asdict(result)

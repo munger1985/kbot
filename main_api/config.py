@@ -16,6 +16,7 @@ class MainApiProcessConfig(ServiceConfig):
     service_name: str = "kbot-main-api"
     service_port: int = 18099
     allowed_origins: list[str] = Field(default_factory=list)
+    test_auth_bypass_enabled: bool = False
     sse_poll_interval_seconds: float = Field(default=0.5, ge=0.1, le=10)
     sse_heartbeat_seconds: float = Field(default=15, ge=1, le=60)
     sse_batch_size: int = Field(default=200, ge=1, le=500)
@@ -48,6 +49,30 @@ class MainApiSettings(Settings):
         default_factory=lambda: ServiceDependencyConfig(
             base_url="http://127.0.0.1:18110",
             audience="kbot-aiops-api",
+        )
+    )
+    model_embedding: ServiceDependencyConfig = Field(
+        default_factory=lambda: ServiceDependencyConfig(
+            base_url="http://127.0.0.1:18091",
+            audience="kbot-model-embedding",
+        )
+    )
+    model_llm: ServiceDependencyConfig = Field(
+        default_factory=lambda: ServiceDependencyConfig(
+            base_url="http://127.0.0.1:18092",
+            audience="kbot-model-llm",
+        )
+    )
+    model_visual: ServiceDependencyConfig = Field(
+        default_factory=lambda: ServiceDependencyConfig(
+            base_url="http://127.0.0.1:18093",
+            audience="kbot-model-visual",
+        )
+    )
+    model_vlm: ServiceDependencyConfig = Field(
+        default_factory=lambda: ServiceDependencyConfig(
+            base_url="http://127.0.0.1:18094",
+            audience="kbot-model-vlm",
         )
     )
     integrations: MainApiIntegrationConfig = Field(

@@ -10,4 +10,14 @@ class ParserArtifactStore(Protocol):
         expected_sha256: str, schema: str, generator: str,
     ) -> dict[str, str]: ...
 
+    async def put_bytes(
+        self,
+        *,
+        job_id: UUID,
+        asset_key: str,
+        payload: bytes,
+        expected_sha256: str,
+        mime_type: str,
+    ) -> dict[str, str]: ...
+
     async def delete_manifest(self, manifest: dict[str, Any]) -> None: ...

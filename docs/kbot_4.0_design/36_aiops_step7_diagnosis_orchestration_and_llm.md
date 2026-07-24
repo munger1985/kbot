@@ -283,7 +283,10 @@ limitations[]
 
 ## Prompt 与数据安全
 
-- System Prompt 和 Schema 是只读部署资产，不能由 APEX、数据库文本或用户请求覆盖；
+- System Prompt 来自受控 Platform Prompt Registry：运行时数据库 Active
+  Version 优先、统一文件兜底，并冻结版本与 SHA-256；APEX、用户请求以及
+  目标数据库中的业务文本不能修改或覆盖 Prompt。统一注册和初始化规则见
+  [46_versioned_prompt_registry.md](46_versioned_prompt_registry.md)；
 - 用户输入、告警标签、数据库 SQL Text、日志、SOP 和案例全部标记为不可信数据，并以结构化字段传入；
 - Evidence 中出现“忽略规则”“执行命令”等文字只作为数据，不进入指令层；
 - 输入按 Security Level、字段白名单、Token 和字节上限裁剪；Secret、DSN、账号、内部 Token、Lease Token 永不进入模型；

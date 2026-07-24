@@ -95,6 +95,7 @@ class KnowledgeCoreEvidenceIndexService:
         self._uow_factory = uow_factory
         self._embedding_gateway = embedding_gateway
         self._model_resolver = model_resolver
+        self.visual_service = None
 
     async def index_parse_view(
         self, *, parse_view_id: UUID, collection_id: UUID, batch_size: int = 64,
@@ -221,12 +222,20 @@ class KnowledgeCoreEvidenceIndexService:
             parse_view_id=parse_view_id, collection_id=collection_id,
             batch_size=batch_size, job_id=job_id,
         )
+        visual_count = 0
+        if self.visual_service is not None:
+            visual_count = await self.visual_service.index_parse_view(
+                collection_id=collection_id,
+                parse_view_id=parse_view_id,
+                batch_size=batch_size,
+            )
         return await self.finalize_index_job(
             job_id=job_id,
             indexed_count=count,
             model=model,
             worker_id=worker_id,
             input_fingerprint=input_fingerprint,
+            visual_indexed_count=visual_count,
         )
 
     async def _run_discovery_job(self, *, job_id: UUID, worker_id: str, input_fingerprint: str, model: EmbeddingModelSnapshot) -> str:
@@ -361,6 +370,7 @@ class KnowledgeCoreEvidenceIndexService:
     async def finalize_index_job(
         self, *, job_id: UUID, indexed_count: int, model: EmbeddingModelSnapshot,
         worker_id: str, input_fingerprint: str,
+        visual_indexed_count: int = 0,
     ) -> str:
         """Mark INDEX successful only after every active Evidence has a vector."""
         now = datetime.now(timezone.utc)
@@ -413,7 +423,10 @@ class KnowledgeCoreEvidenceIndexService:
                 raise ValueError("INDEX job member not found")
             member.member_status, member.completed_at = "READY", now
             job.job_status, job.completed_at = "SUCCEEDED", now
-            job.result_json = {"indexed_count": indexed_count}
+            job.result_json = {
+                "indexed_count": indexed_count,
+                "visual_indexed_count": visual_indexed_count,
+            }
             job.lease_owner = job.lease_until = None
             await uow.session.flush()
             revision = await uow.revisions.get_by_id(bundle_revision_id=job.bundle_revision_id, lock=True)

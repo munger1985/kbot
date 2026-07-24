@@ -42,13 +42,22 @@ Parser 已是独立进程，4.0 保留这一部署边界。它只消费任务并
 
 Parser 不轮询 Document 业务状态、不直接将 Bundle 改为 READY，也不决定当前版本。它提交带 `parser_version`、质量指标、页码/坐标和输入 hash 的 Parse Result；Knowledge Core 的 result applier 校验任务租约和版本后写入 Parse View/Evidence Unit 并推进状态机。
 
-PDF 按页段生成 TEXT、VISUAL 或 HYBRID View。每个可检索范围只能有一个 active 主视图，避免多视图重复召回；原始文本/OCR 证据必须保留以核验编号、日期和表格数据。
+Parser 使用统一流水线，但支持 `TEXT / AUTO / VISUAL / HYBRID` 四种解析策略。默认 OCR 由 Docling 提供；配置独立 DeepSeek OCR 后关闭 Docling 内置 OCR，由 Parser Worker 直接调用其 OpenAI 兼容端点并把 grounding 结果转换为 OCR Atom，DeepSeek OCR 不进入 Model Serving。`AUTO` 再按页面文本覆盖率、提取置信度和乱码比例选择整页 VLM；`VISUAL` 强制逐页视觉解析；`HYBRID` 对全部有页面图像的页面执行视觉结构校正。输出统一进入 Atom IR、Structure IR、质量门和 Evidence Planner，不恢复多套 Chunk 模型。
+
+健康页面保留 Docling 的精确文本、表格和坐标，VLM 只校正匹配标题并补充图表语义；低质量页使用整页 VLM Markdown 替换该页 Docling Atom。视觉结果必须记录模型、选择原因、页面级定位和替换方式，并保存为 `visual_analysis` 解析产物。某一页面的 VLM 调用失败时保留 Docling 结果，不得让局部增强失败破坏整份文档。
+
+每个 Document Version 和解析配置只能发布一个 active 主视图：无视觉能力时为 `TEXT`，强制纯视觉时为 `VISUAL`，自适应或融合解析时为 `HYBRID`。这样避免多视图重复召回，同时保留旧版纯视觉 PDF 对扫描件、复杂排版、跨栏、表格和图表的优势。详细策略与验收要求见 [44_adaptive_hybrid_document_parsing.md](44_adaptive_hybrid_document_parsing.md)。
 
 ## 检索链路
 
-Discovery 在 `KBOT_KC_DISCOVERY_OBJECT` 上执行 Oracle Text + Vector 混合召回，先做权限、Collection、状态和 Facet 过滤，再进行融合、Document→Bundle 聚合、文件多样性和精确字段重排。
+Discovery 在 `KBOT_KC_DISCOVERY_OBJECT` 上执行 Oracle Text + Vector 混合召回，
+先做权限、Collection、状态和 Facet 过滤，再进行 RRF 融合、
+Document→Bundle 聚合与文件多样性处理。Agent 开启 `do_rerank` 时，KC 再按每个
+Collection 的 Retrieval LLM 做对象级类别判断；关闭或模型降级时保留 RRF 顺序。
 
 Evidence 只能在调用方给出的候选 Bundle/Document 范围内检索 `KBOT_KC_EVIDENCE`。它执行混合召回、视图去重、相邻章节扩展和有依据的关联扩展，再按上下文预算返回证据。Agent 只能消费 Evidence API 的结果，不能再次对全库自行选 Chunk。
+开启重排时，KC 还会验证 Evidence Group 的支持关系并选定真实引用的 PRIMARY；
+整个过程不对裸 Chunk 生成数值 rerank 分数。
 
 ## 与 3.x 的关系
 

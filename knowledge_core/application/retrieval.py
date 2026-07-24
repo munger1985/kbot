@@ -22,6 +22,7 @@ class DiscoveryHit:
     matched_member_key: str | None = None
     member_count: int = 0
     coverage: dict[str, Any] = field(default_factory=dict)
+    profile_text: str = ""
 
 
 @dataclass
@@ -37,6 +38,7 @@ class BundleCandidate:
     local_rank: int
     rrf_score: float
     candidate_scope: str
+    profile_text: str = ""
 
 
 class DiscoverySearchPort(Protocol):
@@ -65,6 +67,13 @@ def aggregate_candidates(
         rrf = sum(1.0 / (rrf_k + rank) for rank in ranks_by_channel.values())
         member_count = max(item.member_count for item in bundle_hits)
         scope = "SINGLE_MEMBER" if member_count == 1 else ("MATCHED_MEMBERS" if matched else "BUNDLE_ALL")
+        profile_text = "\n\n".join(
+            dict.fromkeys(
+                item.profile_text.strip()
+                for item in best
+                if item.profile_text.strip()
+            )
+        )[:12000]
         candidates.append(BundleCandidate(
             collection_id=collection_id, collection_key=first.collection_key,
             bundle_id=bundle_id, bundle_revision_id=revision_id,
@@ -72,6 +81,7 @@ def aggregate_candidates(
             matched_members=matched, match_signals=signals,
             local_rank=min(item.local_rank for item in bundle_hits),
             rrf_score=rrf, candidate_scope=scope,
+            profile_text=profile_text,
         ))
     candidates.sort(key=lambda item: (-item.rrf_score, item.collection_key, item.bundle_id))
     # Equal Collection priority: take the same local budget from each

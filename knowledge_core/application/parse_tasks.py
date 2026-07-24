@@ -6,7 +6,11 @@ from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 from typing import Any
 
-from knowledge_core.entities import KcEvidenceEntity, KcIngestionJobEntity
+from knowledge_core.entities import (
+    KcEvidenceEntity,
+    KcIngestionJobEntity,
+    KcVisualAssetEntity,
+)
 
 from knowledge_core.domain.parse_tasks import ParseLeaseError, ParseTaskClaim, claim_job, verify_lease
 from knowledge_core.domain.revision_status import reduce_revision_status
@@ -61,6 +65,19 @@ class EvidenceInput:
     language_code: str | None = None
     token_count: int | None = None
     quality_score: float | None = None
+
+
+@dataclass(frozen=True)
+class VisualAssetInput:
+    asset_key: str
+    asset_type: str
+    page_no: int | None
+    source_item_ref: str | None
+    bbox: dict[str, Any] | None
+    mime_type: str
+    content_base64: str
+    content_sha256: str
+    description: str | None = None
 
 
 class KnowledgeCoreParseTaskService:
@@ -229,6 +246,113 @@ class KnowledgeCoreParseTaskService:
             await uow.commit()
             return inserted
 
+    async def submit_visual_assets(
+        self,
+        *,
+        job_id: UUID,
+        worker_id: str,
+        input_fingerprint: str,
+        items: list[VisualAssetInput],
+    ) -> int:
+        """保存 Parser 原始图片；此阶段禁止生成视觉向量。"""
+        import base64
+
+        if not items or len(items) > 500:
+            raise ValueError("视觉资产批次必须包含 1 到 500 项")
+        now = datetime.now(timezone.utc)
+        async with self._uow_factory() as uow:
+            if not all(
+                (
+                    uow.jobs,
+                    uow.versions,
+                    uow.visual_assets,
+                    uow.evidence,
+                    uow.session,
+                )
+            ):
+                raise RuntimeError("Knowledge Core Unit of Work 未初始化")
+            job = await uow.jobs.get_by_id(
+                ingestion_job_id=job_id, lock=True
+            )
+            if job is None:
+                raise ParseLeaseError("JOB_LEASE_INVALID")
+            verify_lease(
+                job,
+                worker_id=worker_id,
+                input_fingerprint=input_fingerprint,
+                now=now,
+            )
+            if (
+                job.parse_view_id is None
+                or job.document_version_id is None
+                or job.bundle_revision_id is None
+            ):
+                raise ParseLeaseError("JOB_STALE")
+            version = await uow.versions.get_by_id(
+                document_version_id=job.document_version_id
+            )
+            if version is None:
+                raise ParseLeaseError("JOB_STALE")
+            inserted = 0
+            for item in items:
+                if item.asset_type not in {"PAGE", "FIGURE"}:
+                    raise ValueError("不支持的视觉资产类型")
+                existing = await uow.visual_assets.get_by_key(
+                    parse_view_id=job.parse_view_id,
+                    asset_key=item.asset_key,
+                )
+                if existing is not None:
+                    if existing.content_hash != item.content_sha256:
+                        raise ParseLeaseError("VISUAL_ASSET_KEY_CONFLICT")
+                    continue
+                content = base64.b64decode(
+                    item.content_base64, validate=True
+                )
+                if len(content) > 16 * 1024 * 1024:
+                    raise ValueError("单个视觉资产超过 16 MiB")
+                descriptor = await self._artifact_store.put_bytes(
+                    job_id=job_id,
+                    asset_key=item.asset_key,
+                    payload=content,
+                    expected_sha256=item.content_sha256,
+                    mime_type=item.mime_type,
+                )
+                evidence = (
+                    await uow.evidence.get_by_source_ref(
+                        parse_view_id=job.parse_view_id,
+                        source_item_ref=item.source_item_ref,
+                    )
+                    if item.source_item_ref
+                    else None
+                )
+                await uow.visual_assets.add(
+                    KcVisualAssetEntity(
+                        collection_id=job.collection_id,
+                        bundle_revision_id=job.bundle_revision_id,
+                        document_id=version.document_id,
+                        document_version_id=version.document_version_id,
+                        parse_view_id=job.parse_view_id,
+                        evidence_id=(
+                            evidence.evidence_id if evidence else None
+                        ),
+                        asset_key=item.asset_key,
+                        asset_type=item.asset_type,
+                        page_no=item.page_no,
+                        source_item_ref=item.source_item_ref,
+                        bbox_json=item.bbox,
+                        mime_type=item.mime_type,
+                        payload_uri=descriptor["uri"],
+                        content_hash=item.content_sha256,
+                        description_text=item.description,
+                        status="STAGED",
+                        created_by=worker_id,
+                        updated_by=worker_id,
+                    )
+                )
+                inserted += 1
+            await uow.commit()
+            return inserted
+
     async def complete(
         self, *, job_id: UUID, worker_id: str, input_fingerprint: str,
         artifact_manifest: dict[str, Any], output_fingerprint: str,
@@ -276,9 +400,15 @@ class KnowledgeCoreParseTaskService:
                 old_view.artifact_manifest_json for old_view in old_views
                 if old_view.artifact_manifest_json
             ]
+            if uow.visual_assets is not None:
+                await uow.visual_assets.delete_by_view_ids(old_view_ids)
             await uow.evidence.delete_by_view_ids(old_view_ids)
             await uow.parse_views.delete_by_ids(old_view_ids)
             await uow.evidence.activate_staged(parse_view_id=view.parse_view_id)
+            if uow.visual_assets is not None:
+                await uow.visual_assets.activate_staged(
+                    parse_view_id=view.parse_view_id
+                )
             view.view_status, view.quality_score = "ACTIVE", quality_score
             view.quality_report_json, view.artifact_manifest_json, view.activated_at = quality_report, artifact_manifest, now
             # Parsing and indexing are separate durable stages.  The view can
@@ -356,6 +486,10 @@ class KnowledgeCoreParseTaskService:
                 member.member_status = "FAILED"
                 member.failure_stage, member.failure_code, member.failure_message = "PARSE", failure_code, failure_message
                 cleanup_manifest = artifact_manifest or view.artifact_manifest_json
+                if uow.visual_assets is not None:
+                    await uow.visual_assets.delete_by_view_ids(
+                        [view.parse_view_id]
+                    )
                 await uow.evidence.delete_by_view_ids([view.parse_view_id])
                 await uow.parse_views.delete_by_ids([view.parse_view_id])
             await uow.session.flush()

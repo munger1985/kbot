@@ -4,6 +4,20 @@
 
 ## 公开 API
 
+Portal 普通聊天以 Conversation 为入口：
+
+| 方法 | 路径 | 作用 | 返回 |
+| --- | --- | --- | --- |
+| `POST` | `/api/v1/conversations` | 创建固定 Agent 的会话 | Conversation DTO |
+| `POST` | `/api/v1/conversations/{id}/turns` | 提交一轮并创建 Root Run | Turn、Run 和 SSE 地址 |
+| `GET` | `/api/v1/conversations/{id}/turns` | 恢复消息、引用和执行摘要 | Turn Page |
+| `GET` | `/api/v1/conversations/{id}/turns/{turn_id}/trace` | 查询公开执行过程 | Trace Event Page |
+
+Conversation/Turn、记忆驱动的问题改写、历史恢复和 Public Trace 详见
+[45_agent_conversation_memory_and_trace.md](45_agent_conversation_memory_and_trace.md)。
+Run API 仍是权威执行资源；无会话集成可以直接创建 Run，但不会隐式读取或
+更新用户长期记忆。
+
 | 方法 | 路径 | 作用 | 返回 |
 | --- | --- | --- | --- |
 | `POST` | `/api/v1/runs` | 创建一次 Agent Run | `202` + `run_id`、当前状态和事件游标 |

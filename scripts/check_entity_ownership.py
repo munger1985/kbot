@@ -13,11 +13,12 @@ import aiops_agent.entities as aiops_entities  # noqa: E402
 import knowledge_core.entities as kc_entities  # noqa: E402
 import main_api.entities as platform_entities  # noqa: E402
 import model_serving.common.entities as model_entities  # noqa: E402
+import platform_core.prompts as prompt_entities  # noqa: E402
 from scripts.check_oracle_schema import SERVICE_TABLES  # noqa: E402
 
 
 ENTITY_MODULES = {
-    "platform_core": platform_entities,
+    "platform_core": (platform_entities, prompt_entities),
     "model_serving": model_entities,
     "knowledge_core": kc_entities,
     "agent_runtime": agent_entities,
@@ -30,10 +31,13 @@ def entity_tables_by_service() -> dict[str, set[str]]:
     return {
         service: {
             str(getattr(module, name).__tablename__).upper()
+            for module in (
+                modules if isinstance(modules, tuple) else (modules,)
+            )
             for name in module.__all__
             if hasattr(getattr(module, name), "__tablename__")
         }
-        for service, module in ENTITY_MODULES.items()
+        for service, modules in ENTITY_MODULES.items()
     }
 
 

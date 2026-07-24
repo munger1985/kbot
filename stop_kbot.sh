@@ -25,12 +25,29 @@ SERVICES=(
 # 安全查找在指定目录运行的 Python 服务进程
 get_service_pid() {
     local script_dir="$1"
-    local script_name="$2"
+    local service_script="$2"
+    local module_name="${service_script%.py}"
+    module_name="${module_name//\//.}"
     
-    # 先按脚本名查找，再通过工作目录限制进程范围
-    pgrep -f "python.*${script_name}" | grep -v "$CURRENT_PID" | while read pid; do
+    # 同时识别当前模块入口和早期脚本入口，再通过工作目录限制仓库范围。
+    pgrep -f "python.*(-m[[:space:]]+${module_name}|${service_script})" \
+        | grep -v "$CURRENT_PID" \
+        | while read pid; do
         if [ -d "/proc/$pid" ]; then
             if pwdx "$pid" 2>/dev/null | grep -q "${script_dir}"; then
+                echo "$pid"
+            fi
+        fi
+    done
+}
+
+# UI 不属于生产进程拓扑，但开发环境下由统一脚本托管。
+get_ui_pid() {
+    pgrep -f "python.*-m[[:space:]]+http\\.server[[:space:]]+8080[[:space:]]+-d[[:space:]]+ui" \
+        | grep -v "$CURRENT_PID" \
+        | while read pid; do
+        if [ -d "/proc/$pid" ]; then
+            if pwdx "$pid" 2>/dev/null | grep -q "${SERVICE_ROOT}"; then
                 echo "$pid"
             fi
         fi
@@ -52,6 +69,16 @@ for service_script in "${SERVICES[@]}"; do
         done <<< "$SERVICE_PIDS"
     fi
 done
+
+UI_PIDS=$(get_ui_pid)
+if [ -n "$UI_PIDS" ]; then
+    while read pid; do
+        if [ -n "$pid" ]; then
+            PID_MAP["$pid"]=1
+            echo "发现 UI 测试服务器进程：$pid"
+        fi
+    done <<< "$UI_PIDS"
+fi
 
 # 没有可停止的进程时直接退出
 if [ ${#PID_MAP[@]} -eq 0 ]; then

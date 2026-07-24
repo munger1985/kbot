@@ -1,0 +1,72 @@
+"""Main API 对外提供的安全模型目录。"""
+
+import asyncio
+from typing import Any
+from uuid import UUID
+
+from fastapi import APIRouter, HTTPException, Request
+from loguru import logger
+from pydantic import BaseModel
+
+from platform_clients import AIModelConfigClient
+from platform_core.contracts import PUBLIC_API_V1
+
+
+router = APIRouter(
+    prefix=f"{PUBLIC_API_V1}/model-catalog",
+    tags=["Model Catalog"],
+)
+
+
+class ModelCatalogItem(BaseModel):
+    model_id: UUID
+    served_model_name: str
+    display_name: str
+    category: int
+    provider: str
+    status: int
+    embedding_dimension: int | None = None
+
+
+def _clients(request: Request) -> tuple[AIModelConfigClient, ...]:
+    clients = getattr(request.app.state, "model_config_clients", None)
+    if not clients:
+        raise RuntimeError("模型目录客户端尚未初始化")
+    return tuple(clients)
+
+
+@router.get("", response_model=list[ModelCatalogItem])
+async def list_model_catalog(request: Request) -> list[dict[str, Any]]:
+    """聚合各模型进程中的已启用模型，供门户配置业务对象。"""
+    results = await asyncio.gather(
+        *(client.list_models() for client in _clients(request)),
+        return_exceptions=True,
+    )
+    batches = []
+    for result in results:
+        if isinstance(result, BaseException):
+            logger.warning(
+                "模型目录子服务暂时不可用，已跳过：{}",
+                type(result).__name__,
+            )
+            continue
+        batches.append(result)
+    if not batches:
+        raise HTTPException(
+            status_code=503,
+            detail="所有模型目录服务当前均不可用",
+        )
+    rows = [
+        row
+        for batch in batches
+        for row in batch
+        if int(row.get("status") or 0) == 1
+    ]
+    rows.sort(
+        key=lambda row: (
+            int(row.get("category") or 0),
+            str(row.get("display_name") or ""),
+            str(row.get("served_model_name") or ""),
+        )
+    )
+    return rows

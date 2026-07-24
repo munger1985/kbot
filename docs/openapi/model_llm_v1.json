@@ -332,6 +332,18 @@
             ],
             "title": "Display Name"
           },
+          "model_params": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Params"
+          },
           "status": {
             "anyOf": [
               {

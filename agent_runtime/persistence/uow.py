@@ -6,6 +6,14 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from agent_runtime.repositories import (
     AgentDefinitionRepository,
+    AgentConversationItemRepository,
+    AgentConversationRepository,
+    AgentConversationTurnRepository,
+    AgentMemoryItemRepository,
+    AgentMemoryJobRepository,
+    AgentMemoryIndexProfileRepository,
+    AgentMemorySnapshotRepository,
+    AgentMemorySourceRepository,
     AgentArtifactRepository,
     AgentDelegationRepository,
     AgentRunEventRepository,
@@ -24,6 +32,16 @@ class AgentRuntimeUnitOfWork:
         self.artifacts: AgentArtifactRepository | None = None
         self.events: AgentRunEventRepository | None = None
         self.delegations: AgentDelegationRepository | None = None
+        self.conversations: AgentConversationRepository | None = None
+        self.turns: AgentConversationTurnRepository | None = None
+        self.conversation_items: AgentConversationItemRepository | None = None
+        self.memory_snapshots: AgentMemorySnapshotRepository | None = None
+        self.memory_items: AgentMemoryItemRepository | None = None
+        self.memory_jobs: AgentMemoryJobRepository | None = None
+        self.memory_index_profiles: (
+            AgentMemoryIndexProfileRepository | None
+        ) = None
+        self.memory_sources: AgentMemorySourceRepository | None = None
         self._committed = False
 
     async def __aenter__(self) -> "AgentRuntimeUnitOfWork":
@@ -34,6 +52,16 @@ class AgentRuntimeUnitOfWork:
         self.artifacts = AgentArtifactRepository(self.session)
         self.events = AgentRunEventRepository(self.session)
         self.delegations = AgentDelegationRepository(self.session)
+        self.conversations = AgentConversationRepository(self.session)
+        self.turns = AgentConversationTurnRepository(self.session)
+        self.conversation_items = AgentConversationItemRepository(self.session)
+        self.memory_snapshots = AgentMemorySnapshotRepository(self.session)
+        self.memory_items = AgentMemoryItemRepository(self.session)
+        self.memory_jobs = AgentMemoryJobRepository(self.session)
+        self.memory_index_profiles = AgentMemoryIndexProfileRepository(
+            self.session
+        )
+        self.memory_sources = AgentMemorySourceRepository(self.session)
         return self
 
     async def commit(self) -> None:
@@ -61,6 +89,14 @@ class AgentRuntimeUnitOfWork:
             self.artifacts = None
             self.events = None
             self.delegations = None
+            self.conversations = None
+            self.turns = None
+            self.conversation_items = None
+            self.memory_snapshots = None
+            self.memory_items = None
+            self.memory_jobs = None
+            self.memory_index_profiles = None
+            self.memory_sources = None
 
 
 def create_agent_runtime_uow(

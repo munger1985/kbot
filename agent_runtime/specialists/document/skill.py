@@ -1,8 +1,13 @@
 """基于 Knowledge Core 两阶段检索的 Document Skill。"""
 
+import base64
+import asyncio
+from io import BytesIO
+from pathlib import Path
 from typing import Any
 from uuid import UUID
 
+from PIL import Image
 from platform_core.contracts import AuthContext, PrincipalKind
 
 from agent_runtime.runtime import ExecutionContext, SkillArtifact, SkillResult
@@ -18,11 +23,28 @@ from .contracts import (
 class KnowledgeRetrievalSkill:
     """只调用 KC API，不访问 KC Entity、Repository 或向量表。"""
 
-    def __init__(self, *, knowledge_core_client, service_name: str):
+    def __init__(
+        self,
+        *,
+        knowledge_core_client,
+        service_name: str,
+        model_client=None,
+        prompt_resolver=None,
+    ):
         self._client = knowledge_core_client
         self._service_name = service_name
+        self._model_client = model_client
+        self._prompt_resolver = prompt_resolver
 
     async def execute(self, context: ExecutionContext) -> SkillResult:
+        query = self._standalone_query(context)
+        clarification = self._clarification(context)
+        if clarification is not None:
+            return self._empty_result(
+                context,
+                status="CLARIFICATION_REQUIRED",
+                warning=clarification,
+            )
         collection_ids = await self._resolve_collection_ids(context)
         if not collection_ids:
             return self._empty_result(
@@ -32,32 +54,75 @@ class KnowledgeRetrievalSkill:
             )
 
         retrieval_config = self._retrieval_config(context)
+        image_payloads = await self._load_query_images(context)
+        image_processing: dict[str, Any] = {
+            "image_count": len(image_payloads),
+            "visual_search": "NOT_REQUESTED",
+            "vlm_text_search": "NOT_REQUESTED",
+        }
+        warnings: list[str] = []
+        vlm_descriptions, vlm_prompt_ref = await self._describe_images(
+            context, image_payloads, image_processing, warnings
+        )
+        retrieval_query = self._multimodal_query(
+            query, vlm_descriptions
+        )
+        visual_outcome = await self._visual_hits(
+            context,
+            collection_ids,
+            retrieval_config,
+            image_payloads,
+            image_processing,
+            warnings,
+        )
+        visual_hits = list(visual_outcome.get("results") or [])
+        self._finalize_image_warnings(
+            image_processing=image_processing,
+            warnings=warnings,
+        )
         discovery = await self._client.discover(
-            query=context.original_input,
+            query=retrieval_query,
             collection_ids=collection_ids,
             domain_id=context.domain_id,
             agent_id=str(context.agent_id),
             auth_context=self._auth_context(context),
             max_security_level=self._security_level(context),
             per_collection_limit=retrieval_config["max_bundles"],
+            do_rerank=retrieval_config["do_rerank"],
         )
+        warnings.extend(discovery.get("warnings") or [])
+        discovery_rerank = dict(discovery.get("rerank") or {})
         candidates = list(discovery.get("candidates") or [])
-        candidates = candidates[: retrieval_config["max_bundles"]]
+        candidates = self._merge_candidates(
+            visual_hits,
+            candidates,
+            limit=retrieval_config["max_bundles"],
+        )
         if not candidates:
             return self._empty_result(
                 context,
                 status="INSUFFICIENT_EVIDENCE",
                 warning="Knowledge Core 未发现相关 Bundle",
+                warnings=tuple(warnings),
+                query_plan={
+                    "image_processing": image_processing,
+                    "do_rerank": retrieval_config["do_rerank"],
+                    "rerank": {"discovery": discovery_rerank},
+                },
             )
 
         evidence = await self._client.retrieve_evidence(
-            query=context.original_input,
+            query=retrieval_query,
             candidates=[
                 {
                     "collection_id": item["collection_id"],
                     "bundle_id": item["bundle_id"],
                     "bundle_revision_id": item["bundle_revision_id"],
-                    "document_version_ids": [],
+                    "document_version_ids": (
+                        [item["document_version_id"]]
+                        if item.get("document_version_id")
+                        else []
+                    ),
                 }
                 for item in candidates
             ],
@@ -67,7 +132,10 @@ class KnowledgeRetrievalSkill:
             max_security_level=self._security_level(context),
             max_evidence=retrieval_config["max_citations"],
             context_limit=retrieval_config["context_limit"],
+            do_rerank=retrieval_config["do_rerank"],
         )
+        warnings.extend(evidence.get("warnings") or [])
+        evidence_rerank = dict(evidence.get("rerank") or {})
         raw_citations = list(evidence.get("citations") or [])
         citations = self._map_citations(
             raw_citations,
@@ -78,15 +146,25 @@ class KnowledgeRetrievalSkill:
         result = DocumentRetrievalResult(
             status=status,
             citation_pack=CitationPack(
-                question=context.original_input,
+                question=query,
                 query_plan={
                     "strategy": "KC_TWO_STAGE",
+                    "visual_query_count": len(
+                        self._query_image_descriptors(context)
+                    ),
+                    "image_processing": image_processing,
+                    "vlm_prompt": vlm_prompt_ref,
                     "target_level": "AUTO",
                     "collection_ids": [
                         str(value) for value in collection_ids
                     ],
                     "max_bundles": retrieval_config["max_bundles"],
                     "max_citations": retrieval_config["max_citations"],
+                    "do_rerank": retrieval_config["do_rerank"],
+                    "rerank": {
+                        "discovery": discovery_rerank,
+                        "evidence": evidence_rerank,
+                    },
                 },
                 bundle_candidates=tuple(candidates),
                 citations=tuple(citations),
@@ -105,9 +183,21 @@ class KnowledgeRetrievalSkill:
                 "strategy_version": "kc-two-stage-v1",
                 "discovery_candidate_count": len(candidates),
                 "citation_count": len(citations),
-                "selector": "deterministic-group-selection-v1",
+                "selector": (
+                    "llm-object-and-evidence-group-v1"
+                    if retrieval_config["do_rerank"]
+                    else "deterministic-group-selection-v1"
+                ),
+                "rerank": {
+                    "enabled": retrieval_config["do_rerank"],
+                    "discovery": discovery_rerank,
+                    "evidence": evidence_rerank,
+                },
+                "visual_hit_count": len(visual_hits),
+                "vlm_description_count": len(vlm_descriptions),
             },
             coverage_gaps=gaps,
+            warnings=tuple(warnings),
         )
         return SkillResult(
             artifact=SkillArtifact(
@@ -123,6 +213,188 @@ class KnowledgeRetrievalSkill:
                 security_level=self._security_level(context),
             )
         )
+
+    async def _visual_hits(
+        self,
+        context: ExecutionContext,
+        collection_ids: tuple[UUID, ...],
+        retrieval_config: dict[str, int | bool],
+        image_payloads: list[bytes],
+        image_processing: dict[str, Any],
+        warnings: list[str],
+    ) -> dict[str, Any]:
+        if not image_payloads:
+            return {"results": []}
+        try:
+            response = await self._client.search_visual(
+                images_base64=[
+                    base64.b64encode(payload).decode("ascii")
+                    for payload in image_payloads
+                ],
+                collection_ids=collection_ids,
+                domain_id=context.domain_id,
+                agent_id=context.agent_id,
+                auth_context=self._auth_context(context),
+                per_image_limit=retrieval_config["max_bundles"],
+                result_limit=retrieval_config["max_bundles"],
+            )
+        except Exception:
+            image_processing["visual_search"] = "FAILED"
+            warnings.append("图片相似检索暂时不可用，已继续其他检索路径")
+            return {"results": []}
+        searched = list(response.get("searched_collection_ids") or [])
+        skipped = list(response.get("skipped_collection_ids") or [])
+        if searched and skipped:
+            image_processing["visual_search"] = "PARTIAL"
+            warnings.append(
+                "部分 Collection 未配置 Visual Embedding，已跳过其图搜图路径"
+            )
+        elif searched:
+            image_processing["visual_search"] = "EXECUTED"
+        else:
+            image_processing["visual_search"] = "SKIPPED_NOT_CONFIGURED"
+        image_processing["visual_searched_collection_ids"] = searched
+        image_processing["visual_skipped_collection_ids"] = skipped
+        return response
+
+    async def _load_query_images(
+        self, context: ExecutionContext
+    ) -> list[bytes]:
+        payloads: list[bytes] = []
+        for descriptor in self._query_image_descriptors(context):
+            uri = str(descriptor.get("storage_uri") or "")
+            if uri:
+                payloads.append(
+                    await asyncio.to_thread(Path(uri).read_bytes)
+                )
+        return payloads
+
+    async def _describe_images(
+        self,
+        context: ExecutionContext,
+        image_payloads: list[bytes],
+        image_processing: dict[str, Any],
+        warnings: list[str],
+    ) -> tuple[list[str], dict[str, Any] | None]:
+        if not image_payloads:
+            return [], None
+        model_name = str(
+            context.config_snapshot.get("agent", {}).get(
+                "query_vlm_model_name"
+            )
+            or ""
+        ).strip()
+        if not model_name:
+            image_processing["vlm_text_search"] = (
+                "SKIPPED_NOT_CONFIGURED"
+            )
+            return [], None
+        if self._model_client is None or self._prompt_resolver is None:
+            image_processing["vlm_text_search"] = "FAILED"
+            warnings.append("图片理解服务未初始化，已跳过图片转文字检索")
+            return [], None
+        try:
+            prompt = await self._prompt_resolver.resolve(
+                "agent_runtime.query_image_description"
+            )
+            descriptions = await asyncio.gather(
+                *(
+                    self._model_client.get_vlm_answer(
+                        model_name,
+                        Image.open(BytesIO(payload)).convert("RGB"),
+                        prompt=prompt.content,
+                        temperature=0.1,
+                        max_tokens=1024,
+                    )
+                    for payload in image_payloads
+                )
+            )
+        except Exception:
+            image_processing["vlm_text_search"] = "FAILED"
+            warnings.append("图片理解暂时不可用，已继续其他检索路径")
+            return [], (
+                prompt.ref() if "prompt" in locals() else None
+            )
+        normalized = [
+            str(value).strip()[:3000]
+            for value in descriptions
+            if str(value).strip()
+        ]
+        image_processing["vlm_text_search"] = (
+            "EXECUTED" if normalized else "FAILED"
+        )
+        if not normalized:
+            warnings.append("图片理解未产生可检索文本")
+        return normalized, prompt.ref()
+
+    @staticmethod
+    def _multimodal_query(
+        query: str, descriptions: list[str]
+    ) -> str:
+        if not descriptions:
+            return query
+        supplement = "\n".join(
+            f"查询图片{i + 1}：{value}"
+            for i, value in enumerate(descriptions)
+        )
+        return f"{query}\n\n{supplement}"[:8000]
+
+    @staticmethod
+    def _finalize_image_warnings(
+        *,
+        image_processing: dict[str, Any],
+        warnings: list[str],
+    ) -> None:
+        if not image_processing.get("image_count"):
+            return
+        visual = image_processing["visual_search"]
+        vlm = image_processing["vlm_text_search"]
+        if (
+            visual == "SKIPPED_NOT_CONFIGURED"
+            and vlm == "SKIPPED_NOT_CONFIGURED"
+        ):
+            warnings.append(
+                "未配置 Visual Embedding 或查询 VLM，已忽略上传图片并仅处理文字"
+            )
+        elif visual == "SKIPPED_NOT_CONFIGURED":
+            warnings.append(
+                "未配置 Visual Embedding，已仅使用 VLM 图片转文字检索"
+            )
+        elif vlm == "SKIPPED_NOT_CONFIGURED":
+            warnings.append(
+                "未配置查询 VLM，已仅执行图片相似检索"
+            )
+
+    @staticmethod
+    def _query_image_descriptors(
+        context: ExecutionContext,
+    ) -> list[dict[str, Any]]:
+        return list(
+            context.config_snapshot.get("client_metadata", {}).get(
+                "query_images", []
+            )
+            or []
+        )
+
+    @staticmethod
+    def _merge_candidates(
+        visual_hits: list[dict[str, Any]],
+        text_candidates: list[dict[str, Any]],
+        *,
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        """视觉候选优先保留，再补充文本 Discovery 候选。"""
+        output: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for item in [*visual_hits, *text_candidates]:
+            key = str(item.get("bundle_revision_id") or "")
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            output.append(item)
+            if len(output) >= limit:
+                break
+        return output
 
     async def _resolve_collection_ids(
         self, context: ExecutionContext
@@ -142,6 +414,37 @@ class KnowledgeRetrievalSkill:
             UUID(str(item["collection_id"]))
             for item in response.get("bindings", [])
             if item.get("status") == "ACTIVE"
+        )
+
+    @staticmethod
+    def _standalone_query(context: ExecutionContext) -> str:
+        artifacts = [
+            item
+            for item in context.input_artifacts
+            if item.artifact_type == "CONTEXT_REWRITE"
+        ]
+        if not artifacts:
+            return context.original_input
+        query = str(
+            (artifacts[-1].payload or {}).get("standalone_query") or ""
+        ).strip()
+        return query or context.original_input
+
+    @staticmethod
+    def _clarification(context: ExecutionContext) -> str | None:
+        artifacts = [
+            item
+            for item in context.input_artifacts
+            if item.artifact_type == "CONTEXT_REWRITE"
+        ]
+        if not artifacts:
+            return None
+        payload = artifacts[-1].payload or {}
+        if not bool(payload.get("ambiguity", False)):
+            return None
+        return str(
+            payload.get("clarification_question")
+            or "请补充说明当前问题所指的对象。"
         )
 
     def _auth_context(self, context: ExecutionContext) -> AuthContext:
@@ -164,10 +467,11 @@ class KnowledgeRetrievalSkill:
         return max(0, min(value, 3))
 
     @staticmethod
-    def _retrieval_config(context: ExecutionContext) -> dict[str, int]:
-        agent_config = (
-            context.config_snapshot.get("agent", {}).get("config", {})
-        )
+    def _retrieval_config(
+        context: ExecutionContext,
+    ) -> dict[str, int | bool]:
+        agent_snapshot = context.config_snapshot.get("agent", {})
+        agent_config = agent_snapshot.get("config", {})
         retrieval = agent_config.get("retrieval", {})
         return {
             "max_bundles": max(
@@ -179,6 +483,7 @@ class KnowledgeRetrievalSkill:
             "context_limit": max(
                 0, min(int(retrieval.get("context_limit", 4)), 20)
             ),
+            "do_rerank": bool(agent_snapshot.get("do_rerank", False)),
         }
 
     @staticmethod
@@ -272,12 +577,17 @@ class KnowledgeRetrievalSkill:
         *,
         status: str,
         warning: str,
+        warnings: tuple[str, ...] = (),
+        query_plan: dict[str, Any] | None = None,
     ) -> SkillResult:
         result = DocumentRetrievalResult(
             status=status,
             citation_pack=CitationPack(
                 question=context.original_input,
-                query_plan={"strategy": "KC_TWO_STAGE"},
+                query_plan={
+                    "strategy": "KC_TWO_STAGE",
+                    **(query_plan or {}),
+                },
                 bundle_candidates=(),
                 citations=(),
                 coverage=RetrievalCoverage(
@@ -293,7 +603,7 @@ class KnowledgeRetrievalSkill:
                 "citation_count": 0,
             },
             coverage_gaps=(warning,),
-            warnings=(warning,),
+            warnings=tuple(dict.fromkeys((*warnings, warning))),
         )
         return SkillResult(
             artifact=SkillArtifact(
@@ -308,5 +618,5 @@ class KnowledgeRetrievalSkill:
                     KnowledgeRetrievalSkill._security_level(context)
                 ),
             ),
-            warnings=(warning,),
+            warnings=tuple(dict.fromkeys((*warnings, warning))),
         )

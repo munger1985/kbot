@@ -27,11 +27,79 @@ class CollectionDeletionStateError(Exception):
 
 
 @dataclass(frozen=True)
+class CollectionSnapshot:
+    """脱离数据库会话后仍可安全返回的 Collection 快照。"""
+
+    collection_id: UUID
+    app_id: int
+    domain_id: int
+    collection_key: str
+    display_name: str
+    description: str | None
+    parser_llm_model_id: UUID
+    parser_vlm_model_id: UUID | None
+    retrieval_llm_model_id: UUID
+    embedding_model_id: UUID
+    visual_embedding_model_id: UUID | None
+    status: str
+    default_security_level: int
+    metadata_json: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class CollectionBindingSnapshot:
+    """脱离数据库会话后仍可安全返回的绑定快照。"""
+
+    binding_id: UUID
+    collection_id: UUID
+    consumer_type: str
+    consumer_id: UUID
+    status: str
+    note: str | None
+
+
+def _collection_snapshot(entity: KcCollectionEntity) -> CollectionSnapshot:
+    return CollectionSnapshot(
+        collection_id=entity.collection_id,
+        app_id=int(entity.app_id),
+        domain_id=int(entity.domain_id),
+        collection_key=entity.collection_key,
+        display_name=entity.display_name,
+        description=entity.description,
+        parser_llm_model_id=entity.parser_llm_model_id,
+        parser_vlm_model_id=entity.parser_vlm_model_id,
+        retrieval_llm_model_id=entity.retrieval_llm_model_id,
+        embedding_model_id=entity.embedding_model_id,
+        visual_embedding_model_id=entity.visual_embedding_model_id,
+        status=entity.status,
+        default_security_level=int(entity.default_security_level),
+        metadata_json=dict(entity.metadata_json or {}),
+    )
+
+
+def _binding_snapshot(
+    entity: KcCollectionBindingEntity,
+) -> CollectionBindingSnapshot:
+    return CollectionBindingSnapshot(
+        binding_id=entity.binding_id,
+        collection_id=entity.collection_id,
+        consumer_type=entity.consumer_type,
+        consumer_id=entity.consumer_id,
+        status=entity.status,
+        note=entity.note,
+    )
+
+
+@dataclass(frozen=True)
 class CreateCollectionCommand:
     domain_id: int
     collection_key: str
     display_name: str
+    parser_llm_model_id: UUID
+    parser_vlm_model_id: UUID | None
+    retrieval_llm_model_id: UUID
     embedding_model_id: UUID
+    visual_embedding_model_id: UUID | None = None
     default_security_level: int = 1
     description: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
@@ -52,6 +120,16 @@ class ChangeCollectionStatusCommand:
     domain_id: int
     collection_key: str
     status: str
+    actor_id: str = "svc:knowledge-core"
+
+
+@dataclass(frozen=True)
+class UpdateCollectionGenerationModelsCommand:
+    domain_id: int
+    collection_key: str
+    parser_llm_model_id: UUID
+    parser_vlm_model_id: UUID | None
+    retrieval_llm_model_id: UUID
     actor_id: str = "svc:knowledge-core"
 
 
@@ -77,6 +155,19 @@ class KnowledgeCoreCollectionService:
             raise ValueError("display_name is required")
         if not isinstance(command.embedding_model_id, UUID):
             raise ValueError("embedding_model_id must be a UUID")
+        for field_name in (
+            "parser_llm_model_id",
+            "retrieval_llm_model_id",
+        ):
+            if not isinstance(getattr(command, field_name), UUID):
+                raise ValueError(f"{field_name} must be a UUID")
+        for field_name in (
+            "parser_vlm_model_id",
+            "visual_embedding_model_id",
+        ):
+            value = getattr(command, field_name)
+            if value is not None and not isinstance(value, UUID):
+                raise ValueError(f"{field_name} must be a UUID")
         if command.default_security_level < 0:
             raise ValueError("default_security_level must be non-negative")
 
@@ -99,7 +190,13 @@ class KnowledgeCoreCollectionService:
                 collection_key=collection_key,
                 display_name=display_name,
                 description=command.description,
+                parser_llm_model_id=command.parser_llm_model_id,
+                parser_vlm_model_id=command.parser_vlm_model_id,
+                retrieval_llm_model_id=command.retrieval_llm_model_id,
                 embedding_model_id=command.embedding_model_id,
+                visual_embedding_model_id=(
+                    command.visual_embedding_model_id
+                ),
                 status="ACTIVE",
                 default_security_level=command.default_security_level,
                 metadata_json=command.metadata,
@@ -110,13 +207,22 @@ class KnowledgeCoreCollectionService:
             await uow.commit()
             return collection
 
-    async def list(self, *, domain_id: int) -> list[KcCollectionEntity]:
+    async def list(self, *, domain_id: int) -> list[CollectionSnapshot]:
         async with self._uow_factory() as uow:
             if uow.collections is None:
                 raise RuntimeError("Knowledge Core Unit of Work is not initialized")
-            return await uow.collections.list_by_scope(app_id=self._app_id, domain_id=domain_id)
+            entities = await uow.collections.list_by_scope(
+                app_id=self._app_id,
+                domain_id=domain_id,
+            )
+            return [_collection_snapshot(entity) for entity in entities]
 
-    async def get(self, *, domain_id: int, collection_key: str) -> KcCollectionEntity:
+    async def get(
+        self,
+        *,
+        domain_id: int,
+        collection_key: str,
+    ) -> CollectionSnapshot:
         async with self._uow_factory() as uow:
             if uow.collections is None:
                 raise RuntimeError("Knowledge Core Unit of Work is not initialized")
@@ -125,7 +231,7 @@ class KnowledgeCoreCollectionService:
             )
             if collection is None:
                 raise CollectionNotFoundError("Collection not found")
-            return collection
+            return _collection_snapshot(collection)
 
     async def change_status(self, command: ChangeCollectionStatusCommand) -> KcCollectionEntity:
         if command.status not in {"ACTIVE", "DISABLED"}:
@@ -142,6 +248,38 @@ class KnowledgeCoreCollectionService:
             if collection.status in {"DELETING", "DELETION_FAILED"}:
                 raise CollectionDeletionStateError("Collection is in deletion lifecycle")
             collection.status = command.status
+            collection.updated_by = command.actor_id
+            await uow.session.flush()
+            await uow.commit()
+            return collection
+
+    async def update_generation_models(
+        self, command: UpdateCollectionGenerationModelsCommand
+    ) -> KcCollectionEntity:
+        """只更新非向量模型；Embedding 不提供任何更新入口。"""
+        if not isinstance(command.parser_llm_model_id, UUID):
+            raise ValueError("parser_llm_model_id must be a UUID")
+        if not isinstance(command.retrieval_llm_model_id, UUID):
+            raise ValueError("retrieval_llm_model_id must be a UUID")
+        if (
+            command.parser_vlm_model_id is not None
+            and not isinstance(command.parser_vlm_model_id, UUID)
+        ):
+            raise ValueError("parser_vlm_model_id must be a UUID")
+        async with self._uow_factory() as uow:
+            collection = await uow.collections.get_by_scope_key(
+                app_id=self._app_id,
+                domain_id=command.domain_id,
+                collection_key=command.collection_key,
+                lock=True,
+            )
+            if collection is None:
+                raise CollectionNotFoundError("Collection not found")
+            collection.parser_llm_model_id = command.parser_llm_model_id
+            collection.parser_vlm_model_id = command.parser_vlm_model_id
+            collection.retrieval_llm_model_id = (
+                command.retrieval_llm_model_id
+            )
             collection.updated_by = command.actor_id
             await uow.session.flush()
             await uow.commit()
@@ -265,7 +403,7 @@ class KnowledgeCoreBindingService:
         *,
         domain_id: int,
         agent_id: UUID,
-    ) -> list[KcCollectionBindingEntity]:
+    ) -> list[CollectionBindingSnapshot]:
         async with self._uow_factory() as uow:
             if uow.bindings is None or uow.collections is None:
                 raise RuntimeError("Knowledge Core Unit of Work is not initialized")
@@ -279,5 +417,5 @@ class KnowledgeCoreBindingService:
                     app_id=self._app_id, domain_id=domain_id, collection_id=binding.collection_id,
                 )
                 if collection is not None:
-                    result.append(binding)
+                    result.append(_binding_snapshot(binding))
             return result

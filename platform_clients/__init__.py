@@ -13,6 +13,7 @@ from .knowledge_core import (
     KnowledgeCoreClientError,
     KnowledgeCoreResponse,
 )
+from .mcp_data import MCPDataClient, MCPDataClientError
 
 __all__ = [
     "AgentRuntimeClient",
@@ -26,4 +27,6 @@ __all__ = [
     "KnowledgeCoreClient",
     "KnowledgeCoreClientError",
     "KnowledgeCoreResponse",
+    "MCPDataClient",
+    "MCPDataClientError",
 ]

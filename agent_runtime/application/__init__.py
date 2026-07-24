@@ -7,6 +7,7 @@ from .agent_definitions import (
     UpdateAgentDefinitionCommand,
 )
 from .commands import (
+    AppendTaskProgressCommand,
     ArtifactInput,
     CancelRunCommand,
     ClaimTaskCommand,
@@ -29,6 +30,15 @@ from .runtime_service import (
     StaleTaskLease,
 )
 from .delegations import AgentDelegationReconciler
+from .conversations import (
+    ConversationNotFound,
+    MemoryRecallService,
+    ConversationService,
+    ConversationTurnNotFound,
+)
+from .attachments import ConversationAttachmentStore
+from .memory import MemoryConsolidationWorker
+from .retention import ConversationRetentionWorker
 
 __all__ = [
     "AgentDefinitionService",
@@ -39,10 +49,18 @@ __all__ = [
     "AgentResultNotReady",
     "AgentRuntimeNotFound",
     "AgentRuntimeService",
+    "AppendTaskProgressCommand",
     "ArtifactInput",
     "CancelRunCommand",
     "ClaimTaskCommand",
     "CompleteTaskCommand",
+    "ConversationNotFound",
+    "MemoryRecallService",
+    "ConversationService",
+    "ConversationAttachmentStore",
+    "ConversationTurnNotFound",
+    "MemoryConsolidationWorker",
+    "ConversationRetentionWorker",
     "CreateRunCommand",
     "CreateAgentDefinitionCommand",
     "FailTaskCommand",

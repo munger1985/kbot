@@ -16,8 +16,21 @@ from fastapi_offline import FastAPIOffline
 from loguru import logger
 from sqlalchemy import text
 
-from agent_runtime.api import agent_router, internal_router, task_router
-from agent_runtime.application import AgentDefinitionService, AgentRuntimeService
+from agent_runtime.api import (
+    agent_router,
+    conversation_router,
+    data_router,
+    internal_router,
+    memory_router,
+    task_router,
+)
+from agent_runtime.application import (
+    AgentDefinitionService,
+    AgentRuntimeService,
+    ConversationService,
+    ConversationAttachmentStore,
+    MemoryRecallService,
+)
 from agent_runtime.config import get_agent_runtime_settings
 from agent_runtime.domain.planning import PlanLimits, PlanValidator
 from agent_runtime.domain.skills import SkillRegistry
@@ -29,6 +42,9 @@ from platform_core.logger import LogConfig, LogManager
 from platform_core.middleware.log_middleware import log_requests
 from platform_core.platform.port_check import check_port_available
 from platform_core.security import create_internal_auth_middleware
+from platform_clients import AIModelClient, MCPDataClient
+from platform_core.prompts import PromptResolver, load_prompt_catalog
+from pathlib import Path
 
 
 settings = get_agent_runtime_settings()
@@ -64,7 +80,32 @@ async def lifespan(app: FastAPIOffline):
     app.state.agent_definition_service = AgentDefinitionService(
         uow_factory=uow_factory
     )
-    app.state.agent_runtime_service = AgentRuntimeService(
+    model_client = AIModelClient(
+        caller_service=SERVICE_NAME,
+        embedding_config=settings.embedding,
+        llm_config=settings.llm,
+    )
+    prompt_resolver = PromptResolver(
+        session_factory=db_runtime.session_factory,
+        catalog=load_prompt_catalog(),
+    )
+    try:
+        mcp_api_key = settings.ask_data_api.require_api_key()
+    except RuntimeError:
+        app.state.mcp_data_client = None
+        logger.warning("未配置问数 API Key，问数与 Profile 列表暂不可用")
+    else:
+        app.state.mcp_data_client = MCPDataClient(
+            api_endpoint=settings.ask_data_api.api_endpoint,
+            profiles_endpoint=settings.ask_data_api.profiles_endpoint,
+            api_key=mcp_api_key,
+            timeout_seconds=settings.ask_data_api.timeout,
+            max_rows=settings.ask_data_api.max_rows,
+            max_response_bytes=(
+                settings.ask_data_api.max_response_bytes
+            ),
+        )
+    runtime_service = AgentRuntimeService(
         uow_factory=uow_factory,
         plan_validator=PlanValidator(
             skill_exists=skill_registry.contains,
@@ -82,7 +123,22 @@ async def lifespan(app: FastAPIOffline):
             ),
         ),
         skill_registry=skill_registry,
-        root_planner=RootAgentPlanner(),
+        root_planner=RootAgentPlanner(
+            model_client=model_client,
+            prompt_resolver=prompt_resolver,
+        ),
+    )
+    app.state.agent_runtime_service = runtime_service
+    app.state.conversation_service = ConversationService(
+        uow_factory=uow_factory,
+        runtime_service=runtime_service,
+        memory_recall_service=MemoryRecallService(
+            uow_factory=uow_factory,
+            model_client=model_client,
+        ),
+        attachment_store=ConversationAttachmentStore(
+            Path(settings.attachments.local_storage_path)
+        ),
     )
     logger.info("正在启动服务 [{}]，进程号={}", SERVICE_NAME, os.getpid())
     try:
@@ -107,6 +163,9 @@ app.middleware("http")(
 app.include_router(internal_router)
 app.include_router(task_router)
 app.include_router(agent_router)
+app.include_router(data_router)
+app.include_router(conversation_router)
+app.include_router(memory_router)
 
 
 @app.get("/health", tags=["System"])

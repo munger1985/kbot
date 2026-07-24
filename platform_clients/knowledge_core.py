@@ -136,6 +136,24 @@ class KnowledgeCoreClient:
             auth_context=auth_context,
         )
 
+    async def update_collection_generation_models(
+        self,
+        *,
+        domain_id: int,
+        collection_key: str,
+        payload: dict[str, Any],
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "PUT",
+            (
+                f"{INTERNAL_API_V1}/knowledge/domains/{domain_id}"
+                f"/collections/{collection_key}/generation-models"
+            ),
+            payload=payload,
+            auth_context=auth_context,
+        )
+
     async def delete_collection(
         self,
         *,
@@ -240,6 +258,43 @@ class KnowledgeCoreClient:
             auth_context=auth_context,
         )
 
+    async def list_pending_approvals(
+        self,
+        *,
+        domain_id: int,
+        collection_key: str,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "GET",
+            (
+                f"{INTERNAL_API_V1}/knowledge/domains/{domain_id}"
+                f"/collections/{collection_key}/approvals"
+            ),
+            auth_context=auth_context,
+        )
+
+    async def review_user_intake(
+        self,
+        *,
+        domain_id: int,
+        collection_key: str,
+        bundle_revision_id: UUID,
+        decision: str,
+        comment: str | None,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "POST",
+            (
+                f"{INTERNAL_API_V1}/knowledge/domains/{domain_id}"
+                f"/collections/{collection_key}/bundle-revisions/"
+                f"{bundle_revision_id}/approval"
+            ),
+            payload={"decision": decision, "comment": comment},
+            auth_context=auth_context,
+        )
+
     async def ingest_multipart(
         self,
         *,
@@ -278,6 +333,7 @@ class KnowledgeCoreClient:
         query_vectors: dict[UUID, Sequence[float]] | None = None,
         max_security_level: int = 3,
         per_collection_limit: int = 20,
+        do_rerank: bool = False,
     ) -> dict[str, Any]:
         return await self._json(
             "POST",
@@ -297,6 +353,7 @@ class KnowledgeCoreClient:
                 ),
                 "max_security_level": max_security_level,
                 "per_collection_limit": per_collection_limit,
+                "do_rerank": do_rerank,
             },
             auth_context=auth_context,
         )
@@ -313,6 +370,7 @@ class KnowledgeCoreClient:
         max_security_level: int = 3,
         max_evidence: int = 12,
         context_limit: int = 4,
+        do_rerank: bool = False,
     ) -> dict[str, Any]:
         return await self._json(
             "POST",
@@ -333,6 +391,34 @@ class KnowledgeCoreClient:
                 "max_security_level": max_security_level,
                 "max_evidence": max_evidence,
                 "context_limit": context_limit,
+                "do_rerank": do_rerank,
+            },
+            auth_context=auth_context,
+        )
+
+    async def search_visual(
+        self,
+        *,
+        images_base64: Sequence[str],
+        collection_ids: Sequence[UUID],
+        domain_id: int,
+        agent_id: UUID,
+        auth_context: AuthContext,
+        per_image_limit: int = 10,
+        result_limit: int = 20,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "POST",
+            f"{INTERNAL_API_V1}/knowledge/retrieval/visual",
+            payload={
+                "domain_id": domain_id,
+                "agent_id": str(agent_id),
+                "collection_ids": [
+                    str(value) for value in collection_ids
+                ],
+                "images_base64": list(images_base64),
+                "per_image_limit": per_image_limit,
+                "result_limit": result_limit,
             },
             auth_context=auth_context,
         )

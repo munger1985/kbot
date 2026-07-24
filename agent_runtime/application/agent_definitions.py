@@ -23,8 +23,23 @@ class CreateAgentDefinitionCommand(_Model):
     display_name: str = Field(min_length=1, max_length=256)
     description: str | None = Field(default=None, max_length=1000)
     enabled_capabilities: tuple[str, ...] = Field(min_length=1)
-    router_model_name: str | None = Field(default=None, max_length=128)
-    composer_model_name: str = Field(min_length=1, max_length=128)
+    router_llm_model_name: str | None = Field(default=None, max_length=128)
+    context_llm_model_name: str = Field(min_length=1, max_length=128)
+    composer_llm_model_name: str = Field(min_length=1, max_length=128)
+    memory_llm_model_name: str = Field(min_length=1, max_length=128)
+    query_vlm_model_name: str | None = Field(
+        default=None, min_length=1, max_length=128
+    )
+    chart_llm_model_name: str | None = Field(
+        default=None, min_length=1, max_length=128
+    )
+    memory_embedding_model_name: str = Field(
+        min_length=1, max_length=128
+    )
+    do_rerank: bool = False
+    data_profile_name: str | None = Field(
+        default=None, min_length=1, max_length=256
+    )
     instruction: str | None = Field(default=None, max_length=32000)
     config: dict[str, Any] = Field(default_factory=dict)
     status: str = Field(default="DRAFT", pattern=r"^(DRAFT|ACTIVE)$")
@@ -39,9 +54,28 @@ class UpdateAgentDefinitionCommand(_Model):
     display_name: str | None = Field(default=None, min_length=1, max_length=256)
     description: str | None = Field(default=None, max_length=1000)
     enabled_capabilities: tuple[str, ...] | None = None
-    router_model_name: str | None = Field(default=None, max_length=128)
-    composer_model_name: str | None = Field(
+    router_llm_model_name: str | None = Field(default=None, max_length=128)
+    context_llm_model_name: str | None = Field(
         default=None, min_length=1, max_length=128
+    )
+    composer_llm_model_name: str | None = Field(
+        default=None, min_length=1, max_length=128
+    )
+    memory_llm_model_name: str | None = Field(
+        default=None, min_length=1, max_length=128
+    )
+    query_vlm_model_name: str | None = Field(
+        default=None, min_length=1, max_length=128
+    )
+    chart_llm_model_name: str | None = Field(
+        default=None, min_length=1, max_length=128
+    )
+    memory_embedding_model_name: str | None = Field(
+        default=None, min_length=1, max_length=128
+    )
+    do_rerank: bool | None = None
+    data_profile_name: str | None = Field(
+        default=None, min_length=1, max_length=256
     )
     instruction: str | None = Field(default=None, max_length=32000)
     config: dict[str, Any] | None = None
@@ -59,8 +93,15 @@ class AgentDefinitionView(_Model):
     description: str | None
     status: str
     enabled_capabilities: tuple[str, ...]
-    router_model_name: str | None
-    composer_model_name: str
+    router_llm_model_name: str | None
+    context_llm_model_name: str
+    composer_llm_model_name: str
+    memory_llm_model_name: str
+    query_vlm_model_name: str | None
+    chart_llm_model_name: str | None
+    memory_embedding_model_name: str
+    do_rerank: bool
+    data_profile_name: str | None
     instruction: str | None
     config: dict[str, Any]
     row_version: int
@@ -82,6 +123,12 @@ class AgentDefinitionService:
         capabilities = self._validate_capabilities(
             command.enabled_capabilities
         )
+        self._validate_runtime_configuration(
+            capabilities=capabilities,
+            status=command.status,
+            router_llm_model_name=command.router_llm_model_name,
+            data_profile_name=command.data_profile_name,
+        )
         async with self._uow_factory() as uow:
             existing = await uow.agents.get_by_key(
                 app_id=command.app_id,
@@ -102,8 +149,17 @@ class AgentDefinitionService:
                 description=command.description,
                 status=command.status,
                 enabled_capabilities_json=list(capabilities),
-                router_model_name=command.router_model_name,
-                composer_model_name=command.composer_model_name,
+                router_llm_model_name=command.router_llm_model_name,
+                context_llm_model_name=command.context_llm_model_name,
+                composer_llm_model_name=command.composer_llm_model_name,
+                memory_llm_model_name=command.memory_llm_model_name,
+                query_vlm_model_name=command.query_vlm_model_name,
+                chart_llm_model_name=command.chart_llm_model_name,
+                memory_embedding_model_name=(
+                    command.memory_embedding_model_name
+                ),
+                do_rerank=command.do_rerank,
+                data_profile_name=command.data_profile_name,
                 instruction=command.instruction,
                 config_json=command.config,
                 created_by=command.actor_id,
@@ -154,6 +210,36 @@ class AgentDefinitionService:
                         tuple(values.pop("enabled_capabilities"))
                     )
                 )
+            effective_capabilities = tuple(
+                values.get(
+                    "enabled_capabilities_json",
+                    row.enabled_capabilities_json or [],
+                )
+            )
+            self._validate_runtime_configuration(
+                capabilities=effective_capabilities,
+                status=str(values.get("status", row.status)),
+                router_llm_model_name=values.get(
+                    "router_llm_model_name",
+                    row.router_llm_model_name,
+                ),
+                data_profile_name=values.get(
+                    "data_profile_name",
+                    getattr(row, "data_profile_name", None),
+                ),
+            )
+            requested_embedding = values.get(
+                "memory_embedding_model_name"
+            )
+            if (
+                requested_embedding is not None
+                and requested_embedding
+                != row.memory_embedding_model_name
+            ):
+                raise AgentRuntimeConflict(
+                    "MEMORY_EMBEDDING_MODEL_IMMUTABLE",
+                    "记忆 Embedding 模型一经设定禁止更换",
+                )
             if "config" in values:
                 values["config_json"] = values.pop("config")
             for field, value in values.items():
@@ -203,7 +289,37 @@ class AgentDefinitionService:
                 "AGENT_CAPABILITY_INVALID",
                 f"Agent 能力集合无效：{sorted(unknown)}",
             )
+        if "aiops" in normalized and len(normalized) != 1:
+            raise AgentRuntimeConflict(
+                "AGENT_CAPABILITY_INVALID",
+                "AIOps Agent 必须使用独立入口，不能与其他能力混合",
+            )
         return normalized
+
+    @staticmethod
+    def _validate_runtime_configuration(
+        *,
+        capabilities: tuple[str, ...],
+        status: str,
+        router_llm_model_name: str | None,
+        data_profile_name: str | None,
+    ) -> None:
+        if status != "ACTIVE":
+            return
+        if len(capabilities) > 1 and not str(
+            router_llm_model_name or ""
+        ).strip():
+            raise AgentRuntimeConflict(
+                "AGENT_ROUTER_MODEL_REQUIRED",
+                "多能力 Agent 启用前必须配置 router_llm_model_name",
+            )
+        if "mcp_data" in capabilities and not str(
+            data_profile_name or ""
+        ).strip():
+            raise AgentRuntimeConflict(
+                "AGENT_DATA_PROFILE_REQUIRED",
+                "问数 Agent 启用前必须配置 data_profile_name",
+            )
 
     @staticmethod
     def _view(row: AgentDefinitionEntity) -> AgentDefinitionView:
@@ -217,8 +333,17 @@ class AgentDefinitionService:
             enabled_capabilities=tuple(
                 row.enabled_capabilities_json or []
             ),
-            router_model_name=row.router_model_name,
-            composer_model_name=row.composer_model_name,
+            router_llm_model_name=row.router_llm_model_name,
+            context_llm_model_name=row.context_llm_model_name,
+            composer_llm_model_name=row.composer_llm_model_name,
+            memory_llm_model_name=row.memory_llm_model_name,
+            query_vlm_model_name=row.query_vlm_model_name,
+            chart_llm_model_name=row.chart_llm_model_name,
+            memory_embedding_model_name=(
+                row.memory_embedding_model_name
+            ),
+            do_rerank=bool(row.do_rerank),
+            data_profile_name=row.data_profile_name,
             instruction=row.instruction,
             config=dict(row.config_json or {}),
             row_version=int(row.row_version),

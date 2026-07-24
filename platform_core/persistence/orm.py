@@ -4,6 +4,7 @@ from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy import DateTime, Dialect, LargeBinary, Text, TypeDecorator
+from sqlalchemy.types import UserDefinedType
 import array as array_module
 from sqlalchemy.dialects.oracle import (
     RAW,
@@ -122,51 +123,62 @@ def VectorField():
     return UniversalVector()
 
 
-class OracleJSON(TypeDecorator):
-    """
-    自适应 Oracle JSON 处理器。
-    完美调和 oracledb 驱动底层自动反序列化 OSON 与 SQLAlchemy 二次解析带来的冲突。
-    """
-    # 🎯 核心修正 1：避开原生 JSON 类型的深度拦截，由我们完全接管处理流程
-    impl = Text  
+class OracleNativeJSON(UserDefinedType):
+    """Oracle 26ai 原生 JSON 列映射。"""
+
     cache_ok = True
 
-    def load_dialect_impl(self, dialect: Dialect):
-        """根据当前数据库方言动态加载底层实现类型"""
-        # 🎯 始终使用 Text 作为底层实现，由 process_bind_param/process_result_value 完全接管序列化/反序列化
-        # 避免使用原生 JSON() 类型，因为在 oracledb async 模式下会触发
-        # 'OracleDialectAsync_oracledb' object has no attribute '_json_deserializer' 错误
-        return dialect.type_descriptor(Text())
+    def get_col_spec(self, **kwargs):
+        return "JSON"
 
-    def process_bind_param(self, value, dialect: Dialect):
-        """序列化：将 Python 对象转换为 JSON 字符串或保持原样供驱动处理"""
-        if value is None:
-            return None
-        
-        # 兼容高精度 Decimal 并防止中文被转义为 \uXXXX
-        def default_encoder(item):
+    def bind_processor(self, dialect):
+        """将 Python 对象编码为 Oracle 可隐式转换的 JSON 文本。"""
+
+        def process(value):
+            if value is None:
+                return None
+
+            def default_encoder(item):
+                if isinstance(item, Decimal):
+                    return float(item)
+                if isinstance(item, UUID):
+                    return str(item)
+                raise TypeError(
+                    f"{item.__class__.__name__} 无法序列化为 JSON"
+                )
+
+            return json.dumps(
+                value,
+                default=default_encoder,
+                ensure_ascii=False,
+            )
+
+        return process
+
+    def result_processor(self, dialect, coltype):
+        """兼容驱动返回原生对象或 JSON 文本两种形式。"""
+
+        def normalize(item):
             if isinstance(item, Decimal):
-                return float(item)
-            if isinstance(item, UUID):
-                return str(item)
-            raise TypeError(f"Object of type {item.__class__.__name__} is not JSON serializable")
-            
-        # 即使底层是原生 JSON 类型，直接传纯净的 JSON 字符串也是最安全的写入方式
-        return json.dumps(value, default=default_encoder, ensure_ascii=False)
+                return (
+                    int(item)
+                    if item == item.to_integral_value()
+                    else float(item)
+                )
+            if isinstance(item, dict):
+                return {
+                    key: normalize(nested)
+                    for key, nested in item.items()
+                }
+            if isinstance(item, list):
+                return [normalize(nested) for nested in item]
+            return item
 
-    def process_result_value(self, value, dialect: Dialect):
-        """反序列化：如果驱动已经解构成 dict/list，则直接放行，杜绝 TypeError"""
-        if value is None:
-            return None
-            
-        # 🎯 核心防御：如果 oracledb 驱动在 thin 异步模式下已经自动反序列化成了字典/列表，直接放行
-        if isinstance(value, (dict, list)):
-            return value
-            
-        if isinstance(value, str):
-            try:
-                return json.loads(value)
-            except (TypeError, json.JSONDecodeError):
+        def process(value):
+            if value is None:
                 return value
-                
-        return value
+            if isinstance(value, str):
+                value = json.loads(value)
+            return normalize(value)
+
+        return process

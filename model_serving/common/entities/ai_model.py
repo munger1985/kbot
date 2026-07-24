@@ -5,7 +5,11 @@ from sqlalchemy import DateTime, Numeric, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from platform_core.identity import uuid7
-from platform_core.persistence.orm import BaseEntity, OracleJSON, UUIDv7Type
+from platform_core.persistence.orm import (
+    BaseEntity,
+    OracleNativeJSON,
+    UUIDv7Type,
+)
 
 class AIModelEntity(BaseEntity):
     """模型托管服务拥有的可调用模型定义。"""
@@ -50,7 +54,10 @@ class AIModelEntity(BaseEntity):
         Numeric(10, 0),
         comment="Output vector dimension; required for text embedding models and must match base.toml",
     )
-    model_params: Mapped[dict | None] = mapped_column(OracleJSON, comment="Default model parameters configuration in JSON format")
+    model_params: Mapped[dict | None] = mapped_column(
+        OracleNativeJSON(),
+        comment="模型默认参数，使用 Oracle 原生 JSON 存储",
+    )
     descs: Mapped[str | None] = mapped_column(String(512), comment="模型说明")
     created_by: Mapped[str | None] = mapped_column(String(256), comment="创建者")
     created_at: Mapped[datetime] = mapped_column(

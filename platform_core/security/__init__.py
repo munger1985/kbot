@@ -15,6 +15,7 @@ from .auth_context import (
 from .crypto import CryptoToolkit
 from .middleware import (
     DOMAIN_ID_HEADER,
+    TEST_AUTH_BYPASS_HEADER,
     USER_ID_HEADER,
     create_api_client_auth_middleware,
     create_internal_auth_middleware,
@@ -48,6 +49,7 @@ __all__ = [
     "DOMAIN_ID_HEADER",
     "INTERNAL_TOKEN_HEADER",
     "SERVICE_IDENTITY_HEADER",
+    "TEST_AUTH_BYPASS_HEADER",
     "PortalApiKeyError",
     "PortalApiKeyRecord",
     "PortalApiKeyVerifier",

@@ -27,6 +27,11 @@ class MainApiUnitOfWork:
         self.session = None
         self.domains = None
 
+    async def commit(self) -> None:
+        if self.session is None:
+            raise RuntimeError("Main API UoW 尚未进入事务上下文")
+        await self.session.commit()
+
 
 def create_main_api_uow(
     session_factory: async_sessionmaker[AsyncSession],
