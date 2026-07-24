@@ -4,7 +4,7 @@ from collections.abc import Callable, Collection
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import Select, and_, or_, select, update
+from sqlalchemy import Select, and_, case, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aiops_agent.application.errors import StateConflictError
@@ -12,6 +12,8 @@ from aiops_agent.entities import (
     InspectionFireEntity,
     InspectionPlanEntity,
     InspectionTargetEntity,
+    OpsRunEntity,
+    OutboxEntity,
     ReportEntity,
     TargetEntity,
 )
@@ -360,6 +362,76 @@ class InspectionRepository(AIOpsRepository):
         if lock:
             statement = statement.with_for_update()
         return (await self._session.execute(statement)).scalar_one_or_none()
+
+    async def list_open_fires(
+        self, *, inspection_plan_id: UUID, lock: bool = False
+    ) -> list[InspectionFireEntity]:
+        self._check_active()
+        statement: Select = (
+            select(InspectionFireEntity)
+            .where(
+                InspectionFireEntity.inspection_plan_id
+                == inspection_plan_id,
+                InspectionFireEntity.status.in_(("QUEUED", "RUNNING")),
+            )
+            .order_by(
+                InspectionFireEntity.scheduled_for,
+                InspectionFireEntity.inspection_fire_id,
+            )
+        )
+        if lock:
+            statement = statement.with_for_update()
+        return list((await self._session.execute(statement)).scalars())
+
+    async def find_reconcilable_fire(
+        self,
+    ) -> InspectionFireEntity | None:
+        self._check_active()
+        statement = (
+            select(InspectionFireEntity)
+            .where(
+                InspectionFireEntity.status.in_(("RUNNING", "QUEUED"))
+            )
+            .order_by(
+                case(
+                    (InspectionFireEntity.status == "RUNNING", 0),
+                    else_=1,
+                ),
+                InspectionFireEntity.updated_at,
+                InspectionFireEntity.inspection_fire_id,
+            )
+            .limit(1)
+        )
+        return (await self._session.execute(statement)).scalars().first()
+
+    async def list_runs_for_fire(
+        self, *, inspection_fire_id: UUID
+    ) -> list[OpsRunEntity]:
+        self._check_active()
+        statement = (
+            select(OpsRunEntity)
+            .where(
+                OpsRunEntity.inspection_fire_id == inspection_fire_id
+            )
+            .order_by(OpsRunEntity.ops_run_id)
+        )
+        return list((await self._session.execute(statement)).scalars())
+
+    async def list_run_request_events_for_fire(
+        self, *, inspection_fire_id: UUID
+    ) -> list[OutboxEntity]:
+        self._check_active()
+        statement = (
+            select(OutboxEntity)
+            .where(
+                OutboxEntity.aggregate_type == "OPS_INSPECTION_FIRE",
+                OutboxEntity.aggregate_id == inspection_fire_id,
+                OutboxEntity.event_type
+                == "OPS_INSPECTION_RUN_REQUESTED",
+            )
+            .order_by(OutboxEntity.outbox_id)
+        )
+        return list((await self._session.execute(statement)).scalars())
 
     async def transition_fire(
         self,

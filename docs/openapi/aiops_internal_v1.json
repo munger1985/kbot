@@ -824,6 +824,18 @@
             "title": "Input",
             "type": "string"
           },
+          "inspection_fire_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inspection Fire Id"
+          },
           "observation_end": {
             "anyOf": [
               {
@@ -4386,6 +4398,96 @@
         ],
         "title": "ReportType",
         "type": "string"
+      },
+      "ReportView": {
+        "additionalProperties": false,
+        "properties": {
+          "content_artifact": {
+            "$ref": "#/components/schemas/ArtifactRef"
+          },
+          "corrected_from_report_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Corrected From Report Id"
+          },
+          "period_end": {
+            "format": "date-time",
+            "title": "Period End",
+            "type": "string"
+          },
+          "period_start": {
+            "format": "date-time",
+            "title": "Period Start",
+            "type": "string"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published At"
+          },
+          "report_id": {
+            "format": "uuid",
+            "title": "Report Id",
+            "type": "string"
+          },
+          "report_key": {
+            "title": "Report Key",
+            "type": "string"
+          },
+          "report_type": {
+            "$ref": "#/components/schemas/ReportType"
+          },
+          "report_version": {
+            "minimum": 1.0,
+            "title": "Report Version",
+            "type": "integer"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ReportStatus"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          },
+          "target_id": {
+            "format": "uuid",
+            "title": "Target Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "report_id",
+          "report_key",
+          "report_type",
+          "report_version",
+          "status",
+          "target_id",
+          "period_start",
+          "period_end",
+          "summary",
+          "content_artifact"
+        ],
+        "title": "ReportView",
+        "type": "object"
       },
       "ResourceRef": {
         "additionalProperties": false,
@@ -8706,6 +8808,49 @@
         "summary": "Reject Proposal",
         "tags": [
           "AIOps Changes"
+        ]
+      }
+    },
+    "/internal/v1/aiops/reports/{report_id}": {
+      "get": {
+        "operationId": "get_report_internal_v1_aiops_reports__report_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "report_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Report Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Report",
+        "tags": [
+          "AIOps Runtime"
         ]
       }
     },

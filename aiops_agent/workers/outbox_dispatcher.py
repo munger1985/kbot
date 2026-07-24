@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Protocol
 
 from loguru import logger
@@ -94,6 +94,59 @@ class AIOpsDomainOutboxSink:
                     ),
                 ),
                 trace_id=payload["trace_id"],
+            )
+            return
+        if event_type == "OPS_INSPECTION_RUN_REQUESTED":
+            fire_id = payload["inspection_fire_id"]
+            target_id = payload["target_id"]
+            await self._runtime_service.create_run(
+                CreateOpsRunCommand(
+                    command_id=uuid7(),
+                    idempotency_key=(
+                        f"inspection:{fire_id}:target:{target_id}"
+                    ),
+                    app_id=payload["app_id"],
+                    domain_id=payload["domain_id"],
+                    actor_id=payload["actor_id"],
+                    agent_id=payload["agent_id"],
+                    target_id=target_id,
+                    trigger_type="SCHEDULE",
+                    inspection_fire_id=fire_id,
+                    deadline=datetime.now(UTC)
+                    + timedelta(seconds=payload["timeout_seconds"]),
+                    observation_start=datetime.fromisoformat(
+                        payload["period_start"]
+                    ),
+                    observation_end=datetime.fromisoformat(
+                        payload["period_end"]
+                    ),
+                    input="执行数据库定期巡检并生成报告",
+                    blueprint_id="database.diagnostic-baseline",
+                    blueprint_version="1",
+                    client_metadata={
+                        "trace_id": payload["trace_id"],
+                        "trigger": "inspection_schedule",
+                        "inspection": {
+                            "fire_id": fire_id,
+                            "template_id": payload["template_id"],
+                            "template_version": payload[
+                                "template_version"
+                            ],
+                            "schedule_type": payload["schedule_type"],
+                            "timezone": payload["timezone"],
+                            "period_start": payload["period_start"],
+                            "period_end": payload["period_end"],
+                            "template_overrides": payload[
+                                "template_overrides"
+                            ],
+                        },
+                    },
+                )
+            )
+            logger.info(
+                "巡检 Run 已创建：fire_id={} target_id={}",
+                fire_id,
+                target_id,
             )
             return
         if event_type != "OPS_ALERT_AUTO_RUN_REQUESTED":

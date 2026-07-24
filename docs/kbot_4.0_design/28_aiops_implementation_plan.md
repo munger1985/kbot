@@ -249,6 +249,9 @@ Mutation Grant。阶段 9C3 已完成 Worker 投递、Executor 反向 Claim、Or
 
 ## 步骤 10：巡检、报告与对比
 
+**状态：进行中；阶段 10A 调度/Fire/Run 与 10B 日报周报发布已完成
+（2026-07-24），Comparison 尚未实施。**
+
 详细设计见 [39_aiops_step10_inspection_reporting_and_comparison.md](39_aiops_step10_inspection_reporting_and_comparison.md)。
 
 实现 Scheduler 租约、Daily/Weekly/Cron Plan、幂等 Inspection Fire、Target 展开、Misfire/重叠策略和终态对账。巡检复用同一 Observe/Diagnose/Report Task，不复制 Agent 流程。报告内容先形成不可变 Artifact，再通过 `REPORT_KEY + REPORT_VERSION + IS_CURRENT` 发布 `KBOT_OPS_REPORT` 投影供 APEX 查询。
@@ -256,6 +259,11 @@ Mutation Grant。阶段 9C3 已完成 Worker 投递、Executor 反向 Claim、Or
 Incident/Performance 处理前冻结 Comparison Plan 和基线，处理后使用相同定义采集主指标与护栏指标；结论限定为 `IMPROVED/UNCHANGED/DEGRADED/INCONCLUSIVE`。Email/IM 只实现 `ReportDeliveryPort` 空接口，不实现发送 Adapter。
 
 **完成物：** 日报、周报、故障/性能报告和处理前后对比报告的持久化及 APEX 展示数据。
+
+当前已完成多副本 Plan Claim、Cron/IANA 时区与 Misfire/Overlap 解析、Fire 与
+Target Outbox 原子创建、Schedule Run 幂等展开、Fire 终态收敛，以及
+`REPORT_CONTENT.v1 + KBOT_OPS_REPORT` 的日报/周报发布。下一阶段冻结
+`COMPARISON_PLAN.v1`、采集等定义基线/After Window，并实现确定性比较规则。
 
 ## 步骤 11：Root Agent、Main API 与前端集成
 

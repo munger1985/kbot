@@ -59,6 +59,7 @@ from platform_core.contracts.aiops import (
     PolicyPage,
     ProposalView,
     RejectionCommand,
+    ReportView,
     TargetCreate,
     TargetDetail,
     TargetPage,
@@ -105,6 +106,18 @@ def _validated(
     if response is not None and row_version is not None:
         response.headers["ETag"] = f'"rv-{int(row_version)}"'
     return result
+
+
+@router.get("/reports/{report_id}", response_model=ReportView)
+async def get_report(
+    report_id: UUID,
+    request: Request,
+) -> ReportView:
+    payload = await _client(request).get_report(
+        report_id,
+        auth_context=request.state.auth_context,
+    )
+    return ReportView.model_validate(payload)
 
 
 @router.post("/runs", response_model=OpsRunReceipt, status_code=201)

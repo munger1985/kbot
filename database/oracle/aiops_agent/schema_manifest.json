@@ -22,7 +22,7 @@
     {
       "name": "004_ops_inspection.sql",
       "statements": 19,
-      "sha256": "cb4f3208a36c75275264276da7e1bbdad390a4fee4bda170f6c14287f8ac1a6e"
+      "sha256": "595a255a059ce48697ebdedb88387d2d33793e6ecda8a441698ea882398c1f46"
     },
     {
       "name": "005_ops_messaging.sql",

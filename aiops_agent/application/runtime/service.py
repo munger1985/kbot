@@ -40,11 +40,13 @@ from aiops_agent.entities import (
     OpsRunEntity,
     OpsTaskEntity,
     OutboxEntity,
+    ReportEntity,
 )
 from aiops_agent.contracts.change import (
     ExecutionResultArtifact,
     ProposalOutcome,
 )
+from aiops_agent.contracts.report import ReportContent
 from aiops_agent.orchestration import (
     BlueprintRegistry,
     build_advisory_verification_blueprint,
@@ -81,6 +83,7 @@ from platform_core.contracts.aiops.public import (
     HitlResult,
     OpsRunSummary,
     PendingInputView,
+    ReportView,
 )
 from platform_core.contracts.aiops.types import ArtifactRef
 from platform_core.identity import uuid7
@@ -504,6 +507,7 @@ class AIOpsRuntimeService:
                         trigger_type=str(command.trigger_type),
                         trigger_event_id=command.trigger_event_id,
                         trigger_alert_id=command.trigger_alert_id,
+                        inspection_fire_id=command.inspection_fire_id,
                         source_proposal_id=(
                             UUID(verification["proposal_id"])
                             if command.blueprint_id
@@ -1228,7 +1232,24 @@ class AIOpsRuntimeService:
                     DomainOpsRunStatus.COMPLETED,
                 )
                 run.status = DomainOpsRunStatus.COMPLETED.value
-                run.final_artifact_id = artifact.artifact_id
+                final_artifact = artifact
+                if (
+                    run.trigger_type == "SCHEDULE"
+                    and run.inspection_fire_id is not None
+                    and artifact.schema_version
+                    == "DB_DIAGNOSTIC_REPORT.v1"
+                ):
+                    final_artifact = (
+                        await self._publish_inspection_report(
+                            uow=uow,
+                            run=run,
+                            task=task,
+                            source_artifact=artifact,
+                            now=now,
+                            trace_id=command.trace_id,
+                        )
+                    )
+                run.final_artifact_id = final_artifact.artifact_id
                 if artifact.schema_version in {
                     "OBSERVE_REPORT.v1",
                     "DB_DIAGNOSTIC_REPORT.v1",
@@ -1254,7 +1275,9 @@ class AIOpsRuntimeService:
                     visibility="USER",
                     payload_json={
                         "status": DomainOpsRunStatus.COMPLETED.value,
-                        "final_artifact_id": str(artifact.artifact_id),
+                        "final_artifact_id": str(
+                            final_artifact.artifact_id
+                        ),
                         "trace_id": command.trace_id,
                     },
                 )
@@ -1267,7 +1290,7 @@ class AIOpsRuntimeService:
                     ),
                     payload={
                         "ops_run_id": str(run.ops_run_id),
-                        "artifact_id": str(artifact.artifact_id),
+                        "artifact_id": str(final_artifact.artifact_id),
                     },
                     trace_id=command.trace_id,
                     now=now,
@@ -1276,6 +1299,170 @@ class AIOpsRuntimeService:
             return self._mutation_receipt(
                 run, task, int(event.sequence_no), artifact.artifact_id
             )
+
+    async def _publish_inspection_report(
+        self,
+        *,
+        uow,
+        run,
+        task,
+        source_artifact,
+        now: datetime,
+        trace_id: str,
+    ):
+        """把 Schedule Run 终态转换为不可变报告并发布投影。"""
+        assert uow.inspections is not None
+        plan = dict(run.plan_snapshot_json or {})
+        inspection = dict(
+            plan.get("client_metadata", {}).get("inspection", {})
+        )
+        schedule_type = inspection.get("schedule_type")
+        if schedule_type not in {"DAILY", "WEEKLY"}:
+            raise validation_failed("巡检报告类型无效")
+        weekly = schedule_type == "WEEKLY"
+        report_type = (
+            "INSPECTION_WEEKLY" if weekly else "INSPECTION_DAILY"
+        )
+        report_key = "inspection.weekly" if weekly else "inspection.daily"
+        period_start = datetime.fromisoformat(
+            str(inspection["period_start"])
+        )
+        period_end = datetime.fromisoformat(
+            str(inspection["period_end"])
+        )
+        source = dict(source_artifact.payload_json or {})
+        status = (
+            "PARTIAL" if source.get("status") == "PARTIAL" else "READY"
+        )
+        title = (
+            "数据库周度巡检报告" if weekly else "数据库日常巡检报告"
+        )
+        summary = (
+            f"已完成 {int(source.get('observation_count', 0))} 项观测，"
+            f"发现 {int(source.get('gap_count', 0))} 个数据缺口"
+        )
+        content = ReportContent(
+            report_key=report_key,
+            report_type=report_type,
+            ops_run_id=str(run.ops_run_id),
+            target_id=str(run.target_id),
+            title=title,
+            status=status,
+            summary=summary,
+            period_start=period_start,
+            period_end=period_end,
+            scope={
+                "inspection_fire_id": str(run.inspection_fire_id),
+                "template_id": inspection["template_id"],
+                "template_version": inspection["template_version"],
+                "schedule_type": schedule_type,
+                "timezone": inspection["timezone"],
+            },
+            facts=(
+                {
+                    "kind": "database_diagnostic_coverage",
+                    "observation_count": int(
+                        source.get("observation_count", 0)
+                    ),
+                    "tools": list(source.get("tools", ())),
+                },
+            ),
+            gaps=tuple(dict(item) for item in source.get("gaps", ())),
+            evidence_refs=(
+                {
+                    "artifact_id": str(source_artifact.artifact_id),
+                    "content_hash": source_artifact.content_hash,
+                    "schema_version": source_artifact.schema_version,
+                },
+            ),
+            provenance={
+                "deterministic": True,
+                "llm_used": False,
+                "source_report_hash": source_artifact.content_hash,
+                "source_provenance": dict(
+                    source.get("provenance", {})
+                ),
+            },
+        )
+        payload = content.model_dump(mode="json")
+        content_hash = sha256_json(payload)
+        report_artifact = await uow.runs.add_artifact(
+            OpsArtifactEntity(
+                ops_run_id=run.ops_run_id,
+                ops_task_id=task.ops_task_id,
+                artifact_key=f"report:{report_key}:v1",
+                artifact_type="REPORT_CONTENT",
+                schema_version="REPORT_CONTENT.v1",
+                payload_json=payload,
+                content_hash=content_hash,
+                byte_size=len(canonical_bytes(payload)),
+                provenance_json={
+                    "producer": "aiops.report-publisher",
+                    "producer_version": "1",
+                    "source_artifact_id": str(
+                        source_artifact.artifact_id
+                    ),
+                },
+                trust_level="SOURCE_VERIFIED",
+                security_level=int(plan["target"]["security_level"]),
+            )
+        )
+        report = await uow.inspections.publish_report(
+            ReportEntity(
+                report_id=uuid7(),
+                ops_run_id=run.ops_run_id,
+                target_id=run.target_id,
+                report_key=report_key,
+                report_version=1,
+                is_current=0,
+                report_type=report_type,
+                title=title,
+                status=status,
+                period_start=period_start,
+                period_end=period_end,
+                template_id=inspection["template_id"],
+                template_version=inspection["template_version"],
+                generated_by_task_id=task.ops_task_id,
+                content_artifact_id=report_artifact.artifact_id,
+                content_hash=content_hash,
+                summary=summary,
+                security_level=int(plan["target"]["security_level"]),
+                schema_version="REPORT_CONTENT.v1",
+            )
+        )
+        await uow.runs.append_event(
+            ops_run_id=run.ops_run_id,
+            ops_task_id=task.ops_task_id,
+            event_type="report.ready",
+            event_key=f"report:{report.report_id}:ready",
+            visibility="USER",
+            payload_json={
+                "report_id": str(report.report_id),
+                "report_key": report_key,
+                "report_type": report_type,
+                "report_version": 1,
+                "status": status,
+                "summary": summary,
+                "trace_id": trace_id,
+            },
+        )
+        await self._add_outbox(
+            uow,
+            aggregate_id=report.report_id,
+            event_type="OPS_REPORT_READY",
+            idempotency_key=f"report:{report.report_id}:ready",
+            payload={
+                "report_id": str(report.report_id),
+                "ops_run_id": str(run.ops_run_id),
+                "report_key": report_key,
+                "report_type": report_type,
+                "report_version": 1,
+                "status": status,
+            },
+            trace_id=trace_id,
+            now=now,
+        )
+        return report_artifact
 
     async def suspend_task_for_input(
         self, command: SuspendOpsTaskCommand
@@ -2477,6 +2664,51 @@ class AIOpsRuntimeService:
                 row_version=int(run.row_version),
                 created_at=run.created_at,
                 completed_at=run.completed_at,
+            )
+
+    async def get_report(
+        self,
+        *,
+        report_id: UUID,
+        app_id: int,
+        domain_id: int,
+    ) -> ReportView:
+        async with self._uow_factory() as uow:
+            assert uow.inspections is not None
+            report = await uow.inspections.get_current_report_scoped(
+                report_id=report_id,
+                app_id=app_id,
+                domain_id=domain_id,
+            )
+            if report is None or report.content_artifact_id is None:
+                raise resource_not_found("Report")
+            artifact = await uow.runs.get_artifact(
+                artifact_id=report.content_artifact_id
+            )
+            if (
+                artifact is None
+                or artifact.schema_version != "REPORT_CONTENT.v1"
+                or artifact.content_hash != report.content_hash
+            ):
+                raise state_conflict("Report 内容引用不完整")
+            return ReportView(
+                report_id=report.report_id,
+                report_key=report.report_key,
+                report_type=report.report_type,
+                report_version=int(report.report_version),
+                status=report.status,
+                target_id=report.target_id,
+                period_start=report.period_start,
+                period_end=report.period_end,
+                summary=report.summary,
+                content_artifact=ArtifactRef(
+                    artifact_id=artifact.artifact_id,
+                    artifact_type=artifact.artifact_type,
+                    schema_version=artifact.schema_version,
+                    content_hash=artifact.content_hash,
+                ),
+                corrected_from_report_id=report.supersedes_report_id,
+                published_at=report.created_at,
             )
 
     async def get_pending_input(

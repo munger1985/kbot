@@ -1,5 +1,25 @@
 # 4.0 AIOps 步骤 10：巡检、报告与处理前后对比
 
+## 当前实施进度
+
+阶段 10A/10B 已完成首个可恢复闭环：
+
+- Scheduler 已从探针升级为多副本 Plan Claim 循环，使用数据库时间、租约 Token
+  和 Row Version 围栏；
+- 五段 Cron、IANA 时区、`SKIP/LATEST_ONLY` Misfire、`SKIP/QUEUE`
+  Overlap 和日报/周报半开窗口均由版本化 Resolver 确定性解析；
+- Fire、冻结快照、每 Target Outbox 和 Plan 下一游标在一个事务提交；Worker
+  再按 Fire/Target 幂等键创建 Schedule Run，避免 Scheduler 直接跨用例编排 Task；
+- 旧排队 Fire 可被最新时点替代，运行中 Fire 根据 Run 与 Outbox 事实收敛为
+  `COMPLETED/PARTIAL/FAILED`，部分 Run 创建失败不会永久卡住；
+- 首期巡检复用 `database.diagnostic-baseline` 只读 DAG，不进入 HITL 或变更建议；
+- Schedule Run 的 `DB_DIAGNOSTIC_REPORT.v1` 会被确定性包装为不可变
+  `REPORT_CONTENT.v1`，并原子发布 `KBOT_OPS_REPORT` 当前版本和 `report.ready`
+  事件；日报/周报完整内容可通过授权 API 读取，APEX 继续读取安全投影视图。
+
+处理前后 Comparison、历史版本查询、Fire 列表 API 和监控指标型巡检仍属于后续
+10C/10D；当前实现不把数据库诊断覆盖率冒充为性能改善结论。
+
 ## 目标与边界
 
 本步骤把定时巡检、故障/性能报告和处理前后对比接入既有 Run/Task/Artifact 内核。Scheduler 只负责确定“何时为哪些 Target 创建工作”，巡检仍复用 `SCOPE → OBSERVE → DIAGNOSE → REPORT`；它不直接访问监控工具、目标数据库或 LLM。
@@ -65,10 +85,15 @@ Scheduler 使用数据库 `SYSTIMESTAMP` 判断到期，按 `(STATUS, NEXT_RUN_A
 
 1. 校验 Plan 租约、状态和版本；
 2. 插入唯一 Fire，并冻结 Plan、模板和 Target Binding 快照；
-3. 为每个有效 Target 创建 Run、首个 Task、Run Event 和 Outbox；
+3. 为每个有效 Target 创建幂等 Run Request Outbox；
 4. 更新 Fire 计数及状态；
 5. 将 `LAST_SCHEDULED_FOR/NEXT_RUN_AT` 推进到确定的下一时点；
-6. 提交后才由 Worker 领取 Task。
+6. 提交后由 Worker 消费 Outbox，并通过统一 Runtime 用例幂等创建 Run/Task。
+
+这样 Scheduler 不复制 Runtime 的 Target/Agent Binding/Policy 与 Blueprint 校验。
+Fire 和全部 Run Request 已在同一事务持久化；进程在任意位置崩溃后由 Outbox
+恢复。Fire Reconciler 同时读取 Run 与 Outbox 终态，因此单个 Target 创建失败也会
+形成 `PARTIAL/FAILED`，不会无限等待。
 
 激活 Plan 前限制有效 Target 数量，默认建议上限 100，实际值由部署配置决定；超过上限必须拆分 Plan，避免巨型事务。
 

@@ -55,6 +55,7 @@ class AIOpsSchedulerConfig(ServiceConfig):
     )
     scan_interval_seconds: float = Field(default=30, ge=1, le=3600)
     lease_seconds: int = Field(default=120, ge=30, le=3600)
+    misfire_grace_seconds: int = Field(default=60, ge=0, le=3600)
 
 
 class AIOpsExecutorConfig(ServiceConfig):

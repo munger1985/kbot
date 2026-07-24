@@ -29,7 +29,7 @@ from platform_core.contracts.aiops import (
     TaskMutationReceipt,
 )
 from platform_core.contracts.aiops.internal import OpsRunReceipt
-from platform_core.contracts.aiops.public import OpsRunSummary
+from platform_core.contracts.aiops.public import OpsRunSummary, ReportView
 
 
 router = APIRouter(prefix="/internal/v1/aiops", tags=["AIOps Runtime"])
@@ -103,6 +103,22 @@ async def get_run(
     )
     _ensure_agent_authorized(context, result.agent_id)
     return result
+
+
+@router.get("/reports/{report_id}", response_model=ReportView)
+async def get_report(
+    report_id: UUID,
+    request: Request,
+    service: Service,
+    context: Auth,
+) -> ReportView:
+    require_service_scope(request, "aiops.run")
+    app_id, domain_id = _scope(request, context)
+    return await service.get_report(
+        report_id=report_id,
+        app_id=app_id,
+        domain_id=domain_id,
+    )
 
 
 @router.get(

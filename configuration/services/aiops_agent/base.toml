@@ -26,6 +26,7 @@ service_port = 18113
 scheduler_id = "aiops-scheduler-local"
 scan_interval_seconds = 30
 lease_seconds = 120
+misfire_grace_seconds = 60
 
 [executor]
 service_name = "kbot-aiops-db-executor"

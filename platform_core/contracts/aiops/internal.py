@@ -37,6 +37,7 @@ class CreateOpsRunCommand(AIOpsContract):
     parent_delegation_id: UUIDv7 | None = None
     trigger_event_id: UUIDv7 | None = None
     trigger_alert_id: UUIDv7 | None = None
+    inspection_fire_id: UUIDv7 | None = None
     deadline: UtcDatetime | None = None
     blueprint_id: str = Field(
         default="kernel.observe-report", min_length=1, max_length=128

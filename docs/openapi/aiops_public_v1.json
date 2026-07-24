@@ -5486,7 +5486,10 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Get Report"
+        "summary": "Get Report",
+        "tags": [
+          "AIOps"
+        ]
       }
     },
     "/api/v1/ops/runs": {
