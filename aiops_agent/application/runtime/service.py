@@ -41,8 +41,10 @@ from aiops_agent.entities import (
 from aiops_agent.orchestration import (
     BlueprintRegistry,
     build_database_diagnostic_blueprint,
+    build_multi_round_diagnosis_blueprint,
     build_monitor_observe_blueprint,
 )
+from aiops_agent.orchestration.diagnosis import DiagnosisPromptRegistry
 from aiops_agent.diagnostics.registry import DiagnosticRegistry
 from aiops_agent.workers.handlers import HandlerRegistry
 from platform_core.contracts.aiops import (
@@ -108,6 +110,8 @@ class AIOpsRuntimeService:
         default_observation_window_seconds: int = 3600,
         max_monitor_response_bytes: int = 5 * 1024 * 1024,
         diagnostic_registry: DiagnosticRegistry | None = None,
+        diagnosis_config=None,
+        diagnosis_prompt_registry: DiagnosisPromptRegistry | None = None,
     ):
         self._uow_factory = uow_factory
         self._blueprints = blueprint_registry
@@ -120,6 +124,8 @@ class AIOpsRuntimeService:
         )
         self._max_monitor_response_bytes = max_monitor_response_bytes
         self._diagnostic_registry = diagnostic_registry
+        self._diagnosis_config = diagnosis_config
+        self._diagnosis_prompts = diagnosis_prompt_registry
 
     async def create_run(
         self, command: CreateOpsRunCommand
@@ -238,6 +244,53 @@ class AIOpsRuntimeService:
                     binding=binding,
                     policy=policy,
                 )
+            elif command.blueprint_id == "diagnosis.root-cause":
+                (
+                    _,
+                    monitoring_snapshot,
+                ) = await self._monitor_blueprint_snapshot(
+                    uow=uow,
+                    command=command,
+                    target=target,
+                    now=now,
+                )
+                (
+                    _,
+                    database_diagnostic_snapshot,
+                ) = self._database_diagnostic_blueprint_snapshot(
+                    command=command,
+                    target=target,
+                    binding=binding,
+                    policy=policy,
+                    requested_tool_ids=(
+                        "db.instance.identity",
+                        "db.session.active",
+                        "db.session.blocking_chain",
+                        "db.storage.capacity",
+                        "db.transaction.long_running",
+                        "db.replication.status",
+                    ),
+                )
+                baseline_tools = {
+                    "db.instance.identity",
+                    "db.session.active",
+                    "db.session.blocking_chain",
+                    "db.storage.capacity",
+                }
+                if self._diagnosis_config is None:
+                    raise validation_failed("诊断编排尚未配置")
+                blueprint = build_multi_round_diagnosis_blueprint(
+                    binding_ids=tuple(
+                        item["binding_id"]
+                        for item in monitoring_snapshot["bindings"]
+                    ),
+                    tool_ids=tuple(
+                        item["tool_id"]
+                        for item in database_diagnostic_snapshot["tools"]
+                        if item["tool_id"] in baseline_tools
+                    ),
+                    max_rounds=int(self._diagnosis_config.max_rounds),
+                )
             else:
                 blueprint = self._blueprints.resolve(
                     command.blueprint_id, command.blueprint_version
@@ -265,6 +318,16 @@ class AIOpsRuntimeService:
             if command.blueprint_id == "database.diagnostic-baseline":
                 plan_snapshot["database_diagnostics"] = (
                     database_diagnostic_snapshot
+                )
+            if command.blueprint_id == "diagnosis.root-cause":
+                plan_snapshot["database_diagnostics"] = (
+                    database_diagnostic_snapshot
+                )
+                plan_snapshot["diagnosis"] = self._diagnosis_snapshot(
+                    command=command,
+                    target=target,
+                    policy_snapshot=policy_snapshot,
+                    monitoring_snapshot=monitoring_snapshot,
                 )
             try:
                 run = await uow.runs.add_run(
@@ -348,6 +411,69 @@ class AIOpsRuntimeService:
             await uow.commit()
             return self._run_receipt(run, int(event.sequence_no))
 
+    def _diagnosis_snapshot(
+        self,
+        *,
+        command,
+        target,
+        policy_snapshot: dict[str, Any],
+        monitoring_snapshot: dict[str, Any],
+    ) -> dict[str, Any]:
+        """冻结诊断模型、Prompt、窗口、权限范围和预算。"""
+        if self._diagnosis_config is None or self._diagnosis_prompts is None:
+            raise validation_failed("诊断编排尚未配置")
+        config = self._diagnosis_config
+        window = monitoring_snapshot["window"]
+        raw_capabilities = dict(target.capabilities_json or {})
+        capability_names = sorted(
+            str(name)
+            for name, enabled in raw_capabilities.items()
+            if enabled is True
+        )
+        rules = dict(policy_snapshot.get("rules", {}))
+        collection_ids = rules.get("aiops_collection_ids", [])
+        if not isinstance(collection_ids, list):
+            raise validation_failed("策略中的 AIOps Collection 范围无效")
+        try:
+            normalized_collection_ids = tuple(
+                str(UUID(str(item))) for item in collection_ids
+            )
+        except (TypeError, ValueError):
+            raise validation_failed(
+                "策略中的 AIOps Collection ID 无效"
+            ) from None
+        question = command.input.strip()
+        return {
+            "window": dict(window),
+            "symptom_codes": tuple(
+                str(item)
+                for item in command.client_metadata.get(
+                    "symptom_codes", ()
+                )
+                if isinstance(item, str) and item
+            )[:32],
+            "question_summary": question[:2000],
+            "target_capabilities": capability_names,
+            "allowed_collection_ids": tuple(
+                normalized_collection_ids
+            ),
+            "policy_snapshot_hash": sha256_json(policy_snapshot),
+            "model": {
+                "enabled": bool(config.enabled),
+                "technical_name": config.model_technical_name,
+                "revision": config.model_revision,
+            },
+            "prompts": self._diagnosis_prompts.snapshot,
+            "budget": {
+                "max_rounds": int(config.max_rounds),
+                "max_tool_calls": int(config.max_tool_calls),
+                "max_output_tokens_per_call": int(
+                    config.max_output_tokens_per_call
+                ),
+                "max_evidence_facts": int(config.max_evidence_facts),
+            },
+        }
+
     def _database_diagnostic_blueprint_snapshot(
         self,
         *,
@@ -355,6 +481,7 @@ class AIOpsRuntimeService:
         target,
         binding,
         policy,
+        requested_tool_ids: tuple[str, ...] | None = None,
     ):
         """冻结 Target、目录选择、能力声明和执行上限。"""
         if command.blueprint_version != "1":
@@ -444,7 +571,7 @@ class AIOpsRuntimeService:
             and bool(target.endpoint_json)
             and bool(target.version_code)
         )
-        requested = (
+        requested = requested_tool_ids or (
             "db.instance.identity",
             "db.session.active",
             "db.session.blocking_chain",
@@ -483,6 +610,10 @@ class AIOpsRuntimeService:
                             for parameter in definition.parameters
                             if not parameter.required
                         },
+                        "parameter_definitions": [
+                            parameter.model_dump(mode="json")
+                            for parameter in definition.parameters
+                        ],
                         "cost_level": definition.cost_level,
                         "supported_version_min": (
                             definition.supported_version_min
@@ -917,6 +1048,18 @@ class AIOpsRuntimeService:
                     "DB_DIAGNOSTIC_REPORT.v1",
                 }:
                     run.root_cause_level = "INCONCLUSIVE"
+                elif (
+                    artifact.schema_version
+                    == "DIAGNOSIS_REPORT_DRAFT.v1"
+                ):
+                    root_cause = (
+                        (command.artifact.payload or {}).get(
+                            "root_cause", {}
+                        )
+                    )
+                    run.root_cause_level = root_cause.get(
+                        "effective_level", "INCONCLUSIVE"
+                    )
                 run.completed_at = now
                 event = await uow.runs.append_event(
                     ops_run_id=run.ops_run_id,

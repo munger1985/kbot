@@ -14,6 +14,7 @@ from aiops_agent.adapters.agent_runtime import AgentRuntimeValidator
 from aiops_agent.adapters.secret_store import ConfiguredSecretStore
 from aiops_agent.adapters.monitoring import MonitorProviderRegistry
 from aiops_agent.adapters.db_executor_client import DatabaseExecutorClient
+from aiops_agent.adapters.model_serving import AIOpsStructuredModelClient
 from aiops_agent.adapters.monitoring.payload_store import (
     LocalMonitorPayloadStore,
 )
@@ -36,6 +37,7 @@ from aiops_agent.bootstrap.common import (
 from aiops_agent.config import AIOpsSettings, get_aiops_settings
 from aiops_agent.persistence import create_aiops_uow_factory
 from aiops_agent.orchestration import create_kernel_blueprint_registry
+from aiops_agent.orchestration.diagnosis import DiagnosisPromptRegistry
 from aiops_agent.workers import create_runtime_handler_registry
 from aiops_agent.adapters.monitoring.catalog import load_metric_catalog
 from aiops_agent.diagnostics import (
@@ -44,6 +46,7 @@ from aiops_agent.diagnostics import (
 )
 from platform_core.database.oracle import create_database_runtime
 from platform_clients.agent_runtime import AgentRuntimeClient
+from platform_clients.knowledge_core import KnowledgeCoreClient
 from platform_core.security import (
     create_auth_context_codec,
     create_scoped_internal_auth_middleware,
@@ -130,6 +133,25 @@ def create_aiops_api(
             ),
         )
         diagnostic_registry = create_diagnostic_registry(resolved)
+        diagnosis_prompts = DiagnosisPromptRegistry.load(
+            Path(resolved.diagnosis.prompt_catalog_path)
+            if resolved.diagnosis.prompt_catalog_path
+            else None
+        )
+        diagnosis_model_client = AIOpsStructuredModelClient(
+            base_url=resolved.clients.model_serving.base_url,
+            audience=resolved.clients.model_serving.audience,
+            caller_service=config.service_name,
+            timeout_seconds=resolved.clients.model_serving.timeout_seconds,
+            session=client_session,
+        )
+        knowledge_core_client = KnowledgeCoreClient(
+            base_url=resolved.clients.knowledge_core.base_url,
+            caller_service=config.service_name,
+            audience=resolved.clients.knowledge_core.audience,
+            timeout_seconds=resolved.clients.knowledge_core.timeout_seconds,
+            session=client_session,
+        )
         diagnostic_grant_codec = create_diagnostic_grant_codec(resolved)
         db_executor_client = DatabaseExecutorClient(
             base_url=resolved.clients.db_executor.base_url,
@@ -148,6 +170,11 @@ def create_aiops_api(
             diagnostic_grant_ttl_seconds=(
                 resolved.executor.grant_ttl_seconds
             ),
+            diagnosis_model_client=diagnosis_model_client,
+            diagnosis_prompt_registry=diagnosis_prompts,
+            diagnostic_registry=diagnostic_registry,
+            knowledge_core_client=knowledge_core_client,
+            diagnosis_caller_service=config.service_name,
         )
         app.state.monitor_provider_registry = provider_registry
         app.state.monitor_secret_store = secret_store
@@ -168,6 +195,8 @@ def create_aiops_api(
                 resolved.monitoring.max_response_bytes
             ),
             diagnostic_registry=diagnostic_registry,
+            diagnosis_config=resolved.diagnosis,
+            diagnosis_prompt_registry=diagnosis_prompts,
         )
         app.state.monitor_intake_service = MonitorWebhookIntakeService(
             uow_factory=runtime.uow_factory,

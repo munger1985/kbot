@@ -343,3 +343,11 @@ Normalizer 与 Validator 不依赖 HTTP、Repository 或模型 Client。Model Ad
 - 无进展循环在预算内终止，Alert/Schedule 不进入人工等待；
 - `POSSIBLE/INCONCLUSIVE` 不创建 Proposal，步骤 7 的任何路径都不能调用 Mutation Executor；
 - Golden Cases 评测工具计划有效率、引用正确率、反证保留率、根因等级校准、误报率、轮次、时延和 Token 成本。
+
+## 当前实现结果
+
+步骤 7 已实现 `diagnosis.root-cause@1` 有界 Blueprint：同一 Run 内先采集监控、Oracle/MySQL 只读基线和授权范围内的 KC Citation，再生成稳定 `EVIDENCE_INDEX.v1`。最多三轮 Draft → Request Validator → Catalog Collection → Assessment 使用预分配 Task 槽位；上一轮终止或无新 Evidence 时后续槽位确定性短路。该实现不在运行中修改 `PLAN_SNAPSHOT_JSON`，同时保留 Task 级租约、恢复和预算围栏。
+
+模型通过新的 `AIOpsModelPort` 调用 Model Serving 原生 JSON Schema，Prompt 以版本和 SHA-256 冻结。模型只能输出假设、FactRef 与 `tool_id + parameters`；目录版本、Target、Secret、Grant、超时和执行权限仍由服务端决定。模型调用收据随推断 Artifact 保存，模型推断使用 `MODEL_INFERENCE` Trust Level，监控和 DB Executor 事实保持 `SOURCE_VERIFIED`，KC SOP 保持 `KNOWLEDGE_CITATION`。
+
+确定性 `RootCauseGradePolicy` 会按来源独立性、直接测试、反证和质量标志计算等级上限；知识引用不能证明当前 Target 状态。模型或 KC 不可用时链路生成 `DEGRADED/INCONCLUSIVE` 报告，不调用 Mutation Executor。当前自动化覆盖结构污染、未知工具、参数 Schema、同源血缘、知识引用降级、三轮上限和 Prompt Hash；真实模型 Golden Cases 与多版本模型质量门禁留在统一验收阶段。

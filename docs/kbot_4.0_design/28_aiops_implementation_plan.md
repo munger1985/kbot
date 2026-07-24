@@ -189,6 +189,8 @@ Webhook、重复交付、Alert 聚合、Outbox、动态 Task、Artifact 和最�
 
 ## 步骤 7：诊断编排与 LLM 接入
 
+**状态：已完成（2026-07-24）。**
+
 详细设计见 [36_aiops_step7_diagnosis_orchestration_and_llm.md](36_aiops_step7_diagnosis_orchestration_and_llm.md)。
 
 按固定状态机实现 Scope、Observation、Hypothesis、Evidence Request、Evidence Sufficiency、Root Cause 和 Solution Draft。LLM 只输出版本化结构 DTO；Plan Validator 校验 Task 类型、预算、Target 能力和允许的 Tool。监控结果、数据库结果、KC/SOP Citation 与模型推断分别保存 Trust Level 和 Provenance。

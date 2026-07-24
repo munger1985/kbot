@@ -9,6 +9,8 @@ from .blueprints import (
     create_kernel_blueprint_registry,
     build_monitor_observe_blueprint,
     build_database_diagnostic_blueprint,
+    build_diagnosis_blueprint,
+    build_multi_round_diagnosis_blueprint,
 )
 
 __all__ = [
@@ -20,4 +22,6 @@ __all__ = [
     "create_kernel_blueprint_registry",
     "build_monitor_observe_blueprint",
     "build_database_diagnostic_blueprint",
+    "build_diagnosis_blueprint",
+    "build_multi_round_diagnosis_blueprint",
 ]

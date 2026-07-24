@@ -90,6 +90,16 @@ max_response_bytes = 5242880
 # 生产环境应指向持久化加密卷，或替换为 OCI/S3 Adapter。
 payload_store_root = "/var/lib/kbot/aiops-monitor-payloads"
 
+[diagnosis]
+# 配置并启用受 JSON Schema 约束的 AIOps 诊断模型后改为 true。
+enabled = false
+model_technical_name = "aiops-diagnosis"
+model_revision = "1"
+max_rounds = 3
+max_tool_calls = 12
+max_output_tokens_per_call = 4096
+max_evidence_facts = 256
+
 [management]
 cursor_secret_env = "KBOT_AIOPS_CURSOR_SECRET"
 webhook_key_secret_env = "KBOT_AIOPS_WEBHOOK_KEY_SECRET"

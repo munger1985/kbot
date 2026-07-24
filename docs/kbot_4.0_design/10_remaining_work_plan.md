@@ -97,7 +97,7 @@ Policy Gate/HITL/Mutation 和后续更多 Specialist，而不是重新实现问�
 - 保留现有 MCP 问数链路；Data Agent、Excel Dataset 和 NL2SQL 独立服务暂不进入本轮实现，仅保留未来扩展契约。
 - 按 `19_aiops_domain_model_workflow_and_executor.md` 至 `27_aiops_api_and_contracts.md` 的详细设计，以及 [28_aiops_implementation_plan.md](28_aiops_implementation_plan.md) 的施工顺序，完成独立 AIOps Agent、`KBOT_OPS_*` 表/DDL/APEX 视图、Public/Internal/Executor 契约、API/Worker/Scheduler/DB Executor 进程、监控/诊断/执行编排、假设/反证与根因分析、交互式诊断、Oracle/MySQL 诊断目录、DB Executor Policy、单命令审批、巡检报告、外部系统 Adapter 和失败补偿。
 
-  AIOps 步骤 0 至步骤 5 已完成：独立包边界、四进程 Bootstrap、Service
+  AIOps 步骤 0 至步骤 7 已完成：独立包边界、四进程 Bootstrap、Service
   Identity、Wire DTO、Management/Delegation Client、三份 OpenAPI，以及
   21 张领域表、10 个受控视图、Manifest、逐列 Entity、九个聚合 Repository、
   AIOps UoW、租约和 Inbox/Outbox 并发原语，以及六类配置资源的 Public →
@@ -106,8 +106,10 @@ Policy Gate/HITL/Mutation 和后续更多 Specialist，而不是重新实现问�
   Reconciler、Artifact/Event/Outbox 原子提交、Public Run/SSE 和真实 Oracle
   并发故障 Smoke，以及 Prometheus/Zabbix/OEM 统一 Provider、可信 Webhook
   Intake、Metric Catalog、Alert 聚合、动态只观测 Blueprint、Health Reducer
-  和 `OBSERVE_REPORT.v1` 实库闭环。下一步按步骤 6 建立 Oracle/MySQL 只读
-  诊断目录与隔离 DB Executor。
+  和 `OBSERVE_REPORT.v1` 实库闭环；同时已完成 Oracle/MySQL 只读诊断目录、
+  隔离 DB Executor、Evidence Index、KC SOP Citation、三轮有界诊断、
+  结构化 LLM Planner/Assessment/Verifier、确定性根因等级和报告草稿。
+  下一步按步骤 8 建立仅 Chat 生效的人工补证与手工 SQL 回贴循环。
 
 ### 阶段 6：统一测试、重建和切换
 

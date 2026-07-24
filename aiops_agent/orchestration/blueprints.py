@@ -267,3 +267,483 @@ def build_database_diagnostic_blueprint(
             ),
         ),
     )
+
+
+def build_diagnosis_blueprint(
+    *,
+    binding_ids: tuple[str, ...],
+    tool_ids: tuple[str, ...],
+) -> Blueprint:
+    """组合监控、数据库基线和受约束模型诊断的一轮可恢复 DAG。"""
+    observe_tasks = tuple(
+        TaskSpec(
+            task_key=f"observe:{binding_id}",
+            task_type="OBSERVE",
+            handler_id="monitor.observe",
+            handler_version="1",
+            input_schema_version="DIAGNOSIS_SCOPE.v1",
+            output_schema_version="OBSERVATION_SET.v1",
+            depends_on=("scope",),
+            input_artifact_keys=("scope",),
+            timeout_seconds=120,
+            max_attempts=3,
+            priority=40,
+        )
+        for binding_id in sorted(binding_ids)
+    )
+    ordered_tools = tuple(dict.fromkeys(tool_ids))
+    diagnostic_tasks = []
+    for index, tool_id in enumerate(ordered_tools):
+        dependency = (
+            ("scope",)
+            if index == 0
+            else ("diagnostic:db.instance.identity",)
+        )
+        diagnostic_tasks.append(
+            TaskSpec(
+                task_key=f"diagnostic:{tool_id}",
+                task_type="DIAGNOSE",
+                handler_id="database.diagnostic",
+                handler_version="1",
+                input_schema_version=(
+                    "DIAGNOSIS_SCOPE.v1"
+                    if index == 0
+                    else "DATABASE_DIAGNOSTIC_RESULT.v1"
+                ),
+                output_schema_version="DATABASE_DIAGNOSTIC_RESULT.v1",
+                depends_on=dependency,
+                input_artifact_keys=dependency,
+                timeout_seconds=90,
+                max_attempts=2,
+                priority=50 + index,
+            )
+        )
+    source_keys = tuple(
+        item.task_key for item in (*observe_tasks, *diagnostic_tasks)
+    )
+    evidence_dependencies = ("scope", *source_keys)
+    return Blueprint(
+        blueprint_id="diagnosis.root-cause",
+        version="1",
+        final_task_key="diagnosis:report",
+        tasks=(
+            TaskSpec(
+                task_key="scope",
+                task_type="SCOPE",
+                handler_id="diagnosis.scope",
+                handler_version="1",
+                input_schema_version="RUN_INPUT.v1",
+                output_schema_version="DIAGNOSIS_SCOPE.v1",
+                timeout_seconds=30,
+            ),
+            *observe_tasks,
+            *diagnostic_tasks,
+            TaskSpec(
+                task_key="diagnosis:evidence:r0",
+                task_type="DIAGNOSE",
+                handler_id="diagnosis.evidence-index",
+                handler_version="1",
+                input_schema_version="EVIDENCE_BUILD_INPUT.v1",
+                output_schema_version="EVIDENCE_INDEX.v1",
+                depends_on=evidence_dependencies,
+                input_artifact_keys=evidence_dependencies,
+                timeout_seconds=30,
+            ),
+            TaskSpec(
+                task_key="diagnosis:r1:draft",
+                task_type="DIAGNOSE",
+                handler_id="diagnosis.round-draft",
+                handler_version="1",
+                input_schema_version="DIAGNOSIS_DRAFT_INPUT.v1",
+                output_schema_version="DIAGNOSIS_ROUND_DRAFT.v1",
+                depends_on=("scope", "diagnosis:evidence:r0"),
+                input_artifact_keys=("scope", "diagnosis:evidence:r0"),
+                timeout_seconds=180,
+                max_attempts=2,
+            ),
+            TaskSpec(
+                task_key="diagnosis:r1:validate",
+                task_type="DIAGNOSE",
+                handler_id="diagnosis.request-validator",
+                handler_version="1",
+                input_schema_version="DIAGNOSIS_VALIDATE_INPUT.v1",
+                output_schema_version="VALIDATED_EVIDENCE_PLAN.v1",
+                depends_on=(
+                    "diagnosis:evidence:r0",
+                    "diagnosis:r1:draft",
+                ),
+                input_artifact_keys=(
+                    "diagnosis:evidence:r0",
+                    "diagnosis:r1:draft",
+                ),
+                timeout_seconds=30,
+            ),
+            TaskSpec(
+                task_key="diagnosis:r1:collect",
+                task_type="DIAGNOSE",
+                handler_id="diagnosis.evidence-collect",
+                handler_version="1",
+                input_schema_version="DIAGNOSIS_COLLECT_INPUT.v1",
+                output_schema_version="DIAGNOSIS_EVIDENCE_COLLECTION.v1",
+                depends_on=(
+                    "diagnosis:r1:validate",
+                    *(
+                        ("diagnostic:db.instance.identity",)
+                        if "db.instance.identity" in ordered_tools
+                        else ()
+                    ),
+                ),
+                input_artifact_keys=(
+                    "diagnosis:r1:validate",
+                    *(
+                        ("diagnostic:db.instance.identity",)
+                        if "db.instance.identity" in ordered_tools
+                        else ()
+                    ),
+                ),
+                timeout_seconds=180,
+                max_attempts=2,
+            ),
+            TaskSpec(
+                task_key="diagnosis:evidence:r1",
+                task_type="DIAGNOSE",
+                handler_id="diagnosis.evidence-index",
+                handler_version="1",
+                input_schema_version="EVIDENCE_BUILD_INPUT.v1",
+                output_schema_version="EVIDENCE_INDEX.v1",
+                depends_on=(
+                    *source_keys,
+                    "diagnosis:r1:collect",
+                ),
+                input_artifact_keys=(
+                    *source_keys,
+                    "diagnosis:r1:collect",
+                ),
+                timeout_seconds=30,
+            ),
+            TaskSpec(
+                task_key="diagnosis:r1:assess",
+                task_type="DIAGNOSE",
+                handler_id="diagnosis.round-assess",
+                handler_version="1",
+                input_schema_version="DIAGNOSIS_ASSESS_INPUT.v1",
+                output_schema_version="DIAGNOSIS_ROUND_ASSESSMENT.v1",
+                depends_on=(
+                    "diagnosis:evidence:r1",
+                    "diagnosis:r1:draft",
+                    "diagnosis:r1:validate",
+                ),
+                input_artifact_keys=(
+                    "diagnosis:evidence:r1",
+                    "diagnosis:r1:draft",
+                    "diagnosis:r1:validate",
+                ),
+                timeout_seconds=180,
+                max_attempts=2,
+            ),
+            TaskSpec(
+                task_key="diagnosis:root-cause",
+                task_type="DIAGNOSE",
+                handler_id="diagnosis.root-cause",
+                handler_version="1",
+                input_schema_version="ROOT_CAUSE_INPUT.v1",
+                output_schema_version="ROOT_CAUSE_ASSESSMENT.v1",
+                depends_on=(
+                    "diagnosis:evidence:r1",
+                    "diagnosis:r1:assess",
+                ),
+                input_artifact_keys=(
+                    "diagnosis:evidence:r1",
+                    "diagnosis:r1:assess",
+                ),
+                timeout_seconds=30,
+            ),
+            TaskSpec(
+                task_key="diagnosis:verify",
+                task_type="DIAGNOSE",
+                handler_id="diagnosis.grounding",
+                handler_version="1",
+                input_schema_version="GROUNDING_INPUT.v1",
+                output_schema_version="GROUNDING_VERIFICATION.v1",
+                depends_on=(
+                    "diagnosis:evidence:r1",
+                    "diagnosis:root-cause",
+                ),
+                input_artifact_keys=(
+                    "diagnosis:evidence:r1",
+                    "diagnosis:root-cause",
+                ),
+                timeout_seconds=30,
+            ),
+            TaskSpec(
+                task_key="diagnosis:solution",
+                task_type="DIAGNOSE",
+                handler_id="diagnosis.solution",
+                handler_version="1",
+                input_schema_version="SOLUTION_INPUT.v1",
+                output_schema_version="SOLUTION_DRAFT.v1",
+                depends_on=("diagnosis:root-cause",),
+                input_artifact_keys=("diagnosis:root-cause",),
+                timeout_seconds=30,
+            ),
+            TaskSpec(
+                task_key="diagnosis:report",
+                task_type="REPORT",
+                handler_id="diagnosis.report",
+                handler_version="1",
+                input_schema_version="DIAGNOSIS_REPORT_INPUT.v1",
+                output_schema_version="DIAGNOSIS_REPORT_DRAFT.v1",
+                depends_on=(
+                    "diagnosis:evidence:r1",
+                    "diagnosis:r1:assess",
+                    "diagnosis:root-cause",
+                    "diagnosis:verify",
+                    "diagnosis:solution",
+                ),
+                input_artifact_keys=(
+                    "diagnosis:evidence:r1",
+                    "diagnosis:r1:assess",
+                    "diagnosis:root-cause",
+                    "diagnosis:verify",
+                    "diagnosis:solution",
+                ),
+                timeout_seconds=30,
+            ),
+        ),
+    )
+
+
+def build_multi_round_diagnosis_blueprint(
+    *,
+    binding_ids: tuple[str, ...],
+    tool_ids: tuple[str, ...],
+    max_rounds: int,
+) -> Blueprint:
+    """创建最多三轮的固定上限 DAG，未使用轮次由 Handler 安全短路。"""
+    if not 1 <= max_rounds <= 3:
+        raise BlueprintValidationError("诊断轮次上限必须位于 1 到 3")
+    first = build_diagnosis_blueprint(
+        binding_ids=binding_ids, tool_ids=tool_ids
+    )
+    baseline = []
+    for task in first.tasks:
+        baseline.append(task)
+        if task.task_key == "diagnosis:evidence:r0":
+            break
+    baseline_evidence = baseline.pop()
+    knowledge_task = TaskSpec(
+        task_key="diagnosis:knowledge",
+        task_type="DIAGNOSE",
+        handler_id="diagnosis.knowledge-citation",
+        handler_version="1",
+        input_schema_version="DIAGNOSIS_SCOPE.v1",
+        output_schema_version="KNOWLEDGE_CITATION_PACK.v1",
+        depends_on=("scope",),
+        input_artifact_keys=("scope",),
+        timeout_seconds=120,
+        max_attempts=2,
+    )
+    baseline.append(knowledge_task)
+    baseline.append(
+        TaskSpec(
+            task_key=baseline_evidence.task_key,
+            task_type=baseline_evidence.task_type,
+            handler_id=baseline_evidence.handler_id,
+            handler_version=baseline_evidence.handler_version,
+            input_schema_version=baseline_evidence.input_schema_version,
+            output_schema_version=baseline_evidence.output_schema_version,
+            depends_on=(
+                *baseline_evidence.depends_on,
+                knowledge_task.task_key,
+            ),
+            input_artifact_keys=(
+                *baseline_evidence.input_artifact_keys,
+                knowledge_task.task_key,
+            ),
+            timeout_seconds=baseline_evidence.timeout_seconds,
+            max_attempts=baseline_evidence.max_attempts,
+            priority=baseline_evidence.priority,
+        )
+    )
+    source_keys = tuple(
+        task.task_key
+        for task in baseline
+        if task.output_schema_version
+        in {"OBSERVATION_SET.v1", "DATABASE_DIAGNOSTIC_RESULT.v1"}
+    )
+    identity_key = (
+        ("diagnostic:db.instance.identity",)
+        if "db.instance.identity" in tool_ids
+        else ()
+    )
+    tasks = list(baseline)
+    prior_evidence = "diagnosis:evidence:r0"
+    prior_assessment: str | None = None
+    prior_plans: list[str] = []
+    for round_no in range(1, max_rounds + 1):
+        prefix = f"diagnosis:r{round_no}"
+        draft_dependencies = ["scope", prior_evidence]
+        if prior_assessment:
+            draft_dependencies.append(prior_assessment)
+        tasks.append(
+            TaskSpec(
+                task_key=f"{prefix}:draft",
+                task_type="DIAGNOSE",
+                handler_id="diagnosis.round-draft",
+                handler_version="1",
+                input_schema_version="DIAGNOSIS_DRAFT_INPUT.v1",
+                output_schema_version="DIAGNOSIS_ROUND_DRAFT.v1",
+                depends_on=tuple(draft_dependencies),
+                input_artifact_keys=tuple(draft_dependencies),
+                timeout_seconds=180,
+                max_attempts=2,
+            )
+        )
+        validate_inputs = (
+            prior_evidence,
+            f"{prefix}:draft",
+            *prior_plans,
+        )
+        tasks.append(
+            TaskSpec(
+                task_key=f"{prefix}:validate",
+                task_type="DIAGNOSE",
+                handler_id="diagnosis.request-validator",
+                handler_version="1",
+                input_schema_version="DIAGNOSIS_VALIDATE_INPUT.v1",
+                output_schema_version="VALIDATED_EVIDENCE_PLAN.v1",
+                depends_on=validate_inputs,
+                input_artifact_keys=validate_inputs,
+                timeout_seconds=30,
+            )
+        )
+        tasks.append(
+            TaskSpec(
+                task_key=f"{prefix}:collect",
+                task_type="DIAGNOSE",
+                handler_id="diagnosis.evidence-collect",
+                handler_version="1",
+                input_schema_version="DIAGNOSIS_COLLECT_INPUT.v1",
+                output_schema_version="DIAGNOSIS_EVIDENCE_COLLECTION.v1",
+                depends_on=(f"{prefix}:validate", *identity_key),
+                input_artifact_keys=(f"{prefix}:validate", *identity_key),
+                timeout_seconds=180,
+                max_attempts=2,
+            )
+        )
+        evidence_key = f"diagnosis:evidence:r{round_no}"
+        tasks.append(
+            TaskSpec(
+                task_key=evidence_key,
+                task_type="DIAGNOSE",
+                handler_id="diagnosis.evidence-index",
+                handler_version="1",
+                input_schema_version="EVIDENCE_BUILD_INPUT.v1",
+                output_schema_version="EVIDENCE_INDEX.v1",
+                depends_on=(
+                    prior_evidence,
+                    f"{prefix}:collect",
+                ),
+                input_artifact_keys=(
+                    prior_evidence,
+                    f"{prefix}:collect",
+                ),
+                timeout_seconds=30,
+            )
+        )
+        assess_inputs = [
+            prior_evidence,
+            evidence_key,
+            f"{prefix}:draft",
+            f"{prefix}:validate",
+        ]
+        if prior_assessment:
+            assess_inputs.append(prior_assessment)
+        assessment_key = f"{prefix}:assess"
+        tasks.append(
+            TaskSpec(
+                task_key=assessment_key,
+                task_type="DIAGNOSE",
+                handler_id="diagnosis.round-assess",
+                handler_version="1",
+                input_schema_version="DIAGNOSIS_ASSESS_INPUT.v1",
+                output_schema_version="DIAGNOSIS_ROUND_ASSESSMENT.v1",
+                depends_on=tuple(assess_inputs),
+                input_artifact_keys=tuple(assess_inputs),
+                timeout_seconds=180,
+                max_attempts=2,
+            )
+        )
+        prior_evidence = evidence_key
+        prior_assessment = assessment_key
+        prior_plans.append(f"{prefix}:validate")
+    assert prior_assessment is not None
+    tasks.extend(
+        (
+            TaskSpec(
+                task_key="diagnosis:root-cause",
+                task_type="DIAGNOSE",
+                handler_id="diagnosis.root-cause",
+                handler_version="1",
+                input_schema_version="ROOT_CAUSE_INPUT.v1",
+                output_schema_version="ROOT_CAUSE_ASSESSMENT.v1",
+                depends_on=(prior_evidence, prior_assessment),
+                input_artifact_keys=(prior_evidence, prior_assessment),
+                timeout_seconds=30,
+            ),
+            TaskSpec(
+                task_key="diagnosis:verify",
+                task_type="DIAGNOSE",
+                handler_id="diagnosis.grounding",
+                handler_version="1",
+                input_schema_version="GROUNDING_INPUT.v1",
+                output_schema_version="GROUNDING_VERIFICATION.v1",
+                depends_on=(prior_evidence, "diagnosis:root-cause"),
+                input_artifact_keys=(
+                    prior_evidence,
+                    "diagnosis:root-cause",
+                ),
+                timeout_seconds=30,
+            ),
+            TaskSpec(
+                task_key="diagnosis:solution",
+                task_type="DIAGNOSE",
+                handler_id="diagnosis.solution",
+                handler_version="1",
+                input_schema_version="SOLUTION_INPUT.v1",
+                output_schema_version="SOLUTION_DRAFT.v1",
+                depends_on=("diagnosis:root-cause",),
+                input_artifact_keys=("diagnosis:root-cause",),
+                timeout_seconds=30,
+            ),
+            TaskSpec(
+                task_key="diagnosis:report",
+                task_type="REPORT",
+                handler_id="diagnosis.report",
+                handler_version="1",
+                input_schema_version="DIAGNOSIS_REPORT_INPUT.v1",
+                output_schema_version="DIAGNOSIS_REPORT_DRAFT.v1",
+                depends_on=(
+                    prior_evidence,
+                    prior_assessment,
+                    "diagnosis:root-cause",
+                    "diagnosis:verify",
+                    "diagnosis:solution",
+                ),
+                input_artifact_keys=(
+                    prior_evidence,
+                    prior_assessment,
+                    "diagnosis:root-cause",
+                    "diagnosis:verify",
+                    "diagnosis:solution",
+                ),
+                timeout_seconds=30,
+            ),
+        )
+    )
+    return Blueprint(
+        blueprint_id="diagnosis.root-cause",
+        version="1",
+        tasks=tuple(tasks),
+        final_task_key="diagnosis:report",
+    )

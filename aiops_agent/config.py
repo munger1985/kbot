@@ -154,6 +154,23 @@ class AIOpsMonitoringConfig(BaseModel):
     payload_store_root: str = "/tmp/kbot-aiops-monitor-payloads"
 
 
+class AIOpsDiagnosisConfig(BaseModel):
+    enabled: bool = False
+    model_technical_name: str = Field(
+        default="aiops-diagnosis", min_length=1, max_length=128
+    )
+    model_revision: str = Field(
+        default="1", min_length=1, max_length=64
+    )
+    prompt_catalog_path: str | None = None
+    max_rounds: int = Field(default=3, ge=1, le=3)
+    max_tool_calls: int = Field(default=12, ge=0, le=64)
+    max_output_tokens_per_call: int = Field(
+        default=4096, ge=256, le=32768
+    )
+    max_evidence_facts: int = Field(default=256, ge=1, le=2000)
+
+
 class InspectionTemplateRegistration(BaseModel):
     template_id: str = Field(min_length=1, max_length=128)
     template_version: str = Field(min_length=1, max_length=64)
@@ -198,6 +215,9 @@ class AIOpsSettings(Settings):
     limits: AIOpsLimitsConfig = Field(default_factory=AIOpsLimitsConfig)
     monitoring: AIOpsMonitoringConfig = Field(
         default_factory=AIOpsMonitoringConfig
+    )
+    diagnosis: AIOpsDiagnosisConfig = Field(
+        default_factory=AIOpsDiagnosisConfig
     )
     management: AIOpsManagementConfig = Field(
         default_factory=AIOpsManagementConfig

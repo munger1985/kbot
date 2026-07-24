@@ -145,10 +145,16 @@ def create_runtime_handler_registry(
     diagnostic_grant_issuer: str | None = None,
     diagnostic_grant_audience: str | None = None,
     diagnostic_grant_ttl_seconds: int = 45,
+    diagnosis_model_client=None,
+    diagnosis_prompt_registry=None,
+    diagnostic_registry=None,
+    knowledge_core_client=None,
+    diagnosis_caller_service: str | None = None,
 ) -> HandlerRegistry:
-    """组合运行内核与步骤 5 Handler，版本必须精确匹配。"""
+    """组合运行内核及各阶段 Handler，版本必须精确匹配。"""
     kernel = create_kernel_handler_registry()
     manifests = list(kernel.manifests)
+    database_diagnostic_handler = None
     if monitor_provider_registry is not None and secret_store is not None:
         from .monitoring_handlers import (
             MonitorObserveHandler,
@@ -192,6 +198,13 @@ def create_runtime_handler_registry(
             DatabaseScopeHandler,
         )
 
+        database_diagnostic_handler = DatabaseDiagnosticHandler(
+            executor_client=db_executor_client,
+            grant_codec=diagnostic_grant_codec,
+            grant_issuer=diagnostic_grant_issuer or "",
+            grant_audience=diagnostic_grant_audience or "",
+            grant_ttl_seconds=diagnostic_grant_ttl_seconds,
+        )
         manifests.extend(
             (
                 HandlerManifest(
@@ -206,13 +219,7 @@ def create_runtime_handler_registry(
                     version="1",
                     output_schema_version="DATABASE_DIAGNOSTIC_RESULT.v1",
                     idempotent=True,
-                    implementation=DatabaseDiagnosticHandler(
-                        executor_client=db_executor_client,
-                        grant_codec=diagnostic_grant_codec,
-                        grant_issuer=diagnostic_grant_issuer or "",
-                        grant_audience=diagnostic_grant_audience or "",
-                        grant_ttl_seconds=diagnostic_grant_ttl_seconds,
-                    ),
+                    implementation=database_diagnostic_handler,
                 ),
                 HandlerManifest(
                     handler_id="database.aggregate",
@@ -229,6 +236,128 @@ def create_runtime_handler_registry(
                     output_schema_version="DB_DIAGNOSTIC_REPORT.v1",
                     idempotent=True,
                     implementation=DatabaseReportHandler(),
+                ),
+            )
+        )
+    if (
+        diagnosis_model_client is not None
+        and diagnosis_prompt_registry is not None
+        and diagnostic_registry is not None
+        and database_diagnostic_handler is not None
+        and knowledge_core_client is not None
+    ):
+        from .diagnosis_handlers import (
+            BuildEvidenceIndexHandler,
+            DiagnosisEvidenceCollectHandler,
+            DiagnosisReportHandler,
+            DiagnosisRoundAssessmentHandler,
+            DiagnosisRoundDraftHandler,
+            DiagnosisScopeHandler,
+            EvidenceRequestValidatorHandler,
+            GroundingVerificationHandler,
+            KnowledgeCitationHandler,
+            RootCauseAssessmentHandler,
+            SolutionDraftHandler,
+        )
+
+        manifests.extend(
+            (
+                HandlerManifest(
+                    handler_id="diagnosis.scope",
+                    version="1",
+                    output_schema_version="DIAGNOSIS_SCOPE.v1",
+                    idempotent=True,
+                    implementation=DiagnosisScopeHandler(),
+                ),
+                HandlerManifest(
+                    handler_id="diagnosis.evidence-index",
+                    version="1",
+                    output_schema_version="EVIDENCE_INDEX.v1",
+                    idempotent=True,
+                    implementation=BuildEvidenceIndexHandler(),
+                ),
+                HandlerManifest(
+                    handler_id="diagnosis.knowledge-citation",
+                    version="1",
+                    output_schema_version="KNOWLEDGE_CITATION_PACK.v1",
+                    idempotent=True,
+                    implementation=KnowledgeCitationHandler(
+                        knowledge_client=knowledge_core_client,
+                        caller_service=diagnosis_caller_service or "",
+                    ),
+                ),
+                HandlerManifest(
+                    handler_id="diagnosis.round-draft",
+                    version="1",
+                    output_schema_version="DIAGNOSIS_ROUND_DRAFT.v1",
+                    idempotent=True,
+                    implementation=DiagnosisRoundDraftHandler(
+                        model_client=diagnosis_model_client,
+                        prompts=diagnosis_prompt_registry,
+                    ),
+                ),
+                HandlerManifest(
+                    handler_id="diagnosis.request-validator",
+                    version="1",
+                    output_schema_version="VALIDATED_EVIDENCE_PLAN.v1",
+                    idempotent=True,
+                    implementation=EvidenceRequestValidatorHandler(
+                        registry=diagnostic_registry
+                    ),
+                ),
+                HandlerManifest(
+                    handler_id="diagnosis.evidence-collect",
+                    version="1",
+                    output_schema_version=(
+                        "DIAGNOSIS_EVIDENCE_COLLECTION.v1"
+                    ),
+                    idempotent=True,
+                    implementation=DiagnosisEvidenceCollectHandler(
+                        database_handler=database_diagnostic_handler
+                    ),
+                ),
+                HandlerManifest(
+                    handler_id="diagnosis.round-assess",
+                    version="1",
+                    output_schema_version=(
+                        "DIAGNOSIS_ROUND_ASSESSMENT.v1"
+                    ),
+                    idempotent=True,
+                    implementation=DiagnosisRoundAssessmentHandler(
+                        model_client=diagnosis_model_client,
+                        prompts=diagnosis_prompt_registry,
+                    ),
+                ),
+                HandlerManifest(
+                    handler_id="diagnosis.root-cause",
+                    version="1",
+                    output_schema_version="ROOT_CAUSE_ASSESSMENT.v1",
+                    idempotent=True,
+                    implementation=RootCauseAssessmentHandler(),
+                ),
+                HandlerManifest(
+                    handler_id="diagnosis.grounding",
+                    version="1",
+                    output_schema_version="GROUNDING_VERIFICATION.v1",
+                    idempotent=True,
+                    implementation=GroundingVerificationHandler(
+                        model_client=diagnosis_model_client,
+                        prompts=diagnosis_prompt_registry,
+                    ),
+                ),
+                HandlerManifest(
+                    handler_id="diagnosis.solution",
+                    version="1",
+                    output_schema_version="SOLUTION_DRAFT.v1",
+                    idempotent=True,
+                    implementation=SolutionDraftHandler(),
+                ),
+                HandlerManifest(
+                    handler_id="diagnosis.report",
+                    version="1",
+                    output_schema_version="DIAGNOSIS_REPORT_DRAFT.v1",
+                    idempotent=True,
+                    implementation=DiagnosisReportHandler(),
                 ),
             )
         )

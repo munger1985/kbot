@@ -153,8 +153,12 @@ class LLMService:
                             "content": getattr(msg, "content", "")
                         })
             
-            # Log request details for debugging
-            logger.debug(f"正在向模型 {served_model_name} 发送消息：{processed_messages}")
+            # 诊断证据和用户输入不得写入模型服务日志。
+            logger.debug(
+                "正在向模型 {} 发送请求：message_count={}",
+                served_model_name,
+                len(processed_messages),
+            )
             if tools:
                 logger.debug(f"工具调用配置 - 工具数量：{len(tools)}，工具选择：{tool_choice}")
 

@@ -144,9 +144,12 @@ class AIOpsTaskWorker:
                         provenance={
                             "run_id": str(latest.run_id),
                             "task_id": str(latest.task_id),
+                            "task_key": latest.task_key,
                             "attempt": latest.attempt,
                         },
-                        trust_level="SOURCE_VERIFIED",
+                        trust_level=self._artifact_trust_level(
+                            latest.output_schema_version
+                        ),
                         security_level=1,
                     ),
                 )
@@ -186,6 +189,19 @@ class AIOpsTaskWorker:
                     latest.task_id,
                     type(persist_error).__name__,
                 )
+
+    @staticmethod
+    def _artifact_trust_level(schema_version: str) -> str:
+        if schema_version in {
+            "DIAGNOSIS_ROUND_DRAFT.v1",
+            "DIAGNOSIS_ROUND_ASSESSMENT.v1",
+            "ROOT_CAUSE_ASSESSMENT.v1",
+            "GROUNDING_VERIFICATION.v1",
+            "SOLUTION_DRAFT.v1",
+            "DIAGNOSIS_REPORT_DRAFT.v1",
+        }:
+            return "MODEL_INFERENCE"
+        return "SOURCE_VERIFIED"
 
     async def _heartbeat_loop(
         self, current: dict[str, TaskLease]
@@ -227,10 +243,12 @@ class AIOpsTaskWorker:
             input_artifacts=tuple(
                 {
                     "artifact_id": str(item.artifact_id),
+                    "artifact_key": item.artifact_key,
                     "artifact_type": item.artifact_type,
                     "schema_version": item.schema_version,
                     "payload": item.payload,
                     "content_hash": item.content_hash,
+                    "provenance": dict(item.provenance),
                 }
                 for item in lease.input_artifacts
             ),
