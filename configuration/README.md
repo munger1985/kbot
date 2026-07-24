@@ -53,3 +53,12 @@ python scripts/check_process_topology.py
 可检查 App 入口、服务配置、Example、端口唯一性以及 `start_kbot.sh` /
 `stop_kbot.sh` 覆盖关系。本地启动环境默认仍为 `kbot3`，可通过
 `KBOT_CONDA_ENV=cube ./start_kbot.sh` 显式覆盖；生产部署不得依赖该脚本。
+
+修改配置后还应执行：
+
+```bash
+python scripts/check_configuration_contract.py
+```
+
+该检查确保实际配置与 Example 字段严格对应，开发和生产配置可通过各服务的
+Pydantic 模型，并且配置声明的 Secret 环境变量均已收录于 `.env.example`。

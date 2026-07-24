@@ -5,7 +5,8 @@ service_host = "0.0.0.0"
 service_port = 18110
 
 [runtime]
-system_aiops_agent_id = "替换为后台专用 Agent 的 UUIDv7"
+# 部署时替换为持久化的后台专用 Agent UUIDv7。
+system_aiops_agent_id = "019c03b5-4b88-7ab2-8c19-7b6ea34f2a11"
 
 [worker]
 service_name = "kbot-aiops-worker"

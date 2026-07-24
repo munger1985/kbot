@@ -107,6 +107,11 @@ def _checks(
             120,
         ),
         (
+            "configuration_contract",
+            [python, "scripts/check_configuration_contract.py"],
+            120,
+        ),
+        (
             "aiops_diagnostic_catalog",
             [python, "scripts/check_aiops_diagnostic_catalog.py"],
             120,
