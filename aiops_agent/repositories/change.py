@@ -174,6 +174,28 @@ class ChangeRepository(AIOpsRepository):
         )
         return (await self._session.execute(statement)).scalars().first()
 
+    async def find_expired_proposal(
+        self, *, now: datetime
+    ) -> ChangeProposalEntity | None:
+        """返回一个待收敛 Proposal；加锁顺序仍由应用层控制。"""
+        self._check_active()
+        statement = (
+            select(ChangeProposalEntity)
+            .where(
+                ChangeProposalEntity.status.in_(
+                    ("ADVISORY_READY", "PENDING_APPROVAL")
+                ),
+                ChangeProposalEntity.expires_at.is_not(None),
+                ChangeProposalEntity.expires_at <= now,
+            )
+            .order_by(
+                ChangeProposalEntity.expires_at,
+                ChangeProposalEntity.proposal_id,
+            )
+            .limit(1)
+        )
+        return (await self._session.execute(statement)).scalars().first()
+
     async def get_hitl(
         self, *, hitl_id: UUID, lock: bool = False
     ) -> HitlEntity | None:

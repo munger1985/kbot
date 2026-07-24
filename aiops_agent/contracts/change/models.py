@@ -97,3 +97,35 @@ class AdvisoryActionResult(_ChangeContract):
     note: str | None = Field(default=None, max_length=4000)
     bounded_output: str | None = Field(default=None, max_length=16000)
     result_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+
+class AdvisoryVerificationScope(_ChangeContract):
+    schema_version: Literal["ADVISORY_VERIFICATION_SCOPE.v1"] = (
+        "ADVISORY_VERIFICATION_SCOPE.v1"
+    )
+    proposal_id: str
+    source_run_id: str
+    result_artifact_id: str
+    action_template_id: str
+    canonical_parameters: dict[str, int | str]
+    verification_tool_refs: tuple[str, ...]
+    manual_result_status: Literal["EXECUTED"]
+    initial_gap_codes: tuple[str, ...] = ()
+
+
+class ActionVerification(_ChangeContract):
+    schema_version: Literal["ACTION_VERIFICATION.v1"] = (
+        "ACTION_VERIFICATION.v1"
+    )
+    proposal_id: str
+    source_run_id: str
+    result_artifact_id: str
+    status: Literal[
+        "VERIFIED", "NOT_ACHIEVED", "ADVERSE", "INCONCLUSIVE"
+    ]
+    summary: str
+    target_still_present: bool | None = None
+    blocking_still_present: bool | None = None
+    checked_tool_refs: tuple[str, ...] = ()
+    gap_codes: tuple[str, ...] = ()
+    evidence_hashes: tuple[str, ...] = ()

@@ -44,6 +44,7 @@ from aiops_agent.entities import (
 from aiops_agent.contracts.change import ProposalOutcome
 from aiops_agent.orchestration import (
     BlueprintRegistry,
+    build_advisory_verification_blueprint,
     build_database_diagnostic_blueprint,
     build_multi_round_diagnosis_blueprint,
     build_monitor_observe_blueprint,
@@ -307,6 +308,140 @@ class AIOpsRuntimeService:
                     ),
                     max_rounds=int(self._diagnosis_config.max_rounds),
                 )
+            elif command.blueprint_id == "change.advisory-verify":
+                requested_verification = dict(
+                    command.client_metadata.get(
+                        "advisory_verification", {}
+                    )
+                )
+                required = {
+                    "proposal_id",
+                    "source_run_id",
+                    "result_artifact_id",
+                }
+                if not required.issubset(requested_verification):
+                    raise validation_failed("Advisory 验证上下文不完整")
+                try:
+                    proposal_id = UUID(
+                        str(requested_verification["proposal_id"])
+                    )
+                    result_artifact_id = UUID(
+                        str(
+                            requested_verification[
+                                "result_artifact_id"
+                            ]
+                        )
+                    )
+                except (TypeError, ValueError):
+                    raise validation_failed(
+                        "Advisory 验证来源标识无效"
+                    ) from None
+                source_proposal = await uow.changes.get_proposal(
+                    proposal_id=proposal_id
+                )
+                source_result = await uow.runs.get_artifact(
+                    artifact_id=result_artifact_id
+                )
+                source_run = (
+                    await uow.runs.get_run(
+                        ops_run_id=source_proposal.ops_run_id
+                    )
+                    if source_proposal is not None
+                    else None
+                )
+                snapshot_artifact = (
+                    await uow.runs.get_artifact(
+                        artifact_id=source_proposal.snapshot_artifact_id
+                    )
+                    if source_proposal is not None
+                    else None
+                )
+                if (
+                    source_proposal is None
+                    or source_result is None
+                    or source_run is None
+                    or snapshot_artifact is None
+                    or source_proposal.target_id != target.target_id
+                    or source_result.ops_run_id != source_run.ops_run_id
+                    or source_result.schema_version
+                    != "USER_PROVIDED_ACTION_RESULT.v1"
+                    or str(source_run.ops_run_id)
+                    != str(requested_verification["source_run_id"])
+                    or source_run.agent_id != command.agent_id
+                    or source_run.actor_id != command.actor_id
+                ):
+                    raise validation_failed(
+                        "Advisory 验证来源关系不可信"
+                    )
+                proposal_outcome = ProposalOutcome.model_validate(
+                    snapshot_artifact.payload_json
+                )
+                proposal_snapshot = proposal_outcome.proposal
+                result_payload = dict(source_result.payload_json or {})
+                if (
+                    proposal_snapshot is None
+                    or proposal_snapshot.proposal_id
+                    != str(proposal_id)
+                    or result_payload.get("proposal_id")
+                    != str(proposal_id)
+                    or result_payload.get("status") != "EXECUTED"
+                ):
+                    raise validation_failed(
+                        "Advisory 验证来源内容无效"
+                    )
+                verification = {
+                    "proposal_id": str(proposal_id),
+                    "source_run_id": str(source_run.ops_run_id),
+                    "result_artifact_id": str(result_artifact_id),
+                    "action_template_id": (
+                        proposal_snapshot.action_template_id
+                    ),
+                    "canonical_parameters": dict(
+                        proposal_snapshot.canonical_parameters
+                    ),
+                    "verification_tool_refs": tuple(
+                        proposal_snapshot.verification_plan
+                    ),
+                    "manual_result_status": "EXECUTED",
+                }
+                requested_tools = tuple(
+                    dict.fromkeys(
+                        (
+                            "db.instance.identity",
+                            *verification["verification_tool_refs"],
+                        )
+                    )
+                )
+                mandatory = {
+                    "db.session.active",
+                    "db.session.blocking_chain",
+                }
+                if not mandatory.issubset(requested_tools):
+                    raise validation_failed(
+                        "Advisory 验证必须检查活动会话和阻塞链"
+                    )
+                (
+                    _,
+                    database_diagnostic_snapshot,
+                ) = self._database_diagnostic_blueprint_snapshot(
+                    command=command,
+                    target=target,
+                    binding=binding,
+                    policy=policy,
+                    requested_tool_ids=requested_tools,
+                )
+                verification["initial_gap_codes"] = tuple(
+                    item["code"]
+                    for item in database_diagnostic_snapshot[
+                        "initial_gaps"
+                    ]
+                )
+                blueprint = build_advisory_verification_blueprint(
+                    tuple(
+                        item["tool_id"]
+                        for item in database_diagnostic_snapshot["tools"]
+                    )
+                )
             else:
                 blueprint = self._blueprints.resolve(
                     command.blueprint_id, command.blueprint_version
@@ -345,6 +480,11 @@ class AIOpsRuntimeService:
                     policy_snapshot=policy_snapshot,
                     monitoring_snapshot=monitoring_snapshot,
                 )
+            if command.blueprint_id == "change.advisory-verify":
+                plan_snapshot["database_diagnostics"] = (
+                    database_diagnostic_snapshot
+                )
+                plan_snapshot["advisory_verification"] = verification
             try:
                 run = await uow.runs.add_run(
                     OpsRunEntity(
@@ -356,6 +496,18 @@ class AIOpsRuntimeService:
                         trigger_type=str(command.trigger_type),
                         trigger_event_id=command.trigger_event_id,
                         trigger_alert_id=command.trigger_alert_id,
+                        source_proposal_id=(
+                            UUID(verification["proposal_id"])
+                            if command.blueprint_id
+                            == "change.advisory-verify"
+                            else None
+                        ),
+                        source_result_artifact_id=(
+                            UUID(verification["result_artifact_id"])
+                            if command.blueprint_id
+                            == "change.advisory-verify"
+                            else None
+                        ),
                         actor_id=command.actor_id,
                         original_request=command.input,
                         idempotency_key=command.idempotency_key,
@@ -584,6 +736,8 @@ class AIOpsRuntimeService:
             access_allowed
             and policy_allowed
             and bool(target.version_code)
+            and bool(target.diagnostic_secret_ref)
+            and bool(target.endpoint_json)
         )
         requested = requested_tool_ids or (
             "db.instance.identity",
@@ -1796,6 +1950,45 @@ class AIOpsRuntimeService:
                 )
                 await uow.commit()
                 return True
+            expired_proposal = await uow.changes.find_expired_proposal(
+                now=now
+            )
+            if expired_proposal is not None:
+                run = await uow.runs.get_run(
+                    ops_run_id=expired_proposal.ops_run_id,
+                    lock=True,
+                )
+                proposal = await uow.changes.get_proposal(
+                    proposal_id=expired_proposal.proposal_id,
+                    lock=True,
+                )
+                if (
+                    run is None
+                    or proposal is None
+                    or proposal.status
+                    not in {"ADVISORY_READY", "PENDING_APPROVAL"}
+                    or proposal.expires_at is None
+                    or proposal.expires_at > now
+                ):
+                    return False
+                proposal.status = "EXPIRED"
+                proposal.updated_at = now
+                await uow.runs.append_event(
+                    ops_run_id=run.ops_run_id,
+                    ops_task_id=proposal.ops_task_id,
+                    event_type="proposal.expired",
+                    event_key=(
+                        f"proposal:{proposal.proposal_id}:expired"
+                    ),
+                    visibility="USER",
+                    payload_json={
+                        "proposal_id": str(proposal.proposal_id),
+                        "status": "EXPIRED",
+                        "trace_id": trace_id,
+                    },
+                )
+                await uow.commit()
+                return True
             expired_hitl = await uow.changes.find_expired_hitl()
             if expired_hitl is not None:
                 preliminary = await uow.runs.get_task(
@@ -2053,6 +2246,12 @@ class AIOpsRuntimeService:
                 trigger_type=run.trigger_type,
                 status=run.status,
                 root_cause_grade=run.root_cause_level,
+                source_proposal_id=getattr(
+                    run, "source_proposal_id", None
+                ),
+                source_result_artifact_id=(
+                    getattr(run, "source_result_artifact_id", None)
+                ),
                 final_artifact=final,
                 row_version=int(run.row_version),
                 created_at=run.created_at,

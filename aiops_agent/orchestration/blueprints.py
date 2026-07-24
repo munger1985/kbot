@@ -269,6 +269,73 @@ def build_database_diagnostic_blueprint(
     )
 
 
+def build_advisory_verification_blueprint(
+    tool_ids: tuple[str, ...],
+) -> Blueprint:
+    """使用全新只读证据验证人工执行效果，不再生成变更建议。"""
+    ordered = tuple(dict.fromkeys(tool_ids))
+    if ordered and ordered[0] != "db.instance.identity":
+        raise BlueprintValidationError("效果验证必须先执行实例身份工具")
+    diagnostic_tasks = []
+    for index, tool_id in enumerate(ordered):
+        dependency = (
+            ("scope",)
+            if index == 0
+            else ("diagnostic:db.instance.identity",)
+        )
+        diagnostic_tasks.append(
+            TaskSpec(
+                task_key=f"diagnostic:{tool_id}",
+                task_type="DIAGNOSE",
+                handler_id="database.diagnostic",
+                handler_version="1",
+                input_schema_version=(
+                    "DATABASE_SCOPE_RESULT.v1"
+                    if index == 0
+                    else "DATABASE_DIAGNOSTIC_RESULT.v1"
+                ),
+                output_schema_version="DATABASE_DIAGNOSTIC_RESULT.v1",
+                depends_on=dependency,
+                input_artifact_keys=dependency,
+                timeout_seconds=90,
+                max_attempts=2,
+                priority=40 + index,
+            )
+        )
+    dependencies = ("scope",) + tuple(
+        item.task_key for item in diagnostic_tasks
+    )
+    return Blueprint(
+        blueprint_id="change.advisory-verify",
+        version="1",
+        final_task_key="verify",
+        tasks=(
+            TaskSpec(
+                task_key="scope",
+                task_type="SCOPE",
+                handler_id="change.verification-scope",
+                handler_version="1",
+                input_schema_version="RUN_INPUT.v1",
+                output_schema_version="ADVISORY_VERIFICATION_SCOPE.v1",
+                timeout_seconds=30,
+            ),
+            *diagnostic_tasks,
+            TaskSpec(
+                task_key="verify",
+                task_type="VERIFY",
+                handler_id="change.verify",
+                handler_version="1",
+                input_schema_version="ADVISORY_VERIFY_INPUT.v1",
+                output_schema_version="ACTION_VERIFICATION.v1",
+                depends_on=dependencies,
+                input_artifact_keys=dependencies,
+                timeout_seconds=30,
+                max_attempts=1,
+            ),
+        ),
+    )
+
+
 def build_diagnosis_blueprint(
     *,
     binding_ids: tuple[str, ...],

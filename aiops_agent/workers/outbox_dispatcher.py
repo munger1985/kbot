@@ -48,6 +48,42 @@ class AIOpsDomainOutboxSink:
         ):
             await self._monitor_health_service.execute(payload)
             return
+        if event_type == "OPS_ADVISORY_RESULT_RECORDED":
+            proposal_id = payload["proposal_id"]
+            await self._runtime_service.create_run(
+                CreateOpsRunCommand(
+                    command_id=uuid7(),
+                    idempotency_key=(
+                        f"proposal:{proposal_id}:manual-result:verify"
+                    ),
+                    app_id=payload["app_id"],
+                    domain_id=payload["domain_id"],
+                    actor_id=payload["actor_id"],
+                    agent_id=payload["agent_id"],
+                    target_id=payload["target_id"],
+                    trigger_type="API",
+                    input="验证人工执行的 Advisory 动作效果",
+                    blueprint_id="change.advisory-verify",
+                    blueprint_version="1",
+                    client_metadata={
+                        "trace_id": payload["trace_id"],
+                        "trigger": "advisory_manual_result",
+                        "advisory_verification": {
+                            key: payload[key]
+                            for key in (
+                                "proposal_id",
+                                "source_run_id",
+                                "result_artifact_id",
+                            )
+                        },
+                    },
+                )
+            )
+            logger.info(
+                "Advisory 人工结果验证 Run 已创建：proposal_id={}",
+                proposal_id,
+            )
+            return
         if event_type != "OPS_ALERT_AUTO_RUN_REQUESTED":
             await self._fallback.publish(event_type, payload)
             return

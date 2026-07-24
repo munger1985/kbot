@@ -2188,6 +2188,30 @@
             "title": "Schema Version",
             "type": "string"
           },
+          "source_proposal_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Proposal Id"
+          },
+          "source_result_artifact_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Result Artifact Id"
+          },
           "status": {
             "$ref": "#/components/schemas/OpsRunStatus"
           },

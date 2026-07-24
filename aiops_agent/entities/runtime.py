@@ -30,6 +30,10 @@ class OpsRunEntity(BaseEntity):
     trigger_event_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
     trigger_alert_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
     inspection_fire_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
+    source_proposal_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
+    source_result_artifact_id: Mapped[UUID | None] = mapped_column(
+        UUIDv7Type()
+    )
     actor_id: Mapped[str] = mapped_column(String(256), nullable=False)
     original_request: Mapped[str | None] = mapped_column(Text)
     idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)

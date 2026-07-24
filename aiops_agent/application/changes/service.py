@@ -14,7 +14,11 @@ from aiops_agent.contracts.change import (
     AdvisoryActionResult,
     ProposalOutcome,
 )
-from aiops_agent.entities import HitlEntity, OpsArtifactEntity
+from aiops_agent.entities import (
+    HitlEntity,
+    OpsArtifactEntity,
+    OutboxEntity,
+)
 from platform_core.contracts.aiops.public import (
     ManualResultCommand,
     ManualResultReceipt,
@@ -178,6 +182,11 @@ class AIOpsChangeService:
             if proposal.status != "ADVISORY_READY":
                 raise state_conflict("只有 Advisory Proposal 可回填人工结果")
             now = await uow.runs.database_now()
+            if (
+                proposal.expires_at is not None
+                and proposal.expires_at <= now
+            ):
+                raise state_conflict("Advisory Proposal 已过期")
             if command.occurred_at > now:
                 raise state_conflict("人工处理时间不能晚于当前时间")
             body = {
@@ -258,6 +267,36 @@ class AIOpsChangeService:
                     "trace_id": trace_id,
                 },
             )
+            if str(command.status) == "EXECUTED":
+                outbox_payload = {
+                    "proposal_id": str(proposal_id),
+                    "source_run_id": str(run.ops_run_id),
+                    "result_artifact_id": str(artifact.artifact_id),
+                    "app_id": app_id,
+                    "domain_id": domain_id,
+                    "actor_id": actor_id,
+                    "agent_id": str(run.agent_id),
+                    "target_id": str(run.target_id),
+                    "trace_id": trace_id,
+                }
+                await uow.outbox.add(
+                    OutboxEntity(
+                        aggregate_type="OPS_CHANGE_PROPOSAL",
+                        aggregate_id=proposal_id,
+                        event_type=(
+                            "OPS_ADVISORY_RESULT_RECORDED"
+                        ),
+                        idempotency_key=(
+                            f"proposal:{proposal_id}:verify:v1"
+                        ),
+                        payload_json=outbox_payload,
+                        payload_hash=_hash(outbox_payload),
+                        status="PENDING",
+                        available_at=now,
+                        max_attempts=5,
+                        trace_id=trace_id,
+                    )
+                )
             await uow.commit()
             return ManualResultReceipt(
                 proposal_id=proposal_id,

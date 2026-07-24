@@ -219,7 +219,7 @@ Skip/Expiry、Public/Internal API 和安全 SSE 引用。首期不开放模型�
 
 ## 步骤 9：Advisory 与受控变更
 
-**状态：进行中；阶段 9A Advisory 基线已完成（2026-07-24）。**
+**状态：进行中；阶段 9A/9B Advisory 与只读验证闭环已完成（2026-07-24）。**
 
 详细设计见 [38_aiops_step9_advisory_approval_and_execution.md](38_aiops_step9_advisory_approval_and_execution.md)。
 
@@ -237,9 +237,11 @@ Mutation 默认通过部署级 Kill Switch 禁用；它只能降低能力，不�
 **完成物：** Advisory 完整闭环，以及可独立开关、逐命令审批、不可重放的 Oracle/MySQL 变更执行链路。
 
 阶段 9A 已完成严格 Action Catalog、可信 Fact 参数血缘、确定性 Action Plan、
-不可变 Advisory Proposal、权威预览/驳回/人工结果 API。当前执行能力在 Handler
-注册处硬关闭，尚未创建 Approval Token、Execution 或 Mutation 调用。下一阶段先补
-Proposal Expiry 和人工结果 Verify，再单独实现审批与隔离执行。
+不可变 Advisory Proposal、权威预览/驳回/人工结果 API。阶段 9B 已完成 Proposal
+Expiry，以及由事务 Outbox 幂等创建的独立只读 Verify Run；验证只接受新采集的
+数据库事实并输出 `ACTION_VERIFICATION.v1`。当前执行能力仍在 Handler 注册处
+硬关闭，尚未创建 Approval Token、Execution 或 Mutation 调用。下一阶段单独实现
+审批与隔离执行。
 
 ## 步骤 10：巡检、报告与对比
 

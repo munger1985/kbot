@@ -378,6 +378,8 @@ def create_runtime_handler_registry(
         if action_registry is not None:
             from .change_handlers import (
                 ActionPlanHandler,
+                ActionVerificationHandler,
+                AdvisoryVerificationScopeHandler,
                 ProposalSnapshotHandler,
             )
 
@@ -399,6 +401,22 @@ def create_runtime_handler_registry(
                         output_schema_version="PROPOSAL_OUTCOME.v1",
                         idempotent=True,
                         implementation=ProposalSnapshotHandler(),
+                    ),
+                    HandlerManifest(
+                        handler_id="change.verification-scope",
+                        version="1",
+                        output_schema_version=(
+                            "ADVISORY_VERIFICATION_SCOPE.v1"
+                        ),
+                        idempotent=True,
+                        implementation=AdvisoryVerificationScopeHandler(),
+                    ),
+                    HandlerManifest(
+                        handler_id="change.verify",
+                        version="1",
+                        output_schema_version="ACTION_VERIFICATION.v1",
+                        idempotent=True,
+                        implementation=ActionVerificationHandler(),
                     ),
                 )
             )

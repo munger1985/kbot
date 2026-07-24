@@ -121,6 +121,8 @@ class OpsRunSummary(AIOpsContract):
     trigger_type: TriggerType
     status: OpsRunStatus
     root_cause_grade: RootCauseGrade | None = None
+    source_proposal_id: UUIDv7 | None = None
+    source_result_artifact_id: UUIDv7 | None = None
     final_artifact: ArtifactRef | None = None
     row_version: int = Field(ge=1)
     created_at: UtcDatetime

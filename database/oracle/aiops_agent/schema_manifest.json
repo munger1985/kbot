@@ -11,8 +11,8 @@
     },
     {
       "name": "002_ops_runtime.sql",
-      "statements": 31,
-      "sha256": "b3b1d46abe8b9d70e87267ad14a1ee6193330f0652179ec26b7b7b75308f0038"
+      "statements": 32,
+      "sha256": "6935074a92b29d440950fbce6b3fa53dac7da1fb53cd2106cf1d72ee32439475"
     },
     {
       "name": "003_ops_change.sql",
@@ -31,8 +31,8 @@
     },
     {
       "name": "006_ops_fks_views.sql",
-      "statements": 26,
-      "sha256": "1b28015a5adf12b5d168ea9d40267eedad1b65245d0a307a23ccd18f2a247816"
+      "statements": 29,
+      "sha256": "aa7d406ed296ea0add66cac8297a8ddfc1f51bc489083d4a111d938ada08aa21"
     }
   ],
   "tables": [

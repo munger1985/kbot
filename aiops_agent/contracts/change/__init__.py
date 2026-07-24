@@ -3,7 +3,9 @@
 from .models import (
     ActionPlan,
     ActionPlanItem,
+    ActionVerification,
     AdvisoryActionResult,
+    AdvisoryVerificationScope,
     ChangeProposalSnapshot,
     ProposalOutcome,
 )
@@ -11,7 +13,9 @@ from .models import (
 __all__ = [
     "ActionPlan",
     "ActionPlanItem",
+    "ActionVerification",
     "AdvisoryActionResult",
+    "AdvisoryVerificationScope",
     "ChangeProposalSnapshot",
     "ProposalOutcome",
 ]

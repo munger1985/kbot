@@ -17,9 +17,23 @@
 - `action_execution_enabled` 在 9A 注册时固定为 `false`。即使 Target、Binding 和
   Policy 允许执行，也只能生成 Advisory，不创建 Approval Token 或 Execution。
 
-阶段 9B 才实现 Proposal Expiry、人工结果后的独立 Verify；阶段 9C 再实现逐命令
-审批、一次性授权、Claim、Mutation Driver、回调对账和 UNKNOWN 收敛。在这些安全
-门完成前不得把 Bootstrap 中的执行开关改为配置值。
+阶段 9B 已完成 Proposal Expiry 和人工结果后的独立 Verify：
+
+- `EXECUTED` 人工结果与 Outbox 在同一事务提交；`FAILED/CANCELLED` 仅留痕，
+  不创建无意义的效果验证；
+- 领域 Sink 以 Proposal 为幂等键创建 `change.advisory-verify@1` 独立 Run，
+  Run 显式记录来源 Proposal 和人工结果 Artifact；
+- Outbox 只携带来源 ID 与路由上下文；Runtime 必须回读并核对 Proposal
+  Snapshot、人工结果、原 Run、Target、Agent 和 Actor，不能信任消息中的动作参数；
+- 验证 Run 重新解析当前 Target、Binding、Policy 与 Diagnostic Catalog，只执行
+  Identity、Active Session 和 Blocking Chain 等只读工具；
+- 最终生成 `ACTION_VERIFICATION.v1`，结论限定为 `VERIFIED`、
+  `NOT_ACHIEVED`、`ADVERSE` 或 `INCONCLUSIVE`；用户声明本身不能证明成功；
+- Reconciler 将到期的 `ADVISORY_READY/PENDING_APPROVAL` Proposal 收敛为
+  `EXPIRED`，回填接口也在事务内拒绝已到期 Proposal。
+
+阶段 9C 再实现逐命令审批、一次性授权、Claim、Mutation Driver、回调对账和
+UNKNOWN 收敛。在这些安全门完成前不得把 Bootstrap 中的执行开关改为配置值。
 
 ## 目标与安全边界
 
@@ -173,6 +187,22 @@ ACTION_PLAN
 `MANUAL_ACTION_RESULT` 接受 `EXECUTED/FAILED/CANCELLED`、处理时间、备注和受限输出。它不产生 Approval Token，也不会把 Proposal 改成系统已执行。规范化结果保存为 `USER_PROVIDED_ACTION_RESULT.v1`。
 
 若用户不回填，Advisory Proposal 保持可查看直到过期，Run 可以先以“建议已生成”结束，不永久占用 Worker。用户之后回填时创建独立 Verify Run 或关联的后续 Run。
+
+人工回填与验证采用“事实先落库、命令后投递”：
+
+```text
+MANUAL_ACTION_RESULT(EXECUTED)
+  ├─ USER_PROVIDED_ACTION_RESULT.v1
+  └─ OPS_ADVISORY_RESULT_RECORDED (Outbox)
+       → change.advisory-verify@1
+          → fresh read-only diagnostics
+          → ACTION_VERIFICATION.v1
+```
+
+验证 Run 不复用原诊断证据，不包含 `PROPOSE/EXECUTE` Task，也不会递归生成新
+Proposal。目标会话同时从活动会话和阻塞链消失才可判定 `VERIFIED`；目标仍存在
+为 `NOT_ACHIEVED`；连接、权限、版本或证据缺失统一为 `INCONCLUSIVE`。
+`ADVERSE` 为后续监控指标比较保留，不能在缺少负面观测时推断。
 
 ## 审批展示与用户操作
 

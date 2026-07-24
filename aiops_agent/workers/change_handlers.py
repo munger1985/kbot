@@ -11,9 +11,12 @@ from aiops_agent.actions import ActionRegistry, ActionRenderer
 from aiops_agent.contracts.change import (
     ActionPlan,
     ActionPlanItem,
+    ActionVerification,
+    AdvisoryVerificationScope,
     ChangeProposalSnapshot,
     ProposalOutcome,
 )
+from aiops_agent.contracts.artifacts import DatabaseDiagnosticResult
 from aiops_agent.contracts.diagnosis import (
     EvidenceIndex,
     RootCauseAssessment,
@@ -298,4 +301,148 @@ class ProposalSnapshotHandler:
                 **body,
                 proposal_hash=_hash(body),
             ),
+        )
+
+
+class AdvisoryVerificationScopeHandler:
+    async def execute(
+        self, context: TaskExecutionContext
+    ) -> AdvisoryVerificationScope:
+        snapshot = context.plan_snapshot["advisory_verification"]
+        return AdvisoryVerificationScope.model_validate(snapshot)
+
+
+class ActionVerificationHandler:
+    """仅根据回填后的全新只读数据库观测判断动作效果。"""
+
+    async def execute(
+        self, context: TaskExecutionContext
+    ) -> ActionVerification:
+        scope = AdvisoryVerificationScope.model_validate(
+            _artifact(context, "ADVISORY_VERIFICATION_SCOPE.v1")
+        )
+        results = {
+            result.tool_id: result
+            for result in (
+                DatabaseDiagnosticResult.model_validate(item["payload"])
+                for item in context.input_artifacts
+                if item["schema_version"]
+                == "DATABASE_DIAGNOSTIC_RESULT.v1"
+            )
+        }
+        required = {
+            "db.session.active",
+            "db.session.blocking_chain",
+        }
+        gap_codes = set(scope.initial_gap_codes)
+        for tool_id in required:
+            result = results.get(tool_id)
+            if (
+                result is not None
+                and result.status == "SUCCEEDED"
+                and result.observation is not None
+            ):
+                continue
+            gap_codes.add(
+                result.gap.code
+                if result is not None and result.gap is not None
+                else "VERIFICATION_EVIDENCE_MISSING"
+            )
+        gaps = tuple(sorted(gap_codes))
+        successful = {
+            tool_id: results[tool_id].observation
+            for tool_id in required
+            if tool_id in results
+            and results[tool_id].status == "SUCCEEDED"
+            and results[tool_id].observation is not None
+        }
+        hashes = tuple(
+            sorted(
+                observation.result_sha256
+                for observation in successful.values()
+            )
+        )
+        if gaps:
+            return self._result(
+                scope,
+                status="INCONCLUSIVE",
+                summary="只读验证证据不完整，不能确认人工动作是否生效",
+                gap_codes=gaps,
+                evidence_hashes=hashes,
+            )
+        parameters = scope.canonical_parameters
+        active = self._contains_session(
+            successful["db.session.active"],
+            parameters,
+            blocking=False,
+        )
+        blocking = self._contains_session(
+            successful["db.session.blocking_chain"],
+            parameters,
+            blocking=True,
+        )
+        if not active and not blocking:
+            return self._result(
+                scope,
+                status="VERIFIED",
+                summary="目标会话已不在活动会话和阻塞链中，人工动作效果已验证",
+                target_still_present=False,
+                blocking_still_present=False,
+                evidence_hashes=hashes,
+            )
+        return self._result(
+            scope,
+            status="NOT_ACHIEVED",
+            summary="目标会话或其阻塞关系仍然存在，人工动作未达到预期效果",
+            target_still_present=active,
+            blocking_still_present=blocking,
+            evidence_hashes=hashes,
+        )
+
+    @staticmethod
+    def _contains_session(observation, parameters, *, blocking: bool) -> bool:
+        names = [
+            str(column.name).lower() for column in observation.columns
+        ]
+        rows = [dict(zip(names, row)) for row in observation.rows]
+        session_key = (
+            "blocking_session_id" if blocking else "session_id"
+        )
+        expected_session = int(parameters["session_id"])
+        expected_instance = parameters.get("instance_id")
+        for row in rows:
+            value = row.get(session_key)
+            if value is None or int(value) != expected_session:
+                continue
+            if expected_instance is None:
+                return True
+            instance_key = (
+                "blocking_instance_id" if blocking else "instance_id"
+            )
+            if int(row.get(instance_key, -1)) == int(expected_instance):
+                return True
+        return False
+
+    @staticmethod
+    def _result(
+        scope: AdvisoryVerificationScope,
+        *,
+        status: str,
+        summary: str,
+        target_still_present: bool | None = None,
+        blocking_still_present: bool | None = None,
+        gap_codes: tuple[str, ...] = (),
+        evidence_hashes: tuple[str, ...] = (),
+    ) -> ActionVerification:
+        return ActionVerification(
+            proposal_id=scope.proposal_id,
+            source_run_id=scope.source_run_id,
+            result_artifact_id=scope.result_artifact_id,
+            status=status,
+            summary=summary,
+            target_still_present=target_still_present,
+            blocking_still_present=blocking_still_present,
+            checked_tool_refs=scope.verification_tool_refs,
+            gap_codes=gap_codes,
+            evidence_hashes=evidence_hashes,
         )
