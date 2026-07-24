@@ -699,6 +699,12 @@ class AgentDelegationReconciler:
         ):
             return
         payload = event.model_dump(mode="json")
+        resource_url = self._public_resource_url(
+            event_type=str(event.event_type),
+            payload=payload,
+        )
+        if resource_url is not None:
+            payload["resource_url"] = resource_url
         await self._append_event(
             uow=uow,
             run=run,
@@ -711,6 +717,24 @@ class AgentDelegationReconciler:
                 "delegation_id": str(delegation_id),
             },
         )
+
+    @staticmethod
+    def _public_resource_url(
+        *, event_type: str, payload: dict[str, Any]
+    ) -> str | None:
+        mappings = {
+            "interaction.required": ("hitl_id", "hitl"),
+            "approval.required": ("proposal_id", "proposals"),
+            "report.ready": ("report_id", "reports"),
+        }
+        mapping = mappings.get(event_type)
+        if mapping is None:
+            return None
+        field, resource = mapping
+        identifier = payload.get(field)
+        if not identifier:
+            return None
+        return f"/api/v1/ops/{resource}/{identifier}"
 
     @staticmethod
     async def _append_event(

@@ -380,6 +380,19 @@ class MainApiTest(unittest.TestCase):
         self.assertEqual(200, response.status_code)
         self.assertIn("id: 8", body)
         self.assertIn("event: RUN_COMPLETED", body)
+        self.assertIn("event: done", body)
+
+    def test_sse_rejects_cursor_beyond_current_run(self) -> None:
+        response = self.client.get(
+            f"/api/v1/runs/{self.agent_runtime.run_id}/events",
+            headers={**self._headers(), "Last-Event-ID": "9"},
+        )
+
+        self.assertEqual(400, response.status_code)
+        self.assertEqual(
+            "AGENT_EVENT_CURSOR_INVALID",
+            response.json()["code"],
+        )
 
     def test_public_resource_paths_require_uuid(self) -> None:
         bundle_id = UUID("019c03b5-4b88-7ab2-8c19-7b6ea34f2a31")

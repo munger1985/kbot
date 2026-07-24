@@ -71,6 +71,14 @@ class _Uow:
 class AgentDelegationReconcilerTest(
     unittest.IsolatedAsyncioTestCase
 ):
+    def test_interaction_event_points_to_authorized_public_resource(self):
+        url = AgentDelegationReconciler._public_resource_url(
+            event_type="interaction.required",
+            payload={"hitl_id": str(uuid7())},
+        )
+
+        self.assertTrue(url.startswith("/api/v1/ops/hitl/"))
+
     async def test_submit_timeout_keeps_same_recoverable_delegation(self):
         now = datetime.now(UTC)
         run_id = uuid7()

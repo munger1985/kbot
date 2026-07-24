@@ -32,7 +32,7 @@
     {
       "name": "006_ops_fks_views.sql",
       "statements": 29,
-      "sha256": "aa7d406ed296ea0add66cac8297a8ddfc1f51bc489083d4a111d938ada08aa21"
+      "sha256": "e095719886f4b19b3df0ca37d8b3751b348c6c7ad068a0659ca07b5716bfad1a"
     }
   ],
   "tables": [

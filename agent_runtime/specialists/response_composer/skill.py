@@ -101,6 +101,9 @@ class ResponseComposerSkill:
             ops_run_id=payload["ops_run_id"],
             delegation_id=payload["delegation_id"],
             status=status,
+            resource_url=(
+                f"/api/v1/ops/runs/{payload['ops_run_id']}"
+            ),
             root_cause_grade=diagnosis.get("root_cause_grade"),
             artifact_id=artifact.get("artifact_id"),
             content_hash=artifact.get("content_hash"),

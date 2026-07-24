@@ -27,6 +27,7 @@ class AIOpsReferenceCard(_Contract):
     ops_run_id: UUID
     delegation_id: UUID
     status: str
+    resource_url: str
     root_cause_grade: str | None = None
     artifact_id: UUID | None = None
     content_hash: str | None = None

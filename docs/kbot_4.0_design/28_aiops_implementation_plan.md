@@ -271,8 +271,9 @@ Target Outbox 原子创建、Schedule Run 幂等展开、Fire 终态收敛，以
 
 ## 步骤 11：Root Agent、Main API 与前端集成
 
-**状态：进行中；11A AIOps Root Delegation 边界与 11B Agent Runtime
-提交/Reconciler、AIOps 单路由和安全结果组合已完成（2026-07-24）。**
+**状态：已完成；11A AIOps Root Delegation 边界、11B Agent Runtime
+提交/Reconciler，以及 11C Main API/SSE/APEX 公开交互闭环均已完成
+（2026-07-24）。**
 
 详细设计见 [40_aiops_step11_root_main_api_and_apex_integration.md](40_aiops_step11_root_main_api_and_apex_integration.md)。
 
@@ -285,8 +286,12 @@ Target Outbox 原子创建、Schedule Run 幂等展开、Fire 终态收敛，以
 
 11B 已实现稳定 Task 派生幂等键、`WAITING_EXTERNAL` 租约释放、独立有限租约
 Reconciler、Child Event Cursor、父取消联动和 `O1` AIOps Reference Card。
-HTTP 超时只重试同一 Delegation，不创建第二个 Child Run。下一阶段 11C 完善
-多来源并行组合、丰富 Result Envelope 以及 Main API/APEX 的交互资源展示。
+HTTP 超时只重试同一 Delegation，不创建第二个 Child Run。11C 已补齐 Root SSE
+超前游标拒绝、终态 `done`、HITL/Proposal/Report 公开资源 URL、AIOps Run
+Reference Card，以及 APEX 对 Root Parent Run/Delegation 的关联展示。
+
+自然语言 Hybrid Router 与更丰富的多来源 Envelope 在来源契约成熟后单独演进；
+当前不复制命令、原始 SQL 或内部 Artifact 来伪造“丰富结果”。
 
 上线前直接将调用方切换到 v4，不做 3.x/4.0 双写、切流或兼容 Adapter。
 

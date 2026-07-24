@@ -110,10 +110,19 @@ async def stream_run_events(
     ),
 ) -> StreamingResponse:
     cursor = _parse_cursor(last_event_id)
-    await _client(request).get_run(
+    summary = await _client(request).get_run(
         run_id=run_id,
         auth_context=request.state.auth_context,
     )
+    latest = int(summary["event_cursor"])
+    if cursor > latest:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "AGENT_EVENT_CURSOR_INVALID",
+                "message": "Last-Event-ID 超过当前 Run 事件游标",
+            },
+        )
     return StreamingResponse(
         _event_stream(
             run_id=run_id,
@@ -176,6 +185,10 @@ async def _event_stream(
             yield _format_sse(event)
             last_output_at = monotonic()
             if event["event_type"] in _TERMINAL_EVENTS:
+                yield (
+                    "event: done\n"
+                    f"data: {json.dumps({'sequence_no': cursor})}\n\n"
+                )
                 return
         if monotonic() - last_output_at >= heartbeat_seconds:
             yield ": heartbeat\n\n"

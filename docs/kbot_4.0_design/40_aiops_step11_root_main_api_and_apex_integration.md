@@ -2,7 +2,7 @@
 
 ## 当前实施进度
 
-阶段 11A/11B 已完成 AIOps 侧边界与 Agent Runtime 可恢复委派：
+阶段 11A/11B/11C 已完成 AIOps 边界、可恢复委派和公开交互闭环：
 
 - `POST /internal/v1/aiops/delegations` 使用稳定 Delegation ID 幂等创建
   `diagnosis.root-cause` 子 Run，并冻结 `PARENT_AGENT_RUN_ID` 与
@@ -22,9 +22,15 @@
 - Reconciler 使用稳定幂等键、持久化 Child Cursor 和父事件键恢复，不在数据库事务
   内执行 HTTP；
 - Response Composer 已能把受限结果映射为 `O1` 类型化引用，并只公开安全摘要。
+- Main API 的 Root SSE 会拒绝超前游标、在终态发送 `done`，并为补证、审批和报告
+  事件提供当前权限下重新读取资源的公开 URL；
+- AIOps Reference Card 提供 Ops Run 公开资源 URL；APEX Run/Pending View 可用
+  Parent Agent Run/Delegation 关联 Root 对话，Root 触发的待补证不会被遗漏。
 
-AIOps 丰富 Result Envelope、多来源并行 Composer、Main API/APEX 的完整交互体验
-仍属于后续 11C。
+当前 Result Envelope 刻意只包含终态、安全摘要和不可变诊断引用。Verified Fact、
+Proposal、Execution、Comparison 等字段应在对应安全投影已经具备稳定契约后增量
+加入，不能为了“丰富”而复制命令、原始 SQL 结果或内部 Artifact 正文。Document 与
+AIOps 的自然语言混合路由属于后续 Router 能力，不阻塞本步骤的单路由多 Agent 闭环。
 
 ## 目标与入口
 
@@ -181,6 +187,17 @@ Root 投影事件只通知“存在待处理资源”，不承接命令：
 - SQL 补证：先 `GET /api/v1/ops/hitl/{hitl_id}` 获取完整 SQL/Schema，再调用 Responses/Skip API；
 - 变更审批：先 `GET /api/v1/ops/proposals/{proposal_id}` 查看精确命令、风险和 Hash，再调用 Approve/Reject；
 - Advisory 人工结果：调用 Proposal 的 `manual-result` API。
+
+父 SSE 事件携带相对公开资源 URL：
+
+```text
+interaction.required → /api/v1/ops/hitl/{hitl_id}
+approval.required    → /api/v1/ops/proposals/{proposal_id}
+report.ready         → /api/v1/ops/reports/{report_id}
+```
+
+这些 URL 不是授权凭证；Main API 每次读取仍使用当前 Portal AuthContext 验证
+Domain、用户和资源可见性。
 
 Root 的普通聊天文本、`POST /api/v1/runs/{id}/resume` 或通用 Runtime Approval API 都不能替代这些 AIOps Command。Root Agent、Composer 和 LLM 没有批准权限。用户提交后由 AIOps 继续子 Run，Reconciler 再把恢复状态投影到父 Run。
 

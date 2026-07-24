@@ -258,6 +258,10 @@ class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             payload["references"][0]["ops_run_id"], str(ops_run_id)
         )
+        self.assertEqual(
+            payload["references"][0]["resource_url"],
+            f"/api/v1/ops/runs/{ops_run_id}",
+        )
 
 
 if __name__ == "__main__":
