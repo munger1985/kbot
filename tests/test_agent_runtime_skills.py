@@ -141,6 +141,40 @@ class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
             plan.tasks[1].depends_on, ("knowledge_retrieval",)
         )
 
+    def test_root_planner_builds_aiops_delegation_dag(self):
+        planner = RootAgentPlanner()
+        decision = planner.decide(
+            agent_snapshot={
+                "enabled_capabilities": ["aiops"],
+                "config": {
+                    "aiops_agent_id": str(uuid7()),
+                    "aiops_target_id": str(uuid7()),
+                },
+            }
+        )
+        plan = planner.build_plan(
+            objective="分析数据库性能下降原因",
+            decision=decision,
+        )
+
+        self.assertEqual(decision.route_type, RouteType.AIOPS)
+        self.assertEqual(plan.tasks[0].execution_kind, "DELEGATION")
+        self.assertEqual(plan.tasks[0].delegate_service, "aiops_agent")
+        self.assertEqual(
+            plan.tasks[1].input_refs,
+            ("task_output:aiops_diagnosis",),
+        )
+
+    def test_root_planner_rejects_aiops_without_frozen_target(self):
+        decision = RootAgentPlanner().decide(
+            agent_snapshot={
+                "enabled_capabilities": ["aiops"],
+                "config": {},
+            }
+        )
+
+        self.assertEqual(decision.route_type, RouteType.CLARIFY)
+
     async def test_document_skill_builds_document_level_citation(self):
         client = _KnowledgeCoreClient()
         result = await KnowledgeRetrievalSkill(
@@ -183,6 +217,46 @@ class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             payload["references"][0]["document_id"],
             str(client.document_id),
+        )
+
+    async def test_composer_projects_safe_aiops_result(self):
+        delegation_id = uuid7()
+        ops_run_id = uuid7()
+        diagnosis_artifact_id = uuid7()
+        artifact = LeasedArtifact(
+            artifact_id=uuid7(),
+            task_id=uuid7(),
+            artifact_type="DELEGATED_AIOPS_RESULT",
+            schema_version="DELEGATED_AIOPS_RESULT.v1",
+            producer="aiops-agent",
+            producer_version="1",
+            payload={
+                "delegation_id": str(delegation_id),
+                "ops_run_id": str(ops_run_id),
+                "status": "COMPLETED",
+                "safe_summary": "发现慢 SQL 与缺失索引相关。",
+                "diagnosis": {
+                    "root_cause_grade": "CONFIRMED",
+                    "artifact": {
+                        "artifact_id": str(diagnosis_artifact_id),
+                        "content_hash": "a" * 64,
+                    },
+                },
+            },
+            content_hash="result-hash",
+            provenance={},
+            security_level=2,
+        )
+
+        result = await ResponseComposerSkill(
+            model_client=_ModelClient()
+        ).execute(_context(input_artifacts=(artifact,)))
+
+        payload = result.artifact.payload
+        self.assertEqual(payload["used_citation_labels"], ["O1"])
+        self.assertIn("[O1]", payload["answer"])
+        self.assertEqual(
+            payload["references"][0]["ops_run_id"], str(ops_run_id)
         )
 
 

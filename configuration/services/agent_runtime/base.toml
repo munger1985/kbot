@@ -19,6 +19,11 @@ base_url = "http://127.0.0.1:18090"
 audience = "kbot-knowledge-core-api"
 timeout_seconds = 120
 
+[aiops]
+base_url = "http://127.0.0.1:18110"
+audience = "kbot-aiops-api"
+timeout_seconds = 120
+
 [llm]
 base_url = "http://127.0.0.1:18092"
 audience = "kbot-model-llm"

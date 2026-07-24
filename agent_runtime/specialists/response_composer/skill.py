@@ -9,7 +9,7 @@ from agent_runtime.specialists.document.contracts import (
     DocumentRetrievalResult,
 )
 
-from .contracts import GroundedAnswer, ReferenceCard
+from .contracts import AIOpsReferenceCard, GroundedAnswer, ReferenceCard
 
 
 _CITATION_PATTERN = re.compile(r"\[([A-Z]\d+)\]")
@@ -20,6 +20,9 @@ class ResponseComposerSkill:
         self._model_client = model_client
 
     async def execute(self, context: ExecutionContext) -> SkillResult:
+        aiops_result = self._aiops_result(context)
+        if aiops_result is not None:
+            return self._compose_aiops(context, aiops_result)
         retrieval = self._document_result(context)
         if retrieval is None or not retrieval.citation_pack.citations:
             answer = GroundedAnswer(
@@ -70,6 +73,50 @@ class ResponseComposerSkill:
             warnings=retrieval.warnings,
         )
         return self._result(context, grounded)
+
+    @staticmethod
+    def _aiops_result(
+        context: ExecutionContext,
+    ) -> dict[str, Any] | None:
+        artifacts = [
+            item
+            for item in context.input_artifacts
+            if item.artifact_type == "DELEGATED_AIOPS_RESULT"
+        ]
+        return dict(artifacts[-1].payload) if artifacts else None
+
+    @staticmethod
+    def _compose_aiops(
+        context: ExecutionContext, payload: dict[str, Any]
+    ) -> SkillResult:
+        summary = str(payload.get("safe_summary") or "").strip()
+        status = str(payload.get("status") or "FAILED")
+        diagnosis = payload.get("diagnosis") or {}
+        artifact = diagnosis.get("artifact") or {}
+        if not summary:
+            summary = "AIOps 分析已结束，但未生成可公开的诊断摘要。"
+        label = "O1"
+        reference = AIOpsReferenceCard(
+            citation_label=label,
+            ops_run_id=payload["ops_run_id"],
+            delegation_id=payload["delegation_id"],
+            status=status,
+            root_cause_grade=diagnosis.get("root_cause_grade"),
+            artifact_id=artifact.get("artifact_id"),
+            content_hash=artifact.get("content_hash"),
+        )
+        answer = GroundedAnswer(
+            answer=f"{summary} [{label}]",
+            status="READY" if status == "COMPLETED" else "PARTIAL",
+            used_citation_labels=(label,),
+            references=(reference,),
+            warnings=(
+                ()
+                if status == "COMPLETED"
+                else (f"AIOps 子任务以 {status} 状态结束",)
+            ),
+        )
+        return ResponseComposerSkill._result(context, answer)
 
     @staticmethod
     def _document_result(

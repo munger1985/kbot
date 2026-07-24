@@ -16,6 +16,7 @@ from agent_runtime.application import (
     CreateRunCommand,
     FailTaskCommand,
     InstallPlanCommand,
+    StartDelegationCommand,
     StaleTaskLease,
     UpdateAgentDefinitionCommand,
 )
@@ -39,6 +40,7 @@ class _Store:
         self.tasks = {}
         self.artifacts = {}
         self.events = []
+        self.delegations = {}
 
 
 class _Agents:
@@ -275,6 +277,26 @@ class _Events:
         ][:limit]
 
 
+class _Delegations:
+    def __init__(self, store):
+        self.store = store
+
+    async def add(self, entity):
+        entity.row_version = entity.row_version or 1
+        self.store.delegations[entity.delegation_id] = entity
+        return entity
+
+    async def get_by_task(self, *, parent_task_id, lock=False):
+        return next(
+            (
+                delegation
+                for delegation in self.store.delegations.values()
+                if delegation.parent_task_id == parent_task_id
+            ),
+            None,
+        )
+
+
 class _Uow:
     def __init__(self, store):
         self.agents = _Agents(store)
@@ -282,6 +304,7 @@ class _Uow:
         self.tasks = _Tasks(store)
         self.artifacts = _Artifacts(store)
         self.events = _Events(store)
+        self.delegations = _Delegations(store)
         self.committed = False
 
     async def __aenter__(self):
@@ -369,6 +392,64 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
         )
         run = self.store.runs[created.run_id]
         self.assertIsNotNone(run.final_task_id)
+
+    async def test_delegation_task_releases_worker_lease(self):
+        self.store.agents[self.agent_id].enabled_capabilities_json = [
+            "aiops"
+        ]
+        self.store.agents[self.agent_id].config_json = {
+            "aiops_agent_id": str(uuid7()),
+            "aiops_target_id": str(uuid7()),
+        }
+        service = AgentRuntimeService(
+            uow_factory=lambda: _Uow(self.store),
+            plan_validator=PlanValidator(
+                skill_exists=self.registry.contains,
+                capability_exists=lambda service, capability: (
+                    service == "aiops_agent"
+                    and capability == "diagnosis"
+                ),
+                public_artifact_types={"GROUNDED_ANSWER"},
+            ),
+            skill_registry=self.registry,
+            root_planner=RootAgentPlanner(),
+        )
+        created = await service.create_run(
+            self.create_command.model_copy(
+                update={
+                    "idempotency_key": "create-aiops",
+                    "original_input": "分析数据库性能问题",
+                }
+            )
+        )
+        lease = await service.claim_task(
+            ClaimTaskCommand(
+                worker_id="worker-1",
+                lease_seconds=120,
+                trace_id="trace-aiops",
+            )
+        )
+
+        delegation_id = await service.start_delegation(
+            StartDelegationCommand(
+                task_id=lease.task_id,
+                expected_row_version=lease.row_version,
+                worker_id="worker-1",
+                lease_token=lease.lease_token,
+                trace_id="trace-aiops",
+            )
+        )
+
+        task = self.store.tasks[lease.task_id]
+        delegation = self.store.delegations[delegation_id]
+        self.assertEqual(created.status, "RUNNING")
+        self.assertEqual(task.status, "WAITING_EXTERNAL")
+        self.assertIsNone(task.lease_token)
+        self.assertEqual(delegation.status, "SUBMITTING")
+        self.assertEqual(
+            delegation.idempotency_key,
+            f"task:{task.task_id}:delegation",
+        )
 
     async def test_agent_definition_create_and_update(self):
         created = await self.definition_service.create(

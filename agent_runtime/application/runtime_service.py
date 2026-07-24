@@ -11,14 +11,17 @@ from uuid import UUID
 from sqlalchemy.exc import IntegrityError
 
 from agent_runtime.domain.state_machine import (
+    DelegationStatus,
     RunStatus,
     TaskStatus,
+    ensure_delegation_transition,
     ensure_run_transition,
     ensure_task_transition,
 )
 from agent_runtime.domain.planning import PlanLimits
 from agent_runtime.entities import (
     AgentArtifactEntity,
+    AgentDelegationEntity,
     AgentRunEntity,
     AgentRunEventEntity,
     AgentTaskEntity,
@@ -41,6 +44,7 @@ from .commands import (
     HeartbeatTaskCommand,
     InstallPlanCommand,
     LeasedArtifact,
+    StartDelegationCommand,
     TaskLease,
     TaskMutationReceipt,
 )
@@ -560,6 +564,92 @@ class AgentRuntimeService:
             await uow.commit()
             return self._task_lease(task, run, input_artifacts)
 
+    async def start_delegation(
+        self, command: StartDelegationCommand
+    ) -> UUID:
+        """把已领取的 Delegation Task 转为可恢复的外部等待状态。"""
+        now = _utc_now()
+        async with self._uow_factory() as uow:
+            task = await uow.tasks.get(
+                task_id=command.task_id, lock=True
+            )
+            if task is None:
+                raise StaleTaskLease()
+            run = await uow.runs.get(run_id=task.run_id, lock=True)
+            if run is None:
+                raise AgentRuntimeNotFound()
+            self._ensure_version(
+                task.row_version, command.expected_row_version
+            )
+            self._ensure_lease(
+                task,
+                worker_id=command.worker_id,
+                lease_token=command.lease_token,
+                now=now,
+            )
+            if (
+                task.execution_kind != "DELEGATION"
+                or not task.delegate_service
+                or not task.delegate_capability
+            ):
+                raise AgentRuntimeConflict(
+                    "TASK_NOT_DELEGATION",
+                    "当前 Task 不是合法的跨服务 Delegation",
+                )
+            existing = await uow.delegations.get_by_task(
+                parent_task_id=task.task_id, lock=True
+            )
+            if existing is not None:
+                raise AgentRuntimeConflict(
+                    "DELEGATION_ALREADY_STARTED",
+                    "当前 Task 已存在 Delegation",
+                )
+            delegation = await uow.delegations.add(
+                AgentDelegationEntity(
+                    delegation_id=uuid7(),
+                    parent_run_id=run.run_id,
+                    parent_task_id=task.task_id,
+                    target_service=task.delegate_service,
+                    target_capability=task.delegate_capability,
+                    idempotency_key=f"task:{task.task_id}:delegation",
+                    status="CREATED",
+                    last_child_event_sequence=0,
+                    next_poll_at=now,
+                    attempt_count=0,
+                    max_attempts=int(task.max_attempts),
+                )
+            )
+            ensure_delegation_transition(
+                DelegationStatus(delegation.status),
+                DelegationStatus.SUBMITTING,
+            )
+            delegation.status = DelegationStatus.SUBMITTING.value
+            ensure_task_transition(
+                TaskStatus(task.status), TaskStatus.WAITING_EXTERNAL
+            )
+            task.status = TaskStatus.WAITING_EXTERNAL.value
+            task.lease_owner = None
+            task.lease_token = None
+            task.lease_until = None
+            task.row_version = int(task.row_version) + 1
+            await self._append_event(
+                uow,
+                run=run,
+                event_type="delegation.submitting",
+                event_key=f"delegation:{delegation.delegation_id}:submitting",
+                actor_type="WORKER",
+                actor_id=command.worker_id,
+                trace_id=command.trace_id,
+                task=task,
+                payload={
+                    "delegation_id": str(delegation.delegation_id),
+                    "target_service": delegation.target_service,
+                    "target_capability": delegation.target_capability,
+                },
+            )
+            await uow.commit()
+            return delegation.delegation_id
+
     async def complete_task(
         self, command: CompleteTaskCommand
     ) -> TaskMutationReceipt:
@@ -827,6 +917,27 @@ class AgentRuntimeService:
             )
             for task in tasks:
                 current = TaskStatus(task.status)
+                if current == TaskStatus.WAITING_EXTERNAL:
+                    delegation = await uow.delegations.get_by_task(
+                        parent_task_id=task.task_id, lock=True
+                    )
+                    if delegation is not None and delegation.status in {
+                        "SUBMITTING",
+                        "RUNNING",
+                        "WAITING_INPUT",
+                        "WAITING_APPROVAL",
+                    }:
+                        ensure_delegation_transition(
+                            DelegationStatus(delegation.status),
+                            DelegationStatus.CANCEL_REQUESTED,
+                        )
+                        delegation.status = (
+                            DelegationStatus.CANCEL_REQUESTED.value
+                        )
+                        delegation.next_poll_at = now
+                        delegation.row_version = (
+                            int(delegation.row_version) + 1
+                        )
                 if current in {
                     TaskStatus.PENDING,
                     TaskStatus.READY,

@@ -68,7 +68,9 @@ async def lifespan(app: FastAPIOffline):
         uow_factory=uow_factory,
         plan_validator=PlanValidator(
             skill_exists=skill_registry.contains,
-            capability_exists=lambda service, capability: False,
+            capability_exists=lambda service, capability: (
+                service == "aiops_agent" and capability == "diagnosis"
+            ),
             public_artifact_types={"GROUNDED_ANSWER"},
         ),
         plan_limits=PlanLimits(

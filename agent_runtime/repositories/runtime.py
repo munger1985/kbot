@@ -317,6 +317,36 @@ class AgentDelegationRepository:
             statement = statement.with_for_update()
         return (await self._session.execute(statement)).scalar_one_or_none()
 
+    async def get(
+        self, *, delegation_id: UUID, lock: bool = False
+    ) -> AgentDelegationEntity | None:
+        statement: Select = select(AgentDelegationEntity).where(
+            AgentDelegationEntity.delegation_id == delegation_id
+        )
+        if lock:
+            statement = statement.with_for_update()
+        return (await self._session.execute(statement)).scalar_one_or_none()
+
+    async def list_open_by_run(
+        self, *, parent_run_id: UUID, lock: bool = False
+    ) -> list[AgentDelegationEntity]:
+        statement: Select = select(AgentDelegationEntity).where(
+            AgentDelegationEntity.parent_run_id == parent_run_id,
+            AgentDelegationEntity.status.in_(
+                (
+                    "CREATED",
+                    "SUBMITTING",
+                    "RUNNING",
+                    "WAITING_INPUT",
+                    "WAITING_APPROVAL",
+                    "CANCEL_REQUESTED",
+                )
+            ),
+        )
+        if lock:
+            statement = statement.with_for_update()
+        return list((await self._session.execute(statement)).scalars())
+
     async def claim_poll_candidate(
         self, *, now: datetime
     ) -> AgentDelegationEntity | None:
@@ -336,6 +366,10 @@ class AgentDelegationRepository:
                 or_(
                     AgentDelegationEntity.next_poll_at.is_(None),
                     AgentDelegationEntity.next_poll_at <= now,
+                ),
+                or_(
+                    AgentDelegationEntity.lease_until.is_(None),
+                    AgentDelegationEntity.lease_until <= now,
                 ),
             )
             .order_by(

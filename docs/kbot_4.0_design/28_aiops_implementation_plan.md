@@ -271,8 +271,8 @@ Target Outbox 原子创建、Schedule Run 幂等展开、Fire 终态收敛，以
 
 ## 步骤 11：Root Agent、Main API 与前端集成
 
-**状态：进行中；11A AIOps Root Delegation 创建、事件安全投影、终态结果和取消
-接口已完成（2026-07-24）。**
+**状态：进行中；11A AIOps Root Delegation 边界与 11B Agent Runtime
+提交/Reconciler、AIOps 单路由和安全结果组合已完成（2026-07-24）。**
 
 详细设计见 [40_aiops_step11_root_main_api_and_apex_integration.md](40_aiops_step11_root_main_api_and_apex_integration.md)。
 
@@ -282,6 +282,11 @@ Target Outbox 原子创建、Schedule Run 幂等展开、Fire 终态收敛，以
 - Root 只投影必要进度、交互资源和受限 Result Envelope，不接管 Ops Task 或转发子 SSE；
 - Response Composer（原 Conversation Composer）使用 AIOps 最终 Artifact 生成用户表达，但不能改变根因等级、命令、风险或审批状态；
 - APEX 通过只读视图展示 Target、Run、待审和 Report，所有写操作仍调用 API。
+
+11B 已实现稳定 Task 派生幂等键、`WAITING_EXTERNAL` 租约释放、独立有限租约
+Reconciler、Child Event Cursor、父取消联动和 `O1` AIOps Reference Card。
+HTTP 超时只重试同一 Delegation，不创建第二个 Child Run。下一阶段 11C 完善
+多来源并行组合、丰富 Result Envelope 以及 Main API/APEX 的交互资源展示。
 
 上线前直接将调用方切换到 v4，不做 3.x/4.0 双写、切流或兼容 Adapter。
 

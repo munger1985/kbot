@@ -13,6 +13,7 @@ from agent_runtime.application import (
     CompleteTaskCommand,
     FailTaskCommand,
     HeartbeatTaskCommand,
+    StartDelegationCommand,
     TaskLease,
 )
 from agent_runtime.domain.skills import SkillRegistry
@@ -72,8 +73,27 @@ class AgentRuntimeWorker:
         manifest = None
         current = {"lease": lease}
         try:
+            if lease.execution_kind == "DELEGATION":
+                delegation_id = (
+                    await self._runtime_service.start_delegation(
+                        StartDelegationCommand(
+                            task_id=lease.task_id,
+                            expected_row_version=lease.row_version,
+                            worker_id=self._worker_id,
+                            lease_token=lease.lease_token,
+                            trace_id=lease.trace_id,
+                        )
+                    )
+                )
+                logger.info(
+                    "Delegation Task 已转交 Reconciler："
+                    "task_id={} delegation_id={}",
+                    lease.task_id,
+                    delegation_id,
+                )
+                return
             if lease.execution_kind != "LOCAL_SKILL":
-                raise RuntimeError("当前 Worker 不执行跨服务 Delegation Task")
+                raise RuntimeError("Task execution_kind 无效")
             if not lease.skill_id or not lease.skill_version:
                 raise RuntimeError("LOCAL_SKILL 缺少 Skill 标识")
             manifest, implementation = self._skill_registry.resolve(

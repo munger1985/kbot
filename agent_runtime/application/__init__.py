@@ -16,6 +16,7 @@ from .commands import (
     HeartbeatTaskCommand,
     InstallPlanCommand,
     LeasedArtifact,
+    StartDelegationCommand,
     TaskLease,
     TaskMutationReceipt,
 )
@@ -27,9 +28,11 @@ from .runtime_service import (
     AgentRuntimeService,
     StaleTaskLease,
 )
+from .delegations import AgentDelegationReconciler
 
 __all__ = [
     "AgentDefinitionService",
+    "AgentDelegationReconciler",
     "AgentDefinitionView",
     "AgentDefinitionNotFound",
     "AgentRuntimeConflict",
@@ -46,6 +49,7 @@ __all__ = [
     "HeartbeatTaskCommand",
     "InstallPlanCommand",
     "LeasedArtifact",
+    "StartDelegationCommand",
     "StaleTaskLease",
     "TaskLease",
     "TaskMutationReceipt",

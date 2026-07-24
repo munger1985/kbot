@@ -2,7 +2,7 @@
 
 ## 当前实施进度
 
-阶段 11A 已完成 AIOps 侧 Root Delegation 边界：
+阶段 11A/11B 已完成 AIOps 侧边界与 Agent Runtime 可恢复委派：
 
 - `POST /internal/v1/aiops/delegations` 使用稳定 Delegation ID 幂等创建
   `diagnosis.root-cause` 子 Run，并冻结 `PARENT_AGENT_RUN_ID` 与
@@ -13,10 +13,18 @@
   字段不会穿透到 Root；
 - Result 仅返回终态、安全摘要和不可变 Artifact 引用；诊断摘要只使用
   `supporting_fact_refs` 指向的 `fact_summary`，不复制原始行；
-- Cancel 复用 AIOps Run 的版本围栏和权威状态机，不伪造子任务已停止。
+- Cancel 复用 AIOps Run 的版本围栏和权威状态机，不伪造子任务已停止；
+- Root Planner 已支持配置驱动的 AIOps 单路由，生成
+  `DELEGATION → COMPOSE` 两任务 DAG；
+- Worker 在本地事务中创建 `SUBMITTING` Delegation、将 Task 转为
+  `WAITING_EXTERNAL` 并释放租约；独立 Reconciler 使用有限租约完成提交、事件分页、
+  终态结果和取消联动；
+- Reconciler 使用稳定幂等键、持久化 Child Cursor 和父事件键恢复，不在数据库事务
+  内执行 HTTP；
+- Response Composer 已能把受限结果映射为 `O1` 类型化引用，并只公开安全摘要。
 
-Agent Runtime 的 Delegation 提交器/Reconciler、AIOps 丰富 Result Envelope 和
-Response Composer 的多来源联合仍属于后续 11B/11C。
+AIOps 丰富 Result Envelope、多来源并行 Composer、Main API/APEX 的完整交互体验
+仍属于后续 11C。
 
 ## 目标与入口
 
@@ -108,11 +116,15 @@ Main API 使用独立 `AIOpsManagementClient` 代理 Target、Run、HITL、Propo
 Root 委派流程：
 
 1. Route Task 产生不可变 `ROUTE_DECISION.v1`；
-2. 在 Agent UoW 中创建 Delegate Task 和 `CREATED` Delegation；
-3. Worker 领取 Task，在事务外使用稳定幂等键调用 AIOps；
-4. 接收 `ops_run_id` 后，在一个事务中保存 `DELEGATION_RECEIPT.v1`、Child Run ID、游标 0，并将 Task/Delegation 置为 `WAITING_EXTERNAL/RUNNING`；
-5. Reconciler 分页读取子事件并更新持久化游标；
-6. 子 Run 终止后获取最终 Result Envelope，写入 Root Artifact，完成 Delegate Task 并释放 Compose Task。
+2. Planner 在 Agent UoW 中创建 Delegate Task；
+3. Worker 领取 Task，在同一事务创建 `SUBMITTING` Delegation、将 Task 置为
+   `WAITING_EXTERNAL` 并释放 Worker 租约；
+4. Reconciler 使用独立有限租约，在事务外以稳定幂等键调用 AIOps；
+5. 接收 `ops_run_id` 后，在一个事务中保存 Child Run ID 和游标，并将 Delegation
+   置为 `RUNNING`；
+6. Reconciler 分页读取子事件并更新持久化游标；
+7. 子 Run 终止后获取最终 Result Envelope，写入 Root Artifact，完成 Delegate Task
+   并释放 Compose Task。
 
 HTTP 超时并不代表创建失败。Delegation 保持 `SUBMITTING`，使用相同幂等键重试或查询接收结果，不能创建第二个子 Run。远程调用、事件读取和结果读取都在数据库事务外；游标与状态更新使用 Lease Token + Row Version fencing。
 

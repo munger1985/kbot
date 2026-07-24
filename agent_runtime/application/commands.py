@@ -99,6 +99,14 @@ class FailTaskCommand(_FrozenCommand):
         return self
 
 
+class StartDelegationCommand(_FrozenCommand):
+    task_id: UUID
+    expected_row_version: int = Field(ge=1)
+    worker_id: str = Field(min_length=1, max_length=256)
+    lease_token: UUID
+    trace_id: str = Field(min_length=1, max_length=128)
+
+
 class CancelRunCommand(_FrozenCommand):
     app_id: int = Field(ge=1)
     domain_id: int = Field(ge=1)

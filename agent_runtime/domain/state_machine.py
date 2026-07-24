@@ -163,6 +163,7 @@ DELEGATION_TRANSITIONS: dict[
     DelegationStatus.CANCEL_REQUESTED: frozenset({
         DelegationStatus.CANCELLED,
         DelegationStatus.COMPLETED,
+        DelegationStatus.DEGRADED,
         DelegationStatus.FAILED,
         DelegationStatus.EXPIRED,
     }),

@@ -42,6 +42,13 @@ class AgentRuntimeSettings(Settings):
             timeout_seconds=120,
         )
     )
+    aiops: ServiceDependencyConfig = Field(
+        default_factory=lambda: ServiceDependencyConfig(
+            base_url="http://127.0.0.1:18110",
+            audience="kbot-aiops-api",
+            timeout_seconds=120,
+        )
+    )
     llm: ServiceDependencyConfig = Field(
         default_factory=lambda: ServiceDependencyConfig(
             base_url="http://127.0.0.1:18092",
