@@ -1,5 +1,23 @@
 # 4.0 AIOps 步骤 11：Root Agent、Main API 与 APEX 集成
 
+## 当前实施进度
+
+阶段 11A 已完成 AIOps 侧 Root Delegation 边界：
+
+- `POST /internal/v1/aiops/delegations` 使用稳定 Delegation ID 幂等创建
+  `diagnosis.root-cause` 子 Run，并冻结 `PARENT_AGENT_RUN_ID` 与
+  `PARENT_DELEGATION_ID`；
+- Events、Result 和 Cancel 都先按 `delegation_id + APP_ID + DOMAIN_ID`
+  精确解析子 Run，并要求独立 `aiops.delegate` Service Scope；
+- Events 只投影白名单字段，完整命令、原始 SQL 结果、内部 Task 图和未知 Payload
+  字段不会穿透到 Root；
+- Result 仅返回终态、安全摘要和不可变 Artifact 引用；诊断摘要只使用
+  `supporting_fact_refs` 指向的 `fact_summary`，不复制原始行；
+- Cancel 复用 AIOps Run 的版本围栏和权威状态机，不伪造子任务已停止。
+
+Agent Runtime 的 Delegation 提交器/Reconciler、AIOps 丰富 Result Envelope 和
+Response Composer 的多来源联合仍属于后续 11B/11C。
+
 ## 目标与入口
 
 本步骤将 AIOps 接入 Root Agent、Main API/BFF 和 APEX，同时保持 AIOps 对诊断、HITL、审批、执行和报告的完整所有权。

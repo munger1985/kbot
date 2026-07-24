@@ -271,6 +271,9 @@ Target Outbox 原子创建、Schedule Run 幂等展开、Fire 终态收敛，以
 
 ## 步骤 11：Root Agent、Main API 与前端集成
 
+**状态：进行中；11A AIOps Root Delegation 创建、事件安全投影、终态结果和取消
+接口已完成（2026-07-24）。**
+
 详细设计见 [40_aiops_step11_root_main_api_and_apex_integration.md](40_aiops_step11_root_main_api_and_apex_integration.md)。
 
 - Main API 发布完整 `/api/v1/ops/*` 和 Monitoring Integration API；

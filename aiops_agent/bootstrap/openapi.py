@@ -22,12 +22,8 @@ from platform_core.contracts.aiops.executor import (
 )
 from platform_core.contracts.aiops.internal import (
     CreateOpsRunCommand,
-    DelegationEventPage,
     OpsCommand,
     OpsRunReceipt as InternalOpsRunReceipt,
-    RootDelegationReceipt,
-    RootDelegationRequest,
-    RootDelegationResult,
 )
 
 
@@ -56,27 +52,6 @@ def create_internal_contract_app() -> FastAPI:
     app.include_router(internal_changes_router)
     app.include_router(internal_executions_router)
     app.include_router(internal_execution_events_router)
-
-    @app.post(
-        "/internal/v1/aiops/delegations",
-        response_model=RootDelegationReceipt,
-    )
-    async def create_delegation(payload: RootDelegationRequest):
-        _not_implemented()
-
-    @app.get(
-        "/internal/v1/aiops/delegations/{delegation_id}/events",
-        response_model=DelegationEventPage,
-    )
-    async def delegation_events(delegation_id: UUID):
-        _not_implemented()
-
-    @app.get(
-        "/internal/v1/aiops/delegations/{delegation_id}/result",
-        response_model=RootDelegationResult,
-    )
-    async def delegation_result(delegation_id: UUID):
-        _not_implemented()
 
     return app
 

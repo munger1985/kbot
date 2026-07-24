@@ -8574,7 +8574,7 @@
           "required": true
         },
         "responses": {
-          "200": {
+          "201": {
             "content": {
               "application/json": {
                 "schema": {
@@ -8595,12 +8595,15 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Create Delegation"
+        "summary": "Create Delegation",
+        "tags": [
+          "AIOps Runtime"
+        ]
       }
     },
-    "/internal/v1/aiops/delegations/{delegation_id}/events": {
-      "get": {
-        "operationId": "delegation_events_internal_v1_aiops_delegations__delegation_id__events_get",
+    "/internal/v1/aiops/delegations/{delegation_id}/cancel": {
+      "post": {
+        "operationId": "cancel_delegation_internal_v1_aiops_delegations__delegation_id__cancel_post",
         "parameters": [
           {
             "in": "path",
@@ -8610,6 +8613,81 @@
               "format": "uuid",
               "title": "Delegation Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsRunReceipt"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel Delegation",
+        "tags": [
+          "AIOps Runtime"
+        ]
+      }
+    },
+    "/internal/v1/aiops/delegations/{delegation_id}/events": {
+      "get": {
+        "operationId": "list_delegation_events_internal_v1_aiops_delegations__delegation_id__events_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "delegation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Delegation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "after",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "After",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
             }
           }
         ],
@@ -8635,12 +8713,15 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Delegation Events"
+        "summary": "List Delegation Events",
+        "tags": [
+          "AIOps Runtime"
+        ]
       }
     },
     "/internal/v1/aiops/delegations/{delegation_id}/result": {
       "get": {
-        "operationId": "delegation_result_internal_v1_aiops_delegations__delegation_id__result_get",
+        "operationId": "get_delegation_result_internal_v1_aiops_delegations__delegation_id__result_get",
         "parameters": [
           {
             "in": "path",
@@ -8675,7 +8756,10 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Delegation Result"
+        "summary": "Get Delegation Result",
+        "tags": [
+          "AIOps Runtime"
+        ]
       }
     },
     "/internal/v1/aiops/executions/{execution_id}/claim": {

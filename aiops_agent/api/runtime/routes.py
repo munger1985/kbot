@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 
 from aiops_agent.api.dependencies import (
     get_aiops_auth_context,
@@ -18,6 +18,7 @@ from platform_core.contracts.aiops import (
     ClaimOpsTaskCommand,
     CompleteOpsTaskCommand,
     CreateOpsRunCommand,
+    DelegationEventPage,
     FailOpsTaskCommand,
     HeartbeatOpsTaskCommand,
     HitlResponse,
@@ -26,10 +27,15 @@ from platform_core.contracts.aiops import (
     OpsCommand,
     OpsRunEventPage,
     PendingInputView,
+    RootDelegationRequest,
+    RootDelegationResult,
     TaskLease,
     TaskMutationReceipt,
 )
-from platform_core.contracts.aiops.internal import OpsRunReceipt
+from platform_core.contracts.aiops.internal import (
+    OpsRunReceipt,
+    RootDelegationReceipt,
+)
 from platform_core.contracts.aiops.public import (
     InspectionFirePage,
     InspectionFireView,
@@ -104,6 +110,93 @@ async def create_run(
         }
     )
     return await service.create_run(command)
+
+
+@router.post(
+    "/delegations",
+    response_model=RootDelegationReceipt,
+    status_code=201,
+)
+async def create_delegation(
+    body: RootDelegationRequest,
+    request: Request,
+    service: Service,
+    context: Auth,
+) -> RootDelegationReceipt:
+    require_service_scope(request, "aiops.delegate")
+    app_id, domain_id = _scope(request, context)
+    return await service.create_delegated_run(
+        request=body,
+        app_id=app_id,
+        domain_id=domain_id,
+        actor_id=context.asserted_user_id or context.client_id,
+        trace_id=context.trace_id,
+    )
+
+
+@router.get(
+    "/delegations/{delegation_id}/events",
+    response_model=DelegationEventPage,
+)
+async def list_delegation_events(
+    delegation_id: UUID,
+    request: Request,
+    service: Service,
+    context: Auth,
+    after: int = Query(default=0, ge=0),
+    limit: int = Query(default=100, ge=1, le=200),
+) -> DelegationEventPage:
+    require_service_scope(request, "aiops.delegate")
+    app_id, domain_id = _scope(request, context)
+    return await service.list_delegation_events(
+        delegation_id=delegation_id,
+        app_id=app_id,
+        domain_id=domain_id,
+        after_sequence=after,
+        limit=limit,
+    )
+
+
+@router.get(
+    "/delegations/{delegation_id}/result",
+    response_model=RootDelegationResult,
+)
+async def get_delegation_result(
+    delegation_id: UUID,
+    request: Request,
+    service: Service,
+    context: Auth,
+) -> RootDelegationResult:
+    require_service_scope(request, "aiops.delegate")
+    app_id, domain_id = _scope(request, context)
+    return await service.get_delegation_result(
+        delegation_id=delegation_id,
+        app_id=app_id,
+        domain_id=domain_id,
+    )
+
+
+@router.post(
+    "/delegations/{delegation_id}/cancel",
+    response_model=OpsRunReceipt,
+)
+async def cancel_delegation(
+    delegation_id: UUID,
+    request: Request,
+    service: Service,
+    context: Auth,
+    idempotency_key: str = Header(alias="Idempotency-Key"),
+) -> OpsRunReceipt:
+    require_service_scope(request, "aiops.delegate")
+    app_id, domain_id = _scope(request, context)
+    return await service.cancel_delegation(
+        delegation_id=delegation_id,
+        app_id=app_id,
+        domain_id=domain_id,
+        actor_id=context.asserted_user_id or context.client_id,
+        idempotency_key=idempotency_key,
+        trace_id=context.trace_id,
+    )
 
 
 @router.get("/runs/{run_id}", response_model=OpsRunSummary)

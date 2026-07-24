@@ -97,6 +97,29 @@ class OpsRunRepository(AIOpsRepository):
         )
         return (await self._session.execute(statement)).scalar_one_or_none()
 
+    async def get_by_parent_delegation_scoped(
+        self,
+        *,
+        parent_delegation_id: UUID,
+        app_id: int,
+        domain_id: int,
+    ) -> OpsRunEntity | None:
+        self._check_active()
+        statement = (
+            select(OpsRunEntity)
+            .join(
+                TargetEntity,
+                TargetEntity.target_id == OpsRunEntity.target_id,
+            )
+            .where(
+                OpsRunEntity.parent_delegation_id
+                == parent_delegation_id,
+                TargetEntity.app_id == app_id,
+                TargetEntity.domain_id == domain_id,
+            )
+        )
+        return (await self._session.execute(statement)).scalar_one_or_none()
+
     async def get_task(
         self,
         *,

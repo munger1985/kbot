@@ -86,7 +86,15 @@ from platform_core.contracts.aiops import (
     TaskLease,
     TaskMutationReceipt,
 )
-from platform_core.contracts.aiops.internal import OpsRunReceipt
+from platform_core.contracts.aiops.events import UnknownEvent
+from platform_core.contracts.aiops.internal import (
+    DelegationEventPage,
+    FinalDiagnosisRef,
+    OpsRunReceipt,
+    RootDelegationReceipt,
+    RootDelegationRequest,
+    RootDelegationResult,
+)
 from platform_core.contracts.aiops.public import (
     HitlResponse,
     HitlResult,
@@ -608,6 +616,177 @@ class AIOpsRuntimeService:
             )
             await uow.commit()
             return self._run_receipt(run, int(event.sequence_no))
+
+    async def create_delegated_run(
+        self,
+        *,
+        request: RootDelegationRequest,
+        app_id: int,
+        domain_id: int,
+        actor_id: str,
+        trace_id: str,
+    ) -> RootDelegationReceipt:
+        """用稳定 Delegation ID 幂等创建 Root 的 AIOps 子 Run。"""
+        if str(domain_id) != request.domain_id:
+            raise validation_failed("Delegation Domain 与可信上下文不一致")
+        receipt = await self.create_run(
+            CreateOpsRunCommand(
+                command_id=uuid7(),
+                idempotency_key=f"delegation:{request.delegation_id}",
+                app_id=app_id,
+                domain_id=domain_id,
+                actor_id=actor_id,
+                agent_id=request.agent_id,
+                target_id=request.target_id,
+                trigger_type="CHAT",
+                input=request.user_intent,
+                parent_agent_run_id=request.parent_agent_run_id,
+                parent_delegation_id=request.delegation_id,
+                deadline=request.deadline,
+                blueprint_id="diagnosis.root-cause",
+                blueprint_version="1",
+                client_metadata={
+                    "trace_id": trace_id,
+                    "caller_mode": "ROOT_DELEGATION",
+                    "delegation_id": str(request.delegation_id),
+                },
+            )
+        )
+        return RootDelegationReceipt(
+            delegation_id=request.delegation_id,
+            ops_run_id=receipt.ops_run_id,
+            status=receipt.status,
+            child_event_cursor=receipt.event_cursor,
+        )
+
+    async def list_delegation_events(
+        self,
+        *,
+        delegation_id: UUID,
+        app_id: int,
+        domain_id: int,
+        after_sequence: int,
+        limit: int,
+    ) -> DelegationEventPage:
+        """只返回 Root 可安全投影的 USER 事件，不暴露内部 Task 内容。"""
+        async with self._uow_factory() as uow:
+            run = await uow.runs.get_by_parent_delegation_scoped(
+                parent_delegation_id=delegation_id,
+                app_id=app_id,
+                domain_id=domain_id,
+            )
+            if run is None:
+                raise resource_not_found("Delegation")
+            latest = await uow.runs.latest_event_sequence(
+                ops_run_id=run.ops_run_id
+            )
+            if after_sequence > latest:
+                raise _runtime_error(
+                    "OPS_EVENT_CURSOR_INVALID",
+                    "Delegation 事件游标大于当前最新序号",
+                )
+            events = await uow.runs.list_events_after(
+                ops_run_id=run.ops_run_id,
+                after_sequence=after_sequence,
+                visibility="USER",
+                limit=limit,
+            )
+            safe_events = tuple(
+                self._delegation_event(run, item) for item in events
+            )
+            next_sequence = (
+                int(events[-1].sequence_no)
+                if events
+                else after_sequence
+            )
+            return DelegationEventPage(
+                delegation_id=delegation_id,
+                events=safe_events,
+                next_sequence=next_sequence,
+                terminal=DomainOpsRunStatus(run.status)
+                in TERMINAL_RUN_STATUSES,
+            )
+
+    async def get_delegation_result(
+        self,
+        *,
+        delegation_id: UUID,
+        app_id: int,
+        domain_id: int,
+    ) -> RootDelegationResult:
+        """读取终态子 Run，并生成不含命令和原始 SQL 的受限结果。"""
+        async with self._uow_factory() as uow:
+            run = await uow.runs.get_by_parent_delegation_scoped(
+                parent_delegation_id=delegation_id,
+                app_id=app_id,
+                domain_id=domain_id,
+            )
+            if run is None:
+                raise resource_not_found("Delegation")
+            if DomainOpsRunStatus(run.status) not in TERMINAL_RUN_STATUSES:
+                raise _runtime_error(
+                    "OPS_DELEGATION_RESULT_NOT_READY",
+                    "Delegation 子 Run 尚未进入终态",
+                )
+            artifact = (
+                await uow.runs.get_artifact(
+                    artifact_id=run.final_artifact_id
+                )
+                if run.final_artifact_id is not None
+                else None
+            )
+            diagnosis = None
+            safe_summary = self._delegation_safe_summary(run, artifact)
+            if artifact is not None:
+                diagnosis = FinalDiagnosisRef(
+                    artifact=ArtifactRef(
+                        artifact_id=artifact.artifact_id,
+                        artifact_type=artifact.artifact_type,
+                        schema_version=artifact.schema_version,
+                        content_hash=artifact.content_hash,
+                    ),
+                    root_cause_grade=(
+                        run.root_cause_level or "INCONCLUSIVE"
+                    ),
+                )
+            return RootDelegationResult(
+                delegation_id=delegation_id,
+                ops_run_id=run.ops_run_id,
+                status=run.status,
+                diagnosis=diagnosis,
+                safe_summary=safe_summary,
+            )
+
+    async def cancel_delegation(
+        self,
+        *,
+        delegation_id: UUID,
+        app_id: int,
+        domain_id: int,
+        actor_id: str,
+        idempotency_key: str,
+        trace_id: str,
+    ) -> OpsRunReceipt:
+        """按精确父子关联请求取消，保持 AIOps Run 为权威状态。"""
+        async with self._uow_factory() as uow:
+            run = await uow.runs.get_by_parent_delegation_scoped(
+                parent_delegation_id=delegation_id,
+                app_id=app_id,
+                domain_id=domain_id,
+            )
+            if run is None:
+                raise resource_not_found("Delegation")
+            run_id = run.ops_run_id
+            row_version = int(run.row_version)
+        return await self.request_cancel(
+            ops_run_id=run_id,
+            app_id=app_id,
+            domain_id=domain_id,
+            actor_id=actor_id,
+            expected_row_version=row_version,
+            idempotency_key=idempotency_key,
+            trace_id=trace_id,
+        )
 
     def _diagnosis_snapshot(
         self,
@@ -3315,6 +3494,106 @@ class AIOpsRuntimeService:
             scope=scope,
             filters=filters,
         )
+
+    @staticmethod
+    def _delegation_event(run, event) -> UnknownEvent:
+        payload = dict(event.payload_json or {})
+        source_type = event.event_type
+        projected_type = "delegation.status"
+        safe: dict[str, Any] = {}
+        if source_type == "task.status":
+            projected_type = "delegation.progress"
+            safe = {
+                "stage": payload.get("task_type"),
+                "task_status": payload.get("status"),
+            }
+        elif source_type == "diagnostic.input_required":
+            projected_type = "interaction.required"
+            safe = {
+                "hitl_id": payload.get("hitl_id"),
+                "hitl_type": payload.get("hitl_type"),
+                "expires_at": payload.get("expires_at"),
+            }
+        elif source_type == "proposal.pending_approval":
+            projected_type = "approval.required"
+            safe = {
+                "proposal_id": payload.get("proposal_id"),
+                "risk_level": payload.get("risk_level"),
+                "expires_at": payload.get("expires_at"),
+            }
+        elif source_type == "report.ready":
+            projected_type = "report.ready"
+            safe = {
+                key: payload.get(key)
+                for key in (
+                    "report_id",
+                    "report_key",
+                    "report_type",
+                    "report_version",
+                    "summary",
+                    "result",
+                )
+            }
+        elif source_type in {
+            "run.completed",
+            "run.failed",
+            "run.cancelled",
+            "run.expired",
+        }:
+            projected_type = {
+                "run.completed": "delegation.completed",
+                "run.failed": "delegation.failed",
+                "run.cancelled": "delegation.cancelled",
+                "run.expired": "delegation.expired",
+            }[source_type]
+            safe = {"error_code": payload.get("error_code")}
+        return UnknownEvent(
+            ops_run_id=run.ops_run_id,
+            sequence_no=int(event.sequence_no),
+            occurred_at=event.created_at,
+            trace_id=str(payload.get("trace_id") or run.trace_id),
+            event_type=projected_type,
+            status=payload.get("status") or run.status,
+            **{key: value for key, value in safe.items() if value is not None},
+        )
+
+    @staticmethod
+    def _delegation_safe_summary(run, artifact) -> str:
+        if artifact is None:
+            status = str(run.status)
+            code = f"，错误码 {run.error_code}" if run.error_code else ""
+            return f"AIOps 子任务已结束，状态为 {status}{code}。"
+        payload = dict(artifact.payload_json or {})
+        if artifact.schema_version == "DIAGNOSIS_REPORT_DRAFT.v1":
+            root = dict(payload.get("root_cause") or {})
+            grade = str(
+                root.get("effective_level")
+                or run.root_cause_level
+                or "INCONCLUSIVE"
+            )
+            supporting = set(root.get("supporting_fact_refs") or ())
+            summaries = [
+                str(item.get("fact_summary"))
+                for item in payload.get("facts", ())
+                if item.get("fact_id") in supporting
+                and item.get("fact_summary")
+            ][:5]
+            facts = (
+                "；关键事实：" + "；".join(summaries)
+                if summaries
+                else ""
+            )
+            gaps = len(payload.get("gaps") or ())
+            return (
+                f"根因等级为 {grade}{facts}；"
+                f"仍有 {gaps} 个数据缺口。"
+            )[:8000]
+        if artifact.schema_version == "REPORT_CONTENT.v1":
+            return str(payload.get("summary") or "AIOps 报告已生成")[:8000]
+        return (
+            f"AIOps 子任务已结束，状态为 {run.status}，"
+            f"最终产物类型为 {artifact.schema_version}。"
+        )[:8000]
 
     def _next_cursor(
         self,

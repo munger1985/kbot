@@ -26,6 +26,7 @@ from .internal import (
     MonitorWebhookReceipt,
     OpsCommand,
     RootDelegationRequest,
+    RootDelegationReceipt,
     RootDelegationResult,
 )
 from .public import (
@@ -180,6 +181,7 @@ __all__ = [
     "ReportVersionSummary",
     "ReportView",
     "RootDelegationRequest",
+    "RootDelegationReceipt",
     "RootDelegationResult",
     "SecretRefStatus",
     "TargetCreate",
