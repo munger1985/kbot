@@ -73,6 +73,12 @@ class AIOpsExecutorConfig(ServiceConfig):
         ge=1024,
         le=100 * 1024 * 1024,
     )
+    max_result_columns: int = Field(default=128, ge=1, le=1024)
+    max_cell_chars: int = Field(default=32768, ge=1, le=1_000_000)
+    diagnostic_catalog_path: str | None = None
+    grant_secret_env: str = "KBOT_AIOPS_DIAGNOSTIC_GRANT_SECRET"
+    grant_issuer: str = "kbot-aiops-worker"
+    grant_ttl_seconds: int = Field(default=45, ge=5, le=300)
 
 
 class AIOpsDependencyEndpoints(BaseModel):

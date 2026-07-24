@@ -3,6 +3,11 @@
 from .errors import AIOpsErrorCode, ProblemDetails
 from .events import AIOpsEvent, SafeAIOpsEvent, UnknownEvent
 from .executor import (
+    DatabaseColumn,
+    DatabaseObservation,
+    DiagnosticConnectionProfile,
+    DiagnosticExecutionGrant,
+    DiagnosticLimits,
     ExecutionResultRef,
     ExecutionStatusEvent,
     MutationClaimGrant,
@@ -98,6 +103,11 @@ __all__ = [
     "EventReceipt",
     "ExecutionResultRef",
     "ExecutionStatusEvent",
+    "DatabaseColumn",
+    "DatabaseObservation",
+    "DiagnosticConnectionProfile",
+    "DiagnosticExecutionGrant",
+    "DiagnosticLimits",
     "FailOpsTaskCommand",
     "HealthCheckReceipt",
     "HitlResponse",

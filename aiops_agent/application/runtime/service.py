@@ -40,8 +40,10 @@ from aiops_agent.entities import (
 )
 from aiops_agent.orchestration import (
     BlueprintRegistry,
+    build_database_diagnostic_blueprint,
     build_monitor_observe_blueprint,
 )
+from aiops_agent.diagnostics.registry import DiagnosticRegistry
 from aiops_agent.workers.handlers import HandlerRegistry
 from platform_core.contracts.aiops import (
     ArtifactInput,
@@ -105,6 +107,7 @@ class AIOpsRuntimeService:
         metric_catalog: MetricCatalog | None = None,
         default_observation_window_seconds: int = 3600,
         max_monitor_response_bytes: int = 5 * 1024 * 1024,
+        diagnostic_registry: DiagnosticRegistry | None = None,
     ):
         self._uow_factory = uow_factory
         self._blueprints = blueprint_registry
@@ -116,6 +119,7 @@ class AIOpsRuntimeService:
             default_observation_window_seconds
         )
         self._max_monitor_response_bytes = max_monitor_response_bytes
+        self._diagnostic_registry = diagnostic_registry
 
     async def create_run(
         self, command: CreateOpsRunCommand
@@ -224,6 +228,16 @@ class AIOpsRuntimeService:
                     target=target,
                     now=now,
                 )
+            elif command.blueprint_id == "database.diagnostic-baseline":
+                (
+                    blueprint,
+                    database_diagnostic_snapshot,
+                ) = self._database_diagnostic_blueprint_snapshot(
+                    command=command,
+                    target=target,
+                    binding=binding,
+                    policy=policy,
+                )
             else:
                 blueprint = self._blueprints.resolve(
                     command.blueprint_id, command.blueprint_version
@@ -248,6 +262,10 @@ class AIOpsRuntimeService:
             }
             if monitoring_snapshot is not None:
                 plan_snapshot["monitoring"] = monitoring_snapshot
+            if command.blueprint_id == "database.diagnostic-baseline":
+                plan_snapshot["database_diagnostics"] = (
+                    database_diagnostic_snapshot
+                )
             try:
                 run = await uow.runs.add_run(
                     OpsRunEntity(
@@ -329,6 +347,182 @@ class AIOpsRuntimeService:
             )
             await uow.commit()
             return self._run_receipt(run, int(event.sequence_no))
+
+    def _database_diagnostic_blueprint_snapshot(
+        self,
+        *,
+        command,
+        target,
+        binding,
+        policy,
+    ):
+        """冻结 Target、目录选择、能力声明和执行上限。"""
+        if command.blueprint_version != "1":
+            raise validation_failed("数据库诊断 Blueprint 版本不受支持")
+        if self._diagnostic_registry is None:
+            raise validation_failed("数据库诊断目录尚未配置")
+        raw_capabilities = dict(target.capabilities_json or {})
+        capability_names = {
+            str(name)
+            for name, enabled in raw_capabilities.items()
+            if enabled is True
+        }
+        configured_features = raw_capabilities.get("features", [])
+        if isinstance(configured_features, list):
+            capability_names.update(
+                str(item) for item in configured_features if item
+            )
+        raw_entitlements = raw_capabilities.get("entitlements", [])
+        entitlements = (
+            {str(item) for item in raw_entitlements if item}
+            if isinstance(raw_entitlements, list)
+            else set()
+        )
+        capability_snapshot = {
+            "db_type": target.db_type,
+            "configured_version": target.version_code,
+            "capabilities": sorted(capability_names),
+            "entitlements": sorted(entitlements),
+            "target_row_version": int(target.row_version),
+        }
+        capability_hash = sha256_json(capability_snapshot)
+        initial_gaps: list[dict[str, Any]] = []
+        selected = []
+        access_allowed = binding.access_mode in {
+            "DIAGNOSE",
+            "PROPOSE",
+            "EXECUTE",
+        }
+        policy_rules = dict(policy.rules_json) if policy is not None else {}
+        policy_allowed = policy_rules.get(
+            "readonly_database_enabled", True
+        )
+        if not access_allowed:
+            initial_gaps.append(
+                {
+                    "code": "DIAGNOSTIC_ACCESS_DENIED",
+                    "detail": "Agent Binding 未授权数据库诊断",
+                    "retryable": False,
+                }
+            )
+        if not policy_allowed:
+            initial_gaps.append(
+                {
+                    "code": "DIAGNOSTIC_POLICY_DENIED",
+                    "detail": "当前策略禁止数据库直连诊断",
+                    "retryable": False,
+                }
+            )
+        if not target.diagnostic_secret_ref:
+            initial_gaps.append(
+                {
+                    "code": "DIAGNOSTIC_SECRET_MISSING",
+                    "detail": "Target 未配置只读诊断凭据",
+                    "retryable": False,
+                }
+            )
+        if not target.endpoint_json:
+            initial_gaps.append(
+                {
+                    "code": "TARGET_ENDPOINT_MISSING",
+                    "detail": "Target 未配置数据库地址",
+                    "retryable": False,
+                }
+            )
+        if not target.version_code:
+            initial_gaps.append(
+                {
+                    "code": "VERSION_UNSUPPORTED",
+                    "detail": "Target 未声明可用于目录选择的数据库版本",
+                    "retryable": False,
+                }
+            )
+        prerequisites = (
+            access_allowed
+            and policy_allowed
+            and bool(target.diagnostic_secret_ref)
+            and bool(target.endpoint_json)
+            and bool(target.version_code)
+        )
+        requested = (
+            "db.instance.identity",
+            "db.session.active",
+            "db.session.blocking_chain",
+            "db.storage.capacity",
+        )
+        if prerequisites:
+            for tool_id in requested:
+                try:
+                    tool = self._diagnostic_registry.resolve(
+                        tool_id=tool_id,
+                        tool_version="1.0.0",
+                        db_type=target.db_type,
+                        db_version=target.version_code,
+                        capabilities=capability_names,
+                        entitlements=entitlements,
+                    )
+                except LookupError:
+                    initial_gaps.append(
+                        {
+                            "code": "CAPABILITY_UNAVAILABLE",
+                            "tool_id": tool_id,
+                            "detail": "工具版本、能力或许可条件不满足",
+                            "retryable": False,
+                        }
+                    )
+                    continue
+                definition = tool.definition
+                selected.append(
+                    {
+                        "tool_id": definition.tool_id,
+                        "version": definition.version,
+                        "variant": definition.variant,
+                        "template_sha256": definition.template_sha256,
+                        "parameters": {
+                            parameter.name: parameter.default
+                            for parameter in definition.parameters
+                            if not parameter.required
+                        },
+                        "cost_level": definition.cost_level,
+                        "supported_version_min": (
+                            definition.supported_version_min
+                        ),
+                        "supported_version_max_exclusive": (
+                            definition.supported_version_max_exclusive
+                        ),
+                        "limits": {
+                            "statement_timeout_seconds": (
+                                definition.timeout_seconds
+                            ),
+                            "max_result_rows": definition.max_rows,
+                            "max_result_bytes": definition.max_bytes,
+                            "max_columns": 128,
+                            "max_cell_chars": 32768,
+                        },
+                    }
+                )
+        selected.sort(
+            key=lambda item: (
+                item["tool_id"] != "db.instance.identity",
+                item["tool_id"],
+            )
+        )
+        snapshot = {
+            "db_type": target.db_type,
+            "configured_version": target.version_code or "UNKNOWN",
+            "target_row_version": int(target.row_version),
+            "connection_profile": dict(target.endpoint_json or {}),
+            "diagnostic_secret_ref": target.diagnostic_secret_ref,
+            "catalog_hash": self._diagnostic_registry.catalog_hash,
+            "capability_snapshot": capability_snapshot,
+            "capability_snapshot_hash": capability_hash,
+            "tools": selected,
+            "initial_gaps": initial_gaps,
+        }
+        blueprint = build_database_diagnostic_blueprint(
+            tuple(item["tool_id"] for item in selected)
+        )
+        return blueprint, snapshot
 
     async def _monitor_blueprint_snapshot(
         self,
@@ -645,6 +839,16 @@ class AIOpsRuntimeService:
                     payload=command.artifact.payload or {},
                     now=now,
                 )
+            if (
+                command.artifact.schema_version
+                == "DATABASE_DIAGNOSTIC_RESULT.v1"
+            ):
+                await self._reduce_database_health(
+                    uow=uow,
+                    run=run,
+                    payload=command.artifact.payload or {},
+                    now=now,
+                )
             ensure_task_transition(
                 DomainOpsTaskStatus(task.status),
                 DomainOpsTaskStatus.SUCCEEDED,
@@ -708,7 +912,10 @@ class AIOpsRuntimeService:
                 )
                 run.status = DomainOpsRunStatus.COMPLETED.value
                 run.final_artifact_id = artifact.artifact_id
-                if artifact.schema_version == "OBSERVE_REPORT.v1":
+                if artifact.schema_version in {
+                    "OBSERVE_REPORT.v1",
+                    "DB_DIAGNOSTIC_REPORT.v1",
+                }:
                     run.root_cause_level = "INCONCLUSIVE"
                 run.completed_at = now
                 event = await uow.runs.append_event(
@@ -740,6 +947,43 @@ class AIOpsRuntimeService:
             return self._mutation_receipt(
                 run, task, int(event.sequence_no), artifact.artifact_id
             )
+
+    @staticmethod
+    async def _reduce_database_health(
+        *, uow, run, payload: dict[str, Any], now: datetime
+    ) -> None:
+        """仅实例身份工具可改变 Target 直连健康状态，并使用配置版本围栏。"""
+        if payload.get("tool_id") != "db.instance.identity":
+            return
+        plan = run.plan_snapshot_json or {}
+        snapshot = plan.get("database_diagnostics")
+        target_snapshot = plan.get("target", {})
+        if not snapshot:
+            return
+        target = await uow.targets.get_scoped(
+            target_id=run.target_id,
+            app_id=int(target_snapshot["app_id"]),
+            domain_id=int(target_snapshot["domain_id"]),
+        )
+        if target is None or int(target.row_version) != int(
+            snapshot["target_row_version"]
+        ):
+            return
+        gap = payload.get("gap") or {}
+        code = str(gap.get("code", ""))
+        if payload.get("status") == "SUCCEEDED":
+            health, error = "HEALTHY", None
+        elif code in {"TARGET_UNREACHABLE", "TIMEOUT"}:
+            health, error = "UNREACHABLE", code
+        else:
+            health, error = "DEGRADED", code or "DATABASE_DIAGNOSTIC_GAP"
+        await uow.targets.update_health(
+            target_id=target.target_id,
+            expected_health_version=int(target.health_version),
+            health_status=health,
+            checked_at=now,
+            last_error_code=error,
+        )
 
     @staticmethod
     async def _reduce_observation_health(

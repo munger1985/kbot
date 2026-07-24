@@ -10,6 +10,13 @@ from .monitoring import (
     MonitorScopeResult,
     ObserveReport,
 )
+from .database import (
+    DatabaseDiagnosticReport,
+    DatabaseDiagnosticResult,
+    DatabaseObservationAggregate,
+    DatabaseScopeResult,
+    EvidenceGap,
+)
 
 __all__ = [
     "KernelReport",
@@ -18,4 +25,9 @@ __all__ = [
     "ObservationSet",
     "ObserveReport",
     "ScopeResult",
+    "DatabaseDiagnosticReport",
+    "DatabaseDiagnosticResult",
+    "DatabaseObservationAggregate",
+    "DatabaseScopeResult",
+    "EvidenceGap",
 ]

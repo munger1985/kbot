@@ -220,6 +220,8 @@ class AIOpsTaskWorker:
                 if lease.deadline_at is not None
                 else None
             ),
+            lease_token=str(lease.lease_token),
+            lease_until=lease.lease_until.isoformat(),
             plan_snapshot=lease.plan_snapshot,
             policy_snapshot=lease.policy_snapshot,
             input_artifacts=tuple(

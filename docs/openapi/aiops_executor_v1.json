@@ -1,100 +1,178 @@
 {
   "components": {
     "schemas": {
-      "DiagnosticExecutionGrant": {
+      "DatabaseColumn": {
         "additionalProperties": false,
         "properties": {
-          "connection_profile": {
-            "additionalProperties": true,
-            "title": "Connection Profile",
-            "type": "object"
+          "logical_type": {
+            "enum": [
+              "STRING",
+              "INTEGER",
+              "DECIMAL",
+              "BOOLEAN",
+              "DATETIME",
+              "NULL"
+            ],
+            "title": "Logical Type",
+            "type": "string"
           },
-          "diagnostic_tool_id": {
+          "name": {
             "maxLength": 128,
             "minLength": 1,
-            "title": "Diagnostic Tool Id",
+            "title": "Name",
             "type": "string"
           },
-          "diagnostic_tool_version": {
-            "maxLength": 64,
-            "minLength": 1,
-            "title": "Diagnostic Tool Version",
+          "sensitivity": {
+            "enum": [
+              "PUBLIC",
+              "MASKED",
+              "HASHED"
+            ],
+            "title": "Sensitivity",
             "type": "string"
-          },
-          "expires_at": {
-            "format": "date-time",
-            "title": "Expires At",
-            "type": "string"
-          },
-          "grant_id": {
-            "format": "uuid",
-            "title": "Grant Id",
-            "type": "string"
-          },
-          "lease_token_hash": {
+          }
+        },
+        "required": [
+          "name",
+          "logical_type",
+          "sensitivity"
+        ],
+        "title": "DatabaseColumn",
+        "type": "object"
+      },
+      "DatabaseObservation": {
+        "additionalProperties": false,
+        "properties": {
+          "capability_snapshot_hash": {
             "pattern": "^[0-9a-f]{64}$",
-            "title": "Lease Token Hash",
+            "title": "Capability Snapshot Hash",
             "type": "string"
           },
-          "max_result_rows": {
-            "exclusiveMinimum": 0.0,
-            "title": "Max Result Rows",
+          "captured_at": {
+            "format": "date-time",
+            "title": "Captured At",
+            "type": "string"
+          },
+          "columns": {
+            "items": {
+              "$ref": "#/components/schemas/DatabaseColumn"
+            },
+            "title": "Columns",
+            "type": "array"
+          },
+          "db_type": {
+            "enum": [
+              "ORACLE",
+              "MYSQL"
+            ],
+            "title": "Db Type",
+            "type": "string"
+          },
+          "db_version": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Db Version",
+            "type": "string"
+          },
+          "duration_ms": {
+            "minimum": 0.0,
+            "title": "Duration Ms",
             "type": "integer"
+          },
+          "executor_request_id": {
+            "format": "uuid",
+            "title": "Executor Request Id",
+            "type": "string"
+          },
+          "parameters_sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Parameters Sha256",
+            "type": "string"
+          },
+          "provenance": {
+            "additionalProperties": true,
+            "title": "Provenance",
+            "type": "object"
+          },
+          "result_sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Result Sha256",
+            "type": "string"
+          },
+          "row_count": {
+            "minimum": 0.0,
+            "title": "Row Count",
+            "type": "integer"
+          },
+          "rows": {
+            "items": {
+              "items": {},
+              "type": "array"
+            },
+            "title": "Rows",
+            "type": "array"
           },
           "schema_version": {
-            "default": "aiops.executor.v1",
+            "const": "DATABASE_OBSERVATION.v1",
+            "default": "DATABASE_OBSERVATION.v1",
             "title": "Schema Version",
             "type": "string"
-          },
-          "secret_ref": {
-            "maxLength": 2048,
-            "minLength": 8,
-            "pattern": "^[a-z][a-z0-9+.-]*://.+",
-            "title": "Secret Ref",
-            "type": "string"
-          },
-          "statement_timeout_seconds": {
-            "exclusiveMinimum": 0.0,
-            "title": "Statement Timeout Seconds",
-            "type": "integer"
           },
           "target_id": {
             "format": "uuid",
             "title": "Target Id",
             "type": "string"
           },
-          "target_row_version": {
-            "minimum": 1.0,
-            "title": "Target Row Version",
-            "type": "integer"
-          },
-          "task_id": {
-            "format": "uuid",
-            "title": "Task Id",
-            "type": "string"
-          },
-          "template_hash": {
+          "template_sha256": {
             "pattern": "^[0-9a-f]{64}$",
-            "title": "Template Hash",
+            "title": "Template Sha256",
             "type": "string"
+          },
+          "tool_id": {
+            "title": "Tool Id",
+            "type": "string"
+          },
+          "tool_version": {
+            "title": "Tool Version",
+            "type": "string"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          },
+          "variant": {
+            "title": "Variant",
+            "type": "string"
+          },
+          "warnings": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
           }
         },
         "required": [
-          "grant_id",
-          "task_id",
-          "lease_token_hash",
+          "executor_request_id",
           "target_id",
-          "target_row_version",
-          "connection_profile",
-          "secret_ref",
-          "diagnostic_tool_id",
-          "diagnostic_tool_version",
-          "template_hash",
-          "max_result_rows",
-          "statement_timeout_seconds",
-          "expires_at"
+          "tool_id",
+          "tool_version",
+          "variant",
+          "template_sha256",
+          "db_type",
+          "db_version",
+          "capability_snapshot_hash",
+          "captured_at",
+          "duration_ms",
+          "columns",
+          "rows",
+          "row_count",
+          "truncated",
+          "result_sha256",
+          "parameters_sha256"
         ],
-        "title": "DiagnosticExecutionGrant",
+        "title": "DatabaseObservation",
         "type": "object"
       },
       "ExecutionResultRef": {
@@ -280,25 +358,16 @@
       "ReadDiagnosticRequest": {
         "additionalProperties": false,
         "properties": {
-          "diagnostic_tool_id": {
-            "maxLength": 128,
-            "minLength": 1,
-            "title": "Diagnostic Tool Id",
-            "type": "string"
-          },
-          "diagnostic_tool_version": {
-            "maxLength": 64,
-            "minLength": 1,
-            "title": "Diagnostic Tool Version",
-            "type": "string"
-          },
           "executor_request_id": {
             "format": "uuid",
             "title": "Executor Request Id",
             "type": "string"
           },
           "grant": {
-            "$ref": "#/components/schemas/DiagnosticExecutionGrant"
+            "maxLength": 16384,
+            "minLength": 64,
+            "title": "Grant",
+            "type": "string"
           },
           "idempotency_key": {
             "maxLength": 256,
@@ -306,24 +375,23 @@
             "title": "Idempotency Key",
             "type": "string"
           },
+          "parameters": {
+            "additionalProperties": true,
+            "title": "Parameters",
+            "type": "object"
+          },
           "schema_version": {
-            "default": "aiops.executor.v1",
+            "const": "diagnostic-execution-request.v1",
+            "default": "diagnostic-execution-request.v1",
             "title": "Schema Version",
             "type": "string"
-          },
-          "typed_parameters": {
-            "additionalProperties": true,
-            "title": "Typed Parameters",
-            "type": "object"
           }
         },
         "required": [
           "executor_request_id",
-          "idempotency_key",
-          "diagnostic_tool_id",
-          "diagnostic_tool_version",
-          "typed_parameters",
-          "grant"
+          "grant",
+          "parameters",
+          "idempotency_key"
         ],
         "title": "ReadDiagnosticRequest",
         "type": "object"
@@ -348,52 +416,34 @@
             "title": "Executor Request Id",
             "type": "string"
           },
-          "result_hash": {
+          "observation": {
             "anyOf": [
               {
-                "pattern": "^[0-9a-f]{64}$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Result Hash"
-          },
-          "result_ref": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ResourceRef"
+                "$ref": "#/components/schemas/DatabaseObservation"
               },
               {
                 "type": "null"
               }
             ]
           },
-          "row_count": {
-            "anyOf": [
-              {
-                "minimum": 0.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Row Count"
+          "retryable": {
+            "default": false,
+            "title": "Retryable",
+            "type": "boolean"
           },
           "schema_version": {
-            "default": "aiops.executor.v1",
+            "const": "diagnostic-execution-result.v1",
+            "default": "diagnostic-execution-result.v1",
             "title": "Schema Version",
             "type": "string"
           },
           "status": {
-            "$ref": "#/components/schemas/ExecutionStatus"
-          },
-          "truncated": {
-            "default": false,
-            "title": "Truncated",
-            "type": "boolean"
+            "enum": [
+              "SUCCEEDED",
+              "GAP"
+            ],
+            "title": "Status",
+            "type": "string"
           }
         },
         "required": [

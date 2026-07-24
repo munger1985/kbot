@@ -28,6 +28,8 @@ class TaskExecutionContext:
     plan_snapshot: dict[str, Any]
     policy_snapshot: dict[str, Any]
     input_artifacts: tuple[dict[str, Any], ...]
+    lease_token: str = ""
+    lease_until: str = ""
 
 
 class TaskHandler(Protocol):
@@ -138,6 +140,11 @@ def create_runtime_handler_registry(
     *,
     monitor_provider_registry=None,
     secret_store=None,
+    db_executor_client=None,
+    diagnostic_grant_codec=None,
+    diagnostic_grant_issuer: str | None = None,
+    diagnostic_grant_audience: str | None = None,
+    diagnostic_grant_ttl_seconds: int = 45,
 ) -> HandlerRegistry:
     """组合运行内核与步骤 5 Handler，版本必须精确匹配。"""
     kernel = create_kernel_handler_registry()
@@ -174,6 +181,54 @@ def create_runtime_handler_registry(
                     output_schema_version="OBSERVE_REPORT.v1",
                     idempotent=True,
                     implementation=MonitorReportHandler(),
+                ),
+            )
+        )
+    if db_executor_client is not None and diagnostic_grant_codec is not None:
+        from .database_handlers import (
+            DatabaseAggregateHandler,
+            DatabaseDiagnosticHandler,
+            DatabaseReportHandler,
+            DatabaseScopeHandler,
+        )
+
+        manifests.extend(
+            (
+                HandlerManifest(
+                    handler_id="database.scope",
+                    version="1",
+                    output_schema_version="DATABASE_SCOPE_RESULT.v1",
+                    idempotent=True,
+                    implementation=DatabaseScopeHandler(),
+                ),
+                HandlerManifest(
+                    handler_id="database.diagnostic",
+                    version="1",
+                    output_schema_version="DATABASE_DIAGNOSTIC_RESULT.v1",
+                    idempotent=True,
+                    implementation=DatabaseDiagnosticHandler(
+                        executor_client=db_executor_client,
+                        grant_codec=diagnostic_grant_codec,
+                        grant_issuer=diagnostic_grant_issuer or "",
+                        grant_audience=diagnostic_grant_audience or "",
+                        grant_ttl_seconds=diagnostic_grant_ttl_seconds,
+                    ),
+                ),
+                HandlerManifest(
+                    handler_id="database.aggregate",
+                    version="1",
+                    output_schema_version=(
+                        "DATABASE_OBSERVATION_AGGREGATE.v1"
+                    ),
+                    idempotent=True,
+                    implementation=DatabaseAggregateHandler(),
+                ),
+                HandlerManifest(
+                    handler_id="database.report",
+                    version="1",
+                    output_schema_version="DB_DIAGNOSTIC_REPORT.v1",
+                    idempotent=True,
+                    implementation=DatabaseReportHandler(),
                 ),
             )
         )

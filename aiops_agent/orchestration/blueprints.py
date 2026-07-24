@@ -70,6 +70,7 @@ class BlueprintRegistry:
                     task.input_schema_version
                     != upstream.output_schema_version
                     and task.task_type != "REPORT"
+                    and not task.input_schema_version.endswith("_INPUT.v1")
                 ):
                     raise BlueprintValidationError(
                         f"Task Schema 不匹配：{dependency} -> {task.task_key}"
@@ -185,6 +186,83 @@ def build_monitor_observe_blueprint(
                 output_schema_version="OBSERVE_REPORT.v1",
                 depends_on=dependencies,
                 input_artifact_keys=dependencies,
+                timeout_seconds=30,
+            ),
+        ),
+    )
+
+
+def build_database_diagnostic_blueprint(
+    tool_ids: tuple[str, ...],
+) -> Blueprint:
+    """身份探测先行，其余只读工具在固定小并发下由 Worker 领取。"""
+    ordered = tuple(dict.fromkeys(tool_ids))
+    if ordered and ordered[0] != "db.instance.identity":
+        raise BlueprintValidationError("数据库诊断必须先执行实例身份工具")
+    diagnostic_tasks = []
+    for index, tool_id in enumerate(ordered):
+        task_key = f"diagnostic:{tool_id}"
+        dependency = (
+            ("scope",)
+            if index == 0
+            else ("diagnostic:db.instance.identity",)
+        )
+        diagnostic_tasks.append(
+            TaskSpec(
+                task_key=task_key,
+                task_type="DIAGNOSE",
+                handler_id="database.diagnostic",
+                handler_version="1",
+                input_schema_version=(
+                    "DATABASE_SCOPE_RESULT.v1"
+                    if index == 0
+                    else "DATABASE_DIAGNOSTIC_RESULT.v1"
+                ),
+                output_schema_version="DATABASE_DIAGNOSTIC_RESULT.v1",
+                depends_on=dependency,
+                input_artifact_keys=dependency,
+                timeout_seconds=90,
+                max_attempts=2,
+                priority=40 + index,
+            )
+        )
+    diagnostic_keys = tuple(item.task_key for item in diagnostic_tasks)
+    aggregate_dependencies = ("scope",) + diagnostic_keys
+    return Blueprint(
+        blueprint_id="database.diagnostic-baseline",
+        version="1",
+        final_task_key="report",
+        tasks=(
+            TaskSpec(
+                task_key="scope",
+                task_type="SCOPE",
+                handler_id="database.scope",
+                handler_version="1",
+                input_schema_version="RUN_INPUT.v1",
+                output_schema_version="DATABASE_SCOPE_RESULT.v1",
+                timeout_seconds=30,
+            ),
+            *diagnostic_tasks,
+            TaskSpec(
+                task_key="aggregate",
+                task_type="DIAGNOSE",
+                handler_id="database.aggregate",
+                handler_version="1",
+                input_schema_version="DATABASE_AGGREGATE_INPUT.v1",
+                output_schema_version="DATABASE_OBSERVATION_AGGREGATE.v1",
+                depends_on=aggregate_dependencies,
+                input_artifact_keys=aggregate_dependencies,
+                timeout_seconds=30,
+            ),
+            TaskSpec(
+                task_key="report",
+                task_type="REPORT",
+                handler_id="database.report",
+                handler_version="1",
+                input_schema_version="DATABASE_OBSERVATION_AGGREGATE.v1",
+                output_schema_version="DB_DIAGNOSTIC_REPORT.v1",
+                depends_on=("aggregate",),
+                input_artifact_keys=("aggregate",),
                 timeout_seconds=30,
             ),
         ),

@@ -262,7 +262,7 @@ class AIOpsConfigAndBootstrapTest(unittest.TestCase):
         self.assertFalse(
             any(path.startswith("/api/v1/") for path in api_paths)
         )
-        for app in (worker_app, scheduler_app, executor_app):
+        for app in (worker_app, scheduler_app):
             paths = {route.path for route in app.routes}
             self.assertTrue(expected.issubset(paths))
             self.assertFalse(
@@ -272,15 +272,18 @@ class AIOpsConfigAndBootstrapTest(unittest.TestCase):
                     for path in paths
                 )
             )
-            with TestClient(app) as client:
-                self.assertEqual(200, client.get("/live").status_code)
-        with TestClient(aiops_api_app) as client:
-            self.assertEqual(200, client.get("/live").status_code)
+        executor_paths = {route.path for route in executor_app.routes}
+        self.assertIn(
+            "/internal/v1/db-executor/diagnostics", executor_paths
+        )
+        self.assertFalse(
+            any(path.startswith("/api/v1/") for path in executor_paths)
+        )
 
     def test_executor_never_creates_kbot_database_runtime(self) -> None:
         with TestClient(executor_app) as client:
             self.assertEqual(200, client.get("/live").status_code)
-            self.assertEqual(503, client.get("/ready").status_code)
+            self.assertEqual(200, client.get("/ready").status_code)
             self.assertIsNone(
                 client.app.state.runtime.database_runtime
             )

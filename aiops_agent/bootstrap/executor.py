@@ -3,13 +3,27 @@
 from contextlib import asynccontextmanager
 
 from loguru import logger
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 
+from aiops_agent.adapters.secret_store import ConfiguredSecretStore
+from aiops_agent.api.executor import router as executor_router
 from aiops_agent.bootstrap.common import (
     AIOpsProcessRuntime,
     configure_process_logging,
     create_process_app,
 )
 from aiops_agent.config import AIOpsSettings, get_aiops_settings
+from aiops_agent.diagnostics import (
+    create_diagnostic_grant_codec,
+    create_diagnostic_registry,
+)
+from aiops_agent.executor import DiagnosticExecutorService
+from aiops_agent.executor.drivers import (
+    MySQLDiagnosticDriver,
+    OracleDiagnosticDriver,
+)
+from platform_core.contracts.aiops.executor import DiagnosticLimits
 from platform_core.security import (
     create_auth_context_codec,
     create_scoped_internal_auth_middleware,
@@ -20,7 +34,7 @@ from platform_core.security import (
 def create_aiops_executor(
     settings: AIOpsSettings | None = None,
 ):
-    """创建不持有 KBot Schema 连接的步骤 0 Executor。"""
+    """创建不持有 KBot Schema 凭据的隔离 DB Executor。"""
     resolved = settings or get_aiops_settings()
     config = resolved.executor
 
@@ -30,22 +44,46 @@ def create_aiops_executor(
             resolved,
             service_name=config.service_name,
         )
+        registry = create_diagnostic_registry(resolved)
+        secret_store = ConfiguredSecretStore(
+            provider=resolved.secret_store.provider,
+            allowed_schemes=resolved.secret_store.allowed_schemes,
+        )
+        diagnostic_executor = DiagnosticExecutorService(
+            registry=registry,
+            grant_codec=create_diagnostic_grant_codec(resolved),
+            secret_store=secret_store,
+            drivers=(
+                OracleDiagnosticDriver(),
+                MySQLDiagnosticDriver(),
+            ),
+            hard_limits=DiagnosticLimits(
+                statement_timeout_seconds=config.statement_timeout_seconds,
+                max_result_rows=config.max_result_rows,
+                max_result_bytes=config.max_result_bytes,
+                max_columns=config.max_result_columns,
+                max_cell_chars=config.max_cell_chars,
+            ),
+            concurrency=config.readonly_concurrency,
+        )
         runtime = AIOpsProcessRuntime(
             settings=resolved,
             service_name=config.service_name,
             components={
-                "template_registry": False,
-                "secret_provider": False,
-                "identity_verifier": False,
+                "template_registry": True,
+                "secret_provider": True,
+                "identity_verifier": True,
             },
         )
         app.state.runtime = runtime
         app.state.ready_check = runtime.check_executor_components
         app.state.auth_context_codec = create_auth_context_codec()
         app.state.service_identity_codec = create_service_identity_codec()
+        app.state.diagnostic_executor = diagnostic_executor
         await runtime.start()
         logger.info(
-            "正在启动 AIOps DB Executor 步骤 0 骨架，Mutation={}",
+            "正在启动 AIOps DB Executor：catalog_hash={} Mutation={}",
+            registry.catalog_hash,
             config.mutation_enabled,
         )
         try:
@@ -76,4 +114,17 @@ def create_aiops_executor(
             },
         )
     )
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_error_handler(request, exc):
+        del request, exc
+        return JSONResponse(
+            status_code=400,
+            content={
+                "code": "EXECUTOR_REQUEST_INVALID",
+                "message": "DB Executor 请求契约无效",
+            },
+        )
+
+    app.include_router(executor_router)
     return app

@@ -1,0 +1,157 @@
+{
+  "catalog_version": "mysql-baseline.v1",
+  "tools": [
+    {
+      "tool_id": "db.instance.identity",
+      "version": "1.0.0",
+      "db_type": "MYSQL",
+      "variant": "mysql_8",
+      "supported_version_min": 8,
+      "supported_version_max_exclusive": 10,
+      "required_capabilities": [],
+      "required_entitlements": [],
+      "required_privileges": [],
+      "parameters": [],
+      "output_columns": [
+        {"name": "product", "logical_type": "STRING", "nullable": false},
+        {"name": "version", "logical_type": "STRING", "nullable": false},
+        {"name": "instance_name", "logical_type": "STRING", "nullable": false},
+        {"name": "database_role", "logical_type": "STRING", "nullable": false},
+        {"name": "server_time", "logical_type": "DATETIME", "nullable": false}
+      ],
+      "template_ref": "sql/instance_identity.sql",
+      "template_sha256": "f95ecfbf7cb25759e3a25a8a79d7257035794cd60489864502c689905df3c099",
+      "timeout_seconds": 20,
+      "max_rows": 1,
+      "max_bytes": 65536,
+      "cost_level": "LOW"
+    },
+    {
+      "tool_id": "db.session.active",
+      "version": "1.0.0",
+      "db_type": "MYSQL",
+      "variant": "mysql_8_processlist",
+      "supported_version_min": 8,
+      "supported_version_max_exclusive": 10,
+      "required_capabilities": ["information_schema"],
+      "required_entitlements": [],
+      "required_privileges": ["PROCESS"],
+      "parameters": [],
+      "output_columns": [
+        {"name": "session_id", "logical_type": "INTEGER", "nullable": false},
+        {"name": "username", "logical_type": "STRING", "sensitivity": "HASHED"},
+        {"name": "client_host", "logical_type": "STRING", "sensitivity": "MASKED"},
+        {"name": "database_name", "logical_type": "STRING"},
+        {"name": "command_name", "logical_type": "STRING", "nullable": false},
+        {"name": "active_seconds", "logical_type": "INTEGER", "nullable": false},
+        {"name": "session_state", "logical_type": "STRING"}
+      ],
+      "template_ref": "sql/session_active.sql",
+      "template_sha256": "7ceeb1bfb89deb08d10ea5b9087fd7a9040faf23c393428897bb66c859fcb171",
+      "timeout_seconds": 20,
+      "max_rows": 200,
+      "max_bytes": 1048576,
+      "cost_level": "LOW"
+    },
+    {
+      "tool_id": "db.session.blocking_chain",
+      "version": "1.0.0",
+      "db_type": "MYSQL",
+      "variant": "mysql_8_sys",
+      "supported_version_min": 8,
+      "supported_version_max_exclusive": 10,
+      "required_capabilities": ["sys_schema"],
+      "required_entitlements": [],
+      "required_privileges": ["PROCESS"],
+      "parameters": [],
+      "output_columns": [
+        {"name": "waiting_session_id", "logical_type": "INTEGER", "nullable": false},
+        {"name": "waiting_statement", "logical_type": "STRING", "sensitivity": "MASKED"},
+        {"name": "blocking_session_id", "logical_type": "INTEGER", "nullable": false},
+        {"name": "blocking_statement", "logical_type": "STRING", "sensitivity": "MASKED"},
+        {"name": "wait_seconds", "logical_type": "INTEGER", "nullable": false}
+      ],
+      "template_ref": "sql/session_blocking.sql",
+      "template_sha256": "d65fd706ba1296aa494c6ae5804ecdb162844d2ecff24cdd77143f32f5d3b3f1",
+      "timeout_seconds": 20,
+      "max_rows": 200,
+      "max_bytes": 1048576,
+      "cost_level": "MEDIUM"
+    },
+    {
+      "tool_id": "db.storage.capacity",
+      "version": "1.0.0",
+      "db_type": "MYSQL",
+      "variant": "mysql_8_information_schema",
+      "supported_version_min": 8,
+      "supported_version_max_exclusive": 10,
+      "required_capabilities": ["information_schema"],
+      "required_entitlements": [],
+      "required_privileges": [],
+      "parameters": [],
+      "output_columns": [
+        {"name": "database_name", "logical_type": "STRING", "nullable": false},
+        {"name": "allocated_mb", "logical_type": "DECIMAL"},
+        {"name": "table_count", "logical_type": "INTEGER", "nullable": false}
+      ],
+      "template_ref": "sql/storage_capacity.sql",
+      "template_sha256": "b79cf5a09258bf0d49d8368ee10be7fcabcd3a893ab00bafb082ab5d5ca48a8e",
+      "timeout_seconds": 20,
+      "max_rows": 200,
+      "max_bytes": 1048576,
+      "cost_level": "MEDIUM"
+    },
+    {
+      "tool_id": "db.transaction.long_running",
+      "version": "1.0.0",
+      "db_type": "MYSQL",
+      "variant": "mysql_8_innodb",
+      "supported_version_min": 8,
+      "supported_version_max_exclusive": 10,
+      "required_capabilities": ["information_schema"],
+      "required_entitlements": [],
+      "required_privileges": ["PROCESS"],
+      "parameters": [
+        {"name": "min_seconds", "type": "integer", "minimum": 1, "maximum": 86400, "default": 300, "required": false}
+      ],
+      "output_columns": [
+        {"name": "session_id", "logical_type": "INTEGER", "nullable": false},
+        {"name": "transaction_started_at", "logical_type": "DATETIME", "nullable": false},
+        {"name": "elapsed_seconds", "logical_type": "INTEGER", "nullable": false},
+        {"name": "transaction_state", "logical_type": "STRING", "nullable": false},
+        {"name": "rows_locked", "logical_type": "INTEGER", "nullable": false},
+        {"name": "rows_modified", "logical_type": "INTEGER", "nullable": false}
+      ],
+      "template_ref": "sql/transaction_long_running.sql",
+      "template_sha256": "a6c32761cb9d95b11bfdb0ba48c9096ef61db78ca0a75cb8eb2ae58dcc4578ec",
+      "timeout_seconds": 20,
+      "max_rows": 200,
+      "max_bytes": 1048576,
+      "cost_level": "MEDIUM"
+    },
+    {
+      "tool_id": "db.replication.status",
+      "version": "1.0.0",
+      "db_type": "MYSQL",
+      "variant": "mysql_8_replication",
+      "supported_version_min": 8,
+      "supported_version_max_exclusive": 10,
+      "required_capabilities": ["replication_views"],
+      "required_entitlements": [],
+      "required_privileges": ["REPLICATION CLIENT"],
+      "parameters": [],
+      "output_columns": [
+        {"name": "channel_name", "logical_type": "STRING", "nullable": false},
+        {"name": "service_state", "logical_type": "STRING", "nullable": false},
+        {"name": "source_uuid", "logical_type": "STRING"},
+        {"name": "last_error_number", "logical_type": "INTEGER", "nullable": false}
+      ],
+      "template_ref": "sql/replication_status.sql",
+      "template_sha256": "34b2ac6172430e68ba02cf5c0e103f865cea8fd7f75965e4a7bf00c84b19ea5f",
+      "timeout_seconds": 20,
+      "max_rows": 32,
+      "max_bytes": 262144,
+      "cost_level": "LOW"
+    }
+  ]
+}

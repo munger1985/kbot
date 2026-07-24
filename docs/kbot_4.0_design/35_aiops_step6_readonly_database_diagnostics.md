@@ -252,3 +252,9 @@ SCOPE
 - stale Grant/Task Lease 的结果不能提交，重试不重复写 Artifact；
 - Oracle 许可特性默认禁用，只有显式 entitlement 才能选择对应工具；
 - Target 不可达时自动 Run 仍产出可解释的 `PARTIAL/INCONCLUSIVE` 报告。
+
+## 当前实现结果
+
+本步骤已落地首批 12 个目录工具（Oracle/MySQL 各 6 个），覆盖实例身份、活跃会话、阻塞链、存储容量、长事务和复制状态。`DiagnosticRegistry` 在启动时校验模板 Hash、参数 bind、单语句和危险结构；`DiagnosticGrantCodec` 将 Run/Task 租约、目标版本、工具版本及结果上限绑定到短期签名 Grant。独立 DB Executor 仅接受类型化工具请求，使用隔离的 Oracle/MySQL 只读 Driver，以流式行数/字节/列/单元格限制规范化并脱敏结果。Worker 已接入 Scope、诊断 Task、Aggregate 和 Report Artifact，数据库不可达或权限不足会形成结构化 Gap。
+
+离线目录检查与 214 项单元测试已通过。Oracle 真实烟测脚本已提供，但当前开发环境目标连接超时，因此尚需在受控 Oracle 环境完成连接、权限和开销验收；这不影响 Fake Driver 契约测试和其余自动化检查。

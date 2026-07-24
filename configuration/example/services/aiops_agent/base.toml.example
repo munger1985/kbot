@@ -39,6 +39,11 @@ mutation_concurrency = 1
 statement_timeout_seconds = 60
 max_result_rows = 5000
 max_result_bytes = 10485760
+max_result_columns = 128
+max_cell_chars = 32768
+grant_secret_env = "KBOT_AIOPS_DIAGNOSTIC_GRANT_SECRET"
+grant_issuer = "kbot-aiops-worker"
+grant_ttl_seconds = 45
 
 [clients.agent_runtime]
 base_url = "http://agent-runtime-api:18100"

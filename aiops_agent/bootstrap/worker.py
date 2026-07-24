@@ -8,6 +8,7 @@ import aiohttp
 from loguru import logger
 
 from aiops_agent.adapters.monitoring import MonitorProviderRegistry
+from aiops_agent.adapters.db_executor_client import DatabaseExecutorClient
 from aiops_agent.adapters.secret_store import ConfiguredSecretStore
 from aiops_agent.bootstrap.common import (
     AIOpsProcessRuntime,
@@ -19,6 +20,10 @@ from aiops_agent.persistence import create_aiops_uow_factory
 from aiops_agent.application.runtime import AIOpsRuntimeService
 from aiops_agent.application.monitoring import MonitorHealthCheckService
 from aiops_agent.adapters.monitoring.catalog import load_metric_catalog
+from aiops_agent.diagnostics import (
+    create_diagnostic_grant_codec,
+    create_diagnostic_registry,
+)
 from aiops_agent.orchestration import create_kernel_blueprint_registry
 from aiops_agent.workers import (
     AIOpsOutboxDispatcher,
@@ -74,9 +79,25 @@ def create_aiops_worker_probe(
                 resolved.monitoring.webhook_replay_seconds
             ),
         )
+        diagnostic_registry = create_diagnostic_registry(resolved)
+        diagnostic_grant_codec = create_diagnostic_grant_codec(resolved)
+        db_executor_client = DatabaseExecutorClient(
+            base_url=resolved.clients.db_executor.base_url,
+            audience=resolved.clients.db_executor.audience,
+            caller_service=config.service_name,
+            timeout_seconds=resolved.clients.db_executor.timeout_seconds,
+            session=client_session,
+        )
         handler_registry = create_runtime_handler_registry(
             monitor_provider_registry=provider_registry,
             secret_store=secret_store,
+            db_executor_client=db_executor_client,
+            diagnostic_grant_codec=diagnostic_grant_codec,
+            diagnostic_grant_issuer=resolved.executor.grant_issuer,
+            diagnostic_grant_audience=resolved.executor.service_name,
+            diagnostic_grant_ttl_seconds=(
+                resolved.executor.grant_ttl_seconds
+            ),
         )
         runtime_service = AIOpsRuntimeService(
             uow_factory=runtime.uow_factory,
@@ -93,6 +114,7 @@ def create_aiops_worker_probe(
             max_monitor_response_bytes=(
                 resolved.monitoring.max_response_bytes
             ),
+            diagnostic_registry=diagnostic_registry,
         )
         workers = [
             AIOpsTaskWorker(

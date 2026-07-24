@@ -8,6 +8,7 @@ from .blueprints import (
     TaskSpec,
     create_kernel_blueprint_registry,
     build_monitor_observe_blueprint,
+    build_database_diagnostic_blueprint,
 )
 
 __all__ = [
@@ -18,4 +19,5 @@ __all__ = [
     "TaskSpec",
     "create_kernel_blueprint_registry",
     "build_monitor_observe_blueprint",
+    "build_database_diagnostic_blueprint",
 ]

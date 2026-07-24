@@ -72,9 +72,9 @@ class ConfiguredSecretStore:
             isinstance(key, str) and isinstance(value, str)
             for key, value in decoded.items()
         ):
-            raise validation_failed("监控 Secret 必须是字符串或字符串 JSON 对象")
+            raise validation_failed("Secret 必须是字符串或字符串 JSON 对象")
         if not decoded:
-            raise validation_failed("监控 Secret 不能为空")
+            raise validation_failed("Secret 不能为空")
         return ResolvedSecret(
             values=dict(decoded),
             fingerprint=metadata.fingerprint,

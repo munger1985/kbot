@@ -28,6 +28,7 @@ RUN_TRANSITIONS: dict[
     DomainOpsRunStatus.SCOPING: frozenset(
         {
             DomainOpsRunStatus.OBSERVING,
+            DomainOpsRunStatus.DIAGNOSING,
             DomainOpsRunStatus.FAILED,
             DomainOpsRunStatus.CANCELLED,
             DomainOpsRunStatus.EXPIRED,
@@ -36,6 +37,15 @@ RUN_TRANSITIONS: dict[
     DomainOpsRunStatus.OBSERVING: frozenset(
         {
             DomainOpsRunStatus.DIAGNOSING,
+            DomainOpsRunStatus.COMPLETED,
+            DomainOpsRunStatus.DEGRADED,
+            DomainOpsRunStatus.FAILED,
+            DomainOpsRunStatus.CANCELLED,
+            DomainOpsRunStatus.EXPIRED,
+        }
+    ),
+    DomainOpsRunStatus.DIAGNOSING: frozenset(
+        {
             DomainOpsRunStatus.COMPLETED,
             DomainOpsRunStatus.DEGRADED,
             DomainOpsRunStatus.FAILED,
