@@ -94,6 +94,11 @@ def _checks(
             120,
         ),
         (
+            "entity_table_ownership",
+            [python, "scripts/check_entity_ownership.py"],
+            120,
+        ),
+        (
             "aiops_diagnostic_catalog",
             [python, "scripts/check_aiops_diagnostic_catalog.py"],
             120,

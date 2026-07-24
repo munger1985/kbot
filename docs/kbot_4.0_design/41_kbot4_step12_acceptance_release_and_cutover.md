@@ -18,7 +18,8 @@
   Schema Manifest；
 - AIOps Public/Internal/Executor OpenAPI Snapshot；
 - `scripts/verify_release.py` 统一执行 Active Package 编译、架构边界、DDL 契约、
-  AIOps Catalog 和全量测试，并输出 `KBotReleaseEvidence.v1` JSON；
+  Entity 表所有权、AIOps Catalog 和全量测试，并输出
+  `KBotReleaseEvidence.v1` JSON；
 - 本地 `start_kbot.sh/stop_kbot.sh`。
 
 这些仍不是完整发布系统：现有 Golden Corpus 只是示例，生产配置样例和本地启动
