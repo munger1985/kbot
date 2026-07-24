@@ -105,11 +105,18 @@ def _checks(
         ),
     ]
     if include_oracle:
-        checks.append(
+        checks.extend(
             (
-                "oracle_aiops_entity_catalog",
-                [python, "scripts/check_aiops_entity_schema.py"],
-                120,
+                (
+                    "oracle_object_catalog",
+                    [python, "scripts/check_oracle_catalog.py"],
+                    30,
+                ),
+                (
+                    "oracle_aiops_entity_catalog",
+                    [python, "scripts/check_aiops_entity_schema.py"],
+                    30,
+                ),
             )
         )
     return checks

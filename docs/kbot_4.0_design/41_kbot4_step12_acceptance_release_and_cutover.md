@@ -77,8 +77,9 @@ python3 scripts/verify_release.py \
 
 Runner 已记录 Python 版本、解释器路径、Commit、Branch、Dirty Path，以及 DDL、
 配置样例、OpenAPI 和依赖声明 Hash，并始终用当前解释器启动子检查。`--oracle`
-可追加真实 AIOps Entity/Catalog 检查，但必须由有界的 Integration Job 设置连接
-超时。后续再纳入质量、安全、负载、构建物签名和 JUnit 报告。开发者可以运行
+会先执行有界 Listener Preflight，再追加全部 KBot 对象清单和 AIOps
+Entity/Catalog 检查；每个数据库子检查都有进程级超时。后续再纳入质量、安全、
+负载、构建物签名和 JUnit 报告。开发者可以运行
 子集；Release Candidate 必须使用干净工作树生成一份完整证据，禁止拼接旧报告。
 
 ## 测试分层

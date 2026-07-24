@@ -2,7 +2,11 @@
 
 import unittest
 
-from scripts.verify_release import ACTIVE_PACKAGES, build_input_manifest
+from scripts.verify_release import (
+    ACTIVE_PACKAGES,
+    _checks,
+    build_input_manifest,
+)
 
 
 class ReleaseVerifierTest(unittest.TestCase):
@@ -31,6 +35,15 @@ class ReleaseVerifierTest(unittest.TestCase):
             "model_serving",
         ):
             self.assertIn(package, ACTIVE_PACKAGES)
+
+    def test_oracle_profile_has_preflight_catalog_checks(self):
+        names = {
+            name
+            for name, _, _ in _checks(include_oracle=True)
+        }
+
+        self.assertIn("oracle_object_catalog", names)
+        self.assertIn("oracle_aiops_entity_catalog", names)
 
 
 if __name__ == "__main__":

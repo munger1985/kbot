@@ -43,6 +43,7 @@ from platform_core.persistence.orm import (
     UniversalTimestamp,
     UUIDv7Type,
 )
+from scripts.oracle_preflight import require_oracle_listener
 
 
 AIOPS_ENTITY_CLASSES = (
@@ -168,7 +169,10 @@ def catalog_column_contract(row) -> ColumnContract:
 
 async def check_schema() -> list[str]:
     """返回全部 Schema 漂移；空列表表示契约一致。"""
-    runtime = create_database_runtime(get_settings())
+    settings = get_settings()
+    oracle = settings.database.oracle
+    require_oracle_listener(host=oracle.host, port=oracle.port)
+    runtime = create_database_runtime(settings)
     try:
         async with runtime.session_factory() as session:
             rows = (
@@ -215,7 +219,11 @@ async def check_schema() -> list[str]:
 
 
 def main() -> int:
-    errors = asyncio.run(check_schema())
+    try:
+        errors = asyncio.run(check_schema())
+    except RuntimeError as exc:
+        print(f"AIOps Entity/Oracle Schema Preflight 失败：{exc}")
+        return 2
     if errors:
         print("AIOps Entity/Oracle Schema 校验失败：")
         for error in errors:
