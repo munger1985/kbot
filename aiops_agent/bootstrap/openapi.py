@@ -27,11 +27,6 @@ from platform_core.contracts.aiops.internal import (
 )
 from platform_core.contracts.aiops.public import (
     ApprovalCommand,
-    HitlResponse,
-    HitlResult,
-    OpsRunCreate,
-    OpsRunReceipt,
-    OpsRunSummary,
     ProposalView,
     ReportView,
 )
@@ -49,10 +44,6 @@ def create_public_contract_app() -> FastAPI:
     app = FastAPI(title="KBot AIOps Public Contract", version="1.0.0")
     app.include_router(public_config_router)
     app.include_router(public_integration_router)
-
-    @app.post("/api/v1/ops/hitl/{hitl_id}/responses", response_model=HitlResult)
-    async def answer_hitl(hitl_id: UUID, payload: HitlResponse):
-        _not_implemented()
 
     @app.get("/api/v1/ops/proposals/{proposal_id}", response_model=ProposalView)
     async def get_proposal(proposal_id: UUID):

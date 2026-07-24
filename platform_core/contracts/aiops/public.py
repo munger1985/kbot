@@ -140,6 +140,7 @@ class PendingInputView(AIOpsContract):
     hitl_type: HitlType
     status: HitlStatus
     request_artifact: ArtifactRef
+    request: JsonObject | None = None
     expires_at: UtcDatetime
     row_version: int = Field(ge=1)
 
@@ -168,6 +169,11 @@ class HitlResponse(AIOpsContract):
     expected_row_version: int = Field(ge=1)
     responses: tuple[HitlResponseItem, ...] = Field(min_length=1)
     note: str | None = Field(default=None, max_length=2000)
+
+
+class HitlSkipCommand(AIOpsContract):
+    schema_version: str = PUBLIC_SCHEMA_VERSION
+    expected_row_version: int = Field(ge=1)
 
 
 class HitlResult(AIOpsContract):

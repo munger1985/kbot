@@ -201,6 +201,8 @@ Webhook、重复交付、Alert 聚合、Outbox、动态 Task、Artifact 和最�
 
 ## 步骤 8：Chat 人工诊断循环
 
+**状态：首期主链路已完成（2026-07-24）。**
+
 详细设计见 [37_aiops_step8_chat_manual_diagnosis_hitl.md](37_aiops_step8_chat_manual_diagnosis_hitl.md)。
 
 仅为 `TRIGGER_TYPE=CHAT` 实现 `DATA_REQUIRED` 和 `MANUAL_DIAGNOSTIC_SQL` HITL。系统优先使用预置模板；模板不足时，LLM 可生成只展示给用户的只读 SQL，经静态校验后进入不可变请求 Artifact，绝不发送给 Executor。
@@ -208,6 +210,12 @@ Webhook、重复交付、Alert 聚合、Outbox、动态 Task、Artifact 和最�
 实现 `WAITING_INPUT`、受限上传、结果 Schema 校验、不可信内容隔离、同一 HITL 幂等回复、超时/跳过，以及在同一 Run 中创建后继 Task 恢复诊断。Alert/Schedule/API 自动 Run 即使证据不足也只能生成 `PARTIAL/INCONCLUSIVE`，不得进入该循环。
 
 **完成物：** 数据库不可连接时可持续多轮补证且可在进程重启后恢复的 Chat Run。
+
+当前已经实现 Catalog Manual SQL、`WAITING_INPUT` 原子暂停、内联 CSV/JSON
+Schema/身份校验、`USER_PROVIDED` Evidence、人工证据后 Assessment、幂等回复、
+Skip/Expiry、Public/Internal API 和安全 SSE 引用。首期不开放模型临时 SQL、
+对象上传和通用 `DATA_REQUIRED` 表单；这些增强不会阻塞步骤 9 的 Advisory
+边界，后续启用时必须继续服从本步骤的安全门槛。
 
 ## 步骤 9：Advisory 与受控变更
 

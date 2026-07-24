@@ -17,7 +17,7 @@
     {
       "name": "003_ops_change.sql",
       "statements": 26,
-      "sha256": "4d429a65239add1650f656fc7957f15dd5dca45c364b8838010cb84ea195ec7b"
+      "sha256": "2443c49f638eb3ff2b568b7a50275fe5ab904c621e3b7ddc8b6b636f8e672664"
     },
     {
       "name": "004_ops_inspection.sql",

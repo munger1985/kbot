@@ -10,12 +10,14 @@ from aiops_agent.workers.handlers import (
     HandlerRegistry,
     TaskExecutionContext,
 )
+from aiops_agent.contracts.hitl import InputSuspension
 from platform_core.contracts.aiops import (
     ArtifactInput,
     ClaimOpsTaskCommand,
     CompleteOpsTaskCommand,
     FailOpsTaskCommand,
     HeartbeatOpsTaskCommand,
+    SuspendOpsTaskCommand,
     TaskLease,
 )
 from platform_core.identity import uuid7
@@ -122,6 +124,44 @@ class AIOpsTaskWorker:
                     await heartbeat
                 except asyncio.CancelledError:
                     pass
+            if isinstance(result, InputSuspension):
+                latest = current["lease"]
+                await self._service.suspend_task_for_input(
+                    SuspendOpsTaskCommand(
+                        task_id=latest.task_id,
+                        worker_id=self._worker_id,
+                        lease_token=latest.lease_token,
+                        trace_id=latest.trace_id,
+                        hitl_id=result.hitl_id,
+                        request_type=result.request_type,
+                        assignee_user_id=result.assignee_user_id,
+                        prompt_text=result.prompt_text,
+                        response_schema=result.response_schema,
+                        request_artifact=ArtifactInput(
+                            artifact_type=result.request_artifact_type,
+                            schema_version=result.request_schema_version,
+                            producer=latest.handler_id,
+                            producer_version=latest.handler_version,
+                            payload=result.request_payload,
+                            provenance={
+                                "run_id": str(latest.run_id),
+                                "task_id": str(latest.task_id),
+                                "task_key": latest.task_key,
+                                "attempt": latest.attempt,
+                            },
+                            trust_level="MODEL_INFERENCE",
+                            security_level=1,
+                        ),
+                        expires_at=result.expires_at,
+                        idempotency_key=result.idempotency_key,
+                    )
+                )
+                logger.info(
+                    "AIOps Task 等待用户补充诊断数据：task_id={} hitl_id={}",
+                    latest.task_id,
+                    result.hitl_id,
+                )
+                return
             payload = result.model_dump(mode="json")
             latest = current["lease"]
             await self._service.complete_task(
@@ -229,6 +269,8 @@ class AIOpsTaskWorker:
             trigger_type=str(
                 lease.plan_snapshot.get("trigger", {}).get("type", "API")
             ),
+            actor_id=lease.actor_id,
+            original_request=lease.original_request,
             trace_id=lease.trace_id,
             attempt=lease.attempt,
             deadline_at=(

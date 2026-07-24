@@ -19,8 +19,12 @@ from platform_core.contracts.aiops import (
     CreateOpsRunCommand,
     FailOpsTaskCommand,
     HeartbeatOpsTaskCommand,
+    HitlResponse,
+    HitlResult,
+    HitlSkipCommand,
     OpsCommand,
     OpsRunEventPage,
+    PendingInputView,
     TaskLease,
     TaskMutationReceipt,
 )
@@ -126,6 +130,89 @@ async def list_events(
         after_sequence=after,
         user_only=identity.subject == "kbot-main-api",
         limit=limit,
+    )
+
+
+@router.get(
+    "/runs/{run_id}/pending-input",
+    response_model=PendingInputView,
+)
+async def get_pending_input(
+    run_id: UUID,
+    request: Request,
+    service: Service,
+    context: Auth,
+) -> PendingInputView:
+    require_service_scope(request, "aiops.hitl")
+    app_id, domain_id = _scope(request, context)
+    return await service.get_pending_input(
+        ops_run_id=run_id,
+        app_id=app_id,
+        domain_id=domain_id,
+        actor_id=context.asserted_user_id or context.client_id,
+    )
+
+
+@router.get("/hitl/{hitl_id}", response_model=PendingInputView)
+async def get_hitl_input(
+    hitl_id: UUID,
+    request: Request,
+    service: Service,
+    context: Auth,
+) -> PendingInputView:
+    require_service_scope(request, "aiops.hitl")
+    app_id, domain_id = _scope(request, context)
+    return await service.get_hitl_input(
+        hitl_id=hitl_id,
+        app_id=app_id,
+        domain_id=domain_id,
+        actor_id=context.asserted_user_id or context.client_id,
+    )
+
+
+@router.post("/hitl/{hitl_id}/response", response_model=HitlResult)
+async def respond_hitl(
+    hitl_id: UUID,
+    body: HitlResponse,
+    request: Request,
+    service: Service,
+    context: Auth,
+) -> HitlResult:
+    require_service_scope(request, "aiops.hitl")
+    app_id, domain_id = _scope(request, context)
+    return await service.respond_hitl(
+        hitl_id=hitl_id,
+        app_id=app_id,
+        domain_id=domain_id,
+        actor_id=context.asserted_user_id or context.client_id,
+        response=body,
+        idempotency_key=request.headers.get(
+            "Idempotency-Key", str(body.expected_row_version)
+        ),
+        trace_id=context.trace_id,
+    )
+
+
+@router.post("/hitl/{hitl_id}/skip", response_model=HitlResult)
+async def skip_hitl(
+    hitl_id: UUID,
+    body: HitlSkipCommand,
+    request: Request,
+    service: Service,
+    context: Auth,
+) -> HitlResult:
+    require_service_scope(request, "aiops.hitl")
+    app_id, domain_id = _scope(request, context)
+    return await service.skip_hitl(
+        hitl_id=hitl_id,
+        app_id=app_id,
+        domain_id=domain_id,
+        actor_id=context.asserted_user_id or context.client_id,
+        expected_row_version=body.expected_row_version,
+        idempotency_key=request.headers.get(
+            "Idempotency-Key", str(body.expected_row_version)
+        ),
+        trace_id=context.trace_id,
     )
 
 

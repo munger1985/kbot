@@ -75,6 +75,24 @@ class CompleteOpsTaskCommand(AIOpsContract):
     artifact: ArtifactInput
 
 
+class SuspendOpsTaskCommand(AIOpsContract):
+    """Worker 请求运行内核原子创建 HITL 并挂起当前 Task。"""
+
+    schema_version: str = INTERNAL_SCHEMA_VERSION
+    task_id: UUIDv7
+    worker_id: str = Field(min_length=1, max_length=256)
+    lease_token: UUIDv7
+    trace_id: str = Field(min_length=1, max_length=128)
+    hitl_id: UUIDv7
+    request_type: str = Field(min_length=1, max_length=32)
+    assignee_user_id: str = Field(min_length=1, max_length=256)
+    prompt_text: str = Field(min_length=1, max_length=4000)
+    response_schema: JsonObject = Field(default_factory=dict)
+    request_artifact: ArtifactInput
+    expires_at: UtcDatetime
+    idempotency_key: str = Field(min_length=1, max_length=128)
+
+
 class FailOpsTaskCommand(AIOpsContract):
     schema_version: str = INTERNAL_SCHEMA_VERSION
     task_id: UUIDv7

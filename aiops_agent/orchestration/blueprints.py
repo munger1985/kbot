@@ -681,14 +681,73 @@ def build_multi_round_diagnosis_blueprint(
     tasks.extend(
         (
             TaskSpec(
+                task_key="diagnosis:interactive",
+                task_type="DIAGNOSE",
+                handler_id="diagnosis.interactive",
+                handler_version="1",
+                input_schema_version="INTERACTIVE_DIAGNOSIS_INPUT.v1",
+                output_schema_version="HITL_OUTCOME.v1",
+                depends_on=(prior_evidence, prior_assessment),
+                input_artifact_keys=(prior_evidence, prior_assessment),
+                timeout_seconds=30,
+            ),
+            TaskSpec(
+                task_key="diagnosis:evidence:final",
+                task_type="DIAGNOSE",
+                handler_id="diagnosis.evidence-index",
+                handler_version="1",
+                input_schema_version="EVIDENCE_BUILD_INPUT.v1",
+                output_schema_version="EVIDENCE_INDEX.v1",
+                depends_on=(prior_evidence, "diagnosis:interactive"),
+                input_artifact_keys=(
+                    prior_evidence,
+                    "diagnosis:interactive",
+                ),
+                timeout_seconds=30,
+            ),
+            TaskSpec(
+                task_key=(
+                    f"diagnosis:r{max_rounds + 1}:assess-manual"
+                ),
+                task_type="DIAGNOSE",
+                handler_id="diagnosis.round-assess",
+                handler_version="1",
+                input_schema_version="DIAGNOSIS_ASSESS_INPUT.v1",
+                output_schema_version=(
+                    "DIAGNOSIS_ROUND_ASSESSMENT.v1"
+                ),
+                depends_on=(
+                    prior_evidence,
+                    "diagnosis:evidence:final",
+                    f"diagnosis:r{max_rounds}:draft",
+                    f"diagnosis:r{max_rounds}:validate",
+                    prior_assessment,
+                ),
+                input_artifact_keys=(
+                    prior_evidence,
+                    "diagnosis:evidence:final",
+                    f"diagnosis:r{max_rounds}:draft",
+                    f"diagnosis:r{max_rounds}:validate",
+                    prior_assessment,
+                ),
+                timeout_seconds=180,
+                max_attempts=2,
+            ),
+            TaskSpec(
                 task_key="diagnosis:root-cause",
                 task_type="DIAGNOSE",
                 handler_id="diagnosis.root-cause",
                 handler_version="1",
                 input_schema_version="ROOT_CAUSE_INPUT.v1",
                 output_schema_version="ROOT_CAUSE_ASSESSMENT.v1",
-                depends_on=(prior_evidence, prior_assessment),
-                input_artifact_keys=(prior_evidence, prior_assessment),
+                depends_on=(
+                    "diagnosis:evidence:final",
+                    f"diagnosis:r{max_rounds + 1}:assess-manual",
+                ),
+                input_artifact_keys=(
+                    "diagnosis:evidence:final",
+                    f"diagnosis:r{max_rounds + 1}:assess-manual",
+                ),
                 timeout_seconds=30,
             ),
             TaskSpec(
@@ -698,9 +757,12 @@ def build_multi_round_diagnosis_blueprint(
                 handler_version="1",
                 input_schema_version="GROUNDING_INPUT.v1",
                 output_schema_version="GROUNDING_VERIFICATION.v1",
-                depends_on=(prior_evidence, "diagnosis:root-cause"),
+                depends_on=(
+                    "diagnosis:evidence:final",
+                    "diagnosis:root-cause",
+                ),
                 input_artifact_keys=(
-                    prior_evidence,
+                    "diagnosis:evidence:final",
                     "diagnosis:root-cause",
                 ),
                 timeout_seconds=30,
@@ -724,15 +786,15 @@ def build_multi_round_diagnosis_blueprint(
                 input_schema_version="DIAGNOSIS_REPORT_INPUT.v1",
                 output_schema_version="DIAGNOSIS_REPORT_DRAFT.v1",
                 depends_on=(
-                    prior_evidence,
-                    prior_assessment,
+                    "diagnosis:evidence:final",
+                    f"diagnosis:r{max_rounds + 1}:assess-manual",
                     "diagnosis:root-cause",
                     "diagnosis:verify",
                     "diagnosis:solution",
                 ),
                 input_artifact_keys=(
-                    prior_evidence,
-                    prior_assessment,
+                    "diagnosis:evidence:final",
+                    f"diagnosis:r{max_rounds + 1}:assess-manual",
                     "diagnosis:root-cause",
                     "diagnosis:verify",
                     "diagnosis:solution",

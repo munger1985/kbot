@@ -6,7 +6,7 @@ import hashlib
 import json
 import re
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -25,6 +25,11 @@ from aiops_agent.contracts.diagnosis import (
     SolutionDraft,
     ValidatedEvidencePlan,
 )
+from aiops_agent.contracts.hitl import (
+    HitlOutcome,
+    InputSuspension,
+    ManualSqlRequest,
+)
 from aiops_agent.domain.diagnosis import (
     EvidenceRequestBudget,
     assess_root_cause,
@@ -32,8 +37,10 @@ from aiops_agent.domain.diagnosis import (
     validate_evidence_requests,
 )
 from aiops_agent.diagnostics.registry import DiagnosticRegistry
+from aiops_agent.orchestration.hitl import ManualSqlBuilder
 from aiops_agent.orchestration.diagnosis import DiagnosisPromptRegistry
 from platform_core.security import create_service_auth_context
+from platform_core.identity import uuid7
 
 from .handlers import TaskExecutionContext
 
@@ -130,6 +137,7 @@ class BuildEvidenceIndexHandler:
             "DIAGNOSIS_EVIDENCE_COLLECTION.v1",
             "EVIDENCE_INDEX.v1",
             "KNOWLEDGE_CITATION_PACK.v1",
+            "HITL_OUTCOME.v1",
         }
         sources = tuple(
             item
@@ -435,11 +443,16 @@ class DiagnosisRoundAssessmentHandler:
         self, context: TaskExecutionContext
     ) -> DiagnosisRoundAssessment:
         round_no = _round_no(context.task_key)
+        evidence_task_key = (
+            "diagnosis:evidence:final"
+            if context.task_key.endswith(":assess-manual")
+            else f"diagnosis:evidence:r{round_no}"
+        )
         evidence = EvidenceIndex.model_validate(
             _artifact_from_task(
                 context,
                 "EVIDENCE_INDEX.v1",
-                f"diagnosis:evidence:r{round_no}",
+                evidence_task_key,
             )
         )
         draft = DiagnosisRoundDraft.model_validate(
@@ -603,6 +616,155 @@ class DiagnosisRoundAssessmentHandler:
             )
             if not refs <= valid_facts:
                 raise ValueError("模型评估引用了不存在的 FactRef")
+
+
+class InteractiveDiagnosisHandler:
+    """只在聊天且自动诊断无法取证时请求用户手工执行目录 SQL。"""
+
+    _CONNECTIVITY_GAPS = {
+        "TARGET_UNREACHABLE",
+        "TIMEOUT",
+        "SECRET_UNAVAILABLE",
+        "SECRET_NOT_CONFIGURED",
+        "DATABASE_ACCESS_DISABLED",
+        "ENDPOINT_NOT_CONFIGURED",
+    }
+
+    def __init__(self, *, registry: DiagnosticRegistry):
+        self._builder = ManualSqlBuilder(registry)
+
+    async def execute(
+        self, context: TaskExecutionContext
+    ) -> HitlOutcome | InputSuspension:
+        assessment = DiagnosisRoundAssessment.model_validate(
+            _artifact(context, "DIAGNOSIS_ROUND_ASSESSMENT.v1")
+        )
+        evidence = EvidenceIndex.model_validate(
+            _artifact(context, "EVIDENCE_INDEX.v1")
+        )
+        if (
+            context.trigger_type != "CHAT"
+            or assessment.recommended_next_step != "STOP_INCONCLUSIVE"
+            or not self._requires_manual_input(evidence)
+        ):
+            return HitlOutcome(status="NOT_REQUIRED")
+
+        database = context.plan_snapshot["database_diagnostics"]
+        frozen_tools = tuple(database.get("tools", ()))
+        selected = self._select_tools(frozen_tools)
+        if not selected:
+            return HitlOutcome(
+                status="NOT_REQUIRED",
+                gap_code="MANUAL_DIAGNOSTIC_CATALOG_EMPTY",
+            )
+        hypotheses = tuple(
+            item.hypothesis_key
+            for item in assessment.hypothesis_assessments
+            if item.status in {"SUPPORTED", "UNTESTED"}
+        )
+        queries = tuple(
+            self._builder.from_catalog(
+                tool_snapshot=item,
+                db_type=database["db_type"],
+                parameters=dict(item.get("parameters", {})),
+                query_id=item["tool_id"],
+                purpose=f"补充 {item['tool_id']} 的数据库现场证据",
+                diagnostic_question=(
+                    f"目标数据库的 {item['tool_id']} 当前状态是什么？"
+                ),
+                supports_if="返回结果与待验证假设一致",
+                contradicts_if="返回结果明确排除待验证假设",
+            )
+            for item in selected
+        )
+        now = datetime.now(UTC)
+        expires_at = min(
+            now + timedelta(hours=2),
+            _parse_time(context.deadline_at)
+            if context.deadline_at
+            else now + timedelta(hours=2),
+        )
+        hitl_id = uuid7()
+        target = context.plan_snapshot["target"]
+        request = ManualSqlRequest(
+            hitl_id=str(hitl_id),
+            run_id=context.run_id,
+            round_no=int(assessment.round_no),
+            target_id=context.target_id,
+            target_display_name=target["target_key"],
+            db_type=database["db_type"],
+            db_version=database["configured_version"],
+            expected_instance_identity=self._expected_identity(
+                evidence, database["configured_version"]
+            ),
+            evidence_gap_refs=tuple(
+                str(item.get("code", "UNKNOWN")) for item in evidence.gaps
+            ),
+            hypothesis_keys=hypotheses,
+            queries=queries,
+            instructions=(
+                "请使用目标数据库的只读账号逐条执行 SQL。",
+                "不要修改 SQL，也不要提交来自其他数据库实例的结果。",
+                "请将每条结果按原列名粘贴为 CSV 或 JSON 对象数组。",
+            ),
+            expires_at=expires_at,
+        )
+        return InputSuspension(
+            hitl_id=str(hitl_id),
+            request_type="MANUAL_DIAGNOSTIC_SQL",
+            assignee_user_id=context.actor_id,
+            prompt_text="自动诊断无法取得足够数据库证据，请手工执行只读 SQL。",
+            response_schema={
+                "schema_version": "HITL_RESPONSE.v1",
+                "formats": ["CSV", "JSON"],
+                "query_ids": [item.query_id for item in queries],
+            },
+            request_artifact_type="MANUAL_SQL_REQUEST",
+            request_schema_version="MANUAL_SQL_REQUEST.v1",
+            request_payload=request.model_dump(mode="json"),
+            expires_at=expires_at,
+            idempotency_key=f"{context.task_id}:manual-diagnostic",
+        )
+
+    @classmethod
+    def _requires_manual_input(cls, evidence: EvidenceIndex) -> bool:
+        return any(
+            str(item.get("code", "")) in cls._CONNECTIVITY_GAPS
+            for item in evidence.gaps
+        )
+
+    @staticmethod
+    def _select_tools(
+        frozen_tools: tuple[dict[str, Any], ...],
+    ) -> tuple[dict[str, Any], ...]:
+        ordered = sorted(
+            frozen_tools,
+            key=lambda item: (
+                item["tool_id"] != "db.instance.identity",
+                item["tool_id"] != "db.session.active",
+                item["tool_id"],
+            ),
+        )
+        return tuple(ordered[:2])
+
+    @staticmethod
+    def _expected_identity(
+        evidence: EvidenceIndex, configured_version: str
+    ) -> dict[str, str]:
+        identity = next(
+            (
+                item.value
+                for item in evidence.facts
+                if item.metric_or_fact_type == "db.instance.identity"
+                and isinstance(item.value, dict)
+            ),
+            {},
+        )
+        result = {"configured_version": configured_version}
+        for key in ("product", "instance_name"):
+            if identity.get(key):
+                result[key] = str(identity[key])
+        return result
 
 
 class RootCauseAssessmentHandler:

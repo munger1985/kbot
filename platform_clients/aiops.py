@@ -761,6 +761,62 @@ class AIOpsManagementClient(_BaseAIOpsClient):
             auth_context=auth_context,
         )
 
+    async def get_pending_input(
+        self,
+        run_id: UUID,
+        *,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "GET",
+            f"{INTERNAL_API_V1}/aiops/runs/{run_id}/pending-input",
+            auth_context=auth_context,
+        )
+
+    async def get_hitl_input(
+        self,
+        hitl_id: UUID,
+        *,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "GET",
+            f"{INTERNAL_API_V1}/aiops/hitl/{hitl_id}",
+            auth_context=auth_context,
+        )
+
+    async def respond_hitl(
+        self,
+        hitl_id: UUID,
+        payload: dict[str, Any],
+        *,
+        idempotency_key: str,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "POST",
+            f"{INTERNAL_API_V1}/aiops/hitl/{hitl_id}/response",
+            payload=payload,
+            idempotency_key=idempotency_key,
+            auth_context=auth_context,
+        )
+
+    async def skip_hitl(
+        self,
+        hitl_id: UUID,
+        payload: dict[str, Any],
+        *,
+        idempotency_key: str,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "POST",
+            f"{INTERNAL_API_V1}/aiops/hitl/{hitl_id}/skip",
+            payload=payload,
+            idempotency_key=idempotency_key,
+            auth_context=auth_context,
+        )
+
     async def command(
         self,
         command: OpsCommand,

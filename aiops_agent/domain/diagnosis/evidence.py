@@ -92,6 +92,32 @@ def normalize_evidence_artifacts(
                         "_pointer_prefix": f"/results/{index}",
                     }
                 )
+        elif artifact["schema_version"] == "HITL_OUTCOME.v1":
+            submission = artifact["payload"].get("submission")
+            if submission:
+                for index, result in enumerate(
+                    submission.get("results", [])
+                ):
+                    expanded.append(
+                        {
+                            "artifact_id": artifact["artifact_id"],
+                            "schema_version": (
+                                "USER_PROVIDED_DB_RESULT.v1"
+                            ),
+                            "payload": result,
+                            "_pointer_prefix": (
+                                f"/submission/results/{index}"
+                            ),
+                        }
+                    )
+            elif artifact["payload"].get("gap_code"):
+                gaps.append(
+                    {
+                        "code": artifact["payload"]["gap_code"],
+                        "detail": "用户人工诊断数据未提供",
+                        "retryable": False,
+                    }
+                )
         elif artifact["schema_version"] == "EVIDENCE_INDEX.v1":
             expanded.append(artifact)
         else:
@@ -253,6 +279,50 @@ def normalize_evidence_artifacts(
                             f"数据库工具 {observation['tool_id']} 返回"
                             f"记录：{_safe_row_summary(row_value)}"
                         ),
+                    )
+                )
+        elif schema == "USER_PROVIDED_DB_RESULT.v1":
+            if payload.get("status") != "SUCCEEDED":
+                gaps.append(
+                    {
+                        "code": "USER_RESULT_UNAVAILABLE",
+                        "query_id": payload.get("query_id"),
+                        "detail": payload.get("error")
+                        or "用户未提供该查询结果",
+                        "retryable": False,
+                    }
+                )
+                continue
+            prefix = artifact.get("_pointer_prefix", "")
+            columns = payload.get("columns", [])
+            source_group = f"user:{artifact_id}:{payload['query_id']}"
+            for row_index, row in enumerate(payload.get("rows", [])):
+                row_value = dict(zip(columns, row, strict=True))
+                pointer = f"{prefix}/rows/{row_index}"
+                basis = {
+                    "artifact_id": artifact_id,
+                    "pointer": pointer,
+                    "value": row_value,
+                }
+                facts.append(
+                    EvidenceFact(
+                        fact_id=_digest(basis),
+                        source_artifact_id=artifact_id,
+                        source_json_pointer=pointer,
+                        source_type="USER_RESULT",
+                        source_group_id=source_group,
+                        trust_level="USER_PROVIDED",
+                        target_id=target_id,
+                        observed_subject=target_id,
+                        metric_or_fact_type=payload["query_id"],
+                        value=row_value,
+                        quality_flags=tuple(
+                            payload.get("quality_flags", ())
+                        ),
+                        fact_summary=(
+                            f"用户手工执行 {payload['query_id']} 返回记录："
+                            f"{_safe_row_summary(row_value)}"
+                        )[:2000],
                     )
                 )
     facts = list({item.fact_id: item for item in facts}.values())

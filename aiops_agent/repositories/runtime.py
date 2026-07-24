@@ -207,6 +207,15 @@ class OpsRunRepository(AIOpsRepository):
         )
         return (await self._session.execute(statement)).scalar_one_or_none()
 
+    async def get_artifact(
+        self, *, artifact_id: UUID
+    ) -> OpsArtifactEntity | None:
+        self._check_active()
+        statement = select(OpsArtifactEntity).where(
+            OpsArtifactEntity.artifact_id == artifact_id
+        )
+        return (await self._session.execute(statement)).scalar_one_or_none()
+
     async def get_event_by_key(
         self, *, ops_run_id: UUID, event_key: str
     ) -> OpsRunEventEntity | None:

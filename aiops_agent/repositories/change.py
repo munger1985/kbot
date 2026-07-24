@@ -4,7 +4,7 @@ from collections.abc import Callable, Collection
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import Select, select, update
+from sqlalchemy import Select, literal_column, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aiops_agent.entities import (
@@ -33,6 +33,19 @@ class ChangeRepository(AIOpsRepository):
 
     async def add_hitl(self, entity: HitlEntity) -> HitlEntity:
         return await self._add(entity)
+
+    async def get_hitl_by_idempotency(
+        self,
+        *,
+        ops_run_id: UUID,
+        idempotency_key: str,
+    ) -> HitlEntity | None:
+        self._check_active()
+        statement = select(HitlEntity).where(
+            HitlEntity.ops_run_id == ops_run_id,
+            HitlEntity.idempotency_key == idempotency_key,
+        )
+        return (await self._session.execute(statement)).scalar_one_or_none()
 
     async def add_approval_token(
         self, entity: ApprovalTokenEntity
@@ -110,6 +123,52 @@ class ChangeRepository(AIOpsRepository):
             HitlEntity.ops_task_id == ops_task_id,
             HitlEntity.request_type == request_type,
             HitlEntity.status == "PENDING",
+        )
+        if lock:
+            statement = statement.with_for_update()
+        return (await self._session.execute(statement)).scalar_one_or_none()
+
+    async def get_pending_hitl_for_run(
+        self,
+        *,
+        ops_run_id: UUID,
+        assignee_user_id: str,
+        lock: bool = False,
+    ) -> HitlEntity | None:
+        self._check_active()
+        statement: Select = (
+            select(HitlEntity)
+            .where(
+                HitlEntity.ops_run_id == ops_run_id,
+                HitlEntity.assignee_user_id == assignee_user_id,
+                HitlEntity.status == "PENDING",
+            )
+            .order_by(HitlEntity.requested_at.desc())
+        )
+        if lock:
+            statement = statement.with_for_update()
+        return (await self._session.execute(statement)).scalars().first()
+
+    async def find_expired_hitl(self) -> HitlEntity | None:
+        self._check_active()
+        statement = (
+            select(HitlEntity)
+            .where(
+                HitlEntity.status == "PENDING",
+                HitlEntity.expires_at
+                <= literal_column("SYSTIMESTAMP"),
+            )
+            .order_by(HitlEntity.expires_at, HitlEntity.hitl_id)
+            .limit(1)
+        )
+        return (await self._session.execute(statement)).scalars().first()
+
+    async def get_hitl(
+        self, *, hitl_id: UUID, lock: bool = False
+    ) -> HitlEntity | None:
+        self._check_active()
+        statement: Select = select(HitlEntity).where(
+            HitlEntity.hitl_id == hitl_id
         )
         if lock:
             statement = statement.with_for_update()

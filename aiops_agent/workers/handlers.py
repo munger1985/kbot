@@ -28,6 +28,8 @@ class TaskExecutionContext:
     plan_snapshot: dict[str, Any]
     policy_snapshot: dict[str, Any]
     input_artifacts: tuple[dict[str, Any], ...]
+    actor_id: str = ""
+    original_request: str = ""
     lease_token: str = ""
     lease_until: str = ""
 
@@ -255,6 +257,7 @@ def create_runtime_handler_registry(
             DiagnosisScopeHandler,
             EvidenceRequestValidatorHandler,
             GroundingVerificationHandler,
+            InteractiveDiagnosisHandler,
             KnowledgeCitationHandler,
             RootCauseAssessmentHandler,
             SolutionDraftHandler,
@@ -326,6 +329,15 @@ def create_runtime_handler_registry(
                     implementation=DiagnosisRoundAssessmentHandler(
                         model_client=diagnosis_model_client,
                         prompts=diagnosis_prompt_registry,
+                    ),
+                ),
+                HandlerManifest(
+                    handler_id="diagnosis.interactive",
+                    version="1",
+                    output_schema_version="HITL_OUTCOME.v1",
+                    idempotent=True,
+                    implementation=InteractiveDiagnosisHandler(
+                        registry=diagnostic_registry
                     ),
                 ),
                 HandlerManifest(

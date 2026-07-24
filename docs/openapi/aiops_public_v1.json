@@ -558,6 +558,15 @@
         "title": "HitlStatus",
         "type": "string"
       },
+      "HitlType": {
+        "enum": [
+          "DATA_REQUIRED",
+          "MANUAL_DIAGNOSTIC_SQL",
+          "CHANGE_APPROVAL"
+        ],
+        "title": "HitlType",
+        "type": "string"
+      },
       "InspectionPlanCreate": {
         "additionalProperties": false,
         "properties": {
@@ -2114,6 +2123,68 @@
         "title": "OpsRunSummary",
         "type": "object"
       },
+      "PendingInputView": {
+        "additionalProperties": false,
+        "properties": {
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "hitl_id": {
+            "format": "uuid",
+            "title": "Hitl Id",
+            "type": "string"
+          },
+          "hitl_type": {
+            "$ref": "#/components/schemas/HitlType"
+          },
+          "ops_run_id": {
+            "format": "uuid",
+            "title": "Ops Run Id",
+            "type": "string"
+          },
+          "request": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request"
+          },
+          "request_artifact": {
+            "$ref": "#/components/schemas/ArtifactRef"
+          },
+          "row_version": {
+            "minimum": 1.0,
+            "title": "Row Version",
+            "type": "integer"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/HitlStatus"
+          }
+        },
+        "required": [
+          "hitl_id",
+          "ops_run_id",
+          "hitl_type",
+          "status",
+          "request_artifact",
+          "expires_at",
+          "row_version"
+        ],
+        "title": "PendingInputView",
+        "type": "object"
+      },
       "PolicyCreate": {
         "additionalProperties": false,
         "properties": {
@@ -3376,9 +3447,9 @@
         ]
       }
     },
-    "/api/v1/ops/hitl/{hitl_id}/responses": {
-      "post": {
-        "operationId": "answer_hitl_api_v1_ops_hitl__hitl_id__responses_post",
+    "/api/v1/ops/hitl/{hitl_id}": {
+      "get": {
+        "operationId": "get_hitl_input_api_v1_ops_hitl__hitl_id__get",
         "parameters": [
           {
             "in": "path",
@@ -3387,6 +3458,58 @@
             "schema": {
               "format": "uuid",
               "title": "Hitl Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PendingInputView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Hitl Input",
+        "tags": [
+          "AIOps"
+        ]
+      }
+    },
+    "/api/v1/ops/hitl/{hitl_id}/response": {
+      "post": {
+        "operationId": "respond_hitl_api_v1_ops_hitl__hitl_id__response_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "hitl_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Hitl Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "title": "Idempotency-Key",
               "type": "string"
             }
           }
@@ -3423,7 +3546,78 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Answer Hitl"
+        "summary": "Respond Hitl",
+        "tags": [
+          "AIOps"
+        ]
+      }
+    },
+    "/api/v1/ops/hitl/{hitl_id}/skip": {
+      "post": {
+        "operationId": "skip_hitl_api_v1_ops_hitl__hitl_id__skip_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "hitl_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Hitl Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HitlResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Skip Hitl",
+        "tags": [
+          "AIOps"
+        ]
       }
     },
     "/api/v1/ops/inspection-plans": {
@@ -5120,6 +5314,49 @@
           }
         },
         "summary": "Stream Ops Run Events",
+        "tags": [
+          "AIOps"
+        ]
+      }
+    },
+    "/api/v1/ops/runs/{run_id}/pending-input": {
+      "get": {
+        "operationId": "get_pending_input_api_v1_ops_runs__run_id__pending_input_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PendingInputView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Pending Input",
         "tags": [
           "AIOps"
         ]

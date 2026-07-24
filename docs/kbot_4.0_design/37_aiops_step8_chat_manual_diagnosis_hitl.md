@@ -1,5 +1,25 @@
 # AIOps 步骤 8：Chat 人工补证与可恢复 HITL
 
+## 当前实现结果
+
+步骤 8 的首期主链路已于 2026-07-24 落地：`diagnosis.root-cause`
+在最终根因判断前增加 `diagnosis.interactive`、最终 Evidence Index 和人工证据后
+Assessment。只有 `CHAT` 且自动数据库取证因连接、Secret、Endpoint 或超时失败，
+并且诊断仍为 `INCONCLUSIVE` 时，确定性 Handler 才创建
+`MANUAL_SQL_REQUEST.v1`；Alert、Schedule 和 API 不会等待用户。
+
+Worker 返回 `INPUT_SUSPENSION.v1` 后，运行内核在同一 UoW 写入请求 Artifact 和
+`KBOT_OPS_HITL`，将 Task/Run 原子迁移为 `WAITING_INPUT` 并清除 Lease。Portal
+通过详情 API 读取 SQL；SSE 只携带 HITL、有效期和 Artifact 引用。用户提交的内联
+CSV/JSON 会校验完整 Query 集合、精确列、行数、64 KiB 上限、实例版本/已知实例
+身份，并中和公式前缀。接受后以 `USER_PROVIDED` 写入 `HITL_OUTCOME.v1`，恢复同一
+Run，重建 Evidence 并重新评估根因。Skip 和 Reconciler Expiry 都写入明确 Gap 后
+继续收敛。
+
+首期只展示 Diagnostic Catalog 中已评审的 SQL，只接收内联 CSV/JSON。模型临时
+SQL、`DATA_REQUIRED` 表单、对象存储 UploadPort、内容扫描和更强数据库唯一身份查询
+仍是后续增强项；`upload_id` 会被稳定拒绝，不能绕过内联校验进入模型。
+
 ## 目标与边界
 
 本步骤只为 `TRIGGER_TYPE=CHAT` 实现 `DATA_REQUIRED` 和 `MANUAL_DIAGNOSTIC_SQL`。当监控与已登记只读工具仍不足、目标数据库不可连接、权限不足或目录缺少必要诊断能力时，AIOps 可以请求当前对话用户补充上下文，或在目标数据库上手工执行受控只读 SQL 并回贴结果。
@@ -47,8 +67,8 @@ CREATE_INPUT_REQUEST
           ↓
 VALIDATE_AND_ACCEPT_RESPONSE
   ├─ Response/Gap Artifact
-  ├─ HITL → ANSWERED/CANCELLED/EXPIRED
-  ├─ waiting Task → SUCCEEDED/EXPIRED
+  ├─ HITL → ANSWERED/SKIPPED/EXPIRED
+  ├─ waiting Task → SUCCEEDED
   ├─ Run → DIAGNOSING
   └─ 创建 Normalize/Evidence Index/Next Round Task
 ```
@@ -133,7 +153,7 @@ Catalog SQL 通过专用 `ManualSqlRenderer` 生成可复制语句，值使用�
 ```text
 POST /api/v1/ops/hitl/{hitl_id}/uploads
 POST /api/v1/ops/hitl/{hitl_id}/uploads/{upload_id}/complete
-POST /api/v1/ops/hitl/{hitl_id}/responses
+POST /api/v1/ops/hitl/{hitl_id}/response
 POST /api/v1/ops/hitl/{hitl_id}/skip
 ```
 
@@ -172,7 +192,7 @@ POST /api/v1/ops/hitl/{hitl_id}/skip
 
 `skip` 表示放弃当前补证但继续生成现有证据下的报告：
 
-- HITL → `CANCELLED`，`RESPONSE_JSON` 保存结构化 Skip 原因；
+- HITL → `SKIPPED`，`RESPONSE_JSON` 保存结构化 Skip 原因；
 - 等待 Task 以 `HITL_SKIPPED.v1/EVIDENCE_GAP.v1` 正常收敛；
 - Run 回到 `DIAGNOSING` 并直接进入最终评估。
 
@@ -211,7 +231,7 @@ GET  /api/v1/ops/runs/{run_id}/pending-input
 GET  /api/v1/ops/hitl/{hitl_id}
 POST /api/v1/ops/hitl/{hitl_id}/uploads
 POST /api/v1/ops/hitl/{hitl_id}/uploads/{upload_id}/complete
-POST /api/v1/ops/hitl/{hitl_id}/responses
+POST /api/v1/ops/hitl/{hitl_id}/response
 POST /api/v1/ops/hitl/{hitl_id}/skip
 ```
 

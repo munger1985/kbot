@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from datetime import datetime, timedelta
 from typing import Any
 from uuid import UUID
@@ -33,6 +34,7 @@ from aiops_agent.domain.states import (
     DomainOpsTaskStatus,
 )
 from aiops_agent.entities import (
+    HitlEntity,
     OpsArtifactEntity,
     OpsRunEntity,
     OpsTaskEntity,
@@ -45,6 +47,12 @@ from aiops_agent.orchestration import (
     build_monitor_observe_blueprint,
 )
 from aiops_agent.orchestration.diagnosis import DiagnosisPromptRegistry
+from aiops_agent.orchestration.hitl import normalize_inline_response
+from aiops_agent.contracts.hitl import (
+    HitlOutcome,
+    ManualSqlRequest,
+    UserDiagnosticSubmission,
+)
 from aiops_agent.diagnostics.registry import DiagnosticRegistry
 from aiops_agent.workers.handlers import HandlerRegistry
 from platform_core.contracts.aiops import (
@@ -57,11 +65,17 @@ from platform_core.contracts.aiops import (
     LeasedArtifact,
     OpsRunEventPage,
     OpsRunEventView,
+    SuspendOpsTaskCommand,
     TaskLease,
     TaskMutationReceipt,
 )
 from platform_core.contracts.aiops.internal import OpsRunReceipt
-from platform_core.contracts.aiops.public import OpsRunSummary
+from platform_core.contracts.aiops.public import (
+    HitlResponse,
+    HitlResult,
+    OpsRunSummary,
+    PendingInputView,
+)
 from platform_core.contracts.aiops.types import ArtifactRef
 from platform_core.identity import uuid7
 
@@ -564,11 +578,9 @@ class AIOpsRuntimeService:
                     "retryable": False,
                 }
             )
-        prerequisites = (
+        catalog_eligible = (
             access_allowed
             and policy_allowed
-            and bool(target.diagnostic_secret_ref)
-            and bool(target.endpoint_json)
             and bool(target.version_code)
         )
         requested = requested_tool_ids or (
@@ -577,7 +589,7 @@ class AIOpsRuntimeService:
             "db.session.blocking_chain",
             "db.storage.capacity",
         )
-        if prerequisites:
+        if catalog_eligible:
             for tool_id in requested:
                 try:
                     tool = self._diagnostic_registry.resolve(
@@ -1091,6 +1103,192 @@ class AIOpsRuntimeService:
                 run, task, int(event.sequence_no), artifact.artifact_id
             )
 
+    async def suspend_task_for_input(
+        self, command: SuspendOpsTaskCommand
+    ) -> TaskMutationReceipt:
+        """在同一事务中持久化请求 Artifact、HITL，并挂起 Run/Task。"""
+        async with self._uow_factory() as uow:
+            now = await uow.runs.database_now()
+            run, task = await self._lock_run_task(uow, command.task_id)
+            event_key = f"hitl:{command.hitl_id}:requested"
+            artifact_key = f"hitl:{command.hitl_id}:request"
+            prior = await uow.runs.get_event_by_key(
+                ops_run_id=run.ops_run_id,
+                event_key=event_key,
+            )
+            existing = await uow.runs.get_artifact_by_key(
+                ops_run_id=run.ops_run_id,
+                artifact_key=artifact_key,
+            )
+            if prior is not None and existing is not None:
+                return self._mutation_receipt(
+                    run,
+                    task,
+                    int(prior.sequence_no),
+                    existing.artifact_id,
+                )
+            prior_hitl = await uow.changes.get_hitl_by_idempotency(
+                ops_run_id=run.ops_run_id,
+                idempotency_key=command.idempotency_key,
+            )
+            if prior_hitl is not None:
+                prior_artifacts = list(
+                    prior_hitl.input_artifacts_json or []
+                )
+                prior_artifact = (
+                    await uow.runs.get_artifact(
+                        artifact_id=UUID(str(prior_artifacts[0]))
+                    )
+                    if len(prior_artifacts) == 1
+                    else None
+                )
+                prior_event = await uow.runs.get_event_by_key(
+                    ops_run_id=run.ops_run_id,
+                    event_key=f"hitl:{prior_hitl.hitl_id}:requested",
+                )
+                if prior_artifact is None or prior_event is None:
+                    raise state_conflict("HITL 幂等记录不完整")
+                if (
+                    prior_hitl.request_type != command.request_type
+                    or prior_hitl.assignee_user_id
+                    != command.assignee_user_id
+                    or prior_artifact.content_hash
+                    != sha256_json(command.request_artifact.payload)
+                ):
+                    raise _runtime_error(
+                        "OPS_IDEMPOTENCY_CONFLICT",
+                        "相同 HITL 幂等键对应的请求内容不同",
+                    )
+                return self._mutation_receipt(
+                    run,
+                    task,
+                    int(prior_event.sequence_no),
+                    prior_artifact.artifact_id,
+                )
+            self._ensure_lease(
+                run=run,
+                task=task,
+                worker_id=command.worker_id,
+                lease_token=command.lease_token,
+                now=now,
+            )
+            if run.trigger_type != "CHAT":
+                raise _runtime_error(
+                    "OPS_HITL_TRIGGER_FORBIDDEN",
+                    "只有聊天触发的诊断 Run 可以等待用户补充数据",
+                    status_code=422,
+                )
+            if (
+                command.request_type
+                not in {"DATA_REQUIRED", "MANUAL_DIAGNOSTIC_SQL"}
+                or command.assignee_user_id != run.actor_id
+            ):
+                raise _runtime_error(
+                    "OPS_HITL_REQUEST_INVALID",
+                    "人工补证类型或受理用户无效",
+                    status_code=422,
+                )
+            if command.expires_at <= now:
+                raise _runtime_error(
+                    "OPS_HITL_EXPIRED",
+                    "人工补证请求的有效期已结束",
+                    status_code=422,
+                )
+            content = command.request_artifact.payload
+            if content is None:
+                raise _runtime_error(
+                    "OPS_HITL_REQUEST_INVALID",
+                    "人工补证请求必须使用内联 Artifact",
+                    status_code=422,
+                )
+            content_hash = sha256_json(content)
+            artifact = await uow.runs.add_artifact(
+                OpsArtifactEntity(
+                    ops_run_id=run.ops_run_id,
+                    ops_task_id=task.ops_task_id,
+                    artifact_key=artifact_key,
+                    artifact_type=command.request_artifact.artifact_type,
+                    schema_version=command.request_artifact.schema_version,
+                    payload_json=content,
+                    content_hash=content_hash,
+                    byte_size=len(canonical_bytes(content)),
+                    provenance_json={
+                        **command.request_artifact.provenance,
+                        "producer": command.request_artifact.producer,
+                        "producer_version": (
+                            command.request_artifact.producer_version
+                        ),
+                    },
+                    trust_level=command.request_artifact.trust_level,
+                    security_level=(
+                        command.request_artifact.security_level
+                    ),
+                )
+            )
+            await uow.changes.add_hitl(
+                HitlEntity(
+                    hitl_id=command.hitl_id,
+                    ops_run_id=run.ops_run_id,
+                    ops_task_id=task.ops_task_id,
+                    request_type=command.request_type,
+                    assignee_user_id=command.assignee_user_id,
+                    prompt_text=command.prompt_text,
+                    response_schema_json=command.response_schema,
+                    input_artifacts_json=[str(artifact.artifact_id)],
+                    status="PENDING",
+                    idempotency_key=command.idempotency_key,
+                    requested_by=command.request_artifact.producer,
+                    requested_at=now,
+                    expires_at=command.expires_at,
+                )
+            )
+            ensure_task_transition(
+                DomainOpsTaskStatus(task.status),
+                DomainOpsTaskStatus.WAITING_INPUT,
+            )
+            task.status = DomainOpsTaskStatus.WAITING_INPUT.value
+            self._clear_lease(task)
+            ensure_run_transition(
+                DomainOpsRunStatus(run.status),
+                DomainOpsRunStatus.WAITING_INPUT,
+            )
+            run.status = DomainOpsRunStatus.WAITING_INPUT.value
+            await uow.runs.append_event(
+                ops_run_id=run.ops_run_id,
+                ops_task_id=task.ops_task_id,
+                event_type="artifact.created",
+                event_key=f"artifact:{command.hitl_id}:request",
+                visibility="INTERNAL",
+                payload_json={
+                    "artifact_id": str(artifact.artifact_id),
+                    "artifact_type": artifact.artifact_type,
+                    "schema_version": artifact.schema_version,
+                    "content_hash": artifact.content_hash,
+                    "trace_id": command.trace_id,
+                },
+            )
+            event = await uow.runs.append_event(
+                ops_run_id=run.ops_run_id,
+                ops_task_id=task.ops_task_id,
+                event_type="diagnostic.input_required",
+                event_key=event_key,
+                visibility="USER",
+                payload_json={
+                    "hitl_id": str(command.hitl_id),
+                    "hitl_type": command.request_type,
+                    "request_artifact_id": str(artifact.artifact_id),
+                    "expires_at": command.expires_at.isoformat(),
+                    "trace_id": command.trace_id,
+                },
+            )
+            await uow.commit()
+            return self._mutation_receipt(
+                run,
+                task,
+                int(event.sequence_no),
+                artifact.artifact_id,
+            )
+
     @staticmethod
     async def _reduce_database_health(
         *, uow, run, payload: dict[str, Any], now: datetime
@@ -1505,6 +1703,90 @@ class AIOpsRuntimeService:
                 )
                 await uow.commit()
                 return True
+            expired_hitl = await uow.changes.find_expired_hitl()
+            if expired_hitl is not None:
+                preliminary = await uow.runs.get_task(
+                    ops_task_id=expired_hitl.ops_task_id
+                )
+                if preliminary is None:
+                    raise state_conflict("过期 HITL 对应的 Task 不存在")
+                run = await uow.runs.get_run(
+                    ops_run_id=preliminary.ops_run_id, lock=True
+                )
+                task = await uow.runs.get_task(
+                    ops_task_id=preliminary.ops_task_id, lock=True
+                )
+                hitl = await uow.changes.get_hitl(
+                    hitl_id=expired_hitl.hitl_id, lock=True
+                )
+                if (
+                    run is None
+                    or task is None
+                    or hitl is None
+                    or hitl.status != "PENDING"
+                    or hitl.expires_at > now
+                ):
+                    return False
+                payload = HitlOutcome(
+                    hitl_id=str(hitl.hitl_id),
+                    status="EXPIRED",
+                    gap_code="MANUAL_DIAGNOSTIC_EXPIRED",
+                ).model_dump(mode="json")
+                artifact = await uow.runs.add_artifact(
+                    OpsArtifactEntity(
+                        ops_run_id=run.ops_run_id,
+                        ops_task_id=task.ops_task_id,
+                        artifact_key=self._artifact_key(task),
+                        artifact_type="HITL_OUTCOME",
+                        schema_version="HITL_OUTCOME.v1",
+                        payload_json=payload,
+                        content_hash=sha256_json(payload),
+                        byte_size=len(canonical_bytes(payload)),
+                        provenance_json={
+                            "producer": "aiops.reconciler",
+                            "producer_version": "1",
+                        },
+                        trust_level="SOURCE_VERIFIED",
+                        security_level=1,
+                    )
+                )
+                hitl.status = "EXPIRED"
+                hitl.responded_by = "aiops.reconciler"
+                hitl.responded_at = now
+                hitl.response_json = {
+                    "reason": "MANUAL_DIAGNOSTIC_EXPIRED"
+                }
+                hitl.response_hash = sha256_json(hitl.response_json)
+                ensure_task_transition(
+                    DomainOpsTaskStatus(task.status),
+                    DomainOpsTaskStatus.SUCCEEDED,
+                )
+                task.status = DomainOpsTaskStatus.SUCCEEDED.value
+                task.output_artifact_id = artifact.artifact_id
+                task.completed_at = now
+                ensure_run_transition(
+                    DomainOpsRunStatus(run.status),
+                    DomainOpsRunStatus.DIAGNOSING,
+                )
+                run.status = DomainOpsRunStatus.DIAGNOSING.value
+                tasks = await uow.runs.list_tasks(
+                    ops_run_id=run.ops_run_id, lock=True
+                )
+                self._release_successors(tasks, now=now)
+                await uow.runs.append_event(
+                    ops_run_id=run.ops_run_id,
+                    ops_task_id=task.ops_task_id,
+                    event_type="diagnostic.input_expired",
+                    event_key=f"hitl:{hitl.hitl_id}:expired",
+                    visibility="USER",
+                    payload_json={
+                        "hitl_id": str(hitl.hitl_id),
+                        "status": "EXPIRED",
+                        "trace_id": trace_id,
+                    },
+                )
+                await uow.commit()
+                return True
             task = await uow.runs.lock_expired_task(now=now)
             if task is not None:
                 run = await uow.runs.get_run(
@@ -1684,6 +1966,292 @@ class AIOpsRuntimeService:
                 completed_at=run.completed_at,
             )
 
+    async def get_pending_input(
+        self,
+        *,
+        ops_run_id: UUID,
+        app_id: int,
+        domain_id: int,
+        actor_id: str,
+    ) -> PendingInputView:
+        async with self._uow_factory() as uow:
+            run = await uow.runs.get_run_scoped(
+                ops_run_id=ops_run_id,
+                app_id=app_id,
+                domain_id=domain_id,
+            )
+            if run is None or run.actor_id != actor_id:
+                raise resource_not_found("待补充数据")
+            hitl = await uow.changes.get_pending_hitl_for_run(
+                ops_run_id=ops_run_id,
+                assignee_user_id=actor_id,
+            )
+            if hitl is None:
+                raise resource_not_found("待补充数据")
+            return await self._pending_input_view(uow, hitl)
+
+    async def get_hitl_input(
+        self,
+        *,
+        hitl_id: UUID,
+        app_id: int,
+        domain_id: int,
+        actor_id: str,
+    ) -> PendingInputView:
+        async with self._uow_factory() as uow:
+            hitl = await uow.changes.get_hitl_scoped(
+                hitl_id=hitl_id,
+                app_id=app_id,
+                domain_id=domain_id,
+            )
+            if (
+                hitl is None
+                or hitl.assignee_user_id != actor_id
+                or hitl.status != "PENDING"
+            ):
+                raise resource_not_found("待补充数据")
+            return await self._pending_input_view(uow, hitl)
+
+    async def respond_hitl(
+        self,
+        *,
+        hitl_id: UUID,
+        app_id: int,
+        domain_id: int,
+        actor_id: str,
+        response: HitlResponse,
+        idempotency_key: str,
+        trace_id: str,
+    ) -> HitlResult:
+        """校验用户结果并恢复原 Run，不创建新的诊断 Run。"""
+        async with self._uow_factory() as uow:
+            now = await uow.runs.database_now()
+            preliminary_hitl = await uow.changes.get_hitl_scoped(
+                hitl_id=hitl_id,
+                app_id=app_id,
+                domain_id=domain_id,
+            )
+            if (
+                preliminary_hitl is None
+                or preliminary_hitl.assignee_user_id != actor_id
+            ):
+                raise resource_not_found("待补充数据")
+            run = await uow.runs.get_run(
+                ops_run_id=preliminary_hitl.ops_run_id, lock=True
+            )
+            task = await uow.runs.get_task(
+                ops_task_id=preliminary_hitl.ops_task_id, lock=True
+            )
+            hitl = await uow.changes.get_hitl(
+                hitl_id=hitl_id, lock=True
+            )
+            if (
+                task is None
+                or run is None
+                or hitl is None
+                or run.actor_id != actor_id
+            ):
+                raise resource_not_found("待补充数据")
+            request_artifact = await self._hitl_request_artifact(
+                uow, hitl
+            )
+            request = ManualSqlRequest.model_validate(
+                request_artifact.payload_json
+            )
+            normalized = self._normalize_hitl_response(
+                hitl_id=hitl_id,
+                request=request,
+                response=response,
+            )
+            submitted_payload = {
+                "hitl_id": str(hitl_id),
+                "responses": [
+                    item.model_dump(mode="json") for item in normalized
+                ],
+                "note": response.note,
+            }
+            response_hash = sha256_json(submitted_payload)
+            artifact_key = self._artifact_key(task)
+            if hitl.status == "ANSWERED":
+                if hitl.response_hash != response_hash:
+                    raise _runtime_error(
+                        "OPS_IDEMPOTENCY_CONFLICT",
+                        "该人工补证请求已经用不同内容答复",
+                    )
+                existing = await uow.runs.get_artifact_by_key(
+                    ops_run_id=run.ops_run_id,
+                    artifact_key=artifact_key,
+                )
+                if existing is None:
+                    raise state_conflict("人工补证结果 Artifact 不存在")
+                return HitlResult(
+                    hitl_id=hitl.hitl_id,
+                    status="ANSWERED",
+                    row_version=int(hitl.row_version),
+                    accepted_artifact=self._artifact_ref(existing),
+                )
+            if hitl.status != "PENDING":
+                raise state_conflict("人工补证请求当前不能答复")
+            if int(hitl.row_version) != response.expected_row_version:
+                raise _runtime_error(
+                    "OPS_ROW_VERSION_CHANGED",
+                    "人工补证请求版本已变化",
+                    status_code=412,
+                )
+            if hitl.expires_at <= now:
+                raise _runtime_error(
+                    "OPS_HITL_EXPIRED",
+                    "人工补证请求已经过期",
+                    status_code=410,
+                )
+            if task.status != DomainOpsTaskStatus.WAITING_INPUT.value:
+                raise state_conflict("人工补证 Task 未处于等待状态")
+            submission_body = {
+                "hitl_id": str(hitl_id),
+                "submitted_by": actor_id,
+                "submitted_at": now,
+                "target_display_name": request.target_display_name,
+                "used_readonly_account": True,
+                "note": response.note,
+                "results": [
+                    item.model_dump(mode="json") for item in normalized
+                ],
+            }
+            submission = UserDiagnosticSubmission(
+                **submission_body,
+                submission_sha256=sha256_json(submission_body),
+            )
+            outcome = HitlOutcome(
+                hitl_id=str(hitl_id),
+                status="ANSWERED",
+                submission=submission.model_dump(mode="json"),
+            )
+            outcome_payload = outcome.model_dump(mode="json")
+            artifact = await uow.runs.add_artifact(
+                OpsArtifactEntity(
+                    ops_run_id=run.ops_run_id,
+                    ops_task_id=task.ops_task_id,
+                    artifact_key=artifact_key,
+                    artifact_type="HITL_OUTCOME",
+                    schema_version="HITL_OUTCOME.v1",
+                    payload_json=outcome_payload,
+                    content_hash=sha256_json(outcome_payload),
+                    byte_size=len(canonical_bytes(outcome_payload)),
+                    provenance_json={
+                        "producer": "user",
+                        "producer_version": "manual-result.v1",
+                        "actor_id": actor_id,
+                        "idempotency_key": idempotency_key,
+                    },
+                    trust_level="USER_PROVIDED",
+                    security_level=1,
+                )
+            )
+            changed = await uow.changes.answer_hitl(
+                hitl_id=hitl.hitl_id,
+                expected_version=int(hitl.row_version),
+                allowed_statuses=("PENDING",),
+                new_status="ANSWERED",
+                responded_by=actor_id,
+                responded_at=now,
+                response_json=submitted_payload,
+                response_uri=None,
+                response_hash=response_hash,
+            )
+            if not changed:
+                raise _runtime_error(
+                    "OPS_ROW_VERSION_CHANGED",
+                    "人工补证请求版本已变化",
+                    status_code=412,
+                )
+            ensure_task_transition(
+                DomainOpsTaskStatus(task.status),
+                DomainOpsTaskStatus.SUCCEEDED,
+            )
+            task.status = DomainOpsTaskStatus.SUCCEEDED.value
+            task.output_artifact_id = artifact.artifact_id
+            task.completed_at = now
+            ensure_run_transition(
+                DomainOpsRunStatus(run.status),
+                DomainOpsRunStatus.DIAGNOSING,
+            )
+            run.status = DomainOpsRunStatus.DIAGNOSING.value
+            tasks = await uow.runs.list_tasks(
+                ops_run_id=run.ops_run_id, lock=True
+            )
+            released = self._release_successors(tasks, now=now)
+            await uow.runs.append_event(
+                ops_run_id=run.ops_run_id,
+                ops_task_id=task.ops_task_id,
+                event_type="diagnostic.input_received",
+                event_key=f"hitl:{hitl.hitl_id}:answered",
+                visibility="USER",
+                payload_json={
+                    "hitl_id": str(hitl.hitl_id),
+                    "status": "ANSWERED",
+                    "accepted_artifact_id": str(artifact.artifact_id),
+                    "trace_id": trace_id,
+                },
+            )
+            for successor in released:
+                await uow.runs.append_event(
+                    ops_run_id=run.ops_run_id,
+                    ops_task_id=successor.ops_task_id,
+                    event_type="task.status",
+                    event_key=(
+                        f"task:{successor.ops_task_id}:ready:"
+                        f"{int(successor.attempt_count)}"
+                    ),
+                    visibility="USER",
+                    payload_json={
+                        "status": "READY",
+                        "task_id": str(successor.ops_task_id),
+                        "task_type": successor.task_type,
+                        "trace_id": trace_id,
+                    },
+                )
+            await uow.commit()
+            return HitlResult(
+                hitl_id=hitl.hitl_id,
+                status="ANSWERED",
+                row_version=int(hitl.row_version) + 1,
+                accepted_artifact=self._artifact_ref(artifact),
+            )
+
+    async def skip_hitl(
+        self,
+        *,
+        hitl_id: UUID,
+        app_id: int,
+        domain_id: int,
+        actor_id: str,
+        expected_row_version: int,
+        idempotency_key: str,
+        trace_id: str,
+    ) -> HitlResult:
+        """跳过补证时写入受控 Gap，并继续完成同一个 Run。"""
+        response = HitlResponse(
+            expected_row_version=expected_row_version,
+            responses=(
+                {
+                    "query_id": "__all__",
+                    "status": "SKIPPED",
+                    "format": "TEXT",
+                    "error": "用户选择跳过人工补证",
+                },
+            ),
+            note="用户选择跳过人工补证",
+        )
+        return await self._finish_skipped_hitl(
+            hitl_id=hitl_id,
+            app_id=app_id,
+            domain_id=domain_id,
+            actor_id=actor_id,
+            response=response,
+            idempotency_key=idempotency_key,
+            trace_id=trace_id,
+        )
+
     async def list_events(
         self,
         *,
@@ -1737,6 +2305,267 @@ class AIOpsRuntimeService:
                 terminal=DomainOpsRunStatus(run.status)
                 in TERMINAL_RUN_STATUSES,
             )
+
+    async def _finish_skipped_hitl(
+        self,
+        *,
+        hitl_id: UUID,
+        app_id: int,
+        domain_id: int,
+        actor_id: str,
+        response: HitlResponse,
+        idempotency_key: str,
+        trace_id: str,
+    ) -> HitlResult:
+        async with self._uow_factory() as uow:
+            now = await uow.runs.database_now()
+            preliminary_hitl = await uow.changes.get_hitl_scoped(
+                hitl_id=hitl_id,
+                app_id=app_id,
+                domain_id=domain_id,
+            )
+            if (
+                preliminary_hitl is None
+                or preliminary_hitl.assignee_user_id != actor_id
+            ):
+                raise resource_not_found("待补充数据")
+            run = await uow.runs.get_run(
+                ops_run_id=preliminary_hitl.ops_run_id, lock=True
+            )
+            task = await uow.runs.get_task(
+                ops_task_id=preliminary_hitl.ops_task_id, lock=True
+            )
+            hitl = await uow.changes.get_hitl(
+                hitl_id=hitl_id, lock=True
+            )
+            if (
+                task is None
+                or run is None
+                or hitl is None
+                or run.actor_id != actor_id
+            ):
+                raise resource_not_found("待补充数据")
+            response_payload = response.model_dump(mode="json")
+            response_hash = sha256_json(response_payload)
+            artifact_key = self._artifact_key(task)
+            if hitl.status == "SKIPPED":
+                if hitl.response_hash != response_hash:
+                    raise _runtime_error(
+                        "OPS_IDEMPOTENCY_CONFLICT",
+                        "该人工补证请求已经用不同内容跳过",
+                    )
+                existing = await uow.runs.get_artifact_by_key(
+                    ops_run_id=run.ops_run_id,
+                    artifact_key=artifact_key,
+                )
+                if existing is None:
+                    raise state_conflict("人工补证结果 Artifact 不存在")
+                return HitlResult(
+                    hitl_id=hitl.hitl_id,
+                    status="SKIPPED",
+                    row_version=int(hitl.row_version),
+                    accepted_artifact=self._artifact_ref(existing),
+                )
+            if (
+                hitl.status != "PENDING"
+                or task.status
+                != DomainOpsTaskStatus.WAITING_INPUT.value
+            ):
+                raise state_conflict("人工补证请求当前不能跳过")
+            if int(hitl.row_version) != response.expected_row_version:
+                raise _runtime_error(
+                    "OPS_ROW_VERSION_CHANGED",
+                    "人工补证请求版本已变化",
+                    status_code=412,
+                )
+            outcome = HitlOutcome(
+                hitl_id=str(hitl_id),
+                status="SKIPPED",
+                gap_code="USER_SKIPPED_MANUAL_DIAGNOSTIC",
+            )
+            payload = outcome.model_dump(mode="json")
+            artifact = await uow.runs.add_artifact(
+                OpsArtifactEntity(
+                    ops_run_id=run.ops_run_id,
+                    ops_task_id=task.ops_task_id,
+                    artifact_key=artifact_key,
+                    artifact_type="HITL_OUTCOME",
+                    schema_version="HITL_OUTCOME.v1",
+                    payload_json=payload,
+                    content_hash=sha256_json(payload),
+                    byte_size=len(canonical_bytes(payload)),
+                    provenance_json={
+                        "producer": "user",
+                        "producer_version": "manual-result.v1",
+                        "actor_id": actor_id,
+                        "idempotency_key": idempotency_key,
+                    },
+                    trust_level="USER_PROVIDED",
+                    security_level=1,
+                )
+            )
+            changed = await uow.changes.answer_hitl(
+                hitl_id=hitl.hitl_id,
+                expected_version=int(hitl.row_version),
+                allowed_statuses=("PENDING",),
+                new_status="SKIPPED",
+                responded_by=actor_id,
+                responded_at=now,
+                response_json=response_payload,
+                response_uri=None,
+                response_hash=response_hash,
+            )
+            if not changed:
+                raise _runtime_error(
+                    "OPS_ROW_VERSION_CHANGED",
+                    "人工补证请求版本已变化",
+                    status_code=412,
+                )
+            ensure_task_transition(
+                DomainOpsTaskStatus(task.status),
+                DomainOpsTaskStatus.SUCCEEDED,
+            )
+            task.status = DomainOpsTaskStatus.SUCCEEDED.value
+            task.output_artifact_id = artifact.artifact_id
+            task.completed_at = now
+            ensure_run_transition(
+                DomainOpsRunStatus(run.status),
+                DomainOpsRunStatus.DIAGNOSING,
+            )
+            run.status = DomainOpsRunStatus.DIAGNOSING.value
+            tasks = await uow.runs.list_tasks(
+                ops_run_id=run.ops_run_id, lock=True
+            )
+            self._release_successors(tasks, now=now)
+            await uow.runs.append_event(
+                ops_run_id=run.ops_run_id,
+                ops_task_id=task.ops_task_id,
+                event_type="diagnostic.input_skipped",
+                event_key=f"hitl:{hitl.hitl_id}:skipped",
+                visibility="USER",
+                payload_json={
+                    "hitl_id": str(hitl.hitl_id),
+                    "status": "SKIPPED",
+                    "trace_id": trace_id,
+                },
+            )
+            await uow.commit()
+            return HitlResult(
+                hitl_id=hitl.hitl_id,
+                status="SKIPPED",
+                row_version=int(hitl.row_version) + 1,
+                accepted_artifact=self._artifact_ref(artifact),
+            )
+
+    async def _pending_input_view(self, uow, hitl) -> PendingInputView:
+        artifact = await self._hitl_request_artifact(uow, hitl)
+        return PendingInputView(
+            hitl_id=hitl.hitl_id,
+            ops_run_id=hitl.ops_run_id,
+            hitl_type=hitl.request_type,
+            status=hitl.status,
+            request_artifact=self._artifact_ref(artifact),
+            request=dict(artifact.payload_json or {}),
+            expires_at=hitl.expires_at,
+            row_version=int(hitl.row_version),
+        )
+
+    @staticmethod
+    async def _hitl_request_artifact(uow, hitl):
+        references = list(hitl.input_artifacts_json or [])
+        if len(references) != 1:
+            raise state_conflict("人工补证请求 Artifact 引用无效")
+        artifact = await uow.runs.get_artifact(
+            artifact_id=UUID(str(references[0]))
+        )
+        if (
+            artifact is None
+            or artifact.ops_run_id != hitl.ops_run_id
+            or artifact.schema_version != "MANUAL_SQL_REQUEST.v1"
+        ):
+            raise state_conflict("人工补证请求 Artifact 不存在或类型无效")
+        return artifact
+
+    @staticmethod
+    def _normalize_hitl_response(
+        *,
+        hitl_id: UUID,
+        request: ManualSqlRequest,
+        response: HitlResponse,
+    ):
+        expected = {item.query_id: item for item in request.queries}
+        received = {item.query_id: item for item in response.responses}
+        if len(received) != len(response.responses) or set(received) != set(
+            expected
+        ):
+            raise validation_failed("人工结果必须逐条对应请求中的 Query ID")
+        normalized = []
+        for query_id, query in expected.items():
+            item = received[query_id]
+            if item.upload_id is not None:
+                raise validation_failed(
+                    "当前版本仅支持内联 CSV/JSON，尚未开放文件上传"
+                )
+            try:
+                normalized.append(
+                    normalize_inline_response(
+                        hitl_id=str(hitl_id),
+                        query_id=query_id,
+                        status=str(item.status),
+                        result_format=str(item.format),
+                        inline_data=item.inline_data,
+                        error=item.error,
+                        expected_columns=query.expected_columns,
+                        max_rows=query.max_rows,
+                    )
+                )
+            except (ValueError, json.JSONDecodeError) as exc:
+                raise validation_failed(str(exc)) from exc
+        identity = next(
+            (
+                item
+                for item in normalized
+                if item.query_id == "db.instance.identity"
+            ),
+            None,
+        )
+        if identity is not None and identity.status == "SUCCEEDED":
+            if len(identity.rows) != 1:
+                raise validation_failed("实例身份查询必须只返回一行")
+            version_index = identity.columns.index("version")
+            configured = request.expected_instance_identity.get(
+                "configured_version", ""
+            )
+            configured_major = next(
+                iter(re.findall(r"\d+", configured)), ""
+            )
+            returned_major = next(
+                iter(re.findall(r"\d+", str(identity.rows[0][version_index]))),
+                "",
+            )
+            if (
+                configured_major
+                and returned_major
+                and configured_major != returned_major
+            ):
+                raise validation_failed("人工结果来自不同数据库版本")
+            row = dict(
+                zip(identity.columns, identity.rows[0], strict=True)
+            )
+            for key in ("product", "instance_name"):
+                expected_value = request.expected_instance_identity.get(key)
+                if expected_value and str(row.get(key)) != expected_value:
+                    raise validation_failed("人工结果来自不同数据库实例")
+        return tuple(normalized)
+
+    @staticmethod
+    def _artifact_ref(artifact) -> ArtifactRef:
+        return ArtifactRef(
+            artifact_id=artifact.artifact_id,
+            artifact_type=artifact.artifact_type,
+            schema_version=artifact.schema_version,
+            content_hash=artifact.content_hash,
+        )
 
     async def _lock_run_task(self, uow, task_id: UUID):
         preliminary = await uow.runs.get_task(ops_task_id=task_id)

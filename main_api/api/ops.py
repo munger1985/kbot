@@ -28,6 +28,9 @@ from platform_core.contracts.aiops import (
     AgentBindingView,
     CancelRunCommand,
     HealthCheckReceipt,
+    HitlResponse,
+    HitlResult,
+    HitlSkipCommand,
     InspectionPlanCreate,
     InspectionPlanDetail,
     InspectionPlanPage,
@@ -46,6 +49,7 @@ from platform_core.contracts.aiops import (
     OpsRunCreate,
     OpsRunReceipt,
     OpsRunSummary,
+    PendingInputView,
     PolicyCreate,
     PolicyDetail,
     PolicyPage,
@@ -116,7 +120,7 @@ async def create_ops_run(
         trigger_type="CHAT",
         input=body.input,
         session_id=body.session_id,
-        blueprint_id="monitor.observe-report",
+        blueprint_id="diagnosis.root-cause",
         blueprint_version="1",
         observation_start=body.observation_start,
         observation_end=body.observation_end,
@@ -148,6 +152,80 @@ async def get_ops_run(
     result = OpsRunSummary.model_validate(payload)
     response.headers["ETag"] = f'"rv-{result.row_version}"'
     return result
+
+
+@router.get(
+    "/runs/{run_id}/pending-input",
+    response_model=PendingInputView,
+)
+async def get_pending_input(
+    run_id: UUID,
+    request: Request,
+    response: Response,
+) -> PendingInputView:
+    payload = await _client(request).get_pending_input(
+        run_id, auth_context=request.state.auth_context
+    )
+    return _validated(PendingInputView, payload, response)
+
+
+@router.get("/hitl/{hitl_id}", response_model=PendingInputView)
+async def get_hitl_input(
+    hitl_id: UUID,
+    request: Request,
+    response: Response,
+) -> PendingInputView:
+    payload = await _client(request).get_hitl_input(
+        hitl_id, auth_context=request.state.auth_context
+    )
+    return _validated(PendingInputView, payload, response)
+
+
+@router.post("/hitl/{hitl_id}/response", response_model=HitlResult)
+async def respond_hitl(
+    hitl_id: UUID,
+    body: HitlResponse,
+    request: Request,
+    response: Response,
+    idempotency_key: IdempotencyKey,
+) -> HitlResult:
+    payload = await _client(request).respond_hitl(
+        hitl_id,
+        body.model_dump(mode="json"),
+        idempotency_key=idempotency_key,
+        auth_context=request.state.auth_context,
+    )
+    return _validated(HitlResult, payload, response)
+
+
+@router.post("/hitl/{hitl_id}/skip", response_model=HitlResult)
+async def skip_hitl(
+    hitl_id: UUID,
+    request: Request,
+    response: Response,
+    idempotency_key: IdempotencyKey,
+    if_match: IfMatch,
+) -> HitlResult:
+    try:
+        expected = int(
+            if_match.removeprefix('"rv-').removesuffix('"')
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "OPS_ETAG_INVALID",
+                "message": "If-Match 格式必须为 \"rv-<version>\"",
+            },
+        ) from exc
+    body = HitlSkipCommand(expected_row_version=expected)
+    payload = await _client(request).skip_hitl(
+        hitl_id,
+        body.model_dump(mode="json"),
+        idempotency_key=idempotency_key,
+        auth_context=request.state.auth_context,
+    )
+    return _validated(HitlResult, payload, response)
 
 
 @router.post("/runs/{run_id}/cancel", response_model=OpsRunReceipt)
