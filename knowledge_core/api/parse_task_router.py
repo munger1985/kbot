@@ -17,7 +17,7 @@ router = APIRouter(
 )
 
 
-class ClaimRequest(BaseModel):
+class ParseClaimRequest(BaseModel):
     worker_id: str = Field(min_length=1, max_length=256)
     max_tasks: int = Field(default=1, ge=1, le=32)
     lease_seconds: int = Field(default=120, ge=30, le=3600)
@@ -89,7 +89,7 @@ class FailRequest(BaseModel):
 
 
 @router.post("/claim")
-async def claim_parse_tasks(payload: ClaimRequest, request: Request):
+async def claim_parse_tasks(payload: ParseClaimRequest, request: Request):
     try:
         tasks = await request.app.state.kc_parse_task_service.claim(
             ParseTaskClaim(payload.worker_id, payload.max_tasks, payload.lease_seconds)

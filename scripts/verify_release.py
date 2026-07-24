@@ -113,6 +113,11 @@ def _checks(
             120,
         ),
         (
+            "openapi_contracts",
+            [python, "scripts/check_openapi_contracts.py"],
+            120,
+        ),
+        (
             "supply_chain_baseline",
             [python, "scripts/check_supply_chain.py"],
             120,

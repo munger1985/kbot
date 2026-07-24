@@ -22,6 +22,11 @@ class ReleaseVerifierTest(unittest.TestCase):
             manifest,
         )
         self.assertIn("docs/openapi/aiops_internal_v1.json", manifest)
+        self.assertIn("docs/openapi/main_api_public_v1.json", manifest)
+        self.assertIn(
+            "docs/openapi/knowledge_core_internal_v1.json",
+            manifest,
+        )
         self.assertIn("configuration/process_topology.toml", manifest)
         self.assertIn("release/sbom/python-direct.cdx.json", manifest)
         self.assertTrue(

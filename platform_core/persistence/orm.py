@@ -5,13 +5,13 @@ from uuid import UUID
 
 from sqlalchemy import DateTime, Dialect, LargeBinary, Text, TypeDecorator
 import array as array_module
-from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.dialects.oracle import (
     RAW,
     TIMESTAMP as ORA_TIMESTAMP,
     VECTOR as ORA_VECTOR,
 )
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+from sqlalchemy.orm import declarative_base
 
 
 BaseEntity = declarative_base()

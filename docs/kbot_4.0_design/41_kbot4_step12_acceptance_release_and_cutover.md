@@ -16,10 +16,11 @@
 - Parser Golden Manifest 评测脚本和示例；
 - 五个服务、17 份按顺序执行的 Oracle 全量建库脚本，AIOps 额外冻结
   Schema Manifest；
-- AIOps Public/Internal/Executor OpenAPI Snapshot；
+- Main API、Knowledge Core、Agent Runtime、四个 Model Serving 进程和 AIOps
+  共 10 个可确定性重建的 OpenAPI Snapshot；
 - `scripts/verify_release.py` 统一执行 Active Package 编译、架构边界、DDL 契约、
-  Entity 表所有权、14 进程拓扑、配置/Example/Secret 契约、AIOps Catalog 和
-  全量测试，并输出
+  Entity 表所有权、14 进程拓扑、配置/Example/Secret 契约、OpenAPI 漂移、
+  AIOps Catalog 和全量测试，并输出
   `KBotReleaseEvidence.v1` JSON；
 - `requirements.txt` 直接依赖精确锁定、受跟踪文件 Secret Scan 和直接依赖
   CycloneDX SBOM；

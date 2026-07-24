@@ -1,0 +1,789 @@
+{
+  "components": {
+    "schemas": {
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "ModelCreateRequest": {
+        "properties": {
+          "api_endpoint": {
+            "anyOf": [
+              {
+                "maxLength": 1024,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Endpoint"
+          },
+          "api_key": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key"
+          },
+          "category": {
+            "exclusiveMinimum": 0.0,
+            "title": "Category",
+            "type": "integer"
+          },
+          "descs": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Descs"
+          },
+          "display_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "embedding_dimension": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embedding Dimension"
+          },
+          "model_params": {
+            "additionalProperties": true,
+            "title": "Model Params",
+            "type": "object"
+          },
+          "provider": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Provider",
+            "type": "string"
+          },
+          "provider_model_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Provider Model Name",
+            "type": "string"
+          },
+          "served_model_name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+            "title": "Served Model Name",
+            "type": "string"
+          },
+          "status": {
+            "default": 0,
+            "maximum": 2.0,
+            "minimum": 0.0,
+            "title": "Status",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "served_model_name",
+          "display_name",
+          "provider_model_name",
+          "category",
+          "provider"
+        ],
+        "title": "ModelCreateRequest",
+        "type": "object"
+      },
+      "ModelUpdateRequest": {
+        "properties": {
+          "api_endpoint": {
+            "anyOf": [
+              {
+                "maxLength": 1024,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Endpoint"
+          },
+          "api_key": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key"
+          },
+          "descs": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Descs"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "maximum": 2.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          }
+        },
+        "title": "ModelUpdateRequest",
+        "type": "object"
+      },
+      "OpenAIVLMRequest": {
+        "description": "OpenAI 兼容的多模态对话请求。",
+        "properties": {
+          "frequency_penalty": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frequency Penalty"
+          },
+          "max_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Tokens"
+          },
+          "messages": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Messages",
+            "type": "array"
+          },
+          "model": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Model",
+            "type": "string"
+          },
+          "presence_penalty": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Presence Penalty"
+          },
+          "stream": {
+            "default": false,
+            "title": "Stream",
+            "type": "boolean"
+          },
+          "temperature": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Temperature"
+          },
+          "timeout": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timeout"
+          },
+          "top_p": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Top P"
+          }
+        },
+        "required": [
+          "model",
+          "messages"
+        ],
+        "title": "OpenAIVLMRequest",
+        "type": "object"
+      },
+      "VLMRequest": {
+        "description": "VLM inference request model\n\nRequest schema for Vision-Language Model inference requests, supporting both\nstreaming and non-streaming responses with configurable sampling parameters.",
+        "properties": {
+          "frequency_penalty": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Frequency penalty (reduces repetition)",
+            "title": "Frequency Penalty"
+          },
+          "max_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Maximum number of tokens to generate",
+            "title": "Max Tokens"
+          },
+          "messages": {
+            "description": "List of messages containing text/image content",
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Messages",
+            "type": "array"
+          },
+          "presence_penalty": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Presence penalty (reduces topic repetition)",
+            "title": "Presence Penalty"
+          },
+          "served_model_name": {
+            "description": "Name of the model to use for inference",
+            "title": "Served Model Name",
+            "type": "string"
+          },
+          "stream": {
+            "default": false,
+            "description": "Whether to return response as a stream",
+            "title": "Stream",
+            "type": "boolean"
+          },
+          "temperature": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Sampling temperature (0.0-1.0, lower = more deterministic)",
+            "title": "Temperature"
+          },
+          "timeout": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Request timeout in seconds",
+            "title": "Timeout"
+          },
+          "top_p": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Top-p sampling parameter",
+            "title": "Top P"
+          }
+        },
+        "required": [
+          "served_model_name",
+          "messages"
+        ],
+        "title": "VLMRequest",
+        "type": "object"
+      },
+      "VLMResponse": {
+        "description": "VLM inference response model (OpenAI-compatible)\n\nResponse schema matching OpenAI's chat completion format with additional\ncustom fields for processing metrics.",
+        "properties": {
+          "choices": {
+            "description": "List containing the response message(s)",
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Choices",
+            "type": "array"
+          },
+          "created": {
+            "description": "Unix timestamp when the response was created",
+            "title": "Created",
+            "type": "integer"
+          },
+          "id": {
+            "description": "Unique identifier for the response stream",
+            "title": "Id",
+            "type": "string"
+          },
+          "model": {
+            "description": "Name of the model that generated the response",
+            "title": "Model",
+            "type": "string"
+          },
+          "object": {
+            "default": "chat.completion",
+            "description": "Object type, always 'chat.completion'",
+            "title": "Object",
+            "type": "string"
+          },
+          "usage": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "description": "Token usage statistics including prompt_tokens, completion_tokens, and total_tokens",
+            "title": "Usage",
+            "type": "object"
+          }
+        },
+        "required": [
+          "model",
+          "choices",
+          "usage"
+        ],
+        "title": "VLMResponse",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "description": "Provides multimodal vision-language model inference service",
+    "title": "VLM Microservice",
+    "version": "4.0.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v1/chat/completions": {
+      "post": {
+        "description": "把 OpenAI 多模态请求映射为内部 VLM 契约。",
+        "operationId": "openai_vlm_chat_completions_api_v1_chat_completions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OpenAIVLMRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Openai Vlm Chat Completions",
+        "tags": [
+          "OpenAI Compatible"
+        ]
+      }
+    },
+    "/api/v1/models": {
+      "get": {
+        "operationId": "list_models_api_v1_models_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Models Api V1 Models Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Models",
+        "tags": [
+          "OpenAI Compatible"
+        ]
+      }
+    },
+    "/health": {
+      "get": {
+        "description": "System health check.",
+        "operationId": "health_check_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Health Check Health Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health Check",
+        "tags": [
+          "System"
+        ]
+      }
+    },
+    "/internal/v1/inference": {
+      "post": {
+        "description": "Execute VLM inference tasks.\n\nSupports single return and SSE streaming return. Follows OpenAI chat completion API specifications.\n\nArgs:\n    request: Request body containing model, message stream (including images), and sampling parameters.\n    service: VLM business logic service.\n\nReturns:\n    JSON response or SSE text stream.",
+        "operationId": "run_vlm_inference_internal_v1_inference_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VLMRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VLMResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Run Vlm Inference",
+        "tags": [
+          "Inference"
+        ]
+      }
+    },
+    "/internal/v1/models": {
+      "get": {
+        "operationId": "list_models_internal_v1_models_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Models",
+        "tags": [
+          "Model Configuration"
+        ]
+      },
+      "post": {
+        "operationId": "create_model_internal_v1_models_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Model",
+        "tags": [
+          "Model Configuration"
+        ]
+      }
+    },
+    "/internal/v1/models/{model_id}": {
+      "delete": {
+        "operationId": "archive_model_internal_v1_models__model_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "model_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Model Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Archive Model",
+        "tags": [
+          "Model Configuration"
+        ]
+      },
+      "get": {
+        "operationId": "get_model_internal_v1_models__model_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "model_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Model Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Model",
+        "tags": [
+          "Model Configuration"
+        ]
+      },
+      "patch": {
+        "operationId": "update_model_internal_v1_models__model_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "model_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Model Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Model",
+        "tags": [
+          "Model Configuration"
+        ]
+      }
+    }
+  }
+}

@@ -12,7 +12,7 @@ router = APIRouter(
 )
 
 
-class ClaimRequest(BaseModel):
+class PurgeClaimRequest(BaseModel):
     worker_id: str = Field(min_length=1, max_length=256)
     max_tasks: int = Field(default=1, ge=1, le=32)
     lease_seconds: int = Field(default=600, ge=30, le=3600)
@@ -28,7 +28,7 @@ class LeaseRequest(RunRequest):
 
 
 @router.post("/claim")
-async def claim(payload: ClaimRequest, request: Request):
+async def claim(payload: PurgeClaimRequest, request: Request):
     try:
         tasks = await request.app.state.kc_purge_service.claim(ParseTaskClaim(**payload.model_dump()))
     except ValueError as exc:

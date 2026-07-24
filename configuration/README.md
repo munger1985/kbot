@@ -67,3 +67,7 @@ Pydantic 模型，并且配置声明的 Secret 环境变量均已收录于 `.env
 `requirements.txt` 中的直接依赖全部精确锁定且不重复，验证直接依赖 CycloneDX
 SBOM，并扫描受 Git 跟踪文件中的常见 Secret 与敏感文件类型。依赖变化后使用
 `python scripts/check_supply_chain.py --write-sbom` 更新直接依赖 SBOM。
+
+API 契约变化后使用 `python scripts/check_openapi_contracts.py --write` 重建全部
+10 个受管理 OpenAPI 快照，再执行不带 `--write` 的命令检查契约漂移与
+Public/Internal 路径边界。生成过程不会启动 Lifespan、连接数据库或加载模型。

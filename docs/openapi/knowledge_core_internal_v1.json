@@ -1,0 +1,2873 @@
+{
+  "components": {
+    "schemas": {
+      "ArtifactUploadRequest": {
+        "properties": {
+          "generator": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Generator",
+            "type": "string"
+          },
+          "input_fingerprint": {
+            "title": "Input Fingerprint",
+            "type": "string"
+          },
+          "payload": {
+            "title": "Payload"
+          },
+          "schema_name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Schema Name",
+            "type": "string"
+          },
+          "sha256": {
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Sha256",
+            "type": "string"
+          },
+          "worker_id": {
+            "title": "Worker Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "worker_id",
+          "input_fingerprint",
+          "sha256",
+          "schema_name",
+          "generator",
+          "payload"
+        ],
+        "title": "ArtifactUploadRequest",
+        "type": "object"
+      },
+      "BindingRequest": {
+        "properties": {
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "title": "BindingRequest",
+        "type": "object"
+      },
+      "CollectionStatusRequest": {
+        "properties": {
+          "status": {
+            "pattern": "^(ACTIVE|DISABLED)$",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "CollectionStatusRequest",
+        "type": "object"
+      },
+      "CompleteRequest": {
+        "properties": {
+          "artifact_manifest": {
+            "additionalProperties": true,
+            "title": "Artifact Manifest",
+            "type": "object"
+          },
+          "input_fingerprint": {
+            "title": "Input Fingerprint",
+            "type": "string"
+          },
+          "output_fingerprint": {
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Output Fingerprint",
+            "type": "string"
+          },
+          "quality_report": {
+            "additionalProperties": true,
+            "title": "Quality Report",
+            "type": "object"
+          },
+          "quality_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quality Score"
+          },
+          "worker_id": {
+            "title": "Worker Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "worker_id",
+          "input_fingerprint",
+          "artifact_manifest",
+          "output_fingerprint",
+          "quality_report"
+        ],
+        "title": "CompleteRequest",
+        "type": "object"
+      },
+      "CreateCollectionRequest": {
+        "properties": {
+          "collection_key": {
+            "pattern": "^[a-z][a-z0-9_-]{1,63}$",
+            "title": "Collection Key",
+            "type": "string"
+          },
+          "default_security_level": {
+            "default": 1,
+            "maximum": 999.0,
+            "minimum": 0.0,
+            "title": "Default Security Level",
+            "type": "integer"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "display_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "embedding_model_id": {
+            "format": "uuid",
+            "title": "Embedding Model Id",
+            "type": "string"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "title": "Metadata",
+            "type": "object"
+          }
+        },
+        "required": [
+          "collection_key",
+          "display_name",
+          "embedding_model_id"
+        ],
+        "title": "CreateCollectionRequest",
+        "type": "object"
+      },
+      "DiscoverySearchRequest": {
+        "properties": {
+          "agent_id": {
+            "format": "uuid",
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "collection_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 128,
+            "minItems": 1,
+            "title": "Collection Ids",
+            "type": "array"
+          },
+          "domain_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Domain Id",
+            "type": "integer"
+          },
+          "max_security_level": {
+            "default": 3,
+            "maximum": 3.0,
+            "minimum": 0.0,
+            "title": "Max Security Level",
+            "type": "integer"
+          },
+          "per_channel_limit": {
+            "default": 20,
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Per Channel Limit",
+            "type": "integer"
+          },
+          "per_collection_limit": {
+            "default": 20,
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Per Collection Limit",
+            "type": "integer"
+          },
+          "query": {
+            "maxLength": 8000,
+            "minLength": 1,
+            "title": "Query",
+            "type": "string"
+          },
+          "query_vectors": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "items": {
+                    "type": "number"
+                  },
+                  "type": "array"
+                },
+                "propertyNames": {
+                  "format": "uuid"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Query Vectors"
+          }
+        },
+        "required": [
+          "domain_id",
+          "agent_id",
+          "query",
+          "collection_ids"
+        ],
+        "title": "DiscoverySearchRequest",
+        "type": "object"
+      },
+      "EvidenceBatchRequest": {
+        "properties": {
+          "input_fingerprint": {
+            "title": "Input Fingerprint",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceItemRequest"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "worker_id": {
+            "title": "Worker Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "worker_id",
+          "input_fingerprint",
+          "items"
+        ],
+        "title": "EvidenceBatchRequest",
+        "type": "object"
+      },
+      "EvidenceCandidateRequest": {
+        "properties": {
+          "bundle_id": {
+            "format": "uuid",
+            "title": "Bundle Id",
+            "type": "string"
+          },
+          "bundle_revision_id": {
+            "format": "uuid",
+            "title": "Bundle Revision Id",
+            "type": "string"
+          },
+          "collection_id": {
+            "format": "uuid",
+            "title": "Collection Id",
+            "type": "string"
+          },
+          "document_version_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 128,
+            "title": "Document Version Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "collection_id",
+          "bundle_id",
+          "bundle_revision_id"
+        ],
+        "title": "EvidenceCandidateRequest",
+        "type": "object"
+      },
+      "EvidenceItemRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "content_text": {
+            "title": "Content Text",
+            "type": "string"
+          },
+          "evidence_key": {
+            "title": "Evidence Key",
+            "type": "string"
+          },
+          "evidence_type": {
+            "title": "Evidence Type",
+            "type": "string"
+          },
+          "fragment_index": {
+            "minimum": 0.0,
+            "title": "Fragment Index",
+            "type": "integer"
+          },
+          "heading_level": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Heading Level"
+          },
+          "heading_path": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Heading Path"
+          },
+          "hierarchy_depth": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hierarchy Depth"
+          },
+          "language_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language Code"
+          },
+          "locator": {
+            "additionalProperties": true,
+            "title": "Locator",
+            "type": "object"
+          },
+          "locator_schema_version": {
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Locator Schema Version",
+            "type": "string"
+          },
+          "ordinal": {
+            "title": "Ordinal",
+            "type": "integer"
+          },
+          "page_end": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page End"
+          },
+          "page_start": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page Start"
+          },
+          "parent_evidence_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Evidence Key"
+          },
+          "payload_descriptor": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payload Descriptor"
+          },
+          "provenance": {
+            "additionalProperties": true,
+            "title": "Provenance",
+            "type": "object"
+          },
+          "quality_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quality Score"
+          },
+          "section_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Section Key"
+          },
+          "source_item_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Item Ref"
+          },
+          "source_spans": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "minItems": 1,
+            "title": "Source Spans",
+            "type": "array"
+          },
+          "token_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Token Count"
+          }
+        },
+        "required": [
+          "evidence_key",
+          "evidence_type",
+          "ordinal",
+          "fragment_index",
+          "content_text",
+          "source_spans",
+          "locator_schema_version",
+          "locator",
+          "provenance"
+        ],
+        "title": "EvidenceItemRequest",
+        "type": "object"
+      },
+      "EvidenceSearchRequest": {
+        "properties": {
+          "agent_id": {
+            "format": "uuid",
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceCandidateRequest"
+            },
+            "maxItems": 128,
+            "minItems": 1,
+            "title": "Candidates",
+            "type": "array"
+          },
+          "context_limit": {
+            "default": 4,
+            "maximum": 20.0,
+            "minimum": 0.0,
+            "title": "Context Limit",
+            "type": "integer"
+          },
+          "domain_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Domain Id",
+            "type": "integer"
+          },
+          "max_evidence": {
+            "default": 12,
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Max Evidence",
+            "type": "integer"
+          },
+          "max_security_level": {
+            "default": 3,
+            "maximum": 3.0,
+            "minimum": 0.0,
+            "title": "Max Security Level",
+            "type": "integer"
+          },
+          "query": {
+            "maxLength": 8000,
+            "minLength": 1,
+            "title": "Query",
+            "type": "string"
+          },
+          "query_vectors": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "items": {
+                    "type": "number"
+                  },
+                  "type": "array"
+                },
+                "propertyNames": {
+                  "format": "uuid"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Query Vectors"
+          }
+        },
+        "required": [
+          "domain_id",
+          "agent_id",
+          "query",
+          "candidates"
+        ],
+        "title": "EvidenceSearchRequest",
+        "type": "object"
+      },
+      "FailRequest": {
+        "properties": {
+          "artifact_manifest": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artifact Manifest"
+          },
+          "failure_class": {
+            "title": "Failure Class",
+            "type": "string"
+          },
+          "failure_code": {
+            "title": "Failure Code",
+            "type": "string"
+          },
+          "failure_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Message"
+          },
+          "input_fingerprint": {
+            "title": "Input Fingerprint",
+            "type": "string"
+          },
+          "worker_id": {
+            "title": "Worker Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "worker_id",
+          "input_fingerprint",
+          "failure_class",
+          "failure_code"
+        ],
+        "title": "FailRequest",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "HeartbeatRequest": {
+        "properties": {
+          "input_fingerprint": {
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Input Fingerprint",
+            "type": "string"
+          },
+          "lease_seconds": {
+            "default": 120,
+            "maximum": 3600.0,
+            "minimum": 30.0,
+            "title": "Lease Seconds",
+            "type": "integer"
+          },
+          "worker_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Worker Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "worker_id",
+          "input_fingerprint"
+        ],
+        "title": "HeartbeatRequest",
+        "type": "object"
+      },
+      "IndexClaimRequest": {
+        "properties": {
+          "lease_seconds": {
+            "default": 120,
+            "maximum": 3600.0,
+            "minimum": 30.0,
+            "title": "Lease Seconds",
+            "type": "integer"
+          },
+          "max_tasks": {
+            "default": 1,
+            "maximum": 32.0,
+            "minimum": 1.0,
+            "title": "Max Tasks",
+            "type": "integer"
+          },
+          "worker_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Worker Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "worker_id"
+        ],
+        "title": "IndexClaimRequest",
+        "type": "object"
+      },
+      "IndexFailRequest": {
+        "properties": {
+          "failure_class": {
+            "maxLength": 16,
+            "minLength": 1,
+            "title": "Failure Class",
+            "type": "string"
+          },
+          "failure_code": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Failure Code",
+            "type": "string"
+          },
+          "failure_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Message"
+          },
+          "input_fingerprint": {
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Input Fingerprint",
+            "type": "string"
+          },
+          "worker_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Worker Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "worker_id",
+          "input_fingerprint",
+          "failure_class",
+          "failure_code"
+        ],
+        "title": "IndexFailRequest",
+        "type": "object"
+      },
+      "IndexHeartbeatRequest": {
+        "properties": {
+          "input_fingerprint": {
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Input Fingerprint",
+            "type": "string"
+          },
+          "lease_seconds": {
+            "default": 120,
+            "maximum": 3600.0,
+            "minimum": 30.0,
+            "title": "Lease Seconds",
+            "type": "integer"
+          },
+          "worker_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Worker Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "worker_id",
+          "input_fingerprint"
+        ],
+        "title": "IndexHeartbeatRequest",
+        "type": "object"
+      },
+      "IndexRunRequest": {
+        "properties": {
+          "batch_size": {
+            "default": 64,
+            "maximum": 500.0,
+            "minimum": 1.0,
+            "title": "Batch Size",
+            "type": "integer"
+          },
+          "input_fingerprint": {
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Input Fingerprint",
+            "type": "string"
+          },
+          "worker_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Worker Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "worker_id",
+          "input_fingerprint"
+        ],
+        "title": "IndexRunRequest",
+        "type": "object"
+      },
+      "LeaseRequest": {
+        "properties": {
+          "input_fingerprint": {
+            "title": "Input Fingerprint",
+            "type": "string"
+          },
+          "lease_seconds": {
+            "default": 600,
+            "maximum": 3600.0,
+            "minimum": 30.0,
+            "title": "Lease Seconds",
+            "type": "integer"
+          },
+          "worker_id": {
+            "title": "Worker Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "worker_id",
+          "input_fingerprint"
+        ],
+        "title": "LeaseRequest",
+        "type": "object"
+      },
+      "ParseClaimRequest": {
+        "properties": {
+          "lease_seconds": {
+            "default": 120,
+            "maximum": 3600.0,
+            "minimum": 30.0,
+            "title": "Lease Seconds",
+            "type": "integer"
+          },
+          "max_tasks": {
+            "default": 1,
+            "maximum": 32.0,
+            "minimum": 1.0,
+            "title": "Max Tasks",
+            "type": "integer"
+          },
+          "worker_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Worker Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "worker_id"
+        ],
+        "title": "ParseClaimRequest",
+        "type": "object"
+      },
+      "ProfileClaimRequest": {
+        "properties": {
+          "lease_seconds": {
+            "default": 120,
+            "maximum": 3600.0,
+            "minimum": 30.0,
+            "title": "Lease Seconds",
+            "type": "integer"
+          },
+          "max_tasks": {
+            "default": 1,
+            "maximum": 32.0,
+            "minimum": 1.0,
+            "title": "Max Tasks",
+            "type": "integer"
+          },
+          "worker_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Worker Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "worker_id"
+        ],
+        "title": "ProfileClaimRequest",
+        "type": "object"
+      },
+      "ProfileFailRequest": {
+        "properties": {
+          "failure_class": {
+            "maxLength": 16,
+            "minLength": 1,
+            "title": "Failure Class",
+            "type": "string"
+          },
+          "failure_code": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Failure Code",
+            "type": "string"
+          },
+          "failure_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Message"
+          },
+          "input_fingerprint": {
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Input Fingerprint",
+            "type": "string"
+          },
+          "worker_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Worker Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "worker_id",
+          "input_fingerprint",
+          "failure_class",
+          "failure_code"
+        ],
+        "title": "ProfileFailRequest",
+        "type": "object"
+      },
+      "ProfileHeartbeatRequest": {
+        "properties": {
+          "input_fingerprint": {
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Input Fingerprint",
+            "type": "string"
+          },
+          "lease_seconds": {
+            "default": 120,
+            "maximum": 3600.0,
+            "minimum": 30.0,
+            "title": "Lease Seconds",
+            "type": "integer"
+          },
+          "worker_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Worker Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "worker_id",
+          "input_fingerprint"
+        ],
+        "title": "ProfileHeartbeatRequest",
+        "type": "object"
+      },
+      "ProfileRunRequest": {
+        "properties": {
+          "input_fingerprint": {
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Input Fingerprint",
+            "type": "string"
+          },
+          "worker_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Worker Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "worker_id",
+          "input_fingerprint"
+        ],
+        "title": "ProfileRunRequest",
+        "type": "object"
+      },
+      "PurgeClaimRequest": {
+        "properties": {
+          "lease_seconds": {
+            "default": 600,
+            "maximum": 3600.0,
+            "minimum": 30.0,
+            "title": "Lease Seconds",
+            "type": "integer"
+          },
+          "max_tasks": {
+            "default": 1,
+            "maximum": 32.0,
+            "minimum": 1.0,
+            "title": "Max Tasks",
+            "type": "integer"
+          },
+          "worker_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Worker Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "worker_id"
+        ],
+        "title": "PurgeClaimRequest",
+        "type": "object"
+      },
+      "RunRequest": {
+        "properties": {
+          "input_fingerprint": {
+            "title": "Input Fingerprint",
+            "type": "string"
+          },
+          "worker_id": {
+            "title": "Worker Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "worker_id",
+          "input_fingerprint"
+        ],
+        "title": "RunRequest",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "description": "Knowledge Core 的内部入库、解析与检索服务边界。",
+    "title": "kbot-knowledge-core-api API",
+    "version": "4.0.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/health": {
+      "get": {
+        "description": "存活检查不访问数据库。",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Health Health Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "存活检查",
+        "tags": [
+          "System"
+        ]
+      }
+    },
+    "/healthz": {
+      "get": {
+        "operationId": "healthz_healthz_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Healthz Healthz Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "存活检查",
+        "tags": [
+          "System"
+        ]
+      }
+    },
+    "/internal/v1/knowledge/discovery/search": {
+      "post": {
+        "operationId": "search_discovery_internal_v1_knowledge_discovery_search_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DiscoverySearchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Search Discovery",
+        "tags": [
+          "Knowledge Core Discovery"
+        ]
+      }
+    },
+    "/internal/v1/knowledge/domains/{domain_id}/agents/{agent_id}/collection-bindings": {
+      "get": {
+        "operationId": "list_agent_bindings_internal_v1_knowledge_domains__domain_id__agents__agent_id__collection_bindings_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "title": "Domain Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Agent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Agent Bindings",
+        "tags": [
+          "Knowledge Core Collections"
+        ]
+      }
+    },
+    "/internal/v1/knowledge/domains/{domain_id}/agents/{agent_id}/collections/{collection_key}/binding": {
+      "delete": {
+        "operationId": "unbind_collection_internal_v1_knowledge_domains__domain_id__agents__agent_id__collections__collection_key__binding_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "title": "Domain Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Agent Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "collection_key",
+            "required": true,
+            "schema": {
+              "title": "Collection Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Unbind Collection",
+        "tags": [
+          "Knowledge Core Collections"
+        ]
+      },
+      "put": {
+        "operationId": "bind_collection_internal_v1_knowledge_domains__domain_id__agents__agent_id__collections__collection_key__binding_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "title": "Domain Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Agent Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "collection_key",
+            "required": true,
+            "schema": {
+              "title": "Collection Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/BindingRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Bind Collection",
+        "tags": [
+          "Knowledge Core Collections"
+        ]
+      }
+    },
+    "/internal/v1/knowledge/domains/{domain_id}/bundles/{bundle_id}": {
+      "get": {
+        "operationId": "get_bundle_status_internal_v1_knowledge_domains__domain_id__bundles__bundle_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "title": "Domain Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "bundle_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Bundle Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Bundle Status",
+        "tags": [
+          "Knowledge Core Status"
+        ]
+      }
+    },
+    "/internal/v1/knowledge/domains/{domain_id}/bundles/{bundle_id}/revisions/{bundle_revision_id}": {
+      "get": {
+        "operationId": "get_revision_status_internal_v1_knowledge_domains__domain_id__bundles__bundle_id__revisions__bundle_revision_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "title": "Domain Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "bundle_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Bundle Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "bundle_revision_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Bundle Revision Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Revision Status",
+        "tags": [
+          "Knowledge Core Status"
+        ]
+      }
+    },
+    "/internal/v1/knowledge/domains/{domain_id}/bundles/{bundle_id}/revisions/{bundle_revision_id}/members": {
+      "get": {
+        "operationId": "get_revision_members_internal_v1_knowledge_domains__domain_id__bundles__bundle_id__revisions__bundle_revision_id__members_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "title": "Domain Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "bundle_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Bundle Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "bundle_revision_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Bundle Revision Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Revision Members",
+        "tags": [
+          "Knowledge Core Status"
+        ]
+      }
+    },
+    "/internal/v1/knowledge/domains/{domain_id}/collections": {
+      "get": {
+        "operationId": "list_collections_internal_v1_knowledge_domains__domain_id__collections_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "title": "Domain Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Collections",
+        "tags": [
+          "Knowledge Core Collections"
+        ]
+      },
+      "post": {
+        "operationId": "create_collection_internal_v1_knowledge_domains__domain_id__collections_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "title": "Domain Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCollectionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Collection",
+        "tags": [
+          "Knowledge Core Collections"
+        ]
+      }
+    },
+    "/internal/v1/knowledge/domains/{domain_id}/collections/{collection_key}": {
+      "delete": {
+        "operationId": "delete_collection_internal_v1_knowledge_domains__domain_id__collections__collection_key__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "title": "Domain Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "collection_key",
+            "required": true,
+            "schema": {
+              "title": "Collection Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Collection",
+        "tags": [
+          "Knowledge Core Collections"
+        ]
+      },
+      "get": {
+        "operationId": "get_collection_internal_v1_knowledge_domains__domain_id__collections__collection_key__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "title": "Domain Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "collection_key",
+            "required": true,
+            "schema": {
+              "title": "Collection Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Collection",
+        "tags": [
+          "Knowledge Core Collections"
+        ]
+      },
+      "patch": {
+        "operationId": "change_collection_status_internal_v1_knowledge_domains__domain_id__collections__collection_key__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "title": "Domain Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "collection_key",
+            "required": true,
+            "schema": {
+              "title": "Collection Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CollectionStatusRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Change Collection Status",
+        "tags": [
+          "Knowledge Core Collections"
+        ]
+      }
+    },
+    "/internal/v1/knowledge/domains/{domain_id}/collections/{collection_key}/ingestions/km-assets": {
+      "post": {
+        "description": "接收一个完整 Asset Bundle；受理成功不代表解析已完成。",
+        "operationId": "ingest_km_asset_internal_v1_knowledge_domains__domain_id__collections__collection_key__ingestions_km_assets_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "title": "Domain Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "collection_key",
+            "required": true,
+            "schema": {
+              "title": "Collection Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Ingest Km Asset",
+        "tags": [
+          "Knowledge Core"
+        ]
+      }
+    },
+    "/internal/v1/knowledge/domains/{domain_id}/collections/{collection_key}/ingestions/user-files": {
+      "post": {
+        "description": "接收多个独立文件或一个显式组合的 Bundle。",
+        "operationId": "ingest_user_files_internal_v1_knowledge_domains__domain_id__collections__collection_key__ingestions_user_files_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "title": "Domain Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "collection_key",
+            "required": true,
+            "schema": {
+              "title": "Collection Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Ingest User Files",
+        "tags": [
+          "Knowledge Core"
+        ]
+      }
+    },
+    "/internal/v1/knowledge/index-tasks/claim": {
+      "post": {
+        "operationId": "claim_index_tasks_internal_v1_knowledge_index_tasks_claim_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IndexClaimRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Claim Index Tasks",
+        "tags": [
+          "Knowledge Core Index"
+        ]
+      }
+    },
+    "/internal/v1/knowledge/index-tasks/{job_id}/fail": {
+      "post": {
+        "operationId": "fail_index_task_internal_v1_knowledge_index_tasks__job_id__fail_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IndexFailRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Fail Index Task",
+        "tags": [
+          "Knowledge Core Index"
+        ]
+      }
+    },
+    "/internal/v1/knowledge/index-tasks/{job_id}/heartbeat": {
+      "post": {
+        "operationId": "heartbeat_index_task_internal_v1_knowledge_index_tasks__job_id__heartbeat_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IndexHeartbeatRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Heartbeat Index Task",
+        "tags": [
+          "Knowledge Core Index"
+        ]
+      }
+    },
+    "/internal/v1/knowledge/index-tasks/{job_id}/run": {
+      "post": {
+        "operationId": "run_index_task_internal_v1_knowledge_index_tasks__job_id__run_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IndexRunRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Run Index Task",
+        "tags": [
+          "Knowledge Core Index"
+        ]
+      }
+    },
+    "/internal/v1/knowledge/parse-tasks/claim": {
+      "post": {
+        "operationId": "claim_parse_tasks_internal_v1_knowledge_parse_tasks_claim_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ParseClaimRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Claim Parse Tasks",
+        "tags": [
+          "Knowledge Core Parser"
+        ]
+      }
+    },
+    "/internal/v1/knowledge/parse-tasks/{job_id}/artifacts/{artifact_name}": {
+      "post": {
+        "operationId": "upload_parse_artifact_internal_v1_knowledge_parse_tasks__job_id__artifacts__artifact_name__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "artifact_name",
+            "required": true,
+            "schema": {
+              "title": "Artifact Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ArtifactUploadRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Upload Parse Artifact",
+        "tags": [
+          "Knowledge Core Parser"
+        ]
+      }
+    },
+    "/internal/v1/knowledge/parse-tasks/{job_id}/complete": {
+      "post": {
+        "operationId": "complete_parse_internal_v1_knowledge_parse_tasks__job_id__complete_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompleteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Complete Parse",
+        "tags": [
+          "Knowledge Core Parser"
+        ]
+      }
+    },
+    "/internal/v1/knowledge/parse-tasks/{job_id}/evidence-batches": {
+      "post": {
+        "operationId": "submit_evidence_internal_v1_knowledge_parse_tasks__job_id__evidence_batches_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EvidenceBatchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Submit Evidence",
+        "tags": [
+          "Knowledge Core Parser"
+        ]
+      }
+    },
+    "/internal/v1/knowledge/parse-tasks/{job_id}/fail": {
+      "post": {
+        "operationId": "fail_parse_internal_v1_knowledge_parse_tasks__job_id__fail_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FailRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Fail Parse",
+        "tags": [
+          "Knowledge Core Parser"
+        ]
+      }
+    },
+    "/internal/v1/knowledge/parse-tasks/{job_id}/heartbeat": {
+      "post": {
+        "operationId": "heartbeat_parse_task_internal_v1_knowledge_parse_tasks__job_id__heartbeat_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HeartbeatRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Heartbeat Parse Task",
+        "tags": [
+          "Knowledge Core Parser"
+        ]
+      }
+    },
+    "/internal/v1/knowledge/parse-tasks/{job_id}/source": {
+      "get": {
+        "operationId": "read_parse_source_internal_v1_knowledge_parse_tasks__job_id__source_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "worker_id",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "title": "Worker Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "input_fingerprint",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 64,
+              "title": "Input Fingerprint",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Parse Source",
+        "tags": [
+          "Knowledge Core Parser"
+        ]
+      }
+    },
+    "/internal/v1/knowledge/profile-tasks/claim": {
+      "post": {
+        "operationId": "claim_profile_tasks_internal_v1_knowledge_profile_tasks_claim_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProfileClaimRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Claim Profile Tasks",
+        "tags": [
+          "Knowledge Core Profile"
+        ]
+      }
+    },
+    "/internal/v1/knowledge/profile-tasks/{job_id}/fail": {
+      "post": {
+        "operationId": "fail_profile_task_internal_v1_knowledge_profile_tasks__job_id__fail_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProfileFailRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Fail Profile Task",
+        "tags": [
+          "Knowledge Core Profile"
+        ]
+      }
+    },
+    "/internal/v1/knowledge/profile-tasks/{job_id}/heartbeat": {
+      "post": {
+        "operationId": "heartbeat_profile_task_internal_v1_knowledge_profile_tasks__job_id__heartbeat_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProfileHeartbeatRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Heartbeat Profile Task",
+        "tags": [
+          "Knowledge Core Profile"
+        ]
+      }
+    },
+    "/internal/v1/knowledge/profile-tasks/{job_id}/run": {
+      "post": {
+        "operationId": "run_profile_task_internal_v1_knowledge_profile_tasks__job_id__run_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProfileRunRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Run Profile Task",
+        "tags": [
+          "Knowledge Core Profile"
+        ]
+      }
+    },
+    "/internal/v1/knowledge/purge-tasks/claim": {
+      "post": {
+        "operationId": "claim_internal_v1_knowledge_purge_tasks_claim_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PurgeClaimRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Claim",
+        "tags": [
+          "Knowledge Core Internal"
+        ]
+      }
+    },
+    "/internal/v1/knowledge/purge-tasks/{job_id}/fail": {
+      "post": {
+        "operationId": "fail_internal_v1_knowledge_purge_tasks__job_id__fail_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Fail",
+        "tags": [
+          "Knowledge Core Internal"
+        ]
+      }
+    },
+    "/internal/v1/knowledge/purge-tasks/{job_id}/heartbeat": {
+      "post": {
+        "operationId": "heartbeat_internal_v1_knowledge_purge_tasks__job_id__heartbeat_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LeaseRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Heartbeat",
+        "tags": [
+          "Knowledge Core Internal"
+        ]
+      }
+    },
+    "/internal/v1/knowledge/purge-tasks/{job_id}/run": {
+      "post": {
+        "operationId": "run_internal_v1_knowledge_purge_tasks__job_id__run_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Run",
+        "tags": [
+          "Knowledge Core Internal"
+        ]
+      }
+    },
+    "/internal/v1/knowledge/retrieval/evidence": {
+      "post": {
+        "operationId": "search_evidence_internal_v1_knowledge_retrieval_evidence_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EvidenceSearchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Search Evidence",
+        "tags": [
+          "Knowledge Core Evidence"
+        ]
+      }
+    },
+    "/readyz": {
+      "get": {
+        "operationId": "readyz_readyz_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Readyz Readyz Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "就绪检查",
+        "tags": [
+          "System"
+        ]
+      }
+    }
+  }
+}
