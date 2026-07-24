@@ -306,6 +306,56 @@
         "title": "ApprovalCommand",
         "type": "object"
       },
+      "ApprovalReceipt": {
+        "additionalProperties": false,
+        "properties": {
+          "approval_token_id": {
+            "format": "uuid",
+            "title": "Approval Token Id",
+            "type": "string"
+          },
+          "authorization_expires_at": {
+            "format": "date-time",
+            "title": "Authorization Expires At",
+            "type": "string"
+          },
+          "execution_id": {
+            "format": "uuid",
+            "title": "Execution Id",
+            "type": "string"
+          },
+          "execution_status": {
+            "const": "CREATED",
+            "title": "Execution Status",
+            "type": "string"
+          },
+          "proposal_id": {
+            "format": "uuid",
+            "title": "Proposal Id",
+            "type": "string"
+          },
+          "proposal_status": {
+            "const": "APPROVED",
+            "title": "Proposal Status",
+            "type": "string"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "proposal_id",
+          "proposal_status",
+          "approval_token_id",
+          "execution_id",
+          "execution_status",
+          "authorization_expires_at"
+        ],
+        "title": "ApprovalReceipt",
+        "type": "object"
+      },
       "ArtifactRef": {
         "additionalProperties": false,
         "properties": {
@@ -5226,6 +5276,15 @@
               "title": "Proposal Id",
               "type": "string"
             }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
           }
         ],
         "requestBody": {
@@ -5242,7 +5301,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ApprovalReceipt"
+                }
               }
             },
             "description": "Successful Response"
@@ -5258,7 +5319,10 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Approve Proposal"
+        "summary": "Approve Proposal",
+        "tags": [
+          "AIOps"
+        ]
       }
     },
     "/api/v1/ops/proposals/{proposal_id}/manual-result": {

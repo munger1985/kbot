@@ -32,8 +32,21 @@
 - Reconciler 将到期的 `ADVISORY_READY/PENDING_APPROVAL` Proposal 收敛为
   `EXPIRED`，回填接口也在事务内拒绝已到期 Proposal。
 
-阶段 9C 再实现逐命令审批、一次性授权、Claim、Mutation Driver、回调对账和
-UNKNOWN 收敛。在这些安全门完成前不得把 Bootstrap 中的执行开关改为配置值。
+阶段 9C1 已完成逐命令审批的持久化安全基线：
+
+- `AGENT_EXECUTE` Proposal 原子创建 `CHANGE_APPROVAL` HITL；诊断 Run 仍按
+  原 DAG 完成，不允许从终态回退到 `EXECUTING`；
+- Approve 事务按 Run → Proposal → HITL → Target/Binding/Policy →
+  Approval Token → Execution 加锁和校验；
+- 审批时重新解析当前 Action Catalog 并比对 Template、Parameter、Command Hash，
+  同时核验 Target 版本、执行凭据、Binding 和当前 Policy；
+- 同一事务创建 `APPROVAL_DECISION.v1`、仅存 Hash 的一次性授权记录、
+  `Execution(CREATED)` 和 Outbox；响应不返回 Token、Nonce、命令或连接信息；
+- 重复审批通过 Idempotency Key、Proposal 唯一约束和并发回放收敛。
+
+9C1 的 Bootstrap 仍将 `mutation_enabled` 硬编码为 `false`。因此可以评测审批
+状态机，但部署无法产生真实执行投递。阶段 9C2/9C3 再实现 Claim、Mutation
+Driver、回调对账和 UNKNOWN 收敛；完成这些安全门后才能解除执行开关。
 
 ## 目标与安全边界
 

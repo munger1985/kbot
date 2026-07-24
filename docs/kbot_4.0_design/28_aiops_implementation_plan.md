@@ -219,7 +219,7 @@ Skip/Expiry、Public/Internal API 和安全 SSE 引用。首期不开放模型�
 
 ## 步骤 9：Advisory 与受控变更
 
-**状态：进行中；阶段 9A/9B Advisory 与只读验证闭环已完成（2026-07-24）。**
+**状态：进行中；阶段 9A/9B 与 9C1 审批基线已完成（2026-07-24）。**
 
 详细设计见 [38_aiops_step9_advisory_approval_and_execution.md](38_aiops_step9_advisory_approval_and_execution.md)。
 
@@ -239,9 +239,10 @@ Mutation 默认通过部署级 Kill Switch 禁用；它只能降低能力，不�
 阶段 9A 已完成严格 Action Catalog、可信 Fact 参数血缘、确定性 Action Plan、
 不可变 Advisory Proposal、权威预览/驳回/人工结果 API。阶段 9B 已完成 Proposal
 Expiry，以及由事务 Outbox 幂等创建的独立只读 Verify Run；验证只接受新采集的
-数据库事实并输出 `ACTION_VERIFICATION.v1`。当前执行能力仍在 Handler 注册处
-硬关闭，尚未创建 Approval Token、Execution 或 Mutation 调用。下一阶段单独实现
-审批与隔离执行。
+数据库事实并输出 `ACTION_VERIFICATION.v1`。阶段 9C1 已完成 `PENDING_APPROVAL`
+HITL、当前配置与 Catalog 复核、一次性授权 Hash、Execution/Outbox 原子创建及审批
+并发幂等；Bootstrap 的 Mutation 门仍硬关闭。下一阶段实现 Executor Claim、短期
+Grant 与隔离执行。
 
 ## 步骤 10：巡检、报告与对比
 

@@ -1,4 +1,4 @@
-"""Proposal 查询、驳回和 Advisory 人工结果 Internal API。"""
+"""Proposal 查询、逐条审批、驳回和人工结果 Internal API。"""
 
 from __future__ import annotations
 
@@ -14,6 +14,8 @@ from aiops_agent.api.dependencies import (
 from aiops_agent.application.changes import AIOpsChangeService
 from platform_core.contracts import AuthContext
 from platform_core.contracts.aiops import (
+    ApprovalCommand,
+    ApprovalReceipt,
     ManualResultCommand,
     ManualResultReceipt,
     ProposalView,
@@ -76,6 +78,32 @@ async def reject_proposal(
         domain_id=domain_id,
         actor_id=context.asserted_user_id or context.client_id,
         command=body,
+        trace_id=context.trace_id,
+    )
+
+
+@router.post(
+    "/{proposal_id}/approve",
+    response_model=ApprovalReceipt,
+)
+async def approve_proposal(
+    proposal_id: UUID,
+    body: ApprovalCommand,
+    request: Request,
+    service: Service,
+    context: Auth,
+) -> ApprovalReceipt:
+    require_service_scope(request, "aiops.approve")
+    app_id, domain_id = _scope(request, context)
+    return await service.approve_proposal(
+        proposal_id=proposal_id,
+        app_id=app_id,
+        domain_id=domain_id,
+        actor_id=context.asserted_user_id or context.client_id,
+        command=body,
+        idempotency_key=request.headers.get(
+            "Idempotency-Key", str(body.expected_row_version)
+        ),
         trace_id=context.trace_id,
     )
 

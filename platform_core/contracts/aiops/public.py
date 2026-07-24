@@ -221,6 +221,16 @@ class ApprovalCommand(AIOpsContract):
     note: str | None = Field(default=None, max_length=2000)
 
 
+class ApprovalReceipt(AIOpsContract):
+    schema_version: str = PUBLIC_SCHEMA_VERSION
+    proposal_id: UUIDv7
+    proposal_status: Literal["APPROVED"]
+    approval_token_id: UUIDv7
+    execution_id: UUIDv7
+    execution_status: Literal["CREATED"]
+    authorization_expires_at: UtcDatetime
+
+
 class RejectionCommand(AIOpsContract):
     schema_version: str = PUBLIC_SCHEMA_VERSION
     expected_row_version: int = Field(ge=1)

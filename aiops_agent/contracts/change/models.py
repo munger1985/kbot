@@ -129,3 +129,22 @@ class ActionVerification(_ChangeContract):
     checked_tool_refs: tuple[str, ...] = ()
     gap_codes: tuple[str, ...] = ()
     evidence_hashes: tuple[str, ...] = ()
+
+
+class ApprovalDecision(_ChangeContract):
+    schema_version: Literal["APPROVAL_DECISION.v1"] = (
+        "APPROVAL_DECISION.v1"
+    )
+    proposal_id: str
+    proposal_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
+    approval_token_id: str
+    execution_id: str
+    approver_id: str
+    approved_at: UtcDatetime
+    expires_at: UtcDatetime
+    policy_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
+    target_version: int = Field(ge=1)
+    parameters_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
+    note_hash: str | None = Field(
+        default=None, pattern=r"^[a-f0-9]{64}$"
+    )

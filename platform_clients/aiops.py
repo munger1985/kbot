@@ -859,6 +859,25 @@ class AIOpsManagementClient(_BaseAIOpsClient):
             auth_context=auth_context,
         )
 
+    async def approve_proposal(
+        self,
+        proposal_id: UUID,
+        payload: dict[str, Any],
+        *,
+        idempotency_key: str,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "POST",
+            (
+                f"{INTERNAL_API_V1}/aiops/proposals/{proposal_id}"
+                "/approve"
+            ),
+            payload=payload,
+            idempotency_key=idempotency_key,
+            auth_context=auth_context,
+        )
+
     async def record_manual_result(
         self,
         proposal_id: UUID,

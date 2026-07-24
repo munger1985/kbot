@@ -301,6 +301,94 @@
         "title": "AnswerHitlCommand",
         "type": "object"
       },
+      "ApprovalCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_proposal_hash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Expected Proposal Hash",
+            "type": "string"
+          },
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "expected_row_version",
+          "expected_proposal_hash"
+        ],
+        "title": "ApprovalCommand",
+        "type": "object"
+      },
+      "ApprovalReceipt": {
+        "additionalProperties": false,
+        "properties": {
+          "approval_token_id": {
+            "format": "uuid",
+            "title": "Approval Token Id",
+            "type": "string"
+          },
+          "authorization_expires_at": {
+            "format": "date-time",
+            "title": "Authorization Expires At",
+            "type": "string"
+          },
+          "execution_id": {
+            "format": "uuid",
+            "title": "Execution Id",
+            "type": "string"
+          },
+          "execution_status": {
+            "const": "CREATED",
+            "title": "Execution Status",
+            "type": "string"
+          },
+          "proposal_id": {
+            "format": "uuid",
+            "title": "Proposal Id",
+            "type": "string"
+          },
+          "proposal_status": {
+            "const": "APPROVED",
+            "title": "Proposal Status",
+            "type": "string"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "proposal_id",
+          "proposal_status",
+          "approval_token_id",
+          "execution_id",
+          "execution_status",
+          "authorization_expires_at"
+        ],
+        "title": "ApprovalReceipt",
+        "type": "object"
+      },
       "ApprovalRequiredEvent": {
         "additionalProperties": false,
         "properties": {
@@ -8145,6 +8233,59 @@
           }
         },
         "summary": "Get Proposal",
+        "tags": [
+          "AIOps Changes"
+        ]
+      }
+    },
+    "/internal/v1/aiops/proposals/{proposal_id}/approve": {
+      "post": {
+        "operationId": "approve_proposal_internal_v1_aiops_proposals__proposal_id__approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "proposal_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Proposal Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApprovalCommand"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApprovalReceipt"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Approve Proposal",
         "tags": [
           "AIOps Changes"
         ]

@@ -1,0 +1,209 @@
+"""步骤 9C 逐命令审批与一次性授权测试。"""
+
+from __future__ import annotations
+
+import asyncio
+import unittest
+from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
+from aiops_agent.actions import ActionRegistry, ActionRenderer
+from aiops_agent.application.changes import AIOpsChangeService
+from aiops_agent.application.errors import AIOpsApplicationError
+from platform_core.contracts.aiops import ApprovalCommand
+from platform_core.identity import uuid7
+
+
+class ApprovalServiceTest(unittest.TestCase):
+    def test_closed_kill_switch_never_opens_transaction(self) -> None:
+        factory = unittest.mock.Mock()
+        service = AIOpsChangeService(
+            uow_factory=factory,
+            action_registry=ActionRegistry.load(),
+            approval_enabled=True,
+            mutation_enabled=False,
+        )
+        with self.assertRaises(AIOpsApplicationError) as caught:
+            asyncio.run(
+                service.approve_proposal(
+                    proposal_id=uuid7(),
+                    app_id=100,
+                    domain_id=200,
+                    actor_id="portal:user-1",
+                    command=ApprovalCommand(
+                        expected_row_version=1,
+                        expected_proposal_hash="a" * 64,
+                    ),
+                    idempotency_key="approve-1",
+                    trace_id="trace-1",
+                )
+            )
+        self.assertEqual(caught.exception.code, "OPS_STATE_CONFLICT")
+        factory.assert_not_called()
+
+    def test_approval_atomically_creates_token_execution_and_outbox(
+        self,
+    ) -> None:
+        now = datetime(2026, 7, 24, 11, 0, tzinfo=UTC)
+        registry = ActionRegistry.load()
+        template = registry.resolve(
+            action_template_id="db.session.terminate",
+            version="1.0.0",
+            db_type="ORACLE",
+            db_version="19.0.0",
+            capabilities={"session_management"},
+            entitlements=set(),
+            environment="PROD",
+        )
+        parameters = {
+            "session_id": 42,
+            "serial_number": 9,
+            "instance_id": 1,
+        }
+        rendered = ActionRenderer().render(template, parameters)
+        proposal_id = uuid7()
+        run_id = uuid7()
+        task_id = uuid7()
+        target_id = uuid7()
+        agent_id = uuid7()
+        proposal = SimpleNamespace(
+            proposal_id=proposal_id,
+            ops_run_id=run_id,
+            ops_task_id=task_id,
+            target_id=target_id,
+            row_version=1,
+            proposal_hash="a" * 64,
+            status="PENDING_APPROVAL",
+            expires_at=now + timedelta(minutes=10),
+            action_type="AGENT_EXECUTE",
+            action_template_id="db.session.terminate",
+            action_template_version="1.0.0",
+            action_template_hash=rendered.template_hash,
+            renderer_version=rendered.renderer_version,
+            command_hash=rendered.command_hash,
+            parameters_json=parameters,
+            parameters_hash=rendered.parameters_hash,
+            policy_decision_hash="b" * 64,
+            updated_at=now,
+        )
+        run = SimpleNamespace(
+            ops_run_id=run_id,
+            agent_id=agent_id,
+            actor_id="portal:user-1",
+            policy_snapshot_json={"policy_hash": "c" * 64},
+        )
+        hitl = SimpleNamespace(
+            hitl_id=uuid7(),
+            proposal_id=proposal_id,
+            assignee_user_id="portal:user-1",
+            status="PENDING",
+            responded_by=None,
+            responded_at=None,
+            response_json=None,
+            response_hash=None,
+        )
+        target = SimpleNamespace(
+            target_id=target_id,
+            status="ACTIVE",
+            execution_mode="AGENT_EXECUTE",
+            execution_secret_ref="env://ORACLE_EXECUTION_SECRET",
+            row_version=3,
+            db_type="ORACLE",
+            version_code="19.0.0",
+            capabilities_json={"session_management": True},
+            environment="PROD",
+            security_level=3,
+        )
+        binding = SimpleNamespace(
+            status="ACTIVE",
+            access_mode="EXECUTE",
+            allowed_actions_json=["db.session.terminate"],
+            policy_id=uuid7(),
+        )
+        policy = SimpleNamespace(
+            status="ACTIVE",
+            policy_hash="c" * 64,
+            rules_json={
+                "allow_agent_execution": True,
+                "entitlements": [],
+            },
+        )
+        changes = SimpleNamespace(
+            get_execution_by_idempotency=AsyncMock(
+                return_value=None
+            ),
+            get_proposal_scoped=AsyncMock(return_value=proposal),
+            get_proposal=AsyncMock(return_value=proposal),
+            get_pending_hitl=AsyncMock(return_value=hitl),
+            add_approval_token=AsyncMock(
+                side_effect=lambda entity: entity
+            ),
+            add_execution=AsyncMock(side_effect=lambda entity: entity),
+        )
+        uow = SimpleNamespace(
+            changes=changes,
+            runs=SimpleNamespace(
+                get_run=AsyncMock(return_value=run),
+                database_now=AsyncMock(return_value=now),
+                add_artifact=AsyncMock(
+                    side_effect=lambda entity: entity
+                ),
+                append_event=AsyncMock(),
+            ),
+            targets=SimpleNamespace(
+                get_scoped=AsyncMock(return_value=target),
+                get_agent_binding=AsyncMock(return_value=binding),
+            ),
+            policies=SimpleNamespace(
+                get_scoped=AsyncMock(return_value=policy)
+            ),
+            outbox=SimpleNamespace(
+                add=AsyncMock(side_effect=lambda entity: entity)
+            ),
+            commit=AsyncMock(),
+            rollback=AsyncMock(),
+        )
+        context = AsyncMock()
+        context.__aenter__.return_value = uow
+        service = AIOpsChangeService(
+            uow_factory=lambda: context,
+            action_registry=registry,
+            approval_enabled=True,
+            mutation_enabled=True,
+        )
+        service._snapshot = AsyncMock(  # type: ignore[method-assign]
+            return_value=SimpleNamespace(target_version=3)
+        )
+        receipt = asyncio.run(
+            service.approve_proposal(
+                proposal_id=proposal_id,
+                app_id=100,
+                domain_id=200,
+                actor_id="portal:user-1",
+                command=ApprovalCommand(
+                    expected_row_version=1,
+                    expected_proposal_hash="a" * 64,
+                    note="已确认终止阻塞会话",
+                ),
+                idempotency_key="approve-proposal-1",
+                trace_id="trace-approval",
+            )
+        )
+        self.assertEqual(receipt.proposal_status, "APPROVED")
+        self.assertEqual(receipt.execution_status, "CREATED")
+        self.assertEqual(proposal.status, "APPROVED")
+        self.assertEqual(hitl.status, "APPROVED")
+        changes.add_approval_token.assert_awaited_once()
+        changes.add_execution.assert_awaited_once()
+        uow.outbox.add.assert_awaited_once()
+        uow.commit.assert_awaited_once()
+        execution = changes.add_execution.await_args.args[0]
+        self.assertEqual(execution.status, "CREATED")
+        self.assertEqual(execution.proposal_hash, proposal.proposal_hash)
+        token = changes.add_approval_token.await_args.args[0]
+        self.assertNotEqual(token.token_hash, token.nonce_hash)
+
+
+if __name__ == "__main__":
+    unittest.main()

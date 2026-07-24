@@ -121,9 +121,6 @@ def create_aiops_api(
                 resolved.limits.max_targets_per_inspection_fire
             ),
         )
-        app.state.change_service = AIOpsChangeService(
-            uow_factory=runtime.uow_factory
-        )
         metric_catalog = load_metric_catalog(
             Path(resolved.monitoring.catalog_path)
             if resolved.monitoring.catalog_path
@@ -140,6 +137,15 @@ def create_aiops_api(
         )
         diagnostic_registry = create_diagnostic_registry(resolved)
         action_registry = ActionRegistry.load()
+        app.state.change_service = AIOpsChangeService(
+            uow_factory=runtime.uow_factory,
+            action_registry=action_registry,
+            approval_enabled=(
+                resolved.management.agent_execution_enabled
+            ),
+            # 9C1 只落审批状态机；Claim/Driver 完成前保持硬关闭。
+            mutation_enabled=False,
+        )
         diagnosis_prompts = DiagnosisPromptRegistry.load(
             Path(resolved.diagnosis.prompt_catalog_path)
             if resolved.diagnosis.prompt_catalog_path
@@ -183,7 +189,9 @@ def create_aiops_api(
             knowledge_core_client=knowledge_core_client,
             diagnosis_caller_service=config.service_name,
             action_registry=action_registry,
-            action_execution_enabled=False,
+            action_execution_enabled=(
+                resolved.management.agent_execution_enabled
+            ),
         )
         app.state.monitor_provider_registry = provider_registry
         app.state.monitor_secret_store = secret_store

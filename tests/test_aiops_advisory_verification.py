@@ -263,6 +263,7 @@ class ProposalExpiryTest(unittest.TestCase):
                     return_value=proposal
                 ),
                 get_proposal=AsyncMock(return_value=proposal),
+                get_pending_hitl=AsyncMock(return_value=None),
             ),
             commit=AsyncMock(),
         )

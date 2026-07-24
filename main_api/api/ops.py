@@ -26,6 +26,8 @@ from platform_core.contracts.aiops import (
     AgentBindingCreate,
     AgentBindingPatch,
     AgentBindingView,
+    ApprovalCommand,
+    ApprovalReceipt,
     CancelRunCommand,
     HealthCheckReceipt,
     HitlResponse,
@@ -259,6 +261,25 @@ async def reject_proposal(
         auth_context=request.state.auth_context,
     )
     return _validated(ProposalView, payload, response)
+
+
+@router.post(
+    "/proposals/{proposal_id}/approve",
+    response_model=ApprovalReceipt,
+)
+async def approve_proposal(
+    proposal_id: UUID,
+    body: ApprovalCommand,
+    request: Request,
+    idempotency_key: IdempotencyKey,
+) -> ApprovalReceipt:
+    payload = await _client(request).approve_proposal(
+        proposal_id,
+        body.model_dump(mode="json"),
+        idempotency_key=idempotency_key,
+        auth_context=request.state.auth_context,
+    )
+    return ApprovalReceipt.model_validate(payload)
 
 
 @router.post(

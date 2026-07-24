@@ -57,6 +57,34 @@ class ChangeRepository(AIOpsRepository):
     ) -> ExecutionEntity:
         return await self._add(entity)
 
+    async def get_approval_token(
+        self,
+        *,
+        approval_token_id: UUID,
+        lock: bool = False,
+    ) -> ApprovalTokenEntity | None:
+        self._check_active()
+        statement: Select = select(ApprovalTokenEntity).where(
+            ApprovalTokenEntity.approval_token_id == approval_token_id
+        )
+        if lock:
+            statement = statement.with_for_update()
+        return (await self._session.execute(statement)).scalar_one_or_none()
+
+    async def get_approval_token_by_proposal(
+        self,
+        *,
+        proposal_id: UUID,
+        lock: bool = False,
+    ) -> ApprovalTokenEntity | None:
+        self._check_active()
+        statement: Select = select(ApprovalTokenEntity).where(
+            ApprovalTokenEntity.proposal_id == proposal_id
+        )
+        if lock:
+            statement = statement.with_for_update()
+        return (await self._session.execute(statement)).scalar_one_or_none()
+
     async def get_proposal_scoped(
         self,
         *,
@@ -304,6 +332,26 @@ class ChangeRepository(AIOpsRepository):
         self._check_active()
         statement: Select = select(ExecutionEntity).where(
             ExecutionEntity.executor_request_id == executor_request_id
+        )
+        if lock:
+            statement = statement.with_for_update()
+        return (await self._session.execute(statement)).scalar_one_or_none()
+
+    async def get_execution_by_idempotency(
+        self, *, idempotency_key: str
+    ) -> ExecutionEntity | None:
+        self._check_active()
+        statement = select(ExecutionEntity).where(
+            ExecutionEntity.idempotency_key == idempotency_key
+        )
+        return (await self._session.execute(statement)).scalar_one_or_none()
+
+    async def get_execution_by_proposal(
+        self, *, proposal_id: UUID, lock: bool = False
+    ) -> ExecutionEntity | None:
+        self._check_active()
+        statement: Select = select(ExecutionEntity).where(
+            ExecutionEntity.proposal_id == proposal_id
         )
         if lock:
             statement = statement.with_for_update()

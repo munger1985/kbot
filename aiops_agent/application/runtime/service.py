@@ -1515,8 +1515,13 @@ class AIOpsRuntimeService:
             or snapshot.target_id != str(run.target_id)
         ):
             raise validation_failed("Proposal Snapshot 资源标识不匹配")
-        if snapshot.mode != "ADVISORY":
-            raise validation_failed("受控执行尚未启用，Proposal 必须降级为 Advisory")
+        if snapshot.mode not in {"ADVISORY", "AGENT_EXECUTE"}:
+            raise validation_failed("Proposal 执行模式无效")
+        status = (
+            "PENDING_APPROVAL"
+            if snapshot.mode == "AGENT_EXECUTE"
+            else "ADVISORY_READY"
+        )
         proposal = ChangeProposalEntity(
             proposal_id=UUID(snapshot.proposal_id),
             ops_run_id=run.ops_run_id,
@@ -1547,17 +1552,46 @@ class AIOpsRuntimeService:
             policy_decision_hash=snapshot.policy_decision_hash,
             proposal_hash=snapshot.proposal_hash,
             snapshot_artifact_id=artifact.artifact_id,
-            status="ADVISORY_READY",
+            status=status,
             expires_at=snapshot.expires_at,
             created_by_task_id=task.ops_task_id,
             created_at=now,
             updated_at=now,
         )
         await uow.changes.add_proposal(proposal)
+        if status == "PENDING_APPROVAL":
+            await uow.changes.add_hitl(
+                HitlEntity(
+                    hitl_id=uuid7(),
+                    ops_run_id=run.ops_run_id,
+                    ops_task_id=task.ops_task_id,
+                    proposal_id=proposal.proposal_id,
+                    request_type="CHANGE_APPROVAL",
+                    assignee_user_id=run.actor_id,
+                    prompt_text="请查看权威 Proposal 后逐条确认是否执行",
+                    response_schema_json={
+                        "schema_version": "APPROVAL_DECISION.v1"
+                    },
+                    input_artifacts_json=[
+                        str(artifact.artifact_id)
+                    ],
+                    status="PENDING",
+                    idempotency_key=(
+                        f"proposal:{proposal.proposal_id}:approval"
+                    ),
+                    requested_by="aiops.change-service",
+                    requested_at=now,
+                    expires_at=snapshot.expires_at,
+                )
+            )
         await uow.runs.append_event(
             ops_run_id=run.ops_run_id,
             ops_task_id=task.ops_task_id,
-            event_type="proposal.advisory_ready",
+            event_type=(
+                "proposal.pending_approval"
+                if status == "PENDING_APPROVAL"
+                else "proposal.advisory_ready"
+            ),
             event_key=f"proposal:{proposal.proposal_id}:ready",
             visibility="USER",
             payload_json={
@@ -1569,6 +1603,7 @@ class AIOpsRuntimeService:
                     else None
                 ),
                 "proposal_hash": proposal.proposal_hash,
+                "status": status,
                 "trace_id": trace_id,
             },
         )
@@ -1973,6 +2008,25 @@ class AIOpsRuntimeService:
                     return False
                 proposal.status = "EXPIRED"
                 proposal.updated_at = now
+                approval_hitl = await uow.changes.get_pending_hitl(
+                    ops_task_id=proposal.ops_task_id,
+                    request_type="CHANGE_APPROVAL",
+                    lock=True,
+                )
+                if (
+                    approval_hitl is not None
+                    and approval_hitl.proposal_id
+                    == proposal.proposal_id
+                ):
+                    approval_hitl.status = "EXPIRED"
+                    approval_hitl.responded_by = "aiops.reconciler"
+                    approval_hitl.responded_at = now
+                    approval_hitl.response_json = {
+                        "reason": "PROPOSAL_EXPIRED"
+                    }
+                    approval_hitl.response_hash = sha256_json(
+                        approval_hitl.response_json
+                    )
                 await uow.runs.append_event(
                     ops_run_id=run.ops_run_id,
                     ops_task_id=proposal.ops_task_id,

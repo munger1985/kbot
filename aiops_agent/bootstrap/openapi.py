@@ -26,10 +26,7 @@ from platform_core.contracts.aiops.internal import (
     RootDelegationRequest,
     RootDelegationResult,
 )
-from platform_core.contracts.aiops.public import (
-    ApprovalCommand,
-    ReportView,
-)
+from platform_core.contracts.aiops.public import ReportView
 
 
 def _not_implemented() -> None:
@@ -44,10 +41,6 @@ def create_public_contract_app() -> FastAPI:
     app = FastAPI(title="KBot AIOps Public Contract", version="1.0.0")
     app.include_router(public_config_router)
     app.include_router(public_integration_router)
-
-    @app.post("/api/v1/ops/proposals/{proposal_id}/approve")
-    async def approve_proposal(proposal_id: UUID, payload: ApprovalCommand):
-        _not_implemented()
 
     @app.get("/api/v1/ops/reports/{report_id}", response_model=ReportView)
     async def get_report(report_id: UUID):

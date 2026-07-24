@@ -128,7 +128,9 @@ def create_aiops_worker_probe(
             knowledge_core_client=knowledge_core_client,
             diagnosis_caller_service=config.service_name,
             action_registry=action_registry,
-            action_execution_enabled=False,
+            action_execution_enabled=(
+                resolved.management.agent_execution_enabled
+            ),
         )
         runtime_service = AIOpsRuntimeService(
             uow_factory=runtime.uow_factory,
