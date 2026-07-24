@@ -9,6 +9,8 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 from aiops_agent.application.runtime.service import AIOpsRuntimeService
+from aiops_agent.contracts.change import ActionVerification
+from aiops_agent.contracts.report import ComparisonPlan
 from platform_core.identity import uuid7
 
 
@@ -117,6 +119,169 @@ class InspectionReportPublishingTest(unittest.TestCase):
             report.content_artifact_id, report_artifact_id
         )
         uow.outbox.add.assert_awaited_once()
+
+
+class ComparisonReportPublishingTest(unittest.TestCase):
+    def test_verified_action_publishes_improved_comparison_report(
+        self,
+    ) -> None:
+        source_run_id = uuid7()
+        verification_run_id = uuid7()
+        proposal_id = uuid7()
+        target_id = uuid7()
+        task_id = uuid7()
+        source_result_id = uuid7()
+        plan_artifact_id = uuid7()
+        verification_artifact_id = uuid7()
+        created_artifact_ids = iter((uuid7(), uuid7()))
+        baseline_start = datetime(2026, 7, 24, 1, tzinfo=UTC)
+        baseline_end = datetime(2026, 7, 24, 2, tzinfo=UTC)
+        after_start = datetime(2026, 7, 24, 3, tzinfo=UTC)
+        after_end = datetime(2026, 7, 24, 4, tzinfo=UTC)
+        proposal = SimpleNamespace(
+            proposal_id=proposal_id,
+            ops_run_id=source_run_id,
+            solution_group_key="blocking-session",
+            action_template_id="oracle.kill-session",
+            action_template_version="1.0.0",
+        )
+        source_run = SimpleNamespace(
+            ops_run_id=source_run_id,
+            target_id=target_id,
+        )
+        source_result = SimpleNamespace(
+            artifact_id=source_result_id,
+            payload_json={"execution_id": str(uuid7())},
+        )
+        plan = ComparisonPlan(
+            proposal_id=str(proposal_id),
+            source_run_id=str(source_run_id),
+            solution_group_key="blocking-session",
+            action_template_id="oracle.kill-session",
+            action_template_version="1.0.0",
+            baseline_start=baseline_start,
+            baseline_end=baseline_end,
+            settle_delay_seconds=0,
+            after_window_seconds=3600,
+            primary_signals=("target_absent", "blocking_absent"),
+            required_tool_refs=(
+                "db.session.active",
+                "db.session.blocking_chain",
+            ),
+            baseline_evidence_refs=("artifact:baseline",),
+        )
+        plan_artifact = SimpleNamespace(
+            artifact_id=plan_artifact_id,
+            schema_version="COMPARISON_PLAN.v1",
+            payload_json=plan.model_dump(mode="json"),
+            content_hash="a" * 64,
+        )
+        verification = ActionVerification(
+            proposal_id=str(proposal_id),
+            source_run_id=str(source_run_id),
+            result_artifact_id=str(source_result_id),
+            status="VERIFIED",
+            summary="动作效果已验证",
+            target_still_present=False,
+            blocking_still_present=False,
+            checked_tool_refs=(
+                "db.session.active",
+                "db.session.blocking_chain",
+            ),
+            evidence_hashes=("b" * 64,),
+        )
+        verification_artifact = SimpleNamespace(
+            artifact_id=verification_artifact_id,
+            schema_version="ACTION_VERIFICATION.v1",
+            payload_json=verification.model_dump(mode="json"),
+            content_hash="c" * 64,
+        )
+        verification_run = SimpleNamespace(
+            ops_run_id=verification_run_id,
+            target_id=target_id,
+            source_proposal_id=proposal_id,
+            source_result_artifact_id=source_result_id,
+            created_at=after_start,
+            plan_snapshot_json={"target": {"security_level": 4}},
+        )
+        task = SimpleNamespace(ops_task_id=task_id)
+
+        async def add_artifact(entity):
+            entity.artifact_id = next(created_artifact_ids)
+            return entity
+
+        async def publish_report(entity):
+            entity.is_current = 1
+            return entity
+
+        uow = SimpleNamespace(
+            changes=SimpleNamespace(
+                get_proposal=AsyncMock(return_value=proposal)
+            ),
+            inspections=SimpleNamespace(
+                publish_report=AsyncMock(side_effect=publish_report)
+            ),
+            runs=SimpleNamespace(
+                get_run=AsyncMock(return_value=source_run),
+                get_artifact=AsyncMock(return_value=source_result),
+                get_artifact_by_key=AsyncMock(
+                    return_value=plan_artifact
+                ),
+                add_artifact=AsyncMock(side_effect=add_artifact),
+                append_event=AsyncMock(),
+            ),
+            outbox=SimpleNamespace(
+                add=AsyncMock(side_effect=lambda entity: entity)
+            ),
+        )
+        service = AIOpsRuntimeService(
+            uow_factory=AsyncMock(),
+            blueprint_registry=AsyncMock(),
+            handler_registry=AsyncMock(),
+        )
+        result = asyncio.run(
+            service._publish_comparison_report(
+                uow=uow,
+                run=verification_run,
+                task=task,
+                verification_artifact=verification_artifact,
+                now=after_end,
+                trace_id="trace-comparison",
+            )
+        )
+        self.assertEqual(result.schema_version, "REPORT_CONTENT.v1")
+        report = (
+            uow.inspections.publish_report.await_args.args[0]
+        )
+        self.assertEqual(report.ops_run_id, source_run_id)
+        self.assertEqual(report.report_type, "COMPARISON")
+        self.assertEqual(report.result, "IMPROVED")
+        self.assertEqual(report.baseline_start, baseline_start)
+        self.assertEqual(report.after_end, after_end)
+        comparison_artifact = (
+            uow.runs.add_artifact.await_args_list[0].args[0]
+        )
+        self.assertEqual(
+            comparison_artifact.schema_version, "COMPARISON_RESULT.v1"
+        )
+        self.assertEqual(
+            comparison_artifact.payload_json["result"], "IMPROVED"
+        )
+
+    def test_evidence_gap_forces_inconclusive_result(self) -> None:
+        verification = ActionVerification(
+            proposal_id=str(uuid7()),
+            source_run_id=str(uuid7()),
+            result_artifact_id=str(uuid7()),
+            status="INCONCLUSIVE",
+            summary="证据不足",
+            gap_codes=("VERIFICATION_EVIDENCE_MISSING",),
+        )
+        result, rationale = AIOpsRuntimeService._comparison_result(
+            verification
+        )
+        self.assertEqual(result, "INCONCLUSIVE")
+        self.assertEqual(rationale, ("EVIDENCE_NOT_COMPARABLE",))
 
 
 if __name__ == "__main__":

@@ -2,7 +2,7 @@
 
 ## 当前实施进度
 
-阶段 10A/10B 已完成首个可恢复闭环：
+阶段 10A/10B 与 10C 动作级 Comparison 已完成首个可恢复闭环：
 
 - Scheduler 已从探针升级为多副本 Plan Claim 循环，使用数据库时间、租约 Token
   和 Row Version 围栏；
@@ -16,9 +16,15 @@
 - Schedule Run 的 `DB_DIAGNOSTIC_REPORT.v1` 会被确定性包装为不可变
   `REPORT_CONTENT.v1`，并原子发布 `KBOT_OPS_REPORT` 当前版本和 `report.ready`
   事件；日报/周报完整内容可通过授权 API 读取，APEX 继续读取安全投影视图。
+- Proposal 就绪时会额外冻结 `COMPARISON_PLAN.v1`，记录来源 Run、基线证据、
+  验证工具、窗口规则和判级版本；人工执行或 Agent 执行均复用同一事实链；
+- Verification Run 完成后生成 `COMPARISON_RESULT.v1`，再发布动作级
+  `COMPARISON` Report。当前 Action Catalog 只有会话终止动作，因此
+  `action-effect.v1` 只比较目标会话和阻塞关系是否消失；证据缺口一律降级为
+  `INCONCLUSIVE`，LLM 不参与数值或结论判定。
 
-处理前后 Comparison、历史版本查询、Fire 列表 API 和监控指标型巡检仍属于后续
-10C/10D；当前实现不把数据库诊断覆盖率冒充为性能改善结论。
+Solution Group 汇总对比、历史版本查询、Fire 列表 API 和监控指标型巡检仍属于
+后续 10D；当前实现不把数据库诊断覆盖率或命令执行成功冒充为性能改善结论。
 
 ## 目标与边界
 
@@ -185,6 +191,13 @@ thresholds and result rules
 required_evidence
 ```
 
+当前实现的计划在 `PROPOSAL_OUTCOME.v1` 物化为 Proposal 的同一事务内创建，
+Artifact Key 为 `comparison:proposal:<proposal_id>:plan:v1`。基线来自 Proposal
+已经引用的诊断 Evidence，处理后事实来自独立 Verification Run，不能回读可变的
+前端参数补齐证据。首期动作模板是 Oracle/MySQL 会话终止，因此主信号固定为
+`target_absent` 与 `blocking_absent`；新增动作模板必须同时新增自身的比较规则，
+不得复用不适用的会话判级。
+
 系统执行时，Dispatcher 前完成基线采集；模板/Policy 声明为必需的基线缺失会阻止命令提交。Advisory 在 Proposal 就绪时采集可得基线。用户回填已人工执行但不存在处理前基线时，仍可生成 Comparison，但结论只能是 `INCONCLUSIVE`。
 
 执行后以 `COMPARE` Task 的 `AVAILABLE_AT` 表示 settle delay，不让 Worker 睡眠占用租约。采集必须使用相同指标定义、Provider、Mapping、维度、单位、聚合方式和等长窗口。版本变化、数据缺口、采样截断或来源切换会将结论降为 `INCONCLUSIVE`。
@@ -197,6 +210,21 @@ required_evidence
 - 数据不可比或不足：`INCONCLUSIVE`。
 
 LLM 只能解释结果，不能重新判级。每个已执行动作生成动作级 Comparison；多动作方案结束后再生成一个 Solution Group 级 Comparison。报告必须说明观察窗口和因果限制，时间相关性不能表述为已证明的因果关系。
+
+动作级发布由 Verification 最终 Task 的同一事务完成：
+
+```text
+ACTION_VERIFICATION.v1
+  → COMPARISON_RESULT.v1
+  → REPORT_CONTENT.v1
+  → KBOT_OPS_REPORT(IS_CURRENT=1)
+  → report.ready + OPS_REPORT_READY
+```
+
+`VERIFIED + 目标/阻塞均消失` 映射为 `IMPROVED`，`NOT_ACHIEVED` 映射为
+`UNCHANGED`，`ADVERSE` 映射为 `DEGRADED`；任一必需证据缺失、信号为空或状态
+不可解释均为 `INCONCLUSIVE`。这些是“直接效果”结论，不宣称已证明动作与系统
+整体健康变化之间存在因果关系。
 
 ## API、APEX 与投递边界
 

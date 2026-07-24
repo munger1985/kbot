@@ -43,10 +43,15 @@ from aiops_agent.entities import (
     ReportEntity,
 )
 from aiops_agent.contracts.change import (
+    ActionVerification,
     ExecutionResultArtifact,
     ProposalOutcome,
 )
-from aiops_agent.contracts.report import ReportContent
+from aiops_agent.contracts.report import (
+    ComparisonPlan,
+    ComparisonResult,
+    ReportContent,
+)
 from aiops_agent.orchestration import (
     BlueprintRegistry,
     build_advisory_verification_blueprint,
@@ -1249,6 +1254,17 @@ class AIOpsRuntimeService:
                             trace_id=command.trace_id,
                         )
                     )
+                if artifact.schema_version == "ACTION_VERIFICATION.v1":
+                    final_artifact = (
+                        await self._publish_comparison_report(
+                            uow=uow,
+                            run=run,
+                            task=task,
+                            verification_artifact=artifact,
+                            now=now,
+                            trace_id=command.trace_id,
+                        )
+                    )
                 run.final_artifact_id = final_artifact.artifact_id
                 if artifact.schema_version in {
                     "OBSERVE_REPORT.v1",
@@ -1463,6 +1479,307 @@ class AIOpsRuntimeService:
             now=now,
         )
         return report_artifact
+
+    async def _publish_comparison_report(
+        self,
+        *,
+        uow,
+        run,
+        task,
+        verification_artifact,
+        now: datetime,
+        trace_id: str,
+    ):
+        """根据 Verification 事实确定性发布动作级处理前后对比报告。"""
+        assert uow.inspections is not None
+        if run.source_proposal_id is None:
+            raise validation_failed("对比报告缺少来源 Proposal")
+        proposal = await uow.changes.get_proposal(
+            proposal_id=run.source_proposal_id
+        )
+        if proposal is None:
+            raise validation_failed("对比报告来源 Proposal 不存在")
+        source_run = await uow.runs.get_run(
+            ops_run_id=proposal.ops_run_id
+        )
+        source_result = (
+            await uow.runs.get_artifact(
+                artifact_id=run.source_result_artifact_id
+            )
+            if run.source_result_artifact_id is not None
+            else None
+        )
+        plan_artifact = await uow.runs.get_artifact_by_key(
+            ops_run_id=proposal.ops_run_id,
+            artifact_key=(
+                f"comparison:proposal:{proposal.proposal_id}:plan:v1"
+            ),
+        )
+        if (
+            source_run is None
+            or source_result is None
+            or plan_artifact is None
+            or plan_artifact.schema_version != "COMPARISON_PLAN.v1"
+        ):
+            raise validation_failed("对比报告来源事实链不完整")
+        comparison_plan = ComparisonPlan.model_validate(
+            plan_artifact.payload_json
+        )
+        verification = ActionVerification.model_validate(
+            verification_artifact.payload_json
+        )
+        if (
+            comparison_plan.proposal_id != str(proposal.proposal_id)
+            or verification.proposal_id != str(proposal.proposal_id)
+            or verification.source_run_id != str(source_run.ops_run_id)
+            or verification.result_artifact_id
+            != str(source_result.artifact_id)
+        ):
+            raise validation_failed("对比报告来源引用不匹配")
+        result, rationale = self._comparison_result(verification)
+        after_start = run.created_at or now
+        after_end = now
+        comparison = ComparisonResult(
+            comparison_plan_artifact_id=str(plan_artifact.artifact_id),
+            verification_artifact_id=str(
+                verification_artifact.artifact_id
+            ),
+            proposal_id=str(proposal.proposal_id),
+            source_run_id=str(source_run.ops_run_id),
+            source_result_artifact_id=str(source_result.artifact_id),
+            baseline_start=comparison_plan.baseline_start,
+            baseline_end=comparison_plan.baseline_end,
+            after_start=after_start,
+            after_end=after_end,
+            primary_signals={
+                "target_absent": (
+                    None
+                    if verification.target_still_present is None
+                    else not verification.target_still_present
+                ),
+                "blocking_absent": (
+                    None
+                    if verification.blocking_still_present is None
+                    else not verification.blocking_still_present
+                ),
+            },
+            gap_codes=verification.gap_codes,
+            evidence_hashes=verification.evidence_hashes,
+            result=result,
+            rationale_codes=rationale,
+        )
+        comparison_payload = comparison.model_dump(mode="json")
+        comparison_hash = sha256_json(comparison_payload)
+        comparison_artifact = await uow.runs.add_artifact(
+            OpsArtifactEntity(
+                ops_run_id=run.ops_run_id,
+                ops_task_id=task.ops_task_id,
+                artifact_key=(
+                    f"comparison:proposal:{proposal.proposal_id}:result:v1"
+                ),
+                artifact_type="COMPARISON_RESULT",
+                schema_version="COMPARISON_RESULT.v1",
+                payload_json=comparison_payload,
+                content_hash=comparison_hash,
+                byte_size=len(canonical_bytes(comparison_payload)),
+                provenance_json={
+                    "producer": "aiops.comparison-engine",
+                    "producer_version": "action-effect.v1",
+                    "deterministic": True,
+                    "llm_used": False,
+                },
+                trust_level="SOURCE_VERIFIED",
+                security_level=int(
+                    (run.plan_snapshot_json or {})["target"][
+                        "security_level"
+                    ]
+                ),
+            )
+        )
+        source_payload = dict(source_result.payload_json or {})
+        execution_id = source_payload.get("execution_id")
+        suffix = execution_id or str(proposal.proposal_id)
+        report_key = f"comparison.action.{suffix}"
+        report_status = (
+            "PARTIAL" if result == "INCONCLUSIVE" else "READY"
+        )
+        summary = {
+            "IMPROVED": "处理后的直接效果指标已改善",
+            "UNCHANGED": "处理后的直接效果指标未发生预期变化",
+            "DEGRADED": "处理后发现直接效果或护栏指标退化",
+            "INCONCLUSIVE": "处理后证据不足，无法形成可靠对比结论",
+        }[result]
+        report_content = ReportContent(
+            report_key=report_key,
+            report_type="COMPARISON",
+            ops_run_id=str(source_run.ops_run_id),
+            target_id=str(source_run.target_id),
+            title="数据库处理前后对比报告",
+            status=report_status,
+            summary=summary,
+            period_start=comparison.baseline_start,
+            period_end=comparison.after_end,
+            scope={
+                "proposal_id": str(proposal.proposal_id),
+                "execution_id": execution_id,
+                "solution_group_key": proposal.solution_group_key,
+                "action_template_id": proposal.action_template_id,
+                "result_rule_version": (
+                    comparison_plan.result_rule_version
+                ),
+            },
+            facts=(
+                {
+                    "kind": "comparison_result",
+                    "result": result,
+                    "primary_signals": comparison.primary_signals,
+                    "guardrail_signals": comparison.guardrail_signals,
+                    "rationale_codes": list(rationale),
+                    "causal_limitations": list(
+                        comparison.causal_limitations
+                    ),
+                },
+            ),
+            gaps=tuple(
+                {"code": code} for code in verification.gap_codes
+            ),
+            evidence_refs=(
+                {
+                    "artifact_id": str(plan_artifact.artifact_id),
+                    "content_hash": plan_artifact.content_hash,
+                    "schema_version": plan_artifact.schema_version,
+                },
+                {
+                    "artifact_id": str(
+                        verification_artifact.artifact_id
+                    ),
+                    "content_hash": verification_artifact.content_hash,
+                    "schema_version": (
+                        verification_artifact.schema_version
+                    ),
+                },
+                {
+                    "artifact_id": str(comparison_artifact.artifact_id),
+                    "content_hash": comparison_hash,
+                    "schema_version": "COMPARISON_RESULT.v1",
+                },
+            ),
+            provenance={
+                "deterministic": True,
+                "llm_used": False,
+                "comparison_result_hash": comparison_hash,
+            },
+        )
+        report_payload = report_content.model_dump(mode="json")
+        report_hash = sha256_json(report_payload)
+        report_artifact = await uow.runs.add_artifact(
+            OpsArtifactEntity(
+                ops_run_id=run.ops_run_id,
+                ops_task_id=task.ops_task_id,
+                artifact_key=f"report:{report_key}:v1",
+                artifact_type="REPORT_CONTENT",
+                schema_version="REPORT_CONTENT.v1",
+                payload_json=report_payload,
+                content_hash=report_hash,
+                byte_size=len(canonical_bytes(report_payload)),
+                provenance_json={
+                    "producer": "aiops.report-publisher",
+                    "producer_version": "1",
+                    "comparison_result_artifact_id": str(
+                        comparison_artifact.artifact_id
+                    ),
+                },
+                trust_level="SOURCE_VERIFIED",
+                security_level=int(comparison_artifact.security_level),
+            )
+        )
+        report = await uow.inspections.publish_report(
+            ReportEntity(
+                report_id=uuid7(),
+                ops_run_id=source_run.ops_run_id,
+                target_id=source_run.target_id,
+                report_key=report_key,
+                report_version=1,
+                is_current=0,
+                report_type="COMPARISON",
+                title=report_content.title,
+                status=report_status,
+                period_start=comparison.baseline_start,
+                period_end=comparison.after_end,
+                baseline_start=comparison.baseline_start,
+                baseline_end=comparison.baseline_end,
+                after_start=comparison.after_start,
+                after_end=comparison.after_end,
+                result=result,
+                template_id=proposal.action_template_id,
+                template_version=proposal.action_template_version,
+                generated_by_task_id=task.ops_task_id,
+                content_artifact_id=report_artifact.artifact_id,
+                content_hash=report_hash,
+                summary=summary,
+                security_level=int(comparison_artifact.security_level),
+                schema_version="REPORT_CONTENT.v1",
+            )
+        )
+        await uow.runs.append_event(
+            ops_run_id=run.ops_run_id,
+            ops_task_id=task.ops_task_id,
+            event_type="report.ready",
+            event_key=f"report:{report.report_id}:ready",
+            visibility="USER",
+            payload_json={
+                "report_id": str(report.report_id),
+                "report_key": report_key,
+                "report_type": "COMPARISON",
+                "report_version": 1,
+                "status": report_status,
+                "result": result,
+                "summary": summary,
+                "trace_id": trace_id,
+            },
+        )
+        await self._add_outbox(
+            uow,
+            aggregate_id=report.report_id,
+            event_type="OPS_REPORT_READY",
+            idempotency_key=f"report:{report.report_id}:ready",
+            payload={
+                "report_id": str(report.report_id),
+                "ops_run_id": str(source_run.ops_run_id),
+                "report_key": report_key,
+                "report_type": "COMPARISON",
+                "report_version": 1,
+                "status": report_status,
+                "result": result,
+            },
+            trace_id=trace_id,
+            now=now,
+        )
+        return report_artifact
+
+    @staticmethod
+    def _comparison_result(
+        verification: ActionVerification,
+    ) -> tuple[str, tuple[str, ...]]:
+        """把只读 Verification 结果映射为稳定、可审计的对比结论。"""
+        if verification.status == "ADVERSE":
+            return "DEGRADED", ("VERIFICATION_ADVERSE",)
+        if (
+            verification.status == "INCONCLUSIVE"
+            or verification.gap_codes
+            or verification.target_still_present is None
+            or verification.blocking_still_present is None
+        ):
+            return "INCONCLUSIVE", ("EVIDENCE_NOT_COMPARABLE",)
+        if (
+            verification.status == "VERIFIED"
+            and not verification.target_still_present
+            and not verification.blocking_still_present
+        ):
+            return "IMPROVED", ("EXPECTED_DIRECT_EFFECT_OBSERVED",)
+        if verification.status == "NOT_ACHIEVED":
+            return "UNCHANGED", ("EXPECTED_DIRECT_EFFECT_NOT_OBSERVED",)
+        return "INCONCLUSIVE", ("VERIFICATION_STATE_UNSUPPORTED",)
 
     async def suspend_task_for_input(
         self, command: SuspendOpsTaskCommand
@@ -1717,6 +2034,51 @@ class AIOpsRuntimeService:
             if snapshot.mode == "AGENT_EXECUTE"
             else "ADVISORY_READY"
         )
+        baseline_start = run.created_at or now
+        baseline_seconds = max(
+            60, int((now - baseline_start).total_seconds())
+        )
+        comparison_plan = ComparisonPlan(
+            proposal_id=snapshot.proposal_id,
+            source_run_id=str(run.ops_run_id),
+            solution_group_key=snapshot.solution_group_key,
+            action_template_id=snapshot.action_template_id,
+            action_template_version=snapshot.action_template_version,
+            baseline_start=baseline_start,
+            baseline_end=now,
+            settle_delay_seconds=0,
+            after_window_seconds=baseline_seconds,
+            primary_signals=("target_absent", "blocking_absent"),
+            required_tool_refs=tuple(snapshot.verification_plan),
+            baseline_evidence_refs=tuple(snapshot.evidence_refs),
+        )
+        comparison_plan_payload = comparison_plan.model_dump(mode="json")
+        comparison_plan_artifact = await uow.runs.add_artifact(
+            OpsArtifactEntity(
+                ops_run_id=run.ops_run_id,
+                ops_task_id=task.ops_task_id,
+                artifact_key=(
+                    f"comparison:proposal:{snapshot.proposal_id}:plan:v1"
+                ),
+                artifact_type="COMPARISON_PLAN",
+                schema_version="COMPARISON_PLAN.v1",
+                payload_json=comparison_plan_payload,
+                content_hash=sha256_json(comparison_plan_payload),
+                byte_size=len(canonical_bytes(comparison_plan_payload)),
+                provenance_json={
+                    "producer": "aiops.comparison-planner",
+                    "producer_version": "action-effect.v1",
+                    "deterministic": True,
+                    "llm_used": False,
+                },
+                trust_level="SOURCE_VERIFIED",
+                security_level=int(
+                    (run.plan_snapshot_json or {})["target"][
+                        "security_level"
+                    ]
+                ),
+            )
+        )
         proposal = ChangeProposalEntity(
             proposal_id=UUID(snapshot.proposal_id),
             ops_run_id=run.ops_run_id,
@@ -1754,6 +2116,21 @@ class AIOpsRuntimeService:
             updated_at=now,
         )
         await uow.changes.add_proposal(proposal)
+        await uow.runs.append_event(
+            ops_run_id=run.ops_run_id,
+            ops_task_id=task.ops_task_id,
+            event_type="comparison.plan.created",
+            event_key=(
+                f"comparison:proposal:{proposal.proposal_id}:plan:v1"
+            ),
+            visibility="INTERNAL",
+            payload_json={
+                "proposal_id": str(proposal.proposal_id),
+                "artifact_id": str(comparison_plan_artifact.artifact_id),
+                "schema_version": "COMPARISON_PLAN.v1",
+                "trace_id": trace_id,
+            },
+        )
         if status == "PENDING_APPROVAL":
             await uow.changes.add_hitl(
                 HitlEntity(

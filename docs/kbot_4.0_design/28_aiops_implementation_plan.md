@@ -249,8 +249,8 @@ Mutation Grant。阶段 9C3 已完成 Worker 投递、Executor 反向 Claim、Or
 
 ## 步骤 10：巡检、报告与对比
 
-**状态：进行中；阶段 10A 调度/Fire/Run 与 10B 日报周报发布已完成
-（2026-07-24），Comparison 尚未实施。**
+**状态：进行中；阶段 10A 调度/Fire/Run、10B 日报周报发布及 10C 动作级
+Comparison 已完成（2026-07-24），Solution Group 对比与列表 API 尚未实施。**
 
 详细设计见 [39_aiops_step10_inspection_reporting_and_comparison.md](39_aiops_step10_inspection_reporting_and_comparison.md)。
 
@@ -262,8 +262,10 @@ Incident/Performance 处理前冻结 Comparison Plan 和基线，处理后使用
 
 当前已完成多副本 Plan Claim、Cron/IANA 时区与 Misfire/Overlap 解析、Fire 与
 Target Outbox 原子创建、Schedule Run 幂等展开、Fire 终态收敛，以及
-`REPORT_CONTENT.v1 + KBOT_OPS_REPORT` 的日报/周报发布。下一阶段冻结
-`COMPARISON_PLAN.v1`、采集等定义基线/After Window，并实现确定性比较规则。
+`REPORT_CONTENT.v1 + KBOT_OPS_REPORT` 的日报/周报发布。Proposal 事务已冻结
+`COMPARISON_PLAN.v1`；Verification 事务会生成 `COMPARISON_RESULT.v1` 并按
+`action-effect.v1` 确定性发布动作级对比报告。下一阶段补齐 Solution Group 汇总、
+Report/Fire 列表和版本历史 API。
 
 ## 步骤 11：Root Agent、Main API 与前端集成
 
