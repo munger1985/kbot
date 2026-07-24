@@ -1,5 +1,26 @@
 # AIOps 步骤 9：Advisory、逐命令审批与受控执行
 
+## 当前实施进度
+
+步骤 9 按安全阶段门拆分实施。阶段 9A 已于 2026-07-24 建立 Advisory 基线：
+
+- 新增随代码发布的 Oracle/MySQL Action Catalog、严格参数 Schema、模板 Hash、
+  Catalog Hash 和 `strict-template.v1` Renderer；
+- 首期 Catalog 只登记 `db.session.terminate@1.0.0`，Oracle 精确渲染单会话
+  `DISCONNECT SESSION`，MySQL 精确渲染单连接 `KILL CONNECTION`；
+- Action 参数只能来自当前 Target 的 `SOURCE_VERIFIED` 阻塞链/活动会话 Fact，
+  `USER_PROVIDED`、KC Citation 和模型文本不能提供可执行参数；
+- 诊断 DAG 增加 `ACTION_PLAN.v1` 和 `PROPOSAL_OUTCOME.v1`，运行内核在完成
+  Proposal Task 时原子创建 `ADVISORY_READY` 行和不可变 Snapshot 引用；
+- Public/Internal API 支持查看权威命令预览、驳回 Advisory、回填受限人工结果；
+  人工声明保存为 `USER_PROVIDED_ACTION_RESULT.v1`，不会被标记为系统执行；
+- `action_execution_enabled` 在 9A 注册时固定为 `false`。即使 Target、Binding 和
+  Policy 允许执行，也只能生成 Advisory，不创建 Approval Token 或 Execution。
+
+阶段 9B 才实现 Proposal Expiry、人工结果后的独立 Verify；阶段 9C 再实现逐命令
+审批、一次性授权、Claim、Mutation Driver、回调对账和 UNKNOWN 收敛。在这些安全
+门完成前不得把 Bootstrap 中的执行开关改为配置值。
+
 ## 目标与安全边界
 
 本步骤将 `CONFIRMED/PROBABLE` 诊断转化为可审计的处理建议，并在 Target 明确配置为 `AGENT_EXECUTE` 时，允许一位有权用户逐条批准后由 DB Executor 执行 Oracle/MySQL 变更。

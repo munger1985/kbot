@@ -831,6 +831,53 @@ class AIOpsManagementClient(_BaseAIOpsClient):
             idempotency_key=command.idempotency_key,
         )
 
+    async def get_proposal(
+        self,
+        proposal_id: UUID,
+        *,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "GET",
+            f"{INTERNAL_API_V1}/aiops/proposals/{proposal_id}",
+            auth_context=auth_context,
+        )
+
+    async def reject_proposal(
+        self,
+        proposal_id: UUID,
+        payload: dict[str, Any],
+        *,
+        idempotency_key: str,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "POST",
+            f"{INTERNAL_API_V1}/aiops/proposals/{proposal_id}/reject",
+            payload=payload,
+            idempotency_key=idempotency_key,
+            auth_context=auth_context,
+        )
+
+    async def record_manual_result(
+        self,
+        proposal_id: UUID,
+        payload: dict[str, Any],
+        *,
+        idempotency_key: str,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "POST",
+            (
+                f"{INTERNAL_API_V1}/aiops/proposals/{proposal_id}"
+                "/manual-result"
+            ),
+            payload=payload,
+            idempotency_key=idempotency_key,
+            auth_context=auth_context,
+        )
+
 
 class AIOpsDelegationClient(_BaseAIOpsClient):
     """Agent Runtime 只能使用的 Root Delegation Client。"""

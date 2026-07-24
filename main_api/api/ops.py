@@ -38,6 +38,8 @@ from platform_core.contracts.aiops import (
     InspectionTargetCreate,
     InspectionTargetPatch,
     InspectionTargetView,
+    ManualResultCommand,
+    ManualResultReceipt,
     MonitorBindingCreate,
     MonitorBindingPatch,
     MonitorBindingView,
@@ -53,6 +55,8 @@ from platform_core.contracts.aiops import (
     PolicyCreate,
     PolicyDetail,
     PolicyPage,
+    ProposalView,
+    RejectionCommand,
     TargetCreate,
     TargetDetail,
     TargetPage,
@@ -226,6 +230,54 @@ async def skip_hitl(
         auth_context=request.state.auth_context,
     )
     return _validated(HitlResult, payload, response)
+
+
+@router.get("/proposals/{proposal_id}", response_model=ProposalView)
+async def get_proposal(
+    proposal_id: UUID,
+    request: Request,
+    response: Response,
+) -> ProposalView:
+    payload = await _client(request).get_proposal(
+        proposal_id, auth_context=request.state.auth_context
+    )
+    return _validated(ProposalView, payload, response)
+
+
+@router.post("/proposals/{proposal_id}/reject", response_model=ProposalView)
+async def reject_proposal(
+    proposal_id: UUID,
+    body: RejectionCommand,
+    request: Request,
+    response: Response,
+    idempotency_key: IdempotencyKey,
+) -> ProposalView:
+    payload = await _client(request).reject_proposal(
+        proposal_id,
+        body.model_dump(mode="json"),
+        idempotency_key=idempotency_key,
+        auth_context=request.state.auth_context,
+    )
+    return _validated(ProposalView, payload, response)
+
+
+@router.post(
+    "/proposals/{proposal_id}/manual-result",
+    response_model=ManualResultReceipt,
+)
+async def record_manual_result(
+    proposal_id: UUID,
+    body: ManualResultCommand,
+    request: Request,
+    idempotency_key: IdempotencyKey,
+) -> ManualResultReceipt:
+    payload = await _client(request).record_manual_result(
+        proposal_id,
+        body.model_dump(mode="json"),
+        idempotency_key=idempotency_key,
+        auth_context=request.state.auth_context,
+    )
+    return ManualResultReceipt.model_validate(payload)
 
 
 @router.post("/runs/{run_id}/cancel", response_model=OpsRunReceipt)

@@ -90,6 +90,10 @@ class ChangeProposalEntity(BaseEntity):
         onupdate=func.now(),
         nullable=False,
     )
+    row_version: Mapped[int] = mapped_column(
+        Numeric(19, 0), nullable=False, default=1
+    )
+    __mapper_args__ = {"version_id_col": row_version}
 
 
 class HitlEntity(BaseEntity):

@@ -224,10 +224,12 @@
       "ExecutionStatus": {
         "enum": [
           "CREATED",
-          "CLAIMED",
+          "SUBMITTED",
           "RUNNING",
           "SUCCEEDED",
           "FAILED",
+          "TIMED_OUT",
+          "CANCELLED",
           "UNKNOWN"
         ],
         "title": "ExecutionStatus",

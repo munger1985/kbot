@@ -152,6 +152,8 @@ def create_runtime_handler_registry(
     diagnostic_registry=None,
     knowledge_core_client=None,
     diagnosis_caller_service: str | None = None,
+    action_registry=None,
+    action_execution_enabled: bool = False,
 ) -> HandlerRegistry:
     """组合运行内核及各阶段 Handler，版本必须精确匹配。"""
     kernel = create_kernel_handler_registry()
@@ -373,4 +375,31 @@ def create_runtime_handler_registry(
                 ),
             )
         )
+        if action_registry is not None:
+            from .change_handlers import (
+                ActionPlanHandler,
+                ProposalSnapshotHandler,
+            )
+
+            manifests.extend(
+                (
+                    HandlerManifest(
+                        handler_id="change.action-plan",
+                        version="1",
+                        output_schema_version="ACTION_PLAN.v1",
+                        idempotent=True,
+                        implementation=ActionPlanHandler(
+                            registry=action_registry,
+                            execution_enabled=action_execution_enabled,
+                        ),
+                    ),
+                    HandlerManifest(
+                        handler_id="change.proposal",
+                        version="1",
+                        output_schema_version="PROPOSAL_OUTCOME.v1",
+                        idempotent=True,
+                        implementation=ProposalSnapshotHandler(),
+                    ),
+                )
+            )
     return HandlerRegistry(tuple(manifests))

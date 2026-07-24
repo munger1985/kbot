@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import Field, model_validator
 
 from .configuration import (
@@ -189,16 +191,24 @@ class ProposalView(AIOpsContract):
     proposal_id: UUIDv7
     ops_run_id: UUIDv7
     target_id: UUIDv7
+    target_version: int = Field(ge=1)
+    mode: str
     action_template_id: str
     action_template_version: str
+    action_template_hash: Sha256Digest
+    parameters: JsonObject
+    parameter_fact_refs: dict[str, str]
     command_preview: str
+    command_hash: Sha256Digest
     impact: str
     risk: str
     prerequisites: tuple[str, ...]
     rollback_plan: str
     verification_plan: str
+    evidence_refs: tuple[str, ...] = ()
     proposal_hash: Sha256Digest
     status: ProposalStatus
+    expires_at: UtcDatetime | None = None
     row_version: int = Field(ge=1)
 
 
@@ -218,9 +228,17 @@ class RejectionCommand(AIOpsContract):
 class ManualResultCommand(AIOpsContract):
     schema_version: str = PUBLIC_SCHEMA_VERSION
     expected_row_version: int = Field(ge=1)
-    status: ResultStatus
+    status: Literal["EXECUTED", "FAILED", "CANCELLED"]
+    occurred_at: UtcDatetime
     note: str | None = Field(default=None, max_length=4000)
-    result_artifact: ArtifactRef | None = None
+    bounded_output: str | None = Field(default=None, max_length=16000)
+
+
+class ManualResultReceipt(AIOpsContract):
+    schema_version: str = PUBLIC_SCHEMA_VERSION
+    proposal_id: UUIDv7
+    status: str
+    result_artifact: ArtifactRef
 
 
 class ReportSummary(AIOpsContract):

@@ -7,6 +7,7 @@ from fastapi import FastAPI, HTTPException
 from aiops_agent.api.management import router as internal_config_router
 from aiops_agent.api.runtime import router as internal_runtime_router
 from aiops_agent.api.intake import router as internal_intake_router
+from aiops_agent.api.changes import router as internal_changes_router
 from main_api.api.ops import router as public_config_router
 from main_api.api.integrations import router as public_integration_router
 from platform_core.contracts.aiops.executor import (
@@ -27,7 +28,6 @@ from platform_core.contracts.aiops.internal import (
 )
 from platform_core.contracts.aiops.public import (
     ApprovalCommand,
-    ProposalView,
     ReportView,
 )
 
@@ -44,10 +44,6 @@ def create_public_contract_app() -> FastAPI:
     app = FastAPI(title="KBot AIOps Public Contract", version="1.0.0")
     app.include_router(public_config_router)
     app.include_router(public_integration_router)
-
-    @app.get("/api/v1/ops/proposals/{proposal_id}", response_model=ProposalView)
-    async def get_proposal(proposal_id: UUID):
-        _not_implemented()
 
     @app.post("/api/v1/ops/proposals/{proposal_id}/approve")
     async def approve_proposal(proposal_id: UUID, payload: ApprovalCommand):
@@ -66,6 +62,7 @@ def create_internal_contract_app() -> FastAPI:
     app.include_router(internal_config_router)
     app.include_router(internal_runtime_router)
     app.include_router(internal_intake_router)
+    app.include_router(internal_changes_router)
 
     @app.post(
         "/internal/v1/aiops/delegations",

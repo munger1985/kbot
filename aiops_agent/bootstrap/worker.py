@@ -8,6 +8,7 @@ import aiohttp
 from loguru import logger
 
 from aiops_agent.adapters.monitoring import MonitorProviderRegistry
+from aiops_agent.actions import ActionRegistry
 from aiops_agent.adapters.db_executor_client import DatabaseExecutorClient
 from aiops_agent.adapters.model_serving import AIOpsStructuredModelClient
 from aiops_agent.adapters.secret_store import ConfiguredSecretStore
@@ -83,6 +84,7 @@ def create_aiops_worker_probe(
             ),
         )
         diagnostic_registry = create_diagnostic_registry(resolved)
+        action_registry = ActionRegistry.load()
         diagnosis_prompts = DiagnosisPromptRegistry.load(
             Path(resolved.diagnosis.prompt_catalog_path)
             if resolved.diagnosis.prompt_catalog_path
@@ -125,6 +127,8 @@ def create_aiops_worker_probe(
             diagnostic_registry=diagnostic_registry,
             knowledge_core_client=knowledge_core_client,
             diagnosis_caller_service=config.service_name,
+            action_registry=action_registry,
+            action_execution_enabled=False,
         )
         runtime_service = AIOpsRuntimeService(
             uow_factory=runtime.uow_factory,

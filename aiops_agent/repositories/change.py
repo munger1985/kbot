@@ -82,6 +82,17 @@ class ChangeRepository(AIOpsRepository):
             statement = statement.with_for_update()
         return (await self._session.execute(statement)).scalar_one_or_none()
 
+    async def get_proposal(
+        self, *, proposal_id: UUID, lock: bool = False
+    ) -> ChangeProposalEntity | None:
+        self._check_active()
+        statement: Select = select(ChangeProposalEntity).where(
+            ChangeProposalEntity.proposal_id == proposal_id
+        )
+        if lock:
+            statement = statement.with_for_update()
+        return (await self._session.execute(statement)).scalar_one_or_none()
+
     async def get_hitl_scoped(
         self,
         *,
@@ -178,6 +189,7 @@ class ChangeRepository(AIOpsRepository):
         self,
         *,
         proposal_id: UUID,
+        expected_version: int,
         allowed_statuses: Collection[str],
         new_status: str,
         now: datetime,
@@ -187,9 +199,14 @@ class ChangeRepository(AIOpsRepository):
             update(ChangeProposalEntity)
             .where(
                 ChangeProposalEntity.proposal_id == proposal_id,
+                ChangeProposalEntity.row_version == expected_version,
                 ChangeProposalEntity.status.in_(allowed_statuses),
             )
-            .values(status=new_status, updated_at=now)
+            .values(
+                status=new_status,
+                updated_at=now,
+                row_version=ChangeProposalEntity.row_version + 1,
+            )
             .execution_options(synchronize_session=False)
         )
         result = await self._session.execute(statement)

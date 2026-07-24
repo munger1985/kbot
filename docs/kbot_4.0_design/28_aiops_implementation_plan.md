@@ -219,6 +219,8 @@ Skip/Expiry、Public/Internal API 和安全 SSE 引用。首期不开放模型�
 
 ## 步骤 9：Advisory 与受控变更
 
+**状态：进行中；阶段 9A Advisory 基线已完成（2026-07-24）。**
+
 详细设计见 [38_aiops_step9_advisory_approval_and_execution.md](38_aiops_step9_advisory_approval_and_execution.md)。
 
 先落地 `ADVISORY`：版本化 Action Template、影响/风险/前置条件/回滚/验证计划、人工处理结果和处理前后 Comparison。确认无自动执行路径后，再启用 `AGENT_EXECUTE`：
@@ -233,6 +235,11 @@ Skip/Expiry、Public/Internal API 和安全 SSE 引用。首期不开放模型�
 Mutation 默认通过部署级 Kill Switch 禁用；它只能降低能力，不能绕过 Target 的 `ADVISORY` 配置。首期不实现 Shell、OEM Job 或 Zabbix Remote Command 自动执行。
 
 **完成物：** Advisory 完整闭环，以及可独立开关、逐命令审批、不可重放的 Oracle/MySQL 变更执行链路。
+
+阶段 9A 已完成严格 Action Catalog、可信 Fact 参数血缘、确定性 Action Plan、
+不可变 Advisory Proposal、权威预览/驳回/人工结果 API。当前执行能力在 Handler
+注册处硬关闭，尚未创建 Approval Token、Execution 或 Mutation 调用。下一阶段先补
+Proposal Expiry 和人工结果 Verify，再单独实现审批与隔离执行。
 
 ## 步骤 10：巡检、报告与对比
 

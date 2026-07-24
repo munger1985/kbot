@@ -34,12 +34,14 @@ from aiops_agent.domain.states import (
     DomainOpsTaskStatus,
 )
 from aiops_agent.entities import (
+    ChangeProposalEntity,
     HitlEntity,
     OpsArtifactEntity,
     OpsRunEntity,
     OpsTaskEntity,
     OutboxEntity,
 )
+from aiops_agent.contracts.change import ProposalOutcome
 from aiops_agent.orchestration import (
     BlueprintRegistry,
     build_database_diagnostic_blueprint,
@@ -992,6 +994,16 @@ class AIOpsRuntimeService:
                     payload=command.artifact.payload or {},
                     now=now,
                 )
+            if command.artifact.schema_version == "PROPOSAL_OUTCOME.v1":
+                await self._materialize_advisory_proposal(
+                    uow=uow,
+                    run=run,
+                    task=task,
+                    artifact=artifact,
+                    payload=command.artifact.payload or {},
+                    trace_id=command.trace_id,
+                    now=now,
+                )
             ensure_task_transition(
                 DomainOpsTaskStatus(task.status),
                 DomainOpsTaskStatus.SUCCEEDED,
@@ -1324,6 +1336,87 @@ class AIOpsRuntimeService:
             health_status=health,
             checked_at=now,
             last_error_code=error,
+        )
+
+    @staticmethod
+    async def _materialize_advisory_proposal(
+        *,
+        uow,
+        run,
+        task,
+        artifact,
+        payload: dict[str, Any],
+        trace_id: str,
+        now: datetime,
+    ) -> None:
+        outcome = ProposalOutcome.model_validate(payload)
+        if outcome.status == "NOT_REQUIRED":
+            return
+        snapshot = outcome.proposal
+        if snapshot is None:
+            raise validation_failed("Proposal Outcome 缺少权威快照")
+        if (
+            snapshot.run_id != str(run.ops_run_id)
+            or snapshot.task_id != str(task.ops_task_id)
+            or snapshot.target_id != str(run.target_id)
+        ):
+            raise validation_failed("Proposal Snapshot 资源标识不匹配")
+        if snapshot.mode != "ADVISORY":
+            raise validation_failed("受控执行尚未启用，Proposal 必须降级为 Advisory")
+        proposal = ChangeProposalEntity(
+            proposal_id=UUID(snapshot.proposal_id),
+            ops_run_id=run.ops_run_id,
+            ops_task_id=task.ops_task_id,
+            target_id=run.target_id,
+            solution_group_key=snapshot.solution_group_key,
+            command_ordinal=snapshot.command_ordinal,
+            proposal_version=snapshot.proposal_version,
+            action_type=snapshot.mode,
+            action_template_id=snapshot.action_template_id,
+            action_template_version=snapshot.action_template_version,
+            action_template_hash=snapshot.action_template_hash,
+            renderer_version=snapshot.renderer_version,
+            command_hash=snapshot.command_hash,
+            parameters_json=snapshot.canonical_parameters,
+            parameters_hash=snapshot.parameters_hash,
+            rationale=snapshot.rationale,
+            impact_scope_json={"summary": snapshot.impact},
+            risk_level=snapshot.risk_level,
+            preconditions_json=[
+                {"tool_id": item} for item in snapshot.preconditions
+            ],
+            rollback_plan_json={"description": snapshot.rollback_plan},
+            verification_plan_json={
+                "tool_refs": list(snapshot.verification_plan)
+            },
+            evidence_artifacts_json=list(snapshot.evidence_refs),
+            policy_decision_hash=snapshot.policy_decision_hash,
+            proposal_hash=snapshot.proposal_hash,
+            snapshot_artifact_id=artifact.artifact_id,
+            status="ADVISORY_READY",
+            expires_at=snapshot.expires_at,
+            created_by_task_id=task.ops_task_id,
+            created_at=now,
+            updated_at=now,
+        )
+        await uow.changes.add_proposal(proposal)
+        await uow.runs.append_event(
+            ops_run_id=run.ops_run_id,
+            ops_task_id=task.ops_task_id,
+            event_type="proposal.advisory_ready",
+            event_key=f"proposal:{proposal.proposal_id}:ready",
+            visibility="USER",
+            payload_json={
+                "proposal_id": str(proposal.proposal_id),
+                "risk_level": proposal.risk_level,
+                "expires_at": (
+                    proposal.expires_at.isoformat()
+                    if proposal.expires_at is not None
+                    else None
+                ),
+                "proposal_hash": proposal.proposal_hash,
+                "trace_id": trace_id,
+            },
         )
 
     @staticmethod

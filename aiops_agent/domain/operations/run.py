@@ -47,6 +47,7 @@ RUN_TRANSITIONS: dict[
     DomainOpsRunStatus.DIAGNOSING: frozenset(
         {
             DomainOpsRunStatus.WAITING_INPUT,
+            DomainOpsRunStatus.PROPOSING,
             DomainOpsRunStatus.COMPLETED,
             DomainOpsRunStatus.DEGRADED,
             DomainOpsRunStatus.FAILED,
@@ -60,6 +61,16 @@ RUN_TRANSITIONS: dict[
             DomainOpsRunStatus.CANCELLED,
             DomainOpsRunStatus.EXPIRED,
             DomainOpsRunStatus.FAILED,
+        }
+    ),
+    DomainOpsRunStatus.PROPOSING: frozenset(
+        {
+            DomainOpsRunStatus.WAITING_APPROVAL,
+            DomainOpsRunStatus.COMPLETED,
+            DomainOpsRunStatus.DEGRADED,
+            DomainOpsRunStatus.FAILED,
+            DomainOpsRunStatus.CANCELLED,
+            DomainOpsRunStatus.EXPIRED,
         }
     ),
 }

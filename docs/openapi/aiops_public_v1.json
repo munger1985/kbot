@@ -1175,6 +1175,95 @@
         "title": "InspectionTargetView",
         "type": "object"
       },
+      "ManualResultCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "bounded_output": {
+            "anyOf": [
+              {
+                "maxLength": 16000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bounded Output"
+          },
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 4000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "EXECUTED",
+              "FAILED",
+              "CANCELLED"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "expected_row_version",
+          "status",
+          "occurred_at"
+        ],
+        "title": "ManualResultCommand",
+        "type": "object"
+      },
+      "ManualResultReceipt": {
+        "additionalProperties": false,
+        "properties": {
+          "proposal_id": {
+            "format": "uuid",
+            "title": "Proposal Id",
+            "type": "string"
+          },
+          "result_artifact": {
+            "$ref": "#/components/schemas/ArtifactRef"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "proposal_id",
+          "status",
+          "result_artifact"
+        ],
+        "title": "ManualResultReceipt",
+        "type": "object"
+      },
       "MonitorBindingCreate": {
         "additionalProperties": false,
         "properties": {
@@ -2431,12 +2520,14 @@
       },
       "ProposalStatus": {
         "enum": [
-          "PENDING",
+          "DRAFT",
+          "PENDING_APPROVAL",
+          "ADVISORY_READY",
           "APPROVED",
           "REJECTED",
-          "EXECUTING",
-          "COMPLETED",
-          "FAILED"
+          "EXPIRED",
+          "SUPERSEDED",
+          "CONSUMED"
         ],
         "title": "ProposalStatus",
         "type": "string"
@@ -2444,6 +2535,11 @@
       "ProposalView": {
         "additionalProperties": false,
         "properties": {
+          "action_template_hash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Action Template Hash",
+            "type": "string"
+          },
           "action_template_id": {
             "title": "Action Template Id",
             "type": "string"
@@ -2452,18 +2548,59 @@
             "title": "Action Template Version",
             "type": "string"
           },
+          "command_hash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Command Hash",
+            "type": "string"
+          },
           "command_preview": {
             "title": "Command Preview",
             "type": "string"
           },
+          "evidence_refs": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Evidence Refs",
+            "type": "array"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
           "impact": {
             "title": "Impact",
+            "type": "string"
+          },
+          "mode": {
+            "title": "Mode",
             "type": "string"
           },
           "ops_run_id": {
             "format": "uuid",
             "title": "Ops Run Id",
             "type": "string"
+          },
+          "parameter_fact_refs": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Parameter Fact Refs",
+            "type": "object"
+          },
+          "parameters": {
+            "additionalProperties": true,
+            "title": "Parameters",
+            "type": "object"
           },
           "prerequisites": {
             "items": {
@@ -2508,6 +2645,11 @@
             "title": "Target Id",
             "type": "string"
           },
+          "target_version": {
+            "minimum": 1.0,
+            "title": "Target Version",
+            "type": "integer"
+          },
           "verification_plan": {
             "title": "Verification Plan",
             "type": "string"
@@ -2517,9 +2659,15 @@
           "proposal_id",
           "ops_run_id",
           "target_id",
+          "target_version",
+          "mode",
           "action_template_id",
           "action_template_version",
+          "action_template_hash",
+          "parameters",
+          "parameter_fact_refs",
           "command_preview",
+          "command_hash",
           "impact",
           "risk",
           "prerequisites",
@@ -2530,6 +2678,33 @@
           "row_version"
         ],
         "title": "ProposalView",
+        "type": "object"
+      },
+      "RejectionCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          },
+          "reason": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "expected_row_version",
+          "reason"
+        ],
+        "title": "RejectionCommand",
         "type": "object"
       },
       "ReportStatus": {
@@ -5008,7 +5183,10 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Get Proposal"
+        "summary": "Get Proposal",
+        "tags": [
+          "AIOps"
+        ]
       }
     },
     "/api/v1/ops/proposals/{proposal_id}/approve": {
@@ -5057,6 +5235,130 @@
           }
         },
         "summary": "Approve Proposal"
+      }
+    },
+    "/api/v1/ops/proposals/{proposal_id}/manual-result": {
+      "post": {
+        "operationId": "record_manual_result_api_v1_ops_proposals__proposal_id__manual_result_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "proposal_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Proposal Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManualResultCommand"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManualResultReceipt"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Record Manual Result",
+        "tags": [
+          "AIOps"
+        ]
+      }
+    },
+    "/api/v1/ops/proposals/{proposal_id}/reject": {
+      "post": {
+        "operationId": "reject_proposal_api_v1_ops_proposals__proposal_id__reject_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "proposal_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Proposal Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RejectionCommand"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProposalView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reject Proposal",
+        "tags": [
+          "AIOps"
+        ]
       }
     },
     "/api/v1/ops/reports/{report_id}": {

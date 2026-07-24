@@ -1,0 +1,40 @@
+{
+  "catalog_version": "mysql-actions.v1",
+  "actions": [
+    {
+      "action_template_id": "db.session.terminate",
+      "version": "1.0.0",
+      "db_type": "MYSQL",
+      "variant": "mysql_kill_connection",
+      "supported_version_min": 8,
+      "supported_version_max_exclusive": 10,
+      "required_capabilities": ["session_management"],
+      "required_entitlements": [],
+      "required_privileges": ["CONNECTION_ADMIN"],
+      "execution_capability": "EXECUTABLE_AFTER_APPROVAL",
+      "risk_level": "HIGH",
+      "environment_allowlist": ["DEV", "TEST", "STAGING", "PROD"],
+      "parameters": [
+        {
+          "name": "session_id",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 18446744073709551615,
+          "source_fact_fields": ["session_id", "blocking_session_id"]
+        }
+      ],
+      "command_ref": "commands/kill_connection.sql",
+      "command_sha256": "49ff20dea3d2efbb3b267ce2d495364247987af30f75af858ec8272f7f069fb7",
+      "renderer_version": "strict-template.v1",
+      "precondition_tool_refs": ["db.session.active"],
+      "verification_tool_refs": ["db.session.active", "db.session.blocking_chain"],
+      "expected_effects": ["目标连接消失", "对应阻塞链解除"],
+      "rollback_description": null,
+      "statement_timeout_seconds": 30,
+      "observation_delay_seconds": 5,
+      "idempotency_class": "NON_RETRYABLE",
+      "concurrency_key": "database-session-mutation",
+      "status": "ACTIVE"
+    }
+  ]
+}
