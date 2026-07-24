@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from .types import (
     AIOpsContract,
@@ -188,12 +188,29 @@ class ExecutionStatusEvent(AIOpsContract):
     schema_version: str = EXECUTOR_SCHEMA_VERSION
     event_id: UUIDv7
     executor_request_id: UUIDv7
-    execution_id: UUIDv7 | None = None
-    status_version: int = Field(ge=1)
-    status: ExecutionStatus
+    execution_id: UUIDv7
+    executor_instance_id: str = Field(min_length=1, max_length=256)
+    grant_jti_hash: Sha256Digest
+    status_version: int = Field(ge=3)
+    status: Literal["RUNNING", "SUCCEEDED", "FAILED", "UNKNOWN"]
     occurred_at: UtcDatetime
-    result_ref: ResourceRef | None = None
+    bounded_result: JsonObject | None = None
+    result_hash: Sha256Digest | None = None
     error_code: str | None = Field(default=None, max_length=128)
+    retryable: Literal[False] = False
+
+    @model_validator(mode="after")
+    def validate_status_payload(self) -> "ExecutionStatusEvent":
+        terminal = self.status in {"SUCCEEDED", "FAILED", "UNKNOWN"}
+        if self.status == "RUNNING" and (
+            self.bounded_result is not None
+            or self.result_hash is not None
+            or self.error_code is not None
+        ):
+            raise ValueError("RUNNING 事件不能携带终态结果")
+        if terminal and self.result_hash is None:
+            raise ValueError("终态事件必须携带结果 Hash")
+        return self
 
 
 class ExecutionResultRef(AIOpsContract):

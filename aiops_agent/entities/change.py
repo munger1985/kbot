@@ -207,6 +207,9 @@ class ExecutionEntity(BaseEntity):
     claimed_at: Mapped[datetime | None] = mapped_column(
         UniversalTimestamp(timezone=True)
     )
+    deadline_at: Mapped[datetime] = mapped_column(
+        UniversalTimestamp(timezone=True), nullable=False
+    )
     grant_jti_hash: Mapped[str | None] = mapped_column(String(64))
     status_version: Mapped[int] = mapped_column(
         Numeric(19, 0), nullable=False, default=1

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import unittest
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
@@ -13,7 +15,10 @@ from aiops_agent.actions.grants import MutationGrantCodec
 from aiops_agent.application.changes import AIOpsChangeService
 from aiops_agent.application.errors import AIOpsApplicationError
 from platform_core.contracts.aiops import ApprovalCommand
-from platform_core.contracts.aiops.executor import MutationClaimRequest
+from platform_core.contracts.aiops.executor import (
+    ExecutionStatusEvent,
+    MutationClaimRequest,
+)
 from platform_core.identity import uuid7
 
 
@@ -390,6 +395,166 @@ class ExecutionClaimTest(unittest.TestCase):
         )
         self.assertEqual(first.grant, second.grant)
         self.assertEqual(uow.commit.await_count, 1)
+
+
+class ExecutionCallbackTest(unittest.TestCase):
+    def test_callback_applies_monotonic_running_and_terminal_states(
+        self,
+    ) -> None:
+        now = datetime.now(UTC)
+        execution_id = uuid7()
+        request_id = uuid7()
+        run_id = uuid7()
+        task_id = uuid7()
+        proposal_id = uuid7()
+        target_id = uuid7()
+        artifact_id = uuid7()
+        grant_hash = hashlib.sha256(
+            json.dumps(str(execution_id)).encode()
+        ).hexdigest()
+        execution = SimpleNamespace(
+            execution_id=execution_id,
+            executor_request_id=str(request_id),
+            executor_instance_id="executor-01",
+            grant_jti_hash=grant_hash,
+            ops_run_id=run_id,
+            ops_task_id=task_id,
+            proposal_id=proposal_id,
+            approval_token_id=uuid7(),
+            target_id=target_id,
+            proposal_hash="a" * 64,
+            command_hash="b" * 64,
+            status="SUBMITTED",
+            status_version=2,
+            claimed_at=now,
+            started_at=None,
+            completed_at=None,
+            result_artifact_id=None,
+            result_hash=None,
+            error_code=None,
+            error_message=None,
+            updated_at=now,
+        )
+        run = SimpleNamespace(
+            ops_run_id=run_id,
+            actor_id="portal:user-1",
+            agent_id=uuid7(),
+            target_id=target_id,
+            plan_snapshot_json={
+                "target": {
+                    "app_id": 100,
+                    "domain_id": 200,
+                    "security_level": 3,
+                }
+            },
+        )
+        proposal = SimpleNamespace(
+            proposal_id=proposal_id,
+            ops_task_id=task_id,
+        )
+        inboxes = []
+
+        async def add_inbox(entity):
+            inboxes.append(entity)
+            return entity
+
+        async def add_artifact(entity):
+            entity.artifact_id = artifact_id
+            return entity
+
+        uow = SimpleNamespace(
+            inbox=SimpleNamespace(
+                get_by_message=AsyncMock(return_value=None),
+                add=AsyncMock(side_effect=add_inbox),
+            ),
+            changes=SimpleNamespace(
+                get_execution=AsyncMock(return_value=execution),
+                get_proposal=AsyncMock(return_value=proposal),
+                get_approval_token=AsyncMock(
+                    return_value=SimpleNamespace()
+                ),
+            ),
+            runs=SimpleNamespace(
+                database_now=AsyncMock(return_value=now),
+                get_run=AsyncMock(return_value=run),
+                add_artifact=AsyncMock(side_effect=add_artifact),
+                append_event=AsyncMock(),
+            ),
+            outbox=SimpleNamespace(
+                add=AsyncMock(side_effect=lambda entity: entity)
+            ),
+            commit=AsyncMock(),
+        )
+        context = AsyncMock()
+        context.__aenter__.return_value = uow
+        service = AIOpsChangeService(
+            uow_factory=lambda: context,
+            action_registry=ActionRegistry.load(),
+            approval_enabled=True,
+            mutation_enabled=True,
+        )
+        running = ExecutionStatusEvent(
+            event_id=uuid7(),
+            executor_request_id=request_id,
+            execution_id=execution_id,
+            executor_instance_id="executor-01",
+            grant_jti_hash=grant_hash,
+            status_version=3,
+            status="RUNNING",
+            occurred_at=now,
+        )
+        first = asyncio.run(
+            service.apply_execution_event(
+                event=running, trace_id="trace-callback"
+            )
+        )
+        self.assertTrue(first.accepted)
+        self.assertEqual(execution.status, "RUNNING")
+        result_body = {
+            "accepted": True,
+            "action_template_id": "db.session.terminate",
+            "affected_object_count": 1,
+        }
+        result_hash = hashlib.sha256(
+            json.dumps(
+                result_body,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+        ).hexdigest()
+        terminal = ExecutionStatusEvent(
+            event_id=uuid7(),
+            executor_request_id=request_id,
+            execution_id=execution_id,
+            executor_instance_id="executor-01",
+            grant_jti_hash=grant_hash,
+            status_version=4,
+            status="SUCCEEDED",
+            occurred_at=now,
+            bounded_result=result_body,
+            result_hash=result_hash,
+        )
+        second = asyncio.run(
+            service.apply_execution_event(
+                event=terminal, trace_id="trace-callback"
+            )
+        )
+        self.assertTrue(second.accepted)
+        self.assertEqual(execution.status, "SUCCEEDED")
+        self.assertEqual(execution.status_version, 4)
+        self.assertEqual(execution.result_artifact_id, artifact_id)
+        stored_artifact = uow.runs.add_artifact.await_args.args[0]
+        self.assertEqual(
+            stored_artifact.payload_json["proposal_id"],
+            str(proposal_id),
+        )
+        self.assertEqual(len(inboxes), 2)
+        self.assertTrue(all(item.status == "PROCESSED" for item in inboxes))
+        uow.outbox.add.assert_awaited_once()
+        outbox = uow.outbox.add.await_args.args[0]
+        self.assertEqual(
+            outbox.event_type, "OPS_EXECUTION_VERIFY_REQUESTED"
+        )
 
 
 if __name__ == "__main__":

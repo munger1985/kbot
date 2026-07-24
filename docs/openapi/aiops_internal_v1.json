@@ -961,7 +961,7 @@
                     "mapping": {
                       "diagnostic.input_required": "#/components/schemas/InputRequiredEvent",
                       "diagnostic.progress": "#/components/schemas/DiagnosticProgressEvent",
-                      "execution.status": "#/components/schemas/ExecutionStatusEvent",
+                      "execution.status": "#/components/schemas/ExecutionStatusEvent-Output",
                       "proposal.pending_approval": "#/components/schemas/ApprovalRequiredEvent",
                       "report.ready": "#/components/schemas/ReportReadyEvent",
                       "run.cancelled": "#/components/schemas/RunTerminalEvent",
@@ -990,7 +990,7 @@
                       "$ref": "#/components/schemas/ApprovalRequiredEvent"
                     },
                     {
-                      "$ref": "#/components/schemas/ExecutionStatusEvent"
+                      "$ref": "#/components/schemas/ExecutionStatusEvent-Output"
                     },
                     {
                       "$ref": "#/components/schemas/ReportReadyEvent"
@@ -1099,6 +1099,36 @@
         "title": "DiagnosticProgressEvent",
         "type": "object"
       },
+      "EventReceipt": {
+        "additionalProperties": false,
+        "properties": {
+          "accepted": {
+            "title": "Accepted",
+            "type": "boolean"
+          },
+          "duplicate": {
+            "default": false,
+            "title": "Duplicate",
+            "type": "boolean"
+          },
+          "event_id": {
+            "format": "uuid",
+            "title": "Event Id",
+            "type": "string"
+          },
+          "schema_version": {
+            "default": "aiops.internal.v1",
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "event_id",
+          "accepted"
+        ],
+        "title": "EventReceipt",
+        "type": "object"
+      },
       "ExecutionStatus": {
         "enum": [
           "CREATED",
@@ -1113,7 +1143,117 @@
         "title": "ExecutionStatus",
         "type": "string"
       },
-      "ExecutionStatusEvent": {
+      "ExecutionStatusEvent-Input": {
+        "additionalProperties": false,
+        "properties": {
+          "bounded_result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bounded Result"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "event_id": {
+            "format": "uuid",
+            "title": "Event Id",
+            "type": "string"
+          },
+          "execution_id": {
+            "format": "uuid",
+            "title": "Execution Id",
+            "type": "string"
+          },
+          "executor_instance_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Executor Instance Id",
+            "type": "string"
+          },
+          "executor_request_id": {
+            "format": "uuid",
+            "title": "Executor Request Id",
+            "type": "string"
+          },
+          "grant_jti_hash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Grant Jti Hash",
+            "type": "string"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "result_hash": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result Hash"
+          },
+          "retryable": {
+            "const": false,
+            "default": false,
+            "title": "Retryable",
+            "type": "boolean"
+          },
+          "schema_version": {
+            "default": "aiops.executor.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "RUNNING",
+              "SUCCEEDED",
+              "FAILED",
+              "UNKNOWN"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "status_version": {
+            "minimum": 3.0,
+            "title": "Status Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "event_id",
+          "executor_request_id",
+          "execution_id",
+          "executor_instance_id",
+          "grant_jti_hash",
+          "status_version",
+          "status",
+          "occurred_at"
+        ],
+        "title": "ExecutionStatusEvent",
+        "type": "object"
+      },
+      "ExecutionStatusEvent-Output": {
         "additionalProperties": false,
         "properties": {
           "event_type": {
@@ -8131,6 +8271,47 @@
           }
         },
         "summary": "Claim Execution",
+        "tags": [
+          "AIOps Executions"
+        ]
+      }
+    },
+    "/internal/v1/aiops/executor-events": {
+      "post": {
+        "operationId": "apply_execution_event_internal_v1_aiops_executor_events_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExecutionStatusEvent-Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventReceipt"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Apply Execution Event",
         "tags": [
           "AIOps Executions"
         ]

@@ -176,6 +176,7 @@ def create_aiops_worker_probe(
                     provider_registry=provider_registry,
                     secret_store=secret_store,
                 ),
+                db_executor_client=db_executor_client,
             ),
             dispatcher_id=f"{config.worker_id}-outbox",
             lease_seconds=config.lease_seconds,

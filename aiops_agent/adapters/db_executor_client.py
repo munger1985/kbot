@@ -5,10 +5,15 @@ from __future__ import annotations
 import aiohttp
 
 from platform_core.contracts.aiops.executor import (
+    ExecutionResultRef,
+    MutationExecutionRequest,
     ReadDiagnosticRequest,
     ReadDiagnosticResult,
 )
-from platform_core.security import build_scoped_internal_auth_headers
+from platform_core.security import (
+    build_scoped_internal_auth_headers,
+    create_service_auth_context,
+)
 
 
 class DatabaseExecutorClientError(RuntimeError):
@@ -25,9 +30,13 @@ class DatabaseExecutorClient:
         timeout_seconds: int,
         session: aiohttp.ClientSession,
     ):
-        self._url = (
+        self._diagnostic_url = (
             base_url.rstrip("/")
             + "/internal/v1/db-executor/diagnostics"
+        )
+        self._mutation_url = (
+            base_url.rstrip("/")
+            + "/internal/v1/db-executor/executions"
         )
         self._audience = audience
         self._caller = caller_service
@@ -44,7 +53,7 @@ class DatabaseExecutorClient:
         )
         try:
             async with self._session.post(
-                self._url,
+                self._diagnostic_url,
                 headers=headers,
                 json=request.model_dump(mode="json"),
                 timeout=self._timeout,
@@ -58,4 +67,35 @@ class DatabaseExecutorClient:
         except (aiohttp.ClientError, TimeoutError, ValueError) as exc:
             raise DatabaseExecutorClientError(
                 "DB Executor 本次不可用"
+            ) from exc
+
+    async def request_execution(
+        self, request: MutationExecutionRequest, *, trace_id: str
+    ) -> ExecutionResultRef:
+        """向隔离 Executor 投递一次执行通知；授权由 Executor 反向 Claim。"""
+        headers = build_scoped_internal_auth_headers(
+            audience=self._audience,
+            caller_service=self._caller,
+            scopes=("db-executor.mutation",),
+            context=create_service_auth_context(
+                caller_service=self._caller,
+                trace_id=trace_id,
+            ),
+        )
+        try:
+            async with self._session.post(
+                self._mutation_url,
+                headers=headers,
+                json=request.model_dump(mode="json"),
+                timeout=self._timeout,
+            ) as response:
+                payload = await response.json()
+                if response.status >= 400:
+                    raise DatabaseExecutorClientError(
+                        f"DB Executor 返回 HTTP {response.status}"
+                    )
+                return ExecutionResultRef.model_validate(payload)
+        except (aiohttp.ClientError, TimeoutError, ValueError) as exc:
+            raise DatabaseExecutorClientError(
+                "DB Executor 变更入口本次不可用"
             ) from exc

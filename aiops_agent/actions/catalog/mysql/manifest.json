@@ -13,7 +13,7 @@
       "required_privileges": ["CONNECTION_ADMIN"],
       "execution_capability": "EXECUTABLE_AFTER_APPROVAL",
       "risk_level": "HIGH",
-      "environment_allowlist": ["DEV", "TEST", "STAGING", "PROD"],
+      "environment_allowlist": ["DEV", "STG", "PROD"],
       "parameters": [
         {
           "name": "session_id",

@@ -103,7 +103,7 @@ class AdvisoryVerificationHandlerTest(unittest.TestCase):
                 "db.session.active",
                 "db.session.blocking_chain",
             ],
-            "manual_result_status": "EXECUTED",
+            "source_result_status": "EXECUTED",
         }
         return TaskExecutionContext(
             run_id=str(uuid7()),
@@ -222,7 +222,7 @@ class AdvisoryVerificationOutboxTest(unittest.TestCase):
                 "db.session.active",
                 "db.session.blocking_chain",
             ],
-            "manual_result_status": "EXECUTED",
+            "source_result_status": "EXECUTED",
             "trace_id": "trace-1",
         }
         asyncio.run(
@@ -237,6 +237,39 @@ class AdvisoryVerificationOutboxTest(unittest.TestCase):
             command.blueprint_id, "change.advisory-verify"
         )
         fallback.publish.assert_not_awaited()
+
+    def test_execution_result_creates_execution_scoped_verify_run(
+        self,
+    ) -> None:
+        runtime = AsyncMock()
+        sink = AIOpsDomainOutboxSink(
+            runtime_service=runtime,
+            fallback=AsyncMock(),
+        )
+        execution_id = str(uuid7())
+        payload = {
+            "execution_id": execution_id,
+            "proposal_id": str(uuid7()),
+            "source_run_id": str(uuid7()),
+            "result_artifact_id": str(uuid7()),
+            "app_id": 100,
+            "domain_id": 200,
+            "actor_id": "portal:user-1",
+            "agent_id": str(uuid7()),
+            "target_id": str(uuid7()),
+            "trace_id": "trace-execution",
+        }
+        asyncio.run(
+            sink.publish("OPS_EXECUTION_VERIFY_REQUESTED", payload)
+        )
+        command = runtime.create_run.await_args.args[0]
+        self.assertEqual(
+            command.idempotency_key,
+            f"execution:{execution_id}:verify",
+        )
+        self.assertEqual(
+            command.client_metadata["trigger"], "execution_result"
+        )
 
 
 class ProposalExpiryTest(unittest.TestCase):
@@ -283,6 +316,89 @@ class ProposalExpiryTest(unittest.TestCase):
         uow.commit.assert_awaited_once()
         event = uow.runs.append_event.await_args.kwargs
         self.assertEqual(event["event_type"], "proposal.expired")
+
+    def test_reconciler_turns_stale_running_into_unknown(self) -> None:
+        now = datetime(2026, 7, 24, 10, 0, tzinfo=UTC)
+        execution = SimpleNamespace(
+            execution_id=uuid7(),
+            proposal_id=uuid7(),
+            ops_run_id=uuid7(),
+            ops_task_id=uuid7(),
+            target_id=uuid7(),
+            status="RUNNING",
+            status_version=3,
+            deadline_at=now - timedelta(seconds=1),
+            action_template_id="db.session.terminate",
+            executor_request_id=str(uuid7()),
+            executor_instance_id="executor-test",
+            grant_jti_hash="a" * 64,
+            proposal_hash="b" * 64,
+            command_hash="c" * 64,
+            result_artifact_id=None,
+            result_hash=None,
+            completed_at=None,
+            error_code=None,
+            error_message=None,
+            updated_at=now,
+        )
+        artifact_id = uuid7()
+        run = SimpleNamespace(
+            ops_run_id=execution.ops_run_id,
+            actor_id="portal:user-1",
+            agent_id=uuid7(),
+            target_id=execution.target_id,
+            plan_snapshot_json={
+                "target": {
+                    "app_id": 100,
+                    "domain_id": 200,
+                    "security_level": 3,
+                }
+            },
+        )
+        proposal = SimpleNamespace(
+            proposal_id=execution.proposal_id,
+            ops_task_id=execution.ops_task_id,
+        )
+
+        async def add_artifact(entity):
+            entity.artifact_id = artifact_id
+            return entity
+
+        uow = SimpleNamespace(
+            runs=SimpleNamespace(
+                database_now=AsyncMock(return_value=now),
+                lock_due_run=AsyncMock(return_value=None),
+                get_run=AsyncMock(return_value=run),
+                add_artifact=AsyncMock(side_effect=add_artifact),
+                append_event=AsyncMock(),
+            ),
+            changes=SimpleNamespace(
+                find_expired_proposal=AsyncMock(return_value=None),
+                find_expired_hitl=AsyncMock(return_value=None),
+                find_due_execution=AsyncMock(return_value=execution),
+                get_proposal=AsyncMock(return_value=proposal),
+                get_execution=AsyncMock(return_value=execution),
+            ),
+            outbox=SimpleNamespace(
+                add=AsyncMock(side_effect=lambda entity: entity)
+            ),
+            commit=AsyncMock(),
+        )
+        context = AsyncMock()
+        context.__aenter__.return_value = uow
+        service = AIOpsRuntimeService(
+            uow_factory=lambda: context,
+            blueprint_registry=AsyncMock(),
+            handler_registry=AsyncMock(),
+        )
+        worked = asyncio.run(
+            service.reconcile_once(trace_id="trace-reconcile")
+        )
+        self.assertTrue(worked)
+        self.assertEqual(execution.status, "UNKNOWN")
+        self.assertEqual(execution.status_version, 4)
+        self.assertEqual(execution.result_artifact_id, artifact_id)
+        uow.outbox.add.assert_awaited_once()
 
 
 if __name__ == "__main__":

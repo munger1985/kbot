@@ -21,12 +21,14 @@ from aiops_agent.application.errors import (
 from aiops_agent.contracts.change import (
     ApprovalDecision,
     AdvisoryActionResult,
+    ExecutionResultArtifact,
     ProposalOutcome,
 )
 from aiops_agent.entities import (
     ApprovalTokenEntity,
     ExecutionEntity,
     HitlEntity,
+    InboxEntity,
     OpsArtifactEntity,
     OutboxEntity,
 )
@@ -39,10 +41,12 @@ from platform_core.contracts.aiops.public import (
     RejectionCommand,
 )
 from platform_core.contracts.aiops.executor import (
+    ExecutionStatusEvent,
     MutationClaimReceipt,
     MutationClaimRequest,
     MutationExecutionGrant,
 )
+from platform_core.contracts.aiops.internal import EventReceipt
 from platform_core.contracts.aiops.types import ArtifactRef
 from platform_core.identity import uuid7
 
@@ -414,6 +418,7 @@ class AIOpsChangeService:
                     approval_token_id=token_id,
                     status="CREATED",
                     status_version=1,
+                    deadline_at=expires_at,
                 )
             )
             decision = ApprovalDecision(
@@ -926,6 +931,11 @@ class AIOpsChangeService:
                     command.executor_instance_id
                 )
                 execution.claimed_at = now
+                execution.deadline_at = now + timedelta(
+                    seconds=(
+                        self._mutation_statement_timeout_seconds + 60
+                    )
+                )
                 execution.grant_jti_hash = _hash(
                     str(execution.execution_id)
                 )
@@ -952,6 +962,228 @@ class AIOpsChangeService:
                 status="SUBMITTED",
                 grant=encoded,
                 expires_at=expires_at,
+            )
+
+    async def apply_execution_event(
+        self,
+        *,
+        event: ExecutionStatusEvent,
+        trace_id: str,
+    ) -> EventReceipt:
+        """以 Inbox 去重并按严格状态版本应用 Executor 回调。"""
+        payload = event.model_dump(mode="json")
+        message_key = str(event.event_id)
+        async with self._uow_factory() as uow:
+            duplicate = await uow.inbox.get_by_message(
+                source_system="aiops-db-executor",
+                message_key=message_key,
+            )
+            if duplicate is not None:
+                return EventReceipt(
+                    event_id=event.event_id,
+                    accepted=duplicate.status == "PROCESSED",
+                    duplicate=True,
+                )
+            now = await uow.runs.database_now()
+            inbox = await uow.inbox.add(
+                InboxEntity(
+                    source_system="aiops-db-executor",
+                    message_key=message_key,
+                    message_type="EXECUTION_STATUS",
+                    payload_json=payload,
+                    payload_hash=_hash(payload),
+                    status="RECEIVED",
+                    received_at=now,
+                )
+            )
+            preliminary = await uow.changes.get_execution(
+                execution_id=event.execution_id
+            )
+            if preliminary is None:
+                raise resource_not_found("Execution")
+            run = await uow.runs.get_run(
+                ops_run_id=preliminary.ops_run_id, lock=True
+            )
+            proposal = await uow.changes.get_proposal(
+                proposal_id=preliminary.proposal_id, lock=True
+            )
+            token = await uow.changes.get_approval_token(
+                approval_token_id=preliminary.approval_token_id,
+                lock=True,
+            )
+            execution = await uow.changes.get_execution(
+                execution_id=event.execution_id, lock=True
+            )
+            if any(
+                item is None
+                for item in (run, proposal, token, execution)
+            ):
+                raise state_conflict("Execution 回调授权链不完整")
+            assert run is not None
+            assert proposal is not None
+            assert token is not None
+            assert execution is not None
+            if (
+                UUID(str(execution.executor_request_id))
+                != event.executor_request_id
+                or execution.executor_instance_id
+                != event.executor_instance_id
+                or execution.grant_jti_hash != event.grant_jti_hash
+            ):
+                raise state_conflict("Executor 回调围栏不匹配")
+            current_version = int(execution.status_version)
+            if int(event.status_version) != current_version + 1:
+                raise state_conflict("Executor 状态版本不连续")
+            if event.occurred_at > now + timedelta(minutes=1):
+                raise state_conflict("Executor 事件时间超出允许偏差")
+            if (
+                execution.status == "SUBMITTED"
+                and event.status == "RUNNING"
+                and event.status_version == 3
+            ):
+                if (
+                    execution.claimed_at is None
+                    or event.occurred_at < execution.claimed_at
+                ):
+                    raise state_conflict("Executor RUNNING 时间无效")
+                execution.status = "RUNNING"
+                execution.status_version = 3
+                execution.started_at = event.occurred_at
+                execution.updated_at = now
+            elif (
+                execution.status == "RUNNING"
+                and event.status
+                in {"SUCCEEDED", "FAILED", "UNKNOWN"}
+                and event.status_version == 4
+            ):
+                if (
+                    execution.started_at is None
+                    or event.occurred_at < execution.started_at
+                ):
+                    raise state_conflict("Executor 终态时间无效")
+                result_body = event.bounded_result or {}
+                if _hash(result_body) != event.result_hash:
+                    raise state_conflict("Executor 结果 Hash 不匹配")
+                result = ExecutionResultArtifact(
+                    execution_id=str(execution.execution_id),
+                    proposal_id=str(proposal.proposal_id),
+                    executor_request_id=str(
+                        event.executor_request_id
+                    ),
+                    executor_instance_id=event.executor_instance_id,
+                    status=event.status,
+                    status_version=event.status_version,
+                    occurred_at=event.occurred_at,
+                    bounded_result=event.bounded_result,
+                    result_hash=event.result_hash,
+                    error_code=event.error_code,
+                    proposal_hash=execution.proposal_hash,
+                    command_hash=execution.command_hash,
+                    grant_jti_hash=event.grant_jti_hash,
+                )
+                result_payload = result.model_dump(mode="json")
+                artifact = await uow.runs.add_artifact(
+                    OpsArtifactEntity(
+                        ops_run_id=run.ops_run_id,
+                        ops_task_id=proposal.ops_task_id,
+                        artifact_key=(
+                            f"execution:{execution.execution_id}:result:v1"
+                        ),
+                        artifact_type="EXECUTION_RESULT",
+                        schema_version="EXECUTION_RESULT.v1",
+                        payload_json=result_payload,
+                        content_hash=_hash(result_payload),
+                        byte_size=len(_canonical(result_payload)),
+                        provenance_json={
+                            "producer": "aiops-db-executor",
+                            "producer_version": "mutation.v1",
+                            "executor_instance_id": (
+                                event.executor_instance_id
+                            ),
+                        },
+                        trust_level="SOURCE_VERIFIED",
+                        security_level=int(
+                            (run.plan_snapshot_json or {})["target"][
+                                "security_level"
+                            ]
+                        ),
+                    )
+                )
+                execution.status = event.status
+                execution.status_version = 4
+                execution.result_artifact_id = artifact.artifact_id
+                execution.result_hash = event.result_hash
+                execution.completed_at = event.occurred_at
+                execution.error_code = event.error_code
+                execution.error_message = (
+                    "数据库动作执行未成功"
+                    if event.status != "SUCCEEDED"
+                    else None
+                )
+                execution.updated_at = now
+                if event.status in {"SUCCEEDED", "UNKNOWN"}:
+                    verification_payload = {
+                        "execution_id": str(execution.execution_id),
+                        "proposal_id": str(proposal.proposal_id),
+                        "source_run_id": str(run.ops_run_id),
+                        "result_artifact_id": str(artifact.artifact_id),
+                        "app_id": int(
+                            (run.plan_snapshot_json or {})["target"][
+                                "app_id"
+                            ]
+                        ),
+                        "domain_id": int(
+                            (run.plan_snapshot_json or {})["target"][
+                                "domain_id"
+                            ]
+                        ),
+                        "actor_id": run.actor_id,
+                        "agent_id": str(run.agent_id),
+                        "target_id": str(run.target_id),
+                        "trace_id": trace_id,
+                    }
+                    await uow.outbox.add(
+                        OutboxEntity(
+                            aggregate_type="OPS_EXECUTION",
+                            aggregate_id=execution.execution_id,
+                            event_type=(
+                                "OPS_EXECUTION_VERIFY_REQUESTED"
+                            ),
+                            idempotency_key=(
+                                f"execution:{execution.execution_id}:verify"
+                            ),
+                            payload_json=verification_payload,
+                            payload_hash=_hash(
+                                verification_payload
+                            ),
+                            status="PENDING",
+                            available_at=now,
+                            max_attempts=5,
+                            trace_id=trace_id,
+                        )
+                    )
+            else:
+                raise state_conflict("Executor 状态迁移无效")
+            inbox.status = "PROCESSED"
+            inbox.processed_at = now
+            await uow.runs.append_event(
+                ops_run_id=run.ops_run_id,
+                ops_task_id=proposal.ops_task_id,
+                event_type="execution.status",
+                event_key=f"executor-event:{event.event_id}",
+                visibility="USER",
+                payload_json={
+                    "execution_id": str(execution.execution_id),
+                    "status": execution.status,
+                    "status_version": int(execution.status_version),
+                    "trace_id": trace_id,
+                },
+            )
+            await uow.commit()
+            return EventReceipt(
+                event_id=event.event_id,
+                accepted=True,
+                duplicate=False,
             )
 
     @staticmethod

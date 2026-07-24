@@ -56,9 +56,21 @@
 - Mutation Grant 使用独立密钥、issuer、audience 和短 TTL 签名，只允许一次数据库
   投递；同一实例重试可确定性重建完全相同的 Grant，其他实例重放会被拒绝。
 
-Bootstrap 仍将 `mutation_enabled` 硬编码为 `false`。因此可以评测审批和 Claim
-状态机，但部署无法 Claim 或执行真实命令。阶段 9C3 再实现 Mutation Driver、
-回调对账和 UNKNOWN 收敛；完成这些安全门后才能解除执行开关。
+阶段 9C3 已完成隔离执行闭环：
+
+- Worker 只投递 Execution/Request ID，Executor 使用自身实例身份反向 Claim；
+- Executor 重新加载本地 Catalog、渲染精确命令并逐项核对 Grant 中的
+  Template/Parameter/Command/Catalog Hash；
+- Oracle/MySQL Driver 只接受 `RenderedAction`，首期仅支持单会话终止，执行前
+  使用固定只读查询复核目标会话，不暴露任意 SQL 或通用 DML 入口；
+- AIOps 必须先持久化 `RUNNING(v3)`，Executor 才能进行唯一一次数据库 Mutation；
+- 终态事件经 Inbox 去重并按连续版本推进，结果保存为
+  `EXECUTION_RESULT.v1`；`SUCCEEDED/UNKNOWN` 都触发独立只读 Verify Run；
+- `CREATED/SUBMITTED` 超过 Deadline 收敛为 `TIMED_OUT`；已经进入
+  `RUNNING` 但丢失终态回调则收敛为 `UNKNOWN`，只验证、不重试。
+
+Bootstrap 已改为读取部署级 `mutation_enabled`，默认仍为 `false`；只有它与
+`agent_execution_enabled` 同时开启，审批、Claim 和执行链路才完整可用。
 
 ## 目标与安全边界
 
@@ -327,9 +339,9 @@ Mutation 能力与只读诊断使用独立并发池、Secret namespace 和 Kill 
 2. 校验本地 Catalog、Template/Renderer/Parameter/Command Hash；
 3. 从 Secret Store 解析 `execution_secret_ref`，不回退到诊断凭据；
 4. 建立 TLS 短连接，设置 Client Identifier、超时和审计标签；
-5. 执行模板内只读 Precondition，确认目标身份、版本和对象状态仍匹配；
-6. 通过签名回调将 Execution 置为 `RUNNING`；
-7. 仅一次调用方言专用 `execute_action()`；
+5. 通过签名回调将 Execution 置为 `RUNNING`，确认单次投递闸门已持久化；
+6. 在方言 Driver 内执行固定只读 Precondition，确认目标身份仍匹配；
+7. Precondition 通过后仅一次执行同一 `execute_action()` 中的精确命令；
 8. 收集有界结果、数据库错误码、耗时和 Result Hash；
 9. 立即关闭连接并回调终态。
 
@@ -364,7 +376,10 @@ error_code, retryable=false
 
 AIOps 先写 Inbox，再按 `status_version` 和允许迁移对账；重复/乱序事件不重复推进。`EXECUTION_RESULT.v1` 保存有界、脱敏结果和 Template/Command/Grant Hash，不保存 Secret。
 
-若 `SUBMITTED/RUNNING` 超过 Deadline 且没有终态，Reconciler 标记 `UNKNOWN` 并创建 Verify Task。Executor 不能直接修改 Run/Task/Proposal 表。
+若 `CREATED/SUBMITTED` 超过 Deadline，说明 `RUNNING` 单次投递闸门尚未成功，
+Reconciler 标记 `TIMED_OUT` 且不创建效果验证。若 `RUNNING` 超过 Deadline
+仍没有终态，Reconciler 标记 `UNKNOWN`、保存恢复 Artifact 并创建 Verify Run。
+Executor 不能直接修改 Run/Task/Proposal 表。
 
 ## 验证、后续命令与回滚
 

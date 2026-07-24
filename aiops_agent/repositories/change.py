@@ -387,6 +387,27 @@ class ChangeRepository(AIOpsRepository):
         )
         return (await self._session.execute(statement)).scalars().first()
 
+    async def find_due_execution(
+        self, *, now: datetime
+    ) -> ExecutionEntity | None:
+        """返回一个已越过执行截止时间的非终态 Execution。"""
+        self._check_active()
+        statement = (
+            select(ExecutionEntity)
+            .where(
+                ExecutionEntity.status.in_(
+                    ("CREATED", "SUBMITTED", "RUNNING")
+                ),
+                ExecutionEntity.deadline_at <= now,
+            )
+            .order_by(
+                ExecutionEntity.deadline_at,
+                ExecutionEntity.execution_id,
+            )
+            .limit(1)
+        )
+        return (await self._session.execute(statement)).scalars().first()
+
     async def apply_execution_status(
         self,
         *,

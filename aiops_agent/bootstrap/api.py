@@ -26,7 +26,10 @@ from aiops_agent.api.management import router as management_router
 from aiops_agent.api.runtime import router as runtime_router
 from aiops_agent.api.intake import router as intake_router
 from aiops_agent.api.changes import router as changes_router
-from aiops_agent.api.executions import router as executions_router
+from aiops_agent.api.executions import (
+    event_router as execution_events_router,
+    router as executions_router,
+)
 from aiops_agent.application.changes import AIOpsChangeService
 from aiops_agent.application.monitoring import MonitorWebhookIntakeService
 from aiops_agent.application.configuration import AIOpsConfigurationService
@@ -147,8 +150,7 @@ def create_aiops_api(
             approval_enabled=(
                 resolved.management.agent_execution_enabled
             ),
-            # 9C2 已落 Claim；Mutation Driver/回调完成前保持硬关闭。
-            mutation_enabled=False,
+            mutation_enabled=resolved.executor.mutation_enabled,
             mutation_grant_codec=(
                 create_mutation_grant_codec(resolved)
                 if resolved.executor.mutation_enabled
@@ -298,6 +300,7 @@ def create_aiops_api(
     app.include_router(intake_router)
     app.include_router(changes_router)
     app.include_router(executions_router)
+    app.include_router(execution_events_router)
 
     @app.exception_handler(AIOpsApplicationError)
     async def application_error_handler(

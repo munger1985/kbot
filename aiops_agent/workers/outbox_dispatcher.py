@@ -9,6 +9,9 @@ from typing import Protocol
 from loguru import logger
 
 from platform_core.contracts.aiops import CreateOpsRunCommand
+from platform_core.contracts.aiops.executor import (
+    MutationExecutionRequest,
+)
 from platform_core.identity import uuid7
 
 
@@ -36,10 +39,12 @@ class AIOpsDomainOutboxSink:
         runtime_service,
         fallback: OutboxSink,
         monitor_health_service=None,
+        db_executor_client=None,
     ):
         self._runtime_service = runtime_service
         self._fallback = fallback
         self._monitor_health_service = monitor_health_service
+        self._db_executor_client = db_executor_client
 
     async def publish(self, event_type: str, payload: dict) -> None:
         if (
@@ -49,39 +54,46 @@ class AIOpsDomainOutboxSink:
             await self._monitor_health_service.execute(payload)
             return
         if event_type == "OPS_ADVISORY_RESULT_RECORDED":
-            proposal_id = payload["proposal_id"]
-            await self._runtime_service.create_run(
-                CreateOpsRunCommand(
-                    command_id=uuid7(),
-                    idempotency_key=(
-                        f"proposal:{proposal_id}:manual-result:verify"
-                    ),
-                    app_id=payload["app_id"],
-                    domain_id=payload["domain_id"],
-                    actor_id=payload["actor_id"],
-                    agent_id=payload["agent_id"],
-                    target_id=payload["target_id"],
-                    trigger_type="API",
-                    input="验证人工执行的 Advisory 动作效果",
-                    blueprint_id="change.advisory-verify",
-                    blueprint_version="1",
-                    client_metadata={
-                        "trace_id": payload["trace_id"],
-                        "trigger": "advisory_manual_result",
-                        "advisory_verification": {
-                            key: payload[key]
-                            for key in (
-                                "proposal_id",
-                                "source_run_id",
-                                "result_artifact_id",
-                            )
-                        },
-                    },
-                )
+            await self._create_verification_run(
+                payload=payload,
+                idempotency_key=(
+                    f"proposal:{payload['proposal_id']}:manual-result:verify"
+                ),
+                trigger="advisory_manual_result",
             )
             logger.info(
                 "Advisory 人工结果验证 Run 已创建：proposal_id={}",
-                proposal_id,
+                payload["proposal_id"],
+            )
+            return
+        if event_type == "OPS_EXECUTION_VERIFY_REQUESTED":
+            await self._create_verification_run(
+                payload=payload,
+                idempotency_key=(
+                    f"execution:{payload['execution_id']}:verify"
+                ),
+                trigger="execution_result",
+            )
+            logger.info(
+                "Execution 效果验证 Run 已创建：proposal_id={}",
+                payload["proposal_id"],
+            )
+            return
+        if (
+            event_type == "OPS_EXECUTION_CREATED"
+            and self._db_executor_client is not None
+        ):
+            await self._db_executor_client.request_execution(
+                MutationExecutionRequest(
+                    execution_id=payload["execution_id"],
+                    executor_request_id=payload[
+                        "executor_request_id"
+                    ],
+                    idempotency_key=(
+                        f"execution:{payload['execution_id']}:dispatch"
+                    ),
+                ),
+                trace_id=payload["trace_id"],
             )
             return
         if event_type != "OPS_ALERT_AUTO_RUN_REQUESTED":
@@ -111,6 +123,41 @@ class AIOpsDomainOutboxSink:
         )
         logger.info(
             "严重告警只观测 Run 已创建：alert_id={}", alert_id
+        )
+
+    async def _create_verification_run(
+        self,
+        *,
+        payload: dict,
+        idempotency_key: str,
+        trigger: str,
+    ) -> None:
+        await self._runtime_service.create_run(
+            CreateOpsRunCommand(
+                command_id=uuid7(),
+                idempotency_key=idempotency_key,
+                app_id=payload["app_id"],
+                domain_id=payload["domain_id"],
+                actor_id=payload["actor_id"],
+                agent_id=payload["agent_id"],
+                target_id=payload["target_id"],
+                trigger_type="API",
+                input="验证数据库动作的实际效果",
+                blueprint_id="change.advisory-verify",
+                blueprint_version="1",
+                client_metadata={
+                    "trace_id": payload["trace_id"],
+                    "trigger": trigger,
+                    "advisory_verification": {
+                        key: payload[key]
+                        for key in (
+                            "proposal_id",
+                            "source_run_id",
+                            "result_artifact_id",
+                        )
+                    },
+                },
+            )
         )
 class AIOpsOutboxDispatcher:
     def __init__(

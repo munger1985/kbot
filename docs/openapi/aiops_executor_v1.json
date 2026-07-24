@@ -235,82 +235,6 @@
         "title": "ExecutionStatus",
         "type": "string"
       },
-      "ExecutionStatusEvent": {
-        "additionalProperties": false,
-        "properties": {
-          "error_code": {
-            "anyOf": [
-              {
-                "maxLength": 128,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Error Code"
-          },
-          "event_id": {
-            "format": "uuid",
-            "title": "Event Id",
-            "type": "string"
-          },
-          "execution_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Execution Id"
-          },
-          "executor_request_id": {
-            "format": "uuid",
-            "title": "Executor Request Id",
-            "type": "string"
-          },
-          "occurred_at": {
-            "format": "date-time",
-            "title": "Occurred At",
-            "type": "string"
-          },
-          "result_ref": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ResourceRef"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "schema_version": {
-            "default": "aiops.executor.v1",
-            "title": "Schema Version",
-            "type": "string"
-          },
-          "status": {
-            "$ref": "#/components/schemas/ExecutionStatus"
-          },
-          "status_version": {
-            "minimum": 1.0,
-            "title": "Status Version",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "event_id",
-          "executor_request_id",
-          "status_version",
-          "status",
-          "occurred_at"
-        ],
-        "title": "ExecutionStatusEvent",
-        "type": "object"
-      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -518,42 +442,6 @@
   },
   "openapi": "3.1.0",
   "paths": {
-    "/internal/v1/aiops/executor-events": {
-      "post": {
-        "operationId": "executor_event_internal_v1_aiops_executor_events_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ExecutionStatusEvent"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Executor Event"
-      }
-    },
     "/internal/v1/db-executor/diagnostics": {
       "post": {
         "operationId": "execute_diagnostic_internal_v1_db_executor_diagnostics_post",

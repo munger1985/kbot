@@ -219,7 +219,7 @@ Skip/Expiry、Public/Internal API 和安全 SSE 引用。首期不开放模型�
 
 ## 步骤 9：Advisory 与受控变更
 
-**状态：进行中；阶段 9A/9B、9C1 审批及 9C2 Claim 已完成（2026-07-24）。**
+**状态：核心闭环已完成；阶段 9A/9B、9C1/9C2/9C3 已完成（2026-07-24）。**
 
 详细设计见 [38_aiops_step9_advisory_approval_and_execution.md](38_aiops_step9_advisory_approval_and_execution.md)。
 
@@ -242,8 +242,10 @@ Expiry，以及由事务 Outbox 幂等创建的独立只读 Verify Run；验证�
 数据库事实并输出 `ACTION_VERIFICATION.v1`。阶段 9C1 已完成 `PENDING_APPROVAL`
 HITL、当前配置与 Catalog 复核、一次性授权 Hash、Execution/Outbox 原子创建及审批
 并发幂等。阶段 9C2 已完成单实例 Claim、Target 并发围栏和 audience-bound 短期
-Mutation Grant；Bootstrap 的 Mutation 门仍硬关闭。下一阶段实现隔离 Driver、
-状态回调和 UNKNOWN 收敛。
+Mutation Grant。阶段 9C3 已完成 Worker 投递、Executor 反向 Claim、Oracle/MySQL
+窄 Mutation Driver、`RUNNING` 先持久化闸门、Inbox 单调终态回调、
+`EXECUTION_RESULT.v1`、效果验证投递和 Deadline/UNKNOWN 收敛。部署级 Mutation
+开关默认关闭；真实数据库故障注入、最小权限验证和生产分级启用留到统一验收阶段。
 
 ## 步骤 10：巡检、报告与对比
 

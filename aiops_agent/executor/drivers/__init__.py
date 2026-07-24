@@ -3,15 +3,23 @@
 from .base import (
     DiagnosticDriverError,
     DriverQueryResult,
+    MutationDatabaseDriver,
+    MutationDriverError,
+    MutationDriverResult,
     ReadonlyDatabaseDriver,
 )
-from .mysql import MySQLDiagnosticDriver
-from .oracle import OracleDiagnosticDriver
+from .mysql import MySQLDiagnosticDriver, MySQLMutationDriver
+from .oracle import OracleDiagnosticDriver, OracleMutationDriver
 
 __all__ = [
     "DiagnosticDriverError",
     "DriverQueryResult",
     "MySQLDiagnosticDriver",
+    "MySQLMutationDriver",
+    "MutationDatabaseDriver",
+    "MutationDriverError",
+    "MutationDriverResult",
     "OracleDiagnosticDriver",
+    "OracleMutationDriver",
     "ReadonlyDatabaseDriver",
 ]

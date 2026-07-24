@@ -41,7 +41,10 @@ from aiops_agent.entities import (
     OpsTaskEntity,
     OutboxEntity,
 )
-from aiops_agent.contracts.change import ProposalOutcome
+from aiops_agent.contracts.change import (
+    ExecutionResultArtifact,
+    ProposalOutcome,
+)
 from aiops_agent.orchestration import (
     BlueprintRegistry,
     build_advisory_verification_blueprint,
@@ -364,7 +367,10 @@ class AIOpsRuntimeService:
                     or source_proposal.target_id != target.target_id
                     or source_result.ops_run_id != source_run.ops_run_id
                     or source_result.schema_version
-                    != "USER_PROVIDED_ACTION_RESULT.v1"
+                    not in {
+                        "USER_PROVIDED_ACTION_RESULT.v1",
+                        "EXECUTION_RESULT.v1",
+                    }
                     or str(source_run.ops_run_id)
                     != str(requested_verification["source_run_id"])
                     or source_run.agent_id != command.agent_id
@@ -378,13 +384,15 @@ class AIOpsRuntimeService:
                 )
                 proposal_snapshot = proposal_outcome.proposal
                 result_payload = dict(source_result.payload_json or {})
+                source_status = result_payload.get("status")
                 if (
                     proposal_snapshot is None
                     or proposal_snapshot.proposal_id
                     != str(proposal_id)
                     or result_payload.get("proposal_id")
                     != str(proposal_id)
-                    or result_payload.get("status") != "EXECUTED"
+                    or source_status
+                    not in {"EXECUTED", "SUCCEEDED", "UNKNOWN"}
                 ):
                     raise validation_failed(
                         "Advisory 验证来源内容无效"
@@ -402,7 +410,7 @@ class AIOpsRuntimeService:
                     "verification_tool_refs": tuple(
                         proposal_snapshot.verification_plan
                     ),
-                    "manual_result_status": "EXECUTED",
+                    "source_result_status": source_status,
                 }
                 requested_tools = tuple(
                     dict.fromkeys(
@@ -2122,6 +2130,165 @@ class AIOpsRuntimeService:
                     payload_json={
                         "hitl_id": str(hitl.hitl_id),
                         "status": "EXPIRED",
+                        "trace_id": trace_id,
+                    },
+                )
+                await uow.commit()
+                return True
+            due_execution = await uow.changes.find_due_execution(now=now)
+            if due_execution is not None:
+                run = await uow.runs.get_run(
+                    ops_run_id=due_execution.ops_run_id, lock=True
+                )
+                proposal = await uow.changes.get_proposal(
+                    proposal_id=due_execution.proposal_id, lock=True
+                )
+                execution = await uow.changes.get_execution(
+                    execution_id=due_execution.execution_id, lock=True
+                )
+                if (
+                    run is None
+                    or proposal is None
+                    or execution is None
+                    or execution.status
+                    not in {"CREATED", "SUBMITTED", "RUNNING"}
+                    or execution.deadline_at > now
+                ):
+                    return False
+                if execution.status in {"CREATED", "SUBMITTED"}:
+                    execution.status = "TIMED_OUT"
+                    execution.status_version = (
+                        int(execution.status_version) + 1
+                    )
+                    execution.completed_at = now
+                    execution.error_code = "EXECUTION_NOT_STARTED"
+                    execution.error_message = (
+                        "执行授权在数据库动作开始前已超时"
+                    )
+                    execution.updated_at = now
+                else:
+                    result_body = {
+                        "accepted": False,
+                        "action_template_id": (
+                            execution.action_template_id
+                        ),
+                        "outcome_unknown": True,
+                        "reason": "EXECUTOR_CALLBACK_TIMEOUT",
+                    }
+                    result_hash = sha256_json(result_body)
+                    assert execution.executor_instance_id is not None
+                    assert execution.grant_jti_hash is not None
+                    result = ExecutionResultArtifact(
+                        execution_id=str(execution.execution_id),
+                        proposal_id=str(proposal.proposal_id),
+                        executor_request_id=(
+                            execution.executor_request_id
+                        ),
+                        executor_instance_id=(
+                            execution.executor_instance_id
+                        ),
+                        status="UNKNOWN",
+                        status_version=4,
+                        occurred_at=now,
+                        bounded_result=result_body,
+                        result_hash=result_hash,
+                        error_code="EXECUTOR_CALLBACK_TIMEOUT",
+                        proposal_hash=execution.proposal_hash,
+                        command_hash=execution.command_hash,
+                        grant_jti_hash=execution.grant_jti_hash,
+                    )
+                    result_payload = result.model_dump(mode="json")
+                    artifact = await uow.runs.add_artifact(
+                        OpsArtifactEntity(
+                            ops_run_id=run.ops_run_id,
+                            ops_task_id=proposal.ops_task_id,
+                            artifact_key=(
+                                f"execution:{execution.execution_id}:"
+                                "result:v1"
+                            ),
+                            artifact_type="EXECUTION_RESULT",
+                            schema_version="EXECUTION_RESULT.v1",
+                            payload_json=result_payload,
+                            content_hash=sha256_json(result_payload),
+                            byte_size=len(
+                                canonical_bytes(result_payload)
+                            ),
+                            provenance_json={
+                                "producer": "aiops.reconciler",
+                                "producer_version": "mutation.v1",
+                                "reason": "CALLBACK_TIMEOUT",
+                            },
+                            trust_level="SOURCE_VERIFIED",
+                            security_level=int(
+                                (run.plan_snapshot_json or {})[
+                                    "target"
+                                ]["security_level"]
+                            ),
+                        )
+                    )
+                    execution.status = "UNKNOWN"
+                    execution.status_version = 4
+                    execution.result_artifact_id = artifact.artifact_id
+                    execution.result_hash = result_hash
+                    execution.completed_at = now
+                    execution.error_code = "EXECUTOR_CALLBACK_TIMEOUT"
+                    execution.error_message = (
+                        "数据库动作已开始，但未收到可信终态"
+                    )
+                    execution.updated_at = now
+                    target_snapshot = (
+                        run.plan_snapshot_json or {}
+                    )["target"]
+                    verification_payload = {
+                        "execution_id": str(execution.execution_id),
+                        "proposal_id": str(proposal.proposal_id),
+                        "source_run_id": str(run.ops_run_id),
+                        "result_artifact_id": str(artifact.artifact_id),
+                        "app_id": int(target_snapshot["app_id"]),
+                        "domain_id": int(
+                            target_snapshot["domain_id"]
+                        ),
+                        "actor_id": run.actor_id,
+                        "agent_id": str(run.agent_id),
+                        "target_id": str(run.target_id),
+                        "trace_id": trace_id,
+                    }
+                    await uow.outbox.add(
+                        OutboxEntity(
+                            aggregate_type="OPS_EXECUTION",
+                            aggregate_id=execution.execution_id,
+                            event_type=(
+                                "OPS_EXECUTION_VERIFY_REQUESTED"
+                            ),
+                            idempotency_key=(
+                                f"execution:{execution.execution_id}:verify"
+                            ),
+                            payload_json=verification_payload,
+                            payload_hash=sha256_json(
+                                verification_payload
+                            ),
+                            status="PENDING",
+                            available_at=now,
+                            max_attempts=5,
+                            trace_id=trace_id,
+                        )
+                    )
+                await uow.runs.append_event(
+                    ops_run_id=run.ops_run_id,
+                    ops_task_id=proposal.ops_task_id,
+                    event_type="execution.status",
+                    event_key=(
+                        f"execution:{execution.execution_id}:"
+                        f"{execution.status.lower()}"
+                    ),
+                    visibility="USER",
+                    payload_json={
+                        "execution_id": str(execution.execution_id),
+                        "status": execution.status,
+                        "status_version": int(
+                            execution.status_version
+                        ),
+                        "error_code": execution.error_code,
                         "trace_id": trace_id,
                     },
                 )

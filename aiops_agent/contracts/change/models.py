@@ -109,7 +109,7 @@ class AdvisoryVerificationScope(_ChangeContract):
     action_template_id: str
     canonical_parameters: dict[str, int | str]
     verification_tool_refs: tuple[str, ...]
-    manual_result_status: Literal["EXECUTED"]
+    source_result_status: Literal["EXECUTED", "SUCCEEDED", "UNKNOWN"]
     initial_gap_codes: tuple[str, ...] = ()
 
 
@@ -148,3 +148,22 @@ class ApprovalDecision(_ChangeContract):
     note_hash: str | None = Field(
         default=None, pattern=r"^[a-f0-9]{64}$"
     )
+
+
+class ExecutionResultArtifact(_ChangeContract):
+    schema_version: Literal["EXECUTION_RESULT.v1"] = (
+        "EXECUTION_RESULT.v1"
+    )
+    execution_id: str
+    proposal_id: str
+    executor_request_id: str
+    executor_instance_id: str
+    status: Literal["SUCCEEDED", "FAILED", "UNKNOWN"]
+    status_version: int = Field(ge=4)
+    occurred_at: UtcDatetime
+    bounded_result: dict[str, Any] | None = None
+    result_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
+    error_code: str | None = None
+    proposal_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
+    command_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
+    grant_jti_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
