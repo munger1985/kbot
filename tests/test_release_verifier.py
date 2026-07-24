@@ -50,7 +50,22 @@ class ReleaseVerifierTest(unittest.TestCase):
         }
 
         self.assertIn("oracle_object_catalog", names)
+        self.assertIn("oracle_all_entity_catalog", names)
         self.assertIn("oracle_aiops_entity_catalog", names)
+        self.assertIn("oracle_cross_service_uow", names)
+        self.assertIn("oracle_aiops_persistence", names)
+        self.assertIn("oracle_aiops_runtime", names)
+
+    def test_prometheus_check_is_explicitly_enabled(self):
+        names = {
+            name
+            for name, _, _ in _checks(
+                include_oracle=False,
+                prometheus_url="http://localhost:9161/metrics",
+            )
+        }
+
+        self.assertIn("prometheus_metrics", names)
 
 
 if __name__ == "__main__":

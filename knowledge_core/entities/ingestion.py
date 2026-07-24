@@ -86,6 +86,11 @@ class KcDocumentVersionEntity(_AuditEntity):
     detected_mime_type: Mapped[str] = mapped_column(String(255), nullable=False)
     security_level: Mapped[int] = mapped_column(Integer, nullable=False)
     content_metadata_json: Mapped[dict[str, Any] | None] = mapped_column(OracleJSON)
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
 
 
 class KcBundleRevisionDocumentEntity(_AuditEntity):

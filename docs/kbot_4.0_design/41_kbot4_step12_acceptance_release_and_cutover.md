@@ -85,8 +85,12 @@ python3 scripts/verify_release.py \
 Runner 已记录 Python 版本、解释器路径、Commit、Branch、Dirty Path，以及 DDL、
 配置样例、OpenAPI 和依赖声明 Hash，并始终用当前解释器启动子检查。`--oracle`
 会先执行有界 Listener Preflight，再追加全部 KBot 对象清单和 AIOps
-Entity/Catalog 检查；每个数据库子检查都有进程级超时。后续再纳入质量、安全、
-负载、构建物签名和 JUnit 报告。开发者可以运行
+Entity/Catalog 严格检查、五个服务 42 张表的 Entity/Catalog 全列检查、跨服务
+UoW Smoke、AIOps Persistence Smoke 和完整 Run 内核 Smoke；每个数据库子检查
+都有进程级超时，测试数据按隔离标识自动清理。
+`--prometheus-url` 可额外验证抓取端点的 HELP/TYPE/Sample 结构和数据库指标族，
+且拒绝在 URL 中携带凭据或 Query。后续再纳入质量、安全、负载、构建物签名和
+JUnit 报告。开发者可以运行
 子集；Release Candidate 必须使用干净工作树生成一份完整证据，禁止拼接旧报告。
 
 ## 测试分层

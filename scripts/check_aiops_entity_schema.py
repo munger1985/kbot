@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import sys
 
-from sqlalchemy import Numeric, String, Text, text
+from sqlalchemy import DateTime, Integer, Numeric, String, Text, text
 
 # 支持从仓库根目录直接执行本脚本。
 if __package__ in (None, ""):
@@ -41,6 +41,7 @@ from platform_core.database.oracle import create_database_runtime
 from platform_core.persistence.orm import (
     OracleJSON,
     UniversalTimestamp,
+    UniversalVector,
     UUIDv7Type,
 )
 from scripts.oracle_preflight import require_oracle_listener
@@ -96,8 +97,25 @@ def entity_column_contract(column) -> ColumnContract:
             column_type.timezone,
             column.nullable,
         )
+    if isinstance(column_type, UniversalVector):
+        return ColumnContract(
+            "VECTOR", None, None, None, None, column.nullable
+        )
     if isinstance(column_type, OracleJSON) or isinstance(column_type, Text):
         return ColumnContract("CLOB", None, None, None, None, column.nullable)
+    if isinstance(column_type, DateTime):
+        return ColumnContract(
+            "TIMESTAMP",
+            None,
+            None,
+            None,
+            column_type.timezone,
+            column.nullable,
+        )
+    if isinstance(column_type, Integer):
+        return ColumnContract(
+            "NUMBER", None, None, None, None, column.nullable
+        )
     if isinstance(column_type, String):
         return ColumnContract(
             "VARCHAR2",
@@ -142,6 +160,10 @@ def catalog_column_contract(row) -> ColumnContract:
         timezone = "WITH TIME ZONE" in data_type
     elif data_type == "NUMBER":
         family = "NUMBER"
+        length = None
+        timezone = None
+    elif data_type == "VECTOR":
+        family = "VECTOR"
         length = None
         timezone = None
     else:

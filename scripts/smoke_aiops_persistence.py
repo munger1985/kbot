@@ -70,6 +70,7 @@ async def smoke() -> None:
     domain_id = secrets.randbelow(10**18) + 10**18
     target_id = uuid7()
     run_id = uuid7()
+    second_run_id = uuid7()
     task_id = uuid7()
     second_task_id = uuid7()
     outbox_id = uuid7()
@@ -125,6 +126,18 @@ async def smoke() -> None:
                     trace_id=f"smoke-{run_id}",
                 )
             )
+            await uow.runs.add_run(
+                OpsRunEntity(
+                    ops_run_id=second_run_id,
+                    target_id=target_id,
+                    agent_id=uuid7(),
+                    trigger_type="API",
+                    actor_id="smoke",
+                    idempotency_key=f"run-{second_run_id}",
+                    status="CREATED",
+                    trace_id=f"smoke-{second_run_id}",
+                )
+            )
             await uow.runs.add_task(
                 OpsTaskEntity(
                     ops_task_id=task_id,
@@ -136,6 +149,7 @@ async def smoke() -> None:
                     input_schema_version="1",
                     output_schema_version="1",
                     status="READY",
+                    priority=0,
                     available_at=now,
                     timeout_seconds=60,
                 )
@@ -143,7 +157,7 @@ async def smoke() -> None:
             await uow.runs.add_task(
                 OpsTaskEntity(
                     ops_task_id=second_task_id,
-                    ops_run_id=run_id,
+                    ops_run_id=second_run_id,
                     task_key="smoke-task-2",
                     task_type="SCOPE",
                     handler_id="smoke.handler",
@@ -151,6 +165,7 @@ async def smoke() -> None:
                     input_schema_version="1",
                     output_schema_version="1",
                     status="READY",
+                    priority=1,
                     available_at=now,
                     timeout_seconds=60,
                 )
@@ -172,13 +187,13 @@ async def smoke() -> None:
                 OutboxEntity(
                     outbox_id=second_outbox_id,
                     aggregate_type="OPS_RUN",
-                    aggregate_id=run_id,
+                    aggregate_id=second_run_id,
                     event_type="smoke.created.2",
-                    idempotency_key=f"outbox-2-{run_id}",
-                    payload_json={"ops_run_id": str(run_id)},
+                    idempotency_key=f"outbox-{second_run_id}",
+                    payload_json={"ops_run_id": str(second_run_id)},
                     payload_hash="0" * 64,
                     available_at=now,
-                    trace_id=f"smoke-{run_id}",
+                    trace_id=f"smoke-{second_run_id}",
                 )
             )
             await uow.commit()
@@ -187,7 +202,9 @@ async def smoke() -> None:
             ready_count = (
                 await session.execute(
                     select(OpsTaskEntity).where(
-                        OpsTaskEntity.ops_run_id == run_id,
+                        OpsTaskEntity.ops_run_id.in_(
+                            (run_id, second_run_id)
+                        ),
                         OpsTaskEntity.status == "READY",
                         OpsTaskEntity.available_at <= now,
                     )
@@ -221,6 +238,10 @@ async def smoke() -> None:
                 )
                 assert second_claimed_task is not None
                 assert second_claimed_task.ops_task_id != claimed_task.ops_task_id
+                assert {
+                    claimed_task.ops_run_id,
+                    second_claimed_task.ops_run_id,
+                } == {run_id, second_run_id}
                 second_claimed_outbox = await second_uow.outbox.claim(
                     now=now,
                     lease_owner=f"{lease_owner}-2",

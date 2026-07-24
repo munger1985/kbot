@@ -35,11 +35,23 @@ conda run -n cube python scripts/verify_release.py \
 
 Oracle Profile 先以 3 秒 TCP Preflight 检查配置的 Listener，再核对共享 Schema 中
 全部 KBot 表、视图、对象类型和 VALID 状态，最后执行 AIOps Entity/Catalog 逐列
-对照。每个数据库子检查还有 30 秒进程级上限。
+对照和可自动清理的 Repository/UoW Smoke。
 
-本次执行时配置的本地 Listener 不可达，因此 Oracle 两项检查明确失败并生成证据；
-没有执行 DDL，也没有修改数据库。Listener 恢复后直接重跑即可，不需要修改代码或
-放宽超时。
+2026-07-24 复验时 `KBOTDEV@KBOT4` 已恢复：53 个规范表/视图全部存在。列级检查
+发现早期建库遗留四个 AIOps 缺列，受影响表均为空；已按规范 DDL 最小补齐
+`KBOT_OPS_CHANGE_PROPOSAL.ROW_VERSION`、
+`KBOT_OPS_EXECUTION.DEADLINE_AT`、
+`KBOT_OPS_RUN.SOURCE_PROPOSAL_ID` 和
+`KBOT_OPS_RUN.SOURCE_RESULT_ARTIFACT_ID`，同时补齐关联约束、索引并重建 10 个
+AIOps 投影视图。修复后 21 张 AIOps 表逐列与 Entity 一致。
+全服务检查进一步核对 Platform、Model、KC、Agent Runtime 与 AIOps 共 42 张表、
+838 列；唯一额外漂移是 KC Document Version 的 `RECEIVED_AT` 已存在于规范 DDL
+和数据库但 Entity 遗漏，现已补齐映射。
+
+Oracle Profile 现在还执行跨服务 UoW、AIOps Persistence 和完整 Run 内核 Smoke，
+覆盖显式提交、漏提交回滚、跨 Run 双 Worker `SKIP LOCKED`、租约栅栏、事件序列、
+并发幂等、取消和租约接管。`http://localhost:9161/metrics` 已通过结构化校验：
+67 个 HELP/TYPE、108 个 Sample、69 个指标族，其中 29 个数据库指标族。
 
 ## 尚未达到 RC 的项目
 

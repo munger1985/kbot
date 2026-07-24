@@ -78,7 +78,9 @@ def _git(*args: str) -> str:
 
 
 def _checks(
-    *, include_oracle: bool
+    *,
+    include_oracle: bool,
+    prometheus_url: str | None = None,
 ) -> list[tuple[str, list[str], int]]:
     python = sys.executable
     checks = [
@@ -142,10 +144,43 @@ def _checks(
                     30,
                 ),
                 (
+                    "oracle_all_entity_catalog",
+                    [python, "scripts/check_oracle_entity_schema.py"],
+                    30,
+                ),
+                (
                     "oracle_aiops_entity_catalog",
                     [python, "scripts/check_aiops_entity_schema.py"],
                     30,
                 ),
+                (
+                    "oracle_cross_service_uow",
+                    [python, "scripts/smoke_oracle_service_uow.py"],
+                    120,
+                ),
+                (
+                    "oracle_aiops_persistence",
+                    [python, "scripts/smoke_aiops_persistence.py"],
+                    120,
+                ),
+                (
+                    "oracle_aiops_runtime",
+                    [python, "scripts/smoke_aiops_runtime.py"],
+                    180,
+                ),
+            )
+        )
+    if prometheus_url:
+        checks.append(
+            (
+                "prometheus_metrics",
+                [
+                    python,
+                    "scripts/check_prometheus_metrics.py",
+                    "--url",
+                    prometheus_url,
+                ],
+                30,
             )
         )
     return checks
@@ -194,6 +229,7 @@ def verify(
     *,
     profile: str,
     include_oracle: bool,
+    prometheus_url: str | None,
     require_clean: bool,
 ) -> dict[str, Any]:
     """执行发布检查；返回值可直接序列化为 JSON。"""
@@ -203,7 +239,8 @@ def verify(
     results = [
         _run_check(name, command, timeout_seconds)
         for name, command, timeout_seconds in _checks(
-            include_oracle=include_oracle
+            include_oracle=include_oracle,
+            prometheus_url=prometheus_url,
         )
     ]
     failures = [
@@ -225,6 +262,7 @@ def verify(
             "implementation": platform.python_implementation(),
         },
         "require_clean": require_clean,
+        "prometheus_checked": prometheus_url is not None,
         "dirty_paths": dirty_paths,
         "input_manifest": build_input_manifest(),
         "checks": results,
@@ -256,6 +294,10 @@ def main() -> int:
         help="额外执行真实 Oracle Entity/Catalog 校验",
     )
     parser.add_argument(
+        "--prometheus-url",
+        help="额外校验无凭据的 Prometheus/OpenMetrics 抓取地址",
+    )
+    parser.add_argument(
         "--require-clean",
         action="store_true",
         help="工作树有任何改动时令验证失败",
@@ -264,6 +306,7 @@ def main() -> int:
     evidence = verify(
         profile=args.profile,
         include_oracle=args.oracle,
+        prometheus_url=args.prometheus_url,
         require_clean=args.require_clean,
     )
     output = args.output.expanduser().resolve()
