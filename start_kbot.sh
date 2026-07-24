@@ -1,5 +1,9 @@
 #!/bin/bash
 
+# 始终从仓库根目录启动，避免调用方当前目录影响相对路径。
+SERVICE_ROOT="$(cd "$(dirname "$0")" && pwd)"
+cd "$SERVICE_ROOT" || exit 1
+
 # Conda 环境配置
 CONDA_BIN_PATH=$(which conda 2>/dev/null)
 if [ -z "$CONDA_BIN_PATH" ]; then
@@ -19,7 +23,8 @@ fi
 
 CONDA_ROOT=$(dirname "$(dirname "$CONDA_BIN_PATH")")
 source "$CONDA_ROOT/etc/profile.d/conda.sh"
-conda activate kbot3
+KBOT_CONDA_ENV="${KBOT_CONDA_ENV:-kbot3}"
+conda activate "$KBOT_CONDA_ENV"
 
 # 日志目录（服务自身的 loguru 日志配置由各服务控制，这里只存启动 stderr）
 STARTUP_LOG_DIR="logs/startup"

@@ -18,7 +18,7 @@
   Schema Manifest；
 - AIOps Public/Internal/Executor OpenAPI Snapshot；
 - `scripts/verify_release.py` 统一执行 Active Package 编译、架构边界、DDL 契约、
-  Entity 表所有权、AIOps Catalog 和全量测试，并输出
+  Entity 表所有权、14 进程拓扑、AIOps Catalog 和全量测试，并输出
   `KBotReleaseEvidence.v1` JSON；
 - 本地 `start_kbot.sh/stop_kbot.sh`。
 

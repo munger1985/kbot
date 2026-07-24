@@ -47,7 +47,10 @@ def _tracked_inputs() -> list[Path]:
         for path in base.rglob("*")
         if path.is_file()
     ]
-    for name in ("requirements.txt",):
+    for name in (
+        "requirements.txt",
+        "configuration/process_topology.toml",
+    ):
         path = ROOT / name
         if path.is_file():
             files.append(path)
@@ -96,6 +99,11 @@ def _checks(
         (
             "entity_table_ownership",
             [python, "scripts/check_entity_ownership.py"],
+            120,
+        ),
+        (
+            "process_topology",
+            [python, "scripts/check_process_topology.py"],
             120,
         ),
         (

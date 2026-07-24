@@ -22,6 +22,7 @@ class ReleaseVerifierTest(unittest.TestCase):
             manifest,
         )
         self.assertIn("docs/openapi/aiops_internal_v1.json", manifest)
+        self.assertIn("configuration/process_topology.toml", manifest)
         self.assertTrue(
             all(len(digest) == 64 for digest in manifest.values())
         )

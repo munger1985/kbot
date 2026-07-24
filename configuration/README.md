@@ -42,3 +42,14 @@ AIOps 内部调用额外使用短期 Service Identity JWT。签名密钥通过
 `KBOT_SERVICE_IDENTITY_JWT_SECRET` 注入，不写入 TOML；生产环境的 Target、
 Monitor 和数据库凭据只保存 SecretRef，且禁止使用 `environment` Secret
 Provider。
+
+`process_topology.toml` 是 4.0 完整本地进程清单，不承载环境覆盖或 Secret。它将
+14 个 `apps.*.main` 入口映射到所属服务配置段、进程类型和监听端口。执行：
+
+```bash
+python scripts/check_process_topology.py
+```
+
+可检查 App 入口、服务配置、Example、端口唯一性以及 `start_kbot.sh` /
+`stop_kbot.sh` 覆盖关系。本地启动环境默认仍为 `kbot3`，可通过
+`KBOT_CONDA_ENV=cube ./start_kbot.sh` 显式覆盖；生产部署不得依赖该脚本。

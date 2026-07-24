@@ -11,9 +11,10 @@ conda run -n cube python scripts/verify_release.py \
 ```
 
 当前检查覆盖 Active Package 编译、架构依赖边界、五个服务的 Oracle DDL 静态
-契约、Entity 表所有权、AIOps 诊断目录和全量 Unit/Component/Contract 测试。
-证据文件记录 Commit、Branch、解释器、Dirty Path、检查结果，以及 DDL、配置样例、
-OpenAPI 和依赖声明 Hash。它不读取或记录环境变量、数据库密码和 Provider Secret。
+契约、Entity 表所有权、14 个进程的 App/配置/端口/启停覆盖、AIOps 诊断目录和
+全量 Unit/Component/Contract 测试。证据文件记录 Commit、Branch、解释器、
+Dirty Path、检查结果，以及 DDL、配置样例、进程拓扑、OpenAPI 和依赖声明 Hash。
+它不读取或记录环境变量、数据库密码和 Provider Secret。
 
 ## Oracle 集成状态
 
