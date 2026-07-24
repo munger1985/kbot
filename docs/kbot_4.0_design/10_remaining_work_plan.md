@@ -60,8 +60,9 @@ Grounding 和 SSE 已删除，最终回答职责留给后续 Agent Runtime；旧
   Evidence/Discovery/Job 冻结服务名和配置指纹。
 - **Agent Runtime 基础已完成（2026-07-23）：** 已建立 Run/Task/Delegation
   状态机、结构化 Plan Validator、固定 Skill Manifest/Registry、共享 DTO、
-  `database/oracle/agent_runtime` 全量建库脚本和内部 API 进程骨架。尚未注册
-  Run 命令路由，也未实现 Entity/Repository/UoW、租约 Worker、SSE 和具体 Skill。
+  `database/oracle/agent_runtime` 全量建库脚本、Entity/Repository/UoW、内部
+  Run 命令、租约 Worker、公开 SSE、Document Skill 和 AIOps Delegation
+  Reconciler。
 
 ### 阶段 2：Knowledge Core 基线加固
 
@@ -87,9 +88,10 @@ Grounding 和 SSE 已删除，最终回答职责留给后续 Agent Runtime；旧
 - 将问文能力重构为 Document Agent 契约；问数继续通过受控 MCP Adapter；运维能力由独立 AIOps Agent 管理其 Ops Skill 和流程，禁止任何 Skill 直接实例化 Agent 或访问跨域数据库。
 
 当前 Agent Runtime 的 Run/Task/Artifact/Event/Delegation 持久化、租约 Worker、
-Root 确定性 Document Plan、Document Specialist、Grounded Response Composer、
-公开 Run/SSE/Result BFF 已完成。剩余 Agent 工作主要是 AIOps Delegation、
-Policy Gate/HITL/Mutation 和后续更多 Specialist，而不是重新实现问文链路。
+Root 确定性 Document/AIOps Plan、Document Specialist、Grounded Response
+Composer、AIOps 可恢复 Reconciler、公开 Run/SSE/Result BFF 已完成。HITL、
+审批和 Mutation 仍由 AIOps 领域拥有；剩余 Agent 演进主要是自然语言 Hybrid
+Router、更多 Specialist 和统一质量门禁，而不是重新实现问文链路。
 
 ### 阶段 5：平台治理和业务扩展
 
@@ -110,8 +112,9 @@ Policy Gate/HITL/Mutation 和后续更多 Specialist，而不是重新实现问�
   隔离 DB Executor、Evidence Index、KC SOP Citation、三轮有界诊断、
   结构化 LLM Planner/Assessment/Verifier、确定性根因等级和报告草稿，以及仅
   Chat 生效的 Catalog Manual SQL、可恢复 `WAITING_INPUT`、内联结果校验、
-  `USER_PROVIDED` Evidence、Skip/Expiry 和人工证据后重新评估。下一步按步骤 9
-  建立 Advisory、逐命令审批和隔离的受控变更闭环。
+  `USER_PROVIDED` Evidence、Skip/Expiry 和人工证据后重新评估；步骤 9 至 11
+  的 Advisory/逐命令审批/受控执行、调度报告，以及 Root Delegation、Main API
+  与 APEX 公开交互闭环也已完成。下一步进入阶段 6 统一验收。
 
 ### 阶段 6：统一测试、重建和切换
 

@@ -11,12 +11,21 @@
 当前已有：
 
 - `scripts/check_4_0_boundaries.py` 和 `scripts/check_oracle_schema.py`；
-- KC/Parser/检索的大量 `unittest` 组件测试；
+- 覆盖 Platform、Model、KC、Agent Runtime、AIOps 和 Main API 的
+  `unittest` 组件/契约测试；
 - Parser Golden Manifest 评测脚本和示例；
-- Platform、Model Serving 和 KC 的按服务全量建库脚本；
+- 五个服务、17 份按顺序执行的 Oracle 全量建库脚本，AIOps 额外冻结
+  Schema Manifest；
+- AIOps Public/Internal/Executor OpenAPI Snapshot；
+- `scripts/verify_release.py` 统一执行 Active Package 编译、架构边界、DDL 契约、
+  AIOps Catalog 和全量测试，并输出 `KBotReleaseEvidence.v1` JSON；
 - 本地 `start_kbot.sh/stop_kbot.sh`。
 
-这些不是完整发布系统：现有 Golden Corpus 只是示例；当前边界脚本尚未覆盖未来 `agent_runtime/aiops_agent`，生产配置示例和本地启动脚本还未包含完整 4.0 拓扑。尚无统一 Test Dependency Lock、真实 Oracle Schema Manifest 校验、Agent/AIOps E2E、质量 Gate、OpenAPI 兼容检查、负载/故障演练和 Release Evidence Bundle。本地启动脚本不用于生产部署。
+这些仍不是完整发布系统：现有 Golden Corpus 只是示例，生产配置样例和本地启动
+脚本尚未完成生产拓扑验证。仍缺统一 Test Dependency Lock、全部服务的
+Entity/Catalog 实库一致性检查、Agent/AIOps 跨进程 E2E、正式质量 Gate、安全/
+依赖扫描、负载/故障演练、SBOM/签名和不可变构建物。当前 JSON 是发布证据骨架，
+不能替代 Staging 与生产等价验收；本地启动脚本不用于生产部署。
 
 ## 环境与测试数据
 
@@ -60,10 +69,17 @@ quality, security, load, chaos, mutation
 python3 scripts/check_4_0_boundaries.py
 python3 scripts/check_oracle_schema.py
 python3 -m unittest discover -s tests -p 'test_*.py'
-python3 scripts/verify_release.py --profile rc --manifest release-manifest.json
+python3 scripts/verify_release.py \
+  --profile rc \
+  --require-clean \
+  --output release-evidence.json
 ```
 
-Runner 启动时必须记录 Python 版本、解释器路径和 Dependency Lock Hash，不依赖开发机的 `python` 别名。`verify_release.py` 最终统一调用建库脚本、Schema、OpenAPI、测试、评测、安全和构建物校验，并生成机器可读 JSON/JUnit 报告。开发者可以运行子集；Release Candidate 必须运行完整 Profile，禁止只重跑失败用例后拼接旧报告。
+Runner 已记录 Python 版本、解释器路径、Commit、Branch、Dirty Path，以及 DDL、
+配置样例、OpenAPI 和依赖声明 Hash，并始终用当前解释器启动子检查。`--oracle`
+可追加真实 AIOps Entity/Catalog 检查，但必须由有界的 Integration Job 设置连接
+超时。后续再纳入质量、安全、负载、构建物签名和 JUnit 报告。开发者可以运行
+子集；Release Candidate 必须使用干净工作树生成一份完整证据，禁止拼接旧报告。
 
 ## 测试分层
 
