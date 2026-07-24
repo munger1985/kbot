@@ -189,7 +189,7 @@ Root 委派必须带 `delegation_id`、`parent_agent_run_id`、目标范围、�
 
 ```text
 ReadDiagnosticRequest/ReadDiagnosticResult
-MutationExecutionRequest/MutationClaimGrant
+MutationExecutionRequest/MutationClaimRequest/MutationExecutionGrant
 ExecutionStatusEvent/ExecutionResultRef
 ```
 

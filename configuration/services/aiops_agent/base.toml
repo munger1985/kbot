@@ -44,6 +44,9 @@ max_cell_chars = 32768
 grant_secret_env = "KBOT_AIOPS_DIAGNOSTIC_GRANT_SECRET"
 grant_issuer = "kbot-aiops-worker"
 grant_ttl_seconds = 45
+mutation_grant_secret_env = "KBOT_AIOPS_MUTATION_GRANT_SECRET"
+mutation_grant_issuer = "kbot-aiops-api"
+mutation_grant_ttl_seconds = 30
 
 [clients.agent_runtime]
 base_url = "http://127.0.0.1:18100"

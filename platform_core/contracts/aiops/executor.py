@@ -135,22 +135,52 @@ class MutationExecutionRequest(AIOpsContract):
     idempotency_key: str = Field(min_length=1, max_length=256)
 
 
-class MutationClaimGrant(AIOpsContract):
+class MutationClaimRequest(AIOpsContract):
     schema_version: str = EXECUTOR_SCHEMA_VERSION
+    executor_request_id: UUIDv7
+    executor_instance_id: str = Field(min_length=1, max_length=256)
+    action_catalog_hash: Sha256Digest
+
+
+class MutationExecutionGrant(AIOpsContract):
+    schema_version: str = EXECUTOR_SCHEMA_VERSION
+    issuer: str = Field(min_length=1, max_length=128)
+    audience: str = Field(min_length=1, max_length=128)
+    grant_id: UUIDv7
+    issued_at: UtcDatetime
+    expires_at: UtcDatetime
     execution_id: UUIDv7
     executor_request_id: UUIDv7
     executor_instance_id: str = Field(min_length=1, max_length=256)
     target_id: UUIDv7
+    target_version: int = Field(ge=1)
+    db_type: Literal["ORACLE", "MYSQL"]
     connection_profile: JsonObject
-    secret_ref: str
+    execution_secret_ref: str
     action_template_id: str = Field(min_length=1, max_length=128)
     action_template_version: str = Field(min_length=1, max_length=64)
+    action_template_variant: str = Field(min_length=1, max_length=128)
+    renderer_version: str = Field(min_length=1, max_length=64)
     typed_parameters: JsonObject
-    template_hash: Sha256Digest
+    action_template_hash: Sha256Digest
+    parameters_hash: Sha256Digest
+    command_hash: Sha256Digest
     proposal_hash: Sha256Digest
-    policy_hash: Sha256Digest
+    policy_decision_hash: Sha256Digest
     approval_token_hash: Sha256Digest
+    approver_id: str = Field(min_length=1, max_length=256)
+    action_catalog_hash: Sha256Digest
     statement_timeout_seconds: int = Field(gt=0)
+    max_database_attempts: Literal[1] = 1
+    trace_id: str = Field(min_length=1, max_length=128)
+
+
+class MutationClaimReceipt(AIOpsContract):
+    schema_version: str = EXECUTOR_SCHEMA_VERSION
+    execution_id: UUIDv7
+    executor_request_id: UUIDv7
+    status: Literal["SUBMITTED"]
+    grant: str = Field(min_length=64, max_length=32768)
     expires_at: UtcDatetime
 
 

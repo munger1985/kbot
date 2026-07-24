@@ -1,0 +1,102 @@
+"""受 audience 约束的短期 Mutation 执行授权。"""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime
+
+from jose import jwt
+from jose.exceptions import ExpiredSignatureError, JWTClaimsError, JWTError
+
+from platform_core.contracts.aiops.executor import MutationExecutionGrant
+
+
+GRANT_ALGORITHM = "HS256"
+GRANT_TOKEN_TYPE = "kbot-mutation-grant"
+
+
+class MutationGrantError(ValueError):
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code
+
+
+class MutationGrantCodec:
+    def __init__(
+        self,
+        *,
+        secret: str,
+        issuer: str,
+        audience: str,
+        clock_skew_seconds: int = 5,
+    ):
+        if len(secret.encode("utf-8")) < 32:
+            raise ValueError("Mutation Grant 密钥至少需要 32 字节")
+        self._secret = secret
+        self._issuer = issuer
+        self._audience = audience
+        self._clock_skew = clock_skew_seconds
+
+    def issue(self, grant: MutationExecutionGrant) -> str:
+        if grant.issuer != self._issuer or grant.audience != self._audience:
+            raise ValueError("Mutation Grant 签发方或 audience 不匹配")
+        claims = grant.model_dump(mode="json")
+        claims.update(
+            {
+                "iss": grant.issuer,
+                "aud": grant.audience,
+                "iat": int(grant.issued_at.timestamp()),
+                "nbf": int(grant.issued_at.timestamp()),
+                "exp": int(grant.expires_at.timestamp()),
+                "jti": str(grant.grant_id),
+                "typ": GRANT_TOKEN_TYPE,
+            }
+        )
+        return jwt.encode(claims, self._secret, algorithm=GRANT_ALGORITHM)
+
+    def verify(
+        self, token: str, *, now: datetime | None = None
+    ) -> MutationExecutionGrant:
+        try:
+            claims = jwt.decode(
+                token,
+                self._secret,
+                algorithms=[GRANT_ALGORITHM],
+                audience=self._audience,
+                issuer=self._issuer,
+                options={
+                    "require_aud": True,
+                    "require_exp": True,
+                    "require_iat": True,
+                    "require_iss": True,
+                    "require_jti": True,
+                    "require_nbf": True,
+                    "leeway": self._clock_skew,
+                },
+            )
+            if claims.get("typ") != GRANT_TOKEN_TYPE:
+                raise MutationGrantError(
+                    "MUTATION_GRANT_INVALID",
+                    "Mutation Grant 类型无效",
+                )
+            payload = dict(claims)
+            for key in ("iss", "aud", "iat", "nbf", "exp", "jti", "typ"):
+                payload.pop(key, None)
+            grant = MutationExecutionGrant.model_validate(payload)
+            if (now or datetime.now(UTC)) >= grant.expires_at:
+                raise MutationGrantError(
+                    "MUTATION_GRANT_EXPIRED",
+                    "Mutation Grant 已过期",
+                )
+            return grant
+        except MutationGrantError:
+            raise
+        except ExpiredSignatureError as exc:
+            raise MutationGrantError(
+                "MUTATION_GRANT_EXPIRED",
+                "Mutation Grant 已过期",
+            ) from exc
+        except (JWTClaimsError, JWTError, ValueError, KeyError) as exc:
+            raise MutationGrantError(
+                "MUTATION_GRANT_INVALID",
+                "Mutation Grant 无效",
+            ) from exc

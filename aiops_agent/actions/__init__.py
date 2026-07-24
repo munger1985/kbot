@@ -8,11 +8,16 @@ from .contracts import (
 )
 from .registry import ActionRegistry
 from .rendering import ActionRenderer
+from .grants import MutationGrantCodec, MutationGrantError
+from .runtime import create_mutation_grant_codec
 
 __all__ = [
     "ActionParameter",
     "ActionRegistry",
     "ActionRenderer",
+    "MutationGrantCodec",
+    "MutationGrantError",
+    "create_mutation_grant_codec",
     "ActionTemplateDefinition",
     "RenderedAction",
     "ResolvedActionTemplate",

@@ -11,7 +11,10 @@ from fastapi.responses import JSONResponse
 from loguru import logger
 
 from aiops_agent.adapters.agent_runtime import AgentRuntimeValidator
-from aiops_agent.actions import ActionRegistry
+from aiops_agent.actions import (
+    ActionRegistry,
+    create_mutation_grant_codec,
+)
 from aiops_agent.adapters.secret_store import ConfiguredSecretStore
 from aiops_agent.adapters.monitoring import MonitorProviderRegistry
 from aiops_agent.adapters.db_executor_client import DatabaseExecutorClient
@@ -23,6 +26,7 @@ from aiops_agent.api.management import router as management_router
 from aiops_agent.api.runtime import router as runtime_router
 from aiops_agent.api.intake import router as intake_router
 from aiops_agent.api.changes import router as changes_router
+from aiops_agent.api.executions import router as executions_router
 from aiops_agent.application.changes import AIOpsChangeService
 from aiops_agent.application.monitoring import MonitorWebhookIntakeService
 from aiops_agent.application.configuration import AIOpsConfigurationService
@@ -143,8 +147,23 @@ def create_aiops_api(
             approval_enabled=(
                 resolved.management.agent_execution_enabled
             ),
-            # 9C1 只落审批状态机；Claim/Driver 完成前保持硬关闭。
+            # 9C2 已落 Claim；Mutation Driver/回调完成前保持硬关闭。
             mutation_enabled=False,
+            mutation_grant_codec=(
+                create_mutation_grant_codec(resolved)
+                if resolved.executor.mutation_enabled
+                else None
+            ),
+            mutation_grant_issuer=(
+                resolved.executor.mutation_grant_issuer
+            ),
+            mutation_grant_audience=resolved.executor.service_name,
+            mutation_grant_ttl_seconds=(
+                resolved.executor.mutation_grant_ttl_seconds
+            ),
+            mutation_statement_timeout_seconds=(
+                resolved.executor.statement_timeout_seconds
+            ),
         )
         diagnosis_prompts = DiagnosisPromptRegistry.load(
             Path(resolved.diagnosis.prompt_catalog_path)
@@ -278,6 +297,7 @@ def create_aiops_api(
     app.include_router(runtime_router)
     app.include_router(intake_router)
     app.include_router(changes_router)
+    app.include_router(executions_router)
 
     @app.exception_handler(AIOpsApplicationError)
     async def application_error_handler(

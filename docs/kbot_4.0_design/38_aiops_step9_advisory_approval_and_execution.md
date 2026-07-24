@@ -44,9 +44,21 @@
   `Execution(CREATED)` 和 Outbox；响应不返回 Token、Nonce、命令或连接信息；
 - 重复审批通过 Idempotency Key、Proposal 唯一约束和并发回放收敛。
 
-9C1 的 Bootstrap 仍将 `mutation_enabled` 硬编码为 `false`。因此可以评测审批
-状态机，但部署无法产生真实执行投递。阶段 9C2/9C3 再实现 Claim、Mutation
-Driver、回调对账和 UNKNOWN 收敛；完成这些安全门后才能解除执行开关。
+阶段 9C2 已完成 Executor Claim 与短期 Mutation Grant：
+
+- 只有具有 `aiops.execution.claim` Scope 的 DB Executor 可按
+  `execution_id + executor_request_id + executor_instance_id` Claim；
+- Claim 再次校验 Target、Binding、Policy、审批授权、Catalog Hash，以及
+  Template/Parameter/Command/Proposal Hash；
+- 同一 Target 通过 Target 行锁和活动 Execution 查询限制为一个进行中 Mutation；
+- Claim 原子消费 Approval Token，将 Proposal 置为 `CONSUMED`、Execution 置为
+  `SUBMITTED`，并绑定唯一 Executor Instance；
+- Mutation Grant 使用独立密钥、issuer、audience 和短 TTL 签名，只允许一次数据库
+  投递；同一实例重试可确定性重建完全相同的 Grant，其他实例重放会被拒绝。
+
+Bootstrap 仍将 `mutation_enabled` 硬编码为 `false`。因此可以评测审批和 Claim
+状态机，但部署无法 Claim 或执行真实命令。阶段 9C3 再实现 Mutation Driver、
+回调对账和 UNKNOWN 收敛；完成这些安全门后才能解除执行开关。
 
 ## 目标与安全边界
 

@@ -9,9 +9,11 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 from aiops_agent.actions import ActionRegistry, ActionRenderer
+from aiops_agent.actions.grants import MutationGrantCodec
 from aiops_agent.application.changes import AIOpsChangeService
 from aiops_agent.application.errors import AIOpsApplicationError
 from platform_core.contracts.aiops import ApprovalCommand
+from platform_core.contracts.aiops.executor import MutationClaimRequest
 from platform_core.identity import uuid7
 
 
@@ -203,6 +205,191 @@ class ApprovalServiceTest(unittest.TestCase):
         self.assertEqual(execution.proposal_hash, proposal.proposal_hash)
         token = changes.add_approval_token.await_args.args[0]
         self.assertNotEqual(token.token_hash, token.nonce_hash)
+
+
+class ExecutionClaimTest(unittest.TestCase):
+    def test_claim_consumes_authorization_and_replays_same_grant(
+        self,
+    ) -> None:
+        now = datetime.now(UTC)
+        registry = ActionRegistry.load()
+        template = registry.resolve(
+            action_template_id="db.session.terminate",
+            version="1.0.0",
+            db_type="MYSQL",
+            db_version="8.0.36",
+            capabilities={"session_management"},
+            entitlements=set(),
+            environment="PROD",
+        )
+        parameters = {"session_id": 42}
+        rendered = ActionRenderer().render(template, parameters)
+        execution_id = uuid7()
+        request_id = uuid7()
+        proposal_id = uuid7()
+        run_id = uuid7()
+        task_id = uuid7()
+        target_id = uuid7()
+        agent_id = uuid7()
+        token = SimpleNamespace(
+            approval_token_id=uuid7(),
+            hitl_id=uuid7(),
+            status="ISSUED",
+            expires_at=now + timedelta(minutes=5),
+            target_version=7,
+            policy_decision_hash="b" * 64,
+            parameters_hash=rendered.parameters_hash,
+            token_hash="d" * 64,
+            approver_id="portal:user-1",
+            consumed_at=None,
+        )
+        execution = SimpleNamespace(
+            execution_id=execution_id,
+            executor_request_id=str(request_id),
+            ops_run_id=run_id,
+            proposal_id=proposal_id,
+            approval_token_id=token.approval_token_id,
+            target_id=target_id,
+            status="CREATED",
+            executor_instance_id=None,
+            claimed_at=None,
+            grant_jti_hash=None,
+            status_version=1,
+            action_template_hash=rendered.template_hash,
+            parameters_hash=rendered.parameters_hash,
+            command_hash=rendered.command_hash,
+            proposal_hash="a" * 64,
+            updated_at=now,
+        )
+        proposal = SimpleNamespace(
+            proposal_id=proposal_id,
+            ops_task_id=task_id,
+            status="APPROVED",
+            action_template_id="db.session.terminate",
+            action_template_version="1.0.0",
+            action_template_hash=rendered.template_hash,
+            parameters_json=parameters,
+            parameters_hash=rendered.parameters_hash,
+            command_hash=rendered.command_hash,
+            proposal_hash="a" * 64,
+            policy_decision_hash="b" * 64,
+            updated_at=now,
+        )
+        hitl = SimpleNamespace(status="APPROVED")
+        run = SimpleNamespace(
+            ops_run_id=run_id,
+            agent_id=agent_id,
+            trace_id="trace-source",
+            plan_snapshot_json={
+                "target": {"app_id": 100, "domain_id": 200}
+            },
+            policy_snapshot_json={"policy_hash": "c" * 64},
+        )
+        target = SimpleNamespace(
+            target_id=target_id,
+            status="ACTIVE",
+            execution_mode="AGENT_EXECUTE",
+            execution_secret_ref="env://MYSQL_EXECUTION_SECRET",
+            row_version=7,
+            db_type="MYSQL",
+            version_code="8.0.36",
+            capabilities_json={"session_management": True},
+            environment="PROD",
+            endpoint_json={
+                "host": "mysql.internal",
+                "port": 3306,
+                "database": "ops",
+                "tls_enabled": True,
+            },
+        )
+        binding = SimpleNamespace(
+            status="ACTIVE",
+            access_mode="EXECUTE",
+            allowed_actions_json=["db.session.terminate"],
+            policy_id=uuid7(),
+        )
+        policy = SimpleNamespace(
+            status="ACTIVE",
+            policy_hash="c" * 64,
+            rules_json={
+                "allow_agent_execution": True,
+                "entitlements": [],
+            },
+        )
+        changes = SimpleNamespace(
+            get_execution=AsyncMock(
+                side_effect=lambda **kwargs: execution
+            ),
+            get_proposal=AsyncMock(return_value=proposal),
+            get_approval_token=AsyncMock(return_value=token),
+            get_hitl=AsyncMock(return_value=hitl),
+            get_active_execution_for_target=AsyncMock(
+                return_value=None
+            ),
+        )
+        uow = SimpleNamespace(
+            changes=changes,
+            runs=SimpleNamespace(
+                get_run=AsyncMock(return_value=run),
+                database_now=AsyncMock(return_value=now),
+                append_event=AsyncMock(),
+            ),
+            targets=SimpleNamespace(
+                get_scoped=AsyncMock(return_value=target),
+                get_agent_binding=AsyncMock(return_value=binding),
+            ),
+            policies=SimpleNamespace(
+                get_scoped=AsyncMock(return_value=policy)
+            ),
+            commit=AsyncMock(),
+        )
+        context = AsyncMock()
+        context.__aenter__.return_value = uow
+        codec = MutationGrantCodec(
+            secret="mutation-grant-test-secret-at-least-32-bytes",
+            issuer="kbot-aiops-api",
+            audience="kbot-aiops-db-executor",
+        )
+        service = AIOpsChangeService(
+            uow_factory=lambda: context,
+            action_registry=registry,
+            approval_enabled=True,
+            mutation_enabled=True,
+            mutation_grant_codec=codec,
+        )
+        command = MutationClaimRequest(
+            executor_request_id=request_id,
+            executor_instance_id="executor-01",
+            action_catalog_hash=registry.catalog_hash,
+        )
+        first = asyncio.run(
+            service.claim_execution(
+                execution_id=execution_id,
+                command=command,
+                trace_id="trace-claim",
+            )
+        )
+        self.assertEqual(first.status, "SUBMITTED")
+        self.assertEqual(token.status, "CONSUMED")
+        self.assertEqual(proposal.status, "CONSUMED")
+        self.assertEqual(execution.status, "SUBMITTED")
+        self.assertEqual(execution.executor_instance_id, "executor-01")
+        decoded = codec.verify(first.grant, now=now)
+        self.assertEqual(decoded.execution_id, execution_id)
+        self.assertEqual(decoded.max_database_attempts, 1)
+        self.assertEqual(
+            decoded.execution_secret_ref,
+            "env://MYSQL_EXECUTION_SECRET",
+        )
+        second = asyncio.run(
+            service.claim_execution(
+                execution_id=execution_id,
+                command=command,
+                trace_id="trace-claim-retry",
+            )
+        )
+        self.assertEqual(first.grant, second.grant)
+        self.assertEqual(uow.commit.await_count, 1)
 
 
 if __name__ == "__main__":

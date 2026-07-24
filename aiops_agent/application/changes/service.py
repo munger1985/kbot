@@ -9,7 +9,11 @@ from uuid import UUID
 
 from sqlalchemy.exc import IntegrityError
 
-from aiops_agent.actions import ActionRegistry, ActionRenderer
+from aiops_agent.actions import (
+    ActionRegistry,
+    ActionRenderer,
+    MutationGrantCodec,
+)
 from aiops_agent.application.errors import (
     resource_not_found,
     state_conflict,
@@ -33,6 +37,11 @@ from platform_core.contracts.aiops.public import (
     ManualResultReceipt,
     ProposalView,
     RejectionCommand,
+)
+from platform_core.contracts.aiops.executor import (
+    MutationClaimReceipt,
+    MutationClaimRequest,
+    MutationExecutionGrant,
 )
 from platform_core.contracts.aiops.types import ArtifactRef
 from platform_core.identity import uuid7
@@ -61,6 +70,11 @@ class AIOpsChangeService:
         approval_enabled: bool = False,
         mutation_enabled: bool = False,
         approval_ttl_seconds: int = 300,
+        mutation_grant_codec: MutationGrantCodec | None = None,
+        mutation_grant_issuer: str = "kbot-aiops-api",
+        mutation_grant_audience: str = "kbot-aiops-db-executor",
+        mutation_grant_ttl_seconds: int = 30,
+        mutation_statement_timeout_seconds: int = 60,
     ):
         self._uow_factory = uow_factory
         self._action_registry = action_registry
@@ -68,6 +82,15 @@ class AIOpsChangeService:
         self._approval_enabled = approval_enabled
         self._mutation_enabled = mutation_enabled
         self._approval_ttl_seconds = approval_ttl_seconds
+        self._mutation_grant_codec = mutation_grant_codec
+        self._mutation_grant_issuer = mutation_grant_issuer
+        self._mutation_grant_audience = mutation_grant_audience
+        self._mutation_grant_ttl_seconds = (
+            mutation_grant_ttl_seconds
+        )
+        self._mutation_statement_timeout_seconds = (
+            mutation_statement_timeout_seconds
+        )
 
     async def get_proposal(
         self,
@@ -670,6 +693,265 @@ class AIOpsChangeService:
                 proposal_id=proposal_id,
                 status=str(command.status),
                 result_artifact=self._artifact_ref(artifact),
+            )
+
+    async def claim_execution(
+        self,
+        *,
+        execution_id: UUID,
+        command: MutationClaimRequest,
+        trace_id: str,
+    ) -> MutationClaimReceipt:
+        """DB Executor 以唯一实例 Claim 并消费一次性审批授权。"""
+        if (
+            not self._mutation_enabled
+            or self._mutation_grant_codec is None
+            or self._action_registry is None
+        ):
+            raise state_conflict("Mutation Claim 部署开关尚未启用")
+        async with self._uow_factory() as uow:
+            preliminary = await uow.changes.get_execution(
+                execution_id=execution_id
+            )
+            if preliminary is None:
+                raise resource_not_found("Execution")
+            run = await uow.runs.get_run(
+                ops_run_id=preliminary.ops_run_id, lock=True
+            )
+            proposal = await uow.changes.get_proposal(
+                proposal_id=preliminary.proposal_id, lock=True
+            )
+            token = await uow.changes.get_approval_token(
+                approval_token_id=preliminary.approval_token_id,
+                lock=True,
+            )
+            hitl = (
+                await uow.changes.get_hitl(
+                    hitl_id=token.hitl_id, lock=True
+                )
+                if token is not None
+                else None
+            )
+            execution = await uow.changes.get_execution(
+                execution_id=execution_id, lock=True
+            )
+            if any(
+                item is None
+                for item in (run, proposal, token, hitl, execution)
+            ):
+                raise state_conflict("Execution 授权链不完整")
+            assert run is not None
+            assert proposal is not None
+            assert token is not None
+            assert hitl is not None
+            assert execution is not None
+            if (
+                UUID(str(execution.executor_request_id))
+                != command.executor_request_id
+            ):
+                raise state_conflict("Executor Request ID 不匹配")
+            if command.action_catalog_hash != self._action_registry.catalog_hash:
+                raise state_conflict("Executor Action Catalog 版本不一致")
+            now = await uow.runs.database_now()
+            replay = execution.status == "SUBMITTED"
+            if replay:
+                if (
+                    execution.executor_instance_id
+                    != command.executor_instance_id
+                    or execution.claimed_at is None
+                    or execution.grant_jti_hash
+                    != _hash(str(execution.execution_id))
+                ):
+                    raise state_conflict("Execution 已被其他实例 Claim")
+            elif (
+                execution.status != "CREATED"
+                or token.status != "ISSUED"
+                or proposal.status != "APPROVED"
+                or hitl.status != "APPROVED"
+            ):
+                raise state_conflict("Execution 当前不能 Claim")
+            if token.expires_at <= now:
+                raise state_conflict("审批授权已过期")
+
+            target_snapshot = (
+                run.plan_snapshot_json or {}
+            ).get("target", {})
+            app_id = int(target_snapshot.get("app_id", -1))
+            domain_id = int(target_snapshot.get("domain_id", -1))
+            target = await uow.targets.get_scoped(
+                target_id=execution.target_id,
+                app_id=app_id,
+                domain_id=domain_id,
+                lock=True,
+            )
+            if (
+                target is None
+                or target.status != "ACTIVE"
+                or target.execution_mode != "AGENT_EXECUTE"
+                or not target.execution_secret_ref
+                or int(target.row_version) != int(token.target_version)
+            ):
+                raise state_conflict("Target 当前不满足 Claim 条件")
+            conflicting = (
+                await uow.changes.get_active_execution_for_target(
+                    target_id=target.target_id,
+                    exclude_execution_id=execution.execution_id,
+                )
+            )
+            if conflicting is not None:
+                raise state_conflict("Target 已存在进行中的 Mutation")
+            binding = await uow.targets.get_agent_binding(
+                target_id=target.target_id,
+                agent_id=run.agent_id,
+                app_id=app_id,
+                domain_id=domain_id,
+                lock=True,
+            )
+            if (
+                binding is None
+                or binding.status != "ACTIVE"
+                or binding.access_mode != "EXECUTE"
+                or proposal.action_template_id
+                not in set(binding.allowed_actions_json or ())
+            ):
+                raise state_conflict("Agent Binding 已不允许该动作")
+            policy = (
+                await uow.policies.get_scoped(
+                    policy_id=binding.policy_id,
+                    app_id=app_id,
+                    domain_id=domain_id,
+                    lock=True,
+                )
+                if binding.policy_id is not None
+                else None
+            )
+            rules = dict(policy.rules_json) if policy is not None else {}
+            frozen_policy = dict(run.policy_snapshot_json or {})
+            if (
+                policy is None
+                or policy.status != "ACTIVE"
+                or rules.get("allow_agent_execution") is not True
+                or frozen_policy.get("policy_hash") != policy.policy_hash
+                or token.policy_decision_hash
+                != proposal.policy_decision_hash
+            ):
+                raise state_conflict("Policy 已不允许该 Execution")
+            capabilities = {
+                name
+                for name, enabled in dict(
+                    target.capabilities_json or {}
+                ).items()
+                if enabled is True
+            }
+            try:
+                template = self._action_registry.resolve(
+                    action_template_id=proposal.action_template_id,
+                    version=proposal.action_template_version,
+                    db_type=target.db_type,
+                    db_version=target.version_code or "UNKNOWN",
+                    capabilities=capabilities,
+                    entitlements=set(rules.get("entitlements", ())),
+                    environment=target.environment,
+                )
+                rendered = self._renderer.render(
+                    template, dict(proposal.parameters_json)
+                )
+            except (LookupError, ValueError):
+                raise state_conflict(
+                    "Action Catalog 或参数当前不可执行"
+                ) from None
+            if (
+                rendered.template_hash
+                != execution.action_template_hash
+                or rendered.parameters_hash != execution.parameters_hash
+                or rendered.command_hash != execution.command_hash
+                or execution.proposal_hash != proposal.proposal_hash
+                or token.parameters_hash != execution.parameters_hash
+            ):
+                raise state_conflict("Execution Hash 围栏校验失败")
+
+            issued_at = execution.claimed_at if replay else now
+            assert issued_at is not None
+            expires_at = min(
+                token.expires_at,
+                issued_at
+                + timedelta(
+                    seconds=self._mutation_grant_ttl_seconds
+                ),
+            )
+            if expires_at <= now:
+                raise state_conflict("Mutation Grant 已过期")
+            grant = MutationExecutionGrant(
+                issuer=self._mutation_grant_issuer,
+                audience=self._mutation_grant_audience,
+                grant_id=execution.execution_id,
+                issued_at=issued_at,
+                expires_at=expires_at,
+                execution_id=execution.execution_id,
+                executor_request_id=command.executor_request_id,
+                executor_instance_id=command.executor_instance_id,
+                target_id=target.target_id,
+                target_version=int(target.row_version),
+                db_type=target.db_type,
+                connection_profile=dict(target.endpoint_json or {}),
+                execution_secret_ref=target.execution_secret_ref,
+                action_template_id=proposal.action_template_id,
+                action_template_version=(
+                    proposal.action_template_version
+                ),
+                action_template_variant=rendered.variant,
+                renderer_version=rendered.renderer_version,
+                typed_parameters=rendered.typed_parameters,
+                action_template_hash=rendered.template_hash,
+                parameters_hash=rendered.parameters_hash,
+                command_hash=rendered.command_hash,
+                proposal_hash=proposal.proposal_hash,
+                policy_decision_hash=proposal.policy_decision_hash,
+                approval_token_hash=token.token_hash,
+                approver_id=token.approver_id,
+                action_catalog_hash=self._action_registry.catalog_hash,
+                statement_timeout_seconds=(
+                    self._mutation_statement_timeout_seconds
+                ),
+                trace_id=run.trace_id,
+            )
+            encoded = self._mutation_grant_codec.issue(grant)
+            if not replay:
+                token.status = "CONSUMED"
+                token.consumed_at = now
+                proposal.status = "CONSUMED"
+                proposal.updated_at = now
+                execution.status = "SUBMITTED"
+                execution.executor_instance_id = (
+                    command.executor_instance_id
+                )
+                execution.claimed_at = now
+                execution.grant_jti_hash = _hash(
+                    str(execution.execution_id)
+                )
+                execution.status_version = 2
+                execution.updated_at = now
+                await uow.runs.append_event(
+                    ops_run_id=run.ops_run_id,
+                    ops_task_id=proposal.ops_task_id,
+                    event_type="execution.claimed",
+                    event_key=(
+                        f"execution:{execution.execution_id}:claimed"
+                    ),
+                    visibility="USER",
+                    payload_json={
+                        "execution_id": str(execution.execution_id),
+                        "status": "SUBMITTED",
+                        "trace_id": trace_id,
+                    },
+                )
+                await uow.commit()
+            return MutationClaimReceipt(
+                execution_id=execution.execution_id,
+                executor_request_id=command.executor_request_id,
+                status="SUBMITTED",
+                grant=encoded,
+                expires_at=expires_at,
             )
 
     @staticmethod

@@ -337,6 +337,17 @@ class ChangeRepository(AIOpsRepository):
             statement = statement.with_for_update()
         return (await self._session.execute(statement)).scalar_one_or_none()
 
+    async def get_execution(
+        self, *, execution_id: UUID, lock: bool = False
+    ) -> ExecutionEntity | None:
+        self._check_active()
+        statement: Select = select(ExecutionEntity).where(
+            ExecutionEntity.execution_id == execution_id
+        )
+        if lock:
+            statement = statement.with_for_update()
+        return (await self._session.execute(statement)).scalar_one_or_none()
+
     async def get_execution_by_idempotency(
         self, *, idempotency_key: str
     ) -> ExecutionEntity | None:
@@ -356,6 +367,25 @@ class ChangeRepository(AIOpsRepository):
         if lock:
             statement = statement.with_for_update()
         return (await self._session.execute(statement)).scalar_one_or_none()
+
+    async def get_active_execution_for_target(
+        self,
+        *,
+        target_id: UUID,
+        exclude_execution_id: UUID,
+    ) -> ExecutionEntity | None:
+        self._check_active()
+        statement = (
+            select(ExecutionEntity)
+            .where(
+                ExecutionEntity.target_id == target_id,
+                ExecutionEntity.execution_id != exclude_execution_id,
+                ExecutionEntity.status.in_(("SUBMITTED", "RUNNING")),
+            )
+            .order_by(ExecutionEntity.created_at)
+            .limit(1)
+        )
+        return (await self._session.execute(statement)).scalars().first()
 
     async def apply_execution_status(
         self,

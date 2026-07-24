@@ -79,6 +79,9 @@ class AIOpsExecutorConfig(ServiceConfig):
     grant_secret_env: str = "KBOT_AIOPS_DIAGNOSTIC_GRANT_SECRET"
     grant_issuer: str = "kbot-aiops-worker"
     grant_ttl_seconds: int = Field(default=45, ge=5, le=300)
+    mutation_grant_secret_env: str = "KBOT_AIOPS_MUTATION_GRANT_SECRET"
+    mutation_grant_issuer: str = "kbot-aiops-api"
+    mutation_grant_ttl_seconds: int = Field(default=30, ge=5, le=120)
 
 
 class AIOpsDependencyEndpoints(BaseModel):
