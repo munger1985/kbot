@@ -242,7 +242,7 @@ APEX 可以通过受控视图展示待输入计数，但 SQL、回贴和上传�
 ## 代码布局
 
 ```text
-aiops_agent/
+services/aiops_agent/src/aiops_agent/
   contracts/hitl/{requests,responses,uploads}.py
   domain/hitl/{transitions,interactive_policy,errors}.py
   application/hitl/

@@ -1,0 +1,225 @@
+# KBot 4.0 内部进程拓扑，不属于部署人员填写的配置。
+
+[[processes]]
+process_key = "model_embedding"
+module = "model_serving.entrypoints.embedding"
+service_config = "model_serving"
+config_section = "embedding"
+service_name = "kbot-model-embedding"
+kind = "http"
+port = 18091
+
+[[processes]]
+process_key = "model_llm"
+module = "model_serving.entrypoints.llm"
+service_config = "model_serving"
+config_section = "llm"
+service_name = "kbot-model-llm"
+kind = "http"
+port = 18092
+
+[[processes]]
+process_key = "model_visual"
+module = "model_serving.entrypoints.visual"
+service_config = "model_serving"
+config_section = "visual"
+service_name = "kbot-model-visual"
+kind = "http"
+port = 18093
+
+[[processes]]
+process_key = "model_vlm"
+module = "model_serving.entrypoints.vlm"
+service_config = "model_serving"
+config_section = "vlm"
+service_name = "kbot-model-vlm"
+kind = "http"
+port = 18094
+
+[[processes]]
+process_key = "knowledge_core_api"
+module = "knowledge_core.entrypoints.api"
+service_config = "knowledge_core"
+config_section = "api"
+service_name = "kbot-knowledge-core-api"
+kind = "http"
+port = 18090
+
+[[processes]]
+process_key = "knowledge_core_parser"
+module = "knowledge_core.entrypoints.parser"
+service_config = "knowledge_core"
+config_section = "parser"
+service_name = "kbot-knowledge-core-parser"
+kind = "http"
+port = 18095
+
+[[processes]]
+process_key = "knowledge_core_projection"
+module = "knowledge_core.entrypoints.projection"
+service_config = "knowledge_core"
+config_section = "projection"
+service_name = "kbot-knowledge-core-projection"
+kind = "worker"
+
+[[processes]]
+process_key = "agent_runtime_api"
+module = "agent_runtime.entrypoints.api"
+service_config = "agent_runtime"
+config_section = "api"
+service_name = "kbot-agent-runtime-api"
+kind = "http"
+port = 18100
+
+[[processes]]
+process_key = "agent_runtime_worker"
+module = "agent_runtime.entrypoints.worker"
+service_config = "agent_runtime"
+config_section = "worker"
+service_name = "kbot-agent-runtime-worker"
+kind = "worker"
+
+[[processes]]
+process_key = "aiops_api"
+module = "aiops_agent.entrypoints.api"
+service_config = "aiops_agent"
+config_section = "api"
+service_name = "kbot-aiops-api"
+kind = "http"
+port = 18110
+
+[[processes]]
+process_key = "aiops_db_executor"
+module = "aiops_agent.entrypoints.db_executor"
+service_config = "aiops_agent"
+config_section = "executor"
+service_name = "kbot-aiops-db-executor"
+kind = "http"
+port = 18111
+
+[[processes]]
+process_key = "aiops_worker"
+module = "aiops_agent.entrypoints.worker"
+service_config = "aiops_agent"
+config_section = "worker"
+service_name = "kbot-aiops-worker"
+kind = "http"
+port = 18112
+
+[[processes]]
+process_key = "aiops_scheduler"
+module = "aiops_agent.entrypoints.scheduler"
+service_config = "aiops_agent"
+config_section = "scheduler"
+service_name = "kbot-aiops-scheduler"
+kind = "http"
+port = 18113
+
+[[processes]]
+process_key = "main_api"
+module = "main_api.entrypoints.api"
+service_config = "main_api"
+config_section = "api"
+service_name = "kbot-main-api"
+kind = "http"
+port = 18099
+
+# 端点只引用进程；默认 URL 根据进程端口生成，audience 使用 service_name。
+[endpoints]
+knowledge_core = "knowledge_core_api"
+agent_runtime = "agent_runtime_api"
+aiops = "aiops_api"
+aiops_db_executor = "aiops_db_executor"
+model_embedding = "model_embedding"
+model_llm = "model_llm"
+model_visual = "model_visual"
+model_vlm = "model_vlm"
+
+[dependencies.main_api.knowledge_core]
+endpoint = "knowledge_core"
+timeout_seconds = 120
+
+[dependencies.main_api.agent_runtime]
+endpoint = "agent_runtime"
+timeout_seconds = 120
+
+[dependencies.main_api.aiops]
+endpoint = "aiops"
+timeout_seconds = 120
+
+[dependencies.main_api.model_embedding]
+endpoint = "model_embedding"
+timeout_seconds = 120
+
+[dependencies.main_api.model_llm]
+endpoint = "model_llm"
+timeout_seconds = 120
+
+[dependencies.main_api.model_visual]
+endpoint = "model_visual"
+timeout_seconds = 120
+
+[dependencies.main_api.model_vlm]
+endpoint = "model_vlm"
+timeout_seconds = 120
+
+[dependencies.knowledge_core.embedding]
+endpoint = "model_embedding"
+timeout_seconds = 300
+health_check_timeout_seconds = 10
+
+[dependencies.knowledge_core.llm]
+endpoint = "model_llm"
+timeout_seconds = 300
+
+[dependencies.knowledge_core.vlm]
+endpoint = "model_vlm"
+timeout_seconds = 600
+
+[dependencies.knowledge_core.visual]
+endpoint = "model_visual"
+timeout_seconds = 300
+
+[dependencies.knowledge_core.knowledge_core]
+endpoint = "knowledge_core"
+timeout_seconds = 600
+
+[dependencies.agent_runtime.knowledge_core]
+endpoint = "knowledge_core"
+timeout_seconds = 120
+
+[dependencies.agent_runtime.aiops]
+endpoint = "aiops"
+timeout_seconds = 120
+
+[dependencies.agent_runtime.llm]
+endpoint = "model_llm"
+timeout_seconds = 300
+
+[dependencies.agent_runtime.embedding]
+endpoint = "model_embedding"
+timeout_seconds = 300
+
+[dependencies.agent_runtime.vlm]
+endpoint = "model_vlm"
+timeout_seconds = 300
+
+[dependencies.aiops_agent.clients.agent_runtime]
+endpoint = "agent_runtime"
+timeout_seconds = 120
+
+[dependencies.aiops_agent.clients.model_serving]
+endpoint = "model_llm"
+timeout_seconds = 300
+
+[dependencies.aiops_agent.clients.knowledge_core]
+endpoint = "knowledge_core"
+timeout_seconds = 120
+
+[dependencies.aiops_agent.clients.aiops_api]
+endpoint = "aiops"
+timeout_seconds = 120
+
+[dependencies.aiops_agent.clients.db_executor]
+endpoint = "aiops_db_executor"
+timeout_seconds = 120

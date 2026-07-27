@@ -44,7 +44,7 @@ DB Executor 不持有 KBot Schema 凭据、不查询 Run/Task/Target 表、不�
 建议目录：
 
 ```text
-aiops_agent/
+services/aiops_agent/src/aiops_agent/
   diagnostics/
     contracts.py
     registry.py
@@ -55,7 +55,8 @@ aiops_agent/
       mysql/{manifest.yaml,sql/,normalizers.py}
   orchestration/handlers/database_diagnostic.py
   adapters/db_executor_client.py
-apps/aiops_db_executor/
+services/aiops_agent/src/aiops_agent/
+  entrypoints/db_executor.py
   app.py
   settings.py
   executor/{service.py,limits.py,redaction.py}

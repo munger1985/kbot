@@ -4,16 +4,16 @@ KBot 是面向知识检索与数据库运维分析的 Python/FastAPI 后端。4.
 同一 Oracle/APEX Schema 下的独立服务架构，不兼容 3.x API、表模型或 Agent
 运行时。
 
-## 当前服务
+## 当前结构
 
-- `main_api/`：面向 Portal 的唯一公开 API/BFF，只暴露 `/api/v1/*`。
-- `knowledge_core/`：Collection、Bundle、Document、解析、索引与两阶段检索。
-- `model_serving/`：LLM、Embedding、VLM 和 Visual 模型托管。
-- `agent_runtime/`：Agent 状态机、计划、Skill 契约和持久化执行内核。
-- `aiops_agent/`：独立 AIOps 契约、四进程边界和自有 Oracle 领域 Schema。
-- `platform_core/`：配置、日志、认证、数据库运行时和共享契约。
-- `platform_clients/`：跨服务客户端。
-- `apps/`：各独立进程入口。
+- `services/`：五个可独立构建服务及其进程入口。
+- `packages/`：`platform_core` 和 `platform_clients` 两个共享 Python 包。
+- `database/oracle/`：同一 Schema 下按服务所有权拆分的全量 DDL。
+- `configuration/`：唯一部署配置样例。
+- `resources/`：部署进程拓扑等不可变运行资源。
+- `tests/`：单元、集成、契约、验收、Smoke 和质量评估。
+- `tools/dev_console/`：仅开发环境启用的功能测试页面。
+- `var/`：本地日志、上传文件和生成物；不进入 Git。
 
 Agent Runtime 已启用持久化 Run/Task/Artifact/Event、固定 Document Plan、
 KC 两阶段检索 Skill、Grounded Response Composer、租约恢复和独立 Worker。
@@ -31,27 +31,29 @@ Knowledge Core 来源于 3.5 已完成的实现，是 4.0 的正式基线，不�
 使用 Python 3.10 创建环境并安装依赖：
 
 ```bash
-pip install -r requirements.txt
+bash scripts/deployment/install_workspace.sh
 ```
 
-按 [configuration/README.md](configuration/README.md) 准备共享配置和
-对应服务配置。TOML 可以提交，但密码、Token、模型厂商 Key 和私钥只能由
-环境变量或 Secret 管理系统注入；部署模板位于 `configuration/example/`。
+脚本先安装锁定依赖，再以 editable 方式安装两个共享包和五个服务包。
+
+按 [configuration/README.md](configuration/README.md) 从
+`configuration/kbot.toml.example` 准备唯一部署文件。密码、Token、模型厂商
+Key和私钥只能由环境变量或Secret管理系统注入。
 
 可单独启动服务：
 
 ```bash
-python3 -m apps.main_api.main
-python3 -m apps.agent_runtime_api.main
-python3 -m apps.agent_runtime_worker.main
-python3 -m apps.aiops_api.main
-python3 -m apps.aiops_worker.main
-python3 -m apps.aiops_scheduler.main
-python3 -m apps.aiops_db_executor.main
-python3 -m apps.knowledge_core_api.main
-python3 -m apps.knowledge_core_parser.main
-python3 -m apps.knowledge_core_projection.main
-python3 -m apps.ai_models_embedding.main
+python3 -m main_api.entrypoints.api
+python3 -m agent_runtime.entrypoints.api
+python3 -m agent_runtime.entrypoints.worker
+python3 -m aiops_agent.entrypoints.api
+python3 -m aiops_agent.entrypoints.worker
+python3 -m aiops_agent.entrypoints.scheduler
+python3 -m aiops_agent.entrypoints.db_executor
+python3 -m knowledge_core.entrypoints.api
+python3 -m knowledge_core.entrypoints.parser
+python3 -m knowledge_core.entrypoints.projection
+python3 -m model_serving.entrypoints.embedding
 ```
 
 本地同时启动或停止当前服务：
@@ -64,11 +66,12 @@ bash stop_kbot.sh
 ## 开发检查
 
 ```bash
-python3 scripts/check_4_0_boundaries.py
-python3 scripts/check_oracle_schema.py
-python3 -m unittest discover -s tests
+python3 tests/acceptance/check_4_0_boundaries.py
+python3 tests/acceptance/check_oracle_schema.py
+python3 -m unittest discover -s tests -t .
 ```
 
 完整架构和实施计划见
 [`docs/kbot_4.0_design/README.md`](docs/kbot_4.0_design/README.md)。贡献规则见
-[`AGENTS.md`](AGENTS.md)。
+[`AGENTS.md`](AGENTS.md)，当前物理目录说明见
+[`docs/repository_layout.md`](docs/repository_layout.md)。

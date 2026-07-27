@@ -2,23 +2,23 @@
 
 ## Project Structure & Module Organization
 
-KBot is a Python/FastAPI knowledge-base and AIOps backend. Deployable entry points live in `apps/`; service-owned code belongs in bounded packages such as `main_api/`, `knowledge_core/`, and `model_serving/`. Shared configuration, authentication, logging, database primitives, and contracts live in `platform_core/`; cross-service clients live in `platform_clients/`. Keep each service’s API, application, domain, persistence, and worker code inside that service. Configuration examples are under `configuration/example/`, migrations under `migrations/`, SQL/APEX artifacts under `apex/`, documentation under `docs/`, and tests under `tests/`.
+KBot is a Python/FastAPI knowledge-base and AIOps backend. Independently buildable services live under `services/<service>/src/<package>/`; each service owns its entry points, API, application, domain, persistence, workers, and private resources. Shared configuration, authentication, logging, database primitives, and contracts live in `packages/platform_core`; cross-service clients live in `packages/platform_clients`. Configuration examples are under `configuration/`, SQL artifacts under `database/`, documentation under `docs/`, developer pages under `tools/dev_console/`, and all automated checks, Smoke programs, and quality evaluation tools under `tests/`. Keep `scripts/` for deployment, initialization, provisioning, and release operations only.
 
 ## Build, Test, and Development Commands
 
 Create a Python 3.10 environment and install dependencies:
 
 ```bash
-pip install -r requirements.txt
+bash scripts/deployment/install_workspace.sh
 ```
 
-Run a service with its module entry point, for example `python -m apps.knowledge_core_api.main`. Use the configured local environment when integration dependencies are required.
+Run a service with its module entry point, for example `python -m knowledge_core.entrypoints.api`. Use the configured local environment when integration dependencies are required.
 
 Tests are currently integration-style scripts that may require configured databases, models, or credentials. Run a targeted check, for example:
 
 ```bash
-python3 scripts/check_4_0_boundaries.py
-python3 scripts/check_oracle_schema.py
+python3 tests/acceptance/check_4_0_boundaries.py
+python3 tests/acceptance/check_oracle_schema.py
 ```
 
 ## Coding Style & Naming Conventions
@@ -33,7 +33,7 @@ Public routes authenticate the Portal backend API Key and derive Domain/user con
 
 ## Testing Guidelines
 
-Add or update a focused `tests/test_<feature>.py` script alongside behavior changes. Include a runnable `__main__` entry point when the test is intended for direct execution, and keep test data/environment assumptions explicit. Do not commit real OCI keys, database passwords, tokens, or `.env`/secret configuration.
+Add or update focused tests under `tests/unit/<service>/`, `tests/integration/`, or `tests/contract/`. Explicit environment checks belong in `tests/acceptance/`, real dependency flows in `tests/smoke/`, and quality datasets or runners in `tests/evaluation/`. Include a runnable `__main__` entry point when a tool is intended for direct execution, and keep environment assumptions explicit. Do not commit real OCI keys, database passwords, tokens, or `.env`/secret configuration.
 
 ## Commit & Pull Request Guidelines
 

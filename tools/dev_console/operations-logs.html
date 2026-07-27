@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>KBot 开发日志</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <!-- 该页面只用于 development 环境读取本机日志，不属于门户产品页面。 -->
+    <header>
+      <h1>KBot 开发日志</h1>
+      <nav>
+        <a href="./index.html">首页</a>
+        <a href="./knowledge-core.html">Knowledge Core</a>
+        <a href="./agent-chat.html">Agent 问答</a>
+      </nav>
+    </header>
+
+    <form id="auth-form" class="auth-bar">
+      <div class="field"><label>Main API URL</label><input name="baseUrl" required /></div>
+      <div class="field"><label>Domain ID（日志页可空）</label><input name="domainId" /></div>
+      <div class="field"><label>User ID</label><input name="userId" required /></div>
+      <button class="primary" type="submit">保存连接</button>
+    </form>
+
+    <main class="grid">
+      <section class="panel span-12">
+        <h2>筛选与刷新</h2>
+        <p class="hint">
+          每个逻辑服务只显示运行日志和 API 访问日志。启动失败和进程退出统一归入
+          运行日志；点击任意日志行可查看完整异常堆栈。
+        </p>
+        <form id="log-filter-form">
+          <div class="log-filter-grid">
+            <div class="field">
+              <label>服务</label>
+              <select id="service-filter" name="serviceName">
+                <option value="">正在加载服务…</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>日志</label>
+              <select id="log-type-filter" name="logType">
+                <option value="RUNTIME" selected>运行日志</option>
+                <option value="ACCESS">API 访问日志</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>关键字</label>
+              <input name="keyword" placeholder="消息、error_id、request_id、trace_id…" />
+            </div>
+            <div class="field">
+              <label>返回条数</label>
+              <select name="limit">
+                <option value="100">100</option>
+                <option value="200" selected>200</option>
+                <option value="500">500</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>自动刷新</label>
+              <select id="refresh-interval" name="refreshInterval">
+                <option value="0">关闭</option>
+                <option value="3000" selected>每 3 秒</option>
+                <option value="5000">每 5 秒</option>
+                <option value="10000">每 10 秒</option>
+              </select>
+            </div>
+          </div>
+          <div class="log-check-groups">
+            <fieldset>
+              <legend>日志级别</legend>
+              <label><input type="checkbox" name="level" value="DEBUG" checked /> DEBUG</label>
+              <label><input type="checkbox" name="level" value="INFO" checked /> INFO</label>
+              <label><input type="checkbox" name="level" value="WARNING" checked /> WARNING</label>
+              <label><input type="checkbox" name="level" value="ERROR" checked /> ERROR</label>
+              <label><input type="checkbox" name="level" value="CRITICAL" checked /> CRITICAL</label>
+            </fieldset>
+          </div>
+          <div class="actions">
+            <button class="primary" type="submit">立即查询</button>
+            <button id="errors-only" type="button">仅错误</button>
+            <button id="all-levels" type="button">全部级别</button>
+          </div>
+        </form>
+        <p id="log-status" class="status"></p>
+      </section>
+
+      <section class="panel span-12">
+        <h2>日志事件</h2>
+        <div class="log-table-wrap">
+          <table class="log-table">
+            <thead>
+              <tr>
+                <th>时间</th>
+                <th>进程</th>
+                <th>级别</th>
+                <th>位置</th>
+                <th>消息</th>
+              </tr>
+            </thead>
+            <tbody id="log-rows"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel span-12">
+        <h2>完整日志</h2>
+        <p id="event-meta" class="hint">选择上方日志事件查看详情。</p>
+        <pre id="event-detail" class="log-detail">尚未选择日志事件</pre>
+      </section>
+    </main>
+
+    <script src="./shared.js"></script>
+    <script src="./operations-logs.js"></script>
+  </body>
+</html>

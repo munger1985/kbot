@@ -23,7 +23,7 @@ API、Worker 和 Scheduler 共享 `KBOT_OPS_*` 领域表；DB Executor 不编排
 ## 推荐代码布局
 
 ```text
-aiops_agent/
+services/aiops_agent/src/aiops_agent/
   api/
     management/              # Main API 代理的 Target、Run、HITL、Approval、Report
     intake/                  # Root Agent 委派、监控事件接入
@@ -81,13 +81,13 @@ aiops_agent/
     scheduler.py
     reconciliation.py
   contracts/                 # 领域内部版本化 Artifact schema
-  tests/
+  entrypoints/
+    api.py
+    worker.py
+    scheduler.py
+    db_executor.py
 
-apps/
-  aiops_api/main.py
-  aiops_worker/main.py
-  aiops_scheduler/main.py
-  aiops_db_executor/main.py
+tests/unit/aiops_agent/
 ```
 
 `api/schemas`、`application/dto`、`domain` 和 `entities` 不得互相混用。API 不返回 SQLAlchemy Entity；Domain 不 import FastAPI、SQLAlchemy、HTTP Client 或 `platform_core.database`。
@@ -167,7 +167,7 @@ Route/Worker 从 UoW Factory 获取短生命周期 Session。Repository 不创�
 
 ## 对外契约与 Client
 
-Main API 通过 `AIOpsManagementClient` 调用管理与用户资源；Agent Runtime 通过更窄的 `AIOpsDelegationClient` 创建/读取/取消自身子 Run。稳定跨服务 DTO 放入 `platform_core/contracts/aiops/`；AIOps 内部 Domain/Artifact schema 仍归 `aiops_agent/contracts/` 所有。未来拆分仓库时，前者发布为独立契约包。
+Main API 通过 `AIOpsManagementClient` 调用管理与用户资源；Agent Runtime 通过更窄的 `AIOpsDelegationClient` 创建/读取/取消自身子 Run。稳定跨服务 DTO 放入 `packages/platform_core/src/platform_core/contracts/aiops/`；AIOps 内部 Domain/Artifact schema 仍归 `services/aiops_agent/src/aiops_agent/contracts/` 所有。未来拆分仓库时，前者发布为独立契约包。
 
 详细 DTO、鉴权、幂等、SSE 和错误规范见 [27_aiops_api_and_contracts.md](27_aiops_api_and_contracts.md)。外部 API 由 Main API/BFF 发布，AIOps 进程只接受内部 Client 契约：
 
@@ -178,7 +178,7 @@ Main API 通过 `AIOpsManagementClient` 调用管理与用户资源；Agent Runt
 /internal/v1/db-executor/executions      # AIOps Worker 调用 Executor
 ```
 
-Root Agent 只获取 `ops_run_id`、安全事件页和终态 Result Envelope，不获取 AIOps Repository/UoW、内部 Artifact 或完整命令。`platform_clients/ops.py` 遗留兼容 Client 不迁移，4.0 分别建立 Management/Delegation Client。父子事件投影与 Composer 契约见 [40_aiops_step11_root_main_api_and_apex_integration.md](40_aiops_step11_root_main_api_and_apex_integration.md)。
+Root Agent 只获取 `ops_run_id`、安全事件页和终态 Result Envelope，不获取 AIOps Repository/UoW、内部 Artifact 或完整命令。`packages/platform_clients/src/platform_clients/ops.py` 遗留兼容 Client 不迁移，4.0 分别建立 Management/Delegation Client。父子事件投影与 Composer 契约见 [40_aiops_step11_root_main_api_and_apex_integration.md](40_aiops_step11_root_main_api_and_apex_integration.md)。
 
 ## 配置和凭据
 
@@ -191,7 +191,9 @@ Root Agent 只获取 `ops_run_id`、安全事件页和终态 Result Envelope，�
 - KC/Model Serving/DB Executor/Secret Store URL 和 Service Identity；
 - 对象存储、监控 Provider 和报告渲染限额。
 
-Monitor/Target 凭据是领域数据中的 `SECRET_REF`，不写入 `base.toml`。本地开发可使用环境变量 Secret Provider，服务器使用实际 Vault/Secret Manager Adapter。
+Monitor/Target 凭据是领域数据中的 `SECRET_REF`，不写入 TOML。稳定配置仅声明
+Secret 环境变量名或引用，本地开发可使用环境变量 Secret Provider，服务器使用
+实际 Vault/Secret Manager Adapter。
 
 ## 部署、健康和扩缩
 
@@ -208,7 +210,7 @@ Monitor/Target 凭据是领域数据中的 `SECRET_REF`，不写入 `base.toml`�
 
 4.0 中通过代码依赖检查、Repository 包边界、表前缀和 API 契约强制所有权；APEX 仅通过受控视图读取目标、待审、Run 和 Report 投影。
 
-未来拆分时，将 `aiops_agent + apps/aiops_* + platform_core + platform_clients 必要契约 + configuration` 构建为独立镜像，替换 DB/Secret/Client 配置即可。不需要重写 Domain、Application、API 或 Repository 边界。步骤 0 的具体包、配置和启动约束见 [29_aiops_step0_contracts_and_bootstrap.md](29_aiops_step0_contracts_and_bootstrap.md)。
+未来拆分时，将 `aiops_agent + services/aiops_agent/src/aiops_agent/entrypoints/ + platform_core + platform_clients 必要契约 + configuration` 构建为独立镜像，替换 DB/Secret/Client 配置即可。不需要重写 Domain、Application、API 或 Repository 边界。步骤 0 的具体包、配置和启动约束见 [29_aiops_step0_contracts_and_bootstrap.md](29_aiops_step0_contracts_and_bootstrap.md)。
 
 Scheduler、Inspection Fire、版本化 Report 和 Comparison 的具体事务及代码布局见 [39_aiops_step10_inspection_reporting_and_comparison.md](39_aiops_step10_inspection_reporting_and_comparison.md)。
 
@@ -216,7 +218,7 @@ Scheduler、Inspection Fire、版本化 Report 和 Comparison 的具体事务及
 
 具体施工顺序、阶段完成物和启用次序见 [28_aiops_implementation_plan.md](28_aiops_implementation_plan.md)。
 
-- `utils/monitor` 仅作为协议与响应 Fixture 来源；按新 MonitorPort 重写到 `aiops_agent/adapters/monitoring`，禁止原类直接迁移或继续读取全局配置；
+- `utils/monitor` 仅作为协议与响应 Fixture 来源；按新 MonitorPort 重写到 `services/aiops_agent/src/aiops_agent/adapters/monitoring`，禁止原类直接迁移或继续读取全局配置；
 - 3.x Ops Agent、Orchestrator、Planner、Entity/Repository、Scheduler 和 Skill 不被 4.0 import；
 - API、Worker、Scheduler 和 Executor 可独立启动、关闭、重启和扩展；
 - 任意进程崩溃后不丢 Run/HITL/Approval/Execution 状态；

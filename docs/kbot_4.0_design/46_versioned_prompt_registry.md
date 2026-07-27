@@ -9,7 +9,7 @@ Prompt 时才使用文件版本兜底。
 统一文件固定为：
 
 ```text
-configuration/prompts.toml
+packages/platform_core/src/platform_core/resources/prompts.toml
 ```
 
 选择 TOML 是为了复用 Python `tomllib`，避免为建库脚本增加 YAML 依赖。
@@ -133,12 +133,12 @@ Version 行一旦成为 `ACTIVE` 就不可修改正文、变量、Schema 或 Has
 
 ## 空库初始化
 
-`scripts/apply_oracle_schema.py` 在 DDL 和 Schema 校验成功后执行 Prompt
+`scripts/db/apply_oracle_schema.py` 在 DDL 和 Schema 校验成功后执行 Prompt
 Catalog Seed：
 
 ```text
 读取 init_services.ini
-  → 加载并校验 configuration/prompts.toml
+  → 加载并校验 packages/platform_core/src/platform_core/resources/prompts.toml
   → 保留 platform 和已选择 owner_service 的条目
   → 插入 Prompt Definition
   → 插入不可变 Version
@@ -181,7 +181,7 @@ class PromptResolver:
 
 1. Run 已冻结的 `prompt_version_id`；
 2. 数据库中该 Key 的 Active Version；
-3. `configuration/prompts.toml` 中该 Key 的 Active Version；
+3. `packages/platform_core/src/platform_core/resources/prompts.toml` 中该 Key 的 Active Version；
 4. 缺失则返回 `PROMPT_NOT_FOUND`，禁止使用代码内临时字符串。
 
 数据库查询不到 Active Version 或发生暂时性读取故障时，允许文件兜底，并写
@@ -243,7 +243,7 @@ Artifact 和最终回答的 Provenance 都保存 PromptRef、ModelRef、输入 H
 
 ## 实施步骤
 
-1. 增加 `configuration/prompts.toml` 和 Catalog/占位符校验器；
+1. 增加 `packages/platform_core/src/platform_core/resources/prompts.toml` 和 Catalog/占位符校验器；
 2. 增加 Platform Prompt Definition/Version DDL、Entity、Repository 和 UoW；
 3. 扩展空库初始化脚本完成按 Service Seed、Hash 校验和 Dry Run；
 4. 实现数据库优先、文件兜底和 Run 冻结版本的 Prompt Resolver；

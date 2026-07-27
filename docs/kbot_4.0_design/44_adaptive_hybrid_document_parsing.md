@@ -1,7 +1,7 @@
 # KC 自适应混合文档解析
 
 本文中的整页视觉、图片描述和 DeepSeek OCR Prompt 在实现 Prompt Registry
-后统一迁入 `configuration/prompts.toml`。KC 配置只引用稳定 Prompt Key，
+后统一迁入 `packages/platform_core/src/platform_core/resources/prompts.toml`。KC 配置只引用稳定 Prompt Key，
 运行时数据库版本优先、文件版本兜底，并把 Prompt Version/Hash 写入 Parse
 View 和解析 Artifact。详见
 [46_versioned_prompt_registry.md](46_versioned_prompt_registry.md)。

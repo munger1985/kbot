@@ -197,8 +197,8 @@ UoW-B: 重读并校验 row_version → 写配置 + Audit/Outbox → commit
 ## 代码归属
 
 ```text
-aiops_agent/api/management/routes.py
-aiops_agent/application/configuration/
+services/aiops_agent/src/aiops_agent/api/management/routes.py
+services/aiops_agent/src/aiops_agent/application/configuration/
   base.py
   common.py
   target_service.py
@@ -208,11 +208,11 @@ aiops_agent/application/configuration/
   projections.py
   schedule.py
   service.py
-aiops_agent/ports/{agent_runtime,secret_store}.py
-aiops_agent/adapters/{agent_runtime,secret_store}.py
-platform_core/contracts/aiops/configuration.py
-platform_clients/aiops.py
-main_api/api/ops.py
+services/aiops_agent/src/aiops_agent/ports/{agent_runtime,secret_store}.py
+services/aiops_agent/src/aiops_agent/adapters/{agent_runtime,secret_store}.py
+packages/platform_core/src/platform_core/contracts/aiops/configuration.py
+packages/platform_clients/src/platform_clients/aiops.py
+services/main_api/src/main_api/api/ops.py
 ```
 
 Main API Route 只把外部 AuthContext 映射为签名内部上下文并调用 Client；AIOps Application Service 执行最终授权和不变式。Controller、Client 和 Repository 都不能自行组合权限。
@@ -221,7 +221,7 @@ Main API Route 只把外部 AuthContext 映射为签名内部上下文并调用 
 
 步骤 3 已完成以下链路：
 
-- `platform_core/contracts/aiops/configuration.py` 冻结六类资源的严格 DTO；
+- `packages/platform_core/src/platform_core/contracts/aiops/configuration.py` 冻结六类资源的严格 DTO；
 - Main API 发布 `/api/v1/ops/*`，通过限定 `aiops.manage` Scope 的
   `AIOpsManagementClient` 调用配置 Internal API；
 - `AIOpsConfigurationService` 统一执行 Domain 隔离、状态机、Policy/Binding

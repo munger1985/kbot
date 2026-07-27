@@ -83,7 +83,7 @@ Root 资源查询必须带 `app_id/domain_id`；子资源通过 Join 到 Target/
 
 ## Entity 与 Domain Mapping
 
-SQLAlchemy Entity 位于 `aiops_agent/entities`，逐列映射 [30_aiops_step1_oracle_schema.md](30_aiops_step1_oracle_schema.md)：
+SQLAlchemy Entity 位于 `services/aiops_agent/src/aiops_agent/entities`，逐列映射 [30_aiops_step1_oracle_schema.md](30_aiops_step1_oracle_schema.md)：
 
 ```text
 NUMBER(38)       → Mapped[int] + Numeric(38, 0)
@@ -205,7 +205,7 @@ UoW: scope/assignee/version/policy recheck
 ## 步骤 2 文件布局
 
 ```text
-aiops_agent/
+services/aiops_agent/src/aiops_agent/
   domain/*/entities.py, value_objects.py, state_machine.py
   entities/{target,monitoring,runtime,change,inspection,messaging}.py
   repositories/{target,monitoring,runtime,change,inspection,messaging}.py

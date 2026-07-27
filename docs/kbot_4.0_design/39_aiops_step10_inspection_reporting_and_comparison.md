@@ -255,7 +255,7 @@ Fire 与 Report 列表使用按 `CREATED_AT + UUIDv7` 排序的 Keyset Cursor。
 ## 代码布局
 
 ```text
-aiops_agent/
+services/aiops_agent/src/aiops_agent/
   scheduling/
     resolver.py
     template_registry.py

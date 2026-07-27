@@ -19,7 +19,7 @@ Schema 全量建库，不读取、迁移或保留 3.x 表和数据。
 - `platform_core`：配置、日志、认证、数据库、ORM 基础类型和跨服务契约；
 - `model_serving`：模型 Entity、Repository、配置 CRUD、Provider 和模型进程；
 - `knowledge_core`：Collection、Bundle、Document、Version、Parse View、Evidence、Discovery、Job 和 UoW；
-- `knowledge_core/repositories`：KC Repository 已脱离通用 `dao/repositories`；
+- `services/knowledge_core/src/knowledge_core/repositories`：KC Repository 已脱离通用 `dao/repositories`；
 - Parser Worker：Docling 后处理、结构 IR、质量评估和 Evidence 规划；
 - Discovery → Evidence → Citation Pack 的两阶段检索骨架；
 - DocumentAgentV2、KnowledgeRetrievalSkillV2 和 grounded response 基础链路。
@@ -39,7 +39,7 @@ Agent/Skill、旧业务 Service、旧模型兼容层和旧 SkillRuntime 不因 K
 - 建立 import 依赖检查：新领域不得依赖旧 `dao`、`services/kb`、`TxtBaseSearch`、`DocService` 或旧 Agent 编排。
 - 删除不再使用的兼容导出；仍被 4.0 使用的算法先迁移到有明确 Owner 的新包并补充接口和测试，再删除原实现。
 - 删除 `legacy/`、旧 API（含 schemas）、V1 Controller、旧 Skill/SkillRuntime、旧 Parser、旧 Entity/Repository、DB Executor 和入口脚本；不把它们保留到最终验收。
-- 将 `apps/` 收敛为按服务命名空间组织的入口，明确 `knowledge_core`、`model_serving` 和 Main API 的归属。
+- 各进程入口已收敛到 `services/*/src/*/entrypoints/`，服务源码可以独立构建。
 - 把新增或修改代码中的注释、Docstring 和日志正文统一为中文；API 字段、错误码、枚举及可观测性键保持英文。
 
 实施结果：边界检查会拒绝重新创建旧目录或导入旧模块；KC 中过渡的回答生成、
@@ -51,7 +51,7 @@ Grounding 和 SSE 已删除，最终回答职责留给后续 Agent Runtime；旧
 - 完成 `platform_core` 的服务级配置、日志、认证、DB Session Factory 和观测上下文。
 - **认证基础已完成（2026-07-23）：** 删除 KBot 本地用户/密码登录；公开 `/api/v1` 使用门户后端 API Key；内部 Client 为 `/internal/v1` 下游逐请求签发短期、限定 audience 的 AuthContext JWT，并与服务凭证双重校验。
 - 当前只实现调用方认证、Domain 强制隔离和操作人审计，不实现 Role、Scope 或资源 ACL；AIOps 审批和执行安全闸门仍按业务约束实现。
-- 跨服务客户端已迁移到 `platform_clients`；稳定 DTO 放入 `platform_core/contracts`，后续只补齐版本和契约测试。
+- 跨服务客户端已迁移到 `platform_clients`；稳定 DTO 放入 `packages/platform_core/src/platform_core/contracts`，后续只补齐版本和契约测试。
 - 统一 UoW、Outbox、任务租约、重试、取消和幂等语义。
 - 确认所有 App 在同一 Schema 下也只能访问自己拥有的表和 API。
 - **模型身份迁移已完成（2026-07-23）：** Model Serving 使用 UUIDv7
@@ -74,7 +74,7 @@ Grounding 和 SSE 已删除，最终回答职责留给后续 Agent Runtime；旧
 
 ### 阶段 3：Main API 与领域集成
 
-- **Main API/KC 基础组合已完成（2026-07-23）：** 建立独立 `main_api` 包和 `apps/main_api` 入口，只发布 `/api/v1`；通过 `platform_clients` 组合 Collection、Binding、Bundle 状态和两类流式入库契约，公开资源 ID 已统一为规范 UUID 字符串。
+- **Main API/KC 基础组合已完成（2026-07-23）：** 建立独立 Main API 服务入口，只发布 `/api/v1`；通过 `platform_clients` 组合 Collection、Binding、Bundle 状态和两类流式入库契约，公开资源 ID 已统一为规范 UUID 字符串。
 - **入口身份边界已完成：** 建立 Portal API Key、AuthContext JWT、Service Identity、`KBOT_PLATFORM_DOMAIN` 校验和请求上下文传播；Main API 不读取 KC 表。
 - Agent Run、SSE、AIOps 和文件下载路由随所属领域实现后挂载，不提供假成功或旧接口占位实现。
 - 迁移 Portal、APEX 和 MCP Adapter；禁止继续调用旧 `/api/kb` 或直接访问 `/internal/v1`。

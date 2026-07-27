@@ -1,74 +1,88 @@
-# KBot 4.0 配置结构
+# KBot 4.0 部署配置
 
-配置按“共享平台 + 服务专属”分层加载：
+KBot 只使用一个部署文件：`configuration/kbot.toml`。服务端口、进程身份、内部
+依赖、超时、租约、批次、重试和安全上限都是代码契约，部署人员无需填写。
 
-1. `base.toml`
-2. `${ENVIRONMENT}.toml`，默认 `development`
-3. `services/<service>/base.toml`
-4. `services/<service>/${ENVIRONMENT}.toml`
+## 本地开发
 
-目前 `<service>` 可取 `main_api`、`knowledge_core`、`model_serving`、
-`agent_runtime` 和 `aiops_agent`。服务代码只能读取自己的配置模型；
-`platform_core` 不导入任何服务配置。
-
-通过 `CONFIG_DIR` 指定配置根目录，通过 `ENVIRONMENT` 选择环境。例如：
+仓库已准备本机 `kbot.toml`。新环境可执行：
 
 ```bash
-export CONFIG_DIR=/app/configuration
-export ENVIRONMENT=production
-export KBOT_ORACLE_PASSWORD='由 Secret 管理系统注入'
-python -m apps.knowledge_core_api.main
+cp configuration/kbot.toml.example configuration/kbot.toml
+cp .env.example .env
 ```
 
-配置加载器默认读取当前工作目录的 `.env`，但不会覆盖进程中已经存在的
-环境变量。也可以通过 `ENV_FILE=/etc/kbot/kbot.env` 显式指定环境文件。
-因此推荐：
+然后填写数据库地址、`KBOT_ORACLE_PASSWORD`、`KBOT_MASTER_KEY`，并生成
+Portal API Key 摘要。
 
-- 本地开发：复制 `.env.example` 为 `.env`，由 `python-dotenv` 加载；
-- systemd：使用权限为 `0600` 的 `EnvironmentFile`，或直接声明
-  `Environment`；
-- Docker/Kubernetes：通过 Secret 注入进程环境或挂载 Secret 文件；
-- 生产环境不要把 Secret 写入仓库、TOML、Shell Profile 或系统全局环境。
+## 生产配置
 
-`base.toml` 只保存各服务共同遵守的配置：`app_id`、日志、安全参数名、
-数据库连接与连接池，以及唯一向量维度。监听端口、依赖地址、Worker
-租约、解析策略和模型推理默认值必须放在所属服务目录。
+生产环境通常只需以下内容：
 
-`example/` 与实际目录一一对应，用于服务器部署时对照。明文数据库密码、
-API Key、Token、模型厂商 Key 和私钥不得写入任何 TOML；TOML 中只保存
-环境变量名、Key 摘要或 Secret 引用。
+```toml
+environment = "production"
+app_id = 1
+data_dir = "/var/lib/kbot"
+log_dir = "/var/log/kbot"
+embedding_dimension = 2560
 
-AIOps 内部调用额外使用短期 Service Identity JWT。签名密钥通过
-`KBOT_SERVICE_IDENTITY_JWT_SECRET` 注入，不写入 TOML；生产环境的 Target、
-Monitor 和数据库凭据只保存 SecretRef，且禁止使用 `environment` Secret
-Provider。
+[database]
+host = "oracle.example.internal"
+port = 1521
+service_name = "kbot4"
+username = "kbot"
 
-`process_topology.toml` 是 4.0 完整本地进程清单，不承载环境覆盖或 Secret。它将
-14 个 `apps.*.main` 入口映射到所属服务配置段、进程类型和监听端口。执行：
+[[portal_api_keys]]
+key_id = "portal-prod"
+client_id = "portal"
+key_digest = "生成的64位摘要"
+```
+
+`data_dir` 自动派生 Knowledge Core、Agent附件、AIOps正文和模型缓存目录。Docling
+默认使用 `<data_dir>/models/docling_models`。服务部署在同一主机时，内部地址由
+`resources/topology.toml` 自动生成。
+
+只有跨主机部署才增加对应端点：
+
+```toml
+[endpoints]
+knowledge_core = "http://knowledge-core.internal:18090"
+model_llm = "http://models.internal:18092"
+```
+
+未覆盖的端点继续使用本机地址。MCP问数和DeepSeek OCR等可选集成示例见
+`kbot.toml.example`，未使用时不要填写。
+
+## Secret
+
+生产环境建议将以下变量放入权限为 `0600` 的 systemd EnvironmentFile，或通过
+容器Secret注入：
+
+```dotenv
+KBOT_ORACLE_PASSWORD="数据库密码"
+KBOT_MASTER_KEY="至少32字节的随机主密钥"
+```
+
+KBot从主密钥按用途派生内部JWT、API Pepper、凭证加密和AIOps签名密钥。外部
+问数服务启用时再增加 `KBOT_MCP_DATA_API_KEY`。模型厂商凭证仍由数据库加密
+保存。
+
+Portal API Key 的明文只显示一次；设置主密钥后执行：
 
 ```bash
-python scripts/check_process_topology.py
+python scripts/security/generate_portal_api_key.py --key-id portal-prod
 ```
 
-可检查 App 入口、服务配置、Example、端口唯一性以及 `start_kbot.sh` /
-`stop_kbot.sh` 覆盖关系。本地启动优先使用 `kbot3`，不存在时回退到开发机的
-`cube`；也可通过 `KBOT_CONDA_ENV=<name> ./start_kbot.sh` 显式指定。环境不存在
-或激活失败时脚本立即退出。生产部署不得依赖该脚本。
+将输出摘要写入 `[[portal_api_keys]]`，并把明文 Key 仅保存到 Portal
+Secret。外部系统需要直接调用模型 API 时，使用独立的
+`[[model_api_keys]]`。
 
-修改配置后还应执行：
+## 启动前检查
 
 ```bash
-python scripts/check_configuration_contract.py
+python tests/acceptance/check_configuration_contract.py
+python scripts/deployment/check_deployment.py
 ```
 
-该检查确保实际配置与 Example 字段严格对应，开发和生产配置可通过各服务的
-Pydantic 模型，并且配置声明的 Secret 环境变量均已收录于 `.env.example`。
-
-发布前还应执行 `python scripts/check_supply_chain.py`。该检查要求
-`requirements.txt` 中的直接依赖全部精确锁定且不重复，验证直接依赖 CycloneDX
-SBOM，并扫描受 Git 跟踪文件中的常见 Secret 与敏感文件类型。依赖变化后使用
-`python scripts/check_supply_chain.py --write-sbom` 更新直接依赖 SBOM。
-
-API 契约变化后使用 `python scripts/check_openapi_contracts.py --write` 重建全部
-10 个受管理 OpenAPI 快照，再执行不带 `--write` 的命令检查契约漂移与
-Public/Internal 路径边界。生成过程不会启动 Lifespan、连接数据库或加载模型。
+也可通过 `KBOT_CONFIG_FILE=/etc/kbot/kbot.toml` 使用外置配置，通过
+`ENV_FILE=/etc/kbot/kbot.env` 加载Secret文件。

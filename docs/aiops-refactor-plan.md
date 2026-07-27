@@ -132,13 +132,8 @@ ctx["os_log_snapshots"] = logs
 # 新增功能: 定时执行预定义巡检 PromQL → 超阈值自动触发诊断
 ```
 
-配置 (`configuration/development.toml`):
-
-```toml
-[scheduler]
-enabled = true
-patrol_interval_minutes = 30
-```
+调度器使用 `aiops_agent/config.py` 中受校验的产品默认值。运维人员只维护
+`configuration/kbot.toml`，不再为 Worker 或 Scheduler 编写独立 TOML。
 
 ---
 
@@ -1004,6 +999,6 @@ kbot3 无前端，验证结果通过 SSE 流输出。客户端 (curl/Postman/SDK
 | `dao/repositories/ops_execution_report_repo.py` | **新增** | Verify |
 | `dao/repositories/ops_pending_repo.py` | 修改: 新增 count_today_mutations | Decide |
 | `kbot_hitl_timeout_check.py` → `kbot_scheduler.py` | 重构: 扩展为巡检 + 超时检测 | Sense |
-| `configuration/development.toml` | 修改: 新增 [scheduler] 段 | Sense |
+| `aiops_agent/config.py` | 修改：新增受校验的 Scheduler 产品默认值 | Sense |
 | `docs/database/kbot_db_change_ddl_ops_report.sql` | **新增** DDL | Verify |
 | `agent/prompt/default_prompt.py` | 修改: Planner Prompt 增加 condition/wave 示例 | Decide |

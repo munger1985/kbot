@@ -127,29 +127,10 @@
             "title": "Agent Key",
             "type": "string"
           },
-          "chart_llm_model_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Chart Llm Model Name"
-          },
-          "composer_llm_model_name": {
-            "title": "Composer Llm Model Name",
-            "type": "string"
-          },
           "config": {
             "additionalProperties": true,
             "title": "Config",
             "type": "object"
-          },
-          "context_llm_model_name": {
-            "title": "Context Llm Model Name",
-            "type": "string"
           },
           "data_profile_name": {
             "anyOf": [
@@ -203,35 +184,13 @@
             ],
             "title": "Instruction"
           },
-          "memory_embedding_model_name": {
-            "title": "Memory Embedding Model Name",
-            "type": "string"
-          },
-          "memory_llm_model_name": {
-            "title": "Memory Llm Model Name",
-            "type": "string"
-          },
-          "query_vlm_model_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Query Vlm Model Name"
-          },
-          "router_llm_model_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Router Llm Model Name"
+          "models": {
+            "additionalProperties": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Models",
+            "type": "object"
           },
           "row_version": {
             "title": "Row Version",
@@ -250,13 +209,7 @@
           "description",
           "status",
           "enabled_capabilities",
-          "router_llm_model_name",
-          "context_llm_model_name",
-          "composer_llm_model_name",
-          "memory_llm_model_name",
-          "query_vlm_model_name",
-          "chart_llm_model_name",
-          "memory_embedding_model_name",
+          "models",
           "do_rerank",
           "data_profile_name",
           "instruction",
@@ -975,35 +928,10 @@
             "title": "Agent Key",
             "type": "string"
           },
-          "chart_llm_model_name": {
-            "anyOf": [
-              {
-                "maxLength": 128,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Chart Llm Model Name"
-          },
-          "composer_llm_model_name": {
-            "maxLength": 128,
-            "minLength": 1,
-            "title": "Composer Llm Model Name",
-            "type": "string"
-          },
           "config": {
             "additionalProperties": true,
             "title": "Config",
             "type": "object"
-          },
-          "context_llm_model_name": {
-            "maxLength": 128,
-            "minLength": 1,
-            "title": "Context Llm Model Name",
-            "type": "string"
           },
           "data_profile_name": {
             "anyOf": [
@@ -1061,42 +989,13 @@
             ],
             "title": "Instruction"
           },
-          "memory_embedding_model_name": {
-            "maxLength": 128,
-            "minLength": 1,
-            "title": "Memory Embedding Model Name",
-            "type": "string"
-          },
-          "memory_llm_model_name": {
-            "maxLength": 128,
-            "minLength": 1,
-            "title": "Memory Llm Model Name",
-            "type": "string"
-          },
-          "query_vlm_model_name": {
-            "anyOf": [
-              {
-                "maxLength": 128,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Query Vlm Model Name"
-          },
-          "router_llm_model_name": {
-            "anyOf": [
-              {
-                "maxLength": 128,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Router Llm Model Name"
+          "models": {
+            "additionalProperties": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Models",
+            "type": "object"
           },
           "status": {
             "default": "DRAFT",
@@ -1109,10 +1008,7 @@
           "agent_key",
           "display_name",
           "enabled_capabilities",
-          "context_llm_model_name",
-          "composer_llm_model_name",
-          "memory_llm_model_name",
-          "memory_embedding_model_name"
+          "models"
         ],
         "title": "CreateAgentDefinitionRequest",
         "type": "object"
@@ -1755,32 +1651,6 @@
       "UpdateAgentDefinitionRequest": {
         "additionalProperties": false,
         "properties": {
-          "chart_llm_model_name": {
-            "anyOf": [
-              {
-                "maxLength": 128,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Chart Llm Model Name"
-          },
-          "composer_llm_model_name": {
-            "anyOf": [
-              {
-                "maxLength": 128,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Composer Llm Model Name"
-          },
           "config": {
             "anyOf": [
               {
@@ -1792,19 +1662,6 @@
               }
             ],
             "title": "Config"
-          },
-          "context_llm_model_name": {
-            "anyOf": [
-              {
-                "maxLength": 128,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Context Llm Model Name"
           },
           "data_profile_name": {
             "anyOf": [
@@ -1886,56 +1743,20 @@
             ],
             "title": "Instruction"
           },
-          "memory_embedding_model_name": {
+          "models": {
             "anyOf": [
               {
-                "maxLength": 128,
-                "minLength": 1,
-                "type": "string"
+                "additionalProperties": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "type": "object"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Memory Embedding Model Name"
-          },
-          "memory_llm_model_name": {
-            "anyOf": [
-              {
-                "maxLength": 128,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Memory Llm Model Name"
-          },
-          "query_vlm_model_name": {
-            "anyOf": [
-              {
-                "maxLength": 128,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Query Vlm Model Name"
-          },
-          "router_llm_model_name": {
-            "anyOf": [
-              {
-                "maxLength": 128,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Router Llm Model Name"
+            "title": "Models"
           },
           "status": {
             "anyOf": [

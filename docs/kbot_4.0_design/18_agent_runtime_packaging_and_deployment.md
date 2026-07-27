@@ -23,7 +23,7 @@ AIOps Agent 不作为 Runtime Worker 中的一个普通模块运行。它拥有�
 ## 推荐代码布局
 
 ```text
-agent_runtime/
+services/agent_runtime/src/agent_runtime/
   api/                  # Run 查询、事件、取消、审批 DTO/路由
   application/          # Run/Task 用例、路由、组合和恢复
   domain/               # 状态机、Plan、Policy、Artifact 契约
@@ -36,7 +36,7 @@ agent_runtime/
   repositories/         # 仅访问 KBOT_AGENT_* 表
   tests/
 
-aiops_agent/
+services/aiops_agent/src/aiops_agent/
   api/                  # Ops Run、Event、Proposal、Approval API
   application/          # 诊断/执行/验证用例
   domain/               # Ops 状态机和 Policy
@@ -45,12 +45,12 @@ aiops_agent/
   adapters/             # Metrics、Logs、DB Executor Client、外部系统
   tests/
 
-apps/agent_runtime_api/main.py
-apps/agent_runtime_worker/main.py
-apps/aiops_api/main.py
-apps/aiops_worker/main.py
-apps/aiops_scheduler/main.py
-apps/aiops_db_executor/main.py
+services/agent_runtime/src/agent_runtime/entrypoints/api.py
+services/agent_runtime/src/agent_runtime/entrypoints/worker.py
+services/aiops_agent/src/aiops_agent/entrypoints/api.py
+services/aiops_agent/src/aiops_agent/entrypoints/worker.py
+services/aiops_agent/src/aiops_agent/entrypoints/scheduler.py
+services/aiops_agent/src/aiops_agent/entrypoints/db_executor.py
 ```
 
 `agent_runtime_worker` 按独立进程装配自己的数据库 Runtime、KC Client、
@@ -59,7 +59,7 @@ Model Client、Skill Registry 和日志。API 进程只加载同一组 Manifest 
 包而共享连接池或运行时状态。
 
 4.0 不保留旧 Document Agent 或动态 Skill 实现。新的 Document Specialist
-将在 `agent_runtime/specialists/document/` 中基于固定 Manifest 和
+将在 `services/agent_runtime/src/agent_runtime/specialists/document/` 中基于固定 Manifest 和
 `DocumentQueryTask → DocumentRetrievalResult` 契约实现。
 
 ## API 与 Worker 边界

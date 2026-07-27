@@ -5,7 +5,7 @@
 截至 2026-07-24，开发者 Profile 已形成可重复执行的离线门禁：
 
 ```bash
-conda run -n cube python scripts/verify_release.py \
+conda run -n cube python scripts/release/verify_release.py \
   --profile developer \
   --output /tmp/kbot4-release-evidence.json
 ```
@@ -27,7 +27,7 @@ OpenAPI 门禁覆盖 Main API、KC、Agent Runtime、四个模型进程和 AIOps
 真实 Oracle 验收使用：
 
 ```bash
-conda run -n cube python scripts/verify_release.py \
+conda run -n cube python scripts/release/verify_release.py \
   --profile developer \
   --oracle \
   --output /tmp/kbot4-release-evidence-oracle.json

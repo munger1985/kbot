@@ -230,15 +230,15 @@ Agent/Target Binding、Target 状态、Policy、单命令审批、Assignee 和�
 稳定 DTO 建议放置：
 
 ```text
-platform_core/contracts/aiops/
+packages/platform_core/src/platform_core/contracts/aiops/
   public.py       # Main API 对外请求/响应
   internal.py     # Root/Main 到 AIOps
   delegation.py   # Agent Runtime 的子 Run、事件页和 Result Envelope
   executor.py     # AIOps 到 DB Executor
   events.py       # SSE/Event DTO
   errors.py       # 稳定错误码
-platform_clients/aiops_management.py
-platform_clients/aiops_delegation.py
+packages/platform_clients/src/platform_clients/aiops_management.py
+packages/platform_clients/src/platform_clients/aiops_delegation.py
 ```
 
 FastAPI Schema 只能映射这些 DTO，不能直接返回 Entity。OpenAPI 分别生成 Public、AIOps Internal 和 Executor 三份文档；Internal 文档不发布到外网。契约测试至少覆盖 API Key 与内部 JWT、Domain 隔离、ETag、幂等冲突、SSE 断点续传、Webhook 重放、HITL 非 Chat 拒绝、重复审批、过期 Token、Executor 回调乱序和跨 Domain 隐藏。

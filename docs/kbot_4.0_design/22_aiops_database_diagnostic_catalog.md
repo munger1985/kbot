@@ -52,7 +52,7 @@ sensitive_columns, fallback_tool_ids, status
 诊断目录是 AIOps Agent 的版本化部署资产，不是 APEX 可编辑业务数据。建议结构：
 
 ```text
-aiops_agent/
+services/aiops_agent/src/aiops_agent/
   diagnostics/
     contracts.py
     registry.py

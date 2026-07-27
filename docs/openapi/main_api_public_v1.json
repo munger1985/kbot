@@ -394,29 +394,10 @@
             "title": "Agent Key",
             "type": "string"
           },
-          "chart_llm_model_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Chart Llm Model Name"
-          },
-          "composer_llm_model_name": {
-            "title": "Composer Llm Model Name",
-            "type": "string"
-          },
           "config": {
             "additionalProperties": true,
             "title": "Config",
             "type": "object"
-          },
-          "context_llm_model_name": {
-            "title": "Context Llm Model Name",
-            "type": "string"
           },
           "data_profile_name": {
             "anyOf": [
@@ -470,35 +451,13 @@
             ],
             "title": "Instruction"
           },
-          "memory_embedding_model_name": {
-            "title": "Memory Embedding Model Name",
-            "type": "string"
-          },
-          "memory_llm_model_name": {
-            "title": "Memory Llm Model Name",
-            "type": "string"
-          },
-          "query_vlm_model_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Query Vlm Model Name"
-          },
-          "router_llm_model_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Router Llm Model Name"
+          "models": {
+            "additionalProperties": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Models",
+            "type": "object"
           },
           "row_version": {
             "minimum": 1.0,
@@ -517,10 +476,7 @@
           "display_name",
           "status",
           "enabled_capabilities",
-          "context_llm_model_name",
-          "composer_llm_model_name",
-          "memory_llm_model_name",
-          "memory_embedding_model_name",
+          "models",
           "do_rerank",
           "config",
           "row_version"
@@ -870,91 +826,43 @@
             "title": "Display Name",
             "type": "string"
           },
-          "embedding_model_id": {
-            "format": "uuid",
-            "title": "Embedding Model Id",
-            "type": "string"
-          },
           "metadata": {
             "additionalProperties": true,
             "title": "Metadata",
             "type": "object"
           },
-          "parser_llm_model_id": {
-            "format": "uuid",
-            "title": "Parser Llm Model Id",
-            "type": "string"
-          },
-          "parser_vlm_model_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Parser Vlm Model Id"
-          },
-          "retrieval_llm_model_id": {
-            "format": "uuid",
-            "title": "Retrieval Llm Model Id",
-            "type": "string"
-          },
-          "visual_embedding_model_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Visual Embedding Model Id"
+          "models": {
+            "additionalProperties": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Models",
+            "type": "object"
           }
         },
         "required": [
           "collection_key",
           "display_name",
-          "parser_llm_model_id",
-          "retrieval_llm_model_id",
-          "embedding_model_id"
+          "models"
         ],
         "title": "CollectionCreateRequest",
         "type": "object"
       },
-      "CollectionGenerationModelsRequest": {
+      "CollectionModelsRequest": {
         "properties": {
-          "parser_llm_model_id": {
-            "format": "uuid",
-            "title": "Parser Llm Model Id",
-            "type": "string"
-          },
-          "parser_vlm_model_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Parser Vlm Model Id"
-          },
-          "retrieval_llm_model_id": {
-            "format": "uuid",
-            "title": "Retrieval Llm Model Id",
-            "type": "string"
+          "models": {
+            "additionalProperties": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Models",
+            "type": "object"
           }
         },
         "required": [
-          "parser_llm_model_id",
-          "retrieval_llm_model_id"
+          "models"
         ],
-        "title": "CollectionGenerationModelsRequest",
+        "title": "CollectionModelsRequest",
         "type": "object"
       },
       "CollectionStatusRequest": {
@@ -1355,35 +1263,10 @@
             "title": "Agent Key",
             "type": "string"
           },
-          "chart_llm_model_name": {
-            "anyOf": [
-              {
-                "maxLength": 128,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Chart Llm Model Name"
-          },
-          "composer_llm_model_name": {
-            "maxLength": 128,
-            "minLength": 1,
-            "title": "Composer Llm Model Name",
-            "type": "string"
-          },
           "config": {
             "additionalProperties": true,
             "title": "Config",
             "type": "object"
-          },
-          "context_llm_model_name": {
-            "maxLength": 128,
-            "minLength": 1,
-            "title": "Context Llm Model Name",
-            "type": "string"
           },
           "data_profile_name": {
             "anyOf": [
@@ -1441,42 +1324,13 @@
             ],
             "title": "Instruction"
           },
-          "memory_embedding_model_name": {
-            "maxLength": 128,
-            "minLength": 1,
-            "title": "Memory Embedding Model Name",
-            "type": "string"
-          },
-          "memory_llm_model_name": {
-            "maxLength": 128,
-            "minLength": 1,
-            "title": "Memory Llm Model Name",
-            "type": "string"
-          },
-          "query_vlm_model_name": {
-            "anyOf": [
-              {
-                "maxLength": 128,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Query Vlm Model Name"
-          },
-          "router_llm_model_name": {
-            "anyOf": [
-              {
-                "maxLength": 128,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Router Llm Model Name"
+          "models": {
+            "additionalProperties": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Models",
+            "type": "object"
           },
           "status": {
             "default": "DRAFT",
@@ -1489,10 +1343,7 @@
           "agent_key",
           "display_name",
           "enabled_capabilities",
-          "context_llm_model_name",
-          "composer_llm_model_name",
-          "memory_llm_model_name",
-          "memory_embedding_model_name"
+          "models"
         ],
         "title": "CreateAgentDefinitionRequest",
         "type": "object"
@@ -5499,32 +5350,6 @@
       "UpdateAgentDefinitionRequest": {
         "additionalProperties": false,
         "properties": {
-          "chart_llm_model_name": {
-            "anyOf": [
-              {
-                "maxLength": 128,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Chart Llm Model Name"
-          },
-          "composer_llm_model_name": {
-            "anyOf": [
-              {
-                "maxLength": 128,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Composer Llm Model Name"
-          },
           "config": {
             "anyOf": [
               {
@@ -5536,19 +5361,6 @@
               }
             ],
             "title": "Config"
-          },
-          "context_llm_model_name": {
-            "anyOf": [
-              {
-                "maxLength": 128,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Context Llm Model Name"
           },
           "data_profile_name": {
             "anyOf": [
@@ -5630,56 +5442,20 @@
             ],
             "title": "Instruction"
           },
-          "memory_embedding_model_name": {
+          "models": {
             "anyOf": [
               {
-                "maxLength": 128,
-                "minLength": 1,
-                "type": "string"
+                "additionalProperties": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "type": "object"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Memory Embedding Model Name"
-          },
-          "memory_llm_model_name": {
-            "anyOf": [
-              {
-                "maxLength": 128,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Memory Llm Model Name"
-          },
-          "query_vlm_model_name": {
-            "anyOf": [
-              {
-                "maxLength": 128,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Query Vlm Model Name"
-          },
-          "router_llm_model_name": {
-            "anyOf": [
-              {
-                "maxLength": 128,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Router Llm Model Name"
+            "title": "Models"
           },
           "status": {
             "anyOf": [
@@ -6512,6 +6288,123 @@
         ]
       }
     },
+    "/api/v1/development/logs/events": {
+      "get": {
+        "operationId": "list_log_events_api_v1_development_logs_events_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "service_name",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Service Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "log_type",
+            "required": false,
+            "schema": {
+              "default": "RUNTIME",
+              "enum": [
+                "RUNTIME",
+                "ACCESS"
+              ],
+              "title": "Log Type",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "level",
+            "required": false,
+            "schema": {
+              "default": [],
+              "items": {
+                "type": "string"
+              },
+              "title": "Level",
+              "type": "array"
+            }
+          },
+          {
+            "in": "query",
+            "name": "keyword",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Keyword"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Log Events",
+        "tags": [
+          "Development Log Console"
+        ]
+      }
+    },
+    "/api/v1/development/logs/services": {
+      "get": {
+        "operationId": "list_log_services_api_v1_development_logs_services_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Log Services",
+        "tags": [
+          "Development Log Console"
+        ]
+      }
+    },
     "/api/v1/domains": {
       "post": {
         "operationId": "create_domain_api_v1_domains_post",
@@ -7218,56 +7111,6 @@
         ]
       }
     },
-    "/api/v1/knowledge/collections/{collection_key}/generation-models": {
-      "put": {
-        "operationId": "update_collection_generation_models_api_v1_knowledge_collections__collection_key__generation_models_put",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "collection_key",
-            "required": true,
-            "schema": {
-              "title": "Collection Key",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CollectionGenerationModelsRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Update Collection Generation Models",
-        "tags": [
-          "Knowledge"
-        ]
-      }
-    },
     "/api/v1/knowledge/collections/{collection_key}/ingestions/km-assets": {
       "post": {
         "operationId": "ingest_km_asset_api_v1_knowledge_collections__collection_key__ingestions_km_assets_post",
@@ -7363,6 +7206,56 @@
           }
         },
         "summary": "Ingest User Files",
+        "tags": [
+          "Knowledge"
+        ]
+      }
+    },
+    "/api/v1/knowledge/collections/{collection_key}/models": {
+      "put": {
+        "operationId": "update_collection_models_api_v1_knowledge_collections__collection_key__models_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "collection_key",
+            "required": true,
+            "schema": {
+              "title": "Collection Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CollectionModelsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Collection Models",
         "tags": [
           "Knowledge"
         ]

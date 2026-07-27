@@ -22,7 +22,7 @@ Memory Consolidation Worker 异步执行。4.0 不单独部署 Memory Service，
 但通过 Port、DTO 和自己的 Repository 隔离，未来可以直接拆进程或拆库。
 
 问题改写、摘要、记忆提取、冲突判断和回答组合所需 System Prompt 统一登记
-在 `configuration/prompts.toml`，并按
+在 `packages/platform_core/src/platform_core/resources/prompts.toml`，并按
 [46_versioned_prompt_registry.md](46_versioned_prompt_registry.md) 初始化到
 Platform Prompt 表。运行时数据库优先、文件兜底，每次模型调用冻结
 Prompt Key、Version 和 Hash；不能在各 Skill 中内嵌另一份 Prompt。
@@ -220,15 +220,15 @@ Response Composer，保证回答符合用户原始表达。Document Skill 使用
 Evidence、AIOps Observation 等当前事实拥有独立预算，不能被聊天历史挤出。
 
 Memory 向量索引使用 Agent Runtime 自己的不可变 Index Profile。Agent 创建
-时必须显式设置 `memory_embedding_model_name`；首条归并任务据此创建 Profile，
+时必须显式设置 `models.memory_embedding`；首条归并任务据此创建 Profile，
 语义记忆和情景记忆写入规范化向量。新 Turn 在进入会话写事务前生成查询向量，
 使用 `向量 0.60 + 词法 0.25 + Salience 0.15` 混合排序；服务异常时只降级为
 词法和 Salience，不影响领域检索。
 
 未配置 Profile 时继续使用 `canonical_key + search_text + value` 的字词重合
 与 Salience。Profile 只属于聊天记忆，不复用 KC Collection 的模型绑定。
-`memory_llm_model_name` 专门承担摘要、候选提取和冲突判断，可使用低成本蒸馏
-LLM；`context_llm_model_name` 用于上下文改写；`composer_llm_model_name` 用于最终
+`models.memory_llm` 专门承担摘要、候选提取和冲突判断，可使用低成本蒸馏
+LLM；`models.context_llm` 用于上下文改写；`models.composer_llm` 用于最终
 回答。Embedding 模型一经设定即成为该 Agent 的永久数据契约，不允许修改。
 需要使用另一模型时只能创建新的 Agent，并形成独立 Profile 和记忆空间。
 
@@ -467,7 +467,7 @@ Response Composer 流式事件均已接通。
 Artifact/Snapshot/Source 中记录版本信息。开发 Oracle 已通过 52 张 Entity
 映射、Prompt DB-first 读取以及 Conversation → Turn → Item → Snapshot →
 Memory → Source → Job 的回滚式实库写入验收。
-`scripts/smoke_agent_memory.py` 进一步在开发 Oracle 上覆盖 Job 领取、Snapshot
+`tests/smoke/smoke_agent_memory.py` 进一步在开发 Oracle 上覆盖 Job 领取、Snapshot
 和 Memory 写入、决策结果、归档到期以及隐私清理，并在结束时只清理由随机标识
 创建的验收数据。
 

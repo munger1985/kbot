@@ -128,7 +128,7 @@ Policy 可将 `AGENT_EXECUTE` 降为 `ADVISORY`，不能把 `ADVISORY_ONLY` 模�
 Action Catalog 是随代码发布、只读、版本化的部署资产，与 Diagnostic Catalog 物理分目录：
 
 ```text
-aiops_agent/actions/
+services/aiops_agent/src/aiops_agent/actions/
   contracts.py
   registry.py
   validation.py
@@ -454,7 +454,7 @@ KBOT_OPS_EXECUTION:
 ## 代码布局
 
 ```text
-aiops_agent/
+services/aiops_agent/src/aiops_agent/
   actions/{contracts,registry,validation,rendering}.py
   domain/change/{proposal,approval,execution,transitions,policy}.py
   application/change/
@@ -468,7 +468,7 @@ aiops_agent/
   orchestration/change/{handlers,blueprints}.py
   tests/change/
 
-apps/aiops_db_executor/
+services/aiops_agent/src/aiops_agent/entrypoints/db_executor.py
   executor/{grant_verifier,mutation_service}.py
   drivers/{oracle_actions,mysql_actions}.py
 ```

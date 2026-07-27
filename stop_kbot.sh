@@ -4,33 +4,31 @@
 SERVICE_ROOT="$(cd "$(dirname "$0")" && pwd)"
 CURRENT_PID=$$
 
-# 统一服务列表（与启动脚本保持一致）
+# 统一模块入口列表（与启动脚本保持一致）
 SERVICES=(
-    "apps/ai_models_embedding/main.py"
-    "apps/ai_models_llm/main.py"
-    "apps/ai_models_vlm/main.py"
-    "apps/ai_models_visual/main.py"
-    "apps/knowledge_core_api/main.py"
-    "apps/knowledge_core_parser/main.py"
-    "apps/knowledge_core_projection/main.py"
-    "apps/agent_runtime_api/main.py"
-    "apps/agent_runtime_worker/main.py"
-    "apps/aiops_api/main.py"
-    "apps/aiops_worker/main.py"
-    "apps/aiops_scheduler/main.py"
-    "apps/aiops_db_executor/main.py"
-    "apps/main_api/main.py"
+    "model_serving.entrypoints.embedding"
+    "model_serving.entrypoints.llm"
+    "model_serving.entrypoints.vlm"
+    "model_serving.entrypoints.visual"
+    "knowledge_core.entrypoints.api"
+    "knowledge_core.entrypoints.parser"
+    "knowledge_core.entrypoints.projection"
+    "agent_runtime.entrypoints.api"
+    "agent_runtime.entrypoints.worker"
+    "aiops_agent.entrypoints.api"
+    "aiops_agent.entrypoints.worker"
+    "aiops_agent.entrypoints.scheduler"
+    "aiops_agent.entrypoints.db_executor"
+    "main_api.entrypoints.api"
 )
 
 # 安全查找在指定目录运行的 Python 服务进程
 get_service_pid() {
     local script_dir="$1"
-    local service_script="$2"
-    local module_name="${service_script%.py}"
-    module_name="${module_name//\//.}"
+    local module_name="$2"
     
     # 同时识别当前模块入口和早期脚本入口，再通过工作目录限制仓库范围。
-    pgrep -f "python.*(-m[[:space:]]+${module_name}|${service_script})" \
+    pgrep -f "python.*-m[[:space:]]+${module_name}" \
         | grep -v "$CURRENT_PID" \
         | while read pid; do
         if [ -d "/proc/$pid" ]; then
@@ -43,7 +41,7 @@ get_service_pid() {
 
 # UI 不属于生产进程拓扑，但开发环境下由统一脚本托管。
 get_ui_pid() {
-    pgrep -f "python.*-m[[:space:]]+http\\.server[[:space:]]+8080[[:space:]]+-d[[:space:]]+ui" \
+    pgrep -f "python.*-m[[:space:]]+http\\.server[[:space:]]+8080[[:space:]]+-d[[:space:]]+tools/dev_console" \
         | grep -v "$CURRENT_PID" \
         | while read pid; do
         if [ -d "/proc/$pid" ]; then
@@ -58,13 +56,13 @@ get_ui_pid() {
 declare -A PID_MAP
 
 # 遍历所有服务获取PID
-for service_script in "${SERVICES[@]}"; do
-    SERVICE_PIDS=$(get_service_pid "${SERVICE_ROOT}" "${service_script}")
+for service_module in "${SERVICES[@]}"; do
+    SERVICE_PIDS=$(get_service_pid "${SERVICE_ROOT}" "${service_module}")
     if [ -n "$SERVICE_PIDS" ]; then
         while read pid; do
             if [ -n "$pid" ]; then
                 PID_MAP["$pid"]=1
-                echo "发现 ${service_script} 进程：$pid"
+                echo "发现 ${service_module} 进程：$pid"
             fi
         done <<< "$SERVICE_PIDS"
     fi

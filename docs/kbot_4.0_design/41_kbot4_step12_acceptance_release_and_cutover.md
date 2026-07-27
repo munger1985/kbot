@@ -10,7 +10,7 @@
 
 当前已有：
 
-- `scripts/check_4_0_boundaries.py` 和 `scripts/check_oracle_schema.py`；
+- `tests/acceptance/check_4_0_boundaries.py` 和 `tests/acceptance/check_oracle_schema.py`；
 - 覆盖 Platform、Model、KC、Agent Runtime、AIOps 和 Main API 的
   `unittest` 组件/契约测试；
 - Parser Golden Manifest 评测脚本和示例；
@@ -18,8 +18,8 @@
   Schema Manifest；
 - Main API、Knowledge Core、Agent Runtime、四个 Model Serving 进程和 AIOps
   共 10 个可确定性重建的 OpenAPI Snapshot；
-- `scripts/verify_release.py` 统一执行 Active Package 编译、架构边界、DDL 契约、
-  Entity 表所有权、14 进程拓扑、配置/Example/Secret 契约、OpenAPI 漂移、
+- `scripts/release/verify_release.py` 统一执行 Active Package 编译、架构边界、DDL 契约、
+  Entity 表所有权、14 进程拓扑、稳定配置/部署模板/Secret 契约、OpenAPI 漂移、
   AIOps Catalog 和全量测试，并输出
   `KBotReleaseEvidence.v1` JSON；
 - `requirements.txt` 直接依赖精确锁定、受跟踪文件 Secret Scan 和直接依赖
@@ -73,10 +73,10 @@ quality, security, load, chaos, mutation
 目标命令：
 
 ```bash
-python3 scripts/check_4_0_boundaries.py
-python3 scripts/check_oracle_schema.py
+python3 tests/acceptance/check_4_0_boundaries.py
+python3 tests/acceptance/check_oracle_schema.py
 python3 -m unittest discover -s tests -p 'test_*.py'
-python3 scripts/verify_release.py \
+python3 scripts/release/verify_release.py \
   --profile rc \
   --require-clean \
   --output release-evidence.json
@@ -102,7 +102,8 @@ JUnit 报告。开发者可以运行
 - 校验各服务建库脚本顺序、Checksum、对象命名和禁止 3.x/数据导入语句；
 - 比较 SQLAlchemy Entity、Oracle Catalog 与 Schema Manifest；
 - 校验 Public/Internal/Executor OpenAPI Snapshot 和 Artifact JSON Schema；
-- 校验 `base.toml.example` 覆盖所有必填生产配置且不含 Secret；
+- 校验 `configuration/kbot.toml.example` 能加载全部服务配置模型，
+  覆盖所有必填生产配置且不含 Secret；
 - 执行 Secret Scan、依赖漏洞扫描、许可证策略、SBOM 和镜像签名；
 - High/Critical 漏洞、Secret、Schema Drift 和禁止依赖必须为零。
 

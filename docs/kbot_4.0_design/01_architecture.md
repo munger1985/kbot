@@ -48,26 +48,27 @@ All processes ──► Oracle 26ai（单一 APEX Schema；表所有权受契约
 - 同一领域内部允许 Python 模块调用；`knowledge_core` 内的 API、application、domain、repository 不需要为了“微服务”再走 HTTP。
 - 查询可同步 HTTP；耗时或可重试操作（解析、画像、索引、关系构建）必须异步任务化。
 - API 的输入输出使用 Pydantic DTO；不得直接暴露 SQLAlchemy Entity。
-- 服务 URL、超时、重试、内部令牌和调用指标统一封装在 `platform_clients/` 或各领域的 client 包中；4.0 新代码不得依赖通用 `utils` 工具包。
+- 服务 URL、超时、重试、内部令牌和调用指标统一封装在 `packages/platform_clients/src/platform_clients/` 或各领域的 client 包中；4.0 新代码不得依赖通用 `utils` 工具包。
 
 ## 建议代码布局
 
 ```text
-knowledge_core/
+services/knowledge_core/src/knowledge_core/
   api/                 # ingestion/discovery/evidence 路由与 DTO
   application/         # 用例、命令、查询、UoW 协调
   domain/              # 领域模型、状态机、策略、端口
   repositories/        # 仅访问 KB4 表
   workers/              # job claim、outbox dispatch、结果应用
   indexing/ retrieval/ parsing/
-  tests/
-apps/knowledge_core_api/main.py  # Knowledge Core 进程入口
-main_api/                        # 公开 DTO、Domain Registry、BFF 路由
-apps/main_api/main.py            # 唯一公开 `/api/v1` 入口
-apps/aiops_api/main.py           # AIOps 对外/内部 API
-apps/aiops_worker/main.py        # AIOps 诊断与流程 Worker
-apps/aiops_scheduler/main.py     # 巡检调度与超时扫描
-apps/aiops_db_executor/main.py   # 隔离的数据库执行面
+services/knowledge_core/src/knowledge_core/entrypoints/api.py  # Knowledge Core 进程入口
+services/main_api/src/main_api/                        # 公开 DTO、Domain Registry、BFF 路由
+services/main_api/src/main_api/entrypoints/api.py            # 唯一公开 `/api/v1` 入口
+services/aiops_agent/src/aiops_agent/entrypoints/api.py           # AIOps 对外/内部 API
+services/aiops_agent/src/aiops_agent/entrypoints/worker.py        # AIOps 诊断与流程 Worker
+services/aiops_agent/src/aiops_agent/entrypoints/scheduler.py     # 巡检调度与超时扫描
+services/aiops_agent/src/aiops_agent/entrypoints/db_executor.py   # 隔离的数据库执行面
+tests/unit/knowledge_core/                            # KC 单元测试
+tests/integration/oracle/                             # Oracle 集成测试
 ```
 
 旧通用 DAO 不进入 4.0，确认没有新消费者后直接删除；历史实现仅从 Git 查阅。

@@ -36,6 +36,20 @@ POST Bundle
 
 上传使用临时对象路径并原子发布；数据库仅保存稳定 `storage_uri`。入库接口必须幂等：相同来源和 `content_hash` 返回已有处理结果，不重复创建版本或任务。
 
+入库分为 Receipt 预留、对象暂存、Bundle/Document 身份预留、对象发布和最终
+Revision 事务。任一阶段失败后必须执行补偿事务：
+
+- 删除已暂存或发布的对象，并向上清理空目录；
+- Receipt 标记为 `FAILED`，记录稳定失败码和摘要；
+- 只删除 `staging_manifest_json` 标记为本次新建、且没有 Version、Member 或
+  Revision 引用的 Document/Bundle；
+- 已存在的 Bundle/Document，以及已经产生 Revision 的 `PENDING_REVIEW` Bundle
+  不参与补偿删除；
+- 同一幂等键再次提交相同指纹时，可将 `FAILED` Receipt 重置为 `RECEIVING`。
+
+普通 USER_UPLOAD 不生成或预留 `__manifest__` Document；只有明确启用
+`generate_manifest` 的来源类型才创建 Manifest。
+
 ## Parser Worker 的新契约
 
 Parser 已是独立进程，4.0 保留这一部署边界。它只消费任务并调用 Docling、OCR、VLM、表格/PPT 专项解析；可按 CPU/GPU 和队列积压独立扩缩。

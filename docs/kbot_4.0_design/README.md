@@ -60,6 +60,8 @@ KBot 4.0 是一次**Clean-slate 重构**：保留单仓库、同一 Oracle/APEX 
 | [47_function_scoped_model_bindings.md](47_function_scoped_model_bindings.md) | Agent/KC 按功能角色绑定模型、成本分层与 Embedding 不可变边界 |
 | [48_visual_embedding_and_multi_image_search.md](48_visual_embedding_and_multi_image_search.md) | Collection 视觉索引、整页/Figure 资产、聊天多图上传与融合引用 |
 | [49_general_chat_mcp_data_echarts_and_dify.md](49_general_chat_mcp_data_echarts_and_dify.md) | 通用对话、单 Agent 自然语言路由、MCP 问数、ECharts 与 Dify Retrieval Adapter |
+| [50_kc_event_driven_job_dispatch.md](50_kc_event_driven_job_dispatch.md) | KC DBMS_ALERT 通知唤醒、统一 Projection Claim、兜底扫描与 PostgreSQL 演进 |
+| [51_observability_and_error_console.md](51_observability_and_error_console.md) | 开发环境全级别日志浏览、Application/Access/Startup 分类与本地文件查询 |
 | [06_identity_security_and_tenancy.md](06_identity_security_and_tenancy.md) | 身份、租户、权限、密钥与数据安全治理 |
 | [07_platform_operations_and_integrations.md](07_platform_operations_and_integrations.md) | 平台运行、可观测性、AIOps、MCP、Slack 与外部适配器 |
 | [08_api_schema_and_lifecycle.md](08_api_schema_and_lifecycle.md) | API 契约、APEX Schema 建设与文件生命周期 |

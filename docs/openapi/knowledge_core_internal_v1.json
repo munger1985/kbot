@@ -62,36 +62,21 @@
         "title": "BindingRequest",
         "type": "object"
       },
-      "CollectionGenerationModelsRequest": {
+      "CollectionModelsRequest": {
         "properties": {
-          "parser_llm_model_id": {
-            "format": "uuid",
-            "title": "Parser Llm Model Id",
-            "type": "string"
-          },
-          "parser_vlm_model_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Parser Vlm Model Id"
-          },
-          "retrieval_llm_model_id": {
-            "format": "uuid",
-            "title": "Retrieval Llm Model Id",
-            "type": "string"
+          "models": {
+            "additionalProperties": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Models",
+            "type": "object"
           }
         },
         "required": [
-          "parser_llm_model_id",
-          "retrieval_llm_model_id"
+          "models"
         ],
-        "title": "CollectionGenerationModelsRequest",
+        "title": "CollectionModelsRequest",
         "type": "object"
       },
       "CollectionStatusRequest": {
@@ -188,57 +173,24 @@
             "title": "Display Name",
             "type": "string"
           },
-          "embedding_model_id": {
-            "format": "uuid",
-            "title": "Embedding Model Id",
-            "type": "string"
-          },
           "metadata": {
             "additionalProperties": true,
             "title": "Metadata",
             "type": "object"
           },
-          "parser_llm_model_id": {
-            "format": "uuid",
-            "title": "Parser Llm Model Id",
-            "type": "string"
-          },
-          "parser_vlm_model_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Parser Vlm Model Id"
-          },
-          "retrieval_llm_model_id": {
-            "format": "uuid",
-            "title": "Retrieval Llm Model Id",
-            "type": "string"
-          },
-          "visual_embedding_model_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Visual Embedding Model Id"
+          "models": {
+            "additionalProperties": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Models",
+            "type": "object"
           }
         },
         "required": [
           "collection_key",
           "display_name",
-          "parser_llm_model_id",
-          "retrieval_llm_model_id",
-          "embedding_model_id"
+          "models"
         ],
         "title": "CreateCollectionRequest",
         "type": "object"
@@ -764,35 +716,6 @@
         "title": "HeartbeatRequest",
         "type": "object"
       },
-      "IndexClaimRequest": {
-        "properties": {
-          "lease_seconds": {
-            "default": 120,
-            "maximum": 3600.0,
-            "minimum": 30.0,
-            "title": "Lease Seconds",
-            "type": "integer"
-          },
-          "max_tasks": {
-            "default": 1,
-            "maximum": 32.0,
-            "minimum": 1.0,
-            "title": "Max Tasks",
-            "type": "integer"
-          },
-          "worker_id": {
-            "maxLength": 256,
-            "minLength": 1,
-            "title": "Worker Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "worker_id"
-        ],
-        "title": "IndexClaimRequest",
-        "type": "object"
-      },
       "IndexFailRequest": {
         "properties": {
           "failure_class": {
@@ -978,35 +901,6 @@
         "title": "ParseClaimRequest",
         "type": "object"
       },
-      "ProfileClaimRequest": {
-        "properties": {
-          "lease_seconds": {
-            "default": 120,
-            "maximum": 3600.0,
-            "minimum": 30.0,
-            "title": "Lease Seconds",
-            "type": "integer"
-          },
-          "max_tasks": {
-            "default": 1,
-            "maximum": 32.0,
-            "minimum": 1.0,
-            "title": "Max Tasks",
-            "type": "integer"
-          },
-          "worker_id": {
-            "maxLength": 256,
-            "minLength": 1,
-            "title": "Worker Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "worker_id"
-        ],
-        "title": "ProfileClaimRequest",
-        "type": "object"
-      },
       "ProfileFailRequest": {
         "properties": {
           "failure_class": {
@@ -1105,10 +999,10 @@
         "title": "ProfileRunRequest",
         "type": "object"
       },
-      "PurgeClaimRequest": {
+      "ProjectionClaimRequest": {
         "properties": {
           "lease_seconds": {
-            "default": 600,
+            "default": 120,
             "maximum": 3600.0,
             "minimum": 30.0,
             "title": "Lease Seconds",
@@ -1131,7 +1025,7 @@
         "required": [
           "worker_id"
         ],
-        "title": "PurgeClaimRequest",
+        "title": "ProjectionClaimRequest",
         "type": "object"
       },
       "RunRequest": {
@@ -2159,65 +2053,6 @@
         ]
       }
     },
-    "/internal/v1/knowledge/domains/{domain_id}/collections/{collection_key}/generation-models": {
-      "put": {
-        "operationId": "update_collection_generation_models_internal_v1_knowledge_domains__domain_id__collections__collection_key__generation_models_put",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "domain_id",
-            "required": true,
-            "schema": {
-              "title": "Domain Id",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "path",
-            "name": "collection_key",
-            "required": true,
-            "schema": {
-              "title": "Collection Key",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CollectionGenerationModelsRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Update Collection Generation Models",
-        "tags": [
-          "Knowledge Core Collections"
-        ]
-      }
-    },
     "/internal/v1/knowledge/domains/{domain_id}/collections/{collection_key}/ingestions/km-assets": {
       "post": {
         "description": "接收一个完整 Asset Bundle；受理成功不代表解析已完成。",
@@ -2318,14 +2153,34 @@
         ]
       }
     },
-    "/internal/v1/knowledge/index-tasks/claim": {
-      "post": {
-        "operationId": "claim_index_tasks_internal_v1_knowledge_index_tasks_claim_post",
+    "/internal/v1/knowledge/domains/{domain_id}/collections/{collection_key}/models": {
+      "put": {
+        "operationId": "update_collection_models_internal_v1_knowledge_domains__domain_id__collections__collection_key__models_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "title": "Domain Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "collection_key",
+            "required": true,
+            "schema": {
+              "title": "Collection Key",
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/IndexClaimRequest"
+                "$ref": "#/components/schemas/CollectionModelsRequest"
               }
             }
           },
@@ -2351,9 +2206,9 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Claim Index Tasks",
+        "summary": "Update Collection Models",
         "tags": [
-          "Knowledge Core Index"
+          "Knowledge Core Collections"
         ]
       }
     },
@@ -2927,45 +2782,6 @@
         ]
       }
     },
-    "/internal/v1/knowledge/profile-tasks/claim": {
-      "post": {
-        "operationId": "claim_profile_tasks_internal_v1_knowledge_profile_tasks_claim_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ProfileClaimRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Claim Profile Tasks",
-        "tags": [
-          "Knowledge Core Profile"
-        ]
-      }
-    },
     "/internal/v1/knowledge/profile-tasks/{job_id}/fail": {
       "post": {
         "operationId": "fail_profile_task_internal_v1_knowledge_profile_tasks__job_id__fail_post",
@@ -3119,14 +2935,14 @@
         ]
       }
     },
-    "/internal/v1/knowledge/purge-tasks/claim": {
+    "/internal/v1/knowledge/projection-tasks/claim": {
       "post": {
-        "operationId": "claim_internal_v1_knowledge_purge_tasks_claim_post",
+        "operationId": "claim_projection_tasks_internal_v1_knowledge_projection_tasks_claim_post",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/PurgeClaimRequest"
+                "$ref": "#/components/schemas/ProjectionClaimRequest"
               }
             }
           },
@@ -3152,9 +2968,9 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Claim",
+        "summary": "Claim Projection Tasks",
         "tags": [
-          "Knowledge Core Internal"
+          "Knowledge Core Projection"
         ]
       }
     },

@@ -306,27 +306,27 @@ Report Result 只允许 `READY/PARTIAL/FAILED`：
 ## 代码布局
 
 ```text
-aiops_agent/ports/monitor.py
-aiops_agent/domain/monitoring/
+services/aiops_agent/src/aiops_agent/ports/monitor.py
+services/aiops_agent/src/aiops_agent/domain/monitoring/
   metrics.py
   observations.py
   events.py
   health.py
-aiops_agent/adapters/monitoring/
+services/aiops_agent/src/aiops_agent/adapters/monitoring/
   base.py
   prometheus.py
   zabbix.py
   oem.py
   registry.py
   normalizers/
-aiops_agent/application/monitoring/
+services/aiops_agent/src/aiops_agent/application/monitoring/
   observe.py
   webhook_intake.py
   alert_correlation.py
   health_reducer.py
-aiops_agent/contracts/artifacts/monitoring.py
-aiops_agent/tests/monitoring/fixtures/
-configuration/aiops/metrics/
+services/aiops_agent/src/aiops_agent/contracts/artifacts/monitoring.py
+services/aiops_agent/src/aiops_agent/tests/monitoring/fixtures/
+services/aiops_agent/src/aiops_agent/resources/metrics/
 ```
 
 Provider Adapter 不 import Repository/UoW；Application 不 import `utils.monitor`。Catalog 与响应 Fixture 可由现有配置迁移后逐项审核，禁止保留旧兼容字段解析分支。
@@ -360,8 +360,8 @@ Provider Adapter 不 import Repository/UoW；Application 不 import `utils.monit
 步骤 5 已于 2026-07-23 完成，代码按以下边界落地：
 
 ```text
-main_api/api/integrations.py
-  → aiops_agent/api/intake
+services/main_api/src/main_api/api/integrations.py
+  → services/aiops_agent/src/aiops_agent/api/intake
   → application/monitoring/webhook_intake.py
   → Inbox / Event / Alert / Outbox
   → AIOpsDomainOutboxSink
@@ -385,6 +385,6 @@ Run 创建没有复制到 Intake 事务。Event/Alert 与
 和调用预算。每个 Binding 一个 Observe Task，报告等待全部来源；无来源时仍生成
 可追溯的 `PARTIAL/INCONCLUSIVE` 报告。Source、Binding 和 Target Health 使用
 配置版本与 Health Version 栅栏归并，多来源 Availability 冲突时 Target 为
-`DEGRADED`。`scripts/smoke_aiops_monitoring.py` 已在真实 Oracle Schema 验证
+`DEGRADED`。`tests/smoke/smoke_aiops_monitoring.py` 已在真实 Oracle Schema 验证
 Webhook 重放、Alert、Outbox、动态 Run、三个 Task 和最终
 `OBSERVE_REPORT.v1`，并在结束后清理全部测试数据。

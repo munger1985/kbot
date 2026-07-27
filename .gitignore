@@ -23,9 +23,9 @@ __pycache__/
 .DS_Store
 Thumbs.db
 
-# Log files
+# Log files and local runtime state
 *.log
-logs/
+var/
 
 # IDE directories
 .idea/
@@ -35,17 +35,16 @@ logs/
 .agents/
 .codex/
 
-# Project-generated files
+# 旧版运行目录即使残留也不得提交。
+logs/
+data/
 knowledge_core_storage/
 
 # configuration files
 configuration/*.json
 *.toml
-!configuration/base.toml
-!configuration/development.toml
-!configuration/production.toml
-!configuration/services/**/base.toml
-!configuration/services/**/development.toml
-!configuration/services/**/production.toml
+!resources/prompts.toml
+!resources/topology.toml
+# kbot.toml 属于当前部署，只提交 kbot.toml.example。
 CLAUDE.md
 AGENTS.md

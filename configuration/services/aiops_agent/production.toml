@@ -1,8 +1,0 @@
-[secret_store]
-provider = "vault"
-
-[executor]
-mutation_enabled = false
-executor_instance_id = "由部署系统覆盖"
-[monitoring]
-payload_store_root = "/var/lib/kbot/aiops-monitor-payloads"

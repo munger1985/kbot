@@ -25,8 +25,8 @@ Schema。脚本不包含 `DROP`、旧表查询、旧数据导入、兼容视图�
 执行前运行：
 
 ```bash
-python3 scripts/check_oracle_schema.py
-python3 scripts/apply_oracle_schema.py \
+python3 tests/acceptance/check_oracle_schema.py
+python3 scripts/db/apply_oracle_schema.py \
   --config database/oracle/init_services.ini \
   --dry-run
 ```
@@ -36,8 +36,15 @@ python3 scripts/apply_oracle_schema.py \
 `SEGMENT SPACE MANAGEMENT AUTO`，Oracle VECTOR 不支持非 ASSM 表空间。不要把
 业务表默认创建在 `SYSTEM` 表空间。确认目标是空白 Schema 后执行：
 
+Knowledge Core 默认通过 `DBMS_ALERT` 唤醒异步 Worker。PDB 管理员还需执行
+以下运行权限授权，其中用户名替换为实际 KBot Schema：
+
+```sql
+GRANT EXECUTE ON SYS.DBMS_ALERT TO KBOTDEV;
+```
+
 ```bash
-python3 scripts/apply_oracle_schema.py \
+python3 scripts/db/apply_oracle_schema.py \
   --config database/oracle/init_services.ini
 ```
 

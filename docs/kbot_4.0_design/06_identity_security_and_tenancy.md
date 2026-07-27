@@ -19,7 +19,12 @@ KBot 4.0 不再维护用户、密码、登录、刷新令牌或退出登录接�
 
 API Key 标识调用 KBot 的受信门户或集成系统，不代表最终用户。Key 格式为 `kbot_sk_{key_id}.{secret}`，明文仅在创建时返回一次。当前预配置方案使用部署级 Pepper 计算 HMAC-SHA256 摘要；KBot 配置只保存 Key ID、Client ID、摘要、启用状态和可选到期时间。Key 不得写入浏览器代码、URL、配置样例、异常或日志。
 
-使用 `python -m scripts.generate_portal_api_key --key-id <id>` 离线生成 Key 与摘要，Pepper 从 `KBOT_API_KEY_PEPPER` 环境变量读取。轮换时并行配置新旧两个摘要，门户切换后停用旧记录；不允许调用方使用同一 Key 自行增发 Key。不同环境和外部系统使用不同 Key，便于独立吊销与审计。
+设置 `KBOT_MASTER_KEY` 后，使用
+`python scripts/security/generate_portal_api_key.py --key-id <id>` 离线生成 Key 与摘要；
+API Pepper 由主密钥按用途派生。摘要写入单一部署文件的
+`[[portal_api_keys]]`。轮换时并行配置新旧两个摘要，门户切换后停用旧记录；
+不允许调用方使用同一 Key 自行增发 Key。不同环境和外部系统使用不同 Key，
+便于独立吊销与审计。
 
 ## Domain 与操作人声明
 

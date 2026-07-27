@@ -1,1 +1,0 @@
-"""Embedding model serving process."""

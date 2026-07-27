@@ -57,9 +57,9 @@ Root 对话只订阅 `/api/v1/runs/{run_id}/events`；直接运维只订阅 `/ap
 
 - `agent/agent/root_agent_v2.py` 在请求内直接执行并生成 SSE，没有 Run/Task、租约或恢复；
 - 3.5 Agent V2 Router 使用进程级 Agent 实例，并接受客户端提供的 Domain/Security 范围；
-- `knowledge_core/application/answer_generation.py`、`grounding.py` 和 `sse_v2.py` 把最终回答职责放进了 KC 包。
+- `services/knowledge_core/src/knowledge_core/application/answer_generation.py`、`grounding.py` 和 `sse_v2.py` 把最终回答职责放进了 KC 包。
 
-可复用的是 Citation Label、回答后引用校验和 Document Card 投影规则。实现迁入 `agent_runtime/specialists/response_composer/`；Knowledge Core 只保留 Citation/Evidence 契约，不 import Agent、回答模型或 SSE。
+可复用的是 Citation Label、回答后引用校验和 Document Card 投影规则。实现迁入 `services/agent_runtime/src/agent_runtime/specialists/response_composer/`；Knowledge Core 只保留 Citation/Evidence 契约，不 import Agent、回答模型或 SSE。
 
 ## 一等 Delegation 模型
 
@@ -315,7 +315,7 @@ View 始终包含 `APP_ID/DOMAIN_ID` 过滤字段，只提供安全摘要，不�
 ## 推荐代码布局
 
 ```text
-agent_runtime/
+services/agent_runtime/src/agent_runtime/
   application/delegations/
     create.py
     reconcile.py
@@ -330,18 +330,18 @@ agent_runtime/
   repositories/delegations.py
   clients/aiops_delegation.py
 
-main_api/
+services/main_api/src/main_api/
   controllers/runs.py
   controllers/ops/
   controllers/integrations/monitoring.py
   application/sse_proxy.py
   mappers/aiops.py
 
-platform_core/contracts/
+packages/platform_core/src/platform_core/contracts/
   agent/delegation.py
   agent/composition.py
   aiops/delegation.py
-platform_clients/
+packages/platform_clients/src/platform_clients/
   aiops_delegation.py
   aiops_management.py
 ```

@@ -1,0 +1,51 @@
+# KBot 生产部署只需要填写本文件和 Secret 环境变量。
+environment = "production"
+app_id = 1
+data_dir = "/var/lib/kbot"
+log_dir = "/var/log/kbot"
+embedding_dimension = 2560
+
+[database]
+host = "oracle.example.internal"
+port = 1521
+service_name = "kbot4"
+username = "kbot"
+
+# KBot 只保存 API Key 摘要。先设置 KBOT_MASTER_KEY，再执行：
+# python scripts/security/generate_portal_api_key.py --key-id portal-prod
+[[portal_api_keys]]
+key_id = "portal-prod"
+client_id = "portal"
+key_digest = "0000000000000000000000000000000000000000000000000000000000000000"
+
+# 只有向 KBot 以外的系统开放模型 API 时才增加。
+# [[model_api_keys]]
+# key_id = "model-client"
+# client_id = "external-model-client"
+# key_digest = "生成的64位摘要"
+
+# Docling 模型默认位于 <data_dir>/models/docling_models。
+# 若使用其他挂载点，取消下面两行注释。
+# [paths]
+# docling_models = "/opt/kbot/models/docling_models"
+
+# 单机部署无需配置 endpoints。只有服务分散到不同主机时才覆盖对应地址。
+# [endpoints]
+# knowledge_core = "http://knowledge-core.internal:18090"
+# agent_runtime = "http://agent-runtime.internal:18100"
+# aiops = "http://aiops.internal:18110"
+# aiops_db_executor = "http://aiops.internal:18111"
+# model_embedding = "http://models.internal:18091"
+# model_llm = "http://models.internal:18092"
+# model_visual = "http://models.internal:18093"
+# model_vlm = "http://models.internal:18094"
+
+# 以下集成均为可选项，未启用时无需填写。
+# [integrations.mcp_data]
+# api_endpoint = "http://aireport.internal:10090/aireport/chat/with_selectai_api"
+# profiles_endpoint = "http://aireport.internal:10090/aireport/admin/list_profiles"
+
+# [integrations.deepseek_ocr]
+# enabled = true
+# api_endpoint = "http://deepseek-ocr.internal:18097/v1/chat/completions"
+# ocr_model = "deepseek-ocr"

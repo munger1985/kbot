@@ -37,19 +37,20 @@ Monitor Intake/Observe ──→ 只读 DB Diagnostic
 新增以下空包和 App 入口，但此阶段不实现业务：
 
 ```text
-aiops_agent/{api,application,domain,orchestration,diagnostics,
+services/aiops_agent/src/aiops_agent/{api,application,domain,orchestration,diagnostics,
              ports,adapters,entities,repositories,persistence,
-             workers,contracts,tests}/
-apps/aiops_api/
-apps/aiops_worker/
-apps/aiops_scheduler/
-apps/aiops_db_executor/
+             workers,contracts}/
+tests/unit/aiops_agent/
+services/aiops_agent/src/aiops_agent/entrypoints/api.py
+services/aiops_agent/src/aiops_agent/entrypoints/worker.py
+services/aiops_agent/src/aiops_agent/entrypoints/scheduler.py
+services/aiops_agent/src/aiops_agent/entrypoints/db_executor.py
 database/oracle/aiops_agent/
-platform_core/contracts/aiops/
-platform_clients/aiops.py
+packages/platform_core/src/platform_core/contracts/aiops/
+packages/platform_clients/src/platform_clients/aiops.py
 ```
 
-先固化 Public、Internal、Executor、SSE 和 Error DTO；枚举和状态迁移由 `aiops_agent/domain` 定义，HTTP Schema 与 Entity 只能映射，不能复制业务规则。增加 import 架构检查，禁止 `aiops_agent` 引用 `legacy`、旧 `agent/services/skills`、KC Repository 或模型 Entity。
+先固化 Public、Internal、Executor、SSE 和 Error DTO；枚举和状态迁移由 `services/aiops_agent/src/aiops_agent/domain` 定义，HTTP Schema 与 Entity 只能映射，不能复制业务规则。增加 import 架构检查，禁止 `aiops_agent` 引用 `legacy`、旧 `agent/services/skills`、KC Repository 或模型 Entity。
 
 **完成物：** 四个可独立启动的最小 App、三份独立 OpenAPI、配置样例、依赖规则和契约版本说明。
 

@@ -9,7 +9,7 @@
 不让单个 Root Run 隐式跨 Agent 调用。
 
 单能力 Agent 使用确定性路由；多能力 Agent 必须配置
-`router_llm_model_name`，Router 只能从已启用能力中选择
+`models.router_llm`，Router 只能从已启用能力中选择
 `CONVERSATION / DOCUMENT / MCP_DATA / CLARIFY`。分类结果经过 Pydantic 校验，
 模型不能生成 Skill、URL、SQL 或任意执行计划。
 低于 `router_confidence_threshold` 的结果转为 `CLARIFY`，并作为一条

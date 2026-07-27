@@ -279,18 +279,18 @@ Command 使用类型化 DTO，不接受任意状态字符串。Create/Cancel 等
 ## 代码布局
 
 ```text
-aiops_agent/domain/operations/
+services/aiops_agent/src/aiops_agent/domain/operations/
   run.py
   task.py
   transitions.py
   errors.py
-aiops_agent/application/runtime/
+services/aiops_agent/src/aiops_agent/application/runtime/
   service.py
-aiops_agent/orchestration/blueprints.py
-aiops_agent/workers/{task_worker,reconciliation,outbox_dispatcher}.py
-aiops_agent/contracts/artifacts/kernel.py
-tests/test_aiops_runtime_kernel.py
-scripts/smoke_aiops_runtime.py
+services/aiops_agent/src/aiops_agent/orchestration/blueprints.py
+services/aiops_agent/src/aiops_agent/workers/{task_worker,reconciliation,outbox_dispatcher}.py
+services/aiops_agent/src/aiops_agent/contracts/artifacts/kernel.py
+tests/unit/aiops_agent/test_aiops_runtime_kernel.py
+tests/smoke/smoke_aiops_runtime.py
 ```
 
 状态迁移表由 Domain 单点定义；API Schema、Worker 和 Repository 不复制允许迁移

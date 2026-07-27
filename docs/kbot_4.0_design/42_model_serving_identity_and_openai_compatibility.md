@@ -26,7 +26,7 @@ AuthContext JWT：
 - 内部推理 DTO 使用 `served_model_name`，不接受显示名或 UUID；
 - 管理响应永不返回上游 API Key。
 
-外部模型调用使用独立的 `security.model_api_keys`：
+外部模型调用使用单一部署文件中独立的 `[[model_api_keys]]`：
 
 - `GET /api/v1/models`；
 - `POST /api/v1/chat/completions`；

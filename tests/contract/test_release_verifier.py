@@ -1,0 +1,85 @@
+"""发布证据生成器的离线契约测试。"""
+
+import unittest
+
+from scripts.release.verify_release import (
+    ACTIVE_PACKAGES,
+    _checks,
+    build_input_manifest,
+)
+
+
+class ReleaseVerifierTest(unittest.TestCase):
+    def test_manifest_covers_schema_configuration_and_openapi(self):
+        manifest = build_input_manifest()
+
+        self.assertIn(
+            "database/oracle/aiops_agent/schema_manifest.json",
+            manifest,
+        )
+        self.assertIn(
+            "configuration/kbot.toml.example",
+            manifest,
+        )
+        self.assertIn("docs/openapi/aiops_internal_v1.json", manifest)
+        self.assertIn("docs/openapi/main_api_public_v1.json", manifest)
+        self.assertIn(
+            "docs/openapi/knowledge_core_internal_v1.json",
+            manifest,
+        )
+        self.assertIn("resources/topology.toml", manifest)
+        self.assertNotIn("var/release/sbom/python-direct.cdx.json", manifest)
+        self.assertTrue(
+            all(len(digest) == 64 for digest in manifest.values())
+        )
+
+    def test_all_active_service_packages_are_compiled(self):
+        for package in (
+            "services/knowledge_core/src/knowledge_core",
+            "services/agent_runtime/src/agent_runtime",
+            "services/aiops_agent/src/aiops_agent",
+            "services/main_api/src/main_api",
+            "services/model_serving/src/model_serving",
+        ):
+            self.assertIn(package, ACTIVE_PACKAGES)
+
+    def test_oracle_profile_has_preflight_catalog_checks(self):
+        names = {
+            name
+            for name, _, _ in _checks(include_oracle=True)
+        }
+
+        self.assertIn("oracle_object_catalog", names)
+        self.assertIn("oracle_all_entity_catalog", names)
+        self.assertIn("oracle_aiops_entity_catalog", names)
+        self.assertIn("oracle_cross_service_uow", names)
+        self.assertIn("oracle_aiops_persistence", names)
+        self.assertIn("oracle_aiops_runtime", names)
+
+    def test_prometheus_check_is_explicitly_enabled(self):
+        names = {
+            name
+            for name, _, _ in _checks(
+                include_oracle=False,
+                prometheus_url="http://localhost:9161/metrics",
+            )
+        }
+
+        self.assertIn("prometheus_metrics", names)
+
+    def test_release_test_programs_are_loaded_from_tests(self):
+        commands = [
+            command
+            for _, command, _ in _checks(include_oracle=True)
+        ]
+        misplaced = [
+            argument
+            for command in commands
+            for argument in command
+            if argument.startswith(("scripts/check_", "scripts/smoke_"))
+        ]
+        self.assertEqual([], misplaced)
+
+
+if __name__ == "__main__":
+    unittest.main()

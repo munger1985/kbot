@@ -1,8 +1,8 @@
 # 4.0 AIOps 步骤 0：契约、配置与启动骨架
 
-> 实施状态：已于 2026-07-23 完成。实现位于 `aiops_agent/`、
-> `platform_core/contracts/aiops/`、`platform_clients/aiops.py` 和四个
-> `apps/aiops_*` 入口；三份冻结 OpenAPI 位于 `docs/openapi/`。步骤 0 没有
+> 实施状态：已于 2026-07-23 完成。实现位于 `services/aiops_agent/src/aiops_agent/`、
+> `packages/platform_core/src/platform_core/contracts/aiops/`、`packages/platform_clients/src/platform_clients/aiops.py` 和四个
+> `services/aiops_agent/src/aiops_agent/entrypoints/` 入口；三份冻结 OpenAPI 位于 `docs/openapi/`。步骤 0 没有
 > 创建任何 `KBOT_OPS_*` 表或业务路由。
 
 ## 目标与约束
@@ -14,7 +14,7 @@
 ## 最终包结构
 
 ```text
-aiops_agent/
+services/aiops_agent/src/aiops_agent/
   api/
     management/             # Main API 代理的配置、Run、HITL、Report Route
     intake/                 # Root 委派与 Monitoring Intake Route
@@ -50,15 +50,15 @@ aiops_agent/
     scheduler.py
     executor.py
     common.py
-  tests/
+  entrypoints/
+    api.py
+    worker.py
+    scheduler.py
+    db_executor.py
 
-apps/
-  aiops_api/main.py
-  aiops_worker/main.py
-  aiops_scheduler/main.py
-  aiops_db_executor/main.py
+tests/unit/aiops_agent/
 
-platform_core/contracts/
+packages/platform_core/src/platform_core/contracts/
   auth.py                   # 平台通用 AuthContext/Service Identity Envelope
   aiops/
     types.py
@@ -68,16 +68,16 @@ platform_core/contracts/
     events.py
     errors.py
 
-platform_clients/aiops.py
+packages/platform_clients/src/platform_clients/aiops.py
 database/oracle/aiops_agent/
 ```
 
-`apps/*/main.py` 只加载对应配置、调用 Bootstrap Factory、运行进程并处理退出信号。对象组装、Router 注册、Client/UoW Factory 创建和生命周期清理都属于 `aiops_agent/bootstrap`，不能继续堆入入口文件。
+`services/*/src/*/entrypoints/*.py` 只加载对应配置、调用 Bootstrap Factory、运行进程并处理退出信号。对象组装、Router 注册、Client/UoW Factory 创建和生命周期清理都属于 `services/aiops_agent/src/aiops_agent/bootstrap`，不能继续堆入入口文件。
 
 ## 依赖方向
 
 ```text
-apps ──→ bootstrap ──→ api/application/adapters/persistence
+entrypoints ──→ bootstrap ──→ api/application/adapters/persistence
                          ↓
 application ──→ domain + ports
 adapters ──→ ports + external SDK/platform_clients
@@ -93,11 +93,11 @@ domain ──→ Python stdlib only
 - `application` import FastAPI、具体 Monitor SDK 或 SQLAlchemy Entity；
 - `api` 直接 import Repository/Entity 或执行 `commit()`；
 - `aiops_agent` import KC/Model/Agent Runtime Repository；
-- `platform_core/contracts` import `aiops_agent`；
+- `packages/platform_core/src/platform_core/contracts` import `aiops_agent`；
 - `platform_clients.aiops_management/aiops_delegation` import AIOps Entity、Domain 或 App；
 - 任意 4.0 AIOps 文件 import `legacy`、旧 `agent`、旧 `services`、旧 `skills` 或 `utils.monitor`。
 
-跨层转换使用显式 Mapper。Domain 状态枚举属于 `aiops_agent/domain`；Wire Enum/Literal 属于 `platform_core/contracts/aiops/types.py`。两者不互相 import，通过映射与枚举一致性测试防止漂移。
+跨层转换使用显式 Mapper。Domain 状态枚举属于 `services/aiops_agent/src/aiops_agent/domain`；Wire Enum/Literal 属于 `packages/platform_core/src/platform_core/contracts/aiops/types.py`。两者不互相 import，通过映射与枚举一致性测试防止漂移。
 
 ## 四个进程边界
 
@@ -244,7 +244,7 @@ SignedAuthContext {
 ## 配置模型
 
 组合配置沿用当前已经统一的“平台共享配置 + 服务自有配置模型”结构，定义在
-`aiops_agent/config.py`，由 `platform_core.config.load_settings` 分层加载，而
+`services/aiops_agent/src/aiops_agent/config.py`，由 `platform_core.config.load_settings` 分层加载，而
 不是继续扩展旧 `ExecutorConfig/PrometheusConfig/ZabbixConfig/OemConfig`：
 
 ```text
@@ -324,7 +324,8 @@ AIOps API、Executor、Worker Probe 和 Scheduler Probe 都不安装 CORS Middle
 ## 步骤 0 实现顺序
 
 1. 新增 AuthContext、Service Identity 和 AIOps Wire DTO；
-2. 新增 AIOps 组合配置及 `base.toml.example`，不写实际 Secret；
+2. 新增 AIOps 服务配置模型，并由统一
+   `configuration/kbot.toml.example` 提供可选部署入口，不写实际 Secret；
 3. 实现 Management/Delegation Client 的认证、超时、错误和空方法骨架；
 4. 创建 `aiops_agent` 分层包、Bootstrap Runtime 和四个 App；
 5. 实现 `/live`、`/ready`、空 Router 和 OpenAPI Snapshot；

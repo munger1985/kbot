@@ -2,7 +2,7 @@
 
 ## 定位
 
-Document Agent 是 Knowledge 领域的查询 Agent，当前先作为 Agent Runtime 内的独立模块运行，未来可按同一契约提取为 `apps/document_agent` 服务。它不拥有知识库表，不负责文件生命周期，也不替代 Knowledge Core。
+Document Agent 是 Knowledge 领域的查询 Agent，当前先作为 Agent Runtime 内的独立模块运行，未来可按同一契约提取为 `services/document_agent` 服务。它不拥有知识库表，不负责文件生命周期，也不替代 Knowledge Core。
 
 ```text
 Root Agent / Supervisor

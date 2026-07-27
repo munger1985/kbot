@@ -4,7 +4,10 @@
 
 4.0 恢复 3.x 的以图搜图能力，但不恢复 `extracted_images`、KB 或 Chunk 依赖。视觉索引属于 Knowledge Core；查询图片属于 Conversation 的临时输入；Visual 模型由 Model Serving 托管。VLM 用于理解图片和生成描述，Visual Embedding 用于相似度检索，两者不可互换。
 
-Collection 可绑定一个不可变的 `visual_embedding_model_id`。未绑定时，该 Collection 仍可正常进行文本解析和检索，但不会创建或接受视觉向量。不同 Collection 可使用不同视觉模型，查询时必须按 Collection 分组编码，禁止把不同模型产生的向量放进同一排序空间。
+Collection 可通过 `MODELS_JSON.visual_embedding` 绑定一个不可变的视觉模型
+UUIDv7。未绑定时，该 Collection 仍可正常进行文本解析和检索，但不会创建或
+接受视觉向量。不同 Collection 可使用不同视觉模型，查询时必须按 Collection
+分组编码，禁止把不同模型产生的向量放进同一排序空间。
 
 ## 入库与索引
 

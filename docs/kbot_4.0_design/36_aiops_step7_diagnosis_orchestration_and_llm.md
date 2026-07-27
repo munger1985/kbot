@@ -297,7 +297,7 @@ limitations[]
 ## 代码布局
 
 ```text
-aiops_agent/
+services/aiops_agent/src/aiops_agent/
   contracts/diagnosis/
     scope.py
     evidence.py
