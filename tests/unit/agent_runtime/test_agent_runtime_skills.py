@@ -144,6 +144,14 @@ class _RewriteModelClient:
         }
 
 
+class _EmptyObjectRewriteModelClient(_RewriteModelClient):
+    async def get_llm_json(self, **kwargs):
+        output = await super().get_llm_json(**kwargs)
+        output["resolved_references"] = {}
+        output["memory_refs"] = {}
+        return output
+
+
 class _PromptResolver:
     async def resolve(self, prompt_key):
         variables = {
@@ -330,6 +338,35 @@ class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
             result.artifact.payload["standalone_query"],
             "数据库优化案例有什么优势？",
         )
+
+    async def test_context_rewrite_normalizes_empty_object_sequences(self):
+        context = _context().model_copy(
+            update={
+                "original_input": "它有什么优势？",
+                "config_snapshot": {
+                    **_context().config_snapshot,
+                    "conversation": {
+                        "context": {
+                            "summary": {
+                                "active_topic": "数据库优化案例"
+                            },
+                            "recent_items": [],
+                            "memories": [],
+                        }
+                    },
+                },
+            }
+        )
+
+        result = await ContextRewriteSkill(
+            model_client=_EmptyObjectRewriteModelClient(),
+            prompt_resolver=_PromptResolver(),
+        ).execute(context)
+
+        self.assertEqual(
+            result.artifact.payload["resolved_references"], []
+        )
+        self.assertEqual(result.artifact.payload["memory_refs"], [])
 
     def test_root_planner_rejects_aiops_without_frozen_target(self):
         decision = RootAgentPlanner().decide(

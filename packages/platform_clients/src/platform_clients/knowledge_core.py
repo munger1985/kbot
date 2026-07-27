@@ -334,6 +334,8 @@ class KnowledgeCoreClient:
         max_security_level: int = 3,
         per_collection_limit: int = 20,
         do_rerank: bool = False,
+        run_id: UUID | None = None,
+        task_id: UUID | None = None,
     ) -> dict[str, Any]:
         return await self._json(
             "POST",
@@ -354,6 +356,8 @@ class KnowledgeCoreClient:
                 "max_security_level": max_security_level,
                 "per_collection_limit": per_collection_limit,
                 "do_rerank": do_rerank,
+                "run_id": str(run_id) if run_id else None,
+                "task_id": str(task_id) if task_id else None,
             },
             auth_context=auth_context,
         )
@@ -371,6 +375,8 @@ class KnowledgeCoreClient:
         max_evidence: int = 12,
         context_limit: int = 4,
         do_rerank: bool = False,
+        run_id: UUID | None = None,
+        task_id: UUID | None = None,
     ) -> dict[str, Any]:
         return await self._json(
             "POST",
@@ -392,6 +398,8 @@ class KnowledgeCoreClient:
                 "max_evidence": max_evidence,
                 "context_limit": context_limit,
                 "do_rerank": do_rerank,
+                "run_id": str(run_id) if run_id else None,
+                "task_id": str(task_id) if task_id else None,
             },
             auth_context=auth_context,
         )

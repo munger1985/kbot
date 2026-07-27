@@ -274,6 +274,34 @@ async def install_plan(
         _raise_runtime_error(exc)
 
 
+@router.get("/development/recent")
+async def list_debug_runs(
+    request: Request,
+    limit: int = Query(default=50, ge=1, le=200),
+):
+    """提供给 Main API 开发调试台的最近 Run 摘要。"""
+    domain_id, _, _, _ = _identity(request)
+    return await _service(request).list_debug_runs(
+        app_id=request.app.state.platform_app_id,
+        domain_id=domain_id,
+        limit=limit,
+    )
+
+
+@router.get("/{run_id}/development")
+async def get_debug_run(run_id: UUID, request: Request):
+    """提供给 Main API 开发调试台的完整 Run 投影。"""
+    domain_id, _, _, _ = _identity(request)
+    try:
+        return await _service(request).get_debug_run(
+            run_id=run_id,
+            app_id=request.app.state.platform_app_id,
+            domain_id=domain_id,
+        )
+    except AgentRuntimeNotFound as exc:
+        _raise_runtime_error(exc)
+
+
 @router.get("/{run_id}", response_model=AgentRunSummary)
 async def get_run(run_id: UUID, request: Request) -> AgentRunSummary:
     domain_id, _, _, _ = _identity(request)

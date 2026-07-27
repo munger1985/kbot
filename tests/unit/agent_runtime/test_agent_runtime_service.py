@@ -657,6 +657,9 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
             )
         )
         self.assertIsNotNone(lease)
+        leased_task = self.store.tasks[lease.task_id]
+        leased_task.error_code = "WORKER_LEASE_EXPIRED"
+        leased_task.error_message = "历史租约已过期"
         await self.service.append_task_progress(
             AppendTaskProgressCommand(
                 task_id=lease.task_id,
@@ -691,6 +694,8 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(completed.task_status, "SUCCEEDED")
         self.assertEqual(completed.run_status, "COMPLETED")
         self.assertIsNotNone(completed.artifact_id)
+        self.assertIsNone(leased_task.error_code)
+        self.assertIsNone(leased_task.error_message)
         result = await self.service.get_result(
             run_id=created.run_id,
             app_id=1,

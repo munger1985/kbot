@@ -4,13 +4,14 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import DateTime, Float, Numeric, String, Text, func
+from sqlalchemy import Float, Numeric, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from platform_core.identity import uuid7
 from platform_core.persistence.orm import (
     BaseEntity,
     OracleNativeJSON,
+    UniversalTimestamp,
     UUIDv7Type,
     VectorField,
 )
@@ -43,16 +44,16 @@ class AgentConversationEntity(BaseEntity):
         String(32), nullable=False, default="DEFAULT"
     )
     purge_after: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True)
+        UniversalTimestamp(timezone=True)
     )
     last_active_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
+        UniversalTimestamp(timezone=True), server_default=func.now()
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
+        UniversalTimestamp(timezone=True), server_default=func.now()
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
+        UniversalTimestamp(timezone=True),
         server_default=func.now(),
         onupdate=func.now(),
     )
@@ -85,13 +86,13 @@ class AgentConversationTurnEntity(BaseEntity):
         String(128), nullable=False
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
+        UniversalTimestamp(timezone=True), server_default=func.now()
     )
     started_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True)
+        UniversalTimestamp(timezone=True)
     )
     completed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True)
+        UniversalTimestamp(timezone=True)
     )
 
 
@@ -120,7 +121,7 @@ class AgentConversationItemEntity(BaseEntity):
         String(16), nullable=False, default="USER"
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
+        UniversalTimestamp(timezone=True), server_default=func.now()
     )
 
 
@@ -146,7 +147,7 @@ class AgentMemorySnapshotEntity(BaseEntity):
     prompt_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
+        UniversalTimestamp(timezone=True), server_default=func.now()
     )
 
 
@@ -170,17 +171,17 @@ class AgentMemoryItemEntity(BaseEntity):
     confidence: Mapped[float] = mapped_column(Float, nullable=False)
     salience: Mapped[float] = mapped_column(Float, nullable=False)
     valid_from: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False
+        UniversalTimestamp(timezone=True), nullable=False
     )
     valid_to: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True)
+        UniversalTimestamp(timezone=True)
     )
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     sensitivity_level: Mapped[int] = mapped_column(
         Numeric(3, 0), nullable=False, default=0
     )
     expires_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True)
+        UniversalTimestamp(timezone=True)
     )
     row_version: Mapped[int] = mapped_column(
         Numeric(19, 0), nullable=False, default=1
@@ -188,10 +189,10 @@ class AgentMemoryItemEntity(BaseEntity):
     index_profile_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
     embedding: Mapped[list[float] | None] = mapped_column(VectorField())
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
+        UniversalTimestamp(timezone=True), server_default=func.now()
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
+        UniversalTimestamp(timezone=True),
         server_default=func.now(),
         onupdate=func.now(),
     )
@@ -218,7 +219,7 @@ class AgentMemoryIndexProfileEntity(BaseEntity):
     )
     config_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
+        UniversalTimestamp(timezone=True), server_default=func.now()
     )
 
 
@@ -237,7 +238,7 @@ class AgentMemorySourceEntity(BaseEntity):
     excerpt_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     extractor: Mapped[str] = mapped_column(String(128), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
+        UniversalTimestamp(timezone=True), server_default=func.now()
     )
 
 
@@ -261,21 +262,21 @@ class AgentMemoryJobEntity(BaseEntity):
         Numeric(10, 0), nullable=False, default=3
     )
     next_attempt_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
+        UniversalTimestamp(timezone=True), server_default=func.now()
     )
     lease_owner: Mapped[str | None] = mapped_column(String(256))
     lease_token: Mapped[UUID | None] = mapped_column(UUIDv7Type())
     lease_until: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True)
+        UniversalTimestamp(timezone=True)
     )
     error_code: Mapped[str | None] = mapped_column(String(128))
     error_message: Mapped[str | None] = mapped_column(String(1000))
     result_json: Mapped[dict[str, Any] | None] = mapped_column(OracleNativeJSON)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
+        UniversalTimestamp(timezone=True), server_default=func.now()
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
+        UniversalTimestamp(timezone=True),
         server_default=func.now(),
         onupdate=func.now(),
     )

@@ -1,9 +1,28 @@
 from uuid import UUID
-from sqlalchemy import Select, bindparam, func, select, update
+from sqlalchemy import (
+    Float,
+    Select,
+    bindparam,
+    func,
+    literal_column,
+    select,
+    update,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from knowledge_core.entities import KcBundleEntity, KcBundleRevisionEntity, KcCollectionEntity, KcDiscoveryObjectEntity
+from knowledge_core.entities import (
+    KcBundleEntity,
+    KcBundleRevisionDocumentEntity,
+    KcBundleRevisionEntity,
+    KcCollectionEntity,
+    KcDiscoveryObjectEntity,
+    KcDocumentVersionEntity,
+    KcEvidenceEntity,
+)
 from knowledge_core.application.retrieval import DiscoveryHit
+from knowledge_core.repositories.oracle_text_query import (
+    build_oracle_text_query,
+)
 
 
 class DiscoveryRepository:
@@ -69,7 +88,11 @@ class DiscoveryRepository:
 
     async def search_text(self, *, collection_id: UUID, query: str, limit: int = 20, max_security_level: int = 3) -> list[DiscoveryHit]:
         """Oracle Text candidate search scoped to current published revisions."""
-        text_score = func.score(1)
+        oracle_query = build_oracle_text_query(query)
+        if not oracle_query:
+            return []
+        oracle_text_label = literal_column("1")
+        text_score = func.score(oracle_text_label)
         statement = (
             select(KcDiscoveryObjectEntity, text_score.label("text_score"), KcCollectionEntity.collection_key)
             .join(KcCollectionEntity, KcCollectionEntity.collection_id == KcDiscoveryObjectEntity.collection_id)
@@ -83,17 +106,138 @@ class DiscoveryRepository:
                 KcDiscoveryObjectEntity.security_level <= max_security_level,
                 KcBundleEntity.current_revision_id == KcDiscoveryObjectEntity.bundle_revision_id,
                 KcBundleRevisionEntity.status.in_(("READY", "PARTIAL")),
-                func.contains(KcDiscoveryObjectEntity.profile_text, bindparam("discovery_query"), 1) > 0,
+                func.contains(
+                    KcDiscoveryObjectEntity.profile_text,
+                    bindparam("discovery_query"),
+                    oracle_text_label,
+                )
+                > 0,
             )
             .order_by(text_score.desc(), KcDiscoveryObjectEntity.discovery_object_id)
             .limit(limit)
-        ).params(discovery_query=query)
+        ).params(discovery_query=oracle_query)
         rows = (await self.session.execute(statement)).all()
-        return [self._to_hit(entity, rank, "TEXT", float(score or 0), collection_key) for rank, (entity, score, collection_key) in enumerate(rows, 1)]
+        if rows:
+            return [self._to_hit(entity, rank, "TEXT", float(score or 0), collection_key) for rank, (entity, score, collection_key) in enumerate(rows, 1)]
+        return await self._search_evidence_text(
+            collection_id=collection_id,
+            oracle_query=oracle_query,
+            limit=limit,
+            max_security_level=max_security_level,
+        )
+
+    async def _search_evidence_text(
+        self,
+        *,
+        collection_id: UUID,
+        oracle_query: str,
+        limit: int,
+        max_security_level: int,
+    ) -> list[DiscoveryHit]:
+        """Profile 未命中时，以 Evidence 全文索引桥接到所属 Bundle。"""
+        oracle_text_label = literal_column("1")
+        text_score = func.score(oracle_text_label)
+        statement = (
+            select(
+                KcEvidenceEntity,
+                KcBundleRevisionEntity.bundle_id,
+                KcBundleRevisionEntity.title,
+                KcBundleRevisionDocumentEntity.external_document_id,
+                KcBundleRevisionDocumentEntity.declared_name,
+                text_score.label("text_score"),
+                KcCollectionEntity.collection_key,
+            )
+            .join(
+                KcCollectionEntity,
+                KcCollectionEntity.collection_id
+                == KcEvidenceEntity.collection_id,
+            )
+            .join(
+                KcBundleRevisionEntity,
+                KcBundleRevisionEntity.bundle_revision_id
+                == KcEvidenceEntity.bundle_revision_id,
+            )
+            .join(
+                KcBundleEntity,
+                KcBundleEntity.bundle_id
+                == KcBundleRevisionEntity.bundle_id,
+            )
+            .join(
+                KcDocumentVersionEntity,
+                KcDocumentVersionEntity.document_version_id
+                == KcEvidenceEntity.document_version_id,
+            )
+            .outerjoin(
+                KcBundleRevisionDocumentEntity,
+                KcBundleRevisionDocumentEntity.bundle_revision_document_id
+                == KcEvidenceEntity.bundle_revision_document_id,
+            )
+            .where(
+                KcEvidenceEntity.collection_id == collection_id,
+                KcCollectionEntity.status == "ACTIVE",
+                KcEvidenceEntity.status == "ACTIVE",
+                KcEvidenceEntity.embedding_input_hash.is_not(None),
+                KcDocumentVersionEntity.security_level
+                <= max_security_level,
+                KcBundleRevisionEntity.security_level
+                <= max_security_level,
+                KcBundleEntity.current_revision_id
+                == KcEvidenceEntity.bundle_revision_id,
+                KcBundleRevisionEntity.status.in_(("READY", "PARTIAL")),
+                func.contains(
+                    KcEvidenceEntity.retrieval_text,
+                    bindparam("evidence_discovery_query"),
+                    oracle_text_label,
+                )
+                > 0,
+            )
+            .order_by(text_score.desc(), KcEvidenceEntity.evidence_id)
+            .limit(limit)
+        ).params(evidence_discovery_query=oracle_query)
+        rows = (await self.session.execute(statement)).all()
+        hits: list[DiscoveryHit] = []
+        seen_documents: set[UUID] = set()
+        for (
+            entity,
+            bundle_id,
+            bundle_title,
+            external_document_id,
+            declared_name,
+            score,
+            collection_key,
+        ) in rows:
+            if entity.document_version_id in seen_documents:
+                continue
+            seen_documents.add(entity.document_version_id)
+            member_key = (
+                external_document_id or str(entity.document_version_id)
+            )
+            hits.append(
+                DiscoveryHit(
+                    collection_id=entity.collection_id,
+                    collection_key=collection_key,
+                    bundle_id=bundle_id,
+                    bundle_revision_id=entity.bundle_revision_id,
+                    object_type="DOCUMENT",
+                    profile_key=f"evidence:{member_key}",
+                    display_title=declared_name or bundle_title,
+                    local_rank=len(hits) + 1,
+                    channel="TEXT_EVIDENCE",
+                    score=float(score or 0),
+                    matched_member_key=member_key,
+                    member_count=1,
+                    coverage={"evidence_bridge": True},
+                    profile_text=entity.retrieval_text[:12000],
+                )
+            )
+        return hits
 
     async def search_vector(self, *, collection_id: UUID, vector: list[float], limit: int = 20, max_security_level: int = 3) -> list[DiscoveryHit]:
         """Oracle VECTOR distance search; query vectors are model-grouped upstream."""
-        distance = KcDiscoveryObjectEntity.embedding.op("<=>")(bindparam("query_vector"))
+        distance = KcDiscoveryObjectEntity.embedding.op(
+            "<=>",
+            return_type=Float(),
+        )(bindparam("query_vector"))
         statement = (
             select(KcDiscoveryObjectEntity, distance.label("distance"), KcCollectionEntity.collection_key)
             .join(KcCollectionEntity, KcCollectionEntity.collection_id == KcDiscoveryObjectEntity.collection_id)
@@ -112,7 +256,17 @@ class DiscoveryRepository:
             .limit(limit)
         ).params(query_vector=vector)
         rows = (await self.session.execute(statement)).all()
-        return [self._to_hit(entity, rank, "VECTOR", 1.0 - float(distance or 1.0), collection_key) for rank, (entity, distance, collection_key) in enumerate(rows, 1)]
+        return [
+            self._to_hit(
+                entity,
+                rank,
+                "VECTOR",
+                1.0 - float(distance if distance is not None else 1.0),
+                collection_key,
+            )
+            for rank, (entity, distance, collection_key)
+            in enumerate(rows, 1)
+        ]
 
     @staticmethod
     def _to_hit(entity: KcDiscoveryObjectEntity, rank: int, channel: str, score: float, collection_key: str) -> DiscoveryHit:

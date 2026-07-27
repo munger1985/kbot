@@ -71,7 +71,7 @@ python3 tests/acceptance/check_oracle_schema.py
 python3 -m unittest discover -s tests -t .
 ```
 
-完整架构和实施计划见
-[`docs/kbot_4.0_design/README.md`](docs/kbot_4.0_design/README.md)。贡献规则见
-[`AGENTS.md`](AGENTS.md)，当前物理目录说明见
-[`docs/repository_layout.md`](docs/repository_layout.md)。
+当前架构、产品和部署文档统一从
+[`docs/README.md`](docs/README.md) 进入。贡献规则见 [`AGENTS.md`](AGENTS.md)，
+物理目录说明见
+[`docs/architecture/repository-layout.md`](docs/architecture/repository-layout.md)。

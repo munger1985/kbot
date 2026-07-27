@@ -3,11 +3,27 @@ from collections.abc import Callable
 from uuid import UUID
 from datetime import datetime
 
-from sqlalchemy import Select, and_, bindparam, case, delete, exists, func, or_, select, update
+from sqlalchemy import (
+    Float,
+    Select,
+    and_,
+    bindparam,
+    case,
+    delete,
+    exists,
+    func,
+    literal_column,
+    or_,
+    select,
+    update,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from knowledge_core.entities import KcBundleEntity, KcBundleRevisionDocumentEntity, KcBundleRevisionEntity, KcCollectionEntity, KcDocumentEntity, KcDocumentVersionEntity, KcEvidenceEntity, KcIngestionJobEntity, KcParseViewEntity
 from knowledge_core.application.evidence_retrieval import EvidenceHit, EvidenceScope
+from knowledge_core.repositories.oracle_text_query import (
+    build_oracle_text_query,
+)
 
 
 class BundleRepository:
@@ -383,7 +399,11 @@ class EvidenceRepository:
         return [str(value) for value in (await self.session.execute(statement)).scalars() if value]
 
     async def search_text(self, *, scope: EvidenceScope, query: str, limit: int = 20, max_security_level: int = 3) -> list[EvidenceHit]:
-        score = func.score(1)
+        oracle_query = build_oracle_text_query(query)
+        if not oracle_query:
+            return []
+        oracle_text_label = literal_column("1")
+        score = func.score(oracle_text_label)
         statement = (
             select(
                 KcEvidenceEntity,
@@ -413,14 +433,23 @@ class EvidenceRepository:
                 KcBundleRevisionEntity.security_level <= max_security_level,
                 KcBundleEntity.current_revision_id == scope.bundle_revision_id,
                 KcBundleRevisionEntity.status.in_(("READY", "PARTIAL")),
-                func.contains(KcEvidenceEntity.retrieval_text, bindparam("evidence_query"), 1) > 0,
+                func.contains(
+                    KcEvidenceEntity.retrieval_text,
+                    bindparam("evidence_query"),
+                    oracle_text_label,
+                )
+                > 0,
             )
             .order_by(score.desc(), KcEvidenceEntity.evidence_id)
             .limit(limit)
         )
         if scope.document_version_ids:
             statement = statement.where(KcEvidenceEntity.document_version_id.in_(scope.document_version_ids))
-        rows = (await self.session.execute(statement.params(evidence_query=query))).all()
+        rows = (
+            await self.session.execute(
+                statement.params(evidence_query=oracle_query)
+            )
+        ).all()
         return [
             self._to_hit(
                 entity, scope.bundle_id, rank, "TEXT",
@@ -434,7 +463,10 @@ class EvidenceRepository:
         ]
 
     async def search_vector(self, *, scope: EvidenceScope, vector: list[float], limit: int = 20, max_security_level: int = 3) -> list[EvidenceHit]:
-        distance = KcEvidenceEntity.embedding.op("<=>")(bindparam("evidence_vector"))
+        distance = KcEvidenceEntity.embedding.op(
+            "<=>",
+            return_type=Float(),
+        )(bindparam("evidence_vector"))
         statement = (
             select(
                 KcEvidenceEntity,
@@ -474,7 +506,11 @@ class EvidenceRepository:
         return [
             self._to_hit(
                 entity, scope.bundle_id, rank, "VECTOR",
-                1.0 - float(distance_value or 1.0), bundle_title,
+                1.0 - float(
+                    distance_value
+                    if distance_value is not None
+                    else 1.0
+                ), bundle_title,
                 document_name, external_document_id, document_role,
             )
             for rank, (

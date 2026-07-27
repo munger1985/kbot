@@ -25,6 +25,11 @@ _ACCESS_HEADER = re.compile(
 _ERROR_ID = re.compile(r"\berror_id[=:]\s*([0-9a-fA-F-]{32,36})")
 _REQUEST_ID = re.compile(r"\brequest_id[=:]\s*([^\s|,]+)")
 _TRACE_ID = re.compile(r"\btrace_id[=:]\s*([^\s|,]+)")
+_RUN_ID = re.compile(r"\brun_id[=:]\s*([0-9a-fA-F-]{32,36})")
+_TURN_ID = re.compile(r"\bturn_id[=:]\s*([0-9a-fA-F-]{32,36})")
+_TASK_ID = re.compile(r"\btask_id[=:]\s*([0-9a-fA-F-]{32,36})")
+_SKILL_ID = re.compile(r"\bskill(?:_id)?[=:]\s*([^\s|,]+)")
+_EVENT_NAME = re.compile(r"\bevent[=:]\s*([a-zA-Z0-9._-]+)")
 _HTTP_STATUS = re.compile(
     r"(?:status|Status Code|状态码)[=:]\s*(\d{3})"
 )
@@ -166,6 +171,33 @@ class LocalLogSearchService:
         )
         return events[:limit]
 
+    def search_correlated(
+        self,
+        *,
+        identifiers: set[str],
+        limit: int = 500,
+    ) -> list[dict]:
+        """跨服务查找包含 Run/Task/Trace 标识的运行日志。"""
+        normalized = {
+            value.strip().casefold()
+            for value in identifiers
+            if value and value.strip()
+        }
+        if not normalized:
+            return []
+        events: list[dict] = []
+        for ref in self._catalog.files():
+            if ref.log_type != "RUNTIME":
+                continue
+            for event in self._read_events(ref):
+                raw = event["raw"].casefold()
+                if any(identifier in raw for identifier in normalized):
+                    events.append(event)
+        events.sort(
+            key=lambda item: (item["timestamp"], item["event_id"])
+        )
+        return events[-limit:]
+
     def _read_events(self, ref: LogFileRef) -> list[dict]:
         start = max(0, ref.size - self._max_bytes_per_file)
         with ref.path.open("rb") as stream:
@@ -233,6 +265,11 @@ class LocalLogSearchService:
             "error_id": _extract(_ERROR_ID, raw),
             "request_id": _extract(_REQUEST_ID, raw),
             "trace_id": _extract(_TRACE_ID, raw),
+            "run_id": _extract(_RUN_ID, raw),
+            "turn_id": _extract(_TURN_ID, raw),
+            "task_id": _extract(_TASK_ID, raw),
+            "skill_id": _extract(_SKILL_ID, raw),
+            "event_name": _extract(_EVENT_NAME, raw),
             "http_status": int(status) if status else None,
             "duration_ms": float(duration) if duration else None,
             "has_traceback": len(lines) > 1,
@@ -280,6 +317,11 @@ class LocalLogSearchService:
             "error_id": _extract(_ERROR_ID, raw),
             "request_id": _extract(_REQUEST_ID, raw),
             "trace_id": _extract(_TRACE_ID, raw),
+            "run_id": _extract(_RUN_ID, raw),
+            "turn_id": _extract(_TURN_ID, raw),
+            "task_id": _extract(_TASK_ID, raw),
+            "skill_id": _extract(_SKILL_ID, raw),
+            "event_name": _extract(_EVENT_NAME, raw),
             "http_status": None,
             "duration_ms": None,
             "has_traceback": "traceback" in lowered or len(lines) > 1,

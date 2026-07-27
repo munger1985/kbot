@@ -20,6 +20,7 @@ from main_api.api import (
     agent_router,
     conversation_router,
     data_router,
+    development_agent_runs_router,
     development_logs_router,
     dify_router,
     domain_router,
@@ -202,6 +203,7 @@ def create_main_api_app(
     if settings.platform.debug:
         app.state.development_log_root = settings.log.dir
         app.include_router(development_logs_router)
+        app.include_router(development_agent_runs_router)
 
     @app.exception_handler(KnowledgeCoreClientError)
     async def knowledge_core_error_handler(

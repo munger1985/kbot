@@ -5,6 +5,7 @@ from .conversations import memory_router
 from .conversations import router as conversation_router
 from .data import router as data_router
 from .development_logs import router as development_logs_router
+from .development_agent_runs import router as development_agent_runs_router
 from .dify import router as dify_router
 from .domains import router as domain_router
 from .integrations import router as integration_router
@@ -17,6 +18,7 @@ __all__ = [
     "conversation_router",
     "data_router",
     "development_logs_router",
+    "development_agent_runs_router",
     "dify_router",
     "domain_router",
     "memory_router",

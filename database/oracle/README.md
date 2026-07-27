@@ -12,7 +12,8 @@
 5. `aiops_agent/`：目标、监控、运维 Run、HITL、执行、巡检和可靠消息。
 
 `platform_core` 是每次初始化都必须创建的基础层，不需要配置。其余已实现服务在
-`init_services.ini` 的 `[services]` 中使用 `true`/`false` 选择。初始化工具先执行
+`scripts/db/init_services.ini` 的 `[services]` 中使用 `true`/`false` 选择。
+初始化工具先执行
 基础层，再按上述业务服务依赖顺序和目录内文件名前缀执行。数字前缀仅表示空库
 建表依赖顺序，不是增量 Migration 版本。应用启动时不得自动执行 DDL，也不得读取
 其他服务目录中的表。
@@ -27,7 +28,7 @@ Schema。脚本不包含 `DROP`、旧表查询、旧数据导入、兼容视图�
 ```bash
 python3 tests/acceptance/check_oracle_schema.py
 python3 scripts/db/apply_oracle_schema.py \
-  --config database/oracle/init_services.ini \
+  --config scripts/db/init_services.ini \
   --dry-run
 ```
 
@@ -45,7 +46,7 @@ GRANT EXECUTE ON SYS.DBMS_ALERT TO KBOTDEV;
 
 ```bash
 python3 scripts/db/apply_oracle_schema.py \
-  --config database/oracle/init_services.ini
+  --config scripts/db/init_services.ini
 ```
 
 初始化工具会校验当前 PDB、Schema、已有 KBot 对象、DDL 权限和表空间额度；只要

@@ -19,6 +19,9 @@ class RepositoryScriptLayoutTest(unittest.TestCase):
             {
                 "db/apply_oracle_schema.py",
                 "deployment/check_deployment.py",
+                "deployment/models/download_colqwen_model.py",
+                "deployment/models/download_easyocr_model.py",
+                "deployment/models/download_qwen_model.py",
                 "release/verify_release.py",
                 "security/generate_portal_api_key.py",
             },
@@ -26,6 +29,12 @@ class RepositoryScriptLayoutTest(unittest.TestCase):
         )
         self.assertTrue(
             (SCRIPTS_ROOT / "deployment" / "install_workspace.sh").is_file()
+        )
+        self.assertTrue(
+            (SCRIPTS_ROOT / "db" / "init_services.ini").is_file()
+        )
+        self.assertFalse(
+            (ROOT / "database" / "oracle" / "init_services.ini").exists()
         )
 
     def test_explicit_test_tools_live_under_tests(self):

@@ -21,6 +21,7 @@ class OperationsLogConsoleTest(unittest.TestCase):
                 [
                     "2026-07-27 10:00:00.001 | DEBUG    | [api] main_api.jobs:claim:10 - 准备领取任务",
                     "2026-07-27 10:00:00.002 | INFO     | [api] main_api.jobs:claim:11 - 已领取任务 request_id=req-1",
+                    "2026-07-27 10:00:00.002 | INFO     | [worker] main_api.jobs:run:12 - 检索完成 | event=kc.discovery.completed | run_id=019f8eae-2c25-7d48-b044-350ec3f5a010 | task_id=019f8eae-2c25-7d48-b044-350ec3f5a011 | trace_id=trace-1",
                     "2026-07-27 10:00:00.003 | ERROR    | [worker] main_api.jobs:run:20 - 执行失败 error_id=019f8eae-2c25-7d48-b044-350ec3f5a001",
                     "Traceback (most recent call last):",
                     "  RuntimeError: boom",
@@ -86,6 +87,23 @@ class OperationsLogConsoleTest(unittest.TestCase):
         self.assertEqual(1, len(events))
         self.assertEqual("req-1", events[0]["request_id"])
 
+    def test_correlated_search_extracts_run_task_and_event(self):
+        events = self.service.search_correlated(
+            identifiers={
+                "019f8eae-2c25-7d48-b044-350ec3f5a010",
+            }
+        )
+        self.assertEqual(1, len(events))
+        self.assertEqual(
+            "019f8eae-2c25-7d48-b044-350ec3f5a010",
+            events[0]["run_id"],
+        )
+        self.assertEqual(
+            "019f8eae-2c25-7d48-b044-350ec3f5a011",
+            events[0]["task_id"],
+        )
+        self.assertEqual("kc.discovery.completed", events[0]["event_name"])
+
     def test_log_manager_separates_runtime_and_access(self):
         LogManager(
             LogConfig(
@@ -100,6 +118,13 @@ class OperationsLogConsoleTest(unittest.TestCase):
         ).setup()
 
         logger.info("解析器已启动")
+        with logger.contextualize(
+            correlation=(
+                " | run_id=019f8eae-2c25-7d48-b044-350ec3f5a010"
+                " | task_id=019f8eae-2c25-7d48-b044-350ec3f5a011"
+            )
+        ):
+            logger.info("模型调用完成")
         logger.bind(log_type="access").info(
             "API 访问 | status=200 | duration_ms=1.2"
         )
@@ -112,6 +137,8 @@ class OperationsLogConsoleTest(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertIn("[parser]", runtime)
         self.assertIn("解析器已启动", runtime)
+        self.assertIn("run_id=019f8eae-2c25-7d48-b044-350ec3f5a010", runtime)
+        self.assertIn("模型调用完成", runtime)
         self.assertNotIn("API 访问", runtime)
         self.assertIn("[parser]", access)
         self.assertIn("API 访问", access)

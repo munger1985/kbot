@@ -71,6 +71,28 @@ class AgentRunRepository:
             statement = statement.with_for_update()
         return (await self._session.execute(statement)).scalar_one_or_none()
 
+    async def list_scoped(
+        self,
+        *,
+        app_id: int,
+        domain_id: int,
+        limit: int = 50,
+    ) -> list[AgentRunEntity]:
+        """按 Domain 返回最近的 Run，供受控调试查询使用。"""
+        statement = (
+            select(AgentRunEntity)
+            .where(
+                AgentRunEntity.app_id == app_id,
+                AgentRunEntity.domain_id == domain_id,
+            )
+            .order_by(
+                AgentRunEntity.created_at.desc(),
+                AgentRunEntity.run_id.desc(),
+            )
+            .limit(limit)
+        )
+        return list((await self._session.execute(statement)).scalars())
+
 
 class AgentTaskRepository:
     _CLAIM_SCAN_LIMIT = 16
@@ -330,6 +352,19 @@ class AgentArtifactRepository:
         statement = (
             select(AgentArtifactEntity)
             .where(AgentArtifactEntity.task_id.in_(task_ids))
+            .order_by(
+                AgentArtifactEntity.created_at,
+                AgentArtifactEntity.artifact_id,
+            )
+        )
+        return list((await self._session.execute(statement)).scalars())
+
+    async def list_by_run(
+        self, *, run_id: UUID
+    ) -> list[AgentArtifactEntity]:
+        statement = (
+            select(AgentArtifactEntity)
+            .where(AgentArtifactEntity.run_id == run_id)
             .order_by(
                 AgentArtifactEntity.created_at,
                 AgentArtifactEntity.artifact_id,

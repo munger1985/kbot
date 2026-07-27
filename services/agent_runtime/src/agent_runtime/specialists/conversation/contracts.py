@@ -1,6 +1,12 @@
 """上下文问题改写的类型化输出。"""
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 
 class ContextRewriteOutput(BaseModel):
@@ -16,6 +22,16 @@ class ContextRewriteOutput(BaseModel):
         default=None, max_length=1000
     )
     memory_refs: tuple[str, ...] = ()
+
+    @field_validator(
+        "resolved_references", "memory_refs", mode="before"
+    )
+    @classmethod
+    def normalize_empty_optional_sequences(cls, value):
+        """容忍部分模型将空数组错误输出为空对象。"""
+        if value == {}:
+            return ()
+        return value
 
     @model_validator(mode="after")
     def validate_ambiguity(self):

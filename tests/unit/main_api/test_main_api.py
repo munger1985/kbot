@@ -102,6 +102,30 @@ class _FakeAgentRuntimeClient:
     async def is_ready(self):
         return True
 
+    async def list_debug_runs(self, *, limit, auth_context):
+        self.last_context = auth_context
+        return [
+            {
+                "run_id": str(self.run_id),
+                "status": "COMPLETED",
+                "original_input": "测试问题",
+            }
+        ]
+
+    async def get_debug_run(self, *, run_id, auth_context):
+        self.last_context = auth_context
+        return {
+            "run": {
+                "run_id": str(run_id),
+                "trace_id": "trace-debug",
+                "request_id": "request-debug",
+                "status": "COMPLETED",
+            },
+            "tasks": [],
+            "events": [],
+            "artifacts": [],
+        }
+
     def _agent(self):
         return {
             "agent_id": str(self.agent_id),
@@ -336,6 +360,22 @@ class MainApiTest(unittest.TestCase):
         self.assertEqual(200, response.status_code)
         self.assertIn("services", response.json())
 
+    def test_development_agent_run_console_is_domain_scoped(self) -> None:
+        response = self.client.get(
+            "/api/v1/development/agent-runs?limit=25",
+            headers=self._headers(),
+        )
+        self.assertEqual(200, response.status_code)
+        self.assertEqual(1, response.json()["count"])
+        detail = self.client.get(
+            f"/api/v1/development/agent-runs/{self.agent_runtime.run_id}",
+            headers=self._headers(),
+        )
+        self.assertEqual(200, detail.status_code)
+        self.assertEqual("COMPLETED", detail.json()["run"]["status"])
+        self.assertIn("logs", detail.json())
+        self.assertEqual("100", self.agent_runtime.last_context.domain_id)
+
     def test_invalid_domain_is_rejected_before_kc_call(self) -> None:
         response = self.client.get(
             "/api/v1/knowledge/collections",
@@ -391,6 +431,8 @@ class MainApiTest(unittest.TestCase):
         self.assertIn("/api/v1/agents", paths)
         self.assertIn("/api/v1/runs", paths)
         self.assertIn("/api/v1/development/logs/events", paths)
+        self.assertIn("/api/v1/development/agent-runs", paths)
+        self.assertIn("/api/v1/development/agent-runs/{run_id}", paths)
         self.assertFalse(any(path.startswith("/internal/") for path in paths))
 
     def test_agent_and_run_public_contracts(self) -> None:

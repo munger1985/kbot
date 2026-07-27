@@ -3,6 +3,8 @@
 from datetime import datetime, timedelta, timezone
 import unittest
 
+from pydantic import ValidationError
+
 from agent_runtime.application import TaskLease
 from agent_runtime.domain.planning import ExecutionMode
 from agent_runtime.domain.skills import (
@@ -12,6 +14,10 @@ from agent_runtime.domain.skills import (
     SkillRegistry,
 )
 from agent_runtime.runtime import AgentRuntimeWorker, SkillArtifact, SkillResult
+from agent_runtime.runtime.worker import _exception_detail
+from agent_runtime.specialists.conversation.contracts import (
+    ContextRewriteOutput,
+)
 from platform_core.identity import uuid7
 
 
@@ -47,6 +53,22 @@ class _RuntimeService:
 
 
 class AgentRuntimeWorkerTest(unittest.IsolatedAsyncioTestCase):
+    def test_validation_error_detail_contains_field_and_reason(self):
+        with self.assertRaises(ValidationError) as captured:
+            ContextRewriteOutput.model_validate(
+                {
+                    "raw_input": "问题",
+                    "standalone_query": "问题",
+                    "retrieval_queries": ["问题"],
+                    "resolved_references": {"错误": "对象"},
+                }
+            )
+
+        detail = _exception_detail(captured.exception)
+
+        self.assertIn("resolved_references", detail)
+        self.assertIn("valid tuple", detail)
+
     async def test_worker_executes_registered_skill_and_completes_task(self):
         registry = SkillRegistry()
         registry.register(

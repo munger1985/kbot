@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 ROOT = Path(__file__).resolve().parents[2]
 SCHEMA_ROOT = ROOT / "database" / "oracle"
-DEFAULT_CONFIG_PATH = SCHEMA_ROOT / "init_services.ini"
+DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent / "init_services.ini"
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
@@ -666,6 +666,21 @@ async def _seed_prompt_catalog(
                 },
             )
         if entry.active:
+            await connection.execute(
+                text(
+                    """
+                    UPDATE KBOT_PLATFORM_PROMPT_VERSION
+                    SET status = 'RETIRED'
+                    WHERE prompt_id = :prompt_id
+                      AND prompt_version_id <> :prompt_version_id
+                      AND status = 'ACTIVE'
+                    """
+                ),
+                {
+                    "prompt_id": prompt_id,
+                    "prompt_version_id": prompt_version_id,
+                },
+            )
             await connection.execute(
                 text(
                     """

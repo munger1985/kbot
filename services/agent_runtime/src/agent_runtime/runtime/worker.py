@@ -6,6 +6,7 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 
 from loguru import logger
+from pydantic import ValidationError
 
 from agent_runtime.application import (
     AppendTaskProgressCommand,
@@ -21,6 +22,23 @@ from agent_runtime.domain.skills import SkillRegistry
 from platform_core.identity import uuid7
 
 from .contracts import ExecutionContext, SkillProgress, SkillResult
+
+
+def _exception_detail(exc: Exception, *, limit: int = 1000) -> str:
+    """生成适合日志页面和任务状态展示的单行异常摘要。"""
+    if isinstance(exc, ValidationError):
+        details = []
+        for error in exc.errors(include_input=False, include_url=False):
+            location = ".".join(str(item) for item in error.get("loc", ()))
+            message = str(error.get("msg") or "校验失败")
+            error_type = str(error.get("type") or "validation_error")
+            details.append(
+                f"{location or '<root>'}: {message} [{error_type}]"
+            )
+        text = "; ".join(details)
+    else:
+        text = " ".join(str(exc).split())
+    return (text or type(exc).__name__)[:limit]
 
 
 class AgentRuntimeWorker:
@@ -67,7 +85,12 @@ class AgentRuntimeWorker:
         )
         if lease is None:
             return False
-        await self._execute_lease(lease)
+        correlation = (
+            f" | run_id={lease.run_id} | task_id={lease.task_id}"
+            f" | trace_id={lease.trace_id}"
+        )
+        with logger.contextualize(correlation=correlation):
+            await self._execute_lease(lease)
         return True
 
     async def _execute_lease(self, lease: TaskLease) -> None:
@@ -88,8 +111,10 @@ class AgentRuntimeWorker:
                 )
                 logger.info(
                     "Delegation Task 已转交 Reconciler："
-                    "task_id={} delegation_id={}",
+                    "run_id={} task_id={} trace_id={} delegation_id={}",
+                    lease.run_id,
                     lease.task_id,
+                    lease.trace_id,
                     delegation_id,
                 )
                 return
@@ -138,8 +163,11 @@ class AgentRuntimeWorker:
                 )
             )
             logger.info(
-                "Task 执行完成：task_id={} skill={}@{}",
+                "Task 执行完成 | event=agent.task.completed | run_id={} "
+                "| task_id={} | trace_id={} | skill={}@{}",
+                latest.run_id,
                 latest.task_id,
+                latest.trace_id,
                 manifest.skill_id,
                 manifest.version,
             )
@@ -147,6 +175,7 @@ class AgentRuntimeWorker:
             raise
         except Exception as exc:
             latest = current["lease"]
+            error_detail = _exception_detail(exc)
             retryable = bool(
                 manifest is not None
                 and manifest.idempotent
@@ -159,10 +188,15 @@ class AgentRuntimeWorker:
                 else None
             )
             logger.exception(
-                "Task 执行失败：task_id={} retryable={} error={}",
+                "Task 执行失败 | event=agent.task.failed | run_id={} "
+                "| task_id={} | trace_id={} | retryable={} "
+                "| error_type={} | error_detail={}",
+                latest.run_id,
                 latest.task_id,
+                latest.trace_id,
                 retryable,
                 type(exc).__name__,
+                error_detail,
             )
             try:
                 await self._runtime_service.fail_task(
@@ -172,7 +206,7 @@ class AgentRuntimeWorker:
                         worker_id=self._worker_id,
                         lease_token=latest.lease_token,
                         error_code=type(exc).__name__.upper(),
-                        error_message=str(exc)[:1000] or "Task 执行失败",
+                        error_message=error_detail,
                         retryable=retryable,
                         retry_at=retry_at,
                         actor_id=self._worker_id,
@@ -184,9 +218,14 @@ class AgentRuntimeWorker:
                 )
             except Exception as persist_exc:
                 logger.error(
-                    "Task 失败状态写回未成功：task_id={} error={}",
+                    "Task 失败状态写回未成功 | run_id={} "
+                    "| task_id={} | trace_id={} | error_type={} "
+                    "| error_detail={}",
+                    latest.run_id,
                     latest.task_id,
+                    latest.trace_id,
                     type(persist_exc).__name__,
+                    _exception_detail(persist_exc),
                 )
 
     async def _execute_with_heartbeat(

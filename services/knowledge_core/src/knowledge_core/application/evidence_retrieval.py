@@ -4,6 +4,8 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Any, Protocol, Sequence
 
+from loguru import logger
+
 from knowledge_core.application.query_embeddings import QueryEmbeddingProvider
 
 
@@ -173,22 +175,138 @@ class KnowledgeCoreEvidenceRetrievalService:
         query_vectors: dict[UUID, Sequence[float]] | None = None,
         max_evidence: int = 12, context_limit: int = 4, max_security_level: int = 3,
     ) -> list[CitationGroup]:
+        citations, _ = await self.retrieve_with_diagnostics(
+            scopes=scopes,
+            query=query,
+            query_vectors=query_vectors,
+            max_evidence=max_evidence,
+            context_limit=context_limit,
+            max_security_level=max_security_level,
+        )
+        return citations
+
+    async def retrieve_with_diagnostics(
+        self, *, scopes: Sequence[EvidenceScope], query: str,
+        query_vectors: dict[UUID, Sequence[float]] | None = None,
+        max_evidence: int = 12, context_limit: int = 4,
+        max_security_level: int = 3,
+    ) -> tuple[list[CitationGroup], dict[str, Any]]:
         if not query.strip() or not scopes:
             raise ValueError("query and scopes are required")
+        warnings: list[str] = []
         if self._query_embedding_provider is not None:
-            query_vectors = await self._query_embedding_provider.embed_for_collections(
-                query=query, collection_ids=[scope.collection_id for scope in scopes],
-            )
+            try:
+                query_vectors = (
+                    await self._query_embedding_provider.embed_for_collections(
+                        query=query,
+                        collection_ids=[
+                            scope.collection_id for scope in scopes
+                        ],
+                    )
+                )
+            except Exception as exc:
+                query_vectors = {}
+                warnings.append(
+                    "查询向量生成失败，已仅使用全文检索通道"
+                )
+                logger.exception(
+                    "KC Evidence 查询向量生成失败，已降级全文检索 | "
+                    "error_type={}",
+                    type(exc).__name__,
+                )
         anchors: list[EvidenceHit] = []
+        scope_reports: list[dict[str, Any]] = []
+        successful_channels = 0
+        first_failure: Exception | None = None
         for scope in scopes:
-            anchors.extend(await self._search_port.search_text(
-                scope=scope, query=query, limit=max_evidence, max_security_level=max_security_level,
-            ))
-            if query_vectors and scope.collection_id in query_vectors:
-                anchors.extend(await self._search_port.search_vector(
-                    scope=scope, vector=query_vectors[scope.collection_id],
-                    limit=max_evidence, max_security_level=max_security_level,
+            text_error = None
+            try:
+                text_hits = list(await self._search_port.search_text(
+                    scope=scope,
+                    query=query,
+                    limit=max_evidence,
+                    max_security_level=max_security_level,
                 ))
+                successful_channels += 1
+            except Exception as exc:
+                text_hits = []
+                text_error = type(exc).__name__
+                first_failure = first_failure or exc
+                warnings.append(
+                    f"Bundle {scope.bundle_id} 全文检索失败，"
+                    "已继续向量检索"
+                )
+                logger.exception(
+                    "KC Evidence 全文通道失败，已尝试继续 | "
+                    "bundle_id={} | error_type={}",
+                    scope.bundle_id,
+                    text_error,
+                )
+            anchors.extend(text_hits)
+            vector_hits: list[EvidenceHit] = []
+            vector_error = None
+            if query_vectors and scope.collection_id in query_vectors:
+                try:
+                    vector_hits = list(await self._search_port.search_vector(
+                        scope=scope,
+                        vector=query_vectors[scope.collection_id],
+                        limit=max_evidence,
+                        max_security_level=max_security_level,
+                    ))
+                    successful_channels += 1
+                except Exception as exc:
+                    vector_error = type(exc).__name__
+                    first_failure = first_failure or exc
+                    warnings.append(
+                        f"Bundle {scope.bundle_id} 向量检索失败，"
+                        "已保留全文结果"
+                    )
+                    logger.exception(
+                        "KC Evidence 向量通道失败，已尝试继续 | "
+                        "bundle_id={} | error_type={}",
+                        scope.bundle_id,
+                        vector_error,
+                    )
+                anchors.extend(vector_hits)
+            scope_reports.append(
+                {
+                    "collection_id": str(scope.collection_id),
+                    "bundle_id": str(scope.bundle_id),
+                    "text_hits": len(text_hits),
+                    "vector_hits": len(vector_hits),
+                    "vector_enabled": bool(
+                        query_vectors
+                        and scope.collection_id in query_vectors
+                    ),
+                    "text_error": text_error,
+                    "vector_error": vector_error,
+                }
+            )
+        if successful_channels == 0 and first_failure is not None:
+            raise first_failure
+        raw_anchor_count = len(anchors)
         anchors = _dedupe(anchors)[:max_evidence]
         contexts = await self._search_port.expand_context(anchors=anchors, limit=context_limit)
-        return build_citation_pack(assemble_groups(anchors, contexts, max_groups=max_evidence, context_items_per_group=context_limit))
+        groups = assemble_groups(
+            anchors,
+            contexts,
+            max_groups=max_evidence,
+            context_items_per_group=context_limit,
+        )
+        citations = build_citation_pack(groups)
+        return citations, {
+            "stage": "EVIDENCE",
+            "scopes": scope_reports,
+            "text_hits": sum(item["text_hits"] for item in scope_reports),
+            "vector_hits": sum(
+                item["vector_hits"] for item in scope_reports
+            ),
+            "raw_anchor_hits": raw_anchor_count,
+            "selected_anchors": len(anchors),
+            "expanded_contexts": len(contexts),
+            "evidence_groups": len(groups),
+            "citation_groups": len(citations),
+            "max_evidence": max_evidence,
+            "context_limit": context_limit,
+            "warnings": warnings,
+        }

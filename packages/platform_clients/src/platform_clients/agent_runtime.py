@@ -260,6 +260,24 @@ class AgentRuntimeClient:
             auth_context=auth_context,
         )
 
+    async def list_debug_runs(
+        self, *, limit: int, auth_context: AuthContext
+    ) -> list[dict[str, Any]]:
+        return await self._json(
+            "GET",
+            f"{INTERNAL_API_V1}/runs/development/recent?limit={limit}",
+            auth_context=auth_context,
+        )
+
+    async def get_debug_run(
+        self, *, run_id: UUID, auth_context: AuthContext
+    ) -> dict[str, Any]:
+        return await self._json(
+            "GET",
+            f"{INTERNAL_API_V1}/runs/{run_id}/development",
+            auth_context=auth_context,
+        )
+
     async def get_result(
         self, *, run_id: UUID, auth_context: AuthContext
     ) -> dict[str, Any]:

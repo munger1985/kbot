@@ -987,6 +987,11 @@ class AgentRuntimeService:
                         ),
                         "image_processing": image_processing,
                         "rerank": dict(report.get("rerank") or {}),
+                        "diagnostics": dict(
+                            report.get("diagnostics")
+                            or query_plan.get("diagnostics")
+                            or {}
+                        ),
                         "warnings": list(
                             retrieval_payload.get("warnings") or []
                         ),
@@ -1113,6 +1118,8 @@ class AgentRuntimeService:
             task.lease_owner = None
             task.lease_token = None
             task.lease_until = None
+            task.error_code = None
+            task.error_message = None
             task.row_version = int(task.row_version) + 1
             tasks = await uow.tasks.list_by_run(
                 run_id=run.run_id, lock=True
@@ -1391,6 +1398,163 @@ class AgentRuntimeService:
                 created_at=run.created_at,
                 completed_at=run.completed_at,
             )
+
+    async def list_debug_runs(
+        self,
+        *,
+        app_id: int,
+        domain_id: int,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        """返回开发调试台所需的最近 Run 摘要。"""
+        async with self._uow_factory() as uow:
+            if uow.runs is None:
+                raise RuntimeError("Agent Runtime Unit of Work 未初始化")
+            rows = await uow.runs.list_scoped(
+                app_id=app_id,
+                domain_id=domain_id,
+                limit=limit,
+            )
+            return [
+                {
+                    "run_id": row.run_id,
+                    "agent_id": row.agent_id,
+                    "actor_id": row.actor_id,
+                    "request_id": row.request_id,
+                    "trace_id": row.trace_id,
+                    "original_input": row.original_input,
+                    "status": row.status,
+                    "error_code": row.error_code,
+                    "created_at": row.created_at,
+                    "started_at": row.started_at,
+                    "completed_at": row.completed_at,
+                    "duration_ms": self._duration_ms(
+                        row.started_at or row.created_at,
+                        row.completed_at,
+                    ),
+                }
+                for row in rows
+            ]
+
+    async def get_debug_run(
+        self,
+        *,
+        run_id: UUID,
+        app_id: int,
+        domain_id: int,
+    ) -> dict[str, Any]:
+        """聚合 Run、Task、Event 与 Artifact，供开发调试台重放。"""
+        async with self._uow_factory() as uow:
+            if any(
+                repository is None
+                for repository in (
+                    uow.runs,
+                    uow.tasks,
+                    uow.events,
+                    uow.artifacts,
+                )
+            ):
+                raise RuntimeError("Agent Runtime Unit of Work 未初始化")
+            run = await uow.runs.get_scoped(
+                run_id=run_id,
+                app_id=app_id,
+                domain_id=domain_id,
+            )
+            if run is None:
+                raise AgentRuntimeNotFound()
+            tasks = await uow.tasks.list_by_run(run_id=run_id)
+            events = await uow.events.list_after(
+                run_id=run_id,
+                after_sequence=0,
+                limit=1000,
+            )
+            artifacts = await uow.artifacts.list_by_run(run_id=run_id)
+            return {
+                "run": {
+                    "run_id": run.run_id,
+                    "agent_id": run.agent_id,
+                    "parent_run_id": run.parent_run_id,
+                    "actor_id": run.actor_id,
+                    "request_id": run.request_id,
+                    "trace_id": run.trace_id,
+                    "original_input": run.original_input,
+                    "status": run.status,
+                    "row_version": int(run.row_version),
+                    "policy_snapshot": run.policy_snapshot_json,
+                    "config_snapshot": run.config_snapshot_json,
+                    "budget": run.budget_json,
+                    "error_code": run.error_code,
+                    "error_message": run.error_message,
+                    "created_at": run.created_at,
+                    "started_at": run.started_at,
+                    "completed_at": run.completed_at,
+                    "duration_ms": self._duration_ms(
+                        run.started_at or run.created_at,
+                        run.completed_at,
+                    ),
+                },
+                "tasks": [
+                    {
+                        "task_id": task.task_id,
+                        "task_key": task.task_key,
+                        "task_type": task.task_type,
+                        "skill_id": task.skill_id,
+                        "skill_version": task.skill_version,
+                        "status": task.status,
+                        "attempt": int(task.attempt),
+                        "max_attempts": int(task.max_attempts),
+                        "error_code": task.error_code,
+                        "error_message": task.error_message,
+                        "output_artifact_id": task.output_artifact_id,
+                        "created_at": task.created_at,
+                        "started_at": task.started_at,
+                        "completed_at": task.completed_at,
+                        "duration_ms": self._duration_ms(
+                            task.started_at or task.created_at,
+                            task.completed_at,
+                        ),
+                    }
+                    for task in tasks
+                ],
+                "events": [
+                    {
+                        "sequence_no": int(event.sequence_no),
+                        "task_id": event.task_id,
+                        "event_type": event.event_type,
+                        "payload": event.event_payload_json,
+                        "trace_id": event.trace_id,
+                        "created_at": event.created_at,
+                    }
+                    for event in events
+                ],
+                "artifacts": [
+                    {
+                        "artifact_id": artifact.artifact_id,
+                        "task_id": artifact.task_id,
+                        "artifact_type": artifact.artifact_type,
+                        "schema_version": artifact.schema_version,
+                        "producer": artifact.producer,
+                        "producer_version": artifact.producer_version,
+                        "payload": artifact.payload_json,
+                        "provenance": artifact.provenance_json,
+                        "content_hash": artifact.content_hash,
+                        "created_at": artifact.created_at,
+                    }
+                    for artifact in artifacts
+                ],
+            }
+
+    @staticmethod
+    def _duration_ms(
+        started_at: datetime | None,
+        completed_at: datetime | None,
+    ) -> float | None:
+        if started_at is None or completed_at is None:
+            return None
+        return round(
+            max(0.0, (completed_at - started_at).total_seconds() * 1000),
+            2,
+        )
 
     async def list_events(
         self,

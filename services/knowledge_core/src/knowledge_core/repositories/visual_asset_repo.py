@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from sqlalchemy import bindparam, delete, select, update
+from sqlalchemy import Float, bindparam, delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from knowledge_core.entities import (
@@ -89,7 +89,10 @@ class VisualAssetRepository:
         query_vector: list[float],
         limit: int,
     ) -> list[tuple[KcVisualAssetEntity, float]]:
-        distance = KcVisualAssetEntity.visual_embedding.op("<=>")(
+        distance = KcVisualAssetEntity.visual_embedding.op(
+            "<=>",
+            return_type=Float(),
+        )(
             bindparam("query_vector")
         )
         statement = (

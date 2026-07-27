@@ -43,7 +43,7 @@ knowledge_core_storage/
 # configuration files
 configuration/*.json
 *.toml
-!resources/prompts.toml
+!packages/platform_core/src/platform_core/resources/prompts.toml
 !resources/topology.toml
 # kbot.toml 属于当前部署，只提交 kbot.toml.example。
 CLAUDE.md

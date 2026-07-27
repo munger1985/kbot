@@ -4,11 +4,16 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import DateTime, Numeric, String, Text, func
+from sqlalchemy import Numeric, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from platform_core.identity import uuid7
-from platform_core.persistence.orm import BaseEntity, OracleNativeJSON, UUIDv7Type
+from platform_core.persistence.orm import (
+    BaseEntity,
+    OracleNativeJSON,
+    UniversalTimestamp,
+    UUIDv7Type,
+)
 
 
 class AgentDefinitionEntity(BaseEntity):
@@ -47,10 +52,10 @@ class AgentDefinitionEntity(BaseEntity):
     created_by: Mapped[str] = mapped_column(String(256), nullable=False)
     updated_by: Mapped[str] = mapped_column(String(256), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
+        UniversalTimestamp(timezone=True), server_default=func.now()
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
+        UniversalTimestamp(timezone=True),
         server_default=func.now(),
         onupdate=func.now(),
     )

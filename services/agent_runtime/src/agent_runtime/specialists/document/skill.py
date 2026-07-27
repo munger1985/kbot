@@ -90,9 +90,14 @@ class KnowledgeRetrievalSkill:
             max_security_level=self._security_level(context),
             per_collection_limit=retrieval_config["max_bundles"],
             do_rerank=retrieval_config["do_rerank"],
+            run_id=context.run_id,
+            task_id=context.task_id,
         )
         warnings.extend(discovery.get("warnings") or [])
         discovery_rerank = dict(discovery.get("rerank") or {})
+        discovery_diagnostics = dict(
+            discovery.get("diagnostics") or {}
+        )
         candidates = list(discovery.get("candidates") or [])
         candidates = self._merge_candidates(
             visual_hits,
@@ -109,6 +114,9 @@ class KnowledgeRetrievalSkill:
                     "image_processing": image_processing,
                     "do_rerank": retrieval_config["do_rerank"],
                     "rerank": {"discovery": discovery_rerank},
+                    "diagnostics": {
+                        "discovery": discovery_diagnostics,
+                    },
                 },
             )
 
@@ -134,9 +142,14 @@ class KnowledgeRetrievalSkill:
             max_evidence=retrieval_config["max_citations"],
             context_limit=retrieval_config["context_limit"],
             do_rerank=retrieval_config["do_rerank"],
+            run_id=context.run_id,
+            task_id=context.task_id,
         )
         warnings.extend(evidence.get("warnings") or [])
         evidence_rerank = dict(evidence.get("rerank") or {})
+        evidence_diagnostics = dict(
+            evidence.get("diagnostics") or {}
+        )
         raw_citations = list(evidence.get("citations") or [])
         citations = self._map_citations(
             raw_citations,
@@ -166,6 +179,10 @@ class KnowledgeRetrievalSkill:
                         "discovery": discovery_rerank,
                         "evidence": evidence_rerank,
                     },
+                    "diagnostics": {
+                        "discovery": discovery_diagnostics,
+                        "evidence": evidence_diagnostics,
+                    },
                 },
                 bundle_candidates=tuple(candidates),
                 citations=tuple(citations),
@@ -193,6 +210,10 @@ class KnowledgeRetrievalSkill:
                     "enabled": retrieval_config["do_rerank"],
                     "discovery": discovery_rerank,
                     "evidence": evidence_rerank,
+                },
+                "diagnostics": {
+                    "discovery": discovery_diagnostics,
+                    "evidence": evidence_diagnostics,
                 },
                 "visual_hit_count": len(visual_hits),
                 "vlm_description_count": len(vlm_descriptions),

@@ -33,6 +33,7 @@ class UiStaticPagesTest(unittest.TestCase):
             "index.html",
             "knowledge-core.html",
             "agent-chat.html",
+            "agent-debug.html",
             "operations-logs.html",
         ):
             page = UI_ROOT / page_name
@@ -68,6 +69,7 @@ class UiStaticPagesTest(unittest.TestCase):
                 "agent-select",
                 "conversation-select",
                 "turn-form",
+                "live-stream",
                 "timeline",
                 "result-output",
             },
@@ -79,6 +81,21 @@ class UiStaticPagesTest(unittest.TestCase):
                 "refresh-interval",
                 "log-rows",
                 "event-detail",
+            },
+            "agent-debug.html": {
+                "auth-form",
+                "run-filter-form",
+                "run-list",
+                "run-overview",
+                "run-timeline",
+                "tab-retrieval",
+                "tab-models",
+                "tab-tasks",
+                "tab-events",
+                "tab-artifacts",
+                "tab-logs",
+                "tab-errors",
+                "debug-detail",
             },
         }
         for page_name, expected in requirements.items():
@@ -93,6 +110,7 @@ class UiStaticPagesTest(unittest.TestCase):
             "shared.js",
             "knowledge-core.js",
             "agent-chat.js",
+            "agent-debug.js",
             "operations-logs.js",
         ):
             result = subprocess.run(
@@ -108,6 +126,15 @@ class UiStaticPagesTest(unittest.TestCase):
         self.assertIn('"X-KBot-Test-Auth": "true"', source)
         self.assertNotIn("Authorization:", source)
         self.assertNotIn("apiKey", source)
+
+    def test_agent_chat_defaults_to_full_test_security_visibility(self):
+        html = (UI_ROOT / "agent-chat.html").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(
+            'name="securityLevel" type="number" min="0" max="3" value="3"',
+            html,
+        )
 
     def test_knowledge_page_supports_direct_file_grouping(self):
         html = (UI_ROOT / "knowledge-core.html").read_text(
@@ -150,6 +177,15 @@ class UiStaticPagesTest(unittest.TestCase):
             self.assertIn(f'value="{value}"', html)
         self.assertIn("/api/v1/development/logs/events", script)
         self.assertIn("/api/v1/development/logs/services", script)
+
+    def test_agent_debug_page_uses_run_aggregation_api(self):
+        script = (UI_ROOT / "agent-debug.js").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("/api/v1/development/agent-runs", script)
+        self.assertIn("retrieval_report", script)
+        self.assertIn("diagnostics.discovery", script)
+        self.assertIn("diagnostics.evidence", script)
 
 
 if __name__ == "__main__":

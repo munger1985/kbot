@@ -10,7 +10,7 @@
     <!-- 目标：验证 Agent 配置、Conversation、SSE、Trace、引用和历史重放。 -->
     <header>
       <h1>Agent 问答测试</h1>
-      <nav><a href="./index.html">首页</a><a href="./knowledge-core.html">Knowledge Core</a></nav>
+      <nav><a href="./index.html">首页</a><a href="./knowledge-core.html">Knowledge Core</a><a href="./agent-debug.html">Run 调试台</a></nav>
     </header>
 
     <form id="auth-form" class="auth-bar">
@@ -53,7 +53,7 @@
           <div class="field"><label>问题</label><textarea name="input" required placeholder="例如：列出关于数据库性能优化的案例，并给出引用。"></textarea></div>
           <div class="field-row">
             <div class="field"><label>Collection IDs（逗号分隔，可空）</label><input name="collectionIds" /></div>
-            <div class="field"><label>security_level</label><input name="securityLevel" type="number" min="0" max="999" value="0" /></div>
+            <div class="field"><label>安全等级可见上限（测试默认 3）</label><input name="securityLevel" type="number" min="0" max="3" value="3" /></div>
           </div>
           <div class="field"><label>查询图片（可选，最多 8 张）</label><input name="images" type="file" accept="image/png,image/jpeg,image/webp" multiple /></div>
           <div class="actions">
@@ -72,8 +72,15 @@
       </section>
 
       <section class="panel span-5">
-        <h2>SSE 与 Trace</h2>
-        <div id="timeline" class="timeline"></div>
+        <h2>实时 Agent SSE</h2>
+        <p class="hint">按真实前端展示顺序输出公开思考、Skill、检索、回答增量与引用。</p>
+        <div id="live-stream" class="agent-stream">
+          <p class="muted">发送问题后将在这里显示实时回复。</p>
+        </div>
+        <details class="raw-sse">
+          <summary>查看原始 SSE / Trace</summary>
+          <div id="timeline" class="timeline"></div>
+        </details>
       </section>
     </main>
 

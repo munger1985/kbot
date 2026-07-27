@@ -130,7 +130,7 @@ class LogManager:
             "<level>{level: <8}</level> | "
             "[{extra[process]}] "
             "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - "
-            "<level>{message}</level>"
+            "<level>{message}</level>{extra[correlation]}"
         )
         self._access_format = (
             "{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | "
@@ -158,6 +158,7 @@ class LogManager:
                 "service": self.config.service,
                 "process": self.config.process,
                 "log_type": "runtime",
+                "correlation": "",
             }
         )
         logger.add(

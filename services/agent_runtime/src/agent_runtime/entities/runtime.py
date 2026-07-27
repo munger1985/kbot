@@ -4,11 +4,16 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import DateTime, Integer, Numeric, String, Text, func
+from sqlalchemy import Integer, Numeric, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from platform_core.identity import uuid7
-from platform_core.persistence.orm import BaseEntity, OracleNativeJSON, UUIDv7Type
+from platform_core.persistence.orm import (
+    BaseEntity,
+    OracleNativeJSON,
+    UniversalTimestamp,
+    UUIDv7Type,
+)
 
 
 class AgentRunEntity(BaseEntity):
@@ -43,23 +48,23 @@ class AgentRunEntity(BaseEntity):
         OracleNativeJSON, nullable=False
     )
     deadline_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True)
+        UniversalTimestamp(timezone=True)
     )
     final_task_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
     result_artifact_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
     error_code: Mapped[str | None] = mapped_column(String(128))
     error_message: Mapped[str | None] = mapped_column(String(1000))
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
+        UniversalTimestamp(timezone=True), server_default=func.now()
     )
     started_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True)
+        UniversalTimestamp(timezone=True)
     )
     completed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True)
+        UniversalTimestamp(timezone=True)
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
+        UniversalTimestamp(timezone=True),
         server_default=func.now(),
         onupdate=func.now(),
     )
@@ -113,27 +118,27 @@ class AgentTaskEntity(BaseEntity):
     lease_owner: Mapped[str | None] = mapped_column(String(256))
     lease_token: Mapped[UUID | None] = mapped_column(UUIDv7Type())
     lease_until: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True)
+        UniversalTimestamp(timezone=True)
     )
     next_retry_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True)
+        UniversalTimestamp(timezone=True)
     )
     cancel_requested_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True)
+        UniversalTimestamp(timezone=True)
     )
     error_code: Mapped[str | None] = mapped_column(String(128))
     error_message: Mapped[str | None] = mapped_column(String(1000))
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
+        UniversalTimestamp(timezone=True), server_default=func.now()
     )
     started_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True)
+        UniversalTimestamp(timezone=True)
     )
     completed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True)
+        UniversalTimestamp(timezone=True)
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
+        UniversalTimestamp(timezone=True),
         server_default=func.now(),
         onupdate=func.now(),
     )
@@ -164,10 +169,10 @@ class AgentArtifactEntity(BaseEntity):
         Integer, nullable=False, default=0
     )
     expires_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True)
+        UniversalTimestamp(timezone=True)
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
+        UniversalTimestamp(timezone=True), server_default=func.now()
     )
 
 
@@ -191,7 +196,7 @@ class AgentRunEventEntity(BaseEntity):
     actor_id: Mapped[str] = mapped_column(String(256), nullable=False)
     trace_id: Mapped[str] = mapped_column(String(128), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
+        UniversalTimestamp(timezone=True), server_default=func.now()
     )
 
 
@@ -214,7 +219,7 @@ class AgentDelegationEntity(BaseEntity):
         Numeric(19, 0), nullable=False, default=0
     )
     next_poll_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True)
+        UniversalTimestamp(timezone=True)
     )
     result_artifact_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
     attempt_count: Mapped[int] = mapped_column(
@@ -226,7 +231,7 @@ class AgentDelegationEntity(BaseEntity):
     lease_owner: Mapped[str | None] = mapped_column(String(256))
     lease_token: Mapped[UUID | None] = mapped_column(UUIDv7Type())
     lease_until: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True)
+        UniversalTimestamp(timezone=True)
     )
     error_code: Mapped[str | None] = mapped_column(String(128))
     error_message: Mapped[str | None] = mapped_column(String(1000))
@@ -234,14 +239,14 @@ class AgentDelegationEntity(BaseEntity):
         Numeric(19, 0), nullable=False, default=1
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
+        UniversalTimestamp(timezone=True), server_default=func.now()
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
+        UniversalTimestamp(timezone=True),
         server_default=func.now(),
         onupdate=func.now(),
     )
     completed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True)
+        UniversalTimestamp(timezone=True)
     )
     __mapper_args__ = {"version_id_col": row_version}

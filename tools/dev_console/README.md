@@ -26,6 +26,9 @@ Domain ID 和测试 User ID。
   也不构造 Asset。
 - `agent-chat.html`：选择 Agent、切换 `do_rerank`、创建 Conversation、提交文字
   或图片问题、读取带认证 Header 的 SSE、查看 Trace、历史和最终 Artifact。
+- `agent-debug.html`：按 Run 聚合 Task、Event、Artifact、KC 两阶段检索诊断、
+  LLM 重排报告和跨服务运行日志，用于重放一次聊天的完整执行过程。
+- `operations-logs.html`：不关联具体 Run 的通用日志文件浏览器。
 
 若页面通过 `file://` 直接打开，浏览器可能因 Origin/CORS 策略拒绝请求，因此应使用
 上面的 HTTP Server。
