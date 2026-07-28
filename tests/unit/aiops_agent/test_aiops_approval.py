@@ -113,7 +113,6 @@ class ApprovalServiceTest(unittest.TestCase):
         target = SimpleNamespace(
             target_id=target_id,
             status="ACTIVE",
-            execution_mode="AGENT_EXECUTE",
             execution_secret_ref="env://ORACLE_EXECUTION_SECRET",
             row_version=3,
             db_type="ORACLE",
@@ -124,7 +123,7 @@ class ApprovalServiceTest(unittest.TestCase):
         )
         binding = SimpleNamespace(
             status="ACTIVE",
-            access_mode="EXECUTE",
+            allow_mutation=True,
             allowed_actions_json=["db.session.terminate"],
             policy_id=uuid7(),
         )
@@ -293,7 +292,6 @@ class ExecutionClaimTest(unittest.TestCase):
         target = SimpleNamespace(
             target_id=target_id,
             status="ACTIVE",
-            execution_mode="AGENT_EXECUTE",
             execution_secret_ref="env://MYSQL_EXECUTION_SECRET",
             row_version=7,
             db_type="MYSQL",
@@ -309,7 +307,7 @@ class ExecutionClaimTest(unittest.TestCase):
         )
         binding = SimpleNamespace(
             status="ACTIVE",
-            access_mode="EXECUTE",
+            allow_mutation=True,
             allowed_actions_json=["db.session.terminate"],
             policy_id=uuid7(),
         )

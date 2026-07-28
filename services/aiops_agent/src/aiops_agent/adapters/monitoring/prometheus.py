@@ -6,6 +6,8 @@ import hashlib
 from datetime import UTC, datetime
 from typing import Any
 
+import aiohttp
+
 from aiops_agent.contracts.monitoring import (
     NormalizedMonitorEvent,
     NormalizedWebhookBatch,
@@ -19,6 +21,8 @@ from aiops_agent.ports.monitor import (
     AlertQueryResult,
     MetricQueryRequest,
     MetricQueryResult,
+    MonitorHealthRequest,
+    MonitorHealthResult,
     RawWebhookRequest,
 )
 
@@ -39,6 +43,56 @@ def _escape_prometheus_label(value: str) -> str:
 
 
 class PrometheusAdapter(BaseMonitorAdapter):
+    async def health_check(
+        self, request: MonitorHealthRequest
+    ) -> MonitorHealthResult:
+        """验证 Prometheus 查询 API，避免把 Exporter 误当成 Server。"""
+        try:
+            async with self._session.get(
+                (
+                    f"{self.context.endpoint.rstrip('/')}"
+                    "/api/v1/status/buildinfo"
+                ),
+                headers=self._headers(),
+                timeout=self._timeout,
+            ) as response:
+                if response.status in {401, 403}:
+                    return MonitorHealthResult(
+                        healthy=False,
+                        error_code="MONITOR_AUTH_FAILED",
+                        adapter_version=self.adapter_version,
+                    )
+                if response.status != 200:
+                    return MonitorHealthResult(
+                        healthy=False,
+                        error_code="MONITOR_API_UNAVAILABLE",
+                        adapter_version=self.adapter_version,
+                    )
+                payload = await response.json()
+                healthy = (
+                    isinstance(payload, dict)
+                    and payload.get("status") == "success"
+                    and isinstance(payload.get("data"), dict)
+                )
+                return MonitorHealthResult(
+                    healthy=healthy,
+                    error_code=(
+                        None if healthy else "MONITOR_RESPONSE_INVALID"
+                    ),
+                    adapter_version=self.adapter_version,
+                )
+        except (
+            aiohttp.ClientError,
+            TimeoutError,
+            ValueError,
+            TypeError,
+        ):
+            return MonitorHealthResult(
+                healthy=False,
+                error_code="MONITOR_UNREACHABLE",
+                adapter_version=self.adapter_version,
+            )
+
     async def query_alerts(
         self, request: AlertQueryRequest
     ) -> AlertQueryResult:

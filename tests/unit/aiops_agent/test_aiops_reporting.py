@@ -121,6 +121,102 @@ class InspectionReportPublishingTest(unittest.TestCase):
         uow.outbox.add.assert_awaited_once()
 
 
+class DiagnosisReportPublishingTest(unittest.TestCase):
+    def test_formal_diagnosis_is_published_without_replacing_chat_artifact(
+        self,
+    ) -> None:
+        run_id = uuid7()
+        target_id = uuid7()
+        task_id = uuid7()
+        source_id = uuid7()
+        created_at = datetime(2026, 7, 24, 1, tzinfo=UTC)
+        run = SimpleNamespace(
+            ops_run_id=run_id,
+            target_id=target_id,
+            created_at=created_at,
+            plan_snapshot_json={
+                "target": {"security_level": 3},
+                "diagnosis": {
+                    "question_summary": "分析数据库响应变慢"
+                },
+                "effective_capabilities": {
+                    "monitor_read": True,
+                    "database_read": True,
+                    "mutation_execute": False,
+                },
+            },
+        )
+        task = SimpleNamespace(ops_task_id=task_id)
+        source = SimpleNamespace(
+            artifact_id=source_id,
+            schema_version="DIAGNOSIS_REPORT_DRAFT.v1",
+            content_hash="a" * 64,
+            payload_json={
+                "status": "READY",
+                "output_kind": "DIAGNOSIS_REPORT",
+                "report_decision_reasons": ["ISSUE_DETECTED"],
+                "root_cause": {"effective_level": "PROBABLE"},
+                "diagnosis_rationale": "锁等待导致响应时间升高",
+                "facts": [
+                    {
+                        "fact_id": "fact-1",
+                        "fact_summary": "锁等待持续升高",
+                        "trust_level": "SOURCE_VERIFIED",
+                    }
+                ],
+                "gaps": [],
+                "solution": {
+                    "immediate_mitigations": ["确认阻塞源"],
+                    "long_term_remediations": ["优化事务边界"],
+                },
+                "model_receipt_hashes": ["b" * 64],
+            },
+        )
+
+        async def add_artifact(entity):
+            entity.artifact_id = uuid7()
+            return entity
+
+        async def publish_report(entity):
+            entity.is_current = 1
+            return entity
+
+        uow = SimpleNamespace(
+            inspections=SimpleNamespace(
+                publish_report=AsyncMock(side_effect=publish_report)
+            ),
+            runs=SimpleNamespace(
+                add_artifact=AsyncMock(side_effect=add_artifact),
+                append_event=AsyncMock(),
+            ),
+            outbox=SimpleNamespace(
+                add=AsyncMock(side_effect=lambda entity: entity)
+            ),
+        )
+        service = AIOpsRuntimeService(
+            uow_factory=AsyncMock(),
+            blueprint_registry=AsyncMock(),
+            handler_registry=AsyncMock(),
+        )
+        result = asyncio.run(
+            service._publish_diagnosis_report(
+                uow=uow,
+                run=run,
+                task=task,
+                source_artifact=source,
+                now=datetime(2026, 7, 24, 2, tzinfo=UTC),
+                trace_id="trace-diagnosis-report",
+            )
+        )
+        self.assertIsNone(result)
+        report = uow.inspections.publish_report.await_args.args[0]
+        self.assertEqual(report.report_type, "PERFORMANCE")
+        self.assertEqual(report.status, "READY")
+        content = uow.runs.add_artifact.await_args.args[0]
+        self.assertEqual(content.schema_version, "REPORT_CONTENT.v1")
+        self.assertIn("锁等待导致响应时间升高", content.payload_json["summary"])
+
+
 class ComparisonReportPublishingTest(unittest.TestCase):
     def test_verified_action_publishes_improved_comparison_report(
         self,
@@ -255,7 +351,7 @@ class ComparisonReportPublishingTest(unittest.TestCase):
         )
         self.assertEqual(report.ops_run_id, source_run_id)
         self.assertEqual(report.report_type, "COMPARISON")
-        self.assertEqual(report.result, "IMPROVED")
+        self.assertEqual(report.result, "RESOLVED")
         self.assertEqual(report.baseline_start, baseline_start)
         self.assertEqual(report.after_end, after_end)
         comparison_artifact = (
@@ -265,7 +361,7 @@ class ComparisonReportPublishingTest(unittest.TestCase):
             comparison_artifact.schema_version, "COMPARISON_RESULT.v1"
         )
         self.assertEqual(
-            comparison_artifact.payload_json["result"], "IMPROVED"
+            comparison_artifact.payload_json["result"], "RESOLVED"
         )
 
     def test_evidence_gap_forces_inconclusive_result(self) -> None:

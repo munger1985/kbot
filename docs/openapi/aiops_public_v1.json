@@ -4,21 +4,15 @@
       "AgentBindingCreate": {
         "additionalProperties": false,
         "properties": {
-          "access_mode": {
-            "default": "DIAGNOSE",
-            "enum": [
-              "OBSERVE",
-              "DIAGNOSE",
-              "PROPOSE",
-              "EXECUTE"
-            ],
-            "title": "Access Mode",
-            "type": "string"
-          },
           "agent_id": {
             "format": "uuid",
             "title": "Agent Id",
             "type": "string"
+          },
+          "allow_mutation": {
+            "default": false,
+            "title": "Allow Mutation",
+            "type": "boolean"
           },
           "allowed_actions": {
             "default": [],
@@ -79,22 +73,16 @@
       "AgentBindingPatch": {
         "additionalProperties": false,
         "properties": {
-          "access_mode": {
+          "allow_mutation": {
             "anyOf": [
               {
-                "enum": [
-                  "OBSERVE",
-                  "DIAGNOSE",
-                  "PROPOSE",
-                  "EXECUTE"
-                ],
-                "type": "string"
+                "type": "boolean"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Access Mode"
+            "title": "Allow Mutation"
           },
           "allowed_actions": {
             "anyOf": [
@@ -158,20 +146,14 @@
       "AgentBindingView": {
         "additionalProperties": false,
         "properties": {
-          "access_mode": {
-            "enum": [
-              "OBSERVE",
-              "DIAGNOSE",
-              "PROPOSE",
-              "EXECUTE"
-            ],
-            "title": "Access Mode",
-            "type": "string"
-          },
           "agent_id": {
             "format": "uuid",
             "title": "Agent Id",
             "type": "string"
+          },
+          "allow_mutation": {
+            "title": "Allow Mutation",
+            "type": "boolean"
           },
           "allowed_actions": {
             "default": [],
@@ -259,7 +241,7 @@
           "binding_id",
           "target_id",
           "agent_id",
-          "access_mode",
+          "allow_mutation",
           "status",
           "row_version",
           "created_at",
@@ -512,10 +494,13 @@
             ],
             "title": "Error"
           },
-          "format": {
-            "$ref": "#/components/schemas/ResultFormat"
+          "query_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Query Id",
+            "type": "string"
           },
-          "inline_data": {
+          "raw_output": {
             "anyOf": [
               {
                 "maxLength": 65536,
@@ -525,34 +510,15 @@
                 "type": "null"
               }
             ],
-            "title": "Inline Data"
-          },
-          "query_id": {
-            "maxLength": 256,
-            "minLength": 1,
-            "title": "Query Id",
-            "type": "string"
+            "title": "Raw Output"
           },
           "status": {
             "$ref": "#/components/schemas/ResultStatus"
-          },
-          "upload_id": {
-            "anyOf": [
-              {
-                "maxLength": 256,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Upload Id"
           }
         },
         "required": [
           "query_id",
-          "status",
-          "format"
+          "status"
         ],
         "title": "HitlResponseItem",
         "type": "object"
@@ -2329,6 +2295,72 @@
         "title": "OpsRunReceipt",
         "type": "object"
       },
+      "OpsRunResult": {
+        "additionalProperties": false,
+        "description": "对外返回 Run 的最终 Artifact 内容。",
+        "properties": {
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "final_artifact": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ArtifactRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ops_run_id": {
+            "format": "uuid",
+            "title": "Ops Run Id",
+            "type": "string"
+          },
+          "payload": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payload"
+          },
+          "root_cause_grade": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RootCauseGrade"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/OpsRunStatus"
+          }
+        },
+        "required": [
+          "ops_run_id",
+          "status"
+        ],
+        "title": "OpsRunResult",
+        "type": "object"
+      },
       "OpsRunStatus": {
         "enum": [
           "CREATED",
@@ -3244,15 +3276,6 @@
         "title": "ReportView",
         "type": "object"
       },
-      "ResultFormat": {
-        "enum": [
-          "JSON",
-          "CSV",
-          "TEXT"
-        ],
-        "title": "ResultFormat",
-        "type": "string"
-      },
       "ResultStatus": {
         "enum": [
           "SUCCEEDED",
@@ -3351,7 +3374,14 @@
             "type": "string"
           },
           "endpoint": {
-            "$ref": "#/components/schemas/TargetEndpoint"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TargetEndpoint"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "environment": {
             "enum": [
@@ -3360,15 +3390,6 @@
               "DEV"
             ],
             "title": "Environment",
-            "type": "string"
-          },
-          "execution_mode": {
-            "default": "ADVISORY",
-            "enum": [
-              "ADVISORY",
-              "AGENT_EXECUTE"
-            ],
-            "title": "Execution Mode",
             "type": "string"
           },
           "execution_secret_ref": {
@@ -3419,8 +3440,7 @@
           "target_key",
           "display_name",
           "db_type",
-          "environment",
-          "endpoint"
+          "environment"
         ],
         "title": "TargetCreate",
         "type": "object"
@@ -3457,18 +3477,17 @@
             "type": "string"
           },
           "endpoint": {
-            "$ref": "#/components/schemas/TargetEndpoint"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TargetEndpoint"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "environment": {
             "title": "Environment",
-            "type": "string"
-          },
-          "execution_mode": {
-            "enum": [
-              "ADVISORY",
-              "AGENT_EXECUTE"
-            ],
-            "title": "Execution Mode",
             "type": "string"
           },
           "execution_secret": {
@@ -3571,13 +3590,11 @@
           "display_name",
           "db_type",
           "environment",
-          "execution_mode",
           "status",
           "health_status",
           "row_version",
           "updated_at",
           "db_role",
-          "endpoint",
           "diagnostic_secret",
           "execution_secret",
           "security_level",
@@ -3766,21 +3783,6 @@
             ],
             "title": "Environment"
           },
-          "execution_mode": {
-            "anyOf": [
-              {
-                "enum": [
-                  "ADVISORY",
-                  "AGENT_EXECUTE"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Execution Mode"
-          },
           "execution_secret_ref": {
             "anyOf": [
               {
@@ -3843,14 +3845,6 @@
             "title": "Environment",
             "type": "string"
           },
-          "execution_mode": {
-            "enum": [
-              "ADVISORY",
-              "AGENT_EXECUTE"
-            ],
-            "title": "Execution Mode",
-            "type": "string"
-          },
           "health_status": {
             "enum": [
               "UNKNOWN",
@@ -3901,7 +3895,6 @@
           "display_name",
           "db_type",
           "environment",
-          "execution_mode",
           "status",
           "health_status",
           "row_version",
@@ -6408,6 +6401,49 @@
           }
         },
         "summary": "Get Pending Input",
+        "tags": [
+          "AIOps"
+        ]
+      }
+    },
+    "/api/v1/ops/runs/{run_id}/result": {
+      "get": {
+        "operationId": "get_ops_run_result_api_v1_ops_runs__run_id__result_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsRunResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Ops Run Result",
         "tags": [
           "AIOps"
         ]

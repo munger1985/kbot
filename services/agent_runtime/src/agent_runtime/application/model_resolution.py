@@ -17,6 +17,7 @@ AGENT_MODEL_ROLE_CATEGORIES = {
     "composer_llm": ModelCategory.LLM,
     "memory_llm": ModelCategory.LLM,
     "chart_llm": ModelCategory.LLM,
+    "diagnosis_llm": ModelCategory.LLM,
     "query_vlm": ModelCategory.VLM,
     "memory_embedding": ModelCategory.TXT_EMBEDDING,
 }

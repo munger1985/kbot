@@ -788,8 +788,16 @@ def build_multi_round_diagnosis_blueprint(
                 handler_version="1",
                 input_schema_version="INTERACTIVE_DIAGNOSIS_INPUT.v1",
                 output_schema_version="HITL_OUTCOME.v1",
-                depends_on=(prior_evidence, prior_assessment),
-                input_artifact_keys=(prior_evidence, prior_assessment),
+                depends_on=(
+                    prior_evidence,
+                    prior_assessment,
+                    *prior_plans,
+                ),
+                input_artifact_keys=(
+                    prior_evidence,
+                    prior_assessment,
+                    *prior_plans,
+                ),
                 timeout_seconds=30,
             ),
             TaskSpec(

@@ -35,9 +35,6 @@ class TargetEntity(BaseEntity):
     endpoint_json: Mapped[dict[str, Any] | None] = mapped_column(OracleNativeJSON)
     diagnostic_secret_ref: Mapped[str | None] = mapped_column(String(1024))
     execution_secret_ref: Mapped[str | None] = mapped_column(String(1024))
-    execution_mode: Mapped[str] = mapped_column(
-        String(16), nullable=False, default="ADVISORY"
-    )
     security_level: Mapped[int] = mapped_column(
         Numeric(3, 0), nullable=False, default=1
     )
@@ -121,7 +118,9 @@ class TargetBindingEntity(BaseEntity):
     )
     target_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
     agent_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
-    access_mode: Mapped[str] = mapped_column(String(16), nullable=False)
+    allow_mutation: Mapped[bool] = mapped_column(
+        Numeric(1, 0), nullable=False, default=False
+    )
     policy_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
     allowed_actions_json: Mapped[list[str] | None] = mapped_column(OracleNativeJSON)
     change_window_json: Mapped[dict[str, Any] | None] = mapped_column(

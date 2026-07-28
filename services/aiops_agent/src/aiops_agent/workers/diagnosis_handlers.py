@@ -10,6 +10,8 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
+from loguru import logger
+
 from aiops_agent.adapters.model_serving import AIOpsModelError
 from aiops_agent.contracts.diagnosis import (
     DiagnosisReportDraft,
@@ -17,6 +19,7 @@ from aiops_agent.contracts.diagnosis import (
     DiagnosisRoundAssessment,
     DiagnosisRoundDraft,
     DiagnosisScope,
+    DirectQuestionAnswer,
     EvidenceIndex,
     GroundingVerification,
     HypothesisAssessment,
@@ -169,10 +172,8 @@ class KnowledgeCitationHandler:
         )
         query = diagnosis["question_summary"] or "数据库故障诊断"
         if not collection_ids:
-            return KnowledgeCitationPack(
-                query=query,
-                gap_code="KNOWLEDGE_SCOPE_EMPTY",
-            )
+            # Collection 是可选的经验增强源；空范围表示仅依赖当前状态证据和模型。
+            return KnowledgeCitationPack(query=query)
         auth_context = create_service_auth_context(
             caller_service=self._caller,
             request_id=context.task_id,
@@ -277,6 +278,13 @@ class DiagnosisRoundDraftHandler:
                     )
                 },
                 "cost_level": item["cost_level"],
+                "returns": [
+                    {
+                        "name": column["name"],
+                        "type": column["logical_type"],
+                    }
+                    for column in item.get("output_columns", [])
+                ],
             }
             for item in context.plan_snapshot[
                 "database_diagnostics"
@@ -307,32 +315,89 @@ class DiagnosisRoundDraftHandler:
             ),
         }
         try:
-            result = await self._model.generate_structured(
-                purpose="diagnosis.round_draft",
-                output_model=DiagnosisRoundDraft,
-                model_snapshot=diagnosis["model"],
-                prompt_ref={**prompt.ref(), "content": prompt.content},
-                input_payload=input_payload,
-                max_output_tokens=diagnosis["budget"][
-                    "max_output_tokens_per_call"
-                ],
-                deadline=(
-                    _parse_time(context.deadline_at)
-                    if context.deadline_at
-                    else None
-                ),
-                idempotency_key=f"{context.task_id}:{context.attempt}",
+            request_payload = input_payload
+            for repair_count in range(2):
+                result = await self._model.generate_structured(
+                    purpose=(
+                        "diagnosis.round_draft"
+                        if repair_count == 0
+                        else "diagnosis.round_draft.repair"
+                    ),
+                    output_model=DiagnosisRoundDraft,
+                    model_snapshot=diagnosis["model"],
+                    prompt_ref={
+                        **prompt.ref(),
+                        "content": prompt.content,
+                    },
+                    input_payload=request_payload,
+                    max_output_tokens=diagnosis["budget"][
+                        "max_output_tokens_per_call"
+                    ],
+                    deadline=(
+                        _parse_time(context.deadline_at)
+                        if context.deadline_at
+                        else None
+                    ),
+                    idempotency_key=(
+                        f"{context.task_id}:{context.attempt}:"
+                        f"{repair_count}"
+                    ),
+                )
+                draft = DiagnosisRoundDraft.model_validate(
+                    result.output.model_dump()
+                )
+                try:
+                    if draft.round_no != round_no:
+                        raise ValueError("模型返回的诊断轮次不匹配")
+                    self._validate_fact_refs(draft, evidence)
+                    self._validate_tool_refs(draft, tool_cards)
+                except ValueError as exc:
+                    if repair_count > 0:
+                        raise
+                    logger.warning(
+                        "诊断假设输出需要修复：task_id={} round_no={} "
+                        "error={}",
+                        context.task_id,
+                        round_no,
+                        str(exc),
+                    )
+                    request_payload = {
+                        **input_payload,
+                        "validation_feedback": {
+                            "error": str(exc),
+                            "instruction": (
+                                "重新生成完整对象；tool_id 只能逐字选择 "
+                                "allowed_tool_ids 中的值"
+                            ),
+                            "allowed_tool_ids": [
+                                item["tool_id"] for item in tool_cards
+                            ],
+                        },
+                    }
+                    continue
+                receipt = result.receipt.model_copy(
+                    update={"repair_count": repair_count}
+                )
+                return draft.model_copy(
+                    update={"invocation_receipt": receipt}
+                )
+            raise ValueError("诊断假设修复后仍不满足约束")
+        except AIOpsModelError as exc:
+            logger.warning(
+                "诊断假设生成降级：task_id={} round_no={} code={} error={}",
+                context.task_id,
+                round_no,
+                exc.code,
+                str(exc),
             )
-            draft = DiagnosisRoundDraft.model_validate(
-                result.output.model_dump()
+            return self._fallback(round_no, exc.code)
+        except ValueError as exc:
+            logger.warning(
+                "诊断假设业务校验失败：task_id={} round_no={} error={}",
+                context.task_id,
+                round_no,
+                str(exc),
             )
-            if draft.round_no != round_no:
-                raise ValueError("模型返回的诊断轮次不匹配")
-            self._validate_fact_refs(draft, evidence)
-            return draft.model_copy(
-                update={"invocation_receipt": result.receipt}
-            )
-        except (AIOpsModelError, ValueError):
             return self._fallback(round_no, "MODEL_OUTPUT_INVALID")
 
     @staticmethod
@@ -355,6 +420,26 @@ class DiagnosisRoundDraftHandler:
             )
             if not refs <= valid:
                 raise ValueError("模型引用了不存在的 FactRef")
+
+    @staticmethod
+    def _validate_tool_refs(
+        draft: DiagnosisRoundDraft,
+        tool_cards: tuple[dict[str, Any], ...],
+    ) -> None:
+        allowed = {item["tool_id"] for item in tool_cards}
+        invalid = sorted(
+            {
+                request.tool_id
+                for request in draft.evidence_requests
+                if request.tool_id not in allowed
+            }
+        )
+        if invalid:
+            raise ValueError(
+                "模型请求了未登记工具："
+                f"{', '.join(invalid)}；允许工具："
+                f"{', '.join(sorted(allowed)) or '无'}"
+            )
 
 
 class EvidenceRequestValidatorHandler:
@@ -564,7 +649,24 @@ class DiagnosisRoundAssessmentHandler:
             return assessment.model_copy(
                 update={"invocation_receipt": result.receipt}
             )
-        except (AIOpsModelError, ValueError):
+        except AIOpsModelError as exc:
+            logger.warning(
+                "诊断轮次评估降级：task_id={} round_no={} code={} error={}",
+                context.task_id,
+                round_no,
+                exc.code,
+                str(exc),
+            )
+            return self._fallback(
+                draft, exc.code, round_no=round_no
+            )
+        except ValueError as exc:
+            logger.warning(
+                "诊断轮次评估业务校验失败：task_id={} round_no={} error={}",
+                context.task_id,
+                round_no,
+                str(exc),
+            )
             return self._fallback(
                 draft, "MODEL_OUTPUT_INVALID", round_no=round_no
             )
@@ -628,6 +730,10 @@ class InteractiveDiagnosisHandler:
         "SECRET_NOT_CONFIGURED",
         "DATABASE_ACCESS_DISABLED",
         "ENDPOINT_NOT_CONFIGURED",
+        "DIAGNOSTIC_ACCESS_DENIED",
+        "DIAGNOSTIC_POLICY_DENIED",
+        "DIAGNOSTIC_SECRET_MISSING",
+        "TARGET_ENDPOINT_MISSING",
     }
 
     def __init__(self, *, registry: DiagnosticRegistry):
@@ -642,20 +748,36 @@ class InteractiveDiagnosisHandler:
         evidence = EvidenceIndex.model_validate(
             _artifact(context, "EVIDENCE_INDEX.v1")
         )
+        direct_answer = DiagnosisReportHandler._direct_answer(
+            question=context.plan_snapshot.get("diagnosis", {}).get(
+                "question_summary"
+            ),
+            evidence=evidence,
+        )
         if (
             context.trigger_type != "CHAT"
             or assessment.recommended_next_step != "STOP_INCONCLUSIVE"
+            or (
+                direct_answer is not None
+                and direct_answer.status == "ANSWERED"
+            )
             or not self._requires_manual_input(evidence)
         ):
             return HitlOutcome(status="NOT_REQUIRED")
 
         database = context.plan_snapshot["database_diagnostics"]
         frozen_tools = tuple(database.get("tools", ()))
-        selected = self._select_tools(frozen_tools)
+        plans = tuple(
+            ValidatedEvidencePlan.model_validate(item)
+            for item in _artifacts(
+                context, "VALIDATED_EVIDENCE_PLAN.v1"
+            )
+        )
+        selected = self._select_tools(frozen_tools, plans)
         if not selected:
             return HitlOutcome(
                 status="NOT_REQUIRED",
-                gap_code="MANUAL_DIAGNOSTIC_CATALOG_EMPTY",
+                gap_code="MANUAL_DIAGNOSTIC_REQUEST_EMPTY",
             )
         hypotheses = tuple(
             item.hypothesis_key
@@ -705,7 +827,7 @@ class InteractiveDiagnosisHandler:
             instructions=(
                 "请使用目标数据库的只读账号逐条执行 SQL。",
                 "不要修改 SQL，也不要提交来自其他数据库实例的结果。",
-                "请将每条结果按原列名粘贴为 CSV 或 JSON 对象数组。",
+                "请直接粘贴数据库客户端的完整原始输出，不需要选择或转换格式。",
             ),
             expires_at=expires_at,
         )
@@ -716,7 +838,8 @@ class InteractiveDiagnosisHandler:
             prompt_text="自动诊断无法取得足够数据库证据，请手工执行只读 SQL。",
             response_schema={
                 "schema_version": "HITL_RESPONSE.v1",
-                "formats": ["CSV", "JSON"],
+                "input": "RAW_DATABASE_OUTPUT",
+                "auto_detect": True,
                 "query_ids": [item.query_id for item in queries],
             },
             request_artifact_type="MANUAL_SQL_REQUEST",
@@ -736,16 +859,22 @@ class InteractiveDiagnosisHandler:
     @staticmethod
     def _select_tools(
         frozen_tools: tuple[dict[str, Any], ...],
+        plans: tuple[ValidatedEvidencePlan, ...],
     ) -> tuple[dict[str, Any], ...]:
-        ordered = sorted(
-            frozen_tools,
-            key=lambda item: (
-                item["tool_id"] != "db.instance.identity",
-                item["tool_id"] != "db.session.active",
-                item["tool_id"],
-            ),
-        )
-        return tuple(ordered[:2])
+        by_id = {item["tool_id"]: item for item in frozen_tools}
+        selected: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for plan in reversed(plans):
+            for request in plan.accepted:
+                if request.tool_id in seen or request.tool_id not in by_id:
+                    continue
+                frozen = dict(by_id[request.tool_id])
+                frozen["parameters"] = dict(request.parameters)
+                selected.append(frozen)
+                seen.add(request.tool_id)
+                if len(selected) >= 3:
+                    return tuple(selected)
+        return tuple(selected)
 
     @staticmethod
     def _expected_identity(
@@ -863,7 +992,24 @@ class GroundingVerificationHandler:
             return verification.model_copy(
                 update={"invocation_receipt": result.receipt}
             )
-        except (AIOpsModelError, ValueError):
+        except AIOpsModelError as exc:
+            logger.warning(
+                "诊断引用检查降级：task_id={} code={} error={}",
+                context.task_id,
+                exc.code,
+                str(exc),
+            )
+            return GroundingVerification(
+                status="REVISE",
+                issues=("语义引用检查模型本次不可用",),
+                model_gap_code=exc.code,
+            )
+        except ValueError as exc:
+            logger.warning(
+                "诊断引用检查业务校验失败：task_id={} error={}",
+                context.task_id,
+                str(exc),
+            )
             return GroundingVerification(
                 status="REVISE",
                 issues=("语义引用检查模型本次不可用",),
@@ -904,6 +1050,278 @@ class SolutionDraftHandler:
 
 
 class DiagnosisReportHandler:
+    @staticmethod
+    def _output_decision(
+        *,
+        question: str,
+        trigger_type: str,
+        root_level: str,
+        has_direct_answer: bool,
+        has_recommendations: bool,
+        status: str,
+    ) -> tuple[str, str, tuple[str, ...], bool]:
+        """按问题、触发方式和诊断结果决定输出深度。"""
+        explicit_report = any(
+            keyword in question.lower()
+            for keyword in (
+                "报告",
+                "report",
+                "根因分析",
+                "故障分析",
+                "性能分析",
+                "巡检",
+            )
+        )
+        issue_detected = (
+            not has_direct_answer
+            and root_level
+            in {"CONFIRMED", "PROBABLE", "POSSIBLE"}
+        )
+        automatic_trigger = trigger_type in {"ALERT", "SCHEDULE"}
+        output_kind = (
+            "DIAGNOSIS_REPORT"
+            if explicit_report or issue_detected or automatic_trigger
+            else "SIMPLE_CONCLUSION"
+        )
+        decision_reasons = tuple(
+            reason
+            for condition, reason in (
+                (explicit_report, "USER_REQUESTED_REPORT"),
+                (issue_detected, "ISSUE_DETECTED"),
+                (automatic_trigger, "AUTOMATIC_TRIGGER"),
+                (
+                    not explicit_report
+                    and not issue_detected
+                    and not automatic_trigger,
+                    "INFORMATIONAL_QUERY",
+                ),
+            )
+            if condition
+        )
+        recommendation_level = (
+            "FULL"
+            if issue_detected
+            else "BRIEF"
+            if has_recommendations or status != "READY"
+            else "NONE"
+        )
+        return (
+            output_kind,
+            recommendation_level,
+            decision_reasons,
+            issue_detected,
+        )
+
+    _STORAGE_SUBJECTS = ("表空间", "存储空间", "磁盘空间", "storage")
+    _REMAINING_INTENTS = (
+        "还有多少",
+        "还剩",
+        "剩余",
+        "可用",
+        "余量",
+        "remaining",
+    )
+    _UTILIZATION_INTENTS = (
+        "使用率",
+        "占用率",
+        "用了多少",
+        "utilization",
+        "used percent",
+    )
+
+    @classmethod
+    def _direct_answer(
+        cls,
+        *,
+        question: str | None,
+        evidence: EvidenceIndex,
+    ) -> DirectQuestionAnswer | None:
+        """优先回答可由可信监控事实直接计算的问题。"""
+        normalized = (question or "").strip().lower()
+        asks_storage = any(
+            item in normalized for item in cls._STORAGE_SUBJECTS
+        )
+        asks_remaining = any(
+            item in normalized for item in cls._REMAINING_INTENTS
+        )
+        asks_utilization = any(
+            item in normalized for item in cls._UTILIZATION_INTENTS
+        )
+        if (
+            not normalized
+            or not asks_storage
+            or not (asks_remaining or asks_utilization)
+        ):
+            return None
+        series_facts = tuple(
+            item
+            for item in evidence.facts
+            if item.source_type == "MONITOR_METRIC"
+            and item.metric_or_fact_type
+            in {
+                "db.storage.utilization.series.last",
+                "db.storage.free_bytes.series.last",
+                "db.storage.max_bytes.series.last",
+            }
+            and isinstance(item.value, (int, float))
+            and bool(item.dimensions.get("tablespace"))
+        )
+        asks_bytes = any(
+            item in normalized
+            for item in ("gb", "tb", "字节", "容量", "多大")
+        )
+        limitation = (
+            "当前监控事实只有百分比口径，不能据此计算剩余 GB/TB。"
+        )
+        if series_facts:
+            by_tablespace: dict[str, dict[str, EvidenceFact]] = {}
+            for item in series_facts:
+                tablespace = str(item.dimensions["tablespace"])
+                by_tablespace.setdefault(tablespace, {})[
+                    item.metric_or_fact_type
+                ] = item
+            rows = []
+            refs = []
+            has_free_bytes = False
+
+            def _used_percent(item):
+                fact = item[1].get(
+                    "db.storage.utilization.series.last"
+                )
+                return float(fact.value) if fact is not None else -1.0
+
+            ordered_tablespaces = sorted(
+                by_tablespace.items(),
+                key=_used_percent,
+                reverse=True,
+            )
+            for tablespace, metrics in ordered_tablespaces:
+                utilization = metrics.get(
+                    "db.storage.utilization.series.last"
+                )
+                free_bytes = metrics.get(
+                    "db.storage.free_bytes.series.last"
+                )
+                max_bytes = metrics.get(
+                    "db.storage.max_bytes.series.last"
+                )
+                parts = []
+                if free_bytes is not None and asks_remaining:
+                    has_free_bytes = True
+                    parts.append(
+                        f"可用 {float(free_bytes.value) / (1024 ** 3):.2f} GiB"
+                    )
+                    refs.append(free_bytes.fact_id)
+                if max_bytes is not None:
+                    if asks_remaining:
+                        parts.append(
+                            f"最大 "
+                            f"{float(max_bytes.value) / (1024 ** 3):.2f} GiB"
+                        )
+                        refs.append(max_bytes.fact_id)
+                if utilization is not None:
+                    used = max(
+                        0.0, min(100.0, float(utilization.value))
+                    )
+                    if asks_utilization:
+                        parts.append(f"使用率 {used:.2f}%")
+                    if asks_remaining:
+                        parts.append(f"剩余 {100.0 - used:.2f}%")
+                    refs.append(utilization.fact_id)
+                if parts:
+                    rows.append(f"{tablespace}：{'，'.join(parts)}")
+            if rows:
+                bytes_gap = (
+                    "当前监控未提供表空间可用字节数，只能回答剩余百分比。"
+                )
+                status = (
+                    "ANSWERED"
+                    if has_free_bytes or not asks_bytes
+                    else "PARTIAL"
+                )
+                limitations = (
+                    (bytes_gap,)
+                    if asks_bytes and not has_free_bytes
+                    else ()
+                )
+                return DirectQuestionAnswer(
+                    answer_kind="MONITOR_FACT",
+                    status=status,
+                    question_summary=question or normalized,
+                    answer_text=(
+                        (
+                            "当前监控窗口内各表空间情况如下："
+                            if asks_utilization and asks_remaining
+                            else "当前监控窗口内各表空间使用率如下："
+                            if asks_utilization
+                            else "当前监控窗口内各表空间余量如下："
+                        )
+                        + "；".join(rows)
+                        + "。"
+                        + (
+                            f" {bytes_gap}"
+                            if asks_bytes and not has_free_bytes
+                            else ""
+                        )
+                    ),
+                    fact_refs=tuple(dict.fromkeys(refs)),
+                    limitations=limitations,
+                )
+        candidates = {
+            item.metric_or_fact_type: item
+            for item in evidence.facts
+            if item.source_type == "MONITOR_METRIC"
+            and item.metric_or_fact_type
+            in {
+                "db.storage.utilization.last",
+                "db.storage.utilization.max",
+                "db.storage.utilization.avg",
+            }
+            and isinstance(item.value, (int, float))
+        }
+        selected = next(
+            (
+                candidates[key]
+                for key in (
+                    "db.storage.utilization.last",
+                    "db.storage.utilization.max",
+                    "db.storage.utilization.avg",
+                )
+                if key in candidates
+            ),
+            None,
+        )
+        if selected is None:
+            return None
+        used_percent = max(0.0, min(100.0, float(selected.value)))
+        remaining_percent = 100.0 - used_percent
+        aggregate_limitation = (
+            "当前监控查询只保留了聚合值，Prometheus 结果中没有 "
+            "tablespace 标签，无法列出具体表空间名称。"
+        )
+        return DirectQuestionAnswer(
+            answer_kind="MONITOR_FACT",
+            status="PARTIAL",
+            question_summary=question or normalized,
+            answer_text=(
+                f"当前监控窗口内，最高表空间使用率聚合值为 "
+                f"{used_percent:.2f}%"
+                + (
+                    f"，对应剩余约 {remaining_percent:.2f}%"
+                    if asks_remaining
+                    else ""
+                )
+                + "。"
+                + f" {aggregate_limitation}"
+                + (f" {limitation}" if asks_bytes else "")
+            ),
+            fact_refs=(selected.fact_id,),
+            limitations=(
+                aggregate_limitation,
+                *((limitation,) if asks_bytes else ()),
+            ),
+        )
+
     async def execute(
         self, context: TaskExecutionContext
     ) -> DiagnosisReportDraft:
@@ -922,6 +1340,28 @@ class DiagnosisReportHandler:
         solution = SolutionDraft.model_validate(
             _artifact(context, "SOLUTION_DRAFT.v1")
         )
+        round_drafts = _artifacts(
+            context, "DIAGNOSIS_ROUND_DRAFT.v1"
+        )
+        evidence_plans = tuple(
+            ValidatedEvidencePlan.model_validate(item)
+            for item in _artifacts(
+                context, "VALIDATED_EVIDENCE_PLAN.v1"
+            )
+        )
+        drafts_with_hypotheses = tuple(
+            item for item in round_drafts if item.get("hypotheses")
+        )
+        latest_draft = (
+            DiagnosisRoundDraft.model_validate(
+                max(
+                    drafts_with_hypotheses or round_drafts,
+                    key=lambda item: int(item["round_no"]),
+                )
+            )
+            if round_drafts
+            else None
+        )
         model_gaps = tuple(
             code
             for code in (
@@ -939,23 +1379,95 @@ class DiagnosisReportHandler:
             if item is not None
         )
         receipt_hashes = tuple(_hash(item) for item in receipts)
+        direct_answer = self._direct_answer(
+            question=context.plan_snapshot["diagnosis"].get(
+                "question_summary"
+            ),
+            evidence=evidence,
+        )
         status = (
-            "DEGRADED"
+            (
+                "READY"
+                if direct_answer.status == "ANSWERED"
+                else "PARTIAL"
+            )
+            if direct_answer is not None
+            else "DEGRADED"
             if model_gaps
             else "PARTIAL"
             if evidence.gaps or root.effective_level == "INCONCLUSIVE"
             else "READY"
         )
+        question = str(
+            context.plan_snapshot["diagnosis"].get("question_summary") or ""
+        )
+        has_recommendations = bool(
+            solution.immediate_mitigations
+            or solution.long_term_remediations
+            or solution.candidate_action_template_refs
+        )
+        (
+            output_kind,
+            recommendation_level,
+            decision_reasons,
+            issue_detected,
+        ) = self._output_decision(
+            question=question,
+            trigger_type=context.trigger_type,
+            root_level=root.effective_level,
+            has_direct_answer=direct_answer is not None,
+            has_recommendations=has_recommendations,
+            status=status,
+        )
         return DiagnosisReportDraft(
             target_id=context.target_id,
             status=status,
+            output_kind=output_kind,
+            recommendation_level=recommendation_level,
+            report_decision_reasons=decision_reasons,
+            issue_detected=issue_detected,
             root_cause=root,
             facts=evidence.facts,
-            hypotheses=assessment.hypothesis_assessments,
-            solution=solution,
+            hypotheses=(
+                ()
+                if direct_answer is not None
+                else assessment.hypothesis_assessments
+            ),
+            hypothesis_details=(
+                ()
+                if direct_answer is not None
+                else latest_draft.hypotheses if latest_draft else ()
+            ),
+            diagnosis_rationale=(
+                None
+                if direct_answer is not None
+                else assessment.rationale_summary
+            ),
+            rejected_evidence_requests=tuple(
+                ()
+                if direct_answer is not None
+                else (
+                    request
+                    for plan in evidence_plans
+                    for request in plan.rejected
+                )
+            ),
+            direct_answer=direct_answer,
+            solution=(
+                SolutionDraft(limitations=direct_answer.limitations)
+                if direct_answer is not None
+                else solution
+            ),
             gaps=(
-                *model_gaps,
-                *(str(item.get("code", "EVIDENCE_GAP")) for item in evidence.gaps),
+                direct_answer.limitations
+                if direct_answer is not None
+                else (
+                    *model_gaps,
+                    *(
+                        str(item.get("code", "EVIDENCE_GAP"))
+                        for item in evidence.gaps
+                    ),
+                )
             ),
             verification=verification,
             model_receipt_hashes=receipt_hashes,

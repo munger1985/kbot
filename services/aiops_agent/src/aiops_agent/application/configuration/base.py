@@ -186,6 +186,7 @@ class ConfigurationServiceBase:
                     return response_type.model_validate(replay)
             raise state_conflict("配置自然键已存在或并发创建冲突") from exc
 
+    @staticmethod
     def _check_version(actual: int, expected: int) -> None:
         if int(actual) != expected:
             raise row_version_changed()

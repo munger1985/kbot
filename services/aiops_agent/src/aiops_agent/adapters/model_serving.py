@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from typing import Any, TypeVar
 
 import aiohttp
+from loguru import logger
 from pydantic import BaseModel, ValidationError
 
 from aiops_agent.contracts.diagnosis import ModelInvocationReceipt
@@ -20,9 +21,10 @@ OutputModel = TypeVar("OutputModel", bound=BaseModel)
 
 
 class AIOpsModelError(RuntimeError):
-    def __init__(self, code: str):
-        super().__init__(code)
+    def __init__(self, code: str, detail: str | None = None):
+        super().__init__(detail or code)
         self.code = code
+        self.detail = detail
 
 
 def _canonical_hash(value: Any) -> str:
@@ -75,10 +77,17 @@ class AIOpsStructuredModelClient:
             != prompt_ref["prompt_sha256"]
         ):
             raise AIOpsModelError("PROMPT_HASH_MISMATCH")
+        output_schema = output_model.model_json_schema()
+        structured_prompt = (
+            f"{prompt_content.rstrip()}\n\n"
+            "必须只返回一个 JSON 对象，不得添加 Markdown 代码块或解释文字。"
+            "返回对象必须严格满足以下 JSON Schema：\n"
+            f"{json.dumps(output_schema, ensure_ascii=False, separators=(',', ':'))}"
+        )
         request_payload = {
             "served_model_name": technical_name,
             "messages": [
-                {"role": "system", "content": prompt_content},
+                {"role": "system", "content": structured_prompt},
                 {
                     "role": "user",
                     "content": json.dumps(
@@ -92,14 +101,9 @@ class AIOpsStructuredModelClient:
             "stream": False,
             "temperature": 0,
             "max_tokens": max_output_tokens,
-            "response_format": {
-                "type": "json_schema",
-                "json_schema": {
-                    "name": output_model.__name__,
-                    "strict": True,
-                    "schema": output_model.model_json_schema(),
-                },
-            },
+            # OpenAI 兼容厂商对 json_schema 的支持并不一致。统一使用
+            # JSON Mode，并在本服务内执行同一份 Schema 的严格校验。
+            "response_format": {"type": "json_object"},
         }
         timeout = self._timeout_seconds
         if deadline is not None:
@@ -122,7 +126,19 @@ class AIOpsStructuredModelClient:
                 timeout=aiohttp.ClientTimeout(total=timeout),
             ) as response:
                 if response.status != 200:
-                    raise AIOpsModelError("MODEL_SERVICE_UNAVAILABLE")
+                    response_text = (await response.text())[:1000]
+                    logger.error(
+                        "AIOps 结构化模型调用失败：purpose={} model={} "
+                        "status={} response={}",
+                        purpose,
+                        technical_name,
+                        response.status,
+                        response_text,
+                    )
+                    raise AIOpsModelError(
+                        "MODEL_SERVICE_UNAVAILABLE",
+                        f"模型服务返回 HTTP {response.status}",
+                    )
                 envelope = await response.json()
         except AIOpsModelError:
             raise
@@ -133,8 +149,22 @@ class AIOpsStructuredModelClient:
             content = choice["message"]["content"]
             raw_output = json.loads(content)
             output = output_model.model_validate(raw_output)
-        except (KeyError, IndexError, TypeError, json.JSONDecodeError, ValidationError) as exc:
-            raise AIOpsModelError("MODEL_OUTPUT_INVALID") from exc
+        except (
+            KeyError,
+            IndexError,
+            TypeError,
+            json.JSONDecodeError,
+            ValidationError,
+        ) as exc:
+            logger.warning(
+                "AIOps 模型结构化输出校验失败：purpose={} model={} "
+                "schema={} error={}",
+                purpose,
+                technical_name,
+                output_model.__name__,
+                str(exc),
+            )
+            raise AIOpsModelError("MODEL_OUTPUT_INVALID", str(exc)) from exc
         usage = envelope.get("usage") or {}
         duration_ms = int((time.monotonic() - started) * 1000)
         receipt = ModelInvocationReceipt(

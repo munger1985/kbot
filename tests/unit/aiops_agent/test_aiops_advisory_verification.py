@@ -273,6 +273,64 @@ class AdvisoryVerificationOutboxTest(unittest.TestCase):
 
 
 class ProposalExpiryTest(unittest.TestCase):
+    def test_reconciler_expires_orphaned_hitl_without_reopening_run(
+        self,
+    ) -> None:
+        now = datetime(2026, 7, 24, 10, 0, tzinfo=UTC)
+        run = SimpleNamespace(
+            ops_run_id=uuid7(),
+            status="EXPIRED",
+        )
+        task = SimpleNamespace(
+            ops_task_id=uuid7(),
+            ops_run_id=run.ops_run_id,
+            status="EXPIRED",
+        )
+        hitl = SimpleNamespace(
+            hitl_id=uuid7(),
+            ops_task_id=task.ops_task_id,
+            status="PENDING",
+            expires_at=now - timedelta(seconds=1),
+            responded_by=None,
+            responded_at=None,
+            response_json=None,
+            response_hash=None,
+        )
+        uow = SimpleNamespace(
+            runs=SimpleNamespace(
+                database_now=AsyncMock(return_value=now),
+                lock_due_run=AsyncMock(return_value=None),
+                get_task=AsyncMock(return_value=task),
+                get_run=AsyncMock(return_value=run),
+                append_event=AsyncMock(),
+            ),
+            changes=SimpleNamespace(
+                find_expired_proposal=AsyncMock(return_value=None),
+                find_expired_hitl=AsyncMock(return_value=hitl),
+                get_hitl=AsyncMock(return_value=hitl),
+            ),
+            commit=AsyncMock(),
+        )
+        context = AsyncMock()
+        context.__aenter__.return_value = uow
+        service = AIOpsRuntimeService(
+            uow_factory=lambda: context,
+            blueprint_registry=AsyncMock(),
+            handler_registry=AsyncMock(),
+        )
+        worked = asyncio.run(
+            service.reconcile_once(trace_id="trace-orphan-hitl")
+        )
+        self.assertTrue(worked)
+        self.assertEqual(hitl.status, "EXPIRED")
+        self.assertEqual(run.status, "EXPIRED")
+        self.assertEqual(task.status, "EXPIRED")
+        self.assertEqual(
+            hitl.response_json["reason"],
+            "PARENT_STATE_NOT_WAITING_INPUT",
+        )
+        uow.commit.assert_awaited_once()
+
     def test_reconciler_expires_advisory_proposal(self) -> None:
         now = datetime(2026, 7, 24, 10, 0, tzinfo=UTC)
         proposal = SimpleNamespace(

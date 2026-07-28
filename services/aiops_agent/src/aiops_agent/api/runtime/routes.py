@@ -39,6 +39,7 @@ from platform_core.contracts.aiops.internal import (
 from platform_core.contracts.aiops.public import (
     InspectionFirePage,
     InspectionFireView,
+    OpsRunResult,
     OpsRunSummary,
     ReportPage,
     ReportVersionPage,
@@ -213,6 +214,28 @@ async def get_run(
     )
     _ensure_agent_authorized(context, result.agent_id)
     return result
+
+
+@router.get("/runs/{run_id}/result", response_model=OpsRunResult)
+async def get_run_result(
+    run_id: UUID,
+    request: Request,
+    service: Service,
+    context: Auth,
+) -> OpsRunResult:
+    require_service_scope(request, "aiops.run")
+    app_id, domain_id = _scope(request, context)
+    summary = await service.get_run(
+        ops_run_id=run_id,
+        app_id=app_id,
+        domain_id=domain_id,
+    )
+    _ensure_agent_authorized(context, summary.agent_id)
+    return await service.get_run_result(
+        ops_run_id=run_id,
+        app_id=app_id,
+        domain_id=domain_id,
+    )
 
 
 @router.get("/reports/{report_id}", response_model=ReportView)

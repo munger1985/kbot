@@ -273,7 +273,6 @@ class AIOpsChangeService:
             if (
                 target is None
                 or target.status != "ACTIVE"
-                or target.execution_mode != "AGENT_EXECUTE"
                 or not target.execution_secret_ref
             ):
                 raise state_conflict("Target 当前不允许受控执行")
@@ -290,7 +289,7 @@ class AIOpsChangeService:
             if (
                 binding is None
                 or binding.status != "ACTIVE"
-                or binding.access_mode != "EXECUTE"
+                or not bool(binding.allow_mutation)
                 or proposal.action_template_id
                 not in set(binding.allowed_actions_json or ())
             ):
@@ -792,7 +791,6 @@ class AIOpsChangeService:
             if (
                 target is None
                 or target.status != "ACTIVE"
-                or target.execution_mode != "AGENT_EXECUTE"
                 or not target.execution_secret_ref
                 or int(target.row_version) != int(token.target_version)
             ):
@@ -815,7 +813,7 @@ class AIOpsChangeService:
             if (
                 binding is None
                 or binding.status != "ACTIVE"
-                or binding.access_mode != "EXECUTE"
+                or not bool(binding.allow_mutation)
                 or proposal.action_template_id
                 not in set(binding.allowed_actions_json or ())
             ):

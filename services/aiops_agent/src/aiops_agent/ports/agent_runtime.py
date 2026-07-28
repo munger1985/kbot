@@ -14,3 +14,11 @@ class AgentRuntimePort(Protocol):
         domain_id: int,
         auth_context: AuthContext,
     ) -> None: ...
+
+    async def resolve_diagnosis_model(
+        self,
+        *,
+        agent_id: UUID,
+        domain_id: int,
+        trace_id: str,
+    ) -> dict[str, str]: ...

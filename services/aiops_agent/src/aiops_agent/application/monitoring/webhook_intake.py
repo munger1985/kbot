@@ -458,12 +458,6 @@ class MonitorWebhookIntakeService:
         if (
             binding is None
             or binding.status != "ACTIVE"
-            or binding.access_mode not in {
-                "OBSERVE",
-                "DIAGNOSE",
-                "PROPOSE",
-                "EXECUTE",
-            }
         ):
             return False
         minimum = "CRITICAL"

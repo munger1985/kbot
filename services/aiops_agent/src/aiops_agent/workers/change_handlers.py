@@ -132,8 +132,8 @@ class ActionPlanHandler:
             )
         can_execute = (
             self._execution_enabled
-            and target["execution_mode"] == "AGENT_EXECUTE"
-            and binding.get("access_mode") == "EXECUTE"
+            and binding.get("allow_mutation") is True
+            and bool(target.get("execution_secret_configured"))
             and policy.get("allow_agent_execution") is True
             and rendered.execution_capability
             == "EXECUTABLE_AFTER_APPROVAL"
@@ -163,7 +163,7 @@ class ActionPlanHandler:
             decision_reasons=(
                 "MUTATION_POLICY_ALLOWED"
                 if can_execute
-                else "ADVISORY_SAFETY_DOWNGRADE",
+                else "MUTATION_EXECUTION_UNAVAILABLE",
             ),
             policy_decision_hash=policy_hash,
             action_catalog_hash=self._registry.catalog_hash,

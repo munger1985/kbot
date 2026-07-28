@@ -744,6 +744,18 @@ class AIOpsManagementClient(_BaseAIOpsClient):
             auth_context=auth_context,
         )
 
+    async def get_run_result(
+        self,
+        run_id: UUID,
+        *,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "GET",
+            f"{INTERNAL_API_V1}/aiops/runs/{run_id}/result",
+            auth_context=auth_context,
+        )
+
     async def get_report(
         self,
         report_id: UUID,

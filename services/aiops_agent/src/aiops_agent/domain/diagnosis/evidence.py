@@ -23,6 +23,19 @@ def _digest(value: Any) -> str:
     return hashlib.sha256(_canonical(value)).hexdigest()
 
 
+def _text_chunks(
+    value: str,
+    *,
+    chunk_size: int = 1600,
+    max_chunks: int = 4,
+) -> tuple[str, ...]:
+    text = value.strip()
+    return tuple(
+        text[offset : offset + chunk_size]
+        for offset in range(0, min(len(text), chunk_size * max_chunks), chunk_size)
+    )
+
+
 def _fact(
     *,
     artifact_id: str,
@@ -221,6 +234,71 @@ def normalize_evidence_artifacts(
                             ),
                         )
                     )
+                if metric["metric_code"] in {
+                    "db.storage.utilization",
+                    "db.storage.free_bytes",
+                    "db.storage.max_bytes",
+                }:
+                    for series_index, series in enumerate(
+                        metric.get("series", [])
+                    ):
+                        last_point = next(
+                            (
+                                point
+                                for point in reversed(
+                                    series.get("points", [])
+                                )
+                                if point.get("quality") == "GOOD"
+                                and isinstance(
+                                    point.get("value"), (int, float)
+                                )
+                            ),
+                            None,
+                        )
+                        if last_point is None:
+                            continue
+                        dimensions = {
+                            **{
+                                str(key): str(value)
+                                for key, value in series.get(
+                                    "dimensions", {}
+                                ).items()
+                            },
+                            "source_id": str(metric["source_id"]),
+                            "binding_id": str(metric["binding_id"]),
+                        }
+                        tablespace = dimensions.get(
+                            "tablespace", f"series-{series_index + 1}"
+                        )
+                        facts.append(
+                            _fact(
+                                artifact_id=artifact_id,
+                                pointer=(
+                                    f"/observations/{metric_index}/series/"
+                                    f"{series_index}/points/-1"
+                                ),
+                                source_type="MONITOR_METRIC",
+                                source_group_id=source_group,
+                                target_id=target_id,
+                                fact_type=(
+                                    f"{metric['metric_code']}.series.last"
+                                ),
+                                value=last_point["value"],
+                                unit=metric.get("unit"),
+                                dimensions=dimensions,
+                                window_start=metric.get("window_start"),
+                                window_end=metric.get("window_end"),
+                                quality_flags=tuple(
+                                    sorted(set(flags))
+                                ),
+                                summary=(
+                                    f"表空间 {tablespace} 的 "
+                                    f"{metric['metric_code']}="
+                                    f"{last_point['value']} "
+                                    f"{metric.get('unit', '')}".strip()
+                                ),
+                            )
+                        )
             for alert_index, alert in enumerate(
                 payload.get("active_alerts", [])
             ):
@@ -296,6 +374,40 @@ def normalize_evidence_artifacts(
             prefix = artifact.get("_pointer_prefix", "")
             columns = payload.get("columns", [])
             source_group = f"user:{artifact_id}:{payload['query_id']}"
+            raw_chunks = _text_chunks(str(payload.get("raw_output") or ""))
+            for chunk_index, chunk in enumerate(raw_chunks):
+                pointer = f"{prefix}/raw_output/{chunk_index}"
+                basis = {
+                    "artifact_id": artifact_id,
+                    "pointer": pointer,
+                    "value": chunk,
+                }
+                facts.append(
+                    EvidenceFact(
+                        fact_id=_digest(basis),
+                        source_artifact_id=artifact_id,
+                        source_json_pointer=pointer,
+                        source_type="USER_RESULT",
+                        source_group_id=source_group,
+                        trust_level="USER_PROVIDED",
+                        target_id=target_id,
+                        observed_subject=target_id,
+                        metric_or_fact_type=payload["query_id"],
+                        value=chunk,
+                        quality_flags=tuple(
+                            sorted(
+                                {
+                                    *payload.get("quality_flags", ()),
+                                    "RAW_TEXT",
+                                }
+                            )
+                        ),
+                        fact_summary=(
+                            f"用户粘贴的 {payload['query_id']} 原始输出"
+                            f"（第 {chunk_index + 1} 段）：{chunk}"
+                        )[:2000],
+                    )
+                )
             for row_index, row in enumerate(payload.get("rows", [])):
                 row_value = dict(zip(columns, row, strict=True))
                 pointer = f"{prefix}/rows/{row_index}"

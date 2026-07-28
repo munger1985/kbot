@@ -35,6 +35,10 @@
     return normalized || null;
   }
 
+  function delay(milliseconds) {
+    return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+  }
+
   function option(value, label, selected) {
     return `<option value="${KBotUI.escapeHtml(value)}"${
       selected ? " selected" : ""
@@ -61,7 +65,12 @@
       const embeddings = models.filter(
         (item) => Number(item.category) === MODEL_CATEGORY.TXT_EMBEDDING
       );
-      for (const name of ["contextLlm", "composerLlm", "memoryLlm"]) {
+      for (const name of [
+        "diagnosisLlm",
+        "contextLlm",
+        "composerLlm",
+        "memoryLlm",
+      ]) {
         const select = $("#agent-form").elements[name];
         const current = select.value;
         select.innerHTML = llms
@@ -104,6 +113,9 @@
               item.agent_key
             )}</span></td>
             <td><span class="badge">${KBotUI.escapeHtml(item.status)}</span></td>
+            <td><span class="badge ${
+              item.models?.diagnosis_llm ? "" : "warning"
+            }">${item.models?.diagnosis_llm ? "已配置" : "缺失"}</span></td>
             <td><span class="tracking-id">${KBotUI.escapeHtml(
               item.agent_id
             )}</span></td>
@@ -115,9 +127,36 @@
       .forEach((row) =>
         row.addEventListener("click", () => {
           state.selectedAgentId = row.dataset.id;
+          populateSelectedAgentModels();
           renderAgents();
+          refreshBindingOverview();
         })
       );
+  }
+
+  function populateSelectedAgentModels() {
+    const agent = state.agents.find(
+      (item) => item.agent_id === state.selectedAgentId
+    );
+    if (!agent) return;
+    const roleFields = {
+      diagnosis_llm: "diagnosisLlm",
+      context_llm: "contextLlm",
+      composer_llm: "composerLlm",
+      memory_llm: "memoryLlm",
+      memory_embedding: "memoryEmbedding",
+    };
+    for (const [role, fieldName] of Object.entries(roleFields)) {
+      const modelId = agent.models?.[role];
+      if (modelId) $("#agent-form").elements[fieldName].value = modelId;
+    }
+    KBotUI.setStatus(
+      $("#agent-create-status"),
+      agent.models?.diagnosis_llm
+        ? `已载入 ${agent.display_name} 的模型配置`
+        : `${agent.display_name} 尚未配置 diagnosis_llm，请选择后点击更新`,
+      agent.models?.diagnosis_llm ? "ok" : ""
+    );
   }
 
   async function refreshAgents(preferredId) {
@@ -172,7 +211,7 @@
         ...state.monitors.map((item) =>
           option(
             item.source_id,
-            `${item.display_name} · ${item.source_type} · ${item.status}`,
+            `${item.display_name} · ${item.source_type} · ${item.status} / ${item.health_status}`,
             item.source_id === oldMonitor
           )
         ),
@@ -228,6 +267,7 @@
       refreshSources(),
       refreshCollections(),
     ]);
+    await refreshBindingOverview();
     await refreshReports();
   }
 
@@ -238,6 +278,74 @@
   $("#refresh-agents").addEventListener("click", () => refreshAgents());
   $("#refresh-sources").addEventListener("click", () => refreshSources());
   $("#refresh-collections").addEventListener("click", refreshCollections);
+
+  async function healthCheckAndEnable(sourceId) {
+    const status = $("#monitor-create-status");
+    if (!sourceId) {
+      throw new Error("请先选择监控源");
+    }
+    let source = await KBotUI.api(
+      `/api/v1/ops/monitor-sources/${sourceId}`
+    );
+    if (source.status === "ACTIVE" && source.health_status === "HEALTHY") {
+      KBotUI.setStatus(status, "监控源已经处于健康启用状态", "ok");
+      return source;
+    }
+    KBotUI.setStatus(status, "正在请求监控源健康检查…");
+    await KBotUI.api(
+      `/api/v1/ops/monitor-sources/${sourceId}/health-checks`,
+      {
+        method: "POST",
+        headers: {
+          "If-Match": `"rv-${source.row_version}"`,
+          "Idempotency-Key": KBotUI.idempotency("monitor-health"),
+        },
+      }
+    );
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      await delay(1000);
+      source = await KBotUI.api(
+        `/api/v1/ops/monitor-sources/${sourceId}`
+      );
+      if (!source.health_check_pending) break;
+      KBotUI.setStatus(
+        status,
+        `监控健康检查执行中… ${attempt + 1}/20`
+      );
+    }
+    if (source.health_check_pending) {
+      throw new Error("监控健康检查超时，请确认 AIOps Worker 正在运行");
+    }
+    if (source.health_status !== "HEALTHY") {
+      throw new Error(
+        `监控源健康检查失败：${source.last_error_code || source.health_status}`
+      );
+    }
+    if (source.status !== "ACTIVE") {
+      source = await KBotUI.api(
+        `/api/v1/ops/monitor-sources/${sourceId}/enable`,
+        {
+          method: "POST",
+          headers: {
+            "If-Match": `"rv-${source.row_version}"`,
+            "Idempotency-Key": KBotUI.idempotency("monitor-enable"),
+          },
+        }
+      );
+    }
+    KBotUI.setStatus(status, "监控源健康检查通过并已启用", "ok");
+    return source;
+  }
+
+  $("#enable-monitor").addEventListener("click", async () => {
+    const sourceId = selectValue("#monitor-select");
+    try {
+      await healthCheckAndEnable(sourceId);
+      await refreshSources(null, sourceId);
+    } catch (error) {
+      KBotUI.setStatus($("#monitor-create-status"), error.message, "error");
+    }
+  });
 
   $("#target-form").elements.dbType.addEventListener("change", (event) => {
     const form = $("#target-form");
@@ -264,6 +372,7 @@
           description: "面向数据库监控、根因诊断、方案与报告生成的独立 Agent",
           enabled_capabilities: ["aiops"],
           models: {
+            diagnosis_llm: form.elements.diagnosisLlm.value,
             context_llm: form.elements.contextLlm.value,
             composer_llm: form.elements.composerLlm.value,
             memory_llm: form.elements.memoryLlm.value,
@@ -284,6 +393,47 @@
     }
   });
 
+  $("#update-agent-models").addEventListener("click", async () => {
+    const agent = state.agents.find(
+      (item) => item.agent_id === state.selectedAgentId
+    );
+    const form = $("#agent-form");
+    const status = $("#agent-create-status");
+    if (!agent) {
+      KBotUI.setStatus(status, "请先在右侧选择要修改的 Agent", "error");
+      return;
+    }
+    KBotUI.setStatus(status, `正在更新 ${agent.display_name} 的模型配置…`);
+    try {
+      const payload = await KBotUI.api(
+        `/api/v1/agents/${agent.agent_id}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            expected_row_version: agent.row_version,
+            models: {
+              ...agent.models,
+              diagnosis_llm: form.elements.diagnosisLlm.value,
+              context_llm: form.elements.contextLlm.value,
+              composer_llm: form.elements.composerLlm.value,
+              memory_llm: form.elements.memoryLlm.value,
+              memory_embedding: form.elements.memoryEmbedding.value,
+            },
+          }),
+        }
+      );
+      await refreshAgents(payload.agent_id);
+      populateSelectedAgentModels();
+      KBotUI.setStatus(
+        status,
+        `${payload.display_name} 的 diagnosis_llm 已保存`,
+        "ok"
+      );
+    } catch (error) {
+      KBotUI.setStatus(status, error.message, "error");
+    }
+  });
+
   $("#target-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
@@ -293,6 +443,16 @@
     KBotUI.setStatus(status, "正在创建数据库目标…");
     try {
       const capabilities = JSON.parse(form.elements.capabilities.value || "{}");
+      const host = form.elements.host.value.trim();
+      const endpoint = host
+        ? {
+            host,
+            port: Number(form.elements.port.value),
+            service: dbType === "ORACLE" ? name : null,
+            database: dbType === "MYSQL" ? name : null,
+            tls_enabled: false,
+          }
+        : null;
       const payload = await KBotUI.api("/api/v1/ops/targets", {
         method: "POST",
         headers: {
@@ -305,18 +465,13 @@
           version_code: form.elements.versionCode.value.trim(),
           environment: form.elements.environment.value,
           db_role: "UNKNOWN",
-          endpoint: {
-            host: form.elements.host.value.trim(),
-            port: Number(form.elements.port.value),
-            service: dbType === "ORACLE" ? name : null,
-            database: dbType === "MYSQL" ? name : null,
-            tls_enabled: false,
-          },
+          endpoint,
           diagnostic_secret_ref: optionalValue(
             form.elements.diagnosticSecretRef.value
           ),
-          execution_secret_ref: null,
-          execution_mode: "ADVISORY",
+          execution_secret_ref: optionalValue(
+            form.elements.executionSecretRef.value
+          ),
           security_level: 1,
           capabilities,
         }),
@@ -353,7 +508,8 @@
       });
       form.elements.sourceKey.value = generatedKey("monitor");
       await refreshSources(null, payload.source_id);
-      KBotUI.setStatus(status, `已创建 ${payload.display_name}`, "ok");
+      await healthCheckAndEnable(payload.source_id);
+      await refreshSources(null, payload.source_id);
     } catch (error) {
       KBotUI.setStatus(status, error.message, "error");
     }
@@ -368,6 +524,96 @@
     }));
   }
 
+  async function refreshBindingOverview() {
+    const agentId = state.selectedAgentId;
+    const targetId = selectValue("#target-select");
+    const container = $("#binding-overview");
+    if (!agentId || !targetId) {
+      container.innerHTML =
+        '<p class="muted">选择 Agent 和数据库目标后显示现有绑定。</p>';
+      return;
+    }
+    container.innerHTML = '<p class="muted">正在读取既有绑定…</p>';
+    try {
+      const [agentBindings, monitorBindings, collectionPayload] =
+        await Promise.all([
+          KBotUI.api(
+            `/api/v1/ops/targets/${targetId}/agent-bindings`
+          ),
+          KBotUI.api(
+            `/api/v1/ops/targets/${targetId}/monitor-bindings`
+          ),
+          KBotUI.api(
+            `/api/v1/knowledge/agents/${agentId}/collection-bindings`
+          ),
+        ]);
+      const selectedAgentBindings = agentBindings.filter(
+        (item) => item.agent_id === agentId
+      );
+      const collectionBindings = collectionPayload.bindings || [];
+      const collectionName = (collectionId) =>
+        state.collections.find(
+          (item) => item.collection_id === collectionId
+        )?.display_name || collectionId;
+      const monitorName = (sourceId) =>
+        state.monitors.find((item) => item.source_id === sourceId)
+          ?.display_name || sourceId;
+      const cards = [
+        {
+          title: "Agent → Target",
+          rows: selectedAgentBindings.map(
+            (item) =>
+              `${item.status} · ${
+                item.allow_mutation ? "允许审批后变更" : "仅建议"
+              } · Policy ${
+                item.policy_id || "无"
+              }`
+          ),
+        },
+        {
+          title: "Target → Monitor",
+          rows: monitorBindings.map(
+            (item) =>
+              `${monitorName(item.source_id)} · ${item.status} · ${
+                item.external_target_key
+              }`
+          ),
+        },
+        {
+          title: "Agent → Collection",
+          rows: collectionBindings.map(
+            (item) =>
+              `${collectionName(item.collection_id)} · ${item.status}`
+          ),
+          empty: "未绑定（允许仅依赖 LLM 与实时证据）",
+        },
+      ];
+      container.innerHTML = cards
+        .map(
+          (card) => `
+            <article class="selection-card">
+              <span><strong>${KBotUI.escapeHtml(card.title)}</strong>
+              <small>${(card.rows.length
+                ? card.rows
+                : [card.empty || "未绑定"]
+              )
+                .map((row) => KBotUI.escapeHtml(row))
+                .join("<br>")}</small></span>
+            </article>`
+        )
+        .join("");
+    } catch (error) {
+      container.innerHTML = `<p class="status error">${KBotUI.escapeHtml(
+        error.message
+      )}</p>`;
+    }
+  }
+
+  $("#refresh-binding-overview").addEventListener(
+    "click",
+    refreshBindingOverview
+  );
+
   $("#bind-resources").addEventListener("click", async () => {
     const status = $("#binding-status");
     const agentId = state.selectedAgentId;
@@ -376,6 +622,17 @@
     const collections = selectedCollections();
     if (!agentId || !targetId) {
       KBotUI.setStatus(status, "请先选择 Agent 和数据库目标", "error");
+      return;
+    }
+    const selectedMonitor = state.monitors.find(
+      (item) => item.source_id === monitorId
+    );
+    if (monitorId && selectedMonitor?.status !== "ACTIVE") {
+      KBotUI.setStatus(
+        status,
+        "所选监控源尚未启用，请先点击“检查并启用”",
+        "error"
+      );
       return;
     }
     KBotUI.setStatus(status, "正在建立知识、策略和数据源绑定…");
@@ -435,7 +692,7 @@
           },
           body: JSON.stringify({
             agent_id: agentId,
-            access_mode: $("#access-mode").value,
+            allow_mutation: $("#allow-mutation").checked,
             policy_id: activePolicy.policy_id,
             allowed_actions: ["db.session.terminate"],
             change_window: null,
@@ -445,25 +702,49 @@
       );
       let monitorBinding = null;
       if (monitorId) {
-        monitorBinding = await KBotUI.api(
-          `/api/v1/ops/targets/${targetId}/monitor-bindings`,
-          {
-            method: "POST",
-            headers: {
-              "Idempotency-Key": KBotUI.idempotency(
-                "monitor-target-binding"
-              ),
-            },
-            body: JSON.stringify({
-              source_id: monitorId,
-              external_target_key: $("#external-target-key").value.trim(),
-              role: "PRIMARY",
-              priority: 100,
-              metric_scope: null,
-              mapping_overrides: null,
-            }),
-          }
+        const metricCodes = JSON.parse($("#metric-codes").value || "[]");
+        const mappingOverrides = JSON.parse(
+          $("#metric-mapping").value || "{}"
         );
+        const existingMonitorBindings = await KBotUI.api(
+          `/api/v1/ops/targets/${targetId}/monitor-bindings`
+        );
+        const existingMonitorBinding = existingMonitorBindings.find(
+          (item) => item.source_id === monitorId
+        );
+        const monitorPayload = {
+          external_target_key: $("#external-target-key").value.trim(),
+          role: "PRIMARY",
+          priority: 100,
+          metric_scope: { metric_codes: metricCodes },
+          mapping_overrides: mappingOverrides,
+        };
+        monitorBinding = existingMonitorBinding
+          ? await KBotUI.api(
+              `/api/v1/ops/targets/${targetId}/monitor-bindings/${existingMonitorBinding.binding_id}`,
+              {
+                method: "PATCH",
+                headers: {
+                  "If-Match": `"rv-${existingMonitorBinding.row_version}"`,
+                },
+                body: JSON.stringify(monitorPayload),
+              }
+            )
+          : await KBotUI.api(
+              `/api/v1/ops/targets/${targetId}/monitor-bindings`,
+              {
+                method: "POST",
+                headers: {
+                  "Idempotency-Key": KBotUI.idempotency(
+                    "monitor-target-binding"
+                  ),
+                },
+                body: JSON.stringify({
+                  source_id: monitorId,
+                  ...monitorPayload,
+                }),
+              }
+            );
       }
       const currentTarget = await KBotUI.api(
         `/api/v1/ops/targets/${targetId}`
@@ -486,6 +767,7 @@
         target: activeTarget,
       });
       await refreshSources(targetId, monitorId);
+      await refreshBindingOverview();
       KBotUI.setStatus(status, "全部绑定已完成，可开始诊断", "ok");
     } catch (error) {
       $("#binding-output").textContent = KBotUI.json(
@@ -550,6 +832,125 @@
     $("#raw-events").appendChild(row);
   }
 
+  function answerSection(title, values) {
+    const items = (Array.isArray(values) ? values : [])
+      .filter(Boolean)
+      .map((item) => `<li>${KBotUI.escapeHtml(String(item))}</li>`)
+      .join("");
+    return items ? `<section><h4>${KBotUI.escapeHtml(title)}</h4><ul>${items}</ul></section>` : "";
+  }
+
+  function renderRunResult(result) {
+    const payload = result.payload || {};
+    const root = payload.root_cause || {};
+    const solution = payload.solution || {};
+    const hypothesisDetails = payload.hypothesis_details || [];
+    const primaryHypothesis = hypothesisDetails.find(
+      (item) => item.hypothesis_key === root.primary_hypothesis_key
+    );
+    const facts = (payload.facts || []).map(
+      (item) => item.fact_summary || item.summary || JSON.stringify(item)
+    );
+    const grade = result.root_cause_grade || root.effective_level || "未定级";
+    const diagnosisState =
+      grade === "INCONCLUSIVE"
+        ? {
+            title: "诊断未形成结论",
+            detail:
+              "流程已正常执行完成，但现有证据不足以确认根因。这不是系统报错，需要补充下列证据后继续诊断。",
+            badge: "流程完成 · 证据不足（未确诊）",
+          }
+        : grade === "POSSIBLE"
+          ? {
+              title: "已形成初步判断",
+              detail: "当前只有可能性结论，仍需补充直接证据。",
+              badge: "流程完成 · 初步判断",
+            }
+          : {
+              title: "已形成诊断结论",
+              detail: `根因等级：${grade}`,
+              badge: `流程完成 · ${grade}`,
+            };
+    const rejectedRequests = (payload.rejected_evidence_requests || []).map(
+      (item) =>
+        `${item.request_key || "-"}：${item.tool_id || "-"}（${
+          item.reason_code || "REJECTED"
+        }）`
+    );
+    const rootSummary =
+      root.conclusion ||
+      root.root_cause ||
+      root.rationale_summary ||
+      root.summary ||
+      primaryHypothesis?.statement ||
+      (root.primary_hypothesis_key
+        ? `${root.effective_level || "未定级"}：${root.primary_hypothesis_key}`
+        : "");
+    const content = [
+      `<section><h4>${KBotUI.escapeHtml(
+        diagnosisState.title
+      )}</h4><p>${KBotUI.escapeHtml(diagnosisState.detail)}</p></section>`,
+      rootSummary
+        ? `<section><h4>根因结论</h4><p>${KBotUI.escapeHtml(rootSummary)}</p>${
+            primaryHypothesis?.mechanism
+              ? `<p class="muted">${KBotUI.escapeHtml(
+                  primaryHypothesis.mechanism
+                )}</p>`
+              : ""
+          }</section>`
+        : "",
+      payload.diagnosis_rationale
+        ? `<section><h4>诊断推理摘要</h4><p>${KBotUI.escapeHtml(
+            payload.diagnosis_rationale
+          )}</p></section>`
+        : "",
+      answerSection("关键证据", facts),
+      answerSection("立即缓解措施", solution.immediate_mitigations),
+      answerSection("长期改进建议", solution.long_term_remediations),
+      answerSection("验证方法", solution.verification_plan),
+      answerSection("风险", solution.risks),
+      answerSection("当前限制", [
+        ...(solution.limitations || []),
+        ...(payload.gaps || []),
+      ]),
+      answerSection("未执行的取证请求", rejectedRequests),
+    ].join("");
+
+    $("#answer-output").innerHTML =
+      content ||
+      `<p>${KBotUI.escapeHtml(
+        payload.summary || "最终产物已生成，请展开下方原始 Artifact 查看完整内容。"
+      )}</p>`;
+    $("#result-output").textContent = KBotUI.json(result);
+    $("#result-badge").textContent = diagnosisState.badge;
+  }
+
+  async function loadRunResult() {
+    if (!state.activeRunId) return;
+    try {
+      const result = await KBotUI.api(
+        `/api/v1/ops/runs/${state.activeRunId}/result`
+      );
+      renderRunResult(result);
+      addThought(
+        "AI 最终诊断已加载",
+        `最终产物：${result.final_artifact?.schema_version || "无"}`,
+        "done",
+        result.final_artifact?.artifact_id || ""
+      );
+    } catch (error) {
+      $("#result-output").textContent = KBotUI.json(
+        error.payload || { error: error.message }
+      );
+      $("#result-badge").textContent = "读取失败";
+      KBotUI.setStatus(
+        $("#run-status"),
+        `Run 已结束，但最终输出读取失败：${error.message}`,
+        "error"
+      );
+    }
+  }
+
   function firstQueryId(request) {
     const candidates = [
       ...(request?.queries || []),
@@ -587,7 +988,7 @@
       $("#approve-proposal").disabled = Boolean(advisory);
       $("#reject-proposal").disabled = Boolean(advisory);
       $("#proposal-hint").textContent = advisory
-        ? "当前为 ADVISORY：命令仅供人工评估和执行，不会由系统自动运行。"
+        ? "当前资源不具备自动变更能力：命令仅供人工评估和执行。"
         : "页面展示真实命令预览、风险与回滚方案；本次操作必须单独批准并留痕。";
       KBotUI.setStatus(
         $("#proposal-status"),
@@ -640,7 +1041,7 @@
     } else if (event.type === "proposal.advisory_ready") {
       addThought(
         "建议命令已生成",
-        "当前目标为 ADVISORY，系统只展示命令、风险和回滚方案，不会自动执行",
+        "当前资源不具备自动变更能力，系统只展示命令、风险和回滚方案",
         "done",
         payload.proposal_id
       );
@@ -672,6 +1073,7 @@
           event.type === "run.completed" ? "ok" : "error"
         );
         refreshRunSummary();
+        if (event.type === "run.completed") loadRunResult();
       }
     }
   }
@@ -707,7 +1109,9 @@
     }
   }
 
-  $("#question-form").addEventListener("submit", async (event) => {
+  const legacyQuestionForm = $("#question-form");
+  if (legacyQuestionForm) {
+    legacyQuestionForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
     const targetId = selectValue("#target-select");
@@ -722,6 +1126,10 @@
     $("#thought-stream").innerHTML =
       '<p class="muted">Run 已创建，等待 Worker 领取任务…</p>';
     $("#raw-events").innerHTML = "";
+    $("#answer-output").innerHTML =
+      '<p class="muted">正在等待诊断流程生成最终输出…</p>';
+    $("#result-output").textContent = "{}";
+    $("#result-badge").textContent = "生成中";
     $("#hitl-panel").hidden = true;
     $("#proposal-panel").hidden = true;
     KBotUI.setStatus($("#run-status"), "正在创建对话式诊断 Run…");
@@ -756,14 +1164,23 @@
       );
       KBotUI.setStatus($("#run-status"), error.message, "error");
     }
-  });
+    });
 
-  $("#stop-stream").addEventListener("click", () => {
+    $("#stop-stream").addEventListener("click", () => {
     state.streamController?.abort();
     KBotUI.setStatus($("#run-status"), "已停止监听；Run 不会被取消");
-  });
+    });
 
-  $("#hitl-form").addEventListener("submit", async (event) => {
+    $("#refresh-run-result").addEventListener("click", async () => {
+    if (!state.activeRunId) {
+      KBotUI.setStatus($("#run-status"), "当前页面还没有活动 Run", "error");
+      return;
+    }
+    await refreshRunSummary();
+    await loadRunResult();
+    });
+
+    $("#hitl-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     if (!state.activeHitl) return;
     const form = event.currentTarget;
@@ -782,9 +1199,7 @@
               {
                 query_id: form.elements.queryId.value.trim(),
                 status: "SUCCEEDED",
-                format: "TEXT",
-                upload_id: null,
-                inline_data: form.elements.inlineData.value,
+                raw_output: form.elements.inlineData.value,
                 error: null,
               },
             ],
@@ -803,9 +1218,9 @@
     } catch (error) {
       KBotUI.setStatus($("#hitl-status"), error.message, "error");
     }
-  });
+    });
 
-  $("#skip-hitl").addEventListener("click", async () => {
+    $("#skip-hitl").addEventListener("click", async () => {
     if (!state.activeHitl) return;
     try {
       await KBotUI.api(
@@ -823,9 +1238,9 @@
     } catch (error) {
       KBotUI.setStatus($("#hitl-status"), error.message, "error");
     }
-  });
+    });
 
-  $("#approve-proposal").addEventListener("click", async () => {
+    $("#approve-proposal").addEventListener("click", async () => {
     const proposal = state.activeProposal;
     if (!proposal) return;
     KBotUI.setStatus($("#proposal-status"), "正在提交单次审批…");
@@ -849,9 +1264,9 @@
     } catch (error) {
       KBotUI.setStatus($("#proposal-status"), error.message, "error");
     }
-  });
+    });
 
-  $("#reject-proposal").addEventListener("click", async () => {
+    $("#reject-proposal").addEventListener("click", async () => {
     const proposal = state.activeProposal;
     if (!proposal) return;
     const reason = $("#proposal-note").value.trim();
@@ -878,7 +1293,8 @@
     } catch (error) {
       KBotUI.setStatus($("#proposal-status"), error.message, "error");
     }
-  });
+    });
+  }
 
   async function refreshReports(preferredReportId) {
     const targetId = selectValue("#target-select");
@@ -939,7 +1355,10 @@
 
   $("#refresh-reports").addEventListener("click", () => refreshReports());
   $("#report-type").addEventListener("change", () => refreshReports());
-  $("#target-select").addEventListener("change", () => refreshReports());
+  $("#target-select").addEventListener("change", () => {
+    refreshReports();
+    refreshBindingOverview();
+  });
 
   $("#inspection-form").addEventListener("submit", async (event) => {
     event.preventDefault();

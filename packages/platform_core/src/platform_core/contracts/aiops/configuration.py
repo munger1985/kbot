@@ -21,8 +21,6 @@ from .types import (
 
 TargetStatus = Literal["ACTIVE", "MAINTENANCE", "DISABLED"]
 HealthStatus = Literal["UNKNOWN", "HEALTHY", "DEGRADED", "UNREACHABLE"]
-TargetExecutionMode = Literal["ADVISORY", "AGENT_EXECUTE"]
-AccessMode = Literal["OBSERVE", "DIAGNOSE", "PROPOSE", "EXECUTE"]
 BindingStatus = Literal["ACTIVE", "REVOKED"]
 MonitorStatus = Literal["ACTIVE", "DISABLED"]
 PolicyStatus = Literal["DRAFT", "ACTIVE", "RETIRED"]
@@ -70,15 +68,16 @@ class TargetCreate(AIOpsContract):
     version_code: str | None = Field(default=None, max_length=64)
     environment: Literal["PROD", "STG", "DEV"]
     db_role: Literal["PRIMARY", "STANDBY", "UNKNOWN"] = "UNKNOWN"
-    endpoint: TargetEndpoint
+    endpoint: TargetEndpoint | None = None
     diagnostic_secret_ref: SecretRef | None = None
     execution_secret_ref: SecretRef | None = None
-    execution_mode: TargetExecutionMode = "ADVISORY"
     security_level: int = Field(default=1, ge=0, le=999)
     capabilities: JsonObject = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def validate_database_endpoint(self) -> "TargetCreate":
+        if self.endpoint is None:
+            return self
         if self.db_type == DatabaseType.ORACLE:
             if not self.endpoint.service or self.endpoint.database:
                 raise ValueError("Oracle Endpoint 必须只设置 service")
@@ -96,7 +95,6 @@ class TargetPatch(AIOpsContract):
     endpoint: TargetEndpoint | None = None
     diagnostic_secret_ref: SecretRef | None = None
     execution_secret_ref: SecretRef | None = None
-    execution_mode: TargetExecutionMode | None = None
     security_level: int | None = Field(default=None, ge=0, le=999)
     capabilities: JsonObject | None = None
 
@@ -108,7 +106,6 @@ class TargetSummary(AIOpsContract):
     display_name: str
     db_type: DatabaseType
     environment: str
-    execution_mode: TargetExecutionMode
     status: TargetStatus
     health_status: HealthStatus
     row_version: int = Field(ge=1)
@@ -118,7 +115,7 @@ class TargetSummary(AIOpsContract):
 class TargetDetail(TargetSummary):
     version_code: str | None = None
     db_role: str
-    endpoint: TargetEndpoint
+    endpoint: TargetEndpoint | None = None
     diagnostic_secret: SecretRefStatus
     execution_secret: SecretRefStatus
     security_level: int
@@ -139,7 +136,7 @@ class TargetPage(CursorPage):
 class AgentBindingCreate(AIOpsContract):
     schema_version: str = PUBLIC_SCHEMA_VERSION
     agent_id: UUIDv7
-    access_mode: AccessMode = "DIAGNOSE"
+    allow_mutation: bool = False
     policy_id: UUIDv7 | None = None
     allowed_actions: tuple[str, ...] = ()
     change_window: JsonObject | None = None
@@ -148,7 +145,7 @@ class AgentBindingCreate(AIOpsContract):
 
 class AgentBindingPatch(AIOpsContract):
     schema_version: str = PUBLIC_SCHEMA_VERSION
-    access_mode: AccessMode | None = None
+    allow_mutation: bool | None = None
     policy_id: UUIDv7 | None = None
     allowed_actions: tuple[str, ...] | None = None
     change_window: JsonObject | None = None
@@ -160,7 +157,7 @@ class AgentBindingView(AIOpsContract):
     binding_id: UUIDv7
     target_id: UUIDv7
     agent_id: UUIDv7
-    access_mode: AccessMode
+    allow_mutation: bool
     policy_id: UUIDv7 | None = None
     allowed_actions: tuple[str, ...] = ()
     change_window: JsonObject | None = None

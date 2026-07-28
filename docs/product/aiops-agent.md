@@ -22,7 +22,7 @@ Prometheus、Zabbix、OEM 和可选数据库连接，对 Oracle/MySQL 的性能�
 | 根因分析 | 假设、支持证据、反证、数据缺口和根因等级 |
 | 人机协作 | Chat 中请求用户执行只读 SQL 并回贴，可多轮恢复 |
 | 解决方案 | 缓解建议、长期修复、验证和回滚方案 |
-| 受控执行 | Advisory 或每条命令一次审批的 Agent Execute |
+| 受控执行 | 动态能力判定；允许变更时仍须每条命令单独审批 |
 | 报告 | Incident、Performance、Daily、Weekly、Comparison |
 | 审计 | Run、Task、Artifact、Policy、审批、执行和验证全链路 |
 
@@ -85,9 +85,11 @@ flowchart TD
     V --> C[补充采集]
     C --> A[评估支持证据与反证]
     A --> R[根因等级判定]
-    R --> Q[解决方案与验证计划]
-    Q --> P{是否需要变更}
-    P -- 否 --> REP[结构化诊断报告]
+    R --> Q[按问题决定简单结论或完整建议]
+    Q --> P{是否发现问题且需要变更}
+    P -- 否 --> REP{是否需要正式报告}
+    REP -- 否 --> A1[对话结论]
+    REP -- 是 --> A2[结构化诊断报告]
     P -- 是 --> CP[Action Plan / Change Proposal]
 ```
 
@@ -147,8 +149,8 @@ sequenceDiagram
     O-->>U: diagnostic.input_required + hitl_id
     U->>O: 获取受控只读 SQL
     U->>DB: 手工执行
-    U->>O: 回贴表格/CSV/错误
-    O->>O: 校验列、类型、大小和敏感数据
+    U->>O: 直接粘贴 SQL*Plus、表格、说明或错误文本
+    O->>O: 宽松解析并保留原文、来源和内容 Hash
     O->>O: 形成 USER_PROVIDED Evidence 并恢复原 Run
     alt 证据仍不足
         O-->>U: 下一轮最小诊断 SQL
@@ -162,18 +164,22 @@ sequenceDiagram
 永远不会转交 Executor。此循环只对 Chat 生效。Alert/Schedule 不创建人工 SQL
 请求，而是保存数据缺口并正常结束为部分报告。
 
-## 建议、审批和实际执行
+## 动态能力、建议、审批和实际执行
 
-Target 可配置两种模式：
+AIOps Agent 不再配置 `OBSERVE / DIAGNOSE / PROPOSE / EXECUTE` 类型。每次
+Run 根据当前绑定和可用资源计算有效能力：
 
-### `ADVISORY`
+- 有监控源即可采集指标；
+- 有数据库 Endpoint 和只读凭据时，`SELECT/WITH` 可自动执行；
+- Chat 中数据库不可直连或证据不足时，转为人工补证；
+- “允许 Agent 执行变更”开关关闭、没有执行凭据或策略不允许时，只生成建议；
+- 开关开启且执行资源完整时，也只能逐条审批后执行非只读命令。
 
-系统生成版本化命令、影响、风险、前置条件、验证和回滚方案，但不执行。用户处理
-后回填结果，系统再通过监控或只读数据库验证。
+建议深度同样由问题决定：事实查询优先直接回答；发现性能或故障问题时生成完整
+缓解、修复、风险、回滚和验证建议。用户明确要求报告、自动告警/巡检触发，或
+诊断发现问题时，才发布正式报告；普通问答只保存可追溯结论。
 
-### `AGENT_EXECUTE`
-
-每条变更命令单独形成 Change Proposal：
+每条实际变更命令单独形成 Change Proposal：
 
 ```text
 Diagnosis
@@ -200,9 +206,9 @@ Diagnosis
 2. 等待配置的系统稳定时间；
 3. 使用相同时长、单位和聚合方式采集处理后数据；
 4. 比较主指标、告警状态和护栏指标；
-5. 输出 `IMPROVED / UNCHANGED / DEGRADED / INCONCLUSIVE`。
+5. 输出 `RESOLVED / IMPROVED / UNCHANGED / DEGRADED / INCONCLUSIVE`。
 
-Advisory 人工处理同样可以触发对比。没有可比基线时必须返回
+人工处理并确认完成后同样进入相同验证 Blueprint 和对比报告链路。没有可比基线时必须返回
 `INCONCLUSIVE`，不能仅凭“命令执行成功”宣称恢复。
 
 ## 报告产品
@@ -248,7 +254,7 @@ SSE 的人工输入事件只返回 `hitl_id` 和过期时间，不直接携带 S
 4. 根因诊断 DAG；
 5. “假设—证据—反证—等级”可信诊断；
 6. 数据库不可连接时的多轮人工 SQL；
-7. Advisory 与 Agent Execute 两种模式；
+7. 数据源驱动的动态能力与“允许变更”开关；
 8. 每条命令一次审批和 Executor 双重校验；
 9. 处理前后对比为什么不可省略；
 10. 五类报告及 APEX 展示；

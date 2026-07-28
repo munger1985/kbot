@@ -99,6 +99,7 @@ from .projections import (
 
 
 class PolicyConfigurationMixin:
+    @staticmethod
     def _validate_policy_rules(rules: dict[str, Any]) -> None:
         if rules.get("schema_version") != "ops.policy.v1":
             raise validation_failed("Policy rules.schema_version 必须为 ops.policy.v1")

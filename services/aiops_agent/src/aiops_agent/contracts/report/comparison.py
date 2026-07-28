@@ -49,7 +49,11 @@ class ComparisonResult(_ComparisonContract):
     gap_codes: tuple[str, ...] = ()
     evidence_hashes: tuple[str, ...] = ()
     result: Literal[
-        "IMPROVED", "UNCHANGED", "DEGRADED", "INCONCLUSIVE"
+        "RESOLVED",
+        "IMPROVED",
+        "UNCHANGED",
+        "DEGRADED",
+        "INCONCLUSIVE",
     ]
     rationale_codes: tuple[str, ...]
     causal_limitations: tuple[str, ...] = (

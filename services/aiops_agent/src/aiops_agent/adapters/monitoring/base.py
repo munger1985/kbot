@@ -188,7 +188,17 @@ class BaseMonitorAdapter:
             ]:
                 quality = "GOOD"
                 parsed: float | str | bool | None = value
-                if definition.value_kind != "STATE":
+                if definition.value_kind == "STATE":
+                    try:
+                        numeric_state = float(value)
+                        parsed = (
+                            int(numeric_state)
+                            if numeric_state.is_integer()
+                            else numeric_state
+                        )
+                    except (TypeError, ValueError):
+                        parsed = value
+                else:
                     try:
                         parsed = float(value)
                         if not math.isfinite(parsed):

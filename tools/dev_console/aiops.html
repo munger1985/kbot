@@ -3,15 +3,16 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>AIOps Agent 测试</title>
+    <title>AIOps 配置测试</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
     <!-- 仅使用真实公开 API，验证 AIOps 从配置、诊断交互到报告生成的完整流程。 -->
     <header>
-      <h1>AIOps Agent 测试</h1>
+      <h1>AIOps 配置测试</h1>
       <nav>
         <a href="./index.html">首页</a>
+        <a href="./aiops-chat.html">对话诊断</a>
         <a href="./knowledge-core.html">Knowledge Core</a>
         <a href="./operations-logs.html">开发日志</a>
       </nav>
@@ -53,15 +54,21 @@
                 <div class="field"><label>显示名称</label><input name="displayName" required value="AIOps 诊断 Agent" /></div>
               </div>
               <div class="field-row">
+                <div class="field"><label>diagnosis_llm</label><select name="diagnosisLlm" required></select><small>AIOps 多轮根因推理专用</small></div>
                 <div class="field"><label>context_llm</label><select name="contextLlm" required></select></div>
-                <div class="field"><label>composer_llm</label><select name="composerLlm" required></select></div>
               </div>
               <div class="field-row">
                 <div class="field"><label>memory_llm</label><select name="memoryLlm" required></select></div>
+                <div class="field"><label>composer_llm</label><select name="composerLlm" required></select></div>
+              </div>
+              <div class="field-row">
                 <div class="field"><label>memory_embedding</label><select name="memoryEmbedding" required></select></div>
               </div>
               <div class="field"><label>Agent 指令（可选）</label><textarea name="instruction" placeholder="例如：优先依据监控、数据库诊断和已绑定知识生成可追溯结论。"></textarea></div>
-              <button class="primary" type="submit">创建 AIOps Agent</button>
+              <div class="actions">
+                <button class="primary" type="submit">创建 AIOps Agent</button>
+                <button id="update-agent-models" type="button">更新选中 Agent 模型</button>
+              </div>
             </form>
             <p id="agent-create-status" class="status"></p>
           </section>
@@ -72,7 +79,7 @@
             </div>
             <div class="table-wrap">
               <table>
-                <thead><tr><th>Agent</th><th>状态</th><th>ID</th></tr></thead>
+                <thead><tr><th>Agent</th><th>状态</th><th>诊断模型</th><th>ID</th></tr></thead>
                 <tbody id="agent-rows"></tbody>
               </table>
             </div>
@@ -103,13 +110,15 @@
               </div>
               <div class="field-row">
                 <div class="field"><label>环境</label><select name="environment"><option>DEV</option><option>STG</option><option>PROD</option></select></div>
-                <div class="field"><label>Host</label><input name="host" required value="127.0.0.1" /></div>
+                <div class="field"><label>Host（可选）</label><input name="host" value="127.0.0.1" /></div>
               </div>
               <div class="field-row">
-                <div class="field"><label>Port</label><input name="port" required type="number" value="1521" /></div>
-                <div class="field"><label>Oracle Service / MySQL Database</label><input name="databaseName" required value="FREEPDB1" /></div>
+                <div class="field"><label>Port（可选）</label><input name="port" type="number" value="1521" /></div>
+                <div class="field"><label>Oracle Service / MySQL Database（可选）</label><input name="databaseName" value="FREEPDB1" /></div>
               </div>
               <div class="field"><label>只读诊断 Secret Ref（可选）</label><input name="diagnosticSecretRef" placeholder="env://AIOPS_DATABASE_READONLY" /></div>
+              <div class="field"><label>变更执行 Secret Ref（可选）</label><input name="executionSecretRef" placeholder="env://AIOPS_DATABASE_EXECUTION" /></div>
+              <p class="hint">不填写数据库 Endpoint 时仍可绑定监控源；聊天证据不足时，Agent 会给出只读 SQL 供用户手工执行。</p>
               <details class="advanced-fields">
                 <summary>诊断能力声明</summary>
                 <div class="field">
@@ -130,7 +139,8 @@
                 <div class="field"><label>类型</label><select name="sourceType"><option>PROMETHEUS</option><option>ZABBIX</option><option>OEM</option></select></div>
               </div>
               <div class="field"><label>显示名称</label><input name="displayName" required value="本地 Prometheus" /></div>
-              <div class="field"><label>Endpoint</label><input name="endpoint" type="url" required value="http://127.0.0.1:9161" /></div>
+              <div class="field"><label>Prometheus Server Endpoint</label><input name="endpoint" type="url" required value="http://127.0.0.1:9091" /></div>
+              <p class="hint">必须填写支持 <code>/api/v1/query_range</code> 的 Prometheus Server 地址；Exporter 的 <code>:9161/metrics</code> 不能直接作为查询端点。</p>
               <div class="field"><label>Secret Ref（可选）</label><input name="secretRef" placeholder="env://AIOPS_MONITOR_TOKEN" /></div>
               <button class="primary" type="submit">创建监控源</button>
             </form>
@@ -143,7 +153,13 @@
             </div>
             <div class="field-row">
               <div class="field"><label>数据库目标</label><select id="target-select"></select></div>
-              <div class="field"><label>监控源</label><select id="monitor-select"></select></div>
+              <div class="field">
+                <label>监控源</label>
+                <div class="input-with-action">
+                  <select id="monitor-select"></select>
+                  <button id="enable-monitor" type="button">检查并启用</button>
+                </div>
+              </div>
             </div>
             <p id="source-list-status" class="status"></p>
           </section>
@@ -160,16 +176,28 @@
         </div>
         <section class="panel">
           <div class="panel-heading">
-            <div><h3>完整绑定</h3><p class="hint">Collection 可多选；策略快照会固定本次 AIOps 可引用的知识范围。</p></div>
+            <div><h3>完整绑定</h3><p class="hint">Collection 可多选，也可留空。留空时仅使用监控、数据库证据和 LLM 能力；选择后会额外检索经验手册。</p></div>
             <button id="refresh-collections" type="button">刷新 Collections</button>
           </div>
           <div id="collection-choices" class="selection-grid"></div>
           <div class="field-row">
-            <div class="field"><label>监控中的目标标识</label><input id="external-target-key" value="kbot-test-db" /></div>
-            <div class="field"><label>访问模式</label><select id="access-mode"><option>PROPOSE</option><option>DIAGNOSE</option><option>EXECUTE</option><option>OBSERVE</option></select></div>
+            <div class="field"><label>Prometheus instance 标签值</label><input id="external-target-key" value="oracle-dev-01" /></div>
+            <div class="field">
+              <label>
+                <input id="allow-mutation" type="checkbox" />
+                允许 Agent 在逐条审批后执行变更
+              </label>
+              <p class="hint">关闭时仍可诊断并生成建议；只读 SQL 不受此开关限制。</p>
+            </div>
           </div>
-          <button id="bind-resources" class="primary" type="button">创建策略并完成全部绑定</button>
+          <div class="field"><label>采集的标准指标</label><textarea id="metric-codes">["db.availability","db.connection.active","db.transaction.throughput","db.storage.utilization","db.storage.free_bytes","db.storage.max_bytes"]</textarea></div>
+          <div class="field"><label>Prometheus 查询映射（当前预置适配 Oracle DB Exporter）</label><textarea id="metric-mapping">{"prometheus_queries":{"db.connection.active":"sum(oracledb_sessions_value{instance=\"${external_target}\",status=\"ACTIVE\",type=\"USER\"})","db.transaction.throughput":"rate(oracledb_activity_user_commits{instance=\"${external_target}\"}[5m])","db.storage.utilization":"oracledb_tablespace_used_percent{instance=\"${external_target}\"}","db.storage.free_bytes":"oracledb_tablespace_free{instance=\"${external_target}\"}","db.storage.max_bytes":"oracledb_tablespace_max_bytes{instance=\"${external_target}\"}"}}</textarea></div>
+          <div class="actions">
+            <button id="bind-resources" class="primary" type="button">创建策略并完成全部绑定</button>
+            <button id="refresh-binding-overview" type="button">刷新当前绑定</button>
+          </div>
           <p id="binding-status" class="status"></p>
+          <div id="binding-overview" class="selection-grid"><p class="muted">选择 Agent 和数据库目标后显示现有绑定。</p></div>
           <pre id="binding-output">{}</pre>
         </section>
       </section>
@@ -178,49 +206,20 @@
         <div class="workflow-heading">
           <span class="workflow-number">04</span>
           <div>
-            <h2>对话式诊断与实时思考</h2>
-            <p>实时显示监控采集、数据库查询、知识检索、LLM 根因推理、方案生成和报告生成阶段。</p>
+            <h2>对话式诊断</h2>
+            <p>完整问答、人工补数、命令审批和实时执行轨迹已迁移到独立工作台。</p>
           </div>
         </div>
-        <div class="grid">
-          <section class="panel span-5">
-            <form id="question-form">
-              <div class="field"><label>问题</label><textarea name="input" required placeholder="例如：分析当前数据库响应变慢的原因，并给出处理建议和诊断报告。"></textarea></div>
-              <div class="field"><label>会话 ID（可选，同一值用于连续追问）</label><input name="sessionId" /></div>
-              <div class="actions">
-                <button class="primary" type="submit">提问并监听 SSE</button>
-                <button id="stop-stream" type="button">停止监听</button>
-              </div>
-            </form>
-            <p id="run-status" class="status"></p>
-            <pre id="run-output">{}</pre>
-          </section>
-          <section class="panel span-7">
-            <div class="panel-heading"><h3>真实执行轨迹</h3><span id="run-badge" class="badge">未开始</span></div>
-            <div id="thought-stream" class="ops-thought-stream"><p class="muted">发起问题后显示执行过程。</p></div>
-            <details class="raw-sse"><summary>原始 SSE</summary><div id="raw-events" class="timeline"></div></details>
-          </section>
-          <section id="hitl-panel" class="panel span-6" hidden>
-            <h3>需要人工补充数据库结果</h3>
-            <p class="hint">请在受控环境执行下方只读 SQL，将结果粘贴后继续诊断。此交互只用于聊天触发流程。</p>
-            <pre id="hitl-request">{}</pre>
-            <form id="hitl-form">
-              <div class="field"><label>Query ID</label><input name="queryId" required /></div>
-              <div class="field"><label>执行结果</label><textarea name="inlineData" required></textarea></div>
-              <div class="field"><label>备注（可选）</label><input name="note" /></div>
-              <div class="actions"><button class="primary" type="submit">提交结果并继续</button><button id="skip-hitl" type="button">跳过补数</button></div>
-            </form>
-            <p id="hitl-status" class="status"></p>
-          </section>
-          <section id="proposal-panel" class="panel span-6" hidden>
-            <h3>待审批操作</h3>
-            <p id="proposal-hint" class="hint">页面展示真实命令预览、风险与回滚方案；可执行模式下每次操作都必须单独批准并留痕。</p>
-            <pre id="proposal-output">{}</pre>
-            <div class="field"><label>审批/驳回说明</label><input id="proposal-note" /></div>
-            <div class="actions"><button id="approve-proposal" class="primary" type="button">批准执行</button><button id="reject-proposal" class="danger" type="button">驳回</button></div>
-            <p id="proposal-status" class="status"></p>
-          </section>
-        </div>
+        <section class="panel">
+          <h3>在独立页面完成一次诊断会话</h3>
+          <p class="hint">配置页只管理 Agent、监控源、数据库目标与策略。诊断台负责 Run 恢复、SSE 追踪、只读 SQL 补数、逐条命令审批和结果回填。</p>
+          <div class="actions">
+            <a class="launcher-card" href="./aiops-chat.html">
+              <strong>打开 AIOps 对话诊断台</strong>
+              <span>使用当前配置发起真实诊断流程</span>
+            </a>
+          </div>
+        </section>
       </section>
 
       <section id="reports" class="workflow-section">

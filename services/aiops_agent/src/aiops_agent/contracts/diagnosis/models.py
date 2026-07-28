@@ -267,15 +267,34 @@ class SolutionDraft(_DiagnosisContract):
     limitations: tuple[str, ...] = ()
 
 
+class DirectQuestionAnswer(_DiagnosisContract):
+    """针对监控事实查询生成的可追溯直接答案。"""
+
+    answer_kind: Literal["MONITOR_FACT"]
+    status: Literal["ANSWERED", "PARTIAL"]
+    question_summary: str = Field(min_length=1, max_length=2000)
+    answer_text: str = Field(min_length=1, max_length=3000)
+    fact_refs: tuple[str, ...] = Field(min_length=1)
+    limitations: tuple[str, ...] = ()
+
+
 class DiagnosisReportDraft(_DiagnosisContract):
     schema_version: Literal["DIAGNOSIS_REPORT_DRAFT.v1"] = (
         "DIAGNOSIS_REPORT_DRAFT.v1"
     )
     target_id: str
     status: Literal["READY", "PARTIAL", "DEGRADED"]
+    output_kind: Literal["SIMPLE_CONCLUSION", "DIAGNOSIS_REPORT"]
+    recommendation_level: Literal["NONE", "BRIEF", "FULL"]
+    report_decision_reasons: tuple[str, ...] = ()
+    issue_detected: bool = False
     root_cause: RootCauseAssessment
     facts: tuple[EvidenceFact, ...] = ()
     hypotheses: tuple[HypothesisAssessment, ...] = ()
+    hypothesis_details: tuple[HypothesisDraft, ...] = ()
+    diagnosis_rationale: str | None = Field(default=None, max_length=3000)
+    rejected_evidence_requests: tuple[RejectedEvidenceRequest, ...] = ()
+    direct_answer: DirectQuestionAnswer | None = None
     solution: SolutionDraft
     gaps: tuple[str, ...] = ()
     verification: GroundingVerification

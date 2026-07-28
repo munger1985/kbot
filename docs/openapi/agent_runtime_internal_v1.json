@@ -2674,6 +2674,50 @@
         ]
       }
     },
+    "/internal/v1/runs/development/recent": {
+      "get": {
+        "description": "提供给 Main API 开发调试台的最近 Run 摘要。",
+        "operationId": "list_debug_runs_internal_v1_runs_development_recent_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Debug Runs",
+        "tags": [
+          "Agent Runtime"
+        ]
+      }
+    },
     "/internal/v1/runs/{run_id}": {
       "get": {
         "operationId": "get_run_internal_v1_runs__run_id__get",
@@ -2774,6 +2818,48 @@
           }
         },
         "summary": "Cancel Run",
+        "tags": [
+          "Agent Runtime"
+        ]
+      }
+    },
+    "/internal/v1/runs/{run_id}/development": {
+      "get": {
+        "description": "提供给 Main API 开发调试台的完整 Run 投影。",
+        "operationId": "get_debug_run_internal_v1_runs__run_id__development_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Debug Run",
         "tags": [
           "Agent Runtime"
         ]

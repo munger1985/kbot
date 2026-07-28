@@ -4,20 +4,25 @@ from __future__ import annotations
 
 import unittest
 from datetime import UTC, datetime
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from pydantic import ValidationError
 
 from aiops_agent.adapters.secret_store import ConfiguredSecretStore
+from aiops_agent.adapters.agent_runtime import AgentRuntimeValidator
 from aiops_agent.application.configuration.common import (
     ConfigurationScope,
     SignedCursorCodec,
     format_etag,
     parse_etag,
 )
+from aiops_agent.application.configuration.base import ConfigurationServiceBase
 from aiops_agent.application.configuration.schedule import (
     InspectionTemplateRegistry,
     next_cron_run,
+)
+from aiops_agent.application.configuration.policy_service import (
+    PolicyConfigurationMixin,
 )
 from aiops_agent.application.errors import AIOpsApplicationError
 from aiops_agent.config import InspectionTemplateRegistration
@@ -46,6 +51,13 @@ class ETagAndCursorTest(unittest.TestCase):
             parse_etag(None)
         self.assertEqual(428, caught.exception.status_code)
 
+    def test_version_guard_supports_instance_invocation(self) -> None:
+        service = object.__new__(ConfigurationServiceBase)
+        service._check_version(2, 2)
+        with self.assertRaises(AIOpsApplicationError) as caught:
+            service._check_version(2, 1)
+        self.assertEqual(412, caught.exception.status_code)
+
     def test_cursor_is_bound_to_domain_principal_and_filters(self) -> None:
         resource_id = uuid7()
         updated_at = datetime.now(UTC)
@@ -68,6 +80,62 @@ class ETagAndCursorTest(unittest.TestCase):
                 scope=self.scope,
                 filters={"status": "DISABLED"},
             )
+
+
+class AgentDiagnosisModelTest(unittest.IsolatedAsyncioTestCase):
+    async def test_resolves_agent_diagnosis_model_to_served_name(self) -> None:
+        agent_id = uuid7()
+        model_id = uuid7()
+        agent_client = AsyncMock()
+        agent_client.get_agent.return_value = {
+            "agent_id": str(agent_id),
+            "domain_id": 100,
+            "status": "ACTIVE",
+            "enabled_capabilities": ["aiops"],
+            "models": {"diagnosis_llm": str(model_id)},
+        }
+        model_client = AsyncMock()
+        model_client.get_model.return_value = {
+            "model_id": str(model_id),
+            "served_model_name": "qwen-diagnosis",
+        }
+        resolver = AgentRuntimeValidator(
+            agent_client,
+            model_client=model_client,
+            caller_service="kbot-aiops-api",
+        )
+
+        result = await resolver.resolve_diagnosis_model(
+            agent_id=agent_id,
+            domain_id=100,
+            trace_id="trace-1",
+        )
+
+        self.assertEqual("qwen-diagnosis", result["technical_name"])
+        self.assertEqual(str(model_id), result["revision"])
+
+    async def test_missing_diagnosis_model_is_rejected(self) -> None:
+        agent_id = uuid7()
+        agent_client = AsyncMock()
+        agent_client.get_agent.return_value = {
+            "agent_id": str(agent_id),
+            "domain_id": 100,
+            "status": "ACTIVE",
+            "enabled_capabilities": ["aiops"],
+            "models": {},
+        }
+        resolver = AgentRuntimeValidator(
+            agent_client,
+            model_client=AsyncMock(),
+        )
+
+        with self.assertRaises(AIOpsApplicationError) as caught:
+            await resolver.resolve_diagnosis_model(
+                agent_id=agent_id,
+                domain_id=100,
+                trace_id="trace-1",
+            )
+        self.assertEqual(422, caught.exception.status_code)
 
 
 class ScheduleAndSecretTest(unittest.IsolatedAsyncioTestCase):
@@ -120,6 +188,18 @@ class ScheduleAndSecretTest(unittest.IsolatedAsyncioTestCase):
 
 
 class ConfigurationContractTest(unittest.TestCase):
+    def test_policy_rules_validator_supports_instance_invocation(self) -> None:
+        PolicyConfigurationMixin()._validate_policy_rules(
+            {
+                "schema_version": "ops.policy.v1",
+                "allow_agent_execution": False,
+                "max_risk_level": "LOW",
+                "allowed_action_types": [],
+                "auto_observe_min_severity": "CRITICAL",
+                "alert_cooldown_seconds": 900,
+            }
+        )
+
     def test_target_contract_rejects_identity_and_plain_password(self) -> None:
         payload = {
             "target_key": "erp.prod",

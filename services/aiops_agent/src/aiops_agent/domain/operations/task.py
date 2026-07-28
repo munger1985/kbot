@@ -57,6 +57,14 @@ TASK_TRANSITIONS: dict[
             DomainOpsTaskStatus.EXPIRED,
         }
     ),
+    DomainOpsTaskStatus.WAITING_APPROVAL: frozenset(
+        {
+            DomainOpsTaskStatus.SUCCEEDED,
+            DomainOpsTaskStatus.FAILED,
+            DomainOpsTaskStatus.CANCELLED,
+            DomainOpsTaskStatus.EXPIRED,
+        }
+    ),
 }
 
 for _status in DomainOpsTaskStatus:

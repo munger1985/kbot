@@ -159,13 +159,6 @@ class AIOpsMonitoringConfig(BaseModel):
 
 
 class AIOpsDiagnosisConfig(BaseModel):
-    enabled: bool = False
-    model_technical_name: str = Field(
-        default="aiops-diagnosis", min_length=1, max_length=128
-    )
-    model_revision: str = Field(
-        default="1", min_length=1, max_length=64
-    )
     prompt_catalog_path: str | None = None
     max_rounds: int = Field(default=3, ge=1, le=3)
     max_tool_calls: int = Field(default=12, ge=0, le=64)

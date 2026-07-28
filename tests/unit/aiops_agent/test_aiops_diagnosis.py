@@ -27,6 +27,7 @@ from aiops_agent.orchestration import (
     build_multi_round_diagnosis_blueprint,
 )
 from aiops_agent.orchestration.diagnosis import DiagnosisPromptRegistry
+from aiops_agent.workers.diagnosis_handlers import DiagnosisReportHandler
 
 
 def _monitor_artifact() -> dict:
@@ -108,6 +109,142 @@ class EvidenceIndexTest(unittest.TestCase):
             [item.fact_id for item in first.facts],
             [item.fact_id for item in second.facts],
         )
+
+    def test_storage_remaining_question_uses_monitor_fact_directly(
+        self,
+    ) -> None:
+        artifact = _monitor_artifact()
+        observation = artifact["payload"]["observations"][0]
+        observation["metric_code"] = "db.storage.utilization"
+        observation["unit"] = "percent"
+        observation["summary"] = {
+            "last": 1.0492,
+            "max": 1.2,
+            "avg": 1.0,
+        }
+        evidence = normalize_evidence_artifacts(
+            (artifact,), target_id="target-1"
+        )
+
+        answer = DiagnosisReportHandler._direct_answer(
+            question="表空间还有多少？",
+            evidence=evidence,
+        )
+
+        self.assertIsNotNone(answer)
+        self.assertEqual("PARTIAL", answer.status)
+        self.assertIn("剩余约 98.95%", answer.answer_text)
+        self.assertIn("没有 tablespace 标签", answer.answer_text)
+        self.assertEqual(1, len(answer.fact_refs))
+
+    def test_storage_remaining_bytes_marks_partial_answer(self) -> None:
+        artifact = _monitor_artifact()
+        observation = artifact["payload"]["observations"][0]
+        observation["metric_code"] = "db.storage.utilization"
+        observation["unit"] = "percent"
+        observation["summary"] = {"last": 25.0}
+        evidence = normalize_evidence_artifacts(
+            (artifact,), target_id="target-1"
+        )
+
+        answer = DiagnosisReportHandler._direct_answer(
+            question="表空间还剩多少 GB？",
+            evidence=evidence,
+        )
+
+        self.assertIsNotNone(answer)
+        self.assertEqual("PARTIAL", answer.status)
+        self.assertIn("剩余约 75.00%", answer.answer_text)
+        self.assertIn("不能据此计算剩余 GB/TB", answer.answer_text)
+
+    def test_storage_series_answer_keeps_tablespace_dimensions(
+        self,
+    ) -> None:
+        artifact = _monitor_artifact()
+        observation = artifact["payload"]["observations"][0]
+        observation["metric_code"] = "db.storage.utilization"
+        observation["unit"] = "percent"
+        observation["summary"] = {"max": 80.0}
+        observation["series"] = [
+            {
+                "dimensions": {"tablespace": "USERS"},
+                "points": [
+                    {
+                        "observed_at": datetime.now(UTC).isoformat(),
+                        "value": 80.0,
+                        "quality": "GOOD",
+                    }
+                ],
+            },
+            {
+                "dimensions": {"tablespace": "SYSTEM"},
+                "points": [
+                    {
+                        "observed_at": datetime.now(UTC).isoformat(),
+                        "value": 40.0,
+                        "quality": "GOOD",
+                    }
+                ],
+            },
+        ]
+        free_observation = {
+            **observation,
+            "metric_code": "db.storage.free_bytes",
+            "unit": "bytes",
+            "summary": {"last": 80 * 1024**3},
+            "series": [
+                {
+                    "dimensions": {"tablespace": "USERS"},
+                    "points": [
+                        {
+                            "observed_at": datetime.now(UTC).isoformat(),
+                            "value": 80 * 1024**3,
+                            "quality": "GOOD",
+                        }
+                    ],
+                },
+                {
+                    "dimensions": {"tablespace": "SYSTEM"},
+                    "points": [
+                        {
+                            "observed_at": datetime.now(UTC).isoformat(),
+                            "value": 60 * 1024**3,
+                            "quality": "GOOD",
+                        }
+                    ],
+                },
+            ],
+        }
+        artifact["payload"]["observations"].append(free_observation)
+        evidence = normalize_evidence_artifacts(
+            (artifact,), target_id="target-1"
+        )
+
+        answer = DiagnosisReportHandler._direct_answer(
+            question="各表空间还剩多少？",
+            evidence=evidence,
+        )
+
+        self.assertIsNotNone(answer)
+        self.assertIn("USERS：可用 80.00 GiB，剩余 20.00%", answer.answer_text)
+        self.assertIn(
+            "SYSTEM：可用 60.00 GiB，剩余 60.00%",
+            answer.answer_text,
+        )
+        self.assertEqual(4, len(answer.fact_refs))
+
+        utilization_answer = DiagnosisReportHandler._direct_answer(
+            question="表空间使用率是多少？",
+            evidence=evidence,
+        )
+        self.assertIsNotNone(utilization_answer)
+        self.assertEqual("ANSWERED", utilization_answer.status)
+        self.assertIn("USERS：使用率 80.00%", utilization_answer.answer_text)
+        self.assertIn(
+            "SYSTEM：使用率 40.00%",
+            utilization_answer.answer_text,
+        )
+        self.assertNotIn("可用", utilization_answer.answer_text)
 
 
 class PlannerGateTest(unittest.TestCase):
@@ -316,6 +453,24 @@ class RootCausePolicyTest(unittest.TestCase):
         )
         self.assertEqual("INCONCLUSIVE", result.effective_level)
 
+    def test_empty_knowledge_scope_is_not_an_evidence_gap(self) -> None:
+        evidence = normalize_evidence_artifacts(
+            (
+                {
+                    "artifact_id": "knowledge-artifact",
+                    "schema_version": "KNOWLEDGE_CITATION_PACK.v1",
+                    "payload": {
+                        "query": "分析数据库响应变慢",
+                        "citations": [],
+                        "gap_code": None,
+                    },
+                },
+            ),
+            target_id="target-1",
+        )
+        self.assertEqual((), evidence.gaps)
+        self.assertEqual((), evidence.facts)
+
 
 class DiagnosisAssetsTest(unittest.TestCase):
     def test_prompt_assets_are_versioned_and_hashed(self) -> None:
@@ -345,6 +500,55 @@ class DiagnosisAssetsTest(unittest.TestCase):
                 for item in blueprint.tasks
             )
         )
+
+
+class DiagnosisOutputDecisionTest(unittest.TestCase):
+    def test_fact_question_returns_simple_conclusion(self) -> None:
+        decision = DiagnosisReportHandler._output_decision(
+            question="表空间还有多少",
+            trigger_type="CHAT",
+            root_level="INCONCLUSIVE",
+            has_direct_answer=True,
+            has_recommendations=False,
+            status="READY",
+        )
+        self.assertEqual(
+            (
+                "SIMPLE_CONCLUSION",
+                "NONE",
+                ("INFORMATIONAL_QUERY",),
+                False,
+            ),
+            decision,
+        )
+
+    def test_detected_issue_publishes_full_report(self) -> None:
+        decision = DiagnosisReportHandler._output_decision(
+            question="为什么数据库响应变慢",
+            trigger_type="CHAT",
+            root_level="PROBABLE",
+            has_direct_answer=False,
+            has_recommendations=True,
+            status="READY",
+        )
+        self.assertEqual("DIAGNOSIS_REPORT", decision[0])
+        self.assertEqual("FULL", decision[1])
+        self.assertIn("ISSUE_DETECTED", decision[2])
+        self.assertTrue(decision[3])
+
+    def test_alert_always_publishes_report_without_user_interaction(
+        self,
+    ) -> None:
+        decision = DiagnosisReportHandler._output_decision(
+            question="Critical alert",
+            trigger_type="ALERT",
+            root_level="INCONCLUSIVE",
+            has_direct_answer=False,
+            has_recommendations=False,
+            status="PARTIAL",
+        )
+        self.assertEqual("DIAGNOSIS_REPORT", decision[0])
+        self.assertIn("AUTOMATIC_TRIGGER", decision[2])
 
 
 if __name__ == "__main__":

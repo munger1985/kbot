@@ -183,7 +183,6 @@ async def main() -> None:
                     db_type="ORACLE",
                     environment="DEV",
                     db_role="PRIMARY",
-                    execution_mode="ADVISORY",
                     security_level=1,
                     status="ACTIVE",
                     health_status="UNKNOWN",
@@ -195,7 +194,7 @@ async def main() -> None:
                 TargetBindingEntity(
                     target_id=target_id,
                     agent_id=settings.runtime.system_aiops_agent_id,
-                    access_mode="OBSERVE",
+                    allow_mutation=False,
                     status="ACTIVE",
                     created_by="monitor-smoke",
                     updated_by="monitor-smoke",

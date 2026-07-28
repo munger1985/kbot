@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 from pathlib import Path
+import re
 import sys
 
 from sqlalchemy import DateTime, Integer, Numeric, String, Text, text
@@ -70,6 +71,15 @@ AIOPS_ENTITY_CLASSES = (
     InboxEntity,
     OutboxEntity,
 )
+HITL_STATUSES = {
+    "PENDING",
+    "ANSWERED",
+    "APPROVED",
+    "REJECTED",
+    "SKIPPED",
+    "EXPIRED",
+    "CANCELLED",
+}
 
 
 @dataclass(frozen=True)
@@ -218,6 +228,18 @@ async def check_schema() -> list[str]:
                     )
                 )
             ).all()
+            hitl_status_constraint = (
+                await session.execute(
+                    text(
+                        """
+                        SELECT search_condition_vc
+                        FROM user_constraints
+                        WHERE constraint_name = 'CK_OPS_HITL_STATUS'
+                          AND table_name = 'KBOT_OPS_HITL'
+                        """
+                    )
+                )
+            ).scalar_one_or_none()
     finally:
         await runtime.close()
 
@@ -244,6 +266,18 @@ async def check_schema() -> list[str]:
             errors.append(
                 f"{key[0]}.{key[1]} 不一致："
                 f"entity={expected[key]} oracle={catalog[key]}"
+            )
+    if hitl_status_constraint is None:
+        errors.append("Oracle 缺少约束 CK_OPS_HITL_STATUS")
+    else:
+        actual_statuses = set(
+            re.findall(r"'([A-Z_]+)'", str(hitl_status_constraint))
+        )
+        if actual_statuses != HITL_STATUSES:
+            errors.append(
+                "CK_OPS_HITL_STATUS 不一致："
+                f"expected={sorted(HITL_STATUSES)} "
+                f"oracle={sorted(actual_statuses)}"
             )
     return errors
 

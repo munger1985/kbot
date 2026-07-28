@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import Field, model_validator
 
@@ -52,7 +52,6 @@ from .types import (
     PUBLIC_SCHEMA_VERSION,
     ReportStatus,
     ReportType,
-    ResultFormat,
     ResultStatus,
     RootCauseGrade,
     Sha256Digest,
@@ -135,6 +134,18 @@ class OpsRunSummary(AIOpsContract):
     completed_at: UtcDatetime | None = None
 
 
+class OpsRunResult(AIOpsContract):
+    """对外返回 Run 的最终 Artifact 内容。"""
+
+    schema_version: str = PUBLIC_SCHEMA_VERSION
+    ops_run_id: UUIDv7
+    status: OpsRunStatus
+    root_cause_grade: RootCauseGrade | None = None
+    final_artifact: ArtifactRef | None = None
+    payload: Any | None = None
+    completed_at: UtcDatetime | None = None
+
+
 class MonitoringEventReceipt(AIOpsContract):
     schema_version: str = PUBLIC_SCHEMA_VERSION
     receipt_id: UUIDv7
@@ -158,19 +169,15 @@ class PendingInputView(AIOpsContract):
 class HitlResponseItem(AIOpsContract):
     query_id: str = Field(min_length=1, max_length=256)
     status: ResultStatus
-    format: ResultFormat
-    upload_id: str | None = Field(default=None, max_length=256)
-    inline_data: str | None = Field(default=None, max_length=65536)
+    raw_output: str | None = Field(default=None, max_length=65536)
     error: str | None = Field(default=None, max_length=1000)
 
     @model_validator(mode="after")
     def validate_content(self) -> "HitlResponseItem":
-        if self.upload_id and self.inline_data:
-            raise ValueError("HITL 结果不能同时包含 upload_id 和 inline_data")
-        if self.status == ResultStatus.SUCCEEDED and not (
-            self.upload_id or self.inline_data
-        ):
-            raise ValueError("成功的 HITL 结果必须包含上传引用或内联数据")
+        if self.status == ResultStatus.SUCCEEDED and not self.raw_output:
+            raise ValueError("成功的 HITL 结果必须包含原始数据库输出")
+        if self.status != ResultStatus.SUCCEEDED and self.raw_output:
+            raise ValueError("失败或跳过的 HITL 结果不能包含数据库输出")
         return self
 
 

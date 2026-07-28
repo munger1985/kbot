@@ -178,12 +178,11 @@ class ActionPlanHandlerTest(unittest.TestCase):
                     "db_type": "ORACLE",
                     "version_code": "19.0.0",
                     "environment": "PROD",
-                    "execution_mode": "AGENT_EXECUTE",
                     "row_version": 3,
                     "capabilities": {"session_management": True},
                 },
                 "binding": {
-                    "access_mode": "EXECUTE",
+                    "allow_mutation": True,
                     "allowed_actions": ["db.session.terminate"],
                 },
             },

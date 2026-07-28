@@ -15,6 +15,7 @@ from fastapi.testclient import TestClient
 
 from aiops_agent.adapters.monitoring import MonitorProviderRegistry
 from aiops_agent.adapters.monitoring.base import MonitorAdapterError
+from aiops_agent.adapters.monitoring.prometheus import PrometheusAdapter
 from aiops_agent.adapters.monitoring.payload_store import (
     LocalMonitorPayloadStore,
 )
@@ -30,6 +31,8 @@ from aiops_agent.orchestration import (
     build_monitor_observe_blueprint,
 )
 from aiops_agent.ports.monitor import (
+    MetricQueryRequest,
+    MonitorHealthRequest,
     MonitorProviderContext,
     RawWebhookRequest,
 )
@@ -37,7 +40,10 @@ from aiops_agent.workers import (
     AIOpsDomainOutboxSink,
     TaskExecutionContext,
 )
-from aiops_agent.workers.monitoring_handlers import MonitorReportHandler
+from aiops_agent.workers.monitoring_handlers import (
+    MonitorReportHandler,
+    _metric_definitions,
+)
 from platform_core.security import create_public_auth_middleware
 
 
@@ -75,6 +81,67 @@ class MetricCatalogTest(unittest.TestCase):
         self.assertEqual(1, summary["count"])
         self.assertEqual(4.0, summary["last"])
         self.assertNotEqual(0, summary["avg"])
+
+    def test_prometheus_numeric_state_is_included_in_summary(self) -> None:
+        now = datetime.now(UTC)
+        definition = load_metric_catalog().select(
+            ("db.availability",), db_type="ORACLE"
+        )[0]
+        adapter = PrometheusAdapter(
+            context=MonitorProviderContext(
+                source_id="source-1",
+                source_type="PROMETHEUS",
+                source_version=1,
+                endpoint="http://prometheus.example.com",
+            ),
+            session=Mock(),
+            request_timeout_seconds=10,
+            webhook_replay_seconds=300,
+        )
+        observation = adapter._observation(
+            request=MetricQueryRequest(
+                target_id="target-1",
+                binding_id="binding-1",
+                external_target_key="oracle-dev-01",
+                metric_definitions=(definition,),
+                window_start=now - timedelta(minutes=5),
+                window_end=now,
+                requested_step_seconds=60,
+                max_response_bytes=1024,
+                trace_id="trace-1",
+            ),
+            definition=definition,
+            raw_series=[({}, [(now, "1")])],
+            provider_response_hash="a" * 64,
+            effective_step=60,
+            truncated=False,
+        )
+        self.assertEqual(1, observation.summary["count"])
+        self.assertEqual(1.0, observation.summary["last"])
+
+    def test_binding_can_override_prometheus_query_template(self) -> None:
+        definition = load_metric_catalog().select(
+            ("db.connection.active",), db_type="ORACLE"
+        )[0]
+        resolved = _metric_definitions(
+            {
+                "binding_version": 3,
+                "metrics": [definition.model_dump(mode="json")],
+                "mapping_overrides": {
+                    "prometheus_queries": {
+                        "db.connection.active": (
+                            "sum(oracledb_sessions_value"
+                            '{instance="${external_target}"})'
+                        )
+                    }
+                },
+            }
+        )
+        provider = resolved[0].providers["PROMETHEUS"]
+        self.assertEqual(
+            "binding.db.connection.active", provider.template_id
+        )
+        self.assertIn("oracledb_sessions_value", provider.query_template)
 
 
 class MonitorBlueprintTest(unittest.TestCase):
@@ -166,6 +233,73 @@ class PrometheusWebhookTest(unittest.IsolatedAsyncioTestCase):
                 self._request(b"{}", "wrong", now)
             )
         self.assertEqual("MONITOR_AUTH_FAILED", caught.exception.code)
+
+
+class _HealthResponse:
+    def __init__(self, *, status: int, payload: object):
+        self.status = status
+        self._payload = payload
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_):
+        return None
+
+    async def json(self):
+        return self._payload
+
+
+class _HealthSession:
+    def __init__(self, response: _HealthResponse):
+        self.response = response
+        self.requested_url = ""
+
+    def get(self, url, **_):
+        self.requested_url = url
+        return self.response
+
+
+class PrometheusHealthTest(unittest.IsolatedAsyncioTestCase):
+    def _adapter(self, response: _HealthResponse):
+        session = _HealthSession(response)
+        adapter = PrometheusAdapter(
+            context=MonitorProviderContext(
+                source_id="source-1",
+                source_type="PROMETHEUS",
+                source_version=1,
+                endpoint="http://prometheus.example.com",
+            ),
+            session=session,  # type: ignore[arg-type]
+            request_timeout_seconds=5,
+            webhook_replay_seconds=300,
+        )
+        return adapter, session
+
+    async def test_health_check_requires_prometheus_query_api(self) -> None:
+        adapter, session = self._adapter(
+            _HealthResponse(
+                status=200,
+                payload={"status": "success", "data": {"version": "3.0"}},
+            )
+        )
+        result = await adapter.health_check(
+            MonitorHealthRequest(trace_id="trace-1")
+        )
+        self.assertTrue(result.healthy)
+        self.assertTrue(
+            session.requested_url.endswith("/api/v1/status/buildinfo")
+        )
+
+    async def test_exporter_endpoint_is_not_treated_as_prometheus(self) -> None:
+        adapter, _ = self._adapter(
+            _HealthResponse(status=404, payload="not found")
+        )
+        result = await adapter.health_check(
+            MonitorHealthRequest(trace_id="trace-1")
+        )
+        self.assertFalse(result.healthy)
+        self.assertEqual("MONITOR_API_UNAVAILABLE", result.error_code)
 
 
 class MonitoringHandlerTest(unittest.IsolatedAsyncioTestCase):

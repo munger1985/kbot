@@ -7,7 +7,7 @@
     {
       "name": "001_ops_roots.sql",
       "statements": 23,
-      "sha256": "e30046c62c1d3e67078987f95e00a64371aab95a795fc129781eb1381f8bb62b"
+      "sha256": "8e7422a7c959f65ebfcbe5cf0e637f6edc9057dfb5f079a42795f6307253f21e"
     },
     {
       "name": "002_ops_runtime.sql",
@@ -22,7 +22,7 @@
     {
       "name": "004_ops_inspection.sql",
       "statements": 19,
-      "sha256": "b4026ce9b3cd1df84489d5e4183f8c3ce3421121b897dcb4b920069d0928e47b"
+      "sha256": "70329f78369a15c0a45c36d257a8f10aebd83b606e4f1760d31086b661c2caee"
     },
     {
       "name": "005_ops_messaging.sql",

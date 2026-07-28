@@ -205,10 +205,12 @@ class AIOpsTaskWorker:
         except Exception as exc:
             latest = current["lease"]
             logger.exception(
-                "AIOps Task 执行失败：task_id={} error_code={} type={}",
+                "AIOps Task 执行失败：task_id={} error_code={} "
+                "type={} error={}",
                 latest.task_id,
                 error_code,
                 type(exc).__name__,
+                str(exc),
             )
             try:
                 await self._service.fail_task(

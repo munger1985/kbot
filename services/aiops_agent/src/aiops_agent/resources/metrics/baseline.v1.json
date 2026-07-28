@@ -212,7 +212,7 @@
       "description": "数据库存储空间的使用百分比。",
       "unit": "percent",
       "value_kind": "GAUGE",
-      "expected_dimensions": ["storage"],
+      "expected_dimensions": ["instance", "job", "database", "tablespace", "type"],
       "supported_db_types": ["ORACLE", "MYSQL"],
       "allowed_aggregations": ["AVG", "MAX", "LAST"],
       "default_window_seconds": 3600,
@@ -236,6 +236,52 @@
           "template_version": "1",
           "target_type": "oracle_database",
           "metric_name": "StorageUtilization"
+        }
+      }
+    },
+    {
+      "metric_code": "db.storage.free_bytes",
+      "semantic_version": "1.0.0",
+      "name": "存储可用容量",
+      "description": "数据库表空间当前可用字节数。",
+      "unit": "bytes",
+      "value_kind": "GAUGE",
+      "expected_dimensions": ["instance", "job", "database", "tablespace", "type"],
+      "supported_db_types": ["ORACLE", "MYSQL"],
+      "allowed_aggregations": ["AVG", "MAX", "LAST"],
+      "default_window_seconds": 3600,
+      "min_step_seconds": 300,
+      "max_points": 120,
+      "max_series": 64,
+      "providers": {
+        "PROMETHEUS": {
+          "template_id": "prom.db.storage.free",
+          "template_version": "1",
+          "query_template": "kbot_db_storage_free_bytes{instance=\"${external_target}\"}",
+          "required_labels": ["instance"]
+        }
+      }
+    },
+    {
+      "metric_code": "db.storage.max_bytes",
+      "semantic_version": "1.0.0",
+      "name": "存储最大容量",
+      "description": "数据库表空间包含自动扩展上限的最大字节数。",
+      "unit": "bytes",
+      "value_kind": "GAUGE",
+      "expected_dimensions": ["instance", "job", "database", "tablespace", "type"],
+      "supported_db_types": ["ORACLE", "MYSQL"],
+      "allowed_aggregations": ["AVG", "MAX", "LAST"],
+      "default_window_seconds": 3600,
+      "min_step_seconds": 300,
+      "max_points": 120,
+      "max_series": 64,
+      "providers": {
+        "PROMETHEUS": {
+          "template_id": "prom.db.storage.max",
+          "template_version": "1",
+          "query_template": "kbot_db_storage_max_bytes{instance=\"${external_target}\"}",
+          "required_labels": ["instance"]
         }
       }
     },

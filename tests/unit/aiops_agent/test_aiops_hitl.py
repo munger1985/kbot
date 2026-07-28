@@ -14,7 +14,7 @@ from aiops_agent.contracts.hitl import InputSuspension
 from aiops_agent.diagnostics import DiagnosticRegistry
 from aiops_agent.domain.diagnosis import normalize_evidence_artifacts
 from aiops_agent.orchestration.hitl import (
-    normalize_inline_response,
+    normalize_raw_response,
     validate_model_manual_sql,
 )
 from aiops_agent.workers.diagnosis_handlers import (
@@ -34,29 +34,87 @@ class ManualDiagnosticSqlTest(unittest.TestCase):
                 "DELETE FROM v$session", db_type="ORACLE"
             )
 
-    def test_inline_csv_is_bounded_and_formula_is_neutralized(self) -> None:
-        result = normalize_inline_response(
+    def test_raw_csv_is_detected_and_formula_is_neutralized(self) -> None:
+        result = normalize_raw_response(
             hitl_id="hitl-1",
             query_id="db.test",
             status="SUCCEEDED",
-            result_format="CSV",
-            inline_data="name,value\nrow1,=danger\n",
+            raw_output="name,value\nrow1,=danger\n",
             error=None,
             expected_columns=("name", "value"),
             max_rows=10,
         )
         self.assertEqual(result.rows, (("row1", "'=danger"),))
-        with self.assertRaisesRegex(ValueError, "列"):
-            normalize_inline_response(
-                hitl_id="hitl-1",
-                query_id="db.test",
-                status="SUCCEEDED",
-                result_format="CSV",
-                inline_data="unexpected\n1\n",
-                error=None,
-                expected_columns=("name", "value"),
-                max_rows=10,
-            )
+        unstructured = normalize_raw_response(
+            hitl_id="hitl-1",
+            query_id="db.test",
+            status="SUCCEEDED",
+            raw_output="这是我从终端随手复制的结果：unexpected 1",
+            error=None,
+            expected_columns=("name", "value"),
+            max_rows=10,
+        )
+        self.assertEqual(unstructured.parse_status, "UNSTRUCTURED")
+        self.assertEqual(unstructured.rows, ())
+        self.assertIn("随手复制", unstructured.raw_output)
+
+    def test_sqlplus_output_is_detected_without_format_hint(self) -> None:
+        result = normalize_raw_response(
+            hitl_id="hitl-1",
+            query_id="db.session.blocking_chain",
+            status="SUCCEEDED",
+            raw_output=(
+                "我在目标 PDB 执行后复制如下：\n"
+                "SQL> SELECT ...\n"
+                "WAITING_SESSION_ID BLOCKING_SESSION_ID WAIT_EVENT\n"
+                "------------------ ------------------- --------------------\n"
+                "               137                 245 enq: TX - row lock\n"
+                "\n"
+                "1 row selected.\n"
+                "看起来只有这一条，请继续分析。\n"
+            ),
+            error=None,
+            expected_columns=(
+                "waiting_session_id",
+                "blocking_session_id",
+                "wait_event",
+            ),
+            max_rows=10,
+        )
+        self.assertEqual(
+            result.rows,
+            (("137", "245", "enq: TX - row lock"),),
+        )
+        self.assertIn("请继续分析", result.raw_output)
+
+    def test_sqlplus_no_rows_is_a_valid_empty_result(self) -> None:
+        result = normalize_raw_response(
+            hitl_id="hitl-1",
+            query_id="db.session.blocking_chain",
+            status="SUCCEEDED",
+            raw_output="no rows selected.\n",
+            error=None,
+            expected_columns=("waiting_session_id", "blocking_session_id"),
+            max_rows=10,
+        )
+        self.assertEqual(result.rows, ())
+        self.assertEqual(
+            result.columns,
+            ("waiting_session_id", "blocking_session_id"),
+        )
+
+    def test_catalog_storage_cte_is_allowed_for_manual_execution(
+        self,
+    ) -> None:
+        registry = DiagnosticRegistry.load()
+        tool = next(
+            item
+            for item in registry.tools
+            if item.definition.db_type == "ORACLE"
+            and item.definition.tool_id == "db.storage.capacity"
+        )
+
+        validate_model_manual_sql(tool.sql, db_type="ORACLE")
 
 
 class InteractiveDiagnosisHandlerTest(unittest.TestCase):
@@ -83,6 +141,11 @@ class InteractiveDiagnosisHandlerTest(unittest.TestCase):
         self.assertGreaterEqual(len(queries), 1)
         self.assertEqual(queries[0]["query_id"], "db.instance.identity")
         self.assertTrue(queries[0]["sql_text"].lstrip().startswith("SELECT"))
+        self.assertEqual(
+            result.response_schema["input"],
+            "RAW_DATABASE_OUTPUT",
+        )
+        self.assertTrue(result.response_schema["auto_detect"])
 
     def test_user_result_is_normalized_as_unverified_evidence(self) -> None:
         index = normalize_evidence_artifacts(
@@ -97,9 +160,16 @@ class InteractiveDiagnosisHandlerTest(unittest.TestCase):
                                 {
                                     "query_id": "db.session.active",
                                     "status": "SUCCEEDED",
+                                    "raw_output": (
+                                        "SESSION_ID\n----------\n42"
+                                    ),
+                                    "parse_status": "STRUCTURED",
                                     "columns": ["session_id"],
                                     "rows": [[42]],
-                                    "quality_flags": ["USER_PROVIDED"],
+                                    "quality_flags": [
+                                        "USER_PROVIDED",
+                                        "AUTO_PARSED",
+                                    ],
                                 }
                             ]
                         },
@@ -108,9 +178,16 @@ class InteractiveDiagnosisHandlerTest(unittest.TestCase):
             ),
             target_id="target-1",
         )
-        self.assertEqual(index.fact_count, 1)
-        self.assertEqual(index.facts[0].source_type, "USER_RESULT")
-        self.assertEqual(index.facts[0].trust_level, "USER_PROVIDED")
+        self.assertEqual(index.fact_count, 2)
+        self.assertTrue(
+            all(item.source_type == "USER_RESULT" for item in index.facts)
+        )
+        self.assertTrue(
+            all(item.trust_level == "USER_PROVIDED" for item in index.facts)
+        )
+        self.assertTrue(
+            any("RAW_TEXT" in item.quality_flags for item in index.facts)
+        )
 
     def _context(self, trigger_type: str) -> TaskExecutionContext:
         tools = []
@@ -187,6 +264,27 @@ class InteractiveDiagnosisHandlerTest(unittest.TestCase):
                         "DIAGNOSIS_ROUND_ASSESSMENT.v1"
                     ),
                     "payload": assessment.model_dump(mode="json"),
+                },
+                {
+                    "schema_version": "VALIDATED_EVIDENCE_PLAN.v1",
+                    "payload": {
+                        "schema_version": "VALIDATED_EVIDENCE_PLAN.v1",
+                        "round_no": 3,
+                        "accepted": [
+                            {
+                                "request_key": "check_identity",
+                                "tool_id": "db.instance.identity",
+                                "tool_version": "1.0.0",
+                                "variant": "oracle",
+                                "parameters": {},
+                                "request_fingerprint": "1" * 64,
+                                "hypothesis_keys": [],
+                            }
+                        ],
+                        "rejected": [],
+                        "remaining_tool_budget": 1,
+                        "decision": "COLLECT",
+                    },
                 },
             ),
         )

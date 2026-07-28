@@ -27,8 +27,9 @@ class AIOpsReconciler:
                 )
             except Exception as exc:
                 logger.exception(
-                    "AIOps Reconciler 本轮失败：{}",
+                    "AIOps Reconciler 本轮失败：type={} error={}",
                     type(exc).__name__,
+                    str(exc),
                 )
                 worked = False
             if worked:

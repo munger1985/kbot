@@ -110,11 +110,6 @@ class TargetConfigurationMixin:
             request.diagnostic_secret_ref,
             request.execution_secret_ref,
         )
-        if request.execution_mode == "AGENT_EXECUTE":
-            raise validation_failed(
-                "新 Target 必须先以 ADVISORY 创建并完成执行能力绑定"
-            )
-
         async def handler(
             uow: AIOpsUnitOfWork, now: datetime
         ) -> TargetDetail:
@@ -135,10 +130,13 @@ class TargetConfigurationMixin:
                 version_code=request.version_code,
                 environment=request.environment,
                 db_role=request.db_role,
-                endpoint_json=request.endpoint.model_dump(mode="json"),
+                endpoint_json=(
+                    request.endpoint.model_dump(mode="json")
+                    if request.endpoint is not None
+                    else None
+                ),
                 diagnostic_secret_ref=request.diagnostic_secret_ref,
                 execution_secret_ref=request.execution_secret_ref,
-                execution_mode=request.execution_mode,
                 security_level=request.security_level,
                 capabilities_json=request.capabilities,
                 status="MAINTENANCE",
@@ -278,15 +276,6 @@ class TargetConfigurationMixin:
                 ):
                     raise validation_failed("MySQL Endpoint 必须只设置 database")
                 fields["endpoint_json"] = fields.pop("endpoint")
-            if fields.get("execution_mode") == "AGENT_EXECUTE":
-                await self._ensure_execute_capability(uow=uow, target=entity)
-                execution_ref = fields.get(
-                    "execution_secret_ref", entity.execution_secret_ref
-                )
-                if not execution_ref:
-                    raise validation_failed(
-                        "AGENT_EXECUTE 必须配置 Execution SecretRef"
-                    )
             for name, value in fields.items():
                 setattr(entity, name, value)
             if connectivity_changed:
@@ -310,42 +299,6 @@ class TargetConfigurationMixin:
             response = _target_detail(entity)
             await uow.commit()
             return response
-
-    async def _ensure_execute_capability(
-        self,
-        *,
-        uow: AIOpsUnitOfWork,
-        target: TargetEntity,
-    ) -> None:
-        if not self._management.agent_execution_enabled:
-            raise validation_failed("部署级 Agent 执行能力尚未启用")
-        assert uow.targets is not None
-        assert uow.policies is not None
-        bindings = await uow.targets.list_agent_bindings(
-            target_id=target.target_id,
-            app_id=target.app_id,
-            domain_id=target.domain_id,
-        )
-        for binding in bindings:
-            if (
-                binding.status == "ACTIVE"
-                and binding.access_mode == "EXECUTE"
-                and binding.policy_id is not None
-            ):
-                policy = await uow.policies.get_scoped(
-                    policy_id=binding.policy_id,
-                    app_id=target.app_id,
-                    domain_id=target.domain_id,
-                )
-                if (
-                    policy is not None
-                    and policy.status == "ACTIVE"
-                    and policy.rules_json.get("allow_agent_execution") is True
-                ):
-                    return
-        raise validation_failed(
-            "AGENT_EXECUTE 至少需要一个绑定 ACTIVE 执行策略的 EXECUTE Agent"
-        )
 
     async def command_target(
         self,
@@ -382,8 +335,6 @@ class TargetConfigurationMixin:
                 raise state_conflict(
                     f"Target 不能从 {entity.status} 执行 {command}"
                 )
-            if destination == "ACTIVE" and entity.execution_mode == "AGENT_EXECUTE":
-                await self._ensure_execute_capability(uow=uow, target=entity)
             entity.status = destination
             entity.updated_by = scope.actor_id
             entity.updated_at = now
@@ -447,13 +398,13 @@ class TargetConfigurationMixin:
                 uow=uow,
                 scope=scope,
                 policy_id=request.policy_id,
-                require_active=request.access_mode == "EXECUTE",
+                require_active=False,
             )
             entity = TargetBindingEntity(
                 binding_id=uuid7(),
                 target_id=target_id,
                 agent_id=request.agent_id,
-                access_mode=request.access_mode,
+                allow_mutation=request.allow_mutation,
                 policy_id=request.policy_id,
                 allowed_actions_json=list(request.allowed_actions),
                 change_window_json=request.change_window,
@@ -560,7 +511,6 @@ class TargetConfigurationMixin:
             fields.pop("schema_version", None)
             if not fields:
                 raise validation_failed("PATCH 至少需要一个可修改字段")
-            access_mode = fields.get("access_mode", entity.access_mode)
             policy_id = (
                 request.policy_id
                 if "policy_id" in request.model_fields_set
@@ -570,7 +520,7 @@ class TargetConfigurationMixin:
                 uow=uow,
                 scope=scope,
                 policy_id=policy_id,
-                require_active=access_mode == "EXECUTE",
+                require_active=False,
             )
             if "allowed_actions" in fields:
                 fields["allowed_actions_json"] = fields.pop("allowed_actions")
@@ -649,7 +599,7 @@ class TargetConfigurationMixin:
                     uow=uow,
                     scope=scope,
                     policy_id=entity.policy_id,
-                    require_active=entity.access_mode == "EXECUTE",
+                    require_active=False,
                 )
             entity.status = destination
             entity.updated_by = scope.actor_id

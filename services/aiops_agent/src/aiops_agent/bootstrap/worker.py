@@ -11,6 +11,7 @@ from aiops_agent.adapters.monitoring import MonitorProviderRegistry
 from aiops_agent.actions import ActionRegistry
 from aiops_agent.adapters.db_executor_client import DatabaseExecutorClient
 from aiops_agent.adapters.model_serving import AIOpsStructuredModelClient
+from aiops_agent.adapters.agent_runtime import AgentRuntimeValidator
 from aiops_agent.adapters.secret_store import ConfiguredSecretStore
 from aiops_agent.bootstrap.common import (
     AIOpsProcessRuntime,
@@ -38,6 +39,8 @@ from aiops_agent.workers import (
 )
 from platform_core.database.oracle import create_database_runtime
 from platform_clients.knowledge_core import KnowledgeCoreClient
+from platform_clients.agent_runtime import AgentRuntimeClient
+from platform_clients.model import AIModelConfigClient
 
 
 def create_aiops_worker_probe(
@@ -65,6 +68,24 @@ def create_aiops_worker_probe(
         app.state.runtime = runtime
         app.state.ready_check = runtime.check_aiops_schema
         client_session = aiohttp.ClientSession()
+        agent_runtime_validator = AgentRuntimeValidator(
+            AgentRuntimeClient(
+                base_url=resolved.clients.agent_runtime.base_url,
+                caller_service=config.service_name,
+                audience=resolved.clients.agent_runtime.audience,
+                timeout_seconds=(
+                    resolved.clients.agent_runtime.timeout_seconds
+                ),
+                session=client_session,
+            ),
+            model_client=AIModelConfigClient(
+                base_url=resolved.clients.model_serving.base_url,
+                timeout=resolved.clients.model_serving.timeout_seconds,
+                caller_service=config.service_name,
+                audience=resolved.clients.model_serving.audience,
+            ),
+            caller_service=config.service_name,
+        )
         secret_store = ConfiguredSecretStore(
             provider=resolved.secret_store.provider,
             allowed_schemes=resolved.secret_store.allowed_schemes,
@@ -150,6 +171,7 @@ def create_aiops_worker_probe(
             diagnostic_registry=diagnostic_registry,
             diagnosis_config=resolved.diagnosis,
             diagnosis_prompt_registry=diagnosis_prompts,
+            agent_runtime=agent_runtime_validator,
         )
         workers = [
             AIOpsTaskWorker(

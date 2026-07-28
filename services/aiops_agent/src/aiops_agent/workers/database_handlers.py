@@ -75,6 +75,27 @@ class DatabaseDiagnosticHandler:
     ) -> DatabaseDiagnosticResult:
         tool_id = context.task_key.removeprefix("diagnostic:")
         snapshot = context.plan_snapshot["database_diagnostics"]
+        if not snapshot.get("automatic_access_enabled", True):
+            blocking_codes = {
+                "DIAGNOSTIC_ACCESS_DENIED",
+                "DIAGNOSTIC_POLICY_DENIED",
+                "DIAGNOSTIC_SECRET_MISSING",
+                "TARGET_ENDPOINT_MISSING",
+            }
+            code = next(
+                (
+                    str(item.get("code"))
+                    for item in snapshot.get("initial_gaps", ())
+                    if str(item.get("code")) in blocking_codes
+                ),
+                "DATABASE_ACCESS_DISABLED",
+            )
+            return self._gap(
+                context,
+                tool_id,
+                code,
+                retryable=False,
+            )
         if tool_id != "db.instance.identity":
             identity_result = next(
                 (

@@ -54,11 +54,6 @@ class DatabaseType(StrEnum):
     MYSQL = "MYSQL"
 
 
-class ExecutionMode(StrEnum):
-    ADVISORY = "ADVISORY"
-    AGENT_EXECUTE = "AGENT_EXECUTE"
-
-
 class ResourceStatus(StrEnum):
     ACTIVE = "ACTIVE"
     DISABLED = "DISABLED"
@@ -160,12 +155,6 @@ class CommandType(StrEnum):
     APPROVE_PROPOSAL = "APPROVE_PROPOSAL"
     REJECT_PROPOSAL = "REJECT_PROPOSAL"
     RECORD_MANUAL_RESULT = "RECORD_MANUAL_RESULT"
-
-
-class ResultFormat(StrEnum):
-    JSON = "JSON"
-    CSV = "CSV"
-    TEXT = "TEXT"
 
 
 class ResultStatus(StrEnum):

@@ -13,6 +13,7 @@ from sqlalchemy.exc import IntegrityError
 
 from aiops_agent.application.errors import (
     AIOpsApplicationError,
+    dependency_unavailable,
     resource_not_found,
     state_conflict,
     validation_failed,
@@ -64,7 +65,7 @@ from aiops_agent.orchestration import (
     build_monitor_observe_blueprint,
 )
 from aiops_agent.orchestration.diagnosis import DiagnosisPromptRegistry
-from aiops_agent.orchestration.hitl import normalize_inline_response
+from aiops_agent.orchestration.hitl import normalize_raw_response
 from aiops_agent.contracts.hitl import (
     HitlOutcome,
     ManualSqlRequest,
@@ -101,6 +102,7 @@ from platform_core.contracts.aiops.public import (
     InspectionFirePage,
     InspectionFireSummary,
     InspectionFireView,
+    OpsRunResult,
     OpsRunSummary,
     PendingInputView,
     ReportPage,
@@ -159,6 +161,7 @@ class AIOpsRuntimeService:
         diagnostic_registry: DiagnosticRegistry | None = None,
         diagnosis_config=None,
         diagnosis_prompt_registry: DiagnosisPromptRegistry | None = None,
+        agent_runtime=None,
         cursor_codec: SignedCursorCodec | None = None,
     ):
         self._uow_factory = uow_factory
@@ -174,6 +177,7 @@ class AIOpsRuntimeService:
         self._diagnostic_registry = diagnostic_registry
         self._diagnosis_config = diagnosis_config
         self._diagnosis_prompts = diagnosis_prompt_registry
+        self._agent_runtime = agent_runtime
         self._cursor_codec = cursor_codec
 
     async def create_run(
@@ -182,6 +186,19 @@ class AIOpsRuntimeService:
         trace_id = str(
             command.client_metadata.get("trace_id", command.command_id)
         )
+        diagnosis_model = None
+        if command.blueprint_id == "diagnosis.root-cause":
+            if self._agent_runtime is None:
+                raise dependency_unavailable(
+                    "Agent Runtime 模型解析器尚未配置"
+                )
+            diagnosis_model = (
+                await self._agent_runtime.resolve_diagnosis_model(
+                    agent_id=command.agent_id,
+                    domain_id=command.domain_id,
+                    trace_id=trace_id,
+                )
+            )
         async with self._uow_factory() as uow:
             now = await uow.runs.database_now()
             deadline = command.deadline or (
@@ -227,15 +244,19 @@ class AIOpsRuntimeService:
             if binding is None or binding.status != "ACTIVE":
                 raise resource_not_found("Active Agent Binding")
             policy = None
+            configured_policy_status = None
             if binding.policy_id is not None:
-                policy = await uow.policies.get_scoped(
+                configured_policy = await uow.policies.get_scoped(
                     policy_id=binding.policy_id,
                     app_id=command.app_id,
                     domain_id=command.domain_id,
                     lock=True,
                 )
-                if policy is None or policy.status != "ACTIVE":
-                    raise state_conflict("Agent Binding 引用的策略未激活")
+                if configured_policy is None:
+                    raise state_conflict("Agent Binding 引用的策略不存在")
+                configured_policy_status = configured_policy.status
+                if configured_policy.status == "ACTIVE":
+                    policy = configured_policy
 
             target_snapshot = {
                 "target_id": str(target.target_id),
@@ -246,7 +267,13 @@ class AIOpsRuntimeService:
                 "version_code": target.version_code,
                 "environment": target.environment,
                 "db_role": target.db_role,
-                "execution_mode": target.execution_mode,
+                "database_endpoint_configured": bool(target.endpoint_json),
+                "diagnostic_secret_configured": bool(
+                    target.diagnostic_secret_ref
+                ),
+                "execution_secret_configured": bool(
+                    target.execution_secret_ref
+                ),
                 "security_level": int(target.security_level),
                 "capabilities": dict(target.capabilities_json or {}),
                 "row_version": int(target.row_version),
@@ -254,7 +281,13 @@ class AIOpsRuntimeService:
             binding_snapshot = {
                 "binding_id": str(binding.binding_id),
                 "agent_id": str(binding.agent_id),
-                "access_mode": binding.access_mode,
+                "allow_mutation": bool(binding.allow_mutation),
+                "policy_id": (
+                    str(binding.policy_id)
+                    if binding.policy_id is not None
+                    else None
+                ),
+                "policy_status": configured_policy_status,
                 "allowed_actions": list(
                     binding.allowed_actions_json or []
                 ),
@@ -273,6 +306,7 @@ class AIOpsRuntimeService:
                 else {}
             )
             monitoring_snapshot: dict[str, Any] | None = None
+            database_diagnostic_snapshot: dict[str, Any] | None = None
             if command.blueprint_id == "monitor.observe-report":
                 (
                     blueprint,
@@ -487,6 +521,44 @@ class AIOpsRuntimeService:
                 blueprint, max_tasks=self._max_tasks
             )
             run_id = uuid7()
+            mutation_unavailable_reasons = (
+                ("BINDING_MUTATION_DISABLED",)
+                if not bool(binding.allow_mutation)
+                else tuple(
+                    reason
+                    for unavailable, reason in (
+                        (
+                            not self._management.agent_execution_enabled,
+                            "DEPLOYMENT_MUTATION_DISABLED",
+                        ),
+                        (
+                            not bool(target.execution_secret_ref),
+                            "EXECUTION_SECRET_MISSING",
+                        ),
+                        (
+                            policy is None,
+                            (
+                                "POLICY_NOT_ACTIVE"
+                                if configured_policy_status is not None
+                                else "POLICY_MISSING"
+                            ),
+                        ),
+                        (
+                            policy is not None
+                            and policy.rules_json.get(
+                                "allow_agent_execution"
+                            )
+                            is not True,
+                            "POLICY_MUTATION_DENIED",
+                        ),
+                        (
+                            not bool(binding.allowed_actions_json),
+                            "ALLOWED_ACTIONS_EMPTY",
+                        ),
+                    )
+                    if unavailable
+                )
+            )
             plan_snapshot = {
                 "blueprint": {
                     "id": blueprint.blueprint_id,
@@ -500,6 +572,28 @@ class AIOpsRuntimeService:
                     "session_id": command.session_id,
                 },
                 "client_metadata": dict(command.client_metadata),
+                "effective_capabilities": {
+                    "monitor_read": bool(
+                        monitoring_snapshot
+                        and monitoring_snapshot.get("bindings")
+                    ),
+                    "database_read": bool(
+                        database_diagnostic_snapshot
+                        and database_diagnostic_snapshot.get(
+                            "automatic_access_enabled"
+                        )
+                    ),
+                    "manual_database_read": bool(
+                        str(command.trigger_type) == "CHAT"
+                        and database_diagnostic_snapshot
+                        and database_diagnostic_snapshot.get("tools")
+                    ),
+                    "mutation_requested": bool(binding.allow_mutation),
+                    "mutation_execute": not mutation_unavailable_reasons,
+                    "mutation_unavailable_reasons": list(
+                        mutation_unavailable_reasons
+                    ),
+                },
             }
             if monitoring_snapshot is not None:
                 plan_snapshot["monitoring"] = monitoring_snapshot
@@ -516,6 +610,7 @@ class AIOpsRuntimeService:
                     target=target,
                     policy_snapshot=policy_snapshot,
                     monitoring_snapshot=monitoring_snapshot,
+                    model_snapshot=diagnosis_model,
                 )
             if command.blueprint_id == "change.advisory-verify":
                 plan_snapshot["database_diagnostics"] = (
@@ -795,6 +890,7 @@ class AIOpsRuntimeService:
         target,
         policy_snapshot: dict[str, Any],
         monitoring_snapshot: dict[str, Any],
+        model_snapshot: dict[str, str] | None,
     ) -> dict[str, Any]:
         """冻结诊断模型、Prompt、窗口、权限范围和预算。"""
         if self._diagnosis_config is None or self._diagnosis_prompts is None:
@@ -836,9 +932,17 @@ class AIOpsRuntimeService:
             ),
             "policy_snapshot_hash": sha256_json(policy_snapshot),
             "model": {
-                "enabled": bool(config.enabled),
-                "technical_name": config.model_technical_name,
-                "revision": config.model_revision,
+                "enabled": bool(model_snapshot),
+                "technical_name": (
+                    model_snapshot["technical_name"]
+                    if model_snapshot
+                    else ""
+                ),
+                "revision": (
+                    model_snapshot["revision"]
+                    if model_snapshot
+                    else ""
+                ),
             },
             "prompts": self._diagnosis_prompts.snapshot,
             "budget": {
@@ -892,23 +996,10 @@ class AIOpsRuntimeService:
         capability_hash = sha256_json(capability_snapshot)
         initial_gaps: list[dict[str, Any]] = []
         selected = []
-        access_allowed = binding.access_mode in {
-            "DIAGNOSE",
-            "PROPOSE",
-            "EXECUTE",
-        }
         policy_rules = dict(policy.rules_json) if policy is not None else {}
         policy_allowed = policy_rules.get(
             "readonly_database_enabled", True
         )
-        if not access_allowed:
-            initial_gaps.append(
-                {
-                    "code": "DIAGNOSTIC_ACCESS_DENIED",
-                    "detail": "Agent Binding 未授权数据库诊断",
-                    "retryable": False,
-                }
-            )
         if not policy_allowed:
             initial_gaps.append(
                 {
@@ -941,9 +1032,8 @@ class AIOpsRuntimeService:
                     "retryable": False,
                 }
             )
-        catalog_eligible = (
-            access_allowed
-            and policy_allowed
+        automatic_access_enabled = (
+            policy_allowed
             and bool(target.version_code)
             and bool(target.diagnostic_secret_ref)
             and bool(target.endpoint_json)
@@ -954,7 +1044,8 @@ class AIOpsRuntimeService:
             "db.session.blocking_chain",
             "db.storage.capacity",
         )
-        if catalog_eligible:
+        # 即使数据库不可直连，也要冻结目录工具，供 CHAT HITL 生成受控只读 SQL。
+        if target.version_code:
             for tool_id in requested:
                 try:
                     tool = self._diagnostic_registry.resolve(
@@ -991,6 +1082,10 @@ class AIOpsRuntimeService:
                             parameter.model_dump(mode="json")
                             for parameter in definition.parameters
                         ],
+                        "output_columns": [
+                            column.model_dump(mode="json")
+                            for column in definition.output_columns
+                        ],
                         "cost_level": definition.cost_level,
                         "supported_version_min": (
                             definition.supported_version_min
@@ -1021,6 +1116,7 @@ class AIOpsRuntimeService:
             "target_row_version": int(target.row_version),
             "connection_profile": dict(target.endpoint_json or {}),
             "diagnostic_secret_ref": target.diagnostic_secret_ref,
+            "automatic_access_enabled": automatic_access_enabled,
             "catalog_hash": self._diagnostic_registry.catalog_hash,
             "capability_snapshot": capability_snapshot,
             "capability_snapshot_hash": capability_hash,
@@ -1460,6 +1556,20 @@ class AIOpsRuntimeService:
                             trace_id=command.trace_id,
                         )
                     )
+                if (
+                    artifact.schema_version
+                    == "DIAGNOSIS_REPORT_DRAFT.v1"
+                    and (artifact.payload_json or {}).get("output_kind")
+                    == "DIAGNOSIS_REPORT"
+                ):
+                    await self._publish_diagnosis_report(
+                        uow=uow,
+                        run=run,
+                        task=task,
+                        source_artifact=artifact,
+                        now=now,
+                        trace_id=command.trace_id,
+                    )
                 run.final_artifact_id = final_artifact.artifact_id
                 if artifact.schema_version in {
                     "OBSERVE_REPORT.v1",
@@ -1675,6 +1785,202 @@ class AIOpsRuntimeService:
         )
         return report_artifact
 
+    async def _publish_diagnosis_report(
+        self,
+        *,
+        uow,
+        run,
+        task,
+        source_artifact,
+        now: datetime,
+        trace_id: str,
+    ) -> None:
+        """仅在动态决策要求留档时发布正式诊断报告。"""
+        assert uow.inspections is not None
+        plan = dict(run.plan_snapshot_json or {})
+        source = dict(source_artifact.payload_json or {})
+        question = str(
+            plan.get("diagnosis", {}).get("question_summary") or ""
+        )
+        performance_keywords = (
+            "性能",
+            "慢",
+            "响应",
+            "吞吐",
+            "连接",
+            "锁",
+            "等待",
+            "performance",
+            "latency",
+        )
+        report_type = (
+            "PERFORMANCE"
+            if any(item in question.lower() for item in performance_keywords)
+            else "INCIDENT"
+        )
+        report_key = (
+            "diagnosis.performance"
+            if report_type == "PERFORMANCE"
+            else "diagnosis.incident"
+        )
+        root = dict(source.get("root_cause") or {})
+        grade = str(root.get("effective_level") or "INCONCLUSIVE")
+        status = (
+            "READY"
+            if source.get("status") == "READY"
+            and grade != "INCONCLUSIVE"
+            else "PARTIAL"
+        )
+        rationale = str(
+            source.get("diagnosis_rationale")
+            or (
+                "已形成可追溯诊断结论"
+                if grade != "INCONCLUSIVE"
+                else "当前证据不足，尚未确认根因"
+            )
+        )
+        summary = f"根因等级：{grade}。{rationale}"[:2000]
+        solution = dict(source.get("solution") or {})
+        recommendations = tuple(
+            dict.fromkeys(
+                str(item)
+                for key in (
+                    "immediate_mitigations",
+                    "long_term_remediations",
+                )
+                for item in solution.get(key, ())
+                if item
+            )
+        )
+        content = ReportContent(
+            report_key=report_key,
+            report_type=report_type,
+            ops_run_id=str(run.ops_run_id),
+            target_id=str(run.target_id),
+            title=(
+                "数据库性能诊断报告"
+                if report_type == "PERFORMANCE"
+                else "数据库故障诊断报告"
+            ),
+            status=status,
+            summary=summary,
+            period_start=run.created_at,
+            period_end=now,
+            scope={
+                "question_summary": question,
+                "root_cause_grade": grade,
+                "report_decision_reasons": list(
+                    source.get("report_decision_reasons") or ()
+                ),
+                "effective_capabilities": dict(
+                    plan.get("effective_capabilities") or {}
+                ),
+            },
+            facts=tuple(
+                {
+                    "fact_id": item.get("fact_id"),
+                    "summary": item.get("fact_summary")
+                    or item.get("summary"),
+                    "trust_level": item.get("trust_level"),
+                }
+                for item in source.get("facts", ())
+            ),
+            gaps=tuple(
+                {"code": str(code)} for code in source.get("gaps", ())
+            ),
+            evidence_refs=(
+                {
+                    "artifact_id": str(source_artifact.artifact_id),
+                    "content_hash": source_artifact.content_hash,
+                    "schema_version": source_artifact.schema_version,
+                },
+            ),
+            recommendations=recommendations,
+            provenance={
+                "deterministic_report_decision": True,
+                "source_artifact_hash": source_artifact.content_hash,
+                "model_receipt_hashes": list(
+                    source.get("model_receipt_hashes") or ()
+                ),
+            },
+        )
+        payload = content.model_dump(mode="json")
+        content_hash = sha256_json(payload)
+        report_artifact = await uow.runs.add_artifact(
+            OpsArtifactEntity(
+                ops_run_id=run.ops_run_id,
+                ops_task_id=task.ops_task_id,
+                artifact_key=f"report:{report_key}:v1",
+                artifact_type="REPORT_CONTENT",
+                schema_version="REPORT_CONTENT.v1",
+                payload_json=payload,
+                content_hash=content_hash,
+                byte_size=len(canonical_bytes(payload)),
+                provenance_json={
+                    "producer": "aiops.report-publisher",
+                    "producer_version": "1",
+                    "source_artifact_id": str(source_artifact.artifact_id),
+                },
+                trust_level="SOURCE_VERIFIED",
+                security_level=int(plan["target"]["security_level"]),
+            )
+        )
+        report = await uow.inspections.publish_report(
+            ReportEntity(
+                report_id=uuid7(),
+                ops_run_id=run.ops_run_id,
+                target_id=run.target_id,
+                report_key=report_key,
+                report_version=1,
+                is_current=0,
+                report_type=report_type,
+                title=content.title,
+                status=status,
+                period_start=run.created_at,
+                period_end=now,
+                template_id="diagnosis.dynamic",
+                template_version="1",
+                generated_by_task_id=task.ops_task_id,
+                content_artifact_id=report_artifact.artifact_id,
+                content_hash=content_hash,
+                summary=summary,
+                security_level=int(plan["target"]["security_level"]),
+                schema_version="REPORT_CONTENT.v1",
+            )
+        )
+        await uow.runs.append_event(
+            ops_run_id=run.ops_run_id,
+            ops_task_id=task.ops_task_id,
+            event_type="report.ready",
+            event_key=f"report:{report.report_id}:ready",
+            visibility="USER",
+            payload_json={
+                "report_id": str(report.report_id),
+                "report_key": report_key,
+                "report_type": report_type,
+                "report_version": 1,
+                "status": status,
+                "summary": summary,
+                "trace_id": trace_id,
+            },
+        )
+        await self._add_outbox(
+            uow,
+            aggregate_id=report.report_id,
+            event_type="OPS_REPORT_READY",
+            idempotency_key=f"report:{report.report_id}:ready",
+            payload={
+                "report_id": str(report.report_id),
+                "ops_run_id": str(run.ops_run_id),
+                "report_key": report_key,
+                "report_type": report_type,
+                "report_version": 1,
+                "status": status,
+            },
+            trace_id=trace_id,
+            now=now,
+        )
+
     async def _publish_comparison_report(
         self,
         *,
@@ -1799,6 +2105,7 @@ class AIOpsRuntimeService:
             "PARTIAL" if result == "INCONCLUSIVE" else "READY"
         )
         summary = {
+            "RESOLVED": "处理后的验证证据表明目标问题已经解决",
             "IMPROVED": "处理后的直接效果指标已改善",
             "UNCHANGED": "处理后的直接效果指标未发生预期变化",
             "DEGRADED": "处理后发现直接效果或护栏指标退化",
@@ -1971,7 +2278,7 @@ class AIOpsRuntimeService:
             and not verification.target_still_present
             and not verification.blocking_still_present
         ):
-            return "IMPROVED", ("EXPECTED_DIRECT_EFFECT_OBSERVED",)
+            return "RESOLVED", ("TARGET_AND_BLOCKING_EFFECT_CLEARED",)
         if verification.status == "NOT_ACHIEVED":
             return "UNCHANGED", ("EXPECTED_DIRECT_EFFECT_NOT_OBSERVED",)
         return "INCONCLUSIVE", ("VERIFICATION_STATE_UNSUPPORTED",)
@@ -2835,6 +3142,51 @@ class AIOpsRuntimeService:
                     or hitl.expires_at > now
                 ):
                     return False
+                task_status = DomainOpsTaskStatus(task.status)
+                run_status = DomainOpsRunStatus(run.status)
+                if (
+                    task_status
+                    in {
+                        DomainOpsTaskStatus.SUCCEEDED,
+                        DomainOpsTaskStatus.FAILED,
+                        DomainOpsTaskStatus.BLOCKED,
+                        DomainOpsTaskStatus.CANCELLED,
+                        DomainOpsTaskStatus.EXPIRED,
+                    }
+                    or run_status in TERMINAL_RUN_STATUSES
+                    or task_status
+                    != DomainOpsTaskStatus.WAITING_INPUT
+                    or run_status
+                    != DomainOpsRunStatus.WAITING_INPUT
+                ):
+                    # Reconciler 必须能够清理旧版本或并发遗留的孤儿 HITL，
+                    # 不能尝试把终态 Task/Run 重新推进到诊断态。
+                    hitl.status = "EXPIRED"
+                    hitl.responded_by = "aiops.reconciler"
+                    hitl.responded_at = now
+                    hitl.response_json = {
+                        "reason": "PARENT_STATE_NOT_WAITING_INPUT",
+                        "task_status": task.status,
+                        "run_status": run.status,
+                    }
+                    hitl.response_hash = sha256_json(
+                        hitl.response_json
+                    )
+                    await uow.runs.append_event(
+                        ops_run_id=run.ops_run_id,
+                        ops_task_id=task.ops_task_id,
+                        event_type="diagnostic.input_expired",
+                        event_key=f"hitl:{hitl.hitl_id}:expired",
+                        visibility="USER",
+                        payload_json={
+                            "hitl_id": str(hitl.hitl_id),
+                            "status": "EXPIRED",
+                            "reason": "PARENT_STATE_NOT_WAITING_INPUT",
+                            "trace_id": trace_id,
+                        },
+                    )
+                    await uow.commit()
+                    return True
                 payload = HitlOutcome(
                     hitl_id=str(hitl.hitl_id),
                     status="EXPIRED",
@@ -2866,14 +3218,14 @@ class AIOpsRuntimeService:
                 }
                 hitl.response_hash = sha256_json(hitl.response_json)
                 ensure_task_transition(
-                    DomainOpsTaskStatus(task.status),
+                    task_status,
                     DomainOpsTaskStatus.SUCCEEDED,
                 )
                 task.status = DomainOpsTaskStatus.SUCCEEDED.value
                 task.output_artifact_id = artifact.artifact_id
                 task.completed_at = now
                 ensure_run_transition(
-                    DomainOpsRunStatus(run.status),
+                    run_status,
                     DomainOpsRunStatus.DIAGNOSING,
                 )
                 run.status = DomainOpsRunStatus.DIAGNOSING.value
@@ -3238,6 +3590,47 @@ class AIOpsRuntimeService:
                 final_artifact=final,
                 row_version=int(run.row_version),
                 created_at=run.created_at,
+                completed_at=run.completed_at,
+            )
+
+    async def get_run_result(
+        self, *, ops_run_id: UUID, app_id: int, domain_id: int
+    ) -> OpsRunResult:
+        """在校验 Domain 边界后读取 Run 的最终可展示产物。"""
+        async with self._uow_factory() as uow:
+            run = await uow.runs.get_run_scoped(
+                ops_run_id=ops_run_id,
+                app_id=app_id,
+                domain_id=domain_id,
+            )
+            if run is None:
+                raise resource_not_found("Ops Run")
+
+            artifact = None
+            if run.final_artifact_id is not None:
+                candidate = await uow.runs.get_artifact(
+                    artifact_id=run.final_artifact_id
+                )
+                if (
+                    candidate is not None
+                    and candidate.ops_run_id == run.ops_run_id
+                ):
+                    artifact = candidate
+
+            return OpsRunResult(
+                ops_run_id=run.ops_run_id,
+                status=run.status,
+                root_cause_grade=run.root_cause_level,
+                final_artifact=(
+                    self._artifact_ref(artifact)
+                    if artifact is not None
+                    else None
+                ),
+                payload=(
+                    artifact.payload_json
+                    if artifact is not None
+                    else None
+                ),
                 completed_at=run.completed_at,
             )
 
@@ -3926,7 +4319,6 @@ class AIOpsRuntimeService:
                 {
                     "query_id": "__all__",
                     "status": "SKIPPED",
-                    "format": "TEXT",
                     "error": "用户选择跳过人工补证",
                 },
             ),
@@ -4192,18 +4584,13 @@ class AIOpsRuntimeService:
         normalized = []
         for query_id, query in expected.items():
             item = received[query_id]
-            if item.upload_id is not None:
-                raise validation_failed(
-                    "当前版本仅支持内联 CSV/JSON，尚未开放文件上传"
-                )
             try:
                 normalized.append(
-                    normalize_inline_response(
+                    normalize_raw_response(
                         hitl_id=str(hitl_id),
                         query_id=query_id,
                         status=str(item.status),
-                        result_format=str(item.format),
-                        inline_data=item.inline_data,
+                        raw_output=item.raw_output,
                         error=item.error,
                         expected_columns=query.expected_columns,
                         max_rows=query.max_rows,
@@ -4219,7 +4606,11 @@ class AIOpsRuntimeService:
             ),
             None,
         )
-        if identity is not None and identity.status == "SUCCEEDED":
+        if (
+            identity is not None
+            and identity.status == "SUCCEEDED"
+            and identity.parse_status == "STRUCTURED"
+        ):
             if len(identity.rows) != 1:
                 raise validation_failed("实例身份查询必须只返回一行")
             version_index = identity.columns.index("version")

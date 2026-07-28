@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AIOps 对话诊断台</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body class="ops-chat-page">
+    <!--
+      假设：Agent、数据库目标及其绑定已在 AIOps 配置页完成。
+      本页只模拟真实门户中的对话诊断、人工补证、单命令审批与结果呈现。
+    -->
+    <header>
+      <div>
+        <h1>AIOps 对话诊断台</h1>
+        <span class="muted">Chat · Evidence · HITL · Approval · Report</span>
+      </div>
+      <nav>
+        <a href="./index.html">首页</a>
+        <a href="./aiops.html">AIOps 配置</a>
+        <a href="./operations-logs.html">开发日志</a>
+      </nav>
+    </header>
+
+    <form id="auth-form" class="auth-bar">
+      <div class="field"><label>Main API URL</label><input name="baseUrl" required /></div>
+      <div class="field"><label>Domain ID</label><input name="domainId" required /></div>
+      <div class="field"><label>User ID</label><input name="userId" required /></div>
+      <button class="primary" type="submit">保存并连接</button>
+    </form>
+
+    <main class="ops-chat-layout">
+      <aside class="ops-context-rail">
+        <section class="ops-rail-section">
+          <div class="panel-heading">
+            <h2>诊断上下文</h2>
+            <button id="refresh-context" type="button">刷新</button>
+          </div>
+          <div class="field">
+            <label>AIOps Agent</label>
+            <select id="agent-select"></select>
+          </div>
+          <div class="field">
+            <label>数据库目标</label>
+            <select id="target-select"></select>
+          </div>
+          <div id="context-summary" class="ops-context-summary">
+            <p class="muted">连接后显示 Agent、目标和运行模式。</p>
+          </div>
+          <p id="context-status" class="status"></p>
+        </section>
+
+        <section class="ops-rail-section">
+          <h2>会话</h2>
+          <div class="field">
+            <label>Session ID</label>
+            <div class="input-with-action">
+              <input id="session-id" placeholder="自动生成" />
+              <button id="new-session" type="button">新建</button>
+            </div>
+          </div>
+          <div class="field">
+            <label>恢复 Run ID</label>
+            <div class="input-with-action">
+              <input id="resume-run-id" placeholder="UUID" />
+              <button id="resume-run" type="button">恢复</button>
+            </div>
+          </div>
+          <dl class="ops-run-facts">
+            <div><dt>Run</dt><dd id="active-run-label">未开始</dd></div>
+            <div><dt>状态</dt><dd id="active-run-status">IDLE</dd></div>
+            <div><dt>根因等级</dt><dd id="active-root-grade">—</dd></div>
+            <div><dt>SSE Cursor</dt><dd id="active-cursor">0</dd></div>
+          </dl>
+          <div class="actions">
+            <button id="reconnect-stream" type="button">重新监听</button>
+            <button id="cancel-run" class="danger" type="button">取消 Run</button>
+          </div>
+        </section>
+
+        <section class="ops-rail-section">
+          <h2>交互规则</h2>
+          <ol class="ops-rules">
+            <li>只读 SQL 由用户执行并回贴结果。</li>
+            <li>实际变更命令必须单独审批。</li>
+            <li>聊天中的“同意”不代表审批。</li>
+            <li>执行成功后仍需验证和对比。</li>
+          </ol>
+        </section>
+      </aside>
+
+      <section class="ops-conversation">
+        <div class="ops-conversation-head">
+          <div>
+            <span class="ops-kicker">DATABASE DIAGNOSTIC SESSION</span>
+            <h2>对话与受控操作</h2>
+          </div>
+          <span id="conversation-state" class="badge">等待提问</span>
+        </div>
+
+        <div id="conversation-stream" class="ops-message-stream" aria-live="polite">
+          <article class="ops-message assistant">
+            <div class="ops-message-author">AIOps Agent</div>
+            <div class="ops-message-body">
+              请选择 Agent 和数据库目标，然后描述故障现象。诊断过程中如需额外数据，
+              我会展示受控只读 SQL；任何变更命令都会等待独立审批。
+            </div>
+          </article>
+        </div>
+
+        <section id="interaction-dock" class="ops-interaction-dock" hidden>
+          <div id="hitl-card" class="ops-action-card" hidden>
+            <div class="ops-action-head">
+              <div>
+                <span class="ops-action-kind">人工补证</span>
+                <h3>请执行只读 SQL 并回贴结果</h3>
+              </div>
+              <span id="hitl-expiry" class="badge warning"></span>
+            </div>
+            <p id="hitl-prompt" class="hint"></p>
+            <div id="hitl-queries"></div>
+            <div class="field">
+              <label>提交说明（可选）</label>
+              <input id="hitl-note" placeholder="例如：使用只读账号在目标 PDB 执行" />
+            </div>
+            <div class="actions">
+              <button id="submit-hitl" class="primary" type="button">提交数据并继续诊断</button>
+              <button id="skip-hitl" type="button">跳过本次补证</button>
+            </div>
+            <p id="hitl-status" class="status"></p>
+          </div>
+
+          <div id="proposal-card" class="ops-action-card command" hidden>
+            <div class="ops-action-head">
+              <div>
+                <span class="ops-action-kind">受控变更</span>
+                <h3 id="proposal-title">命令等待单次审批</h3>
+              </div>
+              <span id="proposal-mode" class="badge"></span>
+            </div>
+            <div class="ops-command-block">
+              <div class="ops-command-label">待执行命令</div>
+              <pre id="proposal-command"></pre>
+            </div>
+            <div class="ops-proposal-grid">
+              <div><strong>影响</strong><p id="proposal-impact"></p></div>
+              <div><strong>风险</strong><p id="proposal-risk"></p></div>
+              <div><strong>前置条件</strong><ul id="proposal-prerequisites"></ul></div>
+              <div><strong>验证</strong><p id="proposal-verification"></p></div>
+              <div class="span-all"><strong>回滚</strong><p id="proposal-rollback"></p></div>
+            </div>
+            <div class="field">
+              <label>审批、驳回或人工执行说明</label>
+              <input id="proposal-note" />
+            </div>
+            <div class="actions">
+              <button id="approve-proposal" class="primary" type="button">批准本条命令</button>
+              <button id="reject-proposal" class="danger" type="button">驳回</button>
+              <button id="manual-result-toggle" type="button">我已人工执行</button>
+            </div>
+            <div id="manual-result-form" class="ops-inline-form" hidden>
+              <div class="field-row">
+                <div class="field">
+                  <label>人工执行状态</label>
+                  <select id="manual-result-status">
+                    <option>EXECUTED</option>
+                    <option>FAILED</option>
+                    <option>CANCELLED</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label>有限输出（可选）</label>
+                  <textarea id="manual-result-output"></textarea>
+                </div>
+              </div>
+              <button id="submit-manual-result" class="primary" type="button">提交人工执行结果</button>
+            </div>
+            <p id="proposal-status" class="status"></p>
+          </div>
+        </section>
+
+        <form id="question-form" class="ops-composer">
+          <textarea
+            name="input"
+            required
+            placeholder="描述现象、时间范围和影响，例如：表空间告警持续出现，请确认是否需要扩容。"
+          ></textarea>
+          <div class="ops-composer-foot">
+            <span class="muted">新问题会创建一个可恢复的 Chat Run</span>
+            <button class="primary" type="submit">发送并开始诊断</button>
+          </div>
+        </form>
+      </section>
+
+      <aside class="ops-trace-rail">
+        <section class="ops-trace-head">
+          <div>
+            <span class="ops-kicker">LIVE TRACE</span>
+            <h2>执行轨迹</h2>
+          </div>
+          <button id="clear-trace" type="button">清空</button>
+        </section>
+        <div id="trace-stream" class="ops-trace-stream">
+          <p class="muted">Run 开始后显示监控查询、数据库取证、知识检索和诊断阶段。</p>
+        </div>
+        <details class="raw-sse">
+          <summary>原始 SSE 事件</summary>
+          <div id="raw-events" class="timeline"></div>
+        </details>
+        <details class="raw-sse">
+          <summary>Run / 最终 Artifact</summary>
+          <pre id="run-output">{}</pre>
+          <pre id="result-output">{}</pre>
+        </details>
+      </aside>
+    </main>
+
+    <script src="./shared.js"></script>
+    <script src="./aiops-chat.js"></script>
+  </body>
+</html>

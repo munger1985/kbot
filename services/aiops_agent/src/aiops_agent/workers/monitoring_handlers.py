@@ -28,6 +28,49 @@ def _parse_time(value: str) -> datetime:
     )
 
 
+def _metric_definitions(snapshot: dict) -> tuple[MetricDefinition, ...]:
+    """把目标绑定的受控 Provider 查询覆盖应用到冻结指标定义。"""
+    overrides = dict(snapshot.get("mapping_overrides") or {})
+    prometheus_queries = overrides.get("prometheus_queries") or {}
+    if not isinstance(prometheus_queries, dict):
+        raise ValueError("prometheus_queries 必须是对象")
+    definitions = []
+    for item in snapshot["metrics"]:
+        definition = MetricDefinition.model_validate(item)
+        query = prometheus_queries.get(definition.metric_code)
+        if query is not None:
+            if (
+                not isinstance(query, str)
+                or not query.strip()
+                or len(query) > 2000
+                or "${" in query.replace("${external_target}", "")
+            ):
+                raise ValueError("Prometheus 指标查询覆盖格式无效")
+            provider = definition.providers.get("PROMETHEUS")
+            if provider is None:
+                raise ValueError("指标不支持 Prometheus 查询覆盖")
+            definition = definition.model_copy(
+                update={
+                    "providers": {
+                        **definition.providers,
+                        "PROMETHEUS": provider.model_copy(
+                            update={
+                                "template_id": (
+                                    f"binding.{definition.metric_code}"
+                                ),
+                                "template_version": str(
+                                    snapshot["binding_version"]
+                                ),
+                                "query_template": query.strip(),
+                            }
+                        ),
+                    }
+                }
+            )
+        definitions.append(definition)
+    return tuple(definitions)
+
+
 class MonitorScopeHandler:
     async def execute(
         self, context: TaskExecutionContext
@@ -124,10 +167,7 @@ class MonitorObserveHandler:
                     external_target_key=snapshot[
                         "external_target_key"
                     ],
-                    metric_definitions=tuple(
-                        MetricDefinition.model_validate(item)
-                        for item in snapshot["metrics"]
-                    ),
+                    metric_definitions=_metric_definitions(snapshot),
                     window_start=_parse_time(window["start"]),
                     window_end=_parse_time(window["end"]),
                     requested_step_seconds=60,

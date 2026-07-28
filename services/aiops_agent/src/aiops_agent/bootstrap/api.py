@@ -55,6 +55,7 @@ from aiops_agent.diagnostics import (
     create_diagnostic_registry,
 )
 from platform_core.database.oracle import create_database_runtime
+from platform_clients.model import AIModelConfigClient
 from platform_clients.agent_runtime import AgentRuntimeClient
 from platform_clients.knowledge_core import KnowledgeCoreClient
 from platform_core.security import (
@@ -98,6 +99,16 @@ def create_aiops_api(
             timeout_seconds=resolved.clients.agent_runtime.timeout_seconds,
             session=client_session,
         )
+        agent_runtime_validator = AgentRuntimeValidator(
+            agent_runtime_client,
+            model_client=AIModelConfigClient(
+                base_url=resolved.clients.model_serving.base_url,
+                timeout=resolved.clients.model_serving.timeout_seconds,
+                caller_service=config.service_name,
+                audience=resolved.clients.model_serving.audience,
+            ),
+            caller_service=config.service_name,
+        )
         cursor_secret = os.getenv(resolved.management.cursor_secret_env)
         if not cursor_secret:
             if resolved.is_production():
@@ -120,7 +131,7 @@ def create_aiops_api(
             uow_factory=runtime.uow_factory,
             cursor_codec=cursor_codec,
             secret_store=secret_store,
-            agent_runtime=AgentRuntimeValidator(agent_runtime_client),
+            agent_runtime=agent_runtime_validator,
             template_registry=InspectionTemplateRegistry(
                 resolved.management.inspection_templates
             ),
@@ -236,6 +247,7 @@ def create_aiops_api(
             diagnostic_registry=diagnostic_registry,
             diagnosis_config=resolved.diagnosis,
             diagnosis_prompt_registry=diagnosis_prompts,
+            agent_runtime=agent_runtime_validator,
             cursor_codec=cursor_codec,
         )
         app.state.monitor_intake_service = MonitorWebhookIntakeService(

@@ -108,18 +108,27 @@ class UserProvidedDatabaseResult(_HitlContract):
     hitl_id: str
     query_id: str
     status: Literal["SUCCEEDED", "FAILED", "SKIPPED"]
+    raw_output: str | None = Field(default=None, max_length=65536)
+    parse_status: Literal["STRUCTURED", "UNSTRUCTURED", "NOT_APPLICABLE"]
     columns: tuple[str, ...] = ()
     rows: tuple[tuple[Any, ...], ...] = ()
+    parse_warning: str | None = Field(default=None, max_length=1000)
     error: str | None = None
     content_sha256: str
     quality_flags: tuple[str, ...] = ("USER_PROVIDED",)
 
     @model_validator(mode="after")
     def validate_result(self) -> "UserProvidedDatabaseResult":
-        if self.status == "SUCCEEDED" and not self.columns:
-            raise ValueError("成功结果必须包含列定义")
-        if self.status != "SUCCEEDED" and self.rows:
-            raise ValueError("失败或跳过结果不能包含数据行")
+        if self.status == "SUCCEEDED" and not self.raw_output:
+            raise ValueError("成功结果必须保留原始数据库输出")
+        if self.parse_status == "STRUCTURED" and not self.columns:
+            raise ValueError("结构化结果必须包含列定义")
+        if self.parse_status != "STRUCTURED" and (self.columns or self.rows):
+            raise ValueError("未结构化结果不能包含行列数据")
+        if self.status != "SUCCEEDED" and (
+            self.raw_output or self.parse_status != "NOT_APPLICABLE"
+        ):
+            raise ValueError("失败或跳过结果不能包含数据库输出")
         return self
 
 

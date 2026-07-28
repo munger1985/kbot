@@ -21,6 +21,10 @@ _FORBIDDEN = re.compile(
 _ORACLE_OBJECT = re.compile(
     r"\b(?:from|join)\s+([a-z0-9_$#.]+)", re.IGNORECASE
 )
+_CTE_NAME = re.compile(
+    r"(?:\bwith|,)\s*([a-z][a-z0-9_$#]*)\s+as\s*\(",
+    re.IGNORECASE,
+)
 _ORACLE_ALLOW = re.compile(
     r"^(?:gv\$|v\$|dba_|cdb_|user_|all_|dual$)", re.IGNORECASE
 )
@@ -38,6 +42,9 @@ def validate_model_manual_sql(sql: str, *, db_type: str) -> None:
     if _FORBIDDEN.search(normalized):
         raise ValueError("人工 SQL 包含禁止结构")
     objects = _ORACLE_OBJECT.findall(normalized)
+    cte_names = {
+        item.lower() for item in _CTE_NAME.findall(normalized)
+    }
     if not objects and not re.match(
         r"^select\b", normalized, re.IGNORECASE
     ):
@@ -46,7 +53,7 @@ def validate_model_manual_sql(sql: str, *, db_type: str) -> None:
         name = raw.lower()
         if db_type == "ORACLE":
             leaf = name.split(".")[-1]
-            if not _ORACLE_ALLOW.match(leaf):
+            if leaf not in cte_names and not _ORACLE_ALLOW.match(leaf):
                 raise ValueError("Oracle 人工 SQL 引用了未授权对象")
         elif not _MYSQL_ALLOW.match(name):
             raise ValueError("MySQL 人工 SQL 引用了未授权对象")

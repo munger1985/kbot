@@ -34,6 +34,7 @@ class UiStaticPagesTest(unittest.TestCase):
             "knowledge-core.html",
             "agent-chat.html",
             "aiops.html",
+            "aiops-chat.html",
             "agent-debug.html",
             "operations-logs.html",
         ):
@@ -82,14 +83,28 @@ class UiStaticPagesTest(unittest.TestCase):
                 "monitor-form",
                 "collection-choices",
                 "bind-resources",
-                "question-form",
-                "thought-stream",
-                "raw-events",
-                "hitl-panel",
-                "proposal-panel",
+                "diagnosis-flow",
                 "inspection-form",
                 "report-rows",
                 "report-output",
+            },
+            "aiops-chat.html": {
+                "auth-form",
+                "agent-select",
+                "target-select",
+                "session-id",
+                "resume-run-id",
+                "conversation-stream",
+                "question-form",
+                "trace-stream",
+                "raw-events",
+                "hitl-card",
+                "hitl-queries",
+                "submit-hitl",
+                "proposal-card",
+                "approve-proposal",
+                "manual-result-form",
+                "result-output",
             },
             "operations-logs.html": {
                 "auth-form",
@@ -129,6 +144,7 @@ class UiStaticPagesTest(unittest.TestCase):
             "knowledge-core.js",
             "agent-chat.js",
             "aiops.js",
+            "aiops-chat.js",
             "agent-debug.js",
             "operations-logs.js",
         ):
@@ -206,21 +222,41 @@ class UiStaticPagesTest(unittest.TestCase):
         self.assertIn("diagnostics.discovery", script)
         self.assertIn("diagnostics.evidence", script)
 
-    def test_aiops_page_covers_configuration_hitl_and_reports(self):
-        script = (UI_ROOT / "aiops.js").read_text(encoding="utf-8")
+    def test_aiops_pages_separate_configuration_and_chat_diagnosis(self):
+        config_html = (UI_ROOT / "aiops.html").read_text(encoding="utf-8")
+        chat_html = (UI_ROOT / "aiops-chat.html").read_text(
+            encoding="utf-8"
+        )
+        config_script = (UI_ROOT / "aiops.js").read_text(
+            encoding="utf-8"
+        )
+        chat_script = (UI_ROOT / "aiops-chat.js").read_text(
+            encoding="utf-8"
+        )
         for path in (
             "/api/v1/ops/targets",
             "/api/v1/ops/monitor-sources",
             "/api/v1/ops/policies",
-            "/api/v1/ops/runs",
-            "/api/v1/ops/hitl/",
-            "/api/v1/ops/proposals/",
             "/api/v1/ops/inspection-plans",
             "/api/v1/ops/reports",
         ):
-            self.assertIn(path, script)
-        self.assertIn("task_key", script)
-        self.assertIn("diagnosis:knowledge", script)
+            self.assertIn(path, config_script)
+        for path in (
+            "/api/v1/ops/runs",
+            "/api/v1/ops/hitl/",
+            "/api/v1/ops/proposals/",
+        ):
+            self.assertIn(path, chat_script)
+        self.assertIn("aiops-chat.html", config_html)
+        self.assertNotIn('id="hitl-panel"', config_html)
+        self.assertIn('id="hitl-card"', chat_html)
+        self.assertIn("diagnostic.input_required", chat_script)
+        self.assertIn("重新加载补证内容", chat_script)
+        self.assertNotIn('id="hitl-format"', chat_html)
+        self.assertIn("raw_output", chat_script)
+        self.assertIn("proposal.pending_approval", chat_script)
+        self.assertIn("manual-result", chat_script)
+        self.assertIn("expected_proposal_hash", chat_script)
 
 
 if __name__ == "__main__":

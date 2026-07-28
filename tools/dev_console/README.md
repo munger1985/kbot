@@ -26,11 +26,12 @@ Domain ID 和测试 User ID。
   也不构造 Asset。
 - `agent-chat.html`：选择 Agent、切换 `do_rerank`、创建 Conversation、提交文字
   或图片问题、读取带认证 Header 的 SSE、查看 Trace、历史和最终 Artifact。
-- `aiops.html`：创建独立 AIOps Agent 和数据库/监控资源，一次完成 KC、Policy、
-  Target-Agent 与 Monitor-Target 绑定；发起对话式诊断后实时展示监控采集、数据库
-  只读查询、KC 检索、LLM 根因推理、方案和报告生成。数据库不可直连时可查看系统
-  生成的 SQL 并粘贴人工执行结果；执行方案支持单次审批或驳回。报告中心覆盖故障、
-  性能、日报、周报和处置前后对比报告，并可建立定时巡检计划。
+- `aiops.html`：AIOps 配置页。创建独立 AIOps Agent、数据库/监控资源及诊断策略，
+  完成 KC、Target-Agent 与 Monitor-Target 绑定，并管理巡检计划和报告。
+- `aiops-chat.html`：独立的 AIOps 对话诊断台。创建或恢复 Chat Run，通过 SSE
+  展示监控采集、数据库取证、知识检索和 LLM 推理；数据库不可直连时展示受控只读
+  SQL，允许逐项粘贴结果后继续同一个 Run。变更命令必须逐条审批，也支持
+  自动变更能力不可用时回填人工执行结果，随后继续验证、对比和报告生成。
 - `agent-debug.html`：按 Run 聚合 Task、Event、Artifact、KC 两阶段检索诊断、
   LLM 重排报告和跨服务运行日志，用于重放一次聊天的完整执行过程。
 - `operations-logs.html`：不关联具体 Run 的通用日志文件浏览器。

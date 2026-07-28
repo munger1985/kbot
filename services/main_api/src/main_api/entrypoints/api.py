@@ -88,6 +88,8 @@ async def lifespan(app: FastAPI):
             scopes=(
                 "aiops.manage",
                 "aiops.run",
+                "aiops.hitl",
+                "aiops.approve",
                 "aiops.monitor.intake",
             ),
             auth_context_codec=create_auth_context_codec(),

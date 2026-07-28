@@ -96,7 +96,6 @@ async def main() -> None:
                     db_type="ORACLE",
                     environment="DEV",
                     db_role="PRIMARY",
-                    execution_mode="ADVISORY",
                     security_level=1,
                     status="ACTIVE",
                     health_status="UNKNOWN",
@@ -108,7 +107,7 @@ async def main() -> None:
                 TargetBindingEntity(
                     target_id=target_id,
                     agent_id=agent_id,
-                    access_mode="DIAGNOSE",
+                    allow_mutation=False,
                     status="ACTIVE",
                     created_by="runtime-smoke",
                     updated_by="runtime-smoke",

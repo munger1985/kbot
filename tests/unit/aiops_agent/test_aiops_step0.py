@@ -68,7 +68,6 @@ class AIOpsContractTest(unittest.TestCase):
                 "service": "ERP",
             },
             "diagnostic_secret_ref": "vault://kbot/erp/readonly",
-            "execution_mode": "ADVISORY",
             "security_level": 3,
         }
         TargetCreate.model_validate(payload)

@@ -54,6 +54,7 @@ from platform_core.contracts.aiops import (
     OpsCommand,
     OpsRunCreate,
     OpsRunReceipt,
+    OpsRunResult,
     OpsRunSummary,
     PendingInputView,
     PolicyCreate,
@@ -245,6 +246,18 @@ async def get_ops_run(
     result = OpsRunSummary.model_validate(payload)
     response.headers["ETag"] = f'"rv-{result.row_version}"'
     return result
+
+
+@router.get("/runs/{run_id}/result", response_model=OpsRunResult)
+async def get_ops_run_result(
+    run_id: UUID,
+    request: Request,
+) -> OpsRunResult:
+    payload = await _client(request).get_run_result(
+        run_id,
+        auth_context=request.state.auth_context,
+    )
+    return OpsRunResult.model_validate(payload)
 
 
 @router.get(
