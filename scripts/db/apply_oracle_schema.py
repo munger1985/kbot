@@ -17,8 +17,9 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 ROOT = Path(__file__).resolve().parents[2]
 SCHEMA_ROOT = ROOT / "database" / "oracle"
 DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent / "init_services.ini"
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+PLATFORM_CORE_SRC = ROOT / "packages" / "platform_core" / "src"
+if str(PLATFORM_CORE_SRC) not in sys.path:
+    sys.path.insert(0, str(PLATFORM_CORE_SRC))
 
 from platform_core.database.oracle import create_database_runtime  # noqa: E402
 from platform_core.identity import uuid7  # noqa: E402

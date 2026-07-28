@@ -46,6 +46,26 @@ class RepositoryScriptLayoutTest(unittest.TestCase):
         self.assertNotIn("pip install --no-deps", installer)
         self.assertNotIn(" -e ", installer)
 
+    def test_operational_python_scripts_bootstrap_src_layout(self):
+        expected_source_roots = {
+            "db/apply_oracle_schema.py": (
+                '"packages" / "platform_core" / "src"',
+            ),
+            "deployment/check_deployment.py": (
+                '"packages" / "platform_core" / "src"',
+                '"packages" / "platform_clients" / "src"',
+                '"services" / "main_api" / "src"',
+            ),
+            "security/generate_portal_api_key.py": (
+                '"packages" / "platform_core" / "src"',
+            ),
+        }
+
+        for relative_path, source_roots in expected_source_roots.items():
+            content = (SCRIPTS_ROOT / relative_path).read_text(encoding="utf-8")
+            for source_root in source_roots:
+                self.assertIn(source_root, content)
+
     def test_explicit_test_tools_live_under_tests(self):
         expected = (
             ROOT / "tests" / "acceptance" / "check_4_0_boundaries.py",

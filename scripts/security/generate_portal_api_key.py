@@ -4,9 +4,17 @@ from __future__ import annotations
 
 import argparse
 import os
+from pathlib import Path
+import sys
 
-from platform_core.config.settings import get_security_config
-from platform_core.security import generate_portal_api_key
+
+ROOT = Path(__file__).resolve().parents[2]
+PLATFORM_CORE_SRC = ROOT / "packages" / "platform_core" / "src"
+if str(PLATFORM_CORE_SRC) not in sys.path:
+    sys.path.insert(0, str(PLATFORM_CORE_SRC))
+
+from platform_core.config.settings import get_security_config  # noqa: E402
+from platform_core.security import generate_portal_api_key  # noqa: E402
 
 
 def main() -> int:
