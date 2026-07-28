@@ -5,7 +5,7 @@
 - `db/apply_oracle_schema.py`：按同目录 `init_services.ini` 初始化所选服务的 Oracle 表。
 - `db/init_services.ini`：选择本次初始化包含的业务服务；基础共享表始终创建。
 - `deployment/check_deployment.py`：启动前检查部署配置与生产 Secret。
-- `deployment/install_workspace.sh`：安装锁定依赖和七个可编辑 Python 包。
+- `deployment/install_workspace.sh`：安装锁定的第三方依赖；仓库内服务直接从源码加载。
 - `deployment/models/`：按需下载本地 OCR、Tokenizer、VLM 或视觉模型。
 - `security/generate_portal_api_key.py`：生成 Portal API Key 及配置摘要。
 - `release/verify_release.py`：编排发布前检查、实库验收并生成发布证据。

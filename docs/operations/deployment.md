@@ -13,14 +13,15 @@
 
 ## 安装
 
-克隆明确的 4.0 Release/Commit 后安装锁定依赖和工作区包：
+下载或克隆明确的 4.0 Release/Commit 后，仅安装锁定的第三方依赖：
 
 ```bash
 bash scripts/deployment/install_workspace.sh
 ```
 
-生产镜像只安装目标 `services/<service>`、`platform_core` 以及需要发起跨服务调用
-时使用的 `platform_clients`。不要把其他服务源码复制进镜像。
+安装脚本不会执行 `pip install -e`，也不要求服务目录包含 `pyproject.toml`。
+当前部署方式直接保留完整源码树；`start_kbot.sh` 统一设置 `PYTHONPATH` 后从
+`services/*/src` 和 `packages/*/src` 加载模块。
 
 ## 配置与 Secret
 

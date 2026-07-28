@@ -23,9 +23,9 @@ var/            本地日志、上传数据和生成物，Git 整体忽略
 bash scripts/deployment/install_workspace.sh
 ```
 
-生产构建应分别构建目标服务、`platform_core` 和按需使用的
-`platform_clients`，不能把其他服务源码复制进同一镜像。服务间调用只能经过
-稳定契约和客户端，不允许直接导入其他服务的 Entity、Repository 或应用服务。
+当前部署直接使用完整源码树，不把服务构建为 Python 安装包。启动脚本统一注入
+各 `src` 目录；服务间调用仍只能经过稳定契约和客户端，不允许直接导入其他服务
+的 Entity、Repository 或应用服务。
 
 `database/oracle/` 保持集中，是因为 4.0 使用同一 Schema 并需要统一初始化；
 目录内部仍按表所有者拆分。将来拆库时可直接把对应服务的 DDL 目录随服务迁走。

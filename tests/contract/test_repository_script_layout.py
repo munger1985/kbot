@@ -37,6 +37,15 @@ class RepositoryScriptLayoutTest(unittest.TestCase):
             (ROOT / "database" / "oracle" / "init_services.ini").exists()
         )
 
+    def test_workspace_install_only_installs_third_party_dependencies(self):
+        installer = (
+            SCRIPTS_ROOT / "deployment" / "install_workspace.sh"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("pip install -r requirements.txt", installer)
+        self.assertNotIn("pip install --no-deps", installer)
+        self.assertNotIn(" -e ", installer)
+
     def test_explicit_test_tools_live_under_tests(self):
         expected = (
             ROOT / "tests" / "acceptance" / "check_4_0_boundaries.py",
