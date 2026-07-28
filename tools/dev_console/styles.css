@@ -231,6 +231,10 @@ button:disabled {
   backdrop-filter: blur(8px);
 }
 
+.workflow-nav.aiops-nav {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
 .workflow-nav a {
   display: flex;
   gap: 8px;
@@ -462,6 +466,129 @@ tbody tr.selected {
 .tracking-member {
   display: block;
   margin-bottom: 3px;
+  font-size: 12px;
+}
+
+.selection-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.selection-card {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  padding: 10px;
+  border: 1px solid var(--line);
+  background: #f8f7f2;
+  cursor: pointer;
+}
+
+.selection-card:has(input:checked) {
+  border-color: var(--accent);
+  background: #edf3ed;
+}
+
+.selection-card input {
+  width: auto;
+  margin-top: 3px;
+}
+
+.selection-card span {
+  display: grid;
+  min-width: 0;
+}
+
+.selection-card small {
+  overflow: hidden;
+  color: var(--muted);
+  font-weight: 400;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ops-thought-stream {
+  display: grid;
+  gap: 0;
+  max-height: 620px;
+  overflow: auto;
+  padding-left: 4px;
+}
+
+.ops-thought {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 8px;
+  min-height: 58px;
+}
+
+.ops-thought-marker {
+  position: relative;
+}
+
+.ops-thought-marker::before {
+  position: absolute;
+  top: 8px;
+  left: 5px;
+  z-index: 1;
+  width: 8px;
+  height: 8px;
+  border: 2px solid var(--paper);
+  border-radius: 50%;
+  background: #8b6e36;
+  box-shadow: 0 0 0 1px #8b6e36;
+  content: "";
+}
+
+.ops-thought-marker::after {
+  position: absolute;
+  top: 19px;
+  bottom: 0;
+  left: 9px;
+  width: 1px;
+  background: var(--line);
+  content: "";
+}
+
+.ops-thought:last-child .ops-thought-marker::after {
+  display: none;
+}
+
+.ops-thought.done .ops-thought-marker::before {
+  background: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.ops-thought.failed .ops-thought-marker::before {
+  background: var(--danger);
+  box-shadow: 0 0 0 1px var(--danger);
+}
+
+.ops-thought.attention .ops-thought-marker::before {
+  background: #d08b17;
+  box-shadow: 0 0 0 1px #d08b17;
+}
+
+.ops-thought-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding-top: 2px;
+}
+
+.ops-thought-head span {
+  overflow: hidden;
+  color: var(--muted);
+  font: 11px/1.5 "SFMono-Regular", Consolas, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ops-thought-body {
+  padding: 2px 0 13px;
+  color: var(--muted);
   font-size: 12px;
 }
 
@@ -929,8 +1056,16 @@ tbody tr.selected {
     grid-template-columns: 1fr;
   }
 
+  .selection-grid {
+    grid-template-columns: 1fr;
+  }
+
   .workflow-nav {
     position: static;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .workflow-nav.aiops-nav {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 

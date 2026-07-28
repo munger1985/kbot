@@ -40,6 +40,7 @@ class TaskStatusEvent(EventBase):
     status: str
     task_id: UUIDv7
     task_type: str
+    task_key: str
 
 
 class DiagnosticProgressEvent(EventBase):

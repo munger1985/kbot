@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AIOps Agent 测试</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <!-- 仅使用真实公开 API，验证 AIOps 从配置、诊断交互到报告生成的完整流程。 -->
+    <header>
+      <h1>AIOps Agent 测试</h1>
+      <nav>
+        <a href="./index.html">首页</a>
+        <a href="./knowledge-core.html">Knowledge Core</a>
+        <a href="./operations-logs.html">开发日志</a>
+      </nav>
+    </header>
+
+    <form id="auth-form" class="auth-bar">
+      <div class="field"><label>Main API URL</label><input name="baseUrl" required /></div>
+      <div class="field"><label>Domain ID</label><input name="domainId" required /></div>
+      <div class="field"><label>User ID</label><input name="userId" required /></div>
+      <button class="primary" type="submit">保存并刷新</button>
+    </form>
+
+    <nav class="workflow-nav aiops-nav" aria-label="AIOps 测试流程">
+      <a href="#agent-setup"><span>01</span>Agent</a>
+      <a href="#target-setup"><span>02</span>数据源</a>
+      <a href="#binding-setup"><span>03</span>授权绑定</a>
+      <a href="#diagnosis-flow"><span>04</span>诊断</a>
+      <a href="#reports"><span>05</span>报告</a>
+    </nav>
+
+    <main class="workflow">
+      <section id="agent-setup" class="workflow-section">
+        <div class="workflow-heading">
+          <span class="workflow-number">01</span>
+          <div>
+            <h2>创建 AIOps Agent</h2>
+            <p>配置 Agent 自身的问答、推理和记忆模型；AIOps 能力与普通问文 Agent 相互独立。</p>
+          </div>
+        </div>
+        <div class="grid">
+          <section class="panel span-5">
+            <div class="panel-heading">
+              <h3>新建 Agent</h3>
+              <button id="refresh-models" type="button">刷新模型</button>
+            </div>
+            <form id="agent-form">
+              <div class="field-row">
+                <div class="field"><label>agent_key</label><input name="agentKey" required pattern="[a-z][a-z0-9._\-]{1,127}" /></div>
+                <div class="field"><label>显示名称</label><input name="displayName" required value="AIOps 诊断 Agent" /></div>
+              </div>
+              <div class="field-row">
+                <div class="field"><label>context_llm</label><select name="contextLlm" required></select></div>
+                <div class="field"><label>composer_llm</label><select name="composerLlm" required></select></div>
+              </div>
+              <div class="field-row">
+                <div class="field"><label>memory_llm</label><select name="memoryLlm" required></select></div>
+                <div class="field"><label>memory_embedding</label><select name="memoryEmbedding" required></select></div>
+              </div>
+              <div class="field"><label>Agent 指令（可选）</label><textarea name="instruction" placeholder="例如：优先依据监控、数据库诊断和已绑定知识生成可追溯结论。"></textarea></div>
+              <button class="primary" type="submit">创建 AIOps Agent</button>
+            </form>
+            <p id="agent-create-status" class="status"></p>
+          </section>
+          <section class="panel span-7">
+            <div class="panel-heading">
+              <div><h3>可用 AIOps Agents</h3><p class="hint">只显示启用了 aiops capability 的 Agent。</p></div>
+              <button id="refresh-agents" class="primary" type="button">刷新列表</button>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Agent</th><th>状态</th><th>ID</th></tr></thead>
+                <tbody id="agent-rows"></tbody>
+              </table>
+            </div>
+            <p id="agent-list-status" class="status"></p>
+          </section>
+        </div>
+      </section>
+
+      <section id="target-setup" class="workflow-section">
+        <div class="workflow-heading">
+          <span class="workflow-number">02</span>
+          <div>
+            <h2>数据库与监控数据源</h2>
+            <p>数据库凭证仅填写 Secret 引用；留空时聊天流程会在证据不足时要求用户手工执行 SQL。</p>
+          </div>
+        </div>
+        <div class="grid">
+          <section class="panel span-6">
+            <h3>创建数据库目标</h3>
+            <form id="target-form">
+              <div class="field-row">
+                <div class="field"><label>target_key</label><input name="targetKey" required /></div>
+                <div class="field"><label>显示名称</label><input name="displayName" required value="测试数据库" /></div>
+              </div>
+              <div class="field-row">
+                <div class="field"><label>数据库类型</label><select name="dbType"><option>ORACLE</option><option>MYSQL</option></select></div>
+                <div class="field"><label>版本（用于选择诊断 SQL）</label><input name="versionCode" required value="26ai" /></div>
+              </div>
+              <div class="field-row">
+                <div class="field"><label>环境</label><select name="environment"><option>DEV</option><option>STG</option><option>PROD</option></select></div>
+                <div class="field"><label>Host</label><input name="host" required value="127.0.0.1" /></div>
+              </div>
+              <div class="field-row">
+                <div class="field"><label>Port</label><input name="port" required type="number" value="1521" /></div>
+                <div class="field"><label>Oracle Service / MySQL Database</label><input name="databaseName" required value="FREEPDB1" /></div>
+              </div>
+              <div class="field"><label>只读诊断 Secret Ref（可选）</label><input name="diagnosticSecretRef" placeholder="env://AIOPS_DATABASE_READONLY" /></div>
+              <details class="advanced-fields">
+                <summary>诊断能力声明</summary>
+                <div class="field">
+                  <label>capabilities JSON</label>
+                  <textarea name="capabilities">{"dynamic_performance_views":true,"dba_catalog_views":true,"replication_views":true}</textarea>
+                </div>
+                <p class="hint">应与只读账号实际可访问的系统视图一致；声明错误会在诊断结果中形成证据缺口。</p>
+              </details>
+              <button class="primary" type="submit">创建数据库目标</button>
+            </form>
+            <p id="target-create-status" class="status"></p>
+          </section>
+          <section class="panel span-6">
+            <h3>创建监控源</h3>
+            <form id="monitor-form">
+              <div class="field-row">
+                <div class="field"><label>source_key</label><input name="sourceKey" required /></div>
+                <div class="field"><label>类型</label><select name="sourceType"><option>PROMETHEUS</option><option>ZABBIX</option><option>OEM</option></select></div>
+              </div>
+              <div class="field"><label>显示名称</label><input name="displayName" required value="本地 Prometheus" /></div>
+              <div class="field"><label>Endpoint</label><input name="endpoint" type="url" required value="http://127.0.0.1:9161" /></div>
+              <div class="field"><label>Secret Ref（可选）</label><input name="secretRef" placeholder="env://AIOPS_MONITOR_TOKEN" /></div>
+              <button class="primary" type="submit">创建监控源</button>
+            </form>
+            <p id="monitor-create-status" class="status"></p>
+          </section>
+          <section class="panel span-12">
+            <div class="panel-heading">
+              <h3>数据源选择</h3>
+              <button id="refresh-sources" type="button">刷新目标与监控源</button>
+            </div>
+            <div class="field-row">
+              <div class="field"><label>数据库目标</label><select id="target-select"></select></div>
+              <div class="field"><label>监控源</label><select id="monitor-select"></select></div>
+            </div>
+            <p id="source-list-status" class="status"></p>
+          </section>
+        </div>
+      </section>
+
+      <section id="binding-setup" class="workflow-section">
+        <div class="workflow-heading">
+          <span class="workflow-number">03</span>
+          <div>
+            <h2>绑定知识、监控与诊断策略</h2>
+            <p>一次操作建立 KC Agent 绑定、AIOps Policy、目标授权以及目标到监控源的映射。</p>
+          </div>
+        </div>
+        <section class="panel">
+          <div class="panel-heading">
+            <div><h3>完整绑定</h3><p class="hint">Collection 可多选；策略快照会固定本次 AIOps 可引用的知识范围。</p></div>
+            <button id="refresh-collections" type="button">刷新 Collections</button>
+          </div>
+          <div id="collection-choices" class="selection-grid"></div>
+          <div class="field-row">
+            <div class="field"><label>监控中的目标标识</label><input id="external-target-key" value="kbot-test-db" /></div>
+            <div class="field"><label>访问模式</label><select id="access-mode"><option>PROPOSE</option><option>DIAGNOSE</option><option>EXECUTE</option><option>OBSERVE</option></select></div>
+          </div>
+          <button id="bind-resources" class="primary" type="button">创建策略并完成全部绑定</button>
+          <p id="binding-status" class="status"></p>
+          <pre id="binding-output">{}</pre>
+        </section>
+      </section>
+
+      <section id="diagnosis-flow" class="workflow-section">
+        <div class="workflow-heading">
+          <span class="workflow-number">04</span>
+          <div>
+            <h2>对话式诊断与实时思考</h2>
+            <p>实时显示监控采集、数据库查询、知识检索、LLM 根因推理、方案生成和报告生成阶段。</p>
+          </div>
+        </div>
+        <div class="grid">
+          <section class="panel span-5">
+            <form id="question-form">
+              <div class="field"><label>问题</label><textarea name="input" required placeholder="例如：分析当前数据库响应变慢的原因，并给出处理建议和诊断报告。"></textarea></div>
+              <div class="field"><label>会话 ID（可选，同一值用于连续追问）</label><input name="sessionId" /></div>
+              <div class="actions">
+                <button class="primary" type="submit">提问并监听 SSE</button>
+                <button id="stop-stream" type="button">停止监听</button>
+              </div>
+            </form>
+            <p id="run-status" class="status"></p>
+            <pre id="run-output">{}</pre>
+          </section>
+          <section class="panel span-7">
+            <div class="panel-heading"><h3>真实执行轨迹</h3><span id="run-badge" class="badge">未开始</span></div>
+            <div id="thought-stream" class="ops-thought-stream"><p class="muted">发起问题后显示执行过程。</p></div>
+            <details class="raw-sse"><summary>原始 SSE</summary><div id="raw-events" class="timeline"></div></details>
+          </section>
+          <section id="hitl-panel" class="panel span-6" hidden>
+            <h3>需要人工补充数据库结果</h3>
+            <p class="hint">请在受控环境执行下方只读 SQL，将结果粘贴后继续诊断。此交互只用于聊天触发流程。</p>
+            <pre id="hitl-request">{}</pre>
+            <form id="hitl-form">
+              <div class="field"><label>Query ID</label><input name="queryId" required /></div>
+              <div class="field"><label>执行结果</label><textarea name="inlineData" required></textarea></div>
+              <div class="field"><label>备注（可选）</label><input name="note" /></div>
+              <div class="actions"><button class="primary" type="submit">提交结果并继续</button><button id="skip-hitl" type="button">跳过补数</button></div>
+            </form>
+            <p id="hitl-status" class="status"></p>
+          </section>
+          <section id="proposal-panel" class="panel span-6" hidden>
+            <h3>待审批操作</h3>
+            <p id="proposal-hint" class="hint">页面展示真实命令预览、风险与回滚方案；可执行模式下每次操作都必须单独批准并留痕。</p>
+            <pre id="proposal-output">{}</pre>
+            <div class="field"><label>审批/驳回说明</label><input id="proposal-note" /></div>
+            <div class="actions"><button id="approve-proposal" class="primary" type="button">批准执行</button><button id="reject-proposal" class="danger" type="button">驳回</button></div>
+            <p id="proposal-status" class="status"></p>
+          </section>
+        </div>
+      </section>
+
+      <section id="reports" class="workflow-section">
+        <div class="workflow-heading">
+          <span class="workflow-number">05</span>
+          <div>
+            <h2>报告中心</h2>
+            <p>展示故障、性能、日报、周报和处置前后对比报告；巡检计划到期后由 Scheduler 自动生成。</p>
+          </div>
+        </div>
+        <div class="grid">
+          <section class="panel span-5">
+            <h3>创建巡检计划</h3>
+            <form id="inspection-form">
+              <div class="field-row">
+                <div class="field"><label>plan_key</label><input name="planKey" required /></div>
+                <div class="field"><label>显示名称</label><input name="displayName" required value="数据库日常巡检" /></div>
+              </div>
+              <div class="field-row">
+                <div class="field"><label>周期</label><select name="scheduleType"><option>DAILY</option><option>WEEKLY</option></select></div>
+                <div class="field"><label>时区</label><input name="timezone" value="Asia/Shanghai" required /></div>
+              </div>
+              <div class="field"><label>Cron（5 段）</label><input name="cronExpression" value="0 8 * * *" required /></div>
+              <button class="primary" type="submit">创建、绑定目标并启用</button>
+            </form>
+            <p id="inspection-status" class="status"></p>
+          </section>
+          <section class="panel span-7">
+            <div class="panel-heading">
+              <div><h3>已生成报告</h3><p class="hint">点击报告读取详情与内容 Artifact 引用。</p></div>
+              <button id="refresh-reports" class="primary" type="button">刷新报告</button>
+            </div>
+            <div class="field"><label>报告类型</label><select id="report-type"><option value="">全部</option><option>INCIDENT</option><option>PERFORMANCE</option><option>INSPECTION_DAILY</option><option>INSPECTION_WEEKLY</option><option>COMPARISON</option></select></div>
+            <div class="table-wrap"><table><thead><tr><th>类型</th><th>摘要</th><th>状态</th><th>周期</th></tr></thead><tbody id="report-rows"></tbody></table></div>
+            <p id="report-status" class="status"></p>
+          </section>
+          <section class="panel span-12">
+            <h3>报告详情</h3>
+            <pre id="report-output">{}</pre>
+          </section>
+        </div>
+      </section>
+    </main>
+
+    <script src="./shared.js"></script>
+    <script src="./aiops.js"></script>
+  </body>
+</html>

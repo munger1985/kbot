@@ -6053,6 +6053,10 @@
             "title": "Task Id",
             "type": "string"
           },
+          "task_key": {
+            "title": "Task Key",
+            "type": "string"
+          },
           "task_type": {
             "title": "Task Type",
             "type": "string"
@@ -6071,7 +6075,8 @@
           "trace_id",
           "status",
           "task_id",
-          "task_type"
+          "task_type",
+          "task_key"
         ],
         "title": "TaskStatusEvent",
         "type": "object"

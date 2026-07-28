@@ -1211,6 +1211,7 @@ class AIOpsRuntimeService:
                     "status": DomainOpsTaskStatus.RUNNING.value,
                     "task_id": str(task.ops_task_id),
                     "task_type": task.task_type,
+                    "task_key": task.task_key,
                     "trace_id": command.trace_id,
                 },
             )
@@ -1399,6 +1400,7 @@ class AIOpsRuntimeService:
                     "status": DomainOpsTaskStatus.SUCCEEDED.value,
                     "task_id": str(task.ops_task_id),
                     "task_type": task.task_type,
+                    "task_key": task.task_key,
                     "trace_id": command.trace_id,
                 },
             )
@@ -1417,6 +1419,7 @@ class AIOpsRuntimeService:
                         "status": "READY",
                         "task_id": str(successor.ops_task_id),
                         "task_type": successor.task_type,
+                        "task_key": successor.task_key,
                         "trace_id": command.trace_id,
                     },
                 )
@@ -2591,6 +2594,7 @@ class AIOpsRuntimeService:
                     "status": target.value,
                     "task_id": str(task.ops_task_id),
                     "task_type": task.task_type,
+                    "task_key": task.task_key,
                     "error_code": command.error_code,
                     "trace_id": command.trace_id,
                 },
@@ -3137,6 +3141,7 @@ class AIOpsRuntimeService:
                         "status": task.status,
                         "task_id": str(task.ops_task_id),
                         "task_type": task.task_type,
+                        "task_key": task.task_key,
                         "error_code": task.error_code,
                         "trace_id": trace_id,
                     },
@@ -3178,6 +3183,7 @@ class AIOpsRuntimeService:
                         "status": "READY",
                         "task_id": str(task.ops_task_id),
                         "task_type": task.task_type,
+                        "task_key": task.task_key,
                         "trace_id": trace_id,
                     },
                 )
@@ -3890,6 +3896,7 @@ class AIOpsRuntimeService:
                         "status": "READY",
                         "task_id": str(successor.ops_task_id),
                         "task_type": successor.task_type,
+                        "task_key": successor.task_key,
                         "trace_id": trace_id,
                     },
                 )

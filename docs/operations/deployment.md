@@ -66,7 +66,7 @@ python3 scripts/db/apply_oracle_schema.py \
 KC 使用 `DBMS_ALERT` 通知 Worker，PDB 管理员需要直接授权：
 
 ```sql
-GRANT EXECUTE ON SYS.DBMS_ALERT TO KBOT;
+GRANT EXECUTE ON SYS.DBMS_ALERT TO {KBOT_USER};
 ```
 
 确认目标为空 Schema 后执行：

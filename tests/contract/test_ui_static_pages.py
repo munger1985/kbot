@@ -33,6 +33,7 @@ class UiStaticPagesTest(unittest.TestCase):
             "index.html",
             "knowledge-core.html",
             "agent-chat.html",
+            "aiops.html",
             "agent-debug.html",
             "operations-logs.html",
         ):
@@ -73,6 +74,23 @@ class UiStaticPagesTest(unittest.TestCase):
                 "timeline",
                 "result-output",
             },
+            "aiops.html": {
+                "auth-form",
+                "agent-form",
+                "agent-rows",
+                "target-form",
+                "monitor-form",
+                "collection-choices",
+                "bind-resources",
+                "question-form",
+                "thought-stream",
+                "raw-events",
+                "hitl-panel",
+                "proposal-panel",
+                "inspection-form",
+                "report-rows",
+                "report-output",
+            },
             "operations-logs.html": {
                 "auth-form",
                 "log-filter-form",
@@ -110,6 +128,7 @@ class UiStaticPagesTest(unittest.TestCase):
             "shared.js",
             "knowledge-core.js",
             "agent-chat.js",
+            "aiops.js",
             "agent-debug.js",
             "operations-logs.js",
         ):
@@ -186,6 +205,22 @@ class UiStaticPagesTest(unittest.TestCase):
         self.assertIn("retrieval_report", script)
         self.assertIn("diagnostics.discovery", script)
         self.assertIn("diagnostics.evidence", script)
+
+    def test_aiops_page_covers_configuration_hitl_and_reports(self):
+        script = (UI_ROOT / "aiops.js").read_text(encoding="utf-8")
+        for path in (
+            "/api/v1/ops/targets",
+            "/api/v1/ops/monitor-sources",
+            "/api/v1/ops/policies",
+            "/api/v1/ops/runs",
+            "/api/v1/ops/hitl/",
+            "/api/v1/ops/proposals/",
+            "/api/v1/ops/inspection-plans",
+            "/api/v1/ops/reports",
+        ):
+            self.assertIn(path, script)
+        self.assertIn("task_key", script)
+        self.assertIn("diagnosis:knowledge", script)
 
 
 if __name__ == "__main__":
