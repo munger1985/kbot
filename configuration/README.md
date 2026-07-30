@@ -23,7 +23,7 @@ Portal API Key 摘要。
 environment = "production"
 data_dir = "/var/lib/kbot"
 log_dir = "/var/log/kbot"
-embedding_dimension = 2560
+embedding_dimension = 2048
 api_docs_enabled = false
 # 仅浏览器直连 Main API 时需要配置；必须是精确 Origin，不带末尾斜杠。
 api_allowed_origins = ["https://portal.example.com"]

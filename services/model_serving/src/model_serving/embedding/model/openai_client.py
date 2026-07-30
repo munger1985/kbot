@@ -9,7 +9,7 @@ class OpenAIEmbeddingConfig(EmbeddingConfig):
     """OpenAI Embedding service configuration"""
     api_key: str = Field(..., description="OpenAI API Key")
     api_base: str | None = Field(None, description="API proxy endpoint")
-    dimensions: int | None = Field(None, description="Output dimensions (only supported by v3 series models)")
+    dimensions: int | None = Field(None, description="输出向量维度")
     timeout: int = Field(30, description="Request timeout in seconds")
     max_retries: int = Field(2, description="SDK internal retry count")
     max_concurrent_requests: int = Field(5, description="Maximum concurrent requests")
@@ -95,8 +95,13 @@ class OpenAIEmbedding(BaseEmbedding[OpenAIEmbeddingConfig]):
             "encoding_format": "float"
         }
         
-        # Handle Matryoshka dimension truncation for v3 models
-        if self.config.dimensions and "text-embedding-3" in self.model_name:
+        # 百炼 text-embedding-v3/v4 的默认输出为 1024，必须显式传递目录声明的维度。
+        if self.config.dimensions and self.model_name in {
+            "text-embedding-3-small",
+            "text-embedding-3-large",
+            "text-embedding-v3",
+            "text-embedding-v4",
+        }:
             embed_kwargs["dimensions"] = self.config.dimensions # type: ignore
 
         # 2. Create concurrent task queue

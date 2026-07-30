@@ -2,9 +2,12 @@
 
 import asyncio
 import unittest
+from types import SimpleNamespace
 from typing import Any
 
 from model_serving.common.model_pool import BaseModelPool
+from model_serving.embedding.model.openai_client import OpenAIEmbeddingConfig
+from model_serving.embedding.model_pool import EmbeddingModelPool
 
 
 class _Pool(BaseModelPool[dict]):
@@ -45,6 +48,23 @@ class _Pool(BaseModelPool[dict]):
 
 
 class ModelPoolTest(unittest.IsolatedAsyncioTestCase):
+    def test_api_embedding_uses_catalogue_dimension(self):
+        config = EmbeddingModelPool()._build_config(
+            "qwen-v4",
+            "api_qwen",
+            {
+                "provider_model_name": "text-embedding-v4",
+                "api_key": "test-key",
+                "api_endpoint": "https://example.invalid/v1",
+                "embedding_dimension": 2048,
+                "model_params": {"dimensions": 1024},
+            },
+            SimpleNamespace(max_tokens=1024, timeout=30),
+        )
+
+        self.assertIsInstance(config, OpenAIEmbeddingConfig)
+        self.assertEqual(2048, config.dimensions)
+
     async def test_same_model_is_cold_started_only_once(self):
         pool = _Pool()
         models = await asyncio.gather(

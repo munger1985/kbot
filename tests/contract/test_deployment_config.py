@@ -18,7 +18,7 @@ class DeploymentConfigTest(unittest.TestCase):
             "environment='production'\n"
             "data_dir='/var/lib/kbot'\n"
             "log_dir='/var/log/kbot'\n"
-            "embedding_dimension=2560\n"
+            "embedding_dimension=2048\n"
             "[database]\n"
             "host='db.internal'\n"
             "username='kbot'\n"
