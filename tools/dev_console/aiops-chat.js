@@ -49,7 +49,7 @@
   }
 
   function createSessionId() {
-    return `ops-session-${crypto.randomUUID()}`;
+    return `ops-session-${KBotUI.uuid()}`;
   }
 
   function ensureSessionId() {

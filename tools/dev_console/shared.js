@@ -12,6 +12,24 @@
     return "http://127.0.0.1:18099";
   }
 
+  function uuid() {
+    if (
+      typeof crypto !== "undefined" &&
+      typeof crypto.randomUUID === "function"
+    ) {
+      return crypto.randomUUID();
+    }
+    // HTTP 测试页可能无法使用安全上下文 API；该值只作请求关联与幂等标识。
+    return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(
+      /[xy]/g,
+      (character) => {
+        const value = Math.floor(Math.random() * 16);
+        const nibble = character === "x" ? value : (value & 0x3) | 0x8;
+        return nibble.toString(16);
+      }
+    );
+  }
+
   function loadConfig() {
     let persisted = {};
     try {
@@ -65,7 +83,7 @@
     const headers = {
       "X-KBot-Test-Auth": "true",
       "X-KBot-User-ID": config.userId,
-      "X-Request-ID": crypto.randomUUID(),
+      "X-Request-ID": uuid(),
       ...(extra || {}),
     };
     if (config.domainId) {
@@ -180,7 +198,7 @@
   }
 
   function idempotency(prefix) {
-    return `${prefix}-${Date.now()}-${crypto.randomUUID()}`;
+    return `${prefix}-${Date.now()}-${uuid()}`;
   }
 
   async function sha256(file) {
@@ -202,5 +220,6 @@
     setStatus,
     sha256,
     streamSse,
+    uuid,
   };
 })();

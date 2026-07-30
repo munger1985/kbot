@@ -219,7 +219,7 @@
 
   function generateCollectionKey() {
     const timestamp = Date.now().toString(36);
-    const random = crypto.randomUUID().replaceAll("-", "").slice(0, 8);
+    const random = KBotUI.uuid().replaceAll("-", "").slice(0, 8);
     const value = `collection-${timestamp}-${random}`;
     $("#collection-form").elements.collectionKey.value = value;
     return value;
@@ -233,7 +233,7 @@
 
   function generateAgentKey() {
     const timestamp = Date.now().toString(36);
-    const random = crypto.randomUUID().replaceAll("-", "").slice(0, 6);
+    const random = KBotUI.uuid().replaceAll("-", "").slice(0, 6);
     const value = `document-agent-${timestamp}-${random}`;
     $("#agent-form").elements.agentKey.value = value;
     return value;
@@ -640,11 +640,11 @@
     if (!files.length) return;
     const mode = form.elements.groupingMode.value;
     const connection = KBotUI.loadConfig();
-    const batchId = crypto.randomUUID();
+    const batchId = KBotUI.uuid();
     const fileSeeds = files.map((file, index) => ({
       file,
       index,
-      clientFileId: crypto.randomUUID(),
+      clientFileId: KBotUI.uuid(),
     }));
     const trackingIds =
       mode === "SINGLE_BUNDLE"
@@ -705,7 +705,7 @@
         data.append(
           "bundle",
           JSON.stringify({
-            client_bundle_id: crypto.randomUUID(),
+            client_bundle_id: KBotUI.uuid(),
             title,
             security_level: Number(form.elements.securityLevel.value || 1),
             facet: {},
