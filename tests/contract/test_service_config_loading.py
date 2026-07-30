@@ -91,6 +91,26 @@ class ServiceConfigLoadingTest(unittest.TestCase):
                 "/srv/kbot/agent_runtime",
             )
 
+    def test_wildcard_cors_origin_is_preserved(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self._write_config(Path(directory))
+            contents = path.read_text(encoding="utf-8")
+            path.write_text(
+                contents.replace(
+                    "api_allowed_origins=['http://portal.internal:8080']",
+                    "api_allowed_origins=['*']",
+                ),
+                encoding="utf-8",
+            )
+
+            settings = load_settings(
+                MainApiSettings,
+                service="main_api",
+                config_file=path,
+            )
+
+            self.assertEqual(settings.api.allowed_origins, ["*"])
+
     def test_database_password_is_read_only_from_environment(self):
         settings = Settings()
         with patch.dict(os.environ, {}, clear=True):

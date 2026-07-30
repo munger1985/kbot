@@ -49,8 +49,9 @@ ReDoc（`/redoc`）；开发环境默认启用，生产环境默认关闭。
 
 浏览器直连 Main API 时，使用 `api_allowed_origins` 列出允许的门户来源。每项必须
 精确包含协议、主机和端口，例如 `https://portal.example.com` 或
-`http://146.56.158.44:8080`，不带末尾斜杠；不支持 `*`。Portal API Key 不应下发到
-浏览器，生产环境应优先由门户服务端代理调用 KBot。
+`http://146.56.158.44:8080`，不带末尾斜杠。若需要允许任意来源，可设为
+`api_allowed_origins = ["*"]`。Portal API Key 不应下发到浏览器，生产环境应优先由
+门户服务端代理调用 KBot。
 
 只有跨主机部署才增加对应端点：
 

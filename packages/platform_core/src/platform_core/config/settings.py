@@ -356,8 +356,6 @@ def load_settings(
             for origin in api_allowed_origins
         ):
             raise ValueError("api_allowed_origins 必须是 Origin 字符串列表")
-        if "*" in api_allowed_origins:
-            raise ValueError("api_allowed_origins 不允许使用通配符 *")
         allowed_origins = [origin.rstrip("/") for origin in api_allowed_origins]
     elif resolved_environment.lower() in {"dev", "development", "debug"}:
         allowed_origins = [
