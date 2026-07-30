@@ -4,6 +4,14 @@
 
   const STORAGE_KEY = "kbot.ui.connection.v1";
 
+  function defaultBaseUrl() {
+    const hostname = window.location.hostname;
+    if (hostname && hostname !== "127.0.0.1" && hostname !== "localhost") {
+      return `${window.location.protocol}//${hostname}:18099`;
+    }
+    return "http://127.0.0.1:18099";
+  }
+
   function loadConfig() {
     let persisted = {};
     try {
@@ -12,7 +20,7 @@
       persisted = {};
     }
     return {
-      baseUrl: persisted.baseUrl || "http://127.0.0.1:18099",
+      baseUrl: persisted.baseUrl || defaultBaseUrl(),
       domainId: persisted.domainId || "",
       userId: persisted.userId || "ui-tester",
     };
