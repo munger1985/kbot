@@ -15,6 +15,12 @@
   let refreshTimer = null;
   let requestRunning = false;
 
+  function setServiceLoadFailure(message) {
+    serviceFilter.innerHTML =
+      '<option value="">服务加载失败，请查看下方提示</option>';
+    KBotUI.setStatus(statusElement, message, "error");
+  }
+
   function checkedValues(name) {
     return Array.from(
       filterForm.querySelectorAll(`input[name="${name}"]:checked`)
@@ -88,12 +94,28 @@
   }
 
   async function loadServices() {
-    const payload = await KBotUI.api(
-      "/api/v1/development/logs/services",
-      { domainOptional: true }
-    );
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), 15000);
+    let payload;
+    try {
+      payload = await KBotUI.api(
+        "/api/v1/development/logs/services",
+        { domainOptional: true, signal: controller.signal }
+      );
+    } catch (error) {
+      if (error.name === "AbortError") {
+        throw new Error("读取服务日志超时（15 秒），请检查 Main API 地址和网络连通性");
+      }
+      throw error;
+    } finally {
+      window.clearTimeout(timer);
+    }
     const services = payload.services || [];
     const previous = serviceFilter.value;
+    if (!services.length) {
+      serviceFilter.innerHTML = '<option value="">暂无可读取的服务日志</option>';
+      return;
+    }
     serviceFilter.innerHTML = services
       .map((service) => {
         const runtime = service.runtime ? "运行" : "-";
@@ -151,7 +173,7 @@
       await loadServices();
       await refreshLogs();
     } catch (error) {
-      KBotUI.setStatus(statusElement, error.message, "error");
+      setServiceLoadFailure(error.message);
     }
   });
 
@@ -183,5 +205,5 @@
   resetTimer();
   loadServices()
     .then(() => refreshLogs())
-    .catch((error) => KBotUI.setStatus(statusElement, error.message, "error"));
+    .catch((error) => setServiceLoadFailure(error.message));
 })();

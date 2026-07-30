@@ -346,6 +346,7 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
             domain_id=20,
             agent_key="document-assistant",
             display_name="文档助手",
+            description=None,
             status="ACTIVE",
             enabled_capabilities_json=["document"],
             models_json={
@@ -356,6 +357,8 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
                 "query_vlm": str(uuid7()),
                 "memory_embedding": str(uuid7()),
             },
+            do_rerank=False,
+            data_profile_name=None,
             instruction="仅基于可验证证据回答。",
             config_json={"answer_language": "zh-CN"},
             row_version=1,
@@ -546,6 +549,21 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             updated.models["future_reasoner"].version, 7
         )
+
+    async def test_agent_definition_list_is_scoped_to_domain(self):
+        other_agent_id = uuid7()
+        self.store.agents[other_agent_id] = SimpleNamespace(
+            **{
+                **vars(self.store.agents[self.agent_id]),
+                "agent_id": other_agent_id,
+                "domain_id": 21,
+                "agent_key": "other-domain-agent",
+            }
+        )
+
+        agents = await self.definition_service.list(domain_id=20)
+
+        self.assertEqual([agent.agent_id for agent in agents], [self.agent_id])
 
     async def test_create_run_freezes_agent_configuration(self):
         receipt = await self.service.create_run(self.create_command)

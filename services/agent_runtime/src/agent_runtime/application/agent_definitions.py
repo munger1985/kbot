@@ -232,6 +232,7 @@ class AgentDefinitionService:
     ) -> list[AgentDefinitionView]:
         async with self._uow_factory() as uow:
             rows = await uow.agents.list_scoped(
+                domain_id=domain_id,
             )
             return [self._view(row) for row in rows]
 
