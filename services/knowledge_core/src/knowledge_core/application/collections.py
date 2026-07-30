@@ -191,6 +191,8 @@ class KnowledgeCoreCollectionService:
             if uow.collections is None:
                 raise RuntimeError("Knowledge Core Unit of Work is not initialized")
             collection = await uow.collections.get_by_scope_key(
+                domain_id=domain_id,
+                collection_key=collection_key,
             )
             if collection is None:
                 raise CollectionNotFoundError("Collection not found")
@@ -203,7 +205,9 @@ class KnowledgeCoreCollectionService:
             if uow.collections is None or uow.session is None:
                 raise RuntimeError("Knowledge Core Unit of Work is not initialized")
             collection = await uow.collections.get_by_scope_key(
-                collection_key=command.collection_key, lock=True,
+                domain_id=command.domain_id,
+                collection_key=command.collection_key,
+                lock=True,
             )
             if collection is None:
                 raise CollectionNotFoundError("Collection not found")
@@ -254,6 +258,8 @@ class KnowledgeCoreCollectionService:
             if uow.collections is None or uow.bindings is None or uow.jobs is None or uow.session is None:
                 raise RuntimeError("Knowledge Core Unit of Work is not initialized")
             collection = await uow.collections.get_by_scope_key(
+                domain_id=domain_id,
+                collection_key=collection_key,
             )
             if collection is None:
                 raise CollectionNotFoundError("Collection not found")
@@ -337,6 +343,8 @@ class KnowledgeCoreBindingService:
             if uow.collections is None or uow.bindings is None or uow.session is None:
                 raise RuntimeError("Knowledge Core Unit of Work is not initialized")
             collection = await uow.collections.get_by_scope_key(
+                domain_id=command.domain_id,
+                collection_key=command.collection_key,
             )
             if collection is None:
                 raise CollectionNotFoundError("Collection not found")
@@ -367,6 +375,8 @@ class KnowledgeCoreBindingService:
             result = []
             for binding in bindings:
                 collection = await uow.collections.get_by_id_scope(
+                    domain_id=domain_id,
+                    collection_id=binding.collection_id,
                 )
                 if collection is not None:
                     result.append(_binding_snapshot(binding))

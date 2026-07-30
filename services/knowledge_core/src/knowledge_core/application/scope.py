@@ -26,6 +26,8 @@ class KnowledgeCoreScopeService:
             active: list[UUID] = []
             for collection_id in requested:
                 collection = await uow.collections.get_by_id_scope(
+                    domain_id=domain_id,
+                    collection_id=collection_id,
                 )
                 if collection is None:
                     raise KnowledgeScopeError("collection is outside the Domain scope")

@@ -61,6 +61,8 @@ class KnowledgeCoreStatusService:
             if bundle is None:
                 raise KnowledgeObjectNotFoundError("Bundle not found")
             collection = await uow.collections.get_by_id_scope(
+                domain_id=domain_id,
+                collection_id=bundle.collection_id,
             )
             if collection is None:
                 raise KnowledgeObjectNotFoundError("Bundle not found")
@@ -82,6 +84,8 @@ class KnowledgeCoreStatusService:
                 raise RuntimeError("Knowledge Core Unit of Work is not initialized")
             bundle = await uow.bundles.get_by_id(bundle_id=bundle_id)
             if bundle is None or await uow.collections.get_by_id_scope(
+                domain_id=domain_id,
+                collection_id=bundle.collection_id,
             ) is None:
                 raise KnowledgeObjectNotFoundError("Bundle not found")
             revision = await uow.revisions.get_by_id(bundle_revision_id=bundle_revision_id)
