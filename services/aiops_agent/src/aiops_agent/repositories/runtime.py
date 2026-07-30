@@ -59,7 +59,6 @@ class OpsRunRepository(AIOpsRepository):
         self,
         *,
         ops_run_id: UUID,
-        app_id: int,
         domain_id: int,
         lock: bool = False,
     ) -> OpsRunEntity | None:
@@ -72,7 +71,6 @@ class OpsRunRepository(AIOpsRepository):
             )
             .where(
                 OpsRunEntity.ops_run_id == ops_run_id,
-                TargetEntity.app_id == app_id,
                 TargetEntity.domain_id == domain_id,
             )
         )
@@ -101,7 +99,6 @@ class OpsRunRepository(AIOpsRepository):
         self,
         *,
         parent_delegation_id: UUID,
-        app_id: int,
         domain_id: int,
     ) -> OpsRunEntity | None:
         self._check_active()
@@ -114,7 +111,6 @@ class OpsRunRepository(AIOpsRepository):
             .where(
                 OpsRunEntity.parent_delegation_id
                 == parent_delegation_id,
-                TargetEntity.app_id == app_id,
                 TargetEntity.domain_id == domain_id,
             )
         )

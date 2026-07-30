@@ -211,8 +211,7 @@ class AdvisoryVerificationOutboxTest(unittest.TestCase):
             "proposal_id": proposal_id,
             "source_run_id": str(uuid7()),
             "result_artifact_id": str(uuid7()),
-            "app_id": 100,
-            "domain_id": 200,
+                        "domain_id": 200,
             "actor_id": "portal:user-1",
             "agent_id": str(uuid7()),
             "target_id": str(uuid7()),
@@ -252,8 +251,7 @@ class AdvisoryVerificationOutboxTest(unittest.TestCase):
             "proposal_id": str(uuid7()),
             "source_run_id": str(uuid7()),
             "result_artifact_id": str(uuid7()),
-            "app_id": 100,
-            "domain_id": 200,
+                        "domain_id": 200,
             "actor_id": "portal:user-1",
             "agent_id": str(uuid7()),
             "target_id": str(uuid7()),
@@ -407,8 +405,7 @@ class ProposalExpiryTest(unittest.TestCase):
             target_id=execution.target_id,
             plan_snapshot_json={
                 "target": {
-                    "app_id": 100,
-                    "domain_id": 200,
+                                        "domain_id": 200,
                     "security_level": 3,
                 }
             },

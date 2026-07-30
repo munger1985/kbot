@@ -1,6 +1,5 @@
 # KBot 生产部署只需要填写本文件和 Secret 环境变量。
 environment = "production"
-app_id = 1
 data_dir = "/var/lib/kbot"
 log_dir = "/var/log/kbot"
 embedding_dimension = 2560

@@ -18,7 +18,6 @@ class ServiceConfigLoadingTest(unittest.TestCase):
         path = root / "kbot.toml"
         path.write_text(
             "environment='development'\n"
-            "app_id=9\n"
             "data_dir='/srv/kbot'\n"
             "log_dir='/var/log/kbot'\n"
             "embedding_dimension=1024\n"
@@ -43,7 +42,6 @@ class ServiceConfigLoadingTest(unittest.TestCase):
                 config_file=path,
             )
 
-            self.assertEqual(settings.platform.app_id, 9)
             self.assertTrue(settings.platform.debug)
             self.assertEqual(settings.vector.dimensions, 1024)
             self.assertEqual(settings.api.service_port, 18099)

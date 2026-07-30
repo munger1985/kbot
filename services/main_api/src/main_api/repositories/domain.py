@@ -10,9 +10,8 @@ class PlatformDomainRepository:
     def __init__(self, session: AsyncSession):
         self._session = session
 
-    async def exists_active(self, *, app_id: int, domain_id: int) -> bool:
+    async def exists_active(self, *, domain_id: int) -> bool:
         statement = select(PlatformDomainEntity.domain_id).where(
-            PlatformDomainEntity.app_id == app_id,
             PlatformDomainEntity.domain_id == domain_id,
             PlatformDomainEntity.status == "ACTIVE",
         )
@@ -22,11 +21,9 @@ class PlatformDomainRepository:
     async def get_by_name(
         self,
         *,
-        app_id: int,
         name: str,
     ) -> PlatformDomainEntity | None:
         statement = select(PlatformDomainEntity).where(
-            PlatformDomainEntity.app_id == app_id,
             PlatformDomainEntity.name == name,
         )
         result = await self._session.execute(statement)

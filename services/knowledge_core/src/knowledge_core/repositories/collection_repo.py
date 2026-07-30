@@ -15,10 +15,9 @@ class CollectionRepository:
         self.session = session
 
     async def get_by_scope_key(
-        self, *, app_id: int, domain_id: int, collection_key: str, lock: bool = False
+        self, *, domain_id: int, collection_key: str, lock: bool = False
     ) -> KcCollectionEntity | None:
         statement: Select = select(KcCollectionEntity).where(
-            KcCollectionEntity.app_id == app_id,
             KcCollectionEntity.domain_id == domain_id,
             KcCollectionEntity.collection_key == collection_key,
         )
@@ -26,9 +25,8 @@ class CollectionRepository:
             statement = statement.with_for_update()
         return (await self.session.execute(statement)).scalar_one_or_none()
 
-    async def list_by_scope(self, *, app_id: int, domain_id: int) -> list[KcCollectionEntity]:
+    async def list_by_scope(self, *, domain_id: int) -> list[KcCollectionEntity]:
         statement = select(KcCollectionEntity).where(
-            KcCollectionEntity.app_id == app_id,
             KcCollectionEntity.domain_id == domain_id,
         ).order_by(KcCollectionEntity.display_name, KcCollectionEntity.collection_id)
         return list((await self.session.execute(statement)).scalars())
@@ -52,11 +50,10 @@ class CollectionRepository:
         return (await self.session.execute(statement)).scalar_one_or_none()
 
     async def get_by_id_scope(
-        self, *, app_id: int, domain_id: int, collection_id: UUID
+        self, *, domain_id: int, collection_id: UUID
     ) -> KcCollectionEntity | None:
         statement: Select = select(KcCollectionEntity).where(
             KcCollectionEntity.collection_id == collection_id,
-            KcCollectionEntity.app_id == app_id,
             KcCollectionEntity.domain_id == domain_id,
         )
         return (await self.session.execute(statement)).scalar_one_or_none()

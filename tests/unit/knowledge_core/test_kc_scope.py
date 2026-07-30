@@ -14,10 +14,9 @@ class _Collection:
 
 
 class _Collections:
-    async def get_by_id_scope(self, *, app_id, domain_id, collection_id):
+    async def get_by_id_scope(self, *, domain_id, collection_id):
         if (
-            app_id != 100
-            or domain_id != 7
+            domain_id != 7
             or collection_id not in {COLLECTION_1, COLLECTION_2}
         ):
             return None
@@ -48,7 +47,7 @@ class _Uow:
 
 class ScopeTest(unittest.IsolatedAsyncioTestCase):
     async def test_disabled_collection_is_skipped_but_binding_is_retained(self):
-        service = KnowledgeCoreScopeService(app_id=100, uow_factory=_Uow)
+        service = KnowledgeCoreScopeService(uow_factory=_Uow)
         self.assertEqual(await service.resolve_agent_collections(
             domain_id=7,
             agent_id=UUID("019c03b5-4b88-7ab2-8c19-7b6ea34f2a11"),
@@ -56,7 +55,7 @@ class ScopeTest(unittest.IsolatedAsyncioTestCase):
         ), (COLLECTION_1,))
 
     async def test_unbound_collection_is_rejected(self):
-        service = KnowledgeCoreScopeService(app_id=100, uow_factory=_Uow)
+        service = KnowledgeCoreScopeService(uow_factory=_Uow)
         with self.assertRaises(KnowledgeScopeError):
             await service.resolve_agent_collections(
                 domain_id=7,

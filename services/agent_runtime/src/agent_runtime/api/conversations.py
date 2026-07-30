@@ -106,7 +106,6 @@ async def create_conversation(
     domain_id, actor_id, _, _ = _identity(request)
     try:
         return await _service(request).create(
-            app_id=request.app.state.platform_app_id,
             domain_id=domain_id,
             actor_id=actor_id,
             agent_id=payload.agent_id,
@@ -124,7 +123,6 @@ async def list_conversations(
 ) -> list[ConversationView]:
     domain_id, actor_id, _, _ = _identity(request)
     return await _service(request).list(
-        app_id=request.app.state.platform_app_id,
         domain_id=domain_id,
         actor_id=actor_id,
         limit=limit,
@@ -140,7 +138,6 @@ async def get_conversation(
     try:
         return await _service(request).get(
             conversation_id=conversation_id,
-            app_id=request.app.state.platform_app_id,
             domain_id=domain_id,
             actor_id=actor_id,
         )
@@ -158,7 +155,6 @@ async def update_conversation(
     try:
         return await _service(request).update(
             conversation_id=conversation_id,
-            app_id=request.app.state.platform_app_id,
             domain_id=domain_id,
             actor_id=actor_id,
             expected_row_version=payload.expected_row_version,
@@ -180,7 +176,6 @@ async def delete_conversation(
     try:
         await _service(request).delete(
             conversation_id=conversation_id,
-            app_id=request.app.state.platform_app_id,
             domain_id=domain_id,
             actor_id=actor_id,
             expected_row_version=expected_row_version,
@@ -205,7 +200,6 @@ async def create_turn(
     try:
         return await _service(request).create_turn(
             conversation_id=conversation_id,
-            app_id=request.app.state.platform_app_id,
             domain_id=domain_id,
             actor_id=actor_id,
             request_id=request_id,
@@ -245,7 +239,6 @@ async def list_turns(
     try:
         return await _service(request).list_turns(
             conversation_id=conversation_id,
-            app_id=request.app.state.platform_app_id,
             domain_id=domain_id,
             actor_id=actor_id,
             after_sequence=after,
@@ -271,7 +264,6 @@ async def list_turn_trace(
         return await _service(request).list_trace(
             conversation_id=conversation_id,
             turn_id=turn_id,
-            app_id=request.app.state.platform_app_id,
             domain_id=domain_id,
             actor_id=actor_id,
             after_sequence=after,
@@ -289,7 +281,6 @@ async def list_memories(
 ) -> list[MemoryItemView]:
     domain_id, actor_id, _, _ = _identity(request)
     return await _service(request).list_memories(
-        app_id=request.app.state.platform_app_id,
         domain_id=domain_id,
         actor_id=actor_id,
         agent_id=agent_id,
@@ -306,7 +297,6 @@ async def forget_memory(
     try:
         await _service(request).forget_memory(
             memory_id=memory_id,
-            app_id=request.app.state.platform_app_id,
             domain_id=domain_id,
             actor_id=actor_id,
         )

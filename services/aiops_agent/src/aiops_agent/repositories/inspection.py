@@ -50,14 +50,12 @@ class InspectionRepository(AIOpsRepository):
         self,
         *,
         inspection_plan_id: UUID,
-        app_id: int,
         domain_id: int,
         lock: bool = False,
     ) -> InspectionPlanEntity | None:
         self._check_active()
         statement: Select = select(InspectionPlanEntity).where(
             InspectionPlanEntity.inspection_plan_id == inspection_plan_id,
-            InspectionPlanEntity.app_id == app_id,
             InspectionPlanEntity.domain_id == domain_id,
         )
         if lock:
@@ -67,13 +65,11 @@ class InspectionRepository(AIOpsRepository):
     async def get_plan_by_key(
         self,
         *,
-        app_id: int,
         domain_id: int,
         plan_key: str,
     ) -> InspectionPlanEntity | None:
         self._check_active()
         statement = select(InspectionPlanEntity).where(
-            InspectionPlanEntity.app_id == app_id,
             InspectionPlanEntity.domain_id == domain_id,
             InspectionPlanEntity.plan_key == plan_key,
         )
@@ -82,7 +78,6 @@ class InspectionRepository(AIOpsRepository):
     async def page_plans(
         self,
         *,
-        app_id: int,
         domain_id: int,
         statuses: Collection[str] | None,
         before_updated_at: datetime | None,
@@ -91,7 +86,6 @@ class InspectionRepository(AIOpsRepository):
     ) -> list[InspectionPlanEntity]:
         self._check_active()
         statement = select(InspectionPlanEntity).where(
-            InspectionPlanEntity.app_id == app_id,
             InspectionPlanEntity.domain_id == domain_id,
         )
         if statuses:
@@ -118,7 +112,6 @@ class InspectionRepository(AIOpsRepository):
         self,
         *,
         inspection_plan_id: UUID,
-        app_id: int,
         domain_id: int,
         expected_version: int,
         values: dict,
@@ -136,7 +129,6 @@ class InspectionRepository(AIOpsRepository):
             .where(
                 InspectionPlanEntity.inspection_plan_id
                 == inspection_plan_id,
-                InspectionPlanEntity.app_id == app_id,
                 InspectionPlanEntity.domain_id == domain_id,
                 InspectionPlanEntity.row_version == expected_version,
             )
@@ -150,7 +142,6 @@ class InspectionRepository(AIOpsRepository):
         self,
         *,
         inspection_plan_id: UUID,
-        app_id: int,
         domain_id: int,
     ) -> list[InspectionTargetEntity]:
         self._check_active()
@@ -169,9 +160,7 @@ class InspectionRepository(AIOpsRepository):
                 InspectionTargetEntity.inspection_plan_id
                 == inspection_plan_id,
                 InspectionTargetEntity.status == "ACTIVE",
-                InspectionPlanEntity.app_id == app_id,
                 InspectionPlanEntity.domain_id == domain_id,
-                TargetEntity.app_id == app_id,
                 TargetEntity.domain_id == domain_id,
                 TargetEntity.status == "ACTIVE",
             )
@@ -183,7 +172,6 @@ class InspectionRepository(AIOpsRepository):
         self,
         *,
         inspection_plan_id: UUID,
-        app_id: int,
         domain_id: int,
     ) -> list[InspectionTargetEntity]:
         self._check_active()
@@ -197,7 +185,6 @@ class InspectionRepository(AIOpsRepository):
             .where(
                 InspectionTargetEntity.inspection_plan_id
                 == inspection_plan_id,
-                InspectionPlanEntity.app_id == app_id,
                 InspectionPlanEntity.domain_id == domain_id,
             )
             .order_by(InspectionTargetEntity.inspection_target_id)
@@ -209,7 +196,6 @@ class InspectionRepository(AIOpsRepository):
         *,
         inspection_target_id: UUID,
         inspection_plan_id: UUID,
-        app_id: int,
         domain_id: int,
         lock: bool = False,
     ) -> InspectionTargetEntity | None:
@@ -226,7 +212,6 @@ class InspectionRepository(AIOpsRepository):
                 == inspection_target_id,
                 InspectionTargetEntity.inspection_plan_id
                 == inspection_plan_id,
-                InspectionPlanEntity.app_id == app_id,
                 InspectionPlanEntity.domain_id == domain_id,
             )
         )
@@ -367,7 +352,6 @@ class InspectionRepository(AIOpsRepository):
         self,
         *,
         inspection_fire_id: UUID,
-        app_id: int,
         domain_id: int,
     ) -> InspectionFireEntity | None:
         self._check_active()
@@ -381,7 +365,6 @@ class InspectionRepository(AIOpsRepository):
             .where(
                 InspectionFireEntity.inspection_fire_id
                 == inspection_fire_id,
-                InspectionPlanEntity.app_id == app_id,
                 InspectionPlanEntity.domain_id == domain_id,
             )
         )
@@ -390,7 +373,6 @@ class InspectionRepository(AIOpsRepository):
     async def page_fires(
         self,
         *,
-        app_id: int,
         domain_id: int,
         plan_id: UUID | None,
         statuses: Collection[str] | None,
@@ -407,7 +389,6 @@ class InspectionRepository(AIOpsRepository):
                 == InspectionFireEntity.inspection_plan_id,
             )
             .where(
-                InspectionPlanEntity.app_id == app_id,
                 InspectionPlanEntity.domain_id == domain_id,
             )
         )
@@ -562,7 +543,6 @@ class InspectionRepository(AIOpsRepository):
         self,
         *,
         report_id: UUID,
-        app_id: int,
         domain_id: int,
     ) -> ReportEntity | None:
         self._check_active()
@@ -575,7 +555,6 @@ class InspectionRepository(AIOpsRepository):
             .where(
                 ReportEntity.report_id == report_id,
                 ReportEntity.is_current == 1,
-                TargetEntity.app_id == app_id,
                 TargetEntity.domain_id == domain_id,
             )
         )
@@ -585,7 +564,6 @@ class InspectionRepository(AIOpsRepository):
         self,
         *,
         report_id: UUID,
-        app_id: int,
         domain_id: int,
     ) -> ReportEntity | None:
         self._check_active()
@@ -597,7 +575,6 @@ class InspectionRepository(AIOpsRepository):
             )
             .where(
                 ReportEntity.report_id == report_id,
-                TargetEntity.app_id == app_id,
                 TargetEntity.domain_id == domain_id,
             )
         )
@@ -606,7 +583,6 @@ class InspectionRepository(AIOpsRepository):
     async def page_current_reports(
         self,
         *,
-        app_id: int,
         domain_id: int,
         target_id: UUID | None,
         report_type: str | None,
@@ -623,7 +599,6 @@ class InspectionRepository(AIOpsRepository):
             )
             .where(
                 ReportEntity.is_current == 1,
-                TargetEntity.app_id == app_id,
                 TargetEntity.domain_id == domain_id,
             )
         )

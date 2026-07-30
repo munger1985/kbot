@@ -18,7 +18,7 @@ from platform_core.persistence import OracleNativeJSON, UUIDv7Type
 class AiModelsHandlerTest(unittest.TestCase):
     def test_model_projection_never_returns_api_key(self):
         result = ModelRegistryService._safe(SimpleNamespace(
-            model_id=uuid7(), app_id=1, served_model_name="embed-prod",
+            model_id=uuid7(), served_model_name="embed-prod",
             display_name="Embedding", provider_model_name="bge",
             category=2, provider="local", api_endpoint=None, api_key="secret",
             status=1, embedding_dimension=1536, model_params={"device": "cpu"},

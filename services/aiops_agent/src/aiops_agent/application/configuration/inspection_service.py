@@ -138,14 +138,12 @@ class InspectionConfigurationMixin:
         ) -> InspectionPlanDetail:
             assert uow.inspections is not None
             if await uow.inspections.get_plan_by_key(
-                app_id=scope.app_id,
                 domain_id=scope.domain_id,
                 plan_key=request.plan_key,
             ):
                 raise state_conflict("plan_key 已存在")
             entity = InspectionPlanEntity(
                 inspection_plan_id=uuid7(),
-                app_id=scope.app_id,
                 domain_id=scope.domain_id,
                 plan_key=request.plan_key,
                 display_name=request.display_name,
@@ -193,14 +191,12 @@ class InspectionConfigurationMixin:
             assert uow.inspections is not None
             entity = await uow.inspections.get_plan_scoped(
                 inspection_plan_id=plan_id,
-                app_id=scope.app_id,
                 domain_id=scope.domain_id,
             )
             if entity is None:
                 raise resource_not_found("Inspection Plan")
             targets = await uow.inspections.list_active_targets(
                 inspection_plan_id=plan_id,
-                app_id=scope.app_id,
                 domain_id=scope.domain_id,
             )
             return _inspection_detail(
@@ -230,7 +226,6 @@ class InspectionConfigurationMixin:
         async with self._uow_factory() as uow:
             assert uow.inspections is not None
             entities = await uow.inspections.page_plans(
-                app_id=scope.app_id,
                 domain_id=scope.domain_id,
                 statuses=(status,) if status else None,
                 before_updated_at=before_at,
@@ -267,7 +262,6 @@ class InspectionConfigurationMixin:
             assert uow.inspections is not None
             entity = await uow.inspections.get_plan_scoped(
                 inspection_plan_id=plan_id,
-                app_id=scope.app_id,
                 domain_id=scope.domain_id,
                 lock=True,
             )
@@ -299,7 +293,6 @@ class InspectionConfigurationMixin:
             entity.updated_at = datetime.now(UTC)
             targets = await uow.inspections.list_active_targets(
                 inspection_plan_id=plan_id,
-                app_id=scope.app_id,
                 domain_id=scope.domain_id,
             )
             if entity.status == "ACTIVE":
@@ -351,7 +344,6 @@ class InspectionConfigurationMixin:
             assert uow.inspections is not None
             entity = await uow.inspections.get_plan_scoped(
                 inspection_plan_id=plan_id,
-                app_id=scope.app_id,
                 domain_id=scope.domain_id,
                 lock=True,
             )
@@ -364,7 +356,6 @@ class InspectionConfigurationMixin:
                 )
             targets = await uow.inspections.list_active_targets(
                 inspection_plan_id=plan_id,
-                app_id=scope.app_id,
                 domain_id=scope.domain_id,
             )
             if destination == "ACTIVE":
@@ -423,7 +414,6 @@ class InspectionConfigurationMixin:
             assert uow.targets is not None
             plan = await uow.inspections.get_plan_scoped(
                 inspection_plan_id=plan_id,
-                app_id=scope.app_id,
                 domain_id=scope.domain_id,
                 lock=True,
             )
@@ -432,7 +422,6 @@ class InspectionConfigurationMixin:
             self._check_version(plan.row_version, expected_plan_version)
             target = await uow.targets.get_scoped(
                 target_id=request.target_id,
-                app_id=scope.app_id,
                 domain_id=scope.domain_id,
             )
             if target is None:
@@ -448,7 +437,6 @@ class InspectionConfigurationMixin:
             )
             existing = await uow.inspections.list_targets(
                 inspection_plan_id=plan_id,
-                app_id=scope.app_id,
                 domain_id=scope.domain_id,
             )
             if any(item.target_id == request.target_id for item in existing):
@@ -504,14 +492,12 @@ class InspectionConfigurationMixin:
             assert uow.inspections is not None
             plan = await uow.inspections.get_plan_scoped(
                 inspection_plan_id=plan_id,
-                app_id=scope.app_id,
                 domain_id=scope.domain_id,
             )
             if plan is None:
                 raise resource_not_found("Inspection Plan")
             entities = await uow.inspections.list_targets(
                 inspection_plan_id=plan_id,
-                app_id=scope.app_id,
                 domain_id=scope.domain_id,
             )
             return tuple(_inspection_target_view(item) for item in entities)
@@ -529,7 +515,6 @@ class InspectionConfigurationMixin:
             assert uow.inspections is not None
             plan = await uow.inspections.get_plan_scoped(
                 inspection_plan_id=plan_id,
-                app_id=scope.app_id,
                 domain_id=scope.domain_id,
                 lock=True,
             )
@@ -539,7 +524,6 @@ class InspectionConfigurationMixin:
             entity = await uow.inspections.get_target_scoped(
                 inspection_target_id=plan_target_id,
                 inspection_plan_id=plan_id,
-                app_id=scope.app_id,
                 domain_id=scope.domain_id,
                 lock=True,
             )
@@ -572,7 +556,6 @@ class InspectionConfigurationMixin:
             if plan.status == "ACTIVE":
                 active_targets = await uow.inspections.list_active_targets(
                     inspection_plan_id=plan_id,
-                    app_id=scope.app_id,
                     domain_id=scope.domain_id,
                 )
                 if not active_targets:

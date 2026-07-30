@@ -87,7 +87,6 @@ class InspectionSchedulerTest(unittest.TestCase):
         now = datetime(2026, 7, 24, 1, 0, 10, tzinfo=UTC)
         plan = SimpleNamespace(
             inspection_plan_id=uuid7(),
-            app_id=100,
             domain_id=200,
             plan_key="database.daily",
             display_name="数据库日报",
@@ -227,8 +226,7 @@ class InspectionSchedulerTest(unittest.TestCase):
         target_id = uuid7()
         payload = {
             "inspection_fire_id": str(fire_id),
-            "app_id": 100,
-            "domain_id": 200,
+                        "domain_id": 200,
             "actor_id": "system:inspection-scheduler",
             "agent_id": str(uuid7()),
             "target_id": str(target_id),

@@ -41,14 +41,12 @@ class TargetRepository(AIOpsRepository):
         self,
         *,
         target_id: UUID,
-        app_id: int,
         domain_id: int,
         lock: bool = False,
     ) -> TargetEntity | None:
         self._check_active()
         statement: Select = select(TargetEntity).where(
             TargetEntity.target_id == target_id,
-            TargetEntity.app_id == app_id,
             TargetEntity.domain_id == domain_id,
         )
         if lock:
@@ -58,13 +56,11 @@ class TargetRepository(AIOpsRepository):
     async def get_by_key(
         self,
         *,
-        app_id: int,
         domain_id: int,
         target_key: str,
     ) -> TargetEntity | None:
         self._check_active()
         statement = select(TargetEntity).where(
-            TargetEntity.app_id == app_id,
             TargetEntity.domain_id == domain_id,
             TargetEntity.target_key == target_key,
         )
@@ -73,13 +69,11 @@ class TargetRepository(AIOpsRepository):
     async def list_scoped(
         self,
         *,
-        app_id: int,
         domain_id: int,
         statuses: Collection[str] | None = None,
     ) -> list[TargetEntity]:
         self._check_active()
         statement = select(TargetEntity).where(
-            TargetEntity.app_id == app_id,
             TargetEntity.domain_id == domain_id,
         )
         if statuses:
@@ -93,7 +87,6 @@ class TargetRepository(AIOpsRepository):
     async def page_scoped(
         self,
         *,
-        app_id: int,
         domain_id: int,
         statuses: Collection[str] | None,
         before_updated_at: datetime | None,
@@ -102,7 +95,6 @@ class TargetRepository(AIOpsRepository):
     ) -> list[TargetEntity]:
         self._check_active()
         statement = select(TargetEntity).where(
-            TargetEntity.app_id == app_id,
             TargetEntity.domain_id == domain_id,
         )
         if statuses:
@@ -127,7 +119,6 @@ class TargetRepository(AIOpsRepository):
         self,
         *,
         target_id: UUID,
-        app_id: int,
         domain_id: int,
         expected_version: int,
         values: dict,
@@ -144,7 +135,6 @@ class TargetRepository(AIOpsRepository):
             update(TargetEntity)
             .where(
                 TargetEntity.target_id == target_id,
-                TargetEntity.app_id == app_id,
                 TargetEntity.domain_id == domain_id,
                 TargetEntity.row_version == expected_version,
             )
@@ -159,7 +149,6 @@ class TargetRepository(AIOpsRepository):
         *,
         target_id: UUID,
         agent_id: UUID,
-        app_id: int,
         domain_id: int,
         lock: bool = False,
     ) -> TargetBindingEntity | None:
@@ -173,7 +162,6 @@ class TargetRepository(AIOpsRepository):
             .where(
                 TargetBindingEntity.target_id == target_id,
                 TargetBindingEntity.agent_id == agent_id,
-                TargetEntity.app_id == app_id,
                 TargetEntity.domain_id == domain_id,
             )
         )
@@ -186,7 +174,6 @@ class TargetRepository(AIOpsRepository):
         *,
         binding_id: UUID,
         target_id: UUID,
-        app_id: int,
         domain_id: int,
         lock: bool = False,
     ) -> TargetBindingEntity | None:
@@ -200,7 +187,6 @@ class TargetRepository(AIOpsRepository):
             .where(
                 TargetBindingEntity.binding_id == binding_id,
                 TargetBindingEntity.target_id == target_id,
-                TargetEntity.app_id == app_id,
                 TargetEntity.domain_id == domain_id,
             )
         )
@@ -212,7 +198,6 @@ class TargetRepository(AIOpsRepository):
         self,
         *,
         target_id: UUID,
-        app_id: int,
         domain_id: int,
     ) -> list[TargetBindingEntity]:
         self._check_active()
@@ -224,7 +209,6 @@ class TargetRepository(AIOpsRepository):
             )
             .where(
                 TargetBindingEntity.target_id == target_id,
-                TargetEntity.app_id == app_id,
                 TargetEntity.domain_id == domain_id,
             )
             .order_by(
@@ -267,7 +251,6 @@ class TargetRepository(AIOpsRepository):
         self,
         *,
         target_id: UUID,
-        app_id: int,
         domain_id: int,
         active_only: bool = True,
     ) -> list[TargetMonitorEntity]:
@@ -280,7 +263,6 @@ class TargetRepository(AIOpsRepository):
             )
             .where(
                 TargetMonitorEntity.target_id == target_id,
-                TargetEntity.app_id == app_id,
                 TargetEntity.domain_id == domain_id,
             )
         )
@@ -301,7 +283,6 @@ class TargetRepository(AIOpsRepository):
         *,
         target_monitor_id: UUID,
         target_id: UUID,
-        app_id: int,
         domain_id: int,
         lock: bool = False,
     ) -> TargetMonitorEntity | None:
@@ -315,7 +296,6 @@ class TargetRepository(AIOpsRepository):
             .where(
                 TargetMonitorEntity.target_monitor_id == target_monitor_id,
                 TargetMonitorEntity.target_id == target_id,
-                TargetEntity.app_id == app_id,
                 TargetEntity.domain_id == domain_id,
             )
         )
@@ -406,7 +386,6 @@ class TargetRepository(AIOpsRepository):
         self,
         *,
         target_id: UUID,
-        app_id: int,
         domain_id: int,
         expected_version: int,
         allowed_statuses: Collection[str],
@@ -418,7 +397,6 @@ class TargetRepository(AIOpsRepository):
             update(TargetEntity)
             .where(
                 TargetEntity.target_id == target_id,
-                TargetEntity.app_id == app_id,
                 TargetEntity.domain_id == domain_id,
                 TargetEntity.row_version == expected_version,
                 TargetEntity.status.in_(allowed_statuses),
@@ -469,14 +447,12 @@ class PolicyRepository(AIOpsRepository):
     async def get_active(
         self,
         *,
-        app_id: int,
         domain_id: int,
         policy_key: str,
         lock: bool = False,
     ) -> PolicyEntity | None:
         self._check_active()
         statement: Select = select(PolicyEntity).where(
-            PolicyEntity.app_id == app_id,
             PolicyEntity.domain_id == domain_id,
             PolicyEntity.policy_key == policy_key,
             PolicyEntity.status == "ACTIVE",
@@ -489,14 +465,12 @@ class PolicyRepository(AIOpsRepository):
         self,
         *,
         policy_id: UUID,
-        app_id: int,
         domain_id: int,
         lock: bool = False,
     ) -> PolicyEntity | None:
         self._check_active()
         statement: Select = select(PolicyEntity).where(
             PolicyEntity.policy_id == policy_id,
-            PolicyEntity.app_id == app_id,
             PolicyEntity.domain_id == domain_id,
         )
         if lock:
@@ -506,7 +480,6 @@ class PolicyRepository(AIOpsRepository):
     async def lock_versions(
         self,
         *,
-        app_id: int,
         domain_id: int,
         policy_key: str,
     ) -> list[PolicyEntity]:
@@ -514,7 +487,6 @@ class PolicyRepository(AIOpsRepository):
         statement = (
             select(PolicyEntity)
             .where(
-                PolicyEntity.app_id == app_id,
                 PolicyEntity.domain_id == domain_id,
                 PolicyEntity.policy_key == policy_key,
             )
@@ -526,7 +498,6 @@ class PolicyRepository(AIOpsRepository):
     async def page_scoped(
         self,
         *,
-        app_id: int,
         domain_id: int,
         statuses: Collection[str] | None,
         before_updated_at: datetime | None,
@@ -535,7 +506,6 @@ class PolicyRepository(AIOpsRepository):
     ) -> list[PolicyEntity]:
         self._check_active()
         statement = select(PolicyEntity).where(
-            PolicyEntity.app_id == app_id,
             PolicyEntity.domain_id == domain_id,
         )
         if statuses:

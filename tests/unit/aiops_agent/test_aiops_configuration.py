@@ -33,7 +33,6 @@ from platform_core.identity import uuid7
 class ETagAndCursorTest(unittest.TestCase):
     def setUp(self) -> None:
         self.scope = ConfigurationScope(
-            app_id=1001,
             domain_id=100,
             principal_id="PORTAL:km_portal",
             actor_id="portal-user-1",

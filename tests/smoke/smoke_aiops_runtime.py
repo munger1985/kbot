@@ -64,8 +64,6 @@ async def main() -> None:
                 await session.execute(
                     select(PlatformDomainEntity)
                     .where(
-                        PlatformDomainEntity.app_id
-                        == settings.platform.app_id,
                         PlatformDomainEntity.status == "ACTIVE",
                     )
                     .order_by(PlatformDomainEntity.domain_id)
@@ -74,7 +72,6 @@ async def main() -> None:
             ).scalar_one_or_none()
             if domain is None:
                 domain = PlatformDomainEntity(
-                    app_id=settings.platform.app_id,
                     name=f"runtime-smoke-{target_id}",
                     status="ACTIVE",
                     created_by="runtime-smoke",
@@ -89,7 +86,6 @@ async def main() -> None:
             await uow.targets.add_target(
                 TargetEntity(
                     target_id=target_id,
-                    app_id=settings.platform.app_id,
                     domain_id=domain_id,
                     target_key=f"runtime-smoke-{target_id}",
                     display_name="运行内核 Smoke Target",
@@ -119,7 +115,6 @@ async def main() -> None:
                 CreateOpsRunCommand(
                     command_id=uuid7(),
                     idempotency_key=f"runtime-smoke-{case}-{target_id}",
-                    app_id=settings.platform.app_id,
                     domain_id=domain_id,
                     actor_id="runtime-smoke",
                     agent_id=agent_id,
@@ -184,14 +179,12 @@ async def main() -> None:
                 )
         summary = await service.get_run(
             ops_run_id=run_id,
-            app_id=settings.platform.app_id,
             domain_id=domain_id,
         )
         if summary.status != "COMPLETED":
             raise RuntimeError(f"Run 未完成：{summary.status}")
         page = await service.list_events(
             ops_run_id=run_id,
-            app_id=settings.platform.app_id,
             domain_id=domain_id,
             after_sequence=0,
             user_only=True,
@@ -221,12 +214,10 @@ async def main() -> None:
             raise RuntimeError("并发 Claim 未保持单一租约")
         cancel_summary = await service.get_run(
             ops_run_id=cancel_run_id,
-            app_id=settings.platform.app_id,
             domain_id=domain_id,
         )
         await service.request_cancel(
             ops_run_id=cancel_run_id,
-            app_id=settings.platform.app_id,
             domain_id=domain_id,
             actor_id="runtime-smoke",
             expected_row_version=cancel_summary.row_version,
@@ -242,7 +233,6 @@ async def main() -> None:
         await service.reconcile_once(trace_id=str(uuid7()))
         cancel_summary = await service.get_run(
             ops_run_id=cancel_run_id,
-            app_id=settings.platform.app_id,
             domain_id=domain_id,
         )
         if cancel_summary.status != "CANCELLED":
@@ -315,7 +305,6 @@ async def main() -> None:
                 raise RuntimeError("接管后的 Run 未继续执行")
         stale_summary = await service.get_run(
             ops_run_id=stale_run_id,
-            app_id=settings.platform.app_id,
             domain_id=domain_id,
         )
         if stale_summary.status != "COMPLETED":
@@ -324,7 +313,6 @@ async def main() -> None:
         concurrent_command = CreateOpsRunCommand(
             command_id=uuid7(),
             idempotency_key=f"runtime-smoke-idempotent-{target_id}",
-            app_id=settings.platform.app_id,
             domain_id=domain_id,
             actor_id="runtime-smoke",
             agent_id=agent_id,
@@ -345,7 +333,6 @@ async def main() -> None:
         run_ids.append(idempotent_run_id)
         await service.request_cancel(
             ops_run_id=idempotent_run_id,
-            app_id=settings.platform.app_id,
             domain_id=domain_id,
             actor_id="runtime-smoke",
             expected_row_version=concurrent_receipts[0].row_version,

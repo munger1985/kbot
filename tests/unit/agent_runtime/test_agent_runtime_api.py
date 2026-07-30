@@ -24,7 +24,6 @@ class AgentRuntimeApiTest(unittest.TestCase):
         )
         app = FastAPI()
         app.state.agent_runtime_service = self.service
-        app.state.platform_app_id = 7
         app.state.agent_runtime_budget = {"max_tasks": 16}
 
         @app.middleware("http")
@@ -59,7 +58,6 @@ class AgentRuntimeApiTest(unittest.TestCase):
 
         self.assertEqual(response.status_code, 202)
         command = self.service.create_run.await_args.args[0]
-        self.assertEqual(command.app_id, 7)
         self.assertEqual(command.domain_id, 20)
         self.assertEqual(command.actor_id, "user-1")
         self.assertEqual(command.request_id, "request-1")

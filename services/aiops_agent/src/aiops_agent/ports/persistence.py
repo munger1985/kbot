@@ -31,7 +31,6 @@ class TargetRepositoryPort(Protocol):
         self,
         *,
         target_id: UUID,
-        app_id: int,
         domain_id: int,
         lock: bool = False,
     ) -> TargetEntity | None: ...
@@ -46,7 +45,6 @@ class MonitorSourceRepositoryPort(Protocol):
         self,
         *,
         monitor_source_id: UUID,
-        app_id: int,
         domain_id: int,
         lock: bool = False,
     ) -> MonitorSourceEntity | None: ...
@@ -58,7 +56,6 @@ class PolicyRepositoryPort(Protocol):
     async def get_active(
         self,
         *,
-        app_id: int,
         domain_id: int,
         policy_key: str,
         lock: bool = False,

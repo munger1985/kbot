@@ -23,9 +23,6 @@ class AIModelEntity(BaseEntity):
         UUIDv7Type(), primary_key=True, default=uuid7,
         comment="模型定义 UUIDv7",
     )
-    app_id: Mapped[int] = mapped_column(
-        Numeric(38, 0), nullable=False, comment="APEX 应用过滤字段",
-    )
     served_model_name: Mapped[str] = mapped_column(
         String(128), nullable=False, comment="推理 API 对外暴露的稳定模型名称",
     )

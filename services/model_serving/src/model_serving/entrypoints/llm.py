@@ -69,7 +69,6 @@ async def lifespan(app: FastAPI):
     app.state.db_runtime = db_runtime
     llm_service.bind_session_factory(db_runtime.session_factory)
     app.state.model_registry = ModelRegistryService(
-        app_id=settings.platform.app_id,
         session_factory=db_runtime.session_factory,
         on_model_changed=llm_service.invalidate_model,
     )

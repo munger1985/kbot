@@ -50,7 +50,7 @@ KBOT_MASTER_KEY="至少32字节的随机主密钥"
 python3 scripts/security/generate_portal_api_key.py --key-id portal-prod
 ```
 
-明文 Key 只交付 Portal Secret；KBot 配置保存摘要。
+脚本自动将摘要写入 `kbot.toml`；明文 Key 只交付 Portal Secret。
 
 ## 初始化 Oracle
 

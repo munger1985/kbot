@@ -5,8 +5,7 @@ from typing import Any
 
 
 class DomainValidationService:
-    def __init__(self, *, app_id: int, uow_factory: Callable[[], Any]):
-        self._app_id = app_id
+    def __init__(self, *, uow_factory: Callable[[], Any]):
         self._uow_factory = uow_factory
 
     async def is_active(self, domain_id: str) -> bool:
@@ -18,6 +17,5 @@ class DomainValidationService:
             return False
         async with self._uow_factory() as uow:
             return await uow.domains.exists_active(
-                app_id=self._app_id,
                 domain_id=parsed_domain_id,
             )

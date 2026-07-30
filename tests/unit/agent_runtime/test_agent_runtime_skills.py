@@ -186,7 +186,6 @@ class _PromptResolver:
 def _context(*, input_artifacts=()):
     run_id = uuid7()
     return ExecutionContext(
-        app_id=1,
         domain_id=10,
         agent_id=uuid7(),
         run_id=run_id,

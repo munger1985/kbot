@@ -15,23 +15,16 @@ class ModelDefinitionNotFound(LookupError):
 class ModelRegistryService:
     def __init__(
         self, *,
-        app_id: int | None = None,
         session_factory: Callable,
         on_model_changed: Callable[[str], Awaitable[None]] | None = None,
     ):
-        self._app_id = int(
-            app_id
-            if app_id is not None
-            else get_model_serving_settings().platform.app_id
-        )
         self._session_factory = session_factory
         self._on_model_changed = on_model_changed
 
     @staticmethod
     def _safe(entity: AIModelEntity) -> dict[str, Any]:
         return {
-            "model_id": str(entity.model_id), "app_id": int(entity.app_id),
-            "served_model_name": entity.served_model_name,
+            "model_id": str(entity.model_id),             "served_model_name": entity.served_model_name,
             "display_name": entity.display_name,
             "provider_model_name": entity.provider_model_name,
             "category": int(entity.category) if entity.category is not None else None,
@@ -44,13 +37,13 @@ class ModelRegistryService:
 
     async def list(self, *, category: int | None = None) -> list[dict[str, Any]]:
         async with self._session_factory() as session:
-            rows = await AIModelRepository(session).list_by_scope(app_id=self._app_id, category=category)
+            rows = await AIModelRepository(session).list_by_scope(category=category)
             return [self._safe(row) for row in rows]
 
     async def get(self, model_id: UUID, *, category: int | None = None) -> dict[str, Any]:
         async with self._session_factory() as session:
             row = await AIModelRepository(session).get_by_id(model_id)
-            if int(row.app_id) != self._app_id or (category is not None and int(row.category or 0) != int(category)):
+            if category is not None and int(row.category or 0) != int(category):
                 raise ModelDefinitionNotFound(model_id)
             return self._safe(row)
 
@@ -58,7 +51,6 @@ class ModelRegistryService:
         self._validate_embedding_dimension(values)
         async with self._session_factory() as session:
             row = await AIModelRepository(session).add(AIModelEntity(
-                app_id=self._app_id,
                 served_model_name=values["served_model_name"],
                 display_name=values["display_name"],
                 provider_model_name=values["provider_model_name"],
@@ -74,15 +66,13 @@ class ModelRegistryService:
         async with self._session_factory() as session:
             repo = AIModelRepository(session)
             current = await repo.get_by_id(model_id)
-            if int(current.app_id) != self._app_id:
-                raise ModelDefinitionNotFound(model_id)
             check_values = {
                 "category": current.category,
                 "embedding_dimension": current.embedding_dimension,
                 **values,
             }
             self._validate_embedding_dimension(check_values)
-            row = await repo.update_fields(model_id, app_id=self._app_id, values={**values, "updated_by": actor_id})
+            row = await repo.update_fields(model_id, values={**values, "updated_by": actor_id})
             await session.commit()
             result = self._safe(row)
         await self._notify_changed(result["served_model_name"])
@@ -109,7 +99,6 @@ class ModelRegistryService:
         async with self._session_factory() as session:
             row = await AIModelRepository(session).update_fields(
                 model_id,
-                app_id=self._app_id,
                 values={"status": 2, "updated_by": actor_id},
             )
             await session.commit()

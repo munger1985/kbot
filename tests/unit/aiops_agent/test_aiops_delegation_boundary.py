@@ -53,7 +53,6 @@ class AIOpsDelegationBoundaryTest(unittest.TestCase):
         result = asyncio.run(
             service.create_delegated_run(
                 request=request,
-                app_id=100,
                 domain_id=200,
                 actor_id="user-1",
                 trace_id="trace-1",
@@ -106,7 +105,6 @@ class AIOpsDelegationBoundaryTest(unittest.TestCase):
         result = asyncio.run(
             service.list_delegation_events(
                 delegation_id=delegation_id,
-                app_id=100,
                 domain_id=200,
                 after_sequence=0,
                 limit=100,
@@ -120,7 +118,6 @@ class AIOpsDelegationBoundaryTest(unittest.TestCase):
         scoped = (
             runs.get_by_parent_delegation_scoped.await_args.kwargs
         )
-        self.assertEqual(scoped["app_id"], 100)
         self.assertEqual(scoped["domain_id"], 200)
 
     def test_terminal_result_exposes_only_safe_summary_and_ref(
@@ -172,7 +169,6 @@ class AIOpsDelegationBoundaryTest(unittest.TestCase):
         result = asyncio.run(
             service.get_delegation_result(
                 delegation_id=delegation_id,
-                app_id=100,
                 domain_id=200,
             )
         )

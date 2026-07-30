@@ -87,7 +87,6 @@ async def smoke() -> None:
                 text(
                     """
                     INSERT INTO KBOT_PLATFORM_DOMAIN (
-                        DOMAIN_ID, APP_ID, NAME, STATUS, CREATED_BY, UPDATED_BY
                     ) VALUES (
                         :domain_id, 1, :name, 'ACTIVE', 'smoke', 'smoke'
                     )
@@ -104,7 +103,6 @@ async def smoke() -> None:
             await uow.targets.add_target(
                 TargetEntity(
                     target_id=target_id,
-                    app_id=1,
                     domain_id=domain_id,
                     target_key="smoke-target",
                     display_name="AIOps 持久化 Smoke",

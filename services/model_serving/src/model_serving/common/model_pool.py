@@ -198,7 +198,6 @@ class BaseModelPool(ABC, Generic[T]):
         async with self.oracle_session as session:
             repo = ModelRepository(session)
             model = await repo.get_by_served_name(
-                app_id=get_model_serving_settings().platform.app_id,
                 served_model_name=served_model_name,
             )
             if int(model.category) != int(self._get_model_category()):
@@ -214,7 +213,6 @@ class BaseModelPool(ABC, Generic[T]):
         async with self.oracle_session as session:
             repo = ModelRepository(session=session)
             entities = await repo.list_by_scope(
-                app_id=get_model_serving_settings().platform.app_id,
                 category=self._get_model_category(),
             )
             entities = [

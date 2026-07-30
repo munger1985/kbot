@@ -82,7 +82,6 @@ class MemoryRecallService:
         self,
         *,
         conversation_id: UUID,
-        app_id: int,
         domain_id: int,
         actor_id: str,
         query: str,
@@ -90,14 +89,12 @@ class MemoryRecallService:
         async with self._uow_factory() as uow:
             conversation = await uow.conversations.get_scoped(
                 conversation_id=conversation_id,
-                app_id=app_id,
                 domain_id=domain_id,
                 actor_id=actor_id,
             )
             if conversation is None:
                 return None
             profile = await uow.memory_index_profiles.get(
-                app_id=app_id,
                 domain_id=domain_id,
                 agent_id=conversation.agent_id,
             )
@@ -142,7 +139,6 @@ class ConversationService:
     async def create(
         self,
         *,
-        app_id: int,
         domain_id: int,
         actor_id: str,
         agent_id: UUID,
@@ -152,7 +148,6 @@ class ConversationService:
         async with self._uow_factory() as uow:
             agent = await uow.agents.get_active(
                 agent_id=agent_id,
-                app_id=app_id,
                 domain_id=domain_id,
             )
             if agent is None:
@@ -160,7 +155,6 @@ class ConversationService:
             conversation = await uow.conversations.add(
                 AgentConversationEntity(
                     conversation_id=uuid7(),
-                    app_id=app_id,
                     domain_id=domain_id,
                     actor_id=actor_id,
                     agent_id=agent_id,
@@ -179,14 +173,12 @@ class ConversationService:
     async def list(
         self,
         *,
-        app_id: int,
         domain_id: int,
         actor_id: str,
         limit: int,
     ) -> list[ConversationView]:
         async with self._uow_factory() as uow:
             rows = await uow.conversations.list_scoped(
-                app_id=app_id,
                 domain_id=domain_id,
                 actor_id=actor_id,
                 limit=limit,
@@ -197,14 +189,12 @@ class ConversationService:
         self,
         *,
         conversation_id: UUID,
-        app_id: int,
         domain_id: int,
         actor_id: str,
     ) -> ConversationView:
         async with self._uow_factory() as uow:
             row = await uow.conversations.get_scoped(
                 conversation_id=conversation_id,
-                app_id=app_id,
                 domain_id=domain_id,
                 actor_id=actor_id,
             )
@@ -216,7 +206,6 @@ class ConversationService:
         self,
         *,
         conversation_id: UUID,
-        app_id: int,
         domain_id: int,
         actor_id: str,
         expected_row_version: int,
@@ -227,7 +216,6 @@ class ConversationService:
         async with self._uow_factory() as uow:
             row = await uow.conversations.get_scoped(
                 conversation_id=conversation_id,
-                app_id=app_id,
                 domain_id=domain_id,
                 actor_id=actor_id,
                 lock=True,
@@ -269,7 +257,6 @@ class ConversationService:
         self,
         *,
         conversation_id: UUID,
-        app_id: int,
         domain_id: int,
         actor_id: str,
         expected_row_version: int,
@@ -277,7 +264,6 @@ class ConversationService:
         async with self._uow_factory() as uow:
             row = await uow.conversations.get_scoped(
                 conversation_id=conversation_id,
-                app_id=app_id,
                 domain_id=domain_id,
                 actor_id=actor_id,
                 lock=True,
@@ -348,7 +334,6 @@ class ConversationService:
         for memory_id in memory_ids:
             memory = await uow.memory_items.get_scoped(
                 memory_id=memory_id,
-                app_id=int(row.app_id),
                 domain_id=int(row.domain_id),
                 actor_id=row.actor_id,
                 lock=True,
@@ -395,7 +380,6 @@ class ConversationService:
         self,
         *,
         conversation_id: UUID,
-        app_id: int,
         domain_id: int,
         actor_id: str,
         request_id: str,
@@ -430,7 +414,6 @@ class ConversationService:
             try:
                 recall_query = await self._memory_recall_service.prepare(
                     conversation_id=conversation_id,
-                    app_id=app_id,
                     domain_id=domain_id,
                     actor_id=actor_id,
                     query=raw_input,
@@ -439,7 +422,6 @@ class ConversationService:
                 logger.exception("记忆向量召回准备失败，本轮降级为词法召回")
         accepted = await self._accept_turn(
             conversation_id=conversation_id,
-            app_id=app_id,
             domain_id=domain_id,
             actor_id=actor_id,
             idempotency_key=idempotency_key,
@@ -458,7 +440,6 @@ class ConversationService:
         if turn.root_run_id is not None:
             run = await self._runtime_service.get_run(
                 run_id=turn.root_run_id,
-                app_id=app_id,
                 domain_id=domain_id,
             )
             return self._turn_receipt(turn, run)
@@ -466,7 +447,6 @@ class ConversationService:
         try:
             run_receipt = await self._runtime_service.create_run(
                 CreateRunCommand(
-                    app_id=app_id,
                     domain_id=domain_id,
                     agent_id=conversation.agent_id,
                     actor_id=actor_id,
@@ -531,7 +511,6 @@ class ConversationService:
         self,
         *,
         conversation_id: UUID,
-        app_id: int,
         domain_id: int,
         actor_id: str,
         idempotency_key: str,
@@ -544,7 +523,6 @@ class ConversationService:
         async with self._uow_factory() as uow:
             conversation = await uow.conversations.get_scoped(
                 conversation_id=conversation_id,
-                app_id=app_id,
                 domain_id=domain_id,
                 actor_id=actor_id,
                 lock=True,
@@ -582,7 +560,6 @@ class ConversationService:
                 conversation_id=conversation_id
             )
             memory_candidates = await uow.memory_items.list_active(
-                app_id=app_id,
                 domain_id=domain_id,
                 actor_id=actor_id,
                 agent_id=conversation.agent_id,
@@ -763,7 +740,6 @@ class ConversationService:
         self,
         *,
         conversation_id: UUID,
-        app_id: int,
         domain_id: int,
         actor_id: str,
         after_sequence: int,
@@ -772,7 +748,6 @@ class ConversationService:
         async with self._uow_factory() as uow:
             conversation = await uow.conversations.get_scoped(
                 conversation_id=conversation_id,
-                app_id=app_id,
                 domain_id=domain_id,
                 actor_id=actor_id,
             )
@@ -833,7 +808,6 @@ class ConversationService:
         *,
         conversation_id: UUID,
         turn_id: UUID,
-        app_id: int,
         domain_id: int,
         actor_id: str,
         after_sequence: int,
@@ -842,7 +816,6 @@ class ConversationService:
         async with self._uow_factory() as uow:
             conversation = await uow.conversations.get_scoped(
                 conversation_id=conversation_id,
-                app_id=app_id,
                 domain_id=domain_id,
                 actor_id=actor_id,
             )
@@ -863,7 +836,6 @@ class ConversationService:
     async def list_memories(
         self,
         *,
-        app_id: int,
         domain_id: int,
         actor_id: str,
         agent_id: UUID,
@@ -871,7 +843,6 @@ class ConversationService:
     ) -> list[MemoryItemView]:
         async with self._uow_factory() as uow:
             rows = await uow.memory_items.list_active(
-                app_id=app_id,
                 domain_id=domain_id,
                 actor_id=actor_id,
                 agent_id=agent_id,
@@ -884,14 +855,12 @@ class ConversationService:
         self,
         *,
         memory_id: UUID,
-        app_id: int,
         domain_id: int,
         actor_id: str,
     ) -> None:
         async with self._uow_factory() as uow:
             row = await uow.memory_items.get_scoped(
                 memory_id=memory_id,
-                app_id=app_id,
                 domain_id=domain_id,
                 actor_id=actor_id,
                 lock=True,

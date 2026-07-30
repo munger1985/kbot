@@ -21,7 +21,6 @@ class InspectionPlanEntity(BaseEntity):
     inspection_plan_id: Mapped[UUID] = mapped_column(
         UUIDv7Type(), primary_key=True, default=uuid7
     )
-    app_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False)
     domain_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False)
     plan_key: Mapped[str] = mapped_column(String(128), nullable=False)
     display_name: Mapped[str] = mapped_column(String(256), nullable=False)

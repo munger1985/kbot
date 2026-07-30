@@ -748,11 +748,6 @@
             "title": "Agent Id",
             "type": "string"
           },
-          "app_id": {
-            "minimum": 1.0,
-            "title": "App Id",
-            "type": "integer"
-          },
           "blueprint_id": {
             "default": "kernel.observe-report",
             "maxLength": 128,
@@ -919,7 +914,6 @@
         "required": [
           "command_id",
           "idempotency_key",
-          "app_id",
           "domain_id",
           "actor_id",
           "agent_id",

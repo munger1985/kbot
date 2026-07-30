@@ -78,10 +78,8 @@ async def main() -> None:
     for signum in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(signum, stop_worker)
     logger.info(
-        "正在启动 KC INDEX/PROFILE Worker {} -> {}（app_id={}）",
-        config.worker_id,
+        "正在启动 KC INDEX/PROFILE Worker {} -> {}",
         settings.knowledge_core.base_url,
-        settings.platform.app_id,
     )
     try:
         await worker_task

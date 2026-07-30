@@ -65,7 +65,6 @@ def get_scope(
 ) -> ConfigurationScope:
     require_service_scope(request, "aiops.manage")
     return ConfigurationScope.from_auth(
-        app_id=request.app.state.runtime.settings.platform.app_id,
         auth_context=auth_context,
     )
 

@@ -33,14 +33,12 @@ class AgentConversationRepository:
         self,
         *,
         conversation_id: UUID,
-        app_id: int,
         domain_id: int,
         actor_id: str,
         lock: bool = False,
     ) -> AgentConversationEntity | None:
         statement: Select = select(AgentConversationEntity).where(
             AgentConversationEntity.conversation_id == conversation_id,
-            AgentConversationEntity.app_id == app_id,
             AgentConversationEntity.domain_id == domain_id,
             AgentConversationEntity.actor_id == actor_id,
             AgentConversationEntity.status != "DELETED",
@@ -62,7 +60,6 @@ class AgentConversationRepository:
     async def list_scoped(
         self,
         *,
-        app_id: int,
         domain_id: int,
         actor_id: str,
         limit: int,
@@ -70,7 +67,6 @@ class AgentConversationRepository:
         statement = (
             select(AgentConversationEntity)
             .where(
-                AgentConversationEntity.app_id == app_id,
                 AgentConversationEntity.domain_id == domain_id,
                 AgentConversationEntity.actor_id == actor_id,
                 AgentConversationEntity.status != "DELETED",
@@ -315,14 +311,12 @@ class AgentMemoryItemRepository:
         self,
         *,
         memory_id: UUID,
-        app_id: int,
         domain_id: int,
         actor_id: str,
         lock: bool = False,
     ) -> AgentMemoryItemEntity | None:
         statement: Select = select(AgentMemoryItemEntity).where(
             AgentMemoryItemEntity.memory_id == memory_id,
-            AgentMemoryItemEntity.app_id == app_id,
             AgentMemoryItemEntity.domain_id == domain_id,
             AgentMemoryItemEntity.actor_id == actor_id,
             AgentMemoryItemEntity.status != "DELETED",
@@ -334,7 +328,6 @@ class AgentMemoryItemRepository:
     async def list_active(
         self,
         *,
-        app_id: int,
         domain_id: int,
         actor_id: str,
         agent_id: UUID,
@@ -344,7 +337,6 @@ class AgentMemoryItemRepository:
         statement = (
             select(AgentMemoryItemEntity)
             .where(
-                AgentMemoryItemEntity.app_id == app_id,
                 AgentMemoryItemEntity.domain_id == domain_id,
                 AgentMemoryItemEntity.actor_id == actor_id,
                 AgentMemoryItemEntity.status == "ACTIVE",
@@ -368,7 +360,6 @@ class AgentMemoryItemRepository:
     async def get_active_by_key(
         self,
         *,
-        app_id: int,
         domain_id: int,
         actor_id: str,
         agent_id: UUID | None,
@@ -382,7 +373,6 @@ class AgentMemoryItemRepository:
             else AgentMemoryItemEntity.agent_id.is_(None)
         )
         statement: Select = select(AgentMemoryItemEntity).where(
-            AgentMemoryItemEntity.app_id == app_id,
             AgentMemoryItemEntity.domain_id == domain_id,
             AgentMemoryItemEntity.actor_id == actor_id,
             agent_clause,
@@ -397,7 +387,6 @@ class AgentMemoryItemRepository:
     async def list_active_by_canonical_key(
         self,
         *,
-        app_id: int,
         domain_id: int,
         actor_id: str,
         agent_id: UUID | None,
@@ -410,7 +399,6 @@ class AgentMemoryItemRepository:
             else AgentMemoryItemEntity.agent_id.is_(None)
         )
         statement: Select = select(AgentMemoryItemEntity).where(
-            AgentMemoryItemEntity.app_id == app_id,
             AgentMemoryItemEntity.domain_id == domain_id,
             AgentMemoryItemEntity.actor_id == actor_id,
             agent_clause,
@@ -436,7 +424,6 @@ class AgentMemoryIndexProfileRepository:
     async def get(
         self,
         *,
-        app_id: int,
         domain_id: int,
         agent_id: UUID,
         lock: bool = False,
@@ -444,7 +431,6 @@ class AgentMemoryIndexProfileRepository:
         statement: Select = select(
             AgentMemoryIndexProfileEntity
         ).where(
-            AgentMemoryIndexProfileEntity.app_id == app_id,
             AgentMemoryIndexProfileEntity.domain_id == domain_id,
             AgentMemoryIndexProfileEntity.agent_id == agent_id,
         )

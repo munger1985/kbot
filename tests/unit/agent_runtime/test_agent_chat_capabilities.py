@@ -77,7 +77,6 @@ def _context(
     original_input="你好",
 ):
     return ExecutionContext(
-        app_id=1,
         domain_id=20,
         agent_id=uuid7(),
         run_id=uuid7(),

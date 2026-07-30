@@ -11,12 +11,12 @@ class _DomainRepository:
     def __init__(self):
         self.rows = []
 
-    async def get_by_name(self, *, app_id, name):
+    async def get_by_name(self, *, name):
         return next(
             (
                 row
                 for row in self.rows
-                if row.app_id == app_id and row.name == name
+                if row.name == name
             ),
             None,
         )
@@ -47,7 +47,6 @@ class DomainManagementServiceTest(unittest.IsolatedAsyncioTestCase):
         repository = _DomainRepository()
         uow = _Uow(repository)
         service = DomainManagementService(
-            app_id=1001,
             uow_factory=lambda: uow,
         )
 
@@ -58,7 +57,6 @@ class DomainManagementServiceTest(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(1, result["domain_id"])
-        self.assertEqual(1001, result["app_id"])
         self.assertEqual("ACTIVE", result["status"])
         self.assertEqual("ui-tester", repository.rows[0].created_by)
         self.assertTrue(uow.committed)
@@ -66,7 +64,6 @@ class DomainManagementServiceTest(unittest.IsolatedAsyncioTestCase):
     async def test_duplicate_name_is_rejected(self):
         repository = _DomainRepository()
         service = DomainManagementService(
-            app_id=1001,
             uow_factory=lambda: _Uow(repository),
         )
         await service.create(

@@ -101,7 +101,6 @@ async def lifespan(app: FastAPI):
         job_wakeup_publisher=job_wakeup_publisher,
     )
     intake_service = KnowledgeCoreIntakeService(
-        app_id=settings.platform.app_id,
         receipt_ttl_seconds=config.receipt_ttl_seconds,
         uow_factory=kc_uow_factory,
         parse_policy_overrides={
@@ -238,17 +237,13 @@ async def lifespan(app: FastAPI):
         query_embedding_provider=app.state.kc_query_embedding_provider,
     )
     app.state.kc_status_service = KnowledgeCoreStatusService(
-        app_id=settings.platform.app_id, uow_factory=kc_uow_factory
     )
     app.state.kc_scope_service = KnowledgeCoreScopeService(
-        app_id=settings.platform.app_id, uow_factory=kc_uow_factory
     )
     from knowledge_core.application.collections import KnowledgeCoreBindingService, KnowledgeCoreCollectionService
     app.state.kc_collection_service = KnowledgeCoreCollectionService(
-        app_id=settings.platform.app_id, uow_factory=kc_uow_factory
     )
     app.state.kc_binding_service = KnowledgeCoreBindingService(
-        app_id=settings.platform.app_id, uow_factory=kc_uow_factory
     )
     app.state.kc_purge_service = KnowledgeCoreCollectionPurgeService(uow_factory=kc_uow_factory)
     logger.info("正在启动服务 [{}]，进程号={}", SERVICE_NAME, os.getpid())

@@ -23,7 +23,6 @@ class AgentConversationEntity(BaseEntity):
     conversation_id: Mapped[UUID] = mapped_column(
         UUIDv7Type(), primary_key=True, default=uuid7
     )
-    app_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False)
     domain_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False)
     actor_id: Mapped[str] = mapped_column(String(256), nullable=False)
     agent_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
@@ -157,7 +156,6 @@ class AgentMemoryItemEntity(BaseEntity):
     memory_id: Mapped[UUID] = mapped_column(
         UUIDv7Type(), primary_key=True, default=uuid7
     )
-    app_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False)
     domain_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False)
     actor_id: Mapped[str] = mapped_column(String(256), nullable=False)
     agent_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
@@ -205,7 +203,6 @@ class AgentMemoryIndexProfileEntity(BaseEntity):
     index_profile_id: Mapped[UUID] = mapped_column(
         UUIDv7Type(), primary_key=True, default=uuid7
     )
-    app_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False)
     domain_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False)
     agent_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
     embedding_model_name: Mapped[str] = mapped_column(

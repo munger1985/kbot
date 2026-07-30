@@ -135,7 +135,6 @@ class MonitorWebhookIntakeService:
             now = await uow.runs.database_now()
             source = await uow.monitor_sources.get_scoped(
                 monitor_source_id=source_snapshot["source_uuid"],
-                app_id=source_snapshot["app_id"],
                 domain_id=source_snapshot["domain_id"],
                 lock=True,
             )
@@ -249,8 +248,7 @@ class MonitorWebhookIntakeService:
                 "source_id": str(source.monitor_source_id),
                 "source_type": source.source_type,
                 "source_version": int(source.row_version),
-                "app_id": int(source.app_id),
-                "domain_id": int(source.domain_id),
+                                "domain_id": int(source.domain_id),
                 "endpoint": source.endpoint or "https://webhook.invalid",
                 "webhook_secret_ref": source.webhook_secret_ref,
                 "capabilities": dict(source.capabilities_json or {}),
@@ -307,7 +305,6 @@ class MonitorWebhookIntakeService:
             return None
         target = await uow.targets.get_scoped(
             target_id=monitor.target_id,
-            app_id=int(source.app_id),
             domain_id=int(source.domain_id),
             lock=True,
         )
@@ -452,7 +449,6 @@ class MonitorWebhookIntakeService:
         binding = await uow.targets.get_agent_binding(
             target_id=target.target_id,
             agent_id=self._system_agent_id,
-            app_id=int(target.app_id),
             domain_id=int(target.domain_id),
         )
         if (
@@ -465,7 +461,6 @@ class MonitorWebhookIntakeService:
         if binding.policy_id is not None:
             policy = await uow.policies.get_scoped(
                 policy_id=binding.policy_id,
-                app_id=int(target.app_id),
                 domain_id=int(target.domain_id),
             )
             if policy is None or policy.status != "ACTIVE":
@@ -509,8 +504,7 @@ class MonitorWebhookIntakeService:
         ):
             return
         payload = {
-            "app_id": int(target.app_id),
-            "domain_id": int(target.domain_id),
+                        "domain_id": int(target.domain_id),
             "agent_id": str(self._system_agent_id),
             "target_id": str(target.target_id),
             "alert_id": str(alert.alert_id),

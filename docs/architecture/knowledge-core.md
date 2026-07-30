@@ -4,7 +4,6 @@
 
 Knowledge Core（KC）是封闭的知识生成与检索服务。Domain 是强隔离边界，一个
 Domain 可有多个 Collection；Agent 通过绑定表关联多个平权 Collection。Collection
-保存 `app_id`、`domain_id`、状态、默认安全等级和 `models_json`，其余 KC 表通过
 Collection 关联，不重复保存 Domain。
 
 核心聚合如下：

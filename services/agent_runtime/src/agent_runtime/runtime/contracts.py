@@ -14,7 +14,6 @@ class ExecutionContext(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    app_id: int = Field(ge=1)
     domain_id: int = Field(ge=1)
     agent_id: UUID
     run_id: UUID

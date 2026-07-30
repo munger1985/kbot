@@ -66,15 +66,15 @@ class FakeUnitOfWork:
 class KnowledgeCoreCollectionServiceTest(unittest.IsolatedAsyncioTestCase):
     def _service(self, repository):
         uow = FakeUnitOfWork(repository)
-        service = KnowledgeCoreCollectionService(app_id=112, uow_factory=lambda: uow)
+        service = KnowledgeCoreCollectionService(uow_factory=lambda: uow)
         return service, uow
 
     def _binding_service(self, collection_repository, binding_repository):
         uow = FakeUnitOfWork(collection_repository, binding_repository)
-        service = KnowledgeCoreBindingService(app_id=112, uow_factory=lambda: uow)
+        service = KnowledgeCoreBindingService(uow_factory=lambda: uow)
         return service, uow
 
-    async def test_creates_collection_with_server_injected_app_id(self):
+    async def test_creates_collection_with_server_injected_scope(self):
         repository = FakeCollectionRepository()
         service, uow = self._service(repository)
         embedding_model_id = uuid7()
@@ -96,7 +96,6 @@ class KnowledgeCoreCollectionServiceTest(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(101, collection.collection_id)
-        self.assertEqual(112, repository.added.app_id)
         self.assertEqual(8, repository.added.domain_id)
         self.assertEqual(
             str(embedding_model_id),
@@ -129,7 +128,6 @@ class KnowledgeCoreCollectionServiceTest(unittest.IsolatedAsyncioTestCase):
     async def test_list_returns_session_independent_snapshots(self):
         collection = SimpleNamespace(
             collection_id=uuid7(),
-            app_id=112,
             domain_id=8,
             collection_key="assets",
             display_name="Asset Knowledge",
@@ -247,7 +245,7 @@ class KnowledgeCoreCollectionLifecycleTest(unittest.IsolatedAsyncioTestCase):
         collection = SimpleNamespace(status="ACTIVE", updated_by=None)
         repo = FakeCollectionRepository(existing=collection)
         uow = FakeUnitOfWork(repo)
-        service = KnowledgeCoreCollectionService(app_id=112, uow_factory=lambda: uow)
+        service = KnowledgeCoreCollectionService(uow_factory=lambda: uow)
         from knowledge_core.application.collections import ChangeCollectionStatusCommand
         result = await service.change_status(ChangeCollectionStatusCommand(
             domain_id=8, collection_key="assets", status="DISABLED", actor_id="tester",

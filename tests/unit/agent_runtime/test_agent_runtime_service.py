@@ -72,11 +72,10 @@ class _Agents:
     def __init__(self, store):
         self.store = store
 
-    async def get_active(self, *, agent_id, app_id, domain_id):
+    async def get_active(self, *, agent_id, domain_id):
         agent = self.store.agents.get(agent_id)
         if (
             agent is None
-            or int(agent.app_id) != app_id
             or int(agent.domain_id) != domain_id
             or agent.status != "ACTIVE"
         ):
@@ -89,36 +88,33 @@ class _Agents:
         self.store.agents[entity.agent_id] = entity
         return entity
 
-    async def get_by_key(self, *, app_id, domain_id, agent_key):
+    async def get_by_key(self, *, domain_id, agent_key):
         return next(
             (
                 agent
                 for agent in self.store.agents.values()
-                if int(agent.app_id) == app_id
-                and int(agent.domain_id) == domain_id
+                if int(agent.domain_id) == domain_id
                 and agent.agent_key == agent_key
             ),
             None,
         )
 
     async def get_scoped(
-        self, *, agent_id, app_id, domain_id, lock=False
+        self, *, agent_id, domain_id, lock=False
     ):
         agent = self.store.agents.get(agent_id)
         if (
             agent is None
-            or int(agent.app_id) != app_id
             or int(agent.domain_id) != domain_id
         ):
             return None
         return agent
 
-    async def list_scoped(self, *, app_id, domain_id):
+    async def list_scoped(self, *, domain_id):
         return [
             agent
             for agent in self.store.agents.values()
-            if int(agent.app_id) == app_id
-            and int(agent.domain_id) == domain_id
+            if int(agent.domain_id) == domain_id
         ]
 
 
@@ -135,14 +131,13 @@ class _Runs:
         return entity
 
     async def get_by_idempotency(
-        self, *, app_id, domain_id, actor_id, idempotency_key, lock=False
+        self, *, domain_id, actor_id, idempotency_key, lock=False
     ):
         return next(
             (
                 run
                 for run in self.store.runs.values()
-                if int(run.app_id) == app_id
-                and int(run.domain_id) == domain_id
+                if int(run.domain_id) == domain_id
                 and run.actor_id == actor_id
                 and run.idempotency_key == idempotency_key
             ),
@@ -150,12 +145,11 @@ class _Runs:
         )
 
     async def get_scoped(
-        self, *, run_id, app_id, domain_id, lock=False
+        self, *, run_id, domain_id, lock=False
     ):
         run = self.store.runs.get(run_id)
         if (
             run is None
-            or int(run.app_id) != app_id
             or int(run.domain_id) != domain_id
         ):
             return None
@@ -349,7 +343,6 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
         self.agent_id = uuid7()
         self.store.agents[self.agent_id] = SimpleNamespace(
             agent_id=self.agent_id,
-            app_id=1,
             domain_id=20,
             agent_key="document-assistant",
             display_name="文档助手",
@@ -385,7 +378,6 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
             model_resolver=self.model_resolver,
         )
         self.create_command = CreateRunCommand(
-            app_id=1,
             domain_id=20,
             agent_id=self.agent_id,
             actor_id="user-1",
@@ -524,7 +516,6 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
     async def test_agent_definition_create_and_update(self):
         created = await self.definition_service.create(
             CreateAgentDefinitionCommand(
-                app_id=1,
                 domain_id=20,
                 agent_key="case-agent",
                 display_name="案例助手",
@@ -542,7 +533,6 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
         )
         updated = await self.definition_service.update(
             UpdateAgentDefinitionCommand(
-                app_id=1,
                 domain_id=20,
                 agent_id=created.agent_id,
                 expected_row_version=1,
@@ -582,7 +572,6 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(AgentRuntimeConflict) as raised:
             await self.definition_service.update(
                 UpdateAgentDefinitionCommand(
-                    app_id=1,
                     domain_id=20,
                     agent_id=self.agent_id,
                     expected_row_version=1,
@@ -637,7 +626,6 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
         )
         started = await self.service.install_plan(
             InstallPlanCommand(
-                app_id=1,
                 domain_id=20,
                 run_id=created.run_id,
                 expected_row_version=1,
@@ -698,7 +686,6 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(leased_task.error_message)
         result = await self.service.get_result(
             run_id=created.run_id,
-            app_id=1,
             domain_id=20,
         )
         self.assertEqual(result.payload, {"answer": "完成"})
@@ -764,7 +751,6 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
         )
         await self.service.install_plan(
             InstallPlanCommand(
-                app_id=1,
                 domain_id=20,
                 run_id=created.run_id,
                 expected_row_version=1,
@@ -838,7 +824,6 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
         )
         await self.service.install_plan(
             InstallPlanCommand(
-                app_id=1,
                 domain_id=20,
                 run_id=created.run_id,
                 expected_row_version=1,

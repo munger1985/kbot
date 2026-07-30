@@ -28,14 +28,12 @@ class AgentRunRepository:
     async def get_by_idempotency(
         self,
         *,
-        app_id: int,
         domain_id: int,
         actor_id: str,
         idempotency_key: str,
         lock: bool = False,
     ) -> AgentRunEntity | None:
         statement: Select = select(AgentRunEntity).where(
-            AgentRunEntity.app_id == app_id,
             AgentRunEntity.domain_id == domain_id,
             AgentRunEntity.actor_id == actor_id,
             AgentRunEntity.idempotency_key == idempotency_key,
@@ -48,13 +46,11 @@ class AgentRunRepository:
         self,
         *,
         run_id: UUID,
-        app_id: int,
         domain_id: int,
         lock: bool = False,
     ) -> AgentRunEntity | None:
         statement: Select = select(AgentRunEntity).where(
             AgentRunEntity.run_id == run_id,
-            AgentRunEntity.app_id == app_id,
             AgentRunEntity.domain_id == domain_id,
         )
         if lock:
@@ -74,7 +70,6 @@ class AgentRunRepository:
     async def list_scoped(
         self,
         *,
-        app_id: int,
         domain_id: int,
         limit: int = 50,
     ) -> list[AgentRunEntity]:
@@ -82,7 +77,6 @@ class AgentRunRepository:
         statement = (
             select(AgentRunEntity)
             .where(
-                AgentRunEntity.app_id == app_id,
                 AgentRunEntity.domain_id == domain_id,
             )
             .order_by(

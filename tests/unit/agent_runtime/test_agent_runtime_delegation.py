@@ -98,7 +98,6 @@ class AgentDelegationReconcilerTest(
         state = SimpleNamespace(
             run=SimpleNamespace(
                 run_id=run_id,
-                app_id=1,
                 domain_id=20,
                 agent_id=uuid7(),
                 actor_id="user-1",

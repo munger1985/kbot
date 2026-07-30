@@ -77,7 +77,6 @@ async def smoke() -> None:
     try:
         async with runtime.session_factory() as session:
             domain = PlatformDomainEntity(
-                app_id=settings.platform.app_id,
                 name=f"oracle-smoke-{marker}",
                 status="ACTIVE",
                 created_by="oracle-smoke",
@@ -91,12 +90,10 @@ async def smoke() -> None:
         main_uow_factory = create_main_api_uow(runtime.session_factory)
         async with main_uow_factory() as uow:
             assert await uow.domains.exists_active(
-                app_id=settings.platform.app_id,
                 domain_id=domain_id,
             )
 
         model_service = ModelRegistryService(
-            app_id=settings.platform.app_id,
             session_factory=runtime.session_factory,
         )
         model = await model_service.create(
@@ -132,7 +129,6 @@ async def smoke() -> None:
             await uow.collections.add(
                 KcCollectionEntity(
                     collection_id=collection_id,
-                    app_id=settings.platform.app_id,
                     domain_id=domain_id,
                     collection_key=f"smoke-{marker}"[:64],
                     display_name="Oracle Smoke Collection",
@@ -156,7 +152,6 @@ async def smoke() -> None:
             await uow.collections.add(
                 KcCollectionEntity(
                     collection_id=rollback_collection_id,
-                    app_id=settings.platform.app_id,
                     domain_id=domain_id,
                     collection_key=f"rollback-{marker}"[:64],
                     display_name="Oracle Smoke Rollback Collection",
@@ -187,7 +182,6 @@ async def smoke() -> None:
             await uow.agents.add(
                 AgentDefinitionEntity(
                     agent_id=agent_id,
-                    app_id=settings.platform.app_id,
                     domain_id=domain_id,
                     agent_key=f"smoke-{marker}",
                     display_name="Oracle Smoke Agent",
@@ -208,13 +202,11 @@ async def smoke() -> None:
         async with agent_uow_factory() as uow:
             assert await uow.agents.get_active(
                 agent_id=agent_id,
-                app_id=settings.platform.app_id,
                 domain_id=domain_id,
             )
             await uow.agents.add(
                 AgentDefinitionEntity(
                     agent_id=rollback_agent_id,
-                    app_id=settings.platform.app_id,
                     domain_id=domain_id,
                     agent_key=f"rollback-{marker}",
                     display_name="Oracle Smoke Rollback Agent",

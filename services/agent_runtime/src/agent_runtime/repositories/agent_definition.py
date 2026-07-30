@@ -23,13 +23,11 @@ class AgentDefinitionRepository:
         self,
         *,
         agent_id: UUID,
-        app_id: int,
         domain_id: int,
         lock: bool = False,
     ) -> AgentDefinitionEntity | None:
         statement: Select = select(AgentDefinitionEntity).where(
             AgentDefinitionEntity.agent_id == agent_id,
-            AgentDefinitionEntity.app_id == app_id,
             AgentDefinitionEntity.domain_id == domain_id,
         )
         if lock:
@@ -40,12 +38,10 @@ class AgentDefinitionRepository:
         self,
         *,
         agent_id: UUID,
-        app_id: int,
         domain_id: int,
     ) -> AgentDefinitionEntity | None:
         statement = select(AgentDefinitionEntity).where(
             AgentDefinitionEntity.agent_id == agent_id,
-            AgentDefinitionEntity.app_id == app_id,
             AgentDefinitionEntity.domain_id == domain_id,
             AgentDefinitionEntity.status == "ACTIVE",
         )
@@ -54,12 +50,10 @@ class AgentDefinitionRepository:
     async def get_by_key(
         self,
         *,
-        app_id: int,
         domain_id: int,
         agent_key: str,
     ) -> AgentDefinitionEntity | None:
         statement = select(AgentDefinitionEntity).where(
-            AgentDefinitionEntity.app_id == app_id,
             AgentDefinitionEntity.domain_id == domain_id,
             AgentDefinitionEntity.agent_key == agent_key,
         )
@@ -68,13 +62,11 @@ class AgentDefinitionRepository:
     async def list_scoped(
         self,
         *,
-        app_id: int,
         domain_id: int,
     ) -> list[AgentDefinitionEntity]:
         statement = (
             select(AgentDefinitionEntity)
             .where(
-                AgentDefinitionEntity.app_id == app_id,
                 AgentDefinitionEntity.domain_id == domain_id,
             )
             .order_by(

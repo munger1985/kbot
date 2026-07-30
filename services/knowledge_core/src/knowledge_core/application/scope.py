@@ -11,8 +11,7 @@ class KnowledgeScopeError(ValueError):
 
 
 class KnowledgeCoreScopeService:
-    def __init__(self, *, app_id: int, uow_factory: Callable[[], KnowledgeCoreUnitOfWork]):
-        self._app_id = app_id
+    def __init__(self, *, uow_factory: Callable[[], KnowledgeCoreUnitOfWork]):
         self._uow_factory = uow_factory
 
     async def resolve_agent_collections(
@@ -27,7 +26,6 @@ class KnowledgeCoreScopeService:
             active: list[UUID] = []
             for collection_id in requested:
                 collection = await uow.collections.get_by_id_scope(
-                    app_id=self._app_id, domain_id=domain_id, collection_id=collection_id,
                 )
                 if collection is None:
                     raise KnowledgeScopeError("collection is outside the Domain scope")

@@ -106,7 +106,6 @@ class AgentRuntimeWorkerTest(unittest.IsolatedAsyncioTestCase):
             specialist="conversation",
             skill_id="echo-answer",
             skill_version="1.0.0",
-            app_id=1,
             domain_id=10,
             agent_id=uuid7(),
             actor_id="user-1",

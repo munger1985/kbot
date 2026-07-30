@@ -19,7 +19,6 @@ from pydantic import BaseModel, ConfigDict, Field
 class PlatformConfig(BaseModel):
     """所有服务共享的平台标识。"""
 
-    app_id: int = Field(default=1, ge=1)
     version: str = "4.0.0"
     debug: bool = False
 
@@ -300,7 +299,6 @@ def load_settings(
     deployment = _load_toml(resolved_file, required=True)
     unknown_keys = set(deployment) - {
         "environment",
-        "app_id",
         "data_dir",
         "log_dir",
         "embedding_dimension",
@@ -369,7 +367,6 @@ def load_settings(
     topology = _load_toml(resource_dir / "topology.toml", required=True)
     merged: dict[str, Any] = {
         "platform": {
-            "app_id": deployment.get("app_id", 1),
             "version": "4.0.0",
             "debug": resolved_environment.lower()
             in {"dev", "development", "debug"},

@@ -41,8 +41,7 @@ class CollectionModelsRequest(BaseModel):
 
 def _collection(entity) -> dict:
     return {
-        "collection_id": entity.collection_id, "app_id": int(entity.app_id),
-        "domain_id": int(entity.domain_id), "collection_key": entity.collection_key,
+        "collection_id": entity.collection_id,         "domain_id": int(entity.domain_id), "collection_key": entity.collection_key,
         "display_name": entity.display_name, "description": entity.description,
         "models": dict(entity.models_json or {}),
         "status": entity.status,

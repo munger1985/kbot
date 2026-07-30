@@ -144,7 +144,6 @@ class AgentRuntimeService:
         # 先读取冻结配置并释放数据库会话，避免 Router 模型调用占用连接。
         async with self._uow_factory() as uow:
             existing = await uow.runs.get_by_idempotency(
-                app_id=command.app_id,
                 domain_id=command.domain_id,
                 actor_id=command.actor_id,
                 idempotency_key=command.idempotency_key,
@@ -163,7 +162,6 @@ class AgentRuntimeService:
 
             agent = await uow.agents.get_active(
                 agent_id=command.agent_id,
-                app_id=command.app_id,
                 domain_id=command.domain_id,
             )
             if agent is None:
@@ -225,7 +223,6 @@ class AgentRuntimeService:
 
         async with self._uow_factory() as uow:
             existing = await uow.runs.get_by_idempotency(
-                app_id=command.app_id,
                 domain_id=command.domain_id,
                 actor_id=command.actor_id,
                 idempotency_key=command.idempotency_key,
@@ -243,7 +240,6 @@ class AgentRuntimeService:
                 return self._run_receipt(existing, cursor)
             current_agent = await uow.agents.get_active(
                 agent_id=command.agent_id,
-                app_id=command.app_id,
                 domain_id=command.domain_id,
             )
             if current_agent is None:
@@ -258,7 +254,6 @@ class AgentRuntimeService:
             try:
                 run = await uow.runs.add(
                     AgentRunEntity(
-                        app_id=command.app_id,
                         domain_id=command.domain_id,
                         agent_id=command.agent_id,
                         parent_run_id=command.parent_run_id,
@@ -303,7 +298,6 @@ class AgentRuntimeService:
                 # 并发创建由数据库唯一约束裁决，再按同一指纹读取赢家。
                 await uow.rollback()
                 existing = await uow.runs.get_by_idempotency(
-                    app_id=command.app_id,
                     domain_id=command.domain_id,
                     actor_id=command.actor_id,
                     idempotency_key=command.idempotency_key,
@@ -399,7 +393,6 @@ class AgentRuntimeService:
         async with self._uow_factory() as uow:
             run = await uow.runs.get_scoped(
                 run_id=command.run_id,
-                app_id=command.app_id,
                 domain_id=command.domain_id,
                 lock=True,
             )
@@ -1285,7 +1278,6 @@ class AgentRuntimeService:
         async with self._uow_factory() as uow:
             run = await uow.runs.get_scoped(
                 run_id=command.run_id,
-                app_id=command.app_id,
                 domain_id=command.domain_id,
                 lock=True,
             )
@@ -1364,12 +1356,11 @@ class AgentRuntimeService:
             return self._run_receipt(run, int(event.sequence_no))
 
     async def get_run(
-        self, *, run_id: UUID, app_id: int, domain_id: int
+        self, *, run_id: UUID, domain_id: int
     ) -> AgentRunSummary:
         async with self._uow_factory() as uow:
             run = await uow.runs.get_scoped(
                 run_id=run_id,
-                app_id=app_id,
                 domain_id=domain_id,
             )
             if run is None:
@@ -1402,7 +1393,6 @@ class AgentRuntimeService:
     async def list_debug_runs(
         self,
         *,
-        app_id: int,
         domain_id: int,
         limit: int = 50,
     ) -> list[dict[str, Any]]:
@@ -1411,7 +1401,6 @@ class AgentRuntimeService:
             if uow.runs is None:
                 raise RuntimeError("Agent Runtime Unit of Work 未初始化")
             rows = await uow.runs.list_scoped(
-                app_id=app_id,
                 domain_id=domain_id,
                 limit=limit,
             )
@@ -1440,7 +1429,6 @@ class AgentRuntimeService:
         self,
         *,
         run_id: UUID,
-        app_id: int,
         domain_id: int,
     ) -> dict[str, Any]:
         """聚合 Run、Task、Event 与 Artifact，供开发调试台重放。"""
@@ -1457,7 +1445,6 @@ class AgentRuntimeService:
                 raise RuntimeError("Agent Runtime Unit of Work 未初始化")
             run = await uow.runs.get_scoped(
                 run_id=run_id,
-                app_id=app_id,
                 domain_id=domain_id,
             )
             if run is None:
@@ -1560,7 +1547,6 @@ class AgentRuntimeService:
         self,
         *,
         run_id: UUID,
-        app_id: int,
         domain_id: int,
         after_sequence: int,
         limit: int = 200,
@@ -1568,7 +1554,6 @@ class AgentRuntimeService:
         async with self._uow_factory() as uow:
             run = await uow.runs.get_scoped(
                 run_id=run_id,
-                app_id=app_id,
                 domain_id=domain_id,
             )
             if run is None:
@@ -1594,13 +1579,11 @@ class AgentRuntimeService:
         self,
         *,
         run_id: UUID,
-        app_id: int,
         domain_id: int,
     ) -> AgentArtifact:
         async with self._uow_factory() as uow:
             run = await uow.runs.get_scoped(
                 run_id=run_id,
-                app_id=app_id,
                 domain_id=domain_id,
             )
             if run is None:
@@ -1786,7 +1769,6 @@ class AgentRuntimeService:
             return
         conversation = await conversations.get_scoped(
             conversation_id=turn.conversation_id,
-            app_id=int(run.app_id),
             domain_id=int(run.domain_id),
             actor_id=run.actor_id,
             lock=True,
@@ -1867,7 +1849,6 @@ class AgentRuntimeService:
         turn.completed_at = now
         conversation = await conversations.get_scoped(
             conversation_id=turn.conversation_id,
-            app_id=int(run.app_id),
             domain_id=int(run.domain_id),
             actor_id=run.actor_id,
             lock=True,
@@ -1900,7 +1881,6 @@ class AgentRuntimeService:
             skill_version=task.skill_version,
             delegate_service=task.delegate_service,
             delegate_capability=task.delegate_capability,
-            app_id=int(run.app_id),
             domain_id=int(run.domain_id),
             agent_id=run.agent_id,
             actor_id=run.actor_id,

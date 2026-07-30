@@ -22,7 +22,6 @@ class TargetEntity(BaseEntity):
     target_id: Mapped[UUID] = mapped_column(
         UUIDv7Type(), primary_key=True, default=uuid7
     )
-    app_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False)
     domain_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False)
     target_key: Mapped[str] = mapped_column(String(128), nullable=False)
     display_name: Mapped[str] = mapped_column(String(256), nullable=False)
@@ -77,7 +76,6 @@ class PolicyEntity(BaseEntity):
     policy_id: Mapped[UUID] = mapped_column(
         UUIDv7Type(), primary_key=True, default=uuid7
     )
-    app_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False)
     domain_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False)
     policy_key: Mapped[str] = mapped_column(String(128), nullable=False)
     version_no: Mapped[int] = mapped_column(Numeric(19, 0), nullable=False)

@@ -17,8 +17,7 @@ class DomainConflictError(RuntimeError):
 class DomainManagementService:
     """管理不隶属于具体 Domain 的平台级 Domain 注册信息。"""
 
-    def __init__(self, *, app_id: int, uow_factory: Callable[[], Any]):
-        self._app_id = app_id
+    def __init__(self, *, uow_factory: Callable[[], Any]):
         self._uow_factory = uow_factory
 
     async def create(
@@ -31,13 +30,11 @@ class DomainManagementService:
         normalized_name = name.strip()
         async with self._uow_factory() as uow:
             existing = await uow.domains.get_by_name(
-                app_id=self._app_id,
                 name=normalized_name,
             )
             if existing is not None:
                 raise DomainConflictError("当前应用已存在同名 Domain")
             entity = PlatformDomainEntity(
-                app_id=self._app_id,
                 name=normalized_name,
                 status="ACTIVE",
                 description=description,
@@ -54,7 +51,6 @@ class DomainManagementService:
                 ) from exc
             return {
                 "domain_id": int(entity.domain_id),
-                "app_id": int(entity.app_id),
                 "name": entity.name,
                 "status": entity.status,
                 "description": entity.description,

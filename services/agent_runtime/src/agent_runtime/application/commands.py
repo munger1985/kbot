@@ -14,7 +14,6 @@ class _FrozenCommand(BaseModel):
 
 
 class CreateRunCommand(_FrozenCommand):
-    app_id: int = Field(ge=1)
     domain_id: int = Field(ge=1)
     agent_id: UUID
     actor_id: str = Field(min_length=1, max_length=256)
@@ -52,7 +51,6 @@ class CreateRunCommand(_FrozenCommand):
 
 
 class InstallPlanCommand(_FrozenCommand):
-    app_id: int = Field(ge=1)
     domain_id: int = Field(ge=1)
     run_id: UUID
     expected_row_version: int = Field(ge=1)
@@ -139,7 +137,6 @@ class StartDelegationCommand(_FrozenCommand):
 
 
 class CancelRunCommand(_FrozenCommand):
-    app_id: int = Field(ge=1)
     domain_id: int = Field(ge=1)
     run_id: UUID
     expected_row_version: int = Field(ge=1)
@@ -164,7 +161,6 @@ class TaskLease(_FrozenCommand):
     skill_version: str | None = None
     delegate_service: str | None = None
     delegate_capability: str | None = None
-    app_id: int = Field(ge=1)
     domain_id: int = Field(ge=1)
     agent_id: UUID
     actor_id: str

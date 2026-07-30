@@ -152,13 +152,11 @@ class PolicyConfigurationMixin:
         ) -> PolicyDetail:
             assert uow.policies is not None
             versions = await uow.policies.lock_versions(
-                app_id=scope.app_id,
                 domain_id=scope.domain_id,
                 policy_key=request.policy_key,
             )
             entity = PolicyEntity(
                 policy_id=uuid7(),
-                app_id=scope.app_id,
                 domain_id=scope.domain_id,
                 policy_key=request.policy_key,
                 version_no=max(
@@ -208,7 +206,6 @@ class PolicyConfigurationMixin:
             assert uow.policies is not None
             entity = await uow.policies.get_scoped(
                 policy_id=policy_id,
-                app_id=scope.app_id,
                 domain_id=scope.domain_id,
             )
             if entity is None:
@@ -238,7 +235,6 @@ class PolicyConfigurationMixin:
         async with self._uow_factory() as uow:
             assert uow.policies is not None
             entities = await uow.policies.page_scoped(
-                app_id=scope.app_id,
                 domain_id=scope.domain_id,
                 statuses=(status,) if status else None,
                 before_updated_at=before_at,
@@ -281,7 +277,6 @@ class PolicyConfigurationMixin:
             assert uow.policies is not None
             candidate = await uow.policies.get_scoped(
                 policy_id=policy_id,
-                app_id=scope.app_id,
                 domain_id=scope.domain_id,
                 lock=True,
             )
@@ -292,7 +287,6 @@ class PolicyConfigurationMixin:
             if sha256_json(candidate.rules_json) != candidate.policy_hash:
                 raise state_conflict("Policy Hash 校验失败")
             versions = await uow.policies.lock_versions(
-                app_id=scope.app_id,
                 domain_id=scope.domain_id,
                 policy_key=candidate.policy_key,
             )

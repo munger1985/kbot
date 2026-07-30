@@ -29,12 +29,11 @@ class AIModelRepository(ModelRepositoryBase[AIModelEntity]):
             raise DatabaseException("按 ID 读取模型失败", original_error=exc)
 
     async def get_by_served_name(
-        self, *, app_id: int, served_model_name: str,
+        self, *, served_model_name: str,
     ) -> AIModelEntity:
         try:
             result = await self.session.execute(
                 select(AIModelEntity).where(
-                    AIModelEntity.app_id == app_id,
                     AIModelEntity.served_model_name == served_model_name,
                 )
             )
@@ -50,10 +49,10 @@ class AIModelRepository(ModelRepositoryBase[AIModelEntity]):
             raise DatabaseException("按服务名读取模型失败", original_error=exc)
 
     async def list_by_scope(
-        self, *, app_id: int, category: int | None = None,
+        self, *, category: int | None = None,
     ) -> Sequence[AIModelEntity]:
         try:
-            conditions = [AIModelEntity.app_id == app_id]
+            conditions = []
             if category is not None:
                 conditions.append(AIModelEntity.category == category)
             result = await self.session.execute(
@@ -71,11 +70,9 @@ class AIModelRepository(ModelRepositoryBase[AIModelEntity]):
         return model
 
     async def update_fields(
-        self, model_id: UUID, *, app_id: int, values: dict,
+        self, model_id: UUID, *, values: dict,
     ) -> AIModelEntity:
         model = await self.get_by_id(model_id)
-        if int(model.app_id) != int(app_id):
-            raise DataNotFoundException(f"模型不存在：{model_id}")
         mutable_fields = {
             "display_name",
             "api_endpoint",

@@ -58,21 +58,20 @@ Service = Annotated[AIOpsRuntimeService, Depends(get_service)]
 Auth = Annotated[AuthContext, Depends(get_aiops_auth_context)]
 
 
-def _scope(request: Request, context: AuthContext) -> tuple[int, int]:
+def _scope(request: Request, context: AuthContext) -> int:
     if context.domain_id is None:
         raise RuntimeError("AIOps 请求缺少 Domain")
     try:
         domain_id = int(context.domain_id)
     except ValueError as exc:
         raise RuntimeError("AIOps Domain 必须是数字标识") from exc
-    return request.app.state.runtime.settings.platform.app_id, domain_id
+    return domain_id
 
 
 def _query_scope(
     request: Request, context: AuthContext
 ) -> ConfigurationScope:
     return ConfigurationScope.from_auth(
-        app_id=request.app.state.runtime.settings.platform.app_id,
         auth_context=context,
     )
 
@@ -101,11 +100,10 @@ async def create_run(
     context: Auth,
 ) -> OpsRunReceipt:
     require_service_scope(request, "aiops.run")
-    app_id, domain_id = _scope(request, context)
+    domain_id = _scope(request, context)
     _ensure_agent_authorized(context, body.agent_id)
     command = body.model_copy(
         update={
-            "app_id": app_id,
             "domain_id": domain_id,
             "actor_id": context.asserted_user_id or context.client_id,
         }
@@ -125,10 +123,9 @@ async def create_delegation(
     context: Auth,
 ) -> RootDelegationReceipt:
     require_service_scope(request, "aiops.delegate")
-    app_id, domain_id = _scope(request, context)
+    domain_id = _scope(request, context)
     return await service.create_delegated_run(
         request=body,
-        app_id=app_id,
         domain_id=domain_id,
         actor_id=context.asserted_user_id or context.client_id,
         trace_id=context.trace_id,
@@ -148,10 +145,9 @@ async def list_delegation_events(
     limit: int = Query(default=100, ge=1, le=200),
 ) -> DelegationEventPage:
     require_service_scope(request, "aiops.delegate")
-    app_id, domain_id = _scope(request, context)
+    domain_id = _scope(request, context)
     return await service.list_delegation_events(
         delegation_id=delegation_id,
-        app_id=app_id,
         domain_id=domain_id,
         after_sequence=after,
         limit=limit,
@@ -169,10 +165,9 @@ async def get_delegation_result(
     context: Auth,
 ) -> RootDelegationResult:
     require_service_scope(request, "aiops.delegate")
-    app_id, domain_id = _scope(request, context)
+    domain_id = _scope(request, context)
     return await service.get_delegation_result(
         delegation_id=delegation_id,
-        app_id=app_id,
         domain_id=domain_id,
     )
 
@@ -189,10 +184,9 @@ async def cancel_delegation(
     idempotency_key: str = Header(alias="Idempotency-Key"),
 ) -> OpsRunReceipt:
     require_service_scope(request, "aiops.delegate")
-    app_id, domain_id = _scope(request, context)
+    domain_id = _scope(request, context)
     return await service.cancel_delegation(
         delegation_id=delegation_id,
-        app_id=app_id,
         domain_id=domain_id,
         actor_id=context.asserted_user_id or context.client_id,
         idempotency_key=idempotency_key,
@@ -208,9 +202,9 @@ async def get_run(
     context: Auth,
 ) -> OpsRunSummary:
     require_service_scope(request, "aiops.run")
-    app_id, domain_id = _scope(request, context)
+    domain_id = _scope(request, context)
     result = await service.get_run(
-        ops_run_id=run_id, app_id=app_id, domain_id=domain_id
+        ops_run_id=run_id, domain_id=domain_id
     )
     _ensure_agent_authorized(context, result.agent_id)
     return result
@@ -224,16 +218,14 @@ async def get_run_result(
     context: Auth,
 ) -> OpsRunResult:
     require_service_scope(request, "aiops.run")
-    app_id, domain_id = _scope(request, context)
+    domain_id = _scope(request, context)
     summary = await service.get_run(
         ops_run_id=run_id,
-        app_id=app_id,
         domain_id=domain_id,
     )
     _ensure_agent_authorized(context, summary.agent_id)
     return await service.get_run_result(
         ops_run_id=run_id,
-        app_id=app_id,
         domain_id=domain_id,
     )
 
@@ -246,10 +238,9 @@ async def get_report(
     context: Auth,
 ) -> ReportView:
     require_service_scope(request, "aiops.run")
-    app_id, domain_id = _scope(request, context)
+    domain_id = _scope(request, context)
     return await service.get_report(
         report_id=report_id,
-        app_id=app_id,
         domain_id=domain_id,
     )
 
@@ -326,10 +317,9 @@ async def get_inspection_fire(
     context: Auth,
 ) -> InspectionFireView:
     require_service_scope(request, "aiops.run")
-    app_id, domain_id = _scope(request, context)
+    domain_id = _scope(request, context)
     return await service.get_inspection_fire(
         inspection_fire_id=fire_id,
-        app_id=app_id,
         domain_id=domain_id,
     )
 
@@ -347,14 +337,13 @@ async def list_events(
     limit: int = Query(default=200, ge=1, le=200),
 ) -> OpsRunEventPage:
     identity = require_service_scope(request, "aiops.run")
-    app_id, domain_id = _scope(request, context)
+    domain_id = _scope(request, context)
     summary = await service.get_run(
-        ops_run_id=run_id, app_id=app_id, domain_id=domain_id
+        ops_run_id=run_id, domain_id=domain_id
     )
     _ensure_agent_authorized(context, summary.agent_id)
     return await service.list_events(
         ops_run_id=run_id,
-        app_id=app_id,
         domain_id=domain_id,
         after_sequence=after,
         user_only=identity.subject == "kbot-main-api",
@@ -373,10 +362,9 @@ async def get_pending_input(
     context: Auth,
 ) -> PendingInputView:
     require_service_scope(request, "aiops.hitl")
-    app_id, domain_id = _scope(request, context)
+    domain_id = _scope(request, context)
     return await service.get_pending_input(
         ops_run_id=run_id,
-        app_id=app_id,
         domain_id=domain_id,
         actor_id=context.asserted_user_id or context.client_id,
     )
@@ -390,10 +378,9 @@ async def get_hitl_input(
     context: Auth,
 ) -> PendingInputView:
     require_service_scope(request, "aiops.hitl")
-    app_id, domain_id = _scope(request, context)
+    domain_id = _scope(request, context)
     return await service.get_hitl_input(
         hitl_id=hitl_id,
-        app_id=app_id,
         domain_id=domain_id,
         actor_id=context.asserted_user_id or context.client_id,
     )
@@ -408,10 +395,9 @@ async def respond_hitl(
     context: Auth,
 ) -> HitlResult:
     require_service_scope(request, "aiops.hitl")
-    app_id, domain_id = _scope(request, context)
+    domain_id = _scope(request, context)
     return await service.respond_hitl(
         hitl_id=hitl_id,
-        app_id=app_id,
         domain_id=domain_id,
         actor_id=context.asserted_user_id or context.client_id,
         response=body,
@@ -431,10 +417,9 @@ async def skip_hitl(
     context: Auth,
 ) -> HitlResult:
     require_service_scope(request, "aiops.hitl")
-    app_id, domain_id = _scope(request, context)
+    domain_id = _scope(request, context)
     return await service.skip_hitl(
         hitl_id=hitl_id,
-        app_id=app_id,
         domain_id=domain_id,
         actor_id=context.asserted_user_id or context.client_id,
         expected_row_version=body.expected_row_version,
@@ -458,14 +443,13 @@ async def command_run(
         raise ValueError("Path Run ID 与命令不一致")
     if body.command.command_type != "CANCEL_RUN":
         raise ValueError("步骤 4 仅支持 CANCEL_RUN")
-    app_id, domain_id = _scope(request, context)
+    domain_id = _scope(request, context)
     summary = await service.get_run(
-        ops_run_id=run_id, app_id=app_id, domain_id=domain_id
+        ops_run_id=run_id, domain_id=domain_id
     )
     _ensure_agent_authorized(context, summary.agent_id)
     return await service.request_cancel(
         ops_run_id=run_id,
-        app_id=app_id,
         domain_id=domain_id,
         actor_id=context.asserted_user_id or context.client_id,
         expected_row_version=body.command.expected_row_version,

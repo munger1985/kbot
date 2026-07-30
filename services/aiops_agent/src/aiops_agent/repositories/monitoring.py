@@ -32,14 +32,12 @@ class MonitorSourceRepository(AIOpsRepository):
         self,
         *,
         monitor_source_id: UUID,
-        app_id: int,
         domain_id: int,
         lock: bool = False,
     ) -> MonitorSourceEntity | None:
         self._check_active()
         statement: Select = select(MonitorSourceEntity).where(
             MonitorSourceEntity.monitor_source_id == monitor_source_id,
-            MonitorSourceEntity.app_id == app_id,
             MonitorSourceEntity.domain_id == domain_id,
         )
         if lock:
@@ -49,13 +47,11 @@ class MonitorSourceRepository(AIOpsRepository):
     async def get_by_key(
         self,
         *,
-        app_id: int,
         domain_id: int,
         source_key: str,
     ) -> MonitorSourceEntity | None:
         self._check_active()
         statement = select(MonitorSourceEntity).where(
-            MonitorSourceEntity.app_id == app_id,
             MonitorSourceEntity.domain_id == domain_id,
             MonitorSourceEntity.source_key == source_key,
         )
@@ -64,7 +60,6 @@ class MonitorSourceRepository(AIOpsRepository):
     async def page_scoped(
         self,
         *,
-        app_id: int,
         domain_id: int,
         statuses: Collection[str] | None,
         before_updated_at: datetime | None,
@@ -73,7 +68,6 @@ class MonitorSourceRepository(AIOpsRepository):
     ) -> list[MonitorSourceEntity]:
         self._check_active()
         statement = select(MonitorSourceEntity).where(
-            MonitorSourceEntity.app_id == app_id,
             MonitorSourceEntity.domain_id == domain_id,
         )
         if statuses:
@@ -100,7 +94,6 @@ class MonitorSourceRepository(AIOpsRepository):
         self,
         *,
         monitor_source_id: UUID,
-        app_id: int,
         domain_id: int,
         expected_version: int,
         values: dict,
@@ -117,7 +110,6 @@ class MonitorSourceRepository(AIOpsRepository):
             update(MonitorSourceEntity)
             .where(
                 MonitorSourceEntity.monitor_source_id == monitor_source_id,
-                MonitorSourceEntity.app_id == app_id,
                 MonitorSourceEntity.domain_id == domain_id,
                 MonitorSourceEntity.row_version == expected_version,
             )
@@ -131,7 +123,6 @@ class MonitorSourceRepository(AIOpsRepository):
         self,
         *,
         monitor_source_id: UUID,
-        app_id: int,
         domain_id: int,
         expected_version: int,
         request_id: UUID,
@@ -140,7 +131,6 @@ class MonitorSourceRepository(AIOpsRepository):
     ) -> bool:
         return await self.update_config(
             monitor_source_id=monitor_source_id,
-            app_id=app_id,
             domain_id=domain_id,
             expected_version=expected_version,
             values={

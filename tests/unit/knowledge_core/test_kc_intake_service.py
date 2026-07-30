@@ -76,7 +76,6 @@ class IntakeServiceTest(unittest.IsolatedAsyncioTestCase):
     def test_parser_policy_cannot_override_collection_embedding_model(self):
         with self.assertRaisesRegex(ValueError, "retrieval embeddings"):
             KnowledgeCoreIntakeService(
-                app_id=1,
                 receipt_ttl_seconds=60,
                 uow_factory=lambda: None,
                 parse_policy_overrides={"embedding_model_id": 17},
@@ -92,7 +91,7 @@ class IntakeServiceTest(unittest.IsolatedAsyncioTestCase):
     async def test_creates_processing_revision_members_and_parse_job(self):
         values = {"collection": self._collection()}
         uow = Uow(values)
-        service = KnowledgeCoreIntakeService(app_id=1, receipt_ttl_seconds=60, uow_factory=lambda: uow)
+        service = KnowledgeCoreIntakeService(receipt_ttl_seconds=60, uow_factory=lambda: uow)
 
         accepted = await service.accept_published(self._command())
 
@@ -109,7 +108,6 @@ class IntakeServiceTest(unittest.IsolatedAsyncioTestCase):
         values = {"collection": self._collection()}
         uow = Uow(values)
         service = KnowledgeCoreIntakeService(
-            app_id=1,
             receipt_ttl_seconds=60,
             uow_factory=lambda: uow,
         )
@@ -175,7 +173,6 @@ class IntakeServiceTest(unittest.IsolatedAsyncioTestCase):
             return_value=[receipt]
         )
         service = KnowledgeCoreIntakeService(
-            app_id=1,
             receipt_ttl_seconds=60,
             uow_factory=lambda: uow,
         )
@@ -207,7 +204,6 @@ class IntakeServiceTest(unittest.IsolatedAsyncioTestCase):
         }
         uow = Uow(values)
         service = KnowledgeCoreIntakeService(
-            app_id=1,
             receipt_ttl_seconds=60,
             uow_factory=lambda: uow,
             parse_policy_overrides={"parse_strategy": "AUTO"},
@@ -236,7 +232,6 @@ class IntakeServiceTest(unittest.IsolatedAsyncioTestCase):
         values = {"collection": self._collection()}
         uow = Uow(values)
         service = KnowledgeCoreIntakeService(
-            app_id=1,
             receipt_ttl_seconds=60,
             uow_factory=lambda: uow,
             parse_policy_overrides={
@@ -272,7 +267,7 @@ class IntakeServiceTest(unittest.IsolatedAsyncioTestCase):
             "revision": SimpleNamespace(snapshot_fingerprint="different", bundle_revision_id=20, source_revision="r1"),
         }
         uow = Uow(values)
-        service = KnowledgeCoreIntakeService(app_id=1, receipt_ttl_seconds=60, uow_factory=lambda: uow)
+        service = KnowledgeCoreIntakeService(receipt_ttl_seconds=60, uow_factory=lambda: uow)
 
         with self.assertRaisesRegex(IntakeConflictError, "SOURCE_REVISION_CONFLICT"):
             await service.accept_published(self._command())
@@ -287,7 +282,7 @@ class IntakeServiceTest(unittest.IsolatedAsyncioTestCase):
             receipt.ingestion_receipt_id = 77
             return await original_add(receipt)
         uow.receipts.add = add_receipt
-        service = KnowledgeCoreIntakeService(app_id=1, receipt_ttl_seconds=60, uow_factory=lambda: uow)
+        service = KnowledgeCoreIntakeService(receipt_ttl_seconds=60, uow_factory=lambda: uow)
 
         reservation = await service.reserve(ReserveIntakeCommand(1, "assets", "svc:portal", "k2", manifest()))
 
@@ -307,7 +302,7 @@ class IntakeServiceTest(unittest.IsolatedAsyncioTestCase):
         counter = iter((31, 32))
         async def add_document(entity): entity.document_id = next(counter); return await original_document_add(entity)
         uow.bundles.add, uow.documents.add = add_bundle, add_document
-        service = KnowledgeCoreIntakeService(app_id=1, receipt_ttl_seconds=60, uow_factory=lambda: uow)
+        service = KnowledgeCoreIntakeService(receipt_ttl_seconds=60, uow_factory=lambda: uow)
 
         prepared = await service.prepare_publish(PreparePublishCommand(1, "assets", "svc:portal", "k2", manifest(), 77))
 
@@ -338,7 +333,6 @@ class IntakeServiceTest(unittest.IsolatedAsyncioTestCase):
         uow.bundles.add = add_bundle
         uow.documents.add = add_document
         service = KnowledgeCoreIntakeService(
-            app_id=1,
             receipt_ttl_seconds=60,
             uow_factory=lambda: uow,
         )
@@ -386,7 +380,6 @@ class IntakeServiceTest(unittest.IsolatedAsyncioTestCase):
         }
         uow = Uow(values)
         service = KnowledgeCoreIntakeService(
-            app_id=1,
             receipt_ttl_seconds=60,
             uow_factory=lambda: uow,
         )

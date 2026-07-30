@@ -253,8 +253,7 @@ class _FakeDomainManagementService:
         self.last_actor_id = actor_id
         return {
             "domain_id": 101,
-            "app_id": 1001,
-            "name": name,
+                        "name": name,
             "status": "ACTIVE",
             "description": description,
             "row_version": 1,
@@ -262,8 +261,8 @@ class _FakeDomainManagementService:
 
 
 class _FakeDomainRepository:
-    async def exists_active(self, *, app_id: int, domain_id: int) -> bool:
-        return app_id == 1001 and domain_id == 100
+    async def exists_active(self, *, domain_id: int) -> bool:
+        return domain_id == 100
 
 
 class _FakeUow:
@@ -293,7 +292,6 @@ class MainApiTest(unittest.TestCase):
             pepper=TEST_PEPPER,
         )
         self.domain_service = DomainValidationService(
-            app_id=1001,
             uow_factory=_FakeUow,
         )
         self.kc = _FakeKnowledgeCoreClient()
@@ -625,7 +623,6 @@ class MainApiTest(unittest.TestCase):
 class DomainValidationServiceTest(unittest.IsolatedAsyncioTestCase):
     async def test_domain_identifier_must_be_canonical_positive_integer(self):
         service = DomainValidationService(
-            app_id=1001,
             uow_factory=_FakeUow,
         )
         self.assertTrue(await service.is_active("100"))

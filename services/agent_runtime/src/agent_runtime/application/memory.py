@@ -128,7 +128,6 @@ class MemoryJobLease:
     conversation_id: UUID
     turn_id: UUID
     turn_sequence: int
-    app_id: int
     domain_id: int
     actor_id: str
     agent_id: UUID
@@ -327,7 +326,6 @@ class MemoryConsolidationWorker:
                 conversation_id=conversation.conversation_id
             )
             memories = await uow.memory_items.list_active(
-                app_id=int(conversation.app_id),
                 domain_id=int(conversation.domain_id),
                 actor_id=conversation.actor_id,
                 agent_id=conversation.agent_id,
@@ -342,7 +340,6 @@ class MemoryConsolidationWorker:
                 conversation_id=conversation.conversation_id,
                 turn_id=turn.turn_id,
                 turn_sequence=int(turn.turn_sequence),
-                app_id=int(conversation.app_id),
                 domain_id=int(conversation.domain_id),
                 actor_id=conversation.actor_id,
                 agent_id=conversation.agent_id,
@@ -375,7 +372,6 @@ class MemoryConsolidationWorker:
         async with self._uow_factory() as uow:
             agent = await uow.agents.get_active(
                 agent_id=lease.agent_id,
-                app_id=lease.app_id,
                 domain_id=lease.domain_id,
             )
             if agent is None:
@@ -442,7 +438,6 @@ class MemoryConsolidationWorker:
         )
         async with self._uow_factory() as uow:
             active = await uow.memory_index_profiles.get(
-                app_id=lease.app_id,
                 domain_id=lease.domain_id,
                 agent_id=lease.agent_id,
                 lock=True,
@@ -460,7 +455,6 @@ class MemoryConsolidationWorker:
             active = await uow.memory_index_profiles.add(
                 AgentMemoryIndexProfileEntity(
                     index_profile_id=uuid7(),
-                    app_id=lease.app_id,
                     domain_id=lease.domain_id,
                     agent_id=lease.agent_id,
                     embedding_model_name=model_name,
@@ -618,7 +612,6 @@ class MemoryConsolidationWorker:
                 for scoped_agent_id in (lease.agent_id, None):
                     rows.extend(
                         await uow.memory_items.list_active_by_canonical_key(
-                            app_id=lease.app_id,
                             domain_id=lease.domain_id,
                             actor_id=lease.actor_id,
                             agent_id=scoped_agent_id,
@@ -642,7 +635,6 @@ class MemoryConsolidationWorker:
                     else lease.agent_id
                 )
                 memory = await uow.memory_items.get_active_by_key(
-                    app_id=lease.app_id,
                     domain_id=lease.domain_id,
                     actor_id=lease.actor_id,
                     agent_id=scoped_agent_id,
@@ -678,7 +670,6 @@ class MemoryConsolidationWorker:
                     target_memory = await uow.memory_items.add(
                         AgentMemoryItemEntity(
                             memory_id=uuid7(),
-                            app_id=lease.app_id,
                             domain_id=lease.domain_id,
                             actor_id=lease.actor_id,
                             agent_id=scoped_agent_id,
@@ -717,7 +708,6 @@ class MemoryConsolidationWorker:
                     target_memory = await uow.memory_items.add(
                         AgentMemoryItemEntity(
                             memory_id=uuid7(),
-                            app_id=lease.app_id,
                             domain_id=lease.domain_id,
                             actor_id=lease.actor_id,
                             agent_id=scoped_agent_id,
@@ -793,7 +783,6 @@ class MemoryConsolidationWorker:
                 episode = await uow.memory_items.add(
                     AgentMemoryItemEntity(
                         memory_id=uuid7(),
-                        app_id=lease.app_id,
                         domain_id=lease.domain_id,
                         actor_id=lease.actor_id,
                         agent_id=lease.agent_id,

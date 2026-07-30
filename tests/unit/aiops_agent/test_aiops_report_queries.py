@@ -15,7 +15,6 @@ from platform_core.identity import uuid7
 
 def _scope() -> ConfigurationScope:
     return ConfigurationScope(
-        app_id=100,
         domain_id=200,
         principal_id="API_CLIENT:portal",
         actor_id="user-1",
@@ -75,7 +74,6 @@ class ReportQueryTest(unittest.TestCase):
         self.assertTrue(result.has_more)
         self.assertEqual(result.next_cursor, "signed-next")
         kwargs = inspections.page_current_reports.await_args.kwargs
-        self.assertEqual(kwargs["app_id"], 100)
         self.assertEqual(kwargs["domain_id"], 200)
         self.assertEqual(kwargs["limit"], 2)
         cursor_filters = cursor_codec.encode.call_args.kwargs["filters"]
@@ -121,7 +119,6 @@ class ReportQueryTest(unittest.TestCase):
         )
         self.assertEqual(result.items[0].report_version, 2)
         anchor_scope = inspections.get_report_scoped.await_args.kwargs
-        self.assertEqual(anchor_scope["app_id"], 100)
         self.assertEqual(anchor_scope["domain_id"], 200)
         page_scope = inspections.page_report_versions.await_args.kwargs
         self.assertEqual(page_scope["ops_run_id"], source_run_id)
@@ -165,14 +162,12 @@ class InspectionFireQueryTest(unittest.TestCase):
         result = asyncio.run(
             service.get_inspection_fire(
                 inspection_fire_id=fire_id,
-                app_id=100,
                 domain_id=200,
             )
         )
         self.assertEqual(result.plan_id, plan_id)
         self.assertEqual(result.run_ids, run_ids)
         scoped = inspections.get_fire_scoped.await_args.kwargs
-        self.assertEqual(scoped["app_id"], 100)
         self.assertEqual(scoped["domain_id"], 200)
 
 

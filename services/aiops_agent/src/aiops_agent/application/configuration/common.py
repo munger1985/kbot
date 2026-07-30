@@ -22,7 +22,6 @@ from platform_core.identity import uuid7
 class ConfigurationScope:
     """从可信 AuthContext 派生的配置读写范围。"""
 
-    app_id: int
     domain_id: int
     principal_id: str
     actor_id: str
@@ -33,7 +32,6 @@ class ConfigurationScope:
     def from_auth(
         cls,
         *,
-        app_id: int,
         auth_context: AuthContext,
     ) -> "ConfigurationScope":
         if not auth_context.domain_id or not auth_context.asserted_user_id:
@@ -51,7 +49,6 @@ class ConfigurationScope:
                 status_code=401,
             ) from exc
         return cls(
-            app_id=app_id,
             domain_id=domain_id,
             principal_id=f"{auth_context.principal_kind}:{auth_context.client_id}",
             actor_id=auth_context.asserted_user_id,
@@ -135,8 +132,7 @@ class SignedCursorCodec:
             "v": 1,
             "scope": sha256_json(
                 {
-                    "app_id": scope.app_id,
-                    "domain_id": scope.domain_id,
+                                        "domain_id": scope.domain_id,
                     "principal": scope.principal_id,
                 }
             ),
@@ -179,8 +175,7 @@ class SignedCursorCodec:
             payload = json.loads(raw)
             expected_scope = sha256_json(
                 {
-                    "app_id": scope.app_id,
-                    "domain_id": scope.domain_id,
+                                        "domain_id": scope.domain_id,
                     "principal": scope.principal_id,
                 }
             )
@@ -297,8 +292,7 @@ async def add_configuration_event(
     assert uow.outbox is not None
     payload = {
         "schema_version": "aiops.config.event.v1",
-        "app_id": scope.app_id,
-        "domain_id": scope.domain_id,
+                "domain_id": scope.domain_id,
         "aggregate_type": aggregate_type,
         "aggregate_id": str(aggregate_id),
         "event_type": event_type,

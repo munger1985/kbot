@@ -52,7 +52,6 @@ class AIOpsRunResultTest(unittest.TestCase):
         result = asyncio.run(
             service.get_run_result(
                 ops_run_id=run_id,
-                app_id=100,
                 domain_id=200,
             )
         )
@@ -61,7 +60,6 @@ class AIOpsRunResultTest(unittest.TestCase):
         self.assertEqual(result.final_artifact.artifact_id, artifact_id)
         runs.get_run_scoped.assert_awaited_once_with(
             ops_run_id=run_id,
-            app_id=100,
             domain_id=200,
         )
 
@@ -95,7 +93,6 @@ class AIOpsRunResultTest(unittest.TestCase):
         result = asyncio.run(
             service.get_run_result(
                 ops_run_id=run_id,
-                app_id=100,
                 domain_id=200,
             )
         )

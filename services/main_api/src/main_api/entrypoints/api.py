@@ -54,11 +54,9 @@ async def lifespan(app: FastAPI):
     app.state.db_runtime = db_runtime
     uow_factory = create_main_api_uow(db_runtime.session_factory)
     app.state.domain_validation_service = DomainValidationService(
-        app_id=settings.platform.app_id,
         uow_factory=uow_factory,
     )
     app.state.domain_management_service = DomainManagementService(
-        app_id=settings.platform.app_id,
         uow_factory=uow_factory,
     )
     client_session = aiohttp.ClientSession(

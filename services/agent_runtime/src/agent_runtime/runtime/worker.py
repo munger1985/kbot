@@ -331,7 +331,6 @@ class AgentRuntimeWorker:
     @staticmethod
     def _execution_context(lease: TaskLease) -> ExecutionContext:
         return ExecutionContext(
-            app_id=lease.app_id,
             domain_id=lease.domain_id,
             agent_id=lease.agent_id,
             run_id=lease.run_id,

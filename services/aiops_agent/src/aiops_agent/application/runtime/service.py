@@ -228,7 +228,6 @@ class AIOpsRuntimeService:
 
             target = await uow.targets.get_scoped(
                 target_id=command.target_id,
-                app_id=command.app_id,
                 domain_id=command.domain_id,
                 lock=True,
             )
@@ -237,7 +236,6 @@ class AIOpsRuntimeService:
             binding = await uow.targets.get_agent_binding(
                 target_id=command.target_id,
                 agent_id=command.agent_id,
-                app_id=command.app_id,
                 domain_id=command.domain_id,
                 lock=True,
             )
@@ -248,7 +246,6 @@ class AIOpsRuntimeService:
             if binding.policy_id is not None:
                 configured_policy = await uow.policies.get_scoped(
                     policy_id=binding.policy_id,
-                    app_id=command.app_id,
                     domain_id=command.domain_id,
                     lock=True,
                 )
@@ -260,8 +257,7 @@ class AIOpsRuntimeService:
 
             target_snapshot = {
                 "target_id": str(target.target_id),
-                "app_id": int(target.app_id),
-                "domain_id": int(target.domain_id),
+                                "domain_id": int(target.domain_id),
                 "target_key": target.target_key,
                 "db_type": target.db_type,
                 "version_code": target.version_code,
@@ -716,7 +712,6 @@ class AIOpsRuntimeService:
         self,
         *,
         request: RootDelegationRequest,
-        app_id: int,
         domain_id: int,
         actor_id: str,
         trace_id: str,
@@ -728,7 +723,6 @@ class AIOpsRuntimeService:
             CreateOpsRunCommand(
                 command_id=uuid7(),
                 idempotency_key=f"delegation:{request.delegation_id}",
-                app_id=app_id,
                 domain_id=domain_id,
                 actor_id=actor_id,
                 agent_id=request.agent_id,
@@ -758,7 +752,6 @@ class AIOpsRuntimeService:
         self,
         *,
         delegation_id: UUID,
-        app_id: int,
         domain_id: int,
         after_sequence: int,
         limit: int,
@@ -767,7 +760,6 @@ class AIOpsRuntimeService:
         async with self._uow_factory() as uow:
             run = await uow.runs.get_by_parent_delegation_scoped(
                 parent_delegation_id=delegation_id,
-                app_id=app_id,
                 domain_id=domain_id,
             )
             if run is None:
@@ -806,14 +798,12 @@ class AIOpsRuntimeService:
         self,
         *,
         delegation_id: UUID,
-        app_id: int,
         domain_id: int,
     ) -> RootDelegationResult:
         """读取终态子 Run，并生成不含命令和原始 SQL 的受限结果。"""
         async with self._uow_factory() as uow:
             run = await uow.runs.get_by_parent_delegation_scoped(
                 parent_delegation_id=delegation_id,
-                app_id=app_id,
                 domain_id=domain_id,
             )
             if run is None:
@@ -856,7 +846,6 @@ class AIOpsRuntimeService:
         self,
         *,
         delegation_id: UUID,
-        app_id: int,
         domain_id: int,
         actor_id: str,
         idempotency_key: str,
@@ -866,7 +855,6 @@ class AIOpsRuntimeService:
         async with self._uow_factory() as uow:
             run = await uow.runs.get_by_parent_delegation_scoped(
                 parent_delegation_id=delegation_id,
-                app_id=app_id,
                 domain_id=domain_id,
             )
             if run is None:
@@ -875,7 +863,6 @@ class AIOpsRuntimeService:
             row_version = int(run.row_version)
         return await self.request_cancel(
             ops_run_id=run_id,
-            app_id=app_id,
             domain_id=domain_id,
             actor_id=actor_id,
             expected_row_version=row_version,
@@ -1154,7 +1141,6 @@ class AIOpsRuntimeService:
             raise validation_failed("观测窗口无效或结束时间位于未来")
         monitors = await uow.targets.list_monitors(
             target_id=target.target_id,
-            app_id=command.app_id,
             domain_id=command.domain_id,
             active_only=True,
         )
@@ -1164,7 +1150,6 @@ class AIOpsRuntimeService:
         for monitor in monitors:
             source = await uow.monitor_sources.get_scoped(
                 monitor_source_id=monitor.monitor_source_id,
-                app_id=command.app_id,
                 domain_id=command.domain_id,
             )
             if source is None or source.status != "ACTIVE":
@@ -2483,7 +2468,6 @@ class AIOpsRuntimeService:
             return
         target = await uow.targets.get_scoped(
             target_id=run.target_id,
-            app_id=int(target_snapshot["app_id"]),
             domain_id=int(target_snapshot["domain_id"]),
         )
         if target is None or int(target.row_version) != int(
@@ -2704,9 +2688,6 @@ class AIOpsRuntimeService:
         source_snapshot = snapshot["source"]
         source = await uow.monitor_sources.get_scoped(
             monitor_source_id=UUID(source_snapshot["source_id"]),
-            app_id=int(
-                (run.plan_snapshot_json or {})["target"]["app_id"]
-            ),
             domain_id=int(
                 (run.plan_snapshot_json or {})["target"]["domain_id"]
             ),
@@ -2746,7 +2727,6 @@ class AIOpsRuntimeService:
         monitor = await uow.targets.get_monitor_scoped(
             target_monitor_id=UUID(binding_id),
             target_id=run.target_id,
-            app_id=int(source.app_id),
             domain_id=int(source.domain_id),
         )
         if monitor is None:
@@ -2803,7 +2783,6 @@ class AIOpsRuntimeService:
             )
             target = await uow.targets.get_scoped(
                 target_id=run.target_id,
-                app_id=int(source.app_id),
                 domain_id=int(source.domain_id),
             )
             if target is not None:
@@ -2936,7 +2915,6 @@ class AIOpsRuntimeService:
         self,
         *,
         ops_run_id: UUID,
-        app_id: int,
         domain_id: int,
         actor_id: str,
         expected_row_version: int,
@@ -2947,7 +2925,6 @@ class AIOpsRuntimeService:
             now = await uow.runs.database_now()
             run = await uow.runs.get_run_scoped(
                 ops_run_id=ops_run_id,
-                app_id=app_id,
                 domain_id=domain_id,
                 lock=True,
             )
@@ -3356,8 +3333,7 @@ class AIOpsRuntimeService:
                         "proposal_id": str(proposal.proposal_id),
                         "source_run_id": str(run.ops_run_id),
                         "result_artifact_id": str(artifact.artifact_id),
-                        "app_id": int(target_snapshot["app_id"]),
-                        "domain_id": int(
+                                                "domain_id": int(
                             target_snapshot["domain_id"]
                         ),
                         "actor_id": run.actor_id,
@@ -3544,12 +3520,11 @@ class AIOpsRuntimeService:
             return False
 
     async def get_run(
-        self, *, ops_run_id: UUID, app_id: int, domain_id: int
+        self, *, ops_run_id: UUID, domain_id: int
     ) -> OpsRunSummary:
         async with self._uow_factory() as uow:
             run = await uow.runs.get_run_scoped(
                 ops_run_id=ops_run_id,
-                app_id=app_id,
                 domain_id=domain_id,
             )
             if run is None:
@@ -3594,13 +3569,12 @@ class AIOpsRuntimeService:
             )
 
     async def get_run_result(
-        self, *, ops_run_id: UUID, app_id: int, domain_id: int
+        self, *, ops_run_id: UUID, domain_id: int
     ) -> OpsRunResult:
         """在校验 Domain 边界后读取 Run 的最终可展示产物。"""
         async with self._uow_factory() as uow:
             run = await uow.runs.get_run_scoped(
                 ops_run_id=ops_run_id,
-                app_id=app_id,
                 domain_id=domain_id,
             )
             if run is None:
@@ -3668,7 +3642,6 @@ class AIOpsRuntimeService:
         async with self._uow_factory() as uow:
             assert uow.inspections is not None
             entities = await uow.inspections.page_fires(
-                app_id=scope.app_id,
                 domain_id=scope.domain_id,
                 plan_id=plan_id,
                 statuses=(status,) if status else None,
@@ -3697,14 +3670,12 @@ class AIOpsRuntimeService:
         self,
         *,
         inspection_fire_id: UUID,
-        app_id: int,
         domain_id: int,
     ) -> InspectionFireView:
         async with self._uow_factory() as uow:
             assert uow.inspections is not None
             fire = await uow.inspections.get_fire_scoped(
                 inspection_fire_id=inspection_fire_id,
-                app_id=app_id,
                 domain_id=domain_id,
             )
             if fire is None:
@@ -3754,7 +3725,6 @@ class AIOpsRuntimeService:
         async with self._uow_factory() as uow:
             assert uow.inspections is not None
             entities = await uow.inspections.page_current_reports(
-                app_id=scope.app_id,
                 domain_id=scope.domain_id,
                 target_id=target_id,
                 report_type=report_type,
@@ -3799,7 +3769,6 @@ class AIOpsRuntimeService:
             assert uow.inspections is not None
             anchor = await uow.inspections.get_report_scoped(
                 report_id=report_id,
-                app_id=scope.app_id,
                 domain_id=scope.domain_id,
             )
             if anchor is None:
@@ -3838,14 +3807,12 @@ class AIOpsRuntimeService:
         self,
         *,
         report_id: UUID,
-        app_id: int,
         domain_id: int,
     ) -> ReportView:
         async with self._uow_factory() as uow:
             assert uow.inspections is not None
             report = await uow.inspections.get_current_report_scoped(
                 report_id=report_id,
-                app_id=app_id,
                 domain_id=domain_id,
             )
             if report is None or report.content_artifact_id is None:
@@ -4052,14 +4019,12 @@ class AIOpsRuntimeService:
         self,
         *,
         ops_run_id: UUID,
-        app_id: int,
         domain_id: int,
         actor_id: str,
     ) -> PendingInputView:
         async with self._uow_factory() as uow:
             run = await uow.runs.get_run_scoped(
                 ops_run_id=ops_run_id,
-                app_id=app_id,
                 domain_id=domain_id,
             )
             if run is None or run.actor_id != actor_id:
@@ -4076,14 +4041,12 @@ class AIOpsRuntimeService:
         self,
         *,
         hitl_id: UUID,
-        app_id: int,
         domain_id: int,
         actor_id: str,
     ) -> PendingInputView:
         async with self._uow_factory() as uow:
             hitl = await uow.changes.get_hitl_scoped(
                 hitl_id=hitl_id,
-                app_id=app_id,
                 domain_id=domain_id,
             )
             if (
@@ -4098,7 +4061,6 @@ class AIOpsRuntimeService:
         self,
         *,
         hitl_id: UUID,
-        app_id: int,
         domain_id: int,
         actor_id: str,
         response: HitlResponse,
@@ -4110,7 +4072,6 @@ class AIOpsRuntimeService:
             now = await uow.runs.database_now()
             preliminary_hitl = await uow.changes.get_hitl_scoped(
                 hitl_id=hitl_id,
-                app_id=app_id,
                 domain_id=domain_id,
             )
             if (
@@ -4305,7 +4266,6 @@ class AIOpsRuntimeService:
         self,
         *,
         hitl_id: UUID,
-        app_id: int,
         domain_id: int,
         actor_id: str,
         expected_row_version: int,
@@ -4326,7 +4286,6 @@ class AIOpsRuntimeService:
         )
         return await self._finish_skipped_hitl(
             hitl_id=hitl_id,
-            app_id=app_id,
             domain_id=domain_id,
             actor_id=actor_id,
             response=response,
@@ -4338,7 +4297,6 @@ class AIOpsRuntimeService:
         self,
         *,
         ops_run_id: UUID,
-        app_id: int,
         domain_id: int,
         after_sequence: int,
         user_only: bool,
@@ -4347,7 +4305,6 @@ class AIOpsRuntimeService:
         async with self._uow_factory() as uow:
             run = await uow.runs.get_run_scoped(
                 ops_run_id=ops_run_id,
-                app_id=app_id,
                 domain_id=domain_id,
             )
             if run is None:
@@ -4392,7 +4349,6 @@ class AIOpsRuntimeService:
         self,
         *,
         hitl_id: UUID,
-        app_id: int,
         domain_id: int,
         actor_id: str,
         response: HitlResponse,
@@ -4403,7 +4359,6 @@ class AIOpsRuntimeService:
             now = await uow.runs.database_now()
             preliminary_hitl = await uow.changes.get_hitl_scoped(
                 hitl_id=hitl_id,
-                app_id=app_id,
                 domain_id=domain_id,
             )
             if (

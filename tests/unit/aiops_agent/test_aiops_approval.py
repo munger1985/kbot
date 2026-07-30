@@ -35,7 +35,6 @@ class ApprovalServiceTest(unittest.TestCase):
             asyncio.run(
                 service.approve_proposal(
                     proposal_id=uuid7(),
-                    app_id=100,
                     domain_id=200,
                     actor_id="portal:user-1",
                     command=ApprovalCommand(
@@ -184,7 +183,6 @@ class ApprovalServiceTest(unittest.TestCase):
         receipt = asyncio.run(
             service.approve_proposal(
                 proposal_id=proposal_id,
-                app_id=100,
                 domain_id=200,
                 actor_id="portal:user-1",
                 command=ApprovalCommand(
@@ -285,7 +283,7 @@ class ExecutionClaimTest(unittest.TestCase):
             agent_id=agent_id,
             trace_id="trace-source",
             plan_snapshot_json={
-                "target": {"app_id": 100, "domain_id": 200}
+                "target": {"domain_id": 200}
             },
             policy_snapshot_json={"policy_hash": "c" * 64},
         )
@@ -440,8 +438,7 @@ class ExecutionCallbackTest(unittest.TestCase):
             target_id=target_id,
             plan_snapshot_json={
                 "target": {
-                    "app_id": 100,
-                    "domain_id": 200,
+                                        "domain_id": 200,
                     "security_level": 3,
                 }
             },

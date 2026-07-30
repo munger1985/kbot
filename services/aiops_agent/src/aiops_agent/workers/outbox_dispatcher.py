@@ -105,7 +105,6 @@ class AIOpsDomainOutboxSink:
                     idempotency_key=(
                         f"inspection:{fire_id}:target:{target_id}"
                     ),
-                    app_id=payload["app_id"],
                     domain_id=payload["domain_id"],
                     actor_id=payload["actor_id"],
                     agent_id=payload["agent_id"],
@@ -157,7 +156,6 @@ class AIOpsDomainOutboxSink:
             CreateOpsRunCommand(
                 command_id=uuid7(),
                 idempotency_key=f"alert:{alert_id}:observe",
-                app_id=payload["app_id"],
                 domain_id=payload["domain_id"],
                 actor_id="system:monitor-intake",
                 agent_id=payload["agent_id"],
@@ -189,7 +187,6 @@ class AIOpsDomainOutboxSink:
             CreateOpsRunCommand(
                 command_id=uuid7(),
                 idempotency_key=idempotency_key,
-                app_id=payload["app_id"],
                 domain_id=payload["domain_id"],
                 actor_id=payload["actor_id"],
                 agent_id=payload["agent_id"],

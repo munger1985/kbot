@@ -117,14 +117,12 @@ class MonitorConfigurationMixin:
         ) -> MonitorSourceDetail:
             assert uow.monitor_sources is not None
             if await uow.monitor_sources.get_by_key(
-                app_id=scope.app_id,
                 domain_id=scope.domain_id,
                 source_key=request.source_key,
             ):
                 raise state_conflict("source_key 已存在")
             entity = MonitorSourceEntity(
                 monitor_source_id=uuid7(),
-                app_id=scope.app_id,
                 domain_id=scope.domain_id,
                 source_key=request.source_key,
                 display_name=request.display_name,
@@ -171,7 +169,6 @@ class MonitorConfigurationMixin:
             assert uow.monitor_sources is not None
             entity = await uow.monitor_sources.get_scoped(
                 monitor_source_id=source_id,
-                app_id=scope.app_id,
                 domain_id=scope.domain_id,
             )
             if entity is None:
@@ -197,7 +194,6 @@ class MonitorConfigurationMixin:
         async with self._uow_factory() as uow:
             assert uow.monitor_sources is not None
             entities = await uow.monitor_sources.page_scoped(
-                app_id=scope.app_id,
                 domain_id=scope.domain_id,
                 statuses=(status,) if status else None,
                 before_updated_at=before_at,
@@ -258,7 +254,6 @@ class MonitorConfigurationMixin:
             assert uow.monitor_sources is not None
             entity = await uow.monitor_sources.get_scoped(
                 monitor_source_id=source_id,
-                app_id=scope.app_id,
                 domain_id=scope.domain_id,
                 lock=True,
             )
@@ -309,7 +304,6 @@ class MonitorConfigurationMixin:
             assert uow.monitor_sources is not None
             entity = await uow.monitor_sources.get_scoped(
                 monitor_source_id=source_id,
-                app_id=scope.app_id,
                 domain_id=scope.domain_id,
                 lock=True,
             )
@@ -358,7 +352,6 @@ class MonitorConfigurationMixin:
             assert uow.monitor_sources is not None
             entity = await uow.monitor_sources.get_scoped(
                 monitor_source_id=source_id,
-                app_id=scope.app_id,
                 domain_id=scope.domain_id,
                 lock=True,
             )
@@ -438,7 +431,6 @@ class MonitorConfigurationMixin:
             assert uow.monitor_sources is not None
             entity = await uow.monitor_sources.get_scoped(
                 monitor_source_id=source_id,
-                app_id=scope.app_id,
                 domain_id=scope.domain_id,
                 lock=True,
             )
@@ -518,7 +510,6 @@ class MonitorConfigurationMixin:
             assert uow.monitor_sources is not None
             target = await uow.targets.get_scoped(
                 target_id=target_id,
-                app_id=scope.app_id,
                 domain_id=scope.domain_id,
                 lock=True,
             )
@@ -526,7 +517,6 @@ class MonitorConfigurationMixin:
                 raise resource_not_found("Target")
             source = await uow.monitor_sources.get_scoped(
                 monitor_source_id=request.source_id,
-                app_id=scope.app_id,
                 domain_id=scope.domain_id,
             )
             if source is None:
@@ -578,14 +568,12 @@ class MonitorConfigurationMixin:
             assert uow.targets is not None
             target = await uow.targets.get_scoped(
                 target_id=target_id,
-                app_id=scope.app_id,
                 domain_id=scope.domain_id,
             )
             if target is None:
                 raise resource_not_found("Target")
             entities = await uow.targets.list_monitors(
                 target_id=target_id,
-                app_id=scope.app_id,
                 domain_id=scope.domain_id,
                 active_only=False,
             )
@@ -613,7 +601,6 @@ class MonitorConfigurationMixin:
             entity = await uow.targets.get_monitor_scoped(
                 target_monitor_id=binding_id,
                 target_id=target_id,
-                app_id=scope.app_id,
                 domain_id=scope.domain_id,
                 lock=True,
             )
@@ -658,7 +645,6 @@ class MonitorConfigurationMixin:
             entity = await uow.targets.get_monitor_scoped(
                 target_monitor_id=binding_id,
                 target_id=target_id,
-                app_id=scope.app_id,
                 domain_id=scope.domain_id,
                 lock=True,
             )

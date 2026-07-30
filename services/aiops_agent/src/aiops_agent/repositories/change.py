@@ -89,7 +89,6 @@ class ChangeRepository(AIOpsRepository):
         self,
         *,
         proposal_id: UUID,
-        app_id: int,
         domain_id: int,
         lock: bool = False,
     ) -> ChangeProposalEntity | None:
@@ -102,7 +101,6 @@ class ChangeRepository(AIOpsRepository):
             )
             .where(
                 ChangeProposalEntity.proposal_id == proposal_id,
-                TargetEntity.app_id == app_id,
                 TargetEntity.domain_id == domain_id,
             )
         )
@@ -125,7 +123,6 @@ class ChangeRepository(AIOpsRepository):
         self,
         *,
         hitl_id: UUID,
-        app_id: int,
         domain_id: int,
         lock: bool = False,
     ) -> HitlEntity | None:
@@ -142,7 +139,6 @@ class ChangeRepository(AIOpsRepository):
             )
             .where(
                 HitlEntity.hitl_id == hitl_id,
-                TargetEntity.app_id == app_id,
                 TargetEntity.domain_id == domain_id,
             )
         )

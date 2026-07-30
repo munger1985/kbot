@@ -15,7 +15,6 @@ class PlatformDomainEntity(BaseEntity):
         Numeric(38, 0),
         primary_key=True,
     )
-    app_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False)
     name: Mapped[str] = mapped_column(String(256), nullable=False)
     status: Mapped[str] = mapped_column(
         String(16),

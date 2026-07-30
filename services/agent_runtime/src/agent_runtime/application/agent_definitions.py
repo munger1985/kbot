@@ -21,7 +21,6 @@ class _Model(BaseModel):
 
 
 class CreateAgentDefinitionCommand(_Model):
-    app_id: int = Field(ge=1)
     domain_id: int = Field(ge=1)
     agent_key: str = Field(pattern=r"^[a-z][a-z0-9._-]{0,127}$")
     display_name: str = Field(min_length=1, max_length=256)
@@ -39,7 +38,6 @@ class CreateAgentDefinitionCommand(_Model):
 
 
 class UpdateAgentDefinitionCommand(_Model):
-    app_id: int = Field(ge=1)
     domain_id: int = Field(ge=1)
     agent_id: UUID
     expected_row_version: int = Field(ge=1)
@@ -102,7 +100,6 @@ class AgentDefinitionService:
         )
         async with self._uow_factory() as uow:
             existing = await uow.agents.get_by_key(
-                app_id=command.app_id,
                 domain_id=command.domain_id,
                 agent_key=command.agent_key,
             )
@@ -113,7 +110,6 @@ class AgentDefinitionService:
                 )
             row = AgentDefinitionEntity(
                 agent_id=uuid7(),
-                app_id=command.app_id,
                 domain_id=command.domain_id,
                 agent_key=command.agent_key,
                 display_name=command.display_name,
@@ -144,7 +140,6 @@ class AgentDefinitionService:
         async with self._uow_factory() as uow:
             row = await uow.agents.get_scoped(
                 agent_id=command.agent_id,
-                app_id=command.app_id,
                 domain_id=command.domain_id,
                 lock=True,
             )
@@ -159,8 +154,7 @@ class AgentDefinitionService:
                 )
             values = command.model_dump(
                 exclude={
-                    "app_id",
-                    "domain_id",
+                                        "domain_id",
                     "agent_id",
                     "expected_row_version",
                     "actor_id",
@@ -219,13 +213,11 @@ class AgentDefinitionService:
         self,
         *,
         agent_id: UUID,
-        app_id: int,
         domain_id: int,
     ) -> AgentDefinitionView:
         async with self._uow_factory() as uow:
             row = await uow.agents.get_scoped(
                 agent_id=agent_id,
-                app_id=app_id,
                 domain_id=domain_id,
             )
             if row is None:
@@ -236,11 +228,10 @@ class AgentDefinitionService:
             return self._view(row)
 
     async def list(
-        self, *, app_id: int, domain_id: int
+        self, *, domain_id: int
     ) -> list[AgentDefinitionView]:
         async with self._uow_factory() as uow:
             rows = await uow.agents.list_scoped(
-                app_id=app_id, domain_id=domain_id
             )
             return [self._view(row) for row in rows]
 

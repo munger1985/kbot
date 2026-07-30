@@ -206,7 +206,6 @@ async def create_ops_run(
     command = CreateOpsRunCommand(
         command_id=uuid7(),
         idempotency_key=idempotency_key,
-        app_id=request.app.state.main_api_settings.platform.app_id,
         domain_id=int(context.domain_id),
         actor_id=context.asserted_user_id or context.client_id,
         agent_id=body.agent_id,

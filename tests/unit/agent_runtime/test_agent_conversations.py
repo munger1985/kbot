@@ -59,7 +59,6 @@ class AgentConversationApiTest(unittest.TestCase):
         )
         app = FastAPI()
         app.state.conversation_service = self.service
-        app.state.platform_app_id = 7
         app.state.agent_runtime_budget = {"max_tasks": 16}
 
         @app.middleware("http")
@@ -90,7 +89,6 @@ class AgentConversationApiTest(unittest.TestCase):
 
         self.assertEqual(response.status_code, 201)
         kwargs = self.service.create.await_args.kwargs
-        self.assertEqual(kwargs["app_id"], 7)
         self.assertEqual(kwargs["domain_id"], 20)
         self.assertEqual(kwargs["actor_id"], "user-1")
 
@@ -238,7 +236,6 @@ class MemoryConflictTest(unittest.IsolatedAsyncioTestCase):
             conversation_id=uuid7(),
             turn_id=uuid7(),
             turn_sequence=1,
-            app_id=1,
             domain_id=2,
             actor_id="user-1",
             agent_id=uuid7(),

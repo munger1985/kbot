@@ -50,8 +50,7 @@ class BundleStatus:
 
 
 class KnowledgeCoreStatusService:
-    def __init__(self, *, app_id: int, uow_factory: Callable[[], KnowledgeCoreUnitOfWork]):
-        self._app_id = app_id
+    def __init__(self, *, uow_factory: Callable[[], KnowledgeCoreUnitOfWork]):
         self._uow_factory = uow_factory
 
     async def get_bundle(self, *, domain_id: int, bundle_id: UUID) -> BundleStatus:
@@ -62,7 +61,6 @@ class KnowledgeCoreStatusService:
             if bundle is None:
                 raise KnowledgeObjectNotFoundError("Bundle not found")
             collection = await uow.collections.get_by_id_scope(
-                app_id=self._app_id, domain_id=domain_id, collection_id=bundle.collection_id,
             )
             if collection is None:
                 raise KnowledgeObjectNotFoundError("Bundle not found")
@@ -84,7 +82,6 @@ class KnowledgeCoreStatusService:
                 raise RuntimeError("Knowledge Core Unit of Work is not initialized")
             bundle = await uow.bundles.get_by_id(bundle_id=bundle_id)
             if bundle is None or await uow.collections.get_by_id_scope(
-                app_id=self._app_id, domain_id=domain_id, collection_id=bundle.collection_id,
             ) is None:
                 raise KnowledgeObjectNotFoundError("Bundle not found")
             revision = await uow.revisions.get_by_id(bundle_revision_id=bundle_revision_id)

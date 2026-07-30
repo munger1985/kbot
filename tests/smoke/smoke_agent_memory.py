@@ -98,7 +98,6 @@ async def _cleanup(
     actor_id: str,
     agent_id,
     domain_id: int,
-    app_id: int,
 ) -> None:
     """只清理由本脚本生成且拥有随机标识的数据。"""
     async with runtime.engine.begin() as connection:
@@ -107,7 +106,6 @@ async def _cleanup(
             "actor_id": actor_id,
             "agent_id": agent_id.bytes,
             "domain_id": domain_id,
-            "app_id": app_id,
         }
         statements = (
             "DELETE FROM KBOT_AGENT_MEMORY_SOURCE "
@@ -129,7 +127,7 @@ async def _cleanup(
             "DELETE FROM KBOT_AGENT_DEFINITION "
             "WHERE AGENT_ID = :agent_id",
             "DELETE FROM KBOT_PLATFORM_DOMAIN "
-            "WHERE DOMAIN_ID = :domain_id AND APP_ID = :app_id",
+            "WHERE DOMAIN_ID = :domain_id",
         )
         for statement in statements:
             await connection.execute(text(statement), values)
@@ -137,7 +135,6 @@ async def _cleanup(
 
 async def main() -> None:
     runtime = create_database_runtime()
-    app_id = 9901
     domain_id = 900_000_000 + time_ns() % 90_000_000
     agent_id = uuid7()
     conversation_id = uuid7()
@@ -154,7 +151,6 @@ async def main() -> None:
             session.add(
                 PlatformDomainEntity(
                     domain_id=domain_id,
-                    app_id=app_id,
                     name=f"memory-smoke-{domain_id}",
                     status="ACTIVE",
                     row_version=1,
@@ -166,7 +162,6 @@ async def main() -> None:
             session.add(
                 AgentDefinitionEntity(
                     agent_id=agent_id,
-                    app_id=app_id,
                     domain_id=domain_id,
                     agent_key=f"memory-smoke-{domain_id}",
                     display_name="记忆实库验收",
@@ -193,7 +188,6 @@ async def main() -> None:
             session.add(
                 AgentConversationEntity(
                     conversation_id=conversation_id,
-                    app_id=app_id,
                     domain_id=domain_id,
                     actor_id=actor_id,
                     agent_id=agent_id,
@@ -375,13 +369,11 @@ async def main() -> None:
         )
         view = await conversation_service.get(
             conversation_id=conversation_id,
-            app_id=app_id,
             domain_id=domain_id,
             actor_id=actor_id,
         )
         archived = await conversation_service.update(
             conversation_id=conversation_id,
-            app_id=app_id,
             domain_id=domain_id,
             actor_id=actor_id,
             expected_row_version=view.row_version,
@@ -416,7 +408,6 @@ async def main() -> None:
             actor_id=actor_id,
             agent_id=agent_id,
             domain_id=domain_id,
-            app_id=app_id,
         )
         await runtime.close()
 

@@ -150,8 +150,6 @@ async def main() -> None:
                 await session.execute(
                     select(PlatformDomainEntity)
                     .where(
-                        PlatformDomainEntity.app_id
-                        == settings.platform.app_id,
                         PlatformDomainEntity.status == "ACTIVE",
                     )
                     .order_by(PlatformDomainEntity.domain_id)
@@ -160,7 +158,6 @@ async def main() -> None:
             ).scalar_one_or_none()
             if domain is None:
                 domain = PlatformDomainEntity(
-                    app_id=settings.platform.app_id,
                     name=f"monitor-smoke-{target_id}",
                     status="ACTIVE",
                     created_by="monitor-smoke",
@@ -176,7 +173,6 @@ async def main() -> None:
             await uow.targets.add_target(
                 TargetEntity(
                     target_id=target_id,
-                    app_id=settings.platform.app_id,
                     domain_id=domain_id,
                     target_key=f"monitor-smoke-{target_id}",
                     display_name="监控闭环 Smoke Target",
@@ -203,7 +199,6 @@ async def main() -> None:
             await uow.monitor_sources.add(
                 MonitorSourceEntity(
                     monitor_source_id=source_id,
-                    app_id=settings.platform.app_id,
                     domain_id=domain_id,
                     source_key=f"monitor-smoke-{source_id}",
                     display_name="监控闭环 Smoke Prometheus",
@@ -349,7 +344,6 @@ async def main() -> None:
                 raise RuntimeError("Observe Blueprint Task 未全部执行")
         summary = await runtime_service.get_run(
             ops_run_id=run_id,
-            app_id=settings.platform.app_id,
             domain_id=domain_id,
         )
         async with database.session_factory() as session:

@@ -100,13 +100,11 @@ class AIOpsChangeService:
         self,
         *,
         proposal_id: UUID,
-        app_id: int,
         domain_id: int,
     ) -> ProposalView:
         async with self._uow_factory() as uow:
             proposal = await uow.changes.get_proposal_scoped(
                 proposal_id=proposal_id,
-                app_id=app_id,
                 domain_id=domain_id,
             )
             if proposal is None:
@@ -118,7 +116,6 @@ class AIOpsChangeService:
         self,
         *,
         proposal_id: UUID,
-        app_id: int,
         domain_id: int,
         actor_id: str,
         command: RejectionCommand,
@@ -127,7 +124,6 @@ class AIOpsChangeService:
         async with self._uow_factory() as uow:
             preliminary = await uow.changes.get_proposal_scoped(
                 proposal_id=proposal_id,
-                app_id=app_id,
                 domain_id=domain_id,
             )
             if preliminary is None:
@@ -195,7 +191,6 @@ class AIOpsChangeService:
         self,
         *,
         proposal_id: UUID,
-        app_id: int,
         domain_id: int,
         actor_id: str,
         command: ApprovalCommand,
@@ -229,7 +224,6 @@ class AIOpsChangeService:
 
             preliminary = await uow.changes.get_proposal_scoped(
                 proposal_id=proposal_id,
-                app_id=app_id,
                 domain_id=domain_id,
             )
             if preliminary is None:
@@ -266,7 +260,6 @@ class AIOpsChangeService:
 
             target = await uow.targets.get_scoped(
                 target_id=proposal.target_id,
-                app_id=app_id,
                 domain_id=domain_id,
                 lock=True,
             )
@@ -282,7 +275,6 @@ class AIOpsChangeService:
             binding = await uow.targets.get_agent_binding(
                 target_id=target.target_id,
                 agent_id=run.agent_id,
-                app_id=app_id,
                 domain_id=domain_id,
                 lock=True,
             )
@@ -297,7 +289,6 @@ class AIOpsChangeService:
             policy = (
                 await uow.policies.get_scoped(
                     policy_id=binding.policy_id,
-                    app_id=app_id,
                     domain_id=domain_id,
                     lock=True,
                 )
@@ -523,7 +514,6 @@ class AIOpsChangeService:
         self,
         *,
         proposal_id: UUID,
-        app_id: int,
         domain_id: int,
         actor_id: str,
         command: ManualResultCommand,
@@ -533,7 +523,6 @@ class AIOpsChangeService:
         async with self._uow_factory() as uow:
             preliminary = await uow.changes.get_proposal_scoped(
                 proposal_id=proposal_id,
-                app_id=app_id,
                 domain_id=domain_id,
             )
             if preliminary is None:
@@ -667,8 +656,7 @@ class AIOpsChangeService:
                     "proposal_id": str(proposal_id),
                     "source_run_id": str(run.ops_run_id),
                     "result_artifact_id": str(artifact.artifact_id),
-                    "app_id": app_id,
-                    "domain_id": domain_id,
+                                        "domain_id": domain_id,
                     "actor_id": actor_id,
                     "agent_id": str(run.agent_id),
                     "target_id": str(run.target_id),
@@ -780,11 +768,9 @@ class AIOpsChangeService:
             target_snapshot = (
                 run.plan_snapshot_json or {}
             ).get("target", {})
-            app_id = int(target_snapshot.get("app_id", -1))
             domain_id = int(target_snapshot.get("domain_id", -1))
             target = await uow.targets.get_scoped(
                 target_id=execution.target_id,
-                app_id=app_id,
                 domain_id=domain_id,
                 lock=True,
             )
@@ -806,7 +792,6 @@ class AIOpsChangeService:
             binding = await uow.targets.get_agent_binding(
                 target_id=target.target_id,
                 agent_id=run.agent_id,
-                app_id=app_id,
                 domain_id=domain_id,
                 lock=True,
             )
@@ -821,7 +806,6 @@ class AIOpsChangeService:
             policy = (
                 await uow.policies.get_scoped(
                     policy_id=binding.policy_id,
-                    app_id=app_id,
                     domain_id=domain_id,
                     lock=True,
                 )
@@ -1125,11 +1109,6 @@ class AIOpsChangeService:
                         "proposal_id": str(proposal.proposal_id),
                         "source_run_id": str(run.ops_run_id),
                         "result_artifact_id": str(artifact.artifact_id),
-                        "app_id": int(
-                            (run.plan_snapshot_json or {})["target"][
-                                "app_id"
-                            ]
-                        ),
                         "domain_id": int(
                             (run.plan_snapshot_json or {})["target"][
                                 "domain_id"

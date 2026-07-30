@@ -82,7 +82,6 @@ class AIOpsInspectionScheduler:
             )
             targets = await uow.inspections.list_active_targets(
                 inspection_plan_id=plan.inspection_plan_id,
-                app_id=int(plan.app_id),
                 domain_id=int(plan.domain_id),
             )
             target_snapshots = [
@@ -120,8 +119,7 @@ class AIOpsInspectionScheduler:
 
             fire_id = uuid7()
             plan_snapshot = {
-                "app_id": int(plan.app_id),
-                "domain_id": int(plan.domain_id),
+                                "domain_id": int(plan.domain_id),
                 "plan_id": str(plan.inspection_plan_id),
                 "plan_key": plan.plan_key,
                 "display_name": plan.display_name,
@@ -286,8 +284,7 @@ class AIOpsInspectionScheduler:
         for target in snapshot["targets"]:
             payload = {
                 "inspection_fire_id": str(fire_id),
-                "app_id": snapshot["app_id"],
-                "domain_id": snapshot["domain_id"],
+                                "domain_id": snapshot["domain_id"],
                 "actor_id": "system:inspection-scheduler",
                 "agent_id": str(self._system_agent_id),
                 "target_id": target["target_id"],

@@ -70,7 +70,6 @@ async def lifespan(app: FastAPIOffline):
     )).setup()
     db_runtime = create_database_runtime()
     app.state.db_runtime = db_runtime
-    app.state.platform_app_id = settings.platform.app_id
     app.state.agent_runtime_budget = {
         "max_tasks": settings.worker.max_tasks_per_run,
         "max_parallel_tasks": settings.worker.max_parallel_tasks,

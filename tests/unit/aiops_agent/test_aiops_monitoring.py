@@ -369,8 +369,7 @@ class SecretAndOutboxTest(unittest.IsolatedAsyncioTestCase):
         await sink.publish(
             "OPS_ALERT_AUTO_RUN_REQUESTED",
             {
-                "app_id": 100,
-                "domain_id": 2,
+                                "domain_id": 2,
                 "agent_id": "019c03b5-4b88-7ab2-8c19-7b6ea34f2a11",
                 "target_id": "019c03b5-4b88-7ab2-8c19-7b6ea34f2a12",
                 "alert_id": "019c03b5-4b88-7ab2-8c19-7b6ea34f2a13",

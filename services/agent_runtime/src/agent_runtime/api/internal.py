@@ -215,7 +215,6 @@ async def create_run(
     try:
         return await _service(request).create_run(
             CreateRunCommand(
-                app_id=request.app.state.platform_app_id,
                 domain_id=domain_id,
                 agent_id=payload.agent_id,
                 actor_id=actor_id,
@@ -255,7 +254,6 @@ async def install_plan(
     try:
         return await _service(request).install_plan(
             InstallPlanCommand(
-                app_id=request.app.state.platform_app_id,
                 domain_id=domain_id,
                 run_id=run_id,
                 expected_row_version=payload.expected_row_version,
@@ -282,7 +280,6 @@ async def list_debug_runs(
     """提供给 Main API 开发调试台的最近 Run 摘要。"""
     domain_id, _, _, _ = _identity(request)
     return await _service(request).list_debug_runs(
-        app_id=request.app.state.platform_app_id,
         domain_id=domain_id,
         limit=limit,
     )
@@ -295,7 +292,6 @@ async def get_debug_run(run_id: UUID, request: Request):
     try:
         return await _service(request).get_debug_run(
             run_id=run_id,
-            app_id=request.app.state.platform_app_id,
             domain_id=domain_id,
         )
     except AgentRuntimeNotFound as exc:
@@ -308,7 +304,6 @@ async def get_run(run_id: UUID, request: Request) -> AgentRunSummary:
     try:
         return await _service(request).get_run(
             run_id=run_id,
-            app_id=request.app.state.platform_app_id,
             domain_id=domain_id,
         )
     except AgentRuntimeNotFound as exc:
@@ -323,7 +318,6 @@ async def get_run_result(
     try:
         return await _service(request).get_result(
             run_id=run_id,
-            app_id=request.app.state.platform_app_id,
             domain_id=domain_id,
         )
     except (AgentRuntimeNotFound, AgentResultNotReady) as exc:
@@ -341,7 +335,6 @@ async def list_events(
     try:
         return await _service(request).list_events(
             run_id=run_id,
-            app_id=request.app.state.platform_app_id,
             domain_id=domain_id,
             after_sequence=after,
             limit=limit,
@@ -365,7 +358,6 @@ async def cancel_run(
     try:
         return await _service(request).cancel_run(
             CancelRunCommand(
-                app_id=request.app.state.platform_app_id,
                 domain_id=domain_id,
                 run_id=run_id,
                 expected_row_version=payload.expected_row_version,
@@ -430,7 +422,6 @@ async def create_agent_definition(
     try:
         return await _agent_service(request).create(
             CreateAgentDefinitionCommand(
-                app_id=request.app.state.platform_app_id,
                 domain_id=domain_id,
                 actor_id=actor_id,
                 **payload.model_dump(),
@@ -446,7 +437,6 @@ async def list_agent_definitions(
 ) -> list[AgentDefinitionView]:
     domain_id, _, _, _ = _identity(request)
     return await _agent_service(request).list(
-        app_id=request.app.state.platform_app_id,
         domain_id=domain_id,
     )
 
@@ -462,7 +452,6 @@ async def get_agent_definition(
     try:
         return await _agent_service(request).get(
             agent_id=agent_id,
-            app_id=request.app.state.platform_app_id,
             domain_id=domain_id,
         )
     except AgentRuntimeConflict as exc:
@@ -481,7 +470,6 @@ async def update_agent_definition(
     try:
         return await _agent_service(request).update(
             UpdateAgentDefinitionCommand(
-                app_id=request.app.state.platform_app_id,
                 domain_id=domain_id,
                 agent_id=agent_id,
                 actor_id=actor_id,

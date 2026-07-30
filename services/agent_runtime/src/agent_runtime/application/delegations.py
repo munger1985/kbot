@@ -57,7 +57,6 @@ class _Lease:
     idempotency_key: str
     parent_run_id: UUID
     parent_task_id: UUID
-    app_id: int
     domain_id: int
     agent_id: UUID
     actor_id: str
@@ -251,7 +250,6 @@ class AgentDelegationReconciler:
                 idempotency_key=delegation.idempotency_key,
                 parent_run_id=run.run_id,
                 parent_task_id=task.task_id,
-                app_id=int(run.app_id),
                 domain_id=int(run.domain_id),
                 agent_id=run.agent_id,
                 actor_id=run.actor_id,

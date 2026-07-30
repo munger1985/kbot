@@ -23,7 +23,6 @@ class MonitorHealthCheckService:
         async with self._uow_factory() as uow:
             source = await uow.monitor_sources.get_scoped(
                 monitor_source_id=source_id,
-                app_id=int(payload["app_id"]),
                 domain_id=int(payload["domain_id"]),
             )
             if (

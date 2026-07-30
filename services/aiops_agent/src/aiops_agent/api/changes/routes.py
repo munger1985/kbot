@@ -37,13 +37,10 @@ Service = Annotated[AIOpsChangeService, Depends(get_service)]
 Auth = Annotated[AuthContext, Depends(get_aiops_auth_context)]
 
 
-def _scope(request: Request, context: AuthContext) -> tuple[int, int]:
+def _scope(request: Request, context: AuthContext) -> int:
     if context.domain_id is None:
         raise RuntimeError("AIOps 请求缺少 Domain")
-    return (
-        request.app.state.runtime.settings.platform.app_id,
-        int(context.domain_id),
-    )
+    return int(context.domain_id)
 
 
 @router.get("/{proposal_id}", response_model=ProposalView)
@@ -54,10 +51,9 @@ async def get_proposal(
     context: Auth,
 ) -> ProposalView:
     require_service_scope(request, "aiops.approve")
-    app_id, domain_id = _scope(request, context)
+    domain_id = _scope(request, context)
     return await service.get_proposal(
         proposal_id=proposal_id,
-        app_id=app_id,
         domain_id=domain_id,
     )
 
@@ -71,10 +67,9 @@ async def reject_proposal(
     context: Auth,
 ) -> ProposalView:
     require_service_scope(request, "aiops.approve")
-    app_id, domain_id = _scope(request, context)
+    domain_id = _scope(request, context)
     return await service.reject_proposal(
         proposal_id=proposal_id,
-        app_id=app_id,
         domain_id=domain_id,
         actor_id=context.asserted_user_id or context.client_id,
         command=body,
@@ -94,10 +89,9 @@ async def approve_proposal(
     context: Auth,
 ) -> ApprovalReceipt:
     require_service_scope(request, "aiops.approve")
-    app_id, domain_id = _scope(request, context)
+    domain_id = _scope(request, context)
     return await service.approve_proposal(
         proposal_id=proposal_id,
-        app_id=app_id,
         domain_id=domain_id,
         actor_id=context.asserted_user_id or context.client_id,
         command=body,
@@ -120,10 +114,9 @@ async def record_manual_result(
     context: Auth,
 ) -> ManualResultReceipt:
     require_service_scope(request, "aiops.approve")
-    app_id, domain_id = _scope(request, context)
+    domain_id = _scope(request, context)
     return await service.record_manual_result(
         proposal_id=proposal_id,
-        app_id=app_id,
         domain_id=domain_id,
         actor_id=context.asserted_user_id or context.client_id,
         command=body,

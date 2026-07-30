@@ -21,7 +21,6 @@ Portal API Key 摘要。
 
 ```toml
 environment = "production"
-app_id = 1
 data_dir = "/var/lib/kbot"
 log_dir = "/var/log/kbot"
 embedding_dimension = 2560
@@ -73,8 +72,9 @@ Portal API Key 的明文只显示一次；设置主密钥后执行：
 python scripts/security/generate_portal_api_key.py --key-id portal-prod
 ```
 
-将输出摘要写入 `[[portal_api_keys]]`，并把明文 Key 仅保存到 Portal
-Secret。外部系统需要直接调用模型 API 时，使用独立的
+脚本会原子更新部署文件中同名 `key_id` 的 `[[portal_api_keys]]` 摘要记录，再只
+显示一次明文 Key；将明文仅保存到 Portal Secret。外部系统需要直接调用模型 API
+时，使用独立的
 `[[model_api_keys]]`。
 
 ## 启动前检查

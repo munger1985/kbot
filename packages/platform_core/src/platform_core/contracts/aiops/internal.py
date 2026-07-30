@@ -25,7 +25,6 @@ class CreateOpsRunCommand(AIOpsContract):
     schema_version: str = INTERNAL_SCHEMA_VERSION
     command_id: UUIDv7
     idempotency_key: str = Field(min_length=1, max_length=128)
-    app_id: int = Field(ge=1)
     domain_id: int = Field(ge=1)
     actor_id: str = Field(min_length=1, max_length=256)
     agent_id: UUIDv7
