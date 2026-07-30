@@ -47,13 +47,9 @@ class AIModelEntity(BaseEntity):
     status: Mapped[int] = mapped_column(
         Numeric(1, 0), nullable=False, default=0, comment="0 禁用、1 启用、2 归档",
     )
-    embedding_dimension: Mapped[int | None] = mapped_column(
-        Numeric(10, 0),
-        comment="输出向量维度；文本 Embedding 模型必填且必须匹配平台配置",
-    )
     model_params: Mapped[dict | None] = mapped_column(
         OracleNativeJSON(),
-        comment="模型默认参数，使用 Oracle 原生 JSON 存储",
+        comment="模型推理参数，Embedding 模型的 embedding_dimension 存放于此",
     )
     descs: Mapped[str | None] = mapped_column(String(512), comment="模型说明")
     created_by: Mapped[str | None] = mapped_column(String(256), comment="创建者")

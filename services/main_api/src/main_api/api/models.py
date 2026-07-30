@@ -6,7 +6,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Request
 from loguru import logger
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from platform_clients import AIModelConfigClient
 from platform_core.contracts import PUBLIC_API_V1
@@ -25,7 +25,7 @@ class ModelCatalogItem(BaseModel):
     category: int
     provider: str
     status: int
-    embedding_dimension: int | None = None
+    model_params: dict[str, Any] = Field(default_factory=dict)
 
 
 def _clients(request: Request) -> tuple[AIModelConfigClient, ...]:

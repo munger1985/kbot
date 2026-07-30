@@ -110,8 +110,7 @@ class EmbeddingModelPool(BaseModelPool[BaseEmbedding[Any]]):
                 api_key=api_key,
                 api_base=api_endpoint,
                 # 模型目录中的声明维度是 KC、模型服务和实际供应商请求的唯一契约。
-                # 不允许再以 model_params 的隐式默认值覆盖它。
-                dimensions=data.get("embedding_dimension"),
+                dimensions=params.get("embedding_dimension"),
                 timeout=params.get("timeout", global_cfg.timeout),
                 max_retries=params.get("max_retries", 3)
             )

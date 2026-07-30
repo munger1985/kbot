@@ -63,18 +63,6 @@
             "title": "Display Name",
             "type": "string"
           },
-          "embedding_dimension": {
-            "anyOf": [
-              {
-                "exclusiveMinimum": 0.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Embedding Dimension"
-          },
           "model_params": {
             "additionalProperties": true,
             "title": "Model Params",

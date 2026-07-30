@@ -30,7 +30,6 @@ class ModelRegistryService:
             "category": int(entity.category) if entity.category is not None else None,
             "provider": entity.provider, "api_endpoint": entity.api_endpoint,
             "status": int(entity.status) if entity.status is not None else None,
-            "embedding_dimension": int(entity.embedding_dimension) if entity.embedding_dimension is not None else None,
             "model_params": entity.model_params or {}, "descs": entity.descs,
             "created_by": entity.created_by, "updated_by": entity.updated_by,
         }
@@ -56,7 +55,7 @@ class ModelRegistryService:
                 provider_model_name=values["provider_model_name"],
                 category=values["category"], provider=values["provider"], api_endpoint=values.get("api_endpoint"),
                 api_key=values.get("api_key"), status=values.get("status", 0),
-                embedding_dimension=values.get("embedding_dimension"), model_params=values.get("model_params") or {},
+                model_params=values.get("model_params") or {},
                 descs=values.get("descs"), created_by=actor_id, updated_by=actor_id,
             ))
             await session.commit()
@@ -66,11 +65,7 @@ class ModelRegistryService:
         async with self._session_factory() as session:
             repo = AIModelRepository(session)
             current = await repo.get_by_id(model_id)
-            check_values = {
-                "category": current.category,
-                "embedding_dimension": current.embedding_dimension,
-                **values,
-            }
+            check_values = {"category": current.category, "model_params": current.model_params or {}, **values}
             self._validate_embedding_dimension(check_values)
             row = await repo.update_fields(model_id, values={**values, "updated_by": actor_id})
             await session.commit()
@@ -82,17 +77,20 @@ class ModelRegistryService:
     def _validate_embedding_dimension(values: dict[str, Any]) -> None:
         """强制模型目录与物理向量列使用同一维度。"""
         category = int(values.get("category", 0) or 0)
-        dimension = values.get("embedding_dimension")
+        params = values.get("model_params") or {}
+        dimension = params.get("embedding_dimension")
         if category != 2:
             if dimension is not None:
-                raise ValueError("非文本 Embedding 模型不能设置 embedding_dimension")
+                raise ValueError("非文本 Embedding 模型不能在 model_params 设置 embedding_dimension")
             return
         if dimension is None:
-            raise ValueError("文本 Embedding 模型必须设置 embedding_dimension")
+            raise ValueError("文本 Embedding 模型必须在 model_params 设置 embedding_dimension")
+        if isinstance(dimension, bool) or not isinstance(dimension, int) or dimension <= 0:
+            raise ValueError("model_params.embedding_dimension 必须为正整数")
         configured = get_model_serving_settings().vector.dimensions
         if configured is not None and int(dimension) != int(configured):
             raise ValueError(
-                f"embedding_dimension 必须等于配置维度 {configured}"
+                f"model_params.embedding_dimension 必须等于配置维度 {configured}"
             )
 
     async def delete(self, model_id: UUID, *, actor_id: str) -> None:

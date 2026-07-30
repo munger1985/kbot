@@ -22,7 +22,6 @@ class ModelCreateRequest(BaseModel):
     api_endpoint: str | None = Field(default=None, max_length=1024)
     api_key: str | None = Field(default=None, max_length=4096)
     status: int = Field(default=0, ge=0, le=2)
-    embedding_dimension: int | None = Field(default=None, gt=0)
     model_params: dict[str, Any] = Field(default_factory=dict)
     descs: str | None = Field(default=None, max_length=512)
 

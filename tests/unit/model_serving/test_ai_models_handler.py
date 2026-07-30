@@ -21,11 +21,11 @@ class AiModelsHandlerTest(unittest.TestCase):
             model_id=uuid7(), served_model_name="embed-prod",
             display_name="Embedding", provider_model_name="bge",
             category=2, provider="local", api_endpoint=None, api_key="secret",
-            status=1, embedding_dimension=1536, model_params={"device": "cpu"},
+            status=1, model_params={"embedding_dimension": 1536, "device": "cpu"},
             descs="test", created_by="a", updated_by="b",
         ))
         self.assertNotIn("api_key", result)
-        self.assertEqual(1536, result["embedding_dimension"])
+        self.assertEqual(1536, result["model_params"]["embedding_dimension"])
         self.assertEqual("embed-prod", result["served_model_name"])
 
     def test_each_process_gets_category_scoped_management_routes(self):

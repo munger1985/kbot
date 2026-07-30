@@ -7,8 +7,9 @@ OpenAI 兼容接口使用的稳定名称。模型名称不是数据库主键，�
 路径和部署参数在受控更新后变化。`MODEL_PARAMS` 使用 Oracle 原生 JSON，
 本地模型路径写入其中的 `model_path`。
 
-模型目录记录类别、Provider、服务名、维度、加密连接配置和参数。文本 Embedding
-模型的维度必须等于全局 `embedding_dimension`；相同维度不代表相同向量空间。
+模型目录记录类别、Provider、服务名、加密连接配置和参数。文本 Embedding 模型将
+`embedding_dimension` 存入 `MODEL_PARAMS`，其值必须等于全局
+`embedding_dimension`；相同维度不代表相同向量空间。
 
 ## 进程与接口
 

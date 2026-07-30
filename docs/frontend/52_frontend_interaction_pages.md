@@ -271,14 +271,14 @@ Policy 没有 `PATCH` 编辑接口，是不可变的版本资源：修改规则�
 它也是 P30 Agent 与 P41 Collection 表单的模型 LOV 来源。
 
 - **列表区**：Interactive Report 展示类别、状态、显示名、`served_model_name`、
-  Provider、Provider 模型名、Endpoint、向量维度和“密钥已配置”标记；绝不在列表、
+  Provider、Provider 模型名、Endpoint、参数中的向量维度和“密钥已配置”标记；绝不在列表、
   导出或调试信息中展示 `API_KEY`。
 - **新增/编辑弹窗**：公共字段为显示名、服务模型名、类别、Provider、Provider 模型名、
   Endpoint、状态、参数 JSON、说明；LLM 类别默认展示 Provider/Endpoint/密钥/参数，
-  向量类别额外展示必填的 `embedding_dimension`。
+  向量类别在参数 JSON 中填写必填的 `embedding_dimension`。
 - **数据校验**：`served_model_name` 必须符合小写技术名规则且全局唯一；类别为文本向量
-  时维度必填且大于零，其他类别必须清空维度；`MODEL_PARAMS` 必须是合法 JSON；
-  `APP_ID` 取当前 APEX 的 `:APP_ID`，不让管理员手输。
+  时 `MODEL_PARAMS.embedding_dimension` 必填且大于零，其他类别不得设置该参数；
+  `MODEL_PARAMS` 必须是合法 JSON。
 - **审计与主键**：新增时由 APEX Before Insert Process 生成兼容 UUIDv7 的
   `MODEL_ID`，`CREATED_BY`/`UPDATED_BY` 写 `:APP_USER`，时间戳由数据库默认值处理；
   编辑时不得修改 `MODEL_ID` 或 `SERVED_MODEL_NAME`。后者是模型池缓存键，变更模型

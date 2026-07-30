@@ -52,7 +52,7 @@ class MainApiModelCatalogTest(unittest.TestCase):
                         "category": 2,
                         "provider": "local_qwen",
                         "status": 1,
-                        "embedding_dimension": 2560,
+                        "model_params": {"embedding_dimension": 2048},
                     }
                 ]
             ),

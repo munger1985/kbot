@@ -47,7 +47,8 @@ async def resolve_embedding_model(
         raise ValueError("Collection model is not a text embedding model")
     if int(model.get("status") or 0) != int(Status.ENABLED):
         raise ValueError("Collection embedding model is disabled")
-    model_dimension = model.get("embedding_dimension")
+    model_params = model.get("model_params") or {}
+    model_dimension = model_params.get("embedding_dimension")
     if model_dimension is None:
         raise ValueError("embedding dimension is not configured")
     if int(model_dimension) != int(expected_dimension):

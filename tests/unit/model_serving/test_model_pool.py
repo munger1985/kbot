@@ -56,8 +56,7 @@ class ModelPoolTest(unittest.IsolatedAsyncioTestCase):
                 "provider_model_name": "text-embedding-v4",
                 "api_key": "test-key",
                 "api_endpoint": "https://example.invalid/v1",
-                "embedding_dimension": 2048,
-                "model_params": {"dimensions": 1024},
+                "model_params": {"embedding_dimension": 2048},
             },
             SimpleNamespace(max_tokens=1024, timeout=30),
         )
