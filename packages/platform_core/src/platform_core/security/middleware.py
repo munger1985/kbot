@@ -34,6 +34,7 @@ from .service_identity import (
 
 
 DOMAIN_ID_HEADER = "X-KBot-Domain-ID"
+TENANT_ID_HEADER = "X-KBot-Tenant-ID"
 USER_ID_HEADER = "X-KBot-User-ID"
 TEST_AUTH_BYPASS_HEADER = "X-KBot-Test-Auth"
 PUBLIC_PATHS = {
@@ -48,6 +49,7 @@ PUBLIC_PATHS = {
     "/openapi.json",
 }
 DomainValidator = Callable[[str], Awaitable[bool]]
+TenantValidator = Callable[[str], Awaitable[bool]]
 
 
 def _problem(
@@ -129,6 +131,7 @@ def create_public_auth_middleware(
     *,
     domain_validator: DomainValidator,
     verifier: PortalApiKeyVerifier | None = None,
+    tenant_validator: TenantValidator | None = None,
     public_paths: set[str] | None = None,
     public_prefixes: set[str] | None = None,
     domainless_paths: set[str] | None = None,
@@ -202,6 +205,35 @@ def create_public_auth_middleware(
                         "INVALID_DOMAIN",
                         "Domain 不存在或已停用",
                     )
+            tenant_id = None
+            if not domainless_request:
+                tenant_id = _validated_header(
+                    request,
+                    name=TENANT_ID_HEADER,
+                    required=False,
+                    max_length=128,
+                )
+            if tenant_id and tenant_validator is not None:
+                try:
+                    tenant_is_valid = await tenant_validator(tenant_id)
+                except Exception as exc:
+                    logger.error(
+                        "Tenant 校验依赖不可用：method={} path={} type={}",
+                        request.method,
+                        request.url.path,
+                        type(exc).__name__,
+                    )
+                    return _problem(
+                        request=request,
+                        status_code=503,
+                        code="IDENTITY_SERVICE_UNAVAILABLE",
+                        detail="身份上下文暂时无法校验",
+                    )
+                if not tenant_is_valid:
+                    raise PortalApiKeyError(
+                        "INVALID_TENANT",
+                        "Tenant 不存在或已停用",
+                    )
             request_id, trace_id = _request_ids(request)
             request.state.auth_context = AuthContext(
                 principal_kind=(
@@ -212,6 +244,7 @@ def create_public_auth_middleware(
                 client_id=principal_client_id,
                 api_key_id=principal_key_id,
                 domain_id=domain_id,
+                tenant_id=tenant_id,
                 asserted_user_id=user_id,
                 request_id=request_id,
                 trace_id=trace_id,

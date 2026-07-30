@@ -30,6 +30,7 @@ class AuthContext(BaseModel):
     trace_id: str = Field(min_length=1, max_length=128)
     api_key_id: str | None = Field(default=None, max_length=64)
     domain_id: str | None = Field(default=None, max_length=128)
+    tenant_id: str | None = Field(default=None, max_length=128)
     asserted_user_id: str | None = Field(default=None, max_length=256)
     roles: tuple[str, ...] = ()
     scopes: tuple[str, ...] = ()

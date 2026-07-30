@@ -79,6 +79,7 @@ async def main() -> None:
         loop.add_signal_handler(signum, stop_worker)
     logger.info(
         "正在启动 KC INDEX/PROFILE Worker {} -> {}",
+        config.worker_id,
         settings.knowledge_core.base_url,
     )
     try:
