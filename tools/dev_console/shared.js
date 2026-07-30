@@ -13,13 +13,7 @@
   }
 
   function uuid() {
-    if (
-      typeof crypto !== "undefined" &&
-      typeof crypto.randomUUID === "function"
-    ) {
-      return crypto.randomUUID();
-    }
-    // HTTP 测试页可能无法使用安全上下文 API；该值只作请求关联与幂等标识。
+    // 测试页需要兼容 HTTP 环境；该值只作请求关联与幂等标识。
     return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(
       /[xy]/g,
       (character) => {
