@@ -186,6 +186,7 @@ def create_main_api_app(
             domainless_paths=domainless_paths,
             public_prefixes={
                 "/api/v1/integrations/monitoring/",
+                "/static-offline-docs/",
             },
         )
     )
