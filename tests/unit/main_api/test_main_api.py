@@ -328,6 +328,19 @@ class MainApiTest(unittest.TestCase):
         self.assertEqual("km_portal", self.kc.last_context.client_id)
         self.assertEqual("portal-user-1", self.kc.last_context.asserted_user_id)
 
+    def test_cors_headers_are_present_on_authentication_failure(self) -> None:
+        response = self.client.post(
+            "/api/v1/knowledge/collections",
+            headers={"Origin": "http://127.0.0.1:8080"},
+            json={},
+        )
+
+        self.assertEqual(401, response.status_code)
+        self.assertEqual(
+            "http://127.0.0.1:8080",
+            response.headers.get("access-control-allow-origin"),
+        )
+
     def test_create_domain_does_not_require_existing_domain(self) -> None:
         response = self.client.post(
             "/api/v1/domains",

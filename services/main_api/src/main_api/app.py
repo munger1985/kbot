@@ -146,25 +146,6 @@ def create_main_api_app(
             return False
         return await service.is_active(domain_id)
 
-    if config.allowed_origins:
-        app.add_middleware(
-            CORSMiddleware,
-            allow_origins=config.allowed_origins,
-            allow_credentials=False,
-            allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-            allow_headers=[
-                "Authorization",
-                "Content-Type",
-                "Idempotency-Key",
-                "If-Match",
-                "Last-Event-ID",
-                "X-KBot-Domain-ID",
-                "X-KBot-Test-Auth",
-                "X-KBot-User-ID",
-                "X-Request-ID",
-                "traceparent",
-            ],
-        )
     if enable_access_log:
         app.middleware("http")(log_requests)
     domainless_paths = {
@@ -190,6 +171,26 @@ def create_main_api_app(
             },
         )
     )
+    # CORS 必须位于最外层，确保认证及业务错误响应也携带跨域响应头。
+    if config.allowed_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=config.allowed_origins,
+            allow_credentials=False,
+            allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+            allow_headers=[
+                "Authorization",
+                "Content-Type",
+                "Idempotency-Key",
+                "If-Match",
+                "Last-Event-ID",
+                "X-KBot-Domain-ID",
+                "X-KBot-Test-Auth",
+                "X-KBot-User-ID",
+                "X-Request-ID",
+                "traceparent",
+            ],
+        )
     app.include_router(knowledge_router)
     app.include_router(model_catalog_router)
     app.include_router(domain_router)

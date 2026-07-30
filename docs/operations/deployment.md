@@ -56,6 +56,15 @@ Main API 使用离线 Swagger UI，不依赖外部 CDN。在 `kbot.toml` 设置
 `api_docs_enabled = true` 后，可访问 `http://<main-api-host>:18099/docs`，
 OpenAPI JSON 位于 `/openapi.json`。
 
+若远端数据库是在移除 `APP_ID` 前初始化，执行一次性修复脚本清理遗留列：
+
+```bash
+sqlplus <kbot-schema-user>/<password>@<service> @scripts/db/remove_app_id_columns.sql
+```
+
+脚本仅处理当前 Schema 中名称以 `KBOT_` 开头的表，执行 DDL 前应先完成数据库备份。
+它会先删除依赖 `APP_ID` 的外键和其他约束，再删除该列。
+
 若门户页面在浏览器中直连 Main API，还必须在 `kbot.toml` 配置精确的跨域来源，例如：
 
 ```toml
