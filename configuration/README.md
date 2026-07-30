@@ -25,6 +25,8 @@ data_dir = "/var/lib/kbot"
 log_dir = "/var/log/kbot"
 embedding_dimension = 2560
 api_docs_enabled = false
+# 仅浏览器直连 Main API 时需要配置；必须是精确 Origin，不带末尾斜杠。
+api_allowed_origins = ["https://portal.example.com"]
 
 [database]
 host = "oracle.example.internal"
@@ -44,6 +46,11 @@ key_digest = "生成的64位摘要"
 
 `api_docs_enabled = true` 会启用 Main API 的离线 Swagger UI（`/docs`）和
 ReDoc（`/redoc`）；开发环境默认启用，生产环境默认关闭。
+
+浏览器直连 Main API 时，使用 `api_allowed_origins` 列出允许的门户来源。每项必须
+精确包含协议、主机和端口，例如 `https://portal.example.com` 或
+`http://146.56.158.44:8080`，不带末尾斜杠；不支持 `*`。Portal API Key 不应下发到
+浏览器，生产环境应优先由门户服务端代理调用 KBot。
 
 只有跨主机部署才增加对应端点：
 

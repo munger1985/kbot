@@ -304,6 +304,7 @@ def load_settings(
         "embedding_dimension",
         "development_auth_bypass",
         "api_docs_enabled",
+        "api_allowed_origins",
         "portal_api_keys",
         "model_api_keys",
         "database",
@@ -348,6 +349,23 @@ def load_settings(
             raise ValueError("生产环境至少需要一个 Portal API Key 摘要")
     data_dir = Path(str(deployment.get("data_dir") or "./var/data"))
     log_dir = str(deployment.get("log_dir") or "./var/log")
+    api_allowed_origins = deployment.get("api_allowed_origins")
+    if api_allowed_origins is not None:
+        if not isinstance(api_allowed_origins, list) or any(
+            not isinstance(origin, str) or not origin.strip()
+            for origin in api_allowed_origins
+        ):
+            raise ValueError("api_allowed_origins 必须是 Origin 字符串列表")
+        if "*" in api_allowed_origins:
+            raise ValueError("api_allowed_origins 不允许使用通配符 *")
+        allowed_origins = [origin.rstrip("/") for origin in api_allowed_origins]
+    elif resolved_environment.lower() in {"dev", "development", "debug"}:
+        allowed_origins = [
+            "http://127.0.0.1:8080",
+            "http://localhost:8080",
+        ]
+    else:
+        allowed_origins = []
     database = deployment.get("database") or {}
     endpoints_override = deployment.get("endpoints") or {}
     paths = deployment.get("paths") or {}
@@ -428,15 +446,7 @@ def load_settings(
             },
             "main_api": {
                 "api": {
-                    "allowed_origins": (
-                        [
-                            "http://127.0.0.1:8080",
-                            "http://localhost:8080",
-                        ]
-                        if resolved_environment.lower()
-                        in {"dev", "development", "debug"}
-                        else []
-                    ),
+                    "allowed_origins": allowed_origins,
                     "test_auth_bypass_enabled": bool(
                         deployment.get("development_auth_bypass", False)
                     ),

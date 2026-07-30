@@ -22,6 +22,7 @@ class ServiceConfigLoadingTest(unittest.TestCase):
             "log_dir='/var/log/kbot'\n"
             "embedding_dimension=1024\n"
             "api_docs_enabled=true\n"
+            "api_allowed_origins=['http://portal.internal:8080']\n"
             "development_auth_bypass=true\n"
             "[database]\n"
             "host='db.internal'\n"
@@ -45,6 +46,10 @@ class ServiceConfigLoadingTest(unittest.TestCase):
 
             self.assertTrue(settings.platform.debug)
             self.assertTrue(settings.api.docs_enabled)
+            self.assertEqual(
+                settings.api.allowed_origins,
+                ["http://portal.internal:8080"],
+            )
             self.assertEqual(settings.vector.dimensions, 1024)
             self.assertEqual(settings.api.service_port, 18099)
             self.assertTrue(settings.api.test_auth_bypass_enabled)

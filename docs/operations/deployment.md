@@ -56,6 +56,15 @@ Main API 使用离线 Swagger UI，不依赖外部 CDN。在 `kbot.toml` 设置
 `api_docs_enabled = true` 后，可访问 `http://<main-api-host>:18099/docs`，
 OpenAPI JSON 位于 `/openapi.json`。
 
+若门户页面在浏览器中直连 Main API，还必须在 `kbot.toml` 配置精确的跨域来源，例如：
+
+```toml
+api_allowed_origins = ["http://146.56.158.44:8080"]
+```
+
+修改后重启 Main API。该值必须与浏览器地址的协议、主机和端口完全一致，不能使用
+`*` 或末尾斜杠。生产环境不要将 Portal API Key 暴露给浏览器；应由门户服务端代理请求。
+
 ## 初始化 Oracle
 
 在 `scripts/db/init_services.ini` 选择需要部署的业务服务。`platform_core` 基础表

@@ -5,6 +5,8 @@ log_dir = "/var/log/kbot"
 embedding_dimension = 2560
 # 是否启用 Main API 的离线 Swagger UI（/docs）和 ReDoc（/redoc）。
 api_docs_enabled = false
+# 允许浏览器直接访问 Main API 的来源。必须精确匹配 scheme、主机和端口，不要带末尾斜杠。
+# api_allowed_origins = ["https://portal.example.com"]
 
 [database]
 host = "oracle.example.internal"
