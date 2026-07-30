@@ -52,6 +52,10 @@ python3 scripts/security/generate_portal_api_key.py --key-id portal-prod
 
 脚本自动将摘要写入 `kbot.toml`；明文 Key 只交付 Portal Secret。
 
+Main API 使用离线 Swagger UI，不依赖外部 CDN。在 `kbot.toml` 设置
+`api_docs_enabled = true` 后，可访问 `http://<main-api-host>:18099/docs`，
+OpenAPI JSON 位于 `/openapi.json`。
+
 ## 初始化 Oracle
 
 在 `scripts/db/init_services.ini` 选择需要部署的业务服务。`platform_core` 基础表

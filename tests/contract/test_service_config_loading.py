@@ -21,6 +21,7 @@ class ServiceConfigLoadingTest(unittest.TestCase):
             "data_dir='/srv/kbot'\n"
             "log_dir='/var/log/kbot'\n"
             "embedding_dimension=1024\n"
+            "api_docs_enabled=true\n"
             "development_auth_bypass=true\n"
             "[database]\n"
             "host='db.internal'\n"
@@ -43,6 +44,7 @@ class ServiceConfigLoadingTest(unittest.TestCase):
             )
 
             self.assertTrue(settings.platform.debug)
+            self.assertTrue(settings.api.docs_enabled)
             self.assertEqual(settings.vector.dimensions, 1024)
             self.assertEqual(settings.api.service_port, 18099)
             self.assertTrue(settings.api.test_auth_bypass_enabled)

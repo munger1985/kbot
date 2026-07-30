@@ -303,6 +303,7 @@ def load_settings(
         "log_dir",
         "embedding_dimension",
         "development_auth_bypass",
+        "api_docs_enabled",
         "portal_api_keys",
         "model_api_keys",
         "database",
@@ -438,6 +439,13 @@ def load_settings(
                     ),
                     "test_auth_bypass_enabled": bool(
                         deployment.get("development_auth_bypass", False)
+                    ),
+                    "docs_enabled": bool(
+                        deployment.get(
+                            "api_docs_enabled",
+                            resolved_environment.lower()
+                            in {"dev", "development", "debug"},
+                        )
                     ),
                 }
             },

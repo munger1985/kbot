@@ -17,6 +17,7 @@ class MainApiProcessConfig(ServiceConfig):
     service_port: int = 18099
     allowed_origins: list[str] = Field(default_factory=list)
     test_auth_bypass_enabled: bool = False
+    docs_enabled: bool = False
     sse_poll_interval_seconds: float = Field(default=0.5, ge=0.1, le=10)
     sse_heartbeat_seconds: float = Field(default=15, ge=1, le=60)
     sse_batch_size: int = Field(default=200, ge=1, le=500)

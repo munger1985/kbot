@@ -24,6 +24,7 @@ environment = "production"
 data_dir = "/var/lib/kbot"
 log_dir = "/var/log/kbot"
 embedding_dimension = 2560
+api_docs_enabled = false
 
 [database]
 host = "oracle.example.internal"
@@ -40,6 +41,9 @@ key_digest = "生成的64位摘要"
 `data_dir` 自动派生 Knowledge Core、Agent附件、AIOps正文和模型缓存目录。Docling
 默认使用 `<data_dir>/models/docling_models`。服务部署在同一主机时，内部地址由
 `resources/topology.toml` 自动生成。
+
+`api_docs_enabled = true` 会启用 Main API 的离线 Swagger UI（`/docs`）和
+ReDoc（`/redoc`）；开发环境默认启用，生产环境默认关闭。
 
 只有跨主机部署才增加对应端点：
 

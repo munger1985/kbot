@@ -132,8 +132,8 @@ def create_main_api_app(
         title="KBot Main API",
         description="KBot 4.0 的唯一公开 API/BFF 入口。",
         version=config.service_version,
-        docs_url="/docs" if settings.platform.debug else None,
-        redoc_url="/redoc" if settings.platform.debug else None,
+        docs_url="/docs" if config.docs_enabled else None,
+        redoc_url="/redoc" if config.docs_enabled else None,
         **app_kwargs,
     )
     app.state.service_name = config.service_name
