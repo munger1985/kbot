@@ -813,7 +813,7 @@ class InteractiveDiagnosisHandler:
             run_id=context.run_id,
             round_no=int(assessment.round_no),
             target_id=context.target_id,
-            target_display_name=target["target_key"],
+            target_display_name=target["display_name"],
             db_type=database["db_type"],
             db_version=database["configured_version"],
             expected_instance_identity=self._expected_identity(

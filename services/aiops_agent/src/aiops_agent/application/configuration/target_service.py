@@ -114,15 +114,9 @@ class TargetConfigurationMixin:
             uow: AIOpsUnitOfWork, now: datetime
         ) -> TargetDetail:
             assert uow.targets is not None
-            if await uow.targets.get_by_key(
-                domain_id=scope.domain_id,
-                target_key=request.target_key,
-            ):
-                raise state_conflict("target_key 已存在")
             entity = TargetEntity(
                 target_id=uuid7(),
                 domain_id=scope.domain_id,
-                target_key=request.target_key,
                 display_name=request.display_name,
                 db_type=request.db_type,
                 version_code=request.version_code,

@@ -94,7 +94,7 @@ class DiscoveryRepository:
         oracle_text_label = literal_column("1")
         text_score = func.score(oracle_text_label)
         statement = (
-            select(KcDiscoveryObjectEntity, text_score.label("text_score"), KcCollectionEntity.collection_key)
+            select(KcDiscoveryObjectEntity, text_score.label("text_score"))
             .join(KcCollectionEntity, KcCollectionEntity.collection_id == KcDiscoveryObjectEntity.collection_id)
             .join(KcBundleEntity, KcBundleEntity.bundle_id == KcDiscoveryObjectEntity.bundle_id)
             .join(KcBundleRevisionEntity, KcBundleRevisionEntity.bundle_revision_id == KcDiscoveryObjectEntity.bundle_revision_id)
@@ -118,7 +118,7 @@ class DiscoveryRepository:
         ).params(discovery_query=oracle_query)
         rows = (await self.session.execute(statement)).all()
         if rows:
-            return [self._to_hit(entity, rank, "TEXT", float(score or 0), collection_key) for rank, (entity, score, collection_key) in enumerate(rows, 1)]
+            return [self._to_hit(entity, rank, "TEXT", float(score or 0)) for rank, (entity, score) in enumerate(rows, 1)]
         return await self._search_evidence_text(
             collection_id=collection_id,
             oracle_query=oracle_query,
@@ -145,7 +145,6 @@ class DiscoveryRepository:
                 KcBundleRevisionDocumentEntity.external_document_id,
                 KcBundleRevisionDocumentEntity.declared_name,
                 text_score.label("text_score"),
-                KcCollectionEntity.collection_key,
             )
             .join(
                 KcCollectionEntity,
@@ -204,7 +203,6 @@ class DiscoveryRepository:
             external_document_id,
             declared_name,
             score,
-            collection_key,
         ) in rows:
             if entity.document_version_id in seen_documents:
                 continue
@@ -215,7 +213,6 @@ class DiscoveryRepository:
             hits.append(
                 DiscoveryHit(
                     collection_id=entity.collection_id,
-                    collection_key=collection_key,
                     bundle_id=bundle_id,
                     bundle_revision_id=entity.bundle_revision_id,
                     object_type="DOCUMENT",
@@ -239,7 +236,7 @@ class DiscoveryRepository:
             return_type=Float(),
         )(bindparam("query_vector"))
         statement = (
-            select(KcDiscoveryObjectEntity, distance.label("distance"), KcCollectionEntity.collection_key)
+            select(KcDiscoveryObjectEntity, distance.label("distance"))
             .join(KcCollectionEntity, KcCollectionEntity.collection_id == KcDiscoveryObjectEntity.collection_id)
             .join(KcBundleEntity, KcBundleEntity.bundle_id == KcDiscoveryObjectEntity.bundle_id)
             .join(KcBundleRevisionEntity, KcBundleRevisionEntity.bundle_revision_id == KcDiscoveryObjectEntity.bundle_revision_id)
@@ -262,18 +259,16 @@ class DiscoveryRepository:
                 rank,
                 "VECTOR",
                 1.0 - float(distance if distance is not None else 1.0),
-                collection_key,
             )
-            for rank, (entity, distance, collection_key)
+            for rank, (entity, distance)
             in enumerate(rows, 1)
         ]
 
     @staticmethod
-    def _to_hit(entity: KcDiscoveryObjectEntity, rank: int, channel: str, score: float, collection_key: str) -> DiscoveryHit:
+    def _to_hit(entity: KcDiscoveryObjectEntity, rank: int, channel: str, score: float) -> DiscoveryHit:
         coverage = entity.coverage_json or {}
         return DiscoveryHit(
             collection_id=entity.collection_id,
-            collection_key=collection_key,
             bundle_id=entity.bundle_id,
             bundle_revision_id=entity.bundle_revision_id,
             object_type=entity.object_type, profile_key=entity.profile_key,

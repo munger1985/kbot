@@ -47,18 +47,6 @@ class AgentDefinitionRepository:
         )
         return (await self._session.execute(statement)).scalar_one_or_none()
 
-    async def get_by_key(
-        self,
-        *,
-        domain_id: int,
-        agent_key: str,
-    ) -> AgentDefinitionEntity | None:
-        statement = select(AgentDefinitionEntity).where(
-            AgentDefinitionEntity.domain_id == domain_id,
-            AgentDefinitionEntity.agent_key == agent_key,
-        )
-        return (await self._session.execute(statement)).scalar_one_or_none()
-
     async def list_scoped(
         self,
         *,

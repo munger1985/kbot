@@ -201,7 +201,6 @@ class ConfigurationContractTest(unittest.TestCase):
 
     def test_target_contract_rejects_identity_and_plain_password(self) -> None:
         payload = {
-            "target_key": "erp.prod",
             "display_name": "ERP 生产库",
             "db_type": "ORACLE",
             "environment": "PROD",
@@ -222,7 +221,6 @@ class ConfigurationContractTest(unittest.TestCase):
         with self.assertRaises(ValidationError):
             MonitorSourceCreate.model_validate(
                 {
-                    "source_key": "prom.prod",
                     "display_name": "Prometheus",
                     "source_type": "PROMETHEUS",
                     "endpoint": "https://user:pass@prom.example.com",

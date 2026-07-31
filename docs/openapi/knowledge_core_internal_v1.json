@@ -143,11 +143,6 @@
       },
       "CreateCollectionRequest": {
         "properties": {
-          "collection_key": {
-            "pattern": "^[a-z][a-z0-9_-]{1,63}$",
-            "title": "Collection Key",
-            "type": "string"
-          },
           "default_security_level": {
             "default": 1,
             "maximum": 999.0,
@@ -188,7 +183,6 @@
           }
         },
         "required": [
-          "collection_key",
           "display_name",
           "models"
         ],
@@ -1444,9 +1438,9 @@
         ]
       }
     },
-    "/internal/v1/knowledge/domains/{domain_id}/agents/{agent_id}/collections/{collection_key}/binding": {
+    "/internal/v1/knowledge/domains/{domain_id}/agents/{agent_id}/collections/{collection_id}/binding": {
       "delete": {
-        "operationId": "unbind_collection_internal_v1_knowledge_domains__domain_id__agents__agent_id__collections__collection_key__binding_delete",
+        "operationId": "unbind_collection_internal_v1_knowledge_domains__domain_id__agents__agent_id__collections__collection_id__binding_delete",
         "parameters": [
           {
             "in": "path",
@@ -1469,10 +1463,11 @@
           },
           {
             "in": "path",
-            "name": "collection_key",
+            "name": "collection_id",
             "required": true,
             "schema": {
-              "title": "Collection Key",
+              "format": "uuid",
+              "title": "Collection Id",
               "type": "string"
             }
           }
@@ -1498,7 +1493,7 @@
         ]
       },
       "put": {
-        "operationId": "bind_collection_internal_v1_knowledge_domains__domain_id__agents__agent_id__collections__collection_key__binding_put",
+        "operationId": "bind_collection_internal_v1_knowledge_domains__domain_id__agents__agent_id__collections__collection_id__binding_put",
         "parameters": [
           {
             "in": "path",
@@ -1521,10 +1516,11 @@
           },
           {
             "in": "path",
-            "name": "collection_key",
+            "name": "collection_id",
             "required": true,
             "schema": {
-              "title": "Collection Key",
+              "format": "uuid",
+              "title": "Collection Id",
               "type": "string"
             }
           }
@@ -1830,9 +1826,9 @@
         ]
       }
     },
-    "/internal/v1/knowledge/domains/{domain_id}/collections/{collection_key}": {
+    "/internal/v1/knowledge/domains/{domain_id}/collections/{collection_id}": {
       "delete": {
-        "operationId": "delete_collection_internal_v1_knowledge_domains__domain_id__collections__collection_key__delete",
+        "operationId": "delete_collection_internal_v1_knowledge_domains__domain_id__collections__collection_id__delete",
         "parameters": [
           {
             "in": "path",
@@ -1845,10 +1841,11 @@
           },
           {
             "in": "path",
-            "name": "collection_key",
+            "name": "collection_id",
             "required": true,
             "schema": {
-              "title": "Collection Key",
+              "format": "uuid",
+              "title": "Collection Id",
               "type": "string"
             }
           }
@@ -1879,7 +1876,7 @@
         ]
       },
       "get": {
-        "operationId": "get_collection_internal_v1_knowledge_domains__domain_id__collections__collection_key__get",
+        "operationId": "get_collection_internal_v1_knowledge_domains__domain_id__collections__collection_id__get",
         "parameters": [
           {
             "in": "path",
@@ -1892,10 +1889,11 @@
           },
           {
             "in": "path",
-            "name": "collection_key",
+            "name": "collection_id",
             "required": true,
             "schema": {
-              "title": "Collection Key",
+              "format": "uuid",
+              "title": "Collection Id",
               "type": "string"
             }
           }
@@ -1926,7 +1924,7 @@
         ]
       },
       "patch": {
-        "operationId": "change_collection_status_internal_v1_knowledge_domains__domain_id__collections__collection_key__patch",
+        "operationId": "change_collection_status_internal_v1_knowledge_domains__domain_id__collections__collection_id__patch",
         "parameters": [
           {
             "in": "path",
@@ -1939,10 +1937,11 @@
           },
           {
             "in": "path",
-            "name": "collection_key",
+            "name": "collection_id",
             "required": true,
             "schema": {
-              "title": "Collection Key",
+              "format": "uuid",
+              "title": "Collection Id",
               "type": "string"
             }
           }
@@ -1983,9 +1982,9 @@
         ]
       }
     },
-    "/internal/v1/knowledge/domains/{domain_id}/collections/{collection_key}/approvals": {
+    "/internal/v1/knowledge/domains/{domain_id}/collections/{collection_id}/approvals": {
       "get": {
-        "operationId": "list_pending_approvals_internal_v1_knowledge_domains__domain_id__collections__collection_key__approvals_get",
+        "operationId": "list_pending_approvals_internal_v1_knowledge_domains__domain_id__collections__collection_id__approvals_get",
         "parameters": [
           {
             "in": "path",
@@ -1998,10 +1997,11 @@
           },
           {
             "in": "path",
-            "name": "collection_key",
+            "name": "collection_id",
             "required": true,
             "schema": {
-              "title": "Collection Key",
+              "format": "uuid",
+              "title": "Collection Id",
               "type": "string"
             }
           }
@@ -2032,9 +2032,9 @@
         ]
       }
     },
-    "/internal/v1/knowledge/domains/{domain_id}/collections/{collection_key}/bundle-revisions/{bundle_revision_id}/approval": {
+    "/internal/v1/knowledge/domains/{domain_id}/collections/{collection_id}/bundle-revisions/{bundle_revision_id}/approval": {
       "post": {
-        "operationId": "review_user_intake_internal_v1_knowledge_domains__domain_id__collections__collection_key__bundle_revisions__bundle_revision_id__approval_post",
+        "operationId": "review_user_intake_internal_v1_knowledge_domains__domain_id__collections__collection_id__bundle_revisions__bundle_revision_id__approval_post",
         "parameters": [
           {
             "in": "path",
@@ -2047,10 +2047,11 @@
           },
           {
             "in": "path",
-            "name": "collection_key",
+            "name": "collection_id",
             "required": true,
             "schema": {
-              "title": "Collection Key",
+              "format": "uuid",
+              "title": "Collection Id",
               "type": "string"
             }
           },
@@ -2101,10 +2102,10 @@
         ]
       }
     },
-    "/internal/v1/knowledge/domains/{domain_id}/collections/{collection_key}/ingestions/km-assets": {
+    "/internal/v1/knowledge/domains/{domain_id}/collections/{collection_id}/ingestions/km-assets": {
       "post": {
         "description": "接收一个完整 Asset Bundle；受理成功不代表解析已完成。",
-        "operationId": "ingest_km_asset_internal_v1_knowledge_domains__domain_id__collections__collection_key__ingestions_km_assets_post",
+        "operationId": "ingest_km_asset_internal_v1_knowledge_domains__domain_id__collections__collection_id__ingestions_km_assets_post",
         "parameters": [
           {
             "in": "path",
@@ -2117,10 +2118,11 @@
           },
           {
             "in": "path",
-            "name": "collection_key",
+            "name": "collection_id",
             "required": true,
             "schema": {
-              "title": "Collection Key",
+              "format": "uuid",
+              "title": "Collection Id",
               "type": "string"
             }
           }
@@ -2151,10 +2153,10 @@
         ]
       }
     },
-    "/internal/v1/knowledge/domains/{domain_id}/collections/{collection_key}/ingestions/user-files": {
+    "/internal/v1/knowledge/domains/{domain_id}/collections/{collection_id}/ingestions/user-files": {
       "post": {
         "description": "接收多个独立文件或一个显式组合的 Bundle。",
-        "operationId": "ingest_user_files_internal_v1_knowledge_domains__domain_id__collections__collection_key__ingestions_user_files_post",
+        "operationId": "ingest_user_files_internal_v1_knowledge_domains__domain_id__collections__collection_id__ingestions_user_files_post",
         "parameters": [
           {
             "in": "path",
@@ -2167,10 +2169,11 @@
           },
           {
             "in": "path",
-            "name": "collection_key",
+            "name": "collection_id",
             "required": true,
             "schema": {
-              "title": "Collection Key",
+              "format": "uuid",
+              "title": "Collection Id",
               "type": "string"
             }
           }
@@ -2201,9 +2204,9 @@
         ]
       }
     },
-    "/internal/v1/knowledge/domains/{domain_id}/collections/{collection_key}/models": {
+    "/internal/v1/knowledge/domains/{domain_id}/collections/{collection_id}/models": {
       "put": {
-        "operationId": "update_collection_models_internal_v1_knowledge_domains__domain_id__collections__collection_key__models_put",
+        "operationId": "update_collection_models_internal_v1_knowledge_domains__domain_id__collections__collection_id__models_put",
         "parameters": [
           {
             "in": "path",
@@ -2216,10 +2219,11 @@
           },
           {
             "in": "path",
-            "name": "collection_key",
+            "name": "collection_id",
             "required": true,
             "schema": {
-              "title": "Collection Key",
+              "format": "uuid",
+              "title": "Collection Id",
               "type": "string"
             }
           }

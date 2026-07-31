@@ -174,7 +174,6 @@ async def main() -> None:
                 TargetEntity(
                     target_id=target_id,
                     domain_id=domain_id,
-                    target_key=f"monitor-smoke-{target_id}",
                     display_name="监控闭环 Smoke Target",
                     db_type="ORACLE",
                     environment="DEV",
@@ -200,7 +199,6 @@ async def main() -> None:
                 MonitorSourceEntity(
                     monitor_source_id=source_id,
                     domain_id=domain_id,
-                    source_key=f"monitor-smoke-{source_id}",
                     display_name="监控闭环 Smoke Prometheus",
                     source_type="PROMETHEUS",
                     endpoint="https://prometheus.invalid",

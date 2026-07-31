@@ -14,10 +14,6 @@ from knowledge_core.domain.model_bindings import (
 from knowledge_core.persistence import KnowledgeCoreUnitOfWork
 
 
-class CollectionAlreadyExistsError(Exception):
-    """The immutable Collection key already exists in the App/Domain scope."""
-
-
 class CollectionNotFoundError(Exception):
     """The requested Collection is not in the authenticated App/Domain scope."""
 
@@ -36,7 +32,6 @@ class CollectionSnapshot:
 
     collection_id: UUID
     domain_id: int
-    collection_key: str
     display_name: str
     description: str | None
     models_json: dict[str, str]
@@ -61,7 +56,6 @@ def _collection_snapshot(entity: KcCollectionEntity) -> CollectionSnapshot:
     return CollectionSnapshot(
         collection_id=entity.collection_id,
         domain_id=int(entity.domain_id),
-        collection_key=entity.collection_key,
         display_name=entity.display_name,
         description=entity.description,
         models_json=dict(entity.models_json or {}),
@@ -87,7 +81,6 @@ def _binding_snapshot(
 @dataclass(frozen=True)
 class CreateCollectionCommand:
     domain_id: int
-    collection_key: str
     display_name: str
     models: dict[str, UUID | str]
     default_security_level: int = 1
@@ -99,7 +92,7 @@ class CreateCollectionCommand:
 @dataclass(frozen=True)
 class BindAgentCollectionCommand:
     domain_id: int
-    collection_key: str
+    collection_id: UUID
     agent_id: UUID
     actor_id: str = "svc:knowledge-core"
     note: str | None = None
@@ -108,7 +101,7 @@ class BindAgentCollectionCommand:
 @dataclass(frozen=True)
 class ChangeCollectionStatusCommand:
     domain_id: int
-    collection_key: str
+    collection_id: UUID
     status: str
     actor_id: str = "svc:knowledge-core"
 
@@ -116,7 +109,7 @@ class ChangeCollectionStatusCommand:
 @dataclass(frozen=True)
 class UpdateCollectionModelsCommand:
     domain_id: int
-    collection_key: str
+    collection_id: UUID
     models: dict[str, UUID | str]
     actor_id: str = "svc:knowledge-core"
 
@@ -132,12 +125,9 @@ class KnowledgeCoreCollectionService:
         self._uow_factory = uow_factory
 
     async def create(self, command: CreateCollectionCommand) -> KcCollectionEntity:
-        collection_key = command.collection_key.strip()
         display_name = command.display_name.strip()
         if command.domain_id <= 0:
             raise ValueError("domain_id must be positive")
-        if not collection_key:
-            raise ValueError("collection_key is required")
         if not display_name:
             raise ValueError("display_name is required")
         models = normalize_collection_models(command.models)
@@ -147,18 +137,8 @@ class KnowledgeCoreCollectionService:
         async with self._uow_factory() as uow:
             if uow.collections is None:
                 raise RuntimeError("Knowledge Core Unit of Work is not initialized")
-            existing = await uow.collections.get_by_scope_key(
-                domain_id=command.domain_id,
-                collection_key=collection_key,
-            )
-            if existing is not None:
-                raise CollectionAlreadyExistsError(
-                    f"Collection key already exists: domain={command.domain_id}, key={collection_key}"
-                )
-
             collection = KcCollectionEntity(
                 domain_id=command.domain_id,
-                collection_key=collection_key,
                 display_name=display_name,
                 description=command.description,
                 models_json=models,
@@ -185,14 +165,14 @@ class KnowledgeCoreCollectionService:
         self,
         *,
         domain_id: int,
-        collection_key: str,
+        collection_id: UUID,
     ) -> CollectionSnapshot:
         async with self._uow_factory() as uow:
             if uow.collections is None:
                 raise RuntimeError("Knowledge Core Unit of Work is not initialized")
-            collection = await uow.collections.get_by_scope_key(
+            collection = await uow.collections.get_by_id_scope(
                 domain_id=domain_id,
-                collection_key=collection_key,
+                collection_id=collection_id,
             )
             if collection is None:
                 raise CollectionNotFoundError("Collection not found")
@@ -204,9 +184,9 @@ class KnowledgeCoreCollectionService:
         async with self._uow_factory() as uow:
             if uow.collections is None or uow.session is None:
                 raise RuntimeError("Knowledge Core Unit of Work is not initialized")
-            collection = await uow.collections.get_by_scope_key(
+            collection = await uow.collections.get_by_id_scope(
                 domain_id=command.domain_id,
-                collection_key=command.collection_key,
+                collection_id=command.collection_id,
                 lock=True,
             )
             if collection is None:
@@ -225,9 +205,9 @@ class KnowledgeCoreCollectionService:
         """原子更新角色映射，并保护已经设定的 Embedding 身份。"""
         models = normalize_collection_models(command.models)
         async with self._uow_factory() as uow:
-            collection = await uow.collections.get_by_scope_key(
+            collection = await uow.collections.get_by_id_scope(
                 domain_id=command.domain_id,
-                collection_key=command.collection_key,
+                collection_id=command.collection_id,
                 lock=True,
             )
             if collection is None:
@@ -250,16 +230,16 @@ class KnowledgeCoreCollectionService:
         self,
         *,
         domain_id: int,
-        collection_key: str,
+        collection_id: UUID,
         actor_id: str,
     ) -> UUID:
         """Mark an unused Collection for asynchronous, all-descendant purge."""
         async with self._uow_factory() as uow:
             if uow.collections is None or uow.bindings is None or uow.jobs is None or uow.session is None:
                 raise RuntimeError("Knowledge Core Unit of Work is not initialized")
-            collection = await uow.collections.get_by_scope_key(
+            collection = await uow.collections.get_by_id_scope(
                 domain_id=domain_id,
-                collection_key=collection_key,
+                collection_id=collection_id,
             )
             if collection is None:
                 raise CollectionNotFoundError("Collection not found")
@@ -294,21 +274,20 @@ class KnowledgeCoreBindingService:
         self._uow_factory = uow_factory
 
     async def bind_agent(self, command: BindAgentCollectionCommand) -> KcCollectionBindingEntity:
-        collection_key = command.collection_key.strip()
         agent_id = command.agent_id
-        if command.domain_id <= 0 or not collection_key:
-            raise ValueError("domain_id, collection_key and agent_id are required")
+        if command.domain_id <= 0:
+            raise ValueError("domain_id must be positive")
 
         async with self._uow_factory() as uow:
             if uow.collections is None or uow.bindings is None:
                 raise RuntimeError("Knowledge Core Unit of Work is not initialized")
-            collection = await uow.collections.get_by_scope_key(
+            collection = await uow.collections.get_by_id_scope(
                 domain_id=command.domain_id,
-                collection_key=collection_key,
+                collection_id=command.collection_id,
             )
             if collection is None:
                 raise CollectionNotFoundError(
-                    f"Collection not found: domain={command.domain_id}, key={collection_key}"
+                    f"Collection not found: domain={command.domain_id}, id={command.collection_id}"
                 )
 
             binding = await uow.bindings.get_by_consumer_collection(
@@ -342,9 +321,9 @@ class KnowledgeCoreBindingService:
         async with self._uow_factory() as uow:
             if uow.collections is None or uow.bindings is None or uow.session is None:
                 raise RuntimeError("Knowledge Core Unit of Work is not initialized")
-            collection = await uow.collections.get_by_scope_key(
+            collection = await uow.collections.get_by_id_scope(
                 domain_id=command.domain_id,
-                collection_key=command.collection_key,
+                collection_id=command.collection_id,
             )
             if collection is None:
                 raise CollectionNotFoundError("Collection not found")

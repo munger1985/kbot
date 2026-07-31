@@ -1930,11 +1930,6 @@
             "title": "Overlap Policy",
             "type": "string"
           },
-          "plan_key": {
-            "pattern": "^[a-z][a-z0-9._-]{0,127}$",
-            "title": "Plan Key",
-            "type": "string"
-          },
           "schedule_resolver_version": {
             "maxLength": 64,
             "minLength": 1,
@@ -1981,7 +1976,6 @@
           }
         },
         "required": [
-          "plan_key",
           "display_name",
           "schedule_type",
           "cron_expression",
@@ -2044,10 +2038,6 @@
             "title": "Plan Id",
             "type": "string"
           },
-          "plan_key": {
-            "title": "Plan Key",
-            "type": "string"
-          },
           "row_version": {
             "minimum": 1.0,
             "title": "Row Version",
@@ -2103,7 +2093,6 @@
         },
         "required": [
           "plan_id",
-          "plan_key",
           "display_name",
           "schedule_type",
           "timezone",
@@ -2319,10 +2308,6 @@
             "title": "Plan Id",
             "type": "string"
           },
-          "plan_key": {
-            "title": "Plan Key",
-            "type": "string"
-          },
           "row_version": {
             "minimum": 1.0,
             "title": "Row Version",
@@ -2358,7 +2343,6 @@
         },
         "required": [
           "plan_id",
-          "plan_key",
           "display_name",
           "schedule_type",
           "timezone",
@@ -2958,11 +2942,6 @@
             ],
             "title": "Secret Ref"
           },
-          "source_key": {
-            "pattern": "^[a-z][a-z0-9._-]{0,127}$",
-            "title": "Source Key",
-            "type": "string"
-          },
           "source_type": {
             "enum": [
               "PROMETHEUS",
@@ -3002,7 +2981,6 @@
           }
         },
         "required": [
-          "source_key",
           "display_name",
           "source_type",
           "endpoint"
@@ -3095,10 +3073,6 @@
             "title": "Source Id",
             "type": "string"
           },
-          "source_key": {
-            "title": "Source Key",
-            "type": "string"
-          },
           "source_type": {
             "title": "Source Type",
             "type": "string"
@@ -3133,7 +3107,6 @@
         },
         "required": [
           "source_id",
-          "source_key",
           "display_name",
           "source_type",
           "status",
@@ -3321,10 +3294,6 @@
             "title": "Source Id",
             "type": "string"
           },
-          "source_key": {
-            "title": "Source Key",
-            "type": "string"
-          },
           "source_type": {
             "title": "Source Type",
             "type": "string"
@@ -3345,7 +3314,6 @@
         },
         "required": [
           "source_id",
-          "source_key",
           "display_name",
           "source_type",
           "status",
@@ -5309,11 +5277,6 @@
             "title": "Security Level",
             "type": "integer"
           },
-          "target_key": {
-            "pattern": "^[a-z][a-z0-9._-]{0,127}$",
-            "title": "Target Key",
-            "type": "string"
-          },
           "version_code": {
             "anyOf": [
               {
@@ -5328,7 +5291,6 @@
           }
         },
         "required": [
-          "target_key",
           "display_name",
           "db_type",
           "environment"
@@ -5450,10 +5412,6 @@
             "title": "Target Id",
             "type": "string"
           },
-          "target_key": {
-            "title": "Target Key",
-            "type": "string"
-          },
           "updated_at": {
             "format": "date-time",
             "title": "Updated At",
@@ -5477,7 +5435,6 @@
         },
         "required": [
           "target_id",
-          "target_key",
           "display_name",
           "db_type",
           "environment",
@@ -5770,10 +5727,6 @@
             "title": "Target Id",
             "type": "string"
           },
-          "target_key": {
-            "title": "Target Key",
-            "type": "string"
-          },
           "updated_at": {
             "format": "date-time",
             "title": "Updated At",
@@ -5782,7 +5735,6 @@
         },
         "required": [
           "target_id",
-          "target_key",
           "display_name",
           "db_type",
           "environment",

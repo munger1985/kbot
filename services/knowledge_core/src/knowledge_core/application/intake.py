@@ -38,7 +38,7 @@ class IntakeCollectionError(Exception):
 @dataclass(frozen=True)
 class ReserveIntakeCommand:
     domain_id: int
-    collection_key: str
+    collection_id: UUID
     actor_id: str
     idempotency_key: str
     manifest: KmAssetIntakeManifest
@@ -59,7 +59,7 @@ class IntakeReservation:
 @dataclass(frozen=True)
 class PreparePublishCommand:
     domain_id: int
-    collection_key: str
+    collection_id: UUID
     actor_id: str
     idempotency_key: str
     manifest: KmAssetIntakeManifest
@@ -73,7 +73,7 @@ class PreparePublishCommand:
 @dataclass(frozen=True)
 class AbortIntakeCommand:
     domain_id: int
-    collection_key: str
+    collection_id: UUID
     actor_id: str
     idempotency_key: str
     failure_code: str
@@ -105,7 +105,7 @@ class PublishedManifest:
 @dataclass(frozen=True)
 class AcceptKmAssetCommand:
     domain_id: int
-    collection_key: str
+    collection_id: UUID
     actor_id: str
     idempotency_key: str
     manifest: KmAssetIntakeManifest
@@ -129,7 +129,7 @@ class IntakeAcceptance:
 @dataclass(frozen=True)
 class ReviewIntakeCommand:
     domain_id: int
-    collection_key: str
+    collection_id: UUID
     bundle_revision_id: UUID
     decision: str
     actor_id: str
@@ -189,9 +189,9 @@ class KnowledgeCoreIntakeService:
         async with self._uow_factory() as uow:
             if uow.collections is None or uow.receipts is None:
                 raise RuntimeError("Knowledge Core Unit of Work is not initialized")
-            collection = await uow.collections.get_by_scope_key(
+            collection = await uow.collections.get_by_id_scope(
                 domain_id=command.domain_id,
-                collection_key=command.collection_key,
+                collection_id=command.collection_id,
             )
             if collection is None or collection.status != "ACTIVE":
                 raise IntakeCollectionError("Collection is not active in this Domain")
@@ -249,7 +249,7 @@ class KnowledgeCoreIntakeService:
         async with self._uow_factory() as uow:
             if not all((uow.collections, uow.receipts, uow.bundles, uow.documents)):
                 raise RuntimeError("Knowledge Core Unit of Work is not initialized")
-            collection = await uow.collections.get_by_scope_key(domain_id=command.domain_id, collection_key=command.collection_key)
+            collection = await uow.collections.get_by_id_scope(domain_id=command.domain_id, collection_id=command.collection_id)
             if collection is None or collection.status != "ACTIVE":
                 raise IntakeCollectionError("Collection is not active in this Domain")
             receipt = await uow.receipts.get_by_idempotency_key(collection_id=collection.collection_id, actor_id=command.actor_id, idempotency_key=command.idempotency_key)
@@ -327,9 +327,9 @@ class KnowledgeCoreIntakeService:
                 raise RuntimeError(
                     "Knowledge Core Unit of Work is not initialized"
                 )
-            collection = await uow.collections.get_by_scope_key(
+            collection = await uow.collections.get_by_id_scope(
                 domain_id=command.domain_id,
-                collection_key=command.collection_key,
+                collection_id=command.collection_id,
             )
             if collection is None:
                 return
@@ -389,9 +389,9 @@ class KnowledgeCoreIntakeService:
         async with self._uow_factory() as uow:
             if not all((uow.collections, uow.receipts, uow.bundles, uow.revisions, uow.documents, uow.versions, uow.members, uow.jobs, uow.parse_views)):
                 raise RuntimeError("Knowledge Core Unit of Work is not initialized")
-            collection = await uow.collections.get_by_scope_key(
+            collection = await uow.collections.get_by_id_scope(
                 domain_id=command.domain_id,
-                collection_key=command.collection_key,
+                collection_id=command.collection_id,
             )
             if collection is None or collection.status != "ACTIVE":
                 raise IntakeCollectionError("Collection is not active in this Domain")
@@ -568,7 +568,7 @@ class KnowledgeCoreIntakeService:
             )
 
     async def list_pending_reviews(
-        self, *, domain_id: int, collection_key: str,
+        self, *, domain_id: int, collection_id: UUID,
     ) -> list[IntakeReview]:
         """列出指定 Collection 中等待人工审批的用户上传 Revision。"""
         async with self._uow_factory() as uow:
@@ -576,9 +576,9 @@ class KnowledgeCoreIntakeService:
                 raise RuntimeError(
                     "Knowledge Core Unit of Work is not initialized"
                 )
-            collection = await uow.collections.get_by_scope_key(
+            collection = await uow.collections.get_by_id_scope(
                 domain_id=domain_id,
-                collection_key=collection_key,
+                collection_id=collection_id,
             )
             if collection is None:
                 raise IntakeReviewNotFoundError("Collection not found")
@@ -621,7 +621,7 @@ class KnowledgeCoreIntakeService:
             )
             if (
                 collection is None
-                or collection.collection_key != command.collection_key
+                or collection.collection_id != command.collection_id
             ):
                 raise IntakeReviewNotFoundError(
                     "Revision is outside the requested Collection"

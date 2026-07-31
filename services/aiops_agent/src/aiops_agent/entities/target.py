@@ -23,7 +23,6 @@ class TargetEntity(BaseEntity):
         UUIDv7Type(), primary_key=True, default=uuid7
     )
     domain_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False)
-    target_key: Mapped[str] = mapped_column(String(128), nullable=False)
     display_name: Mapped[str] = mapped_column(String(256), nullable=False)
     db_type: Mapped[str] = mapped_column(String(32), nullable=False)
     version_code: Mapped[str | None] = mapped_column(String(64))

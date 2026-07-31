@@ -21,7 +21,6 @@ router = APIRouter(
 
 
 class CollectionCreateRequest(BaseModel):
-    collection_key: str = Field(pattern=r"^[a-z][a-z0-9_-]{1,63}$")
     display_name: str = Field(min_length=1, max_length=256)
     models: dict[str, UUID]
     description: str | None = Field(default=None, max_length=1000)
@@ -82,65 +81,65 @@ async def create_collection(
     )
 
 
-@router.get("/collections/{collection_key}")
-async def get_collection(collection_key: str, request: Request):
+@router.get("/collections/{collection_id}")
+async def get_collection(collection_id: UUID, request: Request):
     context = get_auth_context(request)
     return await _client(request).get_collection(
         domain_id=_domain_id(request),
-        collection_key=collection_key,
+        collection_id=collection_id,
         auth_context=context,
     )
 
 
-@router.patch("/collections/{collection_key}")
+@router.patch("/collections/{collection_id}")
 async def change_collection_status(
-    collection_key: str,
+    collection_id: UUID,
     payload: CollectionStatusRequest,
     request: Request,
 ):
     context = get_auth_context(request)
     return await _client(request).change_collection_status(
         domain_id=_domain_id(request),
-        collection_key=collection_key,
+        collection_id=collection_id,
         status=payload.status,
         auth_context=context,
     )
 
 
-@router.put("/collections/{collection_key}/models")
+@router.put("/collections/{collection_id}/models")
 async def update_collection_models(
-    collection_key: str,
+    collection_id: UUID,
     payload: CollectionModelsRequest,
     request: Request,
 ):
     context = get_auth_context(request)
     return await _client(request).update_collection_models(
         domain_id=_domain_id(request),
-        collection_key=collection_key,
+        collection_id=collection_id,
         payload=payload.model_dump(mode="json"),
         auth_context=context,
     )
 
 
 @router.delete(
-    "/collections/{collection_key}",
+    "/collections/{collection_id}",
     status_code=status.HTTP_202_ACCEPTED,
 )
-async def delete_collection(collection_key: str, request: Request):
+async def delete_collection(collection_id: UUID, request: Request):
     context = get_auth_context(request)
     return await _client(request).delete_collection(
         domain_id=_domain_id(request),
-        collection_key=collection_key,
+        collection_id=collection_id,
         auth_context=context,
     )
 
 
 @router.put(
-    "/agents/{agent_id}/collections/{collection_key}/binding",
+    "/agents/{agent_id}/collections/{collection_id}/binding",
 )
 async def bind_collection(
     agent_id: UUID,
-    collection_key: str,
+    collection_id: UUID,
     request: Request,
     payload: CollectionBindingRequest | None = None,
 ):
@@ -148,26 +147,26 @@ async def bind_collection(
     return await _client(request).bind_collection(
         domain_id=_domain_id(request),
         agent_id=agent_id,
-        collection_key=collection_key,
+        collection_id=collection_id,
         note=payload.note if payload is not None else None,
         auth_context=context,
     )
 
 
 @router.delete(
-    "/agents/{agent_id}/collections/{collection_key}/binding",
+    "/agents/{agent_id}/collections/{collection_id}/binding",
     status_code=status.HTTP_204_NO_CONTENT,
 )
 async def unbind_collection(
     agent_id: UUID,
-    collection_key: str,
+    collection_id: UUID,
     request: Request,
 ) -> Response:
     context = get_auth_context(request)
     await _client(request).unbind_collection(
         domain_id=_domain_id(request),
         agent_id=agent_id,
-        collection_key=collection_key,
+        collection_id=collection_id,
         auth_context=context,
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -227,25 +226,25 @@ async def get_revision_members(
     )
 
 
-@router.get("/collections/{collection_key}/approvals")
+@router.get("/collections/{collection_id}/approvals")
 async def list_pending_approvals(
-    collection_key: str,
+    collection_id: UUID,
     request: Request,
 ):
     context = get_auth_context(request)
     return await _client(request).list_pending_approvals(
         domain_id=_domain_id(request),
-        collection_key=collection_key,
+        collection_id=collection_id,
         auth_context=context,
     )
 
 
 @router.post(
-    "/collections/{collection_key}/bundle-revisions/"
+    "/collections/{collection_id}/bundle-revisions/"
     "{bundle_revision_id}/approval",
 )
 async def review_user_intake(
-    collection_key: str,
+    collection_id: UUID,
     bundle_revision_id: UUID,
     payload: IntakeReviewRequest,
     request: Request,
@@ -253,7 +252,7 @@ async def review_user_intake(
     context = get_auth_context(request)
     return await _client(request).review_user_intake(
         domain_id=_domain_id(request),
-        collection_key=collection_key,
+        collection_id=collection_id,
         bundle_revision_id=bundle_revision_id,
         decision=payload.decision,
         comment=payload.comment,
@@ -264,7 +263,7 @@ async def review_user_intake(
 async def _ingest(
     *,
     request: Request,
-    collection_key: str,
+    collection_id: UUID,
     intake_kind: str,
 ) -> JSONResponse:
     content_type = request.headers.get("Content-Type", "")
@@ -288,7 +287,7 @@ async def _ingest(
     context = get_auth_context(request)
     upstream = await _client(request).ingest_multipart(
         domain_id=_domain_id(request),
-        collection_key=collection_key,
+        collection_id=collection_id,
         intake_kind=intake_kind,
         content_type=content_type,
         body=request.stream(),
@@ -311,7 +310,7 @@ async def _ingest(
 
 
 @router.post(
-    "/collections/{collection_key}/ingestions/km-assets",
+    "/collections/{collection_id}/ingestions/km-assets",
     status_code=status.HTTP_202_ACCEPTED,
     openapi_extra={
         "requestBody": {
@@ -320,16 +319,16 @@ async def _ingest(
         }
     },
 )
-async def ingest_km_asset(collection_key: str, request: Request):
+async def ingest_km_asset(collection_id: UUID, request: Request):
     return await _ingest(
         request=request,
-        collection_key=collection_key,
+        collection_id=collection_id,
         intake_kind="km-assets",
     )
 
 
 @router.post(
-    "/collections/{collection_key}/ingestions/user-files",
+    "/collections/{collection_id}/ingestions/user-files",
     status_code=status.HTTP_202_ACCEPTED,
     openapi_extra={
         "requestBody": {
@@ -338,9 +337,9 @@ async def ingest_km_asset(collection_key: str, request: Request):
         }
     },
 )
-async def ingest_user_files(collection_key: str, request: Request):
+async def ingest_user_files(collection_id: UUID, request: Request):
     return await _ingest(
         request=request,
-        collection_key=collection_key,
+        collection_id=collection_id,
         intake_kind="user-files",
     )

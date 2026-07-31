@@ -62,19 +62,6 @@ class InspectionRepository(AIOpsRepository):
             statement = statement.with_for_update()
         return (await self._session.execute(statement)).scalar_one_or_none()
 
-    async def get_plan_by_key(
-        self,
-        *,
-        domain_id: int,
-        plan_key: str,
-    ) -> InspectionPlanEntity | None:
-        self._check_active()
-        statement = select(InspectionPlanEntity).where(
-            InspectionPlanEntity.domain_id == domain_id,
-            InspectionPlanEntity.plan_key == plan_key,
-        )
-        return (await self._session.execute(statement)).scalar_one_or_none()
-
     async def page_plans(
         self,
         *,

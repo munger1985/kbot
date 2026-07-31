@@ -25,7 +25,6 @@ class AgentDefinitionEntity(BaseEntity):
         UUIDv7Type(), primary_key=True, default=uuid7
     )
     domain_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False)
-    agent_key: Mapped[str] = mapped_column(String(128), nullable=False)
     display_name: Mapped[str] = mapped_column(String(256), nullable=False)
     description: Mapped[str | None] = mapped_column(String(1000))
     status: Mapped[str] = mapped_column(

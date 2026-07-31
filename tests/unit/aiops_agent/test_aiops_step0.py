@@ -56,7 +56,6 @@ from platform_core.security import (
 class AIOpsContractTest(unittest.TestCase):
     def test_public_target_rejects_identity_and_plain_password(self) -> None:
         payload = {
-            "target_key": "erp-prod",
             "display_name": "ERP Production",
             "db_type": "ORACLE",
             "version_code": "19c",

@@ -116,15 +116,9 @@ class MonitorConfigurationMixin:
             uow: AIOpsUnitOfWork, now: datetime
         ) -> MonitorSourceDetail:
             assert uow.monitor_sources is not None
-            if await uow.monitor_sources.get_by_key(
-                domain_id=scope.domain_id,
-                source_key=request.source_key,
-            ):
-                raise state_conflict("source_key 已存在")
             entity = MonitorSourceEntity(
                 monitor_source_id=uuid7(),
                 domain_id=scope.domain_id,
-                source_key=request.source_key,
                 display_name=request.display_name,
                 source_type=request.source_type,
                 endpoint=str(request.endpoint),

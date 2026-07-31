@@ -23,7 +23,6 @@ class MonitorSourceEntity(BaseEntity):
         UUIDv7Type(), primary_key=True, default=uuid7
     )
     domain_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False)
-    source_key: Mapped[str] = mapped_column(String(128), nullable=False)
     display_name: Mapped[str] = mapped_column(String(256), nullable=False)
     source_type: Mapped[str] = mapped_column(String(32), nullable=False)
     endpoint: Mapped[str | None] = mapped_column(String(2048))

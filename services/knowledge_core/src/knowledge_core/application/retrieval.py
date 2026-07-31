@@ -12,7 +12,6 @@ from knowledge_core.application.query_embeddings import QueryEmbeddingProvider
 @dataclass(frozen=True)
 class DiscoveryHit:
     collection_id: UUID
-    collection_key: str
     bundle_id: UUID
     bundle_revision_id: UUID
     object_type: str
@@ -30,7 +29,6 @@ class DiscoveryHit:
 @dataclass
 class BundleCandidate:
     collection_id: UUID
-    collection_key: str
     bundle_id: UUID
     bundle_revision_id: UUID
     display_title: str
@@ -77,7 +75,7 @@ def aggregate_candidates(
             )
         )[:12000]
         candidates.append(BundleCandidate(
-            collection_id=collection_id, collection_key=first.collection_key,
+            collection_id=collection_id,
             bundle_id=bundle_id, bundle_revision_id=revision_id,
             display_title=first.display_title, member_count=member_count,
             matched_members=matched, match_signals=signals,
@@ -85,7 +83,7 @@ def aggregate_candidates(
             rrf_score=rrf, candidate_scope=scope,
             profile_text=profile_text,
         ))
-    candidates.sort(key=lambda item: (-item.rrf_score, item.collection_key, item.bundle_id))
+    candidates.sort(key=lambda item: (-item.rrf_score, item.collection_id, item.bundle_id))
     # Equal Collection priority: take the same local budget from each
     # collection and interleave by rank, then fill unused slots globally.
     by_collection: dict[UUID, list[BundleCandidate]] = defaultdict(list)

@@ -22,7 +22,6 @@ class _Model(BaseModel):
 
 class CreateAgentDefinitionCommand(_Model):
     domain_id: int = Field(ge=1)
-    agent_key: str = Field(pattern=r"^[a-z][a-z0-9._-]{0,127}$")
     display_name: str = Field(min_length=1, max_length=256)
     description: str | None = Field(default=None, max_length=1000)
     enabled_capabilities: tuple[str, ...] = Field(min_length=1)
@@ -60,7 +59,6 @@ class UpdateAgentDefinitionCommand(_Model):
 class AgentDefinitionView(_Model):
     agent_id: UUID
     domain_id: int
-    agent_key: str
     display_name: str
     description: str | None
     status: str
@@ -99,19 +97,9 @@ class AgentDefinitionService:
             data_profile_name=command.data_profile_name,
         )
         async with self._uow_factory() as uow:
-            existing = await uow.agents.get_by_key(
-                domain_id=command.domain_id,
-                agent_key=command.agent_key,
-            )
-            if existing is not None:
-                raise AgentRuntimeConflict(
-                    "AGENT_KEY_CONFLICT",
-                    "当前 Domain 已存在相同 agent_key",
-                )
             row = AgentDefinitionEntity(
                 agent_id=uuid7(),
                 domain_id=command.domain_id,
-                agent_key=command.agent_key,
                 display_name=command.display_name,
                 description=command.description,
                 status=command.status,
@@ -129,8 +117,8 @@ class AgentDefinitionService:
                 await uow.commit()
             except IntegrityError as exc:
                 raise AgentRuntimeConflict(
-                    "AGENT_KEY_CONFLICT",
-                    "当前 Domain 已存在相同 agent_key",
+                    "AGENT_CREATE_CONFLICT",
+                    "Agent 创建发生数据库约束冲突",
                 ) from exc
             return self._view(row)
 
@@ -310,7 +298,6 @@ class AgentDefinitionService:
         return AgentDefinitionView(
             agent_id=row.agent_id,
             domain_id=int(row.domain_id),
-            agent_key=row.agent_key,
             display_name=row.display_name,
             description=row.description,
             status=row.status,

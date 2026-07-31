@@ -169,7 +169,6 @@ class AgentRuntimeService:
             raw_models = dict(agent.models_json or {})
             agent_snapshot = {
                 "agent_id": str(agent.agent_id),
-                "agent_key": agent.agent_key,
                 "display_name": agent.display_name,
                 "enabled_capabilities": list(
                     agent.enabled_capabilities_json or []

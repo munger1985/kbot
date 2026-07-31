@@ -130,7 +130,6 @@ async def smoke() -> None:
                 KcCollectionEntity(
                     collection_id=collection_id,
                     domain_id=domain_id,
-                    collection_key=f"smoke-{marker}"[:64],
                     display_name="Oracle Smoke Collection",
                     models_json={
                         "parser_llm": str(model_id),
@@ -153,7 +152,6 @@ async def smoke() -> None:
                 KcCollectionEntity(
                     collection_id=rollback_collection_id,
                     domain_id=domain_id,
-                    collection_key=f"rollback-{marker}"[:64],
                     display_name="Oracle Smoke Rollback Collection",
                     models_json={
                         "parser_llm": str(model_id),
@@ -183,7 +181,6 @@ async def smoke() -> None:
                 AgentDefinitionEntity(
                     agent_id=agent_id,
                     domain_id=domain_id,
-                    agent_key=f"smoke-{marker}",
                     display_name="Oracle Smoke Agent",
                     status="ACTIVE",
                     enabled_capabilities_json=["document"],
@@ -208,7 +205,6 @@ async def smoke() -> None:
                 AgentDefinitionEntity(
                     agent_id=rollback_agent_id,
                     domain_id=domain_id,
-                    agent_key=f"rollback-{marker}",
                     display_name="Oracle Smoke Rollback Agent",
                     status="DRAFT",
                     enabled_capabilities_json=[],

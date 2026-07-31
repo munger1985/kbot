@@ -2,6 +2,7 @@
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+from uuid import UUID
 from loguru import logger
 
 from knowledge_core.application.intake import (
@@ -21,7 +22,7 @@ class IntakeInProgressError(RuntimeError):
 @dataclass(frozen=True)
 class MultipartIntakeCommand:
     domain_id: int
-    collection_key: str
+    collection_id: UUID
     actor_id: str
     idempotency_key: str
     manifest: KmAssetIntakeManifest
@@ -43,7 +44,7 @@ class KnowledgeCoreMultipartOrchestrator:
             set(command.file_paths), allowed_roles=set(command.allowed_document_roles),
         )
         reservation = await self._intake.reserve(ReserveIntakeCommand(
-            command.domain_id, command.collection_key, command.actor_id,
+            command.domain_id, command.collection_id, command.actor_id,
             command.idempotency_key, command.manifest, command.source_system,
             command.source_type, command.allowed_document_roles,
         ))
@@ -85,7 +86,7 @@ class KnowledgeCoreMultipartOrchestrator:
                 )
                 staged.append(staged_manifest)
             preparation = await self._intake.prepare_publish(PreparePublishCommand(
-                command.domain_id, command.collection_key, command.actor_id, command.idempotency_key,
+                command.domain_id, command.collection_id, command.actor_id, command.idempotency_key,
                 command.manifest, reservation.receipt_id, command.source_system,
                 command.source_type, command.allowed_document_roles,
                 command.generate_manifest,
@@ -108,7 +109,7 @@ class KnowledgeCoreMultipartOrchestrator:
                 )
                 published.append(published_manifest)
             return await self._intake.accept_published(AcceptKmAssetCommand(
-                command.domain_id, command.collection_key, command.actor_id, command.idempotency_key,
+                command.domain_id, command.collection_id, command.actor_id, command.idempotency_key,
                 command.manifest,
                 {item.part_name: PublishedAttachment(item.external_document_id, published_by_part[item.part_name].uri, published_by_part[item.part_name].detected_mime_type) for item in command.manifest.documents},
                 PublishedManifest(published_manifest.uri, len(rendered_manifest.content), rendered_manifest.content_sha256) if published_manifest is not None and rendered_manifest is not None else None,
@@ -124,7 +125,7 @@ class KnowledgeCoreMultipartOrchestrator:
             try:
                 await self._intake.abort(AbortIntakeCommand(
                     domain_id=command.domain_id,
-                    collection_key=command.collection_key,
+                    collection_id=command.collection_id,
                     actor_id=command.actor_id,
                     idempotency_key=command.idempotency_key,
                     failure_code=type(exc).__name__,

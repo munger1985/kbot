@@ -53,19 +53,6 @@ class TargetRepository(AIOpsRepository):
             statement = statement.with_for_update()
         return (await self._session.execute(statement)).scalar_one_or_none()
 
-    async def get_by_key(
-        self,
-        *,
-        domain_id: int,
-        target_key: str,
-    ) -> TargetEntity | None:
-        self._check_active()
-        statement = select(TargetEntity).where(
-            TargetEntity.domain_id == domain_id,
-            TargetEntity.target_key == target_key,
-        )
-        return (await self._session.execute(statement)).scalar_one_or_none()
-
     async def list_scoped(
         self,
         *,

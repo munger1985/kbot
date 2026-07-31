@@ -14,17 +14,6 @@ class CollectionRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def get_by_scope_key(
-        self, *, domain_id: int, collection_key: str, lock: bool = False
-    ) -> KcCollectionEntity | None:
-        statement: Select = select(KcCollectionEntity).where(
-            KcCollectionEntity.domain_id == domain_id,
-            KcCollectionEntity.collection_key == collection_key,
-        )
-        if lock:
-            statement = statement.with_for_update()
-        return (await self.session.execute(statement)).scalar_one_or_none()
-
     async def list_by_scope(self, *, domain_id: int) -> list[KcCollectionEntity]:
         statement = select(KcCollectionEntity).where(
             KcCollectionEntity.domain_id == domain_id,
@@ -50,12 +39,14 @@ class CollectionRepository:
         return (await self.session.execute(statement)).scalar_one_or_none()
 
     async def get_by_id_scope(
-        self, *, domain_id: int, collection_id: UUID
+        self, *, domain_id: int, collection_id: UUID, lock: bool = False
     ) -> KcCollectionEntity | None:
         statement: Select = select(KcCollectionEntity).where(
             KcCollectionEntity.collection_id == collection_id,
             KcCollectionEntity.domain_id == domain_id,
         )
+        if lock:
+            statement = statement.with_for_update()
         return (await self.session.execute(statement)).scalar_one_or_none()
 
 

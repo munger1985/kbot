@@ -28,6 +28,7 @@ from platform_core.security import (
 
 
 TEST_PEPPER = "main-api-test-pepper"
+TEST_COLLECTION_ID = UUID("019f8eae-2c25-7d48-b044-350ec3f5a001")
 
 
 class _FakeKnowledgeCoreClient:
@@ -52,13 +53,13 @@ class _FakeKnowledgeCoreClient:
             )
         self.last_context = auth_context
         self.last_domain_id = domain_id
-        return {"collections": [{"collection_key": "assets"}]}
+        return {"collections": [{"collection_id": str(TEST_COLLECTION_ID)}]}
 
     async def ingest_multipart(
         self,
         *,
         domain_id: int,
-        collection_key: str,
+        collection_id: UUID,
         intake_kind: str,
         content_type: str,
         body,
@@ -130,7 +131,6 @@ class _FakeAgentRuntimeClient:
         return {
             "agent_id": str(self.agent_id),
             "domain_id": 100,
-            "agent_key": "document-agent",
             "display_name": "文档助手",
             "description": None,
             "status": "ACTIVE",
@@ -323,7 +323,10 @@ class MainApiTest(unittest.TestCase):
             headers=self._headers(),
         )
         self.assertEqual(200, response.status_code)
-        self.assertEqual("assets", response.json()["collections"][0]["collection_key"])
+        self.assertEqual(
+            str(TEST_COLLECTION_ID),
+            response.json()["collections"][0]["collection_id"],
+        )
         self.assertEqual(100, self.kc.last_domain_id)
         self.assertEqual("km_portal", self.kc.last_context.client_id)
         self.assertEqual("portal-user-1", self.kc.last_context.asserted_user_id)
@@ -418,7 +421,7 @@ class MainApiTest(unittest.TestCase):
 
     def test_multipart_intake_is_streamed_and_internal_url_is_rewritten(self) -> None:
         response = self.client.post(
-            "/api/v1/knowledge/collections/assets/ingestions/user-files",
+            f"/api/v1/knowledge/collections/{TEST_COLLECTION_ID}/ingestions/user-files",
             headers={
                 **self._headers(),
                 "Idempotency-Key": "upload-1",
@@ -451,7 +454,6 @@ class MainApiTest(unittest.TestCase):
             "/api/v1/agents",
             headers=self._headers(),
             json={
-                "agent_key": "document-agent",
                 "display_name": "文档助手",
                 "enabled_capabilities": ["document"],
                 "models": {
@@ -530,7 +532,7 @@ class MainApiTest(unittest.TestCase):
         response = self.client.post(
             "/api/v1/knowledge/collections",
             headers=self._headers(),
-            json={"collection_key": "INVALID"},
+            json={},
         )
         self.assertEqual(422, response.status_code)
         self.assertEqual(
@@ -585,7 +587,7 @@ class MainApiTest(unittest.TestCase):
                 DOMAIN_ID_HEADER: "100",
                 USER_ID_HEADER: "portal-user-1",
             },
-            json={"collection_key": "INVALID"},
+            json={},
         )
         self.assertEqual(422, response.status_code)
         self.assertTrue(response.json()["request_id"])

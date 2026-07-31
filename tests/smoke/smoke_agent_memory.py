@@ -163,7 +163,6 @@ async def main() -> None:
                 AgentDefinitionEntity(
                     agent_id=agent_id,
                     domain_id=domain_id,
-                    agent_key=f"memory-smoke-{domain_id}",
                     display_name="记忆实库验收",
                     status="ACTIVE",
                     enabled_capabilities_json=["document"],

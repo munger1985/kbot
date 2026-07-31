@@ -217,31 +217,6 @@
     $("#response-output").textContent = KBotUI.json(payload);
   }
 
-  function generateCollectionKey() {
-    const timestamp = Date.now().toString(36);
-    const random = KBotUI.uuid().replaceAll("-", "").slice(0, 8);
-    const value = `collection-${timestamp}-${random}`;
-    $("#collection-form").elements.collectionKey.value = value;
-    return value;
-  }
-
-  $("#generate-collection-key").addEventListener(
-    "click",
-    generateCollectionKey
-  );
-  generateCollectionKey();
-
-  function generateAgentKey() {
-    const timestamp = Date.now().toString(36);
-    const random = KBotUI.uuid().replaceAll("-", "").slice(0, 6);
-    const value = `document-agent-${timestamp}-${random}`;
-    $("#agent-form").elements.agentKey.value = value;
-    return value;
-  }
-
-  $("#generate-agent-key").addEventListener("click", generateAgentKey);
-  generateAgentKey();
-
   const MODEL_CATEGORY = {
     LLM: 1,
     TXT_EMBEDDING: 2,
@@ -409,11 +384,10 @@
       $("#collection-rows").innerHTML = rows
         .map(
           (item) => `
-            <tr data-key="${KBotUI.escapeHtml(item.collection_key)}">
-              <td>${KBotUI.escapeHtml(item.collection_key)}</td>
+            <tr data-id="${KBotUI.escapeHtml(item.collection_id)}">
+              <td>${KBotUI.escapeHtml(item.collection_id)}</td>
               <td>${KBotUI.escapeHtml(item.display_name)}</td>
               <td><span class="badge">${KBotUI.escapeHtml(item.status)}</span></td>
-              <td>${KBotUI.escapeHtml(item.collection_id)}</td>
             </tr>`
         )
         .join("");
@@ -421,10 +395,10 @@
         row.addEventListener("click", () => {
           $("#collection-rows .selected")?.classList.remove("selected");
           row.classList.add("selected");
-          const key = row.dataset.key;
-          $("#upload-form").elements.collectionKey.value = key;
-          $("#approval-form").elements.collectionKey.value = key;
-          $("#binding-form").elements.collectionKey.value = key;
+          const collectionId = row.dataset.id;
+          $("#upload-form").elements.collectionId.value = collectionId;
+          $("#approval-form").elements.collectionId.value = collectionId;
+          $("#binding-form").elements.collectionId.value = collectionId;
         });
       });
       showResponse(payload);
@@ -446,7 +420,6 @@
       const payload = await KBotUI.api("/api/v1/knowledge/collections", {
         method: "POST",
         body: JSON.stringify({
-          collection_key: form.elements.collectionKey.value.trim(),
           display_name: form.elements.displayName.value.trim(),
           models: {
             parser_llm: form.elements.parserLlm.value.trim(),
@@ -480,9 +453,6 @@
           <tr data-agent-id="${KBotUI.escapeHtml(item.agent_id)}">
             <td>
               <strong>${KBotUI.escapeHtml(item.display_name)}</strong>
-              <span class="tracking-id">${KBotUI.escapeHtml(
-                item.agent_key
-              )}</span>
             </td>
             <td>${(item.enabled_capabilities || [])
               .map(
@@ -605,7 +575,6 @@
       const payload = await KBotUI.api("/api/v1/agents", {
         method: "POST",
         body: JSON.stringify({
-          agent_key: form.elements.agentKey.value.trim(),
           display_name: form.elements.displayName.value.trim(),
           description: null,
           enabled_capabilities: capabilities,
@@ -624,7 +593,6 @@
         `Agent 创建成功：${payload.display_name}`,
         "ok"
       );
-      generateAgentKey();
       await refreshAgents(payload.agent_id);
     } catch (error) {
       KBotUI.setStatus(status, error.message, "error");
@@ -658,7 +626,7 @@
       trackedUploads.set(trackingId, {
         trackingId,
         label: labels,
-        collectionKey: form.elements.collectionKey.value.trim(),
+        collectionId: form.elements.collectionId.value.trim(),
         domainId: connection.domainId,
         baseUrl: connection.baseUrl,
         localStage: "HASHING",
@@ -716,7 +684,7 @@
       KBotUI.setStatus(status, "正在上传并等待 KC 受理…");
       const payload = await KBotUI.api(
         `/api/v1/knowledge/collections/${encodeURIComponent(
-          form.elements.collectionKey.value.trim()
+          form.elements.collectionId.value.trim()
         )}/ingestions/user-files`,
         {
           method: "POST",
@@ -763,8 +731,8 @@
         $("#status-form").elements.revisionId.value =
           received.bundle_revision_id || "";
       }
-      $("#approval-form").elements.collectionKey.value =
-        form.elements.collectionKey.value.trim();
+      $("#approval-form").elements.collectionId.value =
+        form.elements.collectionId.value.trim();
       const pendingCount = (payload.items || []).filter(
         (item) => item.status === "PENDING_REVIEW"
       ).length;
@@ -796,7 +764,7 @@
 
   async function reviewApproval(bundleRevisionId, decision) {
     const form = $("#approval-form");
-    const collectionKey = form.elements.collectionKey.value.trim();
+    const collectionId = form.elements.collectionId.value.trim();
     const comment = form.elements.comment.value.trim() || null;
     const status = $("#approval-status");
     KBotUI.setStatus(
@@ -806,7 +774,7 @@
     try {
       const payload = await KBotUI.api(
         `/api/v1/knowledge/collections/${encodeURIComponent(
-          collectionKey
+          collectionId
         )}/bundle-revisions/${bundleRevisionId}/approval`,
         {
           method: "POST",
@@ -839,17 +807,17 @@
 
   async function refreshApprovals() {
     const form = $("#approval-form");
-    const collectionKey = form.elements.collectionKey.value.trim();
+    const collectionId = form.elements.collectionId.value.trim();
     const status = $("#approval-status");
-    if (!collectionKey) {
-      KBotUI.setStatus(status, "请先填写 collection_key", "error");
+    if (!collectionId) {
+      KBotUI.setStatus(status, "请先填写 collection_id", "error");
       return;
     }
     KBotUI.setStatus(status, "正在读取待审批列表…");
     try {
       const payload = await KBotUI.api(
         `/api/v1/knowledge/collections/${encodeURIComponent(
-          collectionKey
+          collectionId
         )}/approvals`
       );
       const rows = payload.items || [];
@@ -966,11 +934,11 @@
     event.preventDefault();
     const form = event.currentTarget;
     const agentId = form.elements.agentId.value.trim();
-    const collectionKey = form.elements.collectionKey.value.trim();
+    const collectionId = form.elements.collectionId.value.trim();
     try {
       const payload = await KBotUI.api(
         `/api/v1/knowledge/agents/${agentId}/collections/${encodeURIComponent(
-          collectionKey
+          collectionId
         )}/binding`,
         { method: "PUT", body: JSON.stringify({ note: "kc-test-ui" }) }
       );

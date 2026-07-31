@@ -119,9 +119,8 @@ class AIOpsInspectionScheduler:
 
             fire_id = uuid7()
             plan_snapshot = {
-                                "domain_id": int(plan.domain_id),
+                "domain_id": int(plan.domain_id),
                 "plan_id": str(plan.inspection_plan_id),
-                "plan_key": plan.plan_key,
                 "display_name": plan.display_name,
                 "schedule_type": plan.schedule_type,
                 "timezone": plan.timezone,

@@ -88,7 +88,6 @@ class InspectionSchedulerTest(unittest.TestCase):
         plan = SimpleNamespace(
             inspection_plan_id=uuid7(),
             domain_id=200,
-            plan_key="database.daily",
             display_name="数据库日报",
             schedule_type="DAILY",
             cron_expression="0 9 * * *",

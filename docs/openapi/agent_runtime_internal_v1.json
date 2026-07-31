@@ -123,10 +123,6 @@
             "title": "Agent Id",
             "type": "string"
           },
-          "agent_key": {
-            "title": "Agent Key",
-            "type": "string"
-          },
           "config": {
             "additionalProperties": true,
             "title": "Config",
@@ -204,7 +200,6 @@
         "required": [
           "agent_id",
           "domain_id",
-          "agent_key",
           "display_name",
           "description",
           "status",
@@ -923,11 +918,6 @@
       "CreateAgentDefinitionRequest": {
         "additionalProperties": false,
         "properties": {
-          "agent_key": {
-            "pattern": "^[a-z][a-z0-9._-]{0,127}$",
-            "title": "Agent Key",
-            "type": "string"
-          },
           "config": {
             "additionalProperties": true,
             "title": "Config",
@@ -1005,7 +995,6 @@
           }
         },
         "required": [
-          "agent_key",
           "display_name",
           "enabled_capabilities",
           "models"

@@ -104,7 +104,6 @@ async def smoke() -> None:
                 TargetEntity(
                     target_id=target_id,
                     domain_id=domain_id,
-                    target_key="smoke-target",
                     display_name="AIOps 持久化 Smoke",
                     db_type="ORACLE",
                     environment="DEV",

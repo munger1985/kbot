@@ -17,7 +17,6 @@ class KcCollectionEntity(BaseEntity):
         UUIDv7Type(), primary_key=True, default=uuid7,
     )
     domain_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False)
-    collection_key: Mapped[str] = mapped_column(String(64), nullable=False)
     display_name: Mapped[str] = mapped_column(String(256), nullable=False)
     description: Mapped[str | None] = mapped_column(String(1000))
     models_json: Mapped[dict[str, str]] = mapped_column(

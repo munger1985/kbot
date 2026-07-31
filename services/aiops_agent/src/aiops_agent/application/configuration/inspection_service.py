@@ -137,15 +137,9 @@ class InspectionConfigurationMixin:
             uow: AIOpsUnitOfWork, now: datetime
         ) -> InspectionPlanDetail:
             assert uow.inspections is not None
-            if await uow.inspections.get_plan_by_key(
-                domain_id=scope.domain_id,
-                plan_key=request.plan_key,
-            ):
-                raise state_conflict("plan_key 已存在")
             entity = InspectionPlanEntity(
                 inspection_plan_id=uuid7(),
                 domain_id=scope.domain_id,
-                plan_key=request.plan_key,
                 display_name=request.display_name,
                 schedule_type=request.schedule_type,
                 cron_expression=request.cron_expression,

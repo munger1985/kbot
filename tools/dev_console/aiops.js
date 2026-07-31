@@ -17,17 +17,9 @@
   const MODEL_CATEGORY = { LLM: 1, TXT_EMBEDDING: 2 };
 
   function generatedKey(prefix) {
-    return `${prefix}-${Date.now().toString(36)}-${crypto
-      .randomUUID()
+    return `${prefix}-${Date.now().toString(36)}-${KBotUI.uuid()
       .replaceAll("-", "")
       .slice(0, 6)}`;
-  }
-
-  function resetGeneratedKeys() {
-    $("#agent-form").elements.agentKey.value = generatedKey("aiops-agent");
-    $("#target-form").elements.targetKey.value = generatedKey("database");
-    $("#monitor-form").elements.sourceKey.value = generatedKey("monitor");
-    $("#inspection-form").elements.planKey.value = generatedKey("inspection");
   }
 
   function optionalValue(value) {
@@ -109,9 +101,7 @@
           }">
             <td><strong>${KBotUI.escapeHtml(
               item.display_name
-            )}</strong><span class="tracking-id">${KBotUI.escapeHtml(
-              item.agent_key
-            )}</span></td>
+            )}</strong></td>
             <td><span class="badge">${KBotUI.escapeHtml(item.status)}</span></td>
             <td><span class="badge ${
               item.models?.diagnosis_llm ? "" : "warning"
@@ -240,11 +230,11 @@
                 <label class="selection-card">
                   <input type="checkbox" value="${KBotUI.escapeHtml(
                     item.collection_id
-                  )}" data-key="${KBotUI.escapeHtml(item.collection_key)}" />
+                  )}" />
                   <span><strong>${KBotUI.escapeHtml(
                     item.display_name
                   )}</strong><small>${KBotUI.escapeHtml(
-                    item.collection_key
+                    item.collection_id
                   )} · ${KBotUI.escapeHtml(item.status)}</small></span>
                 </label>`
             )
@@ -272,8 +262,6 @@
   }
 
   KBotUI.bindAuthForm($("#auth-form"), refreshAll);
-  resetGeneratedKeys();
-
   $("#refresh-models").addEventListener("click", refreshModels);
   $("#refresh-agents").addEventListener("click", () => refreshAgents());
   $("#refresh-sources").addEventListener("click", () => refreshSources());
@@ -367,7 +355,6 @@
       const payload = await KBotUI.api("/api/v1/agents", {
         method: "POST",
         body: JSON.stringify({
-          agent_key: form.elements.agentKey.value.trim(),
           display_name: form.elements.displayName.value.trim(),
           description: "面向数据库监控、根因诊断、方案与报告生成的独立 Agent",
           enabled_capabilities: ["aiops"],
@@ -385,7 +372,6 @@
           status: "ACTIVE",
         }),
       });
-      form.elements.agentKey.value = generatedKey("aiops-agent");
       await refreshAgents(payload.agent_id);
       KBotUI.setStatus(status, `已创建 ${payload.display_name}`, "ok");
     } catch (error) {
@@ -459,7 +445,6 @@
           "Idempotency-Key": KBotUI.idempotency("aiops-target"),
         },
         body: JSON.stringify({
-          target_key: form.elements.targetKey.value.trim(),
           display_name: form.elements.displayName.value.trim(),
           db_type: dbType,
           version_code: form.elements.versionCode.value.trim(),
@@ -476,7 +461,6 @@
           capabilities,
         }),
       });
-      form.elements.targetKey.value = generatedKey("database");
       await refreshSources(payload.target_id);
       KBotUI.setStatus(status, `已创建 ${payload.display_name}`, "ok");
     } catch (error) {
@@ -496,7 +480,6 @@
           "Idempotency-Key": KBotUI.idempotency("aiops-monitor"),
         },
         body: JSON.stringify({
-          source_key: form.elements.sourceKey.value.trim(),
           display_name: form.elements.displayName.value.trim(),
           source_type: form.elements.sourceType.value,
           endpoint: form.elements.endpoint.value.trim(),
@@ -506,7 +489,6 @@
           capabilities: {},
         }),
       });
-      form.elements.sourceKey.value = generatedKey("monitor");
       await refreshSources(null, payload.source_id);
       await healthCheckAndEnable(payload.source_id);
       await refreshSources(null, payload.source_id);
@@ -1376,7 +1358,6 @@
           "Idempotency-Key": KBotUI.idempotency("inspection-plan"),
         },
         body: JSON.stringify({
-          plan_key: form.elements.planKey.value.trim(),
           display_name: form.elements.displayName.value.trim(),
           schedule_type: form.elements.scheduleType.value,
           cron_expression: form.elements.cronExpression.value.trim(),
@@ -1416,7 +1397,6 @@
           },
         }
       );
-      form.elements.planKey.value = generatedKey("inspection");
       $("#report-output").textContent = KBotUI.json(active);
       KBotUI.setStatus(
         $("#inspection-status"),

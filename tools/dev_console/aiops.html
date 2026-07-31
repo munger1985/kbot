@@ -49,10 +49,7 @@
               <button id="refresh-models" type="button">刷新模型</button>
             </div>
             <form id="agent-form">
-              <div class="field-row">
-                <div class="field"><label>agent_key</label><input name="agentKey" required pattern="[a-z][a-z0-9._\-]{1,127}" /></div>
-                <div class="field"><label>显示名称</label><input name="displayName" required value="AIOps 诊断 Agent" /></div>
-              </div>
+              <div class="field"><label>显示名称</label><input name="displayName" required value="AIOps 诊断 Agent" /></div>
               <div class="field-row">
                 <div class="field"><label>diagnosis_llm</label><select name="diagnosisLlm" required></select><small>AIOps 多轮根因推理专用</small></div>
                 <div class="field"><label>context_llm</label><select name="contextLlm" required></select></div>
@@ -100,10 +97,7 @@
           <section class="panel span-6">
             <h3>创建数据库目标</h3>
             <form id="target-form">
-              <div class="field-row">
-                <div class="field"><label>target_key</label><input name="targetKey" required /></div>
-                <div class="field"><label>显示名称</label><input name="displayName" required value="测试数据库" /></div>
-              </div>
+              <div class="field"><label>显示名称</label><input name="displayName" required value="测试数据库" /></div>
               <div class="field-row">
                 <div class="field"><label>数据库类型</label><select name="dbType"><option>ORACLE</option><option>MYSQL</option></select></div>
                 <div class="field"><label>版本（用于选择诊断 SQL）</label><input name="versionCode" required value="26ai" /></div>
@@ -135,10 +129,9 @@
             <h3>创建监控源</h3>
             <form id="monitor-form">
               <div class="field-row">
-                <div class="field"><label>source_key</label><input name="sourceKey" required /></div>
                 <div class="field"><label>类型</label><select name="sourceType"><option>PROMETHEUS</option><option>ZABBIX</option><option>OEM</option></select></div>
+                <div class="field"><label>显示名称</label><input name="displayName" required value="本地 Prometheus" /></div>
               </div>
-              <div class="field"><label>显示名称</label><input name="displayName" required value="本地 Prometheus" /></div>
               <div class="field"><label>Prometheus Server Endpoint</label><input name="endpoint" type="url" required value="http://127.0.0.1:9091" /></div>
               <p class="hint">必须填写支持 <code>/api/v1/query_range</code> 的 Prometheus Server 地址；Exporter 的 <code>:9161/metrics</code> 不能直接作为查询端点。</p>
               <div class="field"><label>Secret Ref（可选）</label><input name="secretRef" placeholder="env://AIOPS_MONITOR_TOKEN" /></div>
@@ -234,10 +227,7 @@
           <section class="panel span-5">
             <h3>创建巡检计划</h3>
             <form id="inspection-form">
-              <div class="field-row">
-                <div class="field"><label>plan_key</label><input name="planKey" required /></div>
-                <div class="field"><label>显示名称</label><input name="displayName" required value="数据库日常巡检" /></div>
-              </div>
+              <div class="field"><label>显示名称</label><input name="displayName" required value="数据库日常巡检" /></div>
               <div class="field-row">
                 <div class="field"><label>周期</label><select name="scheduleType"><option>DAILY</option><option>WEEKLY</option></select></div>
                 <div class="field"><label>时区</label><input name="timezone" value="Asia/Shanghai" required /></div>

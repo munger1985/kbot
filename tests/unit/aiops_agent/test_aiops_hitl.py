@@ -245,7 +245,7 @@ class InteractiveDiagnosisHandlerTest(unittest.TestCase):
             ).isoformat(),
             plan_snapshot={
                 "target": {
-                    "target_key": "oracle-prod",
+                    "display_name": "Oracle 生产库",
                 },
                 "database_diagnostics": {
                     "db_type": "ORACLE",

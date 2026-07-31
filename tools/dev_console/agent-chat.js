@@ -39,7 +39,7 @@
         (item) =>
           `<option value="${item.agent_id}">${KBotUI.escapeHtml(
             item.display_name
-          )} · ${KBotUI.escapeHtml(item.agent_key)}</option>`
+          )}</option>`
       )
       .join("");
     const agent = selectedAgent();

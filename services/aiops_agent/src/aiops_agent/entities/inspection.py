@@ -22,7 +22,6 @@ class InspectionPlanEntity(BaseEntity):
         UUIDv7Type(), primary_key=True, default=uuid7
     )
     domain_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False)
-    plan_key: Mapped[str] = mapped_column(String(128), nullable=False)
     display_name: Mapped[str] = mapped_column(String(256), nullable=False)
     schedule_type: Mapped[str] = mapped_column(String(16), nullable=False)
     cron_expression: Mapped[str] = mapped_column(String(256), nullable=False)

@@ -42,7 +42,6 @@ class _ModelClient:
 def _candidate(collection_id, rank, title):
     return BundleCandidate(
         collection_id=collection_id,
-        collection_key=f"collection-{collection_id}",
         bundle_id=uuid7(),
         bundle_revision_id=uuid7(),
         display_title=title,

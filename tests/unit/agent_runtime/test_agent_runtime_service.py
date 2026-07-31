@@ -88,17 +88,6 @@ class _Agents:
         self.store.agents[entity.agent_id] = entity
         return entity
 
-    async def get_by_key(self, *, domain_id, agent_key):
-        return next(
-            (
-                agent
-                for agent in self.store.agents.values()
-                if int(agent.domain_id) == domain_id
-                and agent.agent_key == agent_key
-            ),
-            None,
-        )
-
     async def get_scoped(
         self, *, agent_id, domain_id, lock=False
     ):
@@ -344,7 +333,6 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
         self.store.agents[self.agent_id] = SimpleNamespace(
             agent_id=self.agent_id,
             domain_id=20,
-            agent_key="document-assistant",
             display_name="文档助手",
             description=None,
             status="ACTIVE",
@@ -520,7 +508,6 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
         created = await self.definition_service.create(
             CreateAgentDefinitionCommand(
                 domain_id=20,
-                agent_key="case-agent",
                 display_name="案例助手",
                 enabled_capabilities=("document",),
                 models={
@@ -557,7 +544,6 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
                 **vars(self.store.agents[self.agent_id]),
                 "agent_id": other_agent_id,
                 "domain_id": 21,
-                "agent_key": "other-domain-agent",
             }
         )
 
@@ -570,7 +556,7 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
         snapshot = self.store.runs[receipt.run_id].config_snapshot_json
 
         self.assertEqual(
-            snapshot["agent"]["agent_key"], "document-assistant"
+            snapshot["agent"]["display_name"], "文档助手"
         )
         self.assertEqual(
             snapshot["agent"]["models"]["composer_llm"][

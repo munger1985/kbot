@@ -372,10 +372,6 @@
             "title": "Agent Id",
             "type": "string"
           },
-          "agent_key": {
-            "title": "Agent Key",
-            "type": "string"
-          },
           "config": {
             "additionalProperties": true,
             "title": "Config",
@@ -454,7 +450,6 @@
         "required": [
           "agent_id",
           "domain_id",
-          "agent_key",
           "display_name",
           "status",
           "enabled_capabilities",
@@ -778,11 +773,6 @@
       },
       "CollectionCreateRequest": {
         "properties": {
-          "collection_key": {
-            "pattern": "^[a-z][a-z0-9_-]{1,63}$",
-            "title": "Collection Key",
-            "type": "string"
-          },
           "default_security_level": {
             "default": 1,
             "maximum": 999.0,
@@ -823,7 +813,6 @@
           }
         },
         "required": [
-          "collection_key",
           "display_name",
           "models"
         ],
@@ -1240,11 +1229,6 @@
       "CreateAgentDefinitionRequest": {
         "additionalProperties": false,
         "properties": {
-          "agent_key": {
-            "pattern": "^[a-z][a-z0-9._-]{0,127}$",
-            "title": "Agent Key",
-            "type": "string"
-          },
           "config": {
             "additionalProperties": true,
             "title": "Config",
@@ -1322,7 +1306,6 @@
           }
         },
         "required": [
-          "agent_key",
           "display_name",
           "enabled_capabilities",
           "models"
@@ -1964,11 +1947,6 @@
             "title": "Overlap Policy",
             "type": "string"
           },
-          "plan_key": {
-            "pattern": "^[a-z][a-z0-9._-]{0,127}$",
-            "title": "Plan Key",
-            "type": "string"
-          },
           "schedule_resolver_version": {
             "maxLength": 64,
             "minLength": 1,
@@ -2015,7 +1993,6 @@
           }
         },
         "required": [
-          "plan_key",
           "display_name",
           "schedule_type",
           "cron_expression",
@@ -2078,10 +2055,6 @@
             "title": "Plan Id",
             "type": "string"
           },
-          "plan_key": {
-            "title": "Plan Key",
-            "type": "string"
-          },
           "row_version": {
             "minimum": 1.0,
             "title": "Row Version",
@@ -2137,7 +2110,6 @@
         },
         "required": [
           "plan_id",
-          "plan_key",
           "display_name",
           "schedule_type",
           "timezone",
@@ -2353,10 +2325,6 @@
             "title": "Plan Id",
             "type": "string"
           },
-          "plan_key": {
-            "title": "Plan Key",
-            "type": "string"
-          },
           "row_version": {
             "minimum": 1.0,
             "title": "Row Version",
@@ -2392,7 +2360,6 @@
         },
         "required": [
           "plan_id",
-          "plan_key",
           "display_name",
           "schedule_type",
           "timezone",
@@ -3086,11 +3053,6 @@
             ],
             "title": "Secret Ref"
           },
-          "source_key": {
-            "pattern": "^[a-z][a-z0-9._-]{0,127}$",
-            "title": "Source Key",
-            "type": "string"
-          },
           "source_type": {
             "enum": [
               "PROMETHEUS",
@@ -3130,7 +3092,6 @@
           }
         },
         "required": [
-          "source_key",
           "display_name",
           "source_type",
           "endpoint"
@@ -3223,10 +3184,6 @@
             "title": "Source Id",
             "type": "string"
           },
-          "source_key": {
-            "title": "Source Key",
-            "type": "string"
-          },
           "source_type": {
             "title": "Source Type",
             "type": "string"
@@ -3261,7 +3218,6 @@
         },
         "required": [
           "source_id",
-          "source_key",
           "display_name",
           "source_type",
           "status",
@@ -3449,10 +3405,6 @@
             "title": "Source Id",
             "type": "string"
           },
-          "source_key": {
-            "title": "Source Key",
-            "type": "string"
-          },
           "source_type": {
             "title": "Source Type",
             "type": "string"
@@ -3473,7 +3425,6 @@
         },
         "required": [
           "source_id",
-          "source_key",
           "display_name",
           "source_type",
           "status",
@@ -4838,11 +4789,6 @@
             "title": "Security Level",
             "type": "integer"
           },
-          "target_key": {
-            "pattern": "^[a-z][a-z0-9._-]{0,127}$",
-            "title": "Target Key",
-            "type": "string"
-          },
           "version_code": {
             "anyOf": [
               {
@@ -4857,7 +4803,6 @@
           }
         },
         "required": [
-          "target_key",
           "display_name",
           "db_type",
           "environment"
@@ -4979,10 +4924,6 @@
             "title": "Target Id",
             "type": "string"
           },
-          "target_key": {
-            "title": "Target Key",
-            "type": "string"
-          },
           "updated_at": {
             "format": "date-time",
             "title": "Updated At",
@@ -5006,7 +4947,6 @@
         },
         "required": [
           "target_id",
-          "target_key",
           "display_name",
           "db_type",
           "environment",
@@ -5299,10 +5239,6 @@
             "title": "Target Id",
             "type": "string"
           },
-          "target_key": {
-            "title": "Target Key",
-            "type": "string"
-          },
           "updated_at": {
             "format": "date-time",
             "title": "Updated At",
@@ -5311,7 +5247,6 @@
         },
         "required": [
           "target_id",
-          "target_key",
           "display_name",
           "db_type",
           "environment",
@@ -6659,9 +6594,9 @@
         ]
       }
     },
-    "/api/v1/knowledge/agents/{agent_id}/collections/{collection_key}/binding": {
+    "/api/v1/knowledge/agents/{agent_id}/collections/{collection_id}/binding": {
       "delete": {
-        "operationId": "unbind_collection_api_v1_knowledge_agents__agent_id__collections__collection_key__binding_delete",
+        "operationId": "unbind_collection_api_v1_knowledge_agents__agent_id__collections__collection_id__binding_delete",
         "parameters": [
           {
             "in": "path",
@@ -6675,10 +6610,11 @@
           },
           {
             "in": "path",
-            "name": "collection_key",
+            "name": "collection_id",
             "required": true,
             "schema": {
-              "title": "Collection Key",
+              "format": "uuid",
+              "title": "Collection Id",
               "type": "string"
             }
           }
@@ -6704,7 +6640,7 @@
         ]
       },
       "put": {
-        "operationId": "bind_collection_api_v1_knowledge_agents__agent_id__collections__collection_key__binding_put",
+        "operationId": "bind_collection_api_v1_knowledge_agents__agent_id__collections__collection_id__binding_put",
         "parameters": [
           {
             "in": "path",
@@ -6718,10 +6654,11 @@
           },
           {
             "in": "path",
-            "name": "collection_key",
+            "name": "collection_id",
             "required": true,
             "schema": {
-              "title": "Collection Key",
+              "format": "uuid",
+              "title": "Collection Id",
               "type": "string"
             }
           }
@@ -6968,16 +6905,17 @@
         ]
       }
     },
-    "/api/v1/knowledge/collections/{collection_key}": {
+    "/api/v1/knowledge/collections/{collection_id}": {
       "delete": {
-        "operationId": "delete_collection_api_v1_knowledge_collections__collection_key__delete",
+        "operationId": "delete_collection_api_v1_knowledge_collections__collection_id__delete",
         "parameters": [
           {
             "in": "path",
-            "name": "collection_key",
+            "name": "collection_id",
             "required": true,
             "schema": {
-              "title": "Collection Key",
+              "format": "uuid",
+              "title": "Collection Id",
               "type": "string"
             }
           }
@@ -7008,14 +6946,15 @@
         ]
       },
       "get": {
-        "operationId": "get_collection_api_v1_knowledge_collections__collection_key__get",
+        "operationId": "get_collection_api_v1_knowledge_collections__collection_id__get",
         "parameters": [
           {
             "in": "path",
-            "name": "collection_key",
+            "name": "collection_id",
             "required": true,
             "schema": {
-              "title": "Collection Key",
+              "format": "uuid",
+              "title": "Collection Id",
               "type": "string"
             }
           }
@@ -7046,14 +6985,15 @@
         ]
       },
       "patch": {
-        "operationId": "change_collection_status_api_v1_knowledge_collections__collection_key__patch",
+        "operationId": "change_collection_status_api_v1_knowledge_collections__collection_id__patch",
         "parameters": [
           {
             "in": "path",
-            "name": "collection_key",
+            "name": "collection_id",
             "required": true,
             "schema": {
-              "title": "Collection Key",
+              "format": "uuid",
+              "title": "Collection Id",
               "type": "string"
             }
           }
@@ -7094,16 +7034,17 @@
         ]
       }
     },
-    "/api/v1/knowledge/collections/{collection_key}/approvals": {
+    "/api/v1/knowledge/collections/{collection_id}/approvals": {
       "get": {
-        "operationId": "list_pending_approvals_api_v1_knowledge_collections__collection_key__approvals_get",
+        "operationId": "list_pending_approvals_api_v1_knowledge_collections__collection_id__approvals_get",
         "parameters": [
           {
             "in": "path",
-            "name": "collection_key",
+            "name": "collection_id",
             "required": true,
             "schema": {
-              "title": "Collection Key",
+              "format": "uuid",
+              "title": "Collection Id",
               "type": "string"
             }
           }
@@ -7134,16 +7075,17 @@
         ]
       }
     },
-    "/api/v1/knowledge/collections/{collection_key}/bundle-revisions/{bundle_revision_id}/approval": {
+    "/api/v1/knowledge/collections/{collection_id}/bundle-revisions/{bundle_revision_id}/approval": {
       "post": {
-        "operationId": "review_user_intake_api_v1_knowledge_collections__collection_key__bundle_revisions__bundle_revision_id__approval_post",
+        "operationId": "review_user_intake_api_v1_knowledge_collections__collection_id__bundle_revisions__bundle_revision_id__approval_post",
         "parameters": [
           {
             "in": "path",
-            "name": "collection_key",
+            "name": "collection_id",
             "required": true,
             "schema": {
-              "title": "Collection Key",
+              "format": "uuid",
+              "title": "Collection Id",
               "type": "string"
             }
           },
@@ -7194,16 +7136,17 @@
         ]
       }
     },
-    "/api/v1/knowledge/collections/{collection_key}/ingestions/km-assets": {
+    "/api/v1/knowledge/collections/{collection_id}/ingestions/km-assets": {
       "post": {
-        "operationId": "ingest_km_asset_api_v1_knowledge_collections__collection_key__ingestions_km_assets_post",
+        "operationId": "ingest_km_asset_api_v1_knowledge_collections__collection_id__ingestions_km_assets_post",
         "parameters": [
           {
             "in": "path",
-            "name": "collection_key",
+            "name": "collection_id",
             "required": true,
             "schema": {
-              "title": "Collection Key",
+              "format": "uuid",
+              "title": "Collection Id",
               "type": "string"
             }
           }
@@ -7244,16 +7187,17 @@
         ]
       }
     },
-    "/api/v1/knowledge/collections/{collection_key}/ingestions/user-files": {
+    "/api/v1/knowledge/collections/{collection_id}/ingestions/user-files": {
       "post": {
-        "operationId": "ingest_user_files_api_v1_knowledge_collections__collection_key__ingestions_user_files_post",
+        "operationId": "ingest_user_files_api_v1_knowledge_collections__collection_id__ingestions_user_files_post",
         "parameters": [
           {
             "in": "path",
-            "name": "collection_key",
+            "name": "collection_id",
             "required": true,
             "schema": {
-              "title": "Collection Key",
+              "format": "uuid",
+              "title": "Collection Id",
               "type": "string"
             }
           }
@@ -7294,16 +7238,17 @@
         ]
       }
     },
-    "/api/v1/knowledge/collections/{collection_key}/models": {
+    "/api/v1/knowledge/collections/{collection_id}/models": {
       "put": {
-        "operationId": "update_collection_models_api_v1_knowledge_collections__collection_key__models_put",
+        "operationId": "update_collection_models_api_v1_knowledge_collections__collection_id__models_put",
         "parameters": [
           {
             "in": "path",
-            "name": "collection_key",
+            "name": "collection_id",
             "required": true,
             "schema": {
-              "title": "Collection Key",
+              "format": "uuid",
+              "title": "Collection Id",
               "type": "string"
             }
           }

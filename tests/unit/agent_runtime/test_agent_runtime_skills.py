@@ -49,7 +49,6 @@ class _KnowledgeCoreClient:
             "candidates": [
                 {
                     "collection_id": str(self.collection_id),
-                    "collection_key": "cases",
                     "bundle_id": str(self.bundle_id),
                     "bundle_revision_id": str(self.revision_id),
                     "display_title": "数据库优化案例",

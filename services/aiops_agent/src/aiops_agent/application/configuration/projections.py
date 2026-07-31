@@ -95,7 +95,6 @@ def _secret_status(reference: str | None) -> SecretRefStatus:
 def _target_summary(entity: TargetEntity) -> TargetSummary:
     return TargetSummary(
         target_id=entity.target_id,
-        target_key=entity.target_key,
         display_name=entity.display_name,
         db_type=entity.db_type,
         environment=entity.environment,
@@ -158,7 +157,6 @@ def _monitor_summary(entity: MonitorSourceEntity) -> MonitorSourceSummary:
     )
     return MonitorSourceSummary(
         source_id=entity.monitor_source_id,
-        source_key=entity.source_key,
         display_name=entity.display_name,
         source_type=entity.source_type,
         status=entity.status,
@@ -240,7 +238,6 @@ def _inspection_summary(
 ) -> InspectionPlanSummary:
     return InspectionPlanSummary(
         plan_id=entity.inspection_plan_id,
-        plan_key=entity.plan_key,
         display_name=entity.display_name,
         schedule_type=entity.schedule_type,
         timezone=entity.timezone,

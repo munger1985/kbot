@@ -54,7 +54,6 @@ class UiStaticPagesTest(unittest.TestCase):
                 "auth-form",
                 "domain-form",
                 "collection-form",
-                "generate-collection-key",
                 "upload-form",
                 "tracking-rows",
                 "status-form",
@@ -185,7 +184,7 @@ class UiStaticPagesTest(unittest.TestCase):
             script,
         )
         self.assertIn('KBotUI.api("/api/v1/domains"', script)
-        self.assertIn("generateCollectionKey()", script)
+        self.assertIn("item.collection_id", script)
         self.assertIn('KBotUI.api("/api/v1/agents"', script)
         self.assertIn("enabled_capabilities", script)
         self.assertIn("memory_embedding", script)

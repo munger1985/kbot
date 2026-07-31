@@ -64,7 +64,7 @@
             <p id="collection-status" class="status"></p>
             <div class="table-wrap">
               <table>
-                <thead><tr><th>Key</th><th>名称</th><th>状态</th><th>Collection ID</th></tr></thead>
+                <thead><tr><th>Collection ID</th><th>名称</th><th>状态</th></tr></thead>
                 <tbody id="collection-rows"></tbody>
               </table>
             </div>
@@ -81,16 +81,7 @@
               <button id="refresh-models" type="button">刷新模型目录</button>
             </div>
             <form id="collection-form">
-              <div class="field-row">
-                <div class="field">
-                  <label>collection_key（不是 UUID）</label>
-                  <div class="input-with-action">
-                    <input name="collectionKey" required pattern="[a-z][-a-z0-9_]{1,63}" placeholder="例如 product-docs" />
-                    <button id="generate-collection-key" type="button">重新生成</button>
-                  </div>
-                </div>
-                <div class="field"><label>display_name</label><input name="displayName" required /></div>
-              </div>
+              <div class="field"><label>display_name</label><input name="displayName" required /></div>
               <div class="model-grid">
                 <div class="field">
                   <label>models.parser_llm</label>
@@ -139,7 +130,7 @@
             </p>
             <form id="upload-form">
               <div class="field-row">
-                <div class="field"><label>collection_key</label><input name="collectionKey" required /></div>
+                <div class="field"><label>collection_id</label><input name="collectionId" required /></div>
                 <div class="field">
                   <label>grouping_mode</label>
                   <select name="groupingMode">
@@ -162,7 +153,7 @@
             <h3>用户上传审批</h3>
             <p class="hint">只有 USER_UPLOAD 强制审批；批准后才创建解析任务。</p>
             <form id="approval-form">
-              <div class="field"><label>collection_key</label><input name="collectionKey" required /></div>
+              <div class="field"><label>collection_id</label><input name="collectionId" required /></div>
               <div class="field"><label>审批意见（可选）</label><input name="comment" maxlength="1000" /></div>
               <button class="primary" type="submit">刷新待审批</button>
             </form>
@@ -251,16 +242,9 @@
                 <h3>创建 Agent</h3>
                 <p class="hint">四个基础模型为必选；多能力 Agent 还必须配置 Router LLM。</p>
               </div>
-              <button id="generate-agent-key" type="button">生成 Agent Key</button>
             </div>
             <form id="agent-form">
-              <div class="field-row">
-                <div class="field">
-                  <label>agent_key</label>
-                  <input name="agentKey" required pattern="[a-z][a-z0-9._-]{0,127}" placeholder="例如 document-assistant" />
-                </div>
-                <div class="field"><label>display_name</label><input name="displayName" required /></div>
-              </div>
+              <div class="field"><label>display_name</label><input name="displayName" required /></div>
               <fieldset class="choice-group">
                 <legend>enabled_capabilities</legend>
                 <label><input name="capability" type="checkbox" value="document" checked /> 文档问答</label>
@@ -297,10 +281,10 @@
 
           <section class="panel span-12">
             <h3>绑定 Collection</h3>
-            <p class="hint">Agent 和 Collection 均可从本页列表点选，也可以直接填写 ID/Key。</p>
+            <p class="hint">Agent 和 Collection 均可从本页列表点选，也可以直接填写 ID。</p>
             <form id="binding-form" class="inline-query-form">
               <div class="field"><label>agent_id</label><input name="agentId" required /></div>
-              <div class="field"><label>collection_key</label><input name="collectionKey" required /></div>
+              <div class="field"><label>collection_id</label><input name="collectionId" required /></div>
               <div class="actions compact-actions">
                 <button class="primary" type="submit">绑定</button>
                 <button id="list-bindings" type="button">查询绑定</button>

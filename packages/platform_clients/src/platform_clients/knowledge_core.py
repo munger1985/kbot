@@ -106,14 +106,14 @@ class KnowledgeCoreClient:
         self,
         *,
         domain_id: int,
-        collection_key: str,
+        collection_id: UUID,
         auth_context: AuthContext,
     ) -> dict[str, Any]:
         return await self._json(
             "GET",
             (
                 f"{INTERNAL_API_V1}/knowledge/domains/{domain_id}"
-                f"/collections/{collection_key}"
+                f"/collections/{collection_id}"
             ),
             auth_context=auth_context,
         )
@@ -122,7 +122,7 @@ class KnowledgeCoreClient:
         self,
         *,
         domain_id: int,
-        collection_key: str,
+        collection_id: UUID,
         status: str,
         auth_context: AuthContext,
     ) -> dict[str, Any]:
@@ -130,7 +130,7 @@ class KnowledgeCoreClient:
             "PATCH",
             (
                 f"{INTERNAL_API_V1}/knowledge/domains/{domain_id}"
-                f"/collections/{collection_key}"
+                f"/collections/{collection_id}"
             ),
             payload={"status": status},
             auth_context=auth_context,
@@ -140,7 +140,7 @@ class KnowledgeCoreClient:
         self,
         *,
         domain_id: int,
-        collection_key: str,
+        collection_id: UUID,
         payload: dict[str, Any],
         auth_context: AuthContext,
     ) -> dict[str, Any]:
@@ -148,7 +148,7 @@ class KnowledgeCoreClient:
             "PUT",
             (
                 f"{INTERNAL_API_V1}/knowledge/domains/{domain_id}"
-                f"/collections/{collection_key}/models"
+                f"/collections/{collection_id}/models"
             ),
             payload=payload,
             auth_context=auth_context,
@@ -158,14 +158,14 @@ class KnowledgeCoreClient:
         self,
         *,
         domain_id: int,
-        collection_key: str,
+        collection_id: UUID,
         auth_context: AuthContext,
     ) -> dict[str, Any]:
         return await self._json(
             "DELETE",
             (
                 f"{INTERNAL_API_V1}/knowledge/domains/{domain_id}"
-                f"/collections/{collection_key}"
+                f"/collections/{collection_id}"
             ),
             auth_context=auth_context,
         )
@@ -175,7 +175,7 @@ class KnowledgeCoreClient:
         *,
         domain_id: int,
         agent_id: UUID,
-        collection_key: str,
+        collection_id: UUID,
         note: str | None,
         auth_context: AuthContext,
     ) -> dict[str, Any]:
@@ -183,7 +183,7 @@ class KnowledgeCoreClient:
             "PUT",
             (
                 f"{INTERNAL_API_V1}/knowledge/domains/{domain_id}"
-                f"/agents/{agent_id}/collections/{collection_key}/binding"
+                f"/agents/{agent_id}/collections/{collection_id}/binding"
             ),
             payload={"note": note},
             auth_context=auth_context,
@@ -194,14 +194,14 @@ class KnowledgeCoreClient:
         *,
         domain_id: int,
         agent_id: UUID,
-        collection_key: str,
+        collection_id: UUID,
         auth_context: AuthContext,
     ) -> None:
         await self._json(
             "DELETE",
             (
                 f"{INTERNAL_API_V1}/knowledge/domains/{domain_id}"
-                f"/agents/{agent_id}/collections/{collection_key}/binding"
+                f"/agents/{agent_id}/collections/{collection_id}/binding"
             ),
             auth_context=auth_context,
             allow_empty=True,
@@ -262,14 +262,14 @@ class KnowledgeCoreClient:
         self,
         *,
         domain_id: int,
-        collection_key: str,
+        collection_id: UUID,
         auth_context: AuthContext,
     ) -> dict[str, Any]:
         return await self._json(
             "GET",
             (
                 f"{INTERNAL_API_V1}/knowledge/domains/{domain_id}"
-                f"/collections/{collection_key}/approvals"
+                f"/collections/{collection_id}/approvals"
             ),
             auth_context=auth_context,
         )
@@ -278,7 +278,7 @@ class KnowledgeCoreClient:
         self,
         *,
         domain_id: int,
-        collection_key: str,
+        collection_id: UUID,
         bundle_revision_id: UUID,
         decision: str,
         comment: str | None,
@@ -288,7 +288,7 @@ class KnowledgeCoreClient:
             "POST",
             (
                 f"{INTERNAL_API_V1}/knowledge/domains/{domain_id}"
-                f"/collections/{collection_key}/bundle-revisions/"
+                f"/collections/{collection_id}/bundle-revisions/"
                 f"{bundle_revision_id}/approval"
             ),
             payload={"decision": decision, "comment": comment},
@@ -299,7 +299,7 @@ class KnowledgeCoreClient:
         self,
         *,
         domain_id: int,
-        collection_key: str,
+        collection_id: UUID,
         intake_kind: str,
         content_type: str,
         body: AsyncIterable[bytes],
@@ -310,7 +310,7 @@ class KnowledgeCoreClient:
             raise ValueError("不支持的 KC 入库类型")
         path = (
             f"{INTERNAL_API_V1}/knowledge/domains/{domain_id}"
-            f"/collections/{collection_key}/ingestions/{intake_kind}"
+            f"/collections/{collection_id}/ingestions/{intake_kind}"
         )
         headers = self._headers(auth_context)
         headers["Content-Type"] = content_type

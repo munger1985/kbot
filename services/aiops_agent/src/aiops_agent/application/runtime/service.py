@@ -257,8 +257,8 @@ class AIOpsRuntimeService:
 
             target_snapshot = {
                 "target_id": str(target.target_id),
-                                "domain_id": int(target.domain_id),
-                "target_key": target.target_key,
+                "domain_id": int(target.domain_id),
+                "display_name": target.display_name,
                 "db_type": target.db_type,
                 "version_code": target.version_code,
                 "environment": target.environment,

@@ -7,7 +7,6 @@ from platform_core.identity import uuid7
 
 from knowledge_core.application.collections import (
     BindAgentCollectionCommand,
-    CollectionAlreadyExistsError,
     CollectionNotFoundError,
     CreateCollectionCommand,
     KnowledgeCoreBindingService,
@@ -15,13 +14,16 @@ from knowledge_core.application.collections import (
     UpdateCollectionModelsCommand,
 )
 
+COLLECTION_ID = uuid7()
+AGENT_ID = uuid7()
+
 
 class FakeCollectionRepository:
     def __init__(self, existing=None):
         self._existing = existing
         self.added = None
 
-    async def get_by_scope_key(self, **kwargs):
+    async def get_by_id_scope(self, **kwargs):
         return self._existing
 
     async def add(self, collection):
@@ -82,7 +84,6 @@ class KnowledgeCoreCollectionServiceTest(unittest.IsolatedAsyncioTestCase):
         collection = await service.create(
             CreateCollectionCommand(
                 domain_id=8,
-                collection_key="assets",
                 display_name="Asset Knowledge",
                 models={
                     "parser_llm": uuid7(),
@@ -104,32 +105,10 @@ class KnowledgeCoreCollectionServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("ACTIVE", repository.added.status)
         uow.commit.assert_awaited_once()
 
-    async def test_rejects_existing_immutable_collection_key(self):
-        repository = FakeCollectionRepository(existing=object())
-        service, uow = self._service(repository)
-
-        with self.assertRaises(CollectionAlreadyExistsError):
-            await service.create(
-                CreateCollectionCommand(
-                    domain_id=8,
-                    collection_key="assets",
-                    display_name="Asset Knowledge",
-                    models={
-                        "parser_llm": uuid7(),
-                        "retrieval_llm": uuid7(),
-                        "embedding": uuid7(),
-                    },
-                )
-            )
-
-        self.assertIsNone(repository.added)
-        uow.commit.assert_not_awaited()
-
     async def test_list_returns_session_independent_snapshots(self):
         collection = SimpleNamespace(
             collection_id=uuid7(),
             domain_id=8,
-            collection_key="assets",
             display_name="Asset Knowledge",
             description=None,
             models_json={
@@ -160,7 +139,6 @@ class KnowledgeCoreCollectionServiceTest(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(ValueError, "embedding"):
             await service.create(CreateCollectionCommand(
                 domain_id=8,
-                collection_key="assets",
                 display_name="Asset Knowledge",
                 models={
                     "parser_llm": uuid7(),
@@ -192,7 +170,7 @@ class KnowledgeCoreCollectionServiceTest(unittest.IsolatedAsyncioTestCase):
         updated = await service.update_models(
             UpdateCollectionModelsCommand(
                 domain_id=8,
-                collection_key="assets",
+                collection_id=COLLECTION_ID,
                 models={
                     "parser_llm": parser_llm,
                     "parser_vlm": parser_vlm,
@@ -216,17 +194,21 @@ class KnowledgeCoreCollectionServiceTest(unittest.IsolatedAsyncioTestCase):
         uow.commit.assert_awaited_once()
 
     async def test_binds_agent_to_collection_without_retrieval_weights(self):
-        collection = SimpleNamespace(collection_id=101)
+        collection = SimpleNamespace(collection_id=COLLECTION_ID)
         bindings = FakeBindingRepository()
         service, uow = self._binding_service(FakeCollectionRepository(existing=collection), bindings)
 
         binding = await service.bind_agent(
-            BindAgentCollectionCommand(domain_id=8, collection_key="assets", agent_id="42")
+            BindAgentCollectionCommand(
+                domain_id=8,
+                collection_id=COLLECTION_ID,
+                agent_id=AGENT_ID,
+            )
         )
 
         self.assertEqual(201, binding.binding_id)
         self.assertEqual("AGENT", bindings.added.consumer_type)
-        self.assertEqual("42", bindings.added.consumer_id)
+        self.assertEqual(AGENT_ID, bindings.added.consumer_id)
         self.assertEqual("ACTIVE", bindings.added.status)
         uow.commit.assert_awaited_once()
 
@@ -235,7 +217,11 @@ class KnowledgeCoreCollectionServiceTest(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaises(CollectionNotFoundError):
             await service.bind_agent(
-                BindAgentCollectionCommand(domain_id=8, collection_key="assets", agent_id="42")
+                BindAgentCollectionCommand(
+                    domain_id=8,
+                    collection_id=COLLECTION_ID,
+                    agent_id=AGENT_ID,
+                )
             )
 
         uow.commit.assert_not_awaited()
@@ -248,7 +234,10 @@ class KnowledgeCoreCollectionLifecycleTest(unittest.IsolatedAsyncioTestCase):
         service = KnowledgeCoreCollectionService(uow_factory=lambda: uow)
         from knowledge_core.application.collections import ChangeCollectionStatusCommand
         result = await service.change_status(ChangeCollectionStatusCommand(
-            domain_id=8, collection_key="assets", status="DISABLED", actor_id="tester",
+            domain_id=8,
+            collection_id=COLLECTION_ID,
+            status="DISABLED",
+            actor_id="tester",
         ))
         self.assertEqual("DISABLED", result.status)
         self.assertEqual("tester", result.updated_by)

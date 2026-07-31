@@ -1,6 +1,7 @@
 """Contract tests for ordinary user-file declarations."""
 import unittest
 from unittest.mock import MagicMock, patch
+from platform_core.identity import uuid7
 
 from knowledge_core.api.intake_router import (
     UserBundleDeclaration,
@@ -31,11 +32,12 @@ class UserIntakeContractTest(unittest.TestCase):
             "knowledge_core.api.intake_router.logger.bind",
             return_value=bound_logger,
         ) as bind:
+            collection_id = uuid7()
             result = _record_user_file_failure(
                 exc=RuntimeError("数据库约束冲突"),
                 request_id="request-1",
                 domain_id=7,
-                collection_key="manuals",
+                collection_id=collection_id,
                 client_file_id="file-1",
                 file_name="guide.pdf",
             )
@@ -50,7 +52,7 @@ class UserIntakeContractTest(unittest.TestCase):
             error_id=result["error_id"],
             request_id="request-1",
             domain_id=7,
-            collection_key="manuals",
+            collection_id=str(collection_id),
             client_file_id="file-1",
             file_name="guide.pdf",
         )

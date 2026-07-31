@@ -25,7 +25,7 @@ def manifest():
 class Repository:
     def __init__(self, values=None):
         self.values, self.added, self.deleted = values or {}, [], []
-    async def get_by_scope_key(self, **kwargs): return self.values.get("collection")
+    async def get_by_id_scope(self, **kwargs): return self.values.get("collection")
     async def get_by_id(self, **kwargs): return self.values.get("collection")
     async def get_by_idempotency_key(self, **kwargs): return self.values.get("receipt")
     async def get_by_source(self, **kwargs): return self.values.get("bundle")
@@ -129,7 +129,6 @@ class IntakeServiceTest(unittest.IsolatedAsyncioTestCase):
     async def test_approval_atomically_creates_parse_job(self):
         revision_id = uuid7()
         collection = self._collection()
-        collection.collection_key = "assets"
         revision = SimpleNamespace(
             collection_id=collection.collection_id,
             bundle_id=uuid7(),
@@ -180,7 +179,7 @@ class IntakeServiceTest(unittest.IsolatedAsyncioTestCase):
         result = await service.review(
             ReviewIntakeCommand(
                 domain_id=1,
-                collection_key="assets",
+                collection_id=collection.collection_id,
                 bundle_revision_id=revision_id,
                 decision="APPROVE",
                 actor_id="user:reviewer",
@@ -387,7 +386,7 @@ class IntakeServiceTest(unittest.IsolatedAsyncioTestCase):
         await service.abort(
             AbortIntakeCommand(
                 domain_id=1,
-                collection_key="assets",
+                collection_id=1,
                 actor_id="svc:portal",
                 idempotency_key="failed-key",
                 failure_code="IntegrityError",

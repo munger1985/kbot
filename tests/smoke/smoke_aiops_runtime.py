@@ -87,7 +87,6 @@ async def main() -> None:
                 TargetEntity(
                     target_id=target_id,
                     domain_id=domain_id,
-                    target_key=f"runtime-smoke-{target_id}",
                     display_name="运行内核 Smoke Target",
                     db_type="ORACLE",
                     environment="DEV",
@@ -404,7 +403,7 @@ async def main() -> None:
                 await session.execute(
                     select(func.count())
                     .select_from(TargetEntity)
-                    .where(TargetEntity.target_key.like("runtime-smoke-%"))
+                    .where(TargetEntity.target_id == target_id)
                 )
             ).scalar_one()
             if int(remaining_runs) or int(remaining_targets):

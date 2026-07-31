@@ -62,7 +62,6 @@ class TargetEndpoint(AIOpsContract):
 
 class TargetCreate(AIOpsContract):
     schema_version: str = PUBLIC_SCHEMA_VERSION
-    target_key: str = Field(pattern=r"^[a-z][a-z0-9._-]{0,127}$")
     display_name: str = Field(min_length=1, max_length=256)
     db_type: DatabaseType
     version_code: str | None = Field(default=None, max_length=64)
@@ -102,7 +101,6 @@ class TargetPatch(AIOpsContract):
 class TargetSummary(AIOpsContract):
     schema_version: str = PUBLIC_SCHEMA_VERSION
     target_id: UUIDv7
-    target_key: str
     display_name: str
     db_type: DatabaseType
     environment: str
@@ -170,7 +168,6 @@ class AgentBindingView(AIOpsContract):
 
 class MonitorSourceCreate(AIOpsContract):
     schema_version: str = PUBLIC_SCHEMA_VERSION
-    source_key: str = Field(pattern=r"^[a-z][a-z0-9._-]{0,127}$")
     display_name: str = Field(min_length=1, max_length=256)
     source_type: Literal["PROMETHEUS", "ZABBIX", "OEM"]
     endpoint: HttpUrl
@@ -217,7 +214,6 @@ class MonitorSourcePatch(AIOpsContract):
 class MonitorSourceSummary(AIOpsContract):
     schema_version: str = PUBLIC_SCHEMA_VERSION
     source_id: UUIDv7
-    source_key: str
     display_name: str
     source_type: str
     status: MonitorStatus
@@ -320,7 +316,6 @@ class PolicyPage(CursorPage):
 
 class InspectionPlanCreate(AIOpsContract):
     schema_version: str = PUBLIC_SCHEMA_VERSION
-    plan_key: str = Field(pattern=r"^[a-z][a-z0-9._-]{0,127}$")
     display_name: str = Field(min_length=1, max_length=256)
     schedule_type: Literal["DAILY", "WEEKLY", "CRON"]
     cron_expression: str = Field(min_length=9, max_length=256)
@@ -351,7 +346,6 @@ class InspectionPlanPatch(AIOpsContract):
 class InspectionPlanSummary(AIOpsContract):
     schema_version: str = PUBLIC_SCHEMA_VERSION
     plan_id: UUIDv7
-    plan_key: str
     display_name: str
     schedule_type: str
     timezone: str

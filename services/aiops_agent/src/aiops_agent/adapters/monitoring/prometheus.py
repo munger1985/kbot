@@ -303,7 +303,7 @@ class PrometheusAdapter(BaseMonitorAdapter):
                 if status == MonitorEventStatus.RESOLVED
                 else starts_at
             )
-            source_key = hashlib.sha256(
+            event_source_key = hashlib.sha256(
                 (
                     f"{alert_fingerprint}|{external}|{problem}|"
                     f"{status}|{transition_at}"
@@ -311,7 +311,7 @@ class PrometheusAdapter(BaseMonitorAdapter):
             ).hexdigest()
             events.append(
                 NormalizedMonitorEvent(
-                    source_event_key=source_key,
+                    source_event_key=event_source_key,
                     external_target_key=external,
                     event_type=problem[:64],
                     event_status=status,

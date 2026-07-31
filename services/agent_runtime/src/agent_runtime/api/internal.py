@@ -86,7 +86,6 @@ class CancelRunRequest(_RequestModel):
 
 
 class CreateAgentDefinitionRequest(_RequestModel):
-    agent_key: str = Field(pattern=r"^[a-z][a-z0-9._-]{0,127}$")
     display_name: str = Field(min_length=1, max_length=256)
     description: str | None = Field(default=None, max_length=1000)
     enabled_capabilities: tuple[str, ...] = Field(min_length=1)

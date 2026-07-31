@@ -100,6 +100,14 @@ FORBIDDEN_TOKENS = (
     "CREATE TABLE AS SELECT",
     "DATABASE LINK",
 )
+FORBIDDEN_RESOURCE_COLUMNS = {
+    "AGENT_KEY",
+    "COLLECTION_KEY",
+    "TARGET_KEY",
+    "SOURCE_KEY",
+    "PLAN_KEY",
+    "MODEL_KEY",
+}
 KC_UUID_COLUMNS = (
     "COLLECTION_ID",
     "BINDING_ID",
@@ -199,6 +207,9 @@ def main() -> int:
         for token in FORBIDDEN_TOKENS:
             if token in combined:
                 errors.append(f"{service} 禁止出现 3.x 或数据导入语句：{token}")
+        for column in sorted(FORBIDDEN_RESOURCE_COLUMNS):
+            if re.search(rf"\b{column}\b", combined):
+                errors.append(f"{service} 禁止出现冗余资源标识列：{column}")
         if re.search(r"\bDROP\s+(TABLE|VIEW|INDEX)\b", combined):
             errors.append(f"{service} 全量建库脚本禁止包含 DROP")
 

@@ -31,7 +31,7 @@ def _record_user_file_failure(
     exc: Exception,
     request_id: str,
     domain_id: int,
-    collection_key: str,
+    collection_id: UUID,
     client_file_id: str,
     file_name: str,
 ) -> dict:
@@ -45,18 +45,18 @@ def _record_user_file_failure(
         error_id=error_id,
         request_id=request_id,
         domain_id=domain_id,
-        collection_key=collection_key,
+        collection_id=str(collection_id),
         client_file_id=client_file_id,
         file_name=file_name,
     ).error(
         "用户文件入库失败 | error_id={} | request_id={} | "
-        "domain_id={} | collection_key={} | "
+        "domain_id={} | collection_id={} | "
         "client_file_id={} | file_name={} | exception_type={} | "
         "错误={}\n{}",
         error_id,
         request_id,
         domain_id,
-        collection_key,
+        collection_id,
         client_file_id,
         file_name,
         type(exc).__name__,
@@ -80,10 +80,10 @@ async def _copy_upload(upload: UploadFile, target: Path) -> None:
 
 
 @router.post(
-    f"{INTERNAL_API_V1}/knowledge/domains/{{domain_id}}/collections/{{collection_key}}/ingestions/km-assets",
+    f"{INTERNAL_API_V1}/knowledge/domains/{{domain_id}}/collections/{{collection_id}}/ingestions/km-assets",
     status_code=status.HTTP_202_ACCEPTED,
 )
-async def ingest_km_asset(domain_id: int, collection_key: str, request: Request):
+async def ingest_km_asset(domain_id: int, collection_id: UUID, request: Request):
     """接收一个完整 Asset Bundle；受理成功不代表解析已完成。"""
     require_domain_match(request, domain_id)
     try:
@@ -112,7 +112,7 @@ async def ingest_km_asset(domain_id: int, collection_key: str, request: Request)
                 files[declaration.part_name] = target
             orchestrator = request.app.state.kc_multipart_orchestrator
             accepted = await orchestrator.accept(MultipartIntakeCommand(
-                domain_id=domain_id, collection_key=collection_key,
+                domain_id=domain_id, collection_id=collection_id,
                 actor_id=get_actor_id(request),
                 idempotency_key=request.headers.get("Idempotency-Key", ""),
                 manifest=manifest, file_paths=files,
@@ -194,10 +194,10 @@ def _user_manifest(bundle: UserBundleDeclaration, files: list[UserFileDeclaratio
 
 
 @router.post(
-    f"{INTERNAL_API_V1}/knowledge/domains/{{domain_id}}/collections/{{collection_key}}/ingestions/user-files",
+    f"{INTERNAL_API_V1}/knowledge/domains/{{domain_id}}/collections/{{collection_id}}/ingestions/user-files",
     status_code=status.HTTP_202_ACCEPTED,
 )
-async def ingest_user_files(domain_id: int, collection_key: str, request: Request):
+async def ingest_user_files(domain_id: int, collection_id: UUID, request: Request):
     """接收多个独立文件或一个显式组合的 Bundle。"""
     require_domain_match(request, domain_id)
     request_id = request.headers.get("X-Request-ID") or str(uuid4())
@@ -242,7 +242,7 @@ async def ingest_user_files(domain_id: int, collection_key: str, request: Reques
                     source_revision=bundle_data.source_revision or idempotency_key,
                 )
                 accepted = await orchestrator.accept(MultipartIntakeCommand(
-                    domain_id, collection_key, actor, idempotency_key, manifest, file_paths,
+                    domain_id, collection_id, actor, idempotency_key, manifest, file_paths,
                     "kbot", "USER_UPLOAD", False,
                     ("CONTENT", "SUPPLEMENT"), True,
                 ))
@@ -260,7 +260,7 @@ async def ingest_user_files(domain_id: int, collection_key: str, request: Reques
                     child_key = f"{idempotency_key}:{item.client_file_id}"
                     try:
                         accepted = await orchestrator.accept(MultipartIntakeCommand(
-                            domain_id, collection_key, actor, child_key, manifest,
+                            domain_id, collection_id, actor, child_key, manifest,
                             {item.part_name: file_paths[item.part_name]},
                             "kbot", "USER_UPLOAD", False,
                             ("CONTENT", "SUPPLEMENT"), True,
@@ -279,7 +279,7 @@ async def ingest_user_files(domain_id: int, collection_key: str, request: Reques
                                 exc=exc,
                                 request_id=request_id,
                                 domain_id=domain_id,
-                                collection_key=collection_key,
+                                collection_id=collection_id,
                                 client_file_id=item.client_file_id,
                                 file_name=item.display_name,
                             )
@@ -316,18 +316,18 @@ def _review_payload(review) -> dict:
 
 @router.get(
     f"{INTERNAL_API_V1}/knowledge/domains/{{domain_id}}"
-    "/collections/{collection_key}/approvals",
+    "/collections/{collection_id}/approvals",
 )
 async def list_pending_approvals(
     domain_id: int,
-    collection_key: str,
+    collection_id: UUID,
     request: Request,
 ):
     require_domain_match(request, domain_id)
     try:
         rows = await request.app.state.kc_intake_service.list_pending_reviews(
             domain_id=domain_id,
-            collection_key=collection_key,
+            collection_id=collection_id,
         )
     except IntakeReviewNotFoundError as exc:
         raise HTTPException(
@@ -339,12 +339,12 @@ async def list_pending_approvals(
 
 @router.post(
     f"{INTERNAL_API_V1}/knowledge/domains/{{domain_id}}"
-    "/collections/{collection_key}/bundle-revisions/"
+    "/collections/{collection_id}/bundle-revisions/"
     "{bundle_revision_id}/approval",
 )
 async def review_user_intake(
     domain_id: int,
-    collection_key: str,
+    collection_id: UUID,
     bundle_revision_id: UUID,
     payload: IntakeReviewRequest,
     request: Request,
@@ -354,7 +354,7 @@ async def review_user_intake(
         review = await request.app.state.kc_intake_service.review(
             ReviewIntakeCommand(
                 domain_id=domain_id,
-                collection_key=collection_key,
+                collection_id=collection_id,
                 bundle_revision_id=bundle_revision_id,
                 decision=payload.decision,
                 actor_id=get_actor_id(request),
