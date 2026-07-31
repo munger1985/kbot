@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
+from loguru import logger
+from pydantic import ValidationError
+
 from agent_runtime.domain.model_bindings import agent_model_name
 from agent_runtime.runtime import ExecutionContext, SkillArtifact, SkillResult
 from platform_core.prompts import StrictPromptRenderer
@@ -62,11 +65,45 @@ class ContextRewriteSkill:
             prompt=rendered,
             max_tokens=2048,
         )
-        normalized = self._normalize_response(
-            response,
-            original_input=context.original_input,
-        )
-        output = ContextRewriteOutput.model_validate(normalized)
+        try:
+            output = self._validate_response(
+                response,
+                original_input=context.original_input,
+            )
+        except ValidationError as exc:
+            logger.warning(
+                "上下文改写模型输出不符合契约，准备执行一次格式修正 "
+                "| model={} | prompt_version={} | shape={} | errors={}",
+                model_name,
+                prompt.version,
+                self._response_shape(response),
+                self._validation_summary(exc),
+            )
+            corrected_response = await self._model_client.get_llm_json(
+                served_model_name=model_name,
+                prompt=(
+                    rendered
+                    + "\n\n上一份输出未通过字段校验。请仅重新输出一个 JSON 对象："
+                    "retrieval_queries 必须是包含至少一个非空字符串的数组；"
+                    "ambiguity 必须是 JSON 布尔值 true 或 false，不能是字符串。"
+                ),
+                max_tokens=2048,
+            )
+            try:
+                output = self._validate_response(
+                    corrected_response,
+                    original_input=context.original_input,
+                )
+            except ValidationError as corrected_exc:
+                logger.error(
+                    "上下文改写模型格式修正后仍不符合契约 "
+                    "| model={} | prompt_version={} | shape={} | errors={}",
+                    model_name,
+                    prompt.version,
+                    self._response_shape(corrected_response),
+                    self._validation_summary(corrected_exc),
+                )
+                raise
         allowed_memory_ids = {
             str(item.get("memory_id"))
             for item in memory_context.get("memories") or []
@@ -77,50 +114,42 @@ class ContextRewriteSkill:
         return self._result(context, output, prompt_ref=prompt.ref())
 
     @staticmethod
-    def _normalize_response(
+    def _validate_response(
         response: Any,
         *,
         original_input: str,
-    ) -> dict[str, Any]:
-        """修复可安全降级的模型格式偏差，保留业务字段的严格校验。"""
+    ) -> ContextRewriteOutput:
+        """将模型响应放入固定输入后执行完整契约校验。"""
         if not isinstance(response, dict):
             raise ValueError("上下文改写模型未返回 JSON 对象")
-
-        normalized = {**response, "raw_input": original_input}
-        standalone_query = str(
-            normalized.get("standalone_query") or original_input
-        ).strip() or original_input
-        normalized["standalone_query"] = standalone_query
-
-        raw_queries = normalized.get("retrieval_queries")
-        if isinstance(raw_queries, str):
-            raw_queries = [raw_queries]
-        if isinstance(raw_queries, (list, tuple)):
-            retrieval_queries = tuple(
-                str(query).strip()
-                for query in raw_queries
-                if str(query).strip()
-            )[:5]
-        else:
-            retrieval_queries = ()
-        # 检索查询为空时使用独立问题，避免模型格式偏差中断整个任务。
-        normalized["retrieval_queries"] = (
-            retrieval_queries or (standalone_query,)
+        return ContextRewriteOutput.model_validate(
+            {**response, "raw_input": original_input}
         )
 
-        raw_ambiguity = normalized.get("ambiguity", False)
-        if isinstance(raw_ambiguity, bool):
-            ambiguity = raw_ambiguity
-        elif isinstance(raw_ambiguity, str):
-            value = raw_ambiguity.strip().lower()
-            ambiguity = value in {"true", "1", "yes", "y", "是"}
-        else:
-            ambiguity = False
-        normalized["ambiguity"] = ambiguity
-        if not ambiguity:
-            normalized["clarification_question"] = None
+    @staticmethod
+    def _response_shape(response: Any) -> dict[str, Any]:
+        """仅记录字段结构，不将用户问题或模型正文写入运行日志。"""
+        if not isinstance(response, dict):
+            return {"response_type": type(response).__name__}
+        queries = response.get("retrieval_queries")
+        return {
+            "retrieval_queries_type": type(queries).__name__,
+            "retrieval_queries_count": (
+                len(queries) if isinstance(queries, (list, tuple)) else None
+            ),
+            "ambiguity_type": type(response.get("ambiguity")).__name__,
+            "has_clarification_question": bool(
+                response.get("clarification_question")
+            ),
+        }
 
-        return normalized
+    @staticmethod
+    def _validation_summary(exc: ValidationError) -> list[str]:
+        """生成不含原始输入值的字段校验摘要。"""
+        return [
+            f"{'.'.join(str(item) for item in error['loc'])}:{error['type']}"
+            for error in exc.errors(include_input=False, include_url=False)
+        ]
 
     @staticmethod
     def _result(

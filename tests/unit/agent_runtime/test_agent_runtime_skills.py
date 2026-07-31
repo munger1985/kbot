@@ -7,6 +7,7 @@ import tempfile
 import unittest
 
 from PIL import Image
+from pydantic import ValidationError
 from agent_runtime.application import LeasedArtifact
 from agent_runtime.runtime import ExecutionContext
 from agent_runtime.specialists.conversation import ContextRewriteSkill
@@ -153,7 +154,11 @@ class _EmptyObjectRewriteModelClient(_RewriteModelClient):
 
 
 class _MalformedRewriteModelClient(_RewriteModelClient):
+    def __init__(self):
+        self.call_count = 0
+
     async def get_llm_json(self, **kwargs):
+        self.call_count += 1
         output = await super().get_llm_json(**kwargs)
         output["retrieval_queries"] = []
         output["ambiguity"] = "否"
@@ -376,7 +381,7 @@ class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(result.artifact.payload["memory_refs"], [])
 
-    async def test_context_rewrite_recovers_empty_queries_and_non_boolean_ambiguity(self):
+    async def test_context_rewrite_rejects_invalid_output_after_one_correction_attempt(self):
         context = _context().model_copy(
             update={
                 "config_snapshot": {
@@ -392,17 +397,14 @@ class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
             }
         )
 
-        result = await ContextRewriteSkill(
-            model_client=_MalformedRewriteModelClient(),
-            prompt_resolver=_PromptResolver(),
-        ).execute(context)
+        model_client = _MalformedRewriteModelClient()
+        with self.assertRaises(ValidationError):
+            await ContextRewriteSkill(
+                model_client=model_client,
+                prompt_resolver=_PromptResolver(),
+            ).execute(context)
 
-        self.assertEqual(
-            ["数据库优化案例有什么优势？"],
-            result.artifact.payload["retrieval_queries"],
-        )
-        self.assertFalse(result.artifact.payload["ambiguity"])
-        self.assertIsNone(result.artifact.payload["clarification_question"])
+        self.assertEqual(2, model_client.call_count)
 
     def test_root_planner_rejects_aiops_without_frozen_target(self):
         decision = RootAgentPlanner().decide(
