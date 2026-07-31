@@ -416,7 +416,6 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
             "aiops"
         ]
         self.store.agents[self.agent_id].config_json = {
-            "aiops_agent_id": str(uuid7()),
             "aiops_target_id": str(uuid7()),
         }
         service = AgentRuntimeService(

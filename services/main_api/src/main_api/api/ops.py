@@ -20,6 +20,7 @@ from fastapi import (
 from pydantic import BaseModel
 from starlette.responses import StreamingResponse
 
+from platform_clients import AgentRuntimeClient
 from platform_clients.aiops import AIOpsManagementClient
 from platform_core.contracts import PUBLIC_API_V1
 from platform_core.contracts.aiops import (
@@ -99,6 +100,61 @@ IfMatch = Annotated[str, Depends(require_if_match)]
 
 def _client(request: Request) -> AIOpsManagementClient:
     return cast(AIOpsManagementClient, request.app.state.aiops_client)
+
+
+def _agent_client(request: Request) -> AgentRuntimeClient:
+    return cast(
+        AgentRuntimeClient,
+        request.app.state.agent_runtime_client,
+    )
+
+
+async def _select_aiops_chat_target(
+    *, request: Request, agent_id: UUID, target_id: UUID
+) -> None:
+    """将显式创建或恢复的绑定同步为该 Agent 的聊天目标。"""
+    client = _agent_client(request)
+    context = request.state.auth_context
+    agent = await client.get_agent(
+        agent_id=agent_id,
+        auth_context=context,
+    )
+    config = dict(agent.get("config") or {})
+    expected = {"aiops_target_id": str(target_id)}
+    if all(config.get(key) == value for key, value in expected.items()):
+        return
+    await client.update_agent(
+        agent_id=agent_id,
+        payload={
+            "expected_row_version": int(agent["row_version"]),
+            "config": {**config, **expected},
+        },
+        auth_context=context,
+    )
+
+
+async def _clear_aiops_chat_target(
+    *, request: Request, agent_id: UUID, target_id: UUID
+) -> None:
+    """撤销当前聊天目标时清理冻结配置，不猜测其他绑定。"""
+    client = _agent_client(request)
+    context = request.state.auth_context
+    agent = await client.get_agent(
+        agent_id=agent_id,
+        auth_context=context,
+    )
+    config = dict(agent.get("config") or {})
+    if config.get("aiops_target_id") != str(target_id):
+        return
+    config.pop("aiops_target_id", None)
+    await client.update_agent(
+        agent_id=agent_id,
+        payload={
+            "expected_row_version": int(agent["row_version"]),
+            "config": config,
+        },
+        auth_context=context,
+    )
 
 
 def _validated(
@@ -662,7 +718,13 @@ async def create_agent_binding(
         idempotency_key=idempotency_key,
         auth_context=request.state.auth_context,
     )
-    return _validated(AgentBindingView, payload, response)
+    result = _validated(AgentBindingView, payload, response)
+    await _select_aiops_chat_target(
+        request=request,
+        agent_id=result.agent_id,
+        target_id=result.target_id,
+    )
+    return result
 
 
 @router.patch(
@@ -708,7 +770,20 @@ async def command_agent_binding(
         idempotency_key=idempotency_key,
         auth_context=request.state.auth_context,
     )
-    return _validated(AgentBindingView, payload, response)
+    result = _validated(AgentBindingView, payload, response)
+    if command == "restore":
+        await _select_aiops_chat_target(
+            request=request,
+            agent_id=result.agent_id,
+            target_id=result.target_id,
+        )
+    else:
+        await _clear_aiops_chat_target(
+            request=request,
+            agent_id=result.agent_id,
+            target_id=result.target_id,
+        )
+    return result
 
 
 @router.post(

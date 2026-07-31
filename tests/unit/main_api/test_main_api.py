@@ -99,6 +99,7 @@ class _FakeAgentRuntimeClient:
         self.agent_id = UUID("019f8eae-2c25-7d48-b044-350ec3f5a001")
         self.run_id = UUID("019f8eae-2c25-7d48-b044-350ec3f5a002")
         self.last_context: AuthContext | None = None
+        self.last_update_payload: dict[str, Any] | None = None
 
     async def is_ready(self):
         return True
@@ -161,6 +162,7 @@ class _FakeAgentRuntimeClient:
 
     async def update_agent(self, *, agent_id, payload, auth_context):
         self.last_context = auth_context
+        self.last_update_payload = payload
         return {**self._agent(), **payload}
 
     async def create_run(
@@ -241,8 +243,38 @@ class _FakeAgentRuntimeClient:
 
 
 class _FakeAIOpsClient:
+    def __init__(self):
+        self.binding_id = UUID("019f8eae-2c25-7d48-b044-350ec3f5a101")
+
     async def is_ready(self):
         return True
+
+    async def create_agent_binding(
+        self,
+        target_id,
+        payload,
+        *,
+        idempotency_key,
+        auth_context,
+    ):
+        now = datetime.now(timezone.utc).isoformat()
+        return {
+            "schema_version": "aiops.public.v1",
+            "binding_id": str(self.binding_id),
+            "target_id": str(target_id),
+            "agent_id": payload["agent_id"],
+            "allow_mutation": payload.get("allow_mutation", False),
+            "policy_id": payload.get("policy_id"),
+            "allowed_actions": payload.get("allowed_actions", []),
+            "change_window": payload.get("change_window"),
+            "max_daily_executions": payload.get(
+                "max_daily_executions"
+            ),
+            "status": "ACTIVE",
+            "row_version": 1,
+            "created_at": now,
+            "updated_at": now,
+        }
 
 
 class _FakeDomainManagementService:
@@ -303,7 +335,8 @@ class MainApiTest(unittest.TestCase):
         )
         self.app.state.knowledge_core_client = self.kc
         self.app.state.agent_runtime_client = self.agent_runtime
-        self.app.state.aiops_client = _FakeAIOpsClient()
+        self.aiops = _FakeAIOpsClient()
+        self.app.state.aiops_client = self.aiops
         self.domain_management = _FakeDomainManagementService()
         self.app.state.domain_management_service = self.domain_management
         self.app.state.main_api_settings = get_main_api_settings()
@@ -549,6 +582,35 @@ class MainApiTest(unittest.TestCase):
         )
         self.assertEqual(428, response.status_code)
         self.assertEqual("PRECONDITION_REQUIRED", response.json()["code"])
+
+    def test_aiops_binding_selects_agent_chat_target(self) -> None:
+        target_id = UUID("019f8eae-2c25-7d48-b044-350ec3f5a102")
+        response = self.client.post(
+            f"/api/v1/ops/targets/{target_id}/agent-bindings",
+            headers={
+                **self._headers(),
+                "Idempotency-Key": "binding-1",
+            },
+            json={
+                "agent_id": str(self.agent_runtime.agent_id),
+                "allow_mutation": False,
+                "allowed_actions": [],
+            },
+        )
+
+        self.assertEqual(201, response.status_code)
+        self.assertEqual(
+            {
+                "aiops_target_id": str(target_id),
+            },
+            self.agent_runtime.last_update_payload["config"],
+        )
+        self.assertEqual(
+            1,
+            self.agent_runtime.last_update_payload[
+                "expected_row_version"
+            ],
+        )
 
     def test_health_is_public(self) -> None:
         response = self.client.get("/healthz")

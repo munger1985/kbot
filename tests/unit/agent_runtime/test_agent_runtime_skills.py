@@ -343,7 +343,6 @@ class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
             agent_snapshot={
                 "enabled_capabilities": ["aiops"],
                 "config": {
-                    "aiops_agent_id": str(uuid7()),
                     "aiops_target_id": str(uuid7()),
                 },
             }

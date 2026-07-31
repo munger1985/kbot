@@ -99,7 +99,7 @@ class AgentDelegationReconcilerTest(
             run=SimpleNamespace(
                 run_id=run_id,
                 domain_id=20,
-                agent_id=uuid7(),
+                agent_id=aiops_agent_id,
                 actor_id="user-1",
                 original_input="分析数据库性能下降",
                 deadline_at=now + timedelta(minutes=10),
@@ -107,7 +107,6 @@ class AgentDelegationReconcilerTest(
                 config_snapshot_json={
                     "agent": {
                         "config": {
-                            "aiops_agent_id": str(aiops_agent_id),
                             "aiops_target_id": str(aiops_target_id),
                         }
                     }

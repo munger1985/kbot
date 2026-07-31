@@ -189,7 +189,7 @@ class AgentDelegationReconciler:
                 .get("config", {})
             )
             try:
-                aiops_agent_id = UUID(str(agent_config["aiops_agent_id"]))
+                aiops_agent_id = UUID(str(run.agent_id))
                 aiops_target_id = UUID(
                     str(agent_config["aiops_target_id"])
                 )

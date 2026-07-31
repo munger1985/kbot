@@ -76,18 +76,17 @@ class RootAgentPlanner:
         ):
             config = agent_snapshot.get("config") or {}
             try:
-                agent_id = UUID(str(config["aiops_agent_id"]))
                 target_id = UUID(str(config["aiops_target_id"]))
-                if agent_id.version != 7 or target_id.version != 7:
+                if target_id.version != 7:
                     raise ValueError
             except (KeyError, TypeError, ValueError):
                 return RouteDecision(
                     route_type=RouteType.CLARIFY,
                     confidence=0.0,
-                    reason="AIOps 路由缺少有效的 UUIDv7 冻结配置",
+                    reason="AIOps 路由尚未选择有效的默认 Target",
                     clarification_question=(
-                        "请先为 Agent 配置 aiops_agent_id 和 "
-                        "aiops_target_id。"
+                        "请先将 Agent 绑定到一个可用 Target，"
+                        "并将该绑定选为聊天默认目标。"
                     ),
                 )
             return RouteDecision(
