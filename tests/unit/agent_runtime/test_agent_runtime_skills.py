@@ -152,6 +152,15 @@ class _EmptyObjectRewriteModelClient(_RewriteModelClient):
         return output
 
 
+class _MalformedRewriteModelClient(_RewriteModelClient):
+    async def get_llm_json(self, **kwargs):
+        output = await super().get_llm_json(**kwargs)
+        output["retrieval_queries"] = []
+        output["ambiguity"] = "否"
+        output["clarification_question"] = "不应展示的澄清问题"
+        return output
+
+
 class _PromptResolver:
     async def resolve(self, prompt_key):
         variables = {
@@ -366,6 +375,34 @@ class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
             result.artifact.payload["resolved_references"], []
         )
         self.assertEqual(result.artifact.payload["memory_refs"], [])
+
+    async def test_context_rewrite_recovers_empty_queries_and_non_boolean_ambiguity(self):
+        context = _context().model_copy(
+            update={
+                "config_snapshot": {
+                    **_context().config_snapshot,
+                    "conversation": {
+                        "context": {
+                            "summary": {"active_topic": "数据库优化案例"},
+                            "recent_items": [],
+                            "memories": [],
+                        }
+                    },
+                },
+            }
+        )
+
+        result = await ContextRewriteSkill(
+            model_client=_MalformedRewriteModelClient(),
+            prompt_resolver=_PromptResolver(),
+        ).execute(context)
+
+        self.assertEqual(
+            ["数据库优化案例有什么优势？"],
+            result.artifact.payload["retrieval_queries"],
+        )
+        self.assertFalse(result.artifact.payload["ambiguity"])
+        self.assertIsNone(result.artifact.payload["clarification_question"])
 
     def test_root_planner_rejects_aiops_without_frozen_target(self):
         decision = RootAgentPlanner().decide(

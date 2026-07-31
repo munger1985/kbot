@@ -62,10 +62,10 @@ class ContextRewriteSkill:
             prompt=rendered,
             max_tokens=2048,
         )
-        normalized: dict[str, Any] = {
-            **response,
-            "raw_input": context.original_input,
-        }
+        normalized = self._normalize_response(
+            response,
+            original_input=context.original_input,
+        )
         output = ContextRewriteOutput.model_validate(normalized)
         allowed_memory_ids = {
             str(item.get("memory_id"))
@@ -75,6 +75,52 @@ class ContextRewriteSkill:
         if not set(output.memory_refs).issubset(allowed_memory_ids):
             raise ValueError("上下文改写引用了未提供的 Memory")
         return self._result(context, output, prompt_ref=prompt.ref())
+
+    @staticmethod
+    def _normalize_response(
+        response: Any,
+        *,
+        original_input: str,
+    ) -> dict[str, Any]:
+        """修复可安全降级的模型格式偏差，保留业务字段的严格校验。"""
+        if not isinstance(response, dict):
+            raise ValueError("上下文改写模型未返回 JSON 对象")
+
+        normalized = {**response, "raw_input": original_input}
+        standalone_query = str(
+            normalized.get("standalone_query") or original_input
+        ).strip() or original_input
+        normalized["standalone_query"] = standalone_query
+
+        raw_queries = normalized.get("retrieval_queries")
+        if isinstance(raw_queries, str):
+            raw_queries = [raw_queries]
+        if isinstance(raw_queries, (list, tuple)):
+            retrieval_queries = tuple(
+                str(query).strip()
+                for query in raw_queries
+                if str(query).strip()
+            )[:5]
+        else:
+            retrieval_queries = ()
+        # 检索查询为空时使用独立问题，避免模型格式偏差中断整个任务。
+        normalized["retrieval_queries"] = (
+            retrieval_queries or (standalone_query,)
+        )
+
+        raw_ambiguity = normalized.get("ambiguity", False)
+        if isinstance(raw_ambiguity, bool):
+            ambiguity = raw_ambiguity
+        elif isinstance(raw_ambiguity, str):
+            value = raw_ambiguity.strip().lower()
+            ambiguity = value in {"true", "1", "yes", "y", "是"}
+        else:
+            ambiguity = False
+        normalized["ambiguity"] = ambiguity
+        if not ambiguity:
+            normalized["clarification_question"] = None
+
+        return normalized
 
     @staticmethod
     def _result(
