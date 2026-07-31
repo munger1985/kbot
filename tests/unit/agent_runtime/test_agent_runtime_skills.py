@@ -138,6 +138,21 @@ class _VariantCitationModelClient(_ModelClient):
         yield LLMChunk(content="第二条事实使用上标引用<sup>C1</sup>。")
 
 
+class _MissingCitationModelClient(_ModelClient):
+    def __init__(self, *, repair_succeeds: bool):
+        self.calls = 0
+        self.repair_succeeds = repair_succeeds
+
+    async def stream_llm_chunks(self, **kwargs):
+        from platform_clients.model import LLMChunk
+
+        self.calls += 1
+        if self.calls == 2 and self.repair_succeeds:
+            yield LLMChunk(content="证据支持的回答。[C1]")
+            return
+        yield LLMChunk(content="1+1=2。")
+
+
 class _RewriteModelClient:
     async def get_llm_json(self, **kwargs):
         return {
@@ -246,6 +261,25 @@ def _context(*, input_artifacts=()):
 
 
 class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
+    @staticmethod
+    async def _retrieval_artifact() -> LeasedArtifact:
+        retrieval = await KnowledgeRetrievalSkill(
+            knowledge_core_client=_KnowledgeCoreClient(),
+            service_name="agent-worker",
+        ).execute(_context())
+        return LeasedArtifact(
+            artifact_id=uuid7(),
+            task_id=uuid7(),
+            artifact_type=retrieval.artifact.artifact_type,
+            schema_version=retrieval.artifact.schema_version,
+            producer="knowledge-retrieval",
+            producer_version="1.0.0",
+            payload=retrieval.artifact.payload,
+            content_hash="hash",
+            provenance={},
+            security_level=2,
+        )
+
     @staticmethod
     def _image_context(
         path: Path, *, query_vlm_model_name: str | None
@@ -669,6 +703,51 @@ class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(answer, "第一条事实[C1]，第二条事实[C1]。")
         self.assertEqual(labels, ("C1",))
+
+    async def test_composer_does_not_stream_answer_before_validation(self):
+        artifact = await self._retrieval_artifact()
+        model = _MissingCitationModelClient(repair_succeeds=True)
+        outputs = [
+            item
+            async for item in ResponseComposerSkill(
+                model_client=model,
+                prompt_resolver=_PromptResolver(),
+            ).execute_stream(_context(input_artifacts=(artifact,)))
+        ]
+
+        deltas = [
+            item.payload["delta"]
+            for item in outputs
+            if getattr(item, "event_type", None) == "answer.delta"
+        ]
+        self.assertEqual(model.calls, 2)
+        self.assertEqual(deltas, ["证据支持的回答。[C1]"])
+        self.assertNotIn("1+1=2", "".join(deltas))
+
+    async def test_composer_returns_visible_insufficient_evidence(self):
+        artifact = await self._retrieval_artifact()
+        model = _MissingCitationModelClient(repair_succeeds=False)
+        outputs = [
+            item
+            async for item in ResponseComposerSkill(
+                model_client=model,
+                prompt_resolver=_PromptResolver(),
+            ).execute_stream(_context(input_artifacts=(artifact,)))
+        ]
+
+        deltas = [
+            item.payload["delta"]
+            for item in outputs
+            if getattr(item, "event_type", None) == "answer.delta"
+        ]
+        payload = outputs[-1].artifact.payload
+        self.assertEqual(model.calls, 2)
+        self.assertEqual(
+            deltas,
+            ["当前授权知识范围内没有找到足够的可引用证据。"],
+        )
+        self.assertEqual(payload["status"], "INSUFFICIENT_EVIDENCE")
+        self.assertEqual(payload["used_citation_labels"], [])
 
     async def test_composer_projects_safe_aiops_result(self):
         delegation_id = uuid7()

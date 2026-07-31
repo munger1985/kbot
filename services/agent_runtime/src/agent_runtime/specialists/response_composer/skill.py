@@ -3,6 +3,8 @@
 import re
 from typing import Any
 
+from loguru import logger
+
 from agent_runtime.domain.model_bindings import agent_model_name
 from agent_runtime.runtime import (
     ExecutionContext,
@@ -224,42 +226,80 @@ class ResponseComposerSkill:
                 "public_summary": "正在组织带引用的最终回答",
             },
         )
-        answer_parts: list[str] = []
-        pending = ""
-        chunk_index = 0
-        async for chunk in self._model_client.stream_llm_chunks(
-            served_model_name=model_name,
-            prompt=prompt,
-            max_tokens=4096,
-            temperature=0,
-        ):
-            if not chunk.content:
-                continue
-            pending += chunk.content
-            if len(pending) < 80 and not re.search(
-                r"[。！？；\n.!?;]$", pending
+        validated: tuple[str, tuple[str, ...]] | None = None
+        for attempt in range(1, 3):
+            attempt_prompt = list(prompt)
+            if attempt == 2:
+                attempt_prompt.append(
+                    {
+                        "role": "system",
+                        "content": (
+                            "上一份回答未通过引用校验。请重新生成完整回答；"
+                            "只能陈述证据支持的事实，并在每项事实后使用"
+                            "输入中已有的 ASCII 引用标签，例如 [C1]。"
+                            "如果证据不能回答问题，不得使用常识补写答案。"
+                        ),
+                    }
+                )
+            answer_parts: list[str] = []
+            async for chunk in self._model_client.stream_llm_chunks(
+                served_model_name=model_name,
+                prompt=attempt_prompt,
+                max_tokens=4096,
+                temperature=0,
             ):
+                if chunk.content:
+                    answer_parts.append(chunk.content)
+            answer_text = _normalize_citations(
+                "".join(answer_parts).strip()
+            )
+            try:
+                used_labels = self._validate_streamed_answer(
+                    answer_text, allowed
+                )
+            except ValueError as exc:
+                logger.warning(
+                    "文档回答未通过引用校验 "
+                    "| run_id={} | task_id={} | attempt={} | error={}",
+                    context.run_id,
+                    context.task_id,
+                    attempt,
+                    str(exc),
+                )
+                if attempt == 1:
+                    yield SkillProgress(
+                        event_type="thinking.delta",
+                        payload={
+                            "delta": "回答引用未通过校验，正在重新生成",
+                            "public_summary": (
+                                "正在修正回答中的文档引用"
+                            ),
+                        },
+                    )
                 continue
-            delta = _normalize_citations(pending)
-            self._validate_partial_citations(delta, allowed)
-            answer_parts.append(delta)
-            chunk_index += 1
+            validated = (answer_text, used_labels)
+            break
+        if validated is None:
+            grounded = GroundedAnswer(
+                answer="当前授权知识范围内没有找到足够的可引用证据。",
+                status="INSUFFICIENT_EVIDENCE",
+                warnings=(
+                    *retrieval.warnings,
+                    "回答模型连续两次未生成可验证的文档引用，"
+                    "已拒绝展示无来源内容",
+                ),
+            )
             yield SkillProgress(
                 event_type="answer.delta",
-                payload={"chunk_index": chunk_index, "delta": delta},
+                payload={"chunk_index": 1, "delta": grounded.answer},
             )
-            pending = ""
-        if pending:
-            delta = _normalize_citations(pending)
-            self._validate_partial_citations(delta, allowed)
-            answer_parts.append(delta)
-            chunk_index += 1
-            yield SkillProgress(
-                event_type="answer.delta",
-                payload={"chunk_index": chunk_index, "delta": delta},
-            )
-        answer_text = "".join(answer_parts).strip()
-        used_labels = self._validate_streamed_answer(answer_text, allowed)
+            yield self._result(context, grounded)
+            return
+        answer_text, used_labels = validated
+        yield SkillProgress(
+            event_type="answer.delta",
+            payload={"chunk_index": 1, "delta": answer_text},
+        )
         references = tuple(
             ReferenceCard(
                 citation_label=label,
@@ -282,14 +322,6 @@ class ResponseComposerSkill:
                 warnings=retrieval.warnings,
             ),
         )
-
-    @staticmethod
-    def _validate_partial_citations(
-        value: str, allowed: dict[str, Any]
-    ) -> None:
-        unknown = set(_CITATION_PATTERN.findall(value)) - allowed.keys()
-        if unknown:
-            raise ValueError(f"模型使用了未知引用标签：{sorted(unknown)}")
 
     @staticmethod
     def _validate_streamed_answer(
