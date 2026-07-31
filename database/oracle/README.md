@@ -26,6 +26,10 @@ Schema。脚本不包含 `DROP`、旧表查询、旧数据导入、兼容视图�
 已有开发 Schema 无需保留数据时，先使用 KBot Schema 用户执行
 `scripts/db/reset_kbot_schema.sql`，确认验证查询返回 0 行，再运行下方初始化
 命令。重置脚本只处理当前用户下的 `KBOT_%` 表和视图。
+需要保留当前数据并应用资源标识字段清理时，停止 KBot 服务并执行
+`scripts/db/remove_redundant_resource_key_columns.sql`。该脚本原地删除
+`AGENT_KEY`、`COLLECTION_KEY`、`TARGET_KEY`、`SOURCE_KEY`、`PLAN_KEY`
+及相关约束，并重建受影响的 AIOps 视图；不删除表和业务数据。
 执行前运行：
 
 ```bash

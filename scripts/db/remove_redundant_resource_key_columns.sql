@@ -1,80 +1,92 @@
--- KBot 4.0 AIOps：循环外键、函数唯一索引和 APEX 只读投影。
--- RAW(16) 在视图中显式格式化，避免 APEX/驱动依赖 Oracle UUID 类型映射。
+-- KBot 4.0 一次性原地修改：删除冗余资源标识列。
+-- 本脚本保留现有业务数据，不删除表，不重建 Schema。
+-- 使用当前 KBot Schema 用户执行；DDL 会隐式提交，执行前请完成备份并停止 KBot 服务。
 
-ALTER TABLE KBOT_OPS_EVENT ADD CONSTRAINT FK_OPS_EVENT_ALERT
-    FOREIGN KEY (ALERT_ID) REFERENCES KBOT_OPS_ALERT (ALERT_ID);
+SET SERVEROUTPUT ON
+WHENEVER SQLERROR EXIT SQL.SQLCODE
 
-ALTER TABLE KBOT_OPS_RUN ADD CONSTRAINT FK_OPS_RUN_INSP_FIRE
-    FOREIGN KEY (INSPECTION_FIRE_ID)
-    REFERENCES KBOT_OPS_INSPECTION_FIRE (INSPECTION_FIRE_ID);
+DECLARE
+    l_column_count PLS_INTEGER := 0;
+    l_removed_count PLS_INTEGER := 0;
 
-ALTER TABLE KBOT_OPS_RUN ADD CONSTRAINT FK_OPS_RUN_FINAL_ART
-    FOREIGN KEY (FINAL_ARTIFACT_ID)
-    REFERENCES KBOT_OPS_ARTIFACT (ARTIFACT_ID)
-    DEFERRABLE INITIALLY DEFERRED;
+    PROCEDURE drop_resource_column(
+        p_table_name IN VARCHAR2,
+        p_column_name IN VARCHAR2
+    ) IS
+    BEGIN
+        SELECT COUNT(*)
+          INTO l_column_count
+          FROM user_tab_columns columns
+          JOIN user_tables tables
+            ON tables.table_name = columns.table_name
+         WHERE columns.table_name = p_table_name
+           AND columns.column_name = p_column_name;
 
-ALTER TABLE KBOT_OPS_RUN ADD CONSTRAINT FK_OPS_RUN_SOURCE_PROPOSAL
-    FOREIGN KEY (SOURCE_PROPOSAL_ID)
-    REFERENCES KBOT_OPS_CHANGE_PROPOSAL (PROPOSAL_ID);
+        IF l_column_count = 0 THEN
+            dbms_output.put_line(
+                '已跳过不存在的列 ' || p_table_name || '.' || p_column_name
+            );
+            RETURN;
+        END IF;
 
-ALTER TABLE KBOT_OPS_RUN ADD CONSTRAINT FK_OPS_RUN_SOURCE_RESULT
-    FOREIGN KEY (SOURCE_RESULT_ARTIFACT_ID)
-    REFERENCES KBOT_OPS_ARTIFACT (ARTIFACT_ID);
+        -- 先删除引用该列所属主键或唯一键的外键，避免 ORA-02449。
+        FOR foreign_key_row IN (
+            SELECT child.table_name, child.constraint_name
+              FROM user_constraints child
+             WHERE child.constraint_type = 'R'
+               AND child.r_constraint_name IN (
+                    SELECT parent.constraint_name
+                      FROM user_constraints parent
+                      JOIN user_cons_columns parent_column
+                        ON parent_column.constraint_name =
+                           parent.constraint_name
+                       AND parent_column.table_name = parent.table_name
+                     WHERE parent.table_name = p_table_name
+                       AND parent_column.column_name = p_column_name
+               )
+             ORDER BY child.table_name, child.constraint_name
+        ) LOOP
+            EXECUTE IMMEDIATE
+                'ALTER TABLE '
+                || dbms_assert.enquote_name(
+                    foreign_key_row.table_name, FALSE
+                )
+                || ' DROP CONSTRAINT '
+                || dbms_assert.enquote_name(
+                    foreign_key_row.constraint_name, FALSE
+                );
+            dbms_output.put_line(
+                '已删除引用外键 '
+                || foreign_key_row.table_name || '.'
+                || foreign_key_row.constraint_name
+            );
+        END LOOP;
 
-ALTER TABLE KBOT_OPS_TASK ADD CONSTRAINT FK_OPS_TASK_OUTPUT_ART
-    FOREIGN KEY (OUTPUT_ARTIFACT_ID)
-    REFERENCES KBOT_OPS_ARTIFACT (ARTIFACT_ID)
-    DEFERRABLE INITIALLY DEFERRED;
+        EXECUTE IMMEDIATE
+            'ALTER TABLE '
+            || dbms_assert.enquote_name(p_table_name, FALSE)
+            || ' DROP COLUMN '
+            || dbms_assert.enquote_name(p_column_name, FALSE)
+            || ' CASCADE CONSTRAINTS';
+        l_removed_count := l_removed_count + 1;
+        dbms_output.put_line(
+            '已删除列 ' || p_table_name || '.' || p_column_name
+        );
+    END;
+BEGIN
+    drop_resource_column('KBOT_AGENT_DEFINITION', 'AGENT_KEY');
+    drop_resource_column('KBOT_KC_COLLECTION', 'COLLECTION_KEY');
+    drop_resource_column('KBOT_OPS_TARGET', 'TARGET_KEY');
+    drop_resource_column('KBOT_OPS_MONITOR_SOURCE', 'SOURCE_KEY');
+    drop_resource_column('KBOT_OPS_INSPECTION_PLAN', 'PLAN_KEY');
 
-ALTER TABLE KBOT_OPS_CHANGE_PROPOSAL
-    ADD CONSTRAINT FK_OPS_PROP_SNAPSHOT_ART
-    FOREIGN KEY (SNAPSHOT_ARTIFACT_ID)
-    REFERENCES KBOT_OPS_ARTIFACT (ARTIFACT_ID)
-    DEFERRABLE INITIALLY DEFERRED;
+    dbms_output.put_line(
+        '冗余资源标识列处理完成，本次删除 ' || l_removed_count || ' 列。'
+    );
+END;
+/
 
-ALTER TABLE KBOT_OPS_EXECUTION ADD CONSTRAINT FK_OPS_EXEC_RESULT_ART
-    FOREIGN KEY (RESULT_ARTIFACT_ID)
-    REFERENCES KBOT_OPS_ARTIFACT (ARTIFACT_ID)
-    DEFERRABLE INITIALLY DEFERRED;
-
-ALTER TABLE KBOT_OPS_REPORT ADD CONSTRAINT FK_OPS_REPORT_CONTENT_ART
-    FOREIGN KEY (CONTENT_ARTIFACT_ID)
-    REFERENCES KBOT_OPS_ARTIFACT (ARTIFACT_ID)
-    DEFERRABLE INITIALLY DEFERRED;
-
-CREATE INDEX IX_OPS_EVENT_ALERT ON KBOT_OPS_EVENT (ALERT_ID);
-CREATE INDEX IX_OPS_RUN_FINAL_ART ON KBOT_OPS_RUN (FINAL_ARTIFACT_ID);
-CREATE INDEX IX_OPS_RUN_SOURCE_RESULT
-    ON KBOT_OPS_RUN (SOURCE_RESULT_ARTIFACT_ID);
-CREATE INDEX IX_OPS_TASK_OUTPUT_ART
-    ON KBOT_OPS_TASK (OUTPUT_ARTIFACT_ID);
-
-CREATE UNIQUE INDEX UX_OPS_POLICY_ACTIVE ON KBOT_OPS_POLICY (
-    CASE WHEN STATUS = 'ACTIVE' THEN DOMAIN_ID END,
-    CASE WHEN STATUS = 'ACTIVE' THEN POLICY_KEY END
-);
-
-CREATE UNIQUE INDEX UX_OPS_ALERT_ACTIVE ON KBOT_OPS_ALERT (
-    CASE
-        WHEN STATUS IN ('OPEN', 'ACKNOWLEDGED', 'SUPPRESSED')
-        THEN TARGET_ID
-    END,
-    CASE
-        WHEN STATUS IN ('OPEN', 'ACKNOWLEDGED', 'SUPPRESSED')
-        THEN FINGERPRINT
-    END
-);
-
-CREATE UNIQUE INDEX UX_OPS_HITL_PENDING ON KBOT_OPS_HITL (
-    CASE WHEN STATUS = 'PENDING' THEN OPS_TASK_ID END,
-    CASE WHEN STATUS = 'PENDING' THEN REQUEST_TYPE END
-);
-
-CREATE UNIQUE INDEX UX_OPS_REPORT_CURRENT ON KBOT_OPS_REPORT (
-    CASE WHEN IS_CURRENT = 1 THEN OPS_RUN_ID END,
-    CASE WHEN IS_CURRENT = 1 THEN REPORT_KEY END
-);
-
+-- 重建所有直接依赖上述 AIOps 列的只读视图。
 CREATE OR REPLACE VIEW KBOT_V_OPS_TARGET AS
 SELECT
     LOWER(
@@ -143,28 +155,6 @@ GROUP BY
     m.DISPLAY_NAME, m.SOURCE_TYPE, m.STATUS, m.HEALTH_STATUS,
     m.LAST_HEALTH_CHECK_AT, m.LAST_ERROR_CODE, m.ROW_VERSION,
     m.CREATED_AT, m.UPDATED_AT;
-
-CREATE OR REPLACE VIEW KBOT_V_OPS_POLICY AS
-SELECT
-    LOWER(
-        SUBSTR(RAWTOHEX(p.POLICY_ID), 1, 8) || '-' ||
-        SUBSTR(RAWTOHEX(p.POLICY_ID), 9, 4) || '-' ||
-        SUBSTR(RAWTOHEX(p.POLICY_ID), 13, 4) || '-' ||
-        SUBSTR(RAWTOHEX(p.POLICY_ID), 17, 4) || '-' ||
-        SUBSTR(RAWTOHEX(p.POLICY_ID), 21, 12)
-    ) AS POLICY_ID,
-    p.DOMAIN_ID,
-    p.POLICY_KEY,
-    p.VERSION_NO,
-    p.DISPLAY_NAME,
-    p.POLICY_HASH,
-    p.STATUS,
-    p.EFFECTIVE_AT,
-    p.RETIRED_AT,
-    p.ROW_VERSION,
-    p.CREATED_AT,
-    p.UPDATED_AT
-FROM KBOT_OPS_POLICY p;
 
 CREATE OR REPLACE VIEW KBOT_V_OPS_INSPECTION_PLAN AS
 SELECT
@@ -436,14 +426,31 @@ JOIN KBOT_OPS_TARGET t ON t.TARGET_ID = r.TARGET_ID
 WHERE r.TRIGGER_TYPE IN ('CHAT', 'ROOT')
   AND h.STATUS = 'PENDING';
 
-CREATE OR REPLACE VIEW KBOT_V_OPS_SCHEMA_VERSION AS
-SELECT
-    'AIOPS' AS COMPONENT,
-    6 AS SCHEMA_VERSION,
-    'aiops-oracle-v1' AS CONTRACT_VERSION
-FROM DUAL;
+-- 验证一：执行后应返回 0 行。
+SELECT table_name, column_name
+FROM user_tab_columns columns
+WHERE (columns.table_name, columns.column_name) IN (
+    ('KBOT_AGENT_DEFINITION', 'AGENT_KEY'),
+    ('KBOT_KC_COLLECTION', 'COLLECTION_KEY'),
+    ('KBOT_OPS_TARGET', 'TARGET_KEY'),
+    ('KBOT_OPS_MONITOR_SOURCE', 'SOURCE_KEY'),
+    ('KBOT_OPS_INSPECTION_PLAN', 'PLAN_KEY')
+)
+  AND columns.table_name IN (SELECT table_name FROM user_tables)
+ORDER BY columns.table_name, columns.column_name;
 
-COMMENT ON COLUMN KBOT_OPS_RUN.FINAL_ARTIFACT_ID IS
-    'Run 最终不可变产物；延后外键支持同一事务建立循环引用';
-COMMENT ON COLUMN KBOT_OPS_TASK.OUTPUT_ARTIFACT_ID IS
-    'Task 当前输出指针；Artifact 本身只追加且不可变';
+-- 验证二：以下 8 个视图都应为 VALID。
+SELECT object_name, status
+FROM user_objects
+WHERE object_type = 'VIEW'
+  AND object_name IN (
+      'KBOT_V_OPS_TARGET',
+      'KBOT_V_OPS_MONITOR_SOURCE',
+      'KBOT_V_OPS_INSPECTION_PLAN',
+      'KBOT_V_OPS_INSPECTION_FIRE',
+      'KBOT_V_OPS_RUN',
+      'KBOT_V_OPS_PENDING_APPROVAL',
+      'KBOT_V_OPS_REPORT',
+      'KBOT_V_OPS_CHAT_PENDING'
+  )
+ORDER BY object_name;
