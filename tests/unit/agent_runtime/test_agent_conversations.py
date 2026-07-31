@@ -111,6 +111,23 @@ class AgentConversationApiTest(unittest.TestCase):
 
 
 class MemorySafetyTest(unittest.TestCase):
+    def test_snapshot_accepts_named_entities(self):
+        snapshot = ConversationSnapshotOutput.model_validate(
+            {
+                "active_topic": "AIOps Agent 配置",
+                "user_goal": "完成 Agent 与 Target 绑定",
+                "entities": [
+                    "aiops_agent_id",
+                    "aiops_target_id",
+                    {"name": "Target", "kind": "RESOURCE"},
+                ],
+                "corrections": [],
+                "unresolved_questions": [],
+            }
+        )
+
+        self.assertEqual(snapshot.entities[0], "aiops_agent_id")
+
     def test_sensitive_candidate_is_rejected_deterministically(self):
         batch = MemoryCandidateBatch.model_validate(
             {

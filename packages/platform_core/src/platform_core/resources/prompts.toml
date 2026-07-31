@@ -93,7 +93,7 @@ ${recalled_memories}
 [[prompts]]
 prompt_key = "agent_runtime.conversation_snapshot"
 owner_service = "agent_runtime"
-version = "1.0.1"
+version = "1.0.2"
 active = true
 purpose = "生成可重建的会话工作摘要"
 input_variables = ["previous_summary", "new_turns"]
@@ -106,7 +106,8 @@ content = """
 输出 JSON 字段必须是 active_topic、user_goal、entities、corrections、
 unresolved_questions；集合字段没有内容时使用空数组。
 active_topic 和 user_goal 必须是单个字符串或 null，不能输出为数组。
-entities、corrections、unresolved_questions 必须输出为 JSON 数组。
+entities 必须输出为字符串或对象组成的 JSON 数组；corrections 和
+unresolved_questions 必须输出为字符串数组。
 输出必须严格满足 ConversationSnapshotOutput.v1，不要输出思维过程。
 
 旧摘要：

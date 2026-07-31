@@ -53,7 +53,7 @@ class ConversationSnapshotOutput(BaseModel):
 
     active_topic: str | None = Field(default=None, max_length=512)
     user_goal: str | None = Field(default=None, max_length=2000)
-    entities: tuple[dict[str, Any], ...] = ()
+    entities: tuple[str | dict[str, Any], ...] = ()
     corrections: tuple[str, ...] = ()
     unresolved_questions: tuple[str, ...] = ()
 
@@ -238,7 +238,8 @@ class MemoryConsolidationWorker:
                 output_name="会话摘要",
                 correction_instruction=(
                     "active_topic 和 user_goal 必须是字符串或 null；"
-                    "entities、corrections、unresolved_questions 必须是数组。"
+                    "entities 必须是字符串或对象组成的数组；"
+                    "corrections、unresolved_questions 必须是字符串数组。"
                 ),
             )
             candidates = await self._validate_model_output(
