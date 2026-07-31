@@ -8,11 +8,11 @@ import json
 import re
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
-from typing import Any, Literal
+from typing import Any, Literal, TypeVar
 from uuid import UUID
 
 from loguru import logger
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from agent_runtime.entities import (
     AgentMemoryIndexProfileEntity,
@@ -22,6 +22,9 @@ from agent_runtime.entities import (
 )
 from platform_core.identity import uuid7
 from platform_core.prompts import StrictPromptRenderer
+
+
+_ModelOutput = TypeVar("_ModelOutput", bound=BaseModel)
 
 
 def _now() -> datetime:
@@ -226,10 +229,30 @@ class MemoryConsolidationWorker:
                     max_tokens=2048,
                 ),
             )
-            snapshot = ConversationSnapshotOutput.model_validate(
-                snapshot_raw
+            snapshot = await self._validate_model_output(
+                model_type=ConversationSnapshotOutput,
+                response=snapshot_raw,
+                model_name=model_name,
+                prompt_version=snapshot_prompt.version,
+                rendered_prompt=snapshot_request,
+                output_name="会话摘要",
+                correction_instruction=(
+                    "active_topic 和 user_goal 必须是字符串或 null；"
+                    "entities、corrections、unresolved_questions 必须是数组。"
+                ),
             )
-            candidates = MemoryCandidateBatch.model_validate(memory_raw)
+            candidates = await self._validate_model_output(
+                model_type=MemoryCandidateBatch,
+                response=memory_raw,
+                model_name=model_name,
+                prompt_version=memory_prompt.version,
+                rendered_prompt=memory_request,
+                output_name="长期记忆候选",
+                correction_instruction=(
+                    "顶层只能包含 candidates 和 forget_keys，且两者必须是数组；"
+                    "每个 candidate 必须完整满足已声明字段及类型。"
+                ),
+            )
             safe_candidates = self._safe_candidates(candidates)
             forget_keys = self._safe_forget_keys(candidates.forget_keys)
             safe_candidates = tuple(
@@ -282,6 +305,78 @@ class MemoryConsolidationWorker:
             )
             await self._fail(lease, exc)
         return True
+
+    async def _validate_model_output(
+        self,
+        *,
+        model_type: type[_ModelOutput],
+        response: Any,
+        model_name: str,
+        prompt_version: str,
+        rendered_prompt: str,
+        output_name: str,
+        correction_instruction: str,
+    ) -> _ModelOutput:
+        """严格校验模型结构，失败时仅允许模型修正一次格式。"""
+        try:
+            return model_type.model_validate(response)
+        except ValidationError as exc:
+            logger.warning(
+                "{}模型输出不符合契约，准备执行一次格式修正 "
+                "| model={} | prompt_version={} | shape={} | errors={}",
+                output_name,
+                model_name,
+                prompt_version,
+                self._response_shape(response),
+                self._validation_summary(exc),
+            )
+        corrected = await self._model_client.get_llm_json(
+            served_model_name=model_name,
+            prompt=(
+                rendered_prompt
+                + "\n\n上一份输出未通过字段校验。"
+                "请仅重新输出满足原 Schema 的 JSON 对象；"
+                + correction_instruction
+            ),
+            max_tokens=2048,
+        )
+        try:
+            return model_type.model_validate(corrected)
+        except ValidationError as exc:
+            logger.error(
+                "{}模型格式修正后仍不符合契约 "
+                "| model={} | prompt_version={} | shape={} | errors={}",
+                output_name,
+                model_name,
+                prompt_version,
+                self._response_shape(corrected),
+                self._validation_summary(exc),
+            )
+            raise
+
+    @staticmethod
+    def _response_shape(response: Any) -> dict[str, Any]:
+        """只记录字段类型，避免把用户内容写入运行日志。"""
+        if not isinstance(response, dict):
+            return {"response_type": type(response).__name__}
+        return {
+            "response_type": "dict",
+            "fields": {
+                str(key): type(value).__name__
+                for key, value in response.items()
+            },
+        }
+
+    @staticmethod
+    def _validation_summary(exc: ValidationError) -> list[str]:
+        """提取不含模型原始值的 Pydantic 错误摘要。"""
+        return [
+            "{}:{}".format(
+                ".".join(str(part) for part in error["loc"]),
+                error["type"],
+            )
+            for error in exc.errors(include_input=False)
+        ]
 
     async def _claim(self) -> MemoryJobLease | None:
         now = _now()

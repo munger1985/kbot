@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 
 from agent_runtime.api import conversation_router, memory_router
 from agent_runtime.application.memory import (
+    ConversationSnapshotOutput,
     MemoryCandidate,
     MemoryCandidateBatch,
     MemoryConsolidationWorker,
@@ -217,7 +218,53 @@ class _ConflictPromptResolver:
         )
 
 
+class _SnapshotRepairModel:
+    def __init__(self):
+        self.calls = 0
+
+    async def get_llm_json(self, **kwargs):
+        self.calls += 1
+        return {
+            "active_topic": "基础算术",
+            "user_goal": "求解5+5的值",
+            "entities": [],
+            "corrections": [],
+            "unresolved_questions": [],
+        }
+
+
 class MemoryConflictTest(unittest.IsolatedAsyncioTestCase):
+    async def test_snapshot_shape_error_gets_one_model_repair(self):
+        model = _SnapshotRepairModel()
+        worker = MemoryConsolidationWorker(
+            uow_factory=None,
+            model_client=model,
+            prompt_resolver=None,
+            worker_id="memory-test",
+            poll_interval_seconds=1,
+        )
+
+        snapshot = await worker._validate_model_output(
+            model_type=ConversationSnapshotOutput,
+            response={
+                "active_topic": "基础算术",
+                "user_goal": ["求解5+5的值"],
+                "entities": [],
+                "corrections": [],
+                "unresolved_questions": [],
+            },
+            model_name="test-model",
+            prompt_version="1.0.1",
+            rendered_prompt="snapshot prompt",
+            output_name="会话摘要",
+            correction_instruction=(
+                "active_topic 和 user_goal 必须是字符串或 null。"
+            ),
+        )
+
+        self.assertEqual(model.calls, 1)
+        self.assertEqual(snapshot.user_goal, "求解5+5的值")
+
     async def test_only_same_key_different_value_calls_conflict_model(self):
         model = _ConflictModel()
         worker = MemoryConsolidationWorker(
