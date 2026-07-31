@@ -28,6 +28,22 @@ from .contracts import (
 
 
 _CITATION_PATTERN = re.compile(r"\[([A-Z]\d+)\]")
+_CITATION_VARIANT_PATTERN = re.compile(
+    r"(?:【\s*([A-Z]\d+)\s*】|<sup>\s*\[?([A-Z]\d+)\]?\s*</sup>)",
+    re.IGNORECASE,
+)
+
+
+def _normalize_citations(value: str) -> str:
+    """将模型常见的引用变体统一为协议规定的 ASCII 方括号格式。"""
+
+    def replace(match: re.Match[str]) -> str:
+        label = next(
+            group for group in match.groups() if group is not None
+        )
+        return f"[{label.upper()}]"
+
+    return _CITATION_VARIANT_PATTERN.sub(replace, value)
 
 
 class ResponseComposerSkill:
@@ -194,7 +210,8 @@ class ResponseComposerSkill:
                 "role": "system",
                 "content": (
                     "当前为流式回答模式。只输出最终 Markdown 回答正文，"
-                    "不要输出 JSON、字段名或隐藏思维过程；引用规则保持不变。"
+                    "不要输出 JSON、字段名或隐藏思维过程；"
+                    "引用必须严格使用 ASCII 方括号格式，例如 [C1]。"
                 ),
             }
         )
@@ -218,25 +235,28 @@ class ResponseComposerSkill:
         ):
             if not chunk.content:
                 continue
-            answer_parts.append(chunk.content)
             pending += chunk.content
             if len(pending) < 80 and not re.search(
                 r"[。！？；\n.!?;]$", pending
             ):
                 continue
-            self._validate_partial_citations(pending, allowed)
+            delta = _normalize_citations(pending)
+            self._validate_partial_citations(delta, allowed)
+            answer_parts.append(delta)
             chunk_index += 1
             yield SkillProgress(
                 event_type="answer.delta",
-                payload={"chunk_index": chunk_index, "delta": pending},
+                payload={"chunk_index": chunk_index, "delta": delta},
             )
             pending = ""
         if pending:
-            self._validate_partial_citations(pending, allowed)
+            delta = _normalize_citations(pending)
+            self._validate_partial_citations(delta, allowed)
+            answer_parts.append(delta)
             chunk_index += 1
             yield SkillProgress(
                 event_type="answer.delta",
-                payload={"chunk_index": chunk_index, "delta": pending},
+                payload={"chunk_index": chunk_index, "delta": delta},
             )
         answer_text = "".join(answer_parts).strip()
         used_labels = self._validate_streamed_answer(answer_text, allowed)
@@ -543,7 +563,9 @@ class ResponseComposerSkill:
         response: dict[str, Any],
         allowed: dict[str, Any],
     ) -> tuple[str, tuple[str, ...]]:
-        answer = str(response.get("answer") or "").strip()
+        answer = _normalize_citations(
+            str(response.get("answer") or "").strip()
+        )
         if not answer:
             raise ValueError("模型返回的 answer 为空")
         mentioned = tuple(dict.fromkeys(_CITATION_PATTERN.findall(answer)))

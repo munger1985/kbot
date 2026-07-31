@@ -130,6 +130,14 @@ class _ModelClient:
         return "图片中是数据库性能监控面板，显示查询延迟升高"
 
 
+class _VariantCitationModelClient(_ModelClient):
+    async def stream_llm_chunks(self, **kwargs):
+        from platform_clients.model import LLMChunk
+
+        yield LLMChunk(content="第一条事实使用全角引用【C1】。")
+        yield LLMChunk(content="第二条事实使用上标引用<sup>C1</sup>。")
+
+
 class _RewriteModelClient:
     async def get_llm_json(self, **kwargs):
         return {
@@ -610,6 +618,57 @@ class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             outputs[-1].artifact.payload["used_citation_labels"], ["C1"]
         )
+
+    async def test_composer_normalizes_streamed_citation_variants(self):
+        client = _KnowledgeCoreClient()
+        retrieval = await KnowledgeRetrievalSkill(
+            knowledge_core_client=client,
+            service_name="agent-worker",
+        ).execute(_context())
+        artifact = LeasedArtifact(
+            artifact_id=uuid7(),
+            task_id=uuid7(),
+            artifact_type=retrieval.artifact.artifact_type,
+            schema_version=retrieval.artifact.schema_version,
+            producer="knowledge-retrieval",
+            producer_version="1.0.0",
+            payload=retrieval.artifact.payload,
+            content_hash="hash",
+            provenance={},
+            security_level=2,
+        )
+        outputs = [
+            item
+            async for item in ResponseComposerSkill(
+                model_client=_VariantCitationModelClient(),
+                prompt_resolver=_PromptResolver(),
+            ).execute_stream(_context(input_artifacts=(artifact,)))
+        ]
+
+        deltas = [
+            item.payload["delta"]
+            for item in outputs
+            if getattr(item, "event_type", None) == "answer.delta"
+        ]
+        self.assertEqual(
+            "".join(deltas),
+            "第一条事实使用全角引用[C1]。第二条事实使用上标引用[C1]。",
+        )
+        self.assertEqual(
+            outputs[-1].artifact.payload["used_citation_labels"], ["C1"]
+        )
+
+    def test_composer_normalizes_non_streamed_citation_variants(self):
+        answer, labels = ResponseComposerSkill._validate_model_answer(
+            {
+                "answer": "第一条事实【C1】，第二条事实<sup>C1</sup>。",
+                "used_citation_labels": ["C1"],
+            },
+            {"C1": object()},
+        )
+
+        self.assertEqual(answer, "第一条事实[C1]，第二条事实[C1]。")
+        self.assertEqual(labels, ("C1",))
 
     async def test_composer_projects_safe_aiops_result(self):
         delegation_id = uuid7()

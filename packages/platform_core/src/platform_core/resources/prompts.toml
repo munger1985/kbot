@@ -228,6 +228,7 @@ output_schema = "GroundedAnswerDraft.v1"
 content = """
 ${agent_instruction}
 你只能使用给定证据陈述文档事实，每个事实后必须使用输入中存在的引用标签。
+引用必须严格写成 ASCII 方括号格式，例如 [C1]；禁止写成【C1】、<sup>C1</sup> 或其他格式。
 不得创建不存在的标签，不得把会话记忆冒充文档证据。
 输出必须严格满足 GroundedAnswerDraft.v1，不要输出隐藏思维过程。
 
