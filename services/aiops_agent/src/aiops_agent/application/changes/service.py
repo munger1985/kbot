@@ -266,7 +266,7 @@ class AIOpsChangeService:
             if (
                 target is None
                 or target.status != "ACTIVE"
-                or not target.execution_secret_ref
+                or not target.execution_credential_id
             ):
                 raise state_conflict("Target 当前不允许受控执行")
             snapshot = await self._snapshot(uow, proposal)
@@ -777,7 +777,7 @@ class AIOpsChangeService:
             if (
                 target is None
                 or target.status != "ACTIVE"
-                or not target.execution_secret_ref
+                or not target.execution_credential_id
                 or int(target.row_version) != int(token.target_version)
             ):
                 raise state_conflict("Target 当前不满足 Claim 条件")
@@ -881,7 +881,7 @@ class AIOpsChangeService:
                 target_version=int(target.row_version),
                 db_type=target.db_type,
                 connection_profile=dict(target.endpoint_json or {}),
-                execution_secret_ref=target.execution_secret_ref,
+                execution_credential_id=target.execution_credential_id,
                 action_template_id=proposal.action_template_id,
                 action_template_version=(
                     proposal.action_template_version

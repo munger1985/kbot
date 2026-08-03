@@ -67,6 +67,7 @@ from platform_core.contracts.aiops import (
     ReportVersionPage,
     ReportView,
     TargetCreate,
+    DatabaseCredentialInput,
     TargetDetail,
     TargetPage,
     TargetPatch,
@@ -611,6 +612,24 @@ async def patch_target(
         if_match=if_match,
         auth_context=request.state.auth_context,
     )
+    return _validated(TargetDetail, payload, response)
+
+
+@router.post("/targets/{target_id}/diagnostic-credential:rotate", response_model=TargetDetail)
+async def rotate_diagnostic_credential(target_id: UUID, body: DatabaseCredentialInput, request: Request, response: Response, if_match: IfMatch, idempotency_key: IdempotencyKey) -> TargetDetail:
+    payload = await _client(request).rotate_target_credential(target_id, "diagnostic", body.model_dump(mode="json"), if_match=if_match, idempotency_key=idempotency_key, auth_context=request.state.auth_context)
+    return _validated(TargetDetail, payload, response)
+
+
+@router.post("/targets/{target_id}/execution-credential:rotate", response_model=TargetDetail)
+async def rotate_execution_credential(target_id: UUID, body: DatabaseCredentialInput, request: Request, response: Response, if_match: IfMatch, idempotency_key: IdempotencyKey) -> TargetDetail:
+    payload = await _client(request).rotate_target_credential(target_id, "execution", body.model_dump(mode="json"), if_match=if_match, idempotency_key=idempotency_key, auth_context=request.state.auth_context)
+    return _validated(TargetDetail, payload, response)
+
+
+@router.post("/targets/{target_id}/execution-credential:remove", response_model=TargetDetail)
+async def remove_execution_credential(target_id: UUID, request: Request, response: Response, if_match: IfMatch, idempotency_key: IdempotencyKey) -> TargetDetail:
+    payload = await _client(request).remove_execution_credential(target_id, if_match=if_match, idempotency_key=idempotency_key, auth_context=request.state.auth_context)
     return _validated(TargetDetail, payload, response)
 
 

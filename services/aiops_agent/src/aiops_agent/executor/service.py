@@ -19,7 +19,8 @@ from aiops_agent.executor.drivers import (
     DiagnosticDriverError,
     ReadonlyDatabaseDriver,
 )
-from aiops_agent.ports.secret_store import SecretStorePort
+from aiops_agent.adapters.aiops_execution_client import AIOpsExecutionClient
+from aiops_agent.ports.secret_store import ResolvedSecret
 from platform_core.contracts.aiops.executor import (
     DatabaseColumn,
     DatabaseObservation,
@@ -35,14 +36,14 @@ class DiagnosticExecutorService:
         *,
         registry: DiagnosticRegistry,
         grant_codec: DiagnosticGrantCodec,
-        secret_store: SecretStorePort,
+        control_plane: AIOpsExecutionClient,
         drivers: tuple[ReadonlyDatabaseDriver, ...],
         hard_limits: DiagnosticLimits,
         concurrency: int,
     ):
         self._registry = registry
         self._grant_codec = grant_codec
-        self._secret_store = secret_store
+        self._control_plane = control_plane
         self._drivers = {driver.db_type: driver for driver in drivers}
         self._hard_limits = hard_limits
         self._semaphore = asyncio.Semaphore(concurrency)
@@ -73,9 +74,8 @@ class DiagnosticExecutorService:
                 return self._gap(
                     request, "VERSION_UNSUPPORTED", retryable=False
                 )
-            secret = await self._secret_store.resolve(
-                grant.diagnostic_secret_ref
-            )
+            issued = await self._control_plane.issue_credential(request.grant, trace_id=grant.trace_id)
+            secret = ResolvedSecret(values={"username": issued.username, "password": issued.password}, fingerprint="issued")
             started = datetime.now(UTC)
             async with self._semaphore:
                 raw = await driver.execute(

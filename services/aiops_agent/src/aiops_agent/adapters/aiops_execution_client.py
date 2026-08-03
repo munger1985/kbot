@@ -7,6 +7,8 @@ from uuid import UUID
 import aiohttp
 
 from platform_core.contracts.aiops.executor import (
+    CredentialIssueRequest,
+    CredentialIssueResponse,
     ExecutionStatusEvent,
     MutationClaimReceipt,
     MutationClaimRequest,
@@ -68,6 +70,9 @@ class AIOpsExecutionClient:
             trace_id=trace_id,
             response_type=EventReceipt,
         )
+
+    async def issue_credential(self, grant: str, *, trace_id: str) -> CredentialIssueResponse:
+        return await self._post(path="/internal/v1/aiops/credentials:issue", payload=CredentialIssueRequest(grant=grant).model_dump(mode="json"), scope="aiops.credentials.issue", trace_id=trace_id, response_type=CredentialIssueResponse)
 
     async def _post(
         self,

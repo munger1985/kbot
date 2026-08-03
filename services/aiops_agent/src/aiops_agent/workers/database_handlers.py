@@ -164,12 +164,13 @@ class DatabaseDiagnosticHandler:
                 context.lease_token.encode()
             ).hexdigest(),
             target_id=UUID(context.target_id),
+            domain_id=int(snapshot["domain_id"]),
             target_row_version=int(snapshot["target_row_version"]),
             db_type=snapshot["db_type"],
             connection_profile=DiagnosticConnectionProfile.model_validate(
                 snapshot["connection_profile"]
             ),
-            diagnostic_secret_ref=snapshot["diagnostic_secret_ref"],
+            diagnostic_credential_id=UUID(snapshot["diagnostic_credential_id"]),
             tool_id=tool["tool_id"],
             tool_version=tool["version"],
             variant=tool["variant"],

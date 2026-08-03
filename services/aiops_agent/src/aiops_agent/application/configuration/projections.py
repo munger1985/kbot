@@ -73,7 +73,7 @@ from platform_core.contracts.aiops import (
     PolicyDetail,
     PolicyPage,
     PolicySummary,
-    SecretRefStatus,
+    DatabaseCredentialStatus,
     TargetCreate,
     TargetDetail,
     TargetPage,
@@ -83,13 +83,12 @@ from platform_core.contracts.aiops import (
 )
 from platform_core.identity import uuid7
 
-def _secret_status(reference: str | None) -> SecretRefStatus:
-    if reference is None:
-        return SecretRefStatus(configured=False)
-    return SecretRefStatus(
-        configured=True,
-        provider=urlparse(reference).scheme,
-        fingerprint=hashlib.sha256(reference.encode("utf-8")).hexdigest()[:16],
+def _credential_status(credential_id, entity: TargetEntity) -> DatabaseCredentialStatus:
+    return DatabaseCredentialStatus(
+        configured=credential_id is not None,
+        credential_id=credential_id,
+        key_version=None,
+        updated_at=entity.updated_at.astimezone(UTC) if credential_id else None,
     )
 
 def _target_summary(entity: TargetEntity) -> TargetSummary:
@@ -110,8 +109,8 @@ def _target_detail(entity: TargetEntity) -> TargetDetail:
         version_code=entity.version_code,
         db_role=entity.db_role,
         endpoint=entity.endpoint_json,
-        diagnostic_secret=_secret_status(entity.diagnostic_secret_ref),
-        execution_secret=_secret_status(entity.execution_secret_ref),
+        diagnostic_credential=_credential_status(entity.diagnostic_credential_id, entity),
+        execution_credential=_credential_status(entity.execution_credential_id, entity),
         security_level=int(entity.security_level),
         capabilities=entity.capabilities_json or {},
         health_version=int(entity.health_version),

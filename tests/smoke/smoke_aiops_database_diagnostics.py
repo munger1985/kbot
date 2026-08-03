@@ -34,7 +34,7 @@ from platform_core.identity import uuid7
 async def main() -> None:
     settings = get_aiops_settings()
     oracle = settings.database.oracle
-    secret_name = "AIOPS_DATABASE_DIAGNOSTIC_SMOKE"
+    secret_name = "KBOT_AIOPS_DATABASE_DIAGNOSTIC_SMOKE"
     os.environ[secret_name] = json.dumps(
         {
             "username": oracle.username,

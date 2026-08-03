@@ -190,6 +190,7 @@ def _prepare_runtime_secrets() -> None:
         "KBOT_AIOPS_DIAGNOSTIC_GRANT_SECRET",
         "KBOT_AIOPS_MUTATION_GRANT_SECRET",
         "KBOT_AIOPS_WEBHOOK_KEY_SECRET",
+        "KBOT_AIOPS_CREDENTIAL_ENCRYPTION_KEY",
     )
     for target in targets:
         if os.getenv(target):

@@ -176,11 +176,11 @@ class ScheduleAndSecretTest(unittest.IsolatedAsyncioTestCase):
         )
         with patch.dict(
             "os.environ",
-            {"AIOPS_TEST_READONLY": "plain-secret-value"},
+            {"KBOT_AIOPS_TEST_READONLY": "plain-secret-value"},
             clear=False,
         ):
             metadata = await adapter.validate_ref(
-                "env://AIOPS_TEST_READONLY"
+                "env://KBOT_AIOPS_TEST_READONLY"
             )
         self.assertEqual("env", metadata.provider)
         self.assertNotIn("plain-secret-value", repr(metadata))
@@ -209,7 +209,7 @@ class ConfigurationContractTest(unittest.TestCase):
                 "port": 1521,
                 "service": "ERP",
             },
-            "diagnostic_secret_ref": "env://AIOPS_TEST_READONLY",
+            "diagnostic_secret_ref": "env://KBOT_AIOPS_TEST_READONLY",
         }
         TargetCreate.model_validate(payload)
         with self.assertRaises(ValidationError):

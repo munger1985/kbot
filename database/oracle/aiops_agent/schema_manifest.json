@@ -7,7 +7,7 @@
     {
       "name": "001_ops_roots.sql",
       "statements": 23,
-      "sha256": "66a950ea0dd795fbea638f46e4c1ac25a1ce423efa7d0cd687288f5ac036c91b"
+      "sha256": "355cc06e9454c0938e57fae0726bea0aa09e5d4eaa2872282389bda654d874d8"
     },
     {
       "name": "002_ops_runtime.sql",
@@ -32,10 +32,11 @@
     {
       "name": "006_ops_fks_views.sql",
       "statements": 29,
-      "sha256": "afff3ea7c0ea86aa5b49570d5e3f110be87db221208ef068bc1a5a08b408f0c6"
+      "sha256": "2aa3b6c5e398faba32902c09cb25d17fef101d3610f9e9c2dbe664da23fef998"
     }
   ],
   "tables": [
+    "KBOT_OPS_CREDENTIAL",
     "KBOT_OPS_TARGET",
     "KBOT_OPS_POLICY",
     "KBOT_OPS_TARGET_BINDING",

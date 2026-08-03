@@ -352,9 +352,9 @@ class SecretAndOutboxTest(unittest.IsolatedAsyncioTestCase):
         )
         with patch.dict(
             os.environ,
-            {"AIOPS_TEST_MONITOR": '{"token":"top-secret"}'},
+            {"KBOT_AIOPS_TEST_MONITOR": '{"token":"top-secret"}'},
         ):
-            secret = await store.resolve("env://AIOPS_TEST_MONITOR")
+            secret = await store.resolve("env://KBOT_AIOPS_TEST_MONITOR")
         self.assertEqual("top-secret", secret.values["token"])
         self.assertNotIn("top-secret", repr(secret))
 

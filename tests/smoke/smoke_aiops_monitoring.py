@@ -139,7 +139,7 @@ async def main() -> None:
     trace_id = str(uuid7())
     webhook_key = f"whk-{uuid7()}-{uuid7()}"
     webhook_secret = f"smoke-secret-{uuid7()}"
-    os.environ["AIOPS_MONITORING_SMOKE_WEBHOOK"] = webhook_secret
+    os.environ["KBOT_AIOPS_MONITORING_SMOKE_WEBHOOK"] = webhook_secret
     client_session = aiohttp.ClientSession()
     payload_directory = tempfile.TemporaryDirectory(
         prefix="kbot-aiops-monitor-smoke-"
@@ -202,7 +202,7 @@ async def main() -> None:
                     display_name="监控闭环 Smoke Prometheus",
                     source_type="PROMETHEUS",
                     endpoint="https://prometheus.invalid",
-                    webhook_secret_ref="env://AIOPS_MONITORING_SMOKE_WEBHOOK",
+                    webhook_secret_ref="env://KBOT_AIOPS_MONITORING_SMOKE_WEBHOOK",
                     webhook_key_hash=hashlib.sha256(
                         webhook_key.encode()
                     ).hexdigest(),
@@ -433,7 +433,7 @@ async def main() -> None:
                     )
                 )
             await session.commit()
-        os.environ.pop("AIOPS_MONITORING_SMOKE_WEBHOOK", None)
+        os.environ.pop("KBOT_AIOPS_MONITORING_SMOKE_WEBHOOK", None)
         await client_session.close()
         await database.close()
         payload_directory.cleanup()

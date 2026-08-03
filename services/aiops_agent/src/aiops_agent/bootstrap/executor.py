@@ -7,7 +7,6 @@ from loguru import logger
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from aiops_agent.adapters.secret_store import ConfiguredSecretStore
 from aiops_agent.adapters.aiops_execution_client import AIOpsExecutionClient
 from aiops_agent.actions import ActionRegistry, create_mutation_grant_codec
 from aiops_agent.api.executor import router as executor_router
@@ -53,15 +52,17 @@ def create_aiops_executor(
             process="db_executor",
         )
         registry = create_diagnostic_registry(resolved)
-        secret_store = ConfiguredSecretStore(
-            provider=resolved.secret_store.provider,
-            allowed_schemes=resolved.secret_store.allowed_schemes,
-        )
         client_session = aiohttp.ClientSession()
         diagnostic_executor = DiagnosticExecutorService(
             registry=registry,
             grant_codec=create_diagnostic_grant_codec(resolved),
-            secret_store=secret_store,
+            control_plane=AIOpsExecutionClient(
+                base_url=resolved.clients.aiops_api.base_url,
+                audience=resolved.clients.aiops_api.audience,
+                caller_service=config.service_name,
+                timeout_seconds=resolved.clients.aiops_api.timeout_seconds,
+                session=client_session,
+            ),
             drivers=(
                 OracleDiagnosticDriver(),
                 MySQLDiagnosticDriver(),
@@ -81,7 +82,6 @@ def create_aiops_executor(
             executor_instance_id=config.executor_instance_id,
             registry=action_registry,
             grant_codec=create_mutation_grant_codec(resolved),
-            secret_store=secret_store,
             control_plane=AIOpsExecutionClient(
                 base_url=resolved.clients.aiops_api.base_url,
                 audience=resolved.clients.aiops_api.audience,

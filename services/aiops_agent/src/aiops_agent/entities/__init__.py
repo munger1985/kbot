@@ -26,10 +26,12 @@ from .runtime import (
     OpsTaskEntity,
 )
 from .target import PolicyEntity, TargetBindingEntity, TargetEntity
+from .credential import CredentialEntity
 
 __all__ = [
     "ApprovalTokenEntity",
     "ChangeProposalEntity",
+    "CredentialEntity",
     "ExecutionEntity",
     "HitlEntity",
     "InboxEntity",

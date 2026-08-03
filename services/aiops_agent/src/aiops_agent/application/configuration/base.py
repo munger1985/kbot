@@ -23,6 +23,7 @@ from aiops_agent.application.configuration.common import (
     canonical_json,
     sha256_json,
 )
+from aiops_agent.application.credential_cipher import CredentialCipher
 from aiops_agent.application.configuration.schedule import (
     InspectionTemplateRegistry,
     next_cron_run,
@@ -103,6 +104,7 @@ class ConfigurationServiceBase:
         template_registry: InspectionTemplateRegistry,
         management: AIOpsManagementConfig,
         max_inspection_targets: int,
+        credential_cipher: CredentialCipher,
     ):
         self._uow_factory = uow_factory
         self._cursor_codec = cursor_codec
@@ -112,6 +114,7 @@ class ConfigurationServiceBase:
         self._management = management
         self._max_inspection_targets = max_inspection_targets
         self._idempotency = IdempotencyGuard()
+        self._credential_cipher = credential_cipher
 
     async def _validate_secret_refs(self, *references: str | None) -> None:
         for reference in references:
@@ -143,7 +146,11 @@ class ConfigurationServiceBase:
             parent_resource=parent_resource,
             idempotency_key=idempotency_key,
         )
-        payload_hash = sha256_json(payload)
+        # 口令请求不能留下可离线猜测的原始摘要。
+        payload_hash = hmac.new(
+            self._credential_cipher._fingerprint_key,  # type: ignore[attr-defined]
+            canonical_json(payload).encode("utf-8"), hashlib.sha256,
+        ).hexdigest()
         try:
             async with self._uow_factory() as uow:
                 replay = await self._idempotency.replay(

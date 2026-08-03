@@ -16,6 +16,7 @@ from aiops_agent.actions import (
     create_mutation_grant_codec,
 )
 from aiops_agent.adapters.secret_store import ConfiguredSecretStore
+from aiops_agent.application.credential_cipher import CredentialCipher
 from aiops_agent.adapters.monitoring import MonitorProviderRegistry
 from aiops_agent.adapters.db_executor_client import DatabaseExecutorClient
 from aiops_agent.adapters.model_serving import AIOpsStructuredModelClient
@@ -139,6 +140,7 @@ def create_aiops_api(
             max_inspection_targets=(
                 resolved.limits.max_targets_per_inspection_fire
             ),
+            credential_cipher=CredentialCipher.from_environment(),
         )
         metric_catalog = load_metric_catalog(
             Path(resolved.monitoring.catalog_path)
@@ -199,6 +201,9 @@ def create_aiops_api(
             session=client_session,
         )
         diagnostic_grant_codec = create_diagnostic_grant_codec(resolved)
+        app.state.credential_cipher = CredentialCipher.from_environment()
+        app.state.diagnostic_grant_codec = diagnostic_grant_codec
+        app.state.mutation_grant_codec = create_mutation_grant_codec(resolved)
         db_executor_client = DatabaseExecutorClient(
             base_url=resolved.clients.db_executor.base_url,
             audience=resolved.clients.db_executor.audience,
@@ -304,6 +309,7 @@ def create_aiops_api(
                     {
                         "aiops.execution.claim",
                         "aiops.execution.callback",
+                        "aiops.credentials.issue",
                     }
                 ),
             },

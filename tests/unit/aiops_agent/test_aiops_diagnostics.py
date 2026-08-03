@@ -173,7 +173,7 @@ class DiagnosticGrantTest(unittest.TestCase):
                 port=1521,
                 service="KBOT4",
             ),
-            diagnostic_secret_ref="env://AIOPS_TEST_DATABASE",
+            diagnostic_secret_ref="env://KBOT_AIOPS_TEST_DATABASE",
             tool_id=tool.definition.tool_id,
             tool_version=tool.definition.version,
             variant=tool.definition.variant,

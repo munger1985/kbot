@@ -13,6 +13,7 @@ from aiops_agent.application.errors import UnitOfWorkStateError
 from aiops_agent.repositories import (
     AlertRepository,
     ChangeRepository,
+    CredentialRepository,
     InboxRepository,
     InspectionRepository,
     MonitorSourceRepository,
@@ -41,6 +42,7 @@ class AIOpsUnitOfWork:
         self.state = UnitOfWorkState.NEW
 
         self.targets: TargetRepository | None = None
+        self.credentials: CredentialRepository | None = None
         self.monitor_sources: MonitorSourceRepository | None = None
         self.policies: PolicyRepository | None = None
         self.alerts: AlertRepository | None = None
@@ -64,6 +66,7 @@ class AIOpsUnitOfWork:
         self.state = UnitOfWorkState.ACTIVE
         guard = self._require_active
         self.targets = TargetRepository(self.session, guard)
+        self.credentials = CredentialRepository(self.session, guard)
         self.monitor_sources = MonitorSourceRepository(self.session, guard)
         self.policies = PolicyRepository(self.session, guard)
         self.alerts = AlertRepository(self.session, guard)
@@ -104,6 +107,7 @@ class AIOpsUnitOfWork:
             self._transaction = None
             self.session = None
             self.targets = None
+            self.credentials = None
             self.monitor_sources = None
             self.policies = None
             self.alerts = None

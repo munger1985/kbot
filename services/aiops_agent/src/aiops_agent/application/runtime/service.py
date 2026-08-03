@@ -265,10 +265,10 @@ class AIOpsRuntimeService:
                 "db_role": target.db_role,
                 "database_endpoint_configured": bool(target.endpoint_json),
                 "diagnostic_secret_configured": bool(
-                    target.diagnostic_secret_ref
+                    target.diagnostic_credential_id
                 ),
                 "execution_secret_configured": bool(
-                    target.execution_secret_ref
+                    target.execution_credential_id
                 ),
                 "security_level": int(target.security_level),
                 "capabilities": dict(target.capabilities_json or {}),
@@ -528,7 +528,7 @@ class AIOpsRuntimeService:
                             "DEPLOYMENT_MUTATION_DISABLED",
                         ),
                         (
-                            not bool(target.execution_secret_ref),
+                            not bool(target.execution_credential_id),
                             "EXECUTION_SECRET_MISSING",
                         ),
                         (
@@ -995,7 +995,7 @@ class AIOpsRuntimeService:
                     "retryable": False,
                 }
             )
-        if not target.diagnostic_secret_ref:
+        if not target.diagnostic_credential_id:
             initial_gaps.append(
                 {
                     "code": "DIAGNOSTIC_SECRET_MISSING",
@@ -1022,7 +1022,7 @@ class AIOpsRuntimeService:
         automatic_access_enabled = (
             policy_allowed
             and bool(target.version_code)
-            and bool(target.diagnostic_secret_ref)
+            and bool(target.diagnostic_credential_id)
             and bool(target.endpoint_json)
         )
         requested = requested_tool_ids or (
@@ -1098,11 +1098,12 @@ class AIOpsRuntimeService:
             )
         )
         snapshot = {
+            "domain_id": int(target.domain_id),
             "db_type": target.db_type,
             "configured_version": target.version_code or "UNKNOWN",
             "target_row_version": int(target.row_version),
             "connection_profile": dict(target.endpoint_json or {}),
-            "diagnostic_secret_ref": target.diagnostic_secret_ref,
+            "diagnostic_credential_id": str(target.diagnostic_credential_id),
             "automatic_access_enabled": automatic_access_enabled,
             "catalog_hash": self._diagnostic_registry.catalog_hash,
             "capability_snapshot": capability_snapshot,

@@ -30,6 +30,10 @@ Schema。脚本不包含 `DROP`、旧表查询、旧数据导入、兼容视图�
 `scripts/db/remove_redundant_resource_key_columns.sql`。该脚本原地删除
 `AGENT_KEY`、`COLLECTION_KEY`、`TARGET_KEY`、`SOURCE_KEY`、`PLAN_KEY`
 及相关约束，并重建受影响的 AIOps 视图；不删除表和业务数据。
+需要保留当前数据并修复 Delegation 子运行唯一性时，停止 Agent Runtime
+Worker 后执行 `scripts/db/fix_agent_delegation_child_unique.sql`。该脚本将
+旧组合唯一约束替换为仅在 `CHILD_RUN_ID` 非空时生效的函数唯一索引；不删除表和
+业务数据。
 执行前运行：
 
 ```bash

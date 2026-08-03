@@ -48,6 +48,18 @@ class SecretRefStatus(AIOpsContract):
     fingerprint: str | None = None
 
 
+class DatabaseCredentialInput(AIOpsContract):
+    username: str = Field(min_length=1, max_length=256)
+    password: str = Field(min_length=1, max_length=4096)
+
+
+class DatabaseCredentialStatus(AIOpsContract):
+    configured: bool
+    credential_id: UUIDv7 | None = None
+    key_version: str | None = None
+    updated_at: UtcDatetime | None = None
+
+
 class TargetEndpoint(AIOpsContract):
     host: str = Field(
         min_length=1,
@@ -68,8 +80,8 @@ class TargetCreate(AIOpsContract):
     environment: Literal["PROD", "STG", "DEV"]
     db_role: Literal["PRIMARY", "STANDBY", "UNKNOWN"] = "UNKNOWN"
     endpoint: TargetEndpoint | None = None
-    diagnostic_secret_ref: SecretRef | None = None
-    execution_secret_ref: SecretRef | None = None
+    diagnostic_credential: DatabaseCredentialInput | None = None
+    execution_credential: DatabaseCredentialInput | None = None
     security_level: int = Field(default=1, ge=0, le=999)
     capabilities: JsonObject = Field(default_factory=dict)
 
@@ -92,8 +104,6 @@ class TargetPatch(AIOpsContract):
     environment: Literal["PROD", "STG", "DEV"] | None = None
     db_role: Literal["PRIMARY", "STANDBY", "UNKNOWN"] | None = None
     endpoint: TargetEndpoint | None = None
-    diagnostic_secret_ref: SecretRef | None = None
-    execution_secret_ref: SecretRef | None = None
     security_level: int | None = Field(default=None, ge=0, le=999)
     capabilities: JsonObject | None = None
 
@@ -114,8 +124,8 @@ class TargetDetail(TargetSummary):
     version_code: str | None = None
     db_role: str
     endpoint: TargetEndpoint | None = None
-    diagnostic_secret: SecretRefStatus
-    execution_secret: SecretRefStatus
+    diagnostic_credential: DatabaseCredentialStatus
+    execution_credential: DatabaseCredentialStatus
     security_level: int
     capabilities: JsonObject
     health_version: int = Field(ge=1)

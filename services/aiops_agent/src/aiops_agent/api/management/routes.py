@@ -43,6 +43,7 @@ from platform_core.contracts.aiops import (
     PolicyDetail,
     PolicyPage,
     TargetCreate,
+    DatabaseCredentialInput,
     TargetDetail,
     TargetPage,
     TargetPatch,
@@ -138,6 +139,27 @@ async def patch_target(
         request=body,
         expected_version=parse_etag(if_match),
     )
+    _etag(response, result.row_version)
+    return result
+
+
+@router.post("/targets/{target_id}/diagnostic-credential:rotate", response_model=TargetDetail)
+async def rotate_diagnostic_credential(target_id: UUID, body: DatabaseCredentialInput, response: Response, service: Service, scope: Scope, idempotency_key: IdempotencyKey, if_match: IfMatch = None) -> TargetDetail:
+    result = await service.rotate_target_credential(scope=scope, target_id=target_id, credential_kind="DIAGNOSTIC", username=body.username, password=body.password, expected_version=parse_etag(if_match), idempotency_key=idempotency_key)
+    _etag(response, result.row_version)
+    return result
+
+
+@router.post("/targets/{target_id}/execution-credential:rotate", response_model=TargetDetail)
+async def rotate_execution_credential(target_id: UUID, body: DatabaseCredentialInput, response: Response, service: Service, scope: Scope, idempotency_key: IdempotencyKey, if_match: IfMatch = None) -> TargetDetail:
+    result = await service.rotate_target_credential(scope=scope, target_id=target_id, credential_kind="EXECUTION", username=body.username, password=body.password, expected_version=parse_etag(if_match), idempotency_key=idempotency_key)
+    _etag(response, result.row_version)
+    return result
+
+
+@router.post("/targets/{target_id}/execution-credential:remove", response_model=TargetDetail)
+async def remove_execution_credential(target_id: UUID, response: Response, service: Service, scope: Scope, idempotency_key: IdempotencyKey, if_match: IfMatch = None) -> TargetDetail:
+    result = await service.remove_execution_credential(scope=scope, target_id=target_id, expected_version=parse_etag(if_match), idempotency_key=idempotency_key)
     _etag(response, result.row_version)
     return result
 

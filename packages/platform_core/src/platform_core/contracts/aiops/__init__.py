@@ -4,6 +4,8 @@ from .errors import AIOpsErrorCode, ProblemDetails
 from .events import AIOpsEvent, SafeAIOpsEvent, UnknownEvent
 from .executor import (
     DatabaseColumn,
+    CredentialIssueRequest,
+    CredentialIssueResponse,
     DatabaseObservation,
     DiagnosticConnectionProfile,
     DiagnosticExecutionGrant,
@@ -78,6 +80,7 @@ from .public import (
     ReportVersionSummary,
     ReportView,
     SecretRefStatus,
+    DatabaseCredentialStatus,
     TargetCreate,
     TargetDetail,
     TargetEndpoint,

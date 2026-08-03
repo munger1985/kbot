@@ -50,6 +50,7 @@ SERVICE_TABLES = {
         "KBOT_AGENT_MEMORY_JOB",
     },
     "aiops_agent": {
+        "KBOT_OPS_CREDENTIAL",
         "KBOT_OPS_TARGET",
         "KBOT_OPS_POLICY",
         "KBOT_OPS_TARGET_BINDING",
@@ -281,6 +282,13 @@ def main() -> int:
             errors.append(f"Agent Runtime 的 {column} 禁止声明为 NUMBER")
     if not re.search(r"\bLEASE_TOKEN\s+RAW\s*\(\s*16\s*\)", agent_sql):
         errors.append("Agent Runtime 的 LEASE_TOKEN 必须为 128-bit RAW(16)")
+    if "CONSTRAINT UK_AGENT_DELEGATION_CHILD UNIQUE" in agent_sql:
+        errors.append("Delegation 子运行唯一性不得阻止 CHILD_RUN_ID 为 NULL 的记录")
+    if not re.search(
+        r"\bCREATE\s+UNIQUE\s+INDEX\s+UX_AGENT_DELEGATION_CHILD\b",
+        agent_sql,
+    ):
+        errors.append("Agent Runtime 缺少 Delegation 子运行条件唯一索引")
 
     aiops_sql = service_sql.get("aiops_agent", "")
     for column in AIOPS_UUID_COLUMNS:

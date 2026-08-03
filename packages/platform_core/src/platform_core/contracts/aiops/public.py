@@ -32,6 +32,7 @@ from .configuration import (
     PolicyPage,
     PolicySummary,
     SecretRefStatus,
+    DatabaseCredentialStatus,
     TargetCreate,
     TargetDetail,
     TargetEndpoint,

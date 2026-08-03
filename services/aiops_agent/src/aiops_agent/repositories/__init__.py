@@ -2,6 +2,7 @@
 """AIOps 聚合 Repository。"""
 
 from .change import ChangeRepository
+from .credential import CredentialRepository
 from .inspection import InspectionRepository
 from .messaging import InboxRepository, OutboxRepository
 from .monitoring import AlertRepository, MonitorSourceRepository
@@ -11,6 +12,7 @@ from .target import PolicyRepository, TargetRepository
 __all__ = [
     "AlertRepository",
     "ChangeRepository",
+    "CredentialRepository",
     "InboxRepository",
     "InspectionRepository",
     "MonitorSourceRepository",

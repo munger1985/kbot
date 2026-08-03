@@ -56,14 +56,11 @@ class DiagnosticExecutionGrant(AIOpsContract):
     task_id: UUIDv7
     lease_token_hash: Sha256Digest
     target_id: UUIDv7
+    domain_id: int = Field(ge=1)
     target_row_version: int = Field(ge=1)
     db_type: Literal["ORACLE", "MYSQL"]
     connection_profile: DiagnosticConnectionProfile
-    diagnostic_secret_ref: str = Field(
-        min_length=8,
-        max_length=2048,
-        pattern=r"^[a-z][a-z0-9+.-]*://.+",
-    )
+    diagnostic_credential_id: UUIDv7
     tool_id: str = Field(pattern=r"^db\.[a-z0-9_.-]{1,124}$")
     tool_version: str = Field(pattern=r"^[0-9]+\.[0-9]+\.[0-9]+$")
     variant: str = Field(min_length=1, max_length=128)
@@ -153,10 +150,11 @@ class MutationExecutionGrant(AIOpsContract):
     executor_request_id: UUIDv7
     executor_instance_id: str = Field(min_length=1, max_length=256)
     target_id: UUIDv7
+    domain_id: int = Field(ge=1)
     target_version: int = Field(ge=1)
     db_type: Literal["ORACLE", "MYSQL"]
     connection_profile: JsonObject
-    execution_secret_ref: str
+    execution_credential_id: UUIDv7
     action_template_id: str = Field(min_length=1, max_length=128)
     action_template_version: str = Field(min_length=1, max_length=64)
     action_template_variant: str = Field(min_length=1, max_length=128)
@@ -173,6 +171,16 @@ class MutationExecutionGrant(AIOpsContract):
     statement_timeout_seconds: int = Field(gt=0)
     max_database_attempts: Literal[1] = 1
     trace_id: str = Field(min_length=1, max_length=128)
+
+
+class CredentialIssueRequest(AIOpsContract):
+    """Executor 用签名 Grant 换取一次性连接材料。"""
+    grant: str = Field(min_length=64, max_length=32768)
+
+
+class CredentialIssueResponse(AIOpsContract):
+    username: str = Field(min_length=1, max_length=256)
+    password: str = Field(min_length=1, max_length=4096)
 
 
 class MutationClaimReceipt(AIOpsContract):

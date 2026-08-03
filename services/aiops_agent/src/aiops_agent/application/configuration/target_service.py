@@ -41,6 +41,7 @@ from aiops_agent.entities import (
     MonitorSourceEntity,
     PolicyEntity,
     TargetBindingEntity,
+    CredentialEntity,
     TargetEntity,
     TargetMonitorEntity,
 )
@@ -106,14 +107,29 @@ class TargetConfigurationMixin:
         request: TargetCreate,
         idempotency_key: str,
     ) -> TargetDetail:
-        await self._validate_secret_refs(
-            request.diagnostic_secret_ref,
-            request.execution_secret_ref,
-        )
         async def handler(
             uow: AIOpsUnitOfWork, now: datetime
         ) -> TargetDetail:
-            assert uow.targets is not None
+            assert uow.targets is not None and uow.credentials is not None
+            diagnostic_id = execution_id = None
+            for kind, value in (("DIAGNOSTIC", request.diagnostic_credential), ("EXECUTION", request.execution_credential)):
+                if value is None:
+                    continue
+                credential_id = uuid7()
+                encrypted = self._credential_cipher.encrypt(
+                    domain_id=scope.domain_id, credential_id=credential_id,
+                    credential_kind=kind, username=value.username, password=value.password,
+                )
+                await uow.credentials.add(CredentialEntity(
+                    credential_id=credential_id, domain_id=scope.domain_id,
+                    credential_kind=kind, username_ciphertext=encrypted.username_ciphertext,
+                    username_nonce=encrypted.username_nonce, password_ciphertext=encrypted.password_ciphertext,
+                    password_nonce=encrypted.password_nonce, key_version=encrypted.key_version,
+                    status="ACTIVE", created_by=scope.actor_id, updated_by=scope.actor_id,
+                    created_at=now, updated_at=now,
+                ))
+                if kind == "DIAGNOSTIC": diagnostic_id = credential_id
+                else: execution_id = credential_id
             entity = TargetEntity(
                 target_id=uuid7(),
                 domain_id=scope.domain_id,
@@ -127,8 +143,8 @@ class TargetConfigurationMixin:
                     if request.endpoint is not None
                     else None
                 ),
-                diagnostic_secret_ref=request.diagnostic_secret_ref,
-                execution_secret_ref=request.execution_secret_ref,
+                diagnostic_credential_id=diagnostic_id,
+                execution_credential_id=execution_id,
                 security_level=request.security_level,
                 capabilities_json=request.capabilities,
                 status="MAINTENANCE",
@@ -235,12 +251,8 @@ class TargetConfigurationMixin:
         fields.pop("schema_version", None)
         if not fields:
             raise validation_failed("PATCH 至少需要一个可修改字段")
-        await self._validate_secret_refs(
-            fields.get("diagnostic_secret_ref"),
-            fields.get("execution_secret_ref"),
-        )
         connectivity_changed = bool(
-            {"endpoint", "diagnostic_secret_ref"} & fields.keys()
+            {"endpoint"} & fields.keys()
         )
         async with self._uow_factory() as uow:
             assert uow.targets is not None
@@ -288,6 +300,46 @@ class TargetConfigurationMixin:
             response = _target_detail(entity)
             await uow.commit()
             return response
+
+    async def rotate_target_credential(self, *, scope: ConfigurationScope, target_id: UUID,
+                                       credential_kind: str, username: str, password: str,
+                                       expected_version: int, idempotency_key: str) -> TargetDetail:
+        async def handler(uow: AIOpsUnitOfWork, now: datetime) -> TargetDetail:
+            assert uow.targets is not None and uow.credentials is not None
+            target = await uow.targets.get_scoped(target_id=target_id, domain_id=scope.domain_id, lock=True)
+            if target is None: raise resource_not_found("Target")
+            self._check_version(target.row_version, expected_version)
+            credential_id = uuid7()
+            encrypted = self._credential_cipher.encrypt(domain_id=scope.domain_id, credential_id=credential_id, credential_kind=credential_kind, username=username, password=password)
+            await uow.credentials.add(CredentialEntity(credential_id=credential_id, domain_id=scope.domain_id, credential_kind=credential_kind, username_ciphertext=encrypted.username_ciphertext, username_nonce=encrypted.username_nonce, password_ciphertext=encrypted.password_ciphertext, password_nonce=encrypted.password_nonce, key_version=encrypted.key_version, status="ACTIVE", created_by=scope.actor_id, updated_by=scope.actor_id, created_at=now, updated_at=now))
+            field = "diagnostic_credential_id" if credential_kind == "DIAGNOSTIC" else "execution_credential_id"
+            previous = getattr(target, field)
+            setattr(target, field, credential_id)
+            if previous:
+                old = await uow.credentials.get_scoped(credential_id=previous, domain_id=scope.domain_id, credential_kind=credential_kind, lock=True)
+                if old: await uow.credentials.revoke(old, actor_id=scope.actor_id, now=now)
+            if credential_kind == "DIAGNOSTIC":
+                target.status, target.health_status = "MAINTENANCE", "UNKNOWN"
+                target.health_version = int(target.health_version) + 1
+                target.last_health_check_at, target.last_error_code = None, None
+            target.updated_by, target.updated_at = scope.actor_id, now
+            await uow.session.flush()  # type: ignore[union-attr]
+            return _target_detail(target)
+        return await self._idempotent(scope=scope, operation=f"TARGET_{credential_kind}_CREDENTIAL_ROTATE", parent_resource=str(target_id), idempotency_key=idempotency_key, payload={"row_version": expected_version, "credential_kind": credential_kind, "username": username, "password": password}, response_type=TargetDetail, handler=handler)
+
+    async def remove_execution_credential(self, *, scope: ConfigurationScope, target_id: UUID, expected_version: int, idempotency_key: str) -> TargetDetail:
+        async def handler(uow: AIOpsUnitOfWork, now: datetime) -> TargetDetail:
+            assert uow.targets is not None and uow.credentials is not None
+            target = await uow.targets.get_scoped(target_id=target_id, domain_id=scope.domain_id, lock=True)
+            if target is None: raise resource_not_found("Target")
+            self._check_version(target.row_version, expected_version)
+            if target.execution_credential_id:
+                old = await uow.credentials.get_scoped(credential_id=target.execution_credential_id, domain_id=scope.domain_id, credential_kind="EXECUTION", lock=True)
+                if old: await uow.credentials.revoke(old, actor_id=scope.actor_id, now=now)
+            target.execution_credential_id, target.updated_by, target.updated_at = None, scope.actor_id, now
+            await uow.session.flush()  # type: ignore[union-attr]
+            return _target_detail(target)
+        return await self._idempotent(scope=scope, operation="TARGET_EXECUTION_CREDENTIAL_REMOVE", parent_resource=str(target_id), idempotency_key=idempotency_key, payload={"row_version": expected_version}, response_type=TargetDetail, handler=handler)
 
     async def command_target(
         self,

@@ -150,3 +150,9 @@ python3 scripts/release/verify_release.py
 验收至少覆盖健康检查、Oracle Schema、模型目录、文件入库解析、全文/向量检索、
 Agent SSE 与引用、AIOps 受控执行和 Domain 隔离。公开调用方只使用 `/api/v1`；
 `/internal/v1` 不进入外部网关。
+
+## 下载docling模型
+
+```bash
+docling-tools models download --all -o models
+```
