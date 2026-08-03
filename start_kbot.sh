@@ -103,8 +103,39 @@ SERVICES=(
     "Main API:API:main_api:main_api.entrypoints.api"
 )
 
-# 启动服务函数
-start_service() {
+# 返回模块对应的监听端口；纯后台 Worker 返回空值。
+service_port() {
+    case "$1" in
+        model_serving.entrypoints.embedding) echo "18091" ;;
+        model_serving.entrypoints.llm) echo "18092" ;;
+        model_serving.entrypoints.vlm) echo "18094" ;;
+        model_serving.entrypoints.visual) echo "18093" ;;
+        knowledge_core.entrypoints.parser) echo "18095" ;;
+        knowledge_core.entrypoints.api) echo "18090" ;;
+        agent_runtime.entrypoints.api) echo "18100" ;;
+        aiops_agent.entrypoints.api) echo "18110" ;;
+        aiops_agent.entrypoints.db_executor) echo "18111" ;;
+        aiops_agent.entrypoints.worker) echo "18112" ;;
+        aiops_agent.entrypoints.scheduler) echo "18113" ;;
+        main_api.entrypoints.api) echo "18099" ;;
+        *) echo "" ;;
+    esac
+}
+
+is_process_only_service() {
+    [ "$1" = "knowledge_core.entrypoints.projection" ] \
+        || [ "$1" = "agent_runtime.entrypoints.worker" ]
+}
+
+STARTED_PIDS=()
+STARTED_NAMES=()
+STARTED_LOG_FILES=()
+STARTED_MODULES=()
+STARTED_PORTS=()
+STARTED_STATES=()
+
+# 只负责拉起进程，不在这里串行等待端口。
+launch_service() {
     local service_name="$1"
     local log_service="$2"
     local module="$3"
@@ -136,65 +167,93 @@ start_service() {
         exit "$exit_code"
     ) >/dev/null 2>>"$log_file" &
     local pid=$!
+    STARTED_PIDS+=("$pid")
+    STARTED_NAMES+=("$service_name")
+    STARTED_LOG_FILES+=("$log_file")
+    STARTED_MODULES+=("$module")
+    STARTED_PORTS+=("$(service_port "$module")")
+    STARTED_STATES+=("PENDING")
+    echo "  ↳ ${service_name} 已拉起（PID: $pid）"
+}
 
-    # 后台 Worker 不监听 HTTP 端口，仅确认进程没有在启动后立即退出。
-    if [ "$module" = "knowledge_core.entrypoints.projection" ] \
-        || [ "$module" = "agent_runtime.entrypoints.worker" ]; then
-        sleep 1
-        if ! kill -0 $pid 2>/dev/null; then
-            echo "  ❌ ${service_name} Worker 在启动期间退出"
-            [ -s "$log_file" ] \
-                && tail -n 50 "$log_file" | sed 's/^/    | /'
-            return 1
-        fi
-        echo "✅ ${service_name} Worker 已启动（PID: $pid）"
-        return 0
+report_start_failure() {
+    local service_name="$1"
+    local log_file="$2"
+    if [ -s "$log_file" ]; then
+        echo "  ⚠  ${service_name} 启动失败，错误日志如下:"
+        tail -n 50 "$log_file" | sed 's/^/    | /'
+    else
+        echo "  ❌ ${service_name} 启动失败（无额外错误日志）"
     fi
+}
 
-    # 重试循环：最多等待 15 秒，每 2 秒检查一次 PID
-    local waited=0
-    local max_wait=15
-    while [ $waited -lt $max_wait ]; do
-        sleep 2
-        waited=$((waited + 2))
-        if ! kill -0 $pid 2>/dev/null; then
-            # 进程已退出，检查日志
-            if [ -s "$log_file" ]; then
-                echo "  ⚠  ${service_name} 启动失败，错误日志如下:"
-                tail -n 50 "$log_file" | sed 's/^/    | /'
-            else
-                echo "  ❌ ${service_name} 启动失败（无额外错误日志）"
+check_service_ports_available() {
+    local listening service group name log_service module port
+    local conflict=0
+    listening="$(ss -tln 2>/dev/null || true)"
+    for service in "${SERVICES[@]}"; do
+        IFS=':' read -r group name log_service module <<< "$service"
+        port="$(service_port "$module")"
+        [ -n "$port" ] || continue
+        if grep -q ":${port} " <<< "$listening"; then
+            echo "❌ ${group} / ${name} 端口 ${port} 已被占用。"
+            conflict=1
+        fi
+    done
+    [ "$conflict" -eq 0 ]
+}
+
+# 所有进程拉起后统一轮询，整体等待时间不再按服务数量累加。
+wait_for_services() {
+    local max_wait="${KBOT_STARTUP_TIMEOUT_SECONDS:-30}"
+    if ! [[ "$max_wait" =~ ^[1-9][0-9]*$ ]]; then
+        echo "❌ KBOT_STARTUP_TIMEOUT_SECONDS 必须是正整数。"
+        return 1
+    fi
+    local elapsed=0
+    local total="${#STARTED_PIDS[@]}"
+    local remaining="$total"
+    local index pid name module port log_file listening
+
+    echo
+    echo "⏳ 正在并行等待 ${total} 个服务就绪（最长 ${max_wait}s）..."
+    while [ "$elapsed" -lt "$max_wait" ]; do
+        listening="$(ss -tln 2>/dev/null || true)"
+        for index in "${!STARTED_PIDS[@]}"; do
+            [ "${STARTED_STATES[$index]}" = "PENDING" ] || continue
+            pid="${STARTED_PIDS[$index]}"
+            name="${STARTED_NAMES[$index]}"
+            module="${STARTED_MODULES[$index]}"
+            port="${STARTED_PORTS[$index]}"
+            log_file="${STARTED_LOG_FILES[$index]}"
+
+            if ! kill -0 "$pid" 2>/dev/null; then
+                STARTED_STATES[$index]="FAILED"
+                report_start_failure "$name" "$log_file"
+                return 1
             fi
-            return 1
-        fi
-
-        # 额外检查：端口是否已在监听（对于已知端口的服务）
-        local port=""
-        case "$module" in
-            model_serving.entrypoints.embedding)   port="18091" ;;
-            model_serving.entrypoints.llm)         port="18092" ;;
-            model_serving.entrypoints.vlm)         port="18094" ;;
-            model_serving.entrypoints.visual)      port="18093" ;;
-            knowledge_core.entrypoints.parser)     port="18095" ;;
-            knowledge_core.entrypoints.api)        port="18090" ;;
-            agent_runtime.entrypoints.api)         port="18100" ;;
-            aiops_agent.entrypoints.api)           port="18110" ;;
-            aiops_agent.entrypoints.db_executor)   port="18111" ;;
-            aiops_agent.entrypoints.worker)        port="18112" ;;
-            aiops_agent.entrypoints.scheduler)     port="18113" ;;
-            main_api.entrypoints.api)               port="18099" ;;
-        esac
-
-        if [ -n "$port" ] && ss -tlnp 2>/dev/null | grep -q ":$port "; then
-            echo "✅ ${service_name} 启动成功（PID: $pid，端口: $port）"
-            return 0
-        fi
-
-        # 端口还没起来，继续等待
+            if is_process_only_service "$module" && [ "$elapsed" -ge 1 ]; then
+                STARTED_STATES[$index]="READY"
+                remaining=$((remaining - 1))
+                echo "✅ ${name} Worker 已启动（PID: $pid）"
+                continue
+            fi
+            if [ -n "$port" ] \
+                && grep -q ":${port} " <<< "$listening"; then
+                STARTED_STATES[$index]="READY"
+                remaining=$((remaining - 1))
+                echo "✅ ${name} 启动成功（PID: $pid，端口: $port）"
+            fi
+        done
+        [ "$remaining" -eq 0 ] && return 0
+        sleep 1
+        elapsed=$((elapsed + 1))
     done
 
-    # 超时 — 进程还在但端口没起来
-    echo "  ⚠  ${service_name} 进程仍在运行（PID: $pid）但端口尚未就绪（${max_wait}s 超时），可能仍在初始化"
+    for index in "${!STARTED_PIDS[@]}"; do
+        [ "${STARTED_STATES[$index]}" = "PENDING" ] || continue
+        echo "  ⚠  ${STARTED_NAMES[$index]} 进程仍在运行（PID: ${STARTED_PIDS[$index]}）但端口 ${STARTED_PORTS[$index]} 尚未就绪（${max_wait}s 超时）"
+    done
     return 0
 }
 
@@ -245,6 +304,7 @@ start_development_ui() {
 # 启动所有服务
 echo "正在启动全部 KBot 服务..."
 echo "  日志根目录: $(pwd)/${LOG_ROOT}/"
+check_service_ports_available || exit 1
 current_group=""
 for service in "${SERVICES[@]}"; do
     IFS=':' read -r group name log_service module <<< "$service"
@@ -253,7 +313,7 @@ for service in "${SERVICES[@]}"; do
         echo "━━━━━━━━━━ ${group} ━━━━━━━━━━"
         current_group="$group"
     fi
-    start_service "$name" "$log_service" "$module" || exit 1
+    launch_service "${group} / ${name}" "$log_service" "$module" || exit 1
 done
 
 if [ "$ENVIRONMENT" = "development" ] || [ "$ENVIRONMENT" = "dev" ]; then
@@ -261,6 +321,7 @@ if [ "$ENVIRONMENT" = "development" ] || [ "$ENVIRONMENT" = "dev" ]; then
     echo "━━━━━━━━━━ Development Tools ━━━━━━━━━━"
 fi
 start_development_ui || exit 1
+wait_for_services || exit 1
 
 echo
 echo "🎉 全部 KBot 服务启动完成！"
