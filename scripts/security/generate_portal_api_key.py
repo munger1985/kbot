@@ -19,7 +19,7 @@ from platform_core.security import generate_portal_api_key  # noqa: E402
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="生成只显示一次的 Ammolite Portal API Key",
+        description="生成只显示一次的 KBot4 Portal API Key",
     )
     parser.add_argument("--key-id", required=True, help="配置中使用的 Key ID")
     args = parser.parse_args()
@@ -33,7 +33,7 @@ def main() -> int:
         key_id=args.key_id,
         pepper=pepper,
     )
-    print("请立即将以下明文保存到门户 Secret，Ammolite 不保存该值：")
+    print("请立即将以下明文保存到门户 Secret，KBot4 不保存该值：")
     print(raw_key)
     print("\n写入 [[portal_api_keys]] 的 key_digest：")
     print(digest)
