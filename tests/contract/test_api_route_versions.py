@@ -15,7 +15,7 @@ from knowledge_core.api.parse_task_router import router as parse_task_router
 from knowledge_core.api.profile_task_router import router as profile_task_router
 from knowledge_core.api.purge_task_router import router as purge_task_router
 from knowledge_core.api.status_router import router as status_router
-from main_api.api import knowledge_router
+from main_api.api import knowledge_router, slack_router
 from model_serving.common.management_router import create_model_management_router
 from model_serving.common.openai_router import create_openai_models_router
 from platform_core.contracts import INTERNAL_API_V1, PUBLIC_API_V1
@@ -59,7 +59,8 @@ class ApiRouteVersionsTest(unittest.TestCase):
     def test_main_api_routes_use_public_v1(self) -> None:
         paths = [
             route.path
-            for route in knowledge_router.routes
+            for router in (knowledge_router, slack_router)
+            for route in router.routes
             if isinstance(route, APIRoute)
         ]
         self.assertTrue(paths)

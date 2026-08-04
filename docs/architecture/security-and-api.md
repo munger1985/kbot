@@ -16,6 +16,11 @@ Domain 上下文；业务服务不能信任外部直接提交的 actor、Domain 
 
 模型公开接口使用独立 Model API Key，不能复用 Portal Key。
 
+Slack Events API 是 Provider 自身验签的公开集成入口，不使用 Portal API Key。
+Main API 必须对完整原始正文校验 Slack 时间戳与 HMAC，再由部署配置把 Workspace
+绑定到可信 Domain、Agent 和安全等级。Slack 报文中的 Domain 或 Agent 字段不作为
+身份依据。
+
 ## 内部认证
 
 Main API 调用下游时同时携带：

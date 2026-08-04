@@ -20,6 +20,7 @@ SERVICES=(
     "aiops_agent.entrypoints.scheduler"
     "aiops_agent.entrypoints.db_executor"
     "main_api.entrypoints.api"
+    "main_api.entrypoints.slack_worker"
 )
 
 # 安全查找在指定目录运行的 Python 服务进程

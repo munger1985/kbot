@@ -38,3 +38,6 @@ class PlatformDomainEntity(BaseEntity):
         server_default=func.now(),
         onupdate=func.now(),
     )
+
+
+__all__ = ["PlatformDomainEntity"]

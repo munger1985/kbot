@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from main_api.repositories import PlatformDomainRepository
+from main_api.repositories import (
+    PlatformDomainRepository,
+    SlackIntegrationRepository,
+)
 
 
 class MainApiUnitOfWork:
@@ -12,10 +15,12 @@ class MainApiUnitOfWork:
         self._session_factory = session_factory
         self.session: AsyncSession | None = None
         self.domains: PlatformDomainRepository | None = None
+        self.slack: SlackIntegrationRepository | None = None
 
     async def __aenter__(self) -> "MainApiUnitOfWork":
         self.session = self._session_factory()
         self.domains = PlatformDomainRepository(self.session)
+        self.slack = SlackIntegrationRepository(self.session)
         return self
 
     async def __aexit__(self, exc_type, exc, traceback) -> None:
@@ -26,6 +31,7 @@ class MainApiUnitOfWork:
         await self.session.close()
         self.session = None
         self.domains = None
+        self.slack = None
 
     async def commit(self) -> None:
         if self.session is None:

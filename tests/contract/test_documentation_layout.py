@@ -48,6 +48,7 @@ class DocumentationLayoutTest(unittest.TestCase):
                 "agent-chat.md",
                 "aiops-agent.md",
                 "knowledge-lifecycle.md",
+                "slack-integration.md",
             },
             {
                 path.name

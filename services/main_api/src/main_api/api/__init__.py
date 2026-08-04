@@ -13,6 +13,7 @@ from .knowledge import router as knowledge_router
 from .models import router as model_catalog_router
 from .ops import router as ops_router
 from .runs import router as run_router
+from .slack import router as slack_router
 
 __all__ = [
     "conversation_router",
@@ -28,4 +29,5 @@ __all__ = [
     "model_catalog_router",
     "ops_router",
     "run_router",
+    "slack_router",
 ]

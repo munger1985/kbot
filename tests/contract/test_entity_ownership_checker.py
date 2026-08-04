@@ -14,6 +14,7 @@ class EntityOwnershipCheckerTest(unittest.TestCase):
 
         mapped = entity_tables_by_service()
         self.assertIn("KBOT_PLATFORM_DOMAIN", mapped["platform_core"])
+        self.assertIn("KBOT_MAIN_SLACK_INBOX", mapped["main_api"])
         self.assertIn("KBOT_AI_MODEL", mapped["model_serving"])
         self.assertIn("KBOT_KC_COLLECTION", mapped["knowledge_core"])
         self.assertIn("KBOT_AGENT_RUN", mapped["agent_runtime"])

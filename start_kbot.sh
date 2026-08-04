@@ -101,6 +101,7 @@ SERVICES=(
     "AIOps Agent:Scheduler:aiops_agent:aiops_agent.entrypoints.scheduler"
     "AIOps Agent:DB Executor:aiops_agent:aiops_agent.entrypoints.db_executor"
     "Main API:API:main_api:main_api.entrypoints.api"
+    "Main API:Slack Worker:main_api:main_api.entrypoints.slack_worker"
 )
 
 # 返回模块对应的监听端口；纯后台 Worker 返回空值。
@@ -124,7 +125,8 @@ service_port() {
 
 is_process_only_service() {
     [ "$1" = "knowledge_core.entrypoints.projection" ] \
-        || [ "$1" = "agent_runtime.entrypoints.worker" ]
+        || [ "$1" = "agent_runtime.entrypoints.worker" ] \
+        || [ "$1" = "main_api.entrypoints.slack_worker" ]
 }
 
 STARTED_PIDS=()

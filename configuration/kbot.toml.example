@@ -53,3 +53,31 @@ key_digest = "0000000000000000000000000000000000000000000000000000000000000000"
 # enabled = true
 # api_endpoint = "http://deepseek-ocr.internal:18097/v1/chat/completions"
 # ocr_model = "deepseek-ocr"
+
+# Slack Events API 集成。Signing Secret 与 Bot Token 只通过下方指定的环境变量注入。
+# [integrations.slack]
+# enabled = true
+# max_webhook_bytes = 1048576
+# requests_per_minute = 120
+# outbox_poll_interval_seconds = 1
+# lease_seconds = 60
+# max_delivery_attempts = 8
+
+# [[integrations.slack.workspaces]]
+# workspace_id = "T0123456789"
+# domain_id = 1001
+# agent_id = "019fcbe0-e46c-7d33-907b-9d1621a2998f"
+# security_level = 0
+# signing_secret_env = "KBOT_SLACK_SIGNING_SECRET"
+# bot_token_env = "KBOT_SLACK_BOT_TOKEN"
+
+# [integrations.slack.external_callback]
+# enabled = true
+# url = "https://callback.example.com/events"
+# timeout_seconds = 10
+
+# 两项调试功能会落盘完整业务报文，只能临时开启。
+# [integrations.slack.debug]
+# callback_payload_log_enabled = false
+# slack_reply_dump_enabled = false
+# slack_reply_dump_dir = "/tmp/slackmess"

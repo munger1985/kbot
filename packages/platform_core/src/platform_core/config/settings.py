@@ -474,6 +474,11 @@ def load_settings(
                 merged = _deep_merge(
                     merged, {"parse_policy": {"ocr_model": ocr_model}}
                 )
+        if service == "main_api" and integrations.get("slack"):
+            merged = _deep_merge(
+                merged,
+                {"integrations": {"slack": integrations["slack"]}},
+            )
 
     merged["environment"] = resolved_environment
     merged["config_dir"] = str(resolved_file.parent)

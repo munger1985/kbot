@@ -30,6 +30,7 @@ REQUIRED_SERVICES = (
     "platform_core",
 )
 OPTIONAL_SERVICE_ORDER = (
+    "main_api",
     "model_serving",
     "knowledge_core",
     "agent_runtime",

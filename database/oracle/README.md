@@ -6,10 +6,11 @@
 脚本按拥有数据的服务拆分：
 
 1. `platform_core/`：平台身份边界和 APEX 公共投影；
-2. `model_serving/`：模型目录；
-3. `knowledge_core/`：Collection、入库聚合、Evidence、Discovery 和 Relation；
-4. `agent_runtime/`：Agent Definition、Run、Task、Artifact、Event 和 Delegation；
-5. `aiops_agent/`：目标、监控、运维 Run、HITL、执行、巡检和可靠消息。
+2. `main_api/`：Slack 等公开集成的 Inbox、会话映射和 Outbox；
+3. `model_serving/`：模型目录；
+4. `knowledge_core/`：Collection、入库聚合、Evidence、Discovery 和 Relation；
+5. `agent_runtime/`：Agent Definition、Run、Task、Artifact、Event 和 Delegation；
+6. `aiops_agent/`：目标、监控、运维 Run、HITL、执行、巡检和可靠消息。
 
 `platform_core` 是每次初始化都必须创建的基础层，不需要配置。其余已实现服务在
 `scripts/db/init_services.ini` 的 `[services]` 中使用 `true`/`false` 选择。

@@ -118,7 +118,7 @@ python3 tests/acceptance/check_oracle_schema.py
 2. Knowledge Core API、Parser、Projection Worker；
 3. Agent Runtime API、Worker；
 4. AIOps API、Worker、Scheduler、DB Executor；
-5. Main API。
+5. Main API、Slack Worker。
 
 各模块入口位于 `services/<service>/src/<package>/entrypoints/`。开发环境可执行：
 

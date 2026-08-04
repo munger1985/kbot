@@ -111,6 +111,37 @@ class ServiceConfigLoadingTest(unittest.TestCase):
 
             self.assertEqual(settings.api.allowed_origins, ["*"])
 
+    def test_slack_integration_is_loaded_from_deployment_config(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self._write_config(Path(directory))
+            with path.open("a", encoding="utf-8") as stream:
+                stream.write(
+                    "[integrations.slack]\n"
+                    "enabled=true\n"
+                    "[[integrations.slack.workspaces]]\n"
+                    "workspace_id='T1'\n"
+                    "domain_id=1001\n"
+                    "agent_id='019fcbe0-e46c-7d33-907b-9d1621a2998f'\n"
+                    "[integrations.slack.external_callback]\n"
+                    "enabled=true\n"
+                    "url='https://callback.example.com/events'\n"
+                )
+
+            settings = load_settings(
+                MainApiSettings,
+                service="main_api",
+                config_file=path,
+            )
+
+            slack = settings.integrations.slack
+            self.assertTrue(slack.enabled)
+            self.assertEqual("T1", slack.workspaces[0].workspace_id)
+            self.assertTrue(slack.external_callback.enabled)
+            self.assertEqual(
+                "https://callback.example.com/events",
+                slack.external_callback.url,
+            )
+
     def test_database_password_is_read_only_from_environment(self):
         settings = Settings()
         with patch.dict(os.environ, {}, clear=True):

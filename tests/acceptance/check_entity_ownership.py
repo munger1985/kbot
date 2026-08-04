@@ -11,7 +11,8 @@ if __package__ in (None, ""):
 import agent_runtime.entities as agent_entities  # noqa: E402
 import aiops_agent.entities as aiops_entities  # noqa: E402
 import knowledge_core.entities as kc_entities  # noqa: E402
-import main_api.entities as platform_entities  # noqa: E402
+import main_api.entities.domain as platform_entities  # noqa: E402
+import main_api.entities.slack as main_entities  # noqa: E402
 import model_serving.common.entities as model_entities  # noqa: E402
 import platform_core.prompts as prompt_entities  # noqa: E402
 from tests.acceptance.check_oracle_schema import SERVICE_TABLES  # noqa: E402
@@ -19,6 +20,7 @@ from tests.acceptance.check_oracle_schema import SERVICE_TABLES  # noqa: E402
 
 ENTITY_MODULES = {
     "platform_core": (platform_entities, prompt_entities),
+    "main_api": main_entities,
     "model_serving": model_entities,
     "knowledge_core": kc_entities,
     "agent_runtime": agent_entities,
@@ -71,7 +73,7 @@ def main() -> int:
             print(f"- {error}")
         return 1
     count = sum(len(value) for value in entity_tables_by_service().values())
-    print(f"KBot Entity 所有权校验通过：5 个服务，{count} 张表")
+    print(f"KBot Entity 所有权校验通过：6 个服务，{count} 张表")
     return 0
 
 

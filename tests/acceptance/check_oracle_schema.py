@@ -16,6 +16,11 @@ SERVICE_TABLES = {
         "KBOT_PLATFORM_PROMPT",
         "KBOT_PLATFORM_PROMPT_VERSION",
     },
+    "main_api": {
+        "KBOT_MAIN_SLACK_INBOX",
+        "KBOT_MAIN_SLACK_THREAD",
+        "KBOT_MAIN_SLACK_DELIVERY",
+    },
     "model_serving": {"KBOT_AI_MODEL"},
     "knowledge_core": {
         "KBOT_KC_COLLECTION",
@@ -76,6 +81,7 @@ SERVICE_TABLES = {
 }
 SERVICE_VIEWS = {
     "platform_core": {"KBOT_V_PLATFORM_DOMAIN"},
+    "main_api": set(),
     "model_serving": set(),
     "knowledge_core": set(),
     "agent_runtime": set(),

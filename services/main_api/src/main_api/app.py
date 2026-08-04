@@ -30,6 +30,7 @@ from main_api.api import (
     model_catalog_router,
     ops_router,
     run_router,
+    slack_router,
 )
 from main_api.config import get_main_api_settings
 from platform_clients import (
@@ -167,6 +168,7 @@ def create_main_api_app(
             domainless_paths=domainless_paths,
             public_prefixes={
                 "/api/v1/integrations/monitoring/",
+                "/api/v1/integrations/slack/",
                 "/static-offline-docs/",
             },
         )
@@ -202,6 +204,7 @@ def create_main_api_app(
     app.include_router(memory_router)
     app.include_router(ops_router)
     app.include_router(integration_router)
+    app.include_router(slack_router)
     if settings.platform.debug:
         app.state.development_log_root = settings.log.dir
         app.include_router(development_logs_router)

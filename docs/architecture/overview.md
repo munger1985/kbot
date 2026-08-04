@@ -14,7 +14,7 @@ Oracle 26ai Schema。每个服务只访问自己拥有的 `KBOT_*` 表；共享 
 
 | 服务 | 职责 | 主要进程 |
 |---|---|---|
-| Main API | Portal/APEX 的公开 BFF、认证、Domain 上下文和 SSE 转发 | API |
+| Main API | Portal/APEX 的公开 BFF、认证、Domain 上下文、Slack 集成和 SSE 转发 | API、Slack Worker |
 | Agent Runtime | Agent、Conversation、计划、Task、Skill、Artifact、记忆 | API、Worker |
 | Knowledge Core | Collection、Bundle、解析、Evidence、索引和检索 | API、Parser、Projection Worker |
 | AIOps Agent | 监控接入、数据库诊断、HITL、审批执行、巡检和报告 | API、Worker、Scheduler、DB Executor |
@@ -35,6 +35,8 @@ Portal / APEX
       ├────────► Agent Runtime ─────► Knowledge Core
       ├────────► Knowledge Core ────► Model Serving
       └────────► AIOps Agent ───────► DB Executor / Monitor Provider
+
+Slack Events API ──► Main API Slack Inbox/Outbox ──► Agent Runtime
 ```
 
 跨服务调用只使用 HTTP、版本化 DTO 或持久化任务。Repository 不跨服务导入，

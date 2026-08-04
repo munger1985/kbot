@@ -14,6 +14,7 @@ from main_api.app import create_main_api_app
 from main_api.application import (
     DomainManagementService,
     DomainValidationService,
+    SlackIntakeService,
 )
 from main_api.config import get_main_api_settings
 from main_api.persistence import create_main_api_uow
@@ -50,6 +51,10 @@ async def lifespan(app: FastAPI):
         rotation=settings.log.rotation,
         retention=settings.log.retention,
     )).setup()
+    slack_config = settings.integrations.slack
+    if slack_config.enabled:
+        for workspace in slack_config.workspaces:
+            workspace.require_signing_secret()
     db_runtime = create_database_runtime()
     app.state.db_runtime = db_runtime
     uow_factory = create_main_api_uow(db_runtime.session_factory)
@@ -58,6 +63,10 @@ async def lifespan(app: FastAPI):
     )
     app.state.domain_management_service = DomainManagementService(
         uow_factory=uow_factory,
+    )
+    app.state.slack_intake_service = SlackIntakeService(
+        uow_factory=uow_factory,
+        slack_config=slack_config,
     )
     client_session = aiohttp.ClientSession(
         timeout=aiohttp.ClientTimeout(

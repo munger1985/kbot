@@ -48,6 +48,7 @@ Key和私钥只能由环境变量或Secret管理系统注入。
 export PYTHONPATH="$PWD/packages/platform_core/src:$PWD/packages/platform_clients/src:$PWD/services/main_api/src:$PWD/services/agent_runtime/src:$PWD/services/knowledge_core/src:$PWD/services/aiops_agent/src:$PWD/services/model_serving/src"
 
 python3 -m main_api.entrypoints.api
+python3 -m main_api.entrypoints.slack_worker
 python3 -m agent_runtime.entrypoints.api
 python3 -m agent_runtime.entrypoints.worker
 python3 -m aiops_agent.entrypoints.api

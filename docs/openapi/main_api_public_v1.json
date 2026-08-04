@@ -4703,6 +4703,43 @@
         "title": "SecretRefStatus",
         "type": "object"
       },
+      "SlackEventReceipt": {
+        "additionalProperties": false,
+        "properties": {
+          "accepted": {
+            "title": "Accepted",
+            "type": "boolean"
+          },
+          "duplicate": {
+            "title": "Duplicate",
+            "type": "boolean"
+          },
+          "ignored": {
+            "default": false,
+            "title": "Ignored",
+            "type": "boolean"
+          },
+          "receipt_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Receipt Id"
+          }
+        },
+        "required": [
+          "receipt_id",
+          "accepted",
+          "duplicate"
+        ],
+        "title": "SlackEventReceipt",
+        "type": "object"
+      },
       "TargetCreate": {
         "additionalProperties": false,
         "properties": {
@@ -6550,6 +6587,37 @@
         "summary": "Receive Monitor Event",
         "tags": [
           "Monitoring Integrations"
+        ]
+      }
+    },
+    "/api/v1/integrations/slack/events": {
+      "post": {
+        "operationId": "receive_slack_event_api_v1_integrations_slack_events_post",
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Slack URL verification challenge"
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SlackEventReceipt"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Receive Slack Event",
+        "tags": [
+          "Slack Integrations"
         ]
       }
     },
