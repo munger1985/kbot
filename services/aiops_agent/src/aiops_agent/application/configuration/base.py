@@ -181,17 +181,33 @@ class ConfigurationServiceBase:
                 await uow.commit()
                 return response
         except IntegrityError as exc:
-            async with self._uow_factory() as retry_uow:
-                replay = await self._idempotency.replay(
-                    uow=retry_uow,
-                    message_key=message_key,
-                    payload_hash=payload_hash,
-                )
-                if replay is not None:
-                    if replay_transform is not None:
-                        replay = replay_transform(replay)
-                    return response_type.model_validate(replay)
-            raise state_conflict("配置自然键已存在或并发创建冲突") from exc
+            database_error = str(getattr(exc, "orig", exc))
+            is_unique_conflict = (
+                "ORA-00001" in database_error
+                or "unique constraint" in database_error.lower()
+            )
+            if is_unique_conflict:
+                async with self._uow_factory() as retry_uow:
+                    replay = await self._idempotency.replay(
+                        uow=retry_uow,
+                        message_key=message_key,
+                        payload_hash=payload_hash,
+                    )
+                    if replay is not None:
+                        if replay_transform is not None:
+                            replay = replay_transform(replay)
+                        return response_type.model_validate(replay)
+                raise state_conflict("配置自然键已存在或并发创建冲突") from exc
+            logger.error(
+                "AIOps 配置持久化约束失败：operation={} database_error={}",
+                operation,
+                database_error,
+            )
+            raise AIOpsApplicationError(
+                code="OPS_PERSISTENCE_CONSTRAINT_FAILED",
+                message="配置保存未满足数据库约束，请检查 AIOps Schema 与 Domain 配置",
+                status_code=500,
+            ) from exc
 
     @staticmethod
     def _check_version(actual: int, expected: int) -> None:
