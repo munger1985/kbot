@@ -4,6 +4,7 @@ from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import LargeBinary, Numeric, String, func
+from sqlalchemy.dialects.oracle import RAW
 from sqlalchemy.orm import Mapped, mapped_column
 
 from platform_core.persistence.orm import BaseEntity, UniversalTimestamp, UUIDv7Type
@@ -16,9 +17,10 @@ class CredentialEntity(BaseEntity):
     domain_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False)
     credential_kind: Mapped[str] = mapped_column(String(16), nullable=False)
     username_ciphertext: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
-    username_nonce: Mapped[bytes] = mapped_column(LargeBinary(12), nullable=False)
+    # Oracle DDL 使用 RAW(12)；LargeBinary 会按 BLOB 绑定，触发长度约束误判。
+    username_nonce: Mapped[bytes] = mapped_column(RAW(12), nullable=False)
     password_ciphertext: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
-    password_nonce: Mapped[bytes] = mapped_column(LargeBinary(12), nullable=False)
+    password_nonce: Mapped[bytes] = mapped_column(RAW(12), nullable=False)
     key_version: Mapped[str] = mapped_column(String(64), nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="ACTIVE")
     created_by: Mapped[str] = mapped_column(String(256), nullable=False)
