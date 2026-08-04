@@ -92,6 +92,8 @@ def create_aiops_api(
         app.state.ready_check = runtime.check_aiops_schema
         app.state.auth_context_codec = create_auth_context_codec()
         app.state.service_identity_codec = create_service_identity_codec()
+        # 先完成不可恢复的配置校验，避免失败时遗留 HTTP 会话。
+        credential_cipher = CredentialCipher.from_environment()
         client_session = aiohttp.ClientSession()
         agent_runtime_client = AgentRuntimeClient(
             base_url=resolved.clients.agent_runtime.base_url,
@@ -140,7 +142,7 @@ def create_aiops_api(
             max_inspection_targets=(
                 resolved.limits.max_targets_per_inspection_fire
             ),
-            credential_cipher=CredentialCipher.from_environment(),
+            credential_cipher=credential_cipher,
         )
         metric_catalog = load_metric_catalog(
             Path(resolved.monitoring.catalog_path)

@@ -41,11 +41,18 @@ class CredentialCipher:
         try:
             key = base64.urlsafe_b64decode(raw + "=" * (-len(raw) % 4))
         except (ValueError, binascii.Error) as exc:
-            raise CredentialCipherError("凭据加密配置无效") from exc
-        return cls(
-            key=key,
-            key_version=os.getenv("KBOT_AIOPS_CREDENTIAL_KEY_VERSION", "v1"),
-        )
+            raise CredentialCipherError(
+                "KBOT_AIOPS_CREDENTIAL_ENCRYPTION_KEY 必须为 Base64URL 编码的 32 字节密钥"
+            ) from exc
+        try:
+            return cls(
+                key=key,
+                key_version=os.getenv("KBOT_AIOPS_CREDENTIAL_KEY_VERSION", "v1"),
+            )
+        except CredentialCipherError as exc:
+            raise CredentialCipherError(
+                "KBOT_AIOPS_CREDENTIAL_ENCRYPTION_KEY 必须为 Base64URL 编码的 32 字节密钥"
+            ) from exc
 
     @staticmethod
     def _aad(domain_id: int, credential_id: UUID, credential_kind: str) -> bytes:

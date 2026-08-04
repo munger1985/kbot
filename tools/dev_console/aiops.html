@@ -110,8 +110,15 @@
                 <div class="field"><label>Port（可选）</label><input name="port" type="number" value="1521" /></div>
                 <div class="field"><label>Oracle Service / MySQL Database（可选）</label><input name="databaseName" value="FREEPDB1" /></div>
               </div>
-              <div class="field"><label>只读诊断 Secret Ref（可选）</label><input name="diagnosticSecretRef" placeholder="env://AIOPS_DATABASE_READONLY" /></div>
-              <div class="field"><label>变更执行 Secret Ref（可选）</label><input name="executionSecretRef" placeholder="env://AIOPS_DATABASE_EXECUTION" /></div>
+              <div class="field-row">
+                <div class="field"><label>只读诊断用户名（可选）</label><input name="diagnosticUsername" autocomplete="username" /></div>
+                <div class="field"><label>只读诊断密码（可选）</label><input name="diagnosticPassword" type="password" autocomplete="new-password" /></div>
+              </div>
+              <div class="field-row">
+                <div class="field"><label>变更执行用户名（可选）</label><input name="executionUsername" autocomplete="username" /></div>
+                <div class="field"><label>变更执行密码（可选）</label><input name="executionPassword" type="password" autocomplete="new-password" /></div>
+              </div>
+              <p class="hint">用户名和密码必须成对填写；仅在本次提交时传输并加密保存，创建后不会再次显示。</p>
               <p class="hint">不填写数据库 Endpoint 时仍可绑定监控源；聊天证据不足时，Agent 会给出只读 SQL 供用户手工执行。</p>
               <details class="advanced-fields">
                 <summary>诊断能力声明</summary>

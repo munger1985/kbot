@@ -439,6 +439,16 @@
             tls_enabled: false,
           }
         : null;
+      const credential = (username, password, label) => {
+        const normalizedUsername = username.trim();
+        const normalizedPassword = password.trim();
+        if (Boolean(normalizedUsername) !== Boolean(normalizedPassword)) {
+          throw new Error(`${label}用户名和密码必须同时填写`);
+        }
+        return normalizedUsername
+          ? { username: normalizedUsername, password: normalizedPassword }
+          : null;
+      };
       const payload = await KBotUI.api("/api/v1/ops/targets", {
         method: "POST",
         headers: {
@@ -451,11 +461,15 @@
           environment: form.elements.environment.value,
           db_role: "UNKNOWN",
           endpoint,
-          diagnostic_secret_ref: optionalValue(
-            form.elements.diagnosticSecretRef.value
+          diagnostic_credential: credential(
+            form.elements.diagnosticUsername.value,
+            form.elements.diagnosticPassword.value,
+            "只读诊断"
           ),
-          execution_secret_ref: optionalValue(
-            form.elements.executionSecretRef.value
+          execution_credential: credential(
+            form.elements.executionUsername.value,
+            form.elements.executionPassword.value,
+            "变更执行"
           ),
           security_level: 1,
           capabilities,

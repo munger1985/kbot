@@ -22,6 +22,8 @@ bash scripts/deployment/install_workspace.sh
 安装脚本不会执行 `pip install -e`，也不要求服务目录包含 `pyproject.toml`。
 当前部署方式直接保留完整源码树；`start_kbot.sh` 统一设置 `PYTHONPATH` 后从
 `services/*/src` 和 `packages/*/src` 加载模块。
+脚本会创建或补齐本地 `.env` 中的 AIOps 凭据加密密钥与版本；已有值不会覆盖。
+生产使用外部 Secret 时设置 `KBOT_SKIP_LOCAL_ENV_INIT=1`。
 
 ## 配置与 Secret
 
