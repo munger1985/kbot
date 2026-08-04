@@ -74,6 +74,7 @@ from platform_core.contracts.aiops import (
     PolicyPage,
     PolicySummary,
     DatabaseCredentialStatus,
+    SecretRefStatus,
     TargetCreate,
     TargetDetail,
     TargetPage,
@@ -82,6 +83,18 @@ from platform_core.contracts.aiops import (
     WebhookKeyRotation,
 )
 from platform_core.identity import uuid7
+
+
+def _secret_status(reference: str | None) -> SecretRefStatus:
+    """只投影 Secret 引用的提供方和不可逆指纹。"""
+    if reference is None:
+        return SecretRefStatus(configured=False)
+    return SecretRefStatus(
+        configured=True,
+        provider=urlparse(reference).scheme,
+        fingerprint=hashlib.sha256(reference.encode("utf-8")).hexdigest()[:16],
+    )
+
 
 def _credential_status(credential_id, entity: TargetEntity) -> DatabaseCredentialStatus:
     return DatabaseCredentialStatus(
