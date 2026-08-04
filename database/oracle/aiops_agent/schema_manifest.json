@@ -7,7 +7,7 @@
     {
       "name": "001_ops_roots.sql",
       "statements": 23,
-      "sha256": "a8f92bf563c0afaf38c341d874de66b54764fe76fde8619392570fd8ed5093db"
+      "sha256": "13543552c1f52e45e25eb0b9e21dfa3620540c8c92e0dd214de6419b9e8f19fe"
     },
     {
       "name": "002_ops_runtime.sql",

@@ -64,6 +64,8 @@ class CredentialCipher:
     ) -> EncryptedCredential:
         aad = self._aad(domain_id, credential_id, credential_kind)
         username_nonce, password_nonce = secrets.token_bytes(12), secrets.token_bytes(12)
+        if len(username_nonce) != 12 or len(password_nonce) != 12:
+            raise CredentialCipherError("凭据随机 nonce 长度无效")
         return EncryptedCredential(
             username_ciphertext=self._aesgcm.encrypt(username_nonce, username.encode(), aad),
             username_nonce=username_nonce,
