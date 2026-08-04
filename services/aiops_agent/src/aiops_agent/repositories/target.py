@@ -27,6 +27,12 @@ class TargetRepository(AIOpsRepository):
     async def add_target(self, entity: TargetEntity) -> TargetEntity:
         return await self._add(entity)
 
+    async def delete_target(self, entity: TargetEntity) -> None:
+        """仅由用例层在确认停用后删除无关联 Target。"""
+        self._check_active()
+        await self._session.delete(entity)
+        await self._session.flush()
+
     async def add_binding(
         self, entity: TargetBindingEntity
     ) -> TargetBindingEntity:

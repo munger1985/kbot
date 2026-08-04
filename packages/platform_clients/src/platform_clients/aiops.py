@@ -281,6 +281,12 @@ class AIOpsManagementClient(_BaseAIOpsClient):
     async def remove_execution_credential(self, target_id: UUID, *, if_match: str, idempotency_key: str, auth_context: AuthContext) -> dict[str, Any]:
         return await self._json("POST", f"{self._CONFIG}/targets/{target_id}/execution-credential:remove", payload={}, if_match=if_match, idempotency_key=idempotency_key, auth_context=auth_context)
 
+    async def remove_diagnostic_credential(self, target_id: UUID, *, if_match: str, idempotency_key: str, auth_context: AuthContext) -> dict[str, Any]:
+        return await self._json("POST", f"{self._CONFIG}/targets/{target_id}/diagnostic-credential:remove", payload={}, if_match=if_match, idempotency_key=idempotency_key, auth_context=auth_context)
+
+    async def delete_target(self, target_id: UUID, *, if_match: str, idempotency_key: str, auth_context: AuthContext) -> None:
+        await self._json("DELETE", f"{self._CONFIG}/targets/{target_id}", if_match=if_match, idempotency_key=idempotency_key, auth_context=auth_context)
+
     async def list_agent_bindings(
         self, target_id: UUID, *, auth_context: AuthContext
     ) -> list[dict[str, Any]]:

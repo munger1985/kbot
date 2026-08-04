@@ -633,6 +633,18 @@ async def remove_execution_credential(target_id: UUID, request: Request, respons
     return _validated(TargetDetail, payload, response)
 
 
+@router.post("/targets/{target_id}/diagnostic-credential:remove", response_model=TargetDetail)
+async def remove_diagnostic_credential(target_id: UUID, request: Request, response: Response, if_match: IfMatch, idempotency_key: IdempotencyKey) -> TargetDetail:
+    payload = await _client(request).remove_diagnostic_credential(target_id, if_match=if_match, idempotency_key=idempotency_key, auth_context=request.state.auth_context)
+    return _validated(TargetDetail, payload, response)
+
+
+@router.delete("/targets/{target_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_target(target_id: UUID, request: Request, if_match: IfMatch, idempotency_key: IdempotencyKey) -> Response:
+    await _client(request).delete_target(target_id, if_match=if_match, idempotency_key=idempotency_key, auth_context=request.state.auth_context)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 async def _target_command(
     *,
     target_id: UUID,

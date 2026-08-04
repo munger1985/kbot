@@ -341,6 +341,43 @@ class TargetConfigurationMixin:
             return _target_detail(target)
         return await self._idempotent(scope=scope, operation="TARGET_EXECUTION_CREDENTIAL_REMOVE", parent_resource=str(target_id), idempotency_key=idempotency_key, payload={"row_version": expected_version}, response_type=TargetDetail, handler=handler)
 
+    async def remove_diagnostic_credential(self, *, scope: ConfigurationScope, target_id: UUID, expected_version: int, idempotency_key: str) -> TargetDetail:
+        async def handler(uow: AIOpsUnitOfWork, now: datetime) -> TargetDetail:
+            assert uow.targets is not None and uow.credentials is not None
+            target = await uow.targets.get_scoped(target_id=target_id, domain_id=scope.domain_id, lock=True)
+            if target is None: raise resource_not_found("Target")
+            self._check_version(target.row_version, expected_version)
+            if target.diagnostic_credential_id:
+                old = await uow.credentials.get_scoped(credential_id=target.diagnostic_credential_id, domain_id=scope.domain_id, credential_kind="DIAGNOSTIC", lock=True)
+                if old: await uow.credentials.revoke(old, actor_id=scope.actor_id, now=now)
+            target.diagnostic_credential_id = None
+            target.status, target.health_status = "MAINTENANCE", "UNKNOWN"
+            target.health_version = int(target.health_version) + 1
+            target.last_health_check_at, target.last_error_code = None, None
+            target.updated_by, target.updated_at = scope.actor_id, now
+            await uow.session.flush()  # type: ignore[union-attr]
+            return _target_detail(target)
+        return await self._idempotent(scope=scope, operation="TARGET_DIAGNOSTIC_CREDENTIAL_REMOVE", parent_resource=str(target_id), idempotency_key=idempotency_key, payload={"row_version": expected_version}, response_type=TargetDetail, handler=handler)
+
+    async def delete_target(self, *, scope: ConfigurationScope, target_id: UUID, expected_version: int, idempotency_key: str) -> TargetDetail:
+        async def handler(uow: AIOpsUnitOfWork, now: datetime) -> TargetDetail:
+            assert uow.targets is not None and uow.credentials is not None
+            target = await uow.targets.get_scoped(target_id=target_id, domain_id=scope.domain_id, lock=True)
+            if target is None: raise resource_not_found("Target")
+            self._check_version(target.row_version, expected_version)
+            if target.status != "DISABLED": raise state_conflict("仅允许删除已停用的 Target")
+            result = _target_detail(target)
+            for credential_id, kind in ((target.diagnostic_credential_id, "DIAGNOSTIC"), (target.execution_credential_id, "EXECUTION")):
+                if credential_id:
+                    credential = await uow.credentials.get_scoped(credential_id=credential_id, domain_id=scope.domain_id, credential_kind=kind, lock=True)
+                    if credential: await uow.credentials.revoke(credential, actor_id=scope.actor_id, now=now)
+            try:
+                await uow.targets.delete_target(target)
+            except IntegrityError as exc:
+                raise state_conflict("Target 仍有关联的配置或运行历史，不能删除") from exc
+            return result
+        return await self._idempotent(scope=scope, operation="TARGET_DELETE", parent_resource=str(target_id), idempotency_key=idempotency_key, payload={"row_version": expected_version}, response_type=TargetDetail, handler=handler)
+
     async def command_target(
         self,
         *,
