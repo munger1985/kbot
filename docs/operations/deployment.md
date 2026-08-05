@@ -13,15 +13,29 @@
 
 ## 安装
 
-下载或克隆明确的 4.0 Release/Commit 后，仅安装锁定的第三方依赖：
+下载或克隆明确的 4.0 Release/Commit 后，开发环境安装锁定的第三方依赖和全部
+editable 内部包：
 
 ```bash
 bash scripts/deployment/install_workspace.sh
 ```
 
-安装脚本不会执行 `pip install -e`，也不要求服务目录包含 `pyproject.toml`。
-当前部署方式直接保留完整源码树；`start_kbot.sh` 统一设置 `PYTHONPATH` 后从
-`services/*/src` 和 `packages/*/src` 加载模块。
+每个服务和共享包都有独立 `pyproject.toml`。安装脚本按依赖顺序执行
+`pip install --no-deps -e`，`start_kbot.sh` 不再设置 `PYTHONPATH`。
+
+生产环境构建并安装本地 Wheel：
+
+```bash
+bash scripts/deployment/install_workspace.sh --production
+```
+
+可通过 `KBOT_PYTHON=/path/to/python` 指定解释器；默认使用当前 `python` 或
+`python3`。安装后脚本会验证模块来源，发现其他工作区的同名 editable package 时
+直接失败。
+
+KBot 与其他使用 `platform_core`、`agent_runtime` 等相同 Import 名的项目不能同时在
+一个 Python 环境中以 editable 模式安装。遇到来源冲突时应使用 KBot 专用环境，不能通过
+调整 `PYTHONPATH` 或忽略来源检查绕过。
 脚本会创建或补齐本地 `.env` 中的 AIOps 凭据加密密钥与版本；已有值不会覆盖。
 生产使用外部 Secret 时设置 `KBOT_SKIP_LOCAL_ENV_INIT=1`。
 
@@ -77,6 +91,14 @@ api_allowed_origins = ["http://146.56.158.44:8080"]
 末尾斜杠。若要临时允许任意网页来源，设置 `api_allowed_origins = ["*"]`。生产环境不要
 将 Portal API Key 暴露给浏览器；应由门户服务端代理请求。
 
+通知中心由 Main API 的 Notification Worker 投影共享 Oracle Outbox。默认配置适合单机，
+需要调整批量、租约、重试或 SSE 心跳时，在 `kbot.toml` 增加 `[notifications]`，字段见
+`configuration/kbot.toml.example`。Outbox 状态为 `PENDING → PROCESSING → PUBLISHED`；
+租约过期会回到 `PENDING`，超过重试上限进入 `QUARANTINED`。修复事件内容或对应投影代码
+后，通过 Main API 的隔离重试接口重新投递。不得直接删除未发布 Outbox；Inbox 默认按事件
+目录保留 90 天。删除外部 Actor 标识时，应调用 Actor 数据清理接口同步删除其 Inbox、偏好、
+待办和关注记录。
+
 ## 初始化 Oracle
 
 在 `scripts/db/init_services.ini` 选择需要部署的业务服务。`platform_core` 基础表
@@ -87,6 +109,14 @@ python3 scripts/db/apply_oracle_schema.py \
   --config scripts/db/init_services.ini \
   --dry-run
 ```
+
+已有环境升级到第 7 阶段时，只补建 Main API 组合回执表：
+
+```bash
+python3 scripts/db/apply_composition_schema.py
+```
+
+组合命令遵循 `PRECHECKING → COMMAND_SUBMITTED → SUCCEEDED`。若下游命令返回超时且无法确认结果，Receipt 会进入 `COMPENSATION_REQUIRED`；使用相同 `Idempotency-Key` 重试时只执行验证，不会再次发送不确定命令。运维人员应先核对 Receipt 的 `resource_id` 和下游实际状态，修复或确认下游资源后再以相同请求重放。不得直接删除 Receipt 来绕过恢复流程。
 
 KC 使用 `DBMS_ALERT` 通知 Worker，PDB 管理员需要直接授权：
 
@@ -118,7 +148,7 @@ python3 tests/acceptance/check_oracle_schema.py
 2. Knowledge Core API、Parser、Projection Worker；
 3. Agent Runtime API、Worker；
 4. AIOps API、Worker、Scheduler、DB Executor；
-5. Main API、Slack Worker。
+5. Main API、Slack Worker、Notification Worker。
 
 各模块入口位于 `services/<service>/src/<package>/entrypoints/`。开发环境可执行：
 
@@ -148,6 +178,20 @@ bash stop_kbot.sh
 ```bash
 python3 scripts/release/verify_release.py
 ```
+
+发布候选环境应同时执行 Oracle 与 Data Query 外部数据库 Smoke：
+
+```bash
+export KBOT_DQ_SMOKE_POSTGRES_PASSWORD='由测试环境 Secret 提供'
+export KBOT_DQ_SMOKE_POSTGRES_DATABASE='kbot_dq_smoke'
+export KBOT_DQ_SMOKE_POSTGRES_USERNAME='kbot_smoke'
+export KBOT_DQ_SMOKE_MYSQL_PASSWORD='由测试环境 Secret 提供'
+python3 scripts/release/verify_release.py --oracle --external-databases
+```
+
+PostgreSQL/MySQL 的主机、端口、数据库、账号和 Schema 可通过同名前缀的
+`KBOT_DQ_SMOKE_POSTGRES_*`、`KBOT_DQ_SMOKE_MYSQL_*` 环境变量覆盖。Smoke 只创建固定
+测试表并在结束时删除，不将密码写入日志或发布证据。
 
 验收至少覆盖健康检查、Oracle Schema、模型目录、文件入库解析、全文/向量检索、
 Agent SSE 与引用、AIOps 受控执行和 Domain 隔离。公开调用方只使用 `/api/v1`；

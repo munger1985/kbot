@@ -1,5 +1,6 @@
 """Unit tests for Collection root creation without an Oracle dependency."""
 import unittest
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -49,6 +50,24 @@ class FakeBindingRepository:
         self.added = binding
         return binding
 
+    async def has_active_binding(self, **kwargs):
+        del kwargs
+        return False
+
+
+class FakeJobRepository:
+    def __init__(self, existing=None):
+        self.existing = existing
+        self.added = None
+
+    async def get_by_idempotency_key(self, **kwargs):
+        del kwargs
+        return self.existing
+
+    async def add(self, job):
+        self.added = job
+        return job
+
 
 class FakeUnitOfWork:
     def __init__(self, repository, binding_repository=None):
@@ -57,6 +76,7 @@ class FakeUnitOfWork:
         self.session = SimpleNamespace(flush=AsyncMock())
         self.commit = AsyncMock()
         self.jobs = None
+        self.flush = AsyncMock()
 
     async def __aenter__(self):
         return self
@@ -119,6 +139,8 @@ class KnowledgeCoreCollectionServiceTest(unittest.IsolatedAsyncioTestCase):
             status="ACTIVE",
             default_security_level=1,
             metadata_json={"source": "test"},
+            row_version=1,
+            updated_at=datetime.now(timezone.utc),
         )
         service, _ = self._service(
             FakeCollectionRepository(existing=collection)
@@ -159,6 +181,7 @@ class KnowledgeCoreCollectionServiceTest(unittest.IsolatedAsyncioTestCase):
                 "embedding": str(original_embedding),
             },
             updated_by=None,
+            row_version=1,
         )
         service, uow = self._service(
             FakeCollectionRepository(existing=collection)
@@ -241,6 +264,68 @@ class KnowledgeCoreCollectionLifecycleTest(unittest.IsolatedAsyncioTestCase):
         ))
         self.assertEqual("DISABLED", result.status)
         self.assertEqual("tester", result.updated_by)
+        uow.commit.assert_awaited_once()
+
+    async def test_repeated_delete_returns_existing_purge_job(self):
+        job_id = uuid7()
+        collection = SimpleNamespace(
+            collection_id=COLLECTION_ID,
+            status="DELETING",
+            updated_by="tester",
+        )
+        existing = SimpleNamespace(
+            ingestion_job_id=job_id,
+            job_status="PENDING",
+        )
+        uow = FakeUnitOfWork(
+            FakeCollectionRepository(existing=collection),
+            FakeBindingRepository(),
+        )
+        uow.jobs = FakeJobRepository(existing=existing)
+        service = KnowledgeCoreCollectionService(uow_factory=lambda: uow)
+
+        returned = await service.request_delete(
+            domain_id=8,
+            collection_id=COLLECTION_ID,
+            actor_id="tester",
+        )
+
+        self.assertEqual(job_id, returned)
+        self.assertIsNone(uow.jobs.added)
+
+    async def test_failed_purge_can_be_requeued_with_same_job(self):
+        job_id = uuid7()
+        collection = SimpleNamespace(
+            collection_id=COLLECTION_ID,
+            status="DELETION_FAILED",
+            updated_by="tester",
+        )
+        existing = SimpleNamespace(
+            ingestion_job_id=job_id,
+            job_status="FAILED",
+            attempt_count=3,
+            available_at=None,
+            failure_class="TRANSIENT",
+            failure_code="OBJECT_DELETE_FAILED",
+            failure_message="store down",
+        )
+        uow = FakeUnitOfWork(
+            FakeCollectionRepository(existing=collection),
+            FakeBindingRepository(),
+        )
+        uow.jobs = FakeJobRepository(existing=existing)
+        service = KnowledgeCoreCollectionService(uow_factory=lambda: uow)
+
+        returned = await service.request_delete(
+            domain_id=8,
+            collection_id=COLLECTION_ID,
+            actor_id="tester",
+        )
+
+        self.assertEqual(job_id, returned)
+        self.assertEqual("PENDING", existing.job_status)
+        self.assertEqual(0, existing.attempt_count)
+        self.assertEqual("DELETING", collection.status)
         uow.commit.assert_awaited_once()
 
 

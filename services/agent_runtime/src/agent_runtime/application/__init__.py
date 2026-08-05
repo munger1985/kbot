@@ -39,6 +39,9 @@ from .conversations import (
 from .attachments import ConversationAttachmentStore
 from .memory import MemoryConsolidationWorker
 from .retention import ConversationRetentionWorker
+from .notifications import (
+    AgentRunNotificationPublisher,
+)
 
 __all__ = [
     "AgentDefinitionService",
@@ -60,6 +63,7 @@ __all__ = [
     "ConversationAttachmentStore",
     "ConversationTurnNotFound",
     "MemoryConsolidationWorker",
+    "AgentRunNotificationPublisher",
     "ConversationRetentionWorker",
     "CreateRunCommand",
     "CreateAgentDefinitionCommand",

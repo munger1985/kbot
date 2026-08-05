@@ -58,6 +58,11 @@ class _ModelResolver:
         }
 
 
+class _NoopNotificationPublisher:
+    async def publish(self, **kwargs):
+        del kwargs
+
+
 class _Store:
     def __init__(self):
         self.agents = {}
@@ -363,6 +368,7 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
             plan_validator=validator,
             skill_registry=registry,
             model_resolver=self.model_resolver,
+            notification_publisher=_NoopNotificationPublisher(),
         )
         self.definition_service = AgentDefinitionService(
             uow_factory=lambda: _Uow(self.store),
@@ -399,6 +405,7 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
             skill_registry=self.registry,
             root_planner=RootAgentPlanner(),
             model_resolver=self.model_resolver,
+            notification_publisher=_NoopNotificationPublisher(),
         )
         created = await service.create_run(self.create_command)
 
@@ -431,6 +438,7 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
             skill_registry=self.registry,
             root_planner=RootAgentPlanner(),
             model_resolver=self.model_resolver,
+            notification_publisher=_NoopNotificationPublisher(),
         )
         created = await service.create_run(
             self.create_command.model_copy(
@@ -516,7 +524,7 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
                     "memory_embedding": uuid7(),
                     "future_reasoner": uuid7(),
                 },
-                status="ACTIVE",
+                status="DRAFT",
                 actor_id="admin-1",
             )
         )

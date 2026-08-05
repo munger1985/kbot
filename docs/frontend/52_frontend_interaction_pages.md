@@ -396,8 +396,8 @@ Domain 内运行。页面使用 `KBOT_V_PLATFORM_DOMAIN` 展示 Domain ID、名�
 
 ## 7. 设计依据
 
-- Main API、AuthContext、APEX 安全视图和 SSE 边界：[14_main_api_bff_and_auth_context.md](14_main_api_bff_and_auth_context.md)
-- Agent Run、事件恢复、Result 与状态迁移：[11_agent_execution_model.md](11_agent_execution_model.md)、[12_agent_runtime_api_and_state_transitions.md](12_agent_runtime_api_and_state_transitions.md)、[45_agent_conversation_memory_and_trace.md](45_agent_conversation_memory_and_trace.md)
-- Knowledge Core、解析/入库和视觉检索：[03_knowledge_core.md](03_knowledge_core.md)、[44_adaptive_hybrid_document_parsing.md](44_adaptive_hybrid_document_parsing.md)、[48_visual_embedding_and_multi_image_search.md](48_visual_embedding_and_multi_image_search.md)
-- Agent、模型和 Prompt 配置：[05_multi_agent_and_skills.md](05_multi_agent_and_skills.md)、[42_model_serving_identity_and_openai_compatibility.md](42_model_serving_identity_and_openai_compatibility.md)、[46_versioned_prompt_registry.md](46_versioned_prompt_registry.md)、[47_function_scoped_model_bindings.md](47_function_scoped_model_bindings.md)
-- AIOps 交互、审批、巡检、报告与 APEX 集成：[21_aiops_interactive_diagnosis.md](21_aiops_interactive_diagnosis.md)、[23_aiops_policy_hitl_and_command_lifecycle.md](23_aiops_policy_hitl_and_command_lifecycle.md)、[27_aiops_api_and_contracts.md](27_aiops_api_and_contracts.md)、[38_aiops_step9_advisory_approval_and_execution.md](38_aiops_step9_advisory_approval_and_execution.md)、[39_aiops_step10_inspection_reporting_and_comparison.md](39_aiops_step10_inspection_reporting_and_comparison.md)、[40_aiops_step11_root_main_api_and_apex_integration.md](40_aiops_step11_root_main_api_and_apex_integration.md)
+- Main API、AuthContext 和公开 API 边界：[身份与 API](../architecture/security-and-api.md)
+- Agent Run、事件恢复、Result 与状态迁移：[Agent Runtime](../architecture/agent-runtime.md)
+- Knowledge Core、解析入库和视觉检索：[Knowledge Core](../architecture/knowledge-core.md)
+- Agent、模型和 Prompt 配置：[Model Serving](../architecture/model-serving.md)
+- AIOps 交互、审批、巡检与报告：[AIOps Agent](../architecture/aiops-agent.md)

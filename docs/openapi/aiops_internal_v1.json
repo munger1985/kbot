@@ -924,6 +924,118 @@
         "title": "CreateOpsRunCommand",
         "type": "object"
       },
+      "CredentialIssueRequest": {
+        "additionalProperties": false,
+        "description": "Executor 用签名 Grant 换取一次性连接材料。",
+        "properties": {
+          "grant": {
+            "maxLength": 32768,
+            "minLength": 64,
+            "title": "Grant",
+            "type": "string"
+          }
+        },
+        "required": [
+          "grant"
+        ],
+        "title": "CredentialIssueRequest",
+        "type": "object"
+      },
+      "CredentialIssueResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "password": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Password",
+            "type": "string"
+          },
+          "username": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "password"
+        ],
+        "title": "CredentialIssueResponse",
+        "type": "object"
+      },
+      "DatabaseCredentialInput": {
+        "additionalProperties": false,
+        "properties": {
+          "password": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Password",
+            "type": "string"
+          },
+          "username": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "password"
+        ],
+        "title": "DatabaseCredentialInput",
+        "type": "object"
+      },
+      "DatabaseCredentialStatus": {
+        "additionalProperties": false,
+        "properties": {
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "credential_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credential Id"
+          },
+          "key_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key Version"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "required": [
+          "configured"
+        ],
+        "title": "DatabaseCredentialStatus",
+        "type": "object"
+      },
       "DatabaseType": {
         "enum": [
           "ORACLE",
@@ -5212,19 +5324,15 @@
           "db_type": {
             "$ref": "#/components/schemas/DatabaseType"
           },
-          "diagnostic_secret_ref": {
+          "diagnostic_credential": {
             "anyOf": [
               {
-                "maxLength": 2048,
-                "minLength": 8,
-                "pattern": "^[a-z][a-z0-9+.-]*://.+",
-                "type": "string"
+                "$ref": "#/components/schemas/DatabaseCredentialInput"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Diagnostic Secret Ref"
+            ]
           },
           "display_name": {
             "maxLength": 256,
@@ -5251,19 +5359,15 @@
             "title": "Environment",
             "type": "string"
           },
-          "execution_secret_ref": {
+          "execution_credential": {
             "anyOf": [
               {
-                "maxLength": 2048,
-                "minLength": 8,
-                "pattern": "^[a-z][a-z0-9+.-]*://.+",
-                "type": "string"
+                "$ref": "#/components/schemas/DatabaseCredentialInput"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Execution Secret Ref"
+            ]
           },
           "schema_version": {
             "default": "aiops.public.v1",
@@ -5322,8 +5426,8 @@
           "db_type": {
             "$ref": "#/components/schemas/DatabaseType"
           },
-          "diagnostic_secret": {
-            "$ref": "#/components/schemas/SecretRefStatus"
+          "diagnostic_credential": {
+            "$ref": "#/components/schemas/DatabaseCredentialStatus"
           },
           "display_name": {
             "title": "Display Name",
@@ -5343,8 +5447,8 @@
             "title": "Environment",
             "type": "string"
           },
-          "execution_secret": {
-            "$ref": "#/components/schemas/SecretRefStatus"
+          "execution_credential": {
+            "$ref": "#/components/schemas/DatabaseCredentialStatus"
           },
           "health_status": {
             "enum": [
@@ -5443,8 +5547,8 @@
           "row_version",
           "updated_at",
           "db_role",
-          "diagnostic_secret",
-          "execution_secret",
+          "diagnostic_credential",
+          "execution_credential",
           "security_level",
           "capabilities",
           "health_version",
@@ -5578,20 +5682,6 @@
             ],
             "title": "Db Role"
           },
-          "diagnostic_secret_ref": {
-            "anyOf": [
-              {
-                "maxLength": 2048,
-                "minLength": 8,
-                "pattern": "^[a-z][a-z0-9+.-]*://.+",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Diagnostic Secret Ref"
-          },
           "display_name": {
             "anyOf": [
               {
@@ -5630,20 +5720,6 @@
               }
             ],
             "title": "Environment"
-          },
-          "execution_secret_ref": {
-            "anyOf": [
-              {
-                "maxLength": 2048,
-                "minLength": 8,
-                "pattern": "^[a-z][a-z0-9+.-]*://.+",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Execution Secret Ref"
           },
           "schema_version": {
             "default": "aiops.public.v1",
@@ -7645,6 +7721,65 @@
       }
     },
     "/internal/v1/aiops/config/targets/{target_id}": {
+      "delete": {
+        "operationId": "delete_target_internal_v1_aiops_config_targets__target_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "target_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Target Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Target",
+        "tags": [
+          "AIOps Config"
+        ]
+      },
       "get": {
         "operationId": "get_target_internal_v1_aiops_config_targets__target_id__get",
         "parameters": [
@@ -8095,6 +8230,152 @@
         ]
       }
     },
+    "/internal/v1/aiops/config/targets/{target_id}/diagnostic-credential:remove": {
+      "post": {
+        "operationId": "remove_diagnostic_credential_internal_v1_aiops_config_targets__target_id__diagnostic_credential_remove_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "target_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Target Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TargetDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Diagnostic Credential",
+        "tags": [
+          "AIOps Config"
+        ]
+      }
+    },
+    "/internal/v1/aiops/config/targets/{target_id}/diagnostic-credential:rotate": {
+      "post": {
+        "operationId": "rotate_diagnostic_credential_internal_v1_aiops_config_targets__target_id__diagnostic_credential_rotate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "target_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Target Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DatabaseCredentialInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TargetDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rotate Diagnostic Credential",
+        "tags": [
+          "AIOps Config"
+        ]
+      }
+    },
     "/internal/v1/aiops/config/targets/{target_id}/disable": {
       "post": {
         "operationId": "disable_target_internal_v1_aiops_config_targets__target_id__disable_post",
@@ -8158,6 +8439,152 @@
           }
         },
         "summary": "Disable Target",
+        "tags": [
+          "AIOps Config"
+        ]
+      }
+    },
+    "/internal/v1/aiops/config/targets/{target_id}/execution-credential:remove": {
+      "post": {
+        "operationId": "remove_execution_credential_internal_v1_aiops_config_targets__target_id__execution_credential_remove_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "target_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Target Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TargetDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Execution Credential",
+        "tags": [
+          "AIOps Config"
+        ]
+      }
+    },
+    "/internal/v1/aiops/config/targets/{target_id}/execution-credential:rotate": {
+      "post": {
+        "operationId": "rotate_execution_credential_internal_v1_aiops_config_targets__target_id__execution_credential_rotate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "target_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Target Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DatabaseCredentialInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TargetDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rotate Execution Credential",
         "tags": [
           "AIOps Config"
         ]
@@ -8501,6 +8928,48 @@
         "summary": "Command Monitor Binding",
         "tags": [
           "AIOps Config"
+        ]
+      }
+    },
+    "/internal/v1/aiops/credentials:issue": {
+      "post": {
+        "description": "仅向已验证的 Executor 发放且消费一次连接材料。",
+        "operationId": "issue_credential_internal_v1_aiops_credentials_issue_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CredentialIssueRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialIssueResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Issue Credential",
+        "tags": [
+          "AIOps Executions"
         ]
       }
     },

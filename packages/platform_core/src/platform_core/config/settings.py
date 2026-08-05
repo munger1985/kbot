@@ -312,6 +312,7 @@ def load_settings(
         "endpoints",
         "paths",
         "integrations",
+        "notifications",
     }
     if unknown_keys:
         names = "、".join(sorted(unknown_keys))
@@ -369,11 +370,13 @@ def load_settings(
     endpoints_override = deployment.get("endpoints") or {}
     paths = deployment.get("paths") or {}
     integrations = deployment.get("integrations") or {}
+    notifications = deployment.get("notifications") or {}
     for name, value in (
         ("database", database),
         ("endpoints", endpoints_override),
         ("paths", paths),
         ("integrations", integrations),
+        ("notifications", notifications),
     ):
         if not isinstance(value, dict):
             raise ValueError(f"kbot.toml 的 [{name}] 必须是对象")
@@ -460,6 +463,10 @@ def load_settings(
             },
         }
         merged = _deep_merge(merged, service_paths.get(service, {}))
+        if service == "main_api" and notifications:
+            merged = _deep_merge(
+                merged, {"notifications": notifications}
+            )
         if service == "agent_runtime" and integrations.get("mcp_data"):
             merged = _deep_merge(
                 merged, {"ask_data_api": integrations["mcp_data"]}

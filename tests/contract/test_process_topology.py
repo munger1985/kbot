@@ -14,9 +14,9 @@ class ProcessTopologyTest(unittest.TestCase):
         self.assertEqual([], check_process_topology())
         processes = load_processes()
 
-        self.assertEqual(15, len(processes))
+        self.assertEqual(18, len(processes))
         self.assertEqual(
-            3,
+            4,
             sum(item["kind"] == "worker" for item in processes),
         )
 
@@ -29,7 +29,8 @@ class ProcessTopologyTest(unittest.TestCase):
             'KBOT_CONFIG_FILE="${KBOT_CONFIG_FILE:-configuration/kbot.toml}"',
             start,
         )
-        self.assertIn('export PYTHONPATH="${SERVICE_ROOT}/packages/', start)
+        self.assertNotIn("export PYTHONPATH=", start)
+        self.assertIn("editable package", start)
         self.assertIn('ENVIRONMENT="${ENVIRONMENT:-$CONFIG_ENVIRONMENT}"', start)
         self.assertIn("python scripts/deployment/check_deployment.py", start)
         self.assertIn('KBOT_UI_ENABLED="${KBOT_UI_ENABLED:-true}"', start)

@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
@@ -18,7 +19,9 @@ from sqlalchemy import text
 
 from main_api.api import (
     agent_router,
+    composition_router,
     conversation_router,
+    data_query_router,
     data_router,
     development_agent_runs_router,
     development_logs_router,
@@ -28,15 +31,18 @@ from main_api.api import (
     knowledge_router,
     memory_router,
     model_catalog_router,
+    notification_router,
     ops_router,
     run_router,
     slack_router,
 )
 from main_api.config import get_main_api_settings
+from main_api.log_reader import LocalLogSearchService
 from platform_clients import (
     AIOpsClientError,
     AgentRuntimeClientError,
     KnowledgeCoreClientError,
+    DataQueryClientError,
 )
 from platform_core.middleware.log_middleware import log_requests
 from platform_core.security import (
@@ -46,6 +52,13 @@ from platform_core.security import (
 
 
 LifespanFactory = Callable[[FastAPI], AbstractAsyncContextManager[Any]]
+_REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
+
+
+def _repository_path(value: str) -> Path:
+    """将部署配置中的相对路径固定解析到 KBot 仓库根目录。"""
+    path = Path(value)
+    return path if path.is_absolute() else _REPOSITORY_ROOT / path
 
 
 def _log_downstream_failure(
@@ -194,19 +207,35 @@ def create_main_api_app(
             ],
         )
     app.include_router(knowledge_router)
+    app.include_router(composition_router)
     app.include_router(model_catalog_router)
+    app.include_router(notification_router)
     app.include_router(domain_router)
     app.include_router(agent_router)
     app.include_router(run_router)
     app.include_router(conversation_router)
     app.include_router(data_router)
+    app.include_router(data_query_router)
     app.include_router(dify_router)
     app.include_router(memory_router)
     app.include_router(ops_router)
     app.include_router(integration_router)
     app.include_router(slack_router)
     if settings.platform.debug:
-        app.state.development_log_root = settings.log.dir
+        log_config = settings.development_logs
+        app.state.development_log_root = _repository_path(settings.log.dir)
+        app.state.development_log_search_service = LocalLogSearchService(
+            log_root=app.state.development_log_root,
+            topology_path=_repository_path(log_config.topology_path),
+            max_files_per_stream=log_config.max_files_per_stream,
+            max_bytes_per_file=log_config.max_bytes_per_file,
+            max_total_scan_bytes=log_config.max_total_scan_bytes,
+            max_window_hours=log_config.max_window_hours,
+            max_page_size=log_config.max_page_size,
+            max_export_events=log_config.max_export_events,
+            max_detail_chars=log_config.max_detail_chars,
+            max_field_chars=log_config.max_field_chars,
+        )
         app.include_router(development_logs_router)
         app.include_router(development_agent_runs_router)
 
@@ -241,6 +270,40 @@ def create_main_api_app(
             status_code=exc.status_code,
             code=exc.code,
             title="Knowledge Core 请求失败",
+            detail=str(exc),
+        )
+
+    @app.exception_handler(DataQueryClientError)
+    async def data_query_error_handler(
+        request: Request,
+        exc: DataQueryClientError,
+    ):
+        _log_downstream_failure(
+            request=request,
+            service_name="data-query",
+            exc=exc,
+        )
+        if exc.status_code in {401, 403}:
+            return _problem_response(
+                request=request,
+                status_code=502,
+                code="UPSTREAM_AUTH_FAILED",
+                title="下游服务认证失败",
+                detail="Data Query 内部认证失败",
+            )
+        if exc.status_code >= 500:
+            return _problem_response(
+                request=request,
+                status_code=503,
+                code="DATA_QUERY_UNAVAILABLE",
+                title="Data Query 暂时不可用",
+                detail="Data Query 暂时无法完成请求",
+            )
+        return _problem_response(
+            request=request,
+            status_code=exc.status_code,
+            code=exc.code,
+            title="Data Query 请求失败",
             detail=str(exc),
         )
 

@@ -11,7 +11,13 @@ from agent_runtime.domain.skills import (
 from .document import KnowledgeRetrievalSkill
 from .conversation import ContextRewriteSkill
 from .conversation_response import ConversationResponseSkill
-from .mcp_data import EChartsSkill, MCPDataQuerySkill
+from .data_query import (
+    DataQuerySkill,
+    MCPDataQueryExecutor,
+    SemanticDataQueryExecutor,
+)
+from .visualization import EChartsSkill
+from .hybrid import DataConstraintExtractSkill, DocumentScopeExtractSkill
 from .response_composer import ResponseComposerSkill
 
 
@@ -108,17 +114,17 @@ CONVERSATION_RESPONSE_MANIFEST = SkillManifest(
     external_dependencies=("llm_service", "prompt_registry"),
 )
 
-MCP_DATA_QUERY_MANIFEST = SkillManifest(
-    skill_id="mcp-data-query",
+DATA_QUERY_MANIFEST = SkillManifest(
+    skill_id="data-query",
     version="1.0.0",
     owner="agent-runtime",
-    specialist="mcp_data",
-    description="通过已配置 Profile 调用 SelectAI/AIReport 问数接口",
-    input_schema="MCPDataQueryInput.v1",
+    specialist="data_query",
+    description="按冻结 Agent 配置调用 MCP 或语义问数 Provider",
+    input_schema="DataQueryInput.v1",
     output_artifacts=(
         ArtifactDeclaration(
             artifact_type="QUERY_RESULT",
-            schema_version="QueryResult.v1",
+            schema_version="QUERY_RESULT.v1",
         ),
     ),
     permissions=(),
@@ -127,14 +133,14 @@ MCP_DATA_QUERY_MANIFEST = SkillManifest(
     timeout_seconds=180,
     max_retries=2,
     data_classification=DataClassification.CONFIDENTIAL,
-    external_dependencies=("selectai_aireport",),
+    external_dependencies=("selectai_aireport", "data_query_api"),
 )
 
 ECHARTS_MANIFEST = SkillManifest(
     skill_id="echarts",
     version="1.0.0",
     owner="agent-runtime",
-    specialist="mcp_data",
+    specialist="visualization",
     description="将 QUERY_RESULT 转换为前端可直接渲染的 ECharts option",
     input_schema="EChartsInput.v1",
     output_artifacts=(
@@ -152,6 +158,46 @@ ECHARTS_MANIFEST = SkillManifest(
     external_dependencies=("llm_service", "prompt_registry"),
 )
 
+DATA_CONSTRAINT_EXTRACT_MANIFEST = SkillManifest(
+    skill_id="data-constraint-extract",
+    version="1.0.0",
+    owner="agent-runtime",
+    specialist="hybrid",
+    description="从文档证据提取受限业务问数约束",
+    input_schema="CitationPack.v1",
+    output_artifacts=(ArtifactDeclaration(
+        artifact_type="DATA_QUERY_CONSTRAINTS",
+        schema_version="DataQueryConstraints.v1",
+    ),),
+    permissions=(),
+    execution_mode=ExecutionMode.READ_ONLY,
+    idempotent=True,
+    timeout_seconds=90,
+    max_retries=1,
+    data_classification=DataClassification.CONFIDENTIAL,
+    external_dependencies=("llm_service", "prompt_registry"),
+)
+
+DOCUMENT_SCOPE_EXTRACT_MANIFEST = SkillManifest(
+    skill_id="document-scope-extract",
+    version="1.0.0",
+    owner="agent-runtime",
+    specialist="hybrid",
+    description="从结构化查询结果提取受限文档检索范围",
+    input_schema="QUERY_RESULT.v1",
+    output_artifacts=(ArtifactDeclaration(
+        artifact_type="DOCUMENT_SCOPE",
+        schema_version="DocumentScope.v1",
+    ),),
+    permissions=(),
+    execution_mode=ExecutionMode.READ_ONLY,
+    idempotent=True,
+    timeout_seconds=90,
+    max_retries=1,
+    data_classification=DataClassification.CONFIDENTIAL,
+    external_dependencies=("llm_service", "prompt_registry"),
+)
+
 
 def register_builtin_skills(
     registry: SkillRegistry,
@@ -161,6 +207,7 @@ def register_builtin_skills(
     prompt_resolver,
     service_name: str,
     mcp_data_client=None,
+    data_query_client=None,
 ) -> SkillRegistry:
     """固定注册，不扫描目录、不动态导入用户代码。"""
     registry.register(
@@ -194,12 +241,33 @@ def register_builtin_skills(
         ),
     )
     registry.register(
-        MCP_DATA_QUERY_MANIFEST,
-        MCPDataQuerySkill(data_client=mcp_data_client),
+        DATA_QUERY_MANIFEST,
+        DataQuerySkill(
+            mcp_executor=MCPDataQueryExecutor(client=mcp_data_client),
+            semantic_executor=SemanticDataQueryExecutor(
+                client=data_query_client,
+                model_client=model_client,
+                prompt_resolver=prompt_resolver,
+            ),
+        ),
     )
     registry.register(
         ECHARTS_MANIFEST,
         EChartsSkill(
+            model_client=model_client,
+            prompt_resolver=prompt_resolver,
+        ),
+    )
+    registry.register(
+        DATA_CONSTRAINT_EXTRACT_MANIFEST,
+        DataConstraintExtractSkill(
+            model_client=model_client,
+            prompt_resolver=prompt_resolver,
+        ),
+    )
+    registry.register(
+        DOCUMENT_SCOPE_EXTRACT_MANIFEST,
+        DocumentScopeExtractSkill(
             model_client=model_client,
             prompt_resolver=prompt_resolver,
         ),
@@ -213,6 +281,8 @@ def register_builtin_manifests(registry: SkillRegistry) -> SkillRegistry:
     registry.register(KNOWLEDGE_RETRIEVAL_MANIFEST, None)
     registry.register(RESPONSE_COMPOSER_MANIFEST, None)
     registry.register(CONVERSATION_RESPONSE_MANIFEST, None)
-    registry.register(MCP_DATA_QUERY_MANIFEST, None)
+    registry.register(DATA_QUERY_MANIFEST, None)
     registry.register(ECHARTS_MANIFEST, None)
+    registry.register(DATA_CONSTRAINT_EXTRACT_MANIFEST, None)
+    registry.register(DOCUMENT_SCOPE_EXTRACT_MANIFEST, None)
     return registry

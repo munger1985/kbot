@@ -184,6 +184,32 @@
         "title": "AgentBindingCreate",
         "type": "object"
       },
+      "AgentBindingCreateRequest": {
+        "properties": {
+          "agent_id": {
+            "format": "uuid",
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "policy_binding_id": {
+            "format": "uuid",
+            "title": "Policy Binding Id",
+            "type": "string"
+          },
+          "semantic_model_id": {
+            "format": "uuid",
+            "title": "Semantic Model Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "agent_id",
+          "semantic_model_id",
+          "policy_binding_id"
+        ],
+        "title": "AgentBindingCreateRequest",
+        "type": "object"
+      },
       "AgentBindingPatch": {
         "additionalProperties": false,
         "properties": {
@@ -364,6 +390,97 @@
         "title": "AgentBindingView",
         "type": "object"
       },
+      "AgentCompositionCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "agent": {
+            "$ref": "#/components/schemas/CreateAgentDefinitionRequest"
+          },
+          "collection_ids": {
+            "default": [],
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Collection Ids",
+            "type": "array"
+          },
+          "data_query_binding": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentDataQueryBindingDefinition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "agent"
+        ],
+        "title": "AgentCompositionCreate",
+        "type": "object"
+      },
+      "AgentCompositionUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "agent": {
+            "$ref": "#/components/schemas/UpdateAgentDefinitionRequest"
+          },
+          "collection_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Collection Ids"
+          },
+          "data_query_binding": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentDataQueryBindingDefinition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "agent"
+        ],
+        "title": "AgentCompositionUpdate",
+        "type": "object"
+      },
+      "AgentDataQueryBindingDefinition": {
+        "additionalProperties": false,
+        "properties": {
+          "policy_binding_id": {
+            "format": "uuid",
+            "title": "Policy Binding Id",
+            "type": "string"
+          },
+          "semantic_model_id": {
+            "format": "uuid",
+            "title": "Semantic Model Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "semantic_model_id",
+          "policy_binding_id"
+        ],
+        "title": "AgentDataQueryBindingDefinition",
+        "type": "object"
+      },
       "AgentDefinition": {
         "additionalProperties": false,
         "properties": {
@@ -387,6 +504,21 @@
               }
             ],
             "title": "Data Profile Name"
+          },
+          "data_query_mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "MCP",
+                  "SEMANTIC"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Query Mode"
           },
           "description": {
             "anyOf": [
@@ -771,6 +903,68 @@
         "title": "CollectionBindingRequest",
         "type": "object"
       },
+      "CollectionCompositionCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "collection": {
+            "$ref": "#/components/schemas/CollectionCompositionDefinition"
+          }
+        },
+        "required": [
+          "collection"
+        ],
+        "title": "CollectionCompositionCreate",
+        "type": "object"
+      },
+      "CollectionCompositionDefinition": {
+        "additionalProperties": false,
+        "properties": {
+          "default_security_level": {
+            "default": 1,
+            "maximum": 999.0,
+            "minimum": 0.0,
+            "title": "Default Security Level",
+            "type": "integer"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "display_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "title": "Metadata",
+            "type": "object"
+          },
+          "models": {
+            "additionalProperties": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Models",
+            "type": "object"
+          }
+        },
+        "required": [
+          "display_name",
+          "models"
+        ],
+        "title": "CollectionCompositionDefinition",
+        "type": "object"
+      },
       "CollectionCreateRequest": {
         "properties": {
           "default_security_level": {
@@ -819,7 +1013,8 @@
         "title": "CollectionCreateRequest",
         "type": "object"
       },
-      "CollectionModelsRequest": {
+      "CollectionModelsCompositionUpdate": {
+        "additionalProperties": false,
         "properties": {
           "models": {
             "additionalProperties": {
@@ -832,6 +1027,29 @@
         },
         "required": [
           "models"
+        ],
+        "title": "CollectionModelsCompositionUpdate",
+        "type": "object"
+      },
+      "CollectionModelsRequest": {
+        "properties": {
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          },
+          "models": {
+            "additionalProperties": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Models",
+            "type": "object"
+          }
+        },
+        "required": [
+          "models",
+          "expected_row_version"
         ],
         "title": "CollectionModelsRequest",
         "type": "object"
@@ -848,6 +1066,218 @@
           "status"
         ],
         "title": "CollectionStatusRequest",
+        "type": "object"
+      },
+      "CompositionEdge": {
+        "additionalProperties": false,
+        "properties": {
+          "blocking": {
+            "default": false,
+            "title": "Blocking",
+            "type": "boolean"
+          },
+          "relation": {
+            "title": "Relation",
+            "type": "string"
+          },
+          "source_id": {
+            "title": "Source Id",
+            "type": "string"
+          },
+          "source_type": {
+            "title": "Source Type",
+            "type": "string"
+          },
+          "target_id": {
+            "title": "Target Id",
+            "type": "string"
+          },
+          "target_type": {
+            "title": "Target Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_type",
+          "source_id",
+          "target_type",
+          "target_id",
+          "relation"
+        ],
+        "title": "CompositionEdge",
+        "type": "object"
+      },
+      "CompositionNode": {
+        "additionalProperties": false,
+        "properties": {
+          "attributes": {
+            "additionalProperties": true,
+            "title": "Attributes",
+            "type": "object"
+          },
+          "availability": {
+            "enum": [
+              "AVAILABLE",
+              "MISSING",
+              "UNAVAILABLE",
+              "STALE"
+            ],
+            "title": "Availability",
+            "type": "string"
+          },
+          "node_type": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Node Type",
+            "type": "string"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "resource_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Resource Id",
+            "type": "string"
+          },
+          "source_service": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Source Service",
+            "type": "string"
+          },
+          "source_version": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Version"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          }
+        },
+        "required": [
+          "node_type",
+          "resource_id",
+          "source_service",
+          "observed_at",
+          "availability"
+        ],
+        "title": "CompositionNode",
+        "type": "object"
+      },
+      "CompositionReceipt": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "idempotency_key": {
+            "title": "Idempotency Key",
+            "type": "string"
+          },
+          "idempotent_replay": {
+            "default": false,
+            "title": "Idempotent Replay",
+            "type": "boolean"
+          },
+          "operation": {
+            "title": "Operation",
+            "type": "string"
+          },
+          "receipt_id": {
+            "format": "uuid",
+            "title": "Receipt Id",
+            "type": "string"
+          },
+          "resource_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resource Id"
+          },
+          "resource_type": {
+            "title": "Resource Type",
+            "type": "string"
+          },
+          "resource_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resource Version"
+          },
+          "status": {
+            "enum": [
+              "PRECHECKING",
+              "COMMAND_SUBMITTED",
+              "SUCCEEDED",
+              "FAILED_PRECHECK",
+              "COMPENSATION_REQUIRED"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "verification": {
+            "additionalProperties": true,
+            "title": "Verification",
+            "type": "object"
+          }
+        },
+        "required": [
+          "receipt_id",
+          "operation",
+          "idempotency_key",
+          "status",
+          "resource_type",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "CompositionReceipt",
         "type": "object"
       },
       "ConversationItemView": {
@@ -1247,6 +1677,21 @@
             ],
             "title": "Data Profile Name"
           },
+          "data_query_mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "MCP",
+                  "SEMANTIC"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Query Mode"
+          },
           "description": {
             "anyOf": [
               {
@@ -1441,6 +1886,383 @@
           "expected_conversation_version"
         ],
         "title": "CreateConversationTurnRequest",
+        "type": "object"
+      },
+      "DataQueryPlanV1": {
+        "additionalProperties": false,
+        "properties": {
+          "contract_version": {
+            "const": "DataQueryPlan.v1",
+            "default": "DataQueryPlan.v1",
+            "title": "Contract Version",
+            "type": "string"
+          },
+          "dataset": {
+            "pattern": "^[a-z][a-z0-9._-]{0,127}$",
+            "title": "Dataset",
+            "type": "string"
+          },
+          "dimensions": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 32,
+            "title": "Dimensions",
+            "type": "array"
+          },
+          "filters": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/PlanFilter"
+            },
+            "maxItems": 64,
+            "title": "Filters",
+            "type": "array"
+          },
+          "limit": {
+            "default": 100,
+            "maximum": 10000.0,
+            "minimum": 1.0,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "measures": {
+            "items": {
+              "$ref": "#/components/schemas/PlanMeasure"
+            },
+            "maxItems": 32,
+            "minItems": 1,
+            "title": "Measures",
+            "type": "array"
+          },
+          "order_by": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/PlanOrderBy"
+            },
+            "maxItems": 8,
+            "title": "Order By",
+            "type": "array"
+          },
+          "semantic_model_id": {
+            "format": "uuid",
+            "title": "Semantic Model Id",
+            "type": "string"
+          },
+          "semantic_model_version": {
+            "minimum": 1.0,
+            "title": "Semantic Model Version",
+            "type": "integer"
+          },
+          "time_zone": {
+            "default": "Asia/Shanghai",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Time Zone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "semantic_model_id",
+          "semantic_model_version",
+          "dataset",
+          "measures"
+        ],
+        "title": "DataQueryPlanV1",
+        "type": "object"
+      },
+      "DataQueryRunCreateRequest": {
+        "properties": {
+          "agent_id": {
+            "format": "uuid",
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "deadline_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deadline At"
+          },
+          "original_question": {
+            "maxLength": 8000,
+            "minLength": 1,
+            "title": "Original Question",
+            "type": "string"
+          },
+          "parent_agent_run_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Agent Run Id"
+          },
+          "parent_agent_task_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Agent Task Id"
+          },
+          "plan": {
+            "$ref": "#/components/schemas/DataQueryPlanV1"
+          },
+          "standalone_query": {
+            "maxLength": 8000,
+            "minLength": 1,
+            "title": "Standalone Query",
+            "type": "string"
+          }
+        },
+        "required": [
+          "original_question",
+          "standalone_query",
+          "plan",
+          "agent_id"
+        ],
+        "title": "DataQueryRunCreateRequest",
+        "type": "object"
+      },
+      "DataSourceConnectionTestRequest": {
+        "properties": {
+          "credentials": {
+            "$ref": "#/components/schemas/DataSourceCredentialsRequest"
+          },
+          "endpoint": {
+            "$ref": "#/components/schemas/DataSourceEndpointRequest"
+          },
+          "source_type": {
+            "pattern": "^(POSTGRESQL|MYSQL|ORACLE)$",
+            "title": "Source Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_type",
+          "endpoint",
+          "credentials"
+        ],
+        "title": "DataSourceConnectionTestRequest",
+        "type": "object"
+      },
+      "DataSourceCreateRequest": {
+        "properties": {
+          "credentials": {
+            "$ref": "#/components/schemas/DataSourceCredentialsRequest"
+          },
+          "display_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "endpoint": {
+            "$ref": "#/components/schemas/DataSourceEndpointRequest"
+          },
+          "source_type": {
+            "pattern": "^(POSTGRESQL|MYSQL|ORACLE)$",
+            "title": "Source Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_type",
+          "endpoint",
+          "credentials",
+          "display_name"
+        ],
+        "title": "DataSourceCreateRequest",
+        "type": "object"
+      },
+      "DataSourceCredentialsRequest": {
+        "properties": {
+          "password": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Password",
+            "type": "string"
+          },
+          "username": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "password"
+        ],
+        "title": "DataSourceCredentialsRequest",
+        "type": "object"
+      },
+      "DataSourceEndpointRequest": {
+        "properties": {
+          "allowed_schemas": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 32,
+            "minItems": 1,
+            "title": "Allowed Schemas",
+            "type": "array"
+          },
+          "database": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Database",
+            "type": "string"
+          },
+          "host": {
+            "maxLength": 253,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9.-]*$",
+            "title": "Host",
+            "type": "string"
+          },
+          "port": {
+            "maximum": 65535.0,
+            "minimum": 1.0,
+            "title": "Port",
+            "type": "integer"
+          },
+          "tls_enabled": {
+            "default": true,
+            "title": "Tls Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "host",
+          "port",
+          "database",
+          "allowed_schemas"
+        ],
+        "title": "DataSourceEndpointRequest",
+        "type": "object"
+      },
+      "DataSourceUpdateRequest": {
+        "properties": {
+          "credentials": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DataSourceCredentialsRequest"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "display_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "endpoint": {
+            "$ref": "#/components/schemas/DataSourceEndpointRequest"
+          },
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "display_name",
+          "endpoint",
+          "expected_row_version"
+        ],
+        "title": "DataSourceUpdateRequest",
+        "type": "object"
+      },
+      "DatabaseCredentialInput": {
+        "additionalProperties": false,
+        "properties": {
+          "password": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Password",
+            "type": "string"
+          },
+          "username": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "password"
+        ],
+        "title": "DatabaseCredentialInput",
+        "type": "object"
+      },
+      "DatabaseCredentialStatus": {
+        "additionalProperties": false,
+        "properties": {
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "credential_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credential Id"
+          },
+          "key_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key Version"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "required": [
+          "configured"
+        ],
+        "title": "DatabaseCredentialStatus",
         "type": "object"
       },
       "DatabaseType": {
@@ -2621,6 +3443,21 @@
         "title": "ManualResultReceipt",
         "type": "object"
       },
+      "ManualSchemaDefinitionRequest": {
+        "properties": {
+          "ddl": {
+            "maxLength": 100000,
+            "minLength": 10,
+            "title": "Ddl",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ddl"
+        ],
+        "title": "ManualSchemaDefinitionRequest",
+        "type": "object"
+      },
       "MemoryItemView": {
         "additionalProperties": false,
         "properties": {
@@ -2748,7 +3585,7 @@
           },
           "status": {
             "title": "Status",
-            "type": "integer"
+            "type": "string"
           }
         },
         "required": [
@@ -3472,6 +4309,75 @@
         "title": "MonitoringEventReceipt",
         "type": "object"
       },
+      "NotificationPreferenceUpdate": {
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "event_type": {
+            "maxLength": 160,
+            "minLength": 3,
+            "title": "Event Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "event_type",
+          "enabled"
+        ],
+        "title": "NotificationPreferenceUpdate",
+        "type": "object"
+      },
+      "NotificationReadMany": {
+        "properties": {
+          "notification_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Notification Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "notification_ids"
+        ],
+        "title": "NotificationReadMany",
+        "type": "object"
+      },
+      "NotificationReadUpdate": {
+        "properties": {
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          },
+          "read": {
+            "title": "Read",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "read",
+          "expected_row_version"
+        ],
+        "title": "NotificationReadUpdate",
+        "type": "object"
+      },
+      "OperationWatchUpdate": {
+        "properties": {
+          "notify_terminal": {
+            "default": true,
+            "title": "Notify Terminal",
+            "type": "boolean"
+          }
+        },
+        "title": "OperationWatchUpdate",
+        "type": "object"
+      },
       "OpsRunCreate": {
         "additionalProperties": false,
         "properties": {
@@ -3846,6 +4752,140 @@
         "title": "PendingInputView",
         "type": "object"
       },
+      "PlanFilter": {
+        "additionalProperties": false,
+        "properties": {
+          "field": {
+            "pattern": "^[a-z][a-z0-9._-]{0,127}$",
+            "title": "Field",
+            "type": "string"
+          },
+          "operator": {
+            "enum": [
+              "EQ",
+              "NE",
+              "IN",
+              "NOT_IN",
+              "BETWEEN",
+              "GT",
+              "GTE",
+              "LT",
+              "LTE",
+              "CONTAINS",
+              "STARTS_WITH",
+              "IS_NULL",
+              "IS_NOT_NULL"
+            ],
+            "title": "Operator",
+            "type": "string"
+          },
+          "values": {
+            "default": [],
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "maxItems": 100,
+            "title": "Values",
+            "type": "array"
+          }
+        },
+        "required": [
+          "field",
+          "operator"
+        ],
+        "title": "PlanFilter",
+        "type": "object"
+      },
+      "PlanMeasure": {
+        "additionalProperties": false,
+        "properties": {
+          "aggregation": {
+            "enum": [
+              "COUNT",
+              "COUNT_DISTINCT",
+              "SUM",
+              "AVG",
+              "MIN",
+              "MAX"
+            ],
+            "title": "Aggregation",
+            "type": "string"
+          },
+          "name": {
+            "pattern": "^[a-z][a-z0-9._-]{0,127}$",
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "aggregation"
+        ],
+        "title": "PlanMeasure",
+        "type": "object"
+      },
+      "PlanOrderBy": {
+        "additionalProperties": false,
+        "properties": {
+          "direction": {
+            "enum": [
+              "ASC",
+              "DESC"
+            ],
+            "title": "Direction",
+            "type": "string"
+          },
+          "field": {
+            "pattern": "^[a-z][a-z0-9._-]{0,127}$",
+            "title": "Field",
+            "type": "string"
+          }
+        },
+        "required": [
+          "field",
+          "direction"
+        ],
+        "title": "PlanOrderBy",
+        "type": "object"
+      },
+      "PolicyBindingCreateRequest": {
+        "properties": {
+          "budget": {
+            "$ref": "#/components/schemas/QueryBudgetRequest"
+          },
+          "semantic_model_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 64,
+            "minItems": 1,
+            "title": "Semantic Model Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "semantic_model_ids"
+        ],
+        "title": "PolicyBindingCreateRequest",
+        "type": "object"
+      },
       "PolicyCreate": {
         "additionalProperties": false,
         "properties": {
@@ -4090,6 +5130,25 @@
         "title": "PolicySummary",
         "type": "object"
       },
+      "PromoteVerifiedQueryRequest": {
+        "properties": {
+          "assertion": {
+            "additionalProperties": true,
+            "title": "Assertion",
+            "type": "object"
+          },
+          "data_query_run_id": {
+            "format": "uuid",
+            "title": "Data Query Run Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data_query_run_id"
+        ],
+        "title": "PromoteVerifiedQueryRequest",
+        "type": "object"
+      },
       "ProposalStatus": {
         "enum": [
           "DRAFT",
@@ -4329,6 +5388,61 @@
           "occurred_at"
         ],
         "title": "PublicTraceEvent",
+        "type": "object"
+      },
+      "PublishSemanticModelRequest": {
+        "properties": {
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          },
+          "schema_snapshot_id": {
+            "format": "uuid",
+            "title": "Schema Snapshot Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema_snapshot_id",
+          "expected_row_version"
+        ],
+        "title": "PublishSemanticModelRequest",
+        "type": "object"
+      },
+      "QueryBudgetRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "max_concurrent_runs": {
+            "default": 4,
+            "maximum": 64.0,
+            "minimum": 1.0,
+            "title": "Max Concurrent Runs",
+            "type": "integer"
+          },
+          "max_result_bytes": {
+            "default": 1048576,
+            "maximum": 16777216.0,
+            "minimum": 1024.0,
+            "title": "Max Result Bytes",
+            "type": "integer"
+          },
+          "max_rows": {
+            "default": 1000,
+            "maximum": 10000.0,
+            "minimum": 1.0,
+            "title": "Max Rows",
+            "type": "integer"
+          },
+          "statement_timeout_seconds": {
+            "default": 30,
+            "maximum": 300.0,
+            "minimum": 1.0,
+            "title": "Statement Timeout Seconds",
+            "type": "integer"
+          }
+        },
+        "title": "QueryBudgetRequest",
         "type": "object"
       },
       "RejectionCommand": {
@@ -4647,6 +5761,107 @@
         "title": "ReportView",
         "type": "object"
       },
+      "ResourceDecommissionPrecheck": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "enum": [
+              "ARCHIVE",
+              "DELETE",
+              "DISABLE"
+            ],
+            "title": "Action",
+            "type": "string"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "title": "ResourceDecommissionPrecheck",
+        "type": "object"
+      },
+      "ResourceDecommissionResult": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "enum": [
+              "ARCHIVE",
+              "DELETE",
+              "DISABLE"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "allowed": {
+            "title": "Allowed",
+            "type": "boolean"
+          },
+          "graph": {
+            "$ref": "#/components/schemas/ResourceReferenceGraph"
+          }
+        },
+        "required": [
+          "action",
+          "allowed",
+          "graph"
+        ],
+        "title": "ResourceDecommissionResult",
+        "type": "object"
+      },
+      "ResourceReferenceGraph": {
+        "additionalProperties": false,
+        "properties": {
+          "blockers": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/CompositionEdge"
+            },
+            "title": "Blockers",
+            "type": "array"
+          },
+          "edges": {
+            "items": {
+              "$ref": "#/components/schemas/CompositionEdge"
+            },
+            "title": "Edges",
+            "type": "array"
+          },
+          "nodes": {
+            "items": {
+              "$ref": "#/components/schemas/CompositionNode"
+            },
+            "title": "Nodes",
+            "type": "array"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "partial": {
+            "default": false,
+            "title": "Partial",
+            "type": "boolean"
+          },
+          "root_id": {
+            "title": "Root Id",
+            "type": "string"
+          },
+          "root_type": {
+            "title": "Root Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "root_type",
+          "root_id",
+          "observed_at",
+          "nodes",
+          "edges"
+        ],
+        "title": "ResourceReferenceGraph",
+        "type": "object"
+      },
       "ResultStatus": {
         "enum": [
           "SUCCEEDED",
@@ -4655,6 +5870,41 @@
         ],
         "title": "ResultStatus",
         "type": "string"
+      },
+      "RetireSemanticModelVersionRequest": {
+        "properties": {
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expected_row_version"
+        ],
+        "title": "RetireSemanticModelVersionRequest",
+        "type": "object"
+      },
+      "ReturnSemanticModelForRevisionRequest": {
+        "properties": {
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          },
+          "review_comment": {
+            "maxLength": 2000,
+            "minLength": 2,
+            "title": "Review Comment",
+            "type": "string"
+          }
+        },
+        "required": [
+          "review_comment",
+          "expected_row_version"
+        ],
+        "title": "ReturnSemanticModelForRevisionRequest",
+        "type": "object"
       },
       "RootCauseGrade": {
         "enum": [
@@ -4665,6 +5915,133 @@
         ],
         "title": "RootCauseGrade",
         "type": "string"
+      },
+      "RunCompositionView": {
+        "additionalProperties": false,
+        "properties": {
+          "agent": {
+            "$ref": "#/components/schemas/CompositionNode"
+          },
+          "artifacts": {
+            "items": {
+              "$ref": "#/components/schemas/CompositionNode"
+            },
+            "title": "Artifacts",
+            "type": "array"
+          },
+          "collections": {
+            "items": {
+              "$ref": "#/components/schemas/CompositionNode"
+            },
+            "title": "Collections",
+            "type": "array"
+          },
+          "data_query_runs": {
+            "items": {
+              "$ref": "#/components/schemas/CompositionNode"
+            },
+            "title": "Data Query Runs",
+            "type": "array"
+          },
+          "data_sources": {
+            "items": {
+              "$ref": "#/components/schemas/CompositionNode"
+            },
+            "title": "Data Sources",
+            "type": "array"
+          },
+          "knowledge_evidence": {
+            "items": {
+              "$ref": "#/components/schemas/CompositionNode"
+            },
+            "title": "Knowledge Evidence",
+            "type": "array"
+          },
+          "models": {
+            "items": {
+              "$ref": "#/components/schemas/CompositionNode"
+            },
+            "title": "Models",
+            "type": "array"
+          },
+          "notifications": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Notifications",
+            "type": "array"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "partial": {
+            "default": false,
+            "title": "Partial",
+            "type": "boolean"
+          },
+          "run": {
+            "$ref": "#/components/schemas/CompositionNode"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "semantic_models": {
+            "items": {
+              "$ref": "#/components/schemas/CompositionNode"
+            },
+            "title": "Semantic Models",
+            "type": "array"
+          },
+          "tasks": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Tasks",
+            "type": "array"
+          }
+        },
+        "required": [
+          "run_id",
+          "observed_at",
+          "run",
+          "agent",
+          "models",
+          "collections",
+          "semantic_models",
+          "data_sources",
+          "data_query_runs",
+          "knowledge_evidence",
+          "artifacts",
+          "notifications",
+          "tasks"
+        ],
+        "title": "RunCompositionView",
+        "type": "object"
+      },
+      "SchemaObjectSelectionRequest": {
+        "properties": {
+          "object_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 5000,
+            "minItems": 1,
+            "title": "Object Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "object_ids"
+        ],
+        "title": "SchemaObjectSelectionRequest",
+        "type": "object"
       },
       "SecretRefStatus": {
         "additionalProperties": false,
@@ -4701,6 +6078,215 @@
           "configured"
         ],
         "title": "SecretRefStatus",
+        "type": "object"
+      },
+      "SemanticModelBindingDefinition": {
+        "additionalProperties": false,
+        "properties": {
+          "agent_id": {
+            "format": "uuid",
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "policy_binding_id": {
+            "format": "uuid",
+            "title": "Policy Binding Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "agent_id",
+          "policy_binding_id"
+        ],
+        "title": "SemanticModelBindingDefinition",
+        "type": "object"
+      },
+      "SemanticModelCandidateRequest": {
+        "properties": {
+          "ai_model_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ai Model Id"
+          },
+          "allow_ai_metadata": {
+            "default": false,
+            "title": "Allow Ai Metadata",
+            "type": "boolean"
+          },
+          "business_context": {
+            "anyOf": [
+              {
+                "maxLength": 4000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Business Context"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "display_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "object_ids": {
+            "default": [],
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 64,
+            "title": "Object Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "display_name"
+        ],
+        "title": "SemanticModelCandidateRequest",
+        "type": "object"
+      },
+      "SemanticModelDraftCreateRequest": {
+        "properties": {
+          "data_source_id": {
+            "format": "uuid",
+            "title": "Data Source Id",
+            "type": "string"
+          },
+          "definition": {
+            "additionalProperties": true,
+            "title": "Definition",
+            "type": "object"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "display_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "schema_snapshot_id": {
+            "format": "uuid",
+            "title": "Schema Snapshot Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "display_name",
+          "data_source_id",
+          "schema_snapshot_id",
+          "definition"
+        ],
+        "title": "SemanticModelDraftCreateRequest",
+        "type": "object"
+      },
+      "SemanticModelDraftUpdateRequest": {
+        "properties": {
+          "definition": {
+            "additionalProperties": true,
+            "title": "Definition",
+            "type": "object"
+          },
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "definition",
+          "expected_row_version"
+        ],
+        "title": "SemanticModelDraftUpdateRequest",
+        "type": "object"
+      },
+      "SemanticModelPublicationComposition": {
+        "additionalProperties": false,
+        "properties": {
+          "binding": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SemanticModelBindingDefinition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "schema_snapshot_id": {
+            "format": "uuid",
+            "title": "Schema Snapshot Id",
+            "type": "string"
+          },
+          "validation_model_id": {
+            "format": "uuid",
+            "title": "Validation Model Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema_snapshot_id",
+          "validation_model_id"
+        ],
+        "title": "SemanticModelPublicationComposition",
+        "type": "object"
+      },
+      "SemanticModelValidationRequest": {
+        "properties": {
+          "ai_model_id": {
+            "format": "uuid",
+            "title": "Ai Model Id",
+            "type": "string"
+          },
+          "allow_ai_metadata": {
+            "default": false,
+            "title": "Allow Ai Metadata",
+            "type": "boolean"
+          },
+          "question": {
+            "maxLength": 2000,
+            "minLength": 2,
+            "title": "Question",
+            "type": "string"
+          }
+        },
+        "required": [
+          "question",
+          "ai_model_id"
+        ],
+        "title": "SemanticModelValidationRequest",
         "type": "object"
       },
       "SlackEventReceipt": {
@@ -4740,6 +6326,34 @@
         "title": "SlackEventReceipt",
         "type": "object"
       },
+      "StatusChangeRequest": {
+        "properties": {
+          "status": {
+            "pattern": "^DISABLED$",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "StatusChangeRequest",
+        "type": "object"
+      },
+      "SubmitSemanticModelReviewRequest": {
+        "properties": {
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expected_row_version"
+        ],
+        "title": "SubmitSemanticModelReviewRequest",
+        "type": "object"
+      },
       "TargetCreate": {
         "additionalProperties": false,
         "properties": {
@@ -4761,19 +6375,15 @@
           "db_type": {
             "$ref": "#/components/schemas/DatabaseType"
           },
-          "diagnostic_secret_ref": {
+          "diagnostic_credential": {
             "anyOf": [
               {
-                "maxLength": 2048,
-                "minLength": 8,
-                "pattern": "^[a-z][a-z0-9+.-]*://.+",
-                "type": "string"
+                "$ref": "#/components/schemas/DatabaseCredentialInput"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Diagnostic Secret Ref"
+            ]
           },
           "display_name": {
             "maxLength": 256,
@@ -4800,19 +6410,15 @@
             "title": "Environment",
             "type": "string"
           },
-          "execution_secret_ref": {
+          "execution_credential": {
             "anyOf": [
               {
-                "maxLength": 2048,
-                "minLength": 8,
-                "pattern": "^[a-z][a-z0-9+.-]*://.+",
-                "type": "string"
+                "$ref": "#/components/schemas/DatabaseCredentialInput"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Execution Secret Ref"
+            ]
           },
           "schema_version": {
             "default": "aiops.public.v1",
@@ -4871,8 +6477,8 @@
           "db_type": {
             "$ref": "#/components/schemas/DatabaseType"
           },
-          "diagnostic_secret": {
-            "$ref": "#/components/schemas/SecretRefStatus"
+          "diagnostic_credential": {
+            "$ref": "#/components/schemas/DatabaseCredentialStatus"
           },
           "display_name": {
             "title": "Display Name",
@@ -4892,8 +6498,8 @@
             "title": "Environment",
             "type": "string"
           },
-          "execution_secret": {
-            "$ref": "#/components/schemas/SecretRefStatus"
+          "execution_credential": {
+            "$ref": "#/components/schemas/DatabaseCredentialStatus"
           },
           "health_status": {
             "enum": [
@@ -4992,8 +6598,8 @@
           "row_version",
           "updated_at",
           "db_role",
-          "diagnostic_secret",
-          "execution_secret",
+          "diagnostic_credential",
+          "execution_credential",
           "security_level",
           "capabilities",
           "health_version",
@@ -5127,20 +6733,6 @@
             ],
             "title": "Db Role"
           },
-          "diagnostic_secret_ref": {
-            "anyOf": [
-              {
-                "maxLength": 2048,
-                "minLength": 8,
-                "pattern": "^[a-z][a-z0-9+.-]*://.+",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Diagnostic Secret Ref"
-          },
           "display_name": {
             "anyOf": [
               {
@@ -5179,20 +6771,6 @@
               }
             ],
             "title": "Environment"
-          },
-          "execution_secret_ref": {
-            "anyOf": [
-              {
-                "maxLength": 2048,
-                "minLength": 8,
-                "pattern": "^[a-z][a-z0-9+.-]*://.+",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Execution Secret Ref"
           },
           "schema_version": {
             "default": "aiops.public.v1",
@@ -5333,6 +6911,21 @@
               }
             ],
             "title": "Data Profile Name"
+          },
+          "data_query_mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "MCP",
+                  "SEMANTIC"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Query Mode"
           },
           "description": {
             "anyOf": [
@@ -5729,6 +7322,682 @@
         "summary": "Update Agent",
         "tags": [
           "Agents"
+        ]
+      }
+    },
+    "/api/v1/background-operations": {
+      "get": {
+        "operationId": "list_background_operations_api_v1_background_operations_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Background Operations",
+        "tags": [
+          "Notifications"
+        ]
+      }
+    },
+    "/api/v1/background-operations/{operation_id}/watch": {
+      "delete": {
+        "operationId": "unwatch_background_operation_api_v1_background_operations__operation_id__watch_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "operation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Operation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Unwatch Background Operation",
+        "tags": [
+          "Notifications"
+        ]
+      },
+      "post": {
+        "operationId": "watch_background_operation_api_v1_background_operations__operation_id__watch_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "operation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Operation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OperationWatchUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Watch Background Operation",
+        "tags": [
+          "Notifications"
+        ]
+      }
+    },
+    "/api/v1/compositions/agents": {
+      "post": {
+        "operationId": "create_agent_composition_api_v1_compositions_agents_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 8,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentCompositionCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompositionReceipt"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Agent Composition",
+        "tags": [
+          "Resource Compositions"
+        ]
+      }
+    },
+    "/api/v1/compositions/agents/{agent_id}": {
+      "patch": {
+        "operationId": "update_agent_composition_api_v1_compositions_agents__agent_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Agent Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 8,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "title": "If-Match",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentCompositionUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompositionReceipt"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Agent Composition",
+        "tags": [
+          "Resource Compositions"
+        ]
+      }
+    },
+    "/api/v1/compositions/collections": {
+      "post": {
+        "operationId": "create_collection_composition_api_v1_compositions_collections_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 8,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CollectionCompositionCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompositionReceipt"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Collection Composition",
+        "tags": [
+          "Resource Compositions"
+        ]
+      }
+    },
+    "/api/v1/compositions/collections/{collection_id}/models": {
+      "put": {
+        "operationId": "update_collection_models_composition_api_v1_compositions_collections__collection_id__models_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "collection_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Collection Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 8,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "title": "If-Match",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CollectionModelsCompositionUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompositionReceipt"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Collection Models Composition",
+        "tags": [
+          "Resource Compositions"
+        ]
+      }
+    },
+    "/api/v1/compositions/receipts/{receipt_id}": {
+      "get": {
+        "operationId": "composition_receipt_api_v1_compositions_receipts__receipt_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "receipt_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Receipt Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompositionReceipt"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Composition Receipt",
+        "tags": [
+          "Resource Compositions"
+        ]
+      }
+    },
+    "/api/v1/compositions/resources/{resource_type}/{resource_id}/decommission-precheck": {
+      "post": {
+        "description": "只返回阻断关系；归属服务的删除或归档命令必须由调用方另行确认。",
+        "operationId": "resource_decommission_precheck_api_v1_compositions_resources__resource_type___resource_id__decommission_precheck_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "resource_type",
+            "required": true,
+            "schema": {
+              "title": "Resource Type",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "resource_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Resource Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResourceDecommissionPrecheck"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceDecommissionResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceDecommissionResult"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Resource Decommission Precheck",
+        "tags": [
+          "Resource Compositions"
+        ]
+      }
+    },
+    "/api/v1/compositions/resources/{resource_type}/{resource_id}/references": {
+      "get": {
+        "operationId": "resource_references_api_v1_compositions_resources__resource_type___resource_id__references_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "resource_type",
+            "required": true,
+            "schema": {
+              "title": "Resource Type",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "resource_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Resource Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceReferenceGraph"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Resource References",
+        "tags": [
+          "Resource Compositions"
+        ]
+      }
+    },
+    "/api/v1/compositions/runs/{run_id}": {
+      "get": {
+        "operationId": "run_composition_api_v1_compositions_runs__run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunCompositionView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Run Composition",
+        "tags": [
+          "Resource Compositions"
+        ]
+      }
+    },
+    "/api/v1/compositions/semantic-models/{semantic_model_id}/versions/{semantic_model_version_id}/publish": {
+      "post": {
+        "operationId": "publish_semantic_model_composition_api_v1_compositions_semantic_models__semantic_model_id__versions__semantic_model_version_id__publish_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "semantic_model_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Semantic Model Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "semantic_model_version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Semantic Model Version Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 8,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "title": "If-Match",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SemanticModelPublicationComposition"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompositionReceipt"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Publish Semantic Model Composition",
+        "tags": [
+          "Resource Compositions"
         ]
       }
     },
@@ -6226,6 +8495,2101 @@
         ]
       }
     },
+    "/api/v1/data-query/agent-bindings": {
+      "get": {
+        "operationId": "list_agent_bindings_api_v1_data_query_agent_bindings_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Agent Bindings Api V1 Data Query Agent Bindings Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Agent Bindings",
+        "tags": [
+          "Data Query"
+        ]
+      },
+      "post": {
+        "operationId": "create_agent_binding_api_v1_data_query_agent_bindings_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentBindingCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Create Agent Binding Api V1 Data Query Agent Bindings Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Agent Binding",
+        "tags": [
+          "Data Query"
+        ]
+      }
+    },
+    "/api/v1/data-query/agent-bindings/{agent_binding_id}/status": {
+      "patch": {
+        "operationId": "change_agent_binding_status_api_v1_data_query_agent_bindings__agent_binding_id__status_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_binding_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Agent Binding Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "title": "If-Match",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StatusChangeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Change Agent Binding Status Api V1 Data Query Agent Bindings  Agent Binding Id  Status Patch",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Change Agent Binding Status",
+        "tags": [
+          "Data Query"
+        ]
+      }
+    },
+    "/api/v1/data-query/audits": {
+      "get": {
+        "operationId": "list_audits_api_v1_data_query_audits_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Audits Api V1 Data Query Audits Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Audits",
+        "tags": [
+          "Data Query"
+        ]
+      }
+    },
+    "/api/v1/data-query/connector-capabilities": {
+      "get": {
+        "operationId": "list_connector_capabilities_api_v1_data_query_connector_capabilities_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Connector Capabilities Api V1 Data Query Connector Capabilities Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Connector Capabilities",
+        "tags": [
+          "Data Query"
+        ]
+      }
+    },
+    "/api/v1/data-query/data-sources": {
+      "get": {
+        "operationId": "list_data_sources_api_v1_data_query_data_sources_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Data Sources Api V1 Data Query Data Sources Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Data Sources",
+        "tags": [
+          "Data Query"
+        ]
+      },
+      "post": {
+        "operationId": "create_data_source_api_v1_data_query_data_sources_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DataSourceCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Create Data Source Api V1 Data Query Data Sources Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Data Source",
+        "tags": [
+          "Data Query"
+        ]
+      }
+    },
+    "/api/v1/data-query/data-sources/test-connection": {
+      "post": {
+        "operationId": "test_data_source_connection_api_v1_data_query_data_sources_test_connection_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DataSourceConnectionTestRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Test Data Source Connection Api V1 Data Query Data Sources Test Connection Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Test Data Source Connection",
+        "tags": [
+          "Data Query"
+        ]
+      }
+    },
+    "/api/v1/data-query/data-sources/{data_source_id}": {
+      "get": {
+        "operationId": "get_data_source_api_v1_data_query_data_sources__data_source_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "data_source_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Data Source Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Data Source Api V1 Data Query Data Sources  Data Source Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Data Source",
+        "tags": [
+          "Data Query"
+        ]
+      },
+      "put": {
+        "operationId": "update_data_source_api_v1_data_query_data_sources__data_source_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "data_source_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Data Source Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DataSourceUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Update Data Source Api V1 Data Query Data Sources  Data Source Id  Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Data Source",
+        "tags": [
+          "Data Query"
+        ]
+      }
+    },
+    "/api/v1/data-query/data-sources/{data_source_id}/snapshots": {
+      "get": {
+        "operationId": "list_data_source_snapshots_api_v1_data_query_data_sources__data_source_id__snapshots_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "data_source_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Data Source Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Data Source Snapshots Api V1 Data Query Data Sources  Data Source Id  Snapshots Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Data Source Snapshots",
+        "tags": [
+          "Data Query"
+        ]
+      },
+      "post": {
+        "operationId": "request_data_source_snapshot_api_v1_data_query_data_sources__data_source_id__snapshots_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "data_source_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Data Source Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Request Data Source Snapshot Api V1 Data Query Data Sources  Data Source Id  Snapshots Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Request Data Source Snapshot",
+        "tags": [
+          "Data Query"
+        ]
+      }
+    },
+    "/api/v1/data-query/data-sources/{data_source_id}/status": {
+      "patch": {
+        "operationId": "change_data_source_status_api_v1_data_query_data_sources__data_source_id__status_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "data_source_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Data Source Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "title": "If-Match",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StatusChangeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Change Data Source Status Api V1 Data Query Data Sources  Data Source Id  Status Patch",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Change Data Source Status",
+        "tags": [
+          "Data Query"
+        ]
+      }
+    },
+    "/api/v1/data-query/policy-bindings": {
+      "get": {
+        "operationId": "list_policy_bindings_api_v1_data_query_policy_bindings_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Policy Bindings Api V1 Data Query Policy Bindings Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Policy Bindings",
+        "tags": [
+          "Data Query"
+        ]
+      },
+      "post": {
+        "operationId": "create_policy_binding_api_v1_data_query_policy_bindings_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PolicyBindingCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Create Policy Binding Api V1 Data Query Policy Bindings Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Policy Binding",
+        "tags": [
+          "Data Query"
+        ]
+      }
+    },
+    "/api/v1/data-query/policy-bindings/{policy_binding_id}": {
+      "get": {
+        "operationId": "get_policy_binding_api_v1_data_query_policy_bindings__policy_binding_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "policy_binding_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Policy Binding Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Policy Binding Api V1 Data Query Policy Bindings  Policy Binding Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Policy Binding",
+        "tags": [
+          "Data Query"
+        ]
+      }
+    },
+    "/api/v1/data-query/policy-bindings/{policy_binding_id}/status": {
+      "patch": {
+        "operationId": "change_policy_binding_status_api_v1_data_query_policy_bindings__policy_binding_id__status_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "policy_binding_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Policy Binding Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "title": "If-Match",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StatusChangeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Change Policy Binding Status Api V1 Data Query Policy Bindings  Policy Binding Id  Status Patch",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Change Policy Binding Status",
+        "tags": [
+          "Data Query"
+        ]
+      }
+    },
+    "/api/v1/data-query/runs": {
+      "post": {
+        "operationId": "create_data_query_run_api_v1_data_query_runs_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DataQueryRunCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Create Data Query Run Api V1 Data Query Runs Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Data Query Run",
+        "tags": [
+          "Data Query"
+        ]
+      }
+    },
+    "/api/v1/data-query/runs/{data_query_run_id}": {
+      "get": {
+        "operationId": "get_data_query_run_api_v1_data_query_runs__data_query_run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "data_query_run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Data Query Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Data Query Run Api V1 Data Query Runs  Data Query Run Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Data Query Run",
+        "tags": [
+          "Data Query"
+        ]
+      }
+    },
+    "/api/v1/data-query/runs/{data_query_run_id}/cancel": {
+      "post": {
+        "operationId": "cancel_data_query_run_api_v1_data_query_runs__data_query_run_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "data_query_run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Data Query Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Cancel Data Query Run Api V1 Data Query Runs  Data Query Run Id  Cancel Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel Data Query Run",
+        "tags": [
+          "Data Query"
+        ]
+      }
+    },
+    "/api/v1/data-query/runs/{data_query_run_id}/result": {
+      "get": {
+        "operationId": "get_data_query_result_api_v1_data_query_runs__data_query_run_id__result_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "data_query_run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Data Query Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Data Query Result Api V1 Data Query Runs  Data Query Run Id  Result Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Data Query Result",
+        "tags": [
+          "Data Query"
+        ]
+      }
+    },
+    "/api/v1/data-query/semantic-model-generation-jobs/{generation_job_id}": {
+      "get": {
+        "operationId": "get_semantic_model_generation_job_api_v1_data_query_semantic_model_generation_jobs__generation_job_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "generation_job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Generation Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Semantic Model Generation Job Api V1 Data Query Semantic Model Generation Jobs  Generation Job Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Semantic Model Generation Job",
+        "tags": [
+          "Data Query"
+        ]
+      }
+    },
+    "/api/v1/data-query/semantic-models": {
+      "get": {
+        "operationId": "list_semantic_models_api_v1_data_query_semantic_models_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Semantic Models Api V1 Data Query Semantic Models Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Semantic Models",
+        "tags": [
+          "Data Query"
+        ]
+      },
+      "post": {
+        "operationId": "create_semantic_model_api_v1_data_query_semantic_models_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SemanticModelDraftCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Create Semantic Model Api V1 Data Query Semantic Models Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Semantic Model",
+        "tags": [
+          "Data Query"
+        ]
+      }
+    },
+    "/api/v1/data-query/semantic-models/{semantic_model_id}": {
+      "delete": {
+        "operationId": "delete_semantic_model_api_v1_data_query_semantic_models__semantic_model_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "semantic_model_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Semantic Model Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "title": "If-Match",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Semantic Model",
+        "tags": [
+          "Data Query"
+        ]
+      },
+      "get": {
+        "operationId": "get_semantic_model_api_v1_data_query_semantic_models__semantic_model_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "semantic_model_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Semantic Model Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Semantic Model Api V1 Data Query Semantic Models  Semantic Model Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Semantic Model",
+        "tags": [
+          "Data Query"
+        ]
+      }
+    },
+    "/api/v1/data-query/semantic-models/{semantic_model_id}/versions/{semantic_model_version_id}": {
+      "patch": {
+        "operationId": "update_semantic_model_draft_api_v1_data_query_semantic_models__semantic_model_id__versions__semantic_model_version_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "semantic_model_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Semantic Model Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "semantic_model_version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Semantic Model Version Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SemanticModelDraftUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Update Semantic Model Draft Api V1 Data Query Semantic Models  Semantic Model Id  Versions  Semantic Model Version Id  Patch",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Semantic Model Draft",
+        "tags": [
+          "Data Query"
+        ]
+      }
+    },
+    "/api/v1/data-query/semantic-models/{semantic_model_id}/versions/{semantic_model_version_id}/publish": {
+      "post": {
+        "operationId": "publish_semantic_model_api_v1_data_query_semantic_models__semantic_model_id__versions__semantic_model_version_id__publish_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "semantic_model_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Semantic Model Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "semantic_model_version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Semantic Model Version Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublishSemanticModelRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Publish Semantic Model",
+        "tags": [
+          "Data Query"
+        ]
+      }
+    },
+    "/api/v1/data-query/semantic-models/{semantic_model_id}/versions/{semantic_model_version_id}/retire": {
+      "post": {
+        "operationId": "retire_semantic_model_version_api_v1_data_query_semantic_models__semantic_model_id__versions__semantic_model_version_id__retire_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "semantic_model_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Semantic Model Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "semantic_model_version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Semantic Model Version Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RetireSemanticModelVersionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Retire Semantic Model Version",
+        "tags": [
+          "Data Query"
+        ]
+      }
+    },
+    "/api/v1/data-query/semantic-models/{semantic_model_id}/versions/{semantic_model_version_id}/return-for-revision": {
+      "post": {
+        "operationId": "return_semantic_model_for_revision_api_v1_data_query_semantic_models__semantic_model_id__versions__semantic_model_version_id__return_for_revision_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "semantic_model_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Semantic Model Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "semantic_model_version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Semantic Model Version Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReturnSemanticModelForRevisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Return Semantic Model For Revision",
+        "tags": [
+          "Data Query"
+        ]
+      }
+    },
+    "/api/v1/data-query/semantic-models/{semantic_model_id}/versions/{semantic_model_version_id}/submit-review": {
+      "post": {
+        "operationId": "submit_semantic_model_review_api_v1_data_query_semantic_models__semantic_model_id__versions__semantic_model_version_id__submit_review_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "semantic_model_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Semantic Model Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "semantic_model_version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Semantic Model Version Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmitSemanticModelReviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Submit Semantic Model Review",
+        "tags": [
+          "Data Query"
+        ]
+      }
+    },
+    "/api/v1/data-query/semantic-models/{semantic_model_id}/versions/{semantic_model_version_id}/validations": {
+      "post": {
+        "operationId": "create_semantic_model_validation_api_v1_data_query_semantic_models__semantic_model_id__versions__semantic_model_version_id__validations_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "semantic_model_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Semantic Model Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "semantic_model_version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Semantic Model Version Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 8,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SemanticModelValidationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Create Semantic Model Validation Api V1 Data Query Semantic Models  Semantic Model Id  Versions  Semantic Model Version Id  Validations Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Semantic Model Validation",
+        "tags": [
+          "Data Query"
+        ]
+      }
+    },
+    "/api/v1/data-query/semantic-models/{semantic_model_id}/versions/{semantic_model_version_id}/validations/{run_id}": {
+      "get": {
+        "operationId": "get_semantic_model_validation_api_v1_data_query_semantic_models__semantic_model_id__versions__semantic_model_version_id__validations__run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "semantic_model_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Semantic Model Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "semantic_model_version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Semantic Model Version Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Semantic Model Validation Api V1 Data Query Semantic Models  Semantic Model Id  Versions  Semantic Model Version Id  Validations  Run Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Semantic Model Validation",
+        "tags": [
+          "Data Query"
+        ]
+      }
+    },
+    "/api/v1/data-query/snapshots/{snapshot_id}": {
+      "get": {
+        "operationId": "get_schema_snapshot_api_v1_data_query_snapshots__snapshot_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "snapshot_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Snapshot Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Schema Snapshot Api V1 Data Query Snapshots  Snapshot Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Schema Snapshot",
+        "tags": [
+          "Data Query"
+        ]
+      }
+    },
+    "/api/v1/data-query/snapshots/{snapshot_id}/objects/{object_id}/manual-ddl": {
+      "post": {
+        "operationId": "supply_manual_schema_api_v1_data_query_snapshots__snapshot_id__objects__object_id__manual_ddl_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "snapshot_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Snapshot Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "object_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Object Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManualSchemaDefinitionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Supply Manual Schema Api V1 Data Query Snapshots  Snapshot Id  Objects  Object Id  Manual Ddl Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Supply Manual Schema",
+        "tags": [
+          "Data Query"
+        ]
+      }
+    },
+    "/api/v1/data-query/snapshots/{snapshot_id}/objects/{object_id}/retry": {
+      "post": {
+        "operationId": "retry_schema_object_api_v1_data_query_snapshots__snapshot_id__objects__object_id__retry_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "snapshot_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Snapshot Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "object_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Object Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Retry Schema Object Api V1 Data Query Snapshots  Snapshot Id  Objects  Object Id  Retry Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Retry Schema Object",
+        "tags": [
+          "Data Query"
+        ]
+      }
+    },
+    "/api/v1/data-query/snapshots/{snapshot_id}/selection": {
+      "post": {
+        "operationId": "select_schema_objects_api_v1_data_query_snapshots__snapshot_id__selection_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "snapshot_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Snapshot Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SchemaObjectSelectionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Select Schema Objects Api V1 Data Query Snapshots  Snapshot Id  Selection Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Select Schema Objects",
+        "tags": [
+          "Data Query"
+        ]
+      }
+    },
+    "/api/v1/data-query/snapshots/{snapshot_id}/semantic-model-draft": {
+      "post": {
+        "operationId": "generate_semantic_model_draft_api_v1_data_query_snapshots__snapshot_id__semantic_model_draft_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "snapshot_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Snapshot Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SemanticModelCandidateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Generate Semantic Model Draft Api V1 Data Query Snapshots  Snapshot Id  Semantic Model Draft Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Generate Semantic Model Draft",
+        "tags": [
+          "Data Query"
+        ]
+      }
+    },
+    "/api/v1/data-query/verified-queries": {
+      "get": {
+        "operationId": "list_verified_queries_api_v1_data_query_verified_queries_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Verified Queries Api V1 Data Query Verified Queries Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Verified Queries",
+        "tags": [
+          "Data Query"
+        ]
+      },
+      "post": {
+        "operationId": "promote_verified_query_api_v1_data_query_verified_queries_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PromoteVerifiedQueryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Promote Verified Query Api V1 Data Query Verified Queries Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Promote Verified Query",
+        "tags": [
+          "Data Query"
+        ]
+      }
+    },
     "/api/v1/data/profiles": {
       "get": {
         "operationId": "list_data_profiles_api_v1_data_profiles_get",
@@ -6350,26 +10714,36 @@
           {
             "in": "query",
             "name": "service_name",
-            "required": true,
+            "required": false,
             "schema": {
-              "maxLength": 64,
-              "minLength": 1,
-              "title": "Service Name",
-              "type": "string"
+              "anyOf": [
+                {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Service Name"
             }
           },
           {
             "in": "query",
-            "name": "log_type",
+            "name": "stream",
             "required": false,
             "schema": {
-              "default": "RUNTIME",
-              "enum": [
-                "RUNTIME",
-                "ACCESS"
-              ],
-              "title": "Log Type",
-              "type": "string"
+              "default": [],
+              "items": {
+                "enum": [
+                  "RUNTIME",
+                  "ACCESS"
+                ],
+                "type": "string"
+              },
+              "title": "Stream",
+              "type": "array"
             }
           },
           {
@@ -6383,6 +10757,16 @@
               },
               "title": "Level",
               "type": "array"
+            }
+          },
+          {
+            "in": "query",
+            "name": "filter_by_level",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Filter By Level",
+              "type": "boolean"
             }
           },
           {
@@ -6404,11 +10788,165 @@
           },
           {
             "in": "query",
+            "name": "request_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Request Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "trace_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Trace Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "error_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Error Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "run_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Run Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "job_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Job Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "http_status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 599,
+                  "minimum": 100,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Http Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "started_at",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Started At"
+            }
+          },
+          {
+            "in": "query",
+            "name": "ended_at",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Ended At"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 4096,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
             "name": "limit",
             "required": false,
             "schema": {
               "default": 200,
-              "maximum": 500,
+              "maximum": 2000,
               "minimum": 1,
               "title": "Limit",
               "type": "integer"
@@ -6436,6 +10974,46 @@
           }
         },
         "summary": "List Log Events",
+        "tags": [
+          "Development Log Console"
+        ]
+      }
+    },
+    "/api/v1/development/logs/events/{event_id}": {
+      "get": {
+        "operationId": "get_log_event_api_v1_development_logs_events__event_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Log Event",
         "tags": [
           "Development Log Console"
         ]
@@ -7475,6 +12053,420 @@
         "summary": "List Model Catalog",
         "tags": [
           "Model Catalog"
+        ]
+      }
+    },
+    "/api/v1/notifications": {
+      "get": {
+        "operationId": "list_notifications_api_v1_notifications_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 512,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Notifications",
+        "tags": [
+          "Notifications"
+        ]
+      }
+    },
+    "/api/v1/notifications/actor-data": {
+      "delete": {
+        "operationId": "forget_notification_actor_api_v1_notifications_actor_data_delete",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Forget Notification Actor",
+        "tags": [
+          "Notifications"
+        ]
+      }
+    },
+    "/api/v1/notifications/events": {
+      "get": {
+        "operationId": "notification_events_api_v1_notifications_events_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Last-Event-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Last-Event-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Notification Events",
+        "tags": [
+          "Notifications"
+        ]
+      }
+    },
+    "/api/v1/notifications/preferences": {
+      "get": {
+        "operationId": "notification_preferences_api_v1_notifications_preferences_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Notification Preferences",
+        "tags": [
+          "Notifications"
+        ]
+      },
+      "put": {
+        "operationId": "set_notification_preference_api_v1_notifications_preferences_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotificationPreferenceUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Notification Preference",
+        "tags": [
+          "Notifications"
+        ]
+      }
+    },
+    "/api/v1/notifications/quarantine": {
+      "get": {
+        "operationId": "notification_quarantine_api_v1_notifications_quarantine_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Notification Quarantine",
+        "tags": [
+          "Notifications"
+        ]
+      }
+    },
+    "/api/v1/notifications/quarantine/{outbox_id}/retry": {
+      "post": {
+        "operationId": "retry_notification_api_v1_notifications_quarantine__outbox_id__retry_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "outbox_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Outbox Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Retry Notification",
+        "tags": [
+          "Notifications"
+        ]
+      }
+    },
+    "/api/v1/notifications/read": {
+      "post": {
+        "operationId": "read_notifications_api_v1_notifications_read_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotificationReadMany"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Notifications",
+        "tags": [
+          "Notifications"
+        ]
+      }
+    },
+    "/api/v1/notifications/summary": {
+      "get": {
+        "operationId": "notification_summary_api_v1_notifications_summary_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Notification Summary",
+        "tags": [
+          "Notifications"
+        ]
+      }
+    },
+    "/api/v1/notifications/{notification_id}": {
+      "get": {
+        "operationId": "get_notification_api_v1_notifications__notification_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "notification_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Notification Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Notification",
+        "tags": [
+          "Notifications"
+        ]
+      },
+      "patch": {
+        "operationId": "update_notification_api_v1_notifications__notification_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "notification_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Notification Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotificationReadUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Notification",
+        "tags": [
+          "Notifications"
         ]
       }
     },
@@ -10014,6 +15006,65 @@
       }
     },
     "/api/v1/ops/targets/{target_id}": {
+      "delete": {
+        "operationId": "delete_target_api_v1_ops_targets__target_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "target_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Target Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Target",
+        "tags": [
+          "AIOps"
+        ]
+      },
       "get": {
         "operationId": "get_target_api_v1_ops_targets__target_id__get",
         "parameters": [
@@ -10468,6 +15519,152 @@
         ]
       }
     },
+    "/api/v1/ops/targets/{target_id}/diagnostic-credential:remove": {
+      "post": {
+        "operationId": "remove_diagnostic_credential_api_v1_ops_targets__target_id__diagnostic_credential_remove_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "target_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Target Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TargetDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Diagnostic Credential",
+        "tags": [
+          "AIOps"
+        ]
+      }
+    },
+    "/api/v1/ops/targets/{target_id}/diagnostic-credential:rotate": {
+      "post": {
+        "operationId": "rotate_diagnostic_credential_api_v1_ops_targets__target_id__diagnostic_credential_rotate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "target_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Target Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DatabaseCredentialInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TargetDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rotate Diagnostic Credential",
+        "tags": [
+          "AIOps"
+        ]
+      }
+    },
     "/api/v1/ops/targets/{target_id}/disable": {
       "post": {
         "operationId": "disable_target_api_v1_ops_targets__target_id__disable_post",
@@ -10531,6 +15728,152 @@
           }
         },
         "summary": "Disable Target",
+        "tags": [
+          "AIOps"
+        ]
+      }
+    },
+    "/api/v1/ops/targets/{target_id}/execution-credential:remove": {
+      "post": {
+        "operationId": "remove_execution_credential_api_v1_ops_targets__target_id__execution_credential_remove_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "target_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Target Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TargetDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Execution Credential",
+        "tags": [
+          "AIOps"
+        ]
+      }
+    },
+    "/api/v1/ops/targets/{target_id}/execution-credential:rotate": {
+      "post": {
+        "operationId": "rotate_execution_credential_api_v1_ops_targets__target_id__execution_credential_rotate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "target_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Target Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DatabaseCredentialInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TargetDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rotate Execution Credential",
         "tags": [
           "AIOps"
         ]
@@ -11135,6 +16478,60 @@
         "summary": "Get Run Result",
         "tags": [
           "Agent Runs"
+        ]
+      }
+    },
+    "/api/v1/work-items": {
+      "get": {
+        "operationId": "list_work_items_api_v1_work_items_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "default": "OPEN",
+              "pattern": "^(OPEN|COMPLETED|CANCELLED)$",
+              "title": "Status",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Work Items",
+        "tags": [
+          "Notifications"
         ]
       }
     },

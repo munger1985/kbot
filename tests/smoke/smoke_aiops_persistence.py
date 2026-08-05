@@ -87,6 +87,8 @@ async def smoke() -> None:
                 text(
                     """
                     INSERT INTO KBOT_PLATFORM_DOMAIN (
+                        DOMAIN_ID, ROW_VERSION, NAME, STATUS,
+                        CREATED_BY, UPDATED_BY
                     ) VALUES (
                         :domain_id, 1, :name, 'ACTIVE', 'smoke', 'smoke'
                     )

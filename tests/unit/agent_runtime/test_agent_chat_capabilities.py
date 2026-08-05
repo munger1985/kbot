@@ -12,12 +12,15 @@ from agent_runtime.runtime import ExecutionContext, SkillProgress, SkillResult
 from agent_runtime.specialists.conversation_response import (
     ConversationResponseSkill,
 )
-from agent_runtime.specialists.mcp_data import (
-    EChartsSkill,
-    MCPDataQuerySkill,
+from agent_runtime.specialists.data_query import (
+    DataQuerySkill,
+    MCPDataQueryExecutor,
+    SemanticDataQueryExecutor,
 )
+from agent_runtime.specialists.visualization import EChartsSkill
 from agent_runtime.specialists.root import RootAgentPlanner, RouteType
 from main_api.api.dify import _records
+from platform_core.contracts import AuthContext, PrincipalKind
 from platform_core.identity import uuid7
 
 
@@ -55,6 +58,11 @@ class _DataClient:
         }
 
 
+class _UnavailableSemanticExecutor:
+    async def execute(self, **kwargs):
+        raise AssertionError("MCP 模式不应调用语义 Provider")
+
+
 def _artifact(artifact_type, payload):
     return LeasedArtifact(
         artifact_id=uuid7(),
@@ -75,6 +83,7 @@ def _context(
     agent=None,
     route=None,
     original_input="你好",
+    policy_snapshot=None,
 ):
     return ExecutionContext(
         domain_id=20,
@@ -86,6 +95,7 @@ def _context(
         request_id="request-1",
         trace_id="trace-1",
         original_input=original_input,
+        policy_snapshot=policy_snapshot or {},
         config_snapshot={"agent": agent or {}, "route": route},
         input_artifacts=tuple(artifacts),
     )
@@ -101,9 +111,10 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
     def test_active_data_agent_requires_profile(self):
         with self.assertRaises(AgentRuntimeConflict):
             AgentDefinitionService._validate_runtime_configuration(
-                capabilities=("mcp_data",),
+                capabilities=("data_query",),
                 status="ACTIVE",
                 router_model=None,
+                data_query_mode="MCP",
                 data_profile_name=None,
             )
 
@@ -111,7 +122,7 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
         planner = RootAgentPlanner(
             model_client=_ModelClient(
                 response={
-                    "route_type": "MCP_DATA",
+                    "route_type": "DATA_QUERY",
                     "confidence": 0.97,
                     "reason": "需要查询销售统计并绘图",
                     "clarification_question": None,
@@ -125,7 +136,7 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
                 "enabled_capabilities": [
                     "conversation",
                     "document",
-                    "mcp_data",
+                    "data_query",
                 ],
                 "models": {
                     "router_llm": {
@@ -139,13 +150,13 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
             objective="画出本月销售趋势图", decision=decision
         )
 
-        self.assertEqual(decision.route_type, RouteType.MCP_DATA)
+        self.assertEqual(decision.route_type, RouteType.DATA_QUERY)
         self.assertTrue(decision.requires_chart)
         self.assertEqual(
             [task.task_key for task in plan.tasks],
             [
                 "context_rewrite",
-                "mcp_data_query",
+                "data_query",
                 "echarts",
                 "response_compose",
             ],
@@ -170,10 +181,16 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_mcp_data_skill_preserves_profile_and_rows(self):
         client = _DataClient()
-        result = await MCPDataQuerySkill(data_client=client).execute(
+        result = await DataQuerySkill(
+            mcp_executor=MCPDataQueryExecutor(client=client),
+            semantic_executor=_UnavailableSemanticExecutor(),
+        ).execute(
             _context(
                 original_input="查询销售额",
-                agent={"data_profile_name": "SALES_PROFILE"},
+                agent={
+                    "data_query_mode": "MCP",
+                    "data_profile_name": "SALES_PROFILE",
+                },
                 artifacts=(
                     _artifact(
                         "CONTEXT_REWRITE",
@@ -184,6 +201,9 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(result.artifact.artifact_type, "QUERY_RESULT")
+        self.assertEqual(result.artifact.schema_version, "QUERY_RESULT.v1")
+        self.assertEqual(result.artifact.payload["schema"], "QUERY_RESULT.v1")
+        self.assertEqual(result.artifact.payload["provider"], "MCP")
         self.assertEqual(
             result.artifact.payload["rows"][0]["sales"], 10
         )
@@ -191,6 +211,85 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             client.request["question"], "查询 2026 年 7 月销售额"
         )
+
+    async def test_semantic_and_mcp_share_query_result_contract(self):
+        semantic_model_id = uuid7()
+
+        class _SemanticClient:
+            async def get_planning_context(self, **kwargs):
+                return {"models": [{
+                    "semantic_model_id": str(semantic_model_id),
+                    "semantic_model_version": 1,
+                    "display_name": "销售",
+                    "datasets": [{"name": "sales"}],
+                    "dimensions": [],
+                    "measures": [{"name": "amount"}],
+                    "max_rows": 100,
+                }]}
+
+            async def create_run(self, **kwargs):
+                return {"data_query_run_id": str(uuid7())}
+
+            async def get_run(self, **kwargs):
+                return {"status": "COMPLETED"}
+
+            async def get_result(self, **kwargs):
+                return {
+                    "columns": [{"name": "amount"}],
+                    "preview_rows": [{"amount": 10}],
+                    "row_count": 1,
+                    "observed_row_count": 1,
+                    "truncated": False,
+                    "provenance": {
+                        "data_source_id": str(uuid7()),
+                        "semantic_model_id": str(semantic_model_id),
+                        "semantic_model_version": "1",
+                        "query_plan_hash": "a" * 64,
+                    },
+                }
+
+        model = _ModelClient(response={
+            "contract_version": "DataQueryPlan.v1",
+            "semantic_model_id": str(semantic_model_id),
+            "semantic_model_version": 1,
+            "dataset": "sales",
+            "measures": [{"name": "amount", "aggregation": "SUM"}],
+            "dimensions": [],
+            "filters": [],
+            "order_by": [],
+            "limit": 100,
+            "time_zone": "Asia/Shanghai",
+        })
+        auth = AuthContext(
+            principal_kind=PrincipalKind.SERVICE,
+            client_id="test",
+            calling_service="test",
+            request_id="request-1",
+            trace_id="trace-1",
+            domain_id="20",
+            asserted_user_id="user-1",
+        )
+        semantic = SemanticDataQueryExecutor(
+            client=_SemanticClient(),
+            model_client=model,
+            prompt_resolver=_PromptResolver(),
+        )
+        result = await DataQuerySkill(
+            mcp_executor=MCPDataQueryExecutor(client=None),
+            semantic_executor=semantic,
+        ).execute(_context(
+            original_input="查询销售额",
+            agent={
+                "data_query_mode": "SEMANTIC",
+                "models": {"data_planner_llm": {"served_model_name": "planner"}},
+            },
+            policy_snapshot={"auth_context": auth.model_dump(mode="json")},
+        ))
+
+        self.assertEqual(result.artifact.schema_version, "QUERY_RESULT.v1")
+        self.assertEqual(result.artifact.payload["schema"], "QUERY_RESULT.v1")
+        self.assertEqual(result.artifact.payload["provider"], "SEMANTIC")
+        self.assertEqual(result.artifact.payload["rows"], [{"amount": 10}])
 
     async def test_conversation_response_streams_and_returns_answer(self):
         skill = ConversationResponseSkill(
@@ -262,14 +361,15 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
             prompt_resolver=_PromptResolver(),
         )
         query = {
+            "schema": "QUERY_RESULT.v1",
             "query_result_id": str(uuid7()),
-            "profile": "SALES_PROFILE",
-            "question": "查询销售",
+            "provider": "MCP",
+            "columns": [{"name": "sales"}],
             "rows": [{"sales": 10}],
             "row_count": 1,
-            "upstream_row_count": 1,
             "truncated": False,
-            "status": "READY",
+            "warnings": [],
+            "provenance": {"profile": "SALES_PROFILE"},
         }
         with self.assertRaisesRegex(ValueError, "可执行脚本"):
             await skill.execute(

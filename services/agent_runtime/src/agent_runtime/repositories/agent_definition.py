@@ -63,3 +63,23 @@ class AgentDefinitionRepository:
             )
         )
         return list((await self._session.execute(statement)).scalars())
+
+    async def list_model_references(
+        self, *, model_id: UUID,
+    ) -> list[dict[str, str]]:
+        """跨 Domain 反查模型 UUID；仅供模型目录一致性检查。"""
+        rows = list(
+            (await self._session.execute(select(AgentDefinitionEntity))).scalars()
+        )
+        expected = str(model_id)
+        return [
+            {
+                "service": "agent-runtime",
+                "resource_type": "agent",
+                "resource_id": str(row.agent_id),
+                "usage": role,
+            }
+            for row in rows
+            for role, bound_model_id in dict(row.models_json or {}).items()
+            if str(bound_model_id) == expected
+        ]

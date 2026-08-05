@@ -211,7 +211,7 @@ class KcParserWorker:
         model = await self._model_config_client.get_model(UUID(str(model_id)))
         if int(model.get("category") or 0) != 5:
             raise RuntimeError("Collection models.parser_vlm 不是 VLM")
-        if int(model.get("status") or 0) != 1:
+        if model.get("status") != "ACTIVE":
             raise RuntimeError("Collection 绑定的 Parser VLM 不可用")
         served_name = str(model.get("served_model_name") or "").strip()
         if not served_name:

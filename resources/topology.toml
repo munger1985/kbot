@@ -80,6 +80,24 @@ service_name = "kbot-agent-runtime-worker"
 kind = "worker"
 
 [[processes]]
+process_key = "data_query_api"
+module = "data_query.entrypoints.api"
+service_config = "data_query"
+config_section = "api"
+service_name = "kbot-data-query-api"
+kind = "http"
+port = 18140
+
+[[processes]]
+process_key = "data_query_worker"
+module = "data_query.entrypoints.worker"
+service_config = "data_query"
+config_section = "worker"
+service_name = "kbot-data-query-worker"
+kind = "http"
+port = 18141
+
+[[processes]]
 process_key = "aiops_api"
 module = "aiops_agent.entrypoints.api"
 service_config = "aiops_agent"
@@ -132,10 +150,19 @@ config_section = "slack_worker"
 service_name = "kbot-main-api-slack-worker"
 kind = "worker"
 
+[[processes]]
+process_key = "main_api_notification_worker"
+module = "main_api.entrypoints.notification_worker"
+service_config = "main_api"
+config_section = "notifications"
+service_name = "kbot-main-api-notification-worker"
+kind = "worker"
+
 # 端点只引用进程；默认 URL 根据进程端口生成，audience 使用 service_name。
 [endpoints]
 knowledge_core = "knowledge_core_api"
 agent_runtime = "agent_runtime_api"
+data_query = "data_query_api"
 aiops = "aiops_api"
 aiops_db_executor = "aiops_db_executor"
 model_embedding = "model_embedding"
@@ -150,6 +177,10 @@ timeout_seconds = 120
 [dependencies.main_api.agent_runtime]
 endpoint = "agent_runtime"
 timeout_seconds = 120
+
+[dependencies.main_api.data_query]
+endpoint = "data_query"
+timeout_seconds = 300
 
 [dependencies.main_api.aiops]
 endpoint = "aiops"
@@ -200,6 +231,10 @@ timeout_seconds = 120
 endpoint = "aiops"
 timeout_seconds = 120
 
+[dependencies.agent_runtime.data_query]
+endpoint = "data_query"
+timeout_seconds = 300
+
 [dependencies.agent_runtime.llm]
 endpoint = "model_llm"
 timeout_seconds = 300
@@ -210,6 +245,10 @@ timeout_seconds = 300
 
 [dependencies.agent_runtime.vlm]
 endpoint = "model_vlm"
+timeout_seconds = 300
+
+[dependencies.data_query.llm]
+endpoint = "model_llm"
 timeout_seconds = 300
 
 [dependencies.aiops_agent.clients.agent_runtime]

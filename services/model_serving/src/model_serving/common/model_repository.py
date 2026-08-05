@@ -14,11 +14,16 @@ from .repository_base import ModelRepositoryBase
 class AIModelRepository(ModelRepositoryBase[AIModelEntity]):
     """只提供模型目录需要的查询和状态变更。"""
 
-    async def get_by_id(self, model_id: UUID) -> AIModelEntity:
+    async def get_by_id(
+        self, model_id: UUID, *, lock: bool = False,
+    ) -> AIModelEntity:
         try:
-            result = await self.session.execute(
-                select(AIModelEntity).where(AIModelEntity.model_id == model_id)
+            statement = select(AIModelEntity).where(
+                AIModelEntity.model_id == model_id
             )
+            if lock:
+                statement = statement.with_for_update()
+            result = await self.session.execute(statement)
             model = result.scalar_one_or_none()
             if model is None:
                 raise DataNotFoundException(f"模型不存在：{model_id}")
@@ -88,3 +93,8 @@ class AIModelRepository(ModelRepositoryBase[AIModelEntity]):
             setattr(model, field, value)
         await self.session.flush()
         return model
+
+    async def delete(self, model: AIModelEntity) -> None:
+        """删除已完成引用检查的归档模型，不提交事务。"""
+        await self.session.delete(model)
+        await self.session.flush()

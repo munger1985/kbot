@@ -25,6 +25,9 @@ def build_contracts() -> dict[str, dict[str, Any]]:
     from agent_runtime.entrypoints.api import (  # noqa: PLC0415
         app as agent_runtime_app,
     )
+    from data_query.bootstrap.openapi import (  # noqa: PLC0415
+        create_data_query_contract_app,
+    )
     from model_serving.entrypoints.embedding import (  # noqa: PLC0415
         app as embedding_app,
     )
@@ -47,6 +50,7 @@ def build_contracts() -> dict[str, dict[str, Any]]:
         ),
         "knowledge_core_internal_v1.json": knowledge_core_app,
         "agent_runtime_internal_v1.json": agent_runtime_app,
+        "data_query_internal_v1.json": create_data_query_contract_app(),
         "model_embedding_v1.json": embedding_app,
         "model_llm_v1.json": llm_app,
         "model_visual_v1.json": visual_app,
@@ -76,6 +80,7 @@ def _route_boundary_errors(
     elif filename in {
         "knowledge_core_internal_v1.json",
         "agent_runtime_internal_v1.json",
+        "data_query_internal_v1.json",
         "aiops_internal_v1.json",
         "aiops_executor_v1.json",
     }:

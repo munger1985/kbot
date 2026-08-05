@@ -22,6 +22,7 @@ ACTIVE_PACKAGES = (
     "services/knowledge_core/src/knowledge_core",
     "services/agent_runtime/src/agent_runtime",
     "services/aiops_agent/src/aiops_agent",
+    "services/data_query/src/data_query",
     "services/main_api/src/main_api",
 )
 
@@ -63,6 +64,7 @@ def _tracked_inputs() -> list[Path]:
         "services/agent_runtime/pyproject.toml",
         "services/knowledge_core/pyproject.toml",
         "services/aiops_agent/pyproject.toml",
+        "services/data_query/pyproject.toml",
         "services/model_serving/pyproject.toml",
     ):
         path = ROOT / name
@@ -93,6 +95,7 @@ def _git(*args: str) -> str:
 def _checks(
     *,
     include_oracle: bool,
+    include_external_databases: bool = False,
     prometheus_url: str | None = None,
 ) -> list[tuple[str, list[str], int]]:
     python = sys.executable
@@ -147,14 +150,17 @@ def _checks(
             [
                 python,
                 "-m",
-                "unittest",
-                "discover",
-                "-s",
-                "tests",
-                "-t",
-                ".",
+                "pytest",
+                "-q",
+                "tests/unit",
+                "tests/contract",
             ],
             300,
+        ),
+        (
+            "development_logs_http",
+            [python, "tests/smoke/smoke_development_logs_http.py"],
+            30,
         ),
     ]
     if include_oracle:
@@ -190,6 +196,47 @@ def _checks(
                     [python, "tests/smoke/smoke_aiops_runtime.py"],
                     180,
                 ),
+                (
+                    "oracle_data_query_runtime",
+                    [python, "tests/smoke/smoke_data_query_oracle.py"],
+                    120,
+                ),
+                (
+                    "oracle_agent_memory",
+                    [python, "tests/smoke/smoke_agent_memory.py"],
+                    120,
+                ),
+                (
+                    "oracle_knowledge_core_s3",
+                    [python, "tests/smoke/smoke_knowledge_core_s3.py"],
+                    120,
+                ),
+                (
+                    "oracle_model_serving_s4",
+                    [python, "tests/smoke/smoke_model_serving_oracle.py"],
+                    120,
+                ),
+                (
+                    "oracle_notifications_s6",
+                    [python, "tests/smoke/smoke_notifications_oracle.py"],
+                    120,
+                ),
+                (
+                    "oracle_composition_s7",
+                    [python, "tests/smoke/smoke_composition_oracle.py"],
+                    120,
+                ),
+            )
+        )
+    if include_external_databases:
+        checks.append(
+            (
+                "data_query_external_databases",
+                [
+                    python,
+                    "tests/smoke/smoke_data_query_external_databases.py",
+                ],
+                120,
             )
         )
     if prometheus_url:
@@ -251,6 +298,7 @@ def verify(
     *,
     profile: str,
     include_oracle: bool,
+    include_external_databases: bool,
     prometheus_url: str | None,
     require_clean: bool,
 ) -> dict[str, Any]:
@@ -262,6 +310,7 @@ def verify(
         _run_check(name, command, timeout_seconds)
         for name, command, timeout_seconds in _checks(
             include_oracle=include_oracle,
+            include_external_databases=include_external_databases,
             prometheus_url=prometheus_url,
         )
     ]
@@ -284,7 +333,9 @@ def verify(
             "implementation": platform.python_implementation(),
         },
         "require_clean": require_clean,
+        "oracle_checked": include_oracle,
         "prometheus_checked": prometheus_url is not None,
+        "external_databases_checked": include_external_databases,
         "dirty_paths": dirty_paths,
         "input_manifest": build_input_manifest(),
         "checks": results,
@@ -320,6 +371,14 @@ def main() -> int:
         help="额外校验无凭据的 Prometheus/OpenMetrics 抓取地址",
     )
     parser.add_argument(
+        "--external-databases",
+        action="store_true",
+        help=(
+            "执行真实 PostgreSQL/MySQL Data Query Smoke；"
+            "连接信息由 KBOT_DQ_SMOKE_* 环境变量提供"
+        ),
+    )
+    parser.add_argument(
         "--require-clean",
         action="store_true",
         help="工作树有任何改动时令验证失败",
@@ -328,6 +387,7 @@ def main() -> int:
     evidence = verify(
         profile=args.profile,
         include_oracle=args.oracle,
+        include_external_databases=args.external_databases,
         prometheus_url=args.prometheus_url,
         require_clean=args.require_clean,
     )

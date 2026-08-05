@@ -181,6 +181,10 @@ class BaseModelPool(ABC, Generic[T]):
             await self._safe_shutdown_model(served_model_name, model)
         return True
 
+    def is_model_loaded(self, served_model_name: str) -> bool:
+        """返回当前进程是否持有指定模型实例。"""
+        return self._normalize_served_name(served_model_name) in self._models
+
     async def reload_model(self, served_model_name: str) -> bool:
         """强制重启指定模型。"""
         await self.unload_model(served_model_name)

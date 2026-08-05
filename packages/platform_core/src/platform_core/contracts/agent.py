@@ -1,7 +1,7 @@
 """Main API、Agent Runtime 与独立子 Agent 共享的稳定契约。"""
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -35,6 +35,7 @@ class CreateAgentDefinitionRequest(BaseModel):
     enabled_capabilities: tuple[str, ...] = Field(min_length=1)
     models: dict[str, UUID]
     do_rerank: bool = False
+    data_query_mode: Literal["MCP", "SEMANTIC"] | None = None
     data_profile_name: str | None = Field(
         default=None, min_length=1, max_length=256
     )
@@ -52,6 +53,7 @@ class UpdateAgentDefinitionRequest(BaseModel):
     enabled_capabilities: tuple[str, ...] | None = None
     models: dict[str, UUID] | None = None
     do_rerank: bool | None = None
+    data_query_mode: Literal["MCP", "SEMANTIC"] | None = None
     data_profile_name: str | None = Field(
         default=None, min_length=1, max_length=256
     )
@@ -73,6 +75,7 @@ class AgentDefinition(BaseModel):
     enabled_capabilities: tuple[str, ...]
     models: dict[str, UUID]
     do_rerank: bool
+    data_query_mode: Literal["MCP", "SEMANTIC"] | None = None
     data_profile_name: str | None = None
     instruction: str | None = None
     config: dict[str, Any]

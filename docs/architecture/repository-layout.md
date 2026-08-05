@@ -1,10 +1,10 @@
 # 仓库结构
 
-KBot 使用服务型单仓库。五个服务共享一个 Oracle Schema，但源码、入口、依赖和
+KBot 使用服务型单仓库。各服务共享一个 Oracle Schema，但源码、入口、依赖和
 私有资源按可独立构建边界组织。
 
 ```text
-services/       可独立构建的 Main API、Agent Runtime、KC、AIOps、模型服务
+services/       可独立构建的 Main API、Agent Runtime、KC、AIOps、Data Query、模型服务
 packages/       platform_core 与 platform_clients 共享包
 database/       同一 Schema 下按所有者拆分的 Oracle DDL
 configuration/  唯一部署配置及说明
@@ -23,9 +23,9 @@ var/            本地日志、上传数据和生成物，Git 整体忽略
 bash scripts/deployment/install_workspace.sh
 ```
 
-当前部署直接使用完整源码树，不把服务构建为 Python 安装包。启动脚本统一注入
-各 `src` 目录；服务间调用仍只能经过稳定契约和客户端，不允许直接导入其他服务
-的 Entity、Repository 或应用服务。
+开发环境把各内部包以 editable package 安装，生产环境构建并安装 Wheel。启动脚本
+不注入源码路径；服务间调用仍只能经过稳定契约和客户端，不允许直接导入其他服务的
+Entity、Repository 或应用服务。
 
 `database/oracle/` 保持集中，是因为 4.0 使用同一 Schema 并需要统一初始化；
 目录内部仍按表所有者拆分，包括 Main API 的 Slack Inbox/Outbox。将来拆库时可直接

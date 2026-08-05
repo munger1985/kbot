@@ -22,6 +22,7 @@ from main_api.entities import PlatformDomainEntity  # noqa: E402
 from main_api.persistence import create_main_api_uow  # noqa: E402
 from model_serving.common.entities import AIModelEntity  # noqa: E402
 from model_serving.common.model_registry import ModelRegistryService  # noqa: E402
+from model_serving.persistence import create_model_serving_uow_factory  # noqa: E402
 from platform_core.config import get_settings  # noqa: E402
 from platform_core.database.oracle import create_database_runtime  # noqa: E402
 from platform_core.identity import uuid7  # noqa: E402
@@ -94,7 +95,9 @@ async def smoke() -> None:
             )
 
         model_service = ModelRegistryService(
-            session_factory=runtime.session_factory,
+            uow_factory=create_model_serving_uow_factory(
+                runtime.session_factory
+            ),
         )
         model = await model_service.create(
             {
@@ -102,13 +105,13 @@ async def smoke() -> None:
                 "display_name": "Oracle Smoke Embedding",
                 "provider_model_name": "oracle-smoke",
                 "category": 2,
-                "provider": "smoke",
-                "status": 1,
-                "embedding_dimension": settings.vector.dimensions,
+                "provider": "local_bge",
+                "status": "DRAFT",
                 "model_params": {
-                    "temperature": 0.2,
-                    "runtime": {"device": "cpu"},
-                    "features": ["json", "中文"],
+                    "embedding_dimension": settings.vector.dimensions,
+                    "model_path": "/tmp/kbot-oracle-smoke-model",
+                    "batch_size": 8,
+                    "normalize": True,
                 },
             },
             actor_id="oracle-smoke",
@@ -117,9 +120,10 @@ async def smoke() -> None:
         loaded_model = await model_service.get(model_id, category=2)
         assert loaded_model["served_model_name"] == model["served_model_name"]
         expected_model_params = {
-            "temperature": 0.2,
-            "runtime": {"device": "cpu"},
-            "features": ["json", "中文"],
+            "embedding_dimension": settings.vector.dimensions,
+            "model_path": "/tmp/kbot-oracle-smoke-model",
+            "batch_size": 8,
+            "normalize": True,
         }
         assert (
             loaded_model["model_params"] == expected_model_params

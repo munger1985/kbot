@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Header, HTTPException, Query, Request, Response
@@ -86,11 +87,13 @@ class CancelRunRequest(_RequestModel):
 
 
 class CreateAgentDefinitionRequest(_RequestModel):
+    agent_id: UUID | None = None
     display_name: str = Field(min_length=1, max_length=256)
     description: str | None = Field(default=None, max_length=1000)
     enabled_capabilities: tuple[str, ...] = Field(min_length=1)
     models: dict[str, UUID]
     do_rerank: bool = False
+    data_query_mode: Literal["MCP", "SEMANTIC"] | None = None
     data_profile_name: str | None = Field(
         default=None, min_length=1, max_length=256
     )
@@ -106,6 +109,7 @@ class UpdateAgentDefinitionRequest(_RequestModel):
     enabled_capabilities: tuple[str, ...] | None = None
     models: dict[str, UUID] | None = None
     do_rerank: bool | None = None
+    data_query_mode: Literal["MCP", "SEMANTIC"] | None = None
     data_profile_name: str | None = Field(
         default=None, min_length=1, max_length=256
     )
@@ -396,7 +400,7 @@ async def list_data_profiles(request: Request):
         raise HTTPException(
             status_code=503,
             detail={
-                "code": "MCP_DATA_UNAVAILABLE",
+                "code": "DATA_QUERY_MCP_PROVIDER_UNAVAILABLE",
                 "message": "问数服务未配置或暂不可用",
             },
         )
@@ -406,7 +410,7 @@ async def list_data_profiles(request: Request):
         raise HTTPException(
             status_code=503,
             detail={
-                "code": "MCP_DATA_UNAVAILABLE",
+                "code": "DATA_QUERY_MCP_PROVIDER_UNAVAILABLE",
                 "message": str(exc),
             },
         ) from exc
@@ -438,6 +442,21 @@ async def list_agent_definitions(
     return await _agent_service(request).list(
         domain_id=domain_id,
     )
+
+
+@agent_router.get("/model-references/{model_id}")
+async def list_agent_model_references(
+    model_id: UUID, request: Request,
+) -> dict[str, object]:
+    """只允许模型服务执行跨 Domain 引用检查。"""
+    context = request.state.auth_context
+    caller = context.calling_service or context.client_id
+    if not caller.startswith("kbot-model-"):
+        raise HTTPException(status_code=403, detail="调用方无权读取模型引用")
+    references = await _agent_service(request).list_model_references(
+        model_id=model_id
+    )
+    return {"model_id": str(model_id), "references": references}
 
 
 @agent_router.get(

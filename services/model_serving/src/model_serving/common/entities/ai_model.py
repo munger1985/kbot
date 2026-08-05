@@ -61,3 +61,7 @@ class AIModelEntity(BaseEntity):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(),
         comment="更新时间",
     )
+    row_version: Mapped[int] = mapped_column(
+        Numeric(19, 0), nullable=False, default=1, comment="并发控制版本",
+    )
+    __mapper_args__ = {"version_id_col": row_version}

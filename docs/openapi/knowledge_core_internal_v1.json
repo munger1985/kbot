@@ -64,6 +64,11 @@
       },
       "CollectionModelsRequest": {
         "properties": {
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          },
           "models": {
             "additionalProperties": {
               "format": "uuid",
@@ -74,7 +79,8 @@
           }
         },
         "required": [
-          "models"
+          "models",
+          "expected_row_version"
         ],
         "title": "CollectionModelsRequest",
         "type": "object"
@@ -143,6 +149,18 @@
       },
       "CreateCollectionRequest": {
         "properties": {
+          "collection_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Collection Id"
+          },
           "default_security_level": {
             "default": 1,
             "maximum": 999.0,
@@ -2032,6 +2050,57 @@
         ]
       }
     },
+    "/internal/v1/knowledge/domains/{domain_id}/collections/{collection_id}/bindings": {
+      "get": {
+        "description": "返回停用、归档与删除前检查所需的反向引用。",
+        "operationId": "list_collection_bindings_internal_v1_knowledge_domains__domain_id__collections__collection_id__bindings_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "title": "Domain Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "collection_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Collection Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Collection Bindings",
+        "tags": [
+          "Knowledge Core Collections"
+        ]
+      }
+    },
     "/internal/v1/knowledge/domains/{domain_id}/collections/{collection_id}/bundle-revisions/{bundle_revision_id}/approval": {
       "post": {
         "operationId": "review_user_intake_internal_v1_knowledge_domains__domain_id__collections__collection_id__bundle_revisions__bundle_revision_id__approval_post",
@@ -2099,6 +2168,156 @@
         "summary": "Review User Intake",
         "tags": [
           "Knowledge Core"
+        ]
+      }
+    },
+    "/internal/v1/knowledge/domains/{domain_id}/collections/{collection_id}/bundles/{bundle_id}/revisions/{bundle_revision_id}/documents/{document_version_id}/content": {
+      "get": {
+        "operationId": "preview_source_file_internal_v1_knowledge_domains__domain_id__collections__collection_id__bundles__bundle_id__revisions__bundle_revision_id__documents__document_version_id__content_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "title": "Domain Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "collection_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Collection Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "bundle_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Bundle Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "bundle_revision_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Bundle Revision Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "document_version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Document Version Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview Source File",
+        "tags": [
+          "Knowledge Core Preview"
+        ]
+      }
+    },
+    "/internal/v1/knowledge/domains/{domain_id}/collections/{collection_id}/bundles/{bundle_id}/revisions/{bundle_revision_id}/preview": {
+      "get": {
+        "operationId": "preview_bundle_revision_internal_v1_knowledge_domains__domain_id__collections__collection_id__bundles__bundle_id__revisions__bundle_revision_id__preview_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "title": "Domain Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "collection_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Collection Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "bundle_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Bundle Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "bundle_revision_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Bundle Revision Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview Bundle Revision",
+        "tags": [
+          "Knowledge Core Preview"
         ]
       }
     },
@@ -2414,6 +2633,51 @@
         "summary": "Run Index Task",
         "tags": [
           "Knowledge Core Index"
+        ]
+      }
+    },
+    "/internal/v1/knowledge/model-references/{model_id}": {
+      "get": {
+        "operationId": "list_model_references_internal_v1_knowledge_model_references__model_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "model_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Model Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Model References Internal V1 Knowledge Model References  Model Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Model References",
+        "tags": [
+          "Knowledge Core Model References"
         ]
       }
     },

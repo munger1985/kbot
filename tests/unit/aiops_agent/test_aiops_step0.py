@@ -66,7 +66,10 @@ class AIOpsContractTest(unittest.TestCase):
                 "port": 1521,
                 "service": "ERP",
             },
-            "diagnostic_secret_ref": "vault://kbot/erp/readonly",
+            "diagnostic_credential": {
+                "username": "readonly",
+                "password": "secret",
+            },
             "security_level": 3,
         }
         TargetCreate.model_validate(payload)

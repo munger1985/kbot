@@ -18,7 +18,12 @@ class RepositoryScriptLayoutTest(unittest.TestCase):
         self.assertEqual(
             {
                 "db/apply_oracle_schema.py",
+                "db/apply_notification_schema.py",
+                "db/apply_composition_schema.py",
+                "db/repair_agent_data_query_mode.py",
+                "db/repair_model_serving_s4.py",
                 "deployment/check_deployment.py",
+                "deployment/init_local_env.py",
                 "deployment/models/download_colqwen_model.py",
                 "deployment/models/download_easyocr_model.py",
                 "deployment/models/download_qwen_model.py",
@@ -37,34 +42,26 @@ class RepositoryScriptLayoutTest(unittest.TestCase):
             (ROOT / "database" / "oracle" / "init_services.ini").exists()
         )
 
-    def test_workspace_install_only_installs_third_party_dependencies(self):
+    def test_workspace_installer_uses_package_boundaries(self):
         installer = (
             SCRIPTS_ROOT / "deployment" / "install_workspace.sh"
         ).read_text(encoding="utf-8")
 
-        self.assertIn("pip install -r requirements.txt", installer)
-        self.assertNotIn("pip install --no-deps", installer)
-        self.assertNotIn(" -e ", installer)
+        self.assertIn('-m pip install -r requirements.txt', installer)
+        self.assertIn('-m pip install --no-deps -e "$member"', installer)
+        self.assertIn('-m pip wheel --no-deps', installer)
+        self.assertIn('check_workspace_packages.py', installer)
 
-    def test_operational_python_scripts_bootstrap_src_layout(self):
-        expected_source_roots = {
-            "db/apply_oracle_schema.py": (
-                '"packages" / "platform_core" / "src"',
-            ),
-            "deployment/check_deployment.py": (
-                '"packages" / "platform_core" / "src"',
-                '"packages" / "platform_clients" / "src"',
-                '"services" / "main_api" / "src"',
-            ),
-            "security/generate_portal_api_key.py": (
-                '"packages" / "platform_core" / "src"',
-            ),
-        }
+    def test_operational_python_scripts_do_not_modify_import_path(self):
+        scripts = (
+            "db/apply_oracle_schema.py",
+            "deployment/check_deployment.py",
+            "security/generate_portal_api_key.py",
+        )
 
-        for relative_path, source_roots in expected_source_roots.items():
+        for relative_path in scripts:
             content = (SCRIPTS_ROOT / relative_path).read_text(encoding="utf-8")
-            for source_root in source_roots:
-                self.assertIn(source_root, content)
+            self.assertNotIn("sys.path", content)
 
     def test_explicit_test_tools_live_under_tests(self):
         expected = (

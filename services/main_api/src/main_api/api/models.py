@@ -24,7 +24,7 @@ class ModelCatalogItem(BaseModel):
     display_name: str
     category: int
     provider: str
-    status: int
+    status: str
     model_params: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -60,7 +60,7 @@ async def list_model_catalog(request: Request) -> list[dict[str, Any]]:
         row
         for batch in batches
         for row in batch
-        if int(row.get("status") or 0) == 1
+        if row.get("status") == "ACTIVE"
     ]
     rows.sort(
         key=lambda row: (

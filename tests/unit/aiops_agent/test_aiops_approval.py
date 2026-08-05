@@ -112,7 +112,8 @@ class ApprovalServiceTest(unittest.TestCase):
         target = SimpleNamespace(
             target_id=target_id,
             status="ACTIVE",
-            execution_secret_ref="env://ORACLE_EXECUTION_SECRET",
+            domain_id=200,
+            execution_credential_id=uuid7(),
             row_version=3,
             db_type="ORACLE",
             version_code="19.0.0",
@@ -290,7 +291,8 @@ class ExecutionClaimTest(unittest.TestCase):
         target = SimpleNamespace(
             target_id=target_id,
             status="ACTIVE",
-            execution_secret_ref="env://MYSQL_EXECUTION_SECRET",
+            domain_id=200,
+            execution_credential_id=uuid7(),
             row_version=7,
             db_type="MYSQL",
             version_code="8.0.36",
@@ -379,8 +381,8 @@ class ExecutionClaimTest(unittest.TestCase):
         self.assertEqual(decoded.execution_id, execution_id)
         self.assertEqual(decoded.max_database_attempts, 1)
         self.assertEqual(
-            decoded.execution_secret_ref,
-            "env://MYSQL_EXECUTION_SECRET",
+            decoded.execution_credential_id,
+            target.execution_credential_id,
         )
         second = asyncio.run(
             service.claim_execution(

@@ -3,12 +3,13 @@ from collections.abc import Callable
 
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from platform_core.notifications import NotificationOutboxRepository
 
 from knowledge_core.ports.job_wakeup import (
     JobWakeupPublisher,
     wakeup_channel_for_job,
 )
-from knowledge_core.repositories import BundleRepository, BundleRevisionDocumentRepository, BundleRevisionRepository, CollectionBindingRepository, CollectionRepository, DiscoveryRepository, DocumentRepository, DocumentVersionRepository, EvidenceRepository, IngestionJobRepository, IngestionReceiptRepository, ParseViewRepository, RelationRepository, VisualAssetRepository
+from knowledge_core.repositories import BundleRepository, BundleRevisionDocumentRepository, BundleRevisionRepository, CollectionBindingRepository, CollectionPurgeRepository, CollectionRepository, DiscoveryRepository, DocumentRepository, DocumentVersionRepository, EvidenceRepository, IngestionJobRepository, IngestionReceiptRepository, ModelReferenceRepository, ParseViewRepository, RelationRepository, VisualAssetRepository
 
 
 class KnowledgeCoreUnitOfWork:
@@ -41,6 +42,9 @@ class KnowledgeCoreUnitOfWork:
         self.discovery: DiscoveryRepository | None = None
         self.relations: RelationRepository | None = None
         self.visual_assets: VisualAssetRepository | None = None
+        self.model_references: ModelReferenceRepository | None = None
+        self.collection_purge: CollectionPurgeRepository | None = None
+        self.notification_outbox: NotificationOutboxRepository | None = None
         self._committed = False
 
     async def __aenter__(self) -> "KnowledgeCoreUnitOfWork":
@@ -62,6 +66,9 @@ class KnowledgeCoreUnitOfWork:
         self.discovery = DiscoveryRepository(self.session)
         self.relations = RelationRepository(self.session)
         self.visual_assets = VisualAssetRepository(self.session)
+        self.model_references = ModelReferenceRepository(self.session)
+        self.collection_purge = CollectionPurgeRepository(self.session)
+        self.notification_outbox = NotificationOutboxRepository(self.session)
         return self
 
     async def commit(self) -> None:
@@ -96,6 +103,11 @@ class KnowledgeCoreUnitOfWork:
         if self.session is not None:
             await self.session.rollback()
 
+    async def flush(self) -> None:
+        if self.session is None:
+            raise RuntimeError("KnowledgeCoreUnitOfWork 尚未进入上下文")
+        await self.session.flush()
+
     async def __aexit__(self, exc_type, exc, traceback) -> None:
         if self.session is None:
             return
@@ -119,6 +131,9 @@ class KnowledgeCoreUnitOfWork:
             self.discovery = None
             self.relations = None
             self.visual_assets = None
+            self.model_references = None
+            self.collection_purge = None
+            self.notification_outbox = None
             self._pending_wakeup_channels.clear()
 
 

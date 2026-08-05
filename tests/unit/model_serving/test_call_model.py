@@ -1,16 +1,19 @@
-import sys
 import asyncio
+import os
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
+import pytest
+
+pytestmark = pytest.mark.skipif(
+    os.getenv("KBOT_RUN_MODEL_SMOKE") != "1",
+    reason="需要已启动并配置真实模型的四类推理服务",
+)
 
 # 加载 .env 文件（必须在导入任何使用配置的模块之前）
 from dotenv import load_dotenv
 env_path = Path(__file__).resolve().parent.parent / ".env"
 load_dotenv(env_path)
 
-# Add both project root and backend directory to Python path
-project_root = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(project_root))
 from platform_clients.model import AIModelClient
 from model_serving.config import get_model_serving_settings
 

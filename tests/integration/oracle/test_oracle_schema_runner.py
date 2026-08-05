@@ -43,7 +43,7 @@ class OracleSchemaRunnerTest(unittest.TestCase):
         sql = "\n".join(
             statement.sql for statement in load_schema_statements()
         )
-        self.assertEqual(71, sql.count(" JSON"))
+        self.assertEqual(95, sql.count(" JSON"))
         self.assertNotRegex(sql, r"\b[A-Z0-9_]+_JSON\s+CLOB\b")
         self.assertNotIn(" IS JSON", sql)
 

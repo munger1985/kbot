@@ -15,6 +15,13 @@ SERVICE_TABLES = {
         "KBOT_PLATFORM_DOMAIN",
         "KBOT_PLATFORM_PROMPT",
         "KBOT_PLATFORM_PROMPT_VERSION",
+        "KBOT_NOTIFICATION_OUTBOX",
+        "KBOT_NOTIFICATION_INBOX",
+        "KBOT_NOTIFICATION_PREF",
+        "KBOT_WORK_ITEM",
+        "KBOT_BACKGROUND_OPERATION",
+        "KBOT_OPERATION_WATCH",
+        "KBOT_COMPOSITION_RECEIPT",
     },
     "main_api": {
         "KBOT_MAIN_SLACK_INBOX",
@@ -54,6 +61,23 @@ SERVICE_TABLES = {
         "KBOT_AGENT_MEMORY_SOURCE",
         "KBOT_AGENT_MEMORY_JOB",
     },
+    "data_query": {
+        "KBOT_DQ_CREDENTIAL",
+        "KBOT_DQ_DATA_SOURCE",
+        "KBOT_DQ_SCHEMA_SNAPSHOT",
+        "KBOT_DQ_SNAPSHOT_OBJECT",
+        "KBOT_DQ_SEMANTIC_MODEL",
+        "KBOT_DQ_MODEL_VERSION",
+        "KBOT_DQ_MODEL_GEN_JOB",
+        "KBOT_DQ_POLICY",
+        "KBOT_DQ_AGENT_BINDING",
+        "KBOT_DQ_VERIFIED_QUERY",
+        "KBOT_DQ_RUN",
+        "KBOT_DQ_EXECUTION",
+        "KBOT_DQ_RESULT",
+        "KBOT_DQ_EVENT",
+        "KBOT_DQ_AUDIT",
+    },
     "aiops_agent": {
         "KBOT_OPS_CREDENTIAL",
         "KBOT_OPS_TARGET",
@@ -85,6 +109,11 @@ SERVICE_VIEWS = {
     "model_serving": set(),
     "knowledge_core": set(),
     "agent_runtime": set(),
+    "data_query": {
+        "KBOT_V_DQ_SOURCE",
+        "KBOT_V_DQ_RUN",
+        "KBOT_V_DQ_SCHEMA_VERSION",
+    },
     "aiops_agent": {
         "KBOT_V_OPS_TARGET",
         "KBOT_V_OPS_MONITOR_SOURCE",
@@ -177,6 +206,31 @@ AIOPS_UUID_COLUMNS = (
     "INBOX_ID",
     "OUTBOX_ID",
 )
+DATA_QUERY_UUID_COLUMNS = (
+    "CREDENTIAL_ID",
+    "DATA_SOURCE_ID",
+    "SCHEMA_SNAPSHOT_ID",
+    "SCHEMA_SNAPSHOT_OBJECT_ID",
+    "SEMANTIC_MODEL_ID",
+    "SEMANTIC_MODEL_VERSION_ID",
+    "GENERATION_JOB_ID",
+    "POLICY_BINDING_ID",
+    "AGENT_BINDING_ID",
+    "VERIFIED_QUERY_ID",
+    "DATA_QUERY_RUN_ID",
+    "DATA_QUERY_EXECUTION_ID",
+    "DATA_QUERY_RESULT_ID",
+)
+NOTIFICATION_UUID_COLUMNS = (
+    "OUTBOX_ID",
+    "INBOX_ID",
+    "OPERATION_ID",
+    "WORK_ITEM_ID",
+    "OPENED_OUTBOX_ID",
+    "RESOLVED_OUTBOX_ID",
+    "LAST_OUTBOX_ID",
+)
+COMPOSITION_UUID_COLUMNS = ("RECEIPT_ID",)
 
 
 def _ordered_scripts(service_dir: Path, errors: list[str]) -> list[Path]:
@@ -280,6 +334,17 @@ def main() -> int:
     if not re.search(r"\bMODEL_ID\s+RAW\s*\(\s*16\s*\)", model_sql):
         errors.append("Model Serving 的 MODEL_ID 必须为 UUIDv7 RAW(16)")
 
+    platform_sql = service_sql.get("platform_core", "")
+    for column in NOTIFICATION_UUID_COLUMNS:
+        if not re.search(rf"\b{column}\s+RAW\s*\(\s*16\s*\)", platform_sql):
+            errors.append(f"Notification 的 {column} 必须至少声明一次为 UUIDv7 RAW(16)")
+    for column in COMPOSITION_UUID_COLUMNS:
+        if not re.search(rf"\b{column}\s+RAW\s*\(\s*16\s*\)", platform_sql):
+            errors.append(f"Composition 的 {column} 必须为 UUIDv7 RAW(16)")
+    for forbidden in ("TENANT_ID", "ROLE_ID", "PERMISSION_ID", "USER_ID"):
+        if re.search(rf"\b{forbidden}\b", platform_sql):
+            errors.append(f"Platform Core 通知禁止依赖 {forbidden}")
+
     agent_sql = service_sql.get("agent_runtime", "")
     for column in AGENT_UUID_COLUMNS:
         if not re.search(rf"\b{column}\s+RAW\s*\(\s*16\s*\)", agent_sql):
@@ -295,6 +360,23 @@ def main() -> int:
         agent_sql,
     ):
         errors.append("Agent Runtime 缺少 Delegation 子运行条件唯一索引")
+
+    data_query_sql = service_sql.get("data_query", "")
+    for column in DATA_QUERY_UUID_COLUMNS:
+        if not re.search(rf"\b{column}\s+RAW\s*\(\s*16\s*\)", data_query_sql):
+            errors.append(f"Data Query 的 {column} 必须至少声明一次为 UUIDv7 RAW(16)")
+        if re.search(rf"\b{column}\s+NUMBER\s*\(", data_query_sql):
+            errors.append(f"Data Query 的 {column} 禁止声明为 NUMBER")
+    for index_name in ("UX_DQ_MODEL_ACTIVE", "UX_DQ_BINDING_ACTIVE", "UX_DQ_EVENT_KEY"):
+        if not re.search(
+            rf"\bCREATE\s+UNIQUE\s+INDEX\s+{index_name}\b",
+            data_query_sql,
+        ):
+            errors.append(f"Data Query 缺少函数唯一索引：{index_name}")
+    if "SUBJECT_SELECTOR" in data_query_sql or "ROLE_ID" in data_query_sql:
+        errors.append("Data Query 禁止引入 User/Role 策略选择器")
+    if "SECRET_REF" in data_query_sql:
+        errors.append("Data Query 禁止保存外部 SecretRef")
 
     aiops_sql = service_sql.get("aiops_agent", "")
     for column in AIOPS_UUID_COLUMNS:
@@ -333,29 +415,34 @@ def main() -> int:
         if forbidden_projection in aiops_sql:
             errors.append("AIOps APEX 视图暴露了受保护字段")
 
-    manifest_path = SCHEMA_ROOT / "aiops_agent" / "schema_manifest.json"
-    try:
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        errors.append(f"AIOps Schema Manifest 无法读取：{exc}")
-    else:
-        if set(manifest.get("tables", ())) != SERVICE_TABLES["aiops_agent"]:
-            errors.append("AIOps Schema Manifest 表清单与 DDL 登记不一致")
-        if set(manifest.get("views", ())) != SERVICE_VIEWS["aiops_agent"]:
-            errors.append("AIOps Schema Manifest 视图清单与 DDL 登记不一致")
+    for manifest_service, display_name in (
+        ("platform_core", "Platform Core"),
+        ("data_query", "Data Query"),
+        ("aiops_agent", "AIOps"),
+    ):
+        manifest_path = SCHEMA_ROOT / manifest_service / "schema_manifest.json"
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            errors.append(f"{display_name} Schema Manifest 无法读取：{exc}")
+            continue
+        if set(manifest.get("tables", ())) != SERVICE_TABLES[manifest_service]:
+            errors.append(f"{display_name} Schema Manifest 表清单与 DDL 登记不一致")
+        if set(manifest.get("views", ())) != SERVICE_VIEWS[manifest_service]:
+            errors.append(f"{display_name} Schema Manifest 视图清单与 DDL 登记不一致")
         manifest_scripts = manifest.get("scripts", ())
         actual_scripts = sorted(
-            (SCHEMA_ROOT / "aiops_agent").glob("[0-9][0-9][0-9]_*.sql")
+            (SCHEMA_ROOT / manifest_service).glob("[0-9][0-9][0-9]_*.sql")
         )
         if [item.get("name") for item in manifest_scripts] != [
             path.name for path in actual_scripts
         ]:
-            errors.append("AIOps Schema Manifest 脚本顺序不一致")
+            errors.append(f"{display_name} Schema Manifest 脚本顺序不一致")
         else:
             for item, path in zip(manifest_scripts, actual_scripts):
                 digest = hashlib.sha256(path.read_bytes()).hexdigest()
                 if item.get("sha256") != digest:
-                    errors.append(f"AIOps Schema Manifest Hash 失配：{path.name}")
+                    errors.append(f"{display_name} Schema Manifest Hash 失配：{path.name}")
 
     if errors:
         print("Oracle 全量建库脚本检查失败：")

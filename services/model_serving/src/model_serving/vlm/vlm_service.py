@@ -52,6 +52,9 @@ class VLMService:
         if self._initialized:
             await self._model_pool.unload_model(served_model_name)
 
+    def is_model_loaded(self, served_model_name: str) -> bool:
+        return self._model_pool.is_model_loaded(served_model_name)
+
     async def get_vlm_model(self, served_model_name: str) -> BaseVLM:
         """Retrieve VLM model instance by unique model name
 

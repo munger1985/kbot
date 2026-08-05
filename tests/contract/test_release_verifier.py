@@ -22,6 +22,7 @@ class ReleaseVerifierTest(unittest.TestCase):
             manifest,
         )
         self.assertIn("docs/openapi/aiops_internal_v1.json", manifest)
+        self.assertIn("docs/openapi/data_query_internal_v1.json", manifest)
         self.assertIn("docs/openapi/main_api_public_v1.json", manifest)
         self.assertIn(
             "docs/openapi/knowledge_core_internal_v1.json",
@@ -38,10 +39,21 @@ class ReleaseVerifierTest(unittest.TestCase):
             "services/knowledge_core/src/knowledge_core",
             "services/agent_runtime/src/agent_runtime",
             "services/aiops_agent/src/aiops_agent",
+            "services/data_query/src/data_query",
             "services/main_api/src/main_api",
             "services/model_serving/src/model_serving",
         ):
             self.assertIn(package, ACTIVE_PACKAGES)
+
+    def test_component_contract_uses_pytest_for_async_test_discovery(self):
+        command = next(
+            command
+            for name, command, _ in _checks(include_oracle=False)
+            if name == "unit_component_contract"
+        )
+        self.assertEqual("pytest", command[2])
+        self.assertIn("tests/unit", command)
+        self.assertIn("tests/contract", command)
 
     def test_oracle_profile_has_preflight_catalog_checks(self):
         names = {
@@ -55,6 +67,23 @@ class ReleaseVerifierTest(unittest.TestCase):
         self.assertIn("oracle_cross_service_uow", names)
         self.assertIn("oracle_aiops_persistence", names)
         self.assertIn("oracle_aiops_runtime", names)
+        self.assertIn("oracle_data_query_runtime", names)
+        self.assertIn("oracle_agent_memory", names)
+        self.assertIn("oracle_knowledge_core_s3", names)
+        self.assertIn("oracle_model_serving_s4", names)
+        self.assertIn("oracle_notifications_s6", names)
+        self.assertIn("oracle_composition_s7", names)
+
+    def test_external_database_smoke_is_explicitly_enabled(self):
+        names = {
+            name
+            for name, _, _ in _checks(
+                include_oracle=False,
+                include_external_databases=True,
+            )
+        }
+
+        self.assertIn("data_query_external_databases", names)
 
     def test_prometheus_check_is_explicitly_enabled(self):
         names = {

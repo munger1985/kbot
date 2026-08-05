@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kbot-aiops-agent"
+version = "4.0.0"
+description = "KBot 数据库监控、诊断、巡检与变更 Agent"
+requires-python = ">=3.10"
+dependencies = [
+  "aiohttp==3.13.3",
+  "aiomysql==0.3.2",
+  "fastapi==0.128.0",
+  "fastapi-offline==1.7.6",
+  "kbot-platform-clients==4.0.0",
+  "kbot-platform-core==4.0.0",
+  "oracledb==3.4.2",
+  "pydantic==2.12.5",
+  "python-jose==3.5.0",
+  "SQLAlchemy==2.0.46",
+  "uvicorn==0.49.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["aiops_agent*"]
+
+[tool.setuptools.package-data]
+aiops_agent = [
+  "diagnostics/catalog/**/*.json",
+  "resources/**/*.json",
+]

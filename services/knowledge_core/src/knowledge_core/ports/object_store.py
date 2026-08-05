@@ -2,6 +2,7 @@
 from uuid import UUID
 from dataclasses import dataclass
 from pathlib import Path
+from collections.abc import AsyncIterator
 from typing import Protocol
 
 
@@ -24,3 +25,14 @@ class KnowledgeObjectStore(Protocol):
     ) -> StoredObject: ...
 
     async def delete(self, uri: str) -> None: ...
+
+    async def size(self, uri: str) -> int: ...
+
+    def stream(
+        self,
+        uri: str,
+        *,
+        offset: int = 0,
+        length: int | None = None,
+        chunk_size: int = 1024 * 1024,
+    ) -> AsyncIterator[bytes]: ...

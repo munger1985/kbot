@@ -8,7 +8,7 @@ from platform_core.contracts import INTERNAL_API_V1
 from platform_core.security import get_actor_id, require_domain_match
 from knowledge_core.application.collections import (
     BindAgentCollectionCommand, ChangeCollectionStatusCommand,
-    CollectionDeletionStateError, CollectionInUseError, CollectionNotFoundError, CreateCollectionCommand,
+    CollectionDeletionStateError, CollectionInUseError, CollectionNotFoundError, CollectionVersionConflictError, CreateCollectionCommand,
     UpdateCollectionModelsCommand,
 )
 
@@ -19,6 +19,7 @@ router = APIRouter(
 
 
 class CreateCollectionRequest(BaseModel):
+    collection_id: UUID | None = None
     display_name: str = Field(min_length=1, max_length=256)
     models: dict[str, UUID]
     description: str | None = Field(default=None, max_length=1000)
@@ -36,6 +37,7 @@ class CollectionStatusRequest(BaseModel):
 
 class CollectionModelsRequest(BaseModel):
     models: dict[str, UUID]
+    expected_row_version: int = Field(ge=1)
 
 
 def _collection(entity) -> dict:
@@ -46,6 +48,8 @@ def _collection(entity) -> dict:
         "status": entity.status,
         "default_security_level": int(entity.default_security_level),
         "metadata": entity.metadata_json or {},
+        "row_version": int(entity.row_version),
+        "updated_at": entity.updated_at,
     }
 
 
@@ -60,6 +64,7 @@ async def create_collection(domain_id: int, payload: CreateCollectionRequest, re
             models=payload.models,
             description=payload.description, default_security_level=payload.default_security_level,
             metadata=payload.metadata, actor_id=actor,
+            collection_id=payload.collection_id,
         ))
     except ValueError as exc:
         raise HTTPException(status_code=422, detail={"code": "INVALID_COLLECTION", "message": str(exc)}) from exc
@@ -113,6 +118,7 @@ async def update_collection_models(
                 collection_id=collection_id,
                 models=payload.models,
                 actor_id=get_actor_id(request),
+                expected_row_version=payload.expected_row_version,
             )
         )
     except CollectionNotFoundError as exc:
@@ -124,6 +130,11 @@ async def update_collection_models(
         raise HTTPException(
             status_code=422,
             detail={"code": "INVALID_COLLECTION_MODELS", "message": str(exc)},
+        ) from exc
+    except CollectionVersionConflictError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "COLLECTION_VERSION_CONFLICT", "message": str(exc)},
         ) from exc
     return _collection(entity)
 
@@ -187,4 +198,29 @@ async def list_agent_bindings(domain_id: int, agent_id: UUID, request: Request):
         "binding_id": binding.binding_id, "collection_id": binding.collection_id,
         "consumer_type": binding.consumer_type, "consumer_id": binding.consumer_id,
         "status": binding.status, "note": binding.note,
+    } for binding in bindings]}
+
+
+@router.get("/collections/{collection_id}/bindings")
+async def list_collection_bindings(
+    domain_id: int, collection_id: UUID, request: Request,
+):
+    """返回停用、归档与删除前检查所需的反向引用。"""
+    require_domain_match(request, domain_id)
+    try:
+        bindings = await request.app.state.kc_binding_service.list_collection(
+            domain_id=domain_id, collection_id=collection_id,
+        )
+    except CollectionNotFoundError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "COLLECTION_NOT_FOUND", "message": str(exc)},
+        ) from exc
+    return {"bindings": [{
+        "binding_id": binding.binding_id,
+        "collection_id": binding.collection_id,
+        "consumer_type": binding.consumer_type,
+        "consumer_id": binding.consumer_id,
+        "status": binding.status,
+        "note": binding.note,
     } for binding in bindings]}

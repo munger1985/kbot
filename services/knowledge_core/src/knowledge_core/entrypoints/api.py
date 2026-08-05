@@ -31,6 +31,9 @@ from knowledge_core.adapters.oracle_job_wakeup import (
 from knowledge_core.adapters.embedding import AIModelEmbeddingGateway, resolve_embedding_model
 from knowledge_core.api.intake_router import router as intake_router
 from knowledge_core.api.collection_router import router as collection_router
+from knowledge_core.api.model_reference_router import (
+    router as model_reference_router,
+)
 from knowledge_core.api.index_task_router import router as index_task_router
 from knowledge_core.api.profile_task_router import router as profile_task_router
 from knowledge_core.api.discovery_router import router as discovery_router
@@ -38,6 +41,7 @@ from knowledge_core.api.evidence_router import router as evidence_router
 from knowledge_core.api.visual_router import router as visual_router
 from knowledge_core.api.parse_task_router import router as parse_task_router
 from knowledge_core.api.status_router import router as status_router
+from knowledge_core.api.preview_router import router as preview_router
 from knowledge_core.api.purge_task_router import router as purge_task_router
 from knowledge_core.api.projection_task_router import (
     router as projection_task_router,
@@ -55,8 +59,13 @@ from knowledge_core.application.llm_reranking import (
 )
 from knowledge_core.application.query_embeddings import CollectionQueryEmbeddingProvider
 from knowledge_core.application.status import KnowledgeCoreStatusService
+from knowledge_core.application.preview import KnowledgeCorePreviewService
+from knowledge_core.application.model_references import (
+    KnowledgeCoreModelReferenceService,
+)
 from knowledge_core.application.scope import KnowledgeCoreScopeService
 from knowledge_core.application.collection_purge import KnowledgeCoreCollectionPurgeService
+from knowledge_core.application.notifications import KnowledgeOutboxPublisher
 from knowledge_core.application.projection_tasks import (
     KnowledgeCoreProjectionTaskService,
 )
@@ -127,11 +136,12 @@ async def lifespan(app: FastAPI):
         },
     )
     app.state.kc_intake_service = intake_service
+    app.state.kc_object_store = LocalKnowledgeObjectStore(
+        Path(settings.storage.local_object_storage_path)
+    )
     app.state.kc_multipart_orchestrator = KnowledgeCoreMultipartOrchestrator(
         intake_service=intake_service,
-        object_store=LocalKnowledgeObjectStore(
-            Path(settings.storage.local_object_storage_path)
-        ),
+        object_store=app.state.kc_object_store,
     )
     app.state.kc_parse_task_service = KnowledgeCoreParseTaskService(
         uow_factory=kc_uow_factory,
@@ -239,6 +249,12 @@ async def lifespan(app: FastAPI):
     app.state.kc_status_service = KnowledgeCoreStatusService(
         uow_factory=kc_uow_factory,
     )
+    app.state.kc_preview_service = KnowledgeCorePreviewService(
+        uow_factory=kc_uow_factory,
+    )
+    app.state.kc_model_reference_service = (
+        KnowledgeCoreModelReferenceService(uow_factory=kc_uow_factory)
+    )
     app.state.kc_scope_service = KnowledgeCoreScopeService(
         uow_factory=kc_uow_factory,
     )
@@ -249,7 +265,11 @@ async def lifespan(app: FastAPI):
     app.state.kc_binding_service = KnowledgeCoreBindingService(
         uow_factory=kc_uow_factory,
     )
-    app.state.kc_purge_service = KnowledgeCoreCollectionPurgeService(uow_factory=kc_uow_factory)
+    app.state.kc_purge_service = KnowledgeCoreCollectionPurgeService(
+        uow_factory=kc_uow_factory,
+        object_store=app.state.kc_object_store,
+        notification_publisher=KnowledgeOutboxPublisher(),
+    )
     logger.info("正在启动服务 [{}]，进程号={}", SERVICE_NAME, os.getpid())
     try:
         yield
@@ -279,6 +299,7 @@ app.middleware("http")(
 )
 app.include_router(intake_router)
 app.include_router(collection_router)
+app.include_router(model_reference_router)
 app.include_router(index_task_router)
 app.include_router(profile_task_router)
 app.include_router(discovery_router)
@@ -286,6 +307,7 @@ app.include_router(evidence_router)
 app.include_router(visual_router)
 app.include_router(parse_task_router)
 app.include_router(status_router)
+app.include_router(preview_router)
 app.include_router(purge_task_router)
 app.include_router(projection_task_router)
 

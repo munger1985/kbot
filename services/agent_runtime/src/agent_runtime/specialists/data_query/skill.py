@@ -1,0 +1,236 @@
+"""由冻结 Agent 配置选择 MCP 或语义问数 Provider。"""
+
+from __future__ import annotations
+
+import asyncio
+import hashlib
+import json
+from datetime import UTC, datetime
+from uuid import UUID
+
+from agent_runtime.domain.model_bindings import agent_model_name
+from agent_runtime.runtime import ExecutionContext, SkillArtifact, SkillProgress, SkillResult
+from platform_core.contracts import AuthContext
+from platform_core.contracts.data_query import DataQueryPlanV1
+from platform_core.identity import uuid7
+
+from .contracts import QueryResult
+
+
+class MCPDataQueryExecutor:
+    def __init__(self, *, client) -> None:
+        self._client = client
+
+    async def execute(self, *, context: ExecutionContext, question: str) -> QueryResult:
+        if self._client is None:
+            raise RuntimeError("DATA_QUERY_MCP_PROVIDER_UNAVAILABLE")
+        profile = str(
+            context.config_snapshot.get("agent", {}).get("data_profile_name") or ""
+        ).strip()
+        if not profile:
+            raise ValueError("MCP 问数模式未配置 data_profile_name")
+        result = await self._client.query(
+            profile=profile,
+            user=context.actor_id,
+            question=question,
+        )
+        raw_rows = result.get("rows")
+        if not isinstance(raw_rows, list) or any(not isinstance(item, dict) for item in raw_rows):
+            raise ValueError("MCP 问数服务返回的结果行不是对象")
+        rows = tuple(dict(item) for item in raw_rows)
+        columns = tuple({"name": str(name)} for name in (rows[0].keys() if rows else ()))
+        truncated = bool(result.get("truncated"))
+        warnings = ("问数结果超过行数上限，已截断",) if truncated else ()
+        return QueryResult(
+            query_result_id=uuid7(),
+            provider="MCP",
+            columns=columns,
+            rows=rows,
+            row_count=len(rows),
+            truncated=truncated,
+            warnings=warnings,
+            provenance={
+                "profile": profile,
+                "external_request_id": result.get("external_request_id"),
+            },
+        )
+
+
+class SemanticDataQueryExecutor:
+    def __init__(self, *, client, model_client, prompt_resolver) -> None:
+        self._client = client
+        self._model_client = model_client
+        self._prompt_resolver = prompt_resolver
+
+    async def execute(self, *, context: ExecutionContext, question: str) -> QueryResult:
+        if self._client is None:
+            raise RuntimeError("SEMANTIC_DATA_QUERY_UNAVAILABLE")
+        auth_context = self._auth_context(context)
+        planning = await self._client.get_planning_context(
+            agent_id=context.agent_id,
+            auth_context=auth_context,
+        )
+        models = planning.get("models") if isinstance(planning, dict) else None
+        if not isinstance(models, list) or not models:
+            raise RuntimeError("SEMANTIC_DATA_QUERY_NOT_CONFIGURED")
+        plan = await self._create_plan(context=context, question=question, models=models)
+        receipt = await self._client.create_run(
+            payload={
+                "idempotency_key": f"{context.run_id}:{context.task_id}",
+                "original_question": context.original_input,
+                "standalone_query": question,
+                "plan": plan.model_dump(mode="json"),
+                "agent_id": str(context.agent_id),
+                "parent_agent_run_id": str(context.run_id),
+                "parent_agent_task_id": str(context.task_id),
+                "deadline_at": (
+                    context.deadline_at.isoformat()
+                    if context.deadline_at is not None
+                    else None
+                ),
+            },
+            auth_context=auth_context,
+        )
+        run_id = UUID(str(receipt.get("data_query_run_id")))
+        result = await self._wait_result(
+            run_id=run_id,
+            auth_context=auth_context,
+            deadline_at=context.deadline_at,
+        )
+        raw_rows = result.get("preview_rows")
+        if not isinstance(raw_rows, list) or any(not isinstance(item, dict) for item in raw_rows):
+            raise RuntimeError("SEMANTIC_DATA_QUERY_INVALID_RESULT")
+        truncated = bool(result.get("truncated"))
+        warnings = ("问数结果超过策略上限，已截断",) if truncated else ()
+        provenance = dict(result.get("provenance") or {})
+        provenance["data_query_run_id"] = str(run_id)
+        provenance.setdefault("query_plan_hash", self._plan_hash(plan))
+        return QueryResult(
+            query_result_id=uuid7(),
+            provider="SEMANTIC",
+            columns=tuple(dict(item) for item in result.get("columns") or ()),
+            rows=tuple(dict(item) for item in raw_rows),
+            row_count=int(result.get("row_count") or 0),
+            truncated=truncated,
+            warnings=warnings,
+            provenance=provenance,
+        )
+
+    async def _create_plan(self, *, context, question, models) -> DataQueryPlanV1:
+        agent = context.config_snapshot.get("agent", {})
+        model_name = str(
+            agent_model_name(agent, "data_planner_llm")
+            or agent_model_name(agent, "composer_llm")
+            or ""
+        ).strip()
+        if not model_name:
+            raise ValueError("Agent 未配置 data_planner_llm 或 composer_llm")
+        prompt = await self._prompt_resolver.resolve("agent_runtime.data_query_plan")
+        constraints = next(
+            (
+                item.payload
+                for item in reversed(context.input_artifacts)
+                if item.artifact_type == "DATA_QUERY_CONSTRAINTS"
+            ),
+            None,
+        )
+        response = await self._model_client.get_llm_json(
+            served_model_name=model_name,
+            prompt=[
+                {"role": "system", "content": prompt.content},
+                {
+                    "role": "user",
+                    "content": json.dumps(
+                        {
+                            "question": question,
+                            "models": models,
+                            "document_constraints": constraints,
+                        },
+                        ensure_ascii=False,
+                    ),
+                },
+            ],
+            max_tokens=2048,
+        )
+        return DataQueryPlanV1.model_validate(response)
+
+    async def _wait_result(self, *, run_id, auth_context, deadline_at):
+        while True:
+            if deadline_at is not None and datetime.now(UTC) >= deadline_at.astimezone(UTC):
+                await self._client.cancel_run(data_query_run_id=run_id, auth_context=auth_context)
+                raise RuntimeError("SEMANTIC_DATA_QUERY_TIMEOUT")
+            view = await self._client.get_run(data_query_run_id=run_id, auth_context=auth_context)
+            status = str(view.get("status") or "")
+            if status in {"COMPLETED", "COMPLETED_EMPTY"}:
+                return await self._client.get_result(data_query_run_id=run_id, auth_context=auth_context)
+            if status in {"REJECTED", "FAILED", "TIMED_OUT", "CANCELLED"}:
+                raise RuntimeError(str(view.get("error_code") or "SEMANTIC_DATA_QUERY_FAILED"))
+            await asyncio.sleep(1)
+
+    @staticmethod
+    def _auth_context(context: ExecutionContext) -> AuthContext:
+        try:
+            auth_context = AuthContext.model_validate(context.policy_snapshot["auth_context"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise RuntimeError("AUTH_CONTEXT_INVALID") from exc
+        if auth_context.domain_id != str(context.domain_id):
+            raise RuntimeError("DOMAIN_CONTEXT_MISMATCH")
+        return auth_context
+
+    @staticmethod
+    def _plan_hash(plan: DataQueryPlanV1) -> str:
+        return hashlib.sha256(
+            json.dumps(plan.model_dump(mode="json"), sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+
+
+class DataQuerySkill:
+    """Provider 只能由 Agent 快照决定，模型不能选择。"""
+
+    def __init__(self, *, mcp_executor: MCPDataQueryExecutor, semantic_executor: SemanticDataQueryExecutor) -> None:
+        self._executors = {"MCP": mcp_executor, "SEMANTIC": semantic_executor}
+
+    async def execute(self, context: ExecutionContext) -> SkillResult:
+        question = self._standalone_query(context)
+        mode = str(context.config_snapshot.get("agent", {}).get("data_query_mode") or "")
+        executor = self._executors.get(mode)
+        if executor is None:
+            raise ValueError("Agent data_query_mode 无效")
+        output = await executor.execute(context=context, question=question)
+        return SkillResult(
+            artifact=SkillArtifact(
+                artifact_type="QUERY_RESULT",
+                schema_version="QUERY_RESULT.v1",
+                payload=output.model_dump(mode="json"),
+                provenance={
+                    "run_id": str(context.run_id),
+                    "task_id": str(context.task_id),
+                    "provider": output.provider,
+                    **output.provenance,
+                },
+            ),
+            warnings=output.warnings,
+        )
+
+    async def execute_stream(self, context: ExecutionContext):
+        result = await self.execute(context)
+        payload = result.artifact.payload or {}
+        yield SkillProgress(
+            event_type="data.query.completed",
+            payload={
+                "query_result_id": payload.get("query_result_id"),
+                "provider": payload.get("provider"),
+                "row_count": payload.get("row_count", 0),
+                "truncated": payload.get("truncated", False),
+            },
+        )
+        yield result
+
+    @staticmethod
+    def _standalone_query(context: ExecutionContext) -> str:
+        for artifact in reversed(context.input_artifacts):
+            if artifact.artifact_type == "CONTEXT_REWRITE":
+                value = str((artifact.payload or {}).get("standalone_query") or "").strip()
+                if value:
+                    return value
+        return context.original_input

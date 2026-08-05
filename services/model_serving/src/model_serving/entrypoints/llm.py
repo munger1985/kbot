@@ -35,7 +35,7 @@ from platform_core.platform.port_check import check_port_available
 from model_serving.common.management_router import create_model_management_router
 from model_serving.common.openai_router import create_openai_models_router
 from model_serving.common.openai_contracts import openai_error_response
-from model_serving.common.model_registry import ModelRegistryService
+from model_serving.common.bootstrap import create_model_registry
 
 # Service basic information
 settings = get_model_serving_settings()
@@ -68,9 +68,11 @@ async def lifespan(app: FastAPI):
     db_runtime = create_database_runtime()
     app.state.db_runtime = db_runtime
     llm_service.bind_session_factory(db_runtime.session_factory)
-    app.state.model_registry = ModelRegistryService(
+    app.state.model_registry = create_model_registry(
         session_factory=db_runtime.session_factory,
-        on_model_changed=llm_service.invalidate_model,
+        runtime_service=llm_service,
+        service_name=SERVICE_NAME,
+        settings=settings,
     )
 
     # Initialize logging system

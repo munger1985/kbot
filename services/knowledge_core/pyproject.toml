@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kbot-knowledge-core"
+version = "4.0.0"
+description = "KBot 知识入库、解析、索引与检索核心"
+requires-python = ">=3.10"
+dependencies = [
+  "aiohttp==3.13.3",
+  "docling==2.114.0",
+  "docling-core==2.88.0",
+  "fastapi==0.128.0",
+  "fastapi-offline==1.7.6",
+  "imagehash==4.3.2",
+  "kbot-platform-clients==4.0.0",
+  "kbot-platform-core==4.0.0",
+  "oracledb==3.4.2",
+  "Pillow==12.2.0",
+  "pydantic==2.12.5",
+  "SQLAlchemy==2.0.46",
+  "uvicorn==0.49.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["knowledge_core*"]

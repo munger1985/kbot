@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import unittest
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 from pydantic import ValidationError
@@ -28,7 +29,6 @@ from aiops_agent.orchestration import (
     BlueprintRegistry,
     build_database_diagnostic_blueprint,
 )
-from aiops_agent.ports.secret_store import ResolvedSecret
 from platform_core.contracts.aiops.executor import (
     DiagnosticConnectionProfile,
     DiagnosticExecutionGrant,
@@ -166,6 +166,7 @@ class DiagnosticGrantTest(unittest.TestCase):
             task_id=uuid7(),
             lease_token_hash="a" * 64,
             target_id=uuid7(),
+            domain_id=100,
             target_row_version=1,
             db_type="ORACLE",
             connection_profile=DiagnosticConnectionProfile(
@@ -173,7 +174,7 @@ class DiagnosticGrantTest(unittest.TestCase):
                 port=1521,
                 service="KBOT4",
             ),
-            diagnostic_secret_ref="env://KBOT_AIOPS_TEST_DATABASE",
+            diagnostic_credential_id=uuid7(),
             tool_id=tool.definition.tool_id,
             tool_version=tool.definition.version,
             variant=tool.definition.variant,
@@ -241,15 +242,14 @@ class DiagnosticExecutorTest(unittest.IsolatedAsyncioTestCase):
             parameters={},
             idempotency_key="request-1",
         )
-        secret_store = AsyncMock()
-        secret_store.resolve.return_value = ResolvedSecret(
-            values={"username": "private-user", "password": "hidden"},
-            fingerprint="secret-1",
+        control_plane = AsyncMock()
+        control_plane.issue_credential.return_value = SimpleNamespace(
+            username="private-user", password="hidden",
         )
         service = DiagnosticExecutorService(
             registry=DiagnosticRegistry.load(),
             grant_codec=grants.codec,
-            secret_store=secret_store,
+            control_plane=control_plane,
             drivers=(driver,),
             hard_limits=DiagnosticLimits(
                 statement_timeout_seconds=30,
@@ -286,11 +286,11 @@ class DiagnosticExecutorTest(unittest.IsolatedAsyncioTestCase):
             parameters={"unexpected": 1},
             idempotency_key="request-2",
         )
-        secret_store = AsyncMock()
+        control_plane = AsyncMock()
         service = DiagnosticExecutorService(
             registry=DiagnosticRegistry.load(),
             grant_codec=grants.codec,
-            secret_store=secret_store,
+            control_plane=control_plane,
             drivers=(FakeDriver(),),
             hard_limits=DiagnosticLimits(
                 statement_timeout_seconds=30,
@@ -301,7 +301,7 @@ class DiagnosticExecutorTest(unittest.IsolatedAsyncioTestCase):
         )
         with self.assertRaises(DiagnosticGrantError):
             await service.execute(request)
-        secret_store.resolve.assert_not_awaited()
+        control_plane.issue_credential.assert_not_awaited()
 
 
 if __name__ == "__main__":

@@ -209,7 +209,10 @@ class ConfigurationContractTest(unittest.TestCase):
                 "port": 1521,
                 "service": "ERP",
             },
-            "diagnostic_secret_ref": "env://KBOT_AIOPS_TEST_READONLY",
+            "diagnostic_credential": {
+                "username": "readonly",
+                "password": "secret",
+            },
         }
         TargetCreate.model_validate(payload)
         with self.assertRaises(ValidationError):

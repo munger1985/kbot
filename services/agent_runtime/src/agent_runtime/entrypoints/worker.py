@@ -27,6 +27,7 @@ from platform_clients import (
     AIModelConfigClient,
     AIOpsClientAuth,
     AIOpsDelegationClient,
+    DataQueryClient,
     KnowledgeCoreClient,
     MCPDataClient,
 )
@@ -38,6 +39,7 @@ from platform_core.security import (
     create_auth_context_codec,
     create_service_identity_codec,
 )
+from agent_runtime.application.notifications import AgentRunOutboxPublisher
 
 
 async def main() -> None:
@@ -113,6 +115,13 @@ async def main() -> None:
                 ),
                 session=client_session,
             )
+        data_query_client = DataQueryClient(
+            base_url=settings.data_query.base_url,
+            caller_service=config.service_name,
+            audience=settings.data_query.audience,
+            timeout_seconds=settings.data_query.timeout_seconds,
+            session=client_session,
+        )
         prompt_resolver = PromptResolver(
             session_factory=db_runtime.session_factory,
             catalog=load_prompt_catalog(),
@@ -136,6 +145,7 @@ async def main() -> None:
             prompt_resolver=prompt_resolver,
             service_name=config.service_name,
             mcp_data_client=mcp_data_client,
+            data_query_client=data_query_client,
         )
         limits = PlanLimits(
             max_tasks=config.max_tasks_per_run,
@@ -158,6 +168,7 @@ async def main() -> None:
             plan_limits=limits,
             skill_registry=skill_registry,
             model_resolver=model_resolver,
+            notification_publisher=AgentRunOutboxPublisher(),
         )
         worker = AgentRuntimeWorker(
             runtime_service=runtime_service,

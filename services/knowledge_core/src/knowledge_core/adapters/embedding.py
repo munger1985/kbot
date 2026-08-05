@@ -9,7 +9,7 @@ from hashlib import sha256
 from typing import Sequence
 from uuid import UUID
 
-from platform_core.dictionary import ModelCategory, Status
+from platform_core.dictionary import ModelCategory
 from knowledge_core.application.indexing import EmbeddingBatch, EmbeddingModelSnapshot
 from platform_clients import AIModelClient, AIModelConfigClient
 
@@ -45,7 +45,7 @@ async def resolve_embedding_model(
     model = await client.get_model(model_id)
     if int(model.get("category") or 0) != int(ModelCategory.TXT_EMBEDDING):
         raise ValueError("Collection model is not a text embedding model")
-    if int(model.get("status") or 0) != int(Status.ENABLED):
+    if model.get("status") != "ACTIVE":
         raise ValueError("Collection embedding model is disabled")
     model_params = model.get("model_params") or {}
     model_dimension = model_params.get("embedding_dimension")

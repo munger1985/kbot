@@ -18,6 +18,7 @@ from knowledge_core.entities import KcIngestionJobEntity
 from knowledge_core.persistence import KnowledgeCoreUnitOfWork
 from knowledge_core.domain.revision_status import reduce_revision_status
 from knowledge_core.domain.parse_tasks import ParseLeaseError, verify_lease
+from knowledge_core.application.notifications import KnowledgeOutboxPublisher
 
 
 @dataclass(frozen=True)
@@ -278,6 +279,21 @@ class KnowledgeCoreEvidenceIndexService:
             job.job_status, job.completed_at = "SUCCEEDED", now
             job.result_json = {"profile_count": len(objects), "status": "ACTIVE"}
             job.lease_owner = job.lease_until = None
+            await KnowledgeOutboxPublisher().publish(
+                uow=uow,
+                event_type=(
+                    "knowledge.ingestion.partial"
+                    if revision.status == "PARTIAL"
+                    else "knowledge.ingestion.completed"
+                ),
+                actor_id=str(collection.created_by or revision.created_by or ""),
+                resource_id=str(collection.collection_id),
+                payload={
+                    "event_key": str(revision.bundle_revision_id),
+                    "job_id": str(job_id),
+                    "display_name": collection.display_name,
+                },
+            )
             await uow.session.flush()
             await uow.commit()
             return str(revision.status)
@@ -306,7 +322,7 @@ class KnowledgeCoreEvidenceIndexService:
     ) -> str:
         now = datetime.now(timezone.utc)
         async with self._uow_factory() as uow:
-            if not all((uow.jobs, uow.members, uow.revisions, uow.bundles)) or uow.session is None:
+            if not all((uow.jobs, uow.members, uow.revisions, uow.bundles, uow.collections)) or uow.session is None:
                 raise RuntimeError("Knowledge Core Unit of Work is not initialized")
             job = await uow.jobs.get_by_id(ingestion_job_id=job_id, lock=True)
             if job is None or job.job_type != "INDEX":
@@ -321,6 +337,7 @@ class KnowledgeCoreEvidenceIndexService:
                 result = job.job_status
             else:
                 job.job_status, job.completed_at = "FAILED", now
+                target = (job.payload_json or {}).get("target")
                 if uow.members is not None and job.bundle_revision_id is not None and job.document_version_id is not None:
                     member = await uow.members.get_by_version(
                         bundle_revision_id=job.bundle_revision_id,
@@ -337,6 +354,23 @@ class KnowledgeCoreEvidenceIndexService:
                         revision.status = reduce_revision_status(members)
                         if revision.status in {"READY", "PARTIAL", "FAILED"}:
                             revision.completed_at = now
+                        if target == "DISCOVERY":
+                            collection = await uow.collections.get_by_id(
+                                collection_id=revision.collection_id,
+                            )
+                            if collection is not None:
+                                await KnowledgeOutboxPublisher().publish(
+                                    uow=uow,
+                                    event_type="knowledge.ingestion.failed",
+                                    actor_id=str(collection.created_by or revision.created_by or ""),
+                                    resource_id=str(collection.collection_id),
+                                    payload={
+                                        "event_key": str(revision.bundle_revision_id),
+                                        "job_id": str(job_id),
+                                        "display_name": collection.display_name,
+                                        "error_code": failure_code,
+                                    },
+                                )
                 result = job.job_status
             await uow.session.flush()
             await uow.commit()

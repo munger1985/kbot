@@ -21,7 +21,6 @@ from aiops_agent.executor.drivers import (
     MutationDriverError,
     MutationDriverResult,
 )
-from aiops_agent.ports.secret_store import ResolvedSecret
 from platform_core.contracts.aiops.executor import (
     MutationClaimReceipt,
     MutationExecutionGrant,
@@ -52,14 +51,9 @@ class _ControlPlane:
             accepted=accepted,
         )
 
-
-class _SecretStore:
-    async def resolve(self, reference):
-        del reference
-        return ResolvedSecret(
-            values={"username": "ops", "password": "secret"},
-            fingerprint="test",
-        )
+    async def issue_credential(self, grant, *, trace_id):
+        del grant, trace_id
+        return SimpleNamespace(username="ops", password="secret")
 
 
 class _Driver:
@@ -116,6 +110,7 @@ class MutationExecutorServiceTest(unittest.TestCase):
             executor_request_id=request_id,
             executor_instance_id="executor-test",
             target_id=uuid7(),
+            domain_id=100,
             target_version=1,
             db_type="MYSQL",
             connection_profile={
@@ -124,7 +119,7 @@ class MutationExecutorServiceTest(unittest.TestCase):
                 "database": "ops",
                 "tls_enabled": True,
             },
-            execution_secret_ref="env://MYSQL_EXECUTION_SECRET",
+            execution_credential_id=uuid7(),
             action_template_id=action.action_template_id,
             action_template_version=action.action_template_version,
             action_template_variant=action.variant,
@@ -157,7 +152,6 @@ class MutationExecutorServiceTest(unittest.TestCase):
             executor_instance_id="executor-test",
             registry=registry,
             grant_codec=codec,
-            secret_store=_SecretStore(),
             control_plane=control,
             drivers=(resolved_driver,),
             concurrency=1,

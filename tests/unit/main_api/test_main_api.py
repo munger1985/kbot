@@ -123,9 +123,21 @@ class _FakeAgentRuntimeClient:
                 "request_id": "request-debug",
                 "status": "COMPLETED",
             },
-            "tasks": [],
-            "events": [],
-            "artifacts": [],
+            "tasks": [{"task_id": "task-debug", "kc_job_id": "job-debug"}],
+            "events": [{
+                "event_type": "MODEL_CALLED",
+                "payload": {
+                    "model_call_id": "call-debug",
+                    "data_query_run_id": "query-debug",
+                    "query_result": ["不应重复返回"],
+                },
+            }],
+            "artifacts": [{
+                "artifact_id": "artifact-debug",
+                "artifact_type": "GROUNDED_ANSWER",
+                "content_hash": "hash-debug",
+                "payload": {"password": "not-returned"},
+            }],
         }
 
     def _agent(self):
@@ -414,6 +426,7 @@ class MainApiTest(unittest.TestCase):
         )
         self.assertEqual(200, response.status_code)
         self.assertEqual(1, response.json()["count"])
+        self.assertNotIn("original_input", response.json()["runs"][0])
         detail = self.client.get(
             f"/api/v1/development/agent-runs/{self.agent_runtime.run_id}",
             headers=self._headers(),
@@ -421,6 +434,15 @@ class MainApiTest(unittest.TestCase):
         self.assertEqual(200, detail.status_code)
         self.assertEqual("COMPLETED", detail.json()["run"]["status"])
         self.assertIn("logs", detail.json())
+        self.assertEqual(
+            ["job-debug"], detail.json()["correlations"]["kc_job_ids"]
+        )
+        self.assertEqual(
+            ["query-debug"],
+            detail.json()["correlations"]["data_query_run_ids"],
+        )
+        self.assertNotIn("payload", detail.json()["artifacts"][0])
+        self.assertIn("TRUNCATED", str(detail.json()["events"][0]["payload"]))
         self.assertEqual("100", self.agent_runtime.last_context.domain_id)
 
     def test_invalid_domain_is_rejected_before_kc_call(self) -> None:

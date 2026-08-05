@@ -5,6 +5,12 @@ from .domain_management import (
     DomainManagementService,
 )
 from .domain_validation import DomainValidationService
+from .notification_center import NotificationCenterError, NotificationCenterService
+from .notification_projection import (
+    NotificationDispatcher,
+    NotificationProjectionService,
+)
+from .resource_composition import CompositionError, ResourceCompositionService
 from .slack_intake import (
     SlackIntakeResult,
     SlackIntakeService,
@@ -16,6 +22,12 @@ __all__ = [
     "DomainConflictError",
     "DomainManagementService",
     "DomainValidationService",
+    "NotificationCenterError",
+    "NotificationCenterService",
+    "CompositionError",
+    "ResourceCompositionService",
+    "NotificationDispatcher",
+    "NotificationProjectionService",
     "SlackIntakeResult",
     "SlackIntakeService",
     "SlackWebhookError",

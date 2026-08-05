@@ -3,6 +3,7 @@
 from collections.abc import Callable
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from platform_core.notifications import NotificationOutboxRepository
 
 from agent_runtime.repositories import (
     AgentDefinitionRepository,
@@ -42,6 +43,7 @@ class AgentRuntimeUnitOfWork:
             AgentMemoryIndexProfileRepository | None
         ) = None
         self.memory_sources: AgentMemorySourceRepository | None = None
+        self.notification_outbox: NotificationOutboxRepository | None = None
         self._committed = False
 
     async def __aenter__(self) -> "AgentRuntimeUnitOfWork":
@@ -62,6 +64,7 @@ class AgentRuntimeUnitOfWork:
             self.session
         )
         self.memory_sources = AgentMemorySourceRepository(self.session)
+        self.notification_outbox = NotificationOutboxRepository(self.session)
         return self
 
     async def commit(self) -> None:
@@ -97,6 +100,7 @@ class AgentRuntimeUnitOfWork:
             self.memory_jobs = None
             self.memory_index_profiles = None
             self.memory_sources = None
+            self.notification_outbox = None
 
 
 def create_agent_runtime_uow(

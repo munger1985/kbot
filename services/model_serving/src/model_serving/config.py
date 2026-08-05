@@ -4,7 +4,12 @@ from functools import lru_cache
 
 from pydantic import Field
 
-from platform_core.config import ServiceConfig, Settings, load_settings
+from platform_core.config import (
+    ServiceConfig,
+    ServiceDependencyConfig,
+    Settings,
+    load_settings,
+)
 
 
 class ModelProcessConfig(ServiceConfig):
@@ -47,6 +52,24 @@ class ModelServingSettings(Settings):
     llm: LlmConfig = Field(default_factory=LlmConfig)
     vlm: VlmConfig = Field(default_factory=VlmConfig)
     visual: VisualConfig = Field(default_factory=VisualConfig)
+    agent_runtime: ServiceDependencyConfig = Field(
+        default_factory=lambda: ServiceDependencyConfig(
+            base_url="http://127.0.0.1:18100",
+            audience="kbot-agent-runtime-api",
+        )
+    )
+    knowledge_core: ServiceDependencyConfig = Field(
+        default_factory=lambda: ServiceDependencyConfig(
+            base_url="http://127.0.0.1:18090",
+            audience="kbot-knowledge-core-api",
+        )
+    )
+    data_query: ServiceDependencyConfig = Field(
+        default_factory=lambda: ServiceDependencyConfig(
+            base_url="http://127.0.0.1:18140",
+            audience="kbot-data-query-api",
+        )
+    )
 
 
 @lru_cache(maxsize=1)

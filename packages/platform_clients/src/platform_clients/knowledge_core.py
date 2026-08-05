@@ -154,6 +154,26 @@ class KnowledgeCoreClient:
             auth_context=auth_context,
         )
 
+    async def list_model_references(
+        self,
+        *,
+        model_id: UUID,
+        auth_context: AuthContext,
+    ) -> list[dict[str, Any]]:
+        payload = await self._json(
+            "GET",
+            f"{INTERNAL_API_V1}/knowledge/model-references/{model_id}",
+            auth_context=auth_context,
+        )
+        references = payload.get("references", [])
+        if not isinstance(references, list):
+            raise KnowledgeCoreClientError(
+                status_code=502,
+                code="KNOWLEDGE_CORE_PROTOCOL_ERROR",
+                message="Knowledge Core 模型引用响应无效",
+            )
+        return references
+
     async def delete_collection(
         self,
         *,
@@ -219,6 +239,19 @@ class KnowledgeCoreClient:
             (
                 f"{INTERNAL_API_V1}/knowledge/domains/{domain_id}"
                 f"/agents/{agent_id}/collection-bindings"
+            ),
+            auth_context=auth_context,
+        )
+
+    async def list_collection_bindings(
+        self, *, domain_id: int, collection_id: UUID,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "GET",
+            (
+                f"{INTERNAL_API_V1}/knowledge/domains/{domain_id}"
+                f"/collections/{collection_id}/bindings"
             ),
             auth_context=auth_context,
         )

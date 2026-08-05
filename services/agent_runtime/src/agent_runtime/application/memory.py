@@ -20,6 +20,7 @@ from agent_runtime.entities import (
     AgentMemorySnapshotEntity,
     AgentMemorySourceEntity,
 )
+from agent_runtime.domain.memory_policy import MemoryScope, memory_scope
 from platform_core.identity import uuid7
 from platform_core.prompts import StrictPromptRenderer
 
@@ -102,7 +103,7 @@ class ResolvedMemoryDecision:
     reason: str
     existing_memory_id: UUID | None
     prompt_ref: dict[str, Any] | None
-    scope_type: Literal["USER_AGENT", "USER_SHARED"]
+    scope_type: MemoryScope
     embedding: list[float] | None = None
 
 
@@ -111,7 +112,6 @@ class MemoryRuntimeConfig:
     llm_model_name: str
     embedding_enabled: bool
     embedding_model_name: str | None
-    shared_keys: frozenset[str]
     episodic_enabled: bool
 
 
@@ -265,7 +265,6 @@ class MemoryConsolidationWorker:
                 lease,
                 candidates=safe_candidates,
                 model_name=model_name,
-                shared_keys=runtime_config.shared_keys,
             )
             profile = await self._ensure_index_profile(
                 lease, runtime_config=runtime_config
@@ -476,18 +475,6 @@ class MemoryConsolidationWorker:
             raw = dict(agent.config_json or {}).get("memory") or {}
             if not isinstance(raw, dict):
                 raise RuntimeError("Agent memory 配置必须是对象")
-            shared_keys = frozenset(
-                str(item).strip()
-                for item in raw.get("shared_keys", [])
-                if str(item).strip()
-            )
-            invalid = [
-                item
-                for item in shared_keys
-                if not re.fullmatch(r"[a-z][a-z0-9_.-]{0,255}", item)
-            ]
-            if invalid:
-                raise RuntimeError("memory.shared_keys 包含非法键")
             episodic_enabled = bool(raw.get("episodic_enabled", True))
         if self._model_resolver is None:
             raise RuntimeError("Agent 模型目录解析器尚未初始化")
@@ -509,7 +496,6 @@ class MemoryConsolidationWorker:
             llm_model_name=llm_model_name,
             embedding_enabled=True,
             embedding_model_name=embedding_model_name,
-            shared_keys=shared_keys,
             episodic_enabled=episodic_enabled,
         )
 
@@ -953,7 +939,6 @@ class MemoryConsolidationWorker:
         *,
         candidates: tuple[MemoryCandidate, ...],
         model_name: str,
-        shared_keys: frozenset[str] = frozenset(),
     ) -> tuple[ResolvedMemoryDecision, ...]:
         existing_by_key = {
             (
@@ -966,10 +951,9 @@ class MemoryConsolidationWorker:
         conflict_prompt = None
         decisions: list[ResolvedMemoryDecision] = []
         for candidate in candidates:
-            scope_type: Literal["USER_AGENT", "USER_SHARED"] = (
-                "USER_SHARED"
-                if candidate.canonical_key in shared_keys
-                else "USER_AGENT"
+            scope_type = memory_scope(
+                candidate.canonical_key,
+                candidate.value,
             )
             existing = existing_by_key.get(
                 (

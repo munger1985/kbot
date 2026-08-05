@@ -20,7 +20,10 @@ from agent_runtime.domain.planning import (
 class RouteType(StrEnum):
     CONVERSATION = "CONVERSATION"
     DOCUMENT = "DOCUMENT"
-    MCP_DATA = "MCP_DATA"
+    DATA_QUERY = "DATA_QUERY"
+    HYBRID_PARALLEL = "HYBRID_PARALLEL"
+    HYBRID_DOCUMENT_FIRST = "HYBRID_DOCUMENT_FIRST"
+    HYBRID_DATA_FIRST = "HYBRID_DATA_FIRST"
     AIOPS = "AIOPS"
     CLARIFY = "CLARIFY"
 
@@ -95,12 +98,12 @@ class RootAgentPlanner:
                 reason="Agent 配置明确限定为 AIOps 路由",
                 classifier_version="deterministic-aiops-v1",
             )
-        if capabilities == {"mcp_data"}:
+        if capabilities == {"data_query"}:
             return RouteDecision(
-                route_type=RouteType.MCP_DATA,
+                route_type=RouteType.DATA_QUERY,
                 confidence=1.0,
-                reason="Agent 配置明确限定为 MCP Data 路由",
-                classifier_version="deterministic-mcp-data-v1",
+                reason="Agent 配置明确限定为 Data Query 路由",
+                classifier_version="deterministic-data-query-v1",
             )
         return RouteDecision(
             route_type=RouteType.CLARIFY,
@@ -133,7 +136,7 @@ class RootAgentPlanner:
                 reason="请求包含查询图片，进入 Document 多模态检索",
                 classifier_version="deterministic-query-image-v1",
             )
-        if capabilities == {"mcp_data"}:
+        if capabilities == {"data_query"}:
             decision = self.decide(agent_snapshot=agent_snapshot)
             return decision.model_copy(
                 update={"requires_chart": self._requests_chart(objective)}
@@ -145,10 +148,18 @@ class RootAgentPlanner:
             for capability, route in (
                 ("conversation", "CONVERSATION"),
                 ("document", "DOCUMENT"),
-                ("mcp_data", "MCP_DATA"),
+                ("data_query", "DATA_QUERY"),
             )
             if capability in capabilities
         ]
+        if {"document", "data_query"}.issubset(capabilities):
+            enabled_routes.extend(
+                (
+                    "HYBRID_PARALLEL",
+                    "HYBRID_DOCUMENT_FIRST",
+                    "HYBRID_DATA_FIRST",
+                )
+            )
         if not enabled_routes:
             return self.decide(agent_snapshot=agent_snapshot)
         model_name = str(
@@ -226,7 +237,7 @@ class RootAgentPlanner:
                 "请说明这是通用问题、文档查询还是业务数据查询。"
             )
         requires_chart = bool(response.get("requires_chart", False))
-        if route_value != "MCP_DATA":
+        if route_value != "DATA_QUERY":
             requires_chart = False
         return RouteDecision(
             route_type=RouteType(route_value),
@@ -279,10 +290,25 @@ class RootAgentPlanner:
             return self._build_conversation_plan(
                 objective=objective, ttl_seconds=ttl_seconds
             )
-        if decision.route_type == RouteType.MCP_DATA:
-            return self._build_mcp_data_plan(
+        if decision.route_type == RouteType.DATA_QUERY:
+            return self._build_data_query_plan(
                 objective=objective,
                 requires_chart=decision.requires_chart,
+                ttl_seconds=ttl_seconds,
+            )
+        if decision.route_type == RouteType.HYBRID_PARALLEL:
+            return self._build_hybrid_parallel_plan(
+                objective=objective,
+                ttl_seconds=ttl_seconds,
+            )
+        if decision.route_type == RouteType.HYBRID_DOCUMENT_FIRST:
+            return self._build_hybrid_document_first_plan(
+                objective=objective,
+                ttl_seconds=ttl_seconds,
+            )
+        if decision.route_type == RouteType.HYBRID_DATA_FIRST:
+            return self._build_hybrid_data_first_plan(
+                objective=objective,
                 ttl_seconds=ttl_seconds,
             )
         if decision.route_type != RouteType.DOCUMENT:
@@ -394,7 +420,7 @@ class RootAgentPlanner:
         )
 
     @staticmethod
-    def _build_mcp_data_plan(
+    def _build_data_query_plan(
         *,
         objective: str,
         requires_chart: bool,
@@ -415,11 +441,11 @@ class RootAgentPlanner:
                 execution_mode=ExecutionMode.READ_ONLY,
             ),
             TaskSpec(
-                task_key="mcp_data_query",
+                task_key="data_query",
                 task_type="DATA_QUERY",
                 execution_kind=ExecutionKind.LOCAL_SKILL,
-                specialist="mcp_data",
-                skill_id="mcp-data-query",
+                specialist="data_query",
+                skill_id="data-query",
                 skill_version="1.0.0",
                 depends_on=("context_rewrite",),
                 input_refs=("task_output:context_rewrite",),
@@ -429,10 +455,10 @@ class RootAgentPlanner:
                 execution_mode=ExecutionMode.READ_ONLY,
             ),
         ]
-        compose_dependencies = ["context_rewrite", "mcp_data_query"]
+        compose_dependencies = ["context_rewrite", "data_query"]
         compose_inputs = [
             "task_output:context_rewrite",
-            "task_output:mcp_data_query",
+            "task_output:data_query",
         ]
         if requires_chart:
             tasks.append(
@@ -440,11 +466,11 @@ class RootAgentPlanner:
                     task_key="echarts",
                     task_type="VISUALIZE",
                     execution_kind=ExecutionKind.LOCAL_SKILL,
-                    specialist="mcp_data",
+                    specialist="visualization",
                     skill_id="echarts",
                     skill_version="1.0.0",
-                    depends_on=("mcp_data_query",),
-                    input_refs=("task_output:mcp_data_query",),
+                    depends_on=("data_query",),
+                    input_refs=("task_output:data_query",),
                     expected_outputs=("ECHARTS_CONFIG",),
                     timeout_seconds=120,
                     max_retries=1,
@@ -470,9 +496,187 @@ class RootAgentPlanner:
             )
         )
         return PlanDraft(
-            plan_version="mcp-data-plan-v1",
+            plan_version="data-query-plan-v1",
             objective=objective,
             tasks=tuple(tasks),
+            final_task_key="response_compose",
+            expires_at=(
+                datetime.now(timezone.utc)
+                + timedelta(seconds=ttl_seconds)
+            ),
+        )
+
+    @staticmethod
+    def _context_task() -> TaskSpec:
+        return TaskSpec(
+            task_key="context_rewrite",
+            task_type="CONTEXT_REWRITE",
+            execution_kind=ExecutionKind.LOCAL_SKILL,
+            specialist="conversation",
+            skill_id="context-rewrite",
+            skill_version="1.0.0",
+            input_refs=("RUN_INPUT", "CONVERSATION_CONTEXT"),
+            expected_outputs=("CONTEXT_REWRITE",),
+            timeout_seconds=60,
+            max_retries=1,
+            execution_mode=ExecutionMode.READ_ONLY,
+        )
+
+    @staticmethod
+    def _data_query_task(*, dependencies: tuple[str, ...]) -> TaskSpec:
+        return TaskSpec(
+            task_key="data_query",
+            task_type="DATA_QUERY",
+            execution_kind=ExecutionKind.LOCAL_SKILL,
+            specialist="data_query",
+            skill_id="data-query",
+            skill_version="1.0.0",
+            depends_on=dependencies,
+            input_refs=tuple(f"task_output:{item}" for item in dependencies),
+            expected_outputs=("QUERY_RESULT",),
+            timeout_seconds=180,
+            max_retries=2,
+            execution_mode=ExecutionMode.READ_ONLY,
+        )
+
+    @staticmethod
+    def _document_task(*, dependencies: tuple[str, ...]) -> TaskSpec:
+        return TaskSpec(
+            task_key="knowledge_retrieval",
+            task_type="RETRIEVE",
+            execution_kind=ExecutionKind.LOCAL_SKILL,
+            specialist="document",
+            skill_id="knowledge-retrieval",
+            skill_version="1.0.0",
+            depends_on=dependencies,
+            input_refs=tuple(f"task_output:{item}" for item in dependencies),
+            expected_outputs=("CITATION_PACK",),
+            required_scopes=(
+                "knowledge.discovery.read",
+                "knowledge.evidence.read",
+            ),
+            timeout_seconds=120,
+            max_retries=2,
+            execution_mode=ExecutionMode.READ_ONLY,
+        )
+
+    @staticmethod
+    def _compose_task(*, dependencies: tuple[str, ...]) -> TaskSpec:
+        return TaskSpec(
+            task_key="response_compose",
+            task_type="COMPOSE",
+            execution_kind=ExecutionKind.LOCAL_SKILL,
+            specialist="response_composer",
+            skill_id="response-composer",
+            skill_version="1.0.0",
+            depends_on=dependencies,
+            input_refs=tuple(f"task_output:{item}" for item in dependencies),
+            expected_outputs=("GROUNDED_ANSWER",),
+            timeout_seconds=120,
+            max_retries=1,
+            execution_mode=ExecutionMode.READ_ONLY,
+        )
+
+    @classmethod
+    def _build_hybrid_parallel_plan(
+        cls, *, objective: str, ttl_seconds: int
+    ) -> PlanDraft:
+        tasks = (
+            cls._context_task(),
+            cls._document_task(dependencies=("context_rewrite",)),
+            cls._data_query_task(dependencies=("context_rewrite",)),
+            cls._compose_task(dependencies=(
+                "context_rewrite",
+                "knowledge_retrieval",
+                "data_query",
+            )),
+        )
+        return cls._hybrid_plan(
+            "hybrid-parallel-plan-v1", objective, tasks, ttl_seconds
+        )
+
+    @classmethod
+    def _build_hybrid_document_first_plan(
+        cls, *, objective: str, ttl_seconds: int
+    ) -> PlanDraft:
+        tasks = (
+            cls._context_task(),
+            cls._document_task(dependencies=("context_rewrite",)),
+            TaskSpec(
+                task_key="data_constraints",
+                task_type="EXTRACT",
+                execution_kind=ExecutionKind.LOCAL_SKILL,
+                specialist="hybrid",
+                skill_id="data-constraint-extract",
+                skill_version="1.0.0",
+                depends_on=("knowledge_retrieval",),
+                input_refs=("task_output:knowledge_retrieval",),
+                expected_outputs=("DATA_QUERY_CONSTRAINTS",),
+                timeout_seconds=90,
+                max_retries=1,
+                execution_mode=ExecutionMode.READ_ONLY,
+            ),
+            cls._data_query_task(
+                dependencies=("context_rewrite", "data_constraints")
+            ),
+            cls._compose_task(dependencies=(
+                "context_rewrite",
+                "knowledge_retrieval",
+                "data_query",
+            )),
+        )
+        return cls._hybrid_plan(
+            "hybrid-document-first-plan-v1",
+            objective,
+            tasks,
+            ttl_seconds,
+        )
+
+    @classmethod
+    def _build_hybrid_data_first_plan(
+        cls, *, objective: str, ttl_seconds: int
+    ) -> PlanDraft:
+        tasks = (
+            cls._context_task(),
+            cls._data_query_task(dependencies=("context_rewrite",)),
+            TaskSpec(
+                task_key="document_scope",
+                task_type="EXTRACT",
+                execution_kind=ExecutionKind.LOCAL_SKILL,
+                specialist="hybrid",
+                skill_id="document-scope-extract",
+                skill_version="1.0.0",
+                depends_on=("data_query",),
+                input_refs=("task_output:data_query",),
+                expected_outputs=("DOCUMENT_SCOPE",),
+                timeout_seconds=90,
+                max_retries=1,
+                execution_mode=ExecutionMode.READ_ONLY,
+            ),
+            cls._document_task(
+                dependencies=("context_rewrite", "document_scope")
+            ),
+            cls._compose_task(dependencies=(
+                "context_rewrite",
+                "data_query",
+                "knowledge_retrieval",
+            )),
+        )
+        return cls._hybrid_plan(
+            "hybrid-data-first-plan-v1", objective, tasks, ttl_seconds
+        )
+
+    @staticmethod
+    def _hybrid_plan(
+        version: str,
+        objective: str,
+        tasks: tuple[TaskSpec, ...],
+        ttl_seconds: int,
+    ) -> PlanDraft:
+        return PlanDraft(
+            plan_version=version,
+            objective=objective,
+            tasks=tasks,
             final_task_key="response_compose",
             expires_at=(
                 datetime.now(timezone.utc)

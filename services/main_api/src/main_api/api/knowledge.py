@@ -34,6 +34,7 @@ class CollectionStatusRequest(BaseModel):
 
 class CollectionModelsRequest(BaseModel):
     models: dict[str, UUID]
+    expected_row_version: int = Field(ge=1)
 
 
 class CollectionBindingRequest(BaseModel):

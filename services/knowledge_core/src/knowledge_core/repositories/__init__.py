@@ -5,6 +5,8 @@ from .ingestion_repo import BundleRepository, BundleRevisionDocumentRepository, 
 from .discovery_repo import DiscoveryRepository
 from .relation_repo import RelationRepository
 from .visual_asset_repo import VisualAssetRepository
+from .model_reference_repo import ModelReferenceRepository
+from .collection_purge_repo import CollectionPurgeRepository
 
 __all__ = [
     "CollectionRepository",
@@ -21,4 +23,6 @@ __all__ = [
     "DiscoveryRepository",
     "RelationRepository",
     "VisualAssetRepository",
+    "ModelReferenceRepository",
+    "CollectionPurgeRepository",
 ]

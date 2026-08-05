@@ -58,8 +58,8 @@ export PYTHONFAULTHANDLER="${PYTHONFAULTHANDLER:-1}"
 # 统一脚本已把 stderr 接入服务 runtime.log，关闭 Loguru 控制台副本避免重复。
 export KBOT_LOG_CONSOLE="false"
 
-# 源码仓库启动使用明确的包搜索路径；正式部署应安装各服务 Wheel。
-export PYTHONPATH="${SERVICE_ROOT}/packages/platform_core/src:${SERVICE_ROOT}/packages/platform_clients/src:${SERVICE_ROOT}/services/main_api/src:${SERVICE_ROOT}/services/agent_runtime/src:${SERVICE_ROOT}/services/knowledge_core/src:${SERVICE_ROOT}/services/aiops_agent/src:${SERVICE_ROOT}/services/model_serving/src${PYTHONPATH:+:${PYTHONPATH}}"
+# 开发环境由 install_workspace.sh 以 editable package 安装内部包，生产环境安装 Wheel。
+# 启动过程不拼接源码搜索路径，确保两种模式使用相同的包边界。
 export KBOT_RESOURCE_DIR="${KBOT_RESOURCE_DIR:-${SERVICE_ROOT}/resources}"
 
 # 启动脚本与各服务读取同一份部署配置。
@@ -96,12 +96,15 @@ SERVICES=(
     "Knowledge Core:Parser:knowledge_core:knowledge_core.entrypoints.parser"
     "Agent Runtime:API:agent_runtime:agent_runtime.entrypoints.api"
     "Agent Runtime:Worker:agent_runtime:agent_runtime.entrypoints.worker"
+    "Data Query:API:data_query:data_query.entrypoints.api"
+    "Data Query:Worker:data_query:data_query.entrypoints.worker"
     "AIOps Agent:API:aiops_agent:aiops_agent.entrypoints.api"
     "AIOps Agent:Worker:aiops_agent:aiops_agent.entrypoints.worker"
     "AIOps Agent:Scheduler:aiops_agent:aiops_agent.entrypoints.scheduler"
     "AIOps Agent:DB Executor:aiops_agent:aiops_agent.entrypoints.db_executor"
     "Main API:API:main_api:main_api.entrypoints.api"
     "Main API:Slack Worker:main_api:main_api.entrypoints.slack_worker"
+    "Main API:Notification Worker:main_api:main_api.entrypoints.notification_worker"
 )
 
 # 返回模块对应的监听端口；纯后台 Worker 返回空值。
@@ -114,6 +117,8 @@ service_port() {
         knowledge_core.entrypoints.parser) echo "18095" ;;
         knowledge_core.entrypoints.api) echo "18090" ;;
         agent_runtime.entrypoints.api) echo "18100" ;;
+        data_query.entrypoints.api) echo "18140" ;;
+        data_query.entrypoints.worker) echo "18141" ;;
         aiops_agent.entrypoints.api) echo "18110" ;;
         aiops_agent.entrypoints.db_executor) echo "18111" ;;
         aiops_agent.entrypoints.worker) echo "18112" ;;
@@ -126,7 +131,8 @@ service_port() {
 is_process_only_service() {
     [ "$1" = "knowledge_core.entrypoints.projection" ] \
         || [ "$1" = "agent_runtime.entrypoints.worker" ] \
-        || [ "$1" = "main_api.entrypoints.slack_worker" ]
+        || [ "$1" = "main_api.entrypoints.slack_worker" ] \
+        || [ "$1" = "main_api.entrypoints.notification_worker" ]
 }
 
 STARTED_PIDS=()

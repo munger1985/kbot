@@ -1,0 +1,35 @@
+{
+  "component": "platform_core",
+  "schema_version": 4,
+  "contract_version": "platform-core-oracle-v1",
+  "oracle_baseline": "26ai",
+  "scripts": [
+    {"name": "001_domain.sql", "statements": 3, "sha256": "a62fd9a288d104a5d552835f78035c25ea16470baf8075bb543388b66311ffd3"},
+    {"name": "002_prompt_registry.sql", "statements": 5, "sha256": "a29216c760249ac7258ae5679153828b481617eddde4546d4d0c2e2085c55229"},
+    {"name": "003_notifications.sql", "statements": 13, "sha256": "bbbec476a209721cda43e64ea9e58bc94e4f3d179c893273fd8f183b657b5909"},
+    {"name": "004_composition.sql", "statements": 3, "sha256": "bc91915a913121dc63aa2639e63d0f83c5ade1aa8e3c080a137b75df34fc7988"}
+  ],
+  "tables": [
+    "KBOT_PLATFORM_DOMAIN",
+    "KBOT_PLATFORM_PROMPT",
+    "KBOT_PLATFORM_PROMPT_VERSION",
+    "KBOT_NOTIFICATION_OUTBOX",
+    "KBOT_NOTIFICATION_INBOX",
+    "KBOT_NOTIFICATION_PREF",
+    "KBOT_WORK_ITEM",
+    "KBOT_BACKGROUND_OPERATION",
+    "KBOT_OPERATION_WATCH",
+    "KBOT_COMPOSITION_RECEIPT"
+  ],
+  "views": ["KBOT_V_PLATFORM_DOMAIN"],
+  "function_unique_indexes": ["UX_NOTIFY_WORK_OPEN"],
+  "invariants": {
+    "recipient_scope": "domain_id_actor_id",
+    "channel": "IN_APP",
+    "resource_id_type": "RAW(16)",
+    "resource_id_generation": "application_uuidv7",
+    "timestamp_type": "TIMESTAMP(6) WITH TIME ZONE",
+    "user_directory_dependency": false,
+    "tenant_rbac_dependency": false
+  }
+}

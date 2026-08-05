@@ -29,6 +29,7 @@ class DocumentationLayoutTest(unittest.TestCase):
                 "model-serving.md",
                 "overview.md",
                 "repository-layout.md",
+                "resource-composition.md",
                 "security-and-api.md",
             },
             {
@@ -47,6 +48,12 @@ class DocumentationLayoutTest(unittest.TestCase):
             {
                 "agent-chat.md",
                 "aiops-agent.md",
+                "aiops-configuration-pages.md",
+                "aiops-credential-encryption-implementation-plan.md",
+                "kbot-ammolite-backend-migration-implementation-plan.md",
+                "kbot-backend-capability-migration-detailed-design.md",
+                "kbot-backend-capability-migration-steps.md",
+                "kbot-backend-migration-s0-baseline-report.md",
                 "knowledge-lifecycle.md",
                 "slack-integration.md",
             },

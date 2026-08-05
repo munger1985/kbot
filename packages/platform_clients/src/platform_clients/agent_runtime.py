@@ -76,6 +76,23 @@ class AgentRuntimeClient:
             auth_context=auth_context,
         )
 
+    async def list_model_references(
+        self, *, model_id: UUID, auth_context: AuthContext,
+    ) -> list[dict[str, Any]]:
+        payload = await self._json(
+            "GET",
+            f"{INTERNAL_API_V1}/agents/model-references/{model_id}",
+            auth_context=auth_context,
+        )
+        references = payload.get("references", [])
+        if not isinstance(references, list):
+            raise AgentRuntimeClientError(
+                status_code=502,
+                code="AGENT_REFERENCE_RESPONSE_INVALID",
+                message="Agent Runtime 返回了无效模型引用",
+            )
+        return [item for item in references if isinstance(item, dict)]
+
     async def update_agent(
         self,
         *,

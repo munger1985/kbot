@@ -4,6 +4,8 @@ from types import SimpleNamespace
 
 from sqlalchemy.dialects import oracle
 from sqlalchemy.schema import CreateTable
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 from model_serving.common.management_router import (
     ModelUpdateRequest,
@@ -22,17 +24,43 @@ class AiModelsHandlerTest(unittest.TestCase):
             display_name="Embedding", provider_model_name="bge",
             category=2, provider="local", api_endpoint=None, api_key="secret",
             status=1, model_params={"embedding_dimension": 1536, "device": "cpu"},
-            descs="test", created_by="a", updated_by="b",
+            descs="test", created_by="a", updated_by="b", row_version=1,
         ))
         self.assertNotIn("api_key", result)
         self.assertEqual(1536, result["model_params"]["embedding_dimension"])
         self.assertEqual("embed-prod", result["served_model_name"])
+        self.assertEqual("ACTIVE", result["status"])
 
     def test_each_process_gets_category_scoped_management_routes(self):
         router = create_model_management_router(category=2)
         paths = {route.path for route in router.routes}
         self.assertIn("/internal/v1/models", paths)
         self.assertIn("/internal/v1/models/{model_id}", paths)
+
+    def test_list_route_uses_safe_lifecycle_contract(self):
+        class Service:
+            async def list(self, *, category):
+                return [{
+                    "model_id": str(uuid7()),
+                    "served_model_name": "chat-prod",
+                    "display_name": "Chat",
+                    "provider_model_name": "qwen",
+                    "category": category,
+                    "provider": "api_qwen",
+                    "api_endpoint": "https://example.invalid/v1",
+                    "status": "ACTIVE",
+                    "model_params": {"max_tokens": 128},
+                    "description": None,
+                    "row_version": 2,
+                }]
+
+        app = FastAPI()
+        app.state.model_registry = Service()
+        app.include_router(create_model_management_router(category=1))
+        response = TestClient(app).get("/internal/v1/models")
+        self.assertEqual(200, response.status_code)
+        self.assertEqual("ACTIVE", response.json()[0]["status"])
+        self.assertNotIn("api_key", response.text)
 
     def test_model_entity_separates_internal_and_serving_identity(self):
         self.assertIsInstance(AIModelEntity.__table__.c.model_id.type, UUIDv7Type)

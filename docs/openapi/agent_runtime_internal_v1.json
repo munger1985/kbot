@@ -139,6 +139,21 @@
             ],
             "title": "Data Profile Name"
           },
+          "data_query_mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "MCP",
+                  "SEMANTIC"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Query Mode"
+          },
           "description": {
             "anyOf": [
               {
@@ -206,6 +221,7 @@
           "enabled_capabilities",
           "models",
           "do_rerank",
+          "data_query_mode",
           "data_profile_name",
           "instruction",
           "config",
@@ -918,6 +934,18 @@
       "CreateAgentDefinitionRequest": {
         "additionalProperties": false,
         "properties": {
+          "agent_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Id"
+          },
           "config": {
             "additionalProperties": true,
             "title": "Config",
@@ -935,6 +963,21 @@
               }
             ],
             "title": "Data Profile Name"
+          },
+          "data_query_mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "MCP",
+                  "SEMANTIC"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Query Mode"
           },
           "description": {
             "anyOf": [
@@ -1665,6 +1708,21 @@
             ],
             "title": "Data Profile Name"
           },
+          "data_query_mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "MCP",
+                  "SEMANTIC"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Query Mode"
+          },
           "description": {
             "anyOf": [
               {
@@ -1966,6 +2024,52 @@
           }
         },
         "summary": "Create Agent Definition",
+        "tags": [
+          "Agent Definition"
+        ]
+      }
+    },
+    "/internal/v1/agents/model-references/{model_id}": {
+      "get": {
+        "description": "只允许模型服务执行跨 Domain 引用检查。",
+        "operationId": "list_agent_model_references_internal_v1_agents_model_references__model_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "model_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Model Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Agent Model References Internal V1 Agents Model References  Model Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Agent Model References",
         "tags": [
           "Agent Definition"
         ]

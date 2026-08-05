@@ -39,6 +39,9 @@ class VisualService:
         if self._initialized:
             await self._pool.unload_model(served_model_name)
 
+    def is_model_loaded(self, served_model_name: str) -> bool:
+        return self._pool.is_model_loaded(served_model_name)
+
     async def embed(self, served_model_name: str, image_base64: str) -> list[float]:
         """图片 → 视觉 embedding"""
         if not self._initialized:

@@ -95,6 +95,32 @@ class ModelPoolTest(unittest.IsolatedAsyncioTestCase):
             await pool.load_model("missing-model")
         self.assertNotIn("missing-model", pool._model_locks)
 
+    async def test_invalidation_makes_next_request_load_new_configuration(self):
+        pool = _Pool()
+        revision = {"value": "v1"}
+
+        async def fetch(served_model_name: str):
+            return {
+                "served_model_name": served_model_name,
+                "provider_model_name": revision["value"],
+            }
+
+        pool._fetch_model_data = fetch
+        first = await pool.load_model("chat-prod")
+        revision["value"] = "v2"
+        await pool.unload_model("chat-prod")
+        second = await pool.load_model("chat-prod")
+        self.assertEqual("v1", first["provider_model_name"])
+        self.assertEqual("v2", second["provider_model_name"])
+
+    async def test_new_process_loads_catalogue_configuration(self):
+        first_pool = _Pool()
+        await first_pool.load_model("chat-prod")
+        await first_pool.shutdown()
+        restarted_pool = _Pool()
+        model = await restarted_pool.load_model("chat-prod")
+        self.assertEqual("provider-chat-prod", model["provider_model_name"])
+
 
 if __name__ == "__main__":
     unittest.main()

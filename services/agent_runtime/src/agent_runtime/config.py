@@ -89,6 +89,13 @@ class AgentRuntimeSettings(Settings):
             timeout_seconds=120,
         )
     )
+    data_query: ServiceDependencyConfig = Field(
+        default_factory=lambda: ServiceDependencyConfig(
+            base_url="http://127.0.0.1:18140",
+            audience="kbot-data-query-api",
+            timeout_seconds=300,
+        )
+    )
     llm: ServiceDependencyConfig = Field(
         default_factory=lambda: ServiceDependencyConfig(
             base_url="http://127.0.0.1:18092",

@@ -11,6 +11,11 @@ from .planning import (
     TaskSpec,
 )
 from .skills import SkillManifest, SkillRegistry
+from .memory_policy import (
+    AUTOMATICALLY_SHARED_MEMORY_KEYS,
+    MemoryScope,
+    memory_scope,
+)
 from .state_machine import (
     DelegationStatus,
     InvalidStateTransition,
@@ -27,6 +32,7 @@ __all__ = [
     "ExecutionKind",
     "ExecutionMode",
     "InvalidStateTransition",
+    "MemoryScope",
     "PlanDraft",
     "PlanLimits",
     "PlanValidationError",
@@ -36,7 +42,9 @@ __all__ = [
     "SkillRegistry",
     "TaskSpec",
     "TaskStatus",
+    "AUTOMATICALLY_SHARED_MEMORY_KEYS",
     "ensure_delegation_transition",
     "ensure_run_transition",
     "ensure_task_transition",
+    "memory_scope",
 ]

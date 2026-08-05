@@ -16,7 +16,7 @@ from knowledge_core.application.evidence_retrieval import (
 )
 from knowledge_core.application.retrieval import BundleCandidate
 from knowledge_core.domain.model_bindings import collection_model_id
-from platform_core.dictionary import ModelCategory, Status
+from platform_core.dictionary import ModelCategory
 
 
 class _StrictModel(BaseModel):
@@ -81,7 +81,7 @@ class CollectionRetrievalModelResolver:
         model = await self._model_config_client.get_model(model_id)
         if int(model.get("category") or 0) != int(ModelCategory.LLM):
             raise ValueError("Collection Retrieval 模型不是 LLM")
-        if int(model.get("status") or 0) != int(Status.ENABLED):
+        if model.get("status") != "ACTIVE":
             raise ValueError("Collection Retrieval LLM 未启用")
         served_name = str(model.get("served_model_name") or "").strip()
         if not served_name:

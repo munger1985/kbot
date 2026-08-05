@@ -14,7 +14,108 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "ModelArchiveRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expected_row_version"
+        ],
+        "title": "ModelArchiveRequest",
+        "type": "object"
+      },
+      "ModelCatalogItem": {
+        "additionalProperties": false,
+        "properties": {
+          "api_endpoint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Endpoint"
+          },
+          "category": {
+            "maximum": 5.0,
+            "minimum": 1.0,
+            "title": "Category",
+            "type": "integer"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "model_id": {
+            "format": "uuid",
+            "title": "Model Id",
+            "type": "string"
+          },
+          "model_params": {
+            "additionalProperties": true,
+            "title": "Model Params",
+            "type": "object"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "provider_model_name": {
+            "title": "Provider Model Name",
+            "type": "string"
+          },
+          "row_version": {
+            "minimum": 1.0,
+            "title": "Row Version",
+            "type": "integer"
+          },
+          "served_model_name": {
+            "title": "Served Model Name",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "DRAFT",
+              "ACTIVE",
+              "ARCHIVED"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "model_id",
+          "served_model_name",
+          "display_name",
+          "provider_model_name",
+          "category",
+          "provider",
+          "status",
+          "row_version"
+        ],
+        "title": "ModelCatalogItem",
+        "type": "object"
+      },
       "ModelCreateRequest": {
+        "additionalProperties": false,
         "properties": {
           "api_endpoint": {
             "anyOf": [
@@ -41,11 +142,12 @@
             "title": "Api Key"
           },
           "category": {
-            "exclusiveMinimum": 0.0,
+            "maximum": 5.0,
+            "minimum": 1.0,
             "title": "Category",
             "type": "integer"
           },
-          "descs": {
+          "description": {
             "anyOf": [
               {
                 "maxLength": 512,
@@ -55,7 +157,7 @@
                 "type": "null"
               }
             ],
-            "title": "Descs"
+            "title": "Description"
           },
           "display_name": {
             "maxLength": 256,
@@ -88,11 +190,14 @@
             "type": "string"
           },
           "status": {
-            "default": 0,
-            "maximum": 2.0,
-            "minimum": 0.0,
+            "default": "DRAFT",
+            "enum": [
+              "DRAFT",
+              "ACTIVE",
+              "ARCHIVED"
+            ],
             "title": "Status",
-            "type": "integer"
+            "type": "string"
           }
         },
         "required": [
@@ -105,7 +210,171 @@
         "title": "ModelCreateRequest",
         "type": "object"
       },
+      "ModelDeleteRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expected_row_version"
+        ],
+        "title": "ModelDeleteRequest",
+        "type": "object"
+      },
+      "ModelProviderOption": {
+        "additionalProperties": false,
+        "properties": {
+          "allowed_model_params": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Allowed Model Params",
+            "type": "array"
+          },
+          "category": {
+            "maximum": 5.0,
+            "minimum": 1.0,
+            "title": "Category",
+            "type": "integer"
+          },
+          "max_context_tokens": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Context Tokens"
+          },
+          "provider": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Provider",
+            "type": "string"
+          },
+          "required_fields": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Required Fields",
+            "type": "array"
+          },
+          "secret_fields": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Secret Fields",
+            "type": "array"
+          },
+          "supports_tool_calling": {
+            "default": false,
+            "title": "Supports Tool Calling",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "category",
+          "provider"
+        ],
+        "title": "ModelProviderOption",
+        "type": "object"
+      },
+      "ModelReference": {
+        "additionalProperties": false,
+        "properties": {
+          "resource_id": {
+            "title": "Resource Id",
+            "type": "string"
+          },
+          "resource_type": {
+            "title": "Resource Type",
+            "type": "string"
+          },
+          "service": {
+            "title": "Service",
+            "type": "string"
+          },
+          "usage": {
+            "title": "Usage",
+            "type": "string"
+          }
+        },
+        "required": [
+          "service",
+          "resource_type",
+          "resource_id",
+          "usage"
+        ],
+        "title": "ModelReference",
+        "type": "object"
+      },
+      "ModelReferenceSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "model_id": {
+            "format": "uuid",
+            "title": "Model Id",
+            "type": "string"
+          },
+          "references": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ModelReference"
+            },
+            "title": "References",
+            "type": "array"
+          },
+          "unavailable_services": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Unavailable Services",
+            "type": "array"
+          }
+        },
+        "required": [
+          "model_id"
+        ],
+        "title": "ModelReferenceSummary",
+        "type": "object"
+      },
+      "ModelStatusRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "DRAFT",
+              "ACTIVE"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "expected_row_version",
+          "status"
+        ],
+        "title": "ModelStatusRequest",
+        "type": "object"
+      },
       "ModelUpdateRequest": {
+        "additionalProperties": false,
         "properties": {
           "api_endpoint": {
             "anyOf": [
@@ -131,7 +400,7 @@
             ],
             "title": "Api Key"
           },
-          "descs": {
+          "description": {
             "anyOf": [
               {
                 "maxLength": 512,
@@ -141,7 +410,7 @@
                 "type": "null"
               }
             ],
-            "title": "Descs"
+            "title": "Description"
           },
           "display_name": {
             "anyOf": [
@@ -156,6 +425,11 @@
             ],
             "title": "Display Name"
           },
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          },
           "model_params": {
             "anyOf": [
               {
@@ -167,21 +441,11 @@
               }
             ],
             "title": "Model Params"
-          },
-          "status": {
-            "anyOf": [
-              {
-                "maximum": 2.0,
-                "minimum": 0.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Status"
           }
         },
+        "required": [
+          "expected_row_version"
+        ],
         "title": "ModelUpdateRequest",
         "type": "object"
       },
@@ -345,7 +609,13 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ModelCatalogItem"
+                  },
+                  "title": "Response List Models Internal V1 Models Get",
+                  "type": "array"
+                }
               }
             },
             "description": "Successful Response"
@@ -372,7 +642,9 @@
           "201": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ModelCatalogItem"
+                }
               }
             },
             "description": "Successful Response"
@@ -394,9 +666,34 @@
         ]
       }
     },
+    "/internal/v1/models/provider-options": {
+      "get": {
+        "operationId": "provider_options_internal_v1_models_provider_options_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ModelProviderOption"
+                  },
+                  "title": "Response Provider Options Internal V1 Models Provider Options Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Provider Options",
+        "tags": [
+          "Model Configuration"
+        ]
+      }
+    },
     "/internal/v1/models/{model_id}": {
       "delete": {
-        "operationId": "archive_model_internal_v1_models__model_id__delete",
+        "operationId": "delete_model_internal_v1_models__model_id__delete",
         "parameters": [
           {
             "in": "path",
@@ -409,6 +706,16 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelDeleteRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "204": {
             "description": "Successful Response"
@@ -424,7 +731,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Archive Model",
+        "summary": "Delete Model",
         "tags": [
           "Model Configuration"
         ]
@@ -447,7 +754,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ModelCatalogItem"
+                }
               }
             },
             "description": "Successful Response"
@@ -496,7 +805,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ModelCatalogItem"
+                }
               }
             },
             "description": "Successful Response"
@@ -513,6 +824,153 @@
           }
         },
         "summary": "Update Model",
+        "tags": [
+          "Model Configuration"
+        ]
+      }
+    },
+    "/internal/v1/models/{model_id}/archive": {
+      "post": {
+        "operationId": "archive_model_internal_v1_models__model_id__archive_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "model_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Model Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelArchiveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Archive Model",
+        "tags": [
+          "Model Configuration"
+        ]
+      }
+    },
+    "/internal/v1/models/{model_id}/references": {
+      "get": {
+        "operationId": "get_model_references_internal_v1_models__model_id__references_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "model_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Model Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelReferenceSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Model References",
+        "tags": [
+          "Model Configuration"
+        ]
+      }
+    },
+    "/internal/v1/models/{model_id}/status": {
+      "patch": {
+        "operationId": "change_model_status_internal_v1_models__model_id__status_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "model_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Model Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelStatusRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelCatalogItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Change Model Status",
         "tags": [
           "Model Configuration"
         ]

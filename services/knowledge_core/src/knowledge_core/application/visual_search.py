@@ -183,7 +183,7 @@ class KnowledgeCoreVisualService:
         model = await self._model_config_client.get_model(model_id)
         if int(model.get("category") or 0) != 3:
             raise ValueError("Collection 绑定的模型不是视觉 Embedding")
-        if int(model.get("status") or 0) != 1:
+        if model.get("status") != "ACTIVE":
             raise ValueError("Collection 绑定的视觉 Embedding 模型不可用")
         served_name = str(model.get("served_model_name") or "").strip()
         if not served_name:

@@ -15,12 +15,15 @@ SERVICES=(
     "knowledge_core.entrypoints.projection"
     "agent_runtime.entrypoints.api"
     "agent_runtime.entrypoints.worker"
+    "data_query.entrypoints.api"
+    "data_query.entrypoints.worker"
     "aiops_agent.entrypoints.api"
     "aiops_agent.entrypoints.worker"
     "aiops_agent.entrypoints.scheduler"
     "aiops_agent.entrypoints.db_executor"
     "main_api.entrypoints.api"
     "main_api.entrypoints.slack_worker"
+    "main_api.entrypoints.notification_worker"
 )
 
 # 安全查找在指定目录运行的 Python 服务进程

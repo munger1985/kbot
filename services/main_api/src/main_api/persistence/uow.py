@@ -5,6 +5,8 @@ from __future__ import annotations
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from main_api.repositories import (
+    CompositionReceiptRepository,
+    NotificationRepository,
     PlatformDomainRepository,
     SlackIntegrationRepository,
 )
@@ -16,11 +18,15 @@ class MainApiUnitOfWork:
         self.session: AsyncSession | None = None
         self.domains: PlatformDomainRepository | None = None
         self.slack: SlackIntegrationRepository | None = None
+        self.notifications: NotificationRepository | None = None
+        self.compositions: CompositionReceiptRepository | None = None
 
     async def __aenter__(self) -> "MainApiUnitOfWork":
         self.session = self._session_factory()
         self.domains = PlatformDomainRepository(self.session)
         self.slack = SlackIntegrationRepository(self.session)
+        self.notifications = NotificationRepository(self.session)
+        self.compositions = CompositionReceiptRepository(self.session)
         return self
 
     async def __aexit__(self, exc_type, exc, traceback) -> None:
@@ -32,6 +38,8 @@ class MainApiUnitOfWork:
         self.session = None
         self.domains = None
         self.slack = None
+        self.notifications = None
+        self.compositions = None
 
     async def commit(self) -> None:
         if self.session is None:

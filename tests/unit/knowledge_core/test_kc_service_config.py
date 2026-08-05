@@ -1,6 +1,5 @@
 """Knowledge Core 独立服务配置检查。"""
 
-import os
 import unittest
 import subprocess
 import sys
@@ -10,13 +9,6 @@ from knowledge_core.config import KnowledgeCoreSettings
 
 
 ROOT = Path(__file__).resolve().parents[3]
-SOURCE_PATH = os.pathsep.join(
-    (
-        str(ROOT / "packages" / "platform_core" / "src"),
-        str(ROOT / "packages" / "platform_clients" / "src"),
-        str(ROOT / "services" / "knowledge_core" / "src"),
-    )
-)
 
 
 class KnowledgeCoreConfigTest(unittest.TestCase):
@@ -39,7 +31,6 @@ class KnowledgeCoreConfigTest(unittest.TestCase):
                 "import knowledge_core.entrypoints.parser",
             ],
             cwd=ROOT,
-            env={**os.environ, "PYTHONPATH": SOURCE_PATH},
             check=False,
             capture_output=True,
             text=True,

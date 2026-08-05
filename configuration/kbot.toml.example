@@ -33,6 +33,15 @@ key_digest = "0000000000000000000000000000000000000000000000000000000000000000"
 # [paths]
 # docling_models = "/opt/kbot/models/docling_models"
 
+# Main API 通知投影和 SSE 的资源边界；单机默认值通常无需修改。
+# [notifications]
+# dispatcher_batch_size = 50
+# dispatcher_lease_seconds = 60
+# dispatcher_max_attempts = 5
+# dispatcher_poll_seconds = 1.0
+# sse_poll_interval_seconds = 1.0
+# sse_heartbeat_seconds = 15.0
+
 # 单机部署无需配置 endpoints。只有服务分散到不同主机时才覆盖对应地址。
 # [endpoints]
 # knowledge_core = "http://knowledge-core.internal:18090"

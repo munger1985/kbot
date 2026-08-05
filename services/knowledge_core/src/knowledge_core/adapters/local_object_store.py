@@ -9,6 +9,7 @@ import asyncio
 import hashlib
 import shutil
 from pathlib import Path
+from collections.abc import AsyncIterator
 
 from knowledge_core.ports.object_store import StoredObject
 
@@ -83,6 +84,49 @@ class LocalKnowledgeObjectStore:
             self._remove_file_and_empty_parents,
             Path(uri),
         )
+
+    async def size(self, uri: str) -> int:
+        """返回受对象存储根目录约束的文件大小。"""
+        path = self._scoped_file(uri)
+        return int(await asyncio.to_thread(lambda: path.stat().st_size))
+
+    async def stream(
+        self,
+        uri: str,
+        *,
+        offset: int = 0,
+        length: int | None = None,
+        chunk_size: int = 1024 * 1024,
+    ) -> AsyncIterator[bytes]:
+        """按固定块流式读取，可选返回单一 Range。"""
+        if offset < 0 or (length is not None and length < 0):
+            raise ValueError("对象读取范围无效")
+        path = self._scoped_file(uri)
+        reader = await asyncio.to_thread(path.open, "rb")
+        remaining = length
+        try:
+            if offset:
+                await asyncio.to_thread(reader.seek, offset)
+            while remaining is None or remaining > 0:
+                read_size = (
+                    chunk_size
+                    if remaining is None
+                    else min(chunk_size, remaining)
+                )
+                chunk = await asyncio.to_thread(reader.read, read_size)
+                if not chunk:
+                    break
+                if remaining is not None:
+                    remaining -= len(chunk)
+                yield chunk
+        finally:
+            await asyncio.to_thread(reader.close)
+
+    def _scoped_file(self, uri: str) -> Path:
+        path = Path(uri).resolve()
+        if not path.is_relative_to(self._root) or not path.is_file():
+            raise FileNotFoundError("对象不存在于当前本地对象存储")
+        return path
 
     def _remove_file_and_empty_parents(self, path: Path) -> None:
         """删除对象文件，并在对象命名空间内向上清理空目录。"""

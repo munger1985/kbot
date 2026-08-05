@@ -34,9 +34,18 @@ Knowledge Core 来源于 3.5 已完成的实现，是 4.0 的正式基线，不�
 bash scripts/deployment/install_workspace.sh
 ```
 
-脚本只安装 `requirements.txt` 中锁定的第三方依赖，不打包或安装仓库内服务。
-`start_kbot.sh` 会把共享包和各服务的 `src` 目录加入 `PYTHONPATH`，直接从当前
-源码启动。
+脚本先安装 `requirements.txt` 中锁定的第三方依赖，再将全部共享包和服务以
+editable package 安装。安装后会核对发行包版本和模块来源，避免与其他工作区的
+同名 Python 包混用。生产安装使用：
+
+```bash
+bash scripts/deployment/install_workspace.sh --production
+```
+
+生产模式构建并安装本地 Wheel，不从源码目录加载。
+
+内部包的 Python Import 名与部分同源项目相同，不能在同一环境中同时安装两个工作区的
+editable package。安装脚本发现模块来自其他工作区时会失败，应切换到 KBot 专用环境。
 
 按 [configuration/README.md](configuration/README.md) 从
 `configuration/kbot.toml.example` 准备唯一部署文件。密码、Token、模型厂商
@@ -45,8 +54,6 @@ Key和私钥只能由环境变量或Secret管理系统注入。
 可单独启动服务：
 
 ```bash
-export PYTHONPATH="$PWD/packages/platform_core/src:$PWD/packages/platform_clients/src:$PWD/services/main_api/src:$PWD/services/agent_runtime/src:$PWD/services/knowledge_core/src:$PWD/services/aiops_agent/src:$PWD/services/model_serving/src"
-
 python3 -m main_api.entrypoints.api
 python3 -m main_api.entrypoints.slack_worker
 python3 -m agent_runtime.entrypoints.api

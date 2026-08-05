@@ -31,7 +31,7 @@ class MainApiModelCatalogTest(unittest.TestCase):
                         "display_name": "Chat Prod",
                         "category": 1,
                         "provider": "api_qwen",
-                        "status": 1,
+                        "status": "ACTIVE",
                     },
                     {
                         "model_id": str(uuid7()),
@@ -51,7 +51,7 @@ class MainApiModelCatalogTest(unittest.TestCase):
                         "display_name": "Embedding Prod",
                         "category": 2,
                         "provider": "local_qwen",
-                        "status": 1,
+                        "status": "ACTIVE",
                         "model_params": {"embedding_dimension": 2048},
                     }
                 ]

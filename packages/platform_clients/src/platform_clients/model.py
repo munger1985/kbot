@@ -81,7 +81,7 @@ class AIModelConfigClient:
                             f"{response.status}: {detail}"
                         )
                     payload = await response.json()
-                    rows = payload.get("models")
+                    rows = payload
                     if not isinstance(rows, list):
                         raise RuntimeError(
                             "模型服务返回了无效的模型目录"
@@ -92,6 +92,69 @@ class AIModelConfigClient:
         except Exception as exc:
             logger.error("读取模型目录失败: {}", exc)
             raise RuntimeError("模型配置服务暂时不可用") from exc
+
+    async def list_provider_options(self) -> list[dict[str, Any]]:
+        payload = await self._request("GET", "/provider-options")
+        if not isinstance(payload, list):
+            raise RuntimeError("模型服务返回了无效 Provider 目录")
+        return [item for item in payload if isinstance(item, dict)]
+
+    async def create_model(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return await self._request("POST", "", payload=payload)
+
+    async def update_model(
+        self, model_id: UUID, payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        return await self._request("PATCH", f"/{model_id}", payload=payload)
+
+    async def change_model_status(
+        self, model_id: UUID, payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        return await self._request(
+            "PATCH", f"/{model_id}/status", payload=payload,
+        )
+
+    async def archive_model(
+        self, model_id: UUID, payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        return await self._request(
+            "POST", f"/{model_id}/archive", payload=payload,
+        )
+
+    async def get_model_references(self, model_id: UUID) -> dict[str, Any]:
+        return await self._request("GET", f"/{model_id}/references")
+
+    async def delete_model(
+        self, model_id: UUID, payload: dict[str, Any],
+    ) -> None:
+        await self._request("DELETE", f"/{model_id}", payload=payload)
+
+    async def _request(
+        self, method: str, suffix: str, *, payload: dict[str, Any] | None = None,
+    ) -> Any:
+        url = f"{self.base_url}{INTERNAL_API_V1}/models{suffix}"
+        headers = {
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+            **build_internal_auth_headers(
+                audience=self.audience,
+                caller_service=self.caller_service,
+            ),
+        }
+        async with aiohttp.ClientSession(
+            timeout=aiohttp.ClientTimeout(total=self.timeout)
+        ) as session:
+            async with session.request(
+                method, url, headers=headers, json=payload,
+            ) as response:
+                if response.status == 204:
+                    return {}
+                body = await response.json(content_type=None)
+                if response.status >= 400:
+                    raise RuntimeError(
+                        f"模型服务返回 HTTP {response.status}: {body}"
+                    )
+                return body
 
 @dataclass
 class LLMChunk:

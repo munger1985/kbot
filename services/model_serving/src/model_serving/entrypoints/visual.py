@@ -27,7 +27,7 @@ from model_serving.visual.schema import VisualEmbeddingRequest, VisualEmbeddingR
 from platform_core.security import create_internal_auth_middleware
 from platform_core.platform.port_check import check_port_available
 from model_serving.common.management_router import create_model_management_router
-from model_serving.common.model_registry import ModelRegistryService
+from model_serving.common.bootstrap import create_model_registry
 
 # 从 VisualConfig 读取视觉嵌入参数
 settings = get_model_serving_settings()
@@ -55,9 +55,11 @@ async def lifespan(app: FastAPI):
     db_runtime = create_database_runtime()
     app.state.db_runtime = db_runtime
     visual_service.bind_session_factory(db_runtime.session_factory)
-    app.state.model_registry = ModelRegistryService(
+    app.state.model_registry = create_model_registry(
         session_factory=db_runtime.session_factory,
-        on_model_changed=visual_service.invalidate_model,
+        runtime_service=visual_service,
+        service_name=SERVICE_NAME,
+        settings=settings,
     )
 
     log_conf = LogConfig(

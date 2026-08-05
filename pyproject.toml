@@ -1,0 +1,22 @@
+[tool.kbot.workspace]
+members = [
+  "packages/platform_core",
+  "packages/platform_clients",
+  "services/model_serving",
+  "services/knowledge_core",
+  "services/agent_runtime",
+  "services/aiops_agent",
+  "services/data_query",
+  "services/main_api",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]

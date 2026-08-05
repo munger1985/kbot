@@ -58,6 +58,9 @@ class LLMService:
         if self._initialized:
             await self._model_pool.unload_model(served_model_name)
 
+    def is_model_loaded(self, served_model_name: str) -> bool:
+        return self._model_pool.is_model_loaded(served_model_name)
+
     async def get_llm_model(self, served_model_name: str) -> BaseLLM:
         """Get llm model instance by its unique name."""
         if not self._initialized:

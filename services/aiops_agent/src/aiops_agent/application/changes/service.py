@@ -878,6 +878,7 @@ class AIOpsChangeService:
                 executor_request_id=command.executor_request_id,
                 executor_instance_id=command.executor_instance_id,
                 target_id=target.target_id,
+                domain_id=int(target.domain_id),
                 target_version=int(target.row_version),
                 db_type=target.db_type,
                 connection_profile=dict(target.endpoint_json or {}),

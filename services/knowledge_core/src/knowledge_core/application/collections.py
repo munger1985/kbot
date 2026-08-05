@@ -12,6 +12,7 @@ from knowledge_core.domain.model_bindings import (
     normalize_collection_models,
 )
 from knowledge_core.persistence import KnowledgeCoreUnitOfWork
+from platform_core.identity import uuid7
 
 
 class CollectionNotFoundError(Exception):
@@ -26,6 +27,10 @@ class CollectionDeletionStateError(Exception):
     """The Collection is already being deleted or has an invalid lifecycle state."""
 
 
+class CollectionVersionConflictError(Exception):
+    """Collection 乐观锁版本与请求不一致。"""
+
+
 @dataclass(frozen=True)
 class CollectionSnapshot:
     """脱离数据库会话后仍可安全返回的 Collection 快照。"""
@@ -38,6 +43,8 @@ class CollectionSnapshot:
     status: str
     default_security_level: int
     metadata_json: dict[str, Any]
+    row_version: int
+    updated_at: datetime
 
 
 @dataclass(frozen=True)
@@ -62,6 +69,8 @@ def _collection_snapshot(entity: KcCollectionEntity) -> CollectionSnapshot:
         status=entity.status,
         default_security_level=int(entity.default_security_level),
         metadata_json=dict(entity.metadata_json or {}),
+        row_version=int(entity.row_version),
+        updated_at=entity.updated_at,
     )
 
 
@@ -83,6 +92,7 @@ class CreateCollectionCommand:
     domain_id: int
     display_name: str
     models: dict[str, UUID | str]
+    collection_id: UUID | None = None
     default_security_level: int = 1
     description: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
@@ -112,6 +122,7 @@ class UpdateCollectionModelsCommand:
     collection_id: UUID
     models: dict[str, UUID | str]
     actor_id: str = "svc:knowledge-core"
+    expected_row_version: int = 1
 
 
 class KnowledgeCoreCollectionService:
@@ -138,6 +149,7 @@ class KnowledgeCoreCollectionService:
             if uow.collections is None:
                 raise RuntimeError("Knowledge Core Unit of Work is not initialized")
             collection = KcCollectionEntity(
+                collection_id=command.collection_id or uuid7(),
                 domain_id=command.domain_id,
                 display_name=display_name,
                 description=command.description,
@@ -212,6 +224,8 @@ class KnowledgeCoreCollectionService:
             )
             if collection is None:
                 raise CollectionNotFoundError("Collection not found")
+            if int(collection.row_version) != command.expected_row_version:
+                raise CollectionVersionConflictError("Collection 已被其他请求修改")
             current = dict(collection.models_json or {})
             for role in KC_IMMUTABLE_MODEL_ROLES:
                 existing = current.get(role)
@@ -222,6 +236,7 @@ class KnowledgeCoreCollectionService:
                     )
             collection.models_json = models
             collection.updated_by = command.actor_id
+            collection.row_version = int(collection.row_version) + 1
             await uow.session.flush()
             await uow.commit()
             return collection
@@ -233,13 +248,18 @@ class KnowledgeCoreCollectionService:
         collection_id: UUID,
         actor_id: str,
     ) -> UUID:
-        """Mark an unused Collection for asynchronous, all-descendant purge."""
+        """以确定性 Job 幂等请求未绑定 Collection 的级联清理。"""
         async with self._uow_factory() as uow:
-            if uow.collections is None or uow.bindings is None or uow.jobs is None or uow.session is None:
+            if (
+                uow.collections is None
+                or uow.bindings is None
+                or uow.jobs is None
+            ):
                 raise RuntimeError("Knowledge Core Unit of Work is not initialized")
             collection = await uow.collections.get_by_id_scope(
                 domain_id=domain_id,
                 collection_id=collection_id,
+                lock=True,
             )
             if collection is None:
                 raise CollectionNotFoundError("Collection not found")
@@ -247,22 +267,47 @@ class KnowledgeCoreCollectionService:
                 collection_id=collection.collection_id,
             ):
                 raise CollectionInUseError("Collection has active Agent bindings")
-            if collection.status == "DELETING":
-                raise CollectionDeletionStateError("Collection deletion is already queued")
+            idempotency_key = f"collection-purge:{collection.collection_id}"
+            fingerprint = sha256(
+                f"collection:{collection.collection_id}:purge".encode()
+            ).hexdigest()
+            existing = await uow.jobs.get_by_idempotency_key(
+                collection_id=collection.collection_id,
+                idempotency_key=idempotency_key,
+                input_fingerprint=fingerprint,
+            )
+            if existing is not None and collection.status in {
+                "DELETING",
+                "DELETION_FAILED",
+            }:
+                if existing.job_status == "FAILED":
+                    existing.job_status = "PENDING"
+                    existing.attempt_count = 0
+                    existing.available_at = datetime.now(timezone.utc)
+                    existing.failure_class = None
+                    existing.failure_code = None
+                    existing.failure_message = None
+                    collection.status = "DELETING"
+                    await uow.flush()
+                    await uow.commit()
+                return existing.ingestion_job_id
+            if collection.status in {"DELETING", "DELETION_FAILED"}:
+                raise CollectionDeletionStateError(
+                    "Collection 删除状态缺少对应补偿 Job"
+                )
             collection.status = "DELETING"
             collection.updated_by = actor_id
-            fingerprint = sha256(f"collection:{collection.collection_id}:purge".encode()).hexdigest()
             job = KcIngestionJobEntity(
                 collection_id=collection.collection_id, bundle_revision_id=None,
                 document_version_id=None, parse_view_id=None,
-                job_type="COLLECTION_PURGE", idempotency_key=f"collection-purge:{collection.collection_id}",
+                job_type="COLLECTION_PURGE", idempotency_key=idempotency_key,
                 input_fingerprint=fingerprint,
                 payload_json={"collection_id": str(collection.collection_id)},
                 job_status="PENDING", priority=100, available_at=datetime.now(timezone.utc),
                 attempt_count=0, max_attempts=3, created_by=actor_id, updated_by=actor_id,
             )
             await uow.jobs.add(job)
-            await uow.session.flush()
+            await uow.flush()
             await uow.commit()
             return job.ingestion_job_id
 
@@ -360,3 +405,23 @@ class KnowledgeCoreBindingService:
                 if collection is not None:
                     result.append(_binding_snapshot(binding))
             return result
+
+    async def list_collection(
+        self, *, domain_id: int, collection_id: UUID,
+    ) -> list[CollectionBindingSnapshot]:
+        """列出 Collection 的活跃消费者，供停用前引用检查使用。"""
+        async with self._uow_factory() as uow:
+            if uow.bindings is None or uow.collections is None:
+                raise RuntimeError("Knowledge Core Unit of Work is not initialized")
+            collection = await uow.collections.get_by_id_scope(
+                domain_id=domain_id, collection_id=collection_id,
+            )
+            if collection is None:
+                raise CollectionNotFoundError("Collection not found")
+            bindings = await uow.bindings.list_by_collection(
+                collection_id=collection_id,
+            )
+            return [
+                _binding_snapshot(binding) for binding in bindings
+                if binding.status == "ACTIVE"
+            ]

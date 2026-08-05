@@ -39,6 +39,7 @@ class AgentDefinitionEntity(BaseEntity):
     do_rerank: Mapped[int] = mapped_column(
         Numeric(1, 0), nullable=False, default=0
     )
+    data_query_mode: Mapped[str | None] = mapped_column(String(16))
     data_profile_name: Mapped[str | None] = mapped_column(String(256))
     instruction: Mapped[str | None] = mapped_column(Text)
     config_json: Mapped[dict[str, Any]] = mapped_column(

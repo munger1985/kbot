@@ -57,7 +57,7 @@ def _ddl_columns() -> dict[str, set[str]]:
             if (
                 match := re.match(
                     r"\s{4}([A-Z][A-Z0-9_]*)\s+"
-                    r"(?:RAW|NUMBER|VARCHAR2|CLOB|JSON|TIMESTAMP)\b",
+                    r"(?:RAW|NUMBER|VARCHAR2|BLOB|CLOB|JSON|TIMESTAMP)\b",
                     line,
                 )
             )

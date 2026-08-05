@@ -6,7 +6,7 @@
   "scripts": [
     {
       "name": "001_ops_roots.sql",
-      "statements": 23,
+      "statements": 25,
       "sha256": "13543552c1f52e45e25eb0b9e21dfa3620540c8c92e0dd214de6419b9e8f19fe"
     },
     {
@@ -31,7 +31,7 @@
     },
     {
       "name": "006_ops_fks_views.sql",
-      "statements": 29,
+      "statements": 31,
       "sha256": "2aa3b6c5e398faba32902c09cb25d17fef101d3610f9e9c2dbe664da23fef998"
     }
   ],

@@ -8,7 +8,7 @@ import json
 from typing import Any
 from uuid import UUID
 
-from platform_core.dictionary import ModelCategory, Status
+from platform_core.dictionary import ModelCategory
 
 
 AGENT_MODEL_ROLE_CATEGORIES = {
@@ -56,7 +56,7 @@ class AgentModelCatalogResolver:
                 raise ValueError(
                     f"模型角色 {role} 必须绑定 {expected.name} 模型"
                 )
-            if int(definition.get("status") or 0) != int(Status.ENABLED):
+            if definition.get("status") != "ACTIVE":
                 raise ValueError(f"模型角色 {role} 绑定的模型未启用")
             served_name = str(
                 definition.get("served_model_name") or ""

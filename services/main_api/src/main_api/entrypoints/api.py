@@ -14,6 +14,8 @@ from main_api.app import create_main_api_app
 from main_api.application import (
     DomainManagementService,
     DomainValidationService,
+    NotificationCenterService,
+    ResourceCompositionService,
     SlackIntakeService,
 )
 from main_api.config import get_main_api_settings
@@ -24,6 +26,7 @@ from platform_clients import (
     AIOpsManagementClient,
     AgentRuntimeClient,
     KnowledgeCoreClient,
+    DataQueryClient,
 )
 from platform_core.database.oracle import create_database_runtime
 from platform_core.logger import LogConfig, LogManager
@@ -68,6 +71,9 @@ async def lifespan(app: FastAPI):
         uow_factory=uow_factory,
         slack_config=slack_config,
     )
+    app.state.notification_center_service = NotificationCenterService(
+        uow_factory=uow_factory,
+    )
     client_session = aiohttp.ClientSession(
         timeout=aiohttp.ClientTimeout(
             total=settings.knowledge_core.timeout_seconds,
@@ -85,6 +91,13 @@ async def lifespan(app: FastAPI):
         caller_service=config.service_name,
         audience=settings.agent_runtime.audience,
         timeout_seconds=settings.agent_runtime.timeout_seconds,
+        session=client_session,
+    )
+    app.state.data_query_client = DataQueryClient(
+        base_url=settings.data_query.base_url,
+        caller_service=config.service_name,
+        audience=settings.data_query.audience,
+        timeout_seconds=settings.data_query.timeout_seconds,
         session=client_session,
     )
     app.state.aiops_client = AIOpsManagementClient(
@@ -118,6 +131,14 @@ async def lifespan(app: FastAPI):
             settings.model_visual,
             settings.model_vlm,
         )
+    )
+    app.state.resource_composition_service = ResourceCompositionService(
+        uow_factory=uow_factory,
+        agent_client=app.state.agent_runtime_client,
+        knowledge_client=app.state.knowledge_core_client,
+        data_query_client=app.state.data_query_client,
+        model_clients=app.state.model_config_clients,
+        notification_center=app.state.notification_center_service,
     )
     logger.info("Main API 已启动，公开前缀=/api/v1")
     try:

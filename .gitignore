@@ -18,6 +18,8 @@ __pycache__/
 *.py[cod]
 *$py.class
 .pytest_cache/
+build/
+*.egg-info/
 
 # System files
 .DS_Store
@@ -43,6 +45,9 @@ knowledge_core_storage/
 # configuration files
 configuration/*.json
 *.toml
+!pyproject.toml
+!packages/*/pyproject.toml
+!services/*/pyproject.toml
 !packages/platform_core/src/platform_core/resources/prompts.toml
 !resources/topology.toml
 # kbot.toml 属于当前部署，只提交 kbot.toml.example。

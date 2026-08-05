@@ -31,7 +31,7 @@ class AgentModelResolutionTest(unittest.IsolatedAsyncioTestCase):
                     {
                         llm_id: {
                             "category": 1,
-                            "status": 1,
+                            "status": "ACTIVE",
                             "served_model_name": "chat-prod",
                             "model_params": {"temperature": 0.1},
                         }
@@ -41,7 +41,7 @@ class AgentModelResolutionTest(unittest.IsolatedAsyncioTestCase):
                     {
                         embedding_id: {
                             "category": 2,
-                            "status": 1,
+                            "status": "ACTIVE",
                             "served_model_name": "embed-prod",
                         }
                     }
@@ -74,7 +74,7 @@ class AgentModelResolutionTest(unittest.IsolatedAsyncioTestCase):
                     {
                         model_id: {
                             "category": 2,
-                            "status": 1,
+                            "status": "ACTIVE",
                             "served_model_name": "wrong-kind",
                         }
                     }
@@ -83,6 +83,20 @@ class AgentModelResolutionTest(unittest.IsolatedAsyncioTestCase):
         )
 
         with self.assertRaisesRegex(ValueError, "LLM"):
+            await resolver.resolve({"composer_llm": model_id})
+
+    async def test_archived_model_cannot_create_new_runtime_binding(self):
+        model_id = uuid7()
+        resolver = AgentModelCatalogResolver({
+            ModelCategory.LLM: _Client({
+                model_id: {
+                    "category": 1,
+                    "status": "ARCHIVED",
+                    "served_model_name": "archived-chat",
+                }
+            })
+        })
+        with self.assertRaisesRegex(ValueError, "未启用"):
             await resolver.resolve({"composer_llm": model_id})
 
     def test_configuration_requires_uuidv7_for_every_role(self):

@@ -37,7 +37,7 @@ class QueryResultReferenceCard(_Contract):
     reference_type: Literal["QUERY_RESULT"] = "QUERY_RESULT"
     citation_label: str
     query_result_id: UUID
-    profile: str
+    provider: Literal["MCP", "SEMANTIC"]
     row_count: int = Field(ge=0)
 
 

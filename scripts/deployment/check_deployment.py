@@ -4,23 +4,14 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-import sys
 
 import tomli
 
 
 ROOT = Path(__file__).resolve().parents[2]
-SOURCE_ROOTS = (
-    ROOT / "packages" / "platform_core" / "src",
-    ROOT / "packages" / "platform_clients" / "src",
-    ROOT / "services" / "main_api" / "src",
-)
-for source_root in reversed(SOURCE_ROOTS):
-    if str(source_root) not in sys.path:
-        sys.path.insert(0, str(source_root))
 
-from main_api.config import MainApiSettings  # noqa: E402
-from platform_core.config import load_settings  # noqa: E402
+from main_api.config import MainApiSettings
+from platform_core.config import load_settings
 
 
 def check_deployment(config_file: Path | None = None) -> list[str]:

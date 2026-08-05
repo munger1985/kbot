@@ -117,6 +117,7 @@ class AgentRuntimeService:
         skill_registry=None,
         root_planner=None,
         model_resolver=None,
+        notification_publisher,
     ):
         self._uow_factory = uow_factory
         self._plan_validator = plan_validator
@@ -124,6 +125,9 @@ class AgentRuntimeService:
         self._skill_registry = skill_registry
         self._root_planner = root_planner
         self._model_resolver = model_resolver
+        if notification_publisher is None:
+            raise ValueError("Agent Runtime 必须配置通知 Outbox Publisher")
+        self._notification_publisher = notification_publisher
 
     async def create_run(
         self, command: CreateRunCommand
@@ -175,6 +179,7 @@ class AgentRuntimeService:
                 ),
                 "models": {},
                 "do_rerank": bool(getattr(agent, "do_rerank", False)),
+                "data_query_mode": getattr(agent, "data_query_mode", None),
                 "data_profile_name": getattr(
                     agent, "data_profile_name", None
                 ),
@@ -597,8 +602,8 @@ class AgentRuntimeService:
             await uow.commit()
             return self._task_lease(task, run, input_artifacts)
 
-    @staticmethod
     async def _recover_expired_task(
+        self,
         uow,
         *,
         task: AgentTaskEntity,
@@ -625,7 +630,7 @@ class AgentRuntimeService:
         task.lease_token = None
         task.lease_until = None
         task.row_version = int(task.row_version) + 1
-        await AgentRuntimeService._append_event(
+        await self._append_event(
             uow,
             run=run,
             event_type="TASK_LEASE_EXPIRED",
@@ -645,7 +650,7 @@ class AgentRuntimeService:
             run.error_message = "Task 租约过期且已达到最大尝试次数"
             run.completed_at = now
             run.row_version = int(run.row_version) + 1
-            await AgentRuntimeService._append_event(
+            await self._append_event(
                 uow,
                 run=run,
                 event_type="RUN_FAILED",
@@ -1677,8 +1682,8 @@ class AgentRuntimeService:
                 "Artifact Producer 与实际 Skill 不一致",
             )
 
-    @staticmethod
     async def _append_event(
+        self,
         uow,
         *,
         run: AgentRunEntity,
@@ -1692,7 +1697,7 @@ class AgentRuntimeService:
         artifact: AgentArtifactEntity | None = None,
     ) -> AgentRunEventEntity:
         sequence = await uow.events.next_sequence(run_id=run.run_id)
-        return await uow.events.add(
+        event = await uow.events.add(
             AgentRunEventEntity(
                 run_id=run.run_id,
                 sequence_no=sequence,
@@ -1706,6 +1711,20 @@ class AgentRuntimeService:
                 trace_id=trace_id,
             )
         )
+        notification_type = {
+            "RUN_COMPLETED": "agent.run.completed",
+            "RUN_FAILED": "agent.run.failed",
+            "RUN_INPUT_REQUIRED": "agent.run.input_required",
+        }.get(event_type)
+        if notification_type is not None:
+            await self._notification_publisher.publish(
+                uow=uow,
+                run=run,
+                event_type=notification_type,
+                actor_id=actor_id,
+                payload=dict(payload),
+            )
+        return event
 
     @staticmethod
     def _run_receipt(

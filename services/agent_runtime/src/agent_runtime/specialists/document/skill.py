@@ -440,6 +440,17 @@ class KnowledgeRetrievalSkill:
 
     @staticmethod
     def _standalone_query(context: ExecutionContext) -> str:
+        document_scopes = [
+            item
+            for item in context.input_artifacts
+            if item.artifact_type == "DOCUMENT_SCOPE"
+        ]
+        if document_scopes:
+            scoped_query = str(
+                (document_scopes[-1].payload or {}).get("query") or ""
+            ).strip()
+            if scoped_query:
+                return scoped_query
         artifacts = [
             item
             for item in context.input_artifacts

@@ -15,10 +15,8 @@ from agent_runtime.runtime import (
 from agent_runtime.specialists.document.contracts import (
     DocumentRetrievalResult,
 )
-from agent_runtime.specialists.mcp_data.contracts import (
-    EChartsResult,
-    QueryResult,
-)
+from agent_runtime.specialists.data_query.contracts import QueryResult
+from agent_runtime.specialists.visualization import EChartsResult
 from platform_core.prompts import StrictPromptRenderer
 
 from .contracts import (
@@ -487,7 +485,7 @@ class ResponseComposerSkill:
                     QueryResultReferenceCard(
                         citation_label=label,
                         query_result_id=query.query_result_id,
-                        profile=query.profile,
+                        provider=query.provider,
                         row_count=query.row_count,
                     ),
                 ),

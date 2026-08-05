@@ -38,6 +38,7 @@ from agent_runtime.config import get_agent_runtime_settings
 from agent_runtime.domain.planning import PlanLimits, PlanValidator
 from agent_runtime.domain.skills import SkillRegistry
 from agent_runtime.persistence import create_agent_runtime_uow
+from agent_runtime.application.notifications import AgentRunOutboxPublisher
 from agent_runtime.specialists import register_builtin_manifests
 from agent_runtime.specialists.root import RootAgentPlanner
 from platform_core.database.oracle import create_database_runtime
@@ -45,7 +46,13 @@ from platform_core.logger import LogConfig, LogManager
 from platform_core.middleware.log_middleware import log_requests
 from platform_core.platform.port_check import check_port_available
 from platform_core.security import create_internal_auth_middleware
-from platform_clients import AIModelClient, AIModelConfigClient, MCPDataClient
+from platform_clients import (
+    AIModelClient,
+    AIModelConfigClient,
+    DataQueryClient,
+    KnowledgeCoreClient,
+    MCPDataClient,
+)
 from platform_core.dictionary import ModelCategory
 from platform_core.prompts import PromptResolver, load_prompt_catalog
 from pathlib import Path
@@ -103,9 +110,24 @@ async def lifespan(app: FastAPIOffline):
             ),
         }
     )
+    data_query_client = DataQueryClient(
+        base_url=settings.data_query.base_url,
+        caller_service=SERVICE_NAME,
+        audience=settings.data_query.audience,
+        timeout_seconds=settings.data_query.timeout_seconds,
+    )
+    knowledge_core_client = KnowledgeCoreClient(
+        base_url=settings.knowledge_core.base_url,
+        caller_service=SERVICE_NAME,
+        audience=settings.knowledge_core.audience,
+        timeout_seconds=settings.knowledge_core.timeout_seconds,
+    )
     app.state.agent_definition_service = AgentDefinitionService(
         uow_factory=uow_factory,
         model_resolver=model_resolver,
+        data_query_client=data_query_client,
+        knowledge_core_client=knowledge_core_client,
+        service_name=SERVICE_NAME,
     )
     model_client = AIModelClient(
         caller_service=SERVICE_NAME,
@@ -155,6 +177,7 @@ async def lifespan(app: FastAPIOffline):
             prompt_resolver=prompt_resolver,
         ),
         model_resolver=model_resolver,
+        notification_publisher=AgentRunOutboxPublisher(),
     )
     app.state.agent_runtime_service = runtime_service
     app.state.conversation_service = ConversationService(
@@ -172,6 +195,7 @@ async def lifespan(app: FastAPIOffline):
     try:
         yield
     finally:
+        await data_query_client.close()
         await db_runtime.close()
         logger.info("正在停止服务 [{}]", SERVICE_NAME)
 

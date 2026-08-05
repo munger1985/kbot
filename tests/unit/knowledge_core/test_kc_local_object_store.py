@@ -81,6 +81,31 @@ class LocalObjectStoreTest(unittest.TestCase):
 
             self.assertTrue(outside.exists())
 
+    def test_stream_supports_range_without_buffering_whole_object(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            object_root = root / "objects"
+            stored = object_root / "kc" / "collection-1" / "large.bin"
+            stored.parent.mkdir(parents=True)
+            stored.write_bytes(b"0123456789")
+            store = LocalKnowledgeObjectStore(object_root)
+
+            async def read() -> bytes:
+                self.assertEqual(10, await store.size(str(stored)))
+                return b"".join(
+                    [
+                        chunk
+                        async for chunk in store.stream(
+                            str(stored),
+                            offset=3,
+                            length=4,
+                            chunk_size=2,
+                        )
+                    ]
+                )
+
+            self.assertEqual(b"3456", asyncio.run(read()))
+
 
 if __name__ == "__main__":
     unittest.main()
