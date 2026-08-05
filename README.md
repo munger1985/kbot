@@ -36,7 +36,8 @@ bash scripts/deployment/install_workspace.sh
 
 脚本先安装 `requirements.txt` 中锁定的第三方依赖，再将全部共享包和服务以
 editable package 安装。安装后会核对发行包版本和模块来源，避免与其他工作区的
-同名 Python 包混用。生产安装使用：
+同名 Python 包混用。默认目标是 `kbot4` Conda 环境，也可通过 `KBOT_CONDA_ENV` 或
+`KBOT_PYTHON` 显式指定。生产安装使用：
 
 ```bash
 bash scripts/deployment/install_workspace.sh --production

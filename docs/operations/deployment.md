@@ -29,9 +29,16 @@ bash scripts/deployment/install_workspace.sh
 bash scripts/deployment/install_workspace.sh --production
 ```
 
-可通过 `KBOT_PYTHON=/path/to/python` 指定解释器；默认使用当前 `python` 或
-`python3`。安装后脚本会验证模块来源，发现其他工作区的同名 editable package 时
-直接失败。
+可通过 `KBOT_PYTHON=/path/to/python` 指定解释器。未指定时，安装脚本与
+`start_kbot.sh` 使用同一选择规则：优先安装到 `KBOT_CONDA_ENV`，否则自动选择
+`kbot4`，仅当 `kbot4` 不存在时回退到 `cube`。安装开始时会打印目标解释器，安装后会
+验证模块来源；发现其他工作区的同名 editable package 时直接失败。
+
+例如明确安装到 `kbot4`：
+
+```bash
+KBOT_CONDA_ENV=kbot4 bash scripts/deployment/install_workspace.sh
+```
 
 KBot 与其他使用 `platform_core`、`agent_runtime` 等相同 Import 名的项目不能同时在
 一个 Python 环境中以 editable 模式安装。遇到来源冲突时应使用 KBot 专用环境，不能通过

@@ -66,8 +66,8 @@ services/
 
 重写 `scripts/deployment/install_workspace.sh`，行为与 Ammolite 对齐：
 
-1. 解析 `KBOT_PYTHON`，未设置时选择 `python` 或 `python3`；不假定调用者已激活某个
-   特定环境。
+1. 解析 `KBOT_PYTHON`；未设置时优先使用 `KBOT_CONDA_ENV`，否则自动选择 `kbot4`，
+   开发机才允许回退 `cube`。通过 `conda run` 解析目标解释器，不要求调用者预先激活环境。
 2. 默认开发模式先执行 `"$python_bin" -m pip install -r requirements.txt`，再按确定顺序执行：
 
    ```bash

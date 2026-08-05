@@ -51,6 +51,16 @@ class RepositoryScriptLayoutTest(unittest.TestCase):
         self.assertIn('-m pip install --no-deps -e "$member"', installer)
         self.assertIn('-m pip wheel --no-deps', installer)
         self.assertIn('check_workspace_packages.py', installer)
+        self.assertIn('KBOT_CONDA_ENV', installer)
+        self.assertIn('"$conda_bin" run -n "$selected_conda_env"', installer)
+        self.assertIn('conda_env_exists "$conda_bin" "kbot4"', installer)
+        self.assertNotIn('conda_env_exists "$conda_bin" "kbot3"', installer)
+
+        startup = (ROOT / "start_kbot.sh").read_text(encoding="utf-8")
+        self.assertIn("当前 Conda 环境缺少 KBot 内部包", startup)
+        self.assertIn("scripts/deployment/install_workspace.sh", startup)
+        self.assertIn('conda_env_exists "kbot4"', startup)
+        self.assertNotIn('conda_env_exists "kbot3"', startup)
 
     def test_operational_python_scripts_do_not_modify_import_path(self):
         scripts = (

@@ -55,7 +55,7 @@ OpenAPI 和文档标识全部使用 KBot，不得保留 Ammolite 产品标识。
 3. 重写 `scripts/deployment/install_workspace.sh`：
    - 默认开发模式安装第三方依赖后，逐包执行 `pip install --no-deps -e`；
    - `--production` 逐包构建 wheel，并只从本地 wheel 目录安装；
-   - 支持 `KBOT_PYTHON`；
+   - 支持 `KBOT_PYTHON` 和 `KBOT_CONDA_ENV`，默认安装到 `kbot4`；
    - 所有包安装成功后才初始化 `.env`。
 4. 启动脚本取消源码路径拼接，统一使用 `python -m <package>.entrypoints.<process>`。
 5. 增加 `tests/acceptance/check_workspace_packages.py`。

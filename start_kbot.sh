@@ -31,13 +31,13 @@ conda_env_exists() {
 }
 
 if [ -z "${KBOT_CONDA_ENV:-}" ]; then
-    if conda_env_exists "kbot3"; then
-        KBOT_CONDA_ENV="kbot3"
+    if conda_env_exists "kbot4"; then
+        KBOT_CONDA_ENV="kbot4"
     elif conda_env_exists "cube"; then
         KBOT_CONDA_ENV="cube"
-        echo "⚠ 未找到 kbot3 环境，本地启动自动使用 cube。"
+        echo "⚠ 未找到 kbot4 环境，本地启动自动使用 cube。"
     else
-        echo "❌ 未找到 kbot3 或 cube Conda 环境。"
+        echo "❌ 未找到 kbot4 或 cube Conda 环境。"
         echo "   请创建环境，或通过 KBOT_CONDA_ENV 显式指定。"
         exit 1
     fi
@@ -52,6 +52,22 @@ if ! conda activate "$KBOT_CONDA_ENV"; then
     exit 1
 fi
 echo "使用 Conda 环境：${KBOT_CONDA_ENV}（$(command -v python)）"
+
+# 安装与启动必须使用同一个解释器，避免内部包被装入 base 或其他 Conda 环境。
+if ! python -c '
+import agent_runtime
+import aiops_agent
+import data_query
+import knowledge_core
+import main_api
+import model_serving
+import platform_clients
+import platform_core
+' >/dev/null 2>&1; then
+    echo "❌ 当前 Conda 环境缺少 KBot 内部包：${KBOT_CONDA_ENV}（$(command -v python)）"
+    echo "   请执行：KBOT_CONDA_ENV=${KBOT_CONDA_ENV} bash scripts/deployment/install_workspace.sh"
+    exit 1
+fi
 
 # native crash 时把 Python 调用栈写入所属服务运行日志。
 export PYTHONFAULTHANDLER="${PYTHONFAULTHANDLER:-1}"

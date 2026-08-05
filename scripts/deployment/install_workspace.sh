@@ -6,7 +6,65 @@ KBOT_SOURCE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$KBOT_SOURCE_ROOT"
 
 python_bin="${KBOT_PYTHON:-}"
+selected_conda_env=""
 mode="${KBOT_INSTALL_MODE:-development}"
+
+find_conda() {
+    local candidate="${CONDA_EXE:-}"
+    if [[ -n "$candidate" && -x "$candidate" ]]; then
+        printf '%s\n' "$candidate"
+        return 0
+    fi
+    candidate="$(command -v conda || true)"
+    if [[ -n "$candidate" ]]; then
+        printf '%s\n' "$candidate"
+        return 0
+    fi
+    for candidate in \
+        "$HOME/anaconda3/bin/conda" \
+        "$HOME/miniconda3/bin/conda" \
+        "/opt/anaconda3/bin/conda" \
+        "/opt/miniconda3/bin/conda"; do
+        if [[ -x "$candidate" ]]; then
+            printf '%s\n' "$candidate"
+            return 0
+        fi
+    done
+    return 1
+}
+
+conda_env_exists() {
+    local conda_bin="$1"
+    local env_name="$2"
+    "$conda_bin" env list 2>/dev/null \
+        | awk 'NF > 1 && $1 !~ /^#/ {print $1}' \
+        | grep -Fxq "$env_name"
+}
+
+if [[ -z "$python_bin" ]]; then
+    conda_bin="$(find_conda || true)"
+    if [[ -n "$conda_bin" ]]; then
+        selected_conda_env="${KBOT_CONDA_ENV:-}"
+        if [[ -z "$selected_conda_env" ]]; then
+            if conda_env_exists "$conda_bin" "kbot4"; then
+                selected_conda_env="kbot4"
+            elif conda_env_exists "$conda_bin" "cube"; then
+                selected_conda_env="cube"
+                echo "⚠ 未找到 kbot4 环境，安装目标自动使用 cube。"
+            fi
+        fi
+        if [[ -n "$selected_conda_env" ]]; then
+            if ! conda_env_exists "$conda_bin" "$selected_conda_env"; then
+                echo "指定的 Conda 环境不存在：$selected_conda_env" >&2
+                exit 1
+            fi
+            python_bin="$(
+                "$conda_bin" run -n "$selected_conda_env" \
+                    python -c 'import sys; print(sys.executable)'
+            )"
+        fi
+    fi
+fi
 if [[ -z "$python_bin" ]]; then
     python_bin="$(command -v python || command -v python3 || true)"
 fi
@@ -14,6 +72,16 @@ fi
     echo "未找到 Python 解释器" >&2
     exit 1
 }
+if [[ ! -x "$python_bin" ]]; then
+    echo "Python 解释器不可执行：$python_bin" >&2
+    exit 1
+fi
+python_bin="$("$python_bin" -c 'import sys; print(sys.executable)')"
+if [[ -n "$selected_conda_env" ]]; then
+    echo "KBot 安装目标：Conda 环境 ${selected_conda_env}（${python_bin}）"
+else
+    echo "KBot 安装目标：${python_bin}"
+fi
 if [[ "$#" -gt 1 || ("$#" -eq 1 && "$1" != "--production") ]]; then
     echo "Usage: $0 [--production]" >&2
     exit 2

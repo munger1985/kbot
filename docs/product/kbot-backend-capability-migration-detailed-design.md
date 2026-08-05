@@ -60,7 +60,8 @@ platform_core
 `install_workspace.sh` 维护唯一的 `members` 数组，同时驱动 editable 安装与 wheel 构建。
 editable 使用 `--no-deps`，避免 pip 用发布源解析内部固定版本；第三方依赖由根
 `requirements.txt` 安装。生产按 members 顺序构建 wheels，再使用明确的 KBot 发行名和
-`==4.0.0` 安装。
+`==4.0.0` 安装。未显式指定 `KBOT_PYTHON` 时，安装器与启动脚本统一选择
+`KBOT_CONDA_ENV` 或默认 `kbot4` 环境，避免内部包被写入 Conda base。
 
 ## 3. Data Query 详细设计
 
