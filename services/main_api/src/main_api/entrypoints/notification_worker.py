@@ -14,12 +14,15 @@ from platform_core.database.oracle import create_database_runtime
 from platform_core.logger import LogConfig, LogManager
 
 
+PROCESS_NAME = "notification_worker"
+
+
 async def main() -> None:
     settings = get_main_api_settings()
     config = settings.notifications
     LogManager(LogConfig(
         service="main_api",
-        process="notification-worker",
+        process=PROCESS_NAME,
         log_dir=settings.log.dir,
         level=settings.log.level,
         rotation=settings.log.rotation,

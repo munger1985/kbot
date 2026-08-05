@@ -3,6 +3,8 @@
 import unittest
 from pathlib import Path
 
+from main_api.entrypoints.notification_worker import PROCESS_NAME
+from platform_core.logger import LogConfig
 from tests.acceptance.check_process_topology import (
     check_process_topology,
     load_processes,
@@ -10,6 +12,14 @@ from tests.acceptance.check_process_topology import (
 
 
 class ProcessTopologyTest(unittest.TestCase):
+    def test_notification_worker_uses_valid_log_process_name(self):
+        config = LogConfig(
+            service="main_api",
+            process=PROCESS_NAME,
+        )
+
+        self.assertEqual("notification_worker", config.process)
+
     def test_every_app_has_configured_process(self):
         self.assertEqual([], check_process_topology())
         processes = load_processes()
