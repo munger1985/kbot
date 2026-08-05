@@ -163,6 +163,93 @@ class AgentDelegationReconcilerTest(
             state.delegation.error_code, "OPS_UPSTREAM_UNAVAILABLE"
         )
 
+    async def test_expired_unchanged_lease_can_record_remote_error(self):
+        """请求超时超过租期时，只要 fencing token 未变化仍可安全收敛。"""
+        now = datetime.now(UTC)
+        run_id = uuid7()
+        task_id = uuid7()
+        delegation_id = uuid7()
+        aiops_agent_id = uuid7()
+        aiops_target_id = uuid7()
+        context = AuthContext(
+            principal_kind=PrincipalKind.PORTAL,
+            client_id="km-portal",
+            request_id="request-expired-lease",
+            trace_id="trace-expired-lease",
+            api_key_id="portal-key",
+            domain_id="20",
+            asserted_user_id="user-1",
+        )
+        state = SimpleNamespace(
+            run=SimpleNamespace(
+                run_id=run_id,
+                domain_id=20,
+                agent_id=aiops_agent_id,
+                actor_id="user-1",
+                original_input="分析数据库性能下降",
+                deadline_at=now + timedelta(minutes=10),
+                trace_id="trace-expired-lease",
+                config_snapshot_json={
+                    "agent": {
+                        "config": {
+                            "aiops_target_id": str(aiops_target_id),
+                        }
+                    }
+                },
+                policy_snapshot_json={
+                    "auth_context": context.model_dump(mode="json")
+                },
+            ),
+            task=SimpleNamespace(
+                task_id=task_id,
+                timeout_seconds=600,
+                max_attempts=3,
+                status="WAITING_EXTERNAL",
+            ),
+            delegation=SimpleNamespace(
+                delegation_id=delegation_id,
+                parent_run_id=run_id,
+                parent_task_id=task_id,
+                status="SUBMITTING",
+                child_run_id=None,
+                idempotency_key=f"task:{task_id}:delegation",
+                attempt_count=0,
+                max_attempts=3,
+                lease_owner=None,
+                lease_token=None,
+                lease_until=None,
+                row_version=1,
+                last_child_event_sequence=0,
+                error_code=None,
+                error_message=None,
+                next_poll_at=now,
+            ),
+        )
+        client = _UnavailableAIOpsClient()
+        reconciler = AgentDelegationReconciler(
+            uow_factory=lambda: _Uow(state),
+            aiops_client=client,
+            reconciler_id="reconciler-expired-lease",
+            lease_seconds=60,
+            poll_interval_seconds=1,
+        )
+        original_create = client.create_delegation
+
+        async def expire_then_fail(*args, **kwargs):
+            state.delegation.lease_until = now - timedelta(seconds=1)
+            return await original_create(*args, **kwargs)
+
+        client.create_delegation = expire_then_fail
+
+        worked = await reconciler.run_once()
+
+        self.assertTrue(worked)
+        self.assertEqual(state.delegation.status, "SUBMITTING")
+        self.assertEqual(
+            state.delegation.error_code, "OPS_UPSTREAM_UNAVAILABLE"
+        )
+        self.assertIsNone(state.delegation.lease_token)
+
 
 if __name__ == "__main__":
     unittest.main()

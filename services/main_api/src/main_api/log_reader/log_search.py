@@ -15,7 +15,14 @@ from typing import Any, Literal
 
 LogStream = Literal["RUNTIME", "ACCESS"]
 _INCLUDED_SERVICES = frozenset(
-    {"main_api", "agent_runtime", "knowledge_core", "model_serving", "data_query"}
+    {
+        "main_api",
+        "agent_runtime",
+        "knowledge_core",
+        "model_serving",
+        "data_query",
+        "aiops_agent",
+    }
 )
 _LEVELS = frozenset({"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"})
 _RUNTIME_HEADER = re.compile(

@@ -30,6 +30,10 @@ service_name = "kbot-main-api"
 [[processes]]
 service_config = "knowledge_core"
 service_name = "kbot-knowledge-core-api"
+
+[[processes]]
+service_config = "aiops_agent"
+service_name = "kbot-aiops-api"
 """.strip(),
             encoding="utf-8",
         )
@@ -58,6 +62,13 @@ service_name = "kbot-knowledge-core-api"
             "client=127.0.0.1 | request_id=req-2",
             encoding="utf-8",
         )
+        aiops_dir = self.log_root / "aiops_agent"
+        aiops_dir.mkdir(parents=True)
+        (aiops_dir / "runtime.log").write_text(
+            f"{stamp} | INFO     | [api] aiops_agent.bootstrap:ready:10 - "
+            "AIOps API 已就绪",
+            encoding="utf-8",
+        )
         self.service = self._service()
 
     def _service(self, **overrides):
@@ -77,10 +88,13 @@ service_name = "kbot-knowledge-core-api"
 
     def test_catalog_groups_runtime_and_access_by_service(self):
         services = self.service.services()
-        self.assertEqual(1, len(services))
-        self.assertEqual("main_api", services[0]["service_name"])
-        self.assertEqual("RUNTIME", services[0]["runtime"]["stream"])
-        self.assertEqual("ACCESS", services[0]["access"]["stream"])
+        by_name = {item["service_name"]: item for item in services}
+        self.assertEqual({"main_api", "aiops_agent"}, set(by_name))
+        self.assertEqual("RUNTIME", by_name["main_api"]["runtime"]["stream"])
+        self.assertEqual("ACCESS", by_name["main_api"]["access"]["stream"])
+        self.assertEqual(
+            "RUNTIME", by_name["aiops_agent"]["runtime"]["stream"]
+        )
 
     def test_list_omits_raw_and_detail_is_redacted(self):
         events, _, _ = self._search(

@@ -267,9 +267,28 @@ class AgentDelegationReconciler:
                 ),
             )
             await uow.commit()
+            logger.info(
+                "Agent Delegation 已领取：delegation_id={} run_id={} "
+                "task_id={} status={} attempt={}/{} lease_until={}",
+                delegation.delegation_id,
+                run.run_id,
+                task.task_id,
+                delegation.status,
+                int(delegation.attempt_count),
+                int(delegation.max_attempts),
+                delegation.lease_until,
+            )
             return lease
 
     async def _submit(self, lease: _Lease) -> None:
+        logger.info(
+            "正在向 AIOps 提交 Agent Delegation：delegation_id={} "
+            "run_id={} task_id={} target_id={}",
+            lease.delegation_id,
+            lease.parent_run_id,
+            lease.parent_task_id,
+            lease.aiops_target_id,
+        )
         payload = RootDelegationRequest(
             delegation_id=lease.delegation_id,
             parent_agent_run_id=lease.parent_run_id,
@@ -316,6 +335,14 @@ class AgentDelegationReconciler:
                 },
             )
             await uow.commit()
+        logger.info(
+            "AIOps Agent Delegation 已启动：delegation_id={} "
+            "run_id={} task_id={} child_run_id={}",
+            lease.delegation_id,
+            lease.parent_run_id,
+            lease.parent_task_id,
+            receipt.ops_run_id,
+        )
 
     async def _poll(self, lease: _Lease) -> None:
         if lease.child_run_id is None:
@@ -397,6 +424,19 @@ class AgentDelegationReconciler:
                 >= int(delegation.max_attempts)
             )
             if not exc.retryable or exhausted:
+                logger.error(
+                    "AIOps Agent Delegation 提交或轮询失败并终止："
+                    "delegation_id={} run_id={} task_id={} code={} "
+                    "status_code={} retryable={} exhausted={} message={}",
+                    lease.delegation_id,
+                    lease.parent_run_id,
+                    lease.parent_task_id,
+                    exc.code,
+                    exc.status_code,
+                    exc.retryable,
+                    exhausted,
+                    str(exc)[:1000],
+                )
                 await self._fail_locked(
                     uow=uow,
                     delegation=delegation,
@@ -407,11 +447,26 @@ class AgentDelegationReconciler:
                     now=now,
                 )
             else:
-                delegation.error_code = exc.code
-                delegation.error_message = str(exc)[:1000]
-                delegation.next_poll_at = now + timedelta(
+                retry_at = now + timedelta(
                     seconds=min(2 ** int(delegation.attempt_count), 30)
                 )
+                logger.warning(
+                    "AIOps Agent Delegation 请求失败，等待重试："
+                    "delegation_id={} run_id={} task_id={} code={} "
+                    "status_code={} attempt={}/{} next_retry_at={} message={}",
+                    lease.delegation_id,
+                    lease.parent_run_id,
+                    lease.parent_task_id,
+                    exc.code,
+                    exc.status_code,
+                    int(delegation.attempt_count),
+                    int(delegation.max_attempts),
+                    retry_at,
+                    str(exc)[:1000],
+                )
+                delegation.error_code = exc.code
+                delegation.error_message = str(exc)[:1000]
+                delegation.next_poll_at = retry_at
                 self._clear_lease(delegation)
                 delegation.row_version = int(delegation.row_version) + 1
             await uow.commit()
@@ -420,12 +475,14 @@ class AgentDelegationReconciler:
         delegation = await uow.delegations.get(
             delegation_id=lease.delegation_id, lock=True
         )
+        # 外部请求可能恰好跨过租期。此处已经持有数据库行锁，只要 Owner 与
+        # fencing token 未变化，就能证明没有其他 Reconciler 接管；允许原
+        # 持有者记录结果，避免超时请求永久停留在 SUBMITTING。
         if (
             delegation is None
             or delegation.lease_owner != self._reconciler_id
             or delegation.lease_token != lease.lease_token
             or delegation.lease_until is None
-            or delegation.lease_until <= _now()
         ):
             raise RuntimeError("Delegation 租约已失效")
         run = await uow.runs.get(

@@ -124,6 +124,9 @@ class _BaseAIOpsClient:
                 f"{self._base_url}{path}",
                 headers=headers,
                 json=payload,
+                # Client 可能复用进程级 Session；每个依赖仍必须使用自己的
+                # 超时，不能被其他服务更长的 Session 默认超时覆盖。
+                timeout=self._timeout,
             ) as response:
                 body = await self._response_payload(response)
                 if response.status >= 400:
