@@ -4,6 +4,8 @@
 
 - `scripts/db/apply_oracle_schema.py`：按同目录 `init_services.ini` 初始化所选服务的 Oracle 表。
 - `scripts/db/apply_composition_schema.py`：为现有 Oracle Schema 补建并核验 S7 组合回执表。
+- `scripts/db/apply_agent_data_query_schema.py`：为现有 Oracle Schema 幂等补齐 Agent 问数模式字段与约束。
+- `scripts/db/apply_notification_schema.py`：为现有 Oracle Schema 补建并核验通知中心表。
 - `scripts/db/init_services.ini`：选择本次初始化包含的业务服务；基础共享表始终创建。
 - `scripts/db/repair_agent_data_query_mode.py`：定向对齐已有 Agent 的问数模式字段。
 - `scripts/db/repair_model_serving_s4.py`：定向补齐已有模型目录的行版本字段。
