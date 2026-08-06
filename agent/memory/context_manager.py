@@ -34,7 +34,12 @@ class ContextManager:
             self.rewrite_prompt,
             chat_history=chat_history if chat_history else 'No previous turns.',
             summary=context_summary or 'None',
-            session_state=json.dumps(session_state or {}, ensure_ascii=False),
+            # Oracle JSON 数值可能被驱动还原为 Decimal；提示词仅需稳定文本表示。
+            session_state=json.dumps(
+                session_state or {},
+                ensure_ascii=False,
+                default=str,
+            ),
             active_topic=active_topic or "None",
             query=query,
             user_language=user_language
